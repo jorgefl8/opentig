@@ -1,0 +1,129 @@
+.source-file-viewer {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+  background: var(--background);
+}
+
+.source-file-toolbar {
+  display: flex;
+  height: 44px;
+  flex: none;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in oklch, var(--muted) 45%, var(--background));
+  padding: 0 12px;
+}
+
+.source-language-label {
+  flex: none;
+  border-radius: var(--radius-sm);
+  background: var(--muted);
+  padding: 3px 7px;
+  color: var(--muted-foreground);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.source-file-path {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  color: var(--muted-foreground);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-save-controls {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 7px;
+}
+
+.file-save-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted-foreground);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.file-save-status::before {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 999px;
+  background: currentColor;
+  content: "";
+}
+
+.file-save-status[data-state="dirty"] { color: var(--warning); }
+.file-save-status[data-state="saving"] { color: var(--primary); }
+
+.file-save-button {
+  display: inline-flex;
+  height: 28px;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--background);
+  padding: 0 9px;
+  color: var(--foreground);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.file-save-button:hover:not(:disabled) {
+  border-color: color-mix(in oklch, var(--primary) 45%, var(--border));
+  background: var(--accent);
+}
+
+.file-save-button:disabled {
+  cursor: default;
+  opacity: .45;
+}
+
+.file-save-button svg {
+  width: 13px;
+  height: 13px;
+}
+
+.source-editor-scroll {
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+.source-code-editor {
+  --diffs-font-family: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --diffs-font-size: 13px;
+  --diffs-line-height: 22px;
+  height: 100%;
+  width: 100%;
+  overflow: auto;
+  color: var(--foreground);
+}
+
+.source-code-editor-content {
+  min-width: 100%;
+  min-height: 100%;
+}
+
+.source-file-viewer:has(.source-code-editor:focus-within) .source-language-label {
+  background: color-mix(in oklch, var(--primary) 12%, var(--muted));
+  color: var(--primary);
+}
+
+@media (max-width: 700px) {
+  .source-file-path { display: none; }
+  .source-language-label { margin-right: auto; }
+}

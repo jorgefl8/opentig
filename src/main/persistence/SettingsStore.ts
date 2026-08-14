@@ -1,0 +1,363 @@
+import { randomUUID } from 'node:crypto';
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import path from 'node:path';
+import type { AiHarnessId, Preferences, RecentRepository, RepositoryOrganization, RepositoryProject } from '../../shared/contracts';
+import { GitOperationError } from '../../shared/errors';
+import { FILES_TREE_SAVE_DEBOUNCE_MS, normalizeFilesTreeStates, type FilesTreeState, upsertFilesTreeState } from '../../shared/files-tree-state';
+import { MAX_PROJECT_NAME_LENGTH, MAX_REPOSITORIES_PER_PROJECT, MAX_REPOSITORY_KEY_LENGTH, MAX_REPOSITORY_PROJECTS, normalizeRepositoryKey, UNASSIGNED_RECENT_LIMIT } from '../../shared/repository-projects';
+
+interface WindowBounds { width: number; height: number; x?: number; y?: number }
+interface SettingsData {
+  recentRepositories: RecentRepository[];
+  repositoryProjects: RepositoryProject[];
+  filesTreeStates: FilesTreeState[];
+  activeRepositoryId: string | null;
+  preferences: Preferences;
+  windowBounds: WindowBounds;
+}
+
+const defaults: SettingsData = {
+  recentRepositories: [],
+  repositoryProjects: [],
+  filesTreeStates: [],
+  activeRepositoryId: null,
+  preferences: {
+    theme: 'system', diffView: 'unified', wrapLines: false, sidebarWidth: 400, showDotEnvFiles: true, uiZoom: 100,
+    commitMessageHarness: 'codex', commitMessageModels: { codex: 'default', claude: 'default', opencode: 'default' },
+  },
+  windowBounds: { width: 1280, height: 800 },
+};
+
+export class SettingsStore {
+  private data: SettingsData = structuredClone(defaults);
+  private loaded = false;
+  private pendingWrite: Promise<void> = Promise.resolve();
+  private filesTreeSaveTimer: ReturnType<typeof setTimeout> | null = null;
+  private filesTreeDirty = false;
+  private lastBackgroundWriteError: unknown = null;
+
+  constructor(private readonly filePath: string) {}
+
+  async load(): Promise<void> {
+    if (this.loaded) return;
+    try {
+      const parsed: unknown = JSON.parse(await readFile(this.filePath, 'utf8'));
+      this.data = validate(parsed);
+    } catch {
+      this.data = structuredClone(defaults);
+    }
+    this.loaded = true;
+  }
+
+  get recentRepositories(): RecentRepository[] { return [...this.data.recentRepositories]; }
+  get repositoryProjects(): RepositoryProject[] { return this.data.repositoryProjects.map(cloneProject); }
+  get filesTreeStates(): FilesTreeState[] { return this.data.filesTreeStates.map(cloneFilesTreeState); }
+  get activeRepositoryId(): string | null { return this.data.activeRepositoryId; }
+  get preferences(): Preferences { return { ...this.data.preferences, commitMessageModels: { ...this.data.preferences.commitMessageModels } }; }
+  get windowBounds(): WindowBounds { return { ...this.data.windowBounds }; }
+
+  async touchRepository(repository: Omit<RecentRepository, 'lastOpenedAt'>): Promise<void> {
+    const recent = { ...repository, lastOpenedAt: new Date().toISOString() };
+    this.data.recentRepositories = [recent, ...this.data.recentRepositories.filter((item) => item.id !== repository.id)];
+    this.data.activeRepositoryId = repository.id;
+    this.pruneRecentRepositories();
+    await this.save();
+  }
+
+  /**
+   * Drops the recent entries for one removed worktree directory. Sibling
+   * worktrees of the same repository keep their entries, and project
+   * assignments are untouched because they are keyed by `commonDir`, which
+   * identifies the repository rather than any single worktree.
+   */
+  async forgetWorktreePath(worktreePath: string): Promise<RecentRepository[]> {
+    const target = normalizeWorktreePath(worktreePath);
+    if (!target) return this.recentRepositories;
+    const matching = this.data.recentRepositories.filter((item) => normalizeWorktreePath(item.path) === target);
+    if (matching.length === 0) return this.recentRepositories;
+    // The active repository is never a removal target; the operations layer
+    // blocks removing the current worktree before it reaches persistence.
+    if (matching.some((item) => item.id === this.data.activeRepositoryId)) return this.recentRepositories;
+    this.data.recentRepositories = this.data.recentRepositories.filter((item) => normalizeWorktreePath(item.path) !== target);
+    await this.save();
+    return this.recentRepositories;
+  }
+
+  async createRepositoryProject(name: string): Promise<RepositoryOrganization> {
+    const normalizedName = this.validateProjectName(name);
+    if (this.data.repositoryProjects.length >= MAX_REPOSITORY_PROJECTS) throw projectError('Too many projects.');
+    this.assertUniqueProjectName(normalizedName);
+    this.data.repositoryProjects.push({ id: randomUUID(), name: normalizedName, repositoryKeys: [] });
+    await this.save();
+    return this.organization;
+  }
+
+  async renameRepositoryProject(projectId: string, name: string): Promise<RepositoryOrganization> {
+    const project = this.getProject(projectId);
+    const normalizedName = this.validateProjectName(name);
+    this.assertUniqueProjectName(normalizedName, projectId);
+    project.name = normalizedName;
+    await this.save();
+    return this.organization;
+  }
+
+  async removeRepositoryProject(projectId: string): Promise<RepositoryOrganization> {
+    this.getProject(projectId);
+    this.data.repositoryProjects = this.data.repositoryProjects.filter((project) => project.id !== projectId);
+    this.pruneRecentRepositories();
+    await this.save();
+    return this.organization;
+  }
+
+  async assignRepositoryProject(repositoryKey: string, projectId: string | null): Promise<RepositoryOrganization> {
+    const key = normalizeRepositoryKey(repositoryKey);
+    if (!key || key.length > MAX_REPOSITORY_KEY_LENGTH || hasControlCharacters(key)) throw projectError('Invalid repository.');
+    const target = projectId === null ? null : this.getProject(projectId);
+    if (target && !this.data.recentRepositories.some((repository) => normalizeRepositoryKey(repository.commonDir) === key)) {
+      throw projectError('Unknown repository.');
+    }
+    this.data.repositoryProjects = this.data.repositoryProjects.map((project) => ({
+      ...project,
+      repositoryKeys: project.repositoryKeys.filter((item) => item !== key),
+    }));
+    if (target) {
+      const refreshed = this.getProject(target.id);
+      if (refreshed.repositoryKeys.length >= MAX_REPOSITORIES_PER_PROJECT) throw projectError('This project is full.');
+      refreshed.repositoryKeys.push(key);
+    }
+    this.pruneRecentRepositories();
+    await this.save();
+    return this.organization;
+  }
+
+  async setPreferences(partial: Partial<Preferences>): Promise<Preferences> {
+    const next = { ...this.data.preferences, ...partial };
+    if (!['system', 'light', 'dark'].includes(next.theme)) next.theme = 'system';
+    if (!['unified', 'split'].includes(next.diffView)) next.diffView = 'unified';
+    next.wrapLines = typeof next.wrapLines === 'boolean' ? next.wrapLines : false;
+    next.sidebarWidth = normalizeSidebarWidth(next.sidebarWidth);
+    next.showDotEnvFiles = typeof next.showDotEnvFiles === 'boolean' ? next.showDotEnvFiles : true;
+    next.uiZoom = Math.max(80, Math.min(130, Math.round(Number(next.uiZoom) || 100)));
+    next.commitMessageHarness = isHarness(next.commitMessageHarness) ? next.commitMessageHarness : 'codex';
+    next.commitMessageModels = modelPreferences(next.commitMessageModels);
+    this.data.preferences = next;
+    await this.save();
+    return this.preferences;
+  }
+
+  async setWindowBounds(bounds: WindowBounds): Promise<void> {
+    this.data.windowBounds = bounds;
+    await this.save();
+  }
+
+  setFilesTreeExpandedPaths(repositoryId: string, expandedPaths: string[]): void {
+    this.data.filesTreeStates = upsertFilesTreeState(this.data.filesTreeStates, repositoryId, expandedPaths, new Date().toISOString());
+    this.filesTreeDirty = true;
+    if (this.filesTreeSaveTimer) clearTimeout(this.filesTreeSaveTimer);
+    this.filesTreeSaveTimer = setTimeout(() => {
+      this.filesTreeSaveTimer = null;
+      void this.saveFilesTreeState().catch(() => undefined);
+    }, FILES_TREE_SAVE_DEBOUNCE_MS);
+  }
+
+  async flush(): Promise<void> {
+    if (this.filesTreeSaveTimer) {
+      clearTimeout(this.filesTreeSaveTimer);
+      this.filesTreeSaveTimer = null;
+    }
+    if (this.filesTreeDirty) await this.saveFilesTreeState();
+    await this.pendingWrite;
+    if (this.filesTreeDirty) await this.saveFilesTreeState();
+    if (this.lastBackgroundWriteError) throw this.lastBackgroundWriteError;
+  }
+
+  private save(): Promise<void> {
+    if (this.filesTreeSaveTimer) {
+      clearTimeout(this.filesTreeSaveTimer);
+      this.filesTreeSaveTimer = null;
+    }
+    this.filesTreeDirty = false;
+    this.lastBackgroundWriteError = null;
+    return this.enqueueWrite();
+  }
+
+  private async saveFilesTreeState(): Promise<void> {
+    if (!this.filesTreeDirty) return this.pendingWrite;
+    this.filesTreeDirty = false;
+    this.lastBackgroundWriteError = null;
+    try {
+      await this.enqueueWrite();
+    } catch (error) {
+      this.filesTreeDirty = true;
+      this.lastBackgroundWriteError = error;
+      throw error;
+    }
+  }
+
+  private enqueueWrite(): Promise<void> {
+    const snapshot = JSON.stringify(this.data, null, 2);
+    const write = this.pendingWrite.then(async () => {
+      await mkdir(path.dirname(this.filePath), { recursive: true });
+      const temporary = `${this.filePath}.${randomUUID()}.tmp`;
+      await writeFile(temporary, snapshot, { encoding: 'utf8', mode: 0o600 });
+      await rename(temporary, this.filePath);
+    });
+    this.pendingWrite = write.catch(() => undefined);
+    return write;
+  }
+
+  private get organization(): RepositoryOrganization {
+    return { repositoryProjects: this.repositoryProjects, recentRepositories: this.recentRepositories };
+  }
+
+  private getProject(projectId: string): RepositoryProject {
+    const project = this.data.repositoryProjects.find((item) => item.id === projectId);
+    if (!project) throw projectError('Unknown project.');
+    return project;
+  }
+
+  private validateProjectName(name: string): string {
+    const normalized = name.trim();
+    if (!normalized || normalized.length > MAX_PROJECT_NAME_LENGTH || hasControlCharacters(normalized)) throw projectError('Invalid project name.');
+    return normalized;
+  }
+
+  private assertUniqueProjectName(name: string, exceptId?: string): void {
+    if (this.data.repositoryProjects.some((project) => project.id !== exceptId && project.name.toLowerCase() === name.toLowerCase())) {
+      throw projectError('A project with this name already exists.');
+    }
+  }
+
+  private pruneRecentRepositories(): void {
+    const assigned = new Set(this.data.repositoryProjects.flatMap((project) => project.repositoryKeys));
+    let unassigned = 0;
+    this.data.recentRepositories = this.data.recentRepositories.filter((repository) => {
+      if (repository.id === this.data.activeRepositoryId || assigned.has(normalizeRepositoryKey(repository.commonDir))) return true;
+      unassigned += 1;
+      return unassigned <= UNASSIGNED_RECENT_LIMIT;
+    });
+  }
+}
+
+function validate(value: unknown): SettingsData {
+  if (!value || typeof value !== 'object') return structuredClone(defaults);
+  const input = value as Partial<SettingsData>;
+  const recentRepositories = Array.isArray(input.recentRepositories)
+    ? input.recentRepositories.filter(isRecent).map(normalizeRecent).slice(0, 10)
+    : [];
+  const repositoryProjects = normalizeProjects(input.repositoryProjects);
+  const filesTreeStates = normalizeFilesTreeStates(input.filesTreeStates);
+  const preferences = input.preferences && typeof input.preferences === 'object'
+    ? {
+        theme: ['system', 'light', 'dark'].includes(input.preferences.theme) ? input.preferences.theme : 'system',
+        diffView: ['unified', 'split'].includes(input.preferences.diffView) ? input.preferences.diffView : 'unified',
+        wrapLines: typeof input.preferences.wrapLines === 'boolean' ? input.preferences.wrapLines : false,
+        sidebarWidth: normalizeSidebarWidth(input.preferences.sidebarWidth),
+        showDotEnvFiles: typeof input.preferences.showDotEnvFiles === 'boolean' ? input.preferences.showDotEnvFiles : true,
+        uiZoom: Math.max(80, Math.min(130, Math.round(Number(input.preferences.uiZoom) || 100))),
+        commitMessageHarness: isHarness(input.preferences.commitMessageHarness) ? input.preferences.commitMessageHarness : 'codex',
+        commitMessageModels: modelPreferences(input.preferences.commitMessageModels),
+      } as Preferences
+    : { ...defaults.preferences };
+  const bounds = input.windowBounds;
+  const windowBounds = bounds && Number.isFinite(bounds.width) && Number.isFinite(bounds.height)
+    ? { width: Math.max(900, bounds.width), height: Math.max(600, bounds.height), ...(Number.isFinite(bounds.x) ? { x: bounds.x } : {}), ...(Number.isFinite(bounds.y) ? { y: bounds.y } : {}) }
+    : { ...defaults.windowBounds };
+  return {
+    recentRepositories,
+    repositoryProjects,
+    filesTreeStates,
+    activeRepositoryId: typeof input.activeRepositoryId === 'string' ? input.activeRepositoryId : null,
+    preferences,
+    windowBounds,
+  };
+}
+
+function normalizeProjects(value: unknown): RepositoryProject[] {
+  if (!Array.isArray(value)) return [];
+  const projects: RepositoryProject[] = [];
+  const names = new Set<string>();
+  const assigned = new Set<string>();
+  for (const candidate of value.slice(0, MAX_REPOSITORY_PROJECTS)) {
+    if (!candidate || typeof candidate !== 'object') continue;
+    const input = candidate as Partial<RepositoryProject>;
+    const name = typeof input.name === 'string' ? input.name.trim() : '';
+    const id = typeof input.id === 'string' ? input.id : '';
+    const normalizedName = name.toLowerCase();
+    if (!id || id.length > 64 || hasControlCharacters(id) || !name || name.length > MAX_PROJECT_NAME_LENGTH || hasControlCharacters(name) || names.has(normalizedName)) continue;
+    names.add(normalizedName);
+    const repositoryKeys: string[] = [];
+    if (Array.isArray(input.repositoryKeys)) {
+      for (const raw of input.repositoryKeys.slice(0, MAX_REPOSITORIES_PER_PROJECT)) {
+        if (typeof raw !== 'string' || raw.length > MAX_REPOSITORY_KEY_LENGTH || hasControlCharacters(raw)) continue;
+        const key = normalizeRepositoryKey(raw);
+        if (!key || assigned.has(key)) continue;
+        assigned.add(key);
+        repositoryKeys.push(key);
+      }
+    }
+    projects.push({ id, name, repositoryKeys });
+  }
+  return projects;
+}
+
+/** Absolute worktree paths compare by resolved form, ignoring Windows casing. */
+function normalizeWorktreePath(value: string): string {
+  if (typeof value !== 'string' || !value.trim()) return '';
+  return path.resolve(value).replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+}
+
+function cloneProject(project: RepositoryProject): RepositoryProject {
+  return { ...project, repositoryKeys: [...project.repositoryKeys] };
+}
+
+function cloneFilesTreeState(state: FilesTreeState): FilesTreeState {
+  return { ...state, expandedPaths: [...state.expandedPaths] };
+}
+
+function projectError(message: string): GitOperationError {
+  return new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'repository-projects', message });
+}
+
+function isHarness(value: unknown): value is AiHarnessId {
+  return value === 'codex' || value === 'claude' || value === 'opencode';
+}
+
+function normalizeSidebarWidth(value: unknown): number {
+  const width = Number(value);
+  if (!Number.isFinite(width) || width === 340) return 400;
+  return Math.max(300, Math.min(680, width));
+}
+
+function modelPreferences(value: unknown): Partial<Record<AiHarnessId, string>> {
+  const result: Partial<Record<AiHarnessId, string>> = { codex: 'default', claude: 'default', opencode: 'default' };
+  if (!value || typeof value !== 'object') return result;
+  for (const harness of ['codex', 'claude', 'opencode'] as const) {
+    const model = (value as Partial<Record<AiHarnessId, unknown>>)[harness];
+    if (typeof model === 'string' && model.length > 0 && model.length <= 200 && !hasControlCharacters(model)) result[harness] = model;
+  }
+  return result;
+}
+
+function hasControlCharacters(value: string): boolean {
+  return [...value].some((character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127);
+}
+
+function isRecent(value: unknown): value is RecentRepository {
+  if (!value || typeof value !== 'object') return false;
+  const item = value as Partial<RecentRepository>;
+  return [item.id, item.name, item.path, item.lastOpenedAt].every((field) => typeof field === 'string');
+}
+
+function normalizeRecent(item: RecentRepository): RecentRepository {
+  const commonDir = typeof item.commonDir === 'string' && item.commonDir
+    ? path.resolve(item.commonDir)
+    : path.join(path.resolve(item.path), '.git');
+  return {
+    ...item,
+    commonDir,
+    repositoryName: typeof item.repositoryName === 'string' && item.repositoryName
+      ? item.repositoryName
+      : path.basename(path.dirname(commonDir)),
+  };
+}

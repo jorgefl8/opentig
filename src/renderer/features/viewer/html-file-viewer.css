@@ -1,0 +1,13 @@
+.html-preview-frame {
+  width: 100%;
+  min-height: 0;
+  flex: 1;
+  border: 0;
+  background: var(--background);
+  color-scheme: light dark;
+}
+
+.html-preview-frame:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
