@@ -14,11 +14,15 @@ export interface SearchMatch {
 export interface SearchFileResult {
   path: string;
   matches: SearchMatch[];
+  /** Matched inside a file excluded by .gitignore rules. */
+  ignored: boolean;
 }
 
 export interface SearchResult {
   files: SearchFileResult[];
   totalMatches: number;
+  /** Matches that live in ignored files; already counted in `totalMatches`. */
+  ignoredMatches: number;
   /** True when the caps below cut the result set short. */
   truncated: boolean;
 }

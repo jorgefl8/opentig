@@ -1,11 +1,18 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
-import { IconChevronDown, IconChevronRight, IconLetterCase, IconLoader4, IconRegex, IconSearch, IconTextWrapDisabled } from '@tabler/icons-react';
+import { useVirtualizer } from '@tanstack/react-virtual';
+import { IconChevronDown, IconChevronRight, IconEyeOff, IconLetterCase, IconLoader4, IconRegex, IconSearch, IconTextWrapDisabled } from '@tabler/icons-react';
 import { Button } from '@/components/ui/button';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { buildSearchRegex, type SearchOptions, type SearchResult } from '../../../shared/search';
+import { buildSearchRegex, type SearchFileResult, type SearchMatch, type SearchOptions, type SearchResult } from '../../../shared/search';
 
 const DEBOUNCE_MS = 250;
+const FILE_ROW_HEIGHT = 28;
+const MATCH_ROW_HEIGHT = 24;
+
+type SearchRow =
+  | { kind: 'file'; file: SearchFileResult; open: boolean }
+  | { kind: 'match'; file: SearchFileResult; match: SearchMatch };
 
 interface SearchViewProps {
   repositoryId: string;
@@ -25,6 +32,7 @@ export function SearchView({ repositoryId, active, revision, onOpenFile }: Searc
   const [searching, setSearching] = useState(false);
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const inputRef = useRef<HTMLInputElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const requestToken = useRef(0);
 
   const options = useMemo<SearchOptions>(() => ({ query, matchCase, wholeWord, regex }), [query, matchCase, wholeWord, regex]);
@@ -40,7 +48,13 @@ export function SearchView({ repositoryId, active, revision, onOpenFile }: Searc
     setSearching(true);
     const timer = window.setTimeout(() => {
       void window.justgit.repository.search(repositoryId, { ...options, query: trimmed })
-        .then((next) => { if (requestToken.current === token) { setResult(next); setError(null); } })
+        .then((next) => {
+          if (requestToken.current !== token) return;
+          setResult(next);
+          setError(null);
+          // Ignored files are noise until asked for, so they arrive folded.
+          setCollapsed(new Set(next.files.filter((file) => file.ignored).map((file) => file.path)));
+        })
         .catch((reason: unknown) => {
           if (requestToken.current !== token) return;
           setResult(null);
@@ -51,17 +65,37 @@ export function SearchView({ repositoryId, active, revision, onOpenFile }: Searc
     return () => window.clearTimeout(timer);
   }, [active, options, query, repositoryId, revision]);
 
+  const rows = useMemo<SearchRow[]>(() => {
+    if (!result) return [];
+    const flattened: SearchRow[] = [];
+    for (const file of result.files) {
+      const open = !collapsed.has(file.path);
+      flattened.push({ kind: 'file', file, open });
+      if (open) for (const match of file.matches) flattened.push({ kind: 'match', file, match });
+    }
+    return flattened;
+  }, [collapsed, result]);
+
+  // eslint-disable-next-line react-hooks/incompatible-library -- TanStack Virtual is intentionally imperative.
+  const virtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: (index) => rows[index]?.kind === 'file' ? FILE_ROW_HEIGHT : MATCH_ROW_HEIGHT,
+    getItemKey: (index) => {
+      const row = rows[index];
+      if (!row) return index;
+      return row.kind === 'file' ? `file:${row.file.path}` : `match:${row.file.path}:${row.match.line}`;
+    },
+    overscan: 12,
+  });
+
   const toggleFile = (path: string) => setCollapsed((current) => {
     const next = new Set(current);
     if (!next.delete(path)) next.add(path);
     return next;
   });
 
-  const summary = result
-    ? result.totalMatches === 0
-      ? 'No results'
-      : `${result.totalMatches}${result.truncated ? '+' : ''} ${result.totalMatches === 1 ? 'result' : 'results'} in ${result.files.length} ${result.files.length === 1 ? 'file' : 'files'}`
-    : null;
+  const ignoredFiles = result?.files.filter((file) => file.ignored).length ?? 0;
 
   return (
     <div className="search-view">
@@ -85,30 +119,55 @@ export function SearchView({ repositoryId, active, revision, onOpenFile }: Searc
         </div>
         {query.trim() !== '' && (
           <div className="search-summary">
-            {searching ? <ShimmeringText text="Searching…" /> : error ? <span className="search-error">{error}</span> : summary}
+            {searching ? <ShimmeringText text="Searching…" /> : error ? <span className="search-error">{error}</span> : result && (
+              <>
+                <span>
+                  {result.totalMatches === 0
+                    ? 'No results'
+                    : `${result.totalMatches - result.ignoredMatches}${result.truncated ? '+' : ''} ${result.totalMatches - result.ignoredMatches === 1 ? 'result' : 'results'} in ${result.files.length - ignoredFiles} ${result.files.length - ignoredFiles === 1 ? 'file' : 'files'}`}
+                </span>
+                {result.ignoredMatches > 0 && (
+                  <span className="search-summary-ignored">· {result.ignoredMatches} in {ignoredFiles} ignored {ignoredFiles === 1 ? 'file' : 'files'}</span>
+                )}
+              </>
+            )}
           </div>
         )}
       </div>
-      <div className="search-results">
+      <div ref={scrollRef} className="search-results">
         {searching && !result && <div className="view-loading" role="status"><IconLoader4 className="spinner" /> <ShimmeringText text="Searching…" /></div>}
-        {result?.files.map((file) => {
-          const open = !collapsed.has(file.path);
-          return (
-            <section key={file.path} className="search-file">
-              <button className="search-file-heading" onClick={() => toggleFile(file.path)} aria-expanded={open}>
-                {open ? <IconChevronDown /> : <IconChevronRight />}
-                <span className="search-file-name">{file.path}</span>
-                <span className="search-file-count">{file.matches.length}</span>
-              </button>
-              {open && file.matches.map((match) => (
-                <button key={`${file.path}:${match.line}`} className="search-match" onClick={() => onOpenFile(file.path)}>
-                  <span className="search-match-line">{match.line}</span>
-                  <span className="search-match-text">{highlight(match.text, highlighter)}</span>
-                </button>
-              ))}
-            </section>
-          );
-        })}
+        <div className="search-rows virtual-list" style={{ height: virtualizer.getTotalSize() }}>
+          {virtualizer.getVirtualItems().map((virtualRow) => {
+            const row = rows[virtualRow.index];
+            if (!row) return null;
+            return (
+              <div key={virtualRow.key} className="virtual-row" style={{ height: virtualRow.size, transform: `translateY(${virtualRow.start}px)` }}>
+                {row.kind === 'file' ? (
+                  <button
+                    className={`search-file-heading ${row.file.ignored ? 'ignored' : ''}`}
+                    onClick={() => toggleFile(row.file.path)}
+                    aria-expanded={row.open}
+                  >
+                    {row.open ? <IconChevronDown /> : <IconChevronRight />}
+                    <span className="search-file-name">{row.file.path}</span>
+                    {row.file.ignored && (
+                      <Tooltip>
+                        <TooltipTrigger render={<span className="search-file-ignored-badge" />}><IconEyeOff /></TooltipTrigger>
+                        <TooltipContent>Ignored by Git</TooltipContent>
+                      </Tooltip>
+                    )}
+                    <span className="search-file-count">{row.file.matches.length}</span>
+                  </button>
+                ) : (
+                  <button className="search-match" onClick={() => onOpenFile(row.file.path)}>
+                    <span className="search-match-line">{row.match.line}</span>
+                    <span className="search-match-text">{highlight(row.match.text, highlighter)}</span>
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );

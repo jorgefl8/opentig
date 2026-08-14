@@ -28,7 +28,7 @@ export function parseSearchOutput(output: string): SearchResult {
     if (totalMatches >= SEARCH_MAX_MATCHES) { truncated = true; break; }
     let file = byPath.get(path);
     if (!file) {
-      file = { path, matches: [] };
+      file = { path, matches: [], ignored: false };
       byPath.set(path, file);
       files.push(file);
     }
@@ -38,5 +38,5 @@ export function parseSearchOutput(output: string): SearchResult {
     totalMatches += 1;
   }
 
-  return { files, totalMatches, truncated };
+  return { files, totalMatches, ignoredMatches: 0, truncated };
 }
