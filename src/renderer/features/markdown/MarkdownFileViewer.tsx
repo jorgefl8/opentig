@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { IconCheck, IconViewportNarrow, IconViewportWide } from '@tabler/icons-react';
+import { IconViewportNarrow, IconViewportWide } from '@tabler/icons-react';
 import { toast } from 'sonner';
 import type { FileResult, ThemePreference, WriteFileResult } from '@shared/contracts';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
@@ -57,8 +57,9 @@ export function MarkdownFileViewer({ file, revision, themeType, wrapLines, readO
   const [html, setHtml] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [copied, setCopied] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
   const requestToken = useRef(0);
+  const copyFeedback = useRef<{ button: HTMLButtonElement; timer: number } | null>(null);
   const dirty = draft !== file.content;
 
   useEffect(() => {
@@ -96,6 +97,10 @@ export function MarkdownFileViewer({ file, revision, themeType, wrapLines, readO
 
   useEffect(() => () => onDirtyChange(false), [onDirtyChange]);
 
+  useEffect(() => () => {
+    if (copyFeedback.current) window.clearTimeout(copyFeedback.current.timer);
+  }, []);
+
   useEffect(() => {
     if (!dirty) return;
     const warnBeforeClose = (event: BeforeUnloadEvent) => {
@@ -115,8 +120,23 @@ export function MarkdownFileViewer({ file, revision, themeType, wrapLines, readO
       try {
         const code = decodeURIComponent(encoded);
         await window.justgit.clipboard.writeText(code);
-        setCopied(encoded);
-        window.setTimeout(() => setCopied((current) => current === encoded ? null : current), 1_500);
+        const previous = copyFeedback.current;
+        if (previous) {
+          window.clearTimeout(previous.timer);
+          delete previous.button.dataset.copyState;
+          previous.button.setAttribute('aria-label', 'Copy code');
+        }
+        copy.dataset.copyState = 'copied';
+        copy.setAttribute('aria-label', 'Copied');
+        setCopied(true);
+        const timer = window.setTimeout(() => {
+          if (copyFeedback.current?.button !== copy) return;
+          delete copy.dataset.copyState;
+          copy.setAttribute('aria-label', 'Copy code');
+          copyFeedback.current = null;
+          setCopied(false);
+        }, 2_000);
+        copyFeedback.current = { button: copy, timer };
       } catch {
         toast.error('Could not copy code');
       }
@@ -223,12 +243,12 @@ export function MarkdownFileViewer({ file, revision, themeType, wrapLines, readO
       </div>
       {tab === 'preview' ? (
         <div className="markdown-preview-scroll">
-          {loading ? (
+          {loading && !html ? (
             <div className="viewer-message"><ShimmeringText text="Rendering Markdown…" /></div>
           ) : (
             <MarkdownPreviewContent html={html} onClick={(event) => void handlePreviewClick(event)} />
           )}
-          {copied && <span className="markdown-copy-status" role="status"><IconCheck /> Copied</span>}
+          <span className="sr-only" role="status" aria-live="polite">{copied ? 'Code copied' : ''}</span>
         </div>
       ) : (
         <div className="markdown-code-view" data-theme={themeType}>

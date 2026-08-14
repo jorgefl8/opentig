@@ -57,6 +57,10 @@
 .file-viewer-tabs > button {
   position: relative;
   z-index: 1;
+  width: 100%;
+  min-width: 0;
+  justify-content: center;
+  text-align: center;
 }
 
 @media (prefers-reduced-motion: reduce) {

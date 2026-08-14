@@ -6,6 +6,13 @@ import markedKatex from 'marked-katex-extension';
 import { getVsCodeFileIconUrl, getVsCodeLanguageIconUrl } from '../../lib/vscode-icons';
 import { highlightCode } from './highlight';
 
+const TABLER_COPY_ICON = [
+  '<svg class="markdown-copy-label tabler-icon tabler-icon-copy" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">',
+  '<path d="M7 9.667a2.667 2.667 0 0 1 2.667 -2.667h8.666a2.667 2.667 0 0 1 2.667 2.667v8.666a2.667 2.667 0 0 1 -2.667 2.667h-8.666a2.667 2.667 0 0 1 -2.667 -2.667l0 -8.666"></path>',
+  '<path d="M4.012 16.737a2.005 2.005 0 0 1 -1.012 -1.737v-10c0 -1.1 .9 -2 2 -2h10c.75 0 1.158 .385 1.5 1"></path>',
+  '</svg>',
+].join('');
+
 export async function renderMarkdown(content: string): Promise<string> {
   const highlights = new Map<string, string>();
   const markdown = new Marked(
@@ -35,7 +42,7 @@ export async function renderMarkdown(content: string): Promise<string> {
             iconUrl ? `<img class="markdown-code-icon" src="${escapeAttribute(iconUrl)}" alt="" aria-hidden="true">` : '',
             `<span>${escapeHtml(label)}</span>`,
             '</span>',
-            `<button type="button" data-copy-code="${encodeURIComponent(text)}" aria-label="Copy code">Copy</button>`,
+            `<button type="button" data-copy-code="${encodeURIComponent(text)}" aria-label="Copy code">${TABLER_COPY_ICON}<span class="markdown-copy-check" aria-hidden="true">✓</span></button>`,
             '</div>',
             `<div class="markdown-code-content">${highlighted}</div>`,
             '</div>',
