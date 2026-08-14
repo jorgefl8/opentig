@@ -2,7 +2,7 @@ import type { BrowserWindow, BrowserWindowConstructorOptions } from 'electron';
 import type { ThemePreference } from '../../shared/contracts';
 
 /** Matches the `.toolbar` height so the controls stay inside the toolbar row. */
-export const WINDOW_TITLE_BAR_HEIGHT = 48;
+export const WINDOW_TITLE_BAR_HEIGHT = 42;
 const TRANSPARENT_TITLE_BAR = '#01000000';
 const LIGHT_SYMBOL_COLOR = '#1f2937';
 const DARK_SYMBOL_COLOR = '#f8fafc';
