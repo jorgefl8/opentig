@@ -1,13 +1,13 @@
-import { type CSSProperties, type ReactNode, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   IconChevronDown, IconChevronRight, IconDeviceDesktop, IconFileArrowRight, IconFolder, IconFolderOpen,
   IconFiles, IconGitBranch, IconGitCompare, IconGitPullRequest, IconHierarchy2, IconHistory,
-  IconLayoutColumns, IconLayoutRows, IconList, IconLoader4, IconMinus, IconMoon, IconPlus,
+  IconList, IconLoader4, IconMinus, IconMoon, IconPlus,
   IconRefresh, IconRestore, IconSettings, IconSparkles, IconSun, IconX,
 } from '@tabler/icons-react';
 import { Toaster, toast } from 'sonner';
-import type { AiHarnessId, AiHarnessStatus, BootstrapData, DiffViewPreference, FileHistoryPathChange, FileHistoryState, GhCliStatus, GitHubRepositoryInfo, Preferences, PullRequestSummary, RecentRepository, RepositoryInfo, RepositoryOrganization, RepositoryProject, ThemePreference, UndoLatestCommitResult } from '../../shared/contracts';
+import type { AiHarnessId, AiHarnessStatus, BootstrapData, ChangesLayoutPreference, FileHistoryPathChange, FileHistoryState, GhCliStatus, GitHubRepositoryInfo, Preferences, PullRequestSummary, RecentRepository, RepositoryInfo, RepositoryOrganization, RepositoryProject, ThemePreference, UndoLatestCommitResult } from '../../shared/contracts';
 import { normalizeRepositoryKey } from '../../shared/repository-projects';
 import type { SerializedAiError } from '../../shared/errors';
 import type { BranchInfo, ChangeKind, CommitFile, CommitInfo, FileChange, FileTreeEntry, RepositoryStatus, WorktreeInfo } from '../../shared/git-types';
@@ -1196,8 +1196,7 @@ export default function App() {
                   conflicts={conflicts}
                   staged={staged}
                   changed={changed}
-                  diffView={diffView}
-                  onDiffView={(value) => void updatePreference({ diffView: value })}
+                  displayMode={bootstrap.preferences.changesLayout}
                   readOnly={Boolean(status?.readOnly)}
                   onSelect={(path, kind) => { selectViewer({ type: 'diff', path, kind }); }}
                   onConflict={(path) => { selectViewer({ type: 'conflict', path }); }}
@@ -1693,6 +1692,11 @@ const THEME_OPTIONS: { value: ThemePreference; label: string; icon: typeof IconS
   { value: 'dark', label: 'Dark', icon: IconMoon },
 ];
 
+const CHANGES_LAYOUT_OPTIONS: { value: ChangesLayoutPreference; label: string; icon: typeof IconSun }[] = [
+  { value: 'tree', label: 'Tree', icon: IconHierarchy2 },
+  { value: 'list', label: 'List', icon: IconList },
+];
+
 function SettingsDialog({ preferences, onPreference, open, onOpenChange, section, onSectionChange }: {
   preferences: Preferences;
   onPreference(partial: Partial<Preferences>): void;
@@ -1773,6 +1777,19 @@ function SettingsDialog({ preferences, onPreference, open, onOpenChange, section
                   <output>{preferences.uiZoom}%</output>
                 </div>
               </div>
+              <div className="settings-field settings-field-separated">
+                <div className="settings-field-label">
+                  <strong>Changes layout</strong>
+                  <span>Group changed files by folder or show them as a flat list.</span>
+                </div>
+                <div className="settings-theme-options" role="radiogroup" aria-label="Changes layout">
+                  {CHANGES_LAYOUT_OPTIONS.map(({ value, label, icon: Icon }) => (
+                    <button key={value} type="button" role="radio" aria-checked={preferences.changesLayout === value} className={`settings-theme-option ${preferences.changesLayout === value ? 'active' : ''}`} onClick={() => onPreference({ changesLayout: value })}>
+                      <Icon /> <span>{label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
               <div className="settings-field settings-field-separated settings-toggle-row">
                 <div className="settings-field-label">
                   <strong>Wrap lines in viewer</strong>
@@ -1837,77 +1854,19 @@ function SettingsDialog({ preferences, onPreference, open, onOpenChange, section
   );
 }
 
-interface SegmentedOption<T extends string> { value: T; icon: ReactNode; label: string; tip: string }
-
-function Segmented<T extends string>({ value, onChange, options, label }: {
-  value: T; onChange(value: T): void; options: SegmentedOption<T>[]; label: string;
-}) {
-  const activeIndex = Math.max(0, options.findIndex((option) => option.value === value));
-  return (
-    <div
-      className="segmented"
-      role="radiogroup"
-      aria-label={label}
-      style={{ '--seg-count': options.length, '--seg-index': activeIndex } as CSSProperties}
-    >
-      <span className="segmented-thumb" aria-hidden="true" />
-      {options.map((option) => {
-        const active = option.value === value;
-        return (
-          <Tooltip key={option.value}>
-            <TooltipTrigger render={
-              <button
-                type="button"
-                role="radio"
-                aria-checked={active}
-                className={`segmented-option ${active ? 'active' : ''}`}
-                onClick={() => onChange(option.value)}
-              />
-            }>
-              {option.icon}
-              <span>{option.label}</span>
-            </TooltipTrigger>
-            <TooltipContent>{option.tip}</TooltipContent>
-          </Tooltip>
-        );
-      })}
-    </div>
-  );
-}
-
 interface ChangesViewProps {
   conflicts: FileChange[]; staged: FileChange[]; changed: FileChange[]; readOnly: boolean;
-  diffView: DiffViewPreference; onDiffView(value: DiffViewPreference): void;
+  displayMode: ChangesLayoutPreference;
   onSelect(path: string, kind: 'staged' | 'unstaged'): void; onOpenFile(path: string): void; onDiscard(paths: string[]): void;
   onConflict(path: string): void;
   onStage(paths: string[]): void; onUnstage(paths: string[]): void; onStageAll(): void; onUnstageAll(): void;
 }
 
 function ChangesView(props: ChangesViewProps) {
-  const [displayMode, setDisplayMode] = useState<'list' | 'tree'>('tree');
+  const displayMode = props.displayMode;
   const scrollRef = useRef<HTMLDivElement>(null);
   return (
     <div className="changes-view">
-      <div className="changes-view-toolbar">
-        <Segmented<'list' | 'tree'>
-          label="Change layout"
-          value={displayMode}
-          onChange={setDisplayMode}
-          options={[
-            { value: 'tree', icon: <IconHierarchy2 />, label: 'Tree', tip: 'Group by folders' },
-            { value: 'list', icon: <IconList />, label: 'List', tip: 'Flat file list' },
-          ]}
-        />
-        <Segmented<DiffViewPreference>
-          label="Diff view"
-          value={props.diffView}
-          onChange={props.onDiffView}
-          options={[
-            { value: 'unified', icon: <IconLayoutRows />, label: 'Unified', tip: 'Diff in one column' },
-            { value: 'split', icon: <IconLayoutColumns />, label: 'Split', tip: 'Side-by-side diff' },
-          ]}
-        />
-      </div>
       <div ref={scrollRef} className="changes-scroll">
         <ConflictSection scrollRef={scrollRef} changes={props.conflicts} onSelect={props.onConflict} onOpenFile={props.onOpenFile} />
         <ChangeSection scrollRef={scrollRef} displayMode={displayMode} title="Staged Changes" changes={props.staged} onSelect={(path) => props.onSelect(path, 'staged')} onOpenFile={props.onOpenFile} action="unstage" disabled={props.readOnly} onAction={props.onUnstage} onDiscard={props.onDiscard} onAll={props.onUnstageAll} />

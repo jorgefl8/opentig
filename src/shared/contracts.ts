@@ -208,6 +208,7 @@ export type WorktreeRemovalResult =
 
 export type ThemePreference = 'system' | 'light' | 'dark';
 export type DiffViewPreference = 'unified' | 'split';
+export type ChangesLayoutPreference = 'tree' | 'list';
 export type AiHarnessId = 'codex' | 'claude' | 'opencode';
 export type AiAuthStatus = 'authenticated' | 'unauthenticated' | 'unknown';
 export type AiAvailability = 'ready' | 'warning' | 'error';
@@ -316,6 +317,7 @@ export interface GeneratedPullRequestDraft {
 export interface Preferences {
   theme: ThemePreference;
   diffView: DiffViewPreference;
+  changesLayout: ChangesLayoutPreference;
   wrapLines: boolean;
   sidebarWidth: number;
   showDotEnvFiles: boolean;

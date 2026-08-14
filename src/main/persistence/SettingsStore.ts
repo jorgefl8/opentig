@@ -22,7 +22,7 @@ const defaults: SettingsData = {
   filesTreeStates: [],
   activeRepositoryId: null,
   preferences: {
-    theme: 'system', diffView: 'unified', wrapLines: false, sidebarWidth: 400, showDotEnvFiles: true, uiZoom: 100,
+    theme: 'system', diffView: 'unified', changesLayout: 'tree', wrapLines: false, sidebarWidth: 400, showDotEnvFiles: true, uiZoom: 100,
     commitMessageHarness: 'codex', commitMessageModels: { codex: 'default', claude: 'default', opencode: 'default' },
   },
   windowBounds: { width: 1280, height: 800 },
@@ -134,6 +134,7 @@ export class SettingsStore {
     const next = { ...this.data.preferences, ...partial };
     if (!['system', 'light', 'dark'].includes(next.theme)) next.theme = 'system';
     if (!['unified', 'split'].includes(next.diffView)) next.diffView = 'unified';
+    if (!['tree', 'list'].includes(next.changesLayout)) next.changesLayout = 'tree';
     next.wrapLines = typeof next.wrapLines === 'boolean' ? next.wrapLines : false;
     next.sidebarWidth = normalizeSidebarWidth(next.sidebarWidth);
     next.showDotEnvFiles = typeof next.showDotEnvFiles === 'boolean' ? next.showDotEnvFiles : true;
@@ -251,6 +252,7 @@ function validate(value: unknown): SettingsData {
     ? {
         theme: ['system', 'light', 'dark'].includes(input.preferences.theme) ? input.preferences.theme : 'system',
         diffView: ['unified', 'split'].includes(input.preferences.diffView) ? input.preferences.diffView : 'unified',
+        changesLayout: ['tree', 'list'].includes(input.preferences.changesLayout) ? input.preferences.changesLayout : 'tree',
         wrapLines: typeof input.preferences.wrapLines === 'boolean' ? input.preferences.wrapLines : false,
         sidebarWidth: normalizeSidebarWidth(input.preferences.sidebarWidth),
         showDotEnvFiles: typeof input.preferences.showDotEnvFiles === 'boolean' ? input.preferences.showDotEnvFiles : true,
