@@ -219,21 +219,17 @@
   .toolbar-spacer { flex: 1; }
   .repo-select { justify-content: flex-start; gap: 6px; border-color: color-mix(in oklch, var(--border) 82%, var(--foreground)); background: color-mix(in oklch, var(--input) 45%, transparent); }
   .repo-select:hover, .repo-select[aria-expanded="true"] { border-color: color-mix(in oklch, var(--primary) 35%, var(--border)); background: color-mix(in oklch, var(--input) 72%, transparent); }
-  .repo-select > svg:first-child { color: color-mix(in oklch, var(--primary) 58%, var(--foreground)); }
   .repo-select [data-slot="select-value"] { min-width: 0; }
   .repo-select-item { min-height: 34px; }
   .repo-select-item + .repo-select-item { margin-top: 1px; }
   .repo-select-item:hover, .repo-select-item[data-highlighted] { background: color-mix(in oklch, var(--foreground) 8%, transparent); }
   .repo-select-item[data-selected] { background: var(--row-selected); color: var(--foreground); }
   .repo-select-item[data-selected]:hover, .repo-select-item[data-selected][data-highlighted] { background: color-mix(in oklch, var(--foreground) 14%, transparent); }
-  .repo-select-item-icon { color: color-mix(in oklch, var(--muted-foreground) 85%, transparent); }
-  .repo-select-item[data-selected] .repo-select-item-icon { color: var(--foreground); }
   .repo-select-item-copy { display: grid; min-width: 0; flex: 1; gap: 1px; line-height: 1.2; }
   .repo-select-item-copy strong { overflow: hidden; color: var(--foreground); font-size: 12px; font-weight: 650; letter-spacing: -.01em; text-overflow: ellipsis; white-space: nowrap; }
   .repo-select-item-copy small { overflow: hidden; color: var(--muted-foreground); font-size: 10px; font-weight: 450; text-overflow: ellipsis; white-space: nowrap; }
   .repo-select-group + .repo-select-group { margin-top: 6px; }
   .repo-select-label { display: flex; align-items: center; gap: 7px; font-weight: 750; letter-spacing: .055em; text-transform: uppercase; }
-  .repo-select-label svg { width: 12px; height: 12px; flex: none; color: color-mix(in oklch, var(--primary) 75%, var(--foreground)); }
   .repo-select-label > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .repo-select-label::after { content: ""; flex: 1 0 12px; height: 1px; background: color-mix(in oklch, var(--foreground) 13%, transparent); }
   .repo-select-manage { min-height: 28px; margin-top: 7px; font-size: 11px; }
@@ -792,15 +788,9 @@
     border-color: color-mix(in oklch, var(--foreground) 16%, var(--border));
     background: var(--row-hover);
   }
-  .repo-select > svg:first-child, .toolbar [data-slot="select-trigger"] > svg:first-child { color: var(--muted-foreground); }
-  /* An open project switcher is the one toolbar control that turns primary:
-     it signals that the Q shortcut is armed and that Q closes it again. */
-  .repo-select[aria-expanded="true"] {
-    border-color: color-mix(in oklch, var(--primary) 55%, var(--border));
-    background: color-mix(in oklch, var(--primary) 16%, transparent);
-    color: var(--foreground);
-  }
-  .repo-select[aria-expanded="true"] > svg:first-child { color: var(--primary); }
+  .toolbar [data-slot="select-trigger"] > svg:first-child { color: var(--muted-foreground); }
+  /* Only the Q chip turns primary while the switcher is open: it is the key
+     that opened it and the key that closes it again. */
   .repo-select[aria-expanded="true"] .repo-select-shortcut {
     border-color: transparent;
     background: var(--primary);
@@ -1103,7 +1093,10 @@
   .diff-workspace-actions button[aria-pressed="true"] { background: var(--row-selected); color: var(--foreground); }
   .diff-workspace-scroll { min-height: 0; flex: 1; overflow: auto; }
   .diff-workspace-content { display: grid; min-width: 100%; align-content: start; }
+  /* The rule between files separates them; after the last one there is nothing
+     left to separate. */
   .diff-file-section { min-width: 100%; border-bottom: 1px solid var(--border); }
+  .diff-file-section:last-child { border-bottom: 0; }
   .diff-file-header {
     position: sticky;
     z-index: 3;
@@ -1137,8 +1130,6 @@
 
   /* Pickers, dialogs and settings all select with the same neutral surface. */
   .repo-select-item[data-selected] { background: var(--row-selected); color: var(--foreground); box-shadow: none; }
-  .repo-select-item[data-selected] .repo-select-item-icon { color: var(--foreground); }
-  .repo-select-label svg { color: var(--muted-foreground); }
   .repo-select-shortcut { margin-left: auto; flex: none; }
   .repo-select-index { display: grid; width: 20px; min-width: 20px; height: 20px; flex: none; place-items: center; padding: 0; font-variant-numeric: tabular-nums; line-height: 1; text-align: center; }
   .quick-open-result.active { background: var(--row-selected); box-shadow: none; }

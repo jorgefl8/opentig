@@ -1443,7 +1443,6 @@ function Toolbar(props: ToolbarProps) {
   // The row already shows the tail of the path, so no hover tooltip repeats it.
   const repositoryItem = (group: RepositoryOption) => (
     <SelectItem key={group.key} value={group.key} className="repo-select-item">
-      <IconFolder className="repo-select-item-icon" />
       <span className="repo-select-item-copy">
         <strong>{group.name}</strong>
         <small>{shortenRepositoryPath(group.rootPath)}</small>
@@ -1465,18 +1464,18 @@ function Toolbar(props: ToolbarProps) {
         onRecent(picker.repositories.find((group) => group.key === key)?.recent.id ?? null);
       }}>
         <SelectTrigger
+          size="sm"
           className="repo-select max-w-[240px]"
           aria-label="Select project or repository"
           aria-keyshortcuts="Q"
         >
-          <IconFolderOpen />
           <SelectValue>{props.repository.repositoryName}</SelectValue>
           <Kbd className="repo-select-shortcut" aria-hidden="true">Q</Kbd>
         </SelectTrigger>
         <SelectContent align="start" alignItemWithTrigger={false} className="w-max max-w-[min(380px,calc(100vw-24px))] p-1">
           {picker.projectSections.map((section) => (
             <SelectGroup key={section.id} className="repo-select-group p-0">
-              <SelectLabel className="repo-select-label"><IconFolder aria-hidden="true" /><span>{section.name}</span></SelectLabel>
+              <SelectLabel className="repo-select-label"><span>{section.name}</span></SelectLabel>
               {section.repositories.map(repositoryItem)}
             </SelectGroup>
           ))}
@@ -1490,7 +1489,10 @@ function Toolbar(props: ToolbarProps) {
         </SelectContent>
       </Select>
       <RepositoryProjectsDialog open={projectsOpen} onOpenChange={setProjectsOpen} projects={props.repositoryProjects} repositories={picker.repositories} onOrganizationChange={props.onOrganizationChange} />
-      <Button variant="outline" size="sm" onClick={props.onOpen}>Open…</Button>
+      <Tooltip>
+        <TooltipTrigger render={<Button variant="ghost" size="icon-sm" onClick={props.onOpen} aria-label="Open repository" aria-keyshortcuts="Control+O" />}><IconPlus /></TooltipTrigger>
+        <TooltipContent>Open repository (Ctrl+O)</TooltipContent>
+      </Tooltip>
       <div className="toolbar-spacer" />
       {props.status && (props.status.ahead > 0 || props.status.behind > 0 || props.status.insertions > 0 || props.status.deletions > 0 || props.busy === 'push' || props.busy === 'pull') && (
         <div className="branch-stats" aria-label="Branch and local changes summary">
