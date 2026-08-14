@@ -4,4 +4,26 @@ updates:
     directory: /
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+      day: monday
+      time: "09:00"
+      timezone: Europe/Madrid
+    open-pull-requests-limit: 3
+    groups:
+      production-minor-and-patch:
+        applies-to: version-updates
+        dependency-type: production
+        update-types:
+          - minor
+          - patch
+      development-minor-and-patch:
+        applies-to: version-updates
+        dependency-type: development
+        update-types:
+          - minor
+          - patch
+      major-updates:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - major
