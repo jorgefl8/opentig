@@ -1416,7 +1416,7 @@ function Toolbar(props: ToolbarProps) {
         onRecent(picker.repositories.find((group) => group.key === key)?.recent.id ?? null);
       }}>
         <SelectTrigger
-          className="repo-select w-[clamp(180px,18vw,240px)]"
+          className="repo-select max-w-[240px]"
           aria-label="Select project or repository"
           aria-keyshortcuts="Q"
         >
@@ -1424,7 +1424,7 @@ function Toolbar(props: ToolbarProps) {
           <SelectValue>{props.repository.repositoryName}</SelectValue>
           <Kbd className="repo-select-shortcut" aria-hidden="true">Q</Kbd>
         </SelectTrigger>
-        <SelectContent align="start" alignItemWithTrigger={false} className="w-[min(380px,calc(100vw-24px))] min-w-[min(280px,calc(100vw-24px))] p-1.5">
+        <SelectContent align="start" alignItemWithTrigger={false} className="w-max max-w-[min(380px,calc(100vw-24px))] p-1">
           {picker.projectSections.map((section) => (
             <SelectGroup key={section.id} className="repo-select-group p-0">
               <SelectLabel className="repo-select-label"><IconFolder aria-hidden="true" /><span>{section.name}</span></SelectLabel>
@@ -1477,8 +1477,8 @@ function Toolbar(props: ToolbarProps) {
         if (value === MANAGE_WORKTREES_VALUE) { openRefsManager('worktrees'); return; }
         props.onWorktree(value);
       }} disabled={refsBusy}>
-        <SelectTrigger size="sm" className="w-[clamp(130px,14vw,190px)]"><IconHierarchy2 /><SelectValue>{currentWorktree?.path.split(/[\\/]/).pop() ?? props.repository.name}</SelectValue></SelectTrigger>
-        <SelectContent align="end" alignItemWithTrigger={false} className="w-[min(280px,calc(100vw-24px))] min-w-[min(190px,calc(100vw-24px))]">
+        <SelectTrigger size="sm" className="max-w-[190px]"><IconHierarchy2 /><SelectValue>{currentWorktree?.path.split(/[\\/]/).pop() ?? props.repository.name}</SelectValue></SelectTrigger>
+        <SelectContent align="end" alignItemWithTrigger={false} className="w-max max-w-[min(280px,calc(100vw-24px))]">
           {props.worktrees.map((item) => <SelectItem key={item.path} value={item.path} disabled={Boolean(item.locked || item.prunable || item.bare)}><span className="min-w-0 flex-1 truncate">{item.path.split(/[\\/]/).pop()} {item.branch ? `· ${item.branch}` : '· detached'}</span></SelectItem>)}
           <SelectItem value={MANAGE_WORKTREES_VALUE} className="repo-select-manage"><IconSettings /><span>Manage worktrees…</span></SelectItem>
         </SelectContent>
@@ -1571,11 +1571,11 @@ function BranchCombobox({ branches, currentLabel, disabled, onBranch, onManage }
       isItemEqualToValue={(a: BranchItem | null, b: BranchItem | null) => a?.value === b?.value}
       onValueChange={(item: BranchItem | null) => { if (item && item.value !== currentValue) onBranch(item.value); }}
     >
-      <ComboboxTrigger size="sm" className="w-[clamp(140px,16vw,220px)]">
+      <ComboboxTrigger size="sm" className="max-w-[220px]">
         <IconGitBranch />
         <span className="block min-w-0 flex-1 overflow-hidden text-left text-ellipsis whitespace-nowrap">{currentLabel}</span>
       </ComboboxTrigger>
-      <ComboboxContent align="end" className="w-[min(300px,calc(100vw-24px))]">
+      <ComboboxContent align="end" className="w-[min(300px,calc(100vw-24px))] max-w-[calc(100vw-24px)]">
         <ComboboxInput placeholder="Search branches…" />
         {noResults ? (
           <div className="px-3 py-6 text-center text-sm text-muted-foreground">No matches</div>

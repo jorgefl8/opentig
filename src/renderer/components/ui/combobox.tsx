@@ -21,7 +21,7 @@ function ComboboxTrigger({
       data-slot="combobox-trigger"
       data-size={size}
       className={cn(
-        "flex w-fit min-w-0 cursor-pointer items-center justify-between gap-2 rounded-lg border border-border bg-input/40 px-3 py-2 text-sm font-medium whitespace-nowrap transition-[color,box-shadow,background-color] outline-none hover:bg-input/70 aria-expanded:bg-input/70 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50 data-placeholder:text-muted-foreground data-[size=default]:h-9 data-[size=sm]:h-8 data-[size=sm]:px-2.5 dark:bg-input/25 dark:hover:bg-input/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        "flex w-fit min-w-0 cursor-pointer items-center justify-between gap-1.5 rounded-lg border border-border bg-input/40 px-2 py-1 text-sm font-medium whitespace-nowrap transition-[color,box-shadow,background-color] outline-none hover:bg-input/70 aria-expanded:bg-input/70 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50 data-placeholder:text-muted-foreground data-[size=default]:h-8 data-[size=sm]:h-7 data-[size=sm]:px-1.5 dark:bg-input/25 dark:hover:bg-input/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         className
       )}
       {...props}
@@ -56,7 +56,7 @@ function ComboboxContent({
         <ComboboxPrimitive.Popup
           data-slot="combobox-content"
           className={cn(
-            "dark relative isolate z-50 flex max-h-[min(24rem,var(--available-height))] w-[max(var(--anchor-width),18rem)] max-w-[min(var(--available-width),40rem)] origin-(--transform-origin) flex-col overflow-hidden rounded-xl bg-popover text-popover-foreground shadow-xl ring-1 ring-foreground/10 duration-100 dark:ring-foreground/10 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+            "dark relative isolate z-50 flex max-h-[min(24rem,var(--available-height))] w-max min-w-0 max-w-[min(var(--available-width),40rem)] origin-(--transform-origin) flex-col overflow-hidden rounded-xl bg-popover text-popover-foreground shadow-xl ring-1 ring-foreground/10 duration-100 dark:ring-foreground/10 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
             className
           )}
           {...props}
@@ -87,7 +87,7 @@ function ComboboxList({ className, ...props }: ComboboxPrimitive.List.Props) {
   return (
     <ComboboxPrimitive.List
       data-slot="combobox-list"
-      className={cn("min-h-0 flex-1 scroll-py-1.5 overflow-y-auto overflow-x-hidden p-1.5", className)}
+      className={cn("min-h-0 flex-1 scroll-py-1 overflow-y-auto overflow-x-hidden p-1", className)}
       {...props}
     />
   )
@@ -111,7 +111,7 @@ function ComboboxGroupLabel({ className, ...props }: ComboboxPrimitive.GroupLabe
   return (
     <ComboboxPrimitive.GroupLabel
       data-slot="combobox-group-label"
-      className={cn("px-2.5 pt-2.5 pb-1.5 text-xs font-medium text-muted-foreground", className)}
+      className={cn("px-2 pt-2 pb-1 text-xs font-medium text-muted-foreground", className)}
       {...props}
     />
   )
@@ -122,7 +122,7 @@ function ComboboxItem({ className, children, ...props }: ComboboxPrimitive.Item.
     <ComboboxPrimitive.Item
       data-slot="combobox-item"
       className={cn(
-        "relative flex w-full cursor-pointer items-center gap-2.5 rounded-lg py-2 pr-8 pl-3 text-sm font-medium outline-hidden select-none transition-colors data-highlighted:bg-foreground/10 data-selected:text-primary data-disabled:pointer-events-none data-disabled:cursor-not-allowed data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        "relative flex w-full cursor-pointer items-center gap-2 rounded-md py-1.5 pr-7 pl-2 text-sm font-medium outline-hidden select-none transition-colors data-highlighted:bg-foreground/10 data-selected:text-primary data-disabled:pointer-events-none data-disabled:cursor-not-allowed data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         className
       )}
       {...props}

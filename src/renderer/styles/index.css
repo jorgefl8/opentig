@@ -217,11 +217,11 @@
   .toolbar-brand { display: flex; flex: none; align-items: center; gap: 7px; color: var(--foreground); font-size: 13px; font-weight: 760; letter-spacing: -.02em; }
   .toolbar-brand svg { width: 16px; height: 16px; color: var(--primary); }
   .toolbar-spacer { flex: 1; }
-  .repo-select { justify-content: flex-start; gap: 8px; border-color: color-mix(in oklch, var(--border) 82%, var(--foreground)); background: color-mix(in oklch, var(--input) 45%, transparent); }
+  .repo-select { justify-content: flex-start; gap: 6px; border-color: color-mix(in oklch, var(--border) 82%, var(--foreground)); background: color-mix(in oklch, var(--input) 45%, transparent); }
   .repo-select:hover, .repo-select[aria-expanded="true"] { border-color: color-mix(in oklch, var(--primary) 35%, var(--border)); background: color-mix(in oklch, var(--input) 72%, transparent); }
   .repo-select > svg:first-child { color: color-mix(in oklch, var(--primary) 58%, var(--foreground)); }
   .repo-select [data-slot="select-value"] { min-width: 0; }
-  .repo-select-item { min-height: 42px; }
+  .repo-select-item { min-height: 34px; }
   .repo-select-item + .repo-select-item { margin-top: 1px; }
   .repo-select-item:hover, .repo-select-item[data-highlighted] { background: color-mix(in oklch, var(--foreground) 8%, transparent); }
   .repo-select-item[data-selected] { background: var(--row-selected); color: var(--foreground); }
@@ -236,7 +236,7 @@
   .repo-select-label svg { width: 12px; height: 12px; flex: none; color: color-mix(in oklch, var(--primary) 75%, var(--foreground)); }
   .repo-select-label > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .repo-select-label::after { content: ""; flex: 1 0 12px; height: 1px; background: color-mix(in oklch, var(--foreground) 13%, transparent); }
-  .repo-select-manage { min-height: 34px; margin-top: 9px; font-size: 11px; }
+  .repo-select-manage { min-height: 28px; margin-top: 7px; font-size: 11px; }
   .repo-select-manage svg { color: currentColor; }
   .branch-stats { display: flex; flex: none; align-items: center; gap: 8px; font-size: 11px; font-weight: 700; white-space: nowrap; }
   .branch-sync { display: flex; align-items: center; gap: 5px; border-radius: var(--radius-md); background: color-mix(in oklch, var(--diff-token-keyword) 13%, transparent); padding: 4px 7px; color: var(--diff-token-keyword); }
@@ -737,7 +737,7 @@
 .repo-select-item[data-selected]:hover, .repo-select-item[data-selected][data-highlighted] { background: color-mix(in oklch, var(--foreground) 14%, transparent); }
 /* 12px keeps every glyph — group labels, repository rows and the manage action —
    on the same left rail as the item padding Base UI applies. */
-.repo-select-label { padding: 6px 12px 5px; color: color-mix(in oklch, var(--muted-foreground) 70%, var(--foreground)); font-size: 9.5px; }
+.repo-select-label { padding: 5px 8px 4px; color: color-mix(in oklch, var(--muted-foreground) 70%, var(--foreground)); font-size: 9.5px; }
 .repo-select-label.plain { color: var(--muted-foreground); }
 .repo-select-manage { border-radius: var(--radius-lg); background: var(--popover); color: var(--muted-foreground); }
 .repo-select-manage::before { content: ""; position: absolute; top: -5px; right: 0; left: 0; height: 1px; background: color-mix(in oklch, var(--foreground) 13%, transparent); pointer-events: none; }
