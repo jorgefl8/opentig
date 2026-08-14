@@ -4,7 +4,7 @@ import {
   IconChevronDown, IconChevronRight, IconDeviceDesktop, IconFileArrowRight, IconFolder, IconFolderOpen,
   IconFiles, IconGitBranch, IconGitCompare, IconGitPullRequest, IconHierarchy2, IconHistory,
   IconList, IconLoader4, IconMinus, IconMoon, IconPlus,
-  IconRefresh, IconRestore, IconSettings, IconSparkles, IconSun, IconX,
+  IconRefresh, IconRestore, IconSearch, IconSettings, IconSparkles, IconSun, IconX,
 } from '@tabler/icons-react';
 import { Toaster, toast } from 'sonner';
 import type { AiHarnessId, AiHarnessStatus, BootstrapData, ChangesLayoutPreference, FileHistoryPathChange, FileHistoryState, GhCliStatus, GitHubRepositoryInfo, Preferences, PullRequestSummary, RecentRepository, RepositoryInfo, RepositoryOrganization, RepositoryProject, ThemePreference, UndoLatestCommitResult } from '../../shared/contracts';
@@ -31,6 +31,7 @@ import { PullRequestsView } from '@/features/pulls/PullRequestsView';
 import { LocalRefsDialog } from '@/features/refs/LocalRefsDialog';
 import type { LocalRefsTab } from '@/features/refs/local-refs-model';
 import { RepositoryProjectsDialog } from '@/features/repositories/RepositoryProjectsDialog';
+import { SearchView } from '@/features/search/SearchView';
 import { buildRepositoryPickerModel, getRepositoryPickerDisplayOrder, groupRecentRepositories, shortenRepositoryPath, touchRecentRepositories, type RepositoryOption } from '@/features/repositories/repository-select-model';
 import type { ViewerSelection } from '@/features/viewer/Viewer';
 import { getVsCodeFileIconUrl, getVsCodeFolderIconUrl } from '@/lib/vscode-icons';
@@ -39,7 +40,7 @@ import { resolveWindowControlsInset } from './window-controls';
 import { RefreshCoordinator, type RefreshRequest } from '@/lib/RefreshCoordinator';
 
 const Viewer = lazy(() => import('@/features/viewer/Viewer'));
-const SIDEBAR_VIEWS = ['changes', 'files', 'history', 'prs'] as const;
+const SIDEBAR_VIEWS = ['changes', 'files', 'history', 'prs', 'search'] as const;
 type SidebarView = (typeof SIDEBAR_VIEWS)[number];
 interface AppRefreshOptions {
   background?: boolean;
@@ -1181,8 +1182,8 @@ export default function App() {
                   aria-keyshortcuts={`Control+${index + 1}`}
                   onClick={() => setView(item)}
                 >
-                  {item === 'changes' ? <IconGitCompare /> : item === 'files' ? <IconFiles /> : item === 'history' ? <IconHistory /> : <IconGitPullRequest />}
-                  <span className="sidebar-tab-label">{item === 'changes' ? 'Changes' : item === 'files' ? 'Files' : item === 'history' ? 'History' : 'PRs'}</span>
+                  {item === 'changes' ? <IconGitCompare /> : item === 'files' ? <IconFiles /> : item === 'history' ? <IconHistory /> : item === 'prs' ? <IconGitPullRequest /> : <IconSearch />}
+                  <span className="sidebar-tab-label">{item === 'changes' ? 'Changes' : item === 'files' ? 'Files' : item === 'history' ? 'History' : item === 'prs' ? 'PRs' : 'Search'}</span>
                   {item === 'changes' && status && status.changes.length > 0 && <span className="sidebar-tab-count">{status.changes.length}</span>}
                   {item === 'prs' && pulls !== null && pulls.length > 0 && <span className="sidebar-tab-count">{pulls.length}</span>}
                   {ctrlHeld && <span className="sidebar-tab-shortcut" aria-hidden="true">{index + 1}</span>}
@@ -1248,6 +1249,14 @@ export default function App() {
                   onUndo={setUndoCommit}
                   undoing={undoingCommit}
                   onMore={() => void loadMore()}
+                />
+              )}
+              {view === 'search' && (
+                <SearchView
+                  repositoryId={repository.id}
+                  active={view === 'search'}
+                  revision={refreshVersion}
+                  onOpenFile={openFile}
                 />
               )}
               {view === 'prs' && (

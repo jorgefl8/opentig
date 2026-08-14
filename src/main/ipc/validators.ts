@@ -3,12 +3,27 @@ import { AiOperationError, GhOperationError } from '../../shared/errors';
 import type { AiHarnessId, BranchDetailsRequest, CreatePullRequestInput, DeleteBranchRequest, GenerateCommitMessageInput, GeneratePullRequestDraftInput, RemoveWorktreeRequest, WorktreeDetailsRequest } from '../../shared/contracts';
 import { MAX_PROJECT_NAME_LENGTH, MAX_REPOSITORY_KEY_LENGTH, normalizeRepositoryKey } from '../../shared/repository-projects';
 import { isFilesTreeRepositoryId, MAX_FILES_TREE_PATHS, normalizeExpandedPaths, normalizeFilesTreePath } from '../../shared/files-tree-state';
+import { SEARCH_MAX_QUERY_LENGTH, type SearchOptions } from '../../shared/search';
 
 export function stringArg(value: unknown, operation: string, maxLength = 32_768): string {
   if (typeof value !== 'string' || value.length === 0 || value.length > maxLength || value.includes('\0')) {
     throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation, message: 'Invalid argument.' });
   }
   return value;
+}
+
+export function searchOptionsArg(value: unknown, operation: string): SearchOptions {
+  const input = value as Partial<SearchOptions> | null;
+  if (!input || typeof input !== 'object' || typeof input.query !== 'string'
+    || input.query.length === 0 || input.query.length > SEARCH_MAX_QUERY_LENGTH || input.query.includes('\0')) {
+    throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation, message: 'Invalid search.' });
+  }
+  return {
+    query: input.query,
+    matchCase: input.matchCase === true,
+    wholeWord: input.wholeWord === true,
+    regex: input.regex === true,
+  };
 }
 
 export function pathsArg(value: unknown, operation: string): string[] {

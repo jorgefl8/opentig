@@ -7,6 +7,7 @@ import { RepositoryWatcher } from './main/files/RepositoryWatcher';
 import { GitProcess } from './main/git/GitProcess';
 import { GitRepositoryOperations } from './main/git/GitRepositoryOperations';
 import { RepositoryService } from './main/git/RepositoryService';
+import { SearchService } from './main/git/SearchService';
 import { registerHandlers } from './main/ipc/register-handlers';
 import { SettingsStore } from './main/persistence/SettingsStore';
 import { IPC } from './shared/contracts';
@@ -49,6 +50,7 @@ async function createWindow(): Promise<void> {
   await settings.load();
   const git = new GitProcess();
   const repositories = new RepositoryService(git, settings);
+  const search = new SearchService(git, repositories);
   const files = new FileService(git, repositories);
   const fileHistory = new FileOperationHistory(files, { trashItem: (target) => shell.trashItem(target) });
   const operations = new GitRepositoryOperations(git, repositories, files);
@@ -114,7 +116,7 @@ async function createWindow(): Promise<void> {
     mainWindow.webContents.send(IPC.repositoryChanged, repositoryId, scope);
   };
   const watcher = new RepositoryWatcher(notifyRepositoryChanged, () => git.hasActiveProcess());
-  const removeHandlers = registerHandlers({ window: mainWindow, settings, repositories, files, fileHistory, operations, watcher, ai, github, prDrafts });
+  const removeHandlers = registerHandlers({ window: mainWindow, settings, repositories, search, files, fileHistory, operations, watcher, ai, github, prDrafts });
 
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   mainWindow.webContents.on('will-navigate', (event) => event.preventDefault());

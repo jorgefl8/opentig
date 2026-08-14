@@ -1,6 +1,6 @@
 import type { RepositoryChangeScope } from '../../shared/repository-change';
 
-export type RefreshView = 'changes' | 'files' | 'history' | 'prs';
+export type RefreshView = 'changes' | 'files' | 'history' | 'prs' | 'search';
 
 export interface RefreshOperations {
   status: true;

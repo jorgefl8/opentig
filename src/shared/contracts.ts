@@ -3,6 +3,7 @@ import type { BranchDeletionResult, BranchDetails, BranchInfo, CommitFile, Commi
 import type { RasterImageMime } from './image-types';
 import type { RepositoryChangeScope } from './repository-change';
 import type { FilesTreeState } from './files-tree-state';
+import type { SearchOptions, SearchResult } from './search';
 
 export interface RepositoryInfo {
   id: string;
@@ -372,6 +373,8 @@ export interface JustGitApi {
     revealEntry(id: string, path: string): Promise<void>;
     renameEntry(id: string, path: string, newName: string): Promise<RenameEntryResult>;
     createEntry(id: string, targetDirectory: string, name: string, kind: 'file' | 'directory'): Promise<CreateEntryResult>;
+    /** Full-text search over the working tree, ignoring files Git ignores. */
+    search(id: string, options: SearchOptions): Promise<SearchResult>;
     fileHistoryState(id: string): Promise<FileHistoryState>;
     undoFileOperation(id: string): Promise<FileHistoryResult>;
     redoFileOperation(id: string): Promise<FileHistoryResult>;
@@ -447,6 +450,7 @@ export const IPC = {
   repositoryCopyEntries: 'repository:copy-entries', repositoryCutEntries: 'repository:cut-entries', repositoryPasteEntries: 'repository:paste-entries', repositoryMoveEntry: 'repository:move-entry', repositoryDeleteEntry: 'repository:delete-entry',
   repositoryMoveEntries: 'repository:move-entries', repositoryDeleteEntries: 'repository:delete-entries', repositoryRevealEntry: 'repository:reveal-entry', repositoryRenameEntry: 'repository:rename-entry', repositoryCreateEntry: 'repository:create-entry',
   repositoryFileHistoryState: 'repository:file-history-state', repositoryUndoFileOperation: 'repository:undo-file-operation', repositoryRedoFileOperation: 'repository:redo-file-operation',
+  repositorySearch: 'repository:search',
   diffGet: 'diff:get', diffCommit: 'diff:commit', diffCommitFile: 'diff:commit-file', indexStage: 'index:stage',
   indexUnstage: 'index:unstage', indexDiscard: 'index:discard', indexStageAll: 'index:stage-all', indexUnstageAll: 'index:unstage-all', indexUpdateConflict: 'index:update-conflict', indexResolveConflict: 'index:resolve-conflict', commitCreate: 'commit:create', commitUndoLatest: 'commit:undo-latest',
   commitsList: 'commits:list', commitsFiles: 'commits:files', branchesList: 'refs:branches', branchSwitch: 'refs:switch', worktreesList: 'refs:worktrees',

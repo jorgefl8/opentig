@@ -52,6 +52,7 @@ export function createApi(ipcRenderer: IpcRenderer, setZoomFactor: (factor: numb
       revealEntry: (id, path) => invoke(IPC.repositoryRevealEntry, id, path),
       renameEntry: (id, path, newName) => invoke(IPC.repositoryRenameEntry, id, path, newName),
       createEntry: (id, targetDirectory, name, kind) => invoke(IPC.repositoryCreateEntry, id, targetDirectory, name, kind),
+      search: (id, options) => invoke(IPC.repositorySearch, id, options),
       fileHistoryState: (id) => invoke(IPC.repositoryFileHistoryState, id),
       undoFileOperation: (id) => invoke(IPC.repositoryUndoFileOperation, id),
       redoFileOperation: (id) => invoke(IPC.repositoryRedoFileOperation, id),

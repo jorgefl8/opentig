@@ -9,18 +9,20 @@ import type { FileOperationHistory } from '../files/FileOperationHistory';
 import type { RepositoryWatcher } from '../files/RepositoryWatcher';
 import type { GitRepositoryOperations } from '../git/GitRepositoryOperations';
 import type { RepositoryService } from '../git/RepositoryService';
+import type { SearchService } from '../git/SearchService';
 import type { SettingsStore } from '../persistence/SettingsStore';
 import type { CommitMessageService } from '../ai/CommitMessageService';
 import type { PullRequestDraftService } from '../ai/PullRequestDraftService';
 import type { GitHubService } from '../github/GitHubService';
 import { readClipboardFilePaths } from '../files/ClipboardFileTransfer';
 import { applyWindowTitleBarTheme } from '../window/WindowTitleBar';
-import { aiString, booleanArg, branchDetailsArg, createPullRequestArg, deleteBranchArg, filesTreeStateArg, generateCommitMessageArg, generatePullRequestDraftArg, nullableProjectIdArg, oidArg, pathsArg, prNumberArg, projectIdArg, projectNameArg, removeWorktreeArg, repositoryKeyArg, stringArg, textArg, worktreeDetailsArg } from './validators';
+import { aiString, booleanArg, branchDetailsArg, createPullRequestArg, deleteBranchArg, filesTreeStateArg, generateCommitMessageArg, generatePullRequestDraftArg, nullableProjectIdArg, oidArg, pathsArg, prNumberArg, projectIdArg, projectNameArg, removeWorktreeArg, repositoryKeyArg, searchOptionsArg, stringArg, textArg, worktreeDetailsArg } from './validators';
 
 interface Services {
   window: BrowserWindow;
   settings: SettingsStore;
   repositories: RepositoryService;
+  search: SearchService;
   files: FileService;
   fileHistory: FileOperationHistory;
   operations: GitRepositoryOperations;
@@ -97,6 +99,10 @@ export function registerHandlers(services: Services): () => void {
   });
   handle(IPC.repositoryStatus, 'status', (id) => services.repositories.status(stringArg(id, 'status', 64)));
   handle(IPC.repositoryFiles, 'files', (id) => services.files.list(stringArg(id, 'files', 64)));
+  handle(IPC.repositorySearch, 'search', (id, options) => services.search.search(
+    stringArg(id, 'search', 64),
+    searchOptionsArg(options, 'search'),
+  ));
   handle(IPC.repositoryDirectoryEntries, 'directory-entries', (id, directoryPath) => services.files.listDirectory(
     stringArg(id, 'directory-entries', 64),
     stringArg(directoryPath, 'directory-entries'),
