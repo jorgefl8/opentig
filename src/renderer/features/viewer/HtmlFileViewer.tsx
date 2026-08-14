@@ -91,14 +91,13 @@ export function HtmlFileViewer({ file, themeType, wrapLines, readOnly, onDirtyCh
 
   return (
     <div className="markdown-viewer html-file-viewer">
-      <div className="markdown-viewer-toolbar">
-        <div role="tablist" aria-label="HTML view" className="markdown-viewer-tabs">
+      <div className="file-viewer-pill markdown-viewer-toolbar">
+        <div role="tablist" aria-label="HTML view" className="file-viewer-tabs markdown-viewer-tabs">
           <button type="button" role="tab" aria-selected={tab === 'preview'} onKeyDown={handleTabKeyDown} onClick={() => setTab('preview')}>Preview</button>
           <button type="button" role="tab" aria-selected={tab === 'code'} onKeyDown={handleTabKeyDown} onClick={() => setTab('code')}>
             Code {dirty && <span className="markdown-unsaved-dot" aria-label="Unsaved changes" />}
           </button>
         </div>
-        <span className="markdown-viewer-file-path" title={file.path}>{file.path}</span>
         <FileSaveControls dirty={dirty} saving={saving} readOnly={readOnly} onSave={() => void save()} />
       </div>
       {tab === 'preview' ? (

@@ -5,7 +5,6 @@ import { EditProvider, File, Virtualizer } from '@pierre/diffs/react';
 import type { EditorOptions } from '@pierre/diffs/edit';
 import { toast } from 'sonner';
 import type { FileResult, ThemePreference, WriteFileResult } from '@shared/contracts';
-import { sourceLanguage } from './source-language';
 import { JUSTGIT_DIFF_THEMES } from './diffThemes';
 import { VIEWER_SCROLLBAR_CSS } from './patch-utils';
 import { PierreWorkerPool } from './PierreWorkerPool';
@@ -191,11 +190,11 @@ export function EditableFileViewer({ file, themeType, wrapLines, readOnly, onDir
 
   return (
     <div className="source-file-viewer">
-      <div className="source-file-toolbar">
-        <span className="source-language-label">{sourceLanguage(file.path)}</span>
-        <span className="source-file-path">{file.path}</span>
-        <FileSaveControls dirty={dirty} saving={saving} readOnly={readOnly} onSave={() => void save()} />
-      </div>
+      {(dirty || saving) && (
+        <div className="file-viewer-pill source-file-toolbar">
+          <FileSaveControls dirty={dirty} saving={saving} readOnly={readOnly} onSave={() => void save()} />
+        </div>
+      )}
       <div className="source-editor-scroll">
         <SourceCodeEditor
           path={file.path}

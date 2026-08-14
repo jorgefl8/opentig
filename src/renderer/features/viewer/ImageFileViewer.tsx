@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { IconZoomIn, IconZoomOut } from '@tabler/icons-react';
 import { toast } from 'sonner';
 import type { FileResult, ImageFileResult, ThemePreference, WriteFileResult } from '@shared/contracts';
@@ -65,7 +65,6 @@ function RasterImageReady({ path, mimeType, size, data }: {
     <ImagePreviewWorkspace
       objectUrl={objectUrl}
       path={path}
-      mimeType={mimeType}
       size={size}
     />
   );
@@ -140,52 +139,55 @@ export function SvgFileViewer({ file, themeType, wrapLines, readOnly, onDirtyCha
     tabs?.[nextIndex]?.focus();
   };
 
+  const tabs = (
+    <div role="tablist" aria-label="SVG view" className="file-viewer-tabs image-viewer-tabs">
+      <button type="button" role="tab" aria-selected={tab === 'preview'} onKeyDown={handleTabKeyDown} onClick={() => setTab('preview')}>Preview</button>
+      <button type="button" role="tab" aria-selected={tab === 'code'} onKeyDown={handleTabKeyDown} onClick={() => setTab('code')}>
+        Code {dirty && <span className="image-unsaved-dot" aria-label="Unsaved changes" />}
+      </button>
+    </div>
+  );
+  const saveControls = <FileSaveControls dirty={dirty} saving={saving} readOnly={readOnly} onSave={() => void save()} />;
+
   return (
     <div className="svg-file-viewer">
-      <div className="image-file-toolbar svg-file-toolbar">
-        <div role="tablist" aria-label="SVG view" className="image-viewer-tabs">
-          <button type="button" role="tab" aria-selected={tab === 'preview'} onKeyDown={handleTabKeyDown} onClick={() => setTab('preview')}>Preview</button>
-          <button type="button" role="tab" aria-selected={tab === 'code'} onKeyDown={handleTabKeyDown} onClick={() => setTab('code')}>
-            Code {dirty && <span className="image-unsaved-dot" aria-label="Unsaved changes" />}
-          </button>
-        </div>
-        <span className="image-file-path" title={file.path}>{file.path}</span>
-        <FileSaveControls dirty={dirty} saving={saving} readOnly={readOnly} onSave={() => void save()} />
-      </div>
       {tab === 'preview' ? (
         <ImagePreviewWorkspace
           objectUrl={objectUrl}
           path={file.path}
-          mimeType="image/svg+xml"
           size={new TextEncoder().encode(draft).byteLength}
-          compact
+          toolbarStart={tabs}
+          toolbarEnd={saveControls}
         />
       ) : (
-        <div className="svg-code-view">
-          <SourceCodeEditor
-            path={file.path}
-            cacheKey={`${file.path}:${file.mtimeMs}`}
-            value={draft}
-            themeType={themeType}
-            wrapLines={wrapLines}
-            readOnly={readOnly || saving}
-            onChange={(value) => {
-              setDraft(value);
-              onDirtyChange(value !== file.content);
-            }}
-          />
-        </div>
+        <>
+          <div className="file-viewer-pill svg-file-toolbar">{tabs}{saveControls}</div>
+          <div className="svg-code-view">
+            <SourceCodeEditor
+              path={file.path}
+              cacheKey={`${file.path}:${file.mtimeMs}`}
+              value={draft}
+              themeType={themeType}
+              wrapLines={wrapLines}
+              readOnly={readOnly || saving}
+              onChange={(value) => {
+                setDraft(value);
+                onDirtyChange(value !== file.content);
+              }}
+            />
+          </div>
+        </>
       )}
     </div>
   );
 }
 
-function ImagePreviewWorkspace({ objectUrl, path, mimeType, size, compact = false }: {
+function ImagePreviewWorkspace({ objectUrl, path, size, toolbarStart, toolbarEnd }: {
   objectUrl: string | null;
   path: string;
-  mimeType: string;
   size: number;
-  compact?: boolean;
+  toolbarStart?: ReactNode;
+  toolbarEnd?: ReactNode;
 }) {
   const [mode, setMode] = useState<ImageSizingMode>('fit');
   const [zoom, setZoom] = useState(1);
@@ -222,11 +224,7 @@ function ImagePreviewWorkspace({ objectUrl, path, mimeType, size, compact = fals
 
   const actualWidth = dimensions ? dimensions.width * zoom : undefined;
   const actualHeight = dimensions ? dimensions.height * zoom : undefined;
-  const details = [
-    mimeType,
-    formatBytes(size),
-    dimensions ? `${dimensions.width} × ${dimensions.height}` : null,
-  ].filter(Boolean).join(' · ');
+  const details = [formatBytes(size), dimensions ? `${dimensions.width} × ${dimensions.height}` : null].filter(Boolean).join(' · ');
 
   const changeZoom = (direction: 'in' | 'out') => {
     setMode('actual');
@@ -234,12 +232,10 @@ function ImagePreviewWorkspace({ objectUrl, path, mimeType, size, compact = fals
   };
 
   return (
-    <div className={`image-preview-workspace${compact ? ' compact' : ''}`}>
-      <div className="image-file-toolbar image-preview-toolbar">
-        <div className="image-file-identity">
-          <span className="image-file-path" title={path}>{path}</span>
-          <span className="image-file-details">{details}</span>
-        </div>
+    <div className="image-preview-workspace">
+      <div className="file-viewer-pill image-preview-toolbar">
+        {toolbarStart}
+        <span className="image-file-details">{details}</span>
         <div className="image-sizing-toggle" role="group" aria-label="Image size">
           <Button type="button" size="xs" variant={mode === 'fit' ? 'secondary' : 'ghost'} aria-pressed={mode === 'fit'} onClick={() => setMode('fit')}>Fit</Button>
           <Button type="button" size="xs" variant={mode === 'actual' && zoom === 1 ? 'secondary' : 'ghost'} aria-pressed={mode === 'actual' && zoom === 1} onClick={() => { setMode('actual'); setZoom(1); }}>1:1</Button>
@@ -261,6 +257,7 @@ function ImagePreviewWorkspace({ objectUrl, path, mimeType, size, compact = fals
             <TooltipContent>Zoom in</TooltipContent>
           </Tooltip>
         </div>
+        {toolbarEnd}
       </div>
       <div
         ref={canvasRef}
