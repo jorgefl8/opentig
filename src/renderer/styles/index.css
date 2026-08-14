@@ -264,14 +264,10 @@
   .sidebar-tabs button .sidebar-tab-count { display: inline-grid; min-width: 17px; place-items: center; border-radius: var(--radius-sm); background: var(--muted); padding: 1px 5px; color: var(--muted-foreground); font-size: 10px; font-weight: 700; }
   .sidebar-tabs button.active .sidebar-tab-count { background: color-mix(in oklch, var(--primary) 22%, transparent); color: color-mix(in oklch, var(--primary) 55%, var(--foreground)); }
   .sidebar-body { min-height: 0; flex: 1; overflow: hidden; }
-  .commit-box { display: grid; flex: none; gap: 9px; border-top: 1px solid var(--sidebar-border); background: color-mix(in oklch, var(--sidebar) 60%, var(--background)); padding: 12px; }
-  .commit-box [data-slot="button"] { height: 38px; font-weight: 600; }
-  .commit-box .commit-generate { border-color: color-mix(in oklch, var(--primary) 30%, var(--border)); background: color-mix(in oklch, var(--primary) 6%, var(--background)); }
-  .commit-box .commit-generate:hover:not(:disabled) { background: color-mix(in oklch, var(--primary) 12%, var(--background)); }
   .change-section { border-bottom: 1px solid var(--sidebar-border); }
   .changes-view { display: flex; height: 100%; min-height: 0; flex-direction: column; container-type: inline-size; }
   .changes-scroll { min-height: 0; flex: 1; overflow: auto; }
-  .changes-view-toolbar { display: flex; height: 46px; flex: none; align-items: center; justify-content: space-between; gap: 10px; border-bottom: 1px solid var(--sidebar-border); padding: 0 10px; background: color-mix(in oklch, var(--sidebar) 55%, var(--background)); }
+  .changes-view-toolbar { display: flex; height: 46px; flex: none; align-items: center; justify-content: space-between; gap: 10px; padding: 0 10px; background: color-mix(in oklch, var(--sidebar) 55%, var(--background)); }
   .segmented { position: relative; display: grid; grid-template-columns: repeat(var(--seg-count), minmax(0, 1fr)); align-items: stretch; border-radius: var(--radius-lg); background: color-mix(in oklch, var(--muted) 65%, transparent); padding: 3px; box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--foreground) 7%, transparent); }
   .segmented-thumb { position: absolute; top: 3px; bottom: 3px; left: 3px; width: calc((100% - 6px) / var(--seg-count)); border-radius: calc(var(--radius-lg) - 3px); background: var(--background); box-shadow: 0 1px 2px rgb(0 0 0 / 12%), inset 0 0 0 1px color-mix(in oklch, var(--primary) 24%, transparent); transform: translateX(calc(var(--seg-index) * 100%)); transition: transform .22s cubic-bezier(.4, 0, .2, 1); }
   .dark .segmented-thumb { background: color-mix(in oklch, var(--card) 70%, var(--foreground)); }
@@ -804,6 +800,19 @@
     background: var(--row-hover);
   }
   .repo-select > svg:first-child, .toolbar [data-slot="select-trigger"] > svg:first-child { color: var(--muted-foreground); }
+  /* An open project switcher is the one toolbar control that turns primary:
+     it signals that the Q shortcut is armed and that Q closes it again. */
+  .repo-select[aria-expanded="true"] {
+    border-color: color-mix(in oklch, var(--primary) 55%, var(--border));
+    background: color-mix(in oklch, var(--primary) 16%, transparent);
+    color: var(--foreground);
+  }
+  .repo-select[aria-expanded="true"] > svg:first-child { color: var(--primary); }
+  .repo-select[aria-expanded="true"] .repo-select-shortcut {
+    border-color: transparent;
+    background: var(--primary);
+    color: var(--primary-foreground);
+  }
 
   /* Counters are data, so they stay monospaced and quiet; only the line
      totals carry the green and red of the diff. */
@@ -875,11 +884,36 @@
     white-space: nowrap;
   }
   .sidebar-tabs button.active .sidebar-tab-count { background: var(--row-selected); color: var(--foreground); }
+  /* Holding Ctrl turns the tab bar into its own legend: each section shows the
+     digit that jumps to it. */
+  .sidebar-tabs button .sidebar-tab-shortcut {
+    display: inline-grid;
+    min-width: 16px;
+    flex: none;
+    place-items: center;
+    border-radius: var(--radius-sm);
+    background: var(--primary);
+    padding: 0 4px;
+    color: var(--primary-foreground);
+    font-size: 9.5px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    line-height: 16px;
+    animation: sidebar-shortcut-in .14s var(--ease-out) both;
+  }
+  .sidebar-tabs[data-shortcuts="visible"] button { color: var(--foreground); }
+  @keyframes sidebar-shortcut-in {
+    from { opacity: 0; transform: translateY(-2px) scale(.8); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
   @container (max-width: 470px) {
     .sidebar-tabs .sidebar-tab-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   }
 
-  .changes-view-toolbar, .pulls-toolbar { height: 40px; border-bottom-color: var(--sidebar-border); background: var(--sidebar); }
+  /* The layout controls sit directly on the sidebar surface: the tab underline
+     above them is the only separator that row needs. */
+  .changes-view-toolbar { height: 40px; border-bottom: 0; background: var(--sidebar); }
+  .pulls-toolbar { height: 40px; border-bottom-color: var(--sidebar-border); background: var(--sidebar); }
   .segmented { border-radius: 6px; background: var(--muted); padding: 2px; box-shadow: none; }
   .segmented-thumb {
     top: 2px;
@@ -942,12 +976,56 @@
     box-shadow: none;
   }
 
-  /* Commit composer ------------------------------------------------------ */
-  .commit-box { gap: 8px; border-top-color: var(--sidebar-border); background: var(--sidebar); padding: 10px; box-shadow: none; }
-  .dark .commit-box { box-shadow: none; }
-  .commit-box textarea { min-height: 74px; background: var(--background); line-height: 1.45; }
-  .commit-box .commit-generate { border-color: var(--border); background: transparent; color: var(--muted-foreground); }
-  .commit-box .commit-generate:hover:not(:disabled) { background: var(--row-hover); color: var(--foreground); }
+  /* Commit composer ------------------------------------------------------
+     The composer floats over the workspace instead of living in the sidebar:
+     writing a commit message is a moment of focus, not a permanent panel. */
+  .commit-composer {
+    position: fixed;
+    bottom: 26px;
+    left: 50%;
+    z-index: 40;
+    display: grid;
+    width: min(560px, calc(100vw - 48px));
+    gap: 10px;
+    border: 1px solid color-mix(in oklch, var(--primary) 18%, var(--border));
+    border-radius: var(--radius-xl);
+    background: color-mix(in oklch, var(--popover) 92%, var(--background));
+    padding: 12px;
+    box-shadow: 0 18px 48px rgb(0 0 0 / 38%), 0 2px 8px rgb(0 0 0 / 22%);
+    animation: commit-composer-in .22s var(--ease-out) both;
+    backdrop-filter: blur(14px);
+  }
+  .commit-composer[data-state="closed"] { animation: commit-composer-out .17s ease-in both; pointer-events: none; }
+  .commit-composer-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .commit-composer-title { display: inline-flex; align-items: center; gap: 6px; color: var(--foreground); font-size: 12px; font-weight: 650; }
+  .commit-composer-title svg { width: 14px; height: 14px; color: var(--primary); }
+  .commit-composer-hint { display: inline-flex; gap: 3px; opacity: .7; }
+  .commit-composer-input { min-height: 78px; background: var(--background); line-height: 1.45; resize: none; }
+  .commit-composer-actions { display: grid; gap: 8px; }
+  .commit-composer-actions [data-slot="button"] { height: 36px; font-weight: 600; }
+  .commit-composer-generate { width: 100%; border-color: var(--border); background: transparent; color: var(--muted-foreground); }
+  .commit-composer-generate:hover:not(:disabled) { background: var(--row-hover); color: var(--foreground); }
+  .commit-composer-harness { color: var(--primary); font-weight: 650; }
+  .commit-composer-commit { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; animation: commit-actions-in .2s var(--ease-out) both; }
+  .commit-composer-commit[data-state="closed"] { animation: commit-actions-out .16s ease-in both; pointer-events: none; }
+  .commit-composer-secondary { border-color: color-mix(in oklch, var(--primary) 26%, var(--border)); color: var(--foreground); }
+
+  @keyframes commit-composer-in {
+    from { opacity: 0; transform: translate(-50%, 14px) scale(.97); }
+    to { opacity: 1; transform: translate(-50%, 0) scale(1); }
+  }
+  @keyframes commit-composer-out {
+    from { opacity: 1; transform: translate(-50%, 0) scale(1); }
+    to { opacity: 0; transform: translate(-50%, 10px) scale(.98); }
+  }
+  @keyframes commit-actions-in {
+    from { opacity: 0; transform: translateY(-6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes commit-actions-out {
+    from { opacity: 1; transform: translateY(0); }
+    to { opacity: 0; transform: translateY(-6px); }
+  }
 
   /* History -------------------------------------------------------------- */
   .commit-oid { background: var(--muted); }

@@ -2,8 +2,8 @@ import { type CSSProperties, type ReactNode, lazy, Suspense, useCallback, useEff
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   IconChevronDown, IconChevronRight, IconDeviceDesktop, IconFileArrowRight, IconFolder, IconFolderOpen,
-  IconFiles, IconGitBranch, IconGitCommit, IconGitCompare, IconGitPullRequest, IconHierarchy2, IconHistory,
-  IconLayoutColumns, IconLayoutRows, IconList, IconLoader4, IconMinus, IconMoon, IconPlayerStop, IconPlus,
+  IconFiles, IconGitBranch, IconGitCompare, IconGitPullRequest, IconHierarchy2, IconHistory,
+  IconLayoutColumns, IconLayoutRows, IconList, IconLoader4, IconMinus, IconMoon, IconPlus,
   IconRefresh, IconRestore, IconSettings, IconSparkles, IconSun, IconX,
 } from '@tabler/icons-react';
 import { Toaster, toast } from 'sonner';
@@ -18,7 +18,6 @@ import { Dialog, DialogClose, DialogDescription, DialogPopup, DialogTitle, Dialo
 import { Kbd } from '@/components/ui/kbd';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Combobox, ComboboxContent, ComboboxGroup, ComboboxGroupLabel, ComboboxInput, ComboboxItem, ComboboxList, ComboboxTrigger } from '@/components/ui/combobox';
-import { Textarea } from '@/components/ui/textarea';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -26,6 +25,7 @@ import { FilesView } from '@/features/files/FilesView';
 import { fileSnapshotFingerprint, isEditableTarget, pathContains, selectedFileChanged, snapshotPathPresence } from '@/features/files/file-tree';
 import { QuickOpenDialog } from '@/features/files/QuickOpenDialog';
 import { isQuickOpenShortcut } from '@/features/files/quick-open';
+import { CommitComposer } from '@/features/commit/CommitComposer';
 import { CreatePullRequestDialog } from '@/features/pulls/CreatePullRequestDialog';
 import { PullRequestsView } from '@/features/pulls/PullRequestsView';
 import { LocalRefsDialog } from '@/features/refs/LocalRefsDialog';
@@ -39,7 +39,8 @@ import { resolveWindowControlsInset } from './window-controls';
 import { RefreshCoordinator, type RefreshRequest } from '@/lib/RefreshCoordinator';
 
 const Viewer = lazy(() => import('@/features/viewer/Viewer'));
-type SidebarView = 'changes' | 'files' | 'history' | 'prs';
+const SIDEBAR_VIEWS = ['changes', 'files', 'history', 'prs'] as const;
+type SidebarView = (typeof SIDEBAR_VIEWS)[number];
 interface AppRefreshOptions {
   background?: boolean;
   scope?: RepositoryChangeScope;
@@ -77,6 +78,9 @@ export default function App() {
   const [pullsError, setPullsError] = useState<string | null>(null);
   const [createPrOpen, setCreatePrOpen] = useState(false);
   const [quickOpen, setQuickOpen] = useState(false);
+  // Holding Ctrl reveals the section numbers, so the shortcut is discoverable
+  // without a cheat sheet.
+  const [ctrlHeld, setCtrlHeld] = useState(false);
   const pullsRequestToken = useRef(0);
   const requestToken = useRef(0);
   const filesRequestToken = useRef(0);
@@ -415,6 +419,10 @@ export default function App() {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.ctrlKey && event.key.toLowerCase() === 'o') { event.preventDefault(); void openRepository(); }
       if (event.ctrlKey && event.key.toLowerCase() === 'r') { event.preventDefault(); void refresh(); }
+      if (repository && event.ctrlKey && !event.altKey && !event.metaKey) {
+        const section = SIDEBAR_VIEWS[Number(event.key) - 1];
+        if (section) { event.preventDefault(); setView(section); }
+      }
       if (repository && !event.repeat && isQuickOpenShortcut(event)) {
         if (!quickOpen && document.querySelector('[data-slot="dialog-popup"]')) return;
         event.preventDefault();
@@ -425,6 +433,20 @@ export default function App() {
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [openRepository, quickOpen, refresh, refreshFilesOnly, repository]);
+
+  useEffect(() => {
+    const update = (event: KeyboardEvent) => setCtrlHeld(event.ctrlKey && !event.altKey && !event.metaKey);
+    // A lost focus never delivers the keyup, so the hint would stay pinned open.
+    const clear = () => setCtrlHeld(false);
+    window.addEventListener('keydown', update);
+    window.addEventListener('keyup', update);
+    window.addEventListener('blur', clear);
+    return () => {
+      window.removeEventListener('keydown', update);
+      window.removeEventListener('keyup', update);
+      window.removeEventListener('blur', clear);
+    };
+  }, []);
 
   const updatePreference = async (partial: Partial<Preferences>) => {
     try {
@@ -755,17 +777,22 @@ export default function App() {
     finally { setBusy(null); }
   };
 
-  const createCommit = async () => {
+  const createCommit = async (options?: { push?: boolean }) => {
     if (!repository || !status?.stagedCount || !commitMessage.trim()) return;
     setBusy('commit'); setError(null);
+    let committed = false;
     try {
       const result = await window.justgit.commits.create(repository.id, commitMessage);
       const subject = commitMessage.split(/\r?\n/, 1)[0] ?? commitMessage;
       setCommitMessage('');
       setViewerSelection({ type: 'commit', oid: result.oid, subject });
       await refresh({ background: true });
+      committed = true;
     } catch (reason) { setError(messageOf(reason)); }
     finally { setBusy(null); }
+    // The refreshed status has not reached this closure yet, so push without
+    // re-checking how many commits are ahead.
+    if (committed && options?.push) await performPush();
   };
 
   const openAiSettings = () => {
@@ -1004,10 +1031,15 @@ export default function App() {
   };
 
   const pushUpdates = async () => {
-    if (!repository || !status || status.ahead === 0 || busy) return;
+    if (!status || status.ahead === 0 || busy) return;
+    await performPush();
+  };
+
+  const performPush = async () => {
+    if (!repository) return;
     setBusy('push');
     setError(null);
-    const toastId = toast.loading(`Pushing ${status.ahead} ${status.ahead === 1 ? 'commit' : 'commits'}…`);
+    const toastId = toast.loading('Pushing commits…');
     try {
       const result = await window.justgit.refs.push(repository.id);
       await refresh({ background: true });
@@ -1140,13 +1172,20 @@ export default function App() {
         {error && <div className="error-banner"><span>{error}</span><button onClick={() => setError(null)} aria-label="Close">×</button></div>}
         <main className="workspace">
           <aside className="sidebar" style={{ width: bootstrap.preferences.sidebarWidth }}>
-            <nav className="sidebar-tabs" aria-label="Repository views">
-              {(['changes', 'files', 'history', 'prs'] as const).map((item) => (
-                <button key={item} className={view === item ? 'active' : ''} aria-current={view === item ? 'page' : undefined} onClick={() => setView(item)}>
+            <nav className="sidebar-tabs" data-shortcuts={ctrlHeld ? 'visible' : undefined} aria-label="Repository views">
+              {SIDEBAR_VIEWS.map((item, index) => (
+                <button
+                  key={item}
+                  className={view === item ? 'active' : ''}
+                  aria-current={view === item ? 'page' : undefined}
+                  aria-keyshortcuts={`Control+${index + 1}`}
+                  onClick={() => setView(item)}
+                >
                   {item === 'changes' ? <IconGitCompare /> : item === 'files' ? <IconFiles /> : item === 'history' ? <IconHistory /> : <IconGitPullRequest />}
                   <span className="sidebar-tab-label">{item === 'changes' ? 'Changes' : item === 'files' ? 'Files' : item === 'history' ? 'History' : 'PRs'}</span>
                   {item === 'changes' && status && status.changes.length > 0 && <span className="sidebar-tab-count">{status.changes.length}</span>}
                   {item === 'prs' && pulls !== null && pulls.length > 0 && <span className="sidebar-tab-count">{pulls.length}</span>}
+                  {ctrlHeld && <span className="sidebar-tab-shortcut" aria-hidden="true">{index + 1}</span>}
                 </button>
               ))}
             </nav>
@@ -1237,18 +1276,6 @@ export default function App() {
               )}
               </div>
             </div>
-            {view === 'changes' && Boolean(status?.stagedCount) && (
-              <div className="commit-box">
-                <Textarea ref={commitTextareaRef} value={commitMessage} onChange={(event) => setCommitMessage(event.target.value)} placeholder="Commit message" rows={3} disabled={status?.readOnly} />
-                <Button variant="outline" className="w-full commit-generate" aria-label={generating ? 'Cancel generation' : undefined} disabled={!status?.stagedCount || status?.readOnly || Boolean(busy && busy !== 'refresh')} onClick={() => generating ? void cancelCommitMessageGeneration() : void generateCommitMessage()}>
-                  {generating ? <IconPlayerStop className="text-destructive" /> : <IconSparkles />}
-                  {generating ? <ShimmeringText text="Generating message…" /> : `Generate with ${harnessLabel(bootstrap.preferences.commitMessageHarness)}`}
-                </Button>
-                <Button className="w-full" disabled={!status?.stagedCount || !commitMessage.trim() || Boolean(busy) || status?.readOnly} onClick={() => void createCommit()}>
-                  <IconGitCommit /> {busy === 'commit' ? 'Creating…' : `Commit ${status?.stagedCount ?? 0} ${(status?.stagedCount ?? 0) === 1 ? 'file' : 'files'}`}
-                </Button>
-              </div>
-            )}
           </aside>
           <section className="viewer-pane">
             <ErrorBoundary
@@ -1281,6 +1308,21 @@ export default function App() {
             </ErrorBoundary>
           </section>
         </main>
+        <CommitComposer
+          open={view === 'changes' && Boolean(status?.stagedCount)}
+          stagedCount={status?.stagedCount ?? 0}
+          message={commitMessage}
+          generating={Boolean(generating)}
+          harness={harnessLabel(bootstrap.preferences.commitMessageHarness)}
+          busy={busy}
+          readOnly={Boolean(status?.readOnly)}
+          canPush={Boolean(status?.upstream)}
+          textareaRef={commitTextareaRef}
+          onMessage={setCommitMessage}
+          onGenerate={() => void generateCommitMessage()}
+          onCancelGenerate={() => void cancelCommitMessageGeneration()}
+          onCommit={(options) => void createCommit(options)}
+        />
       </div>
     </TooltipProvider>
   );
@@ -1355,6 +1397,14 @@ function Toolbar(props: ToolbarProps) {
       }
 
       if (!repositorySelectOpen) return;
+      // The same key that opened the switcher closes it again.
+      if (event.key.toLowerCase() === 'q') {
+        event.preventDefault();
+        event.stopPropagation();
+        clearRepositoryNumberShortcut();
+        setRepositorySelectOpen(false);
+        return;
+      }
       if (event.key === 'Enter' && repositoryNumberBuffer.current) {
         event.preventDefault();
         event.stopPropagation();
