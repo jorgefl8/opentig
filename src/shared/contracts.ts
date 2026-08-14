@@ -339,6 +339,7 @@ export interface JustGitApi {
     setPreferences(preferences: Partial<Preferences>): Promise<Preferences>;
     setFilesTreeExpandedPaths(repositoryId: string, expandedPaths: string[]): Promise<void>;
     setZoomFactor(factor: number): void;
+    setTitleBarTheme(dark: boolean): Promise<void>;
   };
   clipboard: {
     readText(): Promise<string>;
@@ -438,7 +439,7 @@ export interface JustGitApi {
 export type IpcResult<T> = { ok: true; value: T } | { ok: false; error: SerializedOperationError };
 
 export const IPC = {
-  bootstrap: 'app:bootstrap', preferences: 'app:preferences', filesTreeStateUpdate: 'app:files-tree-state', projectCreate: 'projects:create', projectRename: 'projects:rename', projectRemove: 'projects:remove', projectAssign: 'projects:assign', clipboardReadText: 'clipboard:read-text', clipboardWriteText: 'clipboard:write-text', shellOpenExternal: 'shell:open-external', repositorySelect: 'repository:select',
+  bootstrap: 'app:bootstrap', preferences: 'app:preferences', filesTreeStateUpdate: 'app:files-tree-state', titleBarTheme: 'app:title-bar-theme', projectCreate: 'projects:create', projectRename: 'projects:rename', projectRemove: 'projects:remove', projectAssign: 'projects:assign', clipboardReadText: 'clipboard:read-text', clipboardWriteText: 'clipboard:write-text', shellOpenExternal: 'shell:open-external', repositorySelect: 'repository:select',
   repositoryOpenRecent: 'repository:open-recent', repositoryStatus: 'repository:status', repositoryFiles: 'repository:files', repositoryDirectoryEntries: 'repository:directory-entries',
   repositoryReadFile: 'repository:read-file', repositoryReadImage: 'repository:read-image', repositoryWriteFile: 'repository:write-file', repositoryAbsolutePath: 'repository:absolute-path',
   repositoryCopyEntries: 'repository:copy-entries', repositoryCutEntries: 'repository:cut-entries', repositoryPasteEntries: 'repository:paste-entries', repositoryMoveEntry: 'repository:move-entry', repositoryDeleteEntry: 'repository:delete-entry',

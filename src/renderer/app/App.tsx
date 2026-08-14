@@ -35,6 +35,7 @@ import { buildRepositoryPickerModel, getRepositoryPickerDisplayOrder, groupRecen
 import type { ViewerSelection } from '@/features/viewer/Viewer';
 import { getVsCodeFileIconUrl, getVsCodeFolderIconUrl } from '@/lib/vscode-icons';
 import { refreshOperationsForScope } from './refresh-policy';
+import { resolveWindowControlsInset } from './window-controls';
 import { RefreshCoordinator, type RefreshRequest } from '@/lib/RefreshCoordinator';
 
 const Viewer = lazy(() => import('@/features/viewer/Viewer'));
@@ -107,8 +108,40 @@ export default function App() {
   }, [filesTreeStates]);
 
   useEffect(() => {
+    const overlay = (navigator as Navigator & {
+      windowControlsOverlay?: {
+        visible: boolean;
+        getTitlebarAreaRect(): DOMRect;
+        addEventListener(type: 'geometrychange', listener: EventListener): void;
+        removeEventListener(type: 'geometrychange', listener: EventListener): void;
+      };
+    }).windowControlsOverlay;
+    const apply = () => {
+      const rect = overlay?.visible ? overlay.getTitlebarAreaRect() : null;
+      const inset = resolveWindowControlsInset({
+        rect,
+        viewportWidth: window.innerWidth,
+        mac: navigator.userAgent.includes('Mac OS X'),
+      });
+      document.documentElement.style.setProperty('--window-controls-inset', `${inset.right}px`);
+      document.documentElement.style.setProperty('--window-controls-inset-left', `${inset.left}px`);
+    };
+    apply();
+    overlay?.addEventListener('geometrychange', apply);
+    window.addEventListener('resize', apply);
+    return () => {
+      overlay?.removeEventListener('geometrychange', apply);
+      window.removeEventListener('resize', apply);
+    };
+  }, []);
+
+  useEffect(() => {
     const media = window.matchMedia('(prefers-color-scheme: dark)');
-    const apply = () => document.documentElement.classList.toggle('dark', theme === 'dark' || (theme === 'system' && media.matches));
+    const apply = () => {
+      const dark = theme === 'dark' || (theme === 'system' && media.matches);
+      document.documentElement.classList.toggle('dark', dark);
+      void window.justgit.app.setTitleBarTheme(dark).catch(() => undefined);
+    };
     apply();
     media.addEventListener('change', apply);
     return () => media.removeEventListener('change', apply);
@@ -1371,6 +1404,10 @@ function Toolbar(props: ToolbarProps) {
   );
   return (
     <header className="toolbar">
+      <div className="toolbar-brand" aria-label="JustGit">
+        <IconGitBranch aria-hidden="true" />
+        <span>JustGit</span>
+      </div>
       <Select open={repositorySelectOpen} onOpenChange={(open) => {
         setRepositorySelectOpen(open);
         if (!open) clearRepositoryNumberShortcut();
@@ -1406,33 +1443,6 @@ function Toolbar(props: ToolbarProps) {
       <RepositoryProjectsDialog open={projectsOpen} onOpenChange={setProjectsOpen} projects={props.repositoryProjects} repositories={picker.repositories} onOrganizationChange={props.onOrganizationChange} />
       <Button variant="outline" size="sm" onClick={props.onOpen}>Open…</Button>
       <div className="toolbar-spacer" />
-      <Select value={currentWorktree?.path ?? props.repository.path} onValueChange={(value) => {
-        if (value === MANAGE_WORKTREES_VALUE) { openRefsManager('worktrees'); return; }
-        props.onWorktree(value);
-      }} disabled={refsBusy}>
-        <SelectTrigger size="sm" className="w-[clamp(130px,14vw,190px)]"><IconHierarchy2 /><SelectValue>{currentWorktree?.path.split(/[\\/]/).pop() ?? props.repository.name}</SelectValue></SelectTrigger>
-        <SelectContent align="end" alignItemWithTrigger={false} className="w-[min(280px,calc(100vw-24px))] min-w-[min(190px,calc(100vw-24px))]">
-          {props.worktrees.map((item) => <SelectItem key={item.path} value={item.path} disabled={Boolean(item.locked || item.prunable || item.bare)}><span className="min-w-0 flex-1 truncate">{item.path.split(/[\\/]/).pop()} {item.branch ? `· ${item.branch}` : '· detached'}</span></SelectItem>)}
-          <SelectItem value={MANAGE_WORKTREES_VALUE} className="repo-select-manage"><IconSettings /><span>Manage worktrees…</span></SelectItem>
-        </SelectContent>
-      </Select>
-      <BranchCombobox
-        branches={props.branches}
-        currentLabel={props.status?.branch ?? 'Detached HEAD'}
-        disabled={props.status?.readOnly || refsBusy}
-        onBranch={props.onBranch}
-        onManage={() => openRefsManager('branches')}
-      />
-      <LocalRefsDialog
-        open={refsOpen}
-        tab={refsTab}
-        repositoryId={props.repository.id}
-        onOpenChange={setRefsOpen}
-        onTabChange={setRefsTab}
-        onOpenWorktree={(path) => { setRefsOpen(false); props.onWorktree(path); }}
-        onMutated={props.onRefsManaged}
-        onBusyChange={setRefsBusy}
-      />
       {props.status && (props.status.ahead > 0 || props.status.behind > 0 || props.status.insertions > 0 || props.status.deletions > 0 || props.busy === 'push' || props.busy === 'pull') && (
         <div className="branch-stats" aria-label="Branch and local changes summary">
           {(props.status.behind > 0 || props.busy === 'pull') && (
@@ -1463,6 +1473,33 @@ function Toolbar(props: ToolbarProps) {
           )}
         </div>
       )}
+      <Select value={currentWorktree?.path ?? props.repository.path} onValueChange={(value) => {
+        if (value === MANAGE_WORKTREES_VALUE) { openRefsManager('worktrees'); return; }
+        props.onWorktree(value);
+      }} disabled={refsBusy}>
+        <SelectTrigger size="sm" className="w-[clamp(130px,14vw,190px)]"><IconHierarchy2 /><SelectValue>{currentWorktree?.path.split(/[\\/]/).pop() ?? props.repository.name}</SelectValue></SelectTrigger>
+        <SelectContent align="end" alignItemWithTrigger={false} className="w-[min(280px,calc(100vw-24px))] min-w-[min(190px,calc(100vw-24px))]">
+          {props.worktrees.map((item) => <SelectItem key={item.path} value={item.path} disabled={Boolean(item.locked || item.prunable || item.bare)}><span className="min-w-0 flex-1 truncate">{item.path.split(/[\\/]/).pop()} {item.branch ? `· ${item.branch}` : '· detached'}</span></SelectItem>)}
+          <SelectItem value={MANAGE_WORKTREES_VALUE} className="repo-select-manage"><IconSettings /><span>Manage worktrees…</span></SelectItem>
+        </SelectContent>
+      </Select>
+      <BranchCombobox
+        branches={props.branches}
+        currentLabel={props.status?.branch ?? 'Detached HEAD'}
+        disabled={props.status?.readOnly || refsBusy}
+        onBranch={props.onBranch}
+        onManage={() => openRefsManager('branches')}
+      />
+      <LocalRefsDialog
+        open={refsOpen}
+        tab={refsTab}
+        repositoryId={props.repository.id}
+        onOpenChange={setRefsOpen}
+        onTabChange={setRefsTab}
+        onOpenWorktree={(path) => { setRefsOpen(false); props.onWorktree(path); }}
+        onMutated={props.onRefsManaged}
+        onBusyChange={setRefsBusy}
+      />
       <Tooltip><TooltipTrigger render={<Button variant="ghost" size="icon-sm" onClick={props.onRefresh} disabled={props.busy === 'refresh'} />}>{props.busy === 'refresh' ? <IconLoader4 className="animate-spin" /> : <IconRefresh />}</TooltipTrigger><TooltipContent>Refresh (Ctrl+R)</TooltipContent></Tooltip>
       <SettingsDialog
         preferences={props.preferences}

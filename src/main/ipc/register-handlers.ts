@@ -14,6 +14,7 @@ import type { CommitMessageService } from '../ai/CommitMessageService';
 import type { PullRequestDraftService } from '../ai/PullRequestDraftService';
 import type { GitHubService } from '../github/GitHubService';
 import { readClipboardFilePaths } from '../files/ClipboardFileTransfer';
+import { applyWindowTitleBarTheme } from '../window/WindowTitleBar';
 import { aiString, booleanArg, branchDetailsArg, createPullRequestArg, deleteBranchArg, filesTreeStateArg, generateCommitMessageArg, generatePullRequestDraftArg, nullableProjectIdArg, oidArg, pathsArg, prNumberArg, projectIdArg, projectNameArg, removeWorktreeArg, repositoryKeyArg, stringArg, textArg, worktreeDetailsArg } from './validators';
 
 interface Services {
@@ -53,6 +54,9 @@ export function registerHandlers(services: Services): () => void {
     };
   });
   handle(IPC.preferences, 'preferences', (partial) => services.settings.setPreferences((partial ?? {}) as Partial<Preferences>));
+  handle(IPC.titleBarTheme, 'title-bar-theme', (dark) => {
+    applyWindowTitleBarTheme(services.window, booleanArg(dark, 'title-bar-theme'));
+  });
   handle(IPC.filesTreeStateUpdate, 'files-tree-state', (repositoryId, expandedPaths) => {
     const state = filesTreeStateArg(repositoryId, expandedPaths, 'files-tree-state');
     services.settings.setFilesTreeExpandedPaths(state.repositoryId, state.expandedPaths);

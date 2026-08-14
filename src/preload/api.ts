@@ -17,6 +17,7 @@ export function createApi(ipcRenderer: IpcRenderer, setZoomFactor: (factor: numb
       setPreferences: (preferences) => invoke(IPC.preferences, preferences),
       setFilesTreeExpandedPaths: (repositoryId, expandedPaths) => invoke(IPC.filesTreeStateUpdate, repositoryId, expandedPaths),
       setZoomFactor: (factor) => setZoomFactor(Math.max(0.8, Math.min(1.3, Number(factor) || 1))),
+      setTitleBarTheme: (dark) => invoke(IPC.titleBarTheme, dark),
     },
     projects: {
       create: (name) => invoke(IPC.projectCreate, name),

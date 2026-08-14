@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { app, BrowserWindow, session, shell } from 'electron';
+import { app, BrowserWindow, nativeTheme, session, shell } from 'electron';
 import started from 'electron-squirrel-startup';
 import { FileService } from './main/files/FileService';
 import { FileOperationHistory } from './main/files/FileOperationHistory';
@@ -22,6 +22,7 @@ import { createPerformanceSampler, type PerformanceSampler } from './main/perfor
 import { startPerformanceAutomation } from './main/performance/PerformanceAutomation';
 import { mergeRepositoryChangeScopes, type RepositoryChangeScope } from './shared/repository-change';
 import { startGlobalDoubleControlShortcut } from './main/shortcuts/GlobalDoubleControlShortcut';
+import { getWindowTitleBarOptions, shouldUseDarkTitleBar } from './main/window/WindowTitleBar';
 
 if (started) app.quit();
 
@@ -70,6 +71,10 @@ async function createWindow(): Promise<void> {
     backgroundColor: '#171614',
     title: 'JustGit',
     autoHideMenuBar: true,
+    ...getWindowTitleBarOptions(
+      shouldUseDarkTitleBar(settings.preferences.theme, nativeTheme.shouldUseDarkColors),
+      process.platform,
+    ),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
