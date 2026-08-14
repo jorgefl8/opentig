@@ -1,0 +1,33 @@
+# Dependencies and generated output
+node_modules/
+.vite/
+dist/
+out/
+coverage/
+*.tsbuildinfo
+
+# Logs and local environment
+*.log
+npm-debug.log*
+.env
+.env.*
+!.env.example
+
+# Editors and operating systems
+.idea/
+.vscode/
+*.code-workspace
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Local agent and design artifacts
+.agents/
+.tmp-*/
+AGENTS.md
+CLAUDE.md
+skills-lock.json
+design-system/
+files_to_test_ui/
+plan.md
+REDISENO_UI.md
