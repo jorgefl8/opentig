@@ -5,11 +5,14 @@
 export interface TitlebarAreaRect {
   x: number;
   width: number;
+  height: number;
 }
 
 export interface WindowControlsInset {
   left: number;
   right: number;
+  /** Height of the native controls in CSS pixels, or 0 when unknown. */
+  height: number;
 }
 
 /** Width of the Windows/Linux minimize, maximize and close buttons at 100% zoom. */
@@ -33,7 +36,10 @@ export function resolveWindowControlsInset(input: {
     return {
       left: Math.max(0, Math.round(rect.x)),
       right: Math.max(0, Math.round(viewportWidth - rect.x - rect.width)),
+      height: Math.max(0, Math.round(rect.height)),
     };
   }
-  return mac ? { left: TRAFFIC_LIGHTS_WIDTH, right: 0 } : { left: 0, right: OVERLAY_CONTROLS_WIDTH };
+  return mac
+    ? { left: TRAFFIC_LIGHTS_WIDTH, right: 0, height: 0 }
+    : { left: 0, right: OVERLAY_CONTROLS_WIDTH, height: 0 };
 }

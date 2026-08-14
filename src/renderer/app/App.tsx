@@ -130,6 +130,10 @@ export default function App() {
       });
       document.documentElement.style.setProperty('--window-controls-inset', `${inset.right}px`);
       document.documentElement.style.setProperty('--window-controls-inset-left', `${inset.left}px`);
+      // Matching the toolbar to the controls makes their hover surface line up
+      // with the header instead of ending a few pixels short.
+      if (inset.height > 0) document.documentElement.style.setProperty('--toolbar-height', `${inset.height}px`);
+      else document.documentElement.style.removeProperty('--toolbar-height');
     };
     apply();
     overlay?.addEventListener('geometrychange', apply);
