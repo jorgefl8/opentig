@@ -1,5 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
+import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   IconChevronDown, IconChevronRight, IconDeviceDesktop, IconFileArrowRight, IconFolder, IconFolderOpen,
   IconFiles, IconGitBranch, IconGitCompare, IconGitPullRequest, IconHierarchy2, IconHistory,
@@ -11,9 +12,9 @@ import type { AiHarnessId, AiHarnessStatus, BootstrapData, ChangesLayoutPreferen
 import type { OpenFilesState } from '../../shared/open-files-state';
 import { normalizeRepositoryKey } from '../../shared/repository-projects';
 import type { SerializedAiError } from '../../shared/errors';
-import type { BranchInfo, ChangeKind, CommitFile, CommitInfo, FileChange, FileTreeEntry, RepositoryStatus, WorktreeInfo } from '../../shared/git-types';
+import type { BranchInfo, ChangeKind, CommitFile, CommitInfo, CommitPage, FileChange, FileTreeEntry, RepositoryStatus, WorktreeInfo } from '../../shared/git-types';
 import { isKnownImagePath, isSvgPath } from '../../shared/image-types';
-import { mergeRepositoryChangeScopes, type RepositoryChangeScope } from '../../shared/repository-change';
+import type { RepositoryChangeScope } from '../../shared/repository-change';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogClose, DialogDescription, DialogPopup, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
@@ -47,7 +48,7 @@ import type { ViewerSelection } from '@/features/viewer/Viewer';
 import { getVsCodeFileIconUrl, getVsCodeFolderIconUrl } from '@/lib/vscode-icons';
 import { refreshOperationsForScope } from './refresh-policy';
 import { resolveWindowControlsInset } from './window-controls';
-import { RefreshCoordinator, type RefreshRequest } from '@/lib/RefreshCoordinator';
+import { queryKeys, queryResourcesForScope } from '@/lib/query-client';
 
 const Viewer = lazy(() => import('@/features/viewer/Viewer'));
 const NO_OPEN_FILES_STATES: OpenFilesState[] = [];
@@ -60,19 +61,19 @@ interface AppRefreshOptions {
 }
 
 export default function App() {
+  const ipcQueryClient = useQueryClient();
   const [bootstrap, setBootstrap] = useState<BootstrapData | null>(null);
   const [repository, setRepository] = useState<RepositoryInfo | null>(null);
-  const [status, setStatus] = useState<RepositoryStatus | null>(null);
-  const [files, setFiles] = useState<FileTreeEntry[] | null>(null);
+  const [statusState, setStatus] = useState<RepositoryStatus | null>(null);
+  const [filesState, setFiles] = useState<FileTreeEntry[] | null>(null);
   // A root snapshot intentionally omits the contents of collapsed ignored
   // folders. Keep a separate revision so a fresh snapshot can still invalidate
   // their lazy cache when that compact root representation is unchanged.
   const [filesSnapshotRevision, setFilesSnapshotRevision] = useState(0);
   const [fileHistoryState, setFileHistoryState] = useState<FileHistoryState>({ canUndo: false, undoLabel: null, canRedo: false, redoLabel: null });
-  const [commits, setCommits] = useState<CommitInfo[] | null>(null);
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
-  const [branches, setBranches] = useState<BranchInfo[]>([]);
-  const [worktrees, setWorktrees] = useState<WorktreeInfo[]>([]);
+  const [branchesState, setBranches] = useState<BranchInfo[]>([]);
+  const [worktreesState, setWorktrees] = useState<WorktreeInfo[]>([]);
+  const [snapshotRepositoryId, setSnapshotRepositoryId] = useState<string | null>(null);
   const [view, setView] = useState<SidebarView>('changes');
   const [viewerSelection, setViewerSelection] = useState<ViewerSelection>(null);
   const [commitMessage, setCommitMessage] = useState('');
@@ -88,11 +89,6 @@ export default function App() {
   const [generating, setGenerating] = useState<string | null>(null);
   const [undoCommit, setUndoCommit] = useState<CommitInfo | null>(null);
   const [undoingCommit, setUndoingCommit] = useState(false);
-  const [githubInfo, setGithubInfo] = useState<GitHubRepositoryInfo | null>(null);
-  const [ghStatus, setGhStatus] = useState<GhCliStatus | null>(null);
-  const [pulls, setPulls] = useState<PullRequestSummary[] | null>(null);
-  const [pullsLoading, setPullsLoading] = useState(false);
-  const [pullsError, setPullsError] = useState<string | null>(null);
   const [pullRequestStates, setPullRequestStates] = useState<PullRequestState[]>(['OPEN']);
   const [createPrOpen, setCreatePrOpen] = useState(false);
   const [quickOpen, setQuickOpen] = useState(false);
@@ -103,9 +99,6 @@ export default function App() {
   // Holding Ctrl reveals the section numbers, so the shortcut is discoverable
   // without a cheat sheet.
   const [ctrlHeld, setCtrlHeld] = useState(false);
-  const pullsRequestToken = useRef(0);
-  const requestToken = useRef(0);
-  const filesRequestToken = useRef(0);
   const filesRef = useRef<FileTreeEntry[] | null>(null);
   const viewerSelectionRef = useRef<ViewerSelection>(null);
   // A path we just created/renamed/moved the viewer onto; it may be missing from
@@ -127,6 +120,48 @@ export default function App() {
   // The last message JustGit itself put in the composer, so an edited one is
   // never replaced without asking.
   const lastAppliedMessageRef = useRef('');
+  const forceGhStatusRef = useRef(false);
+
+  const historyQuery = useInfiniteQuery({
+    queryKey: queryKeys.history(repository?.id ?? ''),
+    queryFn: ({ pageParam }) => window.justgit.commits.list(repository!.id, pageParam),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+    enabled: repository !== null && view === 'history',
+  });
+  const commits = historyQuery.data ? historyQuery.data.pages.flatMap((page) => page.commits) : null;
+  const nextCursor = historyQuery.hasNextPage ? historyQuery.data?.pages.at(-1)?.nextCursor ?? null : null;
+
+  const githubInfoQuery = useQuery<GitHubRepositoryInfo>({
+    queryKey: queryKeys.githubInfo(repository?.id ?? ''),
+    queryFn: async () => {
+      try { return await window.justgit.github.repositoryInfo(repository!.id); }
+      catch { return { isGitHub: false, nameWithOwner: null }; }
+    },
+    enabled: repository !== null,
+  });
+  const githubInfo = githubInfoQuery.data ?? null;
+  const pullsQuery = useQuery<{ ghStatus: GhCliStatus; pulls: PullRequestSummary[] | null }>({
+    queryKey: queryKeys.pulls(repository?.id ?? '', pullRequestStates),
+    queryFn: async () => {
+      const forceStatus = forceGhStatusRef.current;
+      forceGhStatusRef.current = false;
+      const nextGhStatus = await window.justgit.github.status(forceStatus);
+      if (!nextGhStatus.installed || nextGhStatus.authStatus === 'unauthenticated') return { ghStatus: nextGhStatus, pulls: null };
+      const nextPulls = pullRequestStates.length ? await window.justgit.github.listPullRequests(repository!.id, pullRequestStates) : [];
+      return { ghStatus: nextGhStatus, pulls: nextPulls };
+    },
+    enabled: view === 'prs' && repository !== null && githubInfo?.isGitHub === true,
+  });
+  const ghStatus = pullsQuery.data?.ghStatus ?? null;
+  const pulls = pullsQuery.data?.pulls ?? null;
+  const pullsLoading = pullsQuery.isFetching;
+  const pullsError = pullsQuery.error ? messageOf(pullsQuery.error) : null;
+  const currentSnapshot = snapshotRepositoryId === repository?.id;
+  const status = currentSnapshot ? statusState : null;
+  const files = currentSnapshot ? filesState : null;
+  const branches = currentSnapshot ? branchesState : [];
+  const worktrees = currentSnapshot ? worktreesState : [];
 
   const openFilesStates = bootstrap?.openFilesStates ?? NO_OPEN_FILES_STATES;
   const theme = bootstrap?.preferences.theme ?? 'system';
@@ -391,14 +426,16 @@ export default function App() {
 
   const refreshFilesOnly = useCallback(async () => {
     if (!repository) return;
-    const token = ++filesRequestToken.current;
+    const repositoryId = repository.id;
     try {
-      const nextFiles = await window.justgit.repository.getFiles(repository.id);
-      if (token === filesRequestToken.current) applyFilesSnapshot(nextFiles);
+      const nextFiles = await ipcQueryClient.fetchQuery({
+        queryKey: queryKeys.files(repositoryId), queryFn: () => window.justgit.repository.getFiles(repositoryId),
+      });
+      if (repositoryRef.current?.id === repositoryId) applyFilesSnapshot(nextFiles);
     } catch (reason) {
-      if (token === filesRequestToken.current) setError(messageOf(reason));
+      if (repositoryRef.current?.id === repositoryId) setError(messageOf(reason));
     }
-  }, [applyFilesSnapshot, repository]);
+  }, [applyFilesSnapshot, ipcQueryClient, repository]);
 
   // Folders the file tree leaves collapsed (git-ignored trees) are read one level
   // at a time, the first time the user opens them.
@@ -414,123 +451,82 @@ export default function App() {
 
   const refreshFileHistoryState = useCallback(async () => {
     if (!repository) return;
-    setFileHistoryState(await window.justgit.repository.fileHistoryState(repository.id));
-  }, [repository]);
+    const repositoryId = repository.id;
+    const next = await ipcQueryClient.fetchQuery({
+      queryKey: queryKeys.fileHistory(repositoryId), queryFn: () => window.justgit.repository.fileHistoryState(repositoryId),
+    });
+    if (repositoryRef.current?.id === repositoryId) setFileHistoryState(next);
+  }, [ipcQueryClient, repository]);
 
   useEffect(() => {
     if (!repository) { setFileHistoryState({ canUndo: false, undoLabel: null, canRedo: false, redoLabel: null }); return; }
     void refreshFileHistoryState();
   }, [refreshFileHistoryState, repository]);
 
-  const performRefresh = useCallback(async (request: RefreshRequest<RepositoryChangeScope>) => {
+  const performRefresh = useCallback(async (request: { scope: RepositoryChangeScope; background: boolean }) => {
     if (!repository) return;
     const { background, scope } = request;
     const operations = refreshOperationsForScope(scope, view);
-    const token = ++requestToken.current;
-    const filesToken = operations.files ? ++filesRequestToken.current : null;
+    const repositoryId = repository.id;
+    const resources = queryResourcesForScope(scope, view);
     if (!background) setBusy('refresh');
     setError(null);
     try {
+      await Promise.all(resources.map((resource) => ipcQueryClient.invalidateQueries({
+        queryKey: resource === 'status' ? queryKeys.status(repositoryId)
+          : resource === 'branches' ? queryKeys.branches(repositoryId)
+            : resource === 'worktrees' ? queryKeys.worktrees(repositoryId)
+              : resource === 'files' ? queryKeys.files(repositoryId)
+                : queryKeys.history(repositoryId),
+        exact: true,
+        refetchType: 'none',
+      })));
       const [nextStatus, nextBranches, nextWorktrees, nextFiles, nextHistory] = await Promise.all([
-        window.justgit.repository.getStatus(repository.id),
-        operations.branches ? window.justgit.refs.listBranches(repository.id) : Promise.resolve(null),
-        operations.worktrees ? window.justgit.refs.listWorktrees(repository.id) : Promise.resolve(null),
-        operations.files ? window.justgit.repository.getFiles(repository.id) : Promise.resolve(null),
-        operations.history ? window.justgit.commits.list(repository.id) : Promise.resolve(null),
+        ipcQueryClient.fetchQuery({ queryKey: queryKeys.status(repositoryId), queryFn: () => window.justgit.repository.getStatus(repositoryId) }),
+        operations.branches ? ipcQueryClient.fetchQuery({ queryKey: queryKeys.branches(repositoryId), queryFn: () => window.justgit.refs.listBranches(repositoryId) }) : Promise.resolve(null),
+        operations.worktrees ? ipcQueryClient.fetchQuery({ queryKey: queryKeys.worktrees(repositoryId), queryFn: () => window.justgit.refs.listWorktrees(repositoryId) }) : Promise.resolve(null),
+        operations.files ? ipcQueryClient.fetchQuery({ queryKey: queryKeys.files(repositoryId), queryFn: () => window.justgit.repository.getFiles(repositoryId) }) : Promise.resolve(null),
+        operations.history ? ipcQueryClient.fetchInfiniteQuery({
+          queryKey: queryKeys.history(repositoryId),
+          queryFn: ({ pageParam }) => window.justgit.commits.list(repositoryId, pageParam),
+          initialPageParam: undefined as string | undefined,
+          getNextPageParam: (lastPage: CommitPage) => lastPage.nextCursor ?? undefined,
+        }) : Promise.resolve(null),
       ]);
-      if (token !== requestToken.current) return;
+      if (repositoryRef.current?.id !== repositoryId) return;
+      setSnapshotRepositoryId(repositoryId);
       setStatus(nextStatus);
       if (nextBranches) setBranches(nextBranches);
       if (nextWorktrees) setWorktrees(nextWorktrees);
-      if (nextFiles && filesToken === filesRequestToken.current) {
-        applyFilesSnapshot(nextFiles);
-      }
-      if (nextHistory) {
-        setCommits(nextHistory.commits);
-        setNextCursor(nextHistory.nextCursor);
-      }
+      if (nextFiles) applyFilesSnapshot(nextFiles);
+      void nextHistory;
       setRefreshVersion((version) => version + 1);
     } catch (reason) {
-      if (token === requestToken.current) setError(messageOf(reason));
+      if (repositoryRef.current?.id === repositoryId) setError(messageOf(reason));
     } finally {
-      if (!background && token === requestToken.current) setBusy(null);
+      if (!background && repositoryRef.current?.id === repositoryId) setBusy(null);
     }
-  }, [applyFilesSnapshot, repository, view]);
-  // `performRefresh` changes identity whenever the active view changes, so the
-  // coordinator reads it through a ref instead of being rebuilt: a new
-  // coordinator would re-run the repository reset effect below on every tab
-  // switch and wipe state nothing refetches (GitHub info, files, history).
-  const performRefreshRef = useRef(performRefresh);
-  useEffect(() => { performRefreshRef.current = performRefresh; }, [performRefresh]);
-  // The callback only reads its refs when a queued refresh executes; constructing
-  // the coordinator does not invoke it during render.
-  const refreshCoordinator = useMemo(() => new RefreshCoordinator<RepositoryChangeScope>(
-    // eslint-disable-next-line react-hooks/refs
-    (request) => performRefreshRef.current(request),
-    mergeRepositoryChangeScopes,
-  ), []);
-
-  const refresh = useCallback((options?: AppRefreshOptions) => refreshCoordinator.request({
+  }, [applyFilesSnapshot, ipcQueryClient, repository, view]);
+  // Query keys deduplicate simultaneous IPC reads. Separate scoped refreshes
+  // naturally form a union because each invalidates only the resources it owns.
+  const refresh = useCallback((options?: AppRefreshOptions) => performRefresh({
     background: options?.background === true,
     scope: options?.scope ?? 'unknown',
-  }), [refreshCoordinator]);
-
-  useEffect(() => () => refreshCoordinator.invalidate(), [refreshCoordinator]);
+  }), [performRefresh]);
 
   useEffect(() => {
-    requestToken.current += 1;
-    filesRequestToken.current += 1;
-    refreshCoordinator.invalidate();
+    setSnapshotRepositoryId(null);
     commitFilesCache.clear();
     filesRef.current = null;
     setFiles(null);
-    setCommits(null);
-    setNextCursor(null);
-    pullsRequestToken.current += 1;
-    setGithubInfo(null);
-    setGhStatus(null);
-    setPulls(null);
-    setPullsError(null);
-    setPullsLoading(false);
     setCreatePrOpen(false);
     setQuickOpen(false);
-  }, [refreshCoordinator, repository?.id]);
+  }, [repository?.id]);
 
-  useEffect(() => {
-    if (!repository) return;
-    let active = true;
-    // Local parse of the origin remote; no gh invocation and no network.
-    window.justgit.github.repositoryInfo(repository.id)
-      .then((info) => { if (active) setGithubInfo(info); })
-      .catch(() => { if (active) setGithubInfo({ isGitHub: false, nameWithOwner: null }); });
-    return () => { active = false; };
-  }, [repository]);
-
-  const loadPulls = useCallback(async (states: PullRequestState[], forceStatus = false) => {
-    if (!repository) return;
-    const token = ++pullsRequestToken.current;
-    setPullsLoading(true);
-    setPullsError(null);
-    try {
-      const nextGhStatus = await window.justgit.github.status(forceStatus);
-      if (token !== pullsRequestToken.current) return;
-      setGhStatus(nextGhStatus);
-      if (!nextGhStatus.installed || nextGhStatus.authStatus === 'unauthenticated') return;
-      const list = states.length ? await window.justgit.github.listPullRequests(repository.id, states) : [];
-      if (token !== pullsRequestToken.current) return;
-      setPulls(list);
-    } catch (reason) {
-      if (token === pullsRequestToken.current) setPullsError(messageOf(reason));
-    } finally {
-      if (token === pullsRequestToken.current) setPullsLoading(false);
-    }
-  }, [repository]);
-
-  useEffect(() => {
-    if (view !== 'prs' || !githubInfo?.isGitHub || pullsLoading || pullsError) return;
-    const ready = ghStatus !== null && ghStatus.installed && ghStatus.authStatus !== 'unauthenticated';
-    if (ghStatus === null || (ready && pulls === null)) void loadPulls(pullRequestStates);
-  }, [ghStatus, githubInfo, loadPulls, pullRequestStates, pulls, pullsError, pullsLoading, view]);
+  const loadPulls = useCallback(async (_states: PullRequestState[], forceStatus = false) => {
+    if (forceStatus) forceGhStatusRef.current = true;
+    await pullsQuery.refetch();
+  }, [pullsQuery]);
 
   useEffect(() => {
     void refresh();
@@ -1269,9 +1265,7 @@ export default function App() {
     if (!repository || !nextCursor) return;
     setBusy('history');
     try {
-      const page = await window.justgit.commits.list(repository.id, nextCursor);
-      setCommits((items) => [...(items ?? []), ...page.commits]);
-      setNextCursor(page.nextCursor);
+      await historyQuery.fetchNextPage();
     } catch (reason) { setError(messageOf(reason)); }
     finally { setBusy(null); }
   };
@@ -1684,8 +1678,6 @@ export default function App() {
                     const order: PullRequestState[] = ['OPEN', 'CLOSED', 'MERGED'];
                     const nextStates = order.filter((candidate) => candidate === state ? checked : pullRequestStates.includes(candidate));
                     setPullRequestStates(nextStates);
-                    setPulls(null);
-                    void loadPulls(nextStates);
                   }}
                   onSelect={(pr) => { selectViewer({ type: 'pull-request', number: pr.number }); }}
                   onCreate={() => setCreatePrOpen(true)}

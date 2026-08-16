@@ -1,11 +1,13 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
+import { useQuery } from '@tanstack/react-query';
 import { IconChevronDown, IconChevronRight, IconEyeOff, IconLetterCase, IconLoader4, IconRegex, IconReplace, IconReplaceFilled, IconSearch, IconTextWrapDisabled } from '@tabler/icons-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { buildSearchRegex, type SearchFileResult, type SearchMatch, type SearchOptions, type SearchResult } from '../../../shared/search';
+import { queryKeys } from '@/lib/query-client';
 
 const DEBOUNCE_MS = 250;
 const FILE_ROW_HEIGHT = 28;
@@ -37,46 +39,38 @@ export function SearchView({ repositoryId, active, revision, onOpenFile, unsaved
   const [replaceIgnored, setReplaceIgnored] = useState(false);
   const [replacing, setReplacing] = useState(false);
   const [replaceRevision, setReplaceRevision] = useState(0);
-  const [result, setResult] = useState<SearchResult | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [searching, setSearching] = useState(false);
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const inputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const requestToken = useRef(0);
 
   const options = useMemo<SearchOptions>(
     () => ({ query, matchCase, wholeWord, regex, includeIgnored: searchIgnored }),
     [query, matchCase, wholeWord, regex, searchIgnored],
   );
   const highlighter = useMemo(() => buildSearchRegex(options), [options]);
+  const trimmedQuery = query.trim();
+  const debouncedQuery = useDebouncedValue(trimmedQuery, DEBOUNCE_MS);
+  const searchQuery = useQuery<SearchResult>({
+    queryKey: queryKeys.search(repositoryId, {
+      query: debouncedQuery, matchCase, wholeWord, regex, includeIgnored: searchIgnored, revision, replaceRevision,
+    }),
+    queryFn: () => window.justgit.repository.search(repositoryId, { ...options, query: debouncedQuery }),
+    enabled: active && debouncedQuery.length > 0,
+    placeholderData: (previousData, previousQuery) => previousQuery?.queryKey[1] === repositoryId ? previousData : undefined,
+  });
+  const result = trimmedQuery ? searchQuery.data ?? null : null;
+  const searching = Boolean(trimmedQuery) && (debouncedQuery !== trimmedQuery || searchQuery.isFetching);
+  const error = trimmedQuery && searchQuery.error
+    ? searchQuery.error instanceof Error ? searchQuery.error.message : 'The search failed.'
+    : null;
 
   useEffect(() => { if (active) inputRef.current?.focus(); }, [active]);
 
   useEffect(() => {
-    if (!active) return;
-    const trimmed = query.trim();
-    if (!trimmed) { setResult(null); setError(null); setSearching(false); return; }
-    const token = ++requestToken.current;
-    setSearching(true);
-    const timer = window.setTimeout(() => {
-      void window.justgit.repository.search(repositoryId, { ...options, query: trimmed })
-        .then((next) => {
-          if (requestToken.current !== token) return;
-          setResult(next);
-          setError(null);
-          // Ignored files are noise until asked for, so they arrive folded.
-          setCollapsed(new Set(next.files.filter((file) => file.ignored).map((file) => file.path)));
-        })
-        .catch((reason: unknown) => {
-          if (requestToken.current !== token) return;
-          setResult(null);
-          setError(reason instanceof Error ? reason.message : 'The search failed.');
-        })
-        .finally(() => { if (requestToken.current === token) setSearching(false); });
-    }, DEBOUNCE_MS);
-    return () => window.clearTimeout(timer);
-  }, [active, options, query, replaceRevision, repositoryId, revision]);
+    if (!searchQuery.data) return;
+    // Ignored files are noise until asked for, so every fresh result folds them.
+    setCollapsed(new Set(searchQuery.data.files.filter((file) => file.ignored).map((file) => file.path)));
+  }, [searchQuery.data]);
 
   const rows = useMemo<SearchRow[]>(() => {
     if (!result) return [];
@@ -255,6 +249,15 @@ export function SearchView({ repositoryId, active, revision, onOpenFile, unsaved
       </div>
     </div>
   );
+}
+
+function useDebouncedValue<T>(value: T, delay: number): T {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebounced(value), delay);
+    return () => window.clearTimeout(timer);
+  }, [delay, value]);
+  return debounced;
 }
 
 function SearchToggle({ label, active, onToggle, children }: { label: string; active: boolean; onToggle(): void; children: React.ReactNode }) {

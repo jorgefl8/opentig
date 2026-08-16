@@ -1,10 +1,11 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
   IconAlertTriangle, IconCheck, IconCopy, IconExternalLink, IconGitBranch, IconGitCommit, IconHierarchy2,
   IconLoader4, IconRefresh, IconSearch, IconTrash, IconX,
 } from '@tabler/icons-react';
 import type { PullRequestSummary, RecentRepository } from '../../../shared/contracts';
-import type { BranchDetails, BranchInfo, LocalRefsSnapshot, ManagedWorktree, WorktreeDetails } from '../../../shared/git-types';
+import type { BranchDetails, LocalRefsSnapshot, WorktreeDetails } from '../../../shared/git-types';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -15,6 +16,7 @@ import {
   type LocalRefsTab, type RefBadge,
 } from './local-refs-model';
 import { openOnGitHub } from '@/features/pulls/gh-utils';
+import { queryKeys } from '@/lib/query-client';
 
 interface LocalRefsDialogProps {
   open: boolean;
@@ -32,61 +34,66 @@ interface LocalRefsDialogProps {
 
 export function LocalRefsDialog(props: LocalRefsDialogProps) {
   const { open, tab, repositoryId, onMutated, onBusyChange } = props;
-  const [snapshot, setSnapshot] = useState<LocalRefsSnapshot | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [selectedBranch, setSelectedBranch] = useState<string | null>(null);
   const [selectedWorktree, setSelectedWorktree] = useState<string | null>(null);
-  const [branchDetails, setBranchDetails] = useState<BranchDetails | null>(null);
-  const [branchPullRequest, setBranchPullRequest] = useState<PullRequestSummary | null>(null);
-  const [worktreeDetails, setWorktreeDetails] = useState<WorktreeDetails | null>(null);
-  const [detailsLoading, setDetailsLoading] = useState(false);
-  const [detailsError, setDetailsError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-  // Stale detail responses must never overwrite a newer selection.
-  const detailToken = useRef(0);
   // The previous ordering, so a deleted row hands its place to a neighbour.
   const snapshotRef = useRef<LocalRefsSnapshot | null>(null);
+
+  const snapshotQuery = useQuery({
+    queryKey: queryKeys.localRefs(repositoryId),
+    queryFn: () => window.justgit.refs.localRefsSnapshot(repositoryId),
+    enabled: open,
+  });
+  const snapshot = snapshotQuery.data ?? null;
+  const loading = snapshotQuery.isFetching;
+  const error = snapshotQuery.error ? messageOf(snapshotQuery.error) : null;
 
   const branches = useMemo(() => filterBranches(snapshot?.branches ?? [], query), [snapshot, query]);
   const worktrees = useMemo(() => filterWorktrees(snapshot?.worktrees ?? [], query), [snapshot, query]);
   const branch = branches.find((item) => branchKey(item) === selectedBranch) ?? null;
   const worktree = worktrees.find((item) => worktreeKey(item) === selectedWorktree) ?? null;
-  const detailTarget = tab === 'branches' ? branch : worktree;
+  const branchDetailsQuery = useQuery({
+    queryKey: queryKeys.branchDetails(repositoryId, branch?.fullName ?? ''),
+    queryFn: () => window.justgit.refs.branchDetails({ repositoryId, fullName: branch!.fullName }),
+    enabled: open && tab === 'branches' && branch !== null,
+  });
+  const branchDetails = branchDetailsQuery.data ?? null;
+  const branchPullRequestQuery = useQuery({
+    queryKey: queryKeys.branchPullRequest(repositoryId, branchDetails?.name ?? ''),
+    queryFn: () => window.justgit.github.findPullRequestForBranch(repositoryId, branchDetails!.name),
+    enabled: open && tab === 'branches' && branchDetails !== null && (branchDetails.deletion === 'unknown' || branchDetails.deletion === 'unmerged'),
+  });
+  const branchPullRequest = branchPullRequestQuery.data ?? null;
+  const worktreeDetailsQuery = useQuery({
+    queryKey: queryKeys.worktreeDetails(repositoryId, worktree?.path ?? ''),
+    queryFn: () => window.justgit.refs.worktreeDetails({ repositoryId, path: worktree!.path }),
+    enabled: open && tab === 'worktrees' && worktree !== null,
+  });
+  const worktreeDetails = worktreeDetailsQuery.data ?? null;
+  const activeDetailsQuery = tab === 'branches' ? branchDetailsQuery : worktreeDetailsQuery;
+  const detailsLoading = activeDetailsQuery.isFetching;
+  const detailsError = activeDetailsQuery.error ? messageOf(activeDetailsQuery.error) : null;
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const next = await window.justgit.refs.localRefsSnapshot(repositoryId);
-      const previous = snapshotRef.current;
-      snapshotRef.current = next;
-      setSnapshot(next);
-      setSelectedBranch((selected) => nextSelectionKey(next.branches.map(branchKey), (previous?.branches ?? []).map(branchKey), selected));
-      setSelectedWorktree((selected) => nextSelectionKey(next.worktrees.map(worktreeKey), (previous?.worktrees ?? []).map(worktreeKey), selected));
-    } catch (reason) {
-      setError(messageOf(reason));
-    } finally {
-      setLoading(false);
-    }
-  }, [repositoryId]);
+  const load = useCallback(async () => { await snapshotQuery.refetch(); }, [snapshotQuery]);
 
-  // Snapshots load only when the manager opens or the user asks for a refresh.
   useEffect(() => {
-    if (!open) return;
-    void load();
-  }, [open, load]);
+    if (!snapshot) return;
+    const previous = snapshotRef.current;
+    snapshotRef.current = snapshot;
+    setSelectedBranch((selected) => nextSelectionKey(snapshot.branches.map(branchKey), (previous?.branches ?? []).map(branchKey), selected));
+    setSelectedWorktree((selected) => nextSelectionKey(snapshot.worktrees.map(worktreeKey), (previous?.worktrees ?? []).map(worktreeKey), selected));
+  }, [snapshot]);
 
   useEffect(() => {
     if (open) return;
     setQuery('');
     setConfirming(null);
     setActionError(null);
-    setDetailsError(null);
     setCopied(false);
   }, [open]);
 
@@ -95,40 +102,6 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
     setActionError(null);
     setCopied(false);
   }, [tab, selectedBranch, selectedWorktree]);
-
-  // Details load lazily, for the selected row only.
-  useEffect(() => {
-    if (!open) return;
-    const token = detailToken.current + 1;
-    detailToken.current = token;
-    const target = detailTarget;
-    if (!target) {
-      setBranchDetails(null);
-      setBranchPullRequest(null);
-      setWorktreeDetails(null);
-      setDetailsLoading(false);
-      setDetailsError(null);
-      return;
-    }
-    setDetailsLoading(true);
-    setDetailsError(null);
-    setBranchPullRequest(null);
-    const request = tab === 'branches'
-      ? window.justgit.refs.branchDetails({ repositoryId, fullName: (target as BranchInfo).fullName })
-        .then((details) => {
-          if (detailToken.current !== token) return;
-          setBranchDetails(details);
-          if (details.deletion !== 'unknown' && details.deletion !== 'unmerged') return;
-          void window.justgit.github.findPullRequestForBranch(repositoryId, details.name)
-            .then((pullRequest) => { if (detailToken.current === token) setBranchPullRequest(pullRequest); })
-            .catch(() => undefined);
-        })
-      : window.justgit.refs.worktreeDetails({ repositoryId, path: (target as ManagedWorktree).path })
-        .then((details) => { if (detailToken.current === token) setWorktreeDetails(details); });
-    void request
-      .catch((reason: unknown) => { if (detailToken.current === token) setDetailsError(messageOf(reason)); })
-      .finally(() => { if (detailToken.current === token) setDetailsLoading(false); });
-  }, [open, tab, repositoryId, detailTarget]);
 
   const run = async (operation: string, action: () => Promise<boolean>) => {
     setBusy(operation);

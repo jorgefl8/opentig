@@ -1,4 +1,5 @@
-import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { IconCircleCheck, IconCircleX, IconClock, IconExternalLink, IconGitBranch, IconGitCommit, IconLoader4, IconRefresh, IconTag } from '@tabler/icons-react';
 import type { DiffResult, DiffViewPreference, PullRequestCheckState, PullRequestDetails, ThemePreference } from '../../../shared/contracts';
 import { Badge } from '@/components/ui/badge';
@@ -8,6 +9,7 @@ import { ViewerTabs, ViewerTabsList, ViewerTabsPanel } from '@/components/ui/vie
 import { renderMarkdown } from '@/features/markdown/render-markdown';
 import { openOnGitHub, prStateLabel, reviewDecisionLabel } from './gh-utils';
 import { GitHubAvatar } from './GitHubAvatar';
+import { queryKeys } from '@/lib/query-client';
 import '@/features/markdown/markdown.css';
 
 const PullRequestDiff = lazy(() => import('./PullRequestDiff'));
@@ -25,46 +27,30 @@ interface PullRequestViewerProps {
 
 export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType, wrapLines, onDiffViewChange, onWrapLinesChange, onClose }: PullRequestViewerProps) {
   const [tab, setTab] = useState<'summary' | 'timeline' | 'diff'>('summary');
-  const [details, setDetails] = useState<PullRequestDetails | null>(null);
-  const [detailsError, setDetailsError] = useState<string | null>(null);
-  const [bodyHtml, setBodyHtml] = useState('');
-  const [diff, setDiff] = useState<DiffResult | null>(null);
-  const [diffError, setDiffError] = useState<string | null>(null);
-  const [reloadToken, setReloadToken] = useState(0);
-  const requestToken = useRef(0);
-
-  useEffect(() => {
-    const token = ++requestToken.current;
-    setDetails(null);
-    setDetailsError(null);
-    setDiff(null);
-    setDiffError(null);
-    window.justgit.github.getPullRequest(repositoryId, prNumber).then(async (value) => {
-      if (token !== requestToken.current) return;
-      const html = value.body.trim() ? await renderMarkdown(value.body).catch(() => '<p>Could not render the description.</p>') : '';
-      if (token !== requestToken.current) return;
-      setDetails(value);
-      setBodyHtml(html);
-    }).catch((reason) => {
-      if (token === requestToken.current) setDetailsError(reason instanceof Error ? reason.message : 'Could not load the pull request.');
-    });
-  }, [prNumber, reloadToken, repositoryId]);
-
-  useEffect(() => {
-    if (tab !== 'diff' || diff || diffError || !details) return;
-    const token = requestToken.current;
-    window.justgit.github.getPullRequestDiff(repositoryId, prNumber).then((value) => {
-      if (token === requestToken.current) setDiff(value);
-    }).catch((reason) => {
-      if (token === requestToken.current) setDiffError(reason instanceof Error ? reason.message : 'Could not load the diff.');
-    });
-  }, [details, diff, diffError, prNumber, repositoryId, tab]);
+  const detailsQuery = useQuery<{ details: PullRequestDetails; bodyHtml: string }>({
+    queryKey: queryKeys.pullRequest(repositoryId, prNumber),
+    queryFn: async () => {
+      const details = await window.justgit.github.getPullRequest(repositoryId, prNumber);
+      const bodyHtml = details.body.trim() ? await renderMarkdown(details.body).catch(() => '<p>Could not render the description.</p>') : '';
+      return { details, bodyHtml };
+    },
+  });
+  const details = detailsQuery.data?.details ?? null;
+  const bodyHtml = detailsQuery.data?.bodyHtml ?? '';
+  const detailsError = detailsQuery.error instanceof Error ? detailsQuery.error.message : detailsQuery.error ? 'Could not load the pull request.' : null;
+  const diffQuery = useQuery<DiffResult>({
+    queryKey: queryKeys.pullRequestDiff(repositoryId, prNumber),
+    queryFn: () => window.justgit.github.getPullRequestDiff(repositoryId, prNumber),
+    enabled: tab === 'diff' && details !== null,
+  });
+  const diff = diffQuery.data ?? null;
+  const diffError = diffQuery.error instanceof Error ? diffQuery.error.message : diffQuery.error ? 'Could not load the diff.' : null;
 
   if (detailsError) {
     return (
       <div className="viewer-message flex-col gap-3">
         <p className="text-destructive">{detailsError}</p>
-        <Button variant="outline" size="sm" onClick={() => setReloadToken((value) => value + 1)}><IconRefresh /> Try again</Button>
+        <Button variant="outline" size="sm" onClick={() => void detailsQuery.refetch()}><IconRefresh /> Try again</Button>
       </div>
     );
   }

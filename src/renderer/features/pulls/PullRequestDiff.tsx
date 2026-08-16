@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { IconLoader4, IconRefresh } from '@tabler/icons-react';
 import type { DiffResult, DiffViewPreference, PullRequestCommit, ThemePreference } from '@shared/contracts';
 import { Button } from '@/components/ui/button';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { DiffWorkspace } from '@/features/viewer/DiffWorkspace';
 import { PierreWorkerPool } from '@/features/viewer/PierreWorkerPool';
+import { queryKeys } from '@/lib/query-client';
 
 interface PullRequestDiffProps {
   diff: DiffResult;
@@ -24,21 +26,13 @@ type CodeMode = 'all' | 'commit';
 export default function PullRequestDiff({ diff, prNumber, repositoryId, commits, diffView, themeType, wrapLines, onDiffViewChange, onWrapLinesChange, onClose }: PullRequestDiffProps) {
   const [mode, setMode] = useState<CodeMode>('all');
   const [selectedOid, setSelectedOid] = useState(commits[0]?.oid ?? '');
-  const [commitDiffs, setCommitDiffs] = useState<Map<string, DiffResult>>(() => new Map());
-  const [commitError, setCommitError] = useState<string | null>(null);
-  const requestToken = useRef(0);
   const selectedCommit = useMemo(() => commits.find((commit) => commit.oid === selectedOid) ?? commits[0] ?? null, [commits, selectedOid]);
-
-  useEffect(() => {
-    if (mode !== 'commit' || !selectedCommit || commitDiffs.has(selectedCommit.oid) || commitError) return;
-    const token = ++requestToken.current;
-    window.justgit.github.getPullRequestCommitDiff(repositoryId, selectedCommit.oid).then((value) => {
-      if (token !== requestToken.current) return;
-      setCommitDiffs((current) => new Map(current).set(selectedCommit.oid, value));
-    }).catch((reason) => {
-      if (token === requestToken.current) setCommitError(reason instanceof Error ? reason.message : 'Could not load the commit diff.');
-    });
-  }, [commitDiffs, commitError, mode, repositoryId, selectedCommit]);
+  const commitDiffQuery = useQuery({
+    queryKey: queryKeys.pullRequestCommitDiff(repositoryId, selectedCommit?.oid ?? ''),
+    queryFn: () => window.justgit.github.getPullRequestCommitDiff(repositoryId, selectedCommit!.oid),
+    enabled: mode === 'commit' && selectedCommit !== null,
+  });
+  const commitError = commitDiffQuery.error instanceof Error ? commitDiffQuery.error.message : commitDiffQuery.error ? 'Could not load the commit diff.' : null;
 
   const scopeControl = (
     <div className="pr-code-scope">
@@ -47,19 +41,19 @@ export default function PullRequestDiff({ diff, prNumber, repositoryId, commits,
         <Button type="button" variant={mode === 'commit' ? 'secondary' : 'ghost'} size="xs" aria-pressed={mode === 'commit'} disabled={commits.length === 0} onClick={() => setMode('commit')}>By commit</Button>
       </div>
       {mode === 'commit' && selectedCommit && (
-        <select className="pr-commit-select" aria-label="Commit" value={selectedCommit.oid} onChange={(event) => { setSelectedOid(event.target.value); setCommitError(null); }}>
+        <select className="pr-commit-select" aria-label="Commit" value={selectedCommit.oid} onChange={(event) => setSelectedOid(event.target.value)}>
           {commits.map((commit) => <option key={commit.oid} value={commit.oid}>{commit.oid.slice(0, 7)} · {commit.messageHeadline || '(no commit message)'}</option>)}
         </select>
       )}
     </div>
   );
 
-  const activeDiff = mode === 'all' ? diff : selectedCommit ? commitDiffs.get(selectedCommit.oid) ?? null : null;
+  const activeDiff = mode === 'all' ? diff : commitDiffQuery.data ?? null;
   if (mode === 'commit' && commitError) {
     return (
       <DiffLoadingShell scopeControl={scopeControl}>
         <p className="text-destructive">{commitError}</p>
-        <Button variant="outline" size="sm" onClick={() => setCommitError(null)}><IconRefresh /> Try again</Button>
+        <Button variant="outline" size="sm" onClick={() => void commitDiffQuery.refetch()}><IconRefresh /> Try again</Button>
       </DiffLoadingShell>
     );
   }
