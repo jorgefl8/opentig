@@ -52,6 +52,7 @@ export interface CommitInfo {
   oid: string;
   shortOid: string;
   subject: string;
+  body: string;
   author: string;
   email: string;
   date: string;

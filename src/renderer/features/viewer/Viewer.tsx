@@ -316,7 +316,7 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
     content = null;
     pierreContent = (
       <div className={commitSelection ? 'commit-diff-viewer' : 'standalone-diff-viewer'}>
-        {commitSelection && <CommitDiffHeader commit={commit} fallbackSubject={'subject' in commitSelection ? commitSelection.subject : ''} />}
+        {commitSelection && <CommitDiffHeader key={commitSelection.oid} commit={commit} fallbackSubject={'subject' in commitSelection ? commitSelection.subject : ''} />}
         <Suspense fallback={<ViewerLoading />}>
           <PierreDiffViewer
             kind="diff"
@@ -352,9 +352,27 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
 
 function CommitDiffHeader({ commit, fallbackSubject }: { commit: CommitInfo | undefined; fallbackSubject: string }) {
   const date = commit?.date ? new Date(commit.date) : null;
+  const [descriptionExpanded, setDescriptionExpanded] = useState(false);
+  const body = commit?.body ?? '';
+  const longDescription = body.length > 240 || body.split('\n').length > 3;
   return (
     <header className="commit-diff-header">
       <h2>{commit?.subject || fallbackSubject || '(no subject)'}</h2>
+      {body && (
+        <div className="commit-diff-description-wrap">
+          <p className={`commit-diff-description ${longDescription && !descriptionExpanded ? 'collapsed' : ''}`}>{body}</p>
+          {longDescription && (
+            <button
+              type="button"
+              className="commit-description-toggle"
+              aria-expanded={descriptionExpanded}
+              onClick={() => setDescriptionExpanded((current) => !current)}
+            >
+              {descriptionExpanded ? 'Show less' : 'Show full description'}
+            </button>
+          )}
+        </div>
+      )}
       <div className="commit-diff-meta">
         <code>{commit?.shortOid ?? 'commit'}</code>
         {commit?.author && <span>{commit.author}{commit.email ? ` <${commit.email}>` : ''}</span>}

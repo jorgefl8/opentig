@@ -2740,6 +2740,7 @@ function CommitRow({ repositoryId, upstream, commit, expanded, onExpandedChange,
       </div>
       {expanded && (
         <div className="commit-files">
+          {commit.body && <p className="commit-description">{commit.body}</p>}
           {filesError && <div className="commit-files-message error">{filesError}</div>}
           {!files && !filesError && <div className="commit-files-message"><IconLoader4 className="spinner" /> <ShimmeringText text="Loading files…" /></div>}
           {files && files.length === 0 && <div className="commit-files-message">This commit does not modify its own files (merge).</div>}
