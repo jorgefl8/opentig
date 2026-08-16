@@ -65,7 +65,7 @@ It is intentionally not an IDE, hosting service, or replacement for the Git CLI.
 ### Files and editing
 
 - Browse the repository as a virtualised tree with sticky parent folders and persisted expansion state.
-- Keep open files in a compact tab strip in the header: a single click previews a file and the next preview replaces it, while editing, double-clicking, or `Ctrl`-clicking pins the tab so it opens alongside the preview instead of replacing it. Tabs can be reordered through a lifted drag preview with animated live placement, closed with the middle mouse button, and show the parent folder when two files share a name.
+- Keep open files in a compact tab strip in the header: a single click previews a file and the next preview replaces it, while editing, double-clicking, or `Ctrl`-clicking pins the tab so it opens alongside the preview instead of replacing it. Tabs can be reordered through a lifted drag preview with animated live placement, closed with the middle mouse button, show the parent folder when two files share a name, and expose their full path and state in a styled tooltip.
 - Open text files in the built-in syntax-aware editor and save with external-change protection. Markdown, HTML, and SVG previews share accessible Preview/Code tabs with mouse and keyboard navigation.
 - Move freely between open files without losing work: unsaved changes stay in memory for the running application, closing a modified tab offers Save, Discard, or Cancel, and only the active file keeps an editor loaded.
 - Restore each worktree's open tabs, their order, and the file that was active when you return to it. Tab paths are remembered between sessions; unsaved text is never written to disk.
@@ -91,7 +91,7 @@ It is intentionally not an IDE, hosting service, or replacement for the Git CLI.
 
 ### History
 
-- Browse commit history incrementally instead of loading the entire repository at once.
+- Browse commit history incrementally instead of loading the entire repository at once; refreshes preserve loaded pages without duplicating commits.
 - Inspect commit subjects, full descriptions, authors, dates, refs, publication state, and changed files. Expanded history rows show the complete description; long descriptions in the commit viewer can be revealed without hiding the diff.
 - Copy full commit hashes.
 - Open complete commit diffs or the diff for one file, including renamed paths.

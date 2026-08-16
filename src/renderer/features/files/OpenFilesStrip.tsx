@@ -3,6 +3,7 @@ import { IconX } from '@tabler/icons-react';
 import { closestCenter, DndContext, DragOverlay, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { horizontalListSortingStrategy, SortableContext, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { edgeFades, type FileSession, horizontalWheelDelta, type RuntimeTab, tabLabels } from './open-files-model';
 
 const TAB_MOTION = { duration: 180, easing: 'cubic-bezier(0.2, 0, 0, 1)' } as const;
@@ -163,39 +164,41 @@ function SortableFileTab({ tab, label, active, preview, register, onActivate, on
   };
 
   return (
-    <div
-      ref={setRefs}
-      role="tab"
-      tabIndex={0}
-      title={description ? `${tab.path} (${description})` : tab.path}
-      aria-selected={active}
-      aria-current={active ? 'page' : undefined}
-      aria-keyshortcuts="Control+Shift+PageUp Control+Shift+PageDown"
-      aria-label={description ? `${tab.path}, ${description}` : tab.path}
-      className={tabClassName(tab, { active, preview, dragging: isDragging })}
-      style={style}
-      {...listeners}
-      onClick={() => onActivate(tab.path)}
-      onDoubleClick={() => onPin(tab.path)}
-      onAuxClick={(event) => {
-        if (event.button !== 1) return;
-        event.preventDefault();
-        onClose(tab.path);
-      }}
-      onKeyDown={(event) => {
-        if (event.key === 'Enter' || event.key === ' ') {
-          event.preventDefault();
-          onActivate(tab.path);
-          return;
-        }
-        if (event.key === 'Delete') {
-          event.preventDefault();
-          onClose(tab.path);
-        }
-      }}
-    >
-      <FileTabContents tab={tab} label={label} onClose={onClose} />
-    </div>
+    <Tooltip>
+      <TooltipTrigger render={
+        <div
+          ref={setRefs}
+          role="tab"
+          tabIndex={0}
+          aria-selected={active}
+          aria-current={active ? 'page' : undefined}
+          aria-keyshortcuts="Control+Shift+PageUp Control+Shift+PageDown"
+          aria-label={description ? `${tab.path}, ${description}` : tab.path}
+          className={tabClassName(tab, { active, preview, dragging: isDragging })}
+          style={style}
+          {...listeners}
+          onClick={() => onActivate(tab.path)}
+          onDoubleClick={() => onPin(tab.path)}
+          onAuxClick={(event) => {
+            if (event.button !== 1) return;
+            event.preventDefault();
+            onClose(tab.path);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              onActivate(tab.path);
+              return;
+            }
+            if (event.key === 'Delete') {
+              event.preventDefault();
+              onClose(tab.path);
+            }
+          }}
+        />
+      }><FileTabContents tab={tab} label={label} onClose={onClose} /></TooltipTrigger>
+      <TooltipContent>{description ? `${tab.path} · ${description}` : tab.path}</TooltipContent>
+    </Tooltip>
   );
 }
 
