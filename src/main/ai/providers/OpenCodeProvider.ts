@@ -5,6 +5,7 @@ import type { CliProcessRunner } from '../CliProcessRunner';
 import type { CliResolver } from '../CliResolver';
 import { parseJsonPayload } from '../CommitMessagePrompt';
 import { DEFAULT_MODEL, type AiProvider, type ProviderGenerateInput } from '../types';
+import { openCodeUsage } from '../usage';
 import { requireSuccess, stripAnsi } from './provider-utils';
 
 const DISABLED_TOOLS = { bash: false, edit: false, write: false, read: false, glob: false, grep: false, webfetch: false, websearch: false, task: false };
@@ -36,7 +37,7 @@ export class OpenCodeProvider implements AiProvider {
     const server = await createOpencodeServer({
       hostname: '127.0.0.1', port: 0, timeout: 15_000, signal: input.signal,
       config: { share: 'disabled', autoupdate: false, plugin: [], instructions: [], tools: DISABLED_TOOLS, permission: { edit: 'deny', bash: 'deny', webfetch: 'deny', external_directory: 'deny' } },
-    }).catch(() => { throw new AiOperationError({ code: 'AI_PROCESS_FAILED', operation: 'opencode-server', harness: this.id, message: 'No se pudo iniciar el servidor local de OpenCode.', retryable: true }); });
+    }).catch(() => { throw new AiOperationError({ code: 'AI_PROCESS_FAILED', operation: 'opencode-server', harness: this.id, message: 'Could not start the local OpenCode server.', retryable: true }); });
     this.servers.add(server);
     const client = createOpencodeClient({ baseUrl: server.url, directory: input.repositoryPath });
     let sessionId: string | null = null;
@@ -47,12 +48,23 @@ export class OpenCodeProvider implements AiProvider {
       const model = input.model === 'default' ? undefined : parseModel(input.model);
       const response = await client.session.prompt({
         path: { id: sessionId }, query: { directory: input.repositoryPath },
-        body: { parts: [{ type: 'text', text: input.prompt }], tools: DISABLED_TOOLS, ...(model ? { model } : {}) },
+        body: {
+          parts: [{ type: 'text', text: input.prompt }],
+          tools: DISABLED_TOOLS,
+          // The server API takes no schema, unlike the Codex and Claude CLIs, so
+          // the only way to hold this harness to the contract is the system
+          // prompt. Without it the model answers in whatever shape it likes.
+          system: `Reply with a single JSON object and nothing else. It must satisfy this JSON Schema:
+${JSON.stringify(input.schema)}`,
+          ...(model ? { model } : {}),
+        },
       });
       const infoError = response.data?.info && 'error' in response.data.info ? response.data.info.error : undefined;
       if (infoError) throw new Error('provider rejected request');
       const text = (response.data?.parts ?? []).filter((part): part is typeof part & { type: 'text'; text: string } => part.type === 'text' && 'text' in part && typeof part.text === 'string').map((part) => part.text).join('').trim();
-      return parseJsonPayload(text);
+      // Driving the local server means the accounting arrives already typed on
+      // the assistant message instead of as a stream to parse.
+      return { output: parseJsonPayload(text), usage: openCodeUsage(response.data?.info) };
     } catch (error) {
       if (input.signal?.aborted) throw new AiOperationError({ code: 'AI_CANCELLED', operation: 'opencode-generate', harness: this.id, message: 'Generation canceled.' });
       if (error instanceof AiOperationError) throw error;

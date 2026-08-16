@@ -1,0 +1,155 @@
+import type { AiHarnessId } from './contracts';
+
+export const MAX_AI_LOG_ENTRIES = 500;
+/** Appends past the cap are tolerated until compaction is worth a rewrite. */
+export const AI_LOG_COMPACTION_SLACK = 1.25;
+
+export type AiLogOperation = 'commit-message' | 'pull-request-draft';
+export type AiLogStatus = 'success' | 'failed' | 'cancelled';
+
+/** Every count is nullable: a harness may not report it, and a run that died before answering reports nothing at all. */
+export interface AiUsage {
+  inputTokens: number | null;
+  outputTokens: number | null;
+  reasoningTokens: number | null;
+  cacheReadTokens: number | null;
+  cacheWriteTokens: number | null;
+  costUsd: number | null;
+}
+
+export const EMPTY_AI_USAGE: AiUsage = {
+  inputTokens: null, outputTokens: null, reasoningTokens: null,
+  cacheReadTokens: null, cacheWriteTokens: null, costUsd: null,
+};
+
+/**
+ * One AI generation, recorded for diagnostics.
+ *
+ * Deliberately metadata only: the prompt carries the staged diff, which is
+ * repository source code, and must never be written outside the repository.
+ */
+export interface AiLogEntry {
+  id: string;
+  at: string;
+  operation: AiLogOperation;
+  harness: AiHarnessId;
+  model: string;
+  repositoryId: string;
+  status: AiLogStatus;
+  durationMs: number;
+  errorCode: string | null;
+  usage: AiUsage;
+  /** Commit-message runs only; null for other operations. */
+  stagedFileCount: number | null;
+  contextTruncated: boolean | null;
+  splitOffered: boolean | null;
+  splitGroups: number | null;
+  /**
+   * Why a split the model did offer was thrown away. The parser refuses a plan
+   * for several different reasons and they all look identical from outside, so
+   * without this the prompt cannot be tuned.
+   */
+  splitRejectedReason: string | null;
+  /** Why JustGit did not ask for a split at all. */
+  splitBlockedReason: string | null;
+}
+
+const OPERATIONS: AiLogOperation[] = ['commit-message', 'pull-request-draft'];
+const STATUSES: AiLogStatus[] = ['success', 'failed', 'cancelled'];
+const HARNESSES: AiHarnessId[] = ['codex', 'claude', 'opencode'];
+const MAX_TEXT = 200;
+
+export function normalizeAiUsage(value: unknown): AiUsage {
+  if (!value || typeof value !== 'object') return { ...EMPTY_AI_USAGE };
+  const input = value as Record<string, unknown>;
+  return {
+    inputTokens: count(input.inputTokens),
+    outputTokens: count(input.outputTokens),
+    reasoningTokens: count(input.reasoningTokens),
+    cacheReadTokens: count(input.cacheReadTokens),
+    cacheWriteTokens: count(input.cacheWriteTokens),
+    costUsd: cost(input.costUsd),
+  };
+}
+
+export function normalizeAiLogEntry(value: unknown): AiLogEntry | null {
+  if (!value || typeof value !== 'object') return null;
+  const input = value as Record<string, unknown>;
+  const id = text(input.id, 64);
+  const operation = OPERATIONS.find((item) => item === input.operation);
+  const harness = HARNESSES.find((item) => item === input.harness);
+  const status = STATUSES.find((item) => item === input.status);
+  if (!id || !operation || !harness || !status || !isIsoDate(input.at)) return null;
+  return {
+    id,
+    at: input.at,
+    operation,
+    harness,
+    model: text(input.model, 200) ?? 'default',
+    repositoryId: text(input.repositoryId, 64) ?? '',
+    status,
+    durationMs: count(input.durationMs) ?? 0,
+    errorCode: text(input.errorCode, 64),
+    usage: normalizeAiUsage(input.usage),
+    stagedFileCount: count(input.stagedFileCount),
+    contextTruncated: flag(input.contextTruncated),
+    splitOffered: flag(input.splitOffered),
+    splitGroups: count(input.splitGroups),
+    splitRejectedReason: text(input.splitRejectedReason, MAX_TEXT),
+    splitBlockedReason: text(input.splitBlockedReason, MAX_TEXT),
+  };
+}
+
+/** Parses a JSONL log, dropping unreadable lines rather than failing the read. */
+export function parseAiLogLines(raw: string): AiLogEntry[] {
+  const entries: AiLogEntry[] = [];
+  for (const line of raw.split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    try {
+      const entry = normalizeAiLogEntry(JSON.parse(line));
+      if (entry) entries.push(entry);
+    } catch { continue; }
+  }
+  return entries;
+}
+
+/**
+ * Newest first, capped. Entries arrive in file order, which is append order, so
+ * ties are broken by position: several runs can share a millisecond and sorting
+ * those by id would scramble them and let compaction keep the wrong ones.
+ */
+export function sortAiLogEntries(entries: readonly AiLogEntry[]): AiLogEntry[] {
+  return entries
+    .map((entry, index) => ({ entry, index }))
+    .sort((left, right) => right.entry.at.localeCompare(left.entry.at) || right.index - left.index)
+    .slice(0, MAX_AI_LOG_ENTRIES)
+    .map((item) => item.entry);
+}
+
+function count(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? Math.round(value) : null;
+}
+
+function cost(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
+}
+
+function flag(value: unknown): boolean | null {
+  return typeof value === 'boolean' ? value : null;
+}
+
+function text(value: unknown, maxLength: number): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim().slice(0, maxLength);
+  return trimmed.length > 0 && !hasControlCharacters(trimmed) ? trimmed : null;
+}
+
+function isIsoDate(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) && new Date(timestamp).toISOString() === value;
+}
+
+function hasControlCharacters(value: string): boolean {
+  return [...value].some((character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127);
+}

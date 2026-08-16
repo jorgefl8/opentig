@@ -3,6 +3,7 @@ import { AiOperationError } from '../../../shared/errors';
 import type { CliProcessRunner } from '../CliProcessRunner';
 import type { CliResolver } from '../CliResolver';
 import { DEFAULT_MODEL, type AiProvider, type ProviderGenerateInput } from '../types';
+import { claudeUsage } from '../usage';
 import { requireSuccess } from './provider-utils';
 
 const MODELS = [DEFAULT_MODEL, { id: 'sonnet', label: 'Sonnet' }, { id: 'opus', label: 'Opus' }, { id: 'haiku', label: 'Haiku' }];
@@ -37,7 +38,8 @@ export class ClaudeProvider implements AiProvider {
       const envelope = JSON.parse(result.stdout) as { structured_output?: unknown };
       const output = envelope.structured_output;
       if (!output || typeof output !== 'object' || Array.isArray(output)) throw new Error('missing structured output');
-      return output as Record<string, unknown>;
+      // The same envelope carries the token accounting and the dollar cost.
+      return { output: output as Record<string, unknown>, usage: claudeUsage(envelope) };
     } catch (error) {
       if (error instanceof AiOperationError) throw error;
       throw new AiOperationError({ code: 'AI_INVALID_OUTPUT', operation: 'claude-generate', harness: this.id, message: 'Claude Code returned an invalid response.', retryable: true });

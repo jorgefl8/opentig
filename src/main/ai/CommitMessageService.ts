@@ -1,7 +1,9 @@
-import type { AiHarnessId, AiHarnessStatus, GenerateCommitMessageInput, GeneratedCommitMessage } from '../../shared/contracts';
+import { EMPTY_AI_USAGE, type AiUsage } from '../../shared/ai-log';
+import type { AiHarnessId, AiHarnessStatus, CommitSplitProposal, GenerateCommitMessageInput, GeneratedCommitMessage } from '../../shared/contracts';
 import { AiOperationError } from '../../shared/errors';
 import type { GitRepositoryOperations } from '../git/GitRepositoryOperations';
-import { buildCommitMessagePrompt, COMMIT_MESSAGE_SCHEMA, parseGeneratedParts } from './CommitMessagePrompt';
+import { type AiLogRecorder, recordSafely } from '../persistence/AiLogStore';
+import { buildCommitMessagePrompt, COMMIT_MESSAGE_SCHEMA, type ParsedCommitPlan, parseCommitSplitProposal, parseGeneratedParts } from './CommitMessagePrompt';
 import type { AiProvider } from './types';
 
 export class CommitMessageService {
@@ -9,7 +11,11 @@ export class CommitMessageService {
   private readonly active = new Map<string, { repositoryId: string; controller: AbortController }>();
   private statusCache: { at: number; value: AiHarnessStatus[] } | null = null;
 
-  constructor(private readonly operations: GitRepositoryOperations, providers: AiProvider[]) {
+  constructor(
+    private readonly operations: GitRepositoryOperations,
+    providers: AiProvider[],
+    private readonly log?: AiLogRecorder,
+  ) {
     for (const provider of providers) this.providers.set(provider.id, provider);
   }
 
@@ -32,15 +38,70 @@ export class CommitMessageService {
 
     const controller = new AbortController();
     this.active.set(input.requestId, { repositoryId: input.repositoryId, controller });
+    const startedAt = Date.now();
+    let usage: AiUsage = { ...EMPTY_AI_USAGE };
+    let stagedFileCount: number | null = null;
+    let contextTruncated: boolean | null = null;
     try {
       const context = await this.operations.getCommitMessageContext(input.repositoryId);
-      const parts = parseGeneratedParts(await provider.generate({ repositoryPath: context.repositoryPath, prompt: buildCommitMessagePrompt(context), schema: COMMIT_MESSAGE_SCHEMA, model: input.model, signal: controller.signal }));
+      stagedFileCount = context.stagedPaths.length;
+      contextTruncated = context.truncated;
+      const generated = await provider.generate({ repositoryPath: context.repositoryPath, prompt: buildCommitMessagePrompt(context), schema: COMMIT_MESSAGE_SCHEMA, model: input.model, signal: controller.signal });
+      usage = generated.usage;
+      const parts = parseGeneratedParts(generated.output);
       const current = await this.operations.getCommitMessageContext(input.repositoryId);
       if (current.fingerprint !== context.fingerprint) throw new AiOperationError({ code: 'AI_STAGED_CHANGES_CHANGED', operation: 'ai-generate', harness: input.harness, message: 'Staged changes changed during generation.' });
-      return { ...parts, message: parts.body ? `${parts.subject}\n\n${parts.body}` : parts.subject, harness: input.harness, model: input.model, contextWasTruncated: context.truncated };
+      // A truncated patch no longer blocks the split: grouping needs the file
+      // list, which `splitBlockedReason` already guarantees is complete.
+      const parsed = context.splitBlockedReason ? null : parseCommitSplitProposal(generated.output, context.stagedPaths);
+      const proposal = parsed?.status === 'accepted' ? await this.withGroupFingerprints(input.repositoryId, parsed.plan) : null;
+      recordSafely(this.log, {
+        operation: 'commit-message', harness: input.harness, model: input.model, repositoryId: input.repositoryId,
+        status: 'success', durationMs: Date.now() - startedAt, errorCode: null, usage,
+        stagedFileCount, contextTruncated,
+        splitOffered: proposal !== null,
+        splitGroups: proposal ? proposal.commits.length : null,
+        // The one field that makes the prompt tunable: a plan the model did
+        // offer and JustGit refused, and exactly why.
+        splitRejectedReason: parsed?.status === 'rejected' ? parsed.reason : null,
+        splitBlockedReason: context.splitBlockedReason,
+      });
+      return {
+        ...parts,
+        message: parts.body ? `${parts.subject}\n\n${parts.body}` : parts.subject,
+        harness: input.harness,
+        model: input.model,
+        contextWasTruncated: context.truncated,
+        proposal,
+        splitBlockedReason: context.splitBlockedReason,
+      };
+    } catch (error) {
+      const code = error instanceof AiOperationError ? error.detail.code : 'AI_PROCESS_FAILED';
+      recordSafely(this.log, {
+        operation: 'commit-message', harness: input.harness, model: input.model, repositoryId: input.repositoryId,
+        // A cancellation is a decision, not a failure; merging the two would
+        // poison any reliability figure taken from this log.
+        status: code === 'AI_CANCELLED' ? 'cancelled' : 'failed',
+        durationMs: Date.now() - startedAt, errorCode: code, usage,
+        stagedFileCount, contextTruncated,
+        splitOffered: null, splitGroups: null, splitRejectedReason: null, splitBlockedReason: null,
+      });
+      throw error;
     } finally {
       this.active.delete(input.requestId);
     }
+  }
+
+  /**
+   * Gives every group its own content fingerprint so each commit of the plan
+   * keeps a staleness check of its own, instead of only the first one.
+   */
+  private async withGroupFingerprints(repositoryId: string, plan: ParsedCommitPlan): Promise<CommitSplitProposal> {
+    const commits = await Promise.all(plan.commits.map(async (commit) => ({
+      ...commit,
+      fingerprint: await this.operations.commitGroupFingerprint(repositoryId, commit.paths),
+    })));
+    return { rationale: plan.rationale, commits };
   }
 
   cancel(requestId: string): void {

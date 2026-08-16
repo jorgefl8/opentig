@@ -1,5 +1,6 @@
 import { useEffect, useState, type RefObject } from 'react';
-import { IconArrowUp, IconGitCommit, IconPlayerStop, IconSparkles } from '@tabler/icons-react';
+import { IconArrowUp, IconCheck, IconGitCommit, IconListDetails, IconPlayerStop, IconSparkles, IconX } from '@tabler/icons-react';
+import type { CommitSplitProposal } from '@shared/contracts';
 import { Button } from '@/components/ui/button';
 import { Kbd } from '@/components/ui/kbd';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
@@ -17,10 +18,19 @@ interface CommitComposerProps {
   busy: string | null;
   readOnly: boolean;
   canPush: boolean;
+  proposal: CommitSplitProposal | null;
+  preparedIndex: number | null;
+  /** Indices of plan groups already committed, kept so numbering stays stable. */
+  completed: ReadonlySet<number>;
+  collapsed: boolean;
   textareaRef: RefObject<HTMLTextAreaElement | null>;
   onMessage(message: string): void;
   onGenerate(): void;
   onCancelGenerate(): void;
+  onDismissProposal(): void;
+  onToggleCollapsed(): void;
+  onOpenPath(path: string): void;
+  onPrepare(index: number): void;
   onCommit(options: { push: boolean }): void;
 }
 
@@ -39,8 +49,8 @@ function useExitAnimation(open: boolean, duration: number): { mounted: boolean; 
 }
 
 export function CommitComposer({
-  open, stagedCount, message, generating, harness, busy, readOnly, canPush, textareaRef,
-  onMessage, onGenerate, onCancelGenerate, onCommit,
+  open, stagedCount, message, generating, harness, busy, readOnly, canPush, proposal, preparedIndex, completed, collapsed, textareaRef,
+  onMessage, onGenerate, onCancelGenerate, onDismissProposal, onToggleCollapsed, onOpenPath, onPrepare, onCommit,
 }: CommitComposerProps) {
   const panel = useExitAnimation(open, EXIT_MS);
   const hasMessage = message.trim().length > 0;
@@ -58,10 +68,74 @@ export function CommitComposer({
   return (
     <div className="commit-composer" data-state={panel.state} role="group" aria-label="Create commit">
       <div className="commit-composer-header">
-        <span className="commit-composer-title"><IconGitCommit aria-hidden="true" />Commit {fileLabel}</span>
-        <span className="commit-composer-hint"><Kbd>Ctrl</Kbd><Kbd>↵</Kbd></span>
+        <span className="commit-composer-title"><IconGitCommit aria-hidden="true" />{stagedCount > 0 ? `Commit ${fileLabel}` : 'Commit plan'}</span>
+        {stagedCount > 0 && <span className="commit-composer-hint"><Kbd>Ctrl</Kbd><Kbd>↵</Kbd></span>}
       </div>
-      <Textarea
+      {proposal && (
+        <section className="commit-plan" aria-label="Suggested commit plan">
+          <div className="commit-plan-heading">
+            <span>
+              <IconListDetails aria-hidden="true" />
+              <strong>{proposal.commits.length} commits suggested</strong>
+              {completed.size > 0 && <em className="commit-plan-progress">{completed.size} of {proposal.commits.length} done</em>}
+            </span>
+            <span className="commit-plan-heading-actions">
+              <Button type="button" variant="ghost" size="xs" aria-expanded={!collapsed} onClick={onToggleCollapsed}>
+                {collapsed ? 'Show plan' : 'Hide plan'}
+              </Button>
+              <Button type="button" variant="ghost" size="icon-xs" aria-label="Discard the commit plan and keep one commit" onClick={onDismissProposal}><IconX /></Button>
+            </span>
+          </div>
+          {!collapsed && (
+            <>
+              <p>{proposal.rationale}</p>
+              <div className="commit-plan-list">
+                {/* Numbering follows the original plan even after commits are
+                    made, so the list never renumbers itself under the user. */}
+                {proposal.commits.map((commit, index) => {
+                  const done = completed.has(index);
+                  const prepared = preparedIndex === index;
+                  return (
+                    <article
+                      key={`${commit.subject}:${commit.paths.join('\0')}`}
+                      className={[done ? 'done' : '', prepared ? 'prepared' : ''].filter(Boolean).join(' ')}
+                      aria-current={prepared ? 'step' : undefined}
+                    >
+                      <div>
+                        <strong>
+                          {done && <IconCheck className="commit-plan-done-icon" aria-hidden="true" />}
+                          {index + 1}. {commit.subject}
+                        </strong>
+                        <small>{commit.reason}</small>
+                        <span className="commit-plan-paths">
+                          {commit.paths.map((filePath) => (
+                            <button
+                              key={filePath}
+                              type="button"
+                              className="commit-plan-path"
+                              title={`Open the diff for ${filePath}`}
+                              onClick={() => onOpenPath(filePath)}
+                            >{filePath}</button>
+                          ))}
+                        </span>
+                      </div>
+                      <Button
+                        type="button"
+                        variant={prepared ? 'secondary' : 'outline'}
+                        size="xs"
+                        disabled={readOnly || Boolean(busy) || prepared || done}
+                        onClick={() => onPrepare(index)}
+                      >{done ? 'Committed' : prepared ? 'Prepared' : 'Prepare'}</Button>
+                    </article>
+                  );
+                })}
+              </div>
+              <small className="commit-plan-note">Preparing changes only the Git index, in the listed order. Review the diff before committing; JustGit never creates the commits automatically.</small>
+            </>
+          )}
+        </section>
+      )}
+      {stagedCount > 0 && <Textarea
         ref={textareaRef}
         className="commit-composer-input"
         value={message}
@@ -75,8 +149,8 @@ export function CommitComposer({
         placeholder="Write commit message or…"
         rows={3}
         disabled={readOnly}
-      />
-      <div className="commit-composer-actions">
+      />}
+      {stagedCount > 0 && <div className="commit-composer-actions">
         <Button
           variant="outline"
           className="commit-composer-generate"
@@ -102,7 +176,7 @@ export function CommitComposer({
             </Button>
           </div>
         )}
-      </div>
+      </div>}
     </div>
   );
 }

@@ -1,6 +1,8 @@
+import { EMPTY_AI_USAGE, type AiUsage } from '../../shared/ai-log';
 import type { AiHarnessId, GeneratePullRequestDraftInput, GeneratedPullRequestDraft } from '../../shared/contracts';
 import { AiOperationError } from '../../shared/errors';
 import type { GitRepositoryOperations } from '../git/GitRepositoryOperations';
+import { type AiLogRecorder, recordSafely } from '../persistence/AiLogStore';
 import { buildPullRequestPrompt, parsePullRequestDraft, PR_DRAFT_SCHEMA } from './PullRequestPrompt';
 import type { AiProvider } from './types';
 
@@ -8,7 +10,11 @@ export class PullRequestDraftService {
   private readonly providers = new Map<AiHarnessId, AiProvider>();
   private readonly active = new Map<string, { repositoryId: string; controller: AbortController }>();
 
-  constructor(private readonly operations: GitRepositoryOperations, providers: AiProvider[]) {
+  constructor(
+    private readonly operations: GitRepositoryOperations,
+    providers: AiProvider[],
+    private readonly log?: AiLogRecorder,
+  ) {
     for (const provider of providers) this.providers.set(provider.id, provider);
   }
 
@@ -24,17 +30,45 @@ export class PullRequestDraftService {
 
     const controller = new AbortController();
     this.active.set(input.requestId, { repositoryId: input.repositoryId, controller });
+    const startedAt = Date.now();
+    let usage: AiUsage = { ...EMPTY_AI_USAGE };
+    let contextTruncated: boolean | null = null;
     try {
       const context = await this.operations.getPullRequestDraftContext(input.repositoryId, input.base);
-      const parts = parsePullRequestDraft(await provider.generate({ repositoryPath: context.repositoryPath, prompt: buildPullRequestPrompt(context), schema: PR_DRAFT_SCHEMA, model: input.model, signal: controller.signal }));
+      contextTruncated = context.truncated;
+      const generated = await provider.generate({ repositoryPath: context.repositoryPath, prompt: buildPullRequestPrompt(context), schema: PR_DRAFT_SCHEMA, model: input.model, signal: controller.signal });
+      usage = generated.usage;
+      const parts = parsePullRequestDraft(generated.output);
       const current = await this.operations.getPullRequestDraftContext(input.repositoryId, input.base);
       if (current.fingerprint !== context.fingerprint) {
         throw new AiOperationError({ code: 'AI_STAGED_CHANGES_CHANGED', operation: 'ai-pr-draft', harness: input.harness, message: 'The branch changed during generation.' });
       }
+      this.record(input, 'success', null, usage, contextTruncated, Date.now() - startedAt);
       return { ...parts, harness: input.harness, model: input.model, contextWasTruncated: context.truncated };
+    } catch (error) {
+      const code = error instanceof AiOperationError ? error.detail.code : 'AI_PROCESS_FAILED';
+      this.record(input, code === 'AI_CANCELLED' ? 'cancelled' : 'failed', code, usage, contextTruncated, Date.now() - startedAt);
+      throw error;
     } finally {
       this.active.delete(input.requestId);
     }
+  }
+
+  private record(
+    input: GeneratePullRequestDraftInput,
+    status: 'success' | 'failed' | 'cancelled',
+    errorCode: string | null,
+    usage: AiUsage,
+    contextTruncated: boolean | null,
+    durationMs: number,
+  ): void {
+    recordSafely(this.log, {
+      operation: 'pull-request-draft', harness: input.harness, model: input.model, repositoryId: input.repositoryId,
+      status, durationMs, errorCode, usage,
+      // Split fields belong to commit messages; a draft has no equivalent.
+      stagedFileCount: null, contextTruncated,
+      splitOffered: null, splitGroups: null, splitRejectedReason: null, splitBlockedReason: null,
+    });
   }
 
   cancel(requestId: string): void {
