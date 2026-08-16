@@ -33,7 +33,8 @@ export function SearchView({ repositoryId, active, revision, onOpenFile, unsaved
   const [regex, setRegex] = useState(false);
   const [replaceOpen, setReplaceOpen] = useState(false);
   const [replacement, setReplacement] = useState('');
-  const [includeIgnored, setIncludeIgnored] = useState(false);
+  const [searchIgnored, setSearchIgnored] = useState(false);
+  const [replaceIgnored, setReplaceIgnored] = useState(false);
   const [replacing, setReplacing] = useState(false);
   const [replaceRevision, setReplaceRevision] = useState(0);
   const [result, setResult] = useState<SearchResult | null>(null);
@@ -44,7 +45,10 @@ export function SearchView({ repositoryId, active, revision, onOpenFile, unsaved
   const scrollRef = useRef<HTMLDivElement>(null);
   const requestToken = useRef(0);
 
-  const options = useMemo<SearchOptions>(() => ({ query, matchCase, wholeWord, regex }), [query, matchCase, wholeWord, regex]);
+  const options = useMemo<SearchOptions>(
+    () => ({ query, matchCase, wholeWord, regex, includeIgnored: searchIgnored }),
+    [query, matchCase, wholeWord, regex, searchIgnored],
+  );
   const highlighter = useMemo(() => buildSearchRegex(options), [options]);
 
   useEffect(() => { if (active) inputRef.current?.focus(); }, [active]);
@@ -105,7 +109,7 @@ export function SearchView({ repositoryId, active, revision, onOpenFile, unsaved
   });
 
   const ignoredFiles = result?.files.filter((file) => file.ignored).length ?? 0;
-  const replaceableFiles = result?.files.filter((file) => Boolean(file.revision) && (includeIgnored || !file.ignored)) ?? [];
+  const replaceableFiles = result?.files.filter((file) => Boolean(file.revision) && (replaceIgnored || !file.ignored)) ?? [];
 
   const replace = async (scope: 'all' | SearchFileResult | { file: SearchFileResult; match: SearchMatch }) => {
     if (!result || replacing) return;
@@ -172,6 +176,7 @@ export function SearchView({ repositoryId, active, revision, onOpenFile, unsaved
               <SearchToggle label="Match case" active={matchCase} onToggle={() => setMatchCase((value) => !value)}><IconLetterCase /></SearchToggle>
               <SearchToggle label="Match whole word" active={wholeWord} onToggle={() => setWholeWord((value) => !value)}><IconTextWrapDisabled /></SearchToggle>
               <SearchToggle label="Use regular expression" active={regex} onToggle={() => setRegex((value) => !value)}><IconRegex /></SearchToggle>
+              <SearchToggle label="Search Git-ignored files" active={searchIgnored} onToggle={() => setSearchIgnored((value) => !value)}><IconEyeOff /></SearchToggle>
             </span>
           </div>
         </div>
@@ -186,9 +191,11 @@ export function SearchView({ repositoryId, active, revision, onOpenFile, unsaved
           </div>
         )}
         {replaceOpen && ignoredFiles > 0 && (
-          <label className="search-include-ignored"><input type="checkbox" checked={includeIgnored} onChange={(event) => setIncludeIgnored(event.target.checked)} /> Include ignored files when replacing</label>
+          <label className="search-include-ignored"><input type="checkbox" checked={replaceIgnored} onChange={(event) => setReplaceIgnored(event.target.checked)} /> Include ignored files when replacing</label>
         )}
-        {query.trim() !== '' && (
+        {/* The results pane shows the spinner for the first search, so the summary
+            stays out of the way until there is a result to describe or refresh. */}
+        {query.trim() !== '' && (result !== null || !searching) && (
           <div className="search-summary">
             {searching ? <ShimmeringText text="Searching…" /> : error ? <span className="search-error">{error}</span> : result && (
               <>
@@ -226,7 +233,7 @@ export function SearchView({ repositoryId, active, revision, onOpenFile, unsaved
                       )}
                       <span className="search-file-count">{row.file.matches.length}</span>
                     </button>
-                    {replaceOpen && row.file.revision && (!row.file.ignored || includeIgnored) && (
+                    {replaceOpen && row.file.revision && (!row.file.ignored || replaceIgnored) && (
                       <Button variant="ghost" size="icon-xs" className="search-replace-action" disabled={replacing} aria-label={`Replace all in ${row.file.path}`} onClick={() => void replace(row.file)}><IconReplaceFilled /></Button>
                     )}
                   </div>
@@ -236,7 +243,7 @@ export function SearchView({ repositoryId, active, revision, onOpenFile, unsaved
                       <span className="search-match-line">{row.match.line}:{row.match.column ?? 1}</span>
                       <span className="search-match-text">{highlight(row.match.text, highlighter)}</span>
                     </button>
-                    {replaceOpen && row.file.revision && row.match.column && (!row.file.ignored || includeIgnored) && (
+                    {replaceOpen && row.file.revision && row.match.column && (!row.file.ignored || replaceIgnored) && (
                       <Button variant="ghost" size="icon-xs" className="search-replace-action" disabled={replacing} aria-label={`Replace match on line ${row.match.line}`} onClick={() => void replace({ file: row.file, match: row.match })}><IconReplace /></Button>
                     )}
                   </div>

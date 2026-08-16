@@ -3,6 +3,7 @@ import { GitOperationError } from '../../shared/errors';
 import {
   findSearchMatches,
   replaceSearchMatches,
+  SEARCH_MAX_FILES,
   SEARCH_MAX_MATCHES,
   SEARCH_MAX_MATCHES_PER_FILE,
   type SearchOptions,
@@ -40,23 +41,34 @@ export class SearchService {
     if (!options.query.trim()) return EMPTY;
 
     const args = [
-      'grep', '--no-color', '--full-name', '--untracked', '--no-exclude-standard', '-I', '-n', '-z',
+      'grep', '--no-color', '--full-name', '--untracked', '-I', '-n', '-z',
       '--max-count', String(SEARCH_MAX_MATCHES_PER_FILE),
       options.regex ? '-E' : '-F',
     ];
+    // Ignored files are searched only on request: node_modules and build output
+    // otherwise dominate every result set and slow the search down for nothing.
+    if (options.includeIgnored) args.push('--no-exclude-standard');
     if (!options.matchCase) args.push('-i');
     if (options.wholeWord) args.push('-w');
     args.push('-e', options.query, '--');
 
     let result: SearchResult;
     try {
+      // Untracked and ignored files are searched too, so a short query can match
+      // megabytes of minified dependency code. That output is cut at the limit
+      // and reported as truncated instead of failing the whole search.
       const output = await this.git.run(repository.path, args, {
         operation: 'search',
         readOnly: true,
         timeoutMs: 20_000,
         maxOutputBytes: 8 * 1024 * 1024,
+        truncateOverflow: true,
       });
-      result = parseSearchOutput(output.stdout.toString('utf8'));
+      let stdout = output.stdout.toString('utf8');
+      // The cut lands mid-line, and that partial row describes no real match.
+      if (output.truncated) stdout = stdout.slice(0, Math.max(0, stdout.lastIndexOf('\n')));
+      result = parseSearchOutput(stdout);
+      if (output.truncated) result.truncated = true;
     } catch (error) {
       // `git grep` exits with 1 when nothing matched, which is not a failure.
       if (error instanceof GitOperationError && error.detail.exitCode === 1) return EMPTY;
@@ -64,17 +76,29 @@ export class SearchService {
     }
 
     if (result.files.length === 0) return result;
-    const ignored = await this.ignoredPaths(repository.path, result.files.map((file) => file.path));
+    // Without `--no-exclude-standard` Git listed no ignored file, so asking which
+    // ones are ignored would be a second walk over the same paths for nothing.
+    const ignored = options.includeIgnored
+      ? await this.ignoredPaths(repository.path, result.files.map((file) => file.path))
+      : new Set<string>();
     const files: SearchResult['files'] = [];
     let totalMatches = 0;
     let ignoredMatches = 0;
     let truncated = result.truncated;
+    // Tracked files are what the user is looking for, so they claim the read
+    // budget first; dependency and build output only fill whatever is left.
+    const candidates = [
+      ...result.files.filter((file) => !ignored.has(file.path)),
+      ...result.files.filter((file) => ignored.has(file.path)),
+    ];
+    if (candidates.length > SEARCH_MAX_FILES) truncated = true;
+    const examined = candidates.slice(0, SEARCH_MAX_FILES);
     // Each matched file is re-read to locate exact columns and fingerprint its
     // contents. Reading them one after another turns a wide search into hundreds
     // of sequential round trips, so a bounded number are read at a time while the
     // results are still merged in `git grep` order.
-    outer: for (let index = 0; index < result.files.length; index += SEARCH_READ_CONCURRENCY) {
-      const batch = result.files.slice(index, index + SEARCH_READ_CONCURRENCY);
+    outer: for (let index = 0; index < examined.length; index += SEARCH_READ_CONCURRENCY) {
+      const batch = examined.slice(index, index + SEARCH_READ_CONCURRENCY);
       const loaded = await Promise.all(batch.map(async (candidate) => ({
         candidate,
         snapshot: await this.files.snapshot(repositoryId, candidate.path, REPLACE_FILE_LIMIT),

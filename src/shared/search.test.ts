@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildSearchRegex, findSearchMatches, replaceSearchMatches } from './search';
 
-const base = { matchCase: false, wholeWord: false, regex: false };
+const base = { matchCase: false, wholeWord: false, regex: false, includeIgnored: false };
 
 describe('buildSearchRegex', () => {
   it('treats a plain query as literal text', () => {

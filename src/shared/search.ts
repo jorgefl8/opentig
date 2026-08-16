@@ -4,6 +4,11 @@ export interface SearchOptions {
   matchCase: boolean;
   wholeWord: boolean;
   regex: boolean;
+  /**
+   * Search files excluded by .gitignore too. Off by default: dependency and
+   * build directories bury the repository's own code otherwise.
+   */
+  includeIgnored: boolean;
 }
 
 export interface SearchMatch {
@@ -37,6 +42,11 @@ export interface SearchResult {
 
 export const SEARCH_MAX_MATCHES = 2_000;
 export const SEARCH_MAX_MATCHES_PER_FILE = 50;
+/**
+ * Every listed file is re-read to resolve exact columns, so a query that hits
+ * thousands of dependency files would stall the app before showing anything.
+ */
+export const SEARCH_MAX_FILES = 300;
 export const SEARCH_MAX_QUERY_LENGTH = 512;
 export const SEARCH_MAX_REPLACEMENT_LENGTH = 1024 * 1024;
 export const SEARCH_REPLACE_MAX_FILES = 2_000;

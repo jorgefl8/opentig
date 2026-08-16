@@ -13,7 +13,7 @@ import { SearchService } from './SearchService';
 
 const execFileAsync = promisify(execFile);
 const directories: string[] = [];
-const options = { query: 'foo', matchCase: false, wholeWord: false, regex: false };
+const options = { query: 'foo', matchCase: false, wholeWord: false, regex: false, includeIgnored: false };
 
 afterEach(async () => Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true }))));
 
@@ -67,6 +67,21 @@ describe('SearchService replacement', () => {
     });
     expect(outcome).toEqual({ status: 'stale', paths: ['tracked.txt'] });
     expect(await readFile(path.join(fixture.work, file.path), 'utf8')).toBe('external foo\n');
+  });
+});
+
+describe('SearchService ignored files', () => {
+  it('skips ignored files unless they are asked for', async () => {
+    const fixture = await createFixture();
+
+    const excluded = await fixture.search.search(fixture.repositoryId, options);
+    expect(excluded.files.map((file) => file.path)).not.toContain('ignored.txt');
+    expect(excluded.ignoredMatches).toBe(0);
+
+    const included = await fixture.search.search(fixture.repositoryId, { ...options, includeIgnored: true });
+    const ignored = included.files.find((file) => file.path === 'ignored.txt')!;
+    expect(ignored.ignored).toBe(true);
+    expect(included.ignoredMatches).toBe(1);
   });
 });
 

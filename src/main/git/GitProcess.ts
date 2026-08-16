@@ -6,6 +6,8 @@ export interface GitOutput {
   stdout: Buffer;
   stderr: Buffer;
   exitCode: number;
+  /** Set when `truncateOverflow` cut the output short at the safety limit. */
+  truncated?: boolean;
 }
 
 interface RunOptions {
@@ -14,6 +16,12 @@ interface RunOptions {
   timeoutMs?: number;
   maxOutputBytes?: number;
   stdin?: string | Buffer;
+  /**
+   * Resolve with the output collected so far instead of failing when it reaches
+   * the safety limit. Only for commands whose output is a list the caller can
+   * legitimately present as incomplete, such as searching.
+   */
+  truncateOverflow?: boolean;
 }
 
 const activeChildren = new Set<number>();
@@ -140,6 +148,10 @@ export class GitProcess {
           return;
         }
         if (overLimit) {
+          if (options.truncateOverflow) {
+            resolve({ stdout: out, stderr: err, exitCode: 0, truncated: true });
+            return;
+          }
           reject(new GitOperationError({ code: 'OUTPUT_LIMIT', operation: options.operation, message: 'Git output exceeded the safety limit.' }));
           return;
         }
