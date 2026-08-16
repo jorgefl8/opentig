@@ -35,25 +35,6 @@
   isolation: isolate;
 }
 
-.file-viewer-tabs::before {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  z-index: 0;
-  width: calc((100% - 2px) / 2);
-  border-radius: 999px;
-  background: var(--background);
-  box-shadow: 0 1px 3px rgb(0 0 0 / 14%);
-  content: "";
-  pointer-events: none;
-  transition: transform .24s cubic-bezier(.22, 1, .36, 1);
-}
-
-.file-viewer-tabs:has(> button:nth-child(2)[aria-selected="true"])::before {
-  transform: translateX(calc(100% + 2px));
-}
-
 .file-viewer-tabs > button {
   position: relative;
   z-index: 1;
@@ -61,10 +42,6 @@
   min-width: 0;
   justify-content: center;
   text-align: center;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .file-viewer-tabs::before { transition: none; }
 }
 
 .source-file-toolbar {

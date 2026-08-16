@@ -65,8 +65,8 @@ It is intentionally not an IDE, hosting service, or replacement for the Git CLI.
 ### Files and editing
 
 - Browse the repository as a virtualised tree with sticky parent folders and persisted expansion state.
-- Keep open files in a compact tab strip in the header: a single click previews a file and the next preview replaces it, while editing, double-clicking, or `Ctrl`-clicking pins the tab so it opens alongside the preview instead of replacing it. Tabs can be reordered by dragging them, closed with the middle mouse button, and show the parent folder when two files share a name.
-- Open text files in the built-in syntax-aware editor and save with external-change protection.
+- Keep open files in a compact tab strip in the header: a single click previews a file and the next preview replaces it, while editing, double-clicking, or `Ctrl`-clicking pins the tab so it opens alongside the preview instead of replacing it. Tabs can be reordered through a lifted drag preview with animated live placement, closed with the middle mouse button, and show the parent folder when two files share a name.
+- Open text files in the built-in syntax-aware editor and save with external-change protection. Markdown, HTML, and SVG previews share accessible Preview/Code tabs with mouse and keyboard navigation.
 - Move freely between open files without losing work: unsaved changes stay in memory for the running application, closing a modified tab offers Save, Discard, or Cancel, and only the active file keeps an editor loaded.
 - Restore each worktree's open tabs, their order, and the file that was active when you return to it. Tab paths are remembered between sessions; unsaved text is never written to disk.
 - Keep a tab whose file was renamed or moved pointing at its new path. A tab with unsaved changes whose file disappears stays open and is marked unavailable so its text can still be recovered, while clean tabs simply close.
@@ -75,23 +75,24 @@ It is intentionally not an IDE, hosting service, or replacement for the Git CLI.
 - Preview and edit Markdown, HTML, and SVG files through compact Preview/Code controls.
 - Render GitHub-flavoured Markdown with syntax-highlighted code, copy buttons, alerts, footnotes, KaTeX, and Mermaid diagrams.
 - Preview raster images with fit, 1:1, keyboard/wheel zoom, dimensions, and file-size information.
-- Select multiple files and folders, then copy, cut, paste, move by drag and drop, rename, create, or delete them.
+- Select multiple files and folders, then copy, cut, paste, rename, create, or delete them. Drag and drop moves one or many selected entries with a lifted preview, a count badge, and clear folder or repository-root destination feedback.
 - Copy file paths or contents and reveal entries in Windows File Explorer.
 - Undo and redo supported file operations. Large or directory deletions fall back to the Windows Recycle Bin when an in-app snapshot is not practical.
 - Optionally include Git-ignored files in the tree.
 
 ### Quick open and repository search
 
-- Open files by fuzzy path search with `Ctrl+P`.
+- Open files by fuzzy path search with `Ctrl+P`, navigate the accessible result list with the arrow keys, and open the highlighted file with `Enter`.
 - Search file contents across the repository with case-sensitive, whole-word, and regular-expression modes.
 - Group matches by file, show line numbers, and open a result directly in the editor.
 - Replace one match, every match in a file, or all displayed repository matches; replacements are conflict-checked and undoable as one Files operation.
-- Identify results from Git-ignored files separately.
+- Skip Git-ignored files by default and search them only while the ignored-files toggle is on; results from them stay identified separately and folded.
+- Keep broad queries responsive: tracked files are listed first, very large result sets are cut short and marked as truncated instead of failing, and "replace all" stays disabled while a result is truncated.
 
 ### History
 
 - Browse commit history incrementally instead of loading the entire repository at once.
-- Inspect commit subjects, authors, dates, refs, publication state, and changed files.
+- Inspect commit subjects, full descriptions, authors, dates, refs, publication state, and changed files. Expanded history rows show the complete description; long descriptions in the commit viewer can be revealed without hiding the diff.
 - Copy full commit hashes.
 - Open complete commit diffs or the diff for one file, including renamed paths.
 - Undo only the latest commit when JustGit can prove it is still local and safe to undo.

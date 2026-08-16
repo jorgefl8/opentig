@@ -9,6 +9,13 @@
   background: var(--background);
 }
 
+.svg-file-panel {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
 .image-file-details {
   flex: none;
   padding: 0 7px;

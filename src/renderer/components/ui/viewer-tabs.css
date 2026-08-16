@@ -1,0 +1,27 @@
+.viewer-tabs-list {
+  position: relative;
+  isolation: isolate;
+}
+
+.viewer-tabs-indicator {
+  position: absolute;
+  top: var(--active-tab-top);
+  left: var(--active-tab-left);
+  z-index: 0;
+  width: var(--active-tab-width);
+  height: var(--active-tab-height);
+  border-radius: 999px;
+  background: var(--background);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 14%);
+  pointer-events: none;
+  transition: left .24s cubic-bezier(.22, 1, .36, 1), width .24s cubic-bezier(.22, 1, .36, 1);
+}
+
+.viewer-tabs-list > button {
+  position: relative;
+  z-index: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .viewer-tabs-indicator { transition: none; }
+}

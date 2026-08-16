@@ -1,5 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ComponentPropsWithoutRef } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
+import {
+  closestCenter, DndContext, DragOverlay, KeyboardSensor, PointerSensor, pointerWithin,
+  useDraggable, useDroppable, useSensor, useSensors, type CollisionDetection, type DragEndEvent, type DragOverEvent, type DragStartEvent,
+} from '@dnd-kit/core';
 import {
   IconChevronRight, IconClipboard, IconCopy, IconCut, IconEdit, IconExternalLink, IconFilePlus, IconFiles,
   IconArrowBackUp, IconArrowForwardUp, IconFileText, IconFolderPlus, IconTrash,
@@ -18,13 +22,15 @@ import { Dialog, DialogDescription, DialogPopup, DialogTitle } from '@/component
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { getVsCodeFileIconUrl, getVsCodeFolderIconUrl } from '@/lib/vscode-icons';
 import {
-  fileHistoryShortcut, filterIgnoredEntries, findEntry, isEditableTarget, mergeLoadedDirectories, parentDirectory, pathContains,
+  canMovePathsToDirectory, fileHistoryShortcut, filterIgnoredEntries, findEntry, isEditableTarget, mergeLoadedDirectories, parentDirectory, pathContains,
   persistableExpandedPaths, reconcileExpandedPaths, replaceLoadedDirectoryLevels,
 } from './file-tree';
 
-const FILE_DRAG_TYPE = 'application/x-justgit-file-path';
 const FILE_ROW_HEIGHT = 29;
 const TREE_PADDING_START = 6;
+const ROOT_DROP_ID = 'files-tree-root-drop';
+const HOVER_EXPAND_DELAY_MS = 550;
+const FILE_DROP_MOTION = { duration: 160, easing: 'cubic-bezier(0.2, 0, 0, 1)' } as const;
 // How many ancestor folders may stack at the top before the shallowest drop off.
 const STICKY_MAX_DEPTH = 6;
 
@@ -67,6 +73,23 @@ interface NameDialogState {
   mode: 'rename' | 'new-file' | 'new-folder';
   entry: FileTreeEntry;
 }
+
+interface FileDragData {
+  sourcePaths: string[];
+  entry: FileTreeEntry;
+}
+
+interface FileDragPreview {
+  entry: FileTreeEntry;
+  count: number;
+}
+
+const fileTreeCollisionDetection: CollisionDetection = (args) => {
+  const collisions = pointerWithin(args);
+  const candidates = collisions.length > 0 ? collisions : closestCenter(args);
+  const row = candidates.find((collision) => collision.id !== ROOT_DROP_ID);
+  return row ? [row] : candidates.slice(0, 1);
+};
 
 function flattenVisibleFiles(entries: FileTreeEntry[], expandedPaths: ReadonlySet<string>, depth = 0): VisibleFileRow[] {
   const rows: VisibleFileRow[] = [];
@@ -127,12 +150,20 @@ export function FilesView({
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(() => new Set(initialExpandedPaths));
   const [draggedPaths, setDraggedPaths] = useState<string[]>([]);
   const [dropTargetPath, setDropTargetPath] = useState<string | null>(null);
+  const [dragPreview, setDragPreview] = useState<FileDragPreview | null>(null);
+  const [reducedMotion, setReducedMotion] = useState(false);
   const [dialogState, setDialogState] = useState<NameDialogState | null>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [loadedDirectories, setLoadedDirectories] = useState<Map<string, FileTreeEntry[]>>(new Map());
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor),
+  );
   const loadedDirectoriesRef = useRef(loadedDirectories);
   const loadingDirectoriesRef = useRef<Set<string>>(new Set());
   const directoryRefreshTokenRef = useRef(0);
+  const hoverExpansionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hoverExpansionPathRef = useRef<string | null>(null);
   const lastPersistedPathsRef = useRef(initialExpandedPaths.join('\0'));
   const loadedDirectoryKeys = useMemo(() => new Set(loadedDirectories.keys()), [loadedDirectories]);
   const mergedFiles = useMemo(
@@ -145,6 +176,18 @@ export function FilesView({
   );
 
   useEffect(() => { loadedDirectoriesRef.current = loadedDirectories; }, [loadedDirectories]);
+
+  useEffect(() => {
+    const query = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const update = () => setReducedMotion(query.matches);
+    update();
+    query.addEventListener('change', update);
+    return () => query.removeEventListener('change', update);
+  }, []);
+
+  useEffect(() => () => {
+    if (hoverExpansionTimerRef.current) clearTimeout(hoverExpansionTimerRef.current);
+  }, []);
 
   // The compact root snapshot cannot describe changes below an expanded ignored
   // folder. Re-read every materialized level, but keep the previous children on
@@ -213,6 +256,10 @@ export function FilesView({
     setDialogState(null);
     setDraggedPaths([]);
     setDropTargetPath(null);
+    setDragPreview(null);
+    if (hoverExpansionTimerRef.current) clearTimeout(hoverExpansionTimerRef.current);
+    hoverExpansionTimerRef.current = null;
+    hoverExpansionPathRef.current = null;
   }, [active]);
 
   // Prune the selection, anchor, and lead when files disappear (deletes, moves, refresh).
@@ -484,34 +531,76 @@ export function FilesView({
     });
   };
 
-  const beginDrag = (entry: FileTreeEntry, dataTransfer: DataTransfer) => {
-    const inSelection = selectedPaths.has(entry.path) && selectedPaths.size > 0;
-    const paths = inSelection ? [...selectedPaths] : [entry.path];
-    if (!inSelection) selectOnly(entry.path);
-    dataTransfer.effectAllowed = 'move';
-    dataTransfer.setData(FILE_DRAG_TYPE, paths.join('\n'));
-    setDraggedPaths(paths);
+  const clearHoverExpansion = () => {
+    if (hoverExpansionTimerRef.current) clearTimeout(hoverExpansionTimerRef.current);
+    hoverExpansionTimerRef.current = null;
+    hoverExpansionPathRef.current = null;
   };
   const endDrag = () => {
+    clearHoverExpansion();
     setDraggedPaths([]);
     setDropTargetPath(null);
+    setDragPreview(null);
   };
-  const readDraggedPaths = (dataTransfer: DataTransfer): string[] => {
-    const data = dataTransfer.getData(FILE_DRAG_TYPE);
-    return data ? data.split('\n').filter(Boolean) : draggedPaths;
+  const dragData = (event: DragStartEvent | DragOverEvent | DragEndEvent): FileDragData | null => {
+    const data = event.active.data.current as Partial<FileDragData> | undefined;
+    return data?.entry && Array.isArray(data.sourcePaths) ? { entry: data.entry, sourcePaths: data.sourcePaths } : null;
   };
-  // The empty area below the rows drops onto the worktree root, unless everything
-  // dragged already lives there.
-  const rootDropAllowed = draggedPaths.length > 0 && draggedPaths.some((path) => parentDirectory(path) !== '');
-
+  const handleDragStart = (event: DragStartEvent) => {
+    const data = dragData(event);
+    if (!data) return;
+    if (!selectedPaths.has(data.entry.path)) selectOnly(data.entry.path);
+    setDraggedPaths(data.sourcePaths);
+    setDragPreview({ entry: data.entry, count: data.sourcePaths.length });
+  };
+  const handleDragOver = (event: DragOverEvent) => {
+    const data = dragData(event);
+    const targetDirectory = event.over?.data.current?.targetDirectory;
+    if (!data || typeof targetDirectory !== 'string' || !canMovePathsToDirectory(data.sourcePaths, targetDirectory)) {
+      setDropTargetPath(null);
+      clearHoverExpansion();
+      return;
+    }
+    setDropTargetPath(targetDirectory);
+    const expandPath = event.over?.data.current?.expandPath;
+    if (typeof expandPath !== 'string' || expandedPaths.has(expandPath)) {
+      clearHoverExpansion();
+      return;
+    }
+    if (hoverExpansionPathRef.current === expandPath) return;
+    clearHoverExpansion();
+    hoverExpansionPathRef.current = expandPath;
+    hoverExpansionTimerRef.current = setTimeout(() => {
+      toggleExpanded(expandPath, true);
+      hoverExpansionTimerRef.current = null;
+      hoverExpansionPathRef.current = null;
+    }, HOVER_EXPAND_DELAY_MS);
+  };
+  const handleDragEnd = (event: DragEndEvent) => {
+    const data = dragData(event);
+    const targetDirectory = event.over?.data.current?.targetDirectory;
+    endDrag();
+    if (data && typeof targetDirectory === 'string' && canMovePathsToDirectory(data.sourcePaths, targetDirectory)) {
+      void movePaths(data.sourcePaths, targetDirectory);
+    }
+  };
   return (
-    <div
-      ref={scrollRef}
-      className="files-view virtual-scroll"
-      hidden={!active}
-      onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
+    <DndContext
+      sensors={sensors}
+      collisionDetection={fileTreeCollisionDetection}
+      autoScroll={{ enabled: true, threshold: { x: 0.1, y: 0.16 }, acceleration: 12 }}
+      onDragStart={handleDragStart}
+      onDragOver={handleDragOver}
+      onDragCancel={endDrag}
+      onDragEnd={handleDragEnd}
     >
-      {stickyScroll.headers.length > 0 && (
+      <div
+        ref={scrollRef}
+        className="files-view virtual-scroll"
+        hidden={!active}
+        onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
+      >
+        {stickyScroll.headers.length > 0 && (
         <div className="files-sticky" aria-hidden="true">
           {stickyScroll.headers.map((row, index) => {
             const isDeepest = index === stickyScroll.headers.length - 1;
@@ -534,9 +623,9 @@ export function FilesView({
             );
           })}
         </div>
-      )}
-      {visibleFiles.length ? (
-        <div
+        )}
+        {visibleFiles.length ? (
+        <FileTreeDropSurface
           role="tree"
           aria-label="Files"
           className={`files-tree ${dropTargetPath === '' && draggedPaths.length > 0 ? 'root-drop-target' : ''}`}
@@ -549,24 +638,6 @@ export function FilesView({
             setAnchorPath(null);
             setLeadPath(null);
             event.currentTarget.focus();
-          }}
-          onDragOver={(event) => {
-            if (!rootDropAllowed || (event.target as HTMLElement).closest('.file-tree-row')) return;
-            event.preventDefault();
-            event.dataTransfer.dropEffect = 'move';
-            setDropTargetPath('');
-          }}
-          onDragLeave={(event) => {
-            if (draggedPaths.length === 0) return;
-            const next = event.relatedTarget as Node | null;
-            if (!next || !event.currentTarget.contains(next)) setDropTargetPath(null);
-          }}
-          onDrop={(event) => {
-            if (!rootDropAllowed || (event.target as HTMLElement).closest('.file-tree-row')) return;
-            event.preventDefault();
-            const sourcePaths = readDraggedPaths(event.dataTransfer);
-            endDrag();
-            if (sourcePaths.length) void movePaths(sourcePaths, '');
           }}
         >
           {virtualizer.getVirtualItems().map((virtualRow) => {
@@ -600,7 +671,6 @@ export function FilesView({
                   onRowClick={handleRowClick}
                   onRowDoubleClick={handleRowDoubleClick}
                   onRowContextMenu={handleRowContextMenu}
-                  onToggleExpanded={toggleExpanded}
                   onCopy={(target) => void onCopyEntries(contextTargets(target))}
                   onCut={(target) => void onCutEntries(contextTargets(target))}
                   onPasteInto={(target) => void onPaste(targetDirectoryFor(target))}
@@ -611,18 +681,33 @@ export function FilesView({
                   onNewFolder={(target) => setDialogState({ mode: 'new-folder', entry: target })}
                   onReveal={onReveal}
                   onDelete={(target) => void onDeleteEntries(contextTargets(target))}
-                  onDragStart={beginDrag}
-                  onDragEnd={endDrag}
-                  onDropTarget={setDropTargetPath}
-                  onDropPaths={(sourcePaths, targetDirectory) => void movePaths(sourcePaths, targetDirectory)}
-                  readDraggedPaths={readDraggedPaths}
+                  dragPaths={selectedPaths.has(entry.path) && selectedPaths.size > 0 ? [...selectedPaths] : [entry.path]}
                 />
               </div>
             );
           })}
-        </div>
-      ) : <p className="empty-list">No files.</p>}
-      <NameDialog state={dialogState} onClose={() => setDialogState(null)} onRename={onRename} onCreate={onCreate} />
+        </FileTreeDropSurface>
+        ) : <p className="empty-list">No files.</p>}
+        <NameDialog state={dialogState} onClose={() => setDialogState(null)} onRename={onRename} onCreate={onCreate} />
+      </div>
+      <DragOverlay dropAnimation={reducedMotion ? null : FILE_DROP_MOTION}>
+        {dragPreview && <FileDragOverlay preview={dragPreview} />}
+      </DragOverlay>
+    </DndContext>
+  );
+}
+
+function FileTreeDropSurface(props: ComponentPropsWithoutRef<'div'>) {
+  const { setNodeRef } = useDroppable({ id: ROOT_DROP_ID, data: { targetDirectory: '', expandPath: null } });
+  return <div ref={setNodeRef} {...props} />;
+}
+
+function FileDragOverlay({ preview }: { preview: FileDragPreview }) {
+  return (
+    <div className="file-drag-overlay">
+      <VsCodeTreeIcon path={preview.entry.path} type={preview.entry.type} expanded={false} />
+      <span>{preview.entry.name}</span>
+      {preview.count > 1 && <strong>{preview.count}</strong>}
     </div>
   );
 }
@@ -652,7 +737,6 @@ interface FileRowProps {
   onRowClick(entry: FileTreeEntry, mods: { ctrl: boolean; shift: boolean }): void;
   onRowDoubleClick(entry: FileTreeEntry): void;
   onRowContextMenu(entry: FileTreeEntry): void;
-  onToggleExpanded(path: string, forceOpen?: boolean): void;
   onCopy(entry: FileTreeEntry): void;
   onCut(entry: FileTreeEntry): void;
   onPasteInto(entry: FileTreeEntry): void;
@@ -663,11 +747,7 @@ interface FileRowProps {
   onNewFolder(entry: FileTreeEntry): void;
   onReveal(entry: FileTreeEntry): Promise<void>;
   onDelete(entry: FileTreeEntry): void;
-  onDragStart(entry: FileTreeEntry, dataTransfer: DataTransfer): void;
-  onDragEnd(): void;
-  onDropTarget(path: string | null): void;
-  onDropPaths(sourcePaths: string[], targetDirectory: string): void;
-  readDraggedPaths(dataTransfer: DataTransfer): string[];
+  dragPaths: string[];
 }
 
 function FileRow({
@@ -688,7 +768,6 @@ function FileRow({
   onRowClick,
   onRowDoubleClick,
   onRowContextMenu,
-  onToggleExpanded,
   onCopy,
   onCut,
   onPasteInto,
@@ -699,18 +778,22 @@ function FileRow({
   onNewFolder,
   onReveal,
   onDelete,
-  onDragStart,
-  onDragEnd,
-  onDropTarget,
-  onDropPaths,
-  readDraggedPaths,
+  dragPaths,
 }: FileRowProps) {
   const targetDirectory = targetDirectoryFor(entry);
-  // A drop is allowed only if nothing dragged contains the destination and at
-  // least one dragged item would actually change folders.
-  const dropAllowed = draggedPaths.length > 0
-    && !draggedPaths.some((path) => pathContains(path, targetDirectory))
-    && draggedPaths.some((path) => parentDirectory(path) !== targetDirectory);
+  const { attributes, listeners, setNodeRef: setDraggableRef, isDragging } = useDraggable({
+    id: `file-drag:${entry.path}`,
+    data: { sourcePaths: dragPaths, entry } satisfies FileDragData,
+    disabled: readOnly,
+  });
+  const { setNodeRef: setDroppableRef } = useDroppable({
+    id: `file-drop:${entry.path}`,
+    data: { targetDirectory, expandPath: entry.type === 'directory' ? entry.path : null },
+  });
+  const setRowRef = (element: HTMLButtonElement | null) => {
+    setDraggableRef(element);
+    setDroppableRef(element);
+  };
   const isDropTarget = draggedPaths.length > 0 && entry.type === 'directory' && dropTargetPath === entry.path;
   const inDropRegion = draggedPaths.length > 0
     && dropTargetPath !== null
@@ -720,6 +803,8 @@ function FileRow({
   const row = (
     <button
       type="button"
+      ref={setRowRef}
+      {...attributes}
       role="treeitem"
       aria-selected={selected}
       aria-current={active ? 'true' : undefined}
@@ -727,54 +812,16 @@ function FileRow({
       className={[
         'file-tree-row',
         entry.ignored ? 'ignored-file' : '',
-        draggedPaths.includes(entry.path) ? 'dragging' : '',
+        draggedPaths.includes(entry.path) || isDragging ? 'dragging' : '',
         isDropTarget ? 'drop-target' : '',
         inDropRegion ? 'drop-target-region' : '',
       ].filter(Boolean).join(' ')}
       style={{ paddingLeft: 12 + depth * 14 }}
-      draggable={!readOnly}
+      {...listeners}
       onClick={(event) => onRowClick(entry, { ctrl: event.ctrlKey || event.metaKey, shift: event.shiftKey })}
       onDoubleClick={() => onRowDoubleClick(entry)}
       onFocus={() => onFocus(entry.path)}
       onContextMenu={() => onRowContextMenu(entry)}
-      onDragStart={(event) => {
-        if (readOnly) {
-          event.preventDefault();
-          return;
-        }
-        onDragStart(entry, event.dataTransfer);
-      }}
-      onDragEnd={() => onDragEnd()}
-      onDragEnter={(event) => {
-        if (!dropAllowed) {
-          // Hovering an invalid target (itself, its own folder…) drops the
-          // previous highlight instead of leaving it stale.
-          if (draggedPaths.length > 0) onDropTarget(null);
-          return;
-        }
-        event.preventDefault();
-        event.stopPropagation();
-        onDropTarget(targetDirectory);
-        if (entry.type === 'directory') onToggleExpanded(entry.path, true);
-      }}
-      onDragOver={(event) => {
-        if (!dropAllowed) {
-          if (draggedPaths.length > 0) onDropTarget(null);
-          return;
-        }
-        event.preventDefault();
-        event.stopPropagation();
-        event.dataTransfer.dropEffect = 'move';
-        onDropTarget(targetDirectory);
-      }}
-      onDrop={(event) => {
-        if (!dropAllowed) return;
-        event.preventDefault();
-        event.stopPropagation();
-        const sourcePaths = readDraggedPaths(event.dataTransfer);
-        onDragEnd();
-        if (sourcePaths.length) onDropPaths(sourcePaths, targetDirectory);
-      }}
     >
       {entry.type === 'directory'
         ? <IconChevronRight className={`folder-chevron ${expanded ? 'open' : ''} ${entry.children.length === 0 && !pendingChildren ? 'empty' : ''}`} />
@@ -902,5 +949,5 @@ function NameDialog({
 
 function VsCodeTreeIcon({ path, type, expanded = false }: { path: string; type: 'file' | 'directory'; expanded?: boolean }) {
   const src = type === 'file' ? getVsCodeFileIconUrl(path) : getVsCodeFolderIconUrl(path, expanded);
-  return <img className="vscode-tree-icon" src={src} alt="" aria-hidden="true" draggable={false} />;
+  return <img className="vscode-tree-icon" src={src} alt="" aria-hidden="true" />;
 }

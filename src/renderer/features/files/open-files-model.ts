@@ -326,17 +326,6 @@ export function edgeFades(metrics: StripMetrics): { start: boolean; end: boolean
   return { start: metrics.scrollLeft > 1, end: metrics.scrollLeft < maxScroll - 1 };
 }
 
-export interface TabRect { left: number; width: number }
-
-/** Index a tab dropped at `pointerX` should take, given the measured tabs. */
-export function dropIndex(rects: readonly TabRect[], pointerX: number): number {
-  for (let index = 0; index < rects.length; index += 1) {
-    const rect = rects[index]!;
-    if (pointerX < rect.left + rect.width / 2) return index;
-  }
-  return rects.length === 0 ? 0 : rects.length - 1;
-}
-
 // --- internals ------------------------------------------------------------
 
 function activate(session: FileSession, path: string): FileSession {

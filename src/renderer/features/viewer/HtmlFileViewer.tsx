@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import type { FileResult, ThemePreference, WriteFileResult } from '@shared/contracts';
+import { ViewerTabs, ViewerTabsList, ViewerTabsPanel } from '@/components/ui/viewer-tabs';
 import { FileSaveControls, SourceCodeEditor } from './EditableFileViewer';
 import { buildHtmlPreviewDocument } from './html-preview-document';
 import '@/features/markdown/markdown.css';
@@ -73,36 +74,30 @@ export function HtmlFileViewer({ file, initialContent, themeType, wrapLines, rea
     return () => window.removeEventListener('keydown', handleSaveShortcut);
   }, [save]);
 
-  const handleTabKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
-    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
-    event.preventDefault();
-    setTab((current) => current === 'preview' ? 'code' : 'preview');
-    const tabs = event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]');
-    const nextIndex = event.currentTarget === tabs?.[0] ? 1 : 0;
-    tabs?.[nextIndex]?.focus();
-  };
-
   return (
-    <div className="markdown-viewer html-file-viewer">
+    <ViewerTabs value={tab} onValueChange={(value) => setTab(value as typeof tab)} className="markdown-viewer html-file-viewer">
       <div className="file-viewer-pill markdown-viewer-toolbar">
-        <div role="tablist" aria-label="HTML view" className="file-viewer-tabs markdown-viewer-tabs">
-          <button type="button" role="tab" aria-selected={tab === 'preview'} onKeyDown={handleTabKeyDown} onClick={() => setTab('preview')}>Preview</button>
-          <button type="button" role="tab" aria-selected={tab === 'code'} onKeyDown={handleTabKeyDown} onClick={() => setTab('code')}>
-            Code {dirty && <span className="markdown-unsaved-dot" aria-label="Unsaved changes" />}
-          </button>
-        </div>
+        <ViewerTabsList
+          label="HTML view"
+          className="file-viewer-tabs markdown-viewer-tabs"
+          items={[
+            { value: 'preview', label: 'Preview' },
+            { value: 'code', label: <>Code {dirty && <span className="markdown-unsaved-dot" aria-label="Unsaved changes" />}</> },
+          ]}
+        />
         <FileSaveControls dirty={dirty} saving={saving} readOnly={readOnly} onSave={() => void save()} />
       </div>
-      {tab === 'preview' ? (
-        <iframe
+      <ViewerTabsPanel
+        value="preview"
+        render={<iframe
           className="html-preview-frame"
           title={`Preview of ${file.path}`}
           srcDoc={previewDocument}
           sandbox=""
           referrerPolicy="no-referrer"
-        />
-      ) : (
-        <div className="markdown-code-view" data-theme={themeType}>
+        />}
+      />
+      <ViewerTabsPanel value="code" className="markdown-code-view" data-theme={themeType}>
           <SourceCodeEditor
             path={file.path}
             cacheKey={`${file.path}:${file.mtimeMs}`}
@@ -116,8 +111,7 @@ export function HtmlFileViewer({ file, initialContent, themeType, wrapLines, rea
               onDraftChange(value);
             }}
           />
-        </div>
-      )}
-    </div>
+      </ViewerTabsPanel>
+    </ViewerTabs>
   );
 }

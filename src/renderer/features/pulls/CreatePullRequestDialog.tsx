@@ -10,6 +10,7 @@ import { Dialog, DialogDescription, DialogPopup, DialogTitle } from '@/component
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { Textarea } from '@/components/ui/textarea';
+import { ViewerTabs, ViewerTabsList, ViewerTabsPanel } from '@/components/ui/viewer-tabs';
 import { renderMarkdown } from '@/features/markdown/render-markdown';
 import { ghDetail, ghErrorTitle, openOnGitHub } from './gh-utils';
 import '@/features/markdown/markdown.css';
@@ -170,15 +171,16 @@ export function CreatePullRequestDialog(props: CreatePullRequestDialogProps) {
               onChange={(event) => setTitle(event.target.value)}
             />
           </div>
-          <div className="create-pr-field create-pr-body-field">
+          <ViewerTabs value={bodyTab} onValueChange={(value) => setBodyTab(value as typeof bodyTab)} className="create-pr-field create-pr-body-field">
             <div className="create-pr-body-header">
               <label htmlFor="create-pr-body">Description</label>
-              <div role="tablist" aria-label="Description view" className="markdown-viewer-tabs">
-                <button type="button" role="tab" aria-selected={bodyTab === 'edit'} onClick={() => setBodyTab('edit')}>Edit</button>
-                <button type="button" role="tab" aria-selected={bodyTab === 'preview'} onClick={() => setBodyTab('preview')}>Preview</button>
-              </div>
+              <ViewerTabsList
+                label="Description view"
+                className="markdown-viewer-tabs"
+                items={[{ value: 'edit', label: 'Edit' }, { value: 'preview', label: 'Preview' }]}
+              />
             </div>
-            {bodyTab === 'edit' ? (
+            <ViewerTabsPanel value="edit" className="create-pr-body-panel">
               <Textarea
                 id="create-pr-body"
                 value={body}
@@ -187,10 +189,9 @@ export function CreatePullRequestDialog(props: CreatePullRequestDialogProps) {
                 disabled={blocked || creating || Boolean(generating)}
                 onChange={(event) => setBody(event.target.value)}
               />
-            ) : (
-              <div className="create-pr-preview markdown-prose" dangerouslySetInnerHTML={{ __html: previewHtml }} />
-            )}
-          </div>
+            </ViewerTabsPanel>
+            <ViewerTabsPanel value="preview" className="create-pr-preview markdown-prose" dangerouslySetInnerHTML={{ __html: previewHtml }} />
+          </ViewerTabs>
           <Button
             variant="outline"
             className="create-pr-generate commit-generate"

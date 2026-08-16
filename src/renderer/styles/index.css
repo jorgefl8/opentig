@@ -234,7 +234,7 @@
   .open-file-tab {
     position: relative; display: flex; min-width: 0; max-width: 190px; flex: none; align-items: center; gap: 5px;
     border-radius: var(--radius-md); padding: 4px 4px 4px 9px; color: var(--muted-foreground);
-    font-size: 11px; font-weight: 600; cursor: pointer; -webkit-app-region: no-drag;
+    font-size: 11px; font-weight: 600; cursor: grab; transition: background-color var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out), opacity var(--motion-fast) var(--ease-out), box-shadow var(--motion-fast) var(--ease-out), scale var(--motion-fast) var(--ease-out); -webkit-app-region: no-drag;
   }
   .open-file-tab:hover { background: var(--row-hover); }
   .open-file-tab:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
@@ -245,9 +245,19 @@
   }
   .open-file-tab.preview .open-file-tab-name { font-style: italic; font-weight: 500; }
   .open-file-tab.missing .open-file-tab-name { color: var(--destructive); text-decoration: line-through; }
-  .open-file-tab.dragging { opacity: .5; }
-  .open-file-tab.drop-target { box-shadow: inset 2px 0 0 var(--primary); }
-  .open-file-tab-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .open-files-strip.sorting .open-file-tab { cursor: grabbing; }
+  .open-file-tab.dragging { opacity: .4; }
+  .open-file-tab.drag-overlay {
+    border: 1px solid color-mix(in oklch, var(--primary) 28%, var(--border));
+    background: color-mix(in oklch, var(--background) 94%, var(--row-selected));
+    color: var(--foreground); box-shadow: 0 8px 22px rgb(0 0 0 / 28%), 0 2px 6px rgb(0 0 0 / 22%);
+    cursor: grabbing; opacity: .98; scale: 1.02;
+  }
+  .open-file-tab.drag-overlay .open-file-tab-close { opacity: .65; }
+  /* Italic glyphs lean past the advance width their layout box is measured
+     from, so a preview tab's last character was being clipped by the overflow
+     even though the text technically fit. The padding gives that lean room. */
+  .open-file-tab-name { overflow: hidden; padding-right: 2px; text-overflow: ellipsis; white-space: nowrap; }
   .open-file-tab-suffix { flex: none; color: var(--muted-foreground); font-size: 10px; font-weight: 450; opacity: .75; }
   .open-file-tab-close {
     display: flex; flex: none; align-items: center; justify-content: center; width: 16px; height: 16px;
@@ -268,7 +278,8 @@
   .open-file-tab.dirty .open-file-tab-close:hover .open-file-tab-close-icon,
   .open-file-tab.dirty .open-file-tab-close:focus-visible .open-file-tab-close-icon { opacity: 1; }
   @media (prefers-reduced-motion: reduce) {
-    .open-file-tab, .open-file-tab-close { transition: none; }
+    .open-file-tab, .open-file-tab-close { transition: none !important; }
+    .open-file-tab.drag-overlay { scale: 1; }
   }
   .repo-select { justify-content: flex-start; gap: 6px; border-color: color-mix(in oklch, var(--border) 82%, var(--foreground)); background: color-mix(in oklch, var(--input) 45%, transparent); }
   .repo-select:hover, .repo-select[aria-expanded="true"] { border-color: color-mix(in oklch, var(--primary) 35%, var(--border)); background: color-mix(in oklch, var(--input) 72%, transparent); }
@@ -411,6 +422,9 @@
   .file-tree-row[aria-selected="true"] { background: color-mix(in oklch, var(--primary) 12%, var(--sidebar)); box-shadow: inset 2px 0 0 var(--primary); }
   .file-tree-row[aria-current="true"]:not([aria-selected="true"]) { background: color-mix(in oklch, var(--primary) 6%, var(--sidebar)); }
   .file-tree-row.dragging { opacity: .42; }
+  .file-drag-overlay { display: flex; max-width: 320px; align-items: center; gap: 7px; overflow: hidden; border: 1px solid color-mix(in oklch, var(--primary) 45%, var(--sidebar-border)); border-radius: var(--radius-md); background: color-mix(in oklch, var(--sidebar) 94%, transparent); padding: 7px 9px; color: var(--foreground); font-size: 12px; box-shadow: 0 10px 24px color-mix(in oklch, black 34%, transparent); transform: translateZ(0); }
+  .file-drag-overlay span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .file-drag-overlay strong { display: grid; min-width: 20px; height: 20px; flex: none; place-items: center; border-radius: 999px; background: var(--primary); color: var(--primary-foreground); font-size: 10px; }
   .file-tree-row.drop-target { background: color-mix(in oklch, var(--primary) 18%, var(--sidebar)); box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--primary) 55%, transparent); }
   .file-tree-row.drop-target-region { background: color-mix(in oklch, var(--primary) 9%, var(--sidebar)); box-shadow: inset 2px 0 0 color-mix(in oklch, var(--primary) 45%, transparent); }
   .file-tree-row:focus-visible { outline: 1px solid var(--ring); outline-offset: -1px; }
@@ -419,6 +433,9 @@
   .vscode-tree-icon { width: 16px; height: 16px; flex: none; object-fit: contain; }
   .file-tree-row span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .tree-spacer { width: 16px; flex: none; }
+  @media (prefers-reduced-motion: reduce) {
+    .file-tree-row, .file-drag-overlay { transition: none !important; }
+  }
   .history-list { display: flex; height: 100%; min-height: 0; flex-direction: column; padding-top: 5px; }
   .history-scroll { min-height: 0; flex: 1; overflow: auto; padding-bottom: 12px; }
   .history-more { position: absolute; left: 12px; right: 12px; width: calc(100% - 24px); margin-top: 6px; }
@@ -451,6 +468,7 @@
   .ref-chip.local-only { background: color-mix(in oklch, var(--chart-3) 17%, transparent); color: color-mix(in oklch, var(--chart-3) 65%, var(--foreground)); box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--chart-3) 30%, transparent); }
   .ref-chip.merge { background: var(--muted); color: var(--muted-foreground); box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--foreground) 8%, transparent); }
   .commit-files { display: grid; gap: 1px; padding: 0 8px 9px 31px; animation: fade-rise var(--motion-med) var(--ease-out); }
+  .commit-description { margin: 1px 6px 7px; border-left: 2px solid var(--sidebar-border); padding: 2px 8px; color: var(--muted-foreground); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; white-space: pre-wrap; }
   .commit-files-summary { padding: 1px 6px 5px; color: var(--muted-foreground); font-size: 10px; font-weight: 600; }
   .commit-files-summary .add { color: var(--diff-added); }
   .commit-files-summary .del { color: var(--diff-deleted); }
@@ -789,6 +807,7 @@
   .pr-label { border: 1px solid; border-radius: 999px; padding: 2px 7px; color: var(--foreground); font-size: 9.5px; font-weight: 650; line-height: 1.2; }
   .pr-viewer-actions { margin-left: auto; }
   .pr-viewer-tabs { justify-self: start; }
+  .pr-diff-panel { display: flex; min-height: 0; flex: 1; flex-direction: column; }
   .pr-description-scroll { min-height: 0; flex: 1; overflow: auto; }
   .pr-summary-section, .pr-timeline { padding: 16px 18px; }
   .pr-summary-section > h3, .pr-timeline > h3 { margin: 0 0 12px; font-size: 12px; font-weight: 700; }
@@ -821,6 +840,7 @@
   .create-pr-title:focus-visible { border-color: var(--ring); outline: none; box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 30%, transparent); }
   .create-pr-title:disabled { cursor: not-allowed; opacity: .6; }
   .create-pr-body-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .create-pr-body-panel > textarea { width: 100%; }
   .create-pr-preview { width: 100%; min-height: 214px; max-height: 320px; overflow: auto; border: 1px solid var(--input); border-radius: var(--radius-md); margin: 0; padding: 14px 16px 20px; }
   .create-pr-generate { justify-self: start; }
   .create-pr-draft { display: inline-flex; align-items: center; gap: 8px; color: var(--foreground); font-size: 12px; cursor: pointer; }
@@ -838,11 +858,11 @@
   .quick-open-input-shell input { min-width: 0; height: 46px; flex: 1; background: transparent; color: var(--foreground); font-size: 13.5px; letter-spacing: -.01em; outline: none; }
   .quick-open-input-shell input::placeholder { color: color-mix(in oklch, var(--muted-foreground) 88%, transparent); }
   .quick-open-results { min-height: 0; flex: 1; overflow: auto; padding: 5px; scroll-padding-block: 5px; }
-  .quick-open-result { display: flex; width: 100%; min-width: 0; align-items: center; gap: 9px; border-radius: var(--radius-md); padding: 6px 9px; color: var(--foreground); text-align: left; transition: background-color .1s ease; }
+  .quick-open-result { display: flex; width: 100%; min-width: 0; align-items: center; gap: 9px; border-radius: var(--radius-md); padding: 6px 9px; color: var(--foreground); text-align: left; cursor: pointer; transition: background-color .1s ease; }
   .quick-open-result + .quick-open-result { margin-top: 1px; }
   .quick-open-result:hover { background: color-mix(in oklch, var(--foreground) 6%, transparent); }
-  .quick-open-result.active { background: color-mix(in oklch, var(--primary) 14%, transparent); box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--primary) 26%, transparent); }
-  .quick-open-result.active .quick-open-parent { color: color-mix(in oklch, var(--muted-foreground) 55%, var(--foreground)); }
+  .quick-open-result[data-highlighted] { background: color-mix(in oklch, var(--primary) 14%, transparent); box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--primary) 26%, transparent); }
+  .quick-open-result[data-highlighted] .quick-open-parent { color: color-mix(in oklch, var(--muted-foreground) 55%, var(--foreground)); }
   .quick-open-result:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
   .quick-open-icon { width: 16px; height: 16px; flex: none; object-fit: contain; }
   .quick-open-name { min-width: 0; max-width: 62%; flex: 0 1 auto; overflow: hidden; font-size: 12.5px; font-weight: 600; letter-spacing: -.01em; text-overflow: ellipsis; white-space: nowrap; }
@@ -1133,8 +1153,9 @@
   .commit-plan-heading > span { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; }
   .commit-plan-heading svg { width: 15px; height: 15px; color: var(--primary); }
   .commit-plan > p { margin: 0; color: var(--muted-foreground); font-size: 10.5px; line-height: 1.4; }
-  .commit-plan-list { display: grid; max-height: 210px; gap: 5px; overflow-y: auto; }
-  .commit-plan-list article { display: flex; min-width: 0; align-items: center; gap: 10px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--background); padding: 7px 8px; }
+  .commit-plan-list { display: grid; max-height: 280px; gap: 5px; overflow-y: auto; overscroll-behavior: contain; }
+  .commit-plan-list article { display: flex; min-width: 0; align-items: flex-start; gap: 10px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--background); padding: 7px 8px; }
+  .commit-plan-list article > button { margin-top: 1px; }
   .commit-plan-list article.prepared { border-color: color-mix(in oklch, var(--primary) 45%, var(--border)); background: color-mix(in oklch, var(--primary) 8%, var(--background)); }
   .commit-plan-list article > div { display: grid; min-width: 0; flex: 1; gap: 2px; }
   .commit-plan-list article strong { overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
@@ -1145,8 +1166,11 @@
   .commit-plan-list article.done strong { text-decoration: line-through; }
   .commit-plan-done-icon { width: 12px; height: 12px; margin-right: 3px; color: var(--git-push); vertical-align: -2px; }
   /* Paths wrap as individual targets so a long group stays readable and every
-     file can be opened for review before the group is prepared. */
-  .commit-plan-paths { display: flex; max-height: 44px; flex-wrap: wrap; gap: 3px; overflow-y: auto; }
+     file can be opened for review before the group is prepared. They do not
+     scroll on their own: a 44px scroll box nested inside the already scrolling
+     plan list rendered as a stray scrollbar stub and trapped the wheel. Only
+     the list scrolls; a group is simply as tall as its files need. */
+  .commit-plan-paths { display: flex; flex-wrap: wrap; gap: 3px; }
   .commit-plan-path {
     max-width: 100%; overflow: hidden; border-radius: var(--radius-sm);
     background: color-mix(in oklch, var(--foreground) 7%, transparent); padding: 1px 5px;
@@ -1247,6 +1271,12 @@
     line-height: 1.35;
     overflow-wrap: anywhere;
   }
+  .commit-diff-description-wrap { display: grid; justify-items: start; gap: 4px; min-width: 0; }
+  .commit-diff-description { max-height: min(36vh, 360px); margin: 0; overflow: auto; color: var(--muted-foreground); font-size: 12px; line-height: 1.55; overflow-wrap: anywhere; white-space: pre-wrap; }
+  .commit-diff-description.collapsed { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
+  .commit-description-toggle { border-radius: var(--radius-sm); color: var(--muted-foreground); font-size: 10.5px; font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
+  .commit-description-toggle:hover { color: var(--foreground); }
+  .commit-description-toggle:focus-visible { outline: 1px solid var(--ring); outline-offset: 2px; }
   .commit-diff-meta {
     display: flex;
     min-width: 0;
@@ -1336,7 +1366,7 @@
   .repo-select-item[data-selected] { background: var(--row-selected); color: var(--foreground); box-shadow: none; }
   .repo-select-shortcut { margin-left: auto; flex: none; }
   .repo-select-index { display: grid; width: 20px; min-width: 20px; height: 20px; flex: none; place-items: center; padding: 0; font-variant-numeric: tabular-nums; line-height: 1; text-align: center; }
-  .quick-open-result.active { background: var(--row-selected); box-shadow: none; }
+  .quick-open-result[data-highlighted] { background: var(--row-selected); box-shadow: none; }
   .quick-open-input-shell:focus-within > svg { color: var(--foreground); }
   .local-refs-row[aria-selected="true"] { border-color: transparent; background: var(--row-selected); }
   .local-refs-tab[aria-selected="true"] small { background: var(--row-selected); color: var(--foreground); }

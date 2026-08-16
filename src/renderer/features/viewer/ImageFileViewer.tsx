@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import type { FileResult, ImageFileResult, ThemePreference, WriteFileResult } from '@shared/contracts';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { ViewerTabs, ViewerTabsList, ViewerTabsPanel } from '@/components/ui/viewer-tabs';
 import { FileSaveControls, SourceCodeEditor } from './EditableFileViewer';
 import { MAX_IMAGE_ZOOM, type ImageSizingMode, zoomIn, zoomOut } from './image-viewer-state';
 import './image-viewer.css';
@@ -123,28 +124,21 @@ export function SvgFileViewer({ file, initialContent, themeType, wrapLines, read
     return () => window.removeEventListener('keydown', handleSaveShortcut);
   }, [save]);
 
-  const handleTabKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
-    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
-    event.preventDefault();
-    setTab((current) => current === 'preview' ? 'code' : 'preview');
-    const tabs = event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]');
-    const nextIndex = event.currentTarget === tabs?.[0] ? 1 : 0;
-    tabs?.[nextIndex]?.focus();
-  };
-
   const tabs = (
-    <div role="tablist" aria-label="SVG view" className="file-viewer-tabs image-viewer-tabs">
-      <button type="button" role="tab" aria-selected={tab === 'preview'} onKeyDown={handleTabKeyDown} onClick={() => setTab('preview')}>Preview</button>
-      <button type="button" role="tab" aria-selected={tab === 'code'} onKeyDown={handleTabKeyDown} onClick={() => setTab('code')}>
-        Code {dirty && <span className="image-unsaved-dot" aria-label="Unsaved changes" />}
-      </button>
-    </div>
+    <ViewerTabsList
+      label="SVG view"
+      className="file-viewer-tabs image-viewer-tabs"
+      items={[
+        { value: 'preview', label: 'Preview' },
+        { value: 'code', label: <>Code {dirty && <span className="image-unsaved-dot" aria-label="Unsaved changes" />}</> },
+      ]}
+    />
   );
   const saveControls = <FileSaveControls dirty={dirty} saving={saving} readOnly={readOnly} onSave={() => void save()} />;
 
   return (
-    <div className="svg-file-viewer">
-      {tab === 'preview' ? (
+    <ViewerTabs value={tab} onValueChange={(value) => setTab(value as typeof tab)} className="svg-file-viewer">
+      <ViewerTabsPanel value="preview" className="svg-file-panel">
         <ImagePreviewWorkspace
           objectUrl={objectUrl}
           path={file.path}
@@ -152,8 +146,8 @@ export function SvgFileViewer({ file, initialContent, themeType, wrapLines, read
           toolbarStart={tabs}
           toolbarEnd={saveControls}
         />
-      ) : (
-        <>
+      </ViewerTabsPanel>
+      <ViewerTabsPanel value="code" className="svg-file-panel">
           <div className="file-viewer-pill svg-file-toolbar">{tabs}{saveControls}</div>
           <div className="svg-code-view">
             <SourceCodeEditor
@@ -168,11 +162,10 @@ export function SvgFileViewer({ file, initialContent, themeType, wrapLines, read
                 onDirtyChange(value !== file.content);
                 onDraftChange(value);
               }}
-            />
+              />
           </div>
-        </>
-      )}
-    </div>
+      </ViewerTabsPanel>
+    </ViewerTabs>
   );
 }
 

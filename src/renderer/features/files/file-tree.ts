@@ -192,6 +192,13 @@ export function parentDirectory(filePath: string): string {
   return separator < 0 ? '' : normalized.slice(0, separator);
 }
 
+/** Reparenting policy for internal file-tree drops; this never implies sibling ordering. */
+export function canMovePathsToDirectory(sourcePaths: readonly string[], targetDirectory: string): boolean {
+  return sourcePaths.length > 0
+    && !sourcePaths.some((sourcePath) => pathContains(sourcePath, targetDirectory))
+    && sourcePaths.some((sourcePath) => parentDirectory(sourcePath) !== targetDirectory);
+}
+
 export function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
   return target.matches('input, textarea, select, [contenteditable="true"]')

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { FileTreeEntry } from '@shared/git-types';
 import {
   containsPath,
+  canMovePathsToDirectory,
   fileSnapshotFingerprint,
   filterIgnoredEntries,
   fileHistoryShortcut,
@@ -34,6 +35,23 @@ const tree: FileTreeEntry[] = [
 ];
 
 describe('file tree helpers', () => {
+  it('allows reparenting one item, a multi-selection, and movement to root', () => {
+    expect(canMovePathsToDirectory(['src/app.ts'], 'docs')).toBe(true);
+    expect(canMovePathsToDirectory(['src/app.ts', 'src/lib.ts'], 'docs')).toBe(true);
+    expect(canMovePathsToDirectory(['docs/guide.md'], '')).toBe(true);
+  });
+
+  it('rejects same-parent, self, and descendant targets', () => {
+    expect(canMovePathsToDirectory(['src/app.ts'], 'src')).toBe(false);
+    expect(canMovePathsToDirectory(['src'], 'src')).toBe(false);
+    expect(canMovePathsToDirectory(['src'], 'src/nested')).toBe(false);
+  });
+
+  it('allows a mixed selection when at least one item changes parent', () => {
+    expect(canMovePathsToDirectory(['docs/guide.md', 'src/app.ts'], 'docs')).toBe(true);
+    expect(canMovePathsToDirectory([], 'docs')).toBe(false);
+  });
+
   it('finds nested entries and missing paths', () => {
     expect(findEntry(tree, 'docs/README.MD')).toMatchObject({ type: 'file' });
     expect(containsPath(tree, 'missing.md')).toBe(false);

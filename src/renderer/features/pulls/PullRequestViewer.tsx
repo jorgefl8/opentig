@@ -4,6 +4,7 @@ import type { DiffResult, DiffViewPreference, PullRequestCheckState, PullRequest
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
+import { ViewerTabs, ViewerTabsList, ViewerTabsPanel } from '@/components/ui/viewer-tabs';
 import { renderMarkdown } from '@/features/markdown/render-markdown';
 import { openOnGitHub, prStateLabel, reviewDecisionLabel } from './gh-utils';
 import { GitHubAvatar } from './GitHubAvatar';
@@ -74,7 +75,7 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
   const stateLabel = prStateLabel(details);
   const review = reviewDecisionLabel(details.reviewDecision);
   return (
-    <div className="pr-viewer">
+    <ViewerTabs value={tab} onValueChange={(value) => setTab(value as typeof tab)} className="pr-viewer">
       <header className="pr-viewer-header">
         <div className="pr-viewer-title">
           <Badge variant={details.state === 'OPEN' && !details.isDraft ? 'default' : 'secondary'} className={`pr-state-badge ${stateLabel.toLowerCase().replace(/\s+/g, '-')}`}>{stateLabel}</Badge>
@@ -108,22 +109,24 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
             ))}
           </div>
         )}
-        <div role="tablist" aria-label="Pull request view" className="markdown-viewer-tabs pr-viewer-tabs">
-          <button type="button" role="tab" aria-selected={tab === 'summary'} onClick={() => setTab('summary')}>Summary</button>
-          <button type="button" role="tab" aria-selected={tab === 'timeline'} onClick={() => setTab('timeline')}>Timeline</button>
-          <button type="button" role="tab" aria-selected={tab === 'diff'} onClick={() => setTab('diff')}>Code</button>
-        </div>
+        <ViewerTabsList
+          label="Pull request view"
+          className="markdown-viewer-tabs pr-viewer-tabs"
+          items={[
+            { value: 'summary', label: 'Summary' },
+            { value: 'timeline', label: 'Timeline' },
+            { value: 'diff', label: 'Code' },
+          ]}
+        />
       </header>
-      {tab === 'summary' ? (
-        <div className="markdown-preview-scroll pr-description-scroll">
+      <ViewerTabsPanel value="summary" className="markdown-preview-scroll pr-description-scroll">
           <section className="pr-summary-section">
             {bodyHtml
               ? <div className="markdown-prose" dangerouslySetInnerHTML={{ __html: bodyHtml }} />
               : <p className="pr-empty-description">This pull request has no description.</p>}
           </section>
-        </div>
-      ) : tab === 'timeline' ? (
-        <div className="markdown-preview-scroll pr-description-scroll">
+      </ViewerTabsPanel>
+      <ViewerTabsPanel value="timeline" className="markdown-preview-scroll pr-description-scroll">
           <section className="pr-timeline standalone" aria-label="Commit timeline">
             <h3><IconGitCommit aria-hidden="true" /> Commits <span>{details.commits.length}</span></h3>
             {details.commits.length ? details.commits.map((commit) => (
@@ -138,17 +141,19 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
               </article>
             )) : <p className="pr-empty-description">No commits were returned by GitHub.</p>}
           </section>
-        </div>
-      ) : diffError ? (
-        <div className="viewer-message text-destructive">{diffError}</div>
-      ) : !diff ? (
-        <div className="viewer-message"><IconLoader4 className="spinner" /> <ShimmeringText text="Loading diff…" /></div>
-      ) : (
-        <Suspense fallback={<div className="viewer-message"><IconLoader4 className="spinner" /> <ShimmeringText text="Loading diff viewer…" /></div>}>
-          <PullRequestDiff diff={diff} prNumber={details.number} repositoryId={repositoryId} commits={details.commits} diffView={diffView} themeType={themeType} wrapLines={wrapLines} onDiffViewChange={onDiffViewChange} onWrapLinesChange={onWrapLinesChange} onClose={onClose} />
-        </Suspense>
-      )}
-    </div>
+      </ViewerTabsPanel>
+      <ViewerTabsPanel value="diff" className="pr-diff-panel">
+        {diffError ? (
+          <div className="viewer-message text-destructive">{diffError}</div>
+        ) : !diff ? (
+          <div className="viewer-message"><IconLoader4 className="spinner" /> <ShimmeringText text="Loading diff…" /></div>
+        ) : (
+          <Suspense fallback={<div className="viewer-message"><IconLoader4 className="spinner" /> <ShimmeringText text="Loading diff viewer…" /></div>}>
+            <PullRequestDiff diff={diff} prNumber={details.number} repositoryId={repositoryId} commits={details.commits} diffView={diffView} themeType={themeType} wrapLines={wrapLines} onDiffViewChange={onDiffViewChange} onWrapLinesChange={onWrapLinesChange} onClose={onClose} />
+          </Suspense>
+        )}
+      </ViewerTabsPanel>
+    </ViewerTabs>
   );
 }
 

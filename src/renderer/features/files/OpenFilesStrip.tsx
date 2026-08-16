@@ -1,12 +1,11 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { IconX } from '@tabler/icons-react';
-import { dropIndex, edgeFades, type FileSession, horizontalWheelDelta, tabLabels } from './open-files-model';
+import { closestCenter, DndContext, DragOverlay, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
+import { horizontalListSortingStrategy, SortableContext, useSortable } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import { edgeFades, type FileSession, horizontalWheelDelta, type RuntimeTab, tabLabels } from './open-files-model';
 
-/**
- * Private to tab reordering. Files tree rows carry their own drag type, so a
- * file move can never be mistaken for a tab move in either direction.
- */
-const TAB_DRAG_TYPE = 'application/x-justgit-tab-path';
+const TAB_MOTION = { duration: 180, easing: 'cubic-bezier(0.2, 0, 0, 1)' } as const;
 
 interface OpenFilesStripProps {
   session: FileSession;
@@ -26,8 +25,10 @@ export function OpenFilesStrip({ session, onActivate, onPin, onClose, onReorder 
   const tabRefs = useRef(new Map<string, HTMLDivElement>());
   const [fades, setFades] = useState({ start: false, end: false });
   const [draggingPath, setDraggingPath] = useState<string | null>(null);
-  const [dropTarget, setDropTarget] = useState<number | null>(null);
+  const [reducedMotion, setReducedMotion] = useState(false);
   const labels = useMemo(() => tabLabels(session.tabs), [session.tabs]);
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+  const draggingTab = draggingPath ? session.tabs.find((tab) => tab.path === draggingPath) ?? null : null;
 
   const measure = useCallback(() => {
     const strip = stripRef.current;
@@ -70,120 +71,189 @@ export function OpenFilesStrip({ session, onActivate, onPin, onClose, onReorder 
     return () => strip.removeEventListener('wheel', onWheel);
   }, []);
 
+  useEffect(() => {
+    const query = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const update = () => setReducedMotion(query.matches);
+    update();
+    query.addEventListener('change', update);
+    return () => query.removeEventListener('change', update);
+  }, []);
+
   if (session.tabs.length === 0) return null;
 
-  const resolveDropIndex = (clientX: number): number => {
-    const rects = session.tabs.map((tab) => {
-      const element = tabRefs.current.get(tab.path);
-      const rect = element?.getBoundingClientRect();
-      return { left: rect?.left ?? 0, width: rect?.width ?? 0 };
-    });
-    return dropIndex(rects, clientX);
+  const finishDrag = ({ active, over }: DragEndEvent) => {
+    setDraggingPath(null);
+    if (!over || active.id === over.id) return;
+    const toIndex = session.tabs.findIndex((tab) => tab.path === over.id);
+    if (toIndex >= 0) onReorder(String(active.id), toIndex);
+  };
+
+  return (
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCenter}
+      onDragStart={({ active }) => setDraggingPath(String(active.id))}
+      onDragCancel={() => setDraggingPath(null)}
+      onDragEnd={finishDrag}
+    >
+      <SortableContext items={session.tabs.map((tab) => tab.path)} strategy={horizontalListSortingStrategy}>
+        <div
+          ref={stripRef}
+          className={['open-files-strip', draggingPath ? 'sorting' : '', fades.start ? 'fade-start' : '', fades.end ? 'fade-end' : ''].filter(Boolean).join(' ')}
+          role="tablist"
+          aria-label="Open files"
+          aria-orientation="horizontal"
+          onScroll={measure}
+        >
+          {session.tabs.map((tab) => (
+            <SortableFileTab
+              key={tab.path}
+              tab={tab}
+              label={labels.get(tab.path)}
+              active={session.activePath === tab.path}
+              preview={session.previewPath === tab.path}
+              register={(element) => {
+                if (element) tabRefs.current.set(tab.path, element);
+                else tabRefs.current.delete(tab.path);
+              }}
+              onActivate={onActivate}
+              onPin={onPin}
+              onClose={onClose}
+            />
+          ))}
+        </div>
+      </SortableContext>
+      <DragOverlay dropAnimation={reducedMotion ? null : TAB_MOTION}>
+        {draggingTab && (
+          <FileTabSurface
+            tab={draggingTab}
+            label={labels.get(draggingTab.path)}
+            preview={session.previewPath === draggingTab.path}
+            overlay
+          />
+        )}
+      </DragOverlay>
+    </DndContext>
+  );
+}
+
+function SortableFileTab({ tab, label, active, preview, register, onActivate, onPin, onClose }: {
+  tab: RuntimeTab;
+  label: { name: string; suffix: string | null } | undefined;
+  active: boolean;
+  preview: boolean;
+  register(element: HTMLDivElement | null): void;
+  onActivate(path: string): void;
+  onPin(path: string): void;
+  onClose(path: string): void;
+}) {
+  const { listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: tab.path, transition: TAB_MOTION });
+  const description = [
+    preview ? 'preview' : null,
+    tab.dirty ? 'unsaved changes' : null,
+    tab.missing ? 'file no longer on disk' : null,
+  ].filter(Boolean).join(', ');
+  const style: CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+  const setRefs = (element: HTMLDivElement | null) => {
+    setNodeRef(element);
+    register(element);
   };
 
   return (
     <div
-      ref={stripRef}
-      className={['open-files-strip', fades.start ? 'fade-start' : '', fades.end ? 'fade-end' : ''].filter(Boolean).join(' ')}
-      role="tablist"
-      aria-label="Open files"
-      aria-orientation="horizontal"
-      onScroll={measure}
-      onDragOver={(event) => {
-        if (!draggingPath) return;
+      ref={setRefs}
+      role="tab"
+      tabIndex={0}
+      title={description ? `${tab.path} (${description})` : tab.path}
+      aria-selected={active}
+      aria-current={active ? 'page' : undefined}
+      aria-keyshortcuts="Control+Shift+PageUp Control+Shift+PageDown"
+      aria-label={description ? `${tab.path}, ${description}` : tab.path}
+      className={tabClassName(tab, { active, preview, dragging: isDragging })}
+      style={style}
+      {...listeners}
+      onClick={() => onActivate(tab.path)}
+      onDoubleClick={() => onPin(tab.path)}
+      onAuxClick={(event) => {
+        if (event.button !== 1) return;
         event.preventDefault();
-        event.dataTransfer.dropEffect = 'move';
-        setDropTarget(resolveDropIndex(event.clientX));
+        onClose(tab.path);
       }}
-      onDrop={(event) => {
-        const path = event.dataTransfer.getData(TAB_DRAG_TYPE);
-        if (!path) return;
-        event.preventDefault();
-        onReorder(path, resolveDropIndex(event.clientX));
-        setDraggingPath(null);
-        setDropTarget(null);
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onActivate(tab.path);
+          return;
+        }
+        if (event.key === 'Delete') {
+          event.preventDefault();
+          onClose(tab.path);
+        }
       }}
     >
-      {session.tabs.map((tab, index) => {
-        const label = labels.get(tab.path);
-        const active = session.activePath === tab.path;
-        const preview = session.previewPath === tab.path;
-        const description = [
-          preview ? 'preview' : null,
-          tab.dirty ? 'unsaved changes' : null,
-          tab.missing ? 'file no longer on disk' : null,
-        ].filter(Boolean).join(', ');
-        return (
-          <div
-            key={tab.path}
-            ref={(element) => {
-              if (element) tabRefs.current.set(tab.path, element);
-              else tabRefs.current.delete(tab.path);
-            }}
-            role="tab"
-            tabIndex={0}
-            draggable
-            title={description ? `${tab.path} (${description})` : tab.path}
-            aria-selected={active}
-            aria-current={active ? 'page' : undefined}
-            aria-describedby={undefined}
-            aria-label={description ? `${tab.path}, ${description}` : tab.path}
-            className={[
-              'open-file-tab',
-              active ? 'active' : '',
-              preview ? 'preview' : '',
-              tab.dirty ? 'dirty' : '',
-              tab.missing ? 'missing' : '',
-              draggingPath === tab.path ? 'dragging' : '',
-              dropTarget === index && draggingPath && draggingPath !== tab.path ? 'drop-target' : '',
-            ].filter(Boolean).join(' ')}
-            onClick={() => onActivate(tab.path)}
-            onDoubleClick={() => onPin(tab.path)}
-            onAuxClick={(event) => {
-              if (event.button !== 1) return;
-              event.preventDefault();
-              onClose(tab.path);
-            }}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' || event.key === ' ') {
-                event.preventDefault();
-                onActivate(tab.path);
-                return;
-              }
-              if (event.key === 'Delete') {
-                event.preventDefault();
-                onClose(tab.path);
-              }
-            }}
-            onDragStart={(event) => {
-              event.dataTransfer.setData(TAB_DRAG_TYPE, tab.path);
-              event.dataTransfer.effectAllowed = 'move';
-              setDraggingPath(tab.path);
-            }}
-            onDragEnd={() => {
-              setDraggingPath(null);
-              setDropTarget(null);
-            }}
-          >
-            <span className="open-file-tab-name">{label?.name ?? tab.path}</span>
-            {label?.suffix && <span className="open-file-tab-suffix">{label.suffix}</span>}
-            <button
-              type="button"
-              className="open-file-tab-close"
-              aria-label={`Close ${tab.path}`}
-              onClick={(event) => {
-                event.stopPropagation();
-                onClose(tab.path);
-              }}
-            >
-              {/* The dot marks unsaved changes and gives way to the close icon
-                  on hover or focus, so the control never moves. */}
-              {tab.dirty && <span className="open-file-tab-dot" aria-hidden="true" />}
-              <IconX className="open-file-tab-close-icon" aria-hidden="true" />
-            </button>
-          </div>
-        );
-      })}
+      <FileTabContents tab={tab} label={label} onClose={onClose} />
     </div>
   );
+}
+
+function FileTabSurface({ tab, label, preview, overlay = false }: {
+  tab: RuntimeTab;
+  label: { name: string; suffix: string | null } | undefined;
+  preview: boolean;
+  overlay?: boolean;
+}) {
+  return (
+    <div className={tabClassName(tab, { preview, overlay })} aria-hidden="true">
+      <FileTabContents tab={tab} label={label} />
+    </div>
+  );
+}
+
+function FileTabContents({ tab, label, onClose }: {
+  tab: RuntimeTab;
+  label: { name: string; suffix: string | null } | undefined;
+  onClose?: ((path: string) => void) | undefined;
+}) {
+  return (
+    <>
+      <span className="open-file-tab-name">{label?.name ?? tab.path}</span>
+      {label?.suffix && <span className="open-file-tab-suffix">{label.suffix}</span>}
+      {onClose ? (
+        <button
+          type="button"
+          className="open-file-tab-close"
+          aria-label={`Close ${tab.path}`}
+          onPointerDown={(event) => event.stopPropagation()}
+          onKeyDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation();
+            onClose(tab.path);
+          }}
+        >
+          {tab.dirty && <span className="open-file-tab-dot" aria-hidden="true" />}
+          <IconX className="open-file-tab-close-icon" aria-hidden="true" />
+        </button>
+      ) : (
+        <span className="open-file-tab-close overlay-close" aria-hidden="true">
+          {tab.dirty && <span className="open-file-tab-dot" />}
+          <IconX className="open-file-tab-close-icon" />
+        </span>
+      )}
+    </>
+  );
+}
+
+function tabClassName(tab: RuntimeTab, state: { active?: boolean; preview?: boolean; dragging?: boolean; overlay?: boolean }): string {
+  return [
+    'open-file-tab',
+    state.active ? 'active' : '',
+    state.preview ? 'preview' : '',
+    tab.dirty ? 'dirty' : '',
+    tab.missing ? 'missing' : '',
+    state.dragging ? 'dragging' : '',
+    state.overlay ? 'drag-overlay' : '',
+  ].filter(Boolean).join(' ');
 }

@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import type { FileResult, ThemePreference, WriteFileResult } from '@shared/contracts';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { ViewerTabs, ViewerTabsList, ViewerTabsPanel } from '@/components/ui/viewer-tabs';
 import { FileSaveControls, SourceCodeEditor } from '@/features/viewer/EditableFileViewer';
 import { resolveMarkdownRepositoryPath } from './markdown-links';
 import { renderMarkdown } from './render-markdown';
@@ -150,15 +151,6 @@ export function MarkdownFileViewer({ file, initialContent, revision, themeType, 
     if (repositoryPath) onOpenFile(repositoryPath);
   }, [file.path, onOpenFile]);
 
-  const handleTabKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
-    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
-    event.preventDefault();
-    setTab((current) => current === 'preview' ? 'code' : 'preview');
-    const tabs = event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]');
-    const nextIndex = event.currentTarget === tabs?.[0] ? 1 : 0;
-    tabs?.[nextIndex]?.focus();
-  };
-
   const save = useCallback(async () => {
     if (!dirty || saving || readOnly) return;
     setSaving(true);
@@ -202,14 +194,16 @@ export function MarkdownFileViewer({ file, initialContent, revision, themeType, 
   };
 
   return (
-    <div className="markdown-viewer" data-content-width={contentWidth}>
+    <ViewerTabs value={tab} onValueChange={(value) => setTab(value as typeof tab)} className="markdown-viewer" data-content-width={contentWidth}>
       <div className="file-viewer-pill markdown-viewer-toolbar">
-        <div role="tablist" aria-label="Markdown view" className="file-viewer-tabs markdown-viewer-tabs">
-          <button type="button" role="tab" aria-selected={tab === 'preview'} onKeyDown={handleTabKeyDown} onClick={() => setTab('preview')}>Preview</button>
-          <button type="button" role="tab" aria-selected={tab === 'code'} onKeyDown={handleTabKeyDown} onClick={() => setTab('code')}>
-            Code {dirty && <span className="markdown-unsaved-dot" aria-label="Unsaved changes" />}
-          </button>
-        </div>
+        <ViewerTabsList
+          label="Markdown view"
+          className="file-viewer-tabs markdown-viewer-tabs"
+          items={[
+            { value: 'preview', label: 'Preview' },
+            { value: 'code', label: <>Code {dirty && <span className="markdown-unsaved-dot" aria-label="Unsaved changes" />}</> },
+          ]}
+        />
         <FileSaveControls dirty={dirty} saving={saving} readOnly={readOnly} onSave={() => void save()} />
         <div className="markdown-width-toggle" role="group" aria-label="Markdown content width">
           <Tooltip>
@@ -240,17 +234,15 @@ export function MarkdownFileViewer({ file, initialContent, revision, themeType, 
           </Tooltip>
         </div>
       </div>
-      {tab === 'preview' ? (
-        <div className="markdown-preview-scroll">
+      <ViewerTabsPanel value="preview" className="markdown-preview-scroll">
           {loading && !html ? (
             <div className="viewer-message"><ShimmeringText text="Rendering Markdown…" /></div>
           ) : (
             <MarkdownPreviewContent html={html} onClick={(event) => void handlePreviewClick(event)} />
           )}
           <span className="sr-only" role="status" aria-live="polite">{copied ? 'Code copied' : ''}</span>
-        </div>
-      ) : (
-        <div className="markdown-code-view" data-theme={themeType}>
+      </ViewerTabsPanel>
+      <ViewerTabsPanel value="code" className="markdown-code-view" data-theme={themeType}>
           <SourceCodeEditor
             path={file.path}
             cacheKey={`${file.path}:${file.mtimeMs}`}
@@ -264,8 +256,7 @@ export function MarkdownFileViewer({ file, initialContent, revision, themeType, 
               onDraftChange(value);
             }}
           />
-        </div>
-      )}
-    </div>
+      </ViewerTabsPanel>
+    </ViewerTabs>
   );
 }

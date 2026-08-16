@@ -6,7 +6,6 @@ import {
   dirtyTabs,
   dirtyTabsUnder,
   draftBytes,
-  dropIndex,
   edgeFades,
   emptyFileSession,
   type FileSession,
@@ -283,12 +282,4 @@ describe('open files strip geometry', () => {
     expect(edgeFades({ scrollLeft: 0, clientWidth: 600, scrollWidth: 600 })).toEqual({ start: false, end: false });
   });
 
-  it('computes the drop index from measured tab rectangles', () => {
-    const rects = [{ left: 0, width: 100 }, { left: 100, width: 100 }, { left: 200, width: 100 }];
-    expect(dropIndex(rects, 10)).toBe(0);
-    expect(dropIndex(rects, 120)).toBe(1);
-    expect(dropIndex(rects, 260)).toBe(2);
-    expect(dropIndex(rects, 999)).toBe(2);
-    expect(dropIndex([], 10)).toBe(0);
-  });
 });
