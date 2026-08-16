@@ -1,11 +1,12 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
-import { IconExternalLink, IconGitBranch, IconLoader4, IconRefresh } from '@tabler/icons-react';
-import type { DiffResult, DiffViewPreference, PullRequestDetails, ThemePreference } from '../../../shared/contracts';
+import { IconCircleCheck, IconCircleX, IconClock, IconExternalLink, IconGitBranch, IconGitCommit, IconLoader4, IconRefresh, IconTag } from '@tabler/icons-react';
+import type { DiffResult, DiffViewPreference, PullRequestCheckState, PullRequestDetails, ThemePreference } from '../../../shared/contracts';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { renderMarkdown } from '@/features/markdown/render-markdown';
 import { openOnGitHub, prStateLabel, reviewDecisionLabel } from './gh-utils';
+import { GitHubAvatar } from './GitHubAvatar';
 import '@/features/markdown/markdown.css';
 
 const PullRequestDiff = lazy(() => import('./PullRequestDiff'));
@@ -22,7 +23,7 @@ interface PullRequestViewerProps {
 }
 
 export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType, wrapLines, onDiffViewChange, onWrapLinesChange, onClose }: PullRequestViewerProps) {
-  const [tab, setTab] = useState<'description' | 'diff'>('description');
+  const [tab, setTab] = useState<'summary' | 'timeline' | 'diff'>('summary');
   const [details, setDetails] = useState<PullRequestDetails | null>(null);
   const [detailsError, setDetailsError] = useState<string | null>(null);
   const [bodyHtml, setBodyHtml] = useState('');
@@ -80,7 +81,10 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
           <h2>{details.title || '(no title)'} <span className="pr-number">#{details.number}</span></h2>
         </div>
         <div className="pr-viewer-meta">
-          <span className="pr-author">{details.author}</span>
+          <span className="pr-author-with-avatar">
+            <GitHubAvatar key={details.authorAvatarUrl} src={details.authorAvatarUrl} className="pr-author-avatar" />
+            <span className="pr-author">{details.author}</span>
+          </span>
           <span aria-hidden="true">·</span>
           <span>updated {formatRelativeDate(details.updatedAt)}</span>
           <span aria-hidden="true">·</span>
@@ -90,21 +94,50 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
             {details.changedFiles} {details.changedFiles === 1 ? 'file' : 'files'}
             {' '}<span className="add">+{details.additions}</span> <span className="del">−{details.deletions}</span>
           </span>
+          <PullRequestChecks state={details.checksState} />
           {review && <Badge variant="outline" className="pr-review-badge">{review}</Badge>}
           <span className="pr-viewer-actions">
             <Button variant="outline" size="xs" onClick={() => openOnGitHub(details.url)}><IconExternalLink /> Open on GitHub</Button>
           </span>
         </div>
+        {details.labels.length > 0 && (
+          <div className="pr-labels" aria-label="Pull request labels">
+            <IconTag aria-hidden="true" />
+            {details.labels.map((label) => (
+              <span key={`${label.name}-${label.color}`} className="pr-label" style={{ borderColor: `#${label.color}`, backgroundColor: `#${label.color}22` }}>{label.name}</span>
+            ))}
+          </div>
+        )}
         <div role="tablist" aria-label="Pull request view" className="markdown-viewer-tabs pr-viewer-tabs">
-          <button type="button" role="tab" aria-selected={tab === 'description'} onClick={() => setTab('description')}>Summary</button>
+          <button type="button" role="tab" aria-selected={tab === 'summary'} onClick={() => setTab('summary')}>Summary</button>
+          <button type="button" role="tab" aria-selected={tab === 'timeline'} onClick={() => setTab('timeline')}>Timeline</button>
           <button type="button" role="tab" aria-selected={tab === 'diff'} onClick={() => setTab('diff')}>Code</button>
         </div>
       </header>
-      {tab === 'description' ? (
+      {tab === 'summary' ? (
         <div className="markdown-preview-scroll pr-description-scroll">
-          {bodyHtml
-            ? <div className="markdown-prose" dangerouslySetInnerHTML={{ __html: bodyHtml }} />
-            : <div className="viewer-message">This pull request has no description.</div>}
+          <section className="pr-summary-section">
+            {bodyHtml
+              ? <div className="markdown-prose" dangerouslySetInnerHTML={{ __html: bodyHtml }} />
+              : <p className="pr-empty-description">This pull request has no description.</p>}
+          </section>
+        </div>
+      ) : tab === 'timeline' ? (
+        <div className="markdown-preview-scroll pr-description-scroll">
+          <section className="pr-timeline standalone" aria-label="Commit timeline">
+            <h3><IconGitCommit aria-hidden="true" /> Commits <span>{details.commits.length}</span></h3>
+            {details.commits.length ? details.commits.map((commit) => (
+              <article key={commit.oid} className="pr-timeline-item">
+                <span className="pr-timeline-rail"><span /></span>
+                <GitHubAvatar src={commit.authorAvatarUrl} className="pr-commit-avatar" />
+                <span className="pr-commit-content">
+                  <strong>{commit.messageHeadline || '(no commit message)'}</strong>
+                  <span><b>{commit.author}</b> committed {formatRelativeDate(commit.authoredAt)}</span>
+                </span>
+                <code title={commit.oid}>{commit.oid.slice(0, 7)}</code>
+              </article>
+            )) : <p className="pr-empty-description">No commits were returned by GitHub.</p>}
+          </section>
         </div>
       ) : diffError ? (
         <div className="viewer-message text-destructive">{diffError}</div>
@@ -112,11 +145,18 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
         <div className="viewer-message"><IconLoader4 className="spinner" /> <ShimmeringText text="Loading diff…" /></div>
       ) : (
         <Suspense fallback={<div className="viewer-message"><IconLoader4 className="spinner" /> <ShimmeringText text="Loading diff viewer…" /></div>}>
-          <PullRequestDiff diff={diff} prNumber={details.number} diffView={diffView} themeType={themeType} wrapLines={wrapLines} onDiffViewChange={onDiffViewChange} onWrapLinesChange={onWrapLinesChange} onClose={onClose} />
+          <PullRequestDiff diff={diff} prNumber={details.number} repositoryId={repositoryId} commits={details.commits} diffView={diffView} themeType={themeType} wrapLines={wrapLines} onDiffViewChange={onDiffViewChange} onWrapLinesChange={onWrapLinesChange} onClose={onClose} />
         </Suspense>
       )}
     </div>
   );
+}
+
+function PullRequestChecks({ state }: { state: PullRequestCheckState }) {
+  if (state === 'NONE') return null;
+  const Icon = state === 'PASSING' ? IconCircleCheck : state === 'FAILING' ? IconCircleX : IconClock;
+  const label = state === 'PASSING' ? 'Checks passing' : state === 'FAILING' ? 'Checks failing' : 'Checks pending';
+  return <span className={`pr-checks ${state.toLowerCase()}`} title={label}><Icon aria-hidden="true" /> {label}</span>;
 }
 
 function formatRelativeDate(value: string): string {

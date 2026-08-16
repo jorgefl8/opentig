@@ -1,12 +1,14 @@
 import { useRef } from 'react';
+import { Popover } from '@base-ui/react/popover';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { IconBrandGithub, IconCopy, IconExternalLink, IconGitPullRequest, IconLoader4, IconPlus, IconRefresh } from '@tabler/icons-react';
-import type { GhCliStatus, GitHubRepositoryInfo, PullRequestSummary } from '../../../shared/contracts';
-import { Badge } from '@/components/ui/badge';
+import { IconBrandGithub, IconCircleCheck, IconCircleX, IconClock, IconCopy, IconExternalLink, IconFilter, IconGitMerge, IconGitPullRequest, IconLoader4, IconPlus, IconRefresh } from '@tabler/icons-react';
+import type { GhCliStatus, GitHubRepositoryInfo, PullRequestCheckState, PullRequestState, PullRequestSummary } from '../../../shared/contracts';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { openOnGitHub, reviewDecisionLabel } from './gh-utils';
+import { openOnGitHub } from './gh-utils';
+import { GitHubAvatar } from './GitHubAvatar';
 
 interface PullRequestsViewProps {
   info: GitHubRepositoryInfo | null;
@@ -14,9 +16,11 @@ interface PullRequestsViewProps {
   pulls: PullRequestSummary[] | null;
   loading: boolean;
   error: string | null;
+  states: PullRequestState[];
   activeNumber: number | null;
   createDisabledReason: string | null;
   onRefresh(): void;
+  onStateChange(state: PullRequestState, checked: boolean): void;
   onSelect(pr: PullRequestSummary): void;
   onCreate(): void;
   onCopyCommand(command: string): void;
@@ -69,7 +73,7 @@ function PullsList(props: PullRequestsViewProps & { nameWithOwner: string }) {
   const virtualizer = useVirtualizer({
     count: pulls?.length ?? 0,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => 64,
+    estimateSize: () => 68,
     getItemKey: (index) => pulls?.[index]?.number ?? index,
     overscan: 8,
   });
@@ -83,6 +87,31 @@ function PullsList(props: PullRequestsViewProps & { nameWithOwner: string }) {
           </TooltipTrigger>
           <TooltipContent>Refresh pull requests</TooltipContent>
         </Tooltip>
+        <Popover.Root>
+          <Popover.Trigger
+            render={<Button variant={isDefaultStateFilter(props.states) ? 'ghost' : 'secondary'} size="icon-xs" className="change-action-button" aria-label="Filter pull requests" aria-pressed={!isDefaultStateFilter(props.states)} />}
+          >
+            <IconFilter />
+          </Popover.Trigger>
+          <Popover.Portal>
+            <Popover.Positioner side="bottom" align="end" sideOffset={4} className="isolate z-50 outline-none">
+              <Popover.Popup className="pulls-filter-popup">
+                <span className="pulls-filter-title">State</span>
+                {(['OPEN', 'CLOSED', 'MERGED'] as PullRequestState[]).map((state) => (
+                  <label key={state} htmlFor={`pulls-state-${state.toLowerCase()}`} className="pulls-filter-option">
+                    <Checkbox
+                      id={`pulls-state-${state.toLowerCase()}`}
+                      checked={props.states.includes(state)}
+                      onCheckedChange={(checked) => props.onStateChange(state, checked === true)}
+                    />
+                    <PullStateIcon state={state} className={state.toLowerCase()} />
+                    <span>{state === 'OPEN' ? 'Open' : state === 'CLOSED' ? 'Closed' : 'Merged'}</span>
+                  </label>
+                ))}
+              </Popover.Popup>
+            </Popover.Positioner>
+          </Popover.Portal>
+        </Popover.Root>
         <Tooltip>
           <TooltipTrigger render={
             <Button variant="outline" size="xs" disabled={Boolean(props.createDisabledReason) || props.loading} onClick={props.onCreate} aria-label="Create pull request" />
@@ -98,11 +127,11 @@ function PullsList(props: PullRequestsViewProps & { nameWithOwner: string }) {
           <Button variant="ghost" size="xs" onClick={props.onRefresh}>Retry</Button>
         </div>
       )}
-      <div ref={scrollRef} className="pulls-scroll" role="list" aria-label="Open pull requests">
+      <div ref={scrollRef} className="pulls-scroll" role="list" aria-label={`${props.states.map(stateLabel).join(', ') || 'No'} pull requests`}>
         {pulls === null && !props.error ? (
           <div className="view-loading" role="status"><IconLoader4 className="spinner" /> <ShimmeringText text="Loading pull requests…" /></div>
         ) : pulls !== null && pulls.length === 0 ? (
-          <p className="empty-list">No open pull requests.</p>
+          <p className="empty-list">{props.states.length ? `No ${props.states.map((state) => stateLabel(state).toLowerCase()).join(', ')} pull requests.` : 'Select at least one PR state.'}</p>
         ) : pulls !== null && (
           <div className="virtual-list" style={{ height: virtualizer.getTotalSize() }}>
             {virtualizer.getVirtualItems().map((virtualRow) => {
@@ -127,24 +156,26 @@ function PullsList(props: PullRequestsViewProps & { nameWithOwner: string }) {
 }
 
 function PullRow({ pr, active, onSelect }: { pr: PullRequestSummary; active: boolean; onSelect(pr: PullRequestSummary): void }) {
-  const review = reviewDecisionLabel(pr.reviewDecision);
+  const stateClass = pr.state.toLowerCase();
+  const relativeUpdate = formatRelativeUpdate(pr.updatedAt);
   return (
     <div className={`pull-item ${active ? 'active' : ''}`} role="listitem">
       <button className="pull-main" onClick={() => onSelect(pr)} aria-label={`View pull request #${pr.number}`}>
-        <span className="pull-title"><IconGitPullRequest aria-hidden="true" className={pr.isDraft ? 'draft' : 'open'} /> <span>{pr.title || '(no title)'}</span></span>
-        <span className="pull-meta">
-          <span>#{pr.number}</span>
-          <span className="pull-author">{pr.author}</span>
-          <span aria-hidden="true">·</span>
-          <span className="pull-branch" title={`${pr.headRefName} → ${pr.baseRefName}`}>{pr.headRefName}</span>
-          {formatRelativeUpdate(pr.updatedAt) && <><span aria-hidden="true">·</span><span>{formatRelativeUpdate(pr.updatedAt)}</span></>}
-        </span>
-        {(pr.isDraft || review) && (
-          <span className="pull-badges">
-            {pr.isDraft && <Badge variant="secondary">Draft</Badge>}
-            {review && <Badge variant="outline" className={`pr-review-badge ${pr.reviewDecision === 'CHANGES_REQUESTED' ? 'changes' : pr.reviewDecision === 'APPROVED' ? 'approved' : ''}`}>{review}</Badge>}
+        <span className={`pull-state-icon ${stateClass}${pr.isDraft ? ' draft' : ''}`} title={pr.isDraft ? 'Draft' : stateLabel(pr.state)}><PullStateIcon state={pr.state} /></span>
+        <span className="pull-content">
+          <span className="pull-title">{pr.title || '(no title)'}</span>
+          <span className="pull-meta">
+            <span className="pull-number">#{pr.number}</span>
+            <GitHubAvatar src={pr.authorAvatarUrl} className="pull-avatar" />
+            <span className="pull-author">{pr.author}</span>
+            <ChecksIcon state={pr.checksState} />
+            {pr.isDraft && <span className="pull-draft-label">Draft</span>}
           </span>
-        )}
+        </span>
+        <span className="pull-row-aside">
+          {relativeUpdate && <span>{relativeUpdate}</span>}
+          <span className="pull-line-stats"><span className="add">+{pr.additions}</span> <span className="del">−{pr.deletions}</span></span>
+        </span>
       </button>
       <Tooltip>
         <TooltipTrigger render={<Button variant="ghost" size="icon-xs" className="change-action-button pull-open-external" onClick={() => openOnGitHub(pr.url)} aria-label={`Open #${pr.number} on GitHub`} />}>
@@ -154,6 +185,25 @@ function PullRow({ pr, active, onSelect }: { pr: PullRequestSummary; active: boo
       </Tooltip>
     </div>
   );
+}
+
+function PullStateIcon({ state, className }: { state: PullRequestState; className?: string }) {
+  return state === 'MERGED' ? <IconGitMerge aria-hidden="true" className={className} /> : <IconGitPullRequest aria-hidden="true" className={className} />;
+}
+
+function ChecksIcon({ state }: { state: PullRequestCheckState }) {
+  if (state === 'NONE') return null;
+  const label = state === 'PASSING' ? 'Checks passing' : state === 'FAILING' ? 'Checks failing' : 'Checks pending';
+  const Icon = state === 'PASSING' ? IconCircleCheck : state === 'FAILING' ? IconCircleX : IconClock;
+  return <span className={`pull-checks ${state.toLowerCase()}`} title={label} aria-label={label}><Icon aria-hidden="true" /></span>;
+}
+
+function stateLabel(state: PullRequestState): string {
+  return state === 'OPEN' ? 'Open' : state === 'CLOSED' ? 'Closed' : 'Merged';
+}
+
+function isDefaultStateFilter(states: PullRequestState[]): boolean {
+  return states.length === 1 && states[0] === 'OPEN';
 }
 
 function PullsNotice({ icon, title, children }: { icon: React.ReactNode; title: string; children: React.ReactNode }) {

@@ -1,14 +1,14 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import type { CreatePullRequestInput, CreatePullRequestResult, DiffResult, GhCliStatus, GitHubRepositoryInfo, PullRequestDetails, PullRequestSummary } from '../../shared/contracts';
+import type { CreatePullRequestInput, CreatePullRequestResult, DiffResult, GhCliStatus, GitHubRepositoryInfo, PullRequestDetails, PullRequestState, PullRequestSummary } from '../../shared/contracts';
 import { AiOperationError, GhOperationError } from '../../shared/errors';
 import type { CliProcessRunner, CliRunResult } from '../ai/CliProcessRunner';
 import type { CliResolver } from '../ai/CliResolver';
 import type { GitProcess } from '../git/GitProcess';
 import type { RepositoryService } from '../git/RepositoryService';
 import { parseGitHubRemote } from './GitHubRemoteParser';
-import { parseCreatedPullRequestUrl, parsePullRequestDetails, parsePullRequestList, PR_DETAIL_FIELDS, PR_SUMMARY_FIELDS } from './PullRequestParser';
+import { parseCreatedPullRequestUrl, parsePullRequestDetails, parsePullRequestList, PR_DETAIL_FIELDS, PR_SUMMARY_FIELDS, selectPullRequestsNewestFirst, sortPullRequestsNewestFirst } from './PullRequestParser';
 
 // gh must never block waiting for input, page output, or emit ANSI noise.
 const GH_ENV = { GH_PROMPT_DISABLED: '1', GH_NO_UPDATE_NOTIFIER: '1', GH_PAGER: 'cat', NO_COLOR: '1' } as const;
@@ -51,13 +51,24 @@ export class GitHubService {
     }
   }
 
-  async listPullRequests(repositoryId: string): Promise<PullRequestSummary[]> {
+  async listPullRequests(repositoryId: string, states: PullRequestState[]): Promise<PullRequestSummary[]> {
     const { repository, nameWithOwner } = await this.requireGitHub(repositoryId, 'gh-pr-list');
-    const result = await this.runGh(
-      ['pr', 'list', '-R', nameWithOwner, '--state', 'open', '--json', PR_SUMMARY_FIELDS, '--limit', '50'],
+    const results = await Promise.all(states.map((state) => this.runGh(
+      ['pr', 'list', '-R', nameWithOwner, '--state', state.toLowerCase(), '--json', PR_SUMMARY_FIELDS, '--limit', '50'],
       { cwd: repository.path, operation: 'gh-pr-list', timeoutMs: NETWORK_TIMEOUT_MS, maxOutputBytes: 4 * 1024 * 1024 },
+    )));
+    return selectPullRequestsNewestFirst(results.flatMap((result) => parsePullRequestList(result.stdout)), states);
+  }
+
+  async findPullRequestForBranch(repositoryId: string, branchName: string): Promise<PullRequestSummary | null> {
+    const operation = 'gh-pr-for-branch';
+    const { repository, nameWithOwner } = await this.requireGitHub(repositoryId, operation);
+    const branch = validateRef(branchName, operation);
+    const result = await this.runGh(
+      ['pr', 'list', '-R', nameWithOwner, '--head', branch, '--state', 'all', '--json', PR_SUMMARY_FIELDS, '--limit', '10'],
+      { cwd: repository.path, operation, timeoutMs: NETWORK_TIMEOUT_MS, maxOutputBytes: 1024 * 1024 },
     );
-    return parsePullRequestList(result.stdout);
+    return sortPullRequestsNewestFirst(parsePullRequestList(result.stdout))[0] ?? null;
   }
 
   async getPullRequest(repositoryId: string, prNumber: number): Promise<PullRequestDetails> {
@@ -78,6 +89,21 @@ export class GitHubService {
     const patch = result.stdout;
     const binary = /Binary files .* differ|GIT binary patch/.test(patch);
     return { patch, path: `pull/${prNumber}`, binary, truncated: false, lineCount: patch ? patch.split('\n').length : 0 };
+  }
+
+  async getPullRequestCommitDiff(repositoryId: string, oid: string): Promise<DiffResult> {
+    const operation = 'gh-pr-commit-diff';
+    const { repository, nameWithOwner } = await this.requireGitHub(repositoryId, operation);
+    if (!/^[0-9a-f]{40,64}$/i.test(oid)) {
+      throw new GhOperationError({ code: 'GH_PROCESS_FAILED', operation, message: 'The commit is not valid.' });
+    }
+    const result = await this.runGh(
+      ['api', `repos/${nameWithOwner}/commits/${oid}`, '--header', 'Accept: application/vnd.github.diff'],
+      { cwd: repository.path, operation, timeoutMs: NETWORK_TIMEOUT_MS, maxOutputBytes: 32 * 1024 * 1024 },
+    );
+    const patch = result.stdout;
+    const binary = /Binary files .* differ|GIT binary patch/.test(patch);
+    return { patch, path: `commit/${oid}`, binary, truncated: false, lineCount: patch ? patch.split('\n').length : 0 };
   }
 
   async createPullRequest(input: CreatePullRequestInput): Promise<CreatePullRequestResult> {
