@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState, type ComponentPropsWithoutRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   closestCenter, DndContext, DragOverlay, KeyboardSensor, PointerSensor, pointerWithin,
   useDraggable, useDroppable, useSensor, useSensors, type CollisionDetection, type DragEndEvent, type DragOverEvent, type DragStartEvent,
 } from '@dnd-kit/core';
 import {
-  IconChevronRight, IconClipboard, IconCopy, IconCut, IconEdit, IconExternalLink, IconFilePlus, IconFiles,
-  IconArrowBackUp, IconArrowForwardUp, IconFileText, IconFolderPlus, IconTrash,
+  IconArrowBackUp, IconArrowForwardUp, IconChevronRight, IconClipboard, IconColumns2, IconCopy, IconCut, IconEdit,
+  IconExternalLink, IconFileArrowRight, IconFilePlus, IconFiles, IconFileText, IconFolderPlus, IconTrash,
 } from '@tabler/icons-react';
 import type { FileHistoryState } from '@shared/contracts';
 import type { FileTreeEntry } from '@shared/git-types';
@@ -22,8 +23,8 @@ import { Dialog, DialogDescription, DialogPopup, DialogTitle } from '@/component
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { getVsCodeFileIconUrl, getVsCodeFolderIconUrl } from '@/lib/vscode-icons';
 import {
-  canMovePathsToDirectory, fileHistoryShortcut, filterIgnoredEntries, findEntry, isEditableTarget, mergeLoadedDirectories, parentDirectory, pathContains,
-  persistableExpandedPaths, reconcileExpandedPaths, replaceLoadedDirectoryLevels,
+  canMovePathsToDirectory, canOpenPinnedDrop, fileHistoryShortcut, filterIgnoredEntries, findEntry, isEditableTarget, mergeLoadedDirectories,
+  OPEN_FILES_DROP_HOST_ID, parentDirectory, pathContains, persistableExpandedPaths, reconcileExpandedPaths, replaceLoadedDirectoryLevels,
 } from './file-tree';
 
 const FILE_ROW_HEIGHT = 29;
@@ -81,6 +82,7 @@ interface FileDragData {
 
 interface FileDragPreview {
   entry: FileTreeEntry;
+  sourcePaths: string[];
   count: number;
 }
 
@@ -151,6 +153,7 @@ export function FilesView({
   const [draggedPaths, setDraggedPaths] = useState<string[]>([]);
   const [dropTargetPath, setDropTargetPath] = useState<string | null>(null);
   const [dragPreview, setDragPreview] = useState<FileDragPreview | null>(null);
+  const [openFilesDropHost, setOpenFilesDropHost] = useState<HTMLElement | null>(null);
   const [reducedMotion, setReducedMotion] = useState(false);
   const [dialogState, setDialogState] = useState<NameDialogState | null>(null);
   const [scrollTop, setScrollTop] = useState(0);
@@ -176,6 +179,12 @@ export function FilesView({
   );
 
   useEffect(() => { loadedDirectoriesRef.current = loadedDirectories; }, [loadedDirectories]);
+
+  // The tab strip lives above this DndContext. A portal keeps the drop target in
+  // this React context while placing its measured DOM rectangle over the strip.
+  useEffect(() => {
+    setOpenFilesDropHost(document.getElementById(OPEN_FILES_DROP_HOST_ID));
+  }, [activePath]);
 
   useEffect(() => {
     const query = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -551,10 +560,15 @@ export function FilesView({
     if (!data) return;
     if (!selectedPaths.has(data.entry.path)) selectOnly(data.entry.path);
     setDraggedPaths(data.sourcePaths);
-    setDragPreview({ entry: data.entry, count: data.sourcePaths.length });
+    setDragPreview({ entry: data.entry, sourcePaths: data.sourcePaths, count: data.sourcePaths.length });
   };
   const handleDragOver = (event: DragOverEvent) => {
     const data = dragData(event);
+    if (event.over?.data.current?.openPinned === true) {
+      setDropTargetPath(null);
+      clearHoverExpansion();
+      return;
+    }
     const targetDirectory = event.over?.data.current?.targetDirectory;
     if (!data || typeof targetDirectory !== 'string' || !canMovePathsToDirectory(data.sourcePaths, targetDirectory)) {
       setDropTargetPath(null);
@@ -578,8 +592,13 @@ export function FilesView({
   };
   const handleDragEnd = (event: DragEndEvent) => {
     const data = dragData(event);
+    const openPinned = event.over?.data.current?.openPinned === true;
     const targetDirectory = event.over?.data.current?.targetDirectory;
     endDrag();
+    if (data && openPinned && canOpenPinnedDrop(data.entry, data.sourcePaths)) {
+      onOpenFile(data.entry.path, 'pinned');
+      return;
+    }
     if (data && typeof targetDirectory === 'string' && canMovePathsToDirectory(data.sourcePaths, targetDirectory)) {
       void movePaths(data.sourcePaths, targetDirectory);
     }
@@ -671,6 +690,8 @@ export function FilesView({
                   onRowClick={handleRowClick}
                   onRowDoubleClick={handleRowDoubleClick}
                   onRowContextMenu={handleRowContextMenu}
+                  onOpen={(target) => onOpenFile(target.path)}
+                  onOpenPinned={(target) => onOpenFile(target.path, 'pinned')}
                   onCopy={(target) => void onCopyEntries(contextTargets(target))}
                   onCut={(target) => void onCutEntries(contextTargets(target))}
                   onPasteInto={(target) => void onPaste(targetDirectoryFor(target))}
@@ -693,6 +714,10 @@ export function FilesView({
       <DragOverlay dropAnimation={reducedMotion ? null : FILE_DROP_MOTION}>
         {dragPreview && <FileDragOverlay preview={dragPreview} />}
       </DragOverlay>
+      {openFilesDropHost && createPortal(
+        <OpenFilesDropTarget visible={Boolean(dragPreview && canOpenPinnedDrop(dragPreview.entry, dragPreview.sourcePaths))} />,
+        openFilesDropHost,
+      )}
     </DndContext>
   );
 }
@@ -700,6 +725,20 @@ export function FilesView({
 function FileTreeDropSurface(props: ComponentPropsWithoutRef<'div'>) {
   const { setNodeRef } = useDroppable({ id: ROOT_DROP_ID, data: { targetDirectory: '', expandPath: null } });
   return <div ref={setNodeRef} {...props} />;
+}
+
+function OpenFilesDropTarget({ visible }: { visible: boolean }) {
+  const { isOver, setNodeRef } = useDroppable({ id: 'files-open-pinned-drop', data: { openPinned: true } });
+  return (
+    <div
+      ref={setNodeRef}
+      className={`open-files-drop-target ${visible ? 'visible' : ''} ${visible && isOver ? 'over' : ''}`}
+      aria-hidden="true"
+    >
+      <IconColumns2 />
+      <span>Drop to open beside</span>
+    </div>
+  );
 }
 
 function FileDragOverlay({ preview }: { preview: FileDragPreview }) {
@@ -737,6 +776,8 @@ interface FileRowProps {
   onRowClick(entry: FileTreeEntry, mods: { ctrl: boolean; shift: boolean }): void;
   onRowDoubleClick(entry: FileTreeEntry): void;
   onRowContextMenu(entry: FileTreeEntry): void;
+  onOpen(entry: FileTreeEntry): void;
+  onOpenPinned(entry: FileTreeEntry): void;
   onCopy(entry: FileTreeEntry): void;
   onCut(entry: FileTreeEntry): void;
   onPasteInto(entry: FileTreeEntry): void;
@@ -768,6 +809,8 @@ function FileRow({
   onRowClick,
   onRowDoubleClick,
   onRowContextMenu,
+  onOpen,
+  onOpenPinned,
   onCopy,
   onCut,
   onPasteInto,
@@ -835,6 +878,17 @@ function FileRow({
     <ContextMenu>
       <ContextMenuTrigger render={row} />
       <ContextMenuContent>
+        {entry.type === 'file' && (
+          <>
+            <ContextMenuItem onClick={() => onOpen(entry)}>
+              <IconFileArrowRight aria-hidden="true" /> Open
+            </ContextMenuItem>
+            <ContextMenuItem onClick={() => onOpenPinned(entry)}>
+              <IconColumns2 aria-hidden="true" /> Open to the Side <span className="ml-auto text-[10px] text-muted-foreground">Ctrl+Click</span>
+            </ContextMenuItem>
+            <ContextMenuSeparator />
+          </>
+        )}
         <ContextMenuItem disabled={readOnly || !historyState.canUndo} onClick={() => void onUndo()}>
           <IconArrowBackUp aria-hidden="true" /> {historyState.undoLabel ? `Undo ${historyState.undoLabel}` : 'Undo'} <span className="ml-auto text-[10px] text-muted-foreground">Ctrl+Z</span>
         </ContextMenuItem>

@@ -4,6 +4,7 @@ import { closestCenter, DndContext, DragOverlay, PointerSensor, useSensor, useSe
 import { horizontalListSortingStrategy, SortableContext, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { OPEN_FILES_DROP_HOST_ID } from './file-tree';
 import { edgeFades, type FileSession, horizontalWheelDelta, type RuntimeTab, tabLabels } from './open-files-model';
 
 const TAB_MOTION = { duration: 180, easing: 'cubic-bezier(0.2, 0, 0, 1)' } as const;
@@ -99,6 +100,7 @@ export function OpenFilesStrip({ session, onActivate, onPin, onClose, onReorder 
     >
       <SortableContext items={session.tabs.map((tab) => tab.path)} strategy={horizontalListSortingStrategy}>
         <div
+          id={OPEN_FILES_DROP_HOST_ID}
           ref={stripRef}
           className={['open-files-strip', draggingPath ? 'sorting' : '', fades.start ? 'fade-start' : '', fades.end ? 'fade-end' : ''].filter(Boolean).join(' ')}
           role="tablist"

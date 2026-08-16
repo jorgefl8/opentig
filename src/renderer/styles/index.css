@@ -224,10 +224,18 @@
      pointer events. The strip opts out for itself, not only for its buttons, and
      stays content-sized so the spacer after it keeps the header draggable. */
   .open-files-strip {
-    display: flex; min-width: 140px; max-width: 100%; flex: 0 1 auto; align-items: center; gap: 2px;
+    position: relative; display: flex; min-width: 140px; max-width: 100%; flex: 0 1 auto; align-items: center; gap: 2px;
     overflow-x: auto; scrollbar-width: none; white-space: nowrap; -webkit-app-region: no-drag;
   }
   .open-files-strip::-webkit-scrollbar { display: none; }
+  .open-files-drop-target {
+    position: absolute; inset: 0; z-index: 5; display: flex; align-items: center; justify-content: center; gap: 6px;
+    border: 1px dashed transparent; border-radius: var(--radius-md); background: transparent; color: transparent;
+    font-size: 10px; font-weight: 700; pointer-events: none; opacity: 0; transition: opacity var(--motion-fast) var(--ease-out), border-color var(--motion-fast) var(--ease-out), background-color var(--motion-fast) var(--ease-out);
+  }
+  .open-files-drop-target svg { width: 13px; height: 13px; }
+  .open-files-drop-target.visible { border-color: color-mix(in oklch, var(--primary) 38%, var(--border)); background: color-mix(in oklch, var(--background) 90%, var(--primary)); color: var(--foreground); opacity: .92; }
+  .open-files-drop-target.visible.over { border-color: var(--primary); background: color-mix(in oklch, var(--primary) 22%, var(--background)); color: var(--primary); opacity: 1; }
   .open-files-strip.fade-start { mask-image: linear-gradient(to right, transparent, black 18px); }
   .open-files-strip.fade-end { mask-image: linear-gradient(to left, transparent, black 18px); }
   .open-files-strip.fade-start.fade-end { mask-image: linear-gradient(to right, transparent, black 18px, black calc(100% - 18px), transparent); }
@@ -278,7 +286,7 @@
   .open-file-tab.dirty .open-file-tab-close:hover .open-file-tab-close-icon,
   .open-file-tab.dirty .open-file-tab-close:focus-visible .open-file-tab-close-icon { opacity: 1; }
   @media (prefers-reduced-motion: reduce) {
-    .open-file-tab, .open-file-tab-close { transition: none !important; }
+    .open-file-tab, .open-file-tab-close, .open-files-drop-target { transition: none !important; }
     .open-file-tab.drag-overlay { scale: 1; }
   }
   .repo-select { justify-content: flex-start; gap: 6px; border-color: color-mix(in oklch, var(--border) 82%, var(--foreground)); background: color-mix(in oklch, var(--input) 45%, transparent); }

@@ -10,6 +10,14 @@ export interface ExpandedPathsReconciliation {
 
 export type SnapshotPathPresence = 'present' | 'deferred' | 'missing';
 
+/** DOM host used to bridge Files' DndContext into the toolbar tab strip. */
+export const OPEN_FILES_DROP_HOST_ID = 'justgit-open-files-drop-host';
+
+/** Only an intentional single-file drag can become an open-beside action. */
+export function canOpenPinnedDrop(entry: FileTreeEntry, sourcePaths: readonly string[]): boolean {
+  return entry.type === 'file' && sourcePaths.length === 1 && sourcePaths[0] === entry.path;
+}
+
 export function findEntry(entries: FileTreeEntry[], path: string): FileTreeEntry | null {
   for (const entry of entries) {
     if (entry.path === path) return entry;

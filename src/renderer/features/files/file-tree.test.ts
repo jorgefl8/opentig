@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { FileTreeEntry } from '@shared/git-types';
 import {
+  canOpenPinnedDrop,
   containsPath,
   canMovePathsToDirectory,
   fileSnapshotFingerprint,
@@ -35,6 +36,16 @@ const tree: FileTreeEntry[] = [
 ];
 
 describe('file tree helpers', () => {
+  it('opens only a single dragged file beside the current tab', () => {
+    const file = tree.find((entry) => entry.path === 'main.ts')!;
+    const directory = tree.find((entry) => entry.path === 'docs')!;
+
+    expect(canOpenPinnedDrop(file, ['main.ts'])).toBe(true);
+    expect(canOpenPinnedDrop(file, ['main.ts', 'docs/README.MD'])).toBe(false);
+    expect(canOpenPinnedDrop(file, ['docs/README.MD'])).toBe(false);
+    expect(canOpenPinnedDrop(directory, ['docs'])).toBe(false);
+  });
+
   it('allows reparenting one item, a multi-selection, and movement to root', () => {
     expect(canMovePathsToDirectory(['src/app.ts'], 'docs')).toBe(true);
     expect(canMovePathsToDirectory(['src/app.ts', 'src/lib.ts'], 'docs')).toBe(true);
