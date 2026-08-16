@@ -5,17 +5,22 @@ import type { FileResult, ThemePreference, WriteFileResult } from '@shared/contr
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { FileSaveControls, SourceCodeEditor } from '@/features/viewer/EditableFileViewer';
+import { resolveMarkdownRepositoryPath } from './markdown-links';
 import { renderMarkdown } from './render-markdown';
 import { useMermaid } from './useMermaid';
 import './markdown.css';
 
 interface MarkdownFileViewerProps {
   file: FileResult;
+  /** The draft App is holding for this path, or the file's own content. */
+  initialContent: string;
   revision: number;
   themeType: ThemePreference;
   wrapLines: boolean;
   readOnly: boolean;
+  onOpenFile(path: string): void;
   onDirtyChange(dirty: boolean): void;
+  onDraftChange(content: string): void;
   onSave(path: string, content: string, expectedContent: string): Promise<WriteFileResult>;
 }
 
@@ -50,10 +55,10 @@ function MarkdownPreviewContent({ html, onClick }: MarkdownPreviewContentProps) 
   return <div ref={previewRef} className="markdown-prose" onClick={onClick} />;
 }
 
-export function MarkdownFileViewer({ file, revision, themeType, wrapLines, readOnly, onDirtyChange, onSave }: MarkdownFileViewerProps) {
+export function MarkdownFileViewer({ file, initialContent, revision, themeType, wrapLines, readOnly, onOpenFile, onDirtyChange, onDraftChange, onSave }: MarkdownFileViewerProps) {
   const [tab, setTab] = useState<'preview' | 'code'>('preview');
   const [contentWidth, setContentWidth] = useState<ContentWidth>(getInitialContentWidth);
-  const [draft, setDraft] = useState(file.content);
+  const [draft, setDraft] = useState(initialContent);
   const [html, setHtml] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -101,16 +106,6 @@ export function MarkdownFileViewer({ file, revision, themeType, wrapLines, readO
     if (copyFeedback.current) window.clearTimeout(copyFeedback.current.timer);
   }, []);
 
-  useEffect(() => {
-    if (!dirty) return;
-    const warnBeforeClose = (event: BeforeUnloadEvent) => {
-      event.preventDefault();
-      event.returnValue = '';
-    };
-    window.addEventListener('beforeunload', warnBeforeClose);
-    return () => window.removeEventListener('beforeunload', warnBeforeClose);
-  }, [dirty]);
-
   const handlePreviewClick = useCallback(async (event: React.MouseEvent<HTMLDivElement>) => {
     const target = event.target as HTMLElement;
     const copy = target.closest<HTMLButtonElement>('[data-copy-code]');
@@ -146,10 +141,14 @@ export function MarkdownFileViewer({ file, revision, themeType, wrapLines, readO
     const href = link?.getAttribute('href');
     if (!link || !href) return;
     event.preventDefault();
-    if (!href.startsWith('#')) return;
-    const element = event.currentTarget.querySelector<HTMLElement>(`#${CSS.escape(href.slice(1))}`);
-    element?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }, []);
+    if (href.startsWith('#')) {
+      const element = event.currentTarget.querySelector<HTMLElement>(`#${CSS.escape(href.slice(1))}`);
+      element?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      return;
+    }
+    const repositoryPath = resolveMarkdownRepositoryPath(file.path, href);
+    if (repositoryPath) onOpenFile(repositoryPath);
+  }, [file.path, onOpenFile]);
 
   const handleTabKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
     if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
@@ -262,6 +261,7 @@ export function MarkdownFileViewer({ file, revision, themeType, wrapLines, readO
             onChange={(value) => {
               setDraft(value);
               onDirtyChange(value !== file.content);
+              onDraftChange(value);
             }}
           />
         </div>

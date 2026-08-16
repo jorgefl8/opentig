@@ -7,10 +7,12 @@ import {
   IconRefresh, IconRestore, IconSearch, IconSettings, IconSparkles, IconSun, IconX,
 } from '@tabler/icons-react';
 import { Toaster, toast } from 'sonner';
-import type { AiHarnessId, AiHarnessStatus, BootstrapData, ChangesLayoutPreference, FileHistoryPathChange, FileHistoryState, GhCliStatus, GitHubRepositoryInfo, Preferences, PullRequestSummary, RecentRepository, RepositoryInfo, RepositoryOrganization, RepositoryProject, ThemePreference, UndoLatestCommitResult } from '../../shared/contracts';
+import type { AiHarnessId, AiHarnessStatus, BootstrapData, ChangesLayoutPreference, CommitSplitProposal, FileHistoryPathChange, FileHistoryState, GhCliStatus, GitHubRepositoryInfo, Preferences, PullRequestState, PullRequestSummary, RecentRepository, RepositoryInfo, RepositoryOrganization, RepositoryProject, ThemePreference, UndoLatestCommitResult } from '../../shared/contracts';
+import type { OpenFilesState } from '../../shared/open-files-state';
 import { normalizeRepositoryKey } from '../../shared/repository-projects';
 import type { SerializedAiError } from '../../shared/errors';
 import type { BranchInfo, ChangeKind, CommitFile, CommitInfo, FileChange, FileTreeEntry, RepositoryStatus, WorktreeInfo } from '../../shared/git-types';
+import { isKnownImagePath, isSvgPath } from '../../shared/image-types';
 import { mergeRepositoryChangeScopes, type RepositoryChangeScope } from '../../shared/repository-change';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -22,7 +24,14 @@ import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { FilesView } from '@/features/files/FilesView';
-import { fileSnapshotFingerprint, isEditableTarget, pathContains, selectedFileChanged, snapshotPathPresence } from '@/features/files/file-tree';
+import { fileSnapshotFingerprint, isEditableTarget, isHtmlPath, isMarkdownPath, pathContains, selectedFileChanged, snapshotPathPresence } from '@/features/files/file-tree';
+import {
+  activateTab, applyKeyboardAction, closeTab, dirtyTabs, dirtyTabsUnder, DRAFT_MEMORY_WARNING_BYTES, draftBytes,
+  emptyFileSession, type FileSession, markTabsPresent, moveTab, type OpenMode, openTab, removeTabsUnder, renameTabPaths,
+  restoreSession, serializeSession, setTabDirty, type TabKeyboardAction,
+} from '@/features/files/open-files-model';
+import type { RuntimeFileDraft } from '@/features/viewer/Viewer';
+import { OpenFilesStrip } from '@/features/files/OpenFilesStrip';
 import { QuickOpenDialog } from '@/features/files/QuickOpenDialog';
 import { isQuickOpenShortcut } from '@/features/files/quick-open';
 import { CommitComposer } from '@/features/commit/CommitComposer';
@@ -31,6 +40,7 @@ import { PullRequestsView } from '@/features/pulls/PullRequestsView';
 import { LocalRefsDialog } from '@/features/refs/LocalRefsDialog';
 import type { LocalRefsTab } from '@/features/refs/local-refs-model';
 import { RepositoryProjectsDialog } from '@/features/repositories/RepositoryProjectsDialog';
+import { AiLogDialog } from '@/features/ai/AiLogDialog';
 import { SearchView } from '@/features/search/SearchView';
 import { buildRepositoryPickerModel, getRepositoryPickerDisplayOrder, groupRecentRepositories, shortenRepositoryPath, touchRecentRepositories, type RepositoryOption } from '@/features/repositories/repository-select-model';
 import type { ViewerSelection } from '@/features/viewer/Viewer';
@@ -40,6 +50,8 @@ import { resolveWindowControlsInset } from './window-controls';
 import { RefreshCoordinator, type RefreshRequest } from '@/lib/RefreshCoordinator';
 
 const Viewer = lazy(() => import('@/features/viewer/Viewer'));
+const NO_OPEN_FILES_STATES: OpenFilesState[] = [];
+type DirtyCloseChoice = 'save' | 'discard' | 'cancel';
 const SIDEBAR_VIEWS = ['changes', 'files', 'history', 'prs', 'search'] as const;
 type SidebarView = (typeof SIDEBAR_VIEWS)[number];
 interface AppRefreshOptions {
@@ -64,6 +76,10 @@ export default function App() {
   const [view, setView] = useState<SidebarView>('changes');
   const [viewerSelection, setViewerSelection] = useState<ViewerSelection>(null);
   const [commitMessage, setCommitMessage] = useState('');
+  const [commitProposal, setCommitProposal] = useState<CommitSplitProposal | null>(null);
+  const [preparedCommitIndex, setPreparedCommitIndex] = useState<number | null>(null);
+  const [completedCommitIndices, setCompletedCommitIndices] = useState<ReadonlySet<number>>(() => new Set());
+  const [commitPlanCollapsed, setCommitPlanCollapsed] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshVersion, setRefreshVersion] = useState(0);
@@ -77,8 +93,13 @@ export default function App() {
   const [pulls, setPulls] = useState<PullRequestSummary[] | null>(null);
   const [pullsLoading, setPullsLoading] = useState(false);
   const [pullsError, setPullsError] = useState<string | null>(null);
+  const [pullRequestStates, setPullRequestStates] = useState<PullRequestState[]>(['OPEN']);
   const [createPrOpen, setCreatePrOpen] = useState(false);
   const [quickOpen, setQuickOpen] = useState(false);
+  // Open-file tabs, one session per worktree. Structural metadata only: the
+  // draft text of a dirty tab lives in a ref-backed map, never in React state.
+  const [fileSessions, setFileSessions] = useState<ReadonlyMap<string, FileSession>>(() => new Map());
+  const [dirtyClosePath, setDirtyClosePath] = useState<string | null>(null);
   // Holding Ctrl reveals the section numbers, so the shortcut is discoverable
   // without a cheat sheet.
   const [ctrlHeld, setCtrlHeld] = useState(false);
@@ -87,14 +108,27 @@ export default function App() {
   const filesRequestToken = useRef(0);
   const filesRef = useRef<FileTreeEntry[] | null>(null);
   const viewerSelectionRef = useRef<ViewerSelection>(null);
-  const viewerDirtyRef = useRef(false);
   // A path we just created/renamed/moved the viewer onto; it may be missing from
   // an in-flight (stale) file snapshot, so don't declare it deleted until it appears.
   const pendingViewerPathRef = useRef<string | null>(null);
   const generationRequest = useRef<{ id: string; repositoryId: string } | null>(null);
   const [filesTreeStates] = useState<Map<string, string[]>>(() => new Map());
+  const repositoryRef = useRef<RepositoryInfo | null>(null);
+  const fileSessionsRef = useRef<ReadonlyMap<string, FileSession>>(fileSessions);
+  // Last payload sent per worktree, so pure activation bumps do not produce IPC.
+  const persistedSessionsRef = useRef<Map<string, string>>(new Map());
+  // Unsaved draft text, keyed by worktree then path. Deliberately a ref: an
+  // editor keystroke must not rerender App or the toolbar.
+  const fileDraftsRef = useRef<Map<string, Map<string, RuntimeFileDraft>>>(new Map());
+  const draftBytesRef = useRef(0);
+  const draftWarningShownRef = useRef(false);
+  const dirtyCloseResolverRef = useRef<((choice: DirtyCloseChoice) => void) | null>(null);
   const commitTextareaRef = useRef<HTMLTextAreaElement>(null);
+  // The last message JustGit itself put in the composer, so an edited one is
+  // never replaced without asking.
+  const lastAppliedMessageRef = useRef('');
 
+  const openFilesStates = bootstrap?.openFilesStates ?? NO_OPEN_FILES_STATES;
   const theme = bootstrap?.preferences.theme ?? 'system';
   const diffView = bootstrap?.preferences.diffView ?? 'unified';
   const wrapLines = bootstrap?.preferences.wrapLines ?? false;
@@ -195,6 +229,112 @@ export default function App() {
   }, [files]);
 
   useEffect(() => {
+    repositoryRef.current = repository;
+  }, [repository]);
+
+  /**
+   * Replaces one worktree's tab session and persists its metadata. Only
+   * structural changes reach the main process; the payload is compared with the
+   * last one sent so activation bumps do not produce redundant writes.
+   */
+  const commitFileSession = useCallback((repositoryId: string, session: FileSession): FileSession => {
+    const current = fileSessionsRef.current.get(repositoryId) ?? emptyFileSession;
+    if (session === current) return current;
+    const map = new Map(fileSessionsRef.current);
+    map.set(repositoryId, session);
+    fileSessionsRef.current = map;
+    setFileSessions(map);
+
+    const payload = serializeSession(session);
+    const fingerprint = JSON.stringify(payload);
+    if (persistedSessionsRef.current.get(repositoryId) !== fingerprint) {
+      persistedSessionsRef.current.set(repositoryId, fingerprint);
+      void window.justgit.app.setOpenFilesState(repositoryId, payload.tabs, payload.activePath, payload.previewPath).catch(() => undefined);
+    }
+    return session;
+  }, []);
+
+  const updateFileSession = useCallback((repositoryId: string, update: (session: FileSession) => FileSession): FileSession => {
+    const current = fileSessionsRef.current.get(repositoryId) ?? emptyFileSession;
+    return commitFileSession(repositoryId, update(current));
+  }, [commitFileSession]);
+
+  const selectFilePath = useCallback((path: string | null) => {
+    const selection: ViewerSelection = path ? { type: 'file', path } : null;
+    viewerSelectionRef.current = selection;
+    setViewerSelection(selection);
+  }, []);
+
+  const dropFileDraft = useCallback((repositoryId: string, path: string) => {
+    const drafts = fileDraftsRef.current.get(repositoryId);
+    if (!drafts) return;
+    const draft = drafts.get(path);
+    if (!draft) return;
+    draftBytesRef.current -= draftBytes(draft.content);
+    drafts.delete(path);
+    if (drafts.size === 0) fileDraftsRef.current.delete(repositoryId);
+  }, []);
+
+  const renameFileDrafts = useCallback((repositoryId: string, renamed: ReadonlyMap<string, string>) => {
+    if (renamed.size === 0) return;
+    const drafts = fileDraftsRef.current.get(repositoryId);
+    if (!drafts) return;
+    const next = new Map<string, RuntimeFileDraft>();
+    for (const [path, draft] of drafts) next.set(renamed.get(path) ?? path, draft);
+    fileDraftsRef.current.set(repositoryId, next);
+  }, []);
+
+  const readFileDraft = useCallback((repositoryId: string, path: string): RuntimeFileDraft | null => {
+    return fileDraftsRef.current.get(repositoryId)?.get(path) ?? null;
+  }, []);
+
+  const currentFileSession = useCallback((): FileSession => {
+    const repositoryId = repositoryRef.current?.id;
+    return (repositoryId ? fileSessionsRef.current.get(repositoryId) : undefined) ?? emptyFileSession;
+  }, []);
+
+  /** Unsaved tabs at or under the given paths, on screen or not. */
+  const unsavedTabsUnder = useCallback((paths: readonly string[]): string[] => (
+    dirtyTabsUnder(currentFileSession(), paths)
+  ), [currentFileSession]);
+
+  const anyDirtyTab = useCallback((): string[] => dirtyTabs(currentFileSession()), [currentFileSession]);
+
+  /**
+   * Records the latest draft for a path. Called on every keystroke, so it only
+   * touches refs; React state changes just once, when the dirty flag flips.
+   */
+  const storeFileDraft = useCallback((path: string, content: string, expectedContent: string, expectedMtimeMs: number) => {
+    const repositoryId = repositoryRef.current?.id;
+    if (!repositoryId) return;
+    let drafts = fileDraftsRef.current.get(repositoryId);
+    if (!drafts) {
+      drafts = new Map<string, RuntimeFileDraft>();
+      fileDraftsRef.current.set(repositoryId, drafts);
+    }
+    const previous = drafts.get(path);
+    const dirty = content !== expectedContent;
+    if (!dirty) {
+      if (previous) dropFileDraft(repositoryId, path);
+      updateFileSession(repositoryId, (session) => setTabDirty(session, path, false));
+      return;
+    }
+    draftBytesRef.current += draftBytes(content) - (previous ? draftBytes(previous.content) : 0);
+    // An inactive tab keeps the content it was read with, so a save still
+    // detects a file that changed on disk in the meantime.
+    drafts.set(path, {
+      content,
+      expectedContent: previous?.expectedContent ?? expectedContent,
+      expectedMtimeMs: previous?.expectedMtimeMs ?? expectedMtimeMs,
+    });
+    if (!draftWarningShownRef.current && draftBytesRef.current > DRAFT_MEMORY_WARNING_BYTES) {
+      draftWarningShownRef.current = true;
+      toast.warning('Unsaved changes are using a lot of memory', { description: 'Save or close some open files.', duration: 10_000 });
+    }
+    if (!previous) updateFileSession(repositoryId, (session) => setTabDirty(session, path, true));
+  }, [dropFileDraft, updateFileSession]);
+
+  useEffect(() => {
     viewerSelectionRef.current = viewerSelection;
   }, [viewerSelection]);
 
@@ -205,21 +345,49 @@ export default function App() {
     if (!same) setFiles(nextFiles);
     setFilesSnapshotRevision((revision) => revision + 1);
 
+    const repositoryId = repositoryRef.current?.id;
+    const session = repositoryId ? fileSessionsRef.current.get(repositoryId) : undefined;
+    if (repositoryId && session && session.tabs.length > 0) {
+      // One walk of the snapshot serves every tab; per-tab walks would turn a
+      // refresh into fifty tree traversals.
+      const index = indexSnapshot(nextFiles);
+      const removed: string[] = [];
+      const present = new Set<string>();
+      for (const tab of session.tabs) {
+        const presence = snapshotPresenceFromIndex(index, tab.path);
+        if (presence === 'present') present.add(tab.path);
+        else if (presence === 'missing' && pendingViewerPathRef.current !== tab.path) removed.push(tab.path);
+      }
+      if (removed.length > 0 || present.size > 0) {
+        const restored = markTabsPresent(session, present);
+        const result = removeTabsUnder(restored, removed);
+        for (const path of result.closedPaths) dropFileDraft(repositoryId, path);
+        for (const path of result.retainedPaths) {
+          toast.info('File no longer exists', { description: `${path} — unsaved changes are still open` });
+        }
+        const next = commitFileSession(repositoryId, result.session);
+        const active = viewerSelectionRef.current;
+        if (active?.type === 'file' && result.closedPaths.includes(active.path)) {
+          const selection: ViewerSelection = next.activePath ? { type: 'file', path: next.activePath } : null;
+          viewerSelectionRef.current = selection;
+          setViewerSelection(selection);
+          toast.info('File no longer exists', { description: active.path });
+        }
+      }
+    }
+
     const active = viewerSelectionRef.current;
     if (active?.type !== 'file') return;
     const presence = snapshotPathPresence(nextFiles, active.path);
     if (presence === 'missing') {
       if (pendingViewerPathRef.current === active.path) return;
-      viewerSelectionRef.current = null;
-      setViewerSelection(null);
-      toast.info('File no longer exists', { description: active.path });
       return;
     }
     if (pendingViewerPathRef.current === active.path) pendingViewerPathRef.current = null;
     if (presence === 'present' && previous && selectedFileChanged(previous, nextFiles, active.path)) {
       setRefreshVersion((version) => version + 1);
     }
-  }, []);
+  }, [commitFileSession, dropFileDraft]);
 
   const refreshFilesOnly = useCallback(async () => {
     if (!repository) return;
@@ -338,7 +506,7 @@ export default function App() {
     return () => { active = false; };
   }, [repository]);
 
-  const loadPulls = useCallback(async (forceStatus = false) => {
+  const loadPulls = useCallback(async (states: PullRequestState[], forceStatus = false) => {
     if (!repository) return;
     const token = ++pullsRequestToken.current;
     setPullsLoading(true);
@@ -348,7 +516,7 @@ export default function App() {
       if (token !== pullsRequestToken.current) return;
       setGhStatus(nextGhStatus);
       if (!nextGhStatus.installed || nextGhStatus.authStatus === 'unauthenticated') return;
-      const list = await window.justgit.github.listPullRequests(repository.id);
+      const list = states.length ? await window.justgit.github.listPullRequests(repository.id, states) : [];
       if (token !== pullsRequestToken.current) return;
       setPulls(list);
     } catch (reason) {
@@ -361,13 +529,33 @@ export default function App() {
   useEffect(() => {
     if (view !== 'prs' || !githubInfo?.isGitHub || pullsLoading || pullsError) return;
     const ready = ghStatus !== null && ghStatus.installed && ghStatus.authStatus !== 'unauthenticated';
-    if (ghStatus === null || (ready && pulls === null)) void loadPulls();
-  }, [ghStatus, githubInfo, loadPulls, pulls, pullsError, pullsLoading, view]);
+    if (ghStatus === null || (ready && pulls === null)) void loadPulls(pullRequestStates);
+  }, [ghStatus, githubInfo, loadPulls, pullRequestStates, pulls, pullsError, pullsLoading, view]);
 
   useEffect(() => {
-    setViewerSelection(null);
     void refresh();
   }, [refresh, repository?.id, view]);
+
+  // Switching worktree or sidebar view no longer discards the file session: the
+  // tabs of each worktree are restored from persisted metadata the first time it
+  // is shown, and Files reopens on whichever tab was last active there.
+  useEffect(() => {
+    const repositoryId = repository?.id;
+    if (!repositoryId) {
+      selectFilePath(null);
+      return;
+    }
+    let session = fileSessionsRef.current.get(repositoryId);
+    if (!session) {
+      session = restoreSession(openFilesStates.find((state) => state.repositoryId === repositoryId) ?? null);
+      const map = new Map(fileSessionsRef.current);
+      map.set(repositoryId, session);
+      fileSessionsRef.current = map;
+      setFileSessions(map);
+      persistedSessionsRef.current.set(repositoryId, JSON.stringify(serializeSession(session)));
+    }
+    selectFilePath(view === 'files' ? session.activePath : null);
+  }, [openFilesStates, repository?.id, selectFilePath, view]);
 
   useEffect(() => window.justgit.events.onRepositoryChanged((repositoryId, scope) => {
     if (repositoryId === repository?.id) void refresh({ background: true, scope });
@@ -421,25 +609,6 @@ export default function App() {
   }, [recordOpenedRepository]);
 
   useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.ctrlKey && event.key.toLowerCase() === 'o') { event.preventDefault(); void openRepository(); }
-      if (event.ctrlKey && event.key.toLowerCase() === 'r') { event.preventDefault(); void refresh(); }
-      if (repository && event.ctrlKey && !event.altKey && !event.metaKey) {
-        const section = SIDEBAR_VIEWS[Number(event.key) - 1];
-        if (section) { event.preventDefault(); setView(section); }
-      }
-      if (repository && !event.repeat && isQuickOpenShortcut(event)) {
-        if (!quickOpen && document.querySelector('[data-slot="dialog-popup"]')) return;
-        event.preventDefault();
-        setQuickOpen(true);
-        void refreshFilesOnly();
-      }
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [openRepository, quickOpen, refresh, refreshFilesOnly, repository]);
-
-  useEffect(() => {
     const update = (event: KeyboardEvent) => setCtrlHeld(event.ctrlKey && !event.altKey && !event.metaKey);
     // A lost focus never delivers the keyup, so the hint would stay pinned open.
     const clear = () => setCtrlHeld(false);
@@ -473,6 +642,8 @@ export default function App() {
     setStatus(optimisticStatus(status, paths, mode));
     setBusy(mode);
     setError(null);
+    setCommitProposal(null);
+    setPreparedCommitIndex(null);
     try {
       if (mode === 'stage') await window.justgit.index.stage(repository.id, paths);
       else await window.justgit.index.unstage(repository.id, paths);
@@ -487,6 +658,8 @@ export default function App() {
     if (!repository || paths.length === 0) return;
     setBusy('discard');
     setError(null);
+    setCommitProposal(null);
+    setPreparedCommitIndex(null);
     try {
       await window.justgit.index.discard(repository.id, paths);
       await refresh({ background: true });
@@ -494,48 +667,185 @@ export default function App() {
     finally { setBusy(null); }
   };
 
+  /**
+   * Changing the selection no longer discards anything: a file's unsaved draft
+   * lives in App, so switching tabs, opening a diff, or moving to another
+   * worktree simply leaves it in memory until it is saved or explicitly closed.
+   */
   const selectViewer = useCallback((selection: ViewerSelection): boolean => {
-    const current = viewerSelectionRef.current;
-    const same = JSON.stringify(current) === JSON.stringify(selection);
-    if (!same && viewerDirtyRef.current && !window.confirm('You have unsaved file changes. Discard them and continue?')) {
-      return false;
-    }
-    viewerDirtyRef.current = false;
     viewerSelectionRef.current = selection;
     setViewerSelection(selection);
     return true;
   }, []);
 
-  const handleViewerDirtyChange = useCallback((dirty: boolean) => {
-    viewerDirtyRef.current = dirty;
+  /** The single entry point for every `type: 'file'` selection in the app. */
+  const openFile = useCallback((path: string, mode: OpenMode = 'preview'): boolean => {
+    const repositoryId = repositoryRef.current?.id;
+    if (!repositoryId) return false;
+    if (!selectViewer({ type: 'file', path })) return false;
+    const current = fileSessionsRef.current.get(repositoryId) ?? emptyFileSession;
+    const result = openTab(current, path, mode);
+    if (result.evictedPath) dropFileDraft(repositoryId, result.evictedPath);
+    if (result.overCap) {
+      toast.info('Too many open files', { description: 'Every open tab has unsaved changes, so none could be closed for you.' });
+    }
+    commitFileSession(repositoryId, result.session);
+    return true;
+  }, [commitFileSession, dropFileDraft, selectViewer]);
+
+  const activateFileTab = useCallback((path: string) => {
+    const repositoryId = repositoryRef.current?.id;
+    if (!repositoryId) return;
+    if (!selectViewer({ type: 'file', path })) return;
+    updateFileSession(repositoryId, (session) => activateTab(session, path));
+    setView('files');
+  }, [selectViewer, updateFileSession]);
+
+  const reorderFileTab = useCallback((path: string, toIndex: number) => {
+    const repositoryId = repositoryRef.current?.id;
+    if (!repositoryId) return;
+    updateFileSession(repositoryId, (session) => moveTab(session, path, toIndex));
+  }, [updateFileSession]);
+
+  /**
+   * Saves an inactive tab's draft through the same typed API and the same
+   * expected-content check the mounted editor uses, so an external modification
+   * still produces a conflict instead of a silent overwrite.
+   */
+  const saveFileDraft = useCallback(async (repositoryId: string, path: string): Promise<boolean> => {
+    const draft = readFileDraft(repositoryId, path);
+    if (!draft) return true;
+    try {
+      const result = await window.justgit.repository.writeFile(repositoryId, path, draft.content, draft.expectedContent);
+      if (result.status === 'conflict') {
+        toast.error('File changed on disk', { description: `${path} — the unsaved version is still open.`, duration: 10_000 });
+        return false;
+      }
+      dropFileDraft(repositoryId, path);
+      updateFileSession(repositoryId, (session) => setTabDirty(session, path, false));
+      await refreshFilesOnly();
+      return true;
+    } catch (reason) {
+      toast.error('Could not save file', { description: messageOf(reason), duration: 10_000 });
+      return false;
+    }
+  }, [dropFileDraft, readFileDraft, refreshFilesOnly, updateFileSession]);
+
+  const closeFileTab = useCallback(async (path: string) => {
+    const repositoryId = repositoryRef.current?.id;
+    if (!repositoryId) return;
+    const session = fileSessionsRef.current.get(repositoryId) ?? emptyFileSession;
+    const tab = session.tabs.find((item) => item.path === path);
+    if (!tab) return;
+    if (tab.dirty) {
+      // One prompt at a time: a second close request while the dialog is open
+      // would replace the pending resolver and leave the first one hanging.
+      if (dirtyCloseResolverRef.current) return;
+      const choice = await new Promise<DirtyCloseChoice>((resolve) => {
+        dirtyCloseResolverRef.current = resolve;
+        setDirtyClosePath(path);
+      });
+      setDirtyClosePath(null);
+      dirtyCloseResolverRef.current = null;
+      if (choice === 'cancel') return;
+      // A conflict keeps both the tab and its draft; the user decides again.
+      if (choice === 'save' && !(await saveFileDraft(repositoryId, path))) return;
+    }
+    dropFileDraft(repositoryId, path);
+    const current = fileSessionsRef.current.get(repositoryId) ?? emptyFileSession;
+    const result = closeTab(current, path);
+    commitFileSession(repositoryId, result.session);
+    const selection = viewerSelectionRef.current;
+    if (selection?.type === 'file' && selection.path === path) selectFilePath(result.activePath);
+  }, [commitFileSession, dropFileDraft, saveFileDraft, selectFilePath]);
+
+  const runTabKeyboardAction = useCallback((action: TabKeyboardAction) => {
+    const repositoryId = repositoryRef.current?.id;
+    if (!repositoryId) return;
+    const session = fileSessionsRef.current.get(repositoryId) ?? emptyFileSession;
+    const result = applyKeyboardAction(session, action);
+    if (result.closeRequest) {
+      void closeFileTab(result.closeRequest);
+      return;
+    }
+    if (result.session === session) return;
+    commitFileSession(repositoryId, result.session);
+    if (result.session.activePath !== session.activePath) {
+      selectFilePath(result.session.activePath);
+      setView('files');
+    }
+  }, [closeFileTab, commitFileSession, selectFilePath]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.ctrlKey && event.key.toLowerCase() === 'o') { event.preventDefault(); void openRepository(); }
+      if (event.ctrlKey && event.key.toLowerCase() === 'r') { event.preventDefault(); void refresh(); }
+      if (repository && event.ctrlKey && !event.altKey && !event.metaKey) {
+        const section = SIDEBAR_VIEWS[Number(event.key) - 1];
+        if (section) { event.preventDefault(); setView(section); }
+      }
+      // Deliberately reachable from inside an editor: none of these produce
+      // text, and VS Code binds them the same way while typing.
+      const tabAction = repository ? openFileTabShortcut(event) : null;
+      if (tabAction) {
+        event.preventDefault();
+        if (!event.repeat) runTabKeyboardAction(tabAction);
+      }
+      if (repository && !event.repeat && isQuickOpenShortcut(event)) {
+        if (!quickOpen && document.querySelector('[data-slot="dialog-popup"]')) return;
+        event.preventDefault();
+        setQuickOpen(true);
+        void refreshFilesOnly();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [openRepository, quickOpen, refresh, refreshFilesOnly, repository, runTabKeyboardAction]);
+
+  // One guard for every worktree's drafts. Per-editor listeners could only see
+  // the file currently on screen, so switching tabs would drop the warning.
+  useEffect(() => {
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      const dirty = [...fileSessionsRef.current.values()].some((session) => session.tabs.some((tab) => tab.dirty));
+      if (!dirty) return;
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
   }, []);
 
-  const openFile = (path: string) => {
-    return selectViewer({ type: 'file', path });
-  };
-
   const reconcileViewerPaths = (changes: FileHistoryPathChange[], removedPaths: string[]) => {
+    const repositoryId = repositoryRef.current?.id;
+    if (repositoryId) {
+      const session = fileSessionsRef.current.get(repositoryId) ?? emptyFileSession;
+      const removal = removeTabsUnder(session, removedPaths);
+      for (const path of removal.closedPaths) dropFileDraft(repositoryId, path);
+      const renaming = renameTabPaths(removal.session, changes.map((change) => ({ from: change.from, to: change.to })));
+      renameFileDrafts(repositoryId, renaming.renamed);
+      commitFileSession(repositoryId, renaming.session);
+    }
+
     const current = viewerSelectionRef.current;
     if (current?.type !== 'file') return;
     if (removedPaths.some((item) => pathContains(item, current.path))) {
-      viewerSelectionRef.current = null;
-      setViewerSelection(null);
+      const session = repositoryId ? fileSessionsRef.current.get(repositoryId) : undefined;
+      selectFilePath(session?.activePath ?? null);
       return;
     }
     const change = changes.find((item) => pathContains(item.from, current.path));
     if (!change) return;
-    const nextSelection = { type: 'file', path: `${change.to}${current.path.slice(change.from.length)}` } as const;
-    pendingViewerPathRef.current = nextSelection.path;
-    viewerSelectionRef.current = nextSelection;
-    setViewerSelection(nextSelection);
+    const nextPath = `${change.to}${current.path.slice(change.from.length)}`;
+    pendingViewerPathRef.current = nextPath;
+    selectFilePath(nextPath);
     setRefreshVersion((version) => version + 1);
   };
 
   const performFileHistory = async (direction: 'undo' | 'redo') => {
     if (!repository || busy || status?.readOnly) return;
-    const active = viewerSelectionRef.current;
-    if (active?.type === 'file' && viewerDirtyRef.current) {
-      toast.info(`Save the open file before ${direction === 'undo' ? 'undoing' : 'redoing'} a Files operation`, { description: active.path });
+    const dirty = anyDirtyTab();
+    if (dirty.length > 0) {
+      toast.info(`Save open files before ${direction === 'undo' ? 'undoing' : 'redoing'} a Files operation`, { description: dirty.join(', ') });
       return;
     }
     setBusy(`${direction}-file`);
@@ -608,9 +918,9 @@ export default function App() {
 
   const cutFileEntries = async (entries: FileTreeEntry[]) => {
     if (!repository || busy || status?.readOnly || entries.length === 0) return;
-    const active = viewerSelectionRef.current;
-    if (active?.type === 'file' && entries.some((entry) => pathContains(entry.path, active.path)) && viewerDirtyRef.current) {
-      toast.info('Save the open file before cutting it', { description: active.path });
+    const dirty = unsavedTabsUnder(entries.map((entry) => entry.path));
+    if (dirty.length > 0) {
+      toast.info('Save open files before cutting them', { description: dirty.join(', ') });
       return;
     }
     try {
@@ -653,9 +963,9 @@ export default function App() {
 
   const moveFileEntries = async (entries: FileTreeEntry[], targetDirectory: string) => {
     if (!repository || busy || status?.readOnly || entries.length === 0) return;
-    const active = viewerSelectionRef.current;
-    if (active?.type === 'file' && entries.some((entry) => pathContains(entry.path, active.path)) && viewerDirtyRef.current) {
-      toast.info('Save the open file before moving it', { description: active.path });
+    const dirty = unsavedTabsUnder(entries.map((entry) => entry.path));
+    if (dirty.length > 0) {
+      toast.info('Save open files before moving them', { description: dirty.join(', ') });
       return;
     }
     setBusy('move-file');
@@ -685,11 +995,9 @@ export default function App() {
     try {
       const result = await window.justgit.repository.deleteEntries(repository.id, entries.map((entry) => entry.path));
       if (result.deleted === 0) return;
-      const active = viewerSelectionRef.current;
-      if (active?.type === 'file' && entries.some((entry) => pathContains(entry.path, active.path))) {
-        viewerSelectionRef.current = null;
-        setViewerSelection(null);
-      }
+      // Clean tabs under the deleted paths close; a tab with unsaved changes is
+      // kept and flagged missing so its text can still be recovered.
+      reconcileViewerPaths([], entries.map((entry) => entry.path));
       await refreshFilesOnly();
       await refreshFileHistoryState();
       toast.success(result.deleted === 1 ? 'Moved to Recycle Bin' : `${result.deleted} items moved to Recycle Bin`, result.recovery === 'undo'
@@ -713,9 +1021,9 @@ export default function App() {
 
   const renameFileEntry = async (entry: FileTreeEntry, newName: string) => {
     if (!repository || busy || status?.readOnly) return;
-    const active = viewerSelectionRef.current;
-    if (active?.type === 'file' && pathContains(entry.path, active.path) && viewerDirtyRef.current) {
-      toast.info('Save the open file before renaming it', { description: active.path });
+    const dirty = unsavedTabsUnder([entry.path]);
+    if (dirty.length > 0) {
+      toast.info('Save open files before renaming them', { description: dirty.join(', ') });
       return;
     }
     setBusy('rename-file');
@@ -726,14 +1034,7 @@ export default function App() {
         toast.error('An item with that name already exists', { description: result.path });
         return;
       }
-      if (active?.type === 'file' && pathContains(result.from, active.path)) {
-        const suffix = active.path.slice(result.from.length);
-        const nextSelection = { type: 'file', path: `${result.to}${suffix}` } as const;
-        pendingViewerPathRef.current = nextSelection.path;
-        viewerSelectionRef.current = nextSelection;
-        setViewerSelection(nextSelection);
-        setRefreshVersion((version) => version + 1);
-      }
+      reconcileViewerPaths([{ from: result.from, to: result.to }], []);
       await refresh({ background: true });
       await refreshFileHistoryState();
       toast.success(entry.type === 'directory' ? 'Folder renamed' : 'File renamed', { description: `${result.from} → ${result.to}`, action: { label: 'Undo', onClick: () => void performFileHistory('undo') } });
@@ -774,6 +1075,8 @@ export default function App() {
     const previous = status;
     setStatus(optimisticStatus(status, paths, mode));
     setBusy(mode);
+    setCommitProposal(null);
+    setPreparedCommitIndex(null);
     try {
       if (mode === 'stage') await window.justgit.index.stageAll(repository.id);
       else await window.justgit.index.unstageAll(repository.id);
@@ -790,6 +1093,23 @@ export default function App() {
       const result = await window.justgit.commits.create(repository.id, commitMessage);
       const subject = commitMessage.split(/\r?\n/, 1)[0] ?? commitMessage;
       setCommitMessage('');
+      // Completed groups stay in the plan, marked done. Removing them would
+      // renumber the remaining ones under the user after every commit.
+      if (commitProposal && preparedCommitIndex !== null) {
+        const done = new Set(completedCommitIndices).add(preparedCommitIndex);
+        setCompletedCommitIndices(done);
+        setPreparedCommitIndex(null);
+        if (done.size === commitProposal.commits.length) {
+          setCommitProposal(null);
+          setCompletedCommitIndices(new Set());
+          toast.success('Commit plan finished', { description: `${done.size} commits created.` });
+        }
+      } else {
+        setCommitProposal(null);
+        setPreparedCommitIndex(null);
+        setCompletedCommitIndices(new Set());
+      }
+      lastAppliedMessageRef.current = '';
       setViewerSelection({ type: 'commit', oid: result.oid, subject });
       await refresh({ background: true });
       committed = true;
@@ -822,8 +1142,22 @@ export default function App() {
       const result = await window.justgit.ai.generateCommitMessage({ repositoryId: repository.id, harness, model, requestId });
       if (generationRequest.current?.id !== requestId || generationRequest.current.repositoryId !== repository.id) return;
       setCommitMessage(result.message);
+      lastAppliedMessageRef.current = result.message;
+      setCommitProposal(result.proposal);
+      setPreparedCommitIndex(null);
+      setCompletedCommitIndices(new Set());
+      setCommitPlanCollapsed(false);
       toast.success(`Message generated with ${harnessLabel(result.harness)}`, {
-        description: result.contextWasTruncated ? 'A truncated version of the staged diff was used.' : undefined,
+        description: result.proposal
+          ? `${result.proposal.commits.length} focused commits may be clearer than one.`
+          // Silence used to hide both "the model saw no split" and "JustGit
+          // refused to offer one"; only the second needs explaining.
+          : result.splitBlockedReason
+            ? `No commit split was offered: ${result.splitBlockedReason.charAt(0).toLowerCase()}${result.splitBlockedReason.slice(1)}`
+            : result.contextWasTruncated
+              ? 'A truncated version of the staged diff was used.'
+              : undefined,
+        ...(result.splitBlockedReason ? { duration: 8_000 } : {}),
       });
     } catch (reason) {
       const detail = aiDetail(reason);
@@ -843,9 +1177,53 @@ export default function App() {
     }
   };
 
+  const prepareCommitGroup = async (index: number) => {
+    const proposal = commitProposal;
+    const group = proposal?.commits[index];
+    if (!repository || !status || !proposal || !group || status.readOnly || busy) return;
+    // Preparing a different group unstages the one already prepared, so the work
+    // waiting in the index is only discarded when the user says so.
+    if (preparedCommitIndex !== null && preparedCommitIndex !== index
+      && !window.confirm('Commit group ' + (preparedCommitIndex + 1) + ' is staged and not committed yet. Prepare a different group and unstage it?')) {
+      return;
+    }
+    // The generated message is only overwritten when it is still the generated
+    // one; anything typed by hand is the user's to keep.
+    if (commitMessage.trim() && commitMessage !== lastAppliedMessageRef.current
+      && !window.confirm('Replace the commit message you wrote with the one from this group?')) {
+      return;
+    }
+    setBusy('prepare-commit-group');
+    setError(null);
+    try {
+      await window.justgit.index.prepareCommitGroup({
+        repositoryId: repository.id,
+        paths: group.paths,
+        expectedStagedPaths: status.changes.filter((change) => change.staged && !change.conflict).map((change) => change.path).sort(),
+        expectedFingerprint: group.fingerprint,
+      });
+      setCommitMessage(group.message);
+      lastAppliedMessageRef.current = group.message;
+      setPreparedCommitIndex(index);
+      await refresh({ background: true });
+      toast.success('Commit group prepared', { description: `${group.paths.length} ${group.paths.length === 1 ? 'file is' : 'files are'} staged. Review the diff before committing.` });
+      window.setTimeout(() => commitTextareaRef.current?.focus(), 0);
+    } catch (reason) {
+      // The plan survives a failed prepare: regenerating it costs another model
+      // call, and most failures here are recoverable.
+      setPreparedCommitIndex(null);
+      toast.error('Could not prepare the commit group', { description: messageOf(reason), duration: 10_000 });
+      await refresh({ background: true });
+    } finally {
+      setBusy(null);
+    }
+  };
+
   useEffect(() => {
     const active = generationRequest.current;
     if (active && active.repositoryId !== repository?.id) void window.justgit.ai.cancelGeneration(active.id);
+    setCommitProposal(null);
+    setPreparedCommitIndex(null);
   }, [repository?.id]);
 
   useEffect(() => () => {
@@ -1112,6 +1490,23 @@ export default function App() {
         onOpenChange={setQuickOpen}
         onOpenFile={openFile}
       />
+      <Dialog
+        open={dirtyClosePath !== null}
+        onOpenChange={(open) => { if (!open) dirtyCloseResolverRef.current?.('cancel'); }}
+      >
+        <DialogPopup className="undo-commit-dialog">
+          <div className="undo-commit-content">
+            <DialogTitle>Save changes before closing?</DialogTitle>
+            <DialogDescription>This file has unsaved changes. Discarding them cannot be undone.</DialogDescription>
+            {dirtyClosePath && <div className="undo-commit-summary"><strong>{dirtyClosePath}</strong></div>}
+          </div>
+          <div className="undo-commit-actions">
+            <Button variant="ghost" onClick={() => dirtyCloseResolverRef.current?.('cancel')}>Cancel</Button>
+            <Button variant="destructive" onClick={() => dirtyCloseResolverRef.current?.('discard')}>Discard</Button>
+            <Button onClick={() => dirtyCloseResolverRef.current?.('save')}>Save</Button>
+          </div>
+        </DialogPopup>
+      </Dialog>
       <Dialog open={Boolean(undoCommit)} onOpenChange={(open) => { if (!open && !undoingCommit) setUndoCommit(null); }}>
         <DialogPopup className="undo-commit-dialog">
           <div className="undo-commit-content">
@@ -1138,7 +1533,7 @@ export default function App() {
         onPush={() => void pushUpdates()}
         onCreated={(prNumber) => {
           setCreatePrOpen(false);
-          void loadPulls();
+          void loadPulls(pullRequestStates);
           if (prNumber !== null) selectViewer({ type: 'pull-request', number: prNumber });
         }}
       />
@@ -1162,6 +1557,11 @@ export default function App() {
           onPreference={(partial) => void updatePreference(partial)}
           onOrganizationChange={(organization) => setBootstrap((current) => current ? { ...current, ...organization } : current)}
           onRefsManaged={handleRefsManaged}
+          openFiles={fileSessions.get(repository.id) ?? emptyFileSession}
+          onOpenFileTab={activateFileTab}
+          onPinFileTab={(path) => openFile(path, 'pinned')}
+          onCloseFileTab={(path) => void closeFileTab(path)}
+          onReorderFileTab={reorderFileTab}
           settingsOpen={settingsOpen}
           settingsSection={settingsSection}
           onSettingsOpen={setSettingsOpen}
@@ -1261,6 +1661,8 @@ export default function App() {
                   active={view === 'search'}
                   revision={refreshVersion}
                   onOpenFile={openFile}
+                  unsavedPathsAmong={unsavedTabsUnder}
+                  onReplaced={() => { void refresh({ background: true }); }}
                 />
               )}
               {view === 'prs' && (
@@ -1270,13 +1672,21 @@ export default function App() {
                   pulls={pulls}
                   loading={pullsLoading}
                   error={pullsError}
+                  states={pullRequestStates}
                   activeNumber={viewerSelection?.type === 'pull-request' ? viewerSelection.number : null}
                   createDisabledReason={!status
                     ? 'Loading repository status…'
                     : status.detached || status.unborn || !status.branch
                       ? 'Check out a branch first'
                       : null}
-                  onRefresh={() => void loadPulls(true)}
+                  onRefresh={() => void loadPulls(pullRequestStates, true)}
+                  onStateChange={(state, checked) => {
+                    const order: PullRequestState[] = ['OPEN', 'CLOSED', 'MERGED'];
+                    const nextStates = order.filter((candidate) => candidate === state ? checked : pullRequestStates.includes(candidate));
+                    setPullRequestStates(nextStates);
+                    setPulls(null);
+                    void loadPulls(nextStates);
+                  }}
                   onSelect={(pr) => { selectViewer({ type: 'pull-request', number: pr.number }); }}
                   onCreate={() => setCreatePrOpen(true)}
                   onCopyCommand={(command) => {
@@ -1309,10 +1719,16 @@ export default function App() {
                   revision={refreshVersion}
                   readOnly={Boolean(status?.readOnly)}
                   commits={commits ?? []}
+                  draftFor={(path) => readFileDraft(repository.id, path)}
                   onSelect={selectViewer}
+                  onOpenFile={openFile}
                   onDiffViewChange={(value) => void updatePreference({ diffView: value })}
                   onWrapLinesChange={(value) => void updatePreference({ wrapLines: value })}
-                  onDirtyChange={handleViewerDirtyChange}
+                  onDraftChange={storeFileDraft}
+                  onDraftSaved={(path) => {
+                    dropFileDraft(repository.id, path);
+                    updateFileSession(repository.id, (session) => setTabDirty(session, path, false));
+                  }}
                   onUpdateConflict={updateConflictFile}
                   onResolveConflict={resolveConflictFile}
                 />
@@ -1321,7 +1737,7 @@ export default function App() {
           </section>
         </main>
         <CommitComposer
-          open={view === 'changes' && Boolean(status?.stagedCount)}
+          open={view === 'changes' && Boolean(status?.stagedCount || commitProposal)}
           stagedCount={status?.stagedCount ?? 0}
           message={commitMessage}
           generating={Boolean(generating)}
@@ -1329,10 +1745,18 @@ export default function App() {
           busy={busy}
           readOnly={Boolean(status?.readOnly)}
           canPush={Boolean(status?.upstream)}
+          proposal={commitProposal}
+          preparedIndex={preparedCommitIndex}
+          completed={completedCommitIndices}
+          collapsed={commitPlanCollapsed}
           textareaRef={commitTextareaRef}
           onMessage={setCommitMessage}
           onGenerate={() => void generateCommitMessage()}
           onCancelGenerate={() => void cancelCommitMessageGeneration()}
+          onDismissProposal={() => { setCommitProposal(null); setPreparedCommitIndex(null); setCompletedCommitIndices(new Set()); }}
+          onToggleCollapsed={() => setCommitPlanCollapsed((value) => !value)}
+          onOpenPath={(path) => { selectViewer({ type: 'diff', path, kind: 'staged' }); }}
+          onPrepare={(index) => void prepareCommitGroup(index)}
           onCommit={(options) => void createCommit(options)}
         />
       </div>
@@ -1347,6 +1771,11 @@ interface ToolbarProps {
   onRefresh(): void; onPreference(partial: Partial<Preferences>): void;
   onOrganizationChange(organization: RepositoryOrganization): void;
   onRefsManaged(recentRepositories: RecentRepository[] | null): void;
+  openFiles: FileSession;
+  onOpenFileTab(path: string): void;
+  onPinFileTab(path: string): void;
+  onCloseFileTab(path: string): void;
+  onReorderFileTab(path: string, toIndex: number): void;
   onPull(): void; onPush(): void;
   settingsOpen: boolean; settingsSection: SettingsSection;
   onSettingsOpen(open: boolean): void; onSettingsSection(section: SettingsSection): void;
@@ -1506,6 +1935,13 @@ function Toolbar(props: ToolbarProps) {
         <TooltipTrigger render={<Button variant="ghost" size="icon-sm" onClick={props.onOpen} aria-label="Open repository" aria-keyshortcuts="Control+O" />}><IconPlus /></TooltipTrigger>
         <TooltipContent>Open repository (Ctrl+O)</TooltipContent>
       </Tooltip>
+      <OpenFilesStrip
+        session={props.openFiles}
+        onActivate={props.onOpenFileTab}
+        onPin={props.onPinFileTab}
+        onClose={props.onCloseFileTab}
+        onReorder={props.onReorderFileTab}
+      />
       <div className="toolbar-spacer" />
       {props.status && (props.status.ahead > 0 || props.status.behind > 0 || props.status.insertions > 0 || props.status.deletions > 0 || props.busy === 'push' || props.busy === 'pull') && (
         <div className="branch-stats" aria-label="Branch and local changes summary">
@@ -1722,6 +2158,7 @@ function SettingsDialog({ preferences, onPreference, open, onOpenChange, section
 }) {
   const [statuses, setStatuses] = useState<AiHarnessStatus[]>([]);
   const [loadingStatuses, setLoadingStatuses] = useState(false);
+  const [aiLogOpen, setAiLogOpen] = useState(false);
 
   const loadStatuses = useCallback(async (forceRefresh = false) => {
     setLoadingStatuses(true);
@@ -1822,7 +2259,7 @@ function SettingsDialog({ preferences, onPreference, open, onOpenChange, section
               </> : <>
                 <div className="ai-settings-heading">
                   <div className="settings-field-label">
-                    <strong>Harness local</strong>
+                    <strong>Local harness</strong>
                     <span>JustGit uses the selected CLI session. It does not copy or store credentials.</span>
                   </div>
                   <Button variant="outline" size="sm" onClick={() => void loadStatuses(true)} disabled={loadingStatuses}>
@@ -1849,7 +2286,7 @@ function SettingsDialog({ preferences, onPreference, open, onOpenChange, section
                 </div>
                 <div className="settings-field settings-field-separated">
                   <div className="settings-field-label">
-                    <strong>Modelo de {harnessLabel(selectedHarness)}</strong>
+                    <strong>{harnessLabel(selectedHarness)} model</strong>
                     <span>Default lets the CLI choose. JustGit remembers a separate selection for each harness.</span>
                   </div>
                   <Select value={selectedModel} onValueChange={(model) => onPreference({ commitMessageModels: { ...preferences.commitMessageModels, [selectedHarness]: model } })}>
@@ -1859,7 +2296,15 @@ function SettingsDialog({ preferences, onPreference, open, onOpenChange, section
                   {selectedStatus?.authStatus === 'unauthenticated' && <p className="ai-login-hint">Sign in from a terminal with <code>{loginCommand(selectedHarness)}</code> and check again.</p>}
                   {selectedStatus && !selectedStatus.installed && <p className="ai-login-hint">Install {harnessLabel(selectedHarness)} and check its availability again.</p>}
                 </div>
-                <p className="ai-privacy-note">Only the truncated staged diff, its summary, the branch, and recent subjects are sent to the selected harness. The generated message always remains pending your review.</p>
+                <div className="settings-field settings-field-separated">
+                  <div className="settings-field-label">
+                    <strong>Generation history</strong>
+                    <span>Outcome, duration, tokens, and cost of recent runs, kept locally for diagnostics.</span>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={() => setAiLogOpen(true)}><IconHistory /> View history</Button>
+                </div>
+                <p className="ai-privacy-note">Only the staged diff, its summary, the branch, and recent subjects are sent to the selected harness. The generated message always remains pending your review, and the history records metadata only.</p>
+                <AiLogDialog open={aiLogOpen} onOpenChange={setAiLogOpen} />
               </>}
             </div>
           </section>
@@ -2091,23 +2536,29 @@ function ChangeFileRow({ change, disabled, action, depth = 0, showDirectory = fa
   const name = slash < 0 ? normalizedPath : normalizedPath.slice(slash + 1);
   const directory = slash < 0 ? '' : normalizedPath.slice(0, slash);
   const directorySummary = change.path.endsWith('/') || change.path.endsWith('\\');
+  const previewable = !directorySummary && change.kind !== 'deleted' && isRichPreviewPath(change.path);
   return (
     <div ref={rowRef} role={showDirectory ? 'listitem' : 'treeitem'} className="change-row" style={{ paddingLeft: 12 + depth * 14 }}>
       {!showDirectory && <span className="tree-spacer" />}
       <Tooltip>
-        <TooltipTrigger render={<button className="file-label" onClick={() => onSelect(change.path)} aria-label={`View changes for ${change.path}`} />}>
+        <TooltipTrigger render={<button className="file-label" onClick={() => previewable ? onOpenFile(change.path) : onSelect(change.path)} aria-label={`${previewable ? 'Preview' : 'View changes for'} ${change.path}`} />}>
           <VsCodeTreeIcon path={normalizedPath} type={directorySummary ? 'directory' : 'file'} />
           <span className="change-file-text"><span>{name}</span>{showDirectory && directory && <small>{directory}</small>}</span>
         </TooltipTrigger>
         <TooltipContent anchor={rowRef} side="right" sideOffset={10}>{change.path}</TooltipContent>
       </Tooltip>
       <span className="change-row-actions">
-        {!directorySummary && <Tooltip><TooltipTrigger render={<Button variant="ghost" size="icon-xs" className="change-action-button" disabled={disabled} onClick={() => onOpenFile(change.path)} aria-label="Open file" />}><IconFileArrowRight /></TooltipTrigger><TooltipContent>Open file</TooltipContent></Tooltip>}
+        {!directorySummary && previewable && <Tooltip><TooltipTrigger render={<Button variant="ghost" size="icon-xs" className="change-action-button" onClick={() => onSelect(change.path)} aria-label="View changes" />}><IconGitCompare /></TooltipTrigger><TooltipContent>View changes</TooltipContent></Tooltip>}
+        {!directorySummary && !previewable && <Tooltip><TooltipTrigger render={<Button variant="ghost" size="icon-xs" className="change-action-button" disabled={disabled} onClick={() => onOpenFile(change.path)} aria-label="Open file" />}><IconFileArrowRight /></TooltipTrigger><TooltipContent>Open file</TooltipContent></Tooltip>}
         <ChangeActions paths={[change.path]} action={action} disabled={disabled} onDiscard={onDiscard} onAction={onAction} />
       </span>
       <span className={`status-code ${change.conflict ? 'conflict' : ''}`} data-kind={change.kind}>{changeStatusCode(change.kind)}</span>
     </div>
   );
+}
+
+function isRichPreviewPath(path: string): boolean {
+  return isMarkdownPath(path) || isHtmlPath(path) || isSvgPath(path) || isKnownImagePath(path);
 }
 
 function ChangeActions({ paths, action, disabled, onDiscard, onAction }: {
@@ -2409,6 +2860,42 @@ function buildChangeTree(changes: FileChange[]): ChangeTreeEntry[] {
 function collectChangePaths(node: ChangeTreeEntry): string[] {
   if (node.type === 'file') return node.change ? [node.change.path] : [];
   return node.children.flatMap(collectChangePaths);
+}
+
+/**
+ * Flattens a Files snapshot once so every open tab can be checked against it in
+ * constant time. Collapsed ignored folders keep their contents out of the
+ * snapshot, so they are recorded as deferred prefixes rather than as absences.
+ */
+function indexSnapshot(entries: FileTreeEntry[]): { paths: Set<string>; deferred: string[] } {
+  const paths = new Set<string>();
+  const deferred: string[] = [];
+  const visit = (items: FileTreeEntry[]) => {
+    for (const entry of items) {
+      paths.add(entry.path);
+      if (entry.type !== 'directory') continue;
+      if (entry.ignored === true && entry.children.length === 0) deferred.push(entry.path);
+      else visit(entry.children);
+    }
+  };
+  visit(entries);
+  return { paths, deferred };
+}
+
+function snapshotPresenceFromIndex(index: { paths: Set<string>; deferred: string[] }, path: string): 'present' | 'deferred' | 'missing' {
+  if (index.paths.has(path)) return 'present';
+  return index.deferred.some((prefix) => pathContains(prefix, path)) ? 'deferred' : 'missing';
+}
+
+/** Header tab shortcuts. `Ctrl+1`–`Ctrl+9` stays reserved for sidebar sections. */
+function openFileTabShortcut(event: KeyboardEvent): TabKeyboardAction | null {
+  if (!event.ctrlKey || event.altKey || event.metaKey) return null;
+  const key = event.key.toLowerCase();
+  if (key === 'w' && !event.shiftKey) return 'close';
+  if (event.key === 'Tab') return event.shiftKey ? 'previous' : 'next';
+  if (event.shiftKey && event.key === 'PageUp') return 'move-left';
+  if (event.shiftKey && event.key === 'PageDown') return 'move-right';
+  return null;
 }
 
 function optimisticStatus(status: RepositoryStatus, paths: string[], mode: 'stage' | 'unstage'): RepositoryStatus {

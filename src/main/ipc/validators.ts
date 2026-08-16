@@ -1,9 +1,10 @@
 import { GitOperationError } from '../../shared/errors';
 import { AiOperationError, GhOperationError } from '../../shared/errors';
-import type { AiHarnessId, BranchDetailsRequest, CreatePullRequestInput, DeleteBranchRequest, GenerateCommitMessageInput, GeneratePullRequestDraftInput, RemoveWorktreeRequest, WorktreeDetailsRequest } from '../../shared/contracts';
+import type { AiHarnessId, BranchDetailsRequest, CreatePullRequestInput, DeleteBranchRequest, GenerateCommitMessageInput, GeneratePullRequestDraftInput, PrepareCommitGroupInput, PullRequestState, RemoveWorktreeRequest, WorktreeDetailsRequest } from '../../shared/contracts';
 import { MAX_PROJECT_NAME_LENGTH, MAX_REPOSITORY_KEY_LENGTH, normalizeRepositoryKey } from '../../shared/repository-projects';
 import { isFilesTreeRepositoryId, MAX_FILES_TREE_PATHS, normalizeExpandedPaths, normalizeFilesTreePath } from '../../shared/files-tree-state';
-import { SEARCH_MAX_QUERY_LENGTH, type SearchOptions } from '../../shared/search';
+import { isOpenFilesRepositoryId, MAX_OPEN_FILE_TABS, normalizeOpenFilePath, type OpenFileTab } from '../../shared/open-files-state';
+import { SEARCH_MAX_QUERY_LENGTH, SEARCH_MAX_REPLACEMENT_LENGTH, SEARCH_REPLACE_MAX_FILES, type SearchOptions, type SearchReplaceRequest } from '../../shared/search';
 
 export function stringArg(value: unknown, operation: string, maxLength = 32_768): string {
   if (typeof value !== 'string' || value.length === 0 || value.length > maxLength || value.includes('\0')) {
@@ -57,6 +58,47 @@ export function filesTreeStateArg(repositoryId: unknown, value: unknown, operati
   return { repositoryId, expandedPaths: normalizeExpandedPaths(expandedPaths) };
 }
 
+/**
+ * Validates one worktree's open-file tabs. The renderer supplies no timestamp:
+ * the store stamps it, so a replayed message cannot outrank a newer record.
+ */
+export function openFilesStateArg(
+  repositoryId: unknown,
+  tabs: unknown,
+  activePath: unknown,
+  previewPath: unknown,
+  operation: string,
+): { repositoryId: string; tabs: OpenFileTab[]; activePath: string | null; previewPath: string | null } {
+  const invalid = () => new GitOperationError({ code: 'INVALID_ARGUMENT', operation, message: 'Invalid open files state.' });
+  if (!isOpenFilesRepositoryId(repositoryId) || !Array.isArray(tabs) || tabs.length > MAX_OPEN_FILE_TABS) throw invalid();
+
+  const normalizedTabs: OpenFileTab[] = [];
+  const seen = new Set<string>();
+  for (const candidate of tabs) {
+    if (!candidate || typeof candidate !== 'object') throw invalid();
+    const input = candidate as Partial<OpenFileTab>;
+    const path = normalizeOpenFilePath(input.path);
+    if (!path || typeof input.pinned !== 'boolean') throw invalid();
+    if (seen.has(path)) continue;
+    seen.add(path);
+    normalizedTabs.push({ path, pinned: input.pinned });
+  }
+
+  const active = optionalOpenFilePath(activePath, invalid);
+  const preview = optionalOpenFilePath(previewPath, invalid);
+  if (active && !seen.has(active)) throw invalid();
+  if (preview && !seen.has(preview)) throw invalid();
+
+  return { repositoryId, tabs: normalizedTabs, activePath: active, previewPath: preview };
+}
+
+function optionalOpenFilePath(value: unknown, invalid: () => GitOperationError): string | null {
+  if (value === null || value === undefined) return null;
+  const normalized = normalizeOpenFilePath(value);
+  if (!normalized) throw invalid();
+  return normalized;
+}
+
 export function projectNameArg(value: unknown, operation: string): string {
   if (typeof value !== 'string') throw invalidProject(operation);
   const name = value.trim();
@@ -107,6 +149,7 @@ export function deleteBranchArg(value: unknown, operation: string): DeleteBranch
     repositoryId: refsString(request.repositoryId, operation, 64),
     fullName: refsString(request.fullName, operation, MAX_BRANCH_REF_LENGTH),
     expectedOid: oidArg(request.expectedOid, operation),
+    force: booleanArg(request.force, operation),
   };
 }
 
@@ -116,7 +159,56 @@ export function removeWorktreeArg(value: unknown, operation: string): RemoveWork
     repositoryId: refsString(request.repositoryId, operation, 64),
     path: refsString(request.path, operation, MAX_WORKTREE_PATH_LENGTH),
     expectedOid: oidArg(request.expectedOid, operation),
+    force: booleanArg(request.force, operation),
+    deleteBranch: booleanArg(request.deleteBranch, operation),
   };
+}
+
+export function searchReplaceArg(value: unknown, operation: string): SearchReplaceRequest {
+  const input = value as Partial<SearchReplaceRequest> | null;
+  if (!input || typeof input !== 'object' || typeof input.replacement !== 'string'
+    || input.replacement.length > SEARCH_MAX_REPLACEMENT_LENGTH || input.replacement.includes('\0')) {
+    throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation, message: 'Invalid replacement.' });
+  }
+  const options = searchOptionsArg(input.options, operation);
+  const scope = input.scope as SearchReplaceRequest['scope'] | undefined;
+  if (!scope || typeof scope !== 'object') throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation, message: 'Invalid replacement scope.' });
+  if (scope.kind === 'match') {
+    if (!validReplacementTarget(scope) || !Number.isInteger(scope.line) || scope.line < 1 || !Number.isInteger(scope.column) || scope.column < 1) {
+      throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation, message: 'Invalid replacement match.' });
+    }
+    return { options, replacement: input.replacement, scope: { kind: 'match', path: scope.path, revision: scope.revision, line: scope.line, column: scope.column } };
+  }
+  if (scope.kind === 'file') {
+    if (!validReplacementTarget(scope)) throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation, message: 'Invalid replacement file.' });
+    return { options, replacement: input.replacement, scope: { kind: 'file', path: scope.path, revision: scope.revision } };
+  }
+  if (scope.kind === 'all' && Array.isArray(scope.files) && scope.files.length > 0 && scope.files.length <= SEARCH_REPLACE_MAX_FILES && scope.files.every(validReplacementTarget)) {
+    return { options, replacement: input.replacement, scope: { kind: 'all', files: scope.files.map(({ path, revision }) => ({ path, revision })) } };
+  }
+  throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation, message: 'Invalid replacement scope.' });
+}
+
+function validReplacementTarget(value: unknown): value is { path: string; revision: string } {
+  const target = value as { path?: unknown; revision?: unknown } | null;
+  return Boolean(target && typeof target.path === 'string' && target.path.length > 0 && target.path.length <= 32_768 && !target.path.includes('\0')
+    && typeof target.revision === 'string' && /^[0-9a-f]{64}$/.test(target.revision));
+}
+
+export function prepareCommitGroupArg(value: unknown, operation: string): PrepareCommitGroupInput {
+  const input = requestObject(value, operation);
+  const paths = pathsArg(input.paths, operation);
+  if (paths.length === 0) throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation, message: 'Select at least one file.' });
+  const expectedStagedPaths = Array.isArray(input.expectedStagedPaths) && input.expectedStagedPaths.length === 0
+    ? []
+    : pathsArg(input.expectedStagedPaths, operation);
+  // Every group of a plan carries its own fingerprint, so this is now mandatory:
+  // an omitted one used to mean "no staleness check at all".
+  const expectedFingerprint = stringArg(input.expectedFingerprint, operation, 64);
+  if (!/^[0-9a-f]{64}$/i.test(expectedFingerprint)) {
+    throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation, message: 'Invalid commit group snapshot.' });
+  }
+  return { repositoryId: stringArg(input.repositoryId, operation, 64), paths, expectedStagedPaths, expectedFingerprint };
 }
 
 /**
@@ -157,6 +249,13 @@ export function prNumberArg(value: unknown, operation: string): number {
     throw new GhOperationError({ code: 'GH_PROCESS_FAILED', operation, message: 'Invalid pull request number.' });
   }
   return value;
+}
+
+export function pullRequestStatesArg(value: unknown, operation: string): PullRequestState[] {
+  if (!Array.isArray(value) || value.length > 3 || new Set(value).size !== value.length) throw invalidGh(operation);
+  const allowed: PullRequestState[] = ['OPEN', 'CLOSED', 'MERGED'];
+  if (!value.every((state) => typeof state === 'string' && allowed.includes(state as PullRequestState))) throw invalidGh(operation);
+  return allowed.filter((state) => value.includes(state));
 }
 
 export function createPullRequestArg(value: unknown): CreatePullRequestInput {

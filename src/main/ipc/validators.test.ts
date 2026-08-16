@@ -1,7 +1,54 @@
 import { describe, expect, it } from 'vitest';
-import { branchDetailsArg, deleteBranchArg, filesTreeStateArg, nullableProjectIdArg, projectIdArg, projectNameArg, removeWorktreeArg, repositoryKeyArg, worktreeDetailsArg } from './validators';
+import { branchDetailsArg, deleteBranchArg, filesTreeStateArg, nullableProjectIdArg, openFilesStateArg, prepareCommitGroupArg, projectIdArg, projectNameArg, pullRequestStatesArg, removeWorktreeArg, repositoryKeyArg, searchReplaceArg, worktreeDetailsArg } from './validators';
 
 const OID = 'a'.repeat(40);
+const REVISION = 'b'.repeat(64);
+
+describe('search replacement validator', () => {
+  it('accepts an exact match scope and normalizes search booleans', () => {
+    expect(searchReplaceArg({
+      options: { query: 'foo', regex: false }, replacement: 'bar',
+      scope: { kind: 'match', path: 'src/app.ts', revision: REVISION, line: 2, column: 4 },
+    }, 'test')).toEqual({
+      options: { query: 'foo', matchCase: false, wholeWord: false, regex: false }, replacement: 'bar',
+      scope: { kind: 'match', path: 'src/app.ts', revision: REVISION, line: 2, column: 4 },
+    });
+  });
+
+  it('rejects malformed revisions, empty batches, and invalid coordinates', () => {
+    const options = { query: 'foo', matchCase: false, wholeWord: false, regex: false };
+    expect(() => searchReplaceArg({ options, replacement: 'bar', scope: { kind: 'file', path: 'a', revision: 'bad' } }, 'test')).toThrow();
+    expect(() => searchReplaceArg({ options, replacement: 'bar', scope: { kind: 'all', files: [] } }, 'test')).toThrow();
+    expect(() => searchReplaceArg({ options, replacement: 'bar', scope: { kind: 'match', path: 'a', revision: REVISION, line: 0, column: 1 } }, 'test')).toThrow();
+  });
+});
+
+describe('pull request state validator', () => {
+  it('accepts granular states and returns them in canonical order', () => {
+    expect(pullRequestStatesArg(['MERGED', 'OPEN'], 'test')).toEqual(['OPEN', 'MERGED']);
+    expect(pullRequestStatesArg([], 'test')).toEqual([]);
+  });
+
+  it('rejects unknown, duplicate, or excessive state selections', () => {
+    expect(() => pullRequestStatesArg(['OPEN', 'open'], 'test')).toThrow();
+    expect(() => pullRequestStatesArg(['OPEN', 'OPEN'], 'test')).toThrow();
+    expect(() => pullRequestStatesArg(['OPEN', 'CLOSED', 'MERGED', 'OPEN'], 'test')).toThrow();
+    expect(() => pullRequestStatesArg('OPEN', 'test')).toThrow();
+  });
+});
+
+describe('commit group validator', () => {
+  it('accepts a bounded group and optional staged fingerprint', () => {
+    expect(prepareCommitGroupArg({ repositoryId: 'repo', paths: ['src/app.ts'], expectedStagedPaths: [], expectedFingerprint: 'a'.repeat(64) }, 'test')).toEqual({
+      repositoryId: 'repo', paths: ['src/app.ts'], expectedStagedPaths: [], expectedFingerprint: 'a'.repeat(64),
+    });
+  });
+
+  it('rejects missing paths and malformed fingerprints', () => {
+    expect(() => prepareCommitGroupArg({ repositoryId: 'repo', paths: [], expectedStagedPaths: [] }, 'test')).toThrow();
+    expect(() => prepareCommitGroupArg({ repositoryId: 'repo', paths: ['a'], expectedStagedPaths: [], expectedFingerprint: 'not-a-hash' }, 'test')).toThrow();
+  });
+});
 
 describe('repository project validators', () => {
   it('trims names and normalizes repository keys', () => {
@@ -30,16 +77,15 @@ describe('local refs management validators', () => {
   it('returns newly allocated typed objects with only the expected fields', () => {
     const source = { repositoryId: '0123456789abcdef', fullName: 'refs/heads/función/ñandú', expectedOid: OID, force: true };
     const request = deleteBranchArg(source, 'test');
-    expect(request).toEqual({ repositoryId: '0123456789abcdef', fullName: 'refs/heads/función/ñandú', expectedOid: OID });
+    expect(request).toEqual({ repositoryId: '0123456789abcdef', fullName: 'refs/heads/función/ñandú', expectedOid: OID, force: true });
     expect(request).not.toBe(source);
-    expect('force' in request).toBe(false);
   });
 
   it('accepts valid branch and worktree targets', () => {
     expect(branchDetailsArg({ repositoryId: 'repo', fullName: 'refs/heads/main' }, 'test')).toEqual({ repositoryId: 'repo', fullName: 'refs/heads/main' });
     expect(worktreeDetailsArg({ repositoryId: 'repo', path: 'C:\\Mis Repos\\aplicación' }, 'test')).toEqual({ repositoryId: 'repo', path: 'C:\\Mis Repos\\aplicación' });
-    expect(removeWorktreeArg({ repositoryId: 'repo', path: 'C:\\repos\\app trees\\review', expectedOid: OID.toUpperCase() }, 'test'))
-      .toEqual({ repositoryId: 'repo', path: 'C:\\repos\\app trees\\review', expectedOid: OID.toUpperCase() });
+    expect(removeWorktreeArg({ repositoryId: 'repo', path: 'C:\\repos\\app trees\\review', expectedOid: OID.toUpperCase(), force: true, deleteBranch: true }, 'test'))
+      .toEqual({ repositoryId: 'repo', path: 'C:\\repos\\app trees\\review', expectedOid: OID.toUpperCase(), force: true, deleteBranch: true });
   });
 
   it('rejects arrays, null, and non-objects', () => {
@@ -55,7 +101,14 @@ describe('local refs management validators', () => {
     expect(() => branchDetailsArg({ repositoryId: 'repo', fullName: ['refs/heads/main'] }, 'test')).toThrow();
     expect(() => worktreeDetailsArg({ repositoryId: 'repo', path: null }, 'test')).toThrow();
     expect(() => deleteBranchArg({ repositoryId: 'repo', fullName: 'refs/heads/main' }, 'test')).toThrow();
+    expect(deleteBranchArg({ repositoryId: 'repo', fullName: 'refs/heads/main', expectedOid: OID }, 'test'))
+      .toEqual({ repositoryId: 'repo', fullName: 'refs/heads/main', expectedOid: OID, force: false });
+    expect(() => deleteBranchArg({ repositoryId: 'repo', fullName: 'refs/heads/main', expectedOid: OID, force: 'yes' }, 'test')).toThrow();
     expect(() => removeWorktreeArg({ repositoryId: 'repo', path: 'C:\\repos\\app' }, 'test')).toThrow();
+    expect(removeWorktreeArg({ repositoryId: 'repo', path: 'C:\\repos\\app', expectedOid: OID }, 'test'))
+      .toEqual({ repositoryId: 'repo', path: 'C:\\repos\\app', expectedOid: OID, force: false, deleteBranch: false });
+    expect(() => removeWorktreeArg({ repositoryId: 'repo', path: 'C:\\repos\\app', expectedOid: OID, force: 'yes', deleteBranch: false }, 'test')).toThrow();
+    expect(() => removeWorktreeArg({ repositoryId: 'repo', path: 'C:\\repos\\app', expectedOid: OID, force: false, deleteBranch: 'yes' }, 'test')).toThrow();
   });
 
   it('rejects empty, oversized, and control-bearing strings', () => {
@@ -91,5 +144,53 @@ describe('Files tree state validator', () => {
     expect(() => filesTreeStateArg('0123456789abcdef', ['../src'], 'test')).toThrow();
     expect(() => filesTreeStateArg('0123456789abcdef', ['bad\npath'], 'test')).toThrow();
     expect(() => filesTreeStateArg('0123456789abcdef', Array.from({ length: 501 }, () => 'src'), 'test')).toThrow();
+  });
+});
+
+describe('open files state validator', () => {
+  const ID = '0123456789abcdef';
+
+  it('returns a canonical, newly allocated state with normalized paths', () => {
+    const tabs = [{ path: 'src\\a.ts', pinned: false }, { path: 'src/b.ts', pinned: true }, { path: 'src/a.ts', pinned: true }];
+    const result = openFilesStateArg(ID, tabs, 'src/b.ts', 'src/a.ts', 'test');
+    expect(result).toEqual({
+      repositoryId: ID,
+      tabs: [{ path: 'src/a.ts', pinned: false }, { path: 'src/b.ts', pinned: true }],
+      activePath: 'src/b.ts',
+      previewPath: 'src/a.ts',
+    });
+    expect(result.tabs[0]).not.toBe(tabs[0]);
+  });
+
+  it('accepts null active and preview paths', () => {
+    expect(openFilesStateArg(ID, [{ path: 'a.ts', pinned: false }], null, undefined, 'test')).toEqual({
+      repositoryId: ID,
+      tabs: [{ path: 'a.ts', pinned: false }],
+      activePath: null,
+      previewPath: null,
+    });
+  });
+
+  it('rejects invalid IDs, malformed tabs, unsafe paths, and oversized arrays', () => {
+    expect(() => openFilesStateArg('repo', [{ path: 'a.ts', pinned: false }], null, null, 'test')).toThrow();
+    expect(() => openFilesStateArg(ID, 'a.ts', null, null, 'test')).toThrow();
+    expect(() => openFilesStateArg(ID, ['a.ts'], null, null, 'test')).toThrow();
+    expect(() => openFilesStateArg(ID, [{ path: 'a.ts' }], null, null, 'test')).toThrow();
+    expect(() => openFilesStateArg(ID, [{ path: '../a.ts', pinned: false }], null, null, 'test')).toThrow();
+    expect(() => openFilesStateArg(ID, [{ path: 'bad\npath.ts', pinned: false }], null, null, 'test')).toThrow();
+    expect(() => openFilesStateArg(ID, [{ path: 'nul\0.ts', pinned: false }], null, null, 'test')).toThrow();
+    expect(() => openFilesStateArg(ID, Array.from({ length: 51 }, (_, index) => ({ path: `f${index}.ts`, pinned: false })), null, null, 'test')).toThrow();
+  });
+
+  it('rejects active or preview paths that are not open tabs', () => {
+    const tabs = [{ path: 'a.ts', pinned: false }];
+    expect(() => openFilesStateArg(ID, tabs, 'b.ts', null, 'test')).toThrow();
+    expect(() => openFilesStateArg(ID, tabs, 'a.ts', 'b.ts', 'test')).toThrow();
+  });
+
+  it('ignores a renderer-supplied timestamp instead of trusting it', () => {
+    const result = openFilesStateArg(ID, [{ path: 'a.ts', pinned: false, updatedAt: '2099-01-01T00:00:00.000Z' }], 'a.ts', null, 'test');
+    expect(result.tabs[0]).toEqual({ path: 'a.ts', pinned: false });
+    expect(result).not.toHaveProperty('updatedAt');
   });
 });

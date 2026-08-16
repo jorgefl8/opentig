@@ -1,4 +1,5 @@
 import type { BranchDetails, BranchInfo, ManagedWorktree, WorktreeDetails } from '../../../shared/git-types';
+import type { PullRequestSummary } from '../../../shared/contracts';
 
 export type LocalRefsTab = 'branches' | 'worktrees';
 
@@ -86,6 +87,8 @@ export function worktreeBadges(worktree: Pick<ManagedWorktree, 'main' | 'current
 export interface DeleteEligibility {
   /** Only `true` renders a destructive control. */
   allowed: boolean;
+  /** Dirty linked worktrees may be removed only through explicit force confirmation. */
+  forceAllowed?: boolean;
   /** Why the action is offered or refused, in the user's terms. */
   reason: string;
 }
@@ -94,7 +97,7 @@ export interface DeleteEligibility {
  * Branch deletion eligibility, derived only from the backend's structured
  * state. The copy names the comparison base so "merged" is never a mystery.
  */
-export function branchDeleteEligibility(details: BranchDetails): DeleteEligibility {
+export function branchDeleteEligibility(details: BranchDetails, pullRequest: PullRequestSummary | null = null): DeleteEligibility {
   switch (details.deletion) {
     case 'safe':
       return { allowed: true, reason: `Fully merged into ${details.comparisonBase ?? 'its comparison base'}, so Git can delete it without losing commits.` };
@@ -105,16 +108,29 @@ export function branchDeleteEligibility(details: BranchDetails): DeleteEligibili
     case 'unmerged':
       return {
         allowed: false,
-        reason: `${details.uniqueCommits} ${details.uniqueCommits === 1 ? 'commit is' : 'commits are'} not in ${details.comparisonBase ?? 'the comparison base'}. JustGit never force-deletes a branch.`,
+        forceAllowed: true,
+        reason: pullRequestReason(pullRequest)
+          ?? `${details.uniqueCommits} ${details.uniqueCommits === 1 ? 'commit is' : 'commits are'} not in ${details.comparisonBase ?? 'the comparison base'}. Force deletion may make those commits inaccessible.`,
       };
     default:
       return {
         allowed: false,
-        reason: details.comparisonBase
-          ? `${details.comparisonBase} is not available locally, so JustGit cannot tell whether this branch is merged.`
-          : 'JustGit cannot tell whether this branch is merged, so it will not delete it.',
+        forceAllowed: true,
+        reason: pullRequestReason(pullRequest)
+          ?? (details.comparisonBase
+            ? `${details.comparisonBase} is not available locally, so Git cannot tell whether this branch is merged. Force deletion is still available.`
+            : 'Git cannot tell whether this branch is merged. Force deletion is still available.'),
       };
   }
+}
+
+function pullRequestReason(pullRequest: PullRequestSummary | null): string | null {
+  if (!pullRequest) return null;
+  if (pullRequest.state === 'MERGED') {
+    return `GitHub PR #${pullRequest.number} is merged into ${pullRequest.baseRefName}, but the local comparison ref is unavailable or has different ancestry. Local deletion requires force.`;
+  }
+  if (pullRequest.state === 'OPEN') return `GitHub PR #${pullRequest.number} is still open. Force deletion removes only the local branch.`;
+  return `GitHub PR #${pullRequest.number} was closed without merging. Force deletion may make branch-only commits inaccessible.`;
 }
 
 /** Every reason a worktree cannot be removed, in the order the user should see. */
@@ -124,9 +140,9 @@ export function worktreeRemoveEligibility(details: WorktreeDetails): DeleteEligi
   if (details.bare) return { allowed: false, reason: 'This entry is a bare repository, not a removable worktree.' };
   if (details.locked) return { allowed: false, reason: `Locked${details.locked === 'locked' ? '' : `: ${details.locked}`}. Unlock it in Git before removing it.` };
   if (details.prunable) return { allowed: false, reason: 'Git can no longer find this worktree on disk, so there is nothing to remove.' };
-  if (details.operation) return { allowed: false, reason: `A ${details.operation} is in progress here. Finish or abort it first.` };
+  if (details.operation) return { allowed: false, forceAllowed: true, reason: `A ${details.operation} is in progress here. Force removal permanently discards it and every local change.` };
   const pending = localChangeSummary(details);
-  if (pending) return { allowed: false, reason: `${pending} would be lost. Commit, stash, or discard them first.` };
+  if (pending) return { allowed: false, forceAllowed: true, reason: `${pending} would be permanently lost by force removal.` };
   return { allowed: true, reason: 'No local changes. Removing it deletes the folder from disk and leaves its branch intact.' };
 }
 

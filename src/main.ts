@@ -9,6 +9,7 @@ import { GitRepositoryOperations } from './main/git/GitRepositoryOperations';
 import { RepositoryService } from './main/git/RepositoryService';
 import { SearchService } from './main/git/SearchService';
 import { registerHandlers } from './main/ipc/register-handlers';
+import { AiLogStore } from './main/persistence/AiLogStore';
 import { SettingsStore } from './main/persistence/SettingsStore';
 import { IPC } from './shared/contracts';
 import { CliProcessRunner } from './main/ai/CliProcessRunner';
@@ -50,9 +51,9 @@ async function createWindow(): Promise<void> {
   await settings.load();
   const git = new GitProcess();
   const repositories = new RepositoryService(git, settings);
-  const search = new SearchService(git, repositories);
   const files = new FileService(git, repositories);
   const fileHistory = new FileOperationHistory(files, { trashItem: (target) => shell.trashItem(target) });
+  const search = new SearchService(git, repositories, files, fileHistory);
   const operations = new GitRepositoryOperations(git, repositories, files);
   const cliResolver = new CliResolver();
   const cliRunner = new CliProcessRunner();
@@ -61,8 +62,10 @@ async function createWindow(): Promise<void> {
     new ClaudeProvider(cliResolver, cliRunner),
     new OpenCodeProvider(cliResolver, cliRunner),
   ];
-  const ai = new CommitMessageService(operations, providers);
-  const prDrafts = new PullRequestDraftService(operations, providers);
+  const aiLog = new AiLogStore(path.join(app.getPath('userData'), 'ai-log.jsonl'));
+  await aiLog.load();
+  const ai = new CommitMessageService(operations, providers, aiLog);
+  const prDrafts = new PullRequestDraftService(operations, providers, aiLog);
   const github = new GitHubService(cliResolver, cliRunner, git, repositories);
 
   mainWindow = new BrowserWindow({
@@ -116,7 +119,7 @@ async function createWindow(): Promise<void> {
     mainWindow.webContents.send(IPC.repositoryChanged, repositoryId, scope);
   };
   const watcher = new RepositoryWatcher(notifyRepositoryChanged, () => git.hasActiveProcess());
-  const removeHandlers = registerHandlers({ window: mainWindow, settings, repositories, search, files, fileHistory, operations, watcher, ai, github, prDrafts });
+  const removeHandlers = registerHandlers({ window: mainWindow, settings, repositories, search, files, fileHistory, operations, watcher, ai, aiLog, github, prDrafts });
 
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   mainWindow.webContents.on('will-navigate', (event) => event.preventDefault());

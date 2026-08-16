@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+// Cold-loading DOMPurify, Marked, KaTeX, and Shiki can be CPU-bound while the
+// complete suite starts many workers. Keep these integration checks tolerant
+// of that contention; isolated runs still finish in about a second.
+const COLD_MARKDOWN_TIMEOUT = 60_000;
+
 beforeEach(() => {
   vi.resetModules();
 });
@@ -12,7 +17,7 @@ describe('Markdown syntax highlighting', () => {
     expect(getLoadedMarkdownLanguages()).toEqual([]);
     await renderMarkdown('# Plain document\n\nNo fenced code.');
     expect(getLoadedMarkdownLanguages()).toEqual([]);
-  }, 20_000);
+  }, COLD_MARKDOWN_TIMEOUT);
 
   it('loads only the languages requested by code fences', async () => {
     const { getLoadedMarkdownLanguages, highlightCode } = await import('./highlight');
@@ -82,5 +87,5 @@ describe('Markdown syntax highlighting', () => {
     for (const [language, code] of Object.entries(samples)) {
       await expect(highlightCode(code, language)).resolves.toContain('shiki');
     }
-  }, 20_000);
+  }, COLD_MARKDOWN_TIMEOUT);
 });

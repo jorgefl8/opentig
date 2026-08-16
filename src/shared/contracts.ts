@@ -2,8 +2,10 @@ import type { SerializedOperationError } from './errors';
 import type { BranchDeletionResult, BranchDetails, BranchInfo, CommitFile, CommitPage, FileTreeEntry, LocalRefsSnapshot, RepositoryStatus, WorktreeDetails, WorktreeInfo, WorktreeRemovalBlocked } from './git-types';
 import type { RasterImageMime } from './image-types';
 import type { RepositoryChangeScope } from './repository-change';
+import type { AiLogEntry } from './ai-log';
 import type { FilesTreeState } from './files-tree-state';
-import type { SearchOptions, SearchResult } from './search';
+import type { OpenFileTab, OpenFilesState } from './open-files-state';
+import type { SearchOptions, SearchReplaceRequest, SearchReplaceResult, SearchResult } from './search';
 
 export interface RepositoryInfo {
   id: string;
@@ -190,6 +192,8 @@ export interface DeleteBranchRequest {
   fullName: string;
   /** The tip the renderer saw; a moved branch is refused rather than deleted. */
   expectedOid: string;
+  /** Explicitly permits deleting a branch whose merge state is unsafe or unknown. */
+  force: boolean;
 }
 
 export interface RemoveWorktreeRequest {
@@ -197,11 +201,15 @@ export interface RemoveWorktreeRequest {
   path: string;
   /** The HEAD the renderer saw; a moved worktree is refused rather than removed. */
   expectedOid: string;
+  /** Explicitly permits permanent loss of uncommitted work in this worktree. */
+  force: boolean;
+  /** Also force-deletes the checked-out local branch after removing the worktree. */
+  deleteBranch: boolean;
 }
 
 /**
- * Removing a worktree deletes its directory but never its branch, and it
- * invalidates only that directory's recent entries.
+ * Removing a worktree deletes its directory and invalidates only that
+ * directory's recent entries. Its branch is deleted only by explicit request.
  */
 export type WorktreeRemovalResult =
   | { status: 'removed'; path: string; branch: string | null; recentRepositories: RecentRepository[] }
@@ -239,6 +247,25 @@ export interface GenerateCommitMessageInput {
   requestId: string;
 }
 
+export interface CommitPlanItem {
+  subject: string;
+  body: string;
+  message: string;
+  reason: string;
+  paths: string[];
+  /**
+   * Fingerprint of this group's own working-tree contents. It is independent of
+   * the index and of HEAD, so committing one group never invalidates the others
+   * and every commit in the plan keeps its staleness check.
+   */
+  fingerprint: string;
+}
+
+export interface CommitSplitProposal {
+  rationale: string;
+  commits: CommitPlanItem[];
+}
+
 export interface GeneratedCommitMessage {
   subject: string;
   body: string;
@@ -246,6 +273,17 @@ export interface GeneratedCommitMessage {
   harness: AiHarnessId;
   model: string;
   contextWasTruncated: boolean;
+  proposal: CommitSplitProposal | null;
+  /** Why no split could be offered, when that was a system decision. */
+  splitBlockedReason: string | null;
+}
+
+export interface PrepareCommitGroupInput {
+  repositoryId: string;
+  paths: string[];
+  expectedStagedPaths: string[];
+  /** `CommitPlanItem.fingerprint` of the group being prepared. */
+  expectedFingerprint: string;
 }
 
 export interface GitHubRepositoryInfo {
@@ -265,6 +303,20 @@ export interface GhCliStatus {
 }
 
 export type PullRequestState = 'OPEN' | 'CLOSED' | 'MERGED';
+export type PullRequestCheckState = 'PASSING' | 'FAILING' | 'PENDING' | 'NONE';
+
+export interface PullRequestLabel {
+  name: string;
+  color: string;
+}
+
+export interface PullRequestCommit {
+  oid: string;
+  messageHeadline: string;
+  authoredAt: string;
+  author: string;
+  authorAvatarUrl: string | null;
+}
 
 export interface PullRequestSummary {
   number: number;
@@ -272,18 +324,22 @@ export interface PullRequestSummary {
   state: PullRequestState;
   isDraft: boolean;
   author: string;
+  authorAvatarUrl: string | null;
   headRefName: string;
   baseRefName: string;
   updatedAt: string;
   url: string;
   reviewDecision: string | null;
+  additions: number;
+  deletions: number;
+  checksState: PullRequestCheckState;
 }
 
 export interface PullRequestDetails extends PullRequestSummary {
   body: string;
-  additions: number;
-  deletions: number;
   changedFiles: number;
+  labels: PullRequestLabel[];
+  commits: PullRequestCommit[];
 }
 
 export interface CreatePullRequestInput {
@@ -331,6 +387,7 @@ export interface BootstrapData {
   recentRepositories: RecentRepository[];
   repositoryProjects: RepositoryProject[];
   filesTreeStates: FilesTreeState[];
+  openFilesStates: OpenFilesState[];
   activeRepository: RepositoryInfo | null;
   preferences: Preferences;
   performanceAutomation: boolean;
@@ -341,6 +398,7 @@ export interface JustGitApi {
     bootstrap(): Promise<BootstrapData>;
     setPreferences(preferences: Partial<Preferences>): Promise<Preferences>;
     setFilesTreeExpandedPaths(repositoryId: string, expandedPaths: string[]): Promise<void>;
+    setOpenFilesState(repositoryId: string, tabs: OpenFileTab[], activePath: string | null, previewPath: string | null): Promise<void>;
     setZoomFactor(factor: number): void;
     setTitleBarTheme(dark: boolean): Promise<void>;
   };
@@ -375,6 +433,7 @@ export interface JustGitApi {
     createEntry(id: string, targetDirectory: string, name: string, kind: 'file' | 'directory'): Promise<CreateEntryResult>;
     /** Full-text search over the working tree, ignoring files Git ignores. */
     search(id: string, options: SearchOptions): Promise<SearchResult>;
+    replaceSearch(id: string, request: SearchReplaceRequest): Promise<SearchReplaceResult>;
     fileHistoryState(id: string): Promise<FileHistoryState>;
     undoFileOperation(id: string): Promise<FileHistoryResult>;
     redoFileOperation(id: string): Promise<FileHistoryResult>;
@@ -390,6 +449,7 @@ export interface JustGitApi {
     discard(repositoryId: string, paths: string[]): Promise<GitResult>;
     stageAll(repositoryId: string): Promise<GitResult>;
     unstageAll(repositoryId: string): Promise<GitResult>;
+    prepareCommitGroup(input: PrepareCommitGroupInput): Promise<GitResult>;
     updateConflict(repositoryId: string, path: string, content: string): Promise<GitResult>;
     resolveConflict(repositoryId: string, path: string, content: string): Promise<GitResult>;
   };
@@ -410,22 +470,27 @@ export interface JustGitApi {
     localRefsSnapshot(repositoryId: string): Promise<LocalRefsSnapshot>;
     branchDetails(request: BranchDetailsRequest): Promise<BranchDetails>;
     worktreeDetails(request: WorktreeDetailsRequest): Promise<WorktreeDetails>;
-    /** Git's non-forced `branch --delete`; never falls back to force. */
+    /** Deletes a branch safely unless the user explicitly confirmed force. */
     deleteBranch(request: DeleteBranchRequest): Promise<BranchDeletionResult>;
-    /** Git's non-forced `worktree remove`; leaves the branch untouched. */
+    /** Removes a worktree; dirty state and branch deletion require explicit confirmation. */
     removeWorktree(request: RemoveWorktreeRequest): Promise<WorktreeRemovalResult>;
   };
   ai: {
     statuses(forceRefresh?: boolean): Promise<AiHarnessStatus[]>;
     generateCommitMessage(input: GenerateCommitMessageInput): Promise<GeneratedCommitMessage>;
+    /** Local diagnostic history of AI runs. Metadata only; never prompts. */
+    log(): Promise<AiLogEntry[]>;
+    clearLog(): Promise<void>;
     cancelGeneration(requestId: string): Promise<void>;
   };
   github: {
     status(forceRefresh?: boolean): Promise<GhCliStatus>;
     repositoryInfo(repositoryId: string): Promise<GitHubRepositoryInfo>;
-    listPullRequests(repositoryId: string): Promise<PullRequestSummary[]>;
+    findPullRequestForBranch(repositoryId: string, branchName: string): Promise<PullRequestSummary | null>;
+    listPullRequests(repositoryId: string, states: PullRequestState[]): Promise<PullRequestSummary[]>;
     getPullRequest(repositoryId: string, number: number): Promise<PullRequestDetails>;
     getPullRequestDiff(repositoryId: string, number: number): Promise<DiffResult>;
+    getPullRequestCommitDiff(repositoryId: string, oid: string): Promise<DiffResult>;
     createPullRequest(input: CreatePullRequestInput): Promise<CreatePullRequestResult>;
     generateDraft(input: GeneratePullRequestDraftInput): Promise<GeneratedPullRequestDraft>;
     cancelDraft(requestId: string): Promise<void>;
@@ -444,20 +509,20 @@ export interface JustGitApi {
 export type IpcResult<T> = { ok: true; value: T } | { ok: false; error: SerializedOperationError };
 
 export const IPC = {
-  bootstrap: 'app:bootstrap', preferences: 'app:preferences', filesTreeStateUpdate: 'app:files-tree-state', titleBarTheme: 'app:title-bar-theme', projectCreate: 'projects:create', projectRename: 'projects:rename', projectRemove: 'projects:remove', projectAssign: 'projects:assign', clipboardReadText: 'clipboard:read-text', clipboardWriteText: 'clipboard:write-text', shellOpenExternal: 'shell:open-external', repositorySelect: 'repository:select',
+  bootstrap: 'app:bootstrap', preferences: 'app:preferences', filesTreeStateUpdate: 'app:files-tree-state', openFilesStateUpdate: 'app:open-files-state', titleBarTheme: 'app:title-bar-theme', projectCreate: 'projects:create', projectRename: 'projects:rename', projectRemove: 'projects:remove', projectAssign: 'projects:assign', clipboardReadText: 'clipboard:read-text', clipboardWriteText: 'clipboard:write-text', shellOpenExternal: 'shell:open-external', repositorySelect: 'repository:select',
   repositoryOpenRecent: 'repository:open-recent', repositoryStatus: 'repository:status', repositoryFiles: 'repository:files', repositoryDirectoryEntries: 'repository:directory-entries',
   repositoryReadFile: 'repository:read-file', repositoryReadImage: 'repository:read-image', repositoryWriteFile: 'repository:write-file', repositoryAbsolutePath: 'repository:absolute-path',
   repositoryCopyEntries: 'repository:copy-entries', repositoryCutEntries: 'repository:cut-entries', repositoryPasteEntries: 'repository:paste-entries', repositoryMoveEntry: 'repository:move-entry', repositoryDeleteEntry: 'repository:delete-entry',
   repositoryMoveEntries: 'repository:move-entries', repositoryDeleteEntries: 'repository:delete-entries', repositoryRevealEntry: 'repository:reveal-entry', repositoryRenameEntry: 'repository:rename-entry', repositoryCreateEntry: 'repository:create-entry',
   repositoryFileHistoryState: 'repository:file-history-state', repositoryUndoFileOperation: 'repository:undo-file-operation', repositoryRedoFileOperation: 'repository:redo-file-operation',
-  repositorySearch: 'repository:search',
+  repositorySearch: 'repository:search', repositoryReplaceSearch: 'repository:replace-search',
   diffGet: 'diff:get', diffCommit: 'diff:commit', diffCommitFile: 'diff:commit-file', indexStage: 'index:stage',
-  indexUnstage: 'index:unstage', indexDiscard: 'index:discard', indexStageAll: 'index:stage-all', indexUnstageAll: 'index:unstage-all', indexUpdateConflict: 'index:update-conflict', indexResolveConflict: 'index:resolve-conflict', commitCreate: 'commit:create', commitUndoLatest: 'commit:undo-latest',
+  indexUnstage: 'index:unstage', indexDiscard: 'index:discard', indexStageAll: 'index:stage-all', indexUnstageAll: 'index:unstage-all', indexPrepareCommitGroup: 'index:prepare-commit-group', indexUpdateConflict: 'index:update-conflict', indexResolveConflict: 'index:resolve-conflict', commitCreate: 'commit:create', commitUndoLatest: 'commit:undo-latest',
   commitsList: 'commits:list', commitsFiles: 'commits:files', branchesList: 'refs:branches', branchSwitch: 'refs:switch', worktreesList: 'refs:worktrees',
   worktreeSelect: 'refs:select-worktree', refsPull: 'refs:pull', refsPush: 'refs:push', repositoryChanged: 'repository:changed',
   localRefsSnapshot: 'refs:local-snapshot', branchDetails: 'refs:branch-details', worktreeDetails: 'refs:worktree-details',
   branchDelete: 'refs:delete-branch', worktreeRemove: 'refs:remove-worktree',
-  aiStatuses: 'ai:statuses', aiGenerateCommitMessage: 'ai:generate-commit-message', aiCancelGeneration: 'ai:cancel-generation',
-  githubStatus: 'github:status', githubRepositoryInfo: 'github:repository-info', githubPrList: 'github:pr-list', githubPrView: 'github:pr-view',
-  githubPrDiff: 'github:pr-diff', githubPrCreate: 'github:pr-create', githubPrDraft: 'github:pr-draft', githubPrDraftCancel: 'github:pr-draft-cancel',
+  aiStatuses: 'ai:statuses', aiGenerateCommitMessage: 'ai:generate-commit-message', aiCancelGeneration: 'ai:cancel-generation', aiLog: 'ai:log', aiClearLog: 'ai:clear-log',
+  githubStatus: 'github:status', githubRepositoryInfo: 'github:repository-info', githubPrForBranch: 'github:pr-for-branch', githubPrList: 'github:pr-list', githubPrView: 'github:pr-view',
+  githubPrDiff: 'github:pr-diff', githubPrCommitDiff: 'github:pr-commit-diff', githubPrCreate: 'github:pr-create', githubPrDraft: 'github:pr-draft', githubPrDraftCancel: 'github:pr-draft-cancel',
 } as const;

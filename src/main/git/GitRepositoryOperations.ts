@@ -1,21 +1,30 @@
-import type { CommitResult, DiffRequest, DiffResult, GitResult, PullResult, PushResult, UndoLatestCommitResult, WorktreeRemovalResult } from '../../shared/contracts';
+import type { CommitResult, DiffRequest, DiffResult, GitResult, PrepareCommitGroupInput, PullResult, PushResult, UndoLatestCommitResult, WorktreeRemovalResult } from '../../shared/contracts';
 import type {
   BranchComparisonKind, BranchDeletionResult, BranchDetails, BranchInfo, CommitFile, CommitPage, CommitSummary,
-  LocalRefsSnapshot, WorktreeDetails, WorktreeInfo,
+  FileChange, LocalRefsSnapshot, WorktreeDetails, WorktreeInfo,
 } from '../../shared/git-types';
 import { AiOperationError, GitOperationError } from '../../shared/errors';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import type { FileService } from '../files/FileService';
-import { writeFile } from 'node:fs/promises';
+import { stat, writeFile } from 'node:fs/promises';
 import type { CommitMessageContext, PullRequestDraftContext } from '../ai/types';
 import type { GitProcess } from './GitProcess';
 import { parseCommitFiles } from './CommitFilesParser';
 import { LOG_FORMAT, parseLog } from './LogParser';
 import { REF_FORMAT, parseRefs } from './RefParser';
 import type { RepositoryService } from './RepositoryService';
+import { allocatePatchBudget } from './PatchBudget';
 import { parseStatus } from './StatusParser';
 import { parseWorktrees } from './WorktreeParser';
+
+/**
+ * Characters of staged diff and staged summary sent to the model. Generous on
+ * purpose: a commit plan is only as good as the changes it can actually see, and
+ * the budget is shared fairly across files rather than spent on the first ones.
+ */
+const COMMIT_PATCH_BUDGET = 400_000;
+const COMMIT_SUMMARY_BUDGET = 24_000;
 
 export class GitRepositoryOperations {
   private readonly knownOids = new Map<string, Set<string>>();
@@ -120,6 +129,59 @@ export class GitRepositoryOperations {
     return { ok: true };
   }
 
+  async prepareCommitGroup(input: PrepareCommitGroupInput): Promise<GitResult> {
+    await this.ensureWritable(input.repositoryId);
+    const repository = this.repositories.get(input.repositoryId);
+    const paths = this.repositories.validatePaths(input.repositoryId, input.paths).sort();
+    const expectedStagedPaths = input.expectedStagedPaths.length
+      ? this.repositories.validatePaths(input.repositoryId, input.expectedStagedPaths).sort()
+      : [];
+    return this.git.runWriteTask(repository.path, async (run) => {
+      const status = await this.repositories.status(input.repositoryId, false);
+      const stagedPaths = status.changes.filter((change) => change.staged && !change.conflict).map((change) => change.path).sort();
+      if (!sameStrings(stagedPaths, expectedStagedPaths)) {
+        throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'prepare-commit-group', message: 'Staged changes changed after the commit plan was shown. Generate a new plan.' });
+      }
+      // The group's own contents are checked, not the staged patch as a whole,
+      // so preparing the third commit of a plan is as protected as the first.
+      const fingerprint = await this.commitGroupFingerprint(input.repositoryId, input.paths);
+      if (fingerprint !== input.expectedFingerprint) {
+        throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'prepare-commit-group', message: 'These files changed after the commit plan was generated. Generate a new plan.' });
+      }
+      const changedPaths = new Set(status.changes.filter((change) => !change.conflict).map((change) => change.path));
+      if (paths.some((filePath) => !changedPaths.has(filePath))) {
+        throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'prepare-commit-group', message: 'The proposed files no longer match the working tree. Generate a new plan.' });
+      }
+      const staged = new Set(stagedPaths);
+      const targetAlreadyStaged = paths.every((filePath) => staged.has(filePath));
+      if (stagedPaths.length > 0 && targetAlreadyStaged) {
+        const selected = new Set(paths);
+        const complement = stagedPaths.filter((filePath) => !selected.has(filePath));
+        if (complement.length > 0) {
+          const hasHead = await this.hasHead(repository.path);
+          await run(
+            hasHead
+              ? ['--literal-pathspecs', 'restore', '--staged', '--', ...complement]
+              : ['--literal-pathspecs', 'rm', '--cached', '-r', '--', ...complement],
+            { operation: 'prepare-commit-group-unstage' },
+          );
+        }
+      } else {
+        if (stagedPaths.length > 0) {
+          const hasHead = await this.hasHead(repository.path);
+          await run(
+            hasHead
+              ? ['--literal-pathspecs', 'restore', '--staged', '--', ...stagedPaths]
+              : ['--literal-pathspecs', 'rm', '--cached', '-r', '--', ...stagedPaths],
+            { operation: 'prepare-commit-group-unstage' },
+          );
+        }
+        await run(['--literal-pathspecs', 'add', '-A', '--', ...paths], { operation: 'prepare-commit-group-stage' });
+      }
+      return { ok: true };
+    });
+  }
+
   async resolveConflict(repositoryId: string, relativePath: string, content: string): Promise<GitResult> {
     const repository = this.repositories.get(repositoryId);
     const status = await this.repositories.status(repositoryId, false);
@@ -179,14 +241,22 @@ export class GitRepositoryOperations {
     ]);
     const fullSummary = summaryOutput.stdout.toString('utf8');
     const fullPatch = patchOutput.stdout.toString('utf8');
-    const summary = bounded(fullSummary, 6_000);
-    const patch = bounded(fullPatch, 40_000);
+    const summary = bounded(fullSummary, COMMIT_SUMMARY_BUDGET);
+    // Split evenly across files: a prefix cut would leave the alphabetically
+    // last files with nothing but a path for the model to guess from.
+    const patch = allocatePatchBudget(fullPatch, COMMIT_PATCH_BUDGET);
+    const stagedChanges = status.changes.filter((change) => change.staged && !change.conflict);
     return {
       repositoryId,
       repositoryPath: repository.path,
       branch: status.branch ?? 'detached HEAD',
       summary: summary.value,
       patch: patch.value,
+      stagedPaths: stagedChanges.map((change) => change.path).sort(),
+      // Grouping needs the complete file list, not the complete patch. A
+      // truncated diff costs the model detail; a truncated summary would hide
+      // files, which is the only case that must block a split.
+      splitBlockedReason: splitBlockedReason(stagedChanges, summary.truncated),
       recentSubjects: historyOutput?.stdout.toString('utf8').split(/\r?\n/).map((value) => value.trim()).filter(Boolean) ?? [],
       fingerprint: createHash('sha256').update(fullPatch).digest('hex'),
       truncated: summary.truncated || patch.truncated,
@@ -513,12 +583,8 @@ export class GitRepositoryOperations {
     return { ...details, ...counts, operation, readOnly: operation !== null, lastCommit };
   }
 
-  /**
-   * Deletes a local branch through Git's non-forced path only. Every target is
-   * re-resolved under the repository-common write lock, so a branch that moved
-   * since the renderer's snapshot is rejected rather than deleted.
-   */
-  async deleteLocalBranch(repositoryId: string, fullName: string, expectedOid: string): Promise<BranchDeletionResult> {
+  /** Re-resolves every branch under the common write lock before safe or forced deletion. */
+  async deleteLocalBranch(repositoryId: string, fullName: string, expectedOid: string, force = false): Promise<BranchDeletionResult> {
     const repository = this.repositories.get(repositoryId);
     return this.git.runWriteTask(repository.path, async (run) => {
       const branch = (await this.branches(repositoryId)).find((item) => !item.remote && item.fullName === fullName);
@@ -527,25 +593,24 @@ export class GitRepositoryOperations {
       if (branch.current) return { status: 'current' };
       if (branch.worktreePath) return { status: 'checked-out', worktreePath: branch.worktreePath };
 
-      const comparison = await this.comparisonBase(repository.path, branch.upstream);
-      if (!comparison.resolved) return { status: 'unknown', comparisonBase: comparison.label };
-      if (!await this.isAncestor(repository.path, branch.fullName, comparison.ref)) {
-        return { status: 'unmerged', comparisonBase: comparison.label, uniqueCommits: await this.countCommits(repository.path, comparison.ref, branch.fullName) };
+      if (!force) {
+        const comparison = await this.comparisonBase(repository.path, branch.upstream);
+        if (!comparison.resolved) return { status: 'unknown', comparisonBase: comparison.label };
+        if (!await this.isAncestor(repository.path, branch.fullName, comparison.ref)) {
+          return { status: 'unmerged', comparisonBase: comparison.label, uniqueCommits: await this.countCommits(repository.path, comparison.ref, branch.fullName) };
+        }
       }
 
-      // Git stays the final authority: `--delete` refuses an unmerged branch on
-      // its own, and JustGit never retries with force.
-      await run(['branch', '--delete', '--', branch.name], { operation: 'delete-branch', timeoutMs: 30_000, maxOutputBytes: 1024 * 1024 });
+      await run(['branch', '--delete', ...(force ? ['--force'] : []), '--', branch.name], { operation: 'delete-branch', timeoutMs: 30_000, maxOutputBytes: 1024 * 1024 });
       return { status: 'deleted', fullName: branch.fullName, name: branch.name, oid: branch.oid };
     }, repository.commonDir);
   }
 
   /**
-   * Removes a clean, unlocked, non-current linked worktree. The directory
-   * leaves the disk without going to the Recycle Bin, and the branch it had
-   * checked out is left untouched.
+   * Removes an unlocked, non-current linked worktree. Dirty state requires an
+   * explicit force flag; its branch is preserved unless separately requested.
    */
-  async removeWorktree(repositoryId: string, targetPath: string, expectedOid: string): Promise<WorktreeRemovalResult> {
+  async removeWorktree(repositoryId: string, targetPath: string, expectedOid: string, force = false, deleteBranch = false): Promise<WorktreeRemovalResult> {
     const repository = this.repositories.get(repositoryId);
     return this.git.runWriteTask(repository.path, async (run) => {
       const worktree = (await this.worktrees(repositoryId)).find((item) => samePath(item.path, targetPath));
@@ -562,9 +627,12 @@ export class GitRepositoryOperations {
         this.repositories.operationAt(worktree.path).catch(() => null),
       ]);
       const dirty = counts.stagedCount + counts.unstagedCount + counts.untrackedCount + counts.conflictCount > 0;
-      if (dirty || operation) return { status: 'dirty', ...counts, operation };
+      if ((dirty || operation) && !force) return { status: 'dirty', ...counts, operation };
 
-      await run(['worktree', 'remove', '--', worktree.path], { operation: 'remove-worktree', timeoutMs: 60_000, maxOutputBytes: 4 * 1024 * 1024 });
+      await run(['-c', 'core.longpaths=true', 'worktree', 'remove', ...(force ? ['--force'] : []), '--', worktree.path], { operation: 'remove-worktree', timeoutMs: 60_000, maxOutputBytes: 4 * 1024 * 1024 });
+      if (deleteBranch && worktree.branch) {
+        await run(['branch', '--delete', '--force', '--', worktree.branch], { operation: 'remove-worktree-branch', timeoutMs: 30_000, maxOutputBytes: 1024 * 1024 });
+      }
       // Only after Git succeeded does JustGit forget the directory.
       const recentRepositories = await this.repositories.forgetWorktree(worktree.path);
       return { status: 'removed', path: worktree.path, branch: worktree.branch, recentRepositories };
@@ -654,6 +722,37 @@ export class GitRepositoryOperations {
     const body = lines.map((line) => `+${line}`).join('\n');
     const patch = `diff --git a/${escaped} b/${escaped}\nnew file mode 100644\n--- /dev/null\n+++ b/${escaped}\n@@ -0,0 +1,${lines.length} @@\n${body}\n`;
     return { patch, path: relativePath, binary: false, truncated: file.tooLarge, lineCount: lines.length };
+  }
+
+  /**
+   * Fingerprints the working-tree contents of one commit group. Deliberately
+   * independent of the index and of HEAD: committing one group of a plan must
+   * not invalidate the fingerprints of the groups still waiting, which is what
+   * lets every commit in a plan keep its own staleness check.
+   */
+  async commitGroupFingerprint(repositoryId: string, relativePaths: string[]): Promise<string> {
+    const repository = this.repositories.get(repositoryId);
+    const paths = this.repositories.validatePaths(repositoryId, relativePaths).sort();
+    const hash = createHash('sha256');
+    for (const relativePath of paths) {
+      hash.update(relativePath);
+      hash.update('\0');
+      hash.update(await this.blobHash(repository.path, relativePath));
+      hash.update('\n');
+    }
+    return hash.digest('hex');
+  }
+
+  /** Content id of a working-tree file, or a marker when it no longer exists. */
+  private async blobHash(root: string, relativePath: string): Promise<string> {
+    try {
+      const absolute = path.resolve(root, relativePath);
+      if (!(await stat(absolute)).isFile()) return 'not-a-file';
+      const output = await this.git.run(root, ['hash-object', '--', absolute], { operation: 'commit-group-fingerprint', readOnly: true });
+      return output.stdout.toString('utf8').trim() || 'unknown';
+    } catch {
+      return 'missing';
+    }
   }
 
   private async hasHead(root: string): Promise<boolean> {
@@ -750,6 +849,10 @@ function samePath(left: string, right: string): boolean {
   return normalizePath(left) === normalizePath(right);
 }
 
+function sameStrings(left: string[], right: string[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
 function normalizePath(value: string): string {
   return path.resolve(value).replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
 }
@@ -758,9 +861,25 @@ function conflictPaths(status: Awaited<ReturnType<RepositoryService['status']>>)
   return status.changes.filter((change) => change.conflict).map((change) => change.path);
 }
 
+/**
+ * Explains why a commit split cannot be offered, or null when it can. A split
+ * stages whole files, so any file that is only partially staged, or whose
+ * identity changed through a rename or copy, would be committed with content the
+ * user never chose.
+ */
+function splitBlockedReason(stagedChanges: FileChange[], summaryTruncated: boolean): string | null {
+  if (stagedChanges.length < 2) return null;
+  if (summaryTruncated) return 'There are too many staged files to plan a reliable split.';
+  const partial = stagedChanges.find((change) => change.unstaged);
+  if (partial) return `${partial.path} is only partially staged, so it cannot be grouped by file.`;
+  const moved = stagedChanges.find((change) => change.kind === 'renamed' || change.kind === 'copied');
+  if (moved) return `${moved.path} was renamed or copied, so splitting could commit it in the wrong order.`;
+  return null;
+}
+
 function bounded(value: string, limit: number): { value: string; truncated: boolean } {
   if (value.length <= limit) return { value, truncated: false };
-  return { value: `${value.slice(0, limit)}\n[contenido truncado por JustGit]`, truncated: true };
+  return { value: `${value.slice(0, limit)}\n[content truncated by JustGit]`, truncated: true };
 }
 
 function pushFailure(error: unknown): Extract<PushResult, { status: 'rejected' }> {

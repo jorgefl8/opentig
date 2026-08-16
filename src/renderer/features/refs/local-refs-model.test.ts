@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { BranchDetails, BranchInfo, ManagedWorktree, WorktreeDetails } from '../../../shared/git-types';
+import type { PullRequestSummary } from '../../../shared/contracts';
 import {
   branchBadges, branchDeleteEligibility, branchDetailBadges, branchKey, filterBranches, filterWorktrees,
   localChangeSummary, nextSelectionKey, normalizeWorktreePath, samePath, worktreeBadges, worktreeKey,
@@ -25,6 +26,15 @@ function branchDetails(partial: Partial<BranchDetails>): BranchDetails {
     fullName: 'refs/heads/feature', name: 'feature', oid: 'a'.repeat(40), shortOid: 'aaaaaaa', subject: '', author: '', date: '',
     upstream: null, ahead: 0, behind: 0, worktreePath: null, deletion: 'safe', comparisonKind: 'head',
     comparisonBase: 'HEAD', uniqueCommits: 0, ...partial,
+  };
+}
+
+function pullRequest(partial: Partial<PullRequestSummary>): PullRequestSummary {
+  return {
+    number: 98, title: 'Feature', state: 'MERGED', isDraft: false, author: 'dev', authorAvatarUrl: null, headRefName: 'feature',
+    baseRefName: 'main', updatedAt: '2026-07-09T14:40:01Z', url: 'https://github.com/org/repo/pull/98', reviewDecision: null,
+    additions: 0, deletions: 0, checksState: 'NONE',
+    ...partial,
   };
 }
 
@@ -125,7 +135,7 @@ describe('branchDeleteEligibility', () => {
     expect(eligibility.reason).toContain('origin/feature');
   });
 
-  it('explains every blocked reason without offering the action', () => {
+  it('blocks checked-out branches and offers explicit force for unsafe merge states', () => {
     const current = branchDeleteEligibility(branchDetails({ deletion: 'current', comparisonBase: null }));
     expect(current).toMatchObject({ allowed: false });
     expect(current.reason).toContain('checked out');
@@ -135,15 +145,24 @@ describe('branchDeleteEligibility', () => {
     expect(occupied.reason).toContain('C:\\repos\\app-trees\\review');
 
     const unmerged = branchDeleteEligibility(branchDetails({ deletion: 'unmerged', comparisonBase: 'origin/main', uniqueCommits: 1 }));
-    expect(unmerged.allowed).toBe(false);
+    expect(unmerged).toMatchObject({ allowed: false, forceAllowed: true });
     expect(unmerged.reason).toContain('1 commit is not in origin/main');
 
     const many = branchDeleteEligibility(branchDetails({ deletion: 'unmerged', comparisonBase: 'HEAD', uniqueCommits: 4 }));
     expect(many.reason).toContain('4 commits are not in HEAD');
 
     const unknown = branchDeleteEligibility(branchDetails({ deletion: 'unknown', comparisonKind: 'upstream', comparisonBase: 'origin/gone' }));
-    expect(unknown.allowed).toBe(false);
+    expect(unknown).toMatchObject({ allowed: false, forceAllowed: true });
     expect(unknown.reason).toContain('origin/gone is not available locally');
+  });
+
+  it('uses GitHub PR evidence when local ancestry cannot be verified', () => {
+    const eligibility = branchDeleteEligibility(
+      branchDetails({ deletion: 'unknown', comparisonKind: 'upstream', comparisonBase: 'origin/gone' }),
+      pullRequest({ state: 'MERGED', number: 98, baseRefName: 'main' }),
+    );
+    expect(eligibility).toMatchObject({ allowed: false, forceAllowed: true });
+    expect(eligibility.reason).toContain('GitHub PR #98 is merged into main');
   });
 });
 
@@ -171,11 +190,14 @@ describe('worktreeRemoveEligibility', () => {
       const eligibility = worktreeRemoveEligibility(worktreeDetails(partial));
       expect(eligibility.allowed).toBe(false);
       expect(eligibility.reason).toContain(expected);
+      expect(eligibility.forceAllowed === true).toBe(Boolean(partial.operation || partial.stagedCount || partial.untrackedCount || partial.conflictCount || partial.unstagedCount));
     }
   });
 
   it('ranks main above every other blocker so the copy never misleads', () => {
-    expect(worktreeRemoveEligibility(worktreeDetails({ main: true, current: true, stagedCount: 3 })).reason).toContain('main worktree');
+    const eligibility = worktreeRemoveEligibility(worktreeDetails({ main: true, current: true, stagedCount: 3 }));
+    expect(eligibility.reason).toContain('main worktree');
+    expect(eligibility.forceAllowed).not.toBe(true);
   });
 });
 

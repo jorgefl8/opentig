@@ -145,6 +145,83 @@ describe('GitRepositoryOperations diff', () => {
   });
 });
 
+describe('GitRepositoryOperations commit groups', () => {
+  it('prepares proposed file groups without creating commits', async () => {
+    const fixture = await standaloneRepository();
+    await writeFile(path.join(fixture.work, 'file.txt'), 'content\napplication\n');
+    await writeFile(path.join(fixture.work, 'README.md'), 'documentation\n');
+    await git(fixture.work, ['add', 'file.txt', 'README.md']);
+    const docs = await fixture.operations.commitGroupFingerprint(fixture.repositoryId, ['README.md']);
+    const code = await fixture.operations.commitGroupFingerprint(fixture.repositoryId, ['file.txt']);
+
+    await fixture.operations.prepareCommitGroup({
+      repositoryId: fixture.repositoryId,
+      paths: ['README.md'],
+      expectedStagedPaths: ['README.md', 'file.txt'],
+      expectedFingerprint: docs,
+    });
+    expect((await git(fixture.work, ['diff', '--cached', '--name-only'])).split(/\r?\n/)).toEqual(['README.md']);
+
+    await fixture.operations.createCommit(fixture.repositoryId, 'Document the change');
+    await fixture.operations.prepareCommitGroup({ repositoryId: fixture.repositoryId, paths: ['file.txt'], expectedStagedPaths: [], expectedFingerprint: code });
+    expect((await git(fixture.work, ['diff', '--cached', '--name-only'])).split(/\r?\n/)).toEqual(['file.txt']);
+  });
+
+  it('refuses a stale generated plan before changing the index', async () => {
+    const fixture = await standaloneRepository();
+    await writeFile(path.join(fixture.work, 'file.txt'), 'changed\n');
+    await writeFile(path.join(fixture.work, 'README.md'), 'docs\n');
+    await git(fixture.work, ['add', 'file.txt', 'README.md']);
+    await expect(fixture.operations.prepareCommitGroup({
+      repositoryId: fixture.repositoryId,
+      paths: ['README.md'],
+      expectedStagedPaths: ['README.md', 'file.txt'],
+      expectedFingerprint: '0'.repeat(64),
+    })).rejects.toThrow(/These files changed/);
+    expect((await git(fixture.work, ['diff', '--cached', '--name-only'])).split(/\r?\n/).sort()).toEqual(['README.md', 'file.txt']);
+  });
+
+  it('keeps each group of a plan protected after another group is committed', async () => {
+    const fixture = await standaloneRepository();
+    await writeFile(path.join(fixture.work, 'file.txt'), 'application\n');
+    await writeFile(path.join(fixture.work, 'README.md'), 'documentation\n');
+    await git(fixture.work, ['add', 'file.txt', 'README.md']);
+    // Fingerprints are taken once, when the plan is generated.
+    const docs = await fixture.operations.commitGroupFingerprint(fixture.repositoryId, ['README.md']);
+    const code = await fixture.operations.commitGroupFingerprint(fixture.repositoryId, ['file.txt']);
+
+    await fixture.operations.prepareCommitGroup({ repositoryId: fixture.repositoryId, paths: ['README.md'], expectedStagedPaths: ['README.md', 'file.txt'], expectedFingerprint: docs });
+    await fixture.operations.createCommit(fixture.repositoryId, 'Document the change');
+    // Committing the first group must not invalidate the second one.
+    expect(await fixture.operations.commitGroupFingerprint(fixture.repositoryId, ['file.txt'])).toBe(code);
+
+    // Editing the second group's file after the plan was made must be refused.
+    await writeFile(path.join(fixture.work, 'file.txt'), 'edited after the plan\n');
+    await expect(fixture.operations.prepareCommitGroup({
+      repositoryId: fixture.repositoryId,
+      paths: ['file.txt'],
+      expectedStagedPaths: [],
+      expectedFingerprint: code,
+    })).rejects.toThrow(/These files changed/);
+    expect(await git(fixture.work, ['diff', '--cached', '--name-only'])).toBe('');
+  });
+
+  it('fingerprints a group by content, independently of the index', async () => {
+    const fixture = await standaloneRepository();
+    await writeFile(path.join(fixture.work, 'file.txt'), 'application\n');
+    const staged = await fixture.operations.commitGroupFingerprint(fixture.repositoryId, ['file.txt']);
+    await git(fixture.work, ['add', 'file.txt']);
+    expect(await fixture.operations.commitGroupFingerprint(fixture.repositoryId, ['file.txt'])).toBe(staged);
+
+    await writeFile(path.join(fixture.work, 'file.txt'), 'different\n');
+    expect(await fixture.operations.commitGroupFingerprint(fixture.repositoryId, ['file.txt'])).not.toBe(staged);
+
+    // A deleted file still fingerprints instead of throwing.
+    await rm(path.join(fixture.work, 'file.txt'));
+    await expect(fixture.operations.commitGroupFingerprint(fixture.repositoryId, ['file.txt'])).resolves.toMatch(/^[0-9a-f]{64}$/);
+  });
+});
+
 describe('GitRepositoryOperations local refs snapshot', () => {
   it('returns only local branches, current first, with tip metadata', async () => {
     const fixture = await managementRepository();
@@ -286,6 +363,16 @@ describe('GitRepositoryOperations safe branch deletion', () => {
     expect(await git(fixture.work, ['rev-parse', 'refs/heads/feature'])).toBe(oid);
   });
 
+  it('force-deletes an unmerged branch after explicit confirmation', async () => {
+    const fixture = await managementRepository();
+    await commitOnBranch(fixture, 'temporary', 'unmerged work');
+    const oid = await git(fixture.work, ['rev-parse', 'refs/heads/temporary']);
+
+    expect(await fixture.operations.deleteLocalBranch(fixture.repositoryId, 'refs/heads/temporary', oid, true))
+      .toEqual({ status: 'deleted', fullName: 'refs/heads/temporary', name: 'temporary', oid });
+    expect(await git(fixture.work, ['for-each-ref', '--format=%(refname)', 'refs/heads/temporary'])).toBe('');
+  });
+
   it('refuses a branch whose comparison base no longer resolves', async () => {
     const fixture = await managementRepository();
     await addRemote(fixture);
@@ -385,6 +472,31 @@ describe('GitRepositoryOperations safe worktree removal', () => {
     expect(await fixture.operations.removeWorktree(fixture.repositoryId, untracked, await git(untracked, ['rev-parse', 'HEAD'])))
       .toMatchObject({ status: 'dirty', untrackedCount: 1 });
     for (const directory of [staged, unstaged, untracked]) expect(await exists(directory)).toBe(true);
+  });
+
+  it('force-removes a dirty linked worktree while keeping its branch', async () => {
+    const fixture = await managementRepository();
+    const target = await addWorktree(fixture, 'dirty', 'dirty');
+    await writeFile(path.join(target, 'file.txt'), 'uncommitted change\n');
+    await writeFile(path.join(target, 'untracked.txt'), 'lost forever\n');
+    const oid = await git(target, ['rev-parse', 'HEAD']);
+
+    expect(await fixture.operations.removeWorktree(fixture.repositoryId, target, oid, true))
+      .toMatchObject({ status: 'removed', branch: 'dirty' });
+    expect(await exists(target)).toBe(false);
+    expect(await git(fixture.work, ['for-each-ref', '--format=%(refname)', 'refs/heads/dirty'])).toContain('refs/heads/dirty');
+  });
+
+  it('optionally force-deletes the branch after removing its worktree', async () => {
+    const fixture = await managementRepository();
+    const target = await addWorktree(fixture, 'temporary', 'temporary');
+    await writeFile(path.join(target, 'untracked.txt'), 'discard me\n');
+    const oid = await git(target, ['rev-parse', 'HEAD']);
+
+    expect(await fixture.operations.removeWorktree(fixture.repositoryId, target, oid, true, true))
+      .toMatchObject({ status: 'removed', branch: 'temporary' });
+    expect(await exists(target)).toBe(false);
+    expect(await git(fixture.work, ['for-each-ref', '--format=%(refname)', 'refs/heads/temporary'])).toBe('');
   });
 
   it('refuses a locked worktree', async () => {

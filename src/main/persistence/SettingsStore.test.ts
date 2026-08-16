@@ -200,6 +200,93 @@ describe('SettingsStore Files tree state', () => {
   });
 });
 
+describe('SettingsStore open files state', () => {
+  const repositoryId = '0123456789abcdef';
+  const tabs = [{ path: 'src/b.ts', pinned: true }, { path: 'src/a.ts', pinned: false }];
+
+  it('migrates absent or corrupt open files state without resetting sibling settings', async () => {
+    const absent = new SettingsStore(await settingsFile({}));
+    const corrupt = new SettingsStore(await settingsFile({ openFilesStates: 'bad', preferences: { theme: 'dark', diffView: 'split', wrapLines: true, sidebarWidth: 420, showDotEnvFiles: false, uiZoom: 110 } }));
+    await Promise.all([absent.load(), corrupt.load()]);
+    expect(absent.openFilesStates).toEqual([]);
+    expect(corrupt.openFilesStates).toEqual([]);
+    expect(corrupt.preferences).toMatchObject({ theme: 'dark', diffView: 'split', wrapLines: true, sidebarWidth: 420 });
+  });
+
+  it('drops malformed stored records instead of restoring them', async () => {
+    const store = new SettingsStore(await settingsFile({
+      openFilesStates: [
+        { repositoryId: 'nope', tabs, activePath: 'src/a.ts', previewPath: null, updatedAt: '2026-01-01T00:00:00.000Z' },
+        { repositoryId, tabs: [{ path: '../escape.ts', pinned: false }], activePath: null, previewPath: null, updatedAt: '2026-01-01T00:00:00.000Z' },
+      ],
+    }));
+    await store.load();
+    expect(store.openFilesStates).toEqual([]);
+  });
+
+  it('preserves hand-chosen tab order through a save and reload', async () => {
+    const file = await settingsFile({});
+    const store = new SettingsStore(file);
+    await store.load();
+    store.setOpenFilesState(repositoryId, tabs, 'src/a.ts', 'src/a.ts');
+    await store.flush();
+
+    const reloaded = new SettingsStore(file);
+    await reloaded.load();
+    expect(reloaded.openFilesStates[0]?.tabs.map((tab) => tab.path)).toEqual(['src/b.ts', 'src/a.ts']);
+    expect(reloaded.openFilesStates[0]?.activePath).toBe('src/a.ts');
+    expect(reloaded.openFilesStates[0]?.previewPath).toBe('src/a.ts');
+  });
+
+  it('coalesces updates until the debounce and never stores draft text', async () => {
+    vi.useFakeTimers();
+    const file = await settingsFile({});
+    const store = new SettingsStore(file);
+    await store.load();
+    store.setOpenFilesState(repositoryId, [{ path: 'src/a.ts', pinned: false }], 'src/a.ts', 'src/a.ts');
+    store.setOpenFilesState(repositoryId, tabs, 'src/b.ts', null);
+    await vi.advanceTimersByTimeAsync(749);
+    expect(JSON.parse(await readFile(file, 'utf8')).openFilesStates).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(1);
+    await store.flush();
+    const persisted = JSON.parse(await readFile(file, 'utf8'));
+    expect(persisted.openFilesStates[0].activePath).toBe('src/b.ts');
+    expect(JSON.stringify(persisted)).not.toContain('content');
+  });
+
+  it('flushes both background channels together and returns isolated clones', async () => {
+    const file = await settingsFile({});
+    const store = new SettingsStore(file);
+    await store.load();
+    store.setFilesTreeExpandedPaths(repositoryId, ['src']);
+    store.setOpenFilesState(repositoryId, tabs, 'src/a.ts', null);
+    await store.flush();
+
+    const persisted = JSON.parse(await readFile(file, 'utf8'));
+    expect(persisted.filesTreeStates[0].expandedPaths).toEqual(['src']);
+    expect(persisted.openFilesStates[0].tabs).toHaveLength(2);
+
+    const clone = store.openFilesStates;
+    clone[0]!.tabs.push({ path: 'mutated.ts', pinned: false });
+    expect(store.openFilesStates[0]?.tabs).toHaveLength(2);
+  });
+
+  it('removes the state of a forgotten worktree', async () => {
+    const file = await settingsFile({});
+    const store = new SettingsStore(file);
+    await store.load();
+    await store.touchRepository(worktree('1111111111111111', 'C:\\repos\\app'));
+    await store.touchRepository(worktree('2222222222222222', 'C:\\repos\\app-feature'));
+    store.setOpenFilesState('1111111111111111', tabs, 'src/a.ts', null);
+    await store.flush();
+    expect(store.openFilesStates).toHaveLength(1);
+
+    await store.forgetWorktreePath('C:\\repos\\app');
+    expect(store.openFilesStates).toEqual([]);
+    expect(JSON.parse(await readFile(file, 'utf8')).openFilesStates).toEqual([]);
+  });
+});
+
 function repository(id: string) {
   return { id, name: id, repositoryName: id, path: `C:\\repos\\${id}`, commonDir: `C:\\repos\\${id}\\.git` };
 }

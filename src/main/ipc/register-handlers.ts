@@ -12,11 +12,12 @@ import type { RepositoryService } from '../git/RepositoryService';
 import type { SearchService } from '../git/SearchService';
 import type { SettingsStore } from '../persistence/SettingsStore';
 import type { CommitMessageService } from '../ai/CommitMessageService';
+import type { AiLogStore } from '../persistence/AiLogStore';
 import type { PullRequestDraftService } from '../ai/PullRequestDraftService';
 import type { GitHubService } from '../github/GitHubService';
 import { readClipboardFilePaths } from '../files/ClipboardFileTransfer';
 import { applyWindowTitleBarTheme } from '../window/WindowTitleBar';
-import { aiString, booleanArg, branchDetailsArg, createPullRequestArg, deleteBranchArg, filesTreeStateArg, generateCommitMessageArg, generatePullRequestDraftArg, nullableProjectIdArg, oidArg, pathsArg, prNumberArg, projectIdArg, projectNameArg, removeWorktreeArg, repositoryKeyArg, searchOptionsArg, stringArg, textArg, worktreeDetailsArg } from './validators';
+import { aiString, booleanArg, branchDetailsArg, createPullRequestArg, deleteBranchArg, filesTreeStateArg, generateCommitMessageArg, generatePullRequestDraftArg, nullableProjectIdArg, oidArg, openFilesStateArg, pathsArg, prepareCommitGroupArg, prNumberArg, projectIdArg, projectNameArg, pullRequestStatesArg, removeWorktreeArg, repositoryKeyArg, searchOptionsArg, searchReplaceArg, stringArg, textArg, worktreeDetailsArg } from './validators';
 
 interface Services {
   window: BrowserWindow;
@@ -28,6 +29,7 @@ interface Services {
   operations: GitRepositoryOperations;
   watcher: RepositoryWatcher;
   ai: CommitMessageService;
+  aiLog: AiLogStore;
   github: GitHubService;
   prDrafts: PullRequestDraftService;
 }
@@ -50,6 +52,7 @@ export function registerHandlers(services: Services): () => void {
       recentRepositories: services.repositories.recents(),
       repositoryProjects: services.settings.repositoryProjects,
       filesTreeStates: services.settings.filesTreeStates,
+      openFilesStates: services.settings.openFilesStates,
       activeRepository,
       preferences: services.settings.preferences,
       performanceAutomation: process.env.JUSTGIT_PERF_AUTOMATION === '1',
@@ -62,6 +65,10 @@ export function registerHandlers(services: Services): () => void {
   handle(IPC.filesTreeStateUpdate, 'files-tree-state', (repositoryId, expandedPaths) => {
     const state = filesTreeStateArg(repositoryId, expandedPaths, 'files-tree-state');
     services.settings.setFilesTreeExpandedPaths(state.repositoryId, state.expandedPaths);
+  });
+  handle(IPC.openFilesStateUpdate, 'open-files-state', (repositoryId, tabs, activePath, previewPath) => {
+    const state = openFilesStateArg(repositoryId, tabs, activePath, previewPath, 'open-files-state');
+    services.settings.setOpenFilesState(state.repositoryId, state.tabs, state.activePath, state.previewPath);
   });
   handle(IPC.projectCreate, 'project-create', (name) => services.settings.createRepositoryProject(projectNameArg(name, 'project-create')));
   handle(IPC.projectRename, 'project-rename', (projectId, name) => services.settings.renameRepositoryProject(projectIdArg(projectId, 'project-rename'), projectNameArg(name, 'project-rename')));
@@ -329,6 +336,7 @@ export function registerHandlers(services: Services): () => void {
   });
   handle(IPC.indexStageAll, 'stage-all', (id) => services.operations.stageAll(stringArg(id, 'stage-all', 64)));
   handle(IPC.indexUnstageAll, 'unstage-all', (id) => services.operations.unstageAll(stringArg(id, 'unstage-all', 64)));
+  handle(IPC.indexPrepareCommitGroup, 'prepare-commit-group', (input) => services.operations.prepareCommitGroup(prepareCommitGroupArg(input, 'prepare-commit-group')));
   handle(IPC.indexResolveConflict, 'resolve-conflict', (id, filePath, content) => services.operations.resolveConflict(
     stringArg(id, 'resolve-conflict', 64),
     stringArg(filePath, 'resolve-conflict'),
@@ -363,25 +371,40 @@ export function registerHandlers(services: Services): () => void {
     return services.operations.worktreeDetails(repositoryId, path);
   });
   handle(IPC.branchDelete, 'delete-branch', (request) => {
-    const { repositoryId, fullName, expectedOid } = deleteBranchArg(request, 'delete-branch');
-    return services.operations.deleteLocalBranch(repositoryId, fullName, expectedOid);
+    const { repositoryId, fullName, expectedOid, force } = deleteBranchArg(request, 'delete-branch');
+    return services.operations.deleteLocalBranch(repositoryId, fullName, expectedOid, force);
   });
   handle(IPC.worktreeRemove, 'remove-worktree', (request) => {
-    const { repositoryId, path, expectedOid } = removeWorktreeArg(request, 'remove-worktree');
-    return services.operations.removeWorktree(repositoryId, path, expectedOid);
+    const { repositoryId, path, expectedOid, force, deleteBranch } = removeWorktreeArg(request, 'remove-worktree');
+    return services.operations.removeWorktree(repositoryId, path, expectedOid, force, deleteBranch);
   });
   handle(IPC.refsPull, 'pull', (id) => services.operations.pull(stringArg(id, 'pull', 64)));
   handle(IPC.refsPush, 'push', (id) => services.operations.push(stringArg(id, 'push', 64)));
   handle(IPC.aiStatuses, 'ai-statuses', (forceRefresh) => services.ai.statuses(booleanArg(forceRefresh, 'ai-statuses')));
   handle(IPC.aiGenerateCommitMessage, 'ai-generate-commit-message', (input) => services.ai.generate(generateCommitMessageArg(input)));
+  handle(IPC.aiLog, 'ai-log', () => services.aiLog.list());
+  handle(IPC.aiClearLog, 'ai-clear-log', () => services.aiLog.clear());
   handle(IPC.aiCancelGeneration, 'ai-cancel-generation', (requestId) => {
     services.ai.cancel(aiString(requestId, 'ai-cancel-generation', 100, true));
   });
   handle(IPC.githubStatus, 'gh-status', (forceRefresh) => services.github.status(booleanArg(forceRefresh, 'gh-status')));
   handle(IPC.githubRepositoryInfo, 'gh-repository-info', (id) => services.github.repositoryInfo(stringArg(id, 'gh-repository-info', 64)));
-  handle(IPC.githubPrList, 'gh-pr-list', (id) => services.github.listPullRequests(stringArg(id, 'gh-pr-list', 64)));
+  handle(IPC.githubPrForBranch, 'gh-pr-for-branch', (id, branchName) => services.github.findPullRequestForBranch(
+    stringArg(id, 'gh-pr-for-branch', 64),
+    stringArg(branchName, 'gh-pr-for-branch', 512),
+  ));
+  handle(IPC.repositoryReplaceSearch, 'replace-search', (id, request) => {
+    const repositoryId = stringArg(id, 'replace-search', 64);
+    const input = searchReplaceArg(request, 'replace-search');
+    return services.fileHistory.serialize(repositoryId, () => services.search.replace(repositoryId, input));
+  });
+  handle(IPC.githubPrList, 'gh-pr-list', (id, states) => services.github.listPullRequests(
+    stringArg(id, 'gh-pr-list', 64),
+    pullRequestStatesArg(states, 'gh-pr-list'),
+  ));
   handle(IPC.githubPrView, 'gh-pr-view', (id, prNumber) => services.github.getPullRequest(stringArg(id, 'gh-pr-view', 64), prNumberArg(prNumber, 'gh-pr-view')));
   handle(IPC.githubPrDiff, 'gh-pr-diff', (id, prNumber) => services.github.getPullRequestDiff(stringArg(id, 'gh-pr-diff', 64), prNumberArg(prNumber, 'gh-pr-diff')));
+  handle(IPC.githubPrCommitDiff, 'gh-pr-commit-diff', (id, oid) => services.github.getPullRequestCommitDiff(stringArg(id, 'gh-pr-commit-diff', 64), oidArg(oid, 'gh-pr-commit-diff')));
   handle(IPC.githubPrCreate, 'gh-pr-create', (input) => services.github.createPullRequest(createPullRequestArg(input)));
   handle(IPC.githubPrDraft, 'ai-pr-draft', (input) => services.prDrafts.generate(generatePullRequestDraftArg(input)));
   handle(IPC.githubPrDraftCancel, 'ai-pr-draft-cancel', (requestId) => {

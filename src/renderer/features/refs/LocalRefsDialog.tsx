@@ -3,16 +3,18 @@ import {
   IconAlertTriangle, IconCheck, IconCopy, IconExternalLink, IconGitBranch, IconGitCommit, IconHierarchy2,
   IconLoader4, IconRefresh, IconSearch, IconTrash, IconX,
 } from '@tabler/icons-react';
-import type { RecentRepository } from '../../../shared/contracts';
+import type { PullRequestSummary, RecentRepository } from '../../../shared/contracts';
 import type { BranchDetails, BranchInfo, LocalRefsSnapshot, ManagedWorktree, WorktreeDetails } from '../../../shared/git-types';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogClose, DialogDescription, DialogPopup, DialogTitle } from '@/components/ui/dialog';
 import {
   branchBadges, branchDeleteEligibility, branchDetailBadges, branchKey, filterBranches, filterWorktrees,
   localChangeSummary, nextSelectionKey, worktreeBadges, worktreeKey, worktreeName, worktreeRemoveEligibility,
   type LocalRefsTab, type RefBadge,
 } from './local-refs-model';
+import { openOnGitHub } from '@/features/pulls/gh-utils';
 
 interface LocalRefsDialogProps {
   open: boolean;
@@ -37,6 +39,7 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
   const [selectedBranch, setSelectedBranch] = useState<string | null>(null);
   const [selectedWorktree, setSelectedWorktree] = useState<string | null>(null);
   const [branchDetails, setBranchDetails] = useState<BranchDetails | null>(null);
+  const [branchPullRequest, setBranchPullRequest] = useState<PullRequestSummary | null>(null);
   const [worktreeDetails, setWorktreeDetails] = useState<WorktreeDetails | null>(null);
   const [detailsLoading, setDetailsLoading] = useState(false);
   const [detailsError, setDetailsError] = useState<string | null>(null);
@@ -101,6 +104,7 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
     const target = detailTarget;
     if (!target) {
       setBranchDetails(null);
+      setBranchPullRequest(null);
       setWorktreeDetails(null);
       setDetailsLoading(false);
       setDetailsError(null);
@@ -108,9 +112,17 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
     }
     setDetailsLoading(true);
     setDetailsError(null);
+    setBranchPullRequest(null);
     const request = tab === 'branches'
       ? window.justgit.refs.branchDetails({ repositoryId, fullName: (target as BranchInfo).fullName })
-        .then((details) => { if (detailToken.current === token) setBranchDetails(details); })
+        .then((details) => {
+          if (detailToken.current !== token) return;
+          setBranchDetails(details);
+          if (details.deletion !== 'unknown' && details.deletion !== 'unmerged') return;
+          void window.justgit.github.findPullRequestForBranch(repositoryId, details.name)
+            .then((pullRequest) => { if (detailToken.current === token) setBranchPullRequest(pullRequest); })
+            .catch(() => undefined);
+        })
       : window.justgit.refs.worktreeDetails({ repositoryId, path: (target as ManagedWorktree).path })
         .then((details) => { if (detailToken.current === token) setWorktreeDetails(details); });
     void request
@@ -132,8 +144,8 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
     }
   };
 
-  const deleteBranch = (target: BranchDetails) => run('delete-branch', async () => {
-    const result = await window.justgit.refs.deleteBranch({ repositoryId, fullName: target.fullName, expectedOid: target.oid });
+  const deleteBranch = (target: BranchDetails, force: boolean) => run('delete-branch', async () => {
+    const result = await window.justgit.refs.deleteBranch({ repositoryId, fullName: target.fullName, expectedOid: target.oid, force });
     if (result.status !== 'deleted') {
       setActionError(branchFailure(result.status));
       await load();
@@ -144,8 +156,8 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
     return true;
   });
 
-  const removeWorktree = (target: WorktreeDetails) => run('remove-worktree', async () => {
-    const result = await window.justgit.refs.removeWorktree({ repositoryId, path: target.path, expectedOid: target.oid });
+  const removeWorktree = (target: WorktreeDetails, force: boolean, deleteBranch: boolean) => run('remove-worktree', async () => {
+    const result = await window.justgit.refs.removeWorktree({ repositoryId, path: target.path, expectedOid: target.oid, force, deleteBranch });
     if (result.status !== 'removed') {
       setActionError(worktreeFailure(result.status));
       await load();
@@ -222,6 +234,7 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
         {error && <div className="local-refs-error" role="alert"><IconAlertTriangle aria-hidden="true" /><span>{error}</span></div>}
 
         <div
+          key={tab}
           className="local-refs-body"
           role="tabpanel"
           id={`local-refs-panel-${tab}`}
@@ -281,13 +294,14 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
             {!detailsLoading && !detailsError && tab === 'branches' && branchDetails && branch && (
               <BranchDetailPanel
                 details={branchDetails}
+                pullRequest={branchPullRequest}
                 busy={busy === 'delete-branch'}
                 anyBusy={Boolean(busy)}
                 confirming={confirming === 'delete-branch'}
                 actionError={actionError}
                 onConfirm={() => setConfirming('delete-branch')}
                 onCancel={() => setConfirming(null)}
-                onDelete={() => void deleteBranch(branchDetails)}
+                onDelete={(force) => void deleteBranch(branchDetails, force)}
               />
             )}
             {!detailsLoading && !detailsError && tab === 'worktrees' && worktreeDetails && worktree && (
@@ -300,7 +314,7 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
                 copied={copied}
                 onConfirm={() => setConfirming('remove-worktree')}
                 onCancel={() => setConfirming(null)}
-                onRemove={() => void removeWorktree(worktreeDetails)}
+                onRemove={(force, deleteBranch) => void removeWorktree(worktreeDetails, force, deleteBranch)}
                 onCopyPath={() => void copyPath(worktreeDetails.path)}
                 onOpen={() => props.onOpenWorktree(worktreeDetails.path)}
                 onShowBranch={() => {
@@ -317,7 +331,7 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
         </div>
 
         <footer className="local-refs-footer">
-          <small>Deleting a branch and removing a worktree are separate actions. Neither one forces Git.</small>
+          <small>Deleting a branch and removing a worktree are separate actions. A worktree removes its branch only when explicitly selected.</small>
           <DialogClose render={<Button variant="outline" size="sm" disabled={Boolean(busy)} />}>Done</DialogClose>
         </footer>
       </DialogPopup>
@@ -325,11 +339,13 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
   );
 }
 
-function BranchDetailPanel({ details, busy, anyBusy, confirming, actionError, onConfirm, onCancel, onDelete }: {
-  details: BranchDetails; busy: boolean; anyBusy: boolean; confirming: boolean; actionError: string | null;
-  onConfirm(): void; onCancel(): void; onDelete(): void;
+function BranchDetailPanel({ details, pullRequest, busy, anyBusy, confirming, actionError, onConfirm, onCancel, onDelete }: {
+  details: BranchDetails; pullRequest: PullRequestSummary | null; busy: boolean; anyBusy: boolean; confirming: boolean; actionError: string | null;
+  onConfirm(): void; onCancel(): void; onDelete(force: boolean): void;
 }) {
-  const eligibility = branchDeleteEligibility(details);
+  const eligibility = branchDeleteEligibility(details, pullRequest);
+  const force = eligibility.forceAllowed === true;
+  const deletionAllowed = eligibility.allowed || force;
   return (
     <>
       <div className="local-refs-detail-head">
@@ -343,6 +359,13 @@ function BranchDetailPanel({ details, busy, anyBusy, confirming, actionError, on
         <Fact label="Last commit">{details.date ? formatDate(details.date, true) : '—'}</Fact>
         <Fact label="Upstream">{details.upstream ? `${details.upstream} · ↑${details.ahead} ↓${details.behind}` : 'Not configured'}</Fact>
         <Fact label="Compared with">{details.comparisonBase ?? 'Not compared'}</Fact>
+        {pullRequest && (
+          <Fact label="GitHub PR">
+            <button type="button" className="local-refs-pr-link" onClick={() => openOnGitHub(pullRequest.url)}>
+              #{pullRequest.number} · {pullRequest.state === 'MERGED' ? `Merged into ${pullRequest.baseRefName}` : pullRequest.state === 'OPEN' ? 'Open' : 'Closed'} <IconExternalLink aria-hidden="true" />
+            </button>
+          </Fact>
+        )}
       </dl>
       <DestructiveSection
         tone={eligibility.allowed ? 'ready' : 'blocked'}
@@ -351,13 +374,15 @@ function BranchDetailPanel({ details, busy, anyBusy, confirming, actionError, on
         confirming={confirming}
         busy={busy}
         anyBusy={anyBusy}
-        actionLabel="Delete branch"
-        confirmLabel={busy ? 'Deleting…' : 'Delete branch'}
-        allowed={eligibility.allowed}
-        confirmation={<>Delete the local branch <strong>{details.name}</strong>? This removes only the local branch, keeping every worktree and any remote copy. Git confirmed it is fully merged into <strong>{details.comparisonBase}</strong>.</>}
+        actionLabel={force ? 'Force delete branch' : 'Delete branch'}
+        confirmLabel={busy ? 'Deleting…' : force ? 'Permanently delete' : 'Delete branch'}
+        allowed={deletionAllowed}
+        confirmation={force
+          ? <>Force-delete the local branch <strong>{details.name}</strong>? This keeps any remote branch and pull request, but commits found only on this local branch may become inaccessible. {pullRequest?.state === 'MERGED' ? <>GitHub reports PR <strong>#{pullRequest.number}</strong> as merged into <strong>{pullRequest.baseRefName}</strong>, although local Git cannot verify the ancestry.</> : null}</>
+          : <>Delete the local branch <strong>{details.name}</strong>? This removes only the local branch, keeping every worktree and any remote copy. Git confirmed it is fully merged into <strong>{details.comparisonBase}</strong>.</>}
         onConfirm={onConfirm}
         onCancel={onCancel}
-        onAct={onDelete}
+        onAct={() => onDelete(force)}
       />
     </>
   );
@@ -365,10 +390,14 @@ function BranchDetailPanel({ details, busy, anyBusy, confirming, actionError, on
 
 function WorktreeDetailPanel({ details, busy, anyBusy, confirming, actionError, copied, onConfirm, onCancel, onRemove, onCopyPath, onOpen, onShowBranch }: {
   details: WorktreeDetails; busy: boolean; anyBusy: boolean; confirming: boolean; actionError: string | null; copied: boolean;
-  onConfirm(): void; onCancel(): void; onRemove(): void; onCopyPath(): void; onOpen(): void; onShowBranch(): void;
+  onConfirm(): void; onCancel(): void; onRemove(force: boolean, deleteBranch: boolean): void; onCopyPath(): void; onOpen(): void; onShowBranch(): void;
 }) {
+  const [deleteBranch, setDeleteBranch] = useState(false);
   const eligibility = worktreeRemoveEligibility(details);
   const changes = localChangeSummary(details);
+  const force = eligibility.forceAllowed === true;
+  const removalAllowed = eligibility.allowed || force;
+  useEffect(() => setDeleteBranch(false), [details.path]);
   return (
     <>
       <div className="local-refs-detail-head">
@@ -397,6 +426,12 @@ function WorktreeDetailPanel({ details, busy, anyBusy, confirming, actionError, 
           <Button variant="ghost" size="sm" onClick={onShowBranch} disabled={anyBusy}><IconGitBranch /> Show branch</Button>
         )}
       </div>
+      {details.branch && removalAllowed && (
+        <label htmlFor="remove-worktree-delete-branch" className="local-refs-delete-branch">
+          <Checkbox id="remove-worktree-delete-branch" checked={deleteBranch} onCheckedChange={(checked) => setDeleteBranch(checked === true)} disabled={anyBusy} />
+          <span>Also delete branch <strong>{details.branch}</strong></span>
+        </label>
+      )}
       <DestructiveSection
         tone={eligibility.allowed ? 'ready' : 'blocked'}
         reason={eligibility.reason}
@@ -404,13 +439,20 @@ function WorktreeDetailPanel({ details, busy, anyBusy, confirming, actionError, 
         confirming={confirming}
         busy={busy}
         anyBusy={anyBusy}
-        actionLabel="Remove worktree"
-        confirmLabel={busy ? 'Removing…' : 'Remove worktree'}
-        allowed={eligibility.allowed}
-        confirmation={<>Remove the worktree at <strong className="local-refs-path">{details.path}</strong>? The folder is deleted from disk and is <strong>not</strong> moved to the Recycle Bin. {details.branch ? <>The branch <strong>{details.branch}</strong> stays in the repository.</> : 'No branch is deleted.'}</>}
+        actionLabel={force ? 'Force remove worktree' : 'Remove worktree'}
+        confirmLabel={busy ? 'Removing…' : force ? 'Permanently remove' : 'Remove worktree'}
+        allowed={removalAllowed}
+        confirmation={<>
+          {force
+            ? <>Permanently remove the worktree at <strong className="local-refs-path">{details.path}</strong>? <strong>{changes ?? `The ${details.operation ?? 'current Git operation'}`}</strong> and every uncommitted file will be lost. The folder is deleted from disk and is <strong>not</strong> moved to the Recycle Bin. </>
+            : <>Remove the worktree at <strong className="local-refs-path">{details.path}</strong>? The folder is deleted from disk and is <strong>not</strong> moved to the Recycle Bin. </>}
+          {deleteBranch && details.branch
+            ? <>The branch <strong>{details.branch}</strong> will also be force-deleted. Commits found only on that branch may become inaccessible.</>
+            : details.branch ? <>The branch <strong>{details.branch}</strong> and its commits stay in the repository.</> : 'No branch is deleted.'}
+        </>}
         onConfirm={onConfirm}
         onCancel={onCancel}
-        onAct={onRemove}
+        onAct={() => onRemove(force, deleteBranch)}
       />
     </>
   );

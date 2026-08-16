@@ -44,8 +44,14 @@ It is intentionally not an IDE, hosting service, or replacement for the Git CLI.
 - Stage or unstage individual files, folders, selections, or everything at once.
 - Discard selected unstaged changes with confirmation; untracked files are sent to the Windows Recycle Bin.
 - Review syntax-aware diffs in unified or split mode, with optional line wrapping.
+- Open rich previews for changed Markdown, HTML, SVG, and image files directly from **Changes**, with a separate action to inspect their diff.
 - Resolve merge conflicts in the built-in conflict editor and mark resolved files for staging.
 - Create commits from staged files, or create and push in one action when an upstream exists.
+- Let the selected AI CLI suggest a reviewed multi-commit plan when staged files represent independent responsibilities, then prepare one complete-file group at a time without creating commits automatically.
+- Work through that plan at your own pace: groups keep their original numbering as you commit them, show how many are done, open any listed file's diff for review, and each group is independently rechecked against its files so a plan cannot be applied after those files changed.
+- When a split cannot be offered, JustGit says why instead of staying silent, for example because a file is only partially staged or was renamed.
+- Every generation is recorded locally for diagnostics: harness, model, outcome, duration, the tokens and cost the harness reported, and why a proposed split was refused. Only this metadata is stored; prompts and file contents never leave the repository.
+- Review that history from **Settings → AI commit messages → View history**, with totals for runs, failures, tokens, and reported cost, and clear it whenever you want.
 - Undo the latest unpublished commit while keeping its changes staged. JustGit verifies the expected commit and upstream state before rewriting history.
 
 ### Safe pull and push
@@ -59,7 +65,13 @@ It is intentionally not an IDE, hosting service, or replacement for the Git CLI.
 ### Files and editing
 
 - Browse the repository as a virtualised tree with sticky parent folders and persisted expansion state.
+- Keep open files in a compact tab strip in the header: a single click previews a file and the next preview replaces it, while editing, double-clicking, or `Ctrl`-clicking pins the tab so it opens alongside the preview instead of replacing it. Tabs can be reordered by dragging them, closed with the middle mouse button, and show the parent folder when two files share a name.
 - Open text files in the built-in syntax-aware editor and save with external-change protection.
+- Move freely between open files without losing work: unsaved changes stay in memory for the running application, closing a modified tab offers Save, Discard, or Cancel, and only the active file keeps an editor loaded.
+- Restore each worktree's open tabs, their order, and the file that was active when you return to it. Tab paths are remembered between sessions; unsaved text is never written to disk.
+- Keep a tab whose file was renamed or moved pointing at its new path. A tab with unsaved changes whose file disappears stays open and is marked unavailable so its text can still be recovered, while clean tabs simply close.
+- Only working-tree files become tabs; diffs, conflicts, commits, and pull requests stay transient. Up to 50 tabs are kept per worktree, and opening past that closes the clean tab you used least recently.
+- Find and replace one or every occurrence in an editable file, with case, whole-word, regular-expression, and undo support.
 - Preview and edit Markdown, HTML, and SVG files through compact Preview/Code controls.
 - Render GitHub-flavoured Markdown with syntax-highlighted code, copy buttons, alerts, footnotes, KaTeX, and Mermaid diagrams.
 - Preview raster images with fit, 1:1, keyboard/wheel zoom, dimensions, and file-size information.
@@ -73,6 +85,7 @@ It is intentionally not an IDE, hosting service, or replacement for the Git CLI.
 - Open files by fuzzy path search with `Ctrl+P`.
 - Search file contents across the repository with case-sensitive, whole-word, and regular-expression modes.
 - Group matches by file, show line numbers, and open a result directly in the editor.
+- Replace one match, every match in a file, or all displayed repository matches; replacements are conflict-checked and undoable as one Files operation.
 - Identify results from Git-ignored files separately.
 
 ### History
@@ -98,6 +111,7 @@ GitHub features use the authenticated GitHub CLI (`gh`):
 
 - List open pull requests for the current GitHub repository.
 - Inspect pull-request metadata, Markdown description, and full diff.
+- Switch the pull-request **Code** view between all cumulative changes and the diff introduced by an individual commit.
 - Open a pull request in the browser.
 - Create a pull request or draft pull request with a selected remote base branch.
 - Edit and preview the GitHub Markdown description before publishing.
@@ -109,6 +123,7 @@ GitHub features use the authenticated GitHub CLI (`gh`):
 JustGit supports locally installed Codex, Claude Code, and OpenCode CLIs. It can:
 
 - generate an editable commit message from staged changes;
+- propose multiple focused commits, including their messages, reasons, and complete-file groups, when a split is clearly beneficial;
 - generate an editable pull-request title and description from the current branch diff;
 - detect installed providers, authentication state, and available models;
 - cancel an in-progress generation request.
@@ -123,7 +138,7 @@ AI never creates a commit or pull request automatically. You review and edit the
 - Optional line wrapping in viewers.
 - Optional display of Git-ignored files.
 - Per-provider AI model selection.
-- Persisted sidebar width, viewer preferences, recent repositories, projects, and expanded file-tree paths.
+- Persisted sidebar width, viewer preferences, recent repositories, projects, expanded file-tree paths, and each worktree's open file tabs.
 
 ## Keyboard shortcuts
 
@@ -134,6 +149,11 @@ AI never creates a commit or pull request automatically. You review and edit the
 | `Ctrl+R` | Refresh repository state |
 | `Ctrl+1` … `Ctrl+5` | Open Changes, Files, History, PRs, or Search |
 | `Ctrl+S` | Save the open editable file |
+| `Ctrl+W` | Close the active file tab |
+| `Ctrl+Tab`, `Ctrl+Shift+Tab` | Move to the next or previous file tab |
+| `Ctrl+Shift+PageUp`, `Ctrl+Shift+PageDown` | Move the active file tab left or right |
+| `Enter`, `Delete` | Activate or close the focused file tab |
+| `Ctrl+F`, `Ctrl+Alt+F` | Find, or find and replace, in the open editable file |
 | `Ctrl+Enter` | Create a commit while the commit composer is focused |
 | `Ctrl+Shift+Enter` | Create a commit and push when available |
 | `Ctrl+C`, `Ctrl+X`, `Ctrl+V` | Copy, cut, or paste selected Files entries |
@@ -194,7 +214,9 @@ The unpacked executable is written to `out/JustGit-win32-x64/JustGit.exe`.
 
 ## AI privacy
 
-For commit-message generation, JustGit sends the selected local AI CLI only a bounded staged diff, its summary, the branch name, and up to ten recent commit subjects. It does not include unstaged content or untracked files.
+For commit-message generation, JustGit sends the selected local AI CLI only a bounded staged diff, its summary, staged paths, the branch name, and up to ten recent commit subjects. It does not include unstaged content; untracked files are included only after you stage them.
+
+Multi-commit proposals are accepted only when they partition every staged path exactly once. JustGit suppresses them for truncated context, partially staged files, and staged renames, and verifies that the staged snapshot has not changed before preparing the first group. Preparing a group changes only the Git index; every commit still requires an explicit review and confirmation.
 
 For pull-request drafting, it sends a bounded comparison between the current branch and the selected base branch. If the context is truncated, the interface tells you to review the result carefully.
 

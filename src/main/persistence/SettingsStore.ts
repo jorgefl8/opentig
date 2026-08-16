@@ -4,6 +4,7 @@ import path from 'node:path';
 import type { AiHarnessId, Preferences, RecentRepository, RepositoryOrganization, RepositoryProject } from '../../shared/contracts';
 import { GitOperationError } from '../../shared/errors';
 import { FILES_TREE_SAVE_DEBOUNCE_MS, normalizeFilesTreeStates, type FilesTreeState, upsertFilesTreeState } from '../../shared/files-tree-state';
+import { cloneOpenFilesState, normalizeOpenFilesStates, OPEN_FILES_SAVE_DEBOUNCE_MS, type OpenFilesState, upsertOpenFilesState } from '../../shared/open-files-state';
 import { MAX_PROJECT_NAME_LENGTH, MAX_REPOSITORIES_PER_PROJECT, MAX_REPOSITORY_KEY_LENGTH, MAX_REPOSITORY_PROJECTS, normalizeRepositoryKey, UNASSIGNED_RECENT_LIMIT } from '../../shared/repository-projects';
 
 interface WindowBounds { width: number; height: number; x?: number; y?: number }
@@ -11,15 +12,20 @@ interface SettingsData {
   recentRepositories: RecentRepository[];
   repositoryProjects: RepositoryProject[];
   filesTreeStates: FilesTreeState[];
+  openFilesStates: OpenFilesState[];
   activeRepositoryId: string | null;
   preferences: Preferences;
   windowBounds: WindowBounds;
 }
 
+/** UI state that is written in the background instead of on every interaction. */
+type BackgroundChannel = 'filesTree' | 'openFiles';
+
 const defaults: SettingsData = {
   recentRepositories: [],
   repositoryProjects: [],
   filesTreeStates: [],
+  openFilesStates: [],
   activeRepositoryId: null,
   preferences: {
     theme: 'system', diffView: 'unified', changesLayout: 'tree', wrapLines: false, sidebarWidth: 400, showDotEnvFiles: true, uiZoom: 100,
@@ -32,8 +38,8 @@ export class SettingsStore {
   private data: SettingsData = structuredClone(defaults);
   private loaded = false;
   private pendingWrite: Promise<void> = Promise.resolve();
-  private filesTreeSaveTimer: ReturnType<typeof setTimeout> | null = null;
-  private filesTreeDirty = false;
+  private readonly backgroundTimers = new Map<BackgroundChannel, ReturnType<typeof setTimeout>>();
+  private readonly backgroundDirty = new Set<BackgroundChannel>();
   private lastBackgroundWriteError: unknown = null;
 
   constructor(private readonly filePath: string) {}
@@ -52,6 +58,7 @@ export class SettingsStore {
   get recentRepositories(): RecentRepository[] { return [...this.data.recentRepositories]; }
   get repositoryProjects(): RepositoryProject[] { return this.data.repositoryProjects.map(cloneProject); }
   get filesTreeStates(): FilesTreeState[] { return this.data.filesTreeStates.map(cloneFilesTreeState); }
+  get openFilesStates(): OpenFilesState[] { return this.data.openFilesStates.map(cloneOpenFilesState); }
   get activeRepositoryId(): string | null { return this.data.activeRepositoryId; }
   get preferences(): Preferences { return { ...this.data.preferences, commitMessageModels: { ...this.data.preferences.commitMessageModels } }; }
   get windowBounds(): WindowBounds { return { ...this.data.windowBounds }; }
@@ -78,7 +85,11 @@ export class SettingsStore {
     // The active repository is never a removal target; the operations layer
     // blocks removing the current worktree before it reaches persistence.
     if (matching.some((item) => item.id === this.data.activeRepositoryId)) return this.recentRepositories;
+    const removedIds = new Set(matching.map((item) => item.id));
     this.data.recentRepositories = this.data.recentRepositories.filter((item) => normalizeWorktreePath(item.path) !== target);
+    // Open-file metadata is keyed by the same worktree identifier, so a forgotten
+    // worktree must not leave its tabs behind to be restored later.
+    this.data.openFilesStates = this.data.openFilesStates.filter((state) => !removedIds.has(state.repositoryId));
     await this.save();
     return this.recentRepositories;
   }
@@ -153,43 +164,58 @@ export class SettingsStore {
 
   setFilesTreeExpandedPaths(repositoryId: string, expandedPaths: string[]): void {
     this.data.filesTreeStates = upsertFilesTreeState(this.data.filesTreeStates, repositoryId, expandedPaths, new Date().toISOString());
-    this.filesTreeDirty = true;
-    if (this.filesTreeSaveTimer) clearTimeout(this.filesTreeSaveTimer);
-    this.filesTreeSaveTimer = setTimeout(() => {
-      this.filesTreeSaveTimer = null;
-      void this.saveFilesTreeState().catch(() => undefined);
-    }, FILES_TREE_SAVE_DEBOUNCE_MS);
+    this.scheduleBackgroundSave('filesTree', FILES_TREE_SAVE_DEBOUNCE_MS);
+  }
+
+  /**
+   * Stores the open-file tabs of one worktree. The renderer never supplies the
+   * timestamp so a replayed or forged message cannot pin a stale record on top.
+   */
+  setOpenFilesState(repositoryId: string, tabs: unknown, activePath: unknown, previewPath: unknown): void {
+    this.data.openFilesStates = upsertOpenFilesState(this.data.openFilesStates, repositoryId, tabs, activePath, previewPath, new Date().toISOString());
+    this.scheduleBackgroundSave('openFiles', OPEN_FILES_SAVE_DEBOUNCE_MS);
   }
 
   async flush(): Promise<void> {
-    if (this.filesTreeSaveTimer) {
-      clearTimeout(this.filesTreeSaveTimer);
-      this.filesTreeSaveTimer = null;
-    }
-    if (this.filesTreeDirty) await this.saveFilesTreeState();
+    this.clearBackgroundTimers();
+    await this.saveBackgroundChannels();
     await this.pendingWrite;
-    if (this.filesTreeDirty) await this.saveFilesTreeState();
+    await this.saveBackgroundChannels();
     if (this.lastBackgroundWriteError) throw this.lastBackgroundWriteError;
   }
 
   private save(): Promise<void> {
-    if (this.filesTreeSaveTimer) {
-      clearTimeout(this.filesTreeSaveTimer);
-      this.filesTreeSaveTimer = null;
-    }
-    this.filesTreeDirty = false;
+    // A full write persists every channel, so pending background work is settled.
+    this.clearBackgroundTimers();
+    this.backgroundDirty.clear();
     this.lastBackgroundWriteError = null;
     return this.enqueueWrite();
   }
 
-  private async saveFilesTreeState(): Promise<void> {
-    if (!this.filesTreeDirty) return this.pendingWrite;
-    this.filesTreeDirty = false;
+  private scheduleBackgroundSave(channel: BackgroundChannel, debounceMs: number): void {
+    this.backgroundDirty.add(channel);
+    const existing = this.backgroundTimers.get(channel);
+    if (existing) clearTimeout(existing);
+    this.backgroundTimers.set(channel, setTimeout(() => {
+      this.backgroundTimers.delete(channel);
+      void this.saveBackgroundChannels().catch(() => undefined);
+    }, debounceMs));
+  }
+
+  private clearBackgroundTimers(): void {
+    for (const timer of this.backgroundTimers.values()) clearTimeout(timer);
+    this.backgroundTimers.clear();
+  }
+
+  private async saveBackgroundChannels(): Promise<void> {
+    if (this.backgroundDirty.size === 0) return this.pendingWrite;
+    const pending = [...this.backgroundDirty];
+    this.backgroundDirty.clear();
     this.lastBackgroundWriteError = null;
     try {
       await this.enqueueWrite();
     } catch (error) {
-      this.filesTreeDirty = true;
+      for (const channel of pending) this.backgroundDirty.add(channel);
       this.lastBackgroundWriteError = error;
       throw error;
     }
@@ -248,6 +274,7 @@ function validate(value: unknown): SettingsData {
     : [];
   const repositoryProjects = normalizeProjects(input.repositoryProjects);
   const filesTreeStates = normalizeFilesTreeStates(input.filesTreeStates);
+  const openFilesStates = normalizeOpenFilesStates(input.openFilesStates);
   const preferences = input.preferences && typeof input.preferences === 'object'
     ? {
         theme: ['system', 'light', 'dark'].includes(input.preferences.theme) ? input.preferences.theme : 'system',
@@ -269,6 +296,7 @@ function validate(value: unknown): SettingsData {
     recentRepositories,
     repositoryProjects,
     filesTreeStates,
+    openFilesStates,
     activeRepositoryId: typeof input.activeRepositoryId === 'string' ? input.activeRepositoryId : null,
     preferences,
     windowBounds,
