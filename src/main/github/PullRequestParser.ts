@@ -1,13 +1,22 @@
 import type { PullRequestCheckState, PullRequestCommit, PullRequestDetails, PullRequestLabel, PullRequestState, PullRequestSummary } from '../../shared/contracts';
 import { GhOperationError } from '../../shared/errors';
+import { z } from 'zod';
 
 export const PR_SUMMARY_FIELDS = 'number,title,state,isDraft,author,headRefName,baseRefName,updatedAt,url,reviewDecision,additions,deletions,statusCheckRollup';
 export const PR_DETAIL_FIELDS = `${PR_SUMMARY_FIELDS},body,changedFiles,labels,commits`;
 
+const tolerantRecordSchema = z.looseObject({});
+const pullRequestArraySchema = z.array(z.unknown());
+const summaryRecordSchema = z.looseObject({
+  number: z.number().safe().int().positive(),
+  state: z.string().transform((value) => value.toUpperCase()).pipe(z.enum(['OPEN', 'CLOSED', 'MERGED'])),
+});
+
 export function parsePullRequestList(raw: string): PullRequestSummary[] {
   const parsed: unknown = parseJson(raw, 'gh-pr-list');
-  if (!Array.isArray(parsed)) throw invalidOutput('gh-pr-list');
-  return parsed.map((item) => parseSummary(item, 'gh-pr-list'));
+  const list = pullRequestArraySchema.safeParse(parsed);
+  if (!list.success) throw invalidOutput('gh-pr-list');
+  return list.data.map((item) => parseSummary(item, 'gh-pr-list'));
 }
 
 export function parsePullRequestDetails(raw: string): PullRequestDetails {
@@ -49,13 +58,12 @@ export function parseCreatedPullRequestUrl(stdout: string): { url: string; numbe
 }
 
 function parseSummary(item: unknown, operation: string): PullRequestSummary {
-  if (!item || typeof item !== 'object') throw invalidOutput(operation);
-  const record = item as Record<string, unknown>;
-  const number = record.number;
-  const state = typeof record.state === 'string' ? record.state.toUpperCase() : '';
-  if (typeof number !== 'number' || !Number.isSafeInteger(number) || number <= 0) throw invalidOutput(operation);
-  if (state !== 'OPEN' && state !== 'CLOSED' && state !== 'MERGED') throw invalidOutput(operation);
-  const authorRecord = record.author && typeof record.author === 'object' ? record.author as Record<string, unknown> : null;
+  const parsed = summaryRecordSchema.safeParse(item);
+  if (!parsed.success) throw invalidOutput(operation);
+  const record = parsed.data;
+  const { number, state } = parsed.data;
+  const parsedAuthor = tolerantRecordSchema.safeParse(record.author);
+  const authorRecord = parsedAuthor.success ? parsedAuthor.data : null;
   const author = authorRecord?.login;
   const authorLogin = typeof author === 'string' ? author : 'unknown';
   return {
@@ -77,10 +85,12 @@ function parseSummary(item: unknown, operation: string): PullRequestSummary {
 }
 
 function parseLabels(value: unknown): PullRequestLabel[] {
-  if (!Array.isArray(value)) return [];
-  return value.flatMap((item) => {
-    if (!item || typeof item !== 'object') return [];
-    const record = item as Record<string, unknown>;
+  const parsed = pullRequestArraySchema.safeParse(value);
+  if (!parsed.success) return [];
+  return parsed.data.flatMap((item) => {
+    const candidate = tolerantRecordSchema.safeParse(item);
+    if (!candidate.success) return [];
+    const record = candidate.data;
     if (typeof record.name !== 'string' || !record.name) return [];
     const color = typeof record.color === 'string' && /^[0-9a-f]{6}$/i.test(record.color) ? record.color : '6e7781';
     return [{ name: record.name, color }];
@@ -88,13 +98,15 @@ function parseLabels(value: unknown): PullRequestLabel[] {
 }
 
 function parseCommits(value: unknown): PullRequestCommit[] {
-  if (!Array.isArray(value)) return [];
-  return value.flatMap((item) => {
-    if (!item || typeof item !== 'object') return [];
-    const record = item as Record<string, unknown>;
+  const parsed = pullRequestArraySchema.safeParse(value);
+  if (!parsed.success) return [];
+  return parsed.data.flatMap((item) => {
+    const candidate = tolerantRecordSchema.safeParse(item);
+    if (!candidate.success) return [];
+    const record = candidate.data;
     if (typeof record.oid !== 'string' || !record.oid) return [];
     const authors = Array.isArray(record.authors) ? record.authors : [];
-    const authorRecord = authors.find((author) => author && typeof author === 'object') as Record<string, unknown> | undefined;
+    const authorRecord = authors.map((author) => tolerantRecordSchema.safeParse(author)).find((author) => author.success)?.data;
     const login = typeof authorRecord?.login === 'string' ? authorRecord.login : null;
     const name = typeof authorRecord?.name === 'string' && authorRecord.name ? authorRecord.name : login ?? 'unknown';
     return [{
@@ -111,8 +123,9 @@ function parseChecksState(value: unknown): PullRequestCheckState {
   if (!Array.isArray(value) || value.length === 0) return 'NONE';
   let pending = false;
   for (const item of value) {
-    if (!item || typeof item !== 'object') continue;
-    const record = item as Record<string, unknown>;
+    const parsed = tolerantRecordSchema.safeParse(item);
+    if (!parsed.success) continue;
+    const record = parsed.data;
     const conclusion = typeof record.conclusion === 'string' ? record.conclusion.toUpperCase() : '';
     const state = typeof record.state === 'string' ? record.state.toUpperCase() : '';
     if (['FAILURE', 'ERROR', 'TIMED_OUT', 'CANCELLED', 'ACTION_REQUIRED', 'STARTUP_FAILURE'].includes(conclusion || state)) return 'FAILING';

@@ -1,5 +1,6 @@
 import { AiOperationError } from '../../shared/errors';
 import type { CommitPlanItem } from '../../shared/contracts';
+import { z } from 'zod';
 import type { CommitMessageContext, GeneratedParts } from './types';
 
 /** A parsed group before the main process attaches its content fingerprint. */
@@ -21,33 +22,26 @@ export type CommitPlanParse =
   | { status: 'absent' }
   | { status: 'rejected'; reason: string };
 
-export const COMMIT_MESSAGE_SCHEMA: Record<string, unknown> = {
-  type: 'object',
-  additionalProperties: false,
-  properties: {
-    subject: { type: 'string' },
-    body: { type: 'string' },
-    rationale: { type: 'string' },
-    commits: {
-      type: 'array',
-      maxItems: 8,
-      items: {
-        type: 'object',
-        additionalProperties: false,
-        properties: {
-          subject: { type: 'string' },
-          body: { type: 'string' },
-          reason: { type: 'string' },
-          paths: { type: 'array', items: { type: 'string' } },
-        },
-        required: ['subject', 'body', 'reason', 'paths'],
-      },
-    },
-  },
-  // Only the message itself is required. A model that sees no useful split must
-  // be able to omit these rather than invent values to satisfy the schema.
-  required: ['subject', 'body'],
-};
+const commitPlanItemSchema = z.object({
+  subject: z.string().max(72),
+  body: z.string().max(10_000),
+  reason: z.string().max(500),
+  paths: z.array(z.string()),
+});
+const commitMessageResponseSchema = z.object({
+  subject: z.string().max(72),
+  body: z.string().max(10_000),
+  rationale: z.string().max(1_000).optional(),
+  commits: z.array(commitPlanItemSchema).max(8).optional(),
+});
+const generatedPartsSchema = commitMessageResponseSchema.pick({ subject: true, body: true }).transform(({ subject, body }) => ({
+  subject: subject.trim(), body: body.trim(),
+})).refine(({ subject }) => Boolean(subject) && !subject.endsWith('.') && !hasControlCharacters(subject, false))
+  .refine(({ body }) => !hasControlCharacters(body, true));
+
+// Only the message itself is required. A model that sees no useful split can
+// omit the split fields. This is also the schema used to constrain providers.
+export const COMMIT_MESSAGE_SCHEMA: Record<string, unknown> = z.toJSONSchema(commitMessageResponseSchema) as Record<string, unknown>;
 
 export function buildCommitMessagePrompt(context: CommitMessageContext): string {
   const history = context.recentSubjects.length > 0 ? context.recentSubjects.map((value) => `- ${value}`).join('\n') : '(no history)';
@@ -88,12 +82,9 @@ ${context.patch}`;
 }
 
 export function parseGeneratedParts(value: unknown): GeneratedParts {
-  if (!value || typeof value !== 'object') throw invalidOutput();
-  const subject = typeof (value as { subject?: unknown }).subject === 'string' ? (value as { subject: string }).subject.trim() : '';
-  const body = typeof (value as { body?: unknown }).body === 'string' ? (value as { body: string }).body.trim() : '';
-  if (!subject || hasControlCharacters(subject, false) || subject.length > 72 || subject.endsWith('.')) throw invalidOutput();
-  if (hasControlCharacters(body, true) || `${subject}\n\n${body}`.length > 10_000) throw invalidOutput();
-  return { subject, body };
+  const parsed = generatedPartsSchema.safeParse(value);
+  if (!parsed.success || `${parsed.data.subject}\n\n${parsed.data.body}`.length > 10_000) throw invalidOutput();
+  return parsed.data;
 }
 
 /**

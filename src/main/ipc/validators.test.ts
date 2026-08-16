@@ -1,22 +1,35 @@
 import { describe, expect, it } from 'vitest';
-import { branchDetailsArg, deleteBranchArg, filesTreeStateArg, nullableProjectIdArg, openFilesStateArg, prepareCommitGroupArg, projectIdArg, projectNameArg, pullRequestStatesArg, removeWorktreeArg, repositoryKeyArg, searchReplaceArg, worktreeDetailsArg } from './validators';
+import { branchDetailsArg, deleteBranchArg, filesTreeStateArg, nullableProjectIdArg, openFilesStateArg, prepareCommitGroupArg, projectIdArg, projectNameArg, pullRequestStatesArg, removeWorktreeArg, repositoryKeyArg, searchOptionsArg, searchReplaceArg, worktreeDetailsArg } from './validators';
+import { GitOperationError } from '../../shared/errors';
 
 const OID = 'a'.repeat(40);
 const REVISION = 'b'.repeat(64);
 
 describe('search replacement validator', () => {
+  it('keeps legacy boolean defaults and strips unknown request fields', () => {
+    expect(searchOptionsArg({ query: 'term', matchCase: 'yes', extra: 'ignored' }, 'search')).toEqual({
+      query: 'term', matchCase: false, wholeWord: false, regex: false, includeIgnored: false,
+    });
+  });
+
+  it('preserves the public domain error instead of exposing validation details', () => {
+    try { searchOptionsArg({ query: 'bad\0query' }, 'search'); } catch (error) {
+      expect(error).toBeInstanceOf(GitOperationError);
+      expect(error).toMatchObject({ detail: { code: 'INVALID_ARGUMENT', operation: 'search', message: 'Invalid search.' } });
+    }
+  });
   it('accepts an exact match scope and normalizes search booleans', () => {
     expect(searchReplaceArg({
       options: { query: 'foo', regex: false }, replacement: 'bar',
       scope: { kind: 'match', path: 'src/app.ts', revision: REVISION, line: 2, column: 4 },
     }, 'test')).toEqual({
-      options: { query: 'foo', matchCase: false, wholeWord: false, regex: false }, replacement: 'bar',
+      options: { query: 'foo', matchCase: false, wholeWord: false, regex: false, includeIgnored: false }, replacement: 'bar',
       scope: { kind: 'match', path: 'src/app.ts', revision: REVISION, line: 2, column: 4 },
     });
   });
 
   it('rejects malformed revisions, empty batches, and invalid coordinates', () => {
-    const options = { query: 'foo', matchCase: false, wholeWord: false, regex: false };
+    const options = { query: 'foo', matchCase: false, wholeWord: false, regex: false, includeIgnored: false };
     expect(() => searchReplaceArg({ options, replacement: 'bar', scope: { kind: 'file', path: 'a', revision: 'bad' } }, 'test')).toThrow();
     expect(() => searchReplaceArg({ options, replacement: 'bar', scope: { kind: 'all', files: [] } }, 'test')).toThrow();
     expect(() => searchReplaceArg({ options, replacement: 'bar', scope: { kind: 'match', path: 'a', revision: REVISION, line: 0, column: 1 } }, 'test')).toThrow();

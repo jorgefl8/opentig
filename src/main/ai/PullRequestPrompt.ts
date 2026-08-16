@@ -1,15 +1,16 @@
 import { AiOperationError } from '../../shared/errors';
+import { z } from 'zod';
 import type { PullRequestDraftContext } from './types';
 
-export const PR_DRAFT_SCHEMA: Record<string, unknown> = {
-  type: 'object',
-  additionalProperties: false,
-  properties: {
-    title: { type: 'string' },
-    body: { type: 'string' },
-  },
-  required: ['title', 'body'],
-};
+const titleSchema = z.string().transform((value) => value.trim()).pipe(
+  z.string().min(1).max(120).refine((value) => !hasControlCharacters(value, false)),
+);
+const bodySchema = z.string().transform((value) => value.trim()).pipe(
+  z.string().max(20_000).refine((value) => !hasControlCharacters(value, true)),
+);
+const pullRequestDraftSchema = z.object({ title: titleSchema, body: bodySchema });
+
+export const PR_DRAFT_SCHEMA: Record<string, unknown> = z.toJSONSchema(pullRequestDraftSchema) as Record<string, unknown>;
 
 export interface PullRequestDraftParts {
   title: string;
@@ -41,12 +42,9 @@ ${context.patch}`;
 }
 
 export function parsePullRequestDraft(value: unknown): PullRequestDraftParts {
-  if (!value || typeof value !== 'object') throw invalidOutput();
-  const title = typeof (value as { title?: unknown }).title === 'string' ? (value as { title: string }).title.trim() : '';
-  const body = typeof (value as { body?: unknown }).body === 'string' ? (value as { body: string }).body.trim() : '';
-  if (!title || title.length > 120 || hasControlCharacters(title, false)) throw invalidOutput();
-  if (body.length > 20_000 || hasControlCharacters(body, true)) throw invalidOutput();
-  return { title, body };
+  const parsed = pullRequestDraftSchema.safeParse(value);
+  if (!parsed.success) throw invalidOutput();
+  return parsed.data;
 }
 
 function invalidOutput(): AiOperationError {

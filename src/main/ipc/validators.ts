@@ -5,49 +5,67 @@ import { MAX_PROJECT_NAME_LENGTH, MAX_REPOSITORY_KEY_LENGTH, normalizeRepository
 import { isFilesTreeRepositoryId, MAX_FILES_TREE_PATHS, normalizeExpandedPaths, normalizeFilesTreePath } from '../../shared/files-tree-state';
 import { isOpenFilesRepositoryId, MAX_OPEN_FILE_TABS, normalizeOpenFilePath, type OpenFileTab } from '../../shared/open-files-state';
 import { SEARCH_MAX_QUERY_LENGTH, SEARCH_MAX_REPLACEMENT_LENGTH, SEARCH_REPLACE_MAX_FILES, type SearchOptions, type SearchReplaceRequest } from '../../shared/search';
+import { z } from 'zod';
+import { booleanWithDefaultSchema, boundedStringSchema, parseRecord } from '../schemas/runtime';
+
+const plainStringArraySchema = z.array(z.string());
+const searchOptionsSchema = z.object({
+  query: z.string().min(1).max(SEARCH_MAX_QUERY_LENGTH).refine((value) => !value.includes('\0')),
+  matchCase: z.unknown().optional(),
+  wholeWord: z.unknown().optional(),
+  regex: z.unknown().optional(),
+  includeIgnored: z.unknown().optional(),
+});
+const openFileTabSchema = z.object({ path: z.unknown(), pinned: z.boolean() });
+const aiHarnessSchema = z.enum(['codex', 'claude', 'opencode']);
+const pullRequestStateSchema = z.enum(['OPEN', 'CLOSED', 'MERGED']);
 
 export function stringArg(value: unknown, operation: string, maxLength = 32_768): string {
-  if (typeof value !== 'string' || value.length === 0 || value.length > maxLength || value.includes('\0')) {
+  const parsed = boundedStringSchema(maxLength, { controls: false }).safeParse(value);
+  if (!parsed.success) {
     throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation, message: 'Invalid argument.' });
   }
-  return value;
+  return parsed.data;
 }
 
 export function searchOptionsArg(value: unknown, operation: string): SearchOptions {
-  const input = value as Partial<SearchOptions> | null;
-  if (!input || typeof input !== 'object' || typeof input.query !== 'string'
-    || input.query.length === 0 || input.query.length > SEARCH_MAX_QUERY_LENGTH || input.query.includes('\0')) {
+  const parsed = searchOptionsSchema.safeParse(value);
+  if (!parsed.success) {
     throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation, message: 'Invalid search.' });
   }
   return {
-    query: input.query,
-    matchCase: input.matchCase === true,
-    wholeWord: input.wholeWord === true,
-    regex: input.regex === true,
+    query: parsed.data.query,
+    matchCase: parsed.data.matchCase === true,
+    wholeWord: parsed.data.wholeWord === true,
+    regex: parsed.data.regex === true,
+    includeIgnored: parsed.data.includeIgnored === true,
   };
 }
 
 export function pathsArg(value: unknown, operation: string): string[] {
-  if (!Array.isArray(value) || !value.every((item) => typeof item === 'string')) {
+  const parsed = plainStringArraySchema.safeParse(value);
+  if (!parsed.success) {
     throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation, message: 'Invalid path selection.' });
   }
-  return value;
+  return parsed.data;
 }
 
 export function textArg(value: unknown, operation: string, maxLength: number): string {
-  if (typeof value !== 'string' || value.length > maxLength || value.includes('\0')) {
+  const parsed = boundedStringSchema(maxLength, { empty: true, controls: false }).safeParse(value);
+  if (!parsed.success) {
     throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation, message: 'Invalid content.' });
   }
-  return value;
+  return parsed.data;
 }
 
 export function filesTreeStateArg(repositoryId: unknown, value: unknown, operation: string): { repositoryId: string; expandedPaths: string[] } {
-  if (!isFilesTreeRepositoryId(repositoryId) || !Array.isArray(value) || value.length > MAX_FILES_TREE_PATHS) {
+  const paths = z.array(z.unknown()).max(MAX_FILES_TREE_PATHS).safeParse(value);
+  if (!isFilesTreeRepositoryId(repositoryId) || !paths.success) {
     throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation, message: 'Invalid Files tree state.' });
   }
   const expandedPaths: string[] = [];
   const seen = new Set<string>();
-  for (const candidate of value) {
+  for (const candidate of paths.data) {
     const normalized = normalizeFilesTreePath(candidate);
     if (!normalized) throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation, message: 'Invalid Files tree state.' });
     if (!seen.has(normalized)) {
@@ -70,13 +88,12 @@ export function openFilesStateArg(
   operation: string,
 ): { repositoryId: string; tabs: OpenFileTab[]; activePath: string | null; previewPath: string | null } {
   const invalid = () => new GitOperationError({ code: 'INVALID_ARGUMENT', operation, message: 'Invalid open files state.' });
-  if (!isOpenFilesRepositoryId(repositoryId) || !Array.isArray(tabs) || tabs.length > MAX_OPEN_FILE_TABS) throw invalid();
+  const parsedTabs = z.array(openFileTabSchema).max(MAX_OPEN_FILE_TABS).safeParse(tabs);
+  if (!isOpenFilesRepositoryId(repositoryId) || !parsedTabs.success) throw invalid();
 
   const normalizedTabs: OpenFileTab[] = [];
   const seen = new Set<string>();
-  for (const candidate of tabs) {
-    if (!candidate || typeof candidate !== 'object') throw invalid();
-    const input = candidate as Partial<OpenFileTab>;
+  for (const input of parsedTabs.data) {
     const path = normalizeOpenFilePath(input.path);
     if (!path || typeof input.pinned !== 'boolean') throw invalid();
     if (seen.has(path)) continue;
@@ -100,15 +117,17 @@ function optionalOpenFilePath(value: unknown, invalid: () => GitOperationError):
 }
 
 export function projectNameArg(value: unknown, operation: string): string {
-  if (typeof value !== 'string') throw invalidProject(operation);
-  const name = value.trim();
+  const parsed = z.string().safeParse(value);
+  if (!parsed.success) throw invalidProject(operation);
+  const name = parsed.data.trim();
   if (!name || name.length > MAX_PROJECT_NAME_LENGTH || hasControlCharacters(name)) throw invalidProject(operation);
   return name;
 }
 
 export function projectIdArg(value: unknown, operation: string): string {
-  if (typeof value !== 'string' || !value || value.length > 64 || hasControlCharacters(value)) throw invalidProject(operation);
-  return value;
+  const parsed = boundedStringSchema(64).safeParse(value);
+  if (!parsed.success) throw invalidProject(operation);
+  return parsed.data;
 }
 
 export function nullableProjectIdArg(value: unknown, operation: string): string | null {
@@ -116,15 +135,16 @@ export function nullableProjectIdArg(value: unknown, operation: string): string 
 }
 
 export function repositoryKeyArg(value: unknown, operation: string): string {
-  if (typeof value !== 'string' || !value || value.length > MAX_REPOSITORY_KEY_LENGTH || hasControlCharacters(value)) throw invalidProject(operation);
-  const key = normalizeRepositoryKey(value);
+  const parsed = boundedStringSchema(MAX_REPOSITORY_KEY_LENGTH).safeParse(value);
+  if (!parsed.success) throw invalidProject(operation);
+  const key = normalizeRepositoryKey(parsed.data);
   if (!key) throw invalidProject(operation);
   return key;
 }
 
 export function oidArg(value: unknown, operation: string): string {
   const oid = stringArg(value, operation, 64);
-  if (!/^[0-9a-f]{40,64}$/i.test(oid)) {
+  if (!z.string().regex(/^[0-9a-f]{40,64}$/i).safeParse(oid).success) {
     throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation, message: 'Invalid commit.' });
   }
   return oid;
@@ -165,8 +185,8 @@ export function removeWorktreeArg(value: unknown, operation: string): RemoveWork
 }
 
 export function searchReplaceArg(value: unknown, operation: string): SearchReplaceRequest {
-  const input = value as Partial<SearchReplaceRequest> | null;
-  if (!input || typeof input !== 'object' || typeof input.replacement !== 'string'
+  const input = parseRecord(value) as Partial<SearchReplaceRequest> | null;
+  if (!input || typeof input.replacement !== 'string'
     || input.replacement.length > SEARCH_MAX_REPLACEMENT_LENGTH || input.replacement.includes('\0')) {
     throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation, message: 'Invalid replacement.' });
   }
@@ -217,51 +237,54 @@ export function prepareCommitGroupArg(value: unknown, operation: string): Prepar
  * can never stand in for named fields.
  */
 function requestObject(value: unknown, operation: string): Record<string, unknown> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+  const parsed = parseRecord(value);
+  if (!parsed) {
     throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation, message: 'Invalid request.' });
   }
-  return value as Record<string, unknown>;
+  return parsed;
 }
 
 function refsString(value: unknown, operation: string, maxLength: number): string {
-  if (typeof value !== 'string' || value.length === 0 || value.length > maxLength || hasControlCharacters(value)) {
+  const parsed = boundedStringSchema(maxLength).safeParse(value);
+  if (!parsed.success) {
     throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation, message: 'Invalid request.' });
   }
-  return value;
+  return parsed.data;
 }
 
 export function generateCommitMessageArg(value: unknown): GenerateCommitMessageInput {
   const operation = 'ai-generate-commit-message';
-  if (!value || typeof value !== 'object') throw invalidAi(operation);
-  const input = value as Partial<GenerateCommitMessageInput>;
-  const harness = input.harness;
-  if (harness !== 'codex' && harness !== 'claude' && harness !== 'opencode') throw invalidAi(operation);
+  const input = parseRecord(value) as Partial<GenerateCommitMessageInput> | null;
+  if (!input) throw invalidAi(operation);
+  const harness = aiHarnessSchema.safeParse(input.harness);
+  if (!harness.success) throw invalidAi(operation);
   return {
     repositoryId: aiString(input.repositoryId, operation, 64),
-    harness: harness as AiHarnessId,
+    harness: harness.data as AiHarnessId,
     model: aiString(input.model, operation, 200, true),
     requestId: aiString(input.requestId, operation, 100, true),
   };
 }
 
 export function prNumberArg(value: unknown, operation: string): number {
-  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0 || value > 1_000_000_000) {
+  const parsed = z.number().safe().int().positive().max(1_000_000_000).safeParse(value);
+  if (!parsed.success) {
     throw new GhOperationError({ code: 'GH_PROCESS_FAILED', operation, message: 'Invalid pull request number.' });
   }
-  return value;
+  return parsed.data;
 }
 
 export function pullRequestStatesArg(value: unknown, operation: string): PullRequestState[] {
   if (!Array.isArray(value) || value.length > 3 || new Set(value).size !== value.length) throw invalidGh(operation);
-  const allowed: PullRequestState[] = ['OPEN', 'CLOSED', 'MERGED'];
-  if (!value.every((state) => typeof state === 'string' && allowed.includes(state as PullRequestState))) throw invalidGh(operation);
+  const allowed: PullRequestState[] = pullRequestStateSchema.options;
+  if (!z.array(pullRequestStateSchema).safeParse(value).success) throw invalidGh(operation);
   return allowed.filter((state) => value.includes(state));
 }
 
 export function createPullRequestArg(value: unknown): CreatePullRequestInput {
   const operation = 'gh-pr-create';
-  if (!value || typeof value !== 'object') throw invalidGh(operation);
-  const input = value as Partial<CreatePullRequestInput>;
+  const input = parseRecord(value) as Partial<CreatePullRequestInput> | null;
+  if (!input) throw invalidGh(operation);
   if (typeof input.title !== 'string' || !input.title.trim() || input.title.length > 300 || input.title.includes('\0')) throw invalidGh(operation);
   if (typeof input.body !== 'string' || input.body.length > 100 * 1024 || input.body.includes('\0')) throw invalidGh(operation);
   if (typeof input.base !== 'string' || !input.base || input.base.length > 300 || input.base.includes('\0')) throw invalidGh(operation);
@@ -272,14 +295,14 @@ export function createPullRequestArg(value: unknown): CreatePullRequestInput {
 
 export function generatePullRequestDraftArg(value: unknown): GeneratePullRequestDraftInput {
   const operation = 'ai-pr-draft';
-  if (!value || typeof value !== 'object') throw invalidAi(operation);
-  const input = value as Partial<GeneratePullRequestDraftInput>;
-  const harness = input.harness;
-  if (harness !== 'codex' && harness !== 'claude' && harness !== 'opencode') throw invalidAi(operation);
+  const input = parseRecord(value) as Partial<GeneratePullRequestDraftInput> | null;
+  if (!input) throw invalidAi(operation);
+  const harness = aiHarnessSchema.safeParse(input.harness);
+  if (!harness.success) throw invalidAi(operation);
   return {
     repositoryId: aiString(input.repositoryId, operation, 64),
     base: aiString(input.base, operation, 300, true),
-    harness: harness as AiHarnessId,
+    harness: harness.data as AiHarnessId,
     model: aiString(input.model, operation, 200, true),
     requestId: aiString(input.requestId, operation, 100, true),
   };
@@ -290,16 +313,17 @@ function invalidGh(operation: string): GhOperationError {
 }
 
 export function booleanArg(value: unknown, operation: string, fallback = false): boolean {
-  if (value === undefined) return fallback;
-  if (typeof value !== 'boolean') throw invalidAi(operation);
-  return value;
+  const parsed = booleanWithDefaultSchema(fallback).safeParse(value);
+  if (!parsed.success) throw invalidAi(operation);
+  return parsed.data;
 }
 
 export function aiString(value: unknown, operation: string, maxLength: number, rejectControls = false): string {
-  if (typeof value !== 'string' || value.length === 0 || value.length > maxLength || value.includes('\0') || (rejectControls && hasControlCharacters(value))) {
+  const parsed = boundedStringSchema(maxLength, { controls: rejectControls }).safeParse(value);
+  if (!parsed.success) {
     throw invalidAi(operation);
   }
-  return value;
+  return parsed.data;
 }
 
 function hasControlCharacters(value: string): boolean {

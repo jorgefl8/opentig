@@ -1,4 +1,5 @@
 import type { AiHarnessId } from './contracts';
+import { z } from 'zod';
 
 export const MAX_AI_LOG_ENTRIES = 500;
 /** Appends past the cap are tolerated until compaction is worth a rewrite. */
@@ -58,10 +59,21 @@ const OPERATIONS: AiLogOperation[] = ['commit-message', 'pull-request-draft'];
 const STATUSES: AiLogStatus[] = ['success', 'failed', 'cancelled'];
 const HARNESSES: AiHarnessId[] = ['codex', 'claude', 'opencode'];
 const MAX_TEXT = 200;
+const aiUsageRecordSchema = z.looseObject({
+  inputTokens: z.unknown().optional(), outputTokens: z.unknown().optional(), reasoningTokens: z.unknown().optional(),
+  cacheReadTokens: z.unknown().optional(), cacheWriteTokens: z.unknown().optional(), costUsd: z.unknown().optional(),
+});
+const aiLogRecordSchema = z.looseObject({
+  id: z.unknown().optional(), at: z.unknown().optional(), operation: z.unknown().optional(), harness: z.unknown().optional(),
+  model: z.unknown().optional(), repositoryId: z.unknown().optional(), status: z.unknown().optional(), durationMs: z.unknown().optional(),
+  errorCode: z.unknown().optional(), usage: z.unknown().optional(), stagedFileCount: z.unknown().optional(), contextTruncated: z.unknown().optional(),
+  splitOffered: z.unknown().optional(), splitGroups: z.unknown().optional(), splitRejectedReason: z.unknown().optional(), splitBlockedReason: z.unknown().optional(),
+});
 
 export function normalizeAiUsage(value: unknown): AiUsage {
-  if (!value || typeof value !== 'object') return { ...EMPTY_AI_USAGE };
-  const input = value as Record<string, unknown>;
+  const parsed = aiUsageRecordSchema.safeParse(value);
+  if (!parsed.success) return { ...EMPTY_AI_USAGE };
+  const input = parsed.data;
   return {
     inputTokens: count(input.inputTokens),
     outputTokens: count(input.outputTokens),
@@ -73,8 +85,9 @@ export function normalizeAiUsage(value: unknown): AiUsage {
 }
 
 export function normalizeAiLogEntry(value: unknown): AiLogEntry | null {
-  if (!value || typeof value !== 'object') return null;
-  const input = value as Record<string, unknown>;
+  const parsed = aiLogRecordSchema.safeParse(value);
+  if (!parsed.success) return null;
+  const input = parsed.data;
   const id = text(input.id, 64);
   const operation = OPERATIONS.find((item) => item === input.operation);
   const harness = HARNESSES.find((item) => item === input.harness);

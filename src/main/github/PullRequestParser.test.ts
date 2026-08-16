@@ -104,6 +104,17 @@ describe('parsePullRequestDetails', () => {
     expect(details.body).toBe('');
     expect(details.additions).toBe(0);
   });
+
+  it('keeps the PR while filtering malformed nested legacy data', () => {
+    const details = parsePullRequestDetails(JSON.stringify({
+      ...summary,
+      labels: [null, { name: 'valid', color: 'not-a-color' }, { name: 42 }],
+      commits: ['bad', { oid: 'abc', authors: [null], messageHeadline: 42 }],
+      futureField: { enabled: true },
+    }));
+    expect(details.labels).toEqual([{ name: 'valid', color: '6e7781' }]);
+    expect(details.commits).toEqual([{ oid: 'abc', messageHeadline: '', authoredAt: '', author: 'unknown', authorAvatarUrl: null }]);
+  });
 });
 
 describe('parseCreatedPullRequestUrl', () => {

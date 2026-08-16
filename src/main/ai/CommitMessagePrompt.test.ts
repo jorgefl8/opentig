@@ -75,6 +75,14 @@ describe('CommitMessagePrompt', () => {
     expect(COMMIT_MESSAGE_SCHEMA.required).toEqual(['subject', 'body']);
   });
 
+  it('generates a closed provider schema with the split limits', () => {
+    expect(COMMIT_MESSAGE_SCHEMA).toMatchObject({ type: 'object', additionalProperties: false, required: ['subject', 'body'] });
+    const properties = COMMIT_MESSAGE_SCHEMA.properties as Record<string, Record<string, unknown>>;
+    expect(properties.subject).toMatchObject({ type: 'string', maxLength: 72 });
+    expect(properties.commits).toMatchObject({ type: 'array', maxItems: 8 });
+    expect((properties.commits!.items as Record<string, unknown>).additionalProperties).toBe(false);
+  });
+
   it('asks the model to order the groups so each commit stands alone', () => {
     expect(buildCommitMessagePrompt(context)).toContain('Order the commits so each one stands on its own');
   });

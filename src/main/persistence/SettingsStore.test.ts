@@ -48,6 +48,14 @@ describe('SettingsStore AI preferences', () => {
     expect(legacy.preferences.sidebarWidth).toBe(400);
     expect(custom.preferences.sidebarWidth).toBe(360);
   });
+
+  it('repairs corrupt fields without losing valid sibling preferences', async () => {
+    const store = new SettingsStore(await settingsFile({
+      preferences: { theme: 'dark', diffView: 'future', wrapLines: true, sidebarWidth: 'wide', showDotEnvFiles: false, uiZoom: 999, unknown: true },
+    }));
+    await store.load();
+    expect(store.preferences).toMatchObject({ theme: 'dark', diffView: 'unified', wrapLines: true, sidebarWidth: 400, showDotEnvFiles: false, uiZoom: 130 });
+  });
 });
 
 describe('SettingsStore repository projects', () => {

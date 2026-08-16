@@ -69,6 +69,17 @@ describe('AiLogStore', () => {
     expect(await log.list()).toHaveLength(1);
   });
 
+  it('repairs invalid optional fields in an otherwise valid legacy entry', async () => {
+    const log = await store();
+    const file = (log as unknown as { filePath: string }).filePath;
+    await writeFile(file, `${JSON.stringify({
+      id: 'legacy-entry', at: '2026-08-17T00:00:00.000Z', operation: 'commit-message', harness: 'codex', status: 'success',
+      model: 42, repositoryId: null, durationMs: -1, usage: { inputTokens: 4.4, outputTokens: 'unknown' }, extra: 'ignored',
+    })}\n`, 'utf8');
+    const entries = await log.list();
+    expect(entries[0]).toMatchObject({ model: 'default', repositoryId: '', durationMs: 0, usage: { inputTokens: 4, outputTokens: null } });
+  });
+
   it('compacts to the newest entries once it drifts past the cap', async () => {
     const log = await store();
     for (let index = 0; index < MAX_AI_LOG_ENTRIES + 200; index += 1) log.append(entry({ durationMs: index }));

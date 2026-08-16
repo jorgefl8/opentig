@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { z } from 'zod';
 import type { AiHarnessId, Preferences, RecentRepository, RepositoryOrganization, RepositoryProject } from '../../shared/contracts';
 import { GitOperationError } from '../../shared/errors';
 import { FILES_TREE_SAVE_DEBOUNCE_MS, normalizeFilesTreeStates, type FilesTreeState, upsertFilesTreeState } from '../../shared/files-tree-state';
@@ -33,6 +34,17 @@ const defaults: SettingsData = {
   },
   windowBounds: { width: 1280, height: 800 },
 };
+
+// Disk input is intentionally permissive. Each field is repaired independently
+// so one legacy or corrupt preference never resets valid sibling settings.
+const settingsRecordSchema = z.looseObject({
+  recentRepositories: z.unknown().optional(), repositoryProjects: z.unknown().optional(), filesTreeStates: z.unknown().optional(),
+  openFilesStates: z.unknown().optional(), activeRepositoryId: z.unknown().optional(), preferences: z.unknown().optional(), windowBounds: z.unknown().optional(),
+});
+const preferencesRecordSchema = z.looseObject({});
+const windowBoundsRecordSchema = z.looseObject({});
+const projectRecordSchema = z.looseObject({});
+const recentRepositorySchema = z.looseObject({ id: z.string(), name: z.string(), path: z.string(), lastOpenedAt: z.string() });
 
 export class SettingsStore {
   private data: SettingsData = structuredClone(defaults);
@@ -267,30 +279,33 @@ export class SettingsStore {
 }
 
 function validate(value: unknown): SettingsData {
-  if (!value || typeof value !== 'object') return structuredClone(defaults);
-  const input = value as Partial<SettingsData>;
+  const parsed = settingsRecordSchema.safeParse(value);
+  if (!parsed.success) return structuredClone(defaults);
+  const input = parsed.data;
   const recentRepositories = Array.isArray(input.recentRepositories)
     ? input.recentRepositories.filter(isRecent).map(normalizeRecent).slice(0, 10)
     : [];
   const repositoryProjects = normalizeProjects(input.repositoryProjects);
   const filesTreeStates = normalizeFilesTreeStates(input.filesTreeStates);
   const openFilesStates = normalizeOpenFilesStates(input.openFilesStates);
-  const preferences = input.preferences && typeof input.preferences === 'object'
+  const parsedPreferences = preferencesRecordSchema.safeParse(input.preferences);
+  const preferences = parsedPreferences.success
     ? {
-        theme: ['system', 'light', 'dark'].includes(input.preferences.theme) ? input.preferences.theme : 'system',
-        diffView: ['unified', 'split'].includes(input.preferences.diffView) ? input.preferences.diffView : 'unified',
-        changesLayout: ['tree', 'list'].includes(input.preferences.changesLayout) ? input.preferences.changesLayout : 'tree',
-        wrapLines: typeof input.preferences.wrapLines === 'boolean' ? input.preferences.wrapLines : false,
-        sidebarWidth: normalizeSidebarWidth(input.preferences.sidebarWidth),
-        showDotEnvFiles: typeof input.preferences.showDotEnvFiles === 'boolean' ? input.preferences.showDotEnvFiles : true,
-        uiZoom: Math.max(80, Math.min(130, Math.round(Number(input.preferences.uiZoom) || 100))),
-        commitMessageHarness: isHarness(input.preferences.commitMessageHarness) ? input.preferences.commitMessageHarness : 'codex',
-        commitMessageModels: modelPreferences(input.preferences.commitMessageModels),
+        theme: ['system', 'light', 'dark'].includes(parsedPreferences.data.theme as string) ? parsedPreferences.data.theme : 'system',
+        diffView: ['unified', 'split'].includes(parsedPreferences.data.diffView as string) ? parsedPreferences.data.diffView : 'unified',
+        changesLayout: ['tree', 'list'].includes(parsedPreferences.data.changesLayout as string) ? parsedPreferences.data.changesLayout : 'tree',
+        wrapLines: typeof parsedPreferences.data.wrapLines === 'boolean' ? parsedPreferences.data.wrapLines : false,
+        sidebarWidth: normalizeSidebarWidth(parsedPreferences.data.sidebarWidth),
+        showDotEnvFiles: typeof parsedPreferences.data.showDotEnvFiles === 'boolean' ? parsedPreferences.data.showDotEnvFiles : true,
+        uiZoom: Math.max(80, Math.min(130, Math.round(Number(parsedPreferences.data.uiZoom) || 100))),
+        commitMessageHarness: isHarness(parsedPreferences.data.commitMessageHarness) ? parsedPreferences.data.commitMessageHarness : 'codex',
+        commitMessageModels: modelPreferences(parsedPreferences.data.commitMessageModels),
       } as Preferences
     : { ...defaults.preferences };
-  const bounds = input.windowBounds;
-  const windowBounds = bounds && Number.isFinite(bounds.width) && Number.isFinite(bounds.height)
-    ? { width: Math.max(900, bounds.width), height: Math.max(600, bounds.height), ...(Number.isFinite(bounds.x) ? { x: bounds.x } : {}), ...(Number.isFinite(bounds.y) ? { y: bounds.y } : {}) }
+  const parsedBounds = windowBoundsRecordSchema.safeParse(input.windowBounds);
+  const bounds = parsedBounds.success ? parsedBounds.data : null;
+  const windowBounds = bounds && typeof bounds.width === 'number' && Number.isFinite(bounds.width) && typeof bounds.height === 'number' && Number.isFinite(bounds.height)
+    ? { width: Math.max(900, bounds.width), height: Math.max(600, bounds.height), ...(typeof bounds.x === 'number' && Number.isFinite(bounds.x) ? { x: bounds.x } : {}), ...(typeof bounds.y === 'number' && Number.isFinite(bounds.y) ? { y: bounds.y } : {}) }
     : { ...defaults.windowBounds };
   return {
     recentRepositories,
@@ -309,8 +324,9 @@ function normalizeProjects(value: unknown): RepositoryProject[] {
   const names = new Set<string>();
   const assigned = new Set<string>();
   for (const candidate of value.slice(0, MAX_REPOSITORY_PROJECTS)) {
-    if (!candidate || typeof candidate !== 'object') continue;
-    const input = candidate as Partial<RepositoryProject>;
+    const parsed = projectRecordSchema.safeParse(candidate);
+    if (!parsed.success) continue;
+    const input = parsed.data;
     const name = typeof input.name === 'string' ? input.name.trim() : '';
     const id = typeof input.id === 'string' ? input.id : '';
     const normalizedName = name.toLowerCase();
@@ -374,9 +390,7 @@ function hasControlCharacters(value: string): boolean {
 }
 
 function isRecent(value: unknown): value is RecentRepository {
-  if (!value || typeof value !== 'object') return false;
-  const item = value as Partial<RecentRepository>;
-  return [item.id, item.name, item.path, item.lastOpenedAt].every((field) => typeof field === 'string');
+  return recentRepositorySchema.safeParse(value).success;
 }
 
 function normalizeRecent(item: RecentRepository): RecentRepository {
