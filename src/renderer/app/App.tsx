@@ -49,6 +49,7 @@ import { getVsCodeFileIconUrl, getVsCodeFolderIconUrl } from '@/lib/vscode-icons
 import { refreshOperationsForScope } from './refresh-policy';
 import { resolveWindowControlsInset } from './window-controls';
 import { queryKeys, queryResourcesForScope } from '@/lib/query-client';
+import { shouldActivateChangeRow } from '@/features/changes/row-activation';
 
 const Viewer = lazy(() => import('@/features/viewer/Viewer'));
 const NO_OPEN_FILES_STATES: OpenFilesState[] = [];
@@ -2363,7 +2364,9 @@ function ConflictRow({ change, onSelect, onOpenFile }: { change: FileChange; onS
   const name = slash < 0 ? normalized : normalized.slice(slash + 1);
   const directory = slash < 0 ? '' : normalized.slice(0, slash);
   return (
-    <div ref={rowRef} role="listitem" className="change-row conflict-row">
+    <div ref={rowRef} role="listitem" className="change-row conflict-row" onClick={(event) => {
+      if (shouldActivateChangeRow(event.target)) onSelect(change.path);
+    }}>
       <Tooltip>
         <TooltipTrigger render={<button className="file-label" onClick={() => onSelect(change.path)} aria-label={`Resolve conflict in ${change.path}`} />}>
           <VsCodeTreeIcon path={normalized} type="file" />
@@ -2509,7 +2512,9 @@ function ChangeTreeFolderRow({ node, depth, expanded, disabled, action, onToggle
 }) {
   const paths = collectChangePaths(node);
   return (
-    <div role="treeitem" aria-expanded={expanded} className="tree-folder" style={{ paddingLeft: 8 + depth * 14 }}>
+    <div role="treeitem" aria-expanded={expanded} className="tree-folder" style={{ paddingLeft: 8 + depth * 14 }} onClick={(event) => {
+      if (shouldActivateChangeRow(event.target)) onToggle();
+    }}>
       <button className="folder-toggle" onClick={onToggle} aria-label={expanded ? 'Collapse folder' : 'Expand folder'}><IconChevronRight className={`folder-chevron ${expanded ? 'open' : ''}`} /></button>
       <VsCodeTreeIcon path={node.path} type="directory" expanded={expanded} />
       <button className="folder-name" onClick={onToggle}>{node.name}</button>
@@ -2530,7 +2535,11 @@ function ChangeFileRow({ change, disabled, action, depth = 0, showDirectory = fa
   const directorySummary = change.path.endsWith('/') || change.path.endsWith('\\');
   const previewable = !directorySummary && change.kind !== 'deleted' && isRichPreviewPath(change.path);
   return (
-    <div ref={rowRef} role={showDirectory ? 'listitem' : 'treeitem'} className="change-row" style={{ paddingLeft: 12 + depth * 14 }}>
+    <div ref={rowRef} role={showDirectory ? 'listitem' : 'treeitem'} className="change-row" style={{ paddingLeft: 12 + depth * 14 }} onClick={(event) => {
+      if (!shouldActivateChangeRow(event.target)) return;
+      if (previewable) onOpenFile(change.path);
+      else onSelect(change.path);
+    }}>
       {!showDirectory && <span className="tree-spacer" />}
       <Tooltip>
         <TooltipTrigger render={<button className="file-label" onClick={() => previewable ? onOpenFile(change.path) : onSelect(change.path)} aria-label={`${previewable ? 'Preview' : 'View changes for'} ${change.path}`} />}>

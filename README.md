@@ -41,6 +41,7 @@ It is intentionally not an IDE, hosting service, or replacement for the Git CLI.
 
 - Separate conflicted, staged, and unstaged changes.
 - Display changes as a flat list or recursive tree.
+- Treat each visually highlighted change or folder row as one continuous click target, with a pointer cursor across the active surface, while preserving its dedicated diff, open, stage, unstage, and discard controls.
 - Stage or unstage individual files, folders, selections, or everything at once.
 - Discard selected unstaged changes with confirmation; untracked files are sent to the Windows Recycle Bin.
 - Review syntax-aware diffs in unified or split mode, with optional line wrapping.
