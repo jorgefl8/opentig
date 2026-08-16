@@ -98,6 +98,23 @@ describe('FileOperationHistory', () => {
     expect(order).toEqual([1, 2]);
   });
 
+  it('undoes and redoes a content replacement without overwriting later edits', async () => {
+    const fixture = await createFixture();
+    const before = (await fixture.files.snapshot(fixture.repositoryId, 'tracked.txt', 1024))!;
+    const after = { ...before, bytes: Buffer.from('replaced') };
+    await fixture.files.replaceSnapshots(fixture.repositoryId, [before], [after]);
+    fixture.history.recordEdit(fixture.repositoryId, 'Replace in file', [before], [after]);
+
+    expect((await fixture.history.undo(fixture.repositoryId)).status).toBe('applied');
+    expect(await readFile(path.join(fixture.work, 'tracked.txt'), 'utf8')).toBe('tracked');
+    expect((await fixture.history.redo(fixture.repositoryId)).status).toBe('applied');
+    expect(await readFile(path.join(fixture.work, 'tracked.txt'), 'utf8')).toBe('replaced');
+
+    await writeFile(path.join(fixture.work, 'tracked.txt'), 'external');
+    expect((await fixture.history.undo(fixture.repositoryId)).status).toBe('conflict');
+    expect(await readFile(path.join(fixture.work, 'tracked.txt'), 'utf8')).toBe('external');
+  });
+
   it('keeps at most fifty steps per repository', async () => {
     const fixture = await createFixture();
     for (let index = 0; index < 51; index += 1) {

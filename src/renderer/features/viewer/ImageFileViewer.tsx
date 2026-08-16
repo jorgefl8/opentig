@@ -14,10 +14,13 @@ interface ImageFileViewerProps {
 
 interface SvgFileViewerProps {
   file: FileResult;
+  /** The draft App is holding for this path, or the file's own content. */
+  initialContent: string;
   themeType: ThemePreference;
   wrapLines: boolean;
   readOnly: boolean;
   onDirtyChange(dirty: boolean): void;
+  onDraftChange(content: string): void;
   onSave(path: string, content: string, expectedContent: string): Promise<WriteFileResult>;
 }
 
@@ -70,9 +73,9 @@ function RasterImageReady({ path, mimeType, size, data }: {
   );
 }
 
-export function SvgFileViewer({ file, themeType, wrapLines, readOnly, onDirtyChange, onSave }: SvgFileViewerProps) {
+export function SvgFileViewer({ file, initialContent, themeType, wrapLines, readOnly, onDirtyChange, onDraftChange, onSave }: SvgFileViewerProps) {
   const [tab, setTab] = useState<'preview' | 'code'>('preview');
-  const [draft, setDraft] = useState(file.content);
+  const [draft, setDraft] = useState(initialContent);
   const [saving, setSaving] = useState(false);
   const dirty = draft !== file.content;
   const objectUrl = useObjectUrl(draft, 'image/svg+xml');
@@ -86,16 +89,6 @@ export function SvgFileViewer({ file, themeType, wrapLines, readOnly, onDirtyCha
   }, [dirty, onDirtyChange]);
 
   useEffect(() => () => onDirtyChange(false), [onDirtyChange]);
-
-  useEffect(() => {
-    if (!dirty) return;
-    const warnBeforeClose = (event: BeforeUnloadEvent) => {
-      event.preventDefault();
-      event.returnValue = '';
-    };
-    window.addEventListener('beforeunload', warnBeforeClose);
-    return () => window.removeEventListener('beforeunload', warnBeforeClose);
-  }, [dirty]);
 
   const save = useCallback(async () => {
     if (!dirty || saving || readOnly) return;
@@ -173,6 +166,7 @@ export function SvgFileViewer({ file, themeType, wrapLines, readOnly, onDirtyCha
               onChange={(value) => {
                 setDraft(value);
                 onDirtyChange(value !== file.content);
+                onDraftChange(value);
               }}
             />
           </div>

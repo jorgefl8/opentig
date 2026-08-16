@@ -381,6 +381,35 @@ describe('FileService', () => {
     });
     await expect(fixture.files.create(fixture.repositoryId, 'folder', 'bad/name.txt', 'file')).rejects.toThrow('name is invalid');
   });
+
+  it('applies a snapshot batch atomically and leaves every file untouched when one changed', async () => {
+    const fixture = await createFixture();
+    await writeFile(path.join(fixture.work, 'one.txt'), 'one\n');
+    await writeFile(path.join(fixture.work, 'two.txt'), 'two\n');
+    const before = [
+      (await fixture.files.snapshot(fixture.repositoryId, 'one.txt', 1024))!,
+      (await fixture.files.snapshot(fixture.repositoryId, 'two.txt', 1024))!,
+    ];
+    const after = before.map((item, index) => ({ ...item, bytes: Buffer.from(`replaced-${index}\n`, 'utf8') }));
+
+    await fixture.files.replaceSnapshots(fixture.repositoryId, before, after);
+    expect(await readFile(path.join(fixture.work, 'one.txt'), 'utf8')).toBe('replaced-0\n');
+    expect(await readFile(path.join(fixture.work, 'two.txt'), 'utf8')).toBe('replaced-1\n');
+
+    // A file that moved on disk since the snapshot aborts the whole batch.
+    await writeFile(path.join(fixture.work, 'two.txt'), 'external\n');
+    await expect(fixture.files.replaceSnapshots(fixture.repositoryId, after, before)).rejects.toThrow('changed before');
+    expect(await readFile(path.join(fixture.work, 'one.txt'), 'utf8')).toBe('replaced-0\n');
+    expect(await readFile(path.join(fixture.work, 'two.txt'), 'utf8')).toBe('external\n');
+  });
+
+  it('rejects a replacement batch whose sides do not line up', async () => {
+    const fixture = await createFixture();
+    const snapshot = (await fixture.files.snapshot(fixture.repositoryId, 'tracked.txt', 1024))!;
+    const other = { ...snapshot, path: 'other.txt' };
+    await expect(fixture.files.replaceSnapshots(fixture.repositoryId, [snapshot], [])).rejects.toThrow('batch is invalid');
+    await expect(fixture.files.replaceSnapshots(fixture.repositoryId, [snapshot], [other])).rejects.toThrow('batch is invalid');
+  });
 });
 
 async function createFixture() {

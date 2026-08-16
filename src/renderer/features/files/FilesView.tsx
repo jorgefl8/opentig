@@ -42,7 +42,8 @@ interface FilesViewProps {
   historyState: FileHistoryState;
   onUndo(): Promise<void>;
   onRedo(): Promise<void>;
-  onOpenFile(path: string): void;
+  /** A single click previews a file; a double click or Ctrl+click pins its tab. */
+  onOpenFile(path: string, mode?: 'preview' | 'pinned'): void;
   onLoadDirectory(path: string): Promise<FileTreeEntry[]>;
   onPersistExpandedPaths(paths: string[]): void;
   onCopyPath(entries: FileTreeEntry[]): Promise<void>;
@@ -371,11 +372,21 @@ export function FilesView({
       });
       setAnchorPath(entry.path);
       setLeadPath(entry.path);
+      // Ctrl+click keeps its multi-selection role and additionally opens the
+      // file in a pinned tab, so it lands beside the current preview instead of
+      // replacing it.
+      if (entry.type === 'file') onOpenFile(entry.path, 'pinned');
       return;
     }
     selectOnly(entry.path);
     if (entry.type === 'file') onOpenFile(entry.path);
     else toggleExpanded(entry.path);
+  };
+
+  // The preceding single click already previewed the file, so the double click
+  // only has to pin it; selection and multi-selection are left untouched.
+  const handleRowDoubleClick = (entry: FileTreeEntry) => {
+    if (entry.type === 'file') onOpenFile(entry.path, 'pinned');
   };
 
   // Right-clicking outside the current selection collapses it to that single row,
@@ -587,6 +598,7 @@ export function FilesView({
                   dropTargetPath={dropTargetPath}
                   onFocus={setLeadPath}
                   onRowClick={handleRowClick}
+                  onRowDoubleClick={handleRowDoubleClick}
                   onRowContextMenu={handleRowContextMenu}
                   onToggleExpanded={toggleExpanded}
                   onCopy={(target) => void onCopyEntries(contextTargets(target))}
@@ -638,6 +650,7 @@ interface FileRowProps {
   dropTargetPath: string | null;
   onFocus(path: string): void;
   onRowClick(entry: FileTreeEntry, mods: { ctrl: boolean; shift: boolean }): void;
+  onRowDoubleClick(entry: FileTreeEntry): void;
   onRowContextMenu(entry: FileTreeEntry): void;
   onToggleExpanded(path: string, forceOpen?: boolean): void;
   onCopy(entry: FileTreeEntry): void;
@@ -673,6 +686,7 @@ function FileRow({
   dropTargetPath,
   onFocus,
   onRowClick,
+  onRowDoubleClick,
   onRowContextMenu,
   onToggleExpanded,
   onCopy,
@@ -720,6 +734,7 @@ function FileRow({
       style={{ paddingLeft: 12 + depth * 14 }}
       draggable={!readOnly}
       onClick={(event) => onRowClick(entry, { ctrl: event.ctrlKey || event.metaKey, shift: event.shiftKey })}
+      onDoubleClick={() => onRowDoubleClick(entry)}
       onFocus={() => onFocus(entry.path)}
       onContextMenu={() => onRowContextMenu(entry)}
       onDragStart={(event) => {

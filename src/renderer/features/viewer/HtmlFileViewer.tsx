@@ -8,16 +8,19 @@ import './html-file-viewer.css';
 
 interface HtmlFileViewerProps {
   file: FileResult;
+  /** The draft App is holding for this path, or the file's own content. */
+  initialContent: string;
   themeType: ThemePreference;
   wrapLines: boolean;
   readOnly: boolean;
   onDirtyChange(dirty: boolean): void;
+  onDraftChange(content: string): void;
   onSave(path: string, content: string, expectedContent: string): Promise<WriteFileResult>;
 }
 
-export function HtmlFileViewer({ file, themeType, wrapLines, readOnly, onDirtyChange, onSave }: HtmlFileViewerProps) {
+export function HtmlFileViewer({ file, initialContent, themeType, wrapLines, readOnly, onDirtyChange, onDraftChange, onSave }: HtmlFileViewerProps) {
   const [tab, setTab] = useState<'preview' | 'code'>('preview');
-  const [draft, setDraft] = useState(file.content);
+  const [draft, setDraft] = useState(initialContent);
   const [saving, setSaving] = useState(false);
   const dirty = draft !== file.content;
   const darkPreviewChrome = themeType === 'dark'
@@ -36,16 +39,6 @@ export function HtmlFileViewer({ file, themeType, wrapLines, readOnly, onDirtyCh
   }, [dirty, onDirtyChange]);
 
   useEffect(() => () => onDirtyChange(false), [onDirtyChange]);
-
-  useEffect(() => {
-    if (!dirty) return;
-    const warnBeforeClose = (event: BeforeUnloadEvent) => {
-      event.preventDefault();
-      event.returnValue = '';
-    };
-    window.addEventListener('beforeunload', warnBeforeClose);
-    return () => window.removeEventListener('beforeunload', warnBeforeClose);
-  }, [dirty]);
 
   const save = useCallback(async () => {
     if (!dirty || saving || readOnly) return;
@@ -120,6 +113,7 @@ export function HtmlFileViewer({ file, themeType, wrapLines, readOnly, onDirtyCh
             onChange={(value) => {
               setDraft(value);
               onDirtyChange(value !== file.content);
+              onDraftChange(value);
             }}
           />
         </div>

@@ -1,8 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { PropsWithChildren } from 'react';
-import { IconDeviceFloppy } from '@tabler/icons-react';
+import { IconDeviceFloppy, IconReplace } from '@tabler/icons-react';
 import { EditProvider, File, Virtualizer } from '@pierre/diffs/react';
-import type { EditorOptions } from '@pierre/diffs/edit';
+import type { Editor, EditorOptions } from '@pierre/diffs/edit';
 import { toast } from 'sonner';
 import type { FileResult, ThemePreference, WriteFileResult } from '@shared/contracts';
 import { JUSTGIT_DIFF_THEMES } from './diffThemes';
@@ -89,12 +89,15 @@ interface SourceCodeEditorProps {
   wrapLines: boolean;
   readOnly: boolean;
   onChange(value: string): void;
+  onEditorReady?(editor: Editor<undefined>): void;
 }
 
-export function SourceCodeEditor({ path, cacheKey, value, themeType, wrapLines, readOnly, onChange }: SourceCodeEditorProps) {
+export function SourceCodeEditor({ path, cacheKey, value, themeType, wrapLines, readOnly, onChange, onEditorReady }: SourceCodeEditorProps) {
   const editReady = useContext(EditReadyContext);
   const onChangeRef = useRef(onChange);
+  const onEditorReadyRef = useRef(onEditorReady);
   useEffect(() => { onChangeRef.current = onChange; }, [onChange]);
+  useEffect(() => { onEditorReadyRef.current = onEditorReady; }, [onEditorReady]);
 
   const file = useMemo(() => ({ name: path, contents: value, cacheKey }), [cacheKey, path, value]);
   const options = useMemo(() => ({
@@ -108,6 +111,7 @@ export function SourceCodeEditor({ path, cacheKey, value, themeType, wrapLines, 
   // editor instance and its undo/redo history while the surface rerenders.
   const editorOptions = useMemo<EditorOptions<undefined>>(() => ({
     historyMaxEntries: 500,
+    onAttach(editor) { onEditorReadyRef.current?.(editor); },
     onChange(nextFile) { onChangeRef.current(nextFile.contents); },
   }), []);
 
@@ -127,16 +131,20 @@ export function SourceCodeEditor({ path, cacheKey, value, themeType, wrapLines, 
 
 interface EditableFileViewerProps {
   file: FileResult;
+  /** The draft App is holding for this path, or the file's own content. */
+  initialContent: string;
   themeType: ThemePreference;
   wrapLines: boolean;
   readOnly: boolean;
   onDirtyChange(dirty: boolean): void;
+  onDraftChange(content: string): void;
   onSave(path: string, content: string, expectedContent: string): Promise<WriteFileResult>;
 }
 
-export function EditableFileViewer({ file, themeType, wrapLines, readOnly, onDirtyChange, onSave }: EditableFileViewerProps) {
-  const [draft, setDraft] = useState(file.content);
+export function EditableFileViewer({ file, initialContent, themeType, wrapLines, readOnly, onDirtyChange, onDraftChange, onSave }: EditableFileViewerProps) {
+  const [draft, setDraft] = useState(initialContent);
   const [saving, setSaving] = useState(false);
+  const editorRef = useRef<Editor<undefined> | null>(null);
   const dirty = draft !== file.content;
 
   useEffect(() => {
@@ -144,16 +152,6 @@ export function EditableFileViewer({ file, themeType, wrapLines, readOnly, onDir
   }, [dirty, onDirtyChange]);
 
   useEffect(() => () => onDirtyChange(false), [onDirtyChange]);
-
-  useEffect(() => {
-    if (!dirty) return;
-    const warnBeforeClose = (event: BeforeUnloadEvent) => {
-      event.preventDefault();
-      event.returnValue = '';
-    };
-    window.addEventListener('beforeunload', warnBeforeClose);
-    return () => window.removeEventListener('beforeunload', warnBeforeClose);
-  }, [dirty]);
 
   const save = useCallback(async () => {
     if (!dirty || saving || readOnly) return;
@@ -188,13 +186,28 @@ export function EditableFileViewer({ file, themeType, wrapLines, readOnly, onDir
     return () => window.removeEventListener('keydown', handleSaveShortcut);
   }, [save]);
 
+  const openReplace = useCallback(() => {
+    const editor = editorRef.current;
+    if (!editor || readOnly || saving) return;
+    editor.focus();
+    requestAnimationFrame(() => {
+      document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'f', code: 'KeyF', ctrlKey: true, altKey: true, bubbles: true, cancelable: true,
+      }));
+    });
+  }, [readOnly, saving]);
+
   return (
     <div className="source-file-viewer">
-      {(dirty || saving) && (
-        <div className="file-viewer-pill source-file-toolbar">
+      <div className="file-viewer-pill source-file-toolbar">
+        <button type="button" className="file-save-button" disabled={readOnly || saving} onClick={openReplace} title="Find and replace (Ctrl+Alt+F)">
+          <IconReplace aria-hidden="true" />
+          Replace
+        </button>
+        {(dirty || saving) && (
           <FileSaveControls dirty={dirty} saving={saving} readOnly={readOnly} onSave={() => void save()} />
-        </div>
-      )}
+        )}
+      </div>
       <div className="source-editor-scroll">
         <SourceCodeEditor
           path={file.path}
@@ -203,9 +216,11 @@ export function EditableFileViewer({ file, themeType, wrapLines, readOnly, onDir
           themeType={themeType}
           wrapLines={wrapLines}
           readOnly={readOnly || saving}
+          onEditorReady={(editor) => { editorRef.current = editor; }}
           onChange={(value) => {
             setDraft(value);
             onDirtyChange(value !== file.content);
+            onDraftChange(value);
           }}
         />
       </div>

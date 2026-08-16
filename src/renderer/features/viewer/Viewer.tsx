@@ -24,6 +24,18 @@ export type ViewerSelection =
   | { type: 'pull-request'; number: number }
   | null;
 
+/**
+ * An unsaved edit held by App. `expectedContent` is the text the file had when
+ * the draft started, so a save still detects a file that changed on disk while
+ * the tab was inactive.
+ */
+export interface RuntimeFileDraft {
+  content: string;
+  expectedContent: string;
+  /** `mtimeMs` of that same original read, used to keep the editor mounted. */
+  expectedMtimeMs: number;
+}
+
 interface ViewerProps {
   repositoryId: string;
   selection: ViewerSelection;
@@ -33,10 +45,14 @@ interface ViewerProps {
   revision: number;
   readOnly: boolean;
   commits: CommitInfo[];
+  draftFor(path: string): RuntimeFileDraft | null;
   onSelect(selection: ViewerSelection): void;
+  /** Every `type: 'file'` selection goes through App so it registers a tab. */
+  onOpenFile(path: string): void;
   onDiffViewChange(value: DiffViewPreference): void;
   onWrapLinesChange(value: boolean): void;
-  onDirtyChange(dirty: boolean): void;
+  onDraftChange(path: string, content: string, expectedContent: string, expectedMtimeMs: number): void;
+  onDraftSaved(path: string): void;
   onUpdateConflict(path: string, content: string): Promise<boolean>;
   onResolveConflict(path: string, content: string): Promise<boolean>;
 }
@@ -56,7 +72,7 @@ const diffCache = new ByteBudgetLru<string, DiffResult>({
 });
 let diffCacheRepositoryId: string | null = null;
 
-export default function Viewer({ repositoryId, selection, diffView, wrapLines, theme, revision, readOnly, commits, onSelect, onDiffViewChange, onWrapLinesChange, onDirtyChange, onUpdateConflict, onResolveConflict }: ViewerProps) {
+export default function Viewer({ repositoryId, selection, diffView, wrapLines, theme, revision, readOnly, commits, draftFor, onSelect, onOpenFile, onDiffViewChange, onWrapLinesChange, onDraftChange, onDraftSaved, onUpdateConflict, onResolveConflict }: ViewerProps) {
   const [data, setData] = useState<ViewerData>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -68,8 +84,7 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
   useEffect(() => {
     setAllowLarge(false);
     fileDirty.current = false;
-    onDirtyChange(false);
-  }, [onDirtyChange, selection]);
+  }, [selection]);
 
   useEffect(() => {
     if (diffCacheRepositoryId !== repositoryId) {
@@ -133,15 +148,20 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
 
   const themeType = theme === 'system' ? 'system' : theme;
   const overflow = wrapLines ? 'wrap' : 'scroll';
+  // Kept internally so an in-place refresh never clobbers an unsaved editor;
+  // App tracks dirtiness through the draft store instead.
   const handleFileDirtyChange = useCallback((dirty: boolean) => {
     fileDirty.current = dirty;
-    onDirtyChange(dirty);
-  }, [onDirtyChange]);
+  }, []);
   const saveFile = useCallback(async (path: string, content: string, expectedContent: string): Promise<WriteFileResult> => {
-    const result = await window.justgit.repository.writeFile(repositoryId, path, content, expectedContent);
+    // A draft that survived a tab switch keeps the text the file had when the
+    // edit began; saving against a freshly read disk copy would overwrite an
+    // external change instead of reporting the conflict.
+    const draft = draftFor(path);
+    const result = await window.justgit.repository.writeFile(repositoryId, path, content, draft?.expectedContent ?? expectedContent);
     if (result.status === 'saved') {
       fileDirty.current = false;
-      onDirtyChange(false);
+      onDraftSaved(path);
       setData((current) => current?.type === 'file' && current.value.path === path
         ? {
           ...current,
@@ -157,7 +177,17 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
         : current);
     }
     return result;
-  }, [onDirtyChange, repositoryId]);
+  }, [draftFor, onDraftSaved, repositoryId]);
+
+  // Keyed on the `mtimeMs` the draft was started from, not the current one. That
+  // keeps the mount key stable across the clean-to-dirty transition and while the
+  // file changes on disk underneath an unsaved draft, so typing never remounts
+  // the editor and never resets its cursor, selection, or undo history.
+  const fileMountKey = useCallback((file: FileResult): string => (
+    `${file.path}:${draftFor(file.path)?.expectedMtimeMs ?? file.mtimeMs}`
+  ), [draftFor]);
+  const draftContent = useCallback((file: FileResult): string => draftFor(file.path)?.content ?? file.content, [draftFor]);
+  const reportDraft = useCallback((file: FileResult) => (content: string) => onDraftChange(file.path, content, file.content, file.mtimeMs), [onDraftChange]);
   // While a new document loads, the previous one stays on screen; the swap
   // animates when the fresh data arrives instead of blanking to a spinner.
   const reloading = loading && data !== null && !error;
@@ -219,13 +249,16 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
     const file = data.value;
     content = (
       <MarkdownFileViewer
-        key={`${file.path}:${file.mtimeMs}`}
+        key={fileMountKey(file)}
         file={file}
+        initialContent={draftContent(file)}
         revision={revision}
         themeType={themeType}
         wrapLines={wrapLines}
         readOnly={readOnly || file.tooLarge}
+        onOpenFile={onOpenFile}
         onDirtyChange={handleFileDirtyChange}
+        onDraftChange={reportDraft(file)}
         onSave={saveFile}
       />
     );
@@ -233,12 +266,14 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
     const file = data.value;
     content = (
       <SvgFileViewer
-        key={`${file.path}:${file.mtimeMs}`}
+        key={fileMountKey(file)}
         file={file}
+        initialContent={draftContent(file)}
         themeType={themeType}
         wrapLines={wrapLines}
         readOnly={readOnly || file.tooLarge}
         onDirtyChange={handleFileDirtyChange}
+        onDraftChange={reportDraft(file)}
         onSave={saveFile}
       />
     );
@@ -246,12 +281,14 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
     const file = data.value;
     content = (
       <HtmlFileViewer
-        key={`${file.path}:${file.mtimeMs}`}
+        key={fileMountKey(file)}
         file={file}
+        initialContent={draftContent(file)}
         themeType={themeType}
         wrapLines={wrapLines}
         readOnly={readOnly || file.tooLarge}
         onDirtyChange={handleFileDirtyChange}
+        onDraftChange={reportDraft(file)}
         onSave={saveFile}
       />
     );
@@ -259,12 +296,14 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
     const file = data.value;
     content = (
       <EditableFileViewer
-        key={`${file.path}:${file.size}:${file.mtimeMs}`}
+        key={fileMountKey(file)}
         file={file}
+        initialContent={draftContent(file)}
         themeType={themeType}
         wrapLines={wrapLines}
         readOnly={readOnly}
         onDirtyChange={handleFileDirtyChange}
+        onDraftChange={reportDraft(file)}
         onSave={saveFile}
       />
     );

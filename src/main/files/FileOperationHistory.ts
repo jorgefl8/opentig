@@ -10,8 +10,9 @@ type MoveHistoryEntry = { type: 'rename' | 'move'; label: string; sequence: numb
 type CreateHistoryEntry = { type: 'create'; label: string; sequence: number; bytes: 0; entries: { path: string; kind: 'file' | 'directory' }[] };
 type PasteHistoryEntry = { type: 'paste' | 'paste-image'; label: string; sequence: number; bytes: number; created: string[]; sources?: { source: string; destination: string }[]; snapshots?: FileSnapshot[] };
 type DeleteHistoryEntry = { type: 'delete'; label: string; sequence: number; bytes: number; snapshots: FileSnapshot[] };
+type EditHistoryEntry = { type: 'edit'; label: string; sequence: number; bytes: number; before: FileSnapshot[]; after: FileSnapshot[] };
 type RecycleHistoryEntry = { type: 'recycle-bin-only'; label: string; sequence: number; bytes: 0; paths: string[] };
-type HistoryEntry = MoveHistoryEntry | CreateHistoryEntry | PasteHistoryEntry | DeleteHistoryEntry | RecycleHistoryEntry;
+type HistoryEntry = MoveHistoryEntry | CreateHistoryEntry | PasteHistoryEntry | DeleteHistoryEntry | EditHistoryEntry | RecycleHistoryEntry;
 interface RepositoryHistory { undo: HistoryEntry[]; redo: HistoryEntry[] }
 
 export type PreparedDelete =
@@ -85,6 +86,12 @@ export class FileOperationHistory {
     return 'recycle-bin';
   }
 
+  recordEdit(repositoryId: string, label: string, before: FileSnapshot[], after: FileSnapshot[]): void {
+    if (!before.length) return;
+    const bytes = [...before, ...after].reduce((total, item) => total + item.bytes.byteLength, 0);
+    this.record(repositoryId, { type: 'edit', label, before, after, bytes, sequence: ++this.sequence });
+  }
+
   undo(repositoryId: string): Promise<FileHistoryResult> { return this.serialize(repositoryId, () => this.apply(repositoryId, 'undo')); }
   redo(repositoryId: string): Promise<FileHistoryResult> { return this.serialize(repositoryId, () => this.apply(repositoryId, 'redo')); }
 
@@ -129,6 +136,10 @@ export class FileOperationHistory {
           if (!await this.files.snapshotsMatch(repositoryId, entry.snapshots)) throw new Error('A restored file was changed.');
           await this.trashPaths(repositoryId, entry.snapshots.map((item) => item.path)); removed.push(...entry.snapshots.map((item) => item.path));
         }
+      } else if (entry.type === 'edit') {
+        const expected = direction === 'undo' ? entry.after : entry.before;
+        const replacements = direction === 'undo' ? entry.before : entry.after;
+        await this.files.replaceSnapshots(repositoryId, expected, replacements);
       }
       source.pop();
       if (keepForOppositeDirection) destination.push(entry);

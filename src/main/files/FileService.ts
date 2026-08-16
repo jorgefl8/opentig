@@ -511,6 +511,49 @@ export class FileService {
     return true;
   }
 
+  /** Replaces existing text-file snapshots as one conflict-checked batch, rolling back partial writes. */
+  async replaceSnapshots(repositoryId: string, expected: FileSnapshot[], replacements: FileSnapshot[]): Promise<void> {
+    if (expected.length !== replacements.length
+      || expected.some((item, index) => item.path !== replacements[index]?.path)) {
+      throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'replace-files', message: 'The replacement batch is invalid.' });
+    }
+    if (!await this.snapshotsMatch(repositoryId, expected)) {
+      throw new GitOperationError({ code: 'UNKNOWN', operation: 'replace-files', message: 'A file changed before the replacement was applied.' });
+    }
+
+    const completed: number[] = [];
+    try {
+      for (let index = 0; index < expected.length; index += 1) {
+        const before = expected[index]!;
+        const after = replacements[index]!;
+        const result = await this.write(repositoryId, before.path, after.bytes.toString('utf8'), before.bytes.toString('utf8'));
+        if (result.status === 'conflict') throw new Error(`${before.path} changed while replacements were being applied.`);
+        completed.push(index);
+      }
+    } catch (error) {
+      const failed: string[] = [];
+      for (const index of completed.reverse()) {
+        const before = expected[index]!;
+        const after = replacements[index]!;
+        try {
+          const result = await this.write(repositoryId, before.path, before.bytes.toString('utf8'), after.bytes.toString('utf8'));
+          if (result.status === 'conflict') failed.push(before.path);
+        } catch { failed.push(before.path); }
+      }
+      if (failed.length) {
+        // Both facts matter when this happens: what stopped the batch, and which
+        // files were left rewritten. Reporting only the rollback hides the cause.
+        const cause = error instanceof Error ? error.message : 'The replacement failed.';
+        throw new GitOperationError({
+          code: 'UNKNOWN',
+          operation: 'replace-files',
+          message: `${cause} Replacement rollback also failed for: ${failed.join(', ')}`,
+        });
+      }
+      throw error;
+    }
+  }
+
   absolutePath(repositoryId: string, relativePath: string): string { return this.repositories.resolvePath(repositoryId, relativePath); }
 
   async rename(repositoryId: string, relativePath: string, newName: string): Promise<RenameEntryResult> {
