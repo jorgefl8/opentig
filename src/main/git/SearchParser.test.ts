@@ -11,17 +11,18 @@ describe('parseSearchOutput', () => {
     ].join('\n');
     expect(parseSearchOutput(output)).toEqual({
       files: [
-        { path: 'src/app.ts', matches: [{ line: 12, text: 'const value = 1;' }, { line: 18, text: '  return value;' }] },
-        { path: 'README.md', matches: [{ line: 3, text: '# value' }] },
+        { path: 'src/app.ts', matches: [{ line: 12, text: 'const value = 1;' }, { line: 18, text: '  return value;' }], ignored: false },
+        { path: 'README.md', matches: [{ line: 3, text: '# value' }], ignored: false },
       ],
       totalMatches: 3,
+      ignoredMatches: 0,
       truncated: false,
     });
   });
 
   it('keeps colons that belong to the path and to the matched text', () => {
     const result = parseSearchOutput('weird:name.ts\x007:url: https://example.com');
-    expect(result.files[0]).toEqual({ path: 'weird:name.ts', matches: [{ line: 7, text: 'url: https://example.com' }] });
+    expect(result.files[0]).toEqual({ path: 'weird:name.ts', matches: [{ line: 7, text: 'url: https://example.com' }], ignored: false });
   });
 
   it('reads the NUL-separated line numbers Git emits with -z', () => {
@@ -29,6 +30,7 @@ describe('parseSearchOutput', () => {
     expect(result.files[0]).toEqual({
       path: 'src/main.ts',
       matches: [{ line: 10, text: "import { SearchService } from './SearchService';" }],
+      ignored: false,
     });
   });
 

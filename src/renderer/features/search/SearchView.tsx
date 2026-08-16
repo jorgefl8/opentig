@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { IconChevronDown, IconChevronRight, IconEyeOff, IconLetterCase, IconLoader4, IconRegex, IconSearch, IconTextWrapDisabled } from '@tabler/icons-react';
+import { IconChevronDown, IconChevronRight, IconEyeOff, IconLetterCase, IconLoader4, IconRegex, IconReplace, IconReplaceFilled, IconSearch, IconTextWrapDisabled } from '@tabler/icons-react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -20,13 +21,21 @@ interface SearchViewProps {
   /** Changes whenever the working tree changed, so results can be refreshed. */
   revision: number;
   onOpenFile(path: string): void;
+  /** Open tabs with unsaved changes among the given paths, which must not be overwritten. */
+  unsavedPathsAmong(paths: string[]): string[];
+  onReplaced(paths: string[]): void;
 }
 
-export function SearchView({ repositoryId, active, revision, onOpenFile }: SearchViewProps) {
+export function SearchView({ repositoryId, active, revision, onOpenFile, unsavedPathsAmong, onReplaced }: SearchViewProps) {
   const [query, setQuery] = useState('');
   const [matchCase, setMatchCase] = useState(false);
   const [wholeWord, setWholeWord] = useState(false);
   const [regex, setRegex] = useState(false);
+  const [replaceOpen, setReplaceOpen] = useState(false);
+  const [replacement, setReplacement] = useState('');
+  const [includeIgnored, setIncludeIgnored] = useState(false);
+  const [replacing, setReplacing] = useState(false);
+  const [replaceRevision, setReplaceRevision] = useState(0);
   const [result, setResult] = useState<SearchResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [searching, setSearching] = useState(false);
@@ -63,7 +72,7 @@ export function SearchView({ repositoryId, active, revision, onOpenFile }: Searc
         .finally(() => { if (requestToken.current === token) setSearching(false); });
     }, DEBOUNCE_MS);
     return () => window.clearTimeout(timer);
-  }, [active, options, query, repositoryId, revision]);
+  }, [active, options, query, replaceRevision, repositoryId, revision]);
 
   const rows = useMemo<SearchRow[]>(() => {
     if (!result) return [];
@@ -84,7 +93,7 @@ export function SearchView({ repositoryId, active, revision, onOpenFile }: Searc
     getItemKey: (index) => {
       const row = rows[index];
       if (!row) return index;
-      return row.kind === 'file' ? `file:${row.file.path}` : `match:${row.file.path}:${row.match.line}`;
+      return row.kind === 'file' ? `file:${row.file.path}` : `match:${row.file.path}:${row.match.line}:${row.match.column ?? 1}`;
     },
     overscan: 12,
   });
@@ -96,27 +105,89 @@ export function SearchView({ repositoryId, active, revision, onOpenFile }: Searc
   });
 
   const ignoredFiles = result?.files.filter((file) => file.ignored).length ?? 0;
+  const replaceableFiles = result?.files.filter((file) => Boolean(file.revision) && (includeIgnored || !file.ignored)) ?? [];
+
+  const replace = async (scope: 'all' | SearchFileResult | { file: SearchFileResult; match: SearchMatch }) => {
+    if (!result || replacing) return;
+    const replaceScope = scope === 'all'
+      ? { kind: 'all' as const, files: replaceableFiles.map((file) => ({ path: file.path, revision: file.revision! })) }
+      : 'match' in scope
+        ? { kind: 'match' as const, path: scope.file.path, revision: scope.file.revision!, line: scope.match.line, column: scope.match.column! }
+        : { kind: 'file' as const, path: scope.path, revision: scope.revision! };
+    if (replaceScope.kind === 'all') {
+      if (result.truncated) { toast.info('Narrow the search before replacing all', { description: 'The current result set is truncated.' }); return; }
+      const count = replaceableFiles.reduce((total, file) => total + file.matches.length, 0);
+      if (!count || !window.confirm(`Replace ${count} ${count === 1 ? 'occurrence' : 'occurrences'} in ${replaceableFiles.length} ${replaceableFiles.length === 1 ? 'file' : 'files'}?`)) return;
+    } else if (replaceScope.kind === 'file' && scope !== 'all' && !('match' in scope) && scope.truncatedMatches) {
+      // Replacing a file rewrites every occurrence in it, including the ones
+      // beyond the listed limit, so the count on screen must not be implied.
+      if (!window.confirm(`${scope.path} has more matches than the ${scope.matches.length} listed. Replace every occurrence in the file?`)) return;
+    }
+
+    const targetPaths = replaceScope.kind === 'all' ? replaceScope.files.map((file) => file.path) : [replaceScope.path];
+    const unsaved = unsavedPathsAmong(targetPaths);
+    if (unsaved.length > 0) {
+      toast.error('Save open files before replacing in them', { description: unsaved.join(', '), duration: 10_000 });
+      return;
+    }
+
+    setReplacing(true);
+    try {
+      const outcome = await window.justgit.repository.replaceSearch(repositoryId, {
+        options: { ...options, query: query.trim() }, replacement, scope: replaceScope,
+      });
+      if (outcome.status === 'stale') {
+        toast.error('Files changed before replacement', { description: 'Search results were refreshed without overwriting anything.' });
+      } else if (outcome.status === 'no-match') {
+        toast.info('No matching text to replace');
+      } else {
+        toast.success(`Replaced ${outcome.replacements} ${outcome.replacements === 1 ? 'occurrence' : 'occurrences'}`, { description: `${outcome.files.length} ${outcome.files.length === 1 ? 'file' : 'files'} changed` });
+        onReplaced(outcome.files);
+      }
+      setReplaceRevision((value) => value + 1);
+    } catch (reason) {
+      toast.error('Could not replace search results', { description: reason instanceof Error ? reason.message : 'Unknown error', duration: 10_000 });
+    } finally { setReplacing(false); }
+  };
 
   return (
     <div className="search-view">
       <div className="search-controls">
-        <div className="search-input">
-          <IconSearch aria-hidden="true" />
-          <input
-            ref={inputRef}
-            type="text"
-            value={query}
-            spellCheck={false}
-            placeholder="Search in repository"
-            aria-label="Search in repository"
-            onChange={(event) => setQuery(event.target.value)}
-          />
-          <span className="search-toggles">
-            <SearchToggle label="Match case" active={matchCase} onToggle={() => setMatchCase((value) => !value)}><IconLetterCase /></SearchToggle>
-            <SearchToggle label="Match whole word" active={wholeWord} onToggle={() => setWholeWord((value) => !value)}><IconTextWrapDisabled /></SearchToggle>
-            <SearchToggle label="Use regular expression" active={regex} onToggle={() => setRegex((value) => !value)}><IconRegex /></SearchToggle>
-          </span>
+        <div className="search-query-row">
+          <Button variant="ghost" size="icon-xs" className="search-replace-toggle" aria-label={replaceOpen ? 'Hide replace' : 'Show replace'} aria-expanded={replaceOpen} onClick={() => setReplaceOpen((value) => !value)}>
+            {replaceOpen ? <IconChevronDown /> : <IconChevronRight />}
+          </Button>
+          <div className="search-input">
+            <IconSearch aria-hidden="true" />
+            <input
+              ref={inputRef}
+              type="text"
+              value={query}
+              spellCheck={false}
+              placeholder="Search in repository"
+              aria-label="Search in repository"
+              onChange={(event) => setQuery(event.target.value)}
+            />
+            <span className="search-toggles">
+              <SearchToggle label="Match case" active={matchCase} onToggle={() => setMatchCase((value) => !value)}><IconLetterCase /></SearchToggle>
+              <SearchToggle label="Match whole word" active={wholeWord} onToggle={() => setWholeWord((value) => !value)}><IconTextWrapDisabled /></SearchToggle>
+              <SearchToggle label="Use regular expression" active={regex} onToggle={() => setRegex((value) => !value)}><IconRegex /></SearchToggle>
+            </span>
+          </div>
         </div>
+        {replaceOpen && (
+          <div className="search-replace-row">
+            <IconReplace aria-hidden="true" />
+            <input value={replacement} spellCheck={false} placeholder="Replace" aria-label="Replace with" onChange={(event) => setReplacement(event.target.value)} />
+            <Tooltip>
+              <TooltipTrigger render={<Button variant="ghost" size="icon-xs" disabled={replacing || replaceableFiles.length === 0 || Boolean(result?.truncated)} aria-label="Replace all search results" onClick={() => void replace('all')} />}><IconReplaceFilled /></TooltipTrigger>
+              <TooltipContent>{result?.truncated ? 'Narrow the search to replace all' : 'Replace all'}</TooltipContent>
+            </Tooltip>
+          </div>
+        )}
+        {replaceOpen && ignoredFiles > 0 && (
+          <label className="search-include-ignored"><input type="checkbox" checked={includeIgnored} onChange={(event) => setIncludeIgnored(event.target.checked)} /> Include ignored files when replacing</label>
+        )}
         {query.trim() !== '' && (
           <div className="search-summary">
             {searching ? <ShimmeringText text="Searching…" /> : error ? <span className="search-error">{error}</span> : result && (
@@ -143,26 +214,32 @@ export function SearchView({ repositoryId, active, revision, onOpenFile }: Searc
             return (
               <div key={virtualRow.key} className="virtual-row" style={{ height: virtualRow.size, transform: `translateY(${virtualRow.start}px)` }}>
                 {row.kind === 'file' ? (
-                  <button
-                    className={`search-file-heading ${row.file.ignored ? 'ignored' : ''}`}
-                    onClick={() => toggleFile(row.file.path)}
-                    aria-expanded={row.open}
-                  >
-                    {row.open ? <IconChevronDown /> : <IconChevronRight />}
-                    <span className="search-file-name">{row.file.path}</span>
-                    {row.file.ignored && (
-                      <Tooltip>
-                        <TooltipTrigger render={<span className="search-file-ignored-badge" />}><IconEyeOff /></TooltipTrigger>
-                        <TooltipContent>Ignored by Git</TooltipContent>
-                      </Tooltip>
+                  <div className={`search-file-heading ${row.file.ignored ? 'ignored' : ''}`}>
+                    <button className="search-file-toggle" onClick={() => toggleFile(row.file.path)} aria-expanded={row.open}>
+                      {row.open ? <IconChevronDown /> : <IconChevronRight />}
+                      <span className="search-file-name">{row.file.path}</span>
+                      {row.file.ignored && (
+                        <Tooltip>
+                          <TooltipTrigger render={<span className="search-file-ignored-badge" />}><IconEyeOff /></TooltipTrigger>
+                          <TooltipContent>Ignored by Git</TooltipContent>
+                        </Tooltip>
+                      )}
+                      <span className="search-file-count">{row.file.matches.length}</span>
+                    </button>
+                    {replaceOpen && row.file.revision && (!row.file.ignored || includeIgnored) && (
+                      <Button variant="ghost" size="icon-xs" className="search-replace-action" disabled={replacing} aria-label={`Replace all in ${row.file.path}`} onClick={() => void replace(row.file)}><IconReplaceFilled /></Button>
                     )}
-                    <span className="search-file-count">{row.file.matches.length}</span>
-                  </button>
+                  </div>
                 ) : (
-                  <button className="search-match" onClick={() => onOpenFile(row.file.path)}>
-                    <span className="search-match-line">{row.match.line}</span>
-                    <span className="search-match-text">{highlight(row.match.text, highlighter)}</span>
-                  </button>
+                  <div className="search-match">
+                    <button className="search-match-open" onClick={() => onOpenFile(row.file.path)}>
+                      <span className="search-match-line">{row.match.line}:{row.match.column ?? 1}</span>
+                      <span className="search-match-text">{highlight(row.match.text, highlighter)}</span>
+                    </button>
+                    {replaceOpen && row.file.revision && row.match.column && (!row.file.ignored || includeIgnored) && (
+                      <Button variant="ghost" size="icon-xs" className="search-replace-action" disabled={replacing} aria-label={`Replace match on line ${row.match.line}`} onClick={() => void replace({ file: row.file, match: row.match })}><IconReplace /></Button>
+                    )}
+                  </div>
                 )}
               </div>
             );
