@@ -1,12 +1,12 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { IconZoomIn, IconZoomOut } from '@tabler/icons-react';
-import { toast } from 'sonner';
 import type { FileResult, ImageFileResult, ThemePreference, WriteFileResult } from '@shared/contracts';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { ViewerTabs, ViewerTabsList, ViewerTabsPanel } from '@/components/ui/viewer-tabs';
 import { FileSaveControls, SourceCodeEditor } from './EditableFileViewer';
 import { MAX_IMAGE_ZOOM, type ImageSizingMode, zoomIn, zoomOut } from './image-viewer-state';
+import { useEditableFileDraft } from './useEditableFileDraft';
 import './image-viewer.css';
 
 interface ImageFileViewerProps {
@@ -29,6 +29,12 @@ interface Dimensions {
   width: number;
   height: number;
 }
+
+const SVG_SAVE_MESSAGES = {
+  conflictTitle: 'SVG was changed outside JustGit',
+  successTitle: 'SVG saved',
+  errorTitle: 'Could not save SVG',
+};
 
 export function ImageFileViewer({ image }: ImageFileViewerProps) {
   if (image.status === 'unsupported') {
@@ -76,53 +82,14 @@ function RasterImageReady({ path, mimeType, size, data }: {
 
 export function SvgFileViewer({ file, initialContent, themeType, wrapLines, readOnly, onDirtyChange, onDraftChange, onSave }: SvgFileViewerProps) {
   const [tab, setTab] = useState<'preview' | 'code'>('preview');
-  const [draft, setDraft] = useState(initialContent);
-  const [saving, setSaving] = useState(false);
-  const dirty = draft !== file.content;
+  const { draft, updateDraft, dirty, saving, save } = useEditableFileDraft({
+    file, initialContent, readOnly, messages: SVG_SAVE_MESSAGES, onDirtyChange, onDraftChange, onSave,
+  });
   const objectUrl = useObjectUrl(draft, 'image/svg+xml');
 
   useEffect(() => {
     setTab('preview');
   }, [file.path]);
-
-  useEffect(() => {
-    onDirtyChange(dirty);
-  }, [dirty, onDirtyChange]);
-
-  useEffect(() => () => onDirtyChange(false), [onDirtyChange]);
-
-  const save = useCallback(async () => {
-    if (!dirty || saving || readOnly) return;
-    setSaving(true);
-    try {
-      const result = await onSave(file.path, draft, file.content);
-      if (result.status === 'conflict') {
-        toast.error('SVG was changed outside JustGit', {
-          description: 'Your draft is still open. Copy it or reload the file before saving again.',
-          duration: 10_000,
-        });
-        return;
-      }
-      toast.success('SVG saved', { description: file.path });
-    } catch (reason) {
-      toast.error('Could not save SVG', {
-        description: reason instanceof Error ? reason.message : 'Unknown error',
-        duration: 10_000,
-      });
-    } finally {
-      setSaving(false);
-    }
-  }, [dirty, draft, file.content, file.path, onSave, readOnly, saving]);
-
-  useEffect(() => {
-    const handleSaveShortcut = (event: KeyboardEvent) => {
-      if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 's') return;
-      event.preventDefault();
-      void save();
-    };
-    window.addEventListener('keydown', handleSaveShortcut);
-    return () => window.removeEventListener('keydown', handleSaveShortcut);
-  }, [save]);
 
   const tabs = (
     <ViewerTabsList
@@ -157,11 +124,7 @@ export function SvgFileViewer({ file, initialContent, themeType, wrapLines, read
               themeType={themeType}
               wrapLines={wrapLines}
               readOnly={readOnly || saving}
-              onChange={(value) => {
-                setDraft(value);
-                onDirtyChange(value !== file.content);
-                onDraftChange(value);
-              }}
+              onChange={updateDraft}
               />
           </div>
       </ViewerTabsPanel>

@@ -8,6 +8,7 @@ import type { FileResult, ThemePreference, WriteFileResult } from '@shared/contr
 import { JUSTGIT_DIFF_THEMES } from './diffThemes';
 import { VIEWER_SCROLLBAR_CSS } from './patch-utils';
 import { PierreWorkerPool } from './PierreWorkerPool';
+import { useEditableFileDraft } from './useEditableFileDraft';
 import './source-editor.css';
 
 type EditorConstructor = typeof import('@pierre/diffs/edit').Editor;
@@ -141,50 +142,17 @@ interface EditableFileViewerProps {
   onSave(path: string, content: string, expectedContent: string): Promise<WriteFileResult>;
 }
 
+const FILE_SAVE_MESSAGES = {
+  conflictTitle: 'File was changed outside JustGit',
+  successTitle: 'File saved',
+  errorTitle: 'Could not save file',
+};
+
 export function EditableFileViewer({ file, initialContent, themeType, wrapLines, readOnly, onDirtyChange, onDraftChange, onSave }: EditableFileViewerProps) {
-  const [draft, setDraft] = useState(initialContent);
-  const [saving, setSaving] = useState(false);
+  const { draft, updateDraft, dirty, saving, save } = useEditableFileDraft({
+    file, initialContent, readOnly, messages: FILE_SAVE_MESSAGES, onDirtyChange, onDraftChange, onSave,
+  });
   const editorRef = useRef<Editor<undefined> | null>(null);
-  const dirty = draft !== file.content;
-
-  useEffect(() => {
-    onDirtyChange(dirty);
-  }, [dirty, onDirtyChange]);
-
-  useEffect(() => () => onDirtyChange(false), [onDirtyChange]);
-
-  const save = useCallback(async () => {
-    if (!dirty || saving || readOnly) return;
-    setSaving(true);
-    try {
-      const result = await onSave(file.path, draft, file.content);
-      if (result.status === 'conflict') {
-        toast.error('File was changed outside JustGit', {
-          description: 'Your draft is still open. Copy it or reload the file before saving again.',
-          duration: 10_000,
-        });
-        return;
-      }
-      toast.success('File saved', { description: file.path });
-    } catch (reason) {
-      toast.error('Could not save file', {
-        description: reason instanceof Error ? reason.message : 'Unknown error',
-        duration: 10_000,
-      });
-    } finally {
-      setSaving(false);
-    }
-  }, [dirty, draft, file.content, file.path, onSave, readOnly, saving]);
-
-  useEffect(() => {
-    const handleSaveShortcut = (event: KeyboardEvent) => {
-      if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 's') return;
-      event.preventDefault();
-      void save();
-    };
-    window.addEventListener('keydown', handleSaveShortcut);
-    return () => window.removeEventListener('keydown', handleSaveShortcut);
-  }, [save]);
 
   const openReplace = useCallback(() => {
     const editor = editorRef.current;
@@ -217,11 +185,7 @@ export function EditableFileViewer({ file, initialContent, themeType, wrapLines,
           wrapLines={wrapLines}
           readOnly={readOnly || saving}
           onEditorReady={(editor) => { editorRef.current = editor; }}
-          onChange={(value) => {
-            setDraft(value);
-            onDirtyChange(value !== file.content);
-            onDraftChange(value);
-          }}
+          onChange={updateDraft}
         />
       </div>
     </div>

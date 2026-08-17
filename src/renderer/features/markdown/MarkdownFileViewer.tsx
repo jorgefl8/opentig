@@ -6,6 +6,7 @@ import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { ViewerTabs, ViewerTabsList, ViewerTabsPanel } from '@/components/ui/viewer-tabs';
 import { FileSaveControls, SourceCodeEditor } from '@/features/viewer/EditableFileViewer';
+import { useEditableFileDraft } from '@/features/viewer/useEditableFileDraft';
 import { resolveMarkdownRepositoryPath } from './markdown-links';
 import { renderMarkdown } from './render-markdown';
 import { useMermaid } from './useMermaid';
@@ -28,6 +29,12 @@ interface MarkdownFileViewerProps {
 type ContentWidth = 'reading' | 'fit';
 
 const CONTENT_WIDTH_STORAGE_KEY = 'justgit:markdown-content-width';
+
+const MARKDOWN_SAVE_MESSAGES = {
+  conflictTitle: 'Markdown was changed outside JustGit',
+  successTitle: 'Markdown saved',
+  errorTitle: 'Could not save Markdown',
+};
 
 function getInitialContentWidth(): ContentWidth {
   try {
@@ -59,14 +66,14 @@ function MarkdownPreviewContent({ html, onClick }: MarkdownPreviewContentProps) 
 export function MarkdownFileViewer({ file, initialContent, revision, themeType, wrapLines, readOnly, onOpenFile, onDirtyChange, onDraftChange, onSave }: MarkdownFileViewerProps) {
   const [tab, setTab] = useState<'preview' | 'code'>('preview');
   const [contentWidth, setContentWidth] = useState<ContentWidth>(getInitialContentWidth);
-  const [draft, setDraft] = useState(initialContent);
   const [html, setHtml] = useState('');
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState(false);
   const requestToken = useRef(0);
   const copyFeedback = useRef<{ button: HTMLButtonElement; timer: number } | null>(null);
-  const dirty = draft !== file.content;
+  const { draft, updateDraft, dirty, saving, save } = useEditableFileDraft({
+    file, initialContent, readOnly, messages: MARKDOWN_SAVE_MESSAGES, onDirtyChange, onDraftChange, onSave,
+  });
 
   useEffect(() => {
     setTab('preview');
@@ -96,12 +103,6 @@ export function MarkdownFileViewer({ file, initialContent, revision, themeType, 
     }, dirty ? 120 : 0);
     return () => window.clearTimeout(timer);
   }, [dirty, draft, file.mtimeMs, file.path, revision, themeType]);
-
-  useEffect(() => {
-    onDirtyChange(dirty);
-  }, [dirty, onDirtyChange]);
-
-  useEffect(() => () => onDirtyChange(false), [onDirtyChange]);
 
   useEffect(() => () => {
     if (copyFeedback.current) window.clearTimeout(copyFeedback.current.timer);
@@ -150,39 +151,6 @@ export function MarkdownFileViewer({ file, initialContent, revision, themeType, 
     const repositoryPath = resolveMarkdownRepositoryPath(file.path, href);
     if (repositoryPath) onOpenFile(repositoryPath);
   }, [file.path, onOpenFile]);
-
-  const save = useCallback(async () => {
-    if (!dirty || saving || readOnly) return;
-    setSaving(true);
-    try {
-      const result = await onSave(file.path, draft, file.content);
-      if (result.status === 'conflict') {
-        toast.error('Markdown was changed outside JustGit', {
-          description: 'Your draft is still open. Copy it or reload the file before saving again.',
-          duration: 10_000,
-        });
-        return;
-      }
-      toast.success('Markdown saved', { description: file.path });
-    } catch (reason) {
-      toast.error('Could not save Markdown', {
-        description: reason instanceof Error ? reason.message : 'Unknown error',
-        duration: 10_000,
-      });
-    } finally {
-      setSaving(false);
-    }
-  }, [dirty, draft, file.content, file.path, onSave, readOnly, saving]);
-
-  useEffect(() => {
-    const handleSaveShortcut = (event: KeyboardEvent) => {
-      if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 's') return;
-      event.preventDefault();
-      void save();
-    };
-    window.addEventListener('keydown', handleSaveShortcut);
-    return () => window.removeEventListener('keydown', handleSaveShortcut);
-  }, [save]);
 
   const changeContentWidth = (value: ContentWidth) => {
     setContentWidth(value);
@@ -250,11 +218,7 @@ export function MarkdownFileViewer({ file, initialContent, revision, themeType, 
             themeType={themeType}
             wrapLines={wrapLines}
             readOnly={readOnly || saving}
-            onChange={(value) => {
-              setDraft(value);
-              onDirtyChange(value !== file.content);
-              onDraftChange(value);
-            }}
+            onChange={updateDraft}
           />
       </ViewerTabsPanel>
     </ViewerTabs>
