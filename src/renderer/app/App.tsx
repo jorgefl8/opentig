@@ -1514,7 +1514,11 @@ export default function App() {
   return (
     <ShortcutsProvider shortcuts={shortcuts}>
     <TooltipProvider>
-      <Toaster theme={theme} position="bottom-right" />
+      {/* Sileo names its themes after the page, not the toast: `light` fills the
+          toast with #1a1a1a and `dark` with #f2f2f2. Pinning it to `light` keeps
+          every toast dark whatever the app theme is, and also sidesteps `system`,
+          which sileo resolves from the OS instead of JustGit's own preference. */}
+      <Toaster theme="light" position="bottom-right" />
       <QuickOpenDialog
         open={quickOpen}
         files={files}
