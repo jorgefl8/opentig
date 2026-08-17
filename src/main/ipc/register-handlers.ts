@@ -32,6 +32,7 @@ interface Services {
   aiLog: AiLogStore;
   github: GitHubService;
   prDrafts: PullRequestDraftService;
+  onPreferencesChanged?: (preferences: Preferences) => void;
 }
 
 export function registerHandlers(services: Services): () => void {
@@ -58,7 +59,11 @@ export function registerHandlers(services: Services): () => void {
       performanceAutomation: process.env.JUSTGIT_PERF_AUTOMATION === '1',
     };
   });
-  handle(IPC.preferences, 'preferences', (partial) => services.settings.setPreferences((partial ?? {}) as Partial<Preferences>));
+  handle(IPC.preferences, 'preferences', async (partial) => {
+    const preferences = await services.settings.setPreferences((partial ?? {}) as Partial<Preferences>);
+    services.onPreferencesChanged?.(preferences);
+    return preferences;
+  });
   handle(IPC.titleBarTheme, 'title-bar-theme', (dark) => {
     applyWindowTitleBarTheme(services.window, booleanArg(dark, 'title-bar-theme'));
   });

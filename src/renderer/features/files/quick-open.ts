@@ -59,12 +59,6 @@ export function rankQuickOpenFiles(
     .map((candidate) => ({ path: candidate.path, name: candidate.name, parentPath: candidate.parentPath }));
 }
 
-export function isQuickOpenShortcut(
-  event: Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'altKey' | 'shiftKey'>,
-): boolean {
-  return event.ctrlKey && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'p';
-}
-
 function matchRank(basename: string, fullPath: string, query: string, compactQuery: string): number[] | null {
   if (basename === query) return [0, 0, 0, 0];
   if (basename.startsWith(query)) return [1, 0, basename.length - query.length, 0];

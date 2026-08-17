@@ -22,6 +22,7 @@ import {
 import { Dialog, DialogDescription, DialogPopup, DialogTitle } from '@/components/ui/dialog';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { getVsCodeFileIconUrl, getVsCodeFolderIconUrl } from '@/lib/vscode-icons';
+import { useShortcuts } from '@/app/useShortcuts';
 import {
   canMovePathsToDirectory, canOpenPinnedDrop, fileHistoryShortcut, filterIgnoredEntries, findEntry, isEditableTarget, mergeLoadedDirectories,
   OPEN_FILES_DROP_HOST_ID, parentDirectory, pathContains, persistableExpandedPaths, reconcileExpandedPaths, replaceLoadedDirectoryLevels,
@@ -144,6 +145,7 @@ export function FilesView({
   onRename,
   onCreate,
 }: FilesViewProps) {
+  const shortcuts = useShortcuts();
   const scrollRef = useRef<HTMLDivElement>(null);
   const revealedPathRef = useRef<string | null>(null);
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
@@ -459,7 +461,7 @@ export function FilesView({
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     if (isEditableTarget(event.target)) return;
-    const historyShortcut = fileHistoryShortcut(event.nativeEvent);
+    const historyShortcut = fileHistoryShortcut(event.nativeEvent, shortcuts);
     if (historyShortcut === 'undo' && historyState.canUndo && !readOnly) {
       event.preventDefault();
       if (!event.repeat) void onUndo();

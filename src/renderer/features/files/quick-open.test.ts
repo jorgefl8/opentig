@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { FileTreeEntry } from '@shared/git-types';
-import { collectQuickOpenFiles, isQuickOpenShortcut, rankQuickOpenFiles } from './quick-open';
+import { collectQuickOpenFiles, rankQuickOpenFiles } from './quick-open';
 
 const tree: FileTreeEntry[] = [
   {
@@ -71,15 +71,5 @@ describe('Quick Open model', () => {
   it('includes ignored files only when requested', () => {
     expect(rankQuickOpenFiles(tree, '.env', { includeIgnored: false })).toEqual([]);
     expect(rankQuickOpenFiles(tree, '.env', { includeIgnored: true })[0]?.path).toBe('.env');
-  });
-
-  it('recognizes only unmodified Ctrl+P', () => {
-    const event = (value: Partial<KeyboardEvent>) => ({ key: 'p', ctrlKey: false, altKey: false, shiftKey: false, ...value } as KeyboardEvent);
-    expect(isQuickOpenShortcut(event({ ctrlKey: true }))).toBe(true);
-    expect(isQuickOpenShortcut(event({ ctrlKey: true, key: 'P' }))).toBe(true);
-    expect(isQuickOpenShortcut(event({ ctrlKey: true, altKey: true }))).toBe(false);
-    expect(isQuickOpenShortcut(event({ ctrlKey: true, shiftKey: true }))).toBe(false);
-    expect(isQuickOpenShortcut(event({ key: 'p' }))).toBe(false);
-    expect(isQuickOpenShortcut(event({ ctrlKey: true, key: 'o' }))).toBe(false);
   });
 });

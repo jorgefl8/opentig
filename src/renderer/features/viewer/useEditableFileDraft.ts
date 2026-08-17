@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import type { FileResult, WriteFileResult } from '@shared/contracts';
+import { DEFAULT_SHORTCUT_MAP, matchesCombo } from '@shared/shortcuts';
+import { useShortcuts } from '@/app/useShortcuts';
 
 interface SaveMessages {
   conflictTitle: string;
@@ -31,10 +33,13 @@ interface ExecuteSaveOptions {
 
 export type EditableFileSaveOutcome = 'skipped' | 'saved' | 'conflict' | 'error';
 
-type SaveShortcutEvent = Pick<KeyboardEvent, 'ctrlKey' | 'metaKey' | 'key' | 'preventDefault'>;
+type SaveShortcutEvent = Pick<KeyboardEvent, 'ctrlKey' | 'metaKey' | 'key' | 'preventDefault'> & Partial<Pick<KeyboardEvent, 'shiftKey' | 'altKey'>>;
 
-export function handleEditableFileSaveShortcut(event: SaveShortcutEvent, save: () => void): boolean {
-  if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 's') return false;
+export function handleEditableFileSaveShortcut(event: SaveShortcutEvent, save: () => void, combo: string = DEFAULT_SHORTCUT_MAP.saveFile): boolean {
+  const matches = matchesCombo({
+    key: event.key, ctrlKey: event.ctrlKey, metaKey: event.metaKey, shiftKey: event.shiftKey ?? false, altKey: event.altKey ?? false,
+  }, combo);
+  if (!matches) return false;
   event.preventDefault();
   save();
   return true;
@@ -60,6 +65,7 @@ export async function executeEditableFileSave(options: ExecuteSaveOptions): Prom
 }
 
 export function useEditableFileDraft({ file, initialContent, readOnly, messages, onDirtyChange, onDraftChange, onSave }: UseEditableFileDraftOptions) {
+  const shortcuts = useShortcuts();
   // App owns cross-tab persistence. This initializer intentionally runs only
   // on mount so a refresh cannot reset Pierre's cursor, undo history or draft.
   const [draft, setDraft] = useState(initialContent);
@@ -110,11 +116,11 @@ export function useEditableFileDraft({ file, initialContent, readOnly, messages,
   useEffect(() => { saveRef.current = save; }, [save]);
   useEffect(() => {
     const handleSaveShortcut = (event: KeyboardEvent) => {
-      handleEditableFileSaveShortcut(event, () => { void saveRef.current(); });
+      handleEditableFileSaveShortcut(event, () => { void saveRef.current(); }, shortcuts.saveFile);
     };
     window.addEventListener('keydown', handleSaveShortcut);
     return () => window.removeEventListener('keydown', handleSaveShortcut);
-  }, []);
+  }, [shortcuts.saveFile]);
 
   return { draft, updateDraft, dirty, saving, save };
 }

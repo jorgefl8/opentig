@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { FileTreeEntry } from '@shared/git-types';
+import { DEFAULT_SHORTCUT_MAP } from '@shared/shortcuts';
 import {
   canOpenPinnedDrop,
   containsPath,
@@ -78,12 +79,12 @@ describe('file tree helpers', () => {
 
   it('maps contextual Files undo and redo shortcuts', () => {
     const event = (value: Partial<KeyboardEvent>) => ({ key: 'z', ctrlKey: false, metaKey: false, altKey: false, shiftKey: false, ...value } as KeyboardEvent);
-    expect(fileHistoryShortcut(event({ ctrlKey: true }))).toBe('undo');
-    expect(fileHistoryShortcut(event({ ctrlKey: true, shiftKey: true }))).toBe('redo');
-    expect(fileHistoryShortcut(event({ metaKey: true }))).toBe('undo');
-    expect(fileHistoryShortcut(event({ metaKey: true, shiftKey: true }))).toBe('redo');
-    expect(fileHistoryShortcut(event({ ctrlKey: true, altKey: true }))).toBeNull();
-    expect(fileHistoryShortcut(event({ ctrlKey: true, key: 'y' }))).toBeNull();
+    expect(fileHistoryShortcut(event({ ctrlKey: true }), DEFAULT_SHORTCUT_MAP)).toBe('undo');
+    expect(fileHistoryShortcut(event({ ctrlKey: true, shiftKey: true }), DEFAULT_SHORTCUT_MAP)).toBe('redo');
+    expect(fileHistoryShortcut(event({ metaKey: true }), DEFAULT_SHORTCUT_MAP)).toBe('undo');
+    expect(fileHistoryShortcut(event({ metaKey: true, shiftKey: true }), DEFAULT_SHORTCUT_MAP)).toBe('redo');
+    expect(fileHistoryShortcut(event({ ctrlKey: true, altKey: true }), DEFAULT_SHORTCUT_MAP)).toBeNull();
+    expect(fileHistoryShortcut(event({ ctrlKey: true, key: 'y' }), DEFAULT_SHORTCUT_MAP)).toBeNull();
   });
 
   it('detects metadata changes even when size is unchanged', () => {

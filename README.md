@@ -141,30 +141,36 @@ AI never creates a commit or pull request automatically. You review and edit the
 - Optional line wrapping in viewers.
 - Optional display of Git-ignored files.
 - Per-provider AI model selection.
-- Persisted sidebar width, viewer preferences, recent repositories, projects, expanded file-tree paths, and each worktree's open file tabs.
+- Rebind most keyboard shortcuts from **Settings → Shortcuts**, with per-shortcut conflict detection and one-click reset to defaults; the shortcuts marked fixed below follow platform or file-manager conventions and cannot be changed.
+- Turn off the double-tap-Control shortcut that brings JustGit to the front from any application, also from **Settings → Shortcuts**.
+- Persisted sidebar width, viewer preferences, shortcut customizations, recent repositories, projects, expanded file-tree paths, and each worktree's open file tabs.
 
 ## Keyboard shortcuts
 
+The shortcuts below are defaults; rebind most of them from **Settings → Shortcuts**. Shortcuts marked *fixed* follow platform or file-manager conventions and always stay as shown.
+
 | Shortcut | Action |
 | --- | --- |
+| `Ctrl` `Ctrl` (double-tap, fixed) | Bring JustGit to the front from any application |
 | `Ctrl+O` | Open a repository |
 | `Ctrl+P` | Quick-open a file |
 | `Ctrl+R` | Refresh repository state |
-| `Ctrl+1` … `Ctrl+5` | Open Changes, Files, History, PRs, or Search |
+| `Ctrl+1` … `Ctrl+5` (fixed) | Open Changes, Files, History, PRs, or Search |
 | `Ctrl+S` | Save the open editable file |
 | `Ctrl+W` | Close the active file tab |
 | `Ctrl+Tab`, `Ctrl+Shift+Tab` | Move to the next or previous file tab |
 | `Ctrl+Shift+PageUp`, `Ctrl+Shift+PageDown` | Move the active file tab left or right |
-| `Enter`, `Delete` | Activate or close the focused file tab |
-| `Ctrl+F`, `Ctrl+Alt+F` | Open the integrated panel with both Find and Replace fields in the open editable file (`Ctrl+Alt+F` is an alternative shortcut) |
+| `Enter`, `Delete` (fixed) | Activate or close the focused file tab |
+| `Ctrl+F` | Open the integrated panel with both Find and Replace fields in the open editable file |
+| `Ctrl+Alt+F` (fixed) | Alternative shortcut that always opens Find and Replace, alongside the rebindable one above |
 | `Ctrl+Enter` | Create a commit while the commit composer is focused |
 | `Ctrl+Shift+Enter` | Create a commit and push when available |
-| `Ctrl+C`, `Ctrl+X`, `Ctrl+V` | Copy, cut, or paste selected Files entries |
+| `Ctrl+C`, `Ctrl+X`, `Ctrl+V` (fixed) | Copy, cut, or paste selected Files entries |
 | `Ctrl+Z`, `Ctrl+Shift+Z` | Undo or redo a supported Files operation |
-| `F2` | Rename the selected Files entry |
-| `Delete` | Delete selected Files entries |
-| `Q`, then a number | Open the numbered recent repository |
-| `+`, `-`, `0`, `F` | Zoom in, zoom out, reset, or fit an image preview |
+| `F2` (fixed) | Rename the selected Files entry |
+| `Delete` (fixed) | Delete selected Files entries |
+| `Q`, then a number | Open the repository switcher, then the numbered recent repository |
+| `+`, `-`, `0`, `F` (fixed) | Zoom in, zoom out, reset, or fit an image preview |
 
 ## Requirements
 

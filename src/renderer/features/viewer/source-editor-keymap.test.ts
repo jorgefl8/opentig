@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { JUSTGIT_FILE_EDITOR_KEYMAP } from './source-editor-keymap';
+import { buildFileEditorKeymap, JUSTGIT_FILE_EDITOR_KEYMAP } from './source-editor-keymap';
 
 describe('JUSTGIT_FILE_EDITOR_KEYMAP', () => {
   it('defines one platform-independent group', () => {
@@ -15,5 +15,11 @@ describe('JUSTGIT_FILE_EDITOR_KEYMAP', () => {
   it('does not override other shortcuts', () => {
     expect(Object.keys(JUSTGIT_FILE_EDITOR_KEYMAP[0]!.bindings))
       .toEqual(['cmdOrCtrl+f']);
+  });
+});
+
+describe('buildFileEditorKeymap', () => {
+  it('converts a rebound combo into a Pierre binding', () => {
+    expect(buildFileEditorKeymap('Ctrl+Shift+F')[0]!.bindings).toEqual({ 'cmdOrCtrl+shift+f': 'openSearchReplacePanel' });
   });
 });

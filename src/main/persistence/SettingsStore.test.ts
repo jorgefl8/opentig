@@ -56,6 +56,27 @@ describe('SettingsStore AI preferences', () => {
     await store.load();
     expect(store.preferences).toMatchObject({ theme: 'dark', diffView: 'unified', wrapLines: true, sidebarWidth: 400, showDotEnvFiles: false, uiZoom: 130 });
   });
+
+  it('migrates settings created before shortcut preferences existed', async () => {
+    const file = await settingsFile({ preferences: { theme: 'dark', diffView: 'split', sidebarWidth: 360, showDotEnvFiles: true, uiZoom: 100 } });
+    const store = new SettingsStore(file);
+    await store.load();
+    expect(store.preferences.shortcutOverrides).toEqual({});
+    expect(store.preferences.doubleControlShortcutEnabled).toBe(true);
+  });
+
+  it('persists valid shortcut overrides and drops invalid, reserved, or colliding ones', async () => {
+    const file = await settingsFile({});
+    const store = new SettingsStore(file);
+    await store.load();
+    await store.setPreferences({
+      shortcutOverrides: { openRepository: 'Ctrl+K', refresh: 'Ctrl+1', quickOpen: 'not-a-combo' },
+      doubleControlShortcutEnabled: false,
+    });
+    expect(store.preferences.shortcutOverrides).toEqual({ openRepository: 'Ctrl+K' });
+    expect(store.preferences.doubleControlShortcutEnabled).toBe(false);
+    expect(await readFile(file, 'utf8')).toContain('"openRepository": "Ctrl+K"');
+  });
 });
 
 describe('SettingsStore repository projects', () => {

@@ -4,11 +4,14 @@ import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-quer
 import {
   IconChevronDown, IconChevronRight, IconDeviceDesktop, IconFileArrowRight, IconFolder, IconFolderOpen,
   IconFiles, IconGitBranch, IconGitCompare, IconGitPullRequest, IconHierarchy2, IconHistory,
-  IconList, IconLoader4, IconMinus, IconMoon, IconPlus,
+  IconKeyboard, IconList, IconLoader4, IconMinus, IconMoon, IconPlus,
   IconRefresh, IconRestore, IconSearch, IconSettings, IconSparkles, IconSun, IconX,
 } from '@tabler/icons-react';
 import { Toaster, toast } from 'sonner';
 import type { AiHarnessId, AiHarnessStatus, BootstrapData, ChangesLayoutPreference, CommitSplitProposal, FileHistoryPathChange, FileHistoryState, GhCliStatus, GitHubRepositoryInfo, Preferences, PullRequestState, PullRequestSummary, RecentRepository, RepositoryInfo, RepositoryOrganization, RepositoryProject, ThemePreference, UndoLatestCommitResult } from '../../shared/contracts';
+import { matchesCombo, resolveShortcuts, type ShortcutMap } from '../../shared/shortcuts';
+import { ShortcutsProvider } from './ShortcutsContext';
+import { useShortcuts } from './useShortcuts';
 import type { OpenFilesState } from '../../shared/open-files-state';
 import { normalizeRepositoryKey } from '../../shared/repository-projects';
 import type { SerializedAiError } from '../../shared/errors';
@@ -34,7 +37,7 @@ import {
 import type { RuntimeFileDraft } from '@/features/viewer/Viewer';
 import { OpenFilesStrip } from '@/features/files/OpenFilesStrip';
 import { QuickOpenDialog } from '@/features/files/QuickOpenDialog';
-import { isQuickOpenShortcut } from '@/features/files/quick-open';
+import { ShortcutsSettings } from '@/features/settings/ShortcutsSettings';
 import { CommitComposer } from '@/features/commit/CommitComposer';
 import { CreatePullRequestDialog } from '@/features/pulls/CreatePullRequestDialog';
 import { PullRequestsView } from '@/features/pulls/PullRequestsView';
@@ -169,6 +172,7 @@ export default function App() {
   const diffView = bootstrap?.preferences.diffView ?? 'unified';
   const wrapLines = bootstrap?.preferences.wrapLines ?? false;
   const uiZoom = bootstrap?.preferences.uiZoom ?? 100;
+  const shortcuts = useMemo(() => resolveShortcuts(bootstrap?.preferences.shortcutOverrides), [bootstrap?.preferences.shortcutOverrides]);
 
   useEffect(() => {
     let active = true;
@@ -775,20 +779,20 @@ export default function App() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.ctrlKey && event.key.toLowerCase() === 'o') { event.preventDefault(); void openRepository(); }
-      if (event.ctrlKey && event.key.toLowerCase() === 'r') { event.preventDefault(); void refresh(); }
+      if (matchesCombo(event, shortcuts.openRepository)) { event.preventDefault(); void openRepository(); }
+      if (matchesCombo(event, shortcuts.refresh)) { event.preventDefault(); void refresh(); }
       if (repository && event.ctrlKey && !event.altKey && !event.metaKey) {
         const section = SIDEBAR_VIEWS[Number(event.key) - 1];
         if (section) { event.preventDefault(); setView(section); }
       }
       // Deliberately reachable from inside an editor: none of these produce
       // text, and VS Code binds them the same way while typing.
-      const tabAction = repository ? openFileTabShortcut(event) : null;
+      const tabAction = repository ? openFileTabShortcut(event, shortcuts) : null;
       if (tabAction) {
         event.preventDefault();
         if (!event.repeat) runTabKeyboardAction(tabAction);
       }
-      if (repository && !event.repeat && isQuickOpenShortcut(event)) {
+      if (repository && !event.repeat && matchesCombo(event, shortcuts.quickOpen)) {
         if (!quickOpen && document.querySelector('[data-slot="dialog-popup"]')) return;
         event.preventDefault();
         setQuickOpen(true);
@@ -797,7 +801,7 @@ export default function App() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [openRepository, quickOpen, refresh, refreshFilesOnly, repository, runTabKeyboardAction]);
+  }, [openRepository, quickOpen, refresh, refreshFilesOnly, repository, runTabKeyboardAction, shortcuts]);
 
   // One guard for every worktree's drafts. Per-editor listeners could only see
   // the file currently on screen, so switching tabs would drop the warning.
@@ -1475,6 +1479,7 @@ export default function App() {
   const conflictFiles = conflicts.map((change) => change.path);
 
   return (
+    <ShortcutsProvider shortcuts={shortcuts}>
     <TooltipProvider>
       <Toaster theme={theme} richColors closeButton position="bottom-right" />
       <QuickOpenDialog
@@ -1754,6 +1759,7 @@ export default function App() {
         />
       </div>
     </TooltipProvider>
+    </ShortcutsProvider>
   );
 }
 
@@ -1781,6 +1787,8 @@ const MANAGE_WORKTREES_VALUE = '\0__justgit_manage_worktrees__';
 
 function Toolbar(props: ToolbarProps) {
   const { onRecent } = props;
+  const shortcuts = useShortcuts();
+  const repoSwitcherKey = shortcuts.repoSwitcher.toLowerCase();
   const [repositorySelectOpen, setRepositorySelectOpen] = useState(false);
   const [projectsOpen, setProjectsOpen] = useState(false);
   const [refsOpen, setRefsOpen] = useState(false);
@@ -1820,7 +1828,7 @@ function Toolbar(props: ToolbarProps) {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.repeat || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey || isEditableTarget(event.target)) return;
 
-      if (!repositorySelectOpen && event.key.toLowerCase() === 'q') {
+      if (!repositorySelectOpen && event.key.toLowerCase() === repoSwitcherKey) {
         const anotherPopupIsOpen = document.querySelector(
           '[data-slot="dialog-popup"][data-open], [data-slot="select-content"][data-open], [data-slot="combobox-content"][data-open]',
         );
@@ -1832,7 +1840,7 @@ function Toolbar(props: ToolbarProps) {
 
       if (!repositorySelectOpen) return;
       // The same key that opened the switcher closes it again.
-      if (event.key.toLowerCase() === 'q') {
+      if (event.key.toLowerCase() === repoSwitcherKey) {
         event.preventDefault();
         event.stopPropagation();
         clearRepositoryNumberShortcut();
@@ -1873,7 +1881,7 @@ function Toolbar(props: ToolbarProps) {
       window.removeEventListener('keydown', onKeyDown, true);
       clearRepositoryNumberShortcut();
     };
-  }, [clearRepositoryNumberShortcut, projectsOpen, props.settingsOpen, refsOpen, repositorySelectOpen, selectRepositoryAt, visibleRepositories]);
+  }, [clearRepositoryNumberShortcut, projectsOpen, props.settingsOpen, refsOpen, repoSwitcherKey, repositorySelectOpen, selectRepositoryAt, visibleRepositories]);
 
   // The row already shows the tail of the path, so no hover tooltip repeats it.
   const repositoryItem = (group: RepositoryOption) => (
@@ -2127,6 +2135,7 @@ function BranchMoreRow({ count, onClick }: { count: number; onClick(): void }) {
 
 const SETTINGS_SECTIONS = [
   { id: 'general', label: 'General', icon: IconSettings },
+  { id: 'shortcuts', label: 'Shortcuts', icon: IconKeyboard },
   { id: 'ai', label: 'AI commit messages', icon: IconSparkles },
 ] as const;
 type SettingsSection = (typeof SETTINGS_SECTIONS)[number]['id'];
@@ -2171,8 +2180,12 @@ function SettingsDialog({ preferences, onPreference, open, onOpenChange, section
   const visibleModels = modelOptions.some((model) => model.id === selectedModel)
     ? modelOptions
     : [...modelOptions, { id: selectedModel, label: `${selectedModel} (unavailable)` }];
-  const title = section === 'general' ? 'General' : 'AI commit messages';
-  const description = section === 'general' ? 'JustGit appearance and behavior.' : 'Local harness and model used to suggest messages.';
+  const title = section === 'general' ? 'General' : section === 'shortcuts' ? 'Shortcuts' : 'AI commit messages';
+  const description = section === 'general'
+    ? 'JustGit appearance and behavior.'
+    : section === 'shortcuts'
+      ? 'Rebind commands or review the shortcuts that stay fixed.'
+      : 'Local harness and model used to suggest messages.';
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <Tooltip>
@@ -2249,7 +2262,7 @@ function SettingsDialog({ preferences, onPreference, open, onOpenChange, section
                 </div>
                 <button type="button" role="switch" aria-label="Show files ignored by Git" aria-checked={preferences.showDotEnvFiles} className="settings-switch" onClick={() => onPreference({ showDotEnvFiles: !preferences.showDotEnvFiles })}><span /></button>
               </div>
-              </> : <>
+              </> : section === 'shortcuts' ? <ShortcutsSettings preferences={preferences} onPreference={onPreference} /> : <>
                 <div className="ai-settings-heading">
                   <div className="settings-field-label">
                     <strong>Local harness</strong>
@@ -2890,13 +2903,12 @@ function snapshotPresenceFromIndex(index: { paths: Set<string>; deferred: string
 }
 
 /** Header tab shortcuts. `Ctrl+1`–`Ctrl+9` stays reserved for sidebar sections. */
-function openFileTabShortcut(event: KeyboardEvent): TabKeyboardAction | null {
-  if (!event.ctrlKey || event.altKey || event.metaKey) return null;
-  const key = event.key.toLowerCase();
-  if (key === 'w' && !event.shiftKey) return 'close';
-  if (event.key === 'Tab') return event.shiftKey ? 'previous' : 'next';
-  if (event.shiftKey && event.key === 'PageUp') return 'move-left';
-  if (event.shiftKey && event.key === 'PageDown') return 'move-right';
+function openFileTabShortcut(event: KeyboardEvent, shortcuts: ShortcutMap): TabKeyboardAction | null {
+  if (matchesCombo(event, shortcuts.closeTab)) return 'close';
+  if (matchesCombo(event, shortcuts.nextTab)) return 'next';
+  if (matchesCombo(event, shortcuts.prevTab)) return 'previous';
+  if (matchesCombo(event, shortcuts.moveTabLeft)) return 'move-left';
+  if (matchesCombo(event, shortcuts.moveTabRight)) return 'move-right';
   return null;
 }
 

@@ -1,4 +1,5 @@
 import type { FileTreeEntry } from '@shared/git-types';
+import { matchesCombo, type ShortcutMap } from '@shared/shortcuts';
 import { compareTreePaths, MAX_FILES_TREE_LAZY_PATHS, MAX_FILES_TREE_PATH_CHARACTERS, MAX_FILES_TREE_PATHS } from '../../../shared/files-tree-state';
 
 export interface ExpandedPathsReconciliation {
@@ -213,7 +214,8 @@ export function isEditableTarget(target: EventTarget | null): boolean {
     || target.closest('input, textarea, select, [contenteditable="true"]') !== null;
 }
 
-export function fileHistoryShortcut(event: Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'metaKey' | 'altKey' | 'shiftKey'>): 'undo' | 'redo' | null {
-  if (!(event.ctrlKey || event.metaKey) || event.altKey || event.key.toLowerCase() !== 'z') return null;
-  return event.shiftKey ? 'redo' : 'undo';
+export function fileHistoryShortcut(event: Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'metaKey' | 'altKey' | 'shiftKey'>, shortcuts: ShortcutMap): 'undo' | 'redo' | null {
+  if (matchesCombo(event, shortcuts.undoFileChange)) return 'undo';
+  if (matchesCombo(event, shortcuts.redoFileChange)) return 'redo';
+  return null;
 }

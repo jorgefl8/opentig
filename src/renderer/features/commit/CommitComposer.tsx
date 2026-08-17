@@ -1,10 +1,12 @@
 import { useEffect, useState, type RefObject } from 'react';
 import { IconArrowUp, IconCheck, IconGitCommit, IconListDetails, IconPlayerStop, IconSparkles, IconX } from '@tabler/icons-react';
 import type { CommitSplitProposal } from '@shared/contracts';
+import { normalizeCombo } from '@shared/shortcuts';
 import { Button } from '@/components/ui/button';
 import { Kbd } from '@/components/ui/kbd';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { Textarea } from '@/components/ui/textarea';
+import { useShortcuts } from '@/app/useShortcuts';
 
 /** Keep the exit animations in sync with the durations declared in index.css. */
 const EXIT_MS = 170;
@@ -52,6 +54,8 @@ export function CommitComposer({
   open, stagedCount, message, generating, harness, busy, readOnly, canPush, proposal, preparedIndex, completed, collapsed, textareaRef,
   onMessage, onGenerate, onCancelGenerate, onDismissProposal, onToggleCollapsed, onOpenPath, onPrepare, onCommit,
 }: CommitComposerProps) {
+  const shortcuts = useShortcuts();
+  const commitComboKeys = shortcuts.commit.split('+');
   const panel = useExitAnimation(open, EXIT_MS);
   const hasMessage = message.trim().length > 0;
   // The commit actions stay hidden until there is something to commit, so the
@@ -69,7 +73,7 @@ export function CommitComposer({
     <div className="commit-composer" data-state={panel.state} role="group" aria-label="Create commit">
       <div className="commit-composer-header">
         <span className="commit-composer-title"><IconGitCommit aria-hidden="true" />{stagedCount > 0 ? `Commit ${fileLabel}` : 'Commit plan'}</span>
-        {stagedCount > 0 && <span className="commit-composer-hint"><Kbd>Ctrl</Kbd><Kbd>↵</Kbd></span>}
+        {stagedCount > 0 && <span className="commit-composer-hint">{commitComboKeys.map((key) => <Kbd key={key}>{key === 'Enter' ? '↵' : key}</Kbd>)}</span>}
       </div>
       {proposal && (
         <section className="commit-plan" aria-label="Suggested commit plan">
@@ -141,7 +145,9 @@ export function CommitComposer({
         value={message}
         onChange={(event) => onMessage(event.target.value)}
         onKeyDown={(event) => {
-          if (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && !commitDisabled) {
+          // Shift is the "also push" modifier for this command, not part of its binding.
+          const withoutShift = normalizeCombo({ key: event.key, ctrlKey: event.ctrlKey, altKey: event.altKey, shiftKey: false, metaKey: event.metaKey });
+          if (withoutShift === shortcuts.commit && !commitDisabled) {
             event.preventDefault();
             onCommit({ push: event.shiftKey && canPush });
           }

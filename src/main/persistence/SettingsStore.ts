@@ -4,6 +4,7 @@ import path from 'node:path';
 import { z } from 'zod';
 import type { AiHarnessId, Preferences, RecentRepository, RepositoryOrganization, RepositoryProject } from '../../shared/contracts';
 import { GitOperationError } from '../../shared/errors';
+import { sanitizeShortcutOverrides } from '../../shared/shortcuts';
 import { FILES_TREE_SAVE_DEBOUNCE_MS, normalizeFilesTreeStates, type FilesTreeState, upsertFilesTreeState } from '../../shared/files-tree-state';
 import { cloneOpenFilesState, normalizeOpenFilesStates, OPEN_FILES_SAVE_DEBOUNCE_MS, type OpenFilesState, upsertOpenFilesState } from '../../shared/open-files-state';
 import { MAX_PROJECT_NAME_LENGTH, MAX_REPOSITORIES_PER_PROJECT, MAX_REPOSITORY_KEY_LENGTH, MAX_REPOSITORY_PROJECTS, normalizeRepositoryKey, UNASSIGNED_RECENT_LIMIT } from '../../shared/repository-projects';
@@ -31,6 +32,7 @@ const defaults: SettingsData = {
   preferences: {
     theme: 'system', diffView: 'unified', changesLayout: 'tree', wrapLines: false, sidebarWidth: 400, showDotEnvFiles: true, uiZoom: 100,
     commitMessageHarness: 'codex', commitMessageModels: { codex: 'default', claude: 'default', opencode: 'default' },
+    shortcutOverrides: {}, doubleControlShortcutEnabled: true,
   },
   windowBounds: { width: 1280, height: 800 },
 };
@@ -72,7 +74,9 @@ export class SettingsStore {
   get filesTreeStates(): FilesTreeState[] { return this.data.filesTreeStates.map(cloneFilesTreeState); }
   get openFilesStates(): OpenFilesState[] { return this.data.openFilesStates.map(cloneOpenFilesState); }
   get activeRepositoryId(): string | null { return this.data.activeRepositoryId; }
-  get preferences(): Preferences { return { ...this.data.preferences, commitMessageModels: { ...this.data.preferences.commitMessageModels } }; }
+  get preferences(): Preferences {
+    return { ...this.data.preferences, commitMessageModels: { ...this.data.preferences.commitMessageModels }, shortcutOverrides: { ...this.data.preferences.shortcutOverrides } };
+  }
   get windowBounds(): WindowBounds { return { ...this.data.windowBounds }; }
 
   async touchRepository(repository: Omit<RecentRepository, 'lastOpenedAt'>): Promise<void> {
@@ -164,6 +168,8 @@ export class SettingsStore {
     next.uiZoom = Math.max(80, Math.min(130, Math.round(Number(next.uiZoom) || 100)));
     next.commitMessageHarness = isHarness(next.commitMessageHarness) ? next.commitMessageHarness : 'codex';
     next.commitMessageModels = modelPreferences(next.commitMessageModels);
+    next.shortcutOverrides = sanitizeShortcutOverrides(next.shortcutOverrides);
+    next.doubleControlShortcutEnabled = typeof next.doubleControlShortcutEnabled === 'boolean' ? next.doubleControlShortcutEnabled : true;
     this.data.preferences = next;
     await this.save();
     return this.preferences;
@@ -300,6 +306,8 @@ function validate(value: unknown): SettingsData {
         uiZoom: Math.max(80, Math.min(130, Math.round(Number(parsedPreferences.data.uiZoom) || 100))),
         commitMessageHarness: isHarness(parsedPreferences.data.commitMessageHarness) ? parsedPreferences.data.commitMessageHarness : 'codex',
         commitMessageModels: modelPreferences(parsedPreferences.data.commitMessageModels),
+        shortcutOverrides: sanitizeShortcutOverrides(parsedPreferences.data.shortcutOverrides),
+        doubleControlShortcutEnabled: typeof parsedPreferences.data.doubleControlShortcutEnabled === 'boolean' ? parsedPreferences.data.doubleControlShortcutEnabled : true,
       } as Preferences
     : { ...defaults.preferences };
   const parsedBounds = windowBoundsRecordSchema.safeParse(input.windowBounds);

@@ -45,6 +45,20 @@ function showAndFocusMainWindow(): void {
   mainWindow.focus();
 }
 
+function applyDoubleControlShortcutPreference(enabled: boolean): void {
+  if (enabled === (stopGlobalDoubleControlShortcut !== null)) return;
+  if (enabled) {
+    try {
+      stopGlobalDoubleControlShortcut = startGlobalDoubleControlShortcut(showAndFocusMainWindow);
+    } catch (error) {
+      console.error('Could not start the global double-Control shortcut.', error);
+    }
+  } else {
+    stopGlobalDoubleControlShortcut?.();
+    stopGlobalDoubleControlShortcut = null;
+  }
+}
+
 async function createWindow(): Promise<void> {
   const settings = new SettingsStore(path.join(app.getPath('userData'), 'settings.json'));
   settingsStores.add(settings);
@@ -119,7 +133,10 @@ async function createWindow(): Promise<void> {
     mainWindow.webContents.send(IPC.repositoryChanged, repositoryId, scope);
   };
   const watcher = new RepositoryWatcher(notifyRepositoryChanged, () => git.hasActiveProcess());
-  const removeHandlers = registerHandlers({ window: mainWindow, settings, repositories, search, files, fileHistory, operations, watcher, ai, aiLog, github, prDrafts });
+  const removeHandlers = registerHandlers({
+    window: mainWindow, settings, repositories, search, files, fileHistory, operations, watcher, ai, aiLog, github, prDrafts,
+    onPreferencesChanged: (preferences) => applyDoubleControlShortcutPreference(preferences.doubleControlShortcutEnabled),
+  });
 
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   mainWindow.webContents.on('will-navigate', (event) => event.preventDefault());
@@ -163,6 +180,7 @@ async function createWindow(): Promise<void> {
     mainWindow.focus();
     stopPerformanceAutomation = startPerformanceAutomation(mainWindow, performanceSampler);
   }
+  applyDoubleControlShortcutPreference(settings.preferences.doubleControlShortcutEnabled);
 }
 
 app.on('second-instance', () => {
@@ -178,11 +196,6 @@ app.whenReady().then(async () => {
   }
   session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
   await createWindow();
-  try {
-    stopGlobalDoubleControlShortcut = startGlobalDoubleControlShortcut(showAndFocusMainWindow);
-  } catch (error) {
-    console.error('Could not start the global double-Control shortcut.', error);
-  }
 });
 
 app.on('before-quit', (event) => {

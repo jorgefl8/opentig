@@ -6,6 +6,7 @@ import type { AiLogEntry } from './ai-log';
 import type { FilesTreeState } from './files-tree-state';
 import type { OpenFileTab, OpenFilesState } from './open-files-state';
 import type { SearchOptions, SearchReplaceRequest, SearchReplaceResult, SearchResult } from './search';
+import type { ShortcutOverrides } from './shortcuts';
 
 export interface RepositoryInfo {
   id: string;
@@ -381,6 +382,8 @@ export interface Preferences {
   uiZoom: number;
   commitMessageHarness: AiHarnessId;
   commitMessageModels: Partial<Record<AiHarnessId, string>>;
+  shortcutOverrides: ShortcutOverrides;
+  doubleControlShortcutEnabled: boolean;
 }
 
 export interface BootstrapData {

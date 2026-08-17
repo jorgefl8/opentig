@@ -8,8 +8,9 @@ import type { FileResult, ThemePreference, WriteFileResult } from '@shared/contr
 import { JUSTGIT_CODE_THEMES } from './diffThemes';
 import { VIEWER_SCROLLBAR_CSS } from './patch-utils';
 import { PierreWorkerPool } from './PierreWorkerPool';
-import { JUSTGIT_FILE_EDITOR_KEYMAP } from './source-editor-keymap';
+import { buildFileEditorKeymap } from './source-editor-keymap';
 import { useEditableFileDraft } from './useEditableFileDraft';
+import { useShortcuts } from '@/app/useShortcuts';
 import './source-editor.css';
 
 type EditorConstructor = typeof import('@pierre/diffs/edit').Editor;
@@ -62,6 +63,7 @@ interface FileSaveControlsProps {
 }
 
 export function FileSaveControls({ dirty, saving, readOnly, onSave }: FileSaveControlsProps) {
+  const shortcuts = useShortcuts();
   if (!dirty && !saving) return null;
 
   return (
@@ -74,7 +76,7 @@ export function FileSaveControls({ dirty, saving, readOnly, onSave }: FileSaveCo
         className="file-save-button"
         disabled={saving || readOnly}
         onClick={onSave}
-        title="Save file (Ctrl+S)"
+        title={`Save file (${shortcuts.saveFile})`}
       >
         <IconDeviceFloppy aria-hidden="true" />
         Save
@@ -95,6 +97,7 @@ interface SourceCodeEditorProps {
 
 export function SourceCodeEditor({ path, cacheKey, value, themeType, wrapLines, readOnly, onChange }: SourceCodeEditorProps) {
   const editReady = useContext(EditReadyContext);
+  const shortcuts = useShortcuts();
   const onChangeRef = useRef(onChange);
   useEffect(() => { onChangeRef.current = onChange; }, [onChange]);
 
@@ -107,12 +110,13 @@ export function SourceCodeEditor({ path, cacheKey, value, themeType, wrapLines, 
     unsafeCSS: VIEWER_SCROLLBAR_CSS,
   }), [themeType, wrapLines]);
   // This object must stay stable: EditProvider uses its identity to retain the
-  // editor instance and its undo/redo history while the surface rerenders.
+  // editor instance and its undo/redo history while the surface rerenders. It is
+  // only rebuilt when the find-and-replace binding itself is rebound in Settings.
   const editorOptions = useMemo<EditorOptions<undefined>>(() => ({
     historyMaxEntries: 500,
-    keymap: JUSTGIT_FILE_EDITOR_KEYMAP,
+    keymap: buildFileEditorKeymap(shortcuts.editorSearch),
     onChange(nextFile) { onChangeRef.current(nextFile.contents); },
-  }), []);
+  }), [shortcuts.editorSearch]);
 
   return (
     <PierreWorkerPool theme={JUSTGIT_CODE_THEMES}>
