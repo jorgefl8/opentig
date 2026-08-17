@@ -44,9 +44,9 @@ It is intentionally not an IDE, hosting service, or replacement for the Git CLI.
 - Treat each visually highlighted change or folder row as one continuous click target, with a pointer cursor across the active surface, while preserving its dedicated diff, open, stage, unstage, and discard controls.
 - Stage or unstage individual files, folders, selections, or everything at once.
 - Discard selected unstaged changes with confirmation; untracked files are sent to the Windows Recycle Bin.
-- Review syntax-aware diffs in unified or split mode, with optional line wrapping.
+- Review syntax-aware diffs in unified or split mode, with optional line wrapping, colored with the same One Light/One Dark Pro token palette as the Files editor and Markdown code blocks; added, deleted, and modified lines keep their own diff colors.
 - Open rich previews for changed Markdown, HTML, SVG, and image files directly from **Changes**, with a separate action to inspect their diff.
-- Resolve merge conflicts in the built-in conflict editor and mark resolved files for staging.
+- Resolve merge conflicts in the built-in conflict editor, syntax-highlighted with the same palette as diffs and the Files editor, and mark resolved files for staging.
 - Create commits from staged files, or create and push in one action when an upstream exists.
 - Let the selected AI CLI suggest a reviewed multi-commit plan when staged files represent independent responsibilities, then prepare one complete-file group at a time without creating commits automatically.
 - Work through that plan at your own pace: groups keep their original numbering as you commit them, show how many are done, open any listed file's diff for review, and each group is independently rechecked against its files so a plan cannot be applied after those files changed.

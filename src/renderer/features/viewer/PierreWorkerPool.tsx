@@ -3,9 +3,9 @@ import type { ThemesType } from '@pierre/diffs';
 import { useWorkerPool, WorkerPoolContextProvider } from '@pierre/diffs/react';
 import DiffWorker from '@pierre/diffs/worker/worker.js?worker';
 import { toast } from 'sonner';
-import { JUSTGIT_DIFF_THEMES } from './diffThemes';
+import { JUSTGIT_CODE_THEMES } from './diffThemes';
 
-export function PierreWorkerPool({ children, theme = JUSTGIT_DIFF_THEMES }: PropsWithChildren<{ theme?: ThemesType }>) {
+export function PierreWorkerPool({ children, theme = JUSTGIT_CODE_THEMES }: PropsWithChildren<{ theme?: ThemesType }>) {
   return (
     <WorkerPoolContextProvider
       poolOptions={{ workerFactory: () => new DiffWorker(), poolSize: 1, totalASTLRUCacheSize: 20 }}
