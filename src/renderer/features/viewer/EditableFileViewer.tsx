@@ -1,12 +1,13 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { PropsWithChildren } from 'react';
-import { IconDeviceFloppy, IconReplace } from '@tabler/icons-react';
+import { IconDeviceFloppy } from '@tabler/icons-react';
 import { EditProvider, File, Virtualizer } from '@pierre/diffs/react';
-import type { Editor, EditorOptions } from '@pierre/diffs/edit';
+import type { EditorOptions } from '@pierre/diffs/edit';
 import { toast } from 'sonner';
 import type { FileResult, ThemePreference, WriteFileResult } from '@shared/contracts';
 import { VIEWER_SCROLLBAR_CSS } from './patch-utils';
 import { PierreWorkerPool } from './PierreWorkerPool';
+import { JUSTGIT_FILE_EDITOR_KEYMAP } from './source-editor-keymap';
 import { JUSTGIT_SYNTAX_THEMES } from './syntaxThemes';
 import { useEditableFileDraft } from './useEditableFileDraft';
 import './source-editor.css';
@@ -90,15 +91,12 @@ interface SourceCodeEditorProps {
   wrapLines: boolean;
   readOnly: boolean;
   onChange(value: string): void;
-  onEditorReady?(editor: Editor<undefined>): void;
 }
 
-export function SourceCodeEditor({ path, cacheKey, value, themeType, wrapLines, readOnly, onChange, onEditorReady }: SourceCodeEditorProps) {
+export function SourceCodeEditor({ path, cacheKey, value, themeType, wrapLines, readOnly, onChange }: SourceCodeEditorProps) {
   const editReady = useContext(EditReadyContext);
   const onChangeRef = useRef(onChange);
-  const onEditorReadyRef = useRef(onEditorReady);
   useEffect(() => { onChangeRef.current = onChange; }, [onChange]);
-  useEffect(() => { onEditorReadyRef.current = onEditorReady; }, [onEditorReady]);
 
   const file = useMemo(() => ({ name: path, contents: value, cacheKey }), [cacheKey, path, value]);
   const options = useMemo(() => ({
@@ -112,7 +110,7 @@ export function SourceCodeEditor({ path, cacheKey, value, themeType, wrapLines, 
   // editor instance and its undo/redo history while the surface rerenders.
   const editorOptions = useMemo<EditorOptions<undefined>>(() => ({
     historyMaxEntries: 500,
-    onAttach(editor) { onEditorReadyRef.current?.(editor); },
+    keymap: JUSTGIT_FILE_EDITOR_KEYMAP,
     onChange(nextFile) { onChangeRef.current(nextFile.contents); },
   }), []);
 
@@ -152,30 +150,14 @@ export function EditableFileViewer({ file, initialContent, themeType, wrapLines,
   const { draft, updateDraft, dirty, saving, save } = useEditableFileDraft({
     file, initialContent, readOnly, messages: FILE_SAVE_MESSAGES, onDirtyChange, onDraftChange, onSave,
   });
-  const editorRef = useRef<Editor<undefined> | null>(null);
-
-  const openReplace = useCallback(() => {
-    const editor = editorRef.current;
-    if (!editor || readOnly || saving) return;
-    editor.focus();
-    requestAnimationFrame(() => {
-      document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', {
-        key: 'f', code: 'KeyF', ctrlKey: true, altKey: true, bubbles: true, cancelable: true,
-      }));
-    });
-  }, [readOnly, saving]);
 
   return (
     <div className="source-file-viewer">
-      <div className="file-viewer-pill source-file-toolbar">
-        <button type="button" className="file-save-button" disabled={readOnly || saving} onClick={openReplace} title="Find and replace (Ctrl+Alt+F)">
-          <IconReplace aria-hidden="true" />
-          Replace
-        </button>
-        {(dirty || saving) && (
+      {(dirty || saving) && (
+        <div className="file-viewer-pill source-file-toolbar">
           <FileSaveControls dirty={dirty} saving={saving} readOnly={readOnly} onSave={() => void save()} />
-        )}
-      </div>
+        </div>
+      )}
       <div className="source-editor-scroll">
         <SourceCodeEditor
           path={file.path}
@@ -184,7 +166,6 @@ export function EditableFileViewer({ file, initialContent, themeType, wrapLines,
           themeType={themeType}
           wrapLines={wrapLines}
           readOnly={readOnly || saving}
-          onEditorReady={(editor) => { editorRef.current = editor; }}
           onChange={updateDraft}
         />
       </div>

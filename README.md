@@ -73,7 +73,7 @@ It is intentionally not an IDE, hosting service, or replacement for the Git CLI.
 - Restore each worktree's open tabs, their order, and the file that was active when you return to it. Tab paths are remembered between sessions; unsaved text is never written to disk.
 - Keep a tab whose file was renamed or moved pointing at its new path. A tab with unsaved changes whose file disappears stays open and is marked unavailable so its text can still be recovered, while clean tabs simply close.
 - Only working-tree files become tabs; diffs, conflicts, commits, and pull requests stay transient. Up to 50 tabs are kept per worktree, and opening past that closes the clean tab you used least recently.
-- Find and replace one or every occurrence in an editable file, with case, whole-word, regular-expression, and undo support.
+- Press `Ctrl+F` in any editable file to open one integrated find-and-replace panel, with single or global replacement, case, whole-word, regular-expression, and undo support.
 - Preview and edit Markdown, HTML, and SVG files through compact Preview/Code controls.
 - Render GitHub-flavoured Markdown with syntax-highlighted code, copy buttons, alerts, footnotes, KaTeX, and Mermaid diagrams.
 - Preview raster images with fit, 1:1, keyboard/wheel zoom, dimensions, and file-size information.
@@ -156,7 +156,7 @@ AI never creates a commit or pull request automatically. You review and edit the
 | `Ctrl+Tab`, `Ctrl+Shift+Tab` | Move to the next or previous file tab |
 | `Ctrl+Shift+PageUp`, `Ctrl+Shift+PageDown` | Move the active file tab left or right |
 | `Enter`, `Delete` | Activate or close the focused file tab |
-| `Ctrl+F`, `Ctrl+Alt+F` | Find, or find and replace, in the open editable file |
+| `Ctrl+F`, `Ctrl+Alt+F` | Open the integrated panel with both Find and Replace fields in the open editable file (`Ctrl+Alt+F` is an alternative shortcut) |
 | `Ctrl+Enter` | Create a commit while the commit composer is focused |
 | `Ctrl+Shift+Enter` | Create a commit and push when available |
 | `Ctrl+C`, `Ctrl+X`, `Ctrl+V` | Copy, cut, or paste selected Files entries |
