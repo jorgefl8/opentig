@@ -5,5 +5,10 @@ export default defineConfig({
     environment: 'node',
     include: ['src/**/*.test.ts'],
     clearMocks: true,
+    // Several tests spawn real git subprocesses or do hundreds of real fs
+    // writes; under full-suite parallel load on Windows that routinely
+    // outruns the 5s default even though each test is fast in isolation.
+    testTimeout: 20_000,
+    hookTimeout: 20_000,
   },
 });
