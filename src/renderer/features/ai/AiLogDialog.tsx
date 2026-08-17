@@ -8,7 +8,7 @@ import {
   type SortingState,
 } from '@tanstack/react-table';
 import { IconArrowsSort, IconLoader4, IconRefresh, IconSortAscending, IconSortDescending, IconTrash, IconX } from '@tabler/icons-react';
-import { toast } from 'sonner';
+import { sileo } from 'sileo';
 import type { AiLogEntry } from '@shared/ai-log';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -121,7 +121,7 @@ export function AiLogDialog({ open, onOpenChange }: AiLogDialogProps) {
   const load = useCallback(async () => {
     setLoading(true);
     try { setEntries(await window.justgit.ai.log()); }
-    catch (reason) { toast.error('Could not read the AI history', { description: messageOf(reason) }); }
+    catch (reason) { sileo.error({ title: 'Could not read the AI history', description: messageOf(reason) }); }
     finally { setLoading(false); }
   }, []);
 
@@ -154,7 +154,7 @@ export function AiLogDialog({ open, onOpenChange }: AiLogDialogProps) {
       await window.justgit.ai.clearLog();
       setEntries([]);
     } catch (reason) {
-      toast.error('Could not clear the AI history', { description: messageOf(reason) });
+      sileo.error({ title: 'Could not clear the AI history', description: messageOf(reason) });
     }
   };
 

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { IconViewportNarrow, IconViewportWide } from '@tabler/icons-react';
-import { toast } from 'sonner';
+import { sileo } from 'sileo';
 import type { FileResult, ThemePreference, WriteFileResult } from '@shared/contracts';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -135,7 +135,7 @@ export function MarkdownFileViewer({ file, initialContent, revision, themeType, 
         }, 2_000);
         copyFeedback.current = { button: copy, timer };
       } catch {
-        toast.error('Could not copy code');
+        sileo.error({ title: 'Could not copy code' });
       }
       return;
     }

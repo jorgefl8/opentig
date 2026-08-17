@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { toast } from 'sonner';
+import { sileo } from 'sileo';
 import type { FileResult, WriteFileResult } from '@shared/contracts';
 import { DEFAULT_SHORTCUT_MAP, matchesCombo } from '@shared/shortcuts';
 import { useShortcuts } from '@/app/useShortcuts';
@@ -100,12 +100,14 @@ export function useEditableFileDraft({ file, initialContent, readOnly, messages,
         setSaving(false);
       },
       persist: () => onSave(file.path, draft, file.content),
-      onConflict: () => toast.error(messages.conflictTitle, {
+      onConflict: () => sileo.error({
+        title: messages.conflictTitle,
         description: 'Your draft is still open. Copy it or reload the file before saving again.',
         duration: 10_000,
       }),
-      onSuccess: () => toast.success(messages.successTitle, { description: file.path }),
-      onError: (reason) => toast.error(messages.errorTitle, {
+      onSuccess: () => sileo.success({ title: messages.successTitle, description: file.path }),
+      onError: (reason) => sileo.error({
+        title: messages.errorTitle,
         description: reason instanceof Error ? reason.message : 'Unknown error',
         duration: 10_000,
       }),

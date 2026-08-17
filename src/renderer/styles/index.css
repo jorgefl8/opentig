@@ -1450,7 +1450,6 @@
 
   .operation-banner { border-bottom-color: var(--border); background: var(--muted); color: var(--muted-foreground); }
   .operation-banner, .conflict-banner, .error-banner { font-family: 'Geist Variable', sans-serif; }
-  [data-sonner-toast] { border-radius: 8px !important; font-family: 'Geist Variable', sans-serif !important; }
 }
 
 @media (max-width: 1100px) {

@@ -2,7 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useQuery } from '@tanstack/react-query';
 import { IconChevronDown, IconChevronRight, IconEyeOff, IconLetterCase, IconLoader4, IconRegex, IconReplace, IconReplaceFilled, IconSearch, IconTextWrapDisabled } from '@tabler/icons-react';
-import { toast } from 'sonner';
+import { sileo } from 'sileo';
 import { Button } from '@/components/ui/button';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -113,7 +113,7 @@ export function SearchView({ repositoryId, active, revision, onOpenFile, unsaved
         ? { kind: 'match' as const, path: scope.file.path, revision: scope.file.revision!, line: scope.match.line, column: scope.match.column! }
         : { kind: 'file' as const, path: scope.path, revision: scope.revision! };
     if (replaceScope.kind === 'all') {
-      if (result.truncated) { toast.info('Narrow the search before replacing all', { description: 'The current result set is truncated.' }); return; }
+      if (result.truncated) { sileo.info({ title: 'Narrow the search before replacing all', description: 'The current result set is truncated.' }); return; }
       const count = replaceableFiles.reduce((total, file) => total + file.matches.length, 0);
       if (!count || !window.confirm(`Replace ${count} ${count === 1 ? 'occurrence' : 'occurrences'} in ${replaceableFiles.length} ${replaceableFiles.length === 1 ? 'file' : 'files'}?`)) return;
     } else if (replaceScope.kind === 'file' && scope !== 'all' && !('match' in scope) && scope.truncatedMatches) {
@@ -125,7 +125,7 @@ export function SearchView({ repositoryId, active, revision, onOpenFile, unsaved
     const targetPaths = replaceScope.kind === 'all' ? replaceScope.files.map((file) => file.path) : [replaceScope.path];
     const unsaved = unsavedPathsAmong(targetPaths);
     if (unsaved.length > 0) {
-      toast.error('Save open files before replacing in them', { description: unsaved.join(', '), duration: 10_000 });
+      sileo.error({ title: 'Save open files before replacing in them', description: unsaved.join(', '), duration: 10_000 });
       return;
     }
 
@@ -135,16 +135,16 @@ export function SearchView({ repositoryId, active, revision, onOpenFile, unsaved
         options: { ...options, query: query.trim() }, replacement, scope: replaceScope,
       });
       if (outcome.status === 'stale') {
-        toast.error('Files changed before replacement', { description: 'Search results were refreshed without overwriting anything.' });
+        sileo.error({ title: 'Files changed before replacement', description: 'Search results were refreshed without overwriting anything.' });
       } else if (outcome.status === 'no-match') {
-        toast.info('No matching text to replace');
+        sileo.info({ title: 'No matching text to replace' });
       } else {
-        toast.success(`Replaced ${outcome.replacements} ${outcome.replacements === 1 ? 'occurrence' : 'occurrences'}`, { description: `${outcome.files.length} ${outcome.files.length === 1 ? 'file' : 'files'} changed` });
+        sileo.success({ title: `Replaced ${outcome.replacements} ${outcome.replacements === 1 ? 'occurrence' : 'occurrences'}`, description: `${outcome.files.length} ${outcome.files.length === 1 ? 'file' : 'files'} changed` });
         onReplaced(outcome.files);
       }
       setReplaceRevision((value) => value + 1);
     } catch (reason) {
-      toast.error('Could not replace search results', { description: reason instanceof Error ? reason.message : 'Unknown error', duration: 10_000 });
+      sileo.error({ title: 'Could not replace search results', description: reason instanceof Error ? reason.message : 'Unknown error', duration: 10_000 });
     } finally { setReplacing(false); }
   };
 

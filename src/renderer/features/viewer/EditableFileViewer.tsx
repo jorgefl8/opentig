@@ -3,7 +3,7 @@ import type { PropsWithChildren } from 'react';
 import { IconDeviceFloppy } from '@tabler/icons-react';
 import { EditProvider, File, Virtualizer } from '@pierre/diffs/react';
 import type { EditorOptions } from '@pierre/diffs/edit';
-import { toast } from 'sonner';
+import { sileo } from 'sileo';
 import type { FileResult, ThemePreference, WriteFileResult } from '@shared/contracts';
 import { JUSTGIT_CODE_THEMES } from './diffThemes';
 import { VIEWER_SCROLLBAR_CSS } from './patch-utils';
@@ -32,7 +32,8 @@ export function PierreEditBoundary({ enabled, children }: PropsWithChildren<{ en
       if (active) setEditorClass(() => module.Editor);
     }).catch((reason) => {
       if (!active) return;
-      toast.error('Could not load the code editor', {
+      sileo.error({
+        title: 'Could not load the code editor',
         description: reason instanceof Error ? reason.message : 'Unknown error',
       });
     });

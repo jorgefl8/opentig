@@ -7,8 +7,8 @@ import {
   IconKeyboard, IconList, IconLoader4, IconMinus, IconMoon, IconPlus,
   IconRefresh, IconRestore, IconSearch, IconSettings, IconSparkles, IconSun, IconX,
 } from '@tabler/icons-react';
-import { Toaster, toast } from 'sonner';
-import type { AiHarnessId, AiHarnessStatus, BootstrapData, ChangesLayoutPreference, CommitSplitProposal, FileHistoryPathChange, FileHistoryState, GhCliStatus, GitHubRepositoryInfo, Preferences, PullRequestState, PullRequestSummary, RecentRepository, RepositoryInfo, RepositoryOrganization, RepositoryProject, ThemePreference, UndoLatestCommitResult } from '../../shared/contracts';
+import { Toaster, sileo } from 'sileo';
+import type { AiHarnessId, AiHarnessStatus, BootstrapData, ChangesLayoutPreference, CommitSplitProposal, FileHistoryPathChange, FileHistoryState, GhCliStatus, GitHubRepositoryInfo, Preferences, PullRequestState, PullRequestSummary, PullResult, PushResult, RecentRepository, RepositoryInfo, RepositoryOrganization, RepositoryProject, ThemePreference, UndoLatestCommitResult } from '../../shared/contracts';
 import { matchesCombo, resolveShortcuts, type ShortcutMap } from '../../shared/shortcuts';
 import { ShortcutsProvider } from './ShortcutsContext';
 import { useShortcuts } from './useShortcuts';
@@ -62,6 +62,20 @@ type SidebarView = (typeof SIDEBAR_VIEWS)[number];
 interface AppRefreshOptions {
   background?: boolean;
   scope?: RepositoryChangeScope;
+}
+
+/** Carries a non-success, non-rejected pull result through `sileo.promise()`'s single error path. */
+class PullBlocked extends Error {
+  constructor(readonly result: Exclude<PullResult, { status: 'success' } | { status: 'up-to-date' }>) {
+    super(result.status);
+  }
+}
+
+/** Carries a non-success, non-rejected push result through `sileo.promise()`'s single error path. */
+class PushBlocked extends Error {
+  constructor(readonly result: Exclude<PushResult, { status: 'success' } | { status: 'up-to-date' }>) {
+    super(result.status);
+  }
 }
 
 export default function App() {
@@ -369,7 +383,7 @@ export default function App() {
     });
     if (!draftWarningShownRef.current && draftBytesRef.current > DRAFT_MEMORY_WARNING_BYTES) {
       draftWarningShownRef.current = true;
-      toast.warning('Unsaved changes are using a lot of memory', { description: 'Save or close some open files.', duration: 10_000 });
+      sileo.warning({ title: 'Unsaved changes are using a lot of memory', description: 'Save or close some open files.', duration: 10_000 });
     }
     if (!previous) updateFileSession(repositoryId, (session) => setTabDirty(session, path, true));
   }, [dropFileDraft, updateFileSession]);
@@ -403,7 +417,7 @@ export default function App() {
         const result = removeTabsUnder(restored, removed);
         for (const path of result.closedPaths) dropFileDraft(repositoryId, path);
         for (const path of result.retainedPaths) {
-          toast.info('File no longer exists', { description: `${path} — unsaved changes are still open` });
+          sileo.info({ title: 'File no longer exists', description: `${path} — unsaved changes are still open` });
         }
         const next = commitFileSession(repositoryId, result.session);
         const active = viewerSelectionRef.current;
@@ -411,7 +425,7 @@ export default function App() {
           const selection: ViewerSelection = next.activePath ? { type: 'file', path: next.activePath } : null;
           viewerSelectionRef.current = selection;
           setViewerSelection(selection);
-          toast.info('File no longer exists', { description: active.path });
+          sileo.info({ title: 'File no longer exists', description: active.path });
         }
       }
     }
@@ -449,7 +463,7 @@ export default function App() {
     try {
       return await window.justgit.repository.getDirectoryEntries(repository.id, directoryPath);
     } catch (reason) {
-      toast.error('Could not read folder', { description: messageOf(reason) });
+      sileo.error({ title: 'Could not read folder', description: messageOf(reason) });
       return [];
     }
   }, [repository]);
@@ -688,7 +702,7 @@ export default function App() {
     const result = openTab(current, path, mode);
     if (result.evictedPath) dropFileDraft(repositoryId, result.evictedPath);
     if (result.overCap) {
-      toast.info('Too many open files', { description: 'Every open tab has unsaved changes, so none could be closed for you.' });
+      sileo.info({ title: 'Too many open files', description: 'Every open tab has unsaved changes, so none could be closed for you.' });
     }
     commitFileSession(repositoryId, result.session);
     return true;
@@ -719,7 +733,7 @@ export default function App() {
     try {
       const result = await window.justgit.repository.writeFile(repositoryId, path, draft.content, draft.expectedContent);
       if (result.status === 'conflict') {
-        toast.error('File changed on disk', { description: `${path} — the unsaved version is still open.`, duration: 10_000 });
+        sileo.error({ title: 'File changed on disk', description: `${path} — the unsaved version is still open.`, duration: 10_000 });
         return false;
       }
       dropFileDraft(repositoryId, path);
@@ -727,7 +741,7 @@ export default function App() {
       await refreshFilesOnly();
       return true;
     } catch (reason) {
-      toast.error('Could not save file', { description: messageOf(reason), duration: 10_000 });
+      sileo.error({ title: 'Could not save file', description: messageOf(reason), duration: 10_000 });
       return false;
     }
   }, [dropFileDraft, readFileDraft, refreshFilesOnly, updateFileSession]);
@@ -846,7 +860,7 @@ export default function App() {
     if (!repository || busy || status?.readOnly) return;
     const dirty = anyDirtyTab();
     if (dirty.length > 0) {
-      toast.info(`Save open files before ${direction === 'undo' ? 'undoing' : 'redoing'} a Files operation`, { description: dirty.join(', ') });
+      sileo.info({ title: `Save open files before ${direction === 'undo' ? 'undoing' : 'redoing'} a Files operation`, description: dirty.join(', ') });
       return;
     }
     setBusy(`${direction}-file`);
@@ -857,18 +871,18 @@ export default function App() {
       setFileHistoryState(result.state);
       if (result.status === 'empty') return;
       if (result.status === 'conflict') {
-        toast.error(`Could not ${direction} ${result.label}`, { description: result.message, duration: 10_000 });
+        sileo.error({ title: `Could not ${direction} ${result.label}`, description: result.message, duration: 10_000 });
         return;
       }
       if (result.status === 'recycle-bin') {
-        toast.info(`${result.label} cannot be undone in JustGit`, { description: 'Restore it from the Recycle Bin.' });
+        sileo.info({ title: `${result.label} cannot be undone in JustGit`, description: 'Restore it from the Recycle Bin.' });
         return;
       }
       reconcileViewerPaths(result.pathChanges, result.removedPaths);
       await refresh({ background: true });
-      toast.success(`${direction === 'undo' ? 'Undid' : 'Redid'} ${result.label}`);
+      sileo.success({ title: `${direction === 'undo' ? 'Undid' : 'Redid'} ${result.label}` });
     } catch (reason) {
-      toast.error(`Could not ${direction} Files operation`, { description: messageOf(reason), duration: 10_000 });
+      sileo.error({ title: `Could not ${direction} Files operation`, description: messageOf(reason), duration: 10_000 });
     } finally { setBusy(null); }
   };
 
@@ -877,11 +891,12 @@ export default function App() {
     try {
       const paths = await Promise.all(entries.map((entry) => window.justgit.repository.getAbsolutePath(repository.id, entry.path)));
       await window.justgit.clipboard.writeText(paths.join('\n'));
-      toast.success(paths.length === 1 ? 'Path copied' : `${paths.length} paths copied`, {
+      sileo.success({
+        title: paths.length === 1 ? 'Path copied' : `${paths.length} paths copied`,
         description: entries.length === 1 ? entries[0]!.path : undefined,
       });
     } catch (reason) {
-      toast.error('Could not copy path', { description: messageOf(reason) });
+      sileo.error({ title: 'Could not copy path', description: messageOf(reason) });
     }
   };
 
@@ -890,17 +905,17 @@ export default function App() {
     try {
       const result = await window.justgit.repository.readFile(repository.id, entry.path);
       if (result.binary) {
-        toast.info('Binary files cannot be copied as text', { description: entry.path });
+        sileo.info({ title: 'Binary files cannot be copied as text', description: entry.path });
         return;
       }
       if (result.tooLarge) {
-        toast.info('File is too large to copy safely', { description: entry.path });
+        sileo.info({ title: 'File is too large to copy safely', description: entry.path });
         return;
       }
       await window.justgit.clipboard.writeText(result.content);
-      toast.success('File copied', { description: entry.path });
+      sileo.success({ title: 'File copied', description: entry.path });
     } catch (reason) {
-      toast.error('Could not copy file', { description: messageOf(reason) });
+      sileo.error({ title: 'Could not copy file', description: messageOf(reason) });
     }
   };
 
@@ -908,12 +923,12 @@ export default function App() {
     if (!repository || entries.length === 0) return;
     try {
       await window.justgit.repository.copyEntries(repository.id, entries.map((entry) => entry.path));
-      toast.success(
-        entries.length === 1 ? (entries[0]!.type === 'directory' ? 'Folder copied' : 'File copied') : `${entries.length} items copied`,
-        { description: 'Select a destination folder in Files and press Ctrl+V.' },
-      );
+      sileo.success({
+        title: entries.length === 1 ? (entries[0]!.type === 'directory' ? 'Folder copied' : 'File copied') : `${entries.length} items copied`,
+        description: 'Select a destination folder in Files and press Ctrl+V.',
+      });
     } catch (reason) {
-      toast.error('Could not copy item', { description: messageOf(reason) });
+      sileo.error({ title: 'Could not copy item', description: messageOf(reason) });
     }
   };
 
@@ -921,17 +936,17 @@ export default function App() {
     if (!repository || busy || status?.readOnly || entries.length === 0) return;
     const dirty = unsavedTabsUnder(entries.map((entry) => entry.path));
     if (dirty.length > 0) {
-      toast.info('Save open files before cutting them', { description: dirty.join(', ') });
+      sileo.info({ title: 'Save open files before cutting them', description: dirty.join(', ') });
       return;
     }
     try {
       await window.justgit.repository.cutEntries(repository.id, entries.map((entry) => entry.path));
-      toast.success(
-        entries.length === 1 ? (entries[0]!.type === 'directory' ? 'Folder cut' : 'File cut') : `${entries.length} items cut`,
-        { description: 'Select a destination folder in Files and press Ctrl+V.' },
-      );
+      sileo.success({
+        title: entries.length === 1 ? (entries[0]!.type === 'directory' ? 'Folder cut' : 'File cut') : `${entries.length} items cut`,
+        description: 'Select a destination folder in Files and press Ctrl+V.',
+      });
     } catch (reason) {
-      toast.error('Could not cut item', { description: messageOf(reason) });
+      sileo.error({ title: 'Could not cut item', description: messageOf(reason) });
     }
   };
 
@@ -941,22 +956,23 @@ export default function App() {
     try {
       const result = await window.justgit.repository.pasteEntries(repository.id, targetDirectory);
       if (result.status === 'empty') {
-        toast.info('Clipboard does not contain files or an image');
+        sileo.info({ title: 'Clipboard does not contain files or an image' });
         return;
       }
       await refresh({ background: true });
       await refreshFileHistoryState();
       const destination = targetDirectory || repository.name;
-      toast.success(
-        result.source === 'image'
+      sileo.success({
+        title: result.source === 'image'
           ? 'Clipboard image pasted'
           : result.source === 'cut'
             ? `${result.created.length} ${result.created.length === 1 ? 'item' : 'items'} moved`
             : `${result.created.length} ${result.created.length === 1 ? 'item' : 'items'} pasted`,
-        { description: destination, action: { label: 'Undo', onClick: () => void performFileHistory('undo') } },
-      );
+        description: destination,
+        button: { title: 'Undo', onClick: () => void performFileHistory('undo') },
+      });
     } catch (reason) {
-      toast.error('Could not paste item', { description: messageOf(reason), duration: 10_000 });
+      sileo.error({ title: 'Could not paste item', description: messageOf(reason), duration: 10_000 });
     } finally {
       setBusy(null);
     }
@@ -966,7 +982,7 @@ export default function App() {
     if (!repository || busy || status?.readOnly || entries.length === 0) return;
     const dirty = unsavedTabsUnder(entries.map((entry) => entry.path));
     if (dirty.length > 0) {
-      toast.info('Save open files before moving them', { description: dirty.join(', ') });
+      sileo.info({ title: 'Save open files before moving them', description: dirty.join(', ') });
       return;
     }
     setBusy('move-file');
@@ -978,13 +994,13 @@ export default function App() {
       await refresh({ background: true });
       await refreshFileHistoryState();
       if (conflicts > 0) {
-        toast.error(conflicts === 1 ? 'An item with that name already exists' : `${conflicts} items already exist in the destination`);
+        sileo.error({ title: conflicts === 1 ? 'An item with that name already exists' : `${conflicts} items already exist in the destination` });
       }
       if (moved > 0) {
-        toast.success(moved === 1 ? 'Item moved' : `${moved} items moved`, { description: targetDirectory || repository.name, action: { label: 'Undo', onClick: () => void performFileHistory('undo') } });
+        sileo.success({ title: moved === 1 ? 'Item moved' : `${moved} items moved`, description: targetDirectory || repository.name, button: { title: 'Undo', onClick: () => void performFileHistory('undo') } });
       }
     } catch (reason) {
-      toast.error('Could not move item', { description: messageOf(reason), duration: 10_000 });
+      sileo.error({ title: 'Could not move item', description: messageOf(reason), duration: 10_000 });
     } finally {
       setBusy(null);
     }
@@ -1001,11 +1017,14 @@ export default function App() {
       reconcileViewerPaths([], entries.map((entry) => entry.path));
       await refreshFilesOnly();
       await refreshFileHistoryState();
-      toast.success(result.deleted === 1 ? 'Moved to Recycle Bin' : `${result.deleted} items moved to Recycle Bin`, result.recovery === 'undo'
-        ? { description: 'Undo available', action: { label: 'Undo', onClick: () => void performFileHistory('undo') } }
-        : { description: 'Restore from the Recycle Bin' });
+      sileo.success({
+        title: result.deleted === 1 ? 'Moved to Recycle Bin' : `${result.deleted} items moved to Recycle Bin`,
+        ...(result.recovery === 'undo'
+          ? { description: 'Undo available', button: { title: 'Undo', onClick: () => void performFileHistory('undo') } }
+          : { description: 'Restore from the Recycle Bin' }),
+      });
     } catch (reason) {
-      toast.error('Could not delete item', { description: messageOf(reason), duration: 10_000 });
+      sileo.error({ title: 'Could not delete item', description: messageOf(reason), duration: 10_000 });
     } finally {
       setBusy(null);
     }
@@ -1016,7 +1035,7 @@ export default function App() {
     try {
       await window.justgit.repository.revealEntry(repository.id, entry.path);
     } catch (reason) {
-      toast.error('Could not reveal item', { description: messageOf(reason) });
+      sileo.error({ title: 'Could not reveal item', description: messageOf(reason) });
     }
   };
 
@@ -1024,7 +1043,7 @@ export default function App() {
     if (!repository || busy || status?.readOnly) return;
     const dirty = unsavedTabsUnder([entry.path]);
     if (dirty.length > 0) {
-      toast.info('Save open files before renaming them', { description: dirty.join(', ') });
+      sileo.info({ title: 'Save open files before renaming them', description: dirty.join(', ') });
       return;
     }
     setBusy('rename-file');
@@ -1032,15 +1051,15 @@ export default function App() {
       const result = await window.justgit.repository.renameEntry(repository.id, entry.path, newName);
       if (result.status === 'noop') return;
       if (result.status === 'conflict') {
-        toast.error('An item with that name already exists', { description: result.path });
+        sileo.error({ title: 'An item with that name already exists', description: result.path });
         return;
       }
       reconcileViewerPaths([{ from: result.from, to: result.to }], []);
       await refresh({ background: true });
       await refreshFileHistoryState();
-      toast.success(entry.type === 'directory' ? 'Folder renamed' : 'File renamed', { description: `${result.from} → ${result.to}`, action: { label: 'Undo', onClick: () => void performFileHistory('undo') } });
+      sileo.success({ title: entry.type === 'directory' ? 'Folder renamed' : 'File renamed', description: `${result.from} → ${result.to}`, button: { title: 'Undo', onClick: () => void performFileHistory('undo') } });
     } catch (reason) {
-      toast.error('Could not rename item', { description: messageOf(reason), duration: 10_000 });
+      sileo.error({ title: 'Could not rename item', description: messageOf(reason), duration: 10_000 });
     } finally {
       setBusy(null);
     }
@@ -1052,7 +1071,7 @@ export default function App() {
     try {
       const result = await window.justgit.repository.createEntry(repository.id, targetDirectory, name, kind);
       if (result.status === 'conflict') {
-        toast.error('An item with that name already exists', { description: result.path });
+        sileo.error({ title: 'An item with that name already exists', description: result.path });
         return;
       }
       if (result.kind === 'file') {
@@ -1061,9 +1080,9 @@ export default function App() {
       }
       await refreshFilesOnly();
       await refreshFileHistoryState();
-      toast.success(result.kind === 'directory' ? 'Folder created' : 'File created', { description: result.path, action: { label: 'Undo', onClick: () => void performFileHistory('undo') } });
+      sileo.success({ title: result.kind === 'directory' ? 'Folder created' : 'File created', description: result.path, button: { title: 'Undo', onClick: () => void performFileHistory('undo') } });
     } catch (reason) {
-      toast.error('Could not create item', { description: messageOf(reason), duration: 10_000 });
+      sileo.error({ title: 'Could not create item', description: messageOf(reason), duration: 10_000 });
     } finally {
       setBusy(null);
     }
@@ -1103,7 +1122,7 @@ export default function App() {
         if (done.size === commitProposal.commits.length) {
           setCommitProposal(null);
           setCompletedCommitIndices(new Set());
-          toast.success('Commit plan finished', { description: `${done.size} commits created.` });
+          sileo.success({ title: 'Commit plan finished', description: `${done.size} commits created.` });
         }
       } else {
         setCommitProposal(null);
@@ -1148,7 +1167,8 @@ export default function App() {
       setPreparedCommitIndex(null);
       setCompletedCommitIndices(new Set());
       setCommitPlanCollapsed(false);
-      toast.success(`Message generated with ${harnessLabel(result.harness)}`, {
+      sileo.success({
+        title: `Message generated with ${harnessLabel(result.harness)}`,
         description: result.proposal
           ? `${result.proposal.commits.length} focused commits may be clearer than one.`
           // Silence used to hide both "the model saw no split" and "JustGit
@@ -1163,13 +1183,14 @@ export default function App() {
     } catch (reason) {
       const detail = aiDetail(reason);
       if (detail?.code === 'AI_CANCELLED') {
-        toast.info('Generation canceled');
+        sileo.info({ title: 'Generation canceled' });
       } else {
         const settingsAction = detail?.code === 'AI_CLI_NOT_FOUND' || detail?.code === 'AI_AUTH_REQUIRED' || detail?.code === 'AI_MODEL_UNAVAILABLE';
-        toast.error(aiErrorTitle(detail), {
+        sileo.error({
+          title: aiErrorTitle(detail),
           description: detail?.message ?? messageOf(reason),
           duration: 10_000,
-          ...(settingsAction ? { action: { label: 'Open settings', onClick: openAiSettings } } : {}),
+          ...(settingsAction ? { button: { title: 'Open settings', onClick: openAiSettings } } : {}),
         });
       }
     } finally {
@@ -1207,13 +1228,13 @@ export default function App() {
       lastAppliedMessageRef.current = group.message;
       setPreparedCommitIndex(index);
       await refresh({ background: true });
-      toast.success('Commit group prepared', { description: `${group.paths.length} ${group.paths.length === 1 ? 'file is' : 'files are'} staged. Review the diff before committing.` });
+      sileo.success({ title: 'Commit group prepared', description: `${group.paths.length} ${group.paths.length === 1 ? 'file is' : 'files are'} staged. Review the diff before committing.` });
       window.setTimeout(() => commitTextareaRef.current?.focus(), 0);
     } catch (reason) {
       // The plan survives a failed prepare: regenerating it costs another model
       // call, and most failures here are recoverable.
       setPreparedCommitIndex(null);
-      toast.error('Could not prepare the commit group', { description: messageOf(reason), duration: 10_000 });
+      sileo.error({ title: 'Could not prepare the commit group', description: messageOf(reason), duration: 10_000 });
       await refresh({ background: true });
     } finally {
       setBusy(null);
@@ -1288,25 +1309,26 @@ export default function App() {
         if (!commitMessage.trim()) {
           setCommitMessage(result.message);
         } else {
-          toast.success('Commit undone', {
+          sileo.success({
+            title: 'Commit undone',
             description: 'Its changes are staged again. Your draft was preserved.',
-            action: { label: 'Use previous message', onClick: () => setCommitMessage(result.message) },
+            button: { title: 'Use previous message', onClick: () => setCommitMessage(result.message) },
           });
           await refresh({ background: true });
           window.setTimeout(() => commitTextareaRef.current?.focus(), 0);
           return;
         }
-        toast.success('Commit undone', { description: 'Its changes are staged again.' });
+        sileo.success({ title: 'Commit undone', description: 'Its changes are staged again.' });
         await refresh({ background: true });
         window.setTimeout(() => commitTextareaRef.current?.focus(), 0);
         return;
       }
       setUndoCommit(null);
       const copy = undoBlockedCopy(result);
-      toast.error(copy.title, { description: copy.description, duration: 10_000 });
+      sileo.error({ title: copy.title, description: copy.description, duration: 10_000 });
       await refresh({ background: true });
     } catch (reason) {
-      toast.error('Could not undo commit', { description: messageOf(reason), duration: 10_000 });
+      sileo.error({ title: 'Could not undo commit', description: messageOf(reason), duration: 10_000 });
     } finally {
       setUndoingCommit(false);
     }
@@ -1324,14 +1346,14 @@ export default function App() {
     setError(null);
     try {
       await window.justgit.index.resolveConflict(repository.id, path, content);
-      toast.success('Conflict marked as resolved', { description: path });
+      sileo.success({ title: 'Conflict marked as resolved', description: path });
       setViewerSelection({ type: 'diff', path, kind: 'staged' });
       await refresh({ background: true });
       return true;
     } catch (reason) {
       const message = messageOf(reason);
       setError(message);
-      toast.error('Could not resolve conflict', { description: message, duration: 10_000 });
+      sileo.error({ title: 'Could not resolve conflict', description: message, duration: 10_000 });
       return false;
     } finally {
       setBusy(null);
@@ -1346,67 +1368,81 @@ export default function App() {
     } catch (reason) {
       const message = messageOf(reason);
       setError(message);
-      toast.error('Could not apply selection', { description: message, duration: 10_000 });
+      sileo.error({ title: 'Could not apply selection', description: message, duration: 10_000 });
       return false;
     }
   };
 
   const pullUpdates = async () => {
     if (!repository || !status || status.behind === 0 || busy) return;
+    const repositoryId = repository.id;
     setBusy('pull');
     setError(null);
-    const toastId = toast.loading(`Pulling ${status.behind} ${status.behind === 1 ? 'commit' : 'commits'}…`);
     try {
-      const result = await window.justgit.refs.pull(repository.id);
-      await refresh({ background: true });
-      if (result.status === 'success') {
-        toast.success(`${result.commits} ${result.commits === 1 ? 'commit pulled' : 'commits pulled'}`, {
-          id: toastId,
-          description: result.restoredLocalChanges ? 'Your local changes and staged changes were restored.' : undefined,
-        });
-      } else if (result.status === 'up-to-date') {
-        toast.success('Branch is already up to date', { id: toastId });
-      } else if (result.status === 'blocked-conflicts') {
-        toast.error('Could not pull changes', {
-          id: toastId,
-          description: `Resolve ${result.files.length === 1 ? 'the pending conflict' : `${result.files.length} pending conflicts`} before updating.`,
-          duration: 10_000,
-          action: { label: 'View conflicts', onClick: () => showConflicts(result.files) },
-        });
-      } else if (result.status === 'stash-conflict') {
-        toast.error(result.updated ? 'Update completed with local conflicts' : 'Could not restore local changes', {
-          id: toastId,
-          description: 'The safety stash was preserved. Resolve the conflicts to continue.',
-          duration: Infinity,
-          action: { label: 'View conflicts', onClick: () => showConflicts(result.files) },
-        });
-      } else if (result.status === 'restore-failed') {
-        toast.error('Could not automatically restore local changes', {
-          id: toastId,
-          description: result.recoveredChanges
-            ? 'Some changes are visible and the safety stash was preserved. Do not continue until you review them.'
-            : 'The worktree is still clean and the safety stash remains intact.',
-          duration: Infinity,
-        });
-      } else if (result.status === 'diverged') {
-        toast.error('Branch has diverged', {
-          id: toastId,
-          description: `${result.ahead} ahead and ${result.behind} behind. Choose rebase or merge before continuing.`,
-          duration: 10_000,
-        });
-      } else if (result.status === 'no-upstream') {
-        toast.error('Branch has no upstream configured', { id: toastId, duration: 10_000 });
-      } else {
-        toast.error('A Git operation is in progress', {
-          id: toastId,
-          description: `Finish or cancel ${result.operation} before updating.`,
-          duration: 10_000,
-        });
-      }
-    } catch (reason) {
-      const message = messageOf(reason);
-      setError(message);
-      toast.error('Could not pull changes', { id: toastId, description: message, duration: 10_000 });
+      await sileo.promise(async () => {
+        const result = await window.justgit.refs.pull(repositoryId);
+        await refresh({ background: true });
+        if (result.status === 'success' || result.status === 'up-to-date') return result;
+        throw new PullBlocked(result);
+      }, {
+        loading: { title: `Pulling ${status.behind} ${status.behind === 1 ? 'commit' : 'commits'}…` },
+        success: (result) => result.status === 'success'
+          ? {
+            title: `${result.commits} ${result.commits === 1 ? 'commit pulled' : 'commits pulled'}`,
+            description: result.restoredLocalChanges ? 'Your local changes and staged changes were restored.' : undefined,
+          }
+          : { title: 'Branch is already up to date' },
+        error: (err) => {
+          if (err instanceof PullBlocked) {
+            const result = err.result;
+            if (result.status === 'blocked-conflicts') {
+              return {
+                title: 'Could not pull changes',
+                description: `Resolve ${result.files.length === 1 ? 'the pending conflict' : `${result.files.length} pending conflicts`} before updating.`,
+                duration: 10_000,
+                button: { title: 'View conflicts', onClick: () => showConflicts(result.files) },
+              };
+            }
+            if (result.status === 'stash-conflict') {
+              return {
+                title: result.updated ? 'Update completed with local conflicts' : 'Could not restore local changes',
+                description: 'The safety stash was preserved. Resolve the conflicts to continue.',
+                duration: null,
+                button: { title: 'View conflicts', onClick: () => showConflicts(result.files) },
+              };
+            }
+            if (result.status === 'restore-failed') {
+              return {
+                title: 'Could not automatically restore local changes',
+                description: result.recoveredChanges
+                  ? 'Some changes are visible and the safety stash was preserved. Do not continue until you review them.'
+                  : 'The worktree is still clean and the safety stash remains intact.',
+                duration: null,
+              };
+            }
+            if (result.status === 'diverged') {
+              return {
+                title: 'Branch has diverged',
+                description: `${result.ahead} ahead and ${result.behind} behind. Choose rebase or merge before continuing.`,
+                duration: 10_000,
+              };
+            }
+            if (result.status === 'no-upstream') {
+              return { title: 'Branch has no upstream configured', duration: 10_000 };
+            }
+            return {
+              title: 'A Git operation is in progress',
+              description: `Finish or cancel ${result.operation} before updating.`,
+              duration: 10_000,
+            };
+          }
+          const message = messageOf(err);
+          setError(message);
+          return { title: 'Could not pull changes', description: message, duration: 10_000 };
+        },
+      });
+    } catch {
+      // sileo.promise() already rendered the matching error toast above.
     } finally {
       setBusy(null);
     }
@@ -1419,52 +1455,49 @@ export default function App() {
 
   const performPush = async () => {
     if (!repository) return;
+    const repositoryId = repository.id;
     setBusy('push');
     setError(null);
-    const toastId = toast.loading('Pushing commits…');
     try {
-      const result = await window.justgit.refs.push(repository.id);
-      await refresh({ background: true });
-      if (result.status === 'success') {
-        toast.success(`${result.commits} ${result.commits === 1 ? 'commit pushed' : 'commits pushed'}`, { id: toastId });
-      } else if (result.status === 'up-to-date') {
-        toast.success('No commits pending push', { id: toastId });
-      } else if (result.status === 'blocked-conflicts') {
-        toast.error('Could not push commits', {
-          id: toastId,
-          description: `Resolve ${result.files.length === 1 ? 'the pending conflict' : `${result.files.length} pending conflicts`} before continuing.`,
-          duration: 10_000,
-          action: { label: 'View conflicts', onClick: () => showConflicts(result.files) },
-        });
-      } else if (result.status === 'blocked-operation') {
-        toast.error('A Git operation is in progress', {
-          id: toastId,
-          description: `Finish or cancel ${result.operation} before pushing.`,
-          duration: 10_000,
-        });
-      } else if (result.status === 'no-upstream') {
-        toast.error('Branch has no upstream configured', {
-          id: toastId,
-          description: 'Configure a remote branch before pushing.',
-          duration: 10_000,
-        });
-      } else if (result.status === 'diverged') {
-        toast.error('The remote contains new changes', {
-          id: toastId,
-          description: `${result.ahead} ahead and ${result.behind} behind. Pull and resolve the changes before pushing.`,
-          duration: 10_000,
-        });
-      } else {
-        toast.error('Could not push commits', {
-          id: toastId,
-          description: result.message,
-          duration: 10_000,
-        });
-      }
-    } catch (reason) {
-      const message = messageOf(reason);
-      setError(message);
-      toast.error('Could not push commits', { id: toastId, description: message, duration: 10_000 });
+      await sileo.promise(async () => {
+        const result = await window.justgit.refs.push(repositoryId);
+        await refresh({ background: true });
+        if (result.status === 'success' || result.status === 'up-to-date') return result;
+        throw new PushBlocked(result);
+      }, {
+        loading: { title: 'Pushing commits…' },
+        success: (result) => result.status === 'success'
+          ? { title: `${result.commits} ${result.commits === 1 ? 'commit pushed' : 'commits pushed'}` }
+          : { title: 'No commits pending push' },
+        error: (err) => {
+          if (err instanceof PushBlocked) {
+            const result = err.result;
+            if (result.status === 'blocked-conflicts') {
+              return {
+                title: 'Could not push commits',
+                description: `Resolve ${result.files.length === 1 ? 'the pending conflict' : `${result.files.length} pending conflicts`} before continuing.`,
+                duration: 10_000,
+                button: { title: 'View conflicts', onClick: () => showConflicts(result.files) },
+              };
+            }
+            if (result.status === 'blocked-operation') {
+              return { title: 'A Git operation is in progress', description: `Finish or cancel ${result.operation} before pushing.`, duration: 10_000 };
+            }
+            if (result.status === 'no-upstream') {
+              return { title: 'Branch has no upstream configured', description: 'Configure a remote branch before pushing.', duration: 10_000 };
+            }
+            if (result.status === 'diverged') {
+              return { title: 'The remote contains new changes', description: `${result.ahead} ahead and ${result.behind} behind. Pull and resolve the changes before pushing.`, duration: 10_000 };
+            }
+            return { title: 'Could not push commits', description: result.message, duration: 10_000 };
+          }
+          const message = messageOf(err);
+          setError(message);
+          return { title: 'Could not push commits', description: message, duration: 10_000 };
+        },
+      });
+    } catch {
+      // sileo.promise() already rendered the matching error toast above.
     } finally {
       setBusy(null);
     }
@@ -1481,7 +1514,7 @@ export default function App() {
   return (
     <ShortcutsProvider shortcuts={shortcuts}>
     <TooltipProvider>
-      <Toaster theme={theme} richColors closeButton position="bottom-right" />
+      <Toaster theme={theme} position="bottom-right" />
       <QuickOpenDialog
         open={quickOpen}
         files={files}
@@ -1689,8 +1722,8 @@ export default function App() {
                   onCreate={() => setCreatePrOpen(true)}
                   onCopyCommand={(command) => {
                     void window.justgit.clipboard.writeText(command)
-                      .then(() => toast.success('Command copied', { description: command }))
-                      .catch(() => toast.error('Could not copy the command'));
+                      .then(() => sileo.success({ title: 'Command copied', description: command }))
+                      .catch(() => sileo.error({ title: 'Could not copy the command' }));
                   }}
                 />
               )}
@@ -2165,7 +2198,7 @@ function SettingsDialog({ preferences, onPreference, open, onOpenChange, section
   const loadStatuses = useCallback(async (forceRefresh = false) => {
     setLoadingStatuses(true);
     try { setStatuses(await window.justgit.ai.statuses(forceRefresh)); }
-    catch (reason) { toast.error('Could not check local AI', { description: messageOf(reason) }); }
+    catch (reason) { sileo.error({ title: 'Could not check local AI', description: messageOf(reason) }); }
     finally { setLoadingStatuses(false); }
   }, []);
 
@@ -2699,8 +2732,8 @@ function CommitRow({ repositoryId, upstream, commit, expanded, onExpandedChange,
   const deletions = files?.reduce((total, file) => total + file.deletions, 0) ?? 0;
 
   const copyOid = async () => {
-    try { await window.justgit.clipboard.writeText(commit.oid); toast.success('Hash copied', { description: commit.oid }); }
-    catch { toast.error('Could not copy hash'); }
+    try { await window.justgit.clipboard.writeText(commit.oid); sileo.success({ title: 'Hash copied', description: commit.oid }); }
+    catch { sileo.error({ title: 'Could not copy hash' }); }
   };
 
   return (

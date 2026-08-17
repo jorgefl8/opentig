@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { IconGitPullRequest, IconLoader4, IconPlayerStop, IconSparkles, IconUpload } from '@tabler/icons-react';
-import { toast } from 'sonner';
+import { sileo } from 'sileo';
 import type { AiHarnessId, Preferences } from '../../../shared/contracts';
 import type { BranchInfo, RepositoryStatus } from '../../../shared/git-types';
 import type { SerializedAiError } from '../../../shared/errors';
@@ -89,13 +89,14 @@ export function CreatePullRequestDialog(props: CreatePullRequestDialogProps) {
       setTitle(result.title);
       setBody(result.body);
       setBodyTab('edit');
-      toast.success(`Draft generated with ${harnessLabel(result.harness)}`, {
+      sileo.success({
+        title: `Draft generated with ${harnessLabel(result.harness)}`,
         description: result.contextWasTruncated ? 'A truncated version of the branch diff was used. Review before publishing.' : 'Review and edit before publishing.',
       });
     } catch (reason) {
       const detail = aiDetail(reason);
-      if (detail?.code === 'AI_CANCELLED') toast.info('Generation canceled');
-      else toast.error('Could not generate the draft', { description: detail?.message ?? messageOf(reason), duration: 10_000 });
+      if (detail?.code === 'AI_CANCELLED') sileo.info({ title: 'Generation canceled' });
+      else sileo.error({ title: 'Could not generate the draft', description: detail?.message ?? messageOf(reason), duration: 10_000 });
     } finally {
       if (generationRequest.current === requestId) generationRequest.current = null;
       setGenerating((current) => current === requestId ? null : current);
@@ -110,14 +111,15 @@ export function CreatePullRequestDialog(props: CreatePullRequestDialogProps) {
       setTitle('');
       setBody('');
       setDraft(false);
-      toast.success(draft ? 'Draft pull request created' : 'Pull request created', {
+      sileo.success({
+        title: draft ? 'Draft pull request created' : 'Pull request created',
         description: result.url,
-        action: { label: 'Open', onClick: () => openOnGitHub(result.url) },
+        button: { title: 'Open', onClick: () => openOnGitHub(result.url) },
       });
       props.onCreated(result.number);
     } catch (reason) {
       const detail = ghDetail(reason);
-      toast.error(ghErrorTitle(detail), { description: detail?.message ?? messageOf(reason), duration: 10_000 });
+      sileo.error({ title: ghErrorTitle(detail), description: detail?.message ?? messageOf(reason), duration: 10_000 });
     } finally {
       setCreating(false);
     }
