@@ -1,7 +1,6 @@
-import crossSpawn from 'cross-spawn';
-import type { ChildProcess } from 'node:child_process';
-import { spawn } from 'node:child_process';
+import { execa } from 'execa';
 import { AiOperationError } from '../../shared/errors';
+import { resolveProcessCommand } from '../process/resolveProcessCommand';
 
 export interface CliRunOptions {
   cwd?: string;
@@ -20,67 +19,46 @@ export interface CliRunResult {
 }
 
 export class CliProcessRunner {
-  run(command: string, args: string[], options: CliRunOptions = {}): Promise<CliRunResult> {
+  async run(command: string, args: string[], options: CliRunOptions = {}): Promise<CliRunResult> {
     const timeoutMs = options.timeoutMs ?? 15_000;
     const maxOutputBytes = options.maxOutputBytes ?? 2 * 1024 * 1024;
-    const environment: NodeJS.ProcessEnv = { ...process.env, ...options.env };
+    const environment = Object.fromEntries(
+      Object.entries({ ...process.env, ...options.env }).filter((entry): entry is [string, string] => entry[1] !== undefined),
+    );
     for (const key of options.removeEnv ?? []) delete environment[key];
 
-    return new Promise((resolve, reject) => {
-      if (options.signal?.aborted) {
-        reject(cancelled());
-        return;
-      }
-      const child = crossSpawn(command, args, {
-        ...(options.cwd ? { cwd: options.cwd } : {}),
-        env: environment,
-        shell: false,
-        windowsHide: true,
-        detached: process.platform !== 'win32',
-      });
-      let stdout: Buffer<ArrayBufferLike> = Buffer.alloc(0);
-      let stderr: Buffer<ArrayBufferLike> = Buffer.alloc(0);
-      let settled = false;
-      let timedOut = false;
-
-      const finish = (error?: Error, result?: CliRunResult) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        options.signal?.removeEventListener('abort', onAbort);
-        if (error) reject(error);
-        else if (result) resolve(result);
-      };
-      const append = (current: Buffer<ArrayBufferLike>, chunk: Buffer<ArrayBufferLike>): Buffer<ArrayBufferLike> => {
-        const next = Buffer.concat([current, chunk]);
-        if (next.byteLength > maxOutputBytes) {
-          void terminateTree(child);
-          finish(new AiOperationError({ code: 'AI_CONTEXT_TOO_LARGE', operation: 'ai-process', message: 'The AI tool produced too much output.' }));
-        }
-        return next;
-      };
-      child.stdout?.on('data', (chunk: Buffer) => { stdout = append(stdout, chunk); });
-      child.stderr?.on('data', (chunk: Buffer) => { stderr = append(stderr, chunk); });
-      child.on('error', () => finish(new AiOperationError({ code: 'AI_PROCESS_FAILED', operation: 'ai-process', message: 'Could not start the AI tool.' })));
-      child.on('close', (code) => {
-        if (timedOut) return;
-        finish(undefined, { exitCode: code ?? -1, stdout: stdout.toString('utf8'), stderr: stderr.toString('utf8') });
-      });
-
-      const onAbort = () => {
-        void terminateTree(child);
-        finish(cancelled());
-      };
-      options.signal?.addEventListener('abort', onAbort, { once: true });
-      const timer = setTimeout(() => {
-        timedOut = true;
-        void terminateTree(child);
-        finish(new AiOperationError({ code: 'AI_TIMEOUT', operation: 'ai-process', message: 'Generation took too long.', retryable: true }));
-      }, timeoutMs);
-
-      if (options.stdin !== undefined) child.stdin?.end(options.stdin, 'utf8');
-      else child.stdin?.end();
+    if (options.signal?.aborted) throw cancelled();
+    const resolvedCommand = resolveProcessCommand(command, options.cwd ?? process.cwd(), environment);
+    const result = await execa(resolvedCommand.file, args, {
+      ...(options.cwd ? { cwd: options.cwd } : {}),
+      ...(options.signal ? { cancelSignal: options.signal } : {}),
+      env: environment,
+      extendEnv: false,
+      shell: false,
+      windowsHide: true,
+      cleanup: true,
+      killDescendants: true,
+      timeout: timeoutMs,
+      maxBuffer: maxOutputBytes,
+      input: options.stdin ?? '',
+      stripFinalNewline: false,
+      reject: false,
+    }).catch(() => {
+      if (options.signal?.aborted) throw cancelled();
+      throw processFailed();
     });
+
+    if (result.isCanceled) throw cancelled();
+    if (result.timedOut) {
+      throw new AiOperationError({ code: 'AI_TIMEOUT', operation: 'ai-process', message: 'Generation took too long.', retryable: true });
+    }
+    if (result.isMaxBuffer) {
+      throw new AiOperationError({ code: 'AI_CONTEXT_TOO_LARGE', operation: 'ai-process', message: 'The AI tool produced too much output.' });
+    }
+    if (result.exitCode === undefined || !resolvedCommand.found) {
+      throw processFailed();
+    }
+    return { exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr };
   }
 }
 
@@ -88,15 +66,6 @@ function cancelled(): AiOperationError {
   return new AiOperationError({ code: 'AI_CANCELLED', operation: 'ai-process', message: 'Generation canceled.' });
 }
 
-async function terminateTree(child: ChildProcess): Promise<void> {
-  if (!child.pid) return;
-  if (process.platform === 'win32') {
-    await new Promise<void>((resolve) => {
-      const killer = spawn('taskkill.exe', ['/PID', String(child.pid), '/T', '/F'], { shell: false, windowsHide: true });
-      killer.once('close', () => resolve());
-      killer.once('error', () => resolve());
-    });
-    return;
-  }
-  try { process.kill(-child.pid, 'SIGTERM'); } catch { child.kill('SIGTERM'); }
+function processFailed(): AiOperationError {
+  return new AiOperationError({ code: 'AI_PROCESS_FAILED', operation: 'ai-process', message: 'Could not start the AI tool.' });
 }

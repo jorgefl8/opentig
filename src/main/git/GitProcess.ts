@@ -1,6 +1,6 @@
-import { spawn } from 'node:child_process';
-import type { ChildProcessWithoutNullStreams } from 'node:child_process';
+import { execa } from 'execa';
 import { GitOperationError } from '../../shared/errors';
+import { resolveProcessCommand } from '../process/resolveProcessCommand';
 
 export interface GitOutput {
   stdout: Buffer;
@@ -78,93 +78,77 @@ export class GitProcess {
     return activeChildren.size > 0;
   }
 
-  private spawnGit(cwd: string, args: string[], options: RunOptions): Promise<GitOutput> {
+  private async spawnGit(cwd: string, args: string[], options: RunOptions): Promise<GitOutput> {
     const timeoutMs = options.timeoutMs ?? 30_000;
     const maxOutputBytes = options.maxOutputBytes ?? 16 * 1024 * 1024;
-    return new Promise((resolve, reject) => {
-      let child: ChildProcessWithoutNullStreams;
-      try {
-        child = spawn('git', args, {
-          cwd,
-          shell: false,
-          windowsHide: true,
-          env: {
-            ...process.env,
-            GIT_TERMINAL_PROMPT: '0',
-            GIT_EDITOR: 'true',
-            GIT_SEQUENCE_EDITOR: 'true',
-            LC_ALL: 'C',
-          },
-        });
-      } catch (error) {
-        reject(this.mapError(options.operation, error));
+    const environment = Object.fromEntries(
+      Object.entries({
+        ...process.env,
+        GIT_TERMINAL_PROMPT: '0',
+        GIT_EDITOR: 'true',
+        GIT_SEQUENCE_EDITOR: 'true',
+        LC_ALL: 'C',
+      }).filter((entry): entry is [string, string] => entry[1] !== undefined),
+    );
+    const resolvedCommand = resolveProcessCommand('git', cwd, environment);
+    const outputLimit = new AbortController();
+    let outputSize = 0;
+    let overLimit = false;
+    const enforceCombinedLimit = function* (chunk: Uint8Array): Generator<Uint8Array> {
+      if (overLimit) return;
+      if (outputSize + chunk.byteLength > maxOutputBytes) {
+        overLimit = true;
+        outputLimit.abort();
         return;
       }
+      outputSize += chunk.byteLength;
+      yield chunk;
+    };
 
-      if (child.pid) activeChildren.add(child.pid);
-      const stdout: Buffer[] = [];
-      const stderr: Buffer[] = [];
-      let outputSize = 0;
-      let timedOut = false;
-      let overLimit = false;
-
-      const terminate = () => {
-        if (!child.pid || child.killed) return;
-        if (process.platform === 'win32') {
-          spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { shell: false, windowsHide: true });
-        } else {
-          child.kill('SIGKILL');
-        }
-      };
-
-      const timer = setTimeout(() => {
-        timedOut = true;
-        terminate();
-      }, timeoutMs);
-
-      const collect = (target: Buffer[], chunk: Buffer) => {
-        outputSize += chunk.length;
-        if (outputSize > maxOutputBytes) {
-          overLimit = true;
-          terminate();
-          return;
-        }
-        target.push(chunk);
-      };
-      child.stdout.on('data', (chunk: Buffer) => collect(stdout, chunk));
-      child.stderr.on('data', (chunk: Buffer) => collect(stderr, chunk));
-      child.on('error', (error) => {
-        clearTimeout(timer);
-        if (child.pid) activeChildren.delete(child.pid);
-        reject(this.mapError(options.operation, error));
+    let childPid: number | undefined;
+    try {
+      const subprocess = execa(resolvedCommand.file, args, {
+        cwd,
+        env: environment,
+        extendEnv: false,
+        shell: false,
+        windowsHide: true,
+        cleanup: true,
+        killDescendants: true,
+        timeout: timeoutMs,
+        cancelSignal: outputLimit.signal,
+        input: options.stdin ?? Buffer.alloc(0),
+        encoding: 'buffer',
+        stripFinalNewline: false,
+        maxBuffer: maxOutputBytes,
+        stdout: enforceCombinedLimit,
+        stderr: enforceCombinedLimit,
+        reject: false,
       });
-      child.on('close', (code) => {
-        clearTimeout(timer);
-        if (child.pid) activeChildren.delete(child.pid);
-        const out = Buffer.concat(stdout);
-        const err = Buffer.concat(stderr);
-        if (timedOut) {
-          reject(new GitOperationError({ code: 'TIMEOUT', operation: options.operation, message: `Git took too long during ${options.operation}.` }));
-          return;
-        }
-        if (overLimit) {
-          if (options.truncateOverflow) {
-            resolve({ stdout: out, stderr: err, exitCode: 0, truncated: true });
-            return;
-          }
-          reject(new GitOperationError({ code: 'OUTPUT_LIMIT', operation: options.operation, message: 'Git output exceeded the safety limit.' }));
-          return;
-        }
-        if ((code ?? 1) !== 0) {
-          reject(this.fromExit(options.operation, code ?? 1, err.toString('utf8')));
-          return;
-        }
-        resolve({ stdout: out, stderr: err, exitCode: code ?? 0 });
-      });
+      childPid = subprocess.pid;
+      if (childPid) activeChildren.add(childPid);
+      const result = await subprocess;
+      const stdout = Buffer.from(result.stdout);
+      const stderr = Buffer.from(result.stderr);
 
-      if (options.stdin !== undefined) child.stdin.end(options.stdin);
-      else child.stdin.end();
-    });
+      if (overLimit || result.isMaxBuffer) {
+        if (options.truncateOverflow) return { stdout, stderr, exitCode: 0, truncated: true };
+        throw new GitOperationError({ code: 'OUTPUT_LIMIT', operation: options.operation, message: 'Git output exceeded the safety limit.' });
+      }
+      if (result.timedOut) {
+        throw new GitOperationError({ code: 'TIMEOUT', operation: options.operation, message: `Git took too long during ${options.operation}.` });
+      }
+      if (result.exitCode === undefined || !resolvedCommand.found) {
+        throw this.mapError(options.operation, Object.assign(new Error('Git was not found in PATH.'), { code: 'ENOENT' }));
+      }
+      if (result.exitCode !== 0) throw this.fromExit(options.operation, result.exitCode, stderr.toString('utf8'));
+      return { stdout, stderr, exitCode: result.exitCode };
+    } catch (error) {
+      if (error instanceof GitOperationError) throw error;
+      throw this.mapError(options.operation, error);
+    } finally {
+      if (childPid) activeChildren.delete(childPid);
+    }
   }
 
   private mapError(operation: string, error: unknown): GitOperationError {
