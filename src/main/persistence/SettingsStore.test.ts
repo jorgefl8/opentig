@@ -8,7 +8,7 @@ const directories: string[] = [];
 
 afterEach(async () => {
   vi.useRealTimers();
-  await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })));
+  await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true, maxRetries: 3 })));
 });
 
 describe('SettingsStore AI preferences', () => {

@@ -15,7 +15,7 @@ const execFileAsync = promisify(execFile);
 const directories: string[] = [];
 const options = { query: 'foo', matchCase: false, wholeWord: false, regex: false, includeIgnored: false };
 
-afterEach(async () => Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true }))));
+afterEach(async () => Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true, maxRetries: 3 }))));
 
 describe('SearchService replacement', () => {
   it('reports exact occurrences and replaces one selected match', async () => {

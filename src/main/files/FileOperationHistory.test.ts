@@ -12,7 +12,7 @@ import { FileOperationHistory } from './FileOperationHistory';
 
 const execFileAsync = promisify(execFile);
 const directories: string[] = [];
-afterEach(async () => Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true }))));
+afterEach(async () => Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true, maxRetries: 3 }))));
 
 describe('FileOperationHistory', () => {
   it('keeps empty state per repository and clears redo after a new mutation', async () => {

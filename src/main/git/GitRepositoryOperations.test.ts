@@ -13,7 +13,7 @@ import { RepositoryService } from './RepositoryService';
 const execFileAsync = promisify(execFile);
 const directories: string[] = [];
 
-afterEach(async () => Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true }))));
+afterEach(async () => Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true, maxRetries: 3 }))));
 
 describe('GitRepositoryOperations local history', () => {
   it('marks commits relative to the configured upstream', async () => {

@@ -9,7 +9,7 @@ const originalPath = process.env.PATH;
 
 afterEach(async () => {
   process.env.PATH = originalPath;
-  await Promise.all(temporaryDirectories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })));
+  await Promise.all(temporaryDirectories.splice(0).map((directory) => rm(directory, { recursive: true, force: true, maxRetries: 3 })));
 });
 
 describe('CliResolver', () => {

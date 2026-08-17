@@ -7,7 +7,7 @@ import { AiLogStore } from './AiLogStore';
 
 const directories: string[] = [];
 
-afterEach(async () => Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true }))));
+afterEach(async () => Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true, maxRetries: 3 }))));
 
 function entry(overrides: Partial<Parameters<AiLogStore['append']>[0]> = {}) {
   return {

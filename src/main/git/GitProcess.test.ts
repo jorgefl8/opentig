@@ -57,7 +57,7 @@ describe('GitProcess', () => {
       if (descendantPid !== undefined && isAlive(descendantPid)) {
         try { process.kill(descendantPid, 'SIGKILL'); } catch { /* Process already exited. */ }
       }
-      await rm(directory, { recursive: true, force: true });
+      await rm(directory, { recursive: true, force: true, maxRetries: 3 });
     }
   });
 

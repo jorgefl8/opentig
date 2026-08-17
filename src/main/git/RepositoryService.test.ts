@@ -11,7 +11,7 @@ import { RepositoryService } from './RepositoryService';
 const execFileAsync = promisify(execFile);
 const directories: string[] = [];
 
-afterEach(async () => Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true }))));
+afterEach(async () => Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true, maxRetries: 3 }))));
 
 describe('RepositoryService change stats', () => {
   it('counts untracked lines and keeps the total stable across refreshes', async () => {
