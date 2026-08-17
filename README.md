@@ -52,7 +52,7 @@ It is intentionally not an IDE, hosting service, or replacement for the Git CLI.
 - Work through that plan at your own pace: groups keep their original numbering as you commit them, show how many are done, open any listed file's diff for review, and each group is independently rechecked against its files so a plan cannot be applied after those files changed.
 - When a split cannot be offered, JustGit says why instead of staying silent, for example because a file is only partially staged or was renamed.
 - Every generation is recorded locally for diagnostics: harness, model, outcome, duration, the tokens and cost the harness reported, and why a proposed split was refused. Only this metadata is stored; prompts and file contents never leave the repository.
-- Review that history from **Settings → AI commit messages → View history**, with totals for runs, failures, tokens, and reported cost, and clear it whenever you want.
+- Review that history from **Settings → AI commit messages → View history**, in a sortable table (click a column header to sort) that scrolls within the dialog, with totals for runs, failures, tokens, and reported cost, and clear it whenever you want.
 - Undo the latest unpublished commit while keeping its changes staged. JustGit verifies the expected commit and upstream state before rewriting history.
 
 ### Safe pull and push

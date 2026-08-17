@@ -1,16 +1,113 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { IconLoader4, IconRefresh, IconTrash, IconX } from '@tabler/icons-react';
+import {
+  createColumnHelper,
+  createSortedRowModel,
+  rowSortingFeature,
+  tableFeatures,
+  useTable,
+  type SortingState,
+} from '@tanstack/react-table';
+import { IconArrowsSort, IconLoader4, IconRefresh, IconSortAscending, IconSortDescending, IconTrash, IconX } from '@tabler/icons-react';
 import { toast } from 'sonner';
 import type { AiLogEntry } from '@shared/ai-log';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogClose, DialogDescription, DialogPopup, DialogTitle } from '@/components/ui/dialog';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
 interface AiLogDialogProps {
   open: boolean;
   onOpenChange(open: boolean): void;
 }
+
+const OPERATION_LABEL: Record<AiLogEntry['operation'], string> = {
+  'commit-message': 'commit message',
+  'pull-request-draft': 'pull request draft',
+};
+
+interface SortableColumn {
+  getIsSorted(): false | 'asc' | 'desc';
+  toggleSorting(desc?: boolean): void;
+}
+
+function SortableHeader<TColumn extends SortableColumn>({ column, label }: { column: TColumn; label: string }) {
+  const sorted = column.getIsSorted();
+  return (
+    <button type="button" className="ai-log-sort-button" onClick={() => column.toggleSorting(sorted === 'asc')}>
+      {label}
+      {sorted === 'asc' && <IconSortAscending size={13} />}
+      {sorted === 'desc' && <IconSortDescending size={13} />}
+      {!sorted && <IconArrowsSort size={13} className="ai-log-sort-idle" />}
+    </button>
+  );
+}
+
+const features = tableFeatures({
+  rowSortingFeature,
+  sortedRowModel: createSortedRowModel(),
+});
+
+const columnHelper = createColumnHelper<typeof features, AiLogEntry>();
+
+const columns = columnHelper.columns([
+  columnHelper.accessor('status', {
+    header: ({ column }) => <SortableHeader column={column} label="Status" />,
+    cell: ({ getValue }) => {
+      const status = getValue();
+      return <Badge variant={status === 'success' ? 'secondary' : status === 'cancelled' ? 'outline' : 'destructive'}>{status}</Badge>;
+    },
+  }),
+  columnHelper.accessor('harness', {
+    header: ({ column }) => <SortableHeader column={column} label="Harness" />,
+    cell: ({ getValue }) => <strong>{getValue()}</strong>,
+  }),
+  columnHelper.accessor('model', {
+    header: ({ column }) => <SortableHeader column={column} label="Model" />,
+    cell: ({ getValue }) => <span className="ai-log-model">{getValue()}</span>,
+  }),
+  columnHelper.accessor('operation', {
+    header: ({ column }) => <SortableHeader column={column} label="Task" />,
+    cell: ({ getValue }) => OPERATION_LABEL[getValue()],
+  }),
+  columnHelper.accessor((entry) => new Date(entry.at).getTime(), {
+    id: 'at',
+    header: ({ column }) => <SortableHeader column={column} label="Date" />,
+    cell: ({ row }) => <time dateTime={row.original.at}>{new Date(row.original.at).toLocaleString()}</time>,
+  }),
+  columnHelper.accessor('durationMs', {
+    header: ({ column }) => <SortableHeader column={column} label="Duration" />,
+    cell: ({ getValue }) => `${(getValue() / 1000).toFixed(1)}s`,
+  }),
+  columnHelper.accessor((entry) => (entry.usage.inputTokens ?? 0) + (entry.usage.outputTokens ?? 0), {
+    id: 'usage',
+    header: ({ column }) => <SortableHeader column={column} label="Usage" />,
+    cell: ({ row }) => describeUsage(row.original),
+  }),
+  columnHelper.accessor('stagedFileCount', {
+    header: ({ column }) => <SortableHeader column={column} label="Staged" />,
+    cell: ({ getValue }) => getValue() ?? '—',
+  }),
+  columnHelper.display({
+    id: 'notes',
+    header: 'Notes',
+    cell: ({ row }) => {
+      const entry = row.original;
+      const notes: { key: string; text: string; tone?: 'error' | 'warn' }[] = [];
+      if (entry.errorCode) notes.push({ key: 'error', text: entry.errorCode, tone: 'error' });
+      if (entry.splitOffered === true) notes.push({ key: 'split', text: `split: ${entry.splitGroups} commits` });
+      if (entry.splitRejectedReason) notes.push({ key: 'rejected', text: `split refused: ${entry.splitRejectedReason}`, tone: 'warn' });
+      if (entry.splitBlockedReason) notes.push({ key: 'blocked', text: `no split: ${entry.splitBlockedReason}` });
+      if (entry.contextTruncated === true) notes.push({ key: 'truncated', text: 'context trimmed' });
+      if (notes.length === 0) return null;
+      return (
+        <div className="ai-log-row-notes">
+          {notes.map((note) => <span key={note.key} className={`ai-log-note ${note.tone ?? ''}`}>{note.text}</span>)}
+        </div>
+      );
+    },
+  }),
+]);
 
 /**
  * Local history of AI runs. Reads the diagnostic log written by the main
@@ -19,6 +116,7 @@ interface AiLogDialogProps {
 export function AiLogDialog({ open, onOpenChange }: AiLogDialogProps) {
   const [entries, setEntries] = useState<AiLogEntry[]>([]);
   const [loading, setLoading] = useState(false);
+  const [sorting, setSorting] = useState<SortingState>([]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -41,6 +139,14 @@ export function AiLogDialog({ open, onOpenChange }: AiLogDialogProps) {
       costed: entries.filter((entry) => entry.usage.costUsd !== null).length,
     };
   }, [entries]);
+
+  const table = useTable({
+    features,
+    data: entries,
+    columns,
+    onSortingChange: setSorting,
+    state: { sorting },
+  });
 
   const clear = async () => {
     if (!window.confirm('Delete the whole AI history? This cannot be undone.')) return;
@@ -81,32 +187,32 @@ export function AiLogDialog({ open, onOpenChange }: AiLogDialogProps) {
         <div className="ai-log-body">
           {loading && entries.length === 0 && <div className="view-loading" role="status"><IconLoader4 className="spinner" /> <ShimmeringText text="Reading history…" /></div>}
           {!loading && entries.length === 0 && <p className="ai-log-empty">No generations recorded yet. Generate a commit message and it will show up here.</p>}
-          {entries.map((entry) => (
-            <article key={entry.id} className={`ai-log-row ${entry.status}`}>
-              <div className="ai-log-row-main">
-                <span className="ai-log-row-title">
-                  <Badge variant={entry.status === 'success' ? 'secondary' : entry.status === 'cancelled' ? 'outline' : 'destructive'}>{entry.status}</Badge>
-                  <strong>{entry.harness}</strong>
-                  <small>{entry.model}</small>
-                  <small>{entry.operation === 'commit-message' ? 'commit message' : 'pull request draft'}</small>
-                </span>
-                <span className="ai-log-row-meta">
-                  <time dateTime={entry.at}>{new Date(entry.at).toLocaleString()}</time>
-                  <span>{(entry.durationMs / 1000).toFixed(1)}s</span>
-                  <span>{describeUsage(entry)}</span>
-                  {entry.stagedFileCount !== null && <span>{entry.stagedFileCount} staged</span>}
-                  {entry.contextTruncated === true && <span>context trimmed</span>}
-                </span>
-              </div>
-              <div className="ai-log-row-notes">
-                {entry.errorCode && <span className="ai-log-note error">{entry.errorCode}</span>}
-                {entry.splitOffered === true && <span className="ai-log-note">split: {entry.splitGroups} commits</span>}
-                {/* The reason a plan was thrown away is the point of this log. */}
-                {entry.splitRejectedReason && <span className="ai-log-note warn">split refused: {entry.splitRejectedReason}</span>}
-                {entry.splitBlockedReason && <span className="ai-log-note">no split: {entry.splitBlockedReason}</span>}
-              </div>
-            </article>
-          ))}
+          {entries.length > 0 && (
+            <div className="ai-log-table-wrap">
+              <Table>
+                <TableHeader>
+                  {table.getHeaderGroups().map((headerGroup) => (
+                    <TableRow key={headerGroup.id}>
+                      {headerGroup.headers.map((header) => (
+                        <TableHead key={header.id}>
+                          {header.isPlaceholder ? null : <table.FlexRender header={header} />}
+                        </TableHead>
+                      ))}
+                    </TableRow>
+                  ))}
+                </TableHeader>
+                <TableBody>
+                  {table.getRowModel().rows.map((row) => (
+                    <TableRow key={row.id} className={row.original.status === 'failed' ? 'ai-log-row-failed' : undefined}>
+                      {row.getAllCells().map((cell) => (
+                        <TableCell key={cell.id}><table.FlexRender cell={cell} /></TableCell>
+                      ))}
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
         </div>
       </DialogPopup>
     </Dialog>
