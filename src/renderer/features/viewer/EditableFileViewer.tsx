@@ -5,9 +5,9 @@ import { EditProvider, File, Virtualizer } from '@pierre/diffs/react';
 import type { Editor, EditorOptions } from '@pierre/diffs/edit';
 import { toast } from 'sonner';
 import type { FileResult, ThemePreference, WriteFileResult } from '@shared/contracts';
-import { JUSTGIT_DIFF_THEMES } from './diffThemes';
 import { VIEWER_SCROLLBAR_CSS } from './patch-utils';
 import { PierreWorkerPool } from './PierreWorkerPool';
+import { JUSTGIT_SYNTAX_THEMES } from './syntaxThemes';
 import { useEditableFileDraft } from './useEditableFileDraft';
 import './source-editor.css';
 
@@ -104,7 +104,7 @@ export function SourceCodeEditor({ path, cacheKey, value, themeType, wrapLines, 
   const options = useMemo(() => ({
     disableFileHeader: true,
     themeType,
-    theme: JUSTGIT_DIFF_THEMES,
+    theme: JUSTGIT_SYNTAX_THEMES,
     overflow: wrapLines ? 'wrap' as const : 'scroll' as const,
     unsafeCSS: VIEWER_SCROLLBAR_CSS,
   }), [themeType, wrapLines]);
@@ -117,7 +117,7 @@ export function SourceCodeEditor({ path, cacheKey, value, themeType, wrapLines, 
   }), []);
 
   return (
-    <PierreWorkerPool>
+    <PierreWorkerPool theme={JUSTGIT_SYNTAX_THEMES}>
       <Virtualizer className="source-code-editor" contentClassName="source-code-editor-content">
         <File
           file={file}

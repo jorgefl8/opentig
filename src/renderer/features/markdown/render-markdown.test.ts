@@ -33,6 +33,8 @@ describe('renderMarkdown', () => {
     expect(html).toContain('class="markdown-copy-label tabler-icon tabler-icon-copy"');
     expect(html).not.toContain('>Copy</span>');
     expect(html).toContain('class="markdown-copy-check"');
+    expect(html).toContain('--shiki-light:');
+    expect(html).toContain('--shiki-dark:');
   });
 
   it('keeps mermaid source inert for client rendering', async () => {
