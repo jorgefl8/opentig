@@ -494,6 +494,19 @@
   .commit-file-stats .del { color: var(--diff-deleted); }
   .commit-file-stats .binary { color: var(--muted-foreground); }
   .viewer-pane {
+    /* @pierre/diffs paints its shadow-DOM host with `background-color:
+       light-dark(var(--diffs-light-bg,#fff), var(--diffs-dark-bg,#000))`
+       (see its shared style.js). Those two vars are only ever set by the
+       library's own async theme round-trip (worker tokenize + registerCustomTheme
+       resolve), so on every fresh file/diff mount the shadow host paints the
+       #fff/#000 fallback first and snaps to the real background a tick later -
+       the "sometimes no fondo" flash. Seeding them here, synchronously, with the
+       exact same value the async theme resolves to (`--diff-editor-background`)
+       closes that gap entirely: the host inherits the correct color-scheme-aware
+       background before Pierre's theme even starts resolving, and once it does
+       resolve it writes this same value, so there is nothing to visibly snap to. */
+    --diffs-light-bg: var(--diff-editor-background);
+    --diffs-dark-bg: var(--diff-editor-background);
     --diffs-bg-buffer-override: color-mix(in oklch, var(--diff-editor-background) 92%, var(--muted));
     --diffs-bg-context-override: color-mix(in oklch, var(--diff-editor-background) 96%, var(--muted));
     --diffs-bg-separator-override: color-mix(in oklch, var(--diff-editor-background) 90%, var(--muted));
