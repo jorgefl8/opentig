@@ -5,6 +5,7 @@ import type { CommitInfo } from '../../../shared/git-types';
 import { isKnownImagePath, isSvgPath } from '../../../shared/image-types';
 import { Button } from '@/components/ui/button';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { isHtmlPath, isMarkdownPath } from '@/features/files/file-tree';
 import { MarkdownFileViewer } from '@/features/markdown/MarkdownFileViewer';
 import { PullRequestViewer } from '@/features/pulls/PullRequestViewer';
@@ -375,7 +376,12 @@ function CommitDiffHeader({ commit, fallbackSubject }: { commit: CommitInfo | un
       <div className="commit-diff-meta">
         <code>{commit?.shortOid ?? 'commit'}</code>
         {commit?.author && <span>{commit.author}{commit.email ? ` <${commit.email}>` : ''}</span>}
-        {date && Number.isFinite(date.getTime()) && <time dateTime={commit?.date} title={date.toLocaleString()}>{date.toLocaleString()}</time>}
+        {date && Number.isFinite(date.getTime()) && (
+          <Tooltip>
+            <TooltipTrigger render={<time dateTime={commit?.date} />}>{date.toLocaleString()}</TooltipTrigger>
+            <TooltipContent>{date.toLocaleString()}</TooltipContent>
+          </Tooltip>
+        )}
         {commit?.parentCount && commit.parentCount > 1 ? <span>Merge commit</span> : null}
         {commit?.upstreamState === 'local-only' && <span className="commit-local-label">Local only</span>}
       </div>

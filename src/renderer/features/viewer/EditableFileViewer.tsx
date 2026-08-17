@@ -5,6 +5,7 @@ import { EditProvider, File, Virtualizer, useVirtualizer } from '@pierre/diffs/r
 import type { EditorOptions } from '@pierre/diffs/edit';
 import { sileo } from 'sileo';
 import type { FileResult, ThemePreference, WriteFileResult } from '@shared/contracts';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { JUSTGIT_CODE_THEMES } from './diffThemes';
 import { VIEWER_SCROLLBAR_CSS } from './patch-utils';
 import { PierreWorkerPool } from './PierreWorkerPool';
@@ -72,17 +73,21 @@ export function FileSaveControls({ dirty, saving, readOnly, onSave }: FileSaveCo
   // as an icon-only save button - no redundant "Unsaved" label next to it.
   const label = readOnly ? 'Read only' : saving ? 'Saving…' : `Save file (${shortcuts.saveFile})`;
   return (
-    <button
-      type="button"
-      className="file-save-button"
-      data-state={readOnly ? 'readonly' : saving ? 'saving' : 'dirty'}
-      disabled={saving || readOnly}
-      onClick={onSave}
-      aria-label={label}
-      title={label}
-    >
-      <IconDeviceFloppy aria-hidden="true" />
-    </button>
+    <Tooltip>
+      <TooltipTrigger render={
+        <button
+          type="button"
+          className="file-save-button"
+          data-state={readOnly ? 'readonly' : saving ? 'saving' : 'dirty'}
+          disabled={saving || readOnly}
+          onClick={onSave}
+          aria-label={label}
+        />
+      }>
+        <IconDeviceFloppy aria-hidden="true" />
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -221,7 +226,7 @@ export function EditableFileViewer({ file, initialContent, themeType, wrapLines,
   return (
     <div className="source-file-viewer">
       {(dirty || saving) && (
-        <div className="file-viewer-pill source-file-toolbar">
+        <div className="source-file-toolbar">
           <FileSaveControls dirty={dirty} saving={saving} readOnly={readOnly} onSave={() => void save()} />
         </div>
       )}

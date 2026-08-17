@@ -78,19 +78,25 @@ export function DiffWorkspace({ contentKey, diff, diffView, themeType, wrapLines
               {compact ? (
                 <div className="diff-file-header diff-file-header-compact">
                   <img src={getVsCodeFileIconUrl(file.path)} className="diff-file-icon" alt="" />
-                  <span className="diff-file-path" title={file.path}>{file.path}</span>
+                  <Tooltip>
+                    <TooltipTrigger render={<span className="diff-file-path" />}>{file.path}</TooltipTrigger>
+                    <TooltipContent>{file.path}</TooltipContent>
+                  </Tooltip>
                   {file.previousPath && file.previousPath !== file.path && <span className="diff-file-previous">from {file.previousPath}</span>}
                   <span className="diff-file-stats"><span className="add">+{file.additions}</span><span className="del">−{file.deletions}</span></span>
                   {diffActions(false)}
                 </div>
               ) : (
-                <button type="button" className="diff-file-header" aria-expanded={!isCollapsed} onClick={() => toggleFile(file.key)}>
-                  {isCollapsed ? <IconChevronRight className="diff-file-chevron" /> : <IconChevronDown className="diff-file-chevron" />}
-                  <img src={getVsCodeFileIconUrl(file.path)} className="diff-file-icon" alt="" />
-                  <span className="diff-file-path" title={file.path}>{file.path}</span>
-                  {file.previousPath && file.previousPath !== file.path && <span className="diff-file-previous">from {file.previousPath}</span>}
-                  <span className="diff-file-stats"><span className="add">+{file.additions}</span><span className="del">−{file.deletions}</span></span>
-                </button>
+                <Tooltip>
+                  <TooltipTrigger render={<button type="button" className="diff-file-header" aria-expanded={!isCollapsed} onClick={() => toggleFile(file.key)} />}>
+                    {isCollapsed ? <IconChevronRight className="diff-file-chevron" /> : <IconChevronDown className="diff-file-chevron" />}
+                    <img src={getVsCodeFileIconUrl(file.path)} className="diff-file-icon" alt="" />
+                    <span className="diff-file-path">{file.path}</span>
+                    {file.previousPath && file.previousPath !== file.path && <span className="diff-file-previous">from {file.previousPath}</span>}
+                    <span className="diff-file-stats"><span className="add">+{file.additions}</span><span className="del">−{file.deletions}</span></span>
+                  </TooltipTrigger>
+                  <TooltipContent>{file.path}</TooltipContent>
+                </Tooltip>
               )}
               {!isCollapsed && (
                 <PatchDiff

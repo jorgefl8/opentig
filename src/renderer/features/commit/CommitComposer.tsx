@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Kbd } from '@/components/ui/kbd';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { Textarea } from '@/components/ui/textarea';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useShortcuts } from '@/app/useShortcuts';
 
 /** Keep the exit animations in sync with the durations declared in index.css. */
@@ -113,13 +114,12 @@ export function CommitComposer({
                         <small>{commit.reason}</small>
                         <span className="commit-plan-paths">
                           {commit.paths.map((filePath) => (
-                            <button
-                              key={filePath}
-                              type="button"
-                              className="commit-plan-path"
-                              title={`Open the diff for ${filePath}`}
-                              onClick={() => onOpenPath(filePath)}
-                            >{filePath}</button>
+                            <Tooltip key={filePath}>
+                              <TooltipTrigger render={<button type="button" className="commit-plan-path" onClick={() => onOpenPath(filePath)} />}>
+                                {filePath}
+                              </TooltipTrigger>
+                              <TooltipContent>Open the diff for {filePath}</TooltipContent>
+                            </Tooltip>
                           ))}
                         </span>
                       </div>

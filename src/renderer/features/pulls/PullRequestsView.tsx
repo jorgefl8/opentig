@@ -80,7 +80,10 @@ function PullsList(props: PullRequestsViewProps & { nameWithOwner: string }) {
   return (
     <div className="pulls-view">
       <div className="pulls-toolbar">
-        <span className="pulls-repo" title={props.nameWithOwner}><IconBrandGithub aria-hidden="true" /> {props.nameWithOwner}</span>
+        <Tooltip>
+          <TooltipTrigger render={<span className="pulls-repo" />}><IconBrandGithub aria-hidden="true" /> {props.nameWithOwner}</TooltipTrigger>
+          <TooltipContent>{props.nameWithOwner}</TooltipContent>
+        </Tooltip>
         <Tooltip>
           <TooltipTrigger render={<Button variant="ghost" size="icon-xs" className="change-action-button" disabled={props.loading} onClick={props.onRefresh} aria-label="Refresh pull requests" />}>
             {props.loading ? <IconLoader4 className="animate-spin" /> : <IconRefresh />}
@@ -161,7 +164,7 @@ function PullRow({ pr, active, onSelect }: { pr: PullRequestSummary; active: boo
   return (
     <div className={`pull-item ${active ? 'active' : ''}`} role="listitem">
       <button className="pull-main" onClick={() => onSelect(pr)} aria-label={`View pull request #${pr.number}`}>
-        <span className={`pull-state-icon ${stateClass}${pr.isDraft ? ' draft' : ''}`} title={pr.isDraft ? 'Draft' : stateLabel(pr.state)}><PullStateIcon state={pr.state} /></span>
+        <span className={`pull-state-icon ${stateClass}${pr.isDraft ? ' draft' : ''}`} aria-label={pr.isDraft ? 'Draft' : stateLabel(pr.state)}><PullStateIcon state={pr.state} /></span>
         <span className="pull-content">
           <span className="pull-title">{pr.title || '(no title)'}</span>
           <span className="pull-meta">
@@ -195,7 +198,7 @@ function ChecksIcon({ state }: { state: PullRequestCheckState }) {
   if (state === 'NONE') return null;
   const label = state === 'PASSING' ? 'Checks passing' : state === 'FAILING' ? 'Checks failing' : 'Checks pending';
   const Icon = state === 'PASSING' ? IconCircleCheck : state === 'FAILING' ? IconCircleX : IconClock;
-  return <span className={`pull-checks ${state.toLowerCase()}`} title={label} aria-label={label}><Icon aria-hidden="true" /></span>;
+  return <span className={`pull-checks ${state.toLowerCase()}`} aria-label={label}><Icon aria-hidden="true" /></span>;
 }
 
 function stateLabel(state: PullRequestState): string {

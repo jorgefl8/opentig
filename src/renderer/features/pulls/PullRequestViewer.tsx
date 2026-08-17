@@ -5,6 +5,7 @@ import type { DiffResult, DiffViewPreference, PullRequestCheckState, PullRequest
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { ViewerTabs, ViewerTabsList, ViewerTabsPanel } from '@/components/ui/viewer-tabs';
 import { renderMarkdown } from '@/features/markdown/render-markdown';
 import { openOnGitHub, prStateLabel, reviewDecisionLabel } from './gh-utils';
@@ -123,7 +124,10 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
                   <strong>{commit.messageHeadline || '(no commit message)'}</strong>
                   <span><b>{commit.author}</b> committed {formatRelativeDate(commit.authoredAt)}</span>
                 </span>
-                <code title={commit.oid}>{commit.oid.slice(0, 7)}</code>
+                <Tooltip>
+                  <TooltipTrigger render={<code />}>{commit.oid.slice(0, 7)}</TooltipTrigger>
+                  <TooltipContent>{commit.oid}</TooltipContent>
+                </Tooltip>
               </article>
             )) : <p className="pr-empty-description">No commits were returned by GitHub.</p>}
           </section>
@@ -147,7 +151,7 @@ function PullRequestChecks({ state }: { state: PullRequestCheckState }) {
   if (state === 'NONE') return null;
   const Icon = state === 'PASSING' ? IconCircleCheck : state === 'FAILING' ? IconCircleX : IconClock;
   const label = state === 'PASSING' ? 'Checks passing' : state === 'FAILING' ? 'Checks failing' : 'Checks pending';
-  return <span className={`pr-checks ${state.toLowerCase()}`} title={label}><Icon aria-hidden="true" /> {label}</span>;
+  return <span className={`pr-checks ${state.toLowerCase()}`}><Icon aria-hidden="true" /> {label}</span>;
 }
 
 function formatRelativeDate(value: string): string {

@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogClose, DialogDescription, DialogPopup, DialogTitle } from '@/components/ui/dialog';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   branchBadges, branchDeleteEligibility, branchDetailBadges, branchKey, filterBranches, filterWorktrees,
   localChangeSummary, nextSelectionKey, worktreeBadges, worktreeKey, worktreeName, worktreeRemoveEligibility,
@@ -219,45 +220,53 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
               <p className="local-refs-placeholder">{query ? 'No matches for this search.' : `This repository has no ${tab === 'branches' ? 'local branches' : 'worktrees'}.`}</p>
             )}
             {tab === 'branches' && branches.map((item) => (
-              <button
-                key={branchKey(item)}
-                type="button"
-                role="option"
-                aria-selected={branchKey(item) === selectedBranch}
-                className="local-refs-row"
-                onClick={() => setSelectedBranch(branchKey(item))}
-              >
-                <span className="local-refs-row-head">
-                  <IconGitBranch aria-hidden="true" />
-                  <strong title={item.name}>{item.name}</strong>
-                  <BadgeRow badges={branchBadges(item)} />
-                </span>
-                <small className="local-refs-row-meta">
-                  <code>{item.shortOid}</code>
-                  {item.subject && <span title={item.subject}>{item.subject}</span>}
-                  {item.date && <time dateTime={item.date}>{formatDate(item.date)}</time>}
-                </small>
-              </button>
+              <Tooltip key={branchKey(item)}>
+                <TooltipTrigger render={
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={branchKey(item) === selectedBranch}
+                    className="local-refs-row"
+                    onClick={() => setSelectedBranch(branchKey(item))}
+                  />
+                }>
+                  <span className="local-refs-row-head">
+                    <IconGitBranch aria-hidden="true" />
+                    <strong>{item.name}</strong>
+                    <BadgeRow badges={branchBadges(item)} />
+                  </span>
+                  <small className="local-refs-row-meta">
+                    <code>{item.shortOid}</code>
+                    {item.subject && <span>{item.subject}</span>}
+                    {item.date && <time dateTime={item.date}>{formatDate(item.date)}</time>}
+                  </small>
+                </TooltipTrigger>
+                <TooltipContent>{item.name}{item.subject ? ` — ${item.subject}` : ''}</TooltipContent>
+              </Tooltip>
             ))}
             {tab === 'worktrees' && worktrees.map((item) => (
-              <button
-                key={worktreeKey(item)}
-                type="button"
-                role="option"
-                aria-selected={worktreeKey(item) === selectedWorktree}
-                className="local-refs-row"
-                onClick={() => setSelectedWorktree(worktreeKey(item))}
-              >
-                <span className="local-refs-row-head">
-                  <IconHierarchy2 aria-hidden="true" />
-                  <strong title={worktreeName(item.path)}>{worktreeName(item.path)}</strong>
-                  <BadgeRow badges={worktreeBadges(item)} />
-                </span>
-                <small className="local-refs-row-meta">
-                  <span className="local-refs-row-branch">{item.branch ? `${item.branch}` : 'Detached HEAD'}</span>
-                  <span title={item.path}>{item.path}</span>
-                </small>
-              </button>
+              <Tooltip key={worktreeKey(item)}>
+                <TooltipTrigger render={
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={worktreeKey(item) === selectedWorktree}
+                    className="local-refs-row"
+                    onClick={() => setSelectedWorktree(worktreeKey(item))}
+                  />
+                }>
+                  <span className="local-refs-row-head">
+                    <IconHierarchy2 aria-hidden="true" />
+                    <strong>{worktreeName(item.path)}</strong>
+                    <BadgeRow badges={worktreeBadges(item)} />
+                  </span>
+                  <small className="local-refs-row-meta">
+                    <span className="local-refs-row-branch">{item.branch ? `${item.branch}` : 'Detached HEAD'}</span>
+                    <span>{item.path}</span>
+                  </small>
+                </TooltipTrigger>
+                <TooltipContent>{worktreeName(item.path)} — {item.path}</TooltipContent>
+              </Tooltip>
             ))}
           </div>
 
@@ -322,7 +331,7 @@ function BranchDetailPanel({ details, pullRequest, busy, anyBusy, confirming, ac
   return (
     <>
       <div className="local-refs-detail-head">
-        <h3><IconGitBranch aria-hidden="true" /><span title={details.name}>{details.name}</span></h3>
+        <h3><IconGitBranch aria-hidden="true" /><Tooltip><TooltipTrigger render={<span />}>{details.name}</TooltipTrigger><TooltipContent>{details.name}</TooltipContent></Tooltip></h3>
         <BadgeRow badges={branchDetailBadges(details)} />
       </div>
       <dl className="local-refs-facts">
@@ -374,7 +383,7 @@ function WorktreeDetailPanel({ details, busy, anyBusy, confirming, actionError, 
   return (
     <>
       <div className="local-refs-detail-head">
-        <h3><IconHierarchy2 aria-hidden="true" /><span title={worktreeName(details.path)}>{worktreeName(details.path)}</span></h3>
+        <h3><IconHierarchy2 aria-hidden="true" /><Tooltip><TooltipTrigger render={<span />}>{worktreeName(details.path)}</TooltipTrigger><TooltipContent>{worktreeName(details.path)}</TooltipContent></Tooltip></h3>
         <BadgeRow badges={worktreeBadges(details)} />
       </div>
       <dl className="local-refs-facts">

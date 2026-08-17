@@ -5,6 +5,7 @@ import { MAX_PROJECT_NAME_LENGTH } from '../../../shared/repository-projects';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogClose, DialogDescription, DialogPopup, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { shortenRepositoryPath, type RepositoryOption } from './repository-select-model';
 
 const NO_PROJECT = '__justgit_no_project__';
@@ -150,7 +151,10 @@ export function RepositoryProjectsDialog({ open, projects, repositories, onOpenC
                     <IconFolder aria-hidden="true" />
                     <span className="repository-assignment-copy">
                       <strong>{repository.name}</strong>
-                      <small title={repository.rootPath}>{shortenRepositoryPath(repository.rootPath, 4)}</small>
+                      <Tooltip>
+                        <TooltipTrigger render={<small />}>{shortenRepositoryPath(repository.rootPath, 4)}</TooltipTrigger>
+                        <TooltipContent>{repository.rootPath}</TooltipContent>
+                      </Tooltip>
                     </span>
                     {rowBusy && <IconLoader4 className="repository-assignment-busy animate-spin" aria-hidden="true" />}
                     <Select value={projectId} onValueChange={(value) => void assignProject(repository.key, value === NO_PROJECT ? null : value)} disabled={Boolean(busy)}>
