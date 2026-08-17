@@ -119,7 +119,7 @@ export function SvgFileViewer({ file, initialContent, themeType, wrapLines, read
           <div className="svg-code-view">
             <SourceCodeEditor
               path={file.path}
-              cacheKey={`${file.path}:${file.mtimeMs}`}
+              cacheKey={file.path}
               value={draft}
               themeType={themeType}
               wrapLines={wrapLines}

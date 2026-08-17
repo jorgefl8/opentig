@@ -67,7 +67,7 @@ export function HtmlFileViewer({ file, initialContent, themeType, wrapLines, rea
       <ViewerTabsPanel value="code" className="markdown-code-view" data-theme={themeType}>
           <SourceCodeEditor
             path={file.path}
-            cacheKey={`${file.path}:${file.mtimeMs}`}
+            cacheKey={file.path}
             value={draft}
             themeType={themeType}
             wrapLines={wrapLines}

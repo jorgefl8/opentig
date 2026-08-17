@@ -50,47 +50,26 @@
   transform: none;
 }
 
-.file-save-controls {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  gap: 7px;
-}
-
-.file-save-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  color: var(--muted-foreground);
-  font-family: var(--font-mono);
-  font-size: 10px;
-  white-space: nowrap;
-}
-
-.file-save-status::before {
-  width: 6px;
-  height: 6px;
-  flex: none;
-  border-radius: 999px;
-  background: currentColor;
-  content: "";
-}
-
-.file-save-status[data-state="dirty"] { color: var(--warning); }
-.file-save-status[data-state="saving"] { color: var(--primary); }
-
 .file-save-button {
   display: inline-flex;
+  width: 28px;
   height: 28px;
   align-items: center;
-  gap: 5px;
+  justify-content: center;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: var(--background);
-  padding: 0 9px;
   color: var(--foreground);
-  font-size: 11px;
-  font-weight: 600;
+}
+
+.file-save-button[data-state="dirty"] {
+  border-color: color-mix(in oklch, var(--warning) 45%, var(--border));
+  color: var(--warning);
+}
+
+.file-save-button[data-state="saving"] {
+  border-color: color-mix(in oklch, var(--primary) 45%, var(--border));
+  color: var(--primary);
 }
 
 .file-save-button:hover:not(:disabled) {
@@ -104,8 +83,8 @@
 }
 
 .file-save-button svg {
-  width: 13px;
-  height: 13px;
+  width: 14px;
+  height: 14px;
 }
 
 .source-editor-scroll {

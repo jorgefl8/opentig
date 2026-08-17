@@ -68,22 +68,21 @@ export function FileSaveControls({ dirty, saving, readOnly, onSave }: FileSaveCo
   const shortcuts = useShortcuts();
   if (!dirty && !saving) return null;
 
+  // The dirty state already shows as a dot on the file's tab, so this floats
+  // as an icon-only save button - no redundant "Unsaved" label next to it.
+  const label = readOnly ? 'Read only' : saving ? 'Saving…' : `Save file (${shortcuts.saveFile})`;
   return (
-    <div className="file-save-controls">
-      <span className="file-save-status" data-state={readOnly ? 'readonly' : saving ? 'saving' : 'dirty'} role="status" aria-live="polite">
-        {readOnly ? 'Read only' : saving ? 'Saving…' : 'Unsaved'}
-      </span>
-      <button
-        type="button"
-        className="file-save-button"
-        disabled={saving || readOnly}
-        onClick={onSave}
-        title={`Save file (${shortcuts.saveFile})`}
-      >
-        <IconDeviceFloppy aria-hidden="true" />
-        Save
-      </button>
-    </div>
+    <button
+      type="button"
+      className="file-save-button"
+      data-state={readOnly ? 'readonly' : saving ? 'saving' : 'dirty'}
+      disabled={saving || readOnly}
+      onClick={onSave}
+      aria-label={label}
+      title={label}
+    >
+      <IconDeviceFloppy aria-hidden="true" />
+    </button>
   );
 }
 
@@ -229,7 +228,7 @@ export function EditableFileViewer({ file, initialContent, themeType, wrapLines,
       <div className="source-editor-scroll">
         <SourceCodeEditor
           path={file.path}
-          cacheKey={`${file.path}:${file.mtimeMs}`}
+          cacheKey={file.path}
           value={draft}
           themeType={themeType}
           wrapLines={wrapLines}

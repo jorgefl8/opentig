@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { sileo } from 'sileo';
 import type { FileResult, WriteFileResult } from '@shared/contracts';
 import { DEFAULT_SHORTCUT_MAP, matchesCombo } from '@shared/shortcuts';
@@ -72,6 +72,24 @@ export function useEditableFileDraft({ file, initialContent, readOnly, messages,
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
   const dirty = draft !== file.content;
+
+  // `file.content`/`file.mtimeMs` change both on our own successful saves and
+  // on a genuine external edit to the file on disk. The mount key and
+  // Pierre's own `cacheKey` upstream stay pinned to the file's path (see
+  // `Viewer.tsx`), so neither ever forces a remount here - that used to be
+  // what reset the editor's scroll position to the top on every Ctrl+S.
+  // A save needs no help: `draft` already equals the new `file.content`, so
+  // `dirty` above already recomputes to `false` on its own. A genuine
+  // external change is the one case that still needs a hand, since the draft
+  // was clean against the *old* content: adopt the new content in place
+  // instead, so there is nothing to remount for that either.
+  const syncedContentRef = useRef(file.content);
+  useLayoutEffect(() => {
+    if (draft === syncedContentRef.current && file.content !== syncedContentRef.current) {
+      setDraft(file.content);
+    }
+    syncedContentRef.current = file.content;
+  }, [file.content, draft]);
 
   useEffect(() => {
     onDirtyChange(dirty);

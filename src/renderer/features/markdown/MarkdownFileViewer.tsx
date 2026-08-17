@@ -266,7 +266,7 @@ export function MarkdownFileViewer({ file, initialContent, revision, themeType, 
           <SourceCodeEditor
             ref={sourceEditorRef}
             path={file.path}
-            cacheKey={`${file.path}:${file.mtimeMs}`}
+            cacheKey={file.path}
             value={draft}
             themeType={themeType}
             wrapLines={wrapLines}

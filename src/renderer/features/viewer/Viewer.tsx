@@ -179,13 +179,12 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
     return result;
   }, [draftFor, onDraftSaved, repositoryId]);
 
-  // Keyed on the `mtimeMs` the draft was started from, not the current one. That
-  // keeps the mount key stable across the clean-to-dirty transition and while the
-  // file changes on disk underneath an unsaved draft, so typing never remounts
-  // the editor and never resets its cursor, selection, or undo history.
-  const fileMountKey = useCallback((file: FileResult): string => (
-    `${file.path}:${draftFor(file.path)?.expectedMtimeMs ?? file.mtimeMs}`
-  ), [draftFor]);
+  // Keyed on the path alone. This used to key on the draft's `mtimeMs`, but
+  // that value bumps on every successful save, which remounted the editor -
+  // and reset its scroll position - on every Ctrl+S. A stable path-only key
+  // never remounts while the tab stays open; `useEditableFileDraft` handles
+  // resyncing the draft in place when the file genuinely changes on disk.
+  const fileMountKey = useCallback((file: FileResult): string => file.path, []);
   const draftContent = useCallback((file: FileResult): string => draftFor(file.path)?.content ?? file.content, [draftFor]);
   const reportDraft = useCallback((file: FileResult) => (content: string) => onDraftChange(file.path, content, file.content, file.mtimeMs), [onDraftChange]);
   // While a new document loads, the previous one stays on screen; the swap
