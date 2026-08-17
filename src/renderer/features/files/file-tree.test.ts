@@ -36,12 +36,12 @@ const tree: FileTreeEntry[] = [
 ];
 
 describe('file tree helpers', () => {
-  it('opens only a single dragged file beside the current tab', () => {
+  it('opens the file that initiated a drop without treating a directory as a file', () => {
     const file = tree.find((entry) => entry.path === 'main.ts')!;
     const directory = tree.find((entry) => entry.path === 'docs')!;
 
     expect(canOpenPinnedDrop(file, ['main.ts'])).toBe(true);
-    expect(canOpenPinnedDrop(file, ['main.ts', 'docs/README.MD'])).toBe(false);
+    expect(canOpenPinnedDrop(file, ['main.ts', 'docs/README.MD'])).toBe(true);
     expect(canOpenPinnedDrop(file, ['docs/README.MD'])).toBe(false);
     expect(canOpenPinnedDrop(directory, ['docs'])).toBe(false);
   });

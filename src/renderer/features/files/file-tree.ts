@@ -13,9 +13,9 @@ export type SnapshotPathPresence = 'present' | 'deferred' | 'missing';
 /** DOM host used to bridge Files' DndContext into the toolbar tab strip. */
 export const OPEN_FILES_DROP_HOST_ID = 'justgit-open-files-drop-host';
 
-/** Only an intentional single-file drag can become an open-beside action. */
+/** The row that initiated a drag can open beside, without opening its selected peers. */
 export function canOpenPinnedDrop(entry: FileTreeEntry, sourcePaths: readonly string[]): boolean {
-  return entry.type === 'file' && sourcePaths.length === 1 && sourcePaths[0] === entry.path;
+  return entry.type === 'file' && sourcePaths.includes(entry.path);
 }
 
 export function findEntry(entries: FileTreeEntry[], path: string): FileTreeEntry | null {
