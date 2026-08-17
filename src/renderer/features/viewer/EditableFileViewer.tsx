@@ -1,7 +1,7 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import type { PropsWithChildren } from 'react';
+import { createContext, useCallback, useContext, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import type { MutableRefObject, PropsWithChildren, Ref } from 'react';
 import { IconDeviceFloppy } from '@tabler/icons-react';
-import { EditProvider, File, Virtualizer } from '@pierre/diffs/react';
+import { EditProvider, File, Virtualizer, useVirtualizer } from '@pierre/diffs/react';
 import type { EditorOptions } from '@pierre/diffs/edit';
 import { sileo } from 'sileo';
 import type { FileResult, ThemePreference, WriteFileResult } from '@shared/contracts';
@@ -94,13 +94,38 @@ interface SourceCodeEditorProps {
   wrapLines: boolean;
   readOnly: boolean;
   onChange(value: string): void;
+  ref?: Ref<SourceCodeEditorHandle>;
 }
 
-export function SourceCodeEditor({ path, cacheKey, value, themeType, wrapLines, readOnly, onChange }: SourceCodeEditorProps) {
+/** Imperative scroll access for syncing position with the Markdown preview tab. */
+export interface SourceCodeEditorHandle {
+  /** Current scroll position as a 0-1 fraction of the scrollable range. */
+  getScrollFraction(): number;
+  /** Scroll to a 0-1 fraction of the scrollable range, via the editor's own virtualizer. */
+  scrollToFraction(fraction: number): void;
+}
+
+type VirtualizerHandle = ReturnType<typeof useVirtualizer>;
+
+/**
+ * Renders inside <Virtualizer> to capture its instance for imperative scrollTo calls.
+ * A layout effect (not a plain effect) so the ref is populated before ancestor
+ * layout effects run in the same commit, e.g. MarkdownFileViewer's scroll restore.
+ */
+function VirtualizerScrollBridge({ handleRef }: { handleRef: MutableRefObject<VirtualizerHandle> }) {
+  const virtualizer = useVirtualizer();
+  useLayoutEffect(() => {
+    handleRef.current = virtualizer;
+  }, [virtualizer, handleRef]);
+  return null;
+}
+
+export function SourceCodeEditor({ path, cacheKey, value, themeType, wrapLines, readOnly, onChange, ref }: SourceCodeEditorProps) {
   const editReady = useContext(EditReadyContext);
   const shortcuts = useShortcuts();
   const onChangeRef = useRef(onChange);
   useEffect(() => { onChangeRef.current = onChange; }, [onChange]);
+  const virtualizerRef = useRef<VirtualizerHandle>(undefined);
 
   const file = useMemo(() => ({ name: path, contents: value, cacheKey }), [cacheKey, path, value]);
   const options = useMemo(() => ({
@@ -119,9 +144,33 @@ export function SourceCodeEditor({ path, cacheKey, value, themeType, wrapLines, 
     onChange(nextFile) { onChangeRef.current(nextFile.contents); },
   }), [shortcuts.editorSearch]);
 
+  useImperativeHandle(ref, () => ({
+    getScrollFraction() {
+      const root = virtualizerRef.current?.getRoot();
+      if (!(root instanceof HTMLElement)) return 0;
+      const max = root.scrollHeight - root.clientHeight;
+      return max > 0 ? root.scrollTop / max : 0;
+    },
+    scrollToFraction(fraction) {
+      const applyScroll = () => {
+        const virtualizer = virtualizerRef.current;
+        const root = virtualizer?.getRoot();
+        if (!virtualizer || !(root instanceof HTMLElement)) return;
+        const max = root.scrollHeight - root.clientHeight;
+        virtualizer.scrollTo({ top: max > 0 ? fraction * max : 0 });
+      };
+      applyScroll();
+      // Streamed syntax highlighting keeps resizing rows after mount, and an
+      // editable file's own caret placement can pull scroll away right after;
+      // reapply once both have had a chance to settle so the request sticks.
+      requestAnimationFrame(() => requestAnimationFrame(applyScroll));
+    },
+  }), []);
+
   return (
     <PierreWorkerPool theme={JUSTGIT_CODE_THEMES}>
       <Virtualizer className="source-code-editor" contentClassName="source-code-editor-content">
+        <VirtualizerScrollBridge handleRef={virtualizerRef} />
         <File
           file={file}
           options={options}

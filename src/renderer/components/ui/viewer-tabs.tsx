@@ -1,5 +1,5 @@
 import { Tabs } from '@base-ui/react/tabs';
-import type { ComponentProps, ReactNode } from 'react';
+import type { ComponentProps, ReactNode, Ref } from 'react';
 import { cn } from '@/lib/utils';
 import './viewer-tabs.css';
 
@@ -31,6 +31,6 @@ export function ViewerTabsList<Value extends string>({ label, items, className, 
   );
 }
 
-export function ViewerTabsPanel(props: ComponentProps<typeof Tabs.Panel>) {
-  return <Tabs.Panel {...props} />;
+export function ViewerTabsPanel({ ref, ...props }: ComponentProps<typeof Tabs.Panel> & { ref?: Ref<HTMLDivElement> }) {
+  return <Tabs.Panel ref={ref} {...props} />;
 }

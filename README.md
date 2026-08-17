@@ -74,7 +74,7 @@ It is intentionally not an IDE, hosting service, or replacement for the Git CLI.
 - Keep a tab whose file was renamed or moved pointing at its new path. A tab with unsaved changes whose file disappears stays open and is marked unavailable so its text can still be recovered, while clean tabs simply close.
 - Only working-tree files become tabs; diffs, conflicts, commits, and pull requests stay transient. Up to 50 tabs are kept per worktree, and opening past that closes the clean tab you used least recently.
 - Press `Ctrl+F` in any editable file to open one integrated find-and-replace panel, with single or global replacement, case, whole-word, regular-expression, and undo support.
-- Preview and edit Markdown, HTML, and SVG files through compact Preview/Code controls.
+- Preview and edit Markdown, HTML, and SVG files through compact Preview/Code controls; switching between them restores roughly the same scroll position in the tab you land on.
 - Render GitHub-flavoured Markdown with syntax-highlighted code, copy buttons, alerts, footnotes, KaTeX, and Mermaid diagrams.
 - Preview raster images with fit, 1:1, keyboard/wheel zoom, dimensions, and file-size information.
 - Select multiple files and folders, then copy, cut, paste, rename, create, or delete them. Drag and drop moves one or many selected entries with a lifted preview, a count badge, and clear folder or repository-root destination feedback.

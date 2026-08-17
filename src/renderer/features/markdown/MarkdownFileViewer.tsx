@@ -5,7 +5,7 @@ import type { FileResult, ThemePreference, WriteFileResult } from '@shared/contr
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { ViewerTabs, ViewerTabsList, ViewerTabsPanel } from '@/components/ui/viewer-tabs';
-import { FileSaveControls, SourceCodeEditor } from '@/features/viewer/EditableFileViewer';
+import { FileSaveControls, SourceCodeEditor, type SourceCodeEditorHandle } from '@/features/viewer/EditableFileViewer';
 import { useEditableFileDraft } from '@/features/viewer/useEditableFileDraft';
 import { resolveMarkdownRepositoryPath } from './markdown-links';
 import { renderMarkdown } from './render-markdown';
@@ -71,6 +71,9 @@ export function MarkdownFileViewer({ file, initialContent, revision, themeType, 
   const [copied, setCopied] = useState(false);
   const requestToken = useRef(0);
   const copyFeedback = useRef<{ button: HTMLButtonElement; timer: number } | null>(null);
+  const previewPanelRef = useRef<HTMLDivElement>(null);
+  const sourceEditorRef = useRef<SourceCodeEditorHandle>(null);
+  const pendingScrollFraction = useRef<number | null>(null);
   const { draft, updateDraft, dirty, saving, save } = useEditableFileDraft({
     file, initialContent, readOnly, messages: MARKDOWN_SAVE_MESSAGES, onDirtyChange, onDraftChange, onSave,
   });
@@ -78,6 +81,37 @@ export function MarkdownFileViewer({ file, initialContent, revision, themeType, 
   useEffect(() => {
     setTab('preview');
   }, [file.path]);
+
+  // Capture the scroll position of the tab being left as a 0-1 fraction so the
+  // panel being entered can restore roughly the same reading position instead
+  // of defaulting to whatever position it happens to mount at.
+  const handleTabChange = useCallback((nextTab: 'preview' | 'code') => {
+    setTab((currentTab) => {
+      if (nextTab === currentTab) return currentTab;
+      if (currentTab === 'preview') {
+        const el = previewPanelRef.current;
+        const max = el ? el.scrollHeight - el.clientHeight : 0;
+        pendingScrollFraction.current = el && max > 0 ? el.scrollTop / max : 0;
+      } else {
+        pendingScrollFraction.current = sourceEditorRef.current?.getScrollFraction() ?? 0;
+      }
+      return nextTab;
+    });
+  }, []);
+
+  useLayoutEffect(() => {
+    const fraction = pendingScrollFraction.current;
+    if (fraction == null) return;
+    pendingScrollFraction.current = null;
+    if (tab === 'preview') {
+      const el = previewPanelRef.current;
+      if (!el) return;
+      const max = el.scrollHeight - el.clientHeight;
+      el.scrollTop = max > 0 ? fraction * max : 0;
+    } else {
+      sourceEditorRef.current?.scrollToFraction(fraction);
+    }
+  }, [tab]);
 
   useEffect(() => {
     const token = ++requestToken.current;
@@ -162,7 +196,7 @@ export function MarkdownFileViewer({ file, initialContent, revision, themeType, 
   };
 
   return (
-    <ViewerTabs value={tab} onValueChange={(value) => setTab(value as typeof tab)} className="markdown-viewer" data-content-width={contentWidth}>
+    <ViewerTabs value={tab} onValueChange={(value) => handleTabChange(value as typeof tab)} className="markdown-viewer" data-content-width={contentWidth}>
       <div className="file-viewer-pill markdown-viewer-toolbar">
         <ViewerTabsList
           label="Markdown view"
@@ -202,7 +236,7 @@ export function MarkdownFileViewer({ file, initialContent, revision, themeType, 
           </Tooltip>
         </div>
       </div>
-      <ViewerTabsPanel value="preview" className="markdown-preview-scroll">
+      <ViewerTabsPanel ref={previewPanelRef} value="preview" className="markdown-preview-scroll">
           {loading && !html ? (
             <div className="viewer-message"><ShimmeringText text="Rendering Markdown…" /></div>
           ) : (
@@ -212,6 +246,7 @@ export function MarkdownFileViewer({ file, initialContent, revision, themeType, 
       </ViewerTabsPanel>
       <ViewerTabsPanel value="code" className="markdown-code-view" data-theme={themeType}>
           <SourceCodeEditor
+            ref={sourceEditorRef}
             path={file.path}
             cacheKey={`${file.path}:${file.mtimeMs}`}
             value={draft}
