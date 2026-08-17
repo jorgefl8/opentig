@@ -6,6 +6,7 @@ import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { ViewerTabs, ViewerTabsList, ViewerTabsPanel } from '@/components/ui/viewer-tabs';
 import { FileSaveControls, SourceCodeEditor, type SourceCodeEditorHandle } from '@/features/viewer/EditableFileViewer';
+import { syncScrollFraction } from '@/features/viewer/scroll-sync';
 import { useEditableFileDraft } from '@/features/viewer/useEditableFileDraft';
 import { resolveMarkdownRepositoryPath } from './markdown-links';
 import { renderMarkdown } from './render-markdown';
@@ -74,11 +75,16 @@ export function MarkdownFileViewer({ file, initialContent, revision, themeType, 
   const previewPanelRef = useRef<HTMLDivElement>(null);
   const sourceEditorRef = useRef<SourceCodeEditorHandle>(null);
   const pendingScrollFraction = useRef<number | null>(null);
+  const cancelScrollSync = useRef<(() => void) | null>(null);
   const { draft, updateDraft, dirty, saving, save } = useEditableFileDraft({
     file, initialContent, readOnly, messages: MARKDOWN_SAVE_MESSAGES, onDirtyChange, onDraftChange, onSave,
   });
 
   useEffect(() => {
+    // A different file starts at the top of its preview, so any position
+    // captured for the previous one must not be replayed here.
+    cancelScrollSync.current?.();
+    pendingScrollFraction.current = null;
     setTab('preview');
   }, [file.path]);
 
@@ -86,32 +92,44 @@ export function MarkdownFileViewer({ file, initialContent, revision, themeType, 
   // panel being entered can restore roughly the same reading position instead
   // of defaulting to whatever position it happens to mount at.
   const handleTabChange = useCallback((nextTab: 'preview' | 'code') => {
-    setTab((currentTab) => {
-      if (nextTab === currentTab) return currentTab;
-      if (currentTab === 'preview') {
-        const el = previewPanelRef.current;
-        const max = el ? el.scrollHeight - el.clientHeight : 0;
-        pendingScrollFraction.current = el && max > 0 ? el.scrollTop / max : 0;
-      } else {
-        pendingScrollFraction.current = sourceEditorRef.current?.getScrollFraction() ?? 0;
-      }
-      return nextTab;
-    });
-  }, []);
+    if (nextTab === tab) return;
+    cancelScrollSync.current?.();
+    if (tab === 'preview') {
+      const el = previewPanelRef.current;
+      const max = el ? el.scrollHeight - el.clientHeight : 0;
+      pendingScrollFraction.current = el && max > 0 ? el.scrollTop / max : 0;
+    } else {
+      pendingScrollFraction.current = sourceEditorRef.current?.getScrollFraction() ?? 0;
+    }
+    setTab(nextTab);
+  }, [tab]);
 
+  // Restoring runs against content that is still arriving: the preview waits
+  // for its HTML and then keeps growing as Mermaid and KaTeX lay out, and the
+  // code tab mounts a virtualizer that measures rows over several frames. Both
+  // sides therefore reapply the fraction until their height settles.
   useLayoutEffect(() => {
     const fraction = pendingScrollFraction.current;
     if (fraction == null) return;
-    pendingScrollFraction.current = null;
-    if (tab === 'preview') {
-      const el = previewPanelRef.current;
-      if (!el) return;
-      const max = el.scrollHeight - el.clientHeight;
-      el.scrollTop = max > 0 ? fraction * max : 0;
-    } else {
+    if (tab === 'code') {
+      pendingScrollFraction.current = null;
       sourceEditorRef.current?.scrollToFraction(fraction);
+      return;
     }
-  }, [tab]);
+    const el = previewPanelRef.current;
+    // Keep the request pending until the rendered Markdown is in the DOM,
+    // otherwise the placeholder's height would collapse the fraction to 0.
+    if (!el || (loading && !html)) return;
+    pendingScrollFraction.current = null;
+    cancelScrollSync.current = syncScrollFraction({
+      getScrollRange: () => Math.max(0, el.scrollHeight - el.clientHeight),
+      getScrollTop: () => el.scrollTop,
+      getContentHeight: () => el.scrollHeight,
+      scrollTo: (top) => { el.scrollTop = top; },
+    }, fraction);
+  }, [html, loading, tab]);
+
+  useEffect(() => () => cancelScrollSync.current?.(), []);
 
   useEffect(() => {
     const token = ++requestToken.current;

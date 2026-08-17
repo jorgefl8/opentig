@@ -8,6 +8,7 @@ import type { FileResult, ThemePreference, WriteFileResult } from '@shared/contr
 import { JUSTGIT_CODE_THEMES } from './diffThemes';
 import { VIEWER_SCROLLBAR_CSS } from './patch-utils';
 import { PierreWorkerPool } from './PierreWorkerPool';
+import { syncScrollFraction } from './scroll-sync';
 import { buildFileEditorKeymap } from './source-editor-keymap';
 import { useEditableFileDraft } from './useEditableFileDraft';
 import { useShortcuts } from '@/app/useShortcuts';
@@ -144,6 +145,9 @@ export function SourceCodeEditor({ path, cacheKey, value, themeType, wrapLines, 
     onChange(nextFile) { onChangeRef.current(nextFile.contents); },
   }), [shortcuts.editorSearch]);
 
+  const cancelScrollSync = useRef<(() => void) | null>(null);
+  useEffect(() => () => cancelScrollSync.current?.(), []);
+
   useImperativeHandle(ref, () => ({
     getScrollFraction() {
       const root = virtualizerRef.current?.getRoot();
@@ -152,18 +156,28 @@ export function SourceCodeEditor({ path, cacheKey, value, themeType, wrapLines, 
       return max > 0 ? root.scrollTop / max : 0;
     },
     scrollToFraction(fraction) {
-      const applyScroll = () => {
-        const virtualizer = virtualizerRef.current;
-        const root = virtualizer?.getRoot();
-        if (!virtualizer || !(root instanceof HTMLElement)) return;
-        const max = root.scrollHeight - root.clientHeight;
-        virtualizer.scrollTo({ top: max > 0 ? fraction * max : 0 });
-      };
-      applyScroll();
-      // Streamed syntax highlighting keeps resizing rows after mount, and an
-      // editable file's own caret placement can pull scroll away right after;
-      // reapply once both have had a chance to settle so the request sticks.
-      requestAnimationFrame(() => requestAnimationFrame(applyScroll));
+      cancelScrollSync.current?.();
+      // The virtualizer mounts near-empty and grows as rows are measured and
+      // syntax highlighting streams in, so a single scroll would land far short
+      // of the target line. Reapply until its height settles.
+      cancelScrollSync.current = syncScrollFraction({
+        getScrollRange() {
+          const root = virtualizerRef.current?.getRoot();
+          return root instanceof HTMLElement ? Math.max(0, root.scrollHeight - root.clientHeight) : 0;
+        },
+        getScrollTop() {
+          const root = virtualizerRef.current?.getRoot();
+          return root instanceof HTMLElement ? root.scrollTop : 0;
+        },
+        getContentHeight() {
+          const root = virtualizerRef.current?.getRoot();
+          return root instanceof HTMLElement ? root.scrollHeight : 0;
+        },
+        scrollTo(top) {
+          const virtualizer = virtualizerRef.current;
+          if (virtualizer && virtualizerRef.current?.getRoot() instanceof HTMLElement) virtualizer.scrollTo({ top });
+        },
+      }, fraction);
     },
   }), []);
 
