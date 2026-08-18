@@ -119,8 +119,30 @@
 .markdown-prose h3 { margin: 1.5em 0 .5em; font-size: 1.25em; font-weight: 650; }
 .markdown-prose h4 { margin: 1.25em 0 .5em; font-weight: 650; }
 .markdown-prose p { margin: .75em 0; }
-.markdown-prose a { color: var(--primary); text-decoration: underline; text-underline-offset: 2px; }
+.markdown-prose a { color: var(--primary); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
 .markdown-prose a:hover { opacity: .8; }
+.markdown-link-tooltip {
+  position: fixed;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  gap: .375rem;
+  max-width: 26rem;
+  border-radius: .75rem;
+  background: var(--foreground);
+  color: var(--background);
+  padding: .375rem .75rem;
+  font-size: .75rem;
+  line-height: 1.2;
+  pointer-events: none;
+}
+.markdown-link-tooltip-label { flex: none; font-weight: 500; }
+.markdown-link-tooltip-href {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: .8;
+}
 .markdown-prose :not(pre) > code { border-radius: var(--radius-sm); background: var(--muted); padding: .2em .4em; font-family: var(--font-mono); font-size: .875em; }
 .markdown-prose ul,
 .markdown-prose ol { margin: .75em 0; padding-left: 1.5em; }

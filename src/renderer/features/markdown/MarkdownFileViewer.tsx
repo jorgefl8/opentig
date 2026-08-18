@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { IconViewportNarrow, IconViewportWide } from '@tabler/icons-react';
 import { sileo } from 'sileo';
 import type { FileResult, ThemePreference, WriteFileResult } from '@shared/contracts';
@@ -31,6 +32,10 @@ type ContentWidth = 'reading' | 'fit';
 
 const CONTENT_WIDTH_STORAGE_KEY = 'justgit:markdown-content-width';
 
+// Matches absolute URLs (`https://…`), protocol-relative URLs (`//…`), and `mailto:` links -
+// anything that should be handed off to the OS instead of resolved as a repository-relative path.
+const EXTERNAL_LINK_RE = /^([a-z][a-z0-9+.-]*:)?\/\//i;
+
 const MARKDOWN_SAVE_MESSAGES = {
   conflictTitle: 'Markdown was changed outside JustGit',
   successTitle: 'Markdown saved',
@@ -48,20 +53,40 @@ function getInitialContentWidth(): ContentWidth {
 interface MarkdownPreviewContentProps {
   html: string;
   onClick(event: React.MouseEvent<HTMLDivElement>): void;
+  onLinkHover(link: HTMLAnchorElement | null): void;
 }
 
-function MarkdownPreviewContent({ html, onClick }: MarkdownPreviewContentProps) {
+function MarkdownPreviewContent({ html, onClick, onLinkHover }: MarkdownPreviewContentProps) {
   const previewRef = useRef<HTMLDivElement>(null);
+  const hoveredLink = useRef<HTMLAnchorElement | null>(null);
 
   // Mermaid owns the descendants after it replaces its source with an SVG.
   // Only write the sanitized Markdown when that source HTML actually changes;
   // otherwise a React re-render would restore the raw `graph TD` text.
   useLayoutEffect(() => {
     if (previewRef.current) previewRef.current.innerHTML = html;
-  }, [html]);
+    hoveredLink.current = null;
+    onLinkHover(null);
+  }, [html, onLinkHover]);
   useMermaid(previewRef, true, html);
 
-  return <div ref={previewRef} className="markdown-prose" onClick={onClick} />;
+  const handleMouseOver = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    const link = (event.target as HTMLElement).closest<HTMLAnchorElement>('a[href]');
+    if (!link || link === hoveredLink.current) return;
+    hoveredLink.current = link;
+    onLinkHover(link);
+  }, [onLinkHover]);
+
+  const handleMouseOut = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    const link = hoveredLink.current;
+    if (!link) return;
+    const related = event.relatedTarget as Node | null;
+    if (related && link.contains(related)) return;
+    hoveredLink.current = null;
+    onLinkHover(null);
+  }, [onLinkHover]);
+
+  return <div ref={previewRef} className="markdown-prose" onClick={onClick} onMouseOver={handleMouseOver} onMouseOut={handleMouseOut} />;
 }
 
 export function MarkdownFileViewer({ file, initialContent, revision, themeType, wrapLines, readOnly, onOpenFile, onDirtyChange, onDraftChange, onSave }: MarkdownFileViewerProps) {
@@ -70,6 +95,7 @@ export function MarkdownFileViewer({ file, initialContent, revision, themeType, 
   const [html, setHtml] = useState('');
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
+  const [linkTooltip, setLinkTooltip] = useState<{ top: number; left: number; label: string; href: string } | null>(null);
   const requestToken = useRef(0);
   const copyFeedback = useRef<{ button: HTMLButtonElement; timer: number } | null>(null);
   const previewPanelRef = useRef<HTMLDivElement>(null);
@@ -200,9 +226,40 @@ export function MarkdownFileViewer({ file, initialContent, revision, themeType, 
       element?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       return;
     }
+    if (EXTERNAL_LINK_RE.test(href) || href.startsWith('mailto:')) {
+      void window.justgit.shell.openExternal(href).catch(() => undefined);
+      return;
+    }
     const repositoryPath = resolveMarkdownRepositoryPath(file.path, href);
     if (repositoryPath) onOpenFile(repositoryPath);
   }, [file.path, onOpenFile]);
+
+  const handleLinkHover = useCallback((link: HTMLAnchorElement | null) => {
+    if (!link) {
+      setLinkTooltip(null);
+      return;
+    }
+    const href = link.getAttribute('href');
+    if (!href || href.startsWith('#')) {
+      setLinkTooltip(null);
+      return;
+    }
+    const rect = link.getBoundingClientRect();
+    const position = { top: rect.bottom + 6, left: rect.left };
+    if (href.startsWith('mailto:')) {
+      setLinkTooltip({ ...position, label: 'Open in mail app', href: href.replace(/^mailto:/, '') });
+      return;
+    }
+    if (EXTERNAL_LINK_RE.test(href)) {
+      setLinkTooltip({ ...position, label: 'Open in browser', href });
+      return;
+    }
+    if (resolveMarkdownRepositoryPath(file.path, href)) {
+      setLinkTooltip({ ...position, label: 'Open file', href });
+      return;
+    }
+    setLinkTooltip(null);
+  }, [file.path]);
 
   const changeContentWidth = (value: ContentWidth) => {
     setContentWidth(value);
@@ -254,13 +311,20 @@ export function MarkdownFileViewer({ file, initialContent, revision, themeType, 
           </Tooltip>
         </div>
       </div>
-      <ViewerTabsPanel ref={previewPanelRef} value="preview" className="markdown-preview-scroll">
+      <ViewerTabsPanel ref={previewPanelRef} value="preview" className="markdown-preview-scroll" onScroll={() => setLinkTooltip(null)}>
           {loading && !html ? (
             <div className="viewer-message"><ShimmeringText text="Rendering Markdown…" /></div>
           ) : (
-            <MarkdownPreviewContent html={html} onClick={(event) => void handlePreviewClick(event)} />
+            <MarkdownPreviewContent html={html} onClick={(event) => void handlePreviewClick(event)} onLinkHover={handleLinkHover} />
           )}
           <span className="sr-only" role="status" aria-live="polite">{copied ? 'Code copied' : ''}</span>
+          {linkTooltip ? createPortal(
+            <div className="markdown-link-tooltip" style={{ top: linkTooltip.top, left: linkTooltip.left }} role="tooltip">
+              <span className="markdown-link-tooltip-label">{linkTooltip.label}</span>
+              <span className="markdown-link-tooltip-href">{linkTooltip.href}</span>
+            </div>,
+            document.body,
+          ) : null}
       </ViewerTabsPanel>
       <ViewerTabsPanel value="code" className="markdown-code-view" data-theme={themeType}>
           <SourceCodeEditor

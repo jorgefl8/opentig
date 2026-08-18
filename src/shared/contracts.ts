@@ -410,7 +410,7 @@ export interface JustGitApi {
     writeText(text: string): Promise<void>;
   };
   shell: {
-    /** Opens an https://github.com URL in the default browser; anything else is rejected. */
+    /** Opens an http(s):// or mailto: URL in the default browser/mail client; anything else is rejected. */
     openExternal(url: string): Promise<void>;
   };
   repository: {

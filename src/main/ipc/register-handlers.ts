@@ -90,8 +90,8 @@ export function registerHandlers(services: Services): () => void {
     try { parsed = new URL(value); } catch {
       throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'open-external', message: 'Invalid URL.' });
     }
-    if (parsed.protocol !== 'https:' || parsed.hostname.toLowerCase() !== 'github.com') {
-      throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'open-external', message: 'Only GitHub links can be opened.' });
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:' && parsed.protocol !== 'mailto:') {
+      throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'open-external', message: 'Only web or mail links can be opened.' });
     }
     await shell.openExternal(parsed.toString());
   });
