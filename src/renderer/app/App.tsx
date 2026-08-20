@@ -17,7 +17,6 @@ import { normalizeFilesTreeStates } from '../../shared/files-tree-state';
 import { normalizeRepositoryKey } from '../../shared/repository-projects';
 import type { SerializedAiError } from '../../shared/errors';
 import type { BranchInfo, ChangeKind, CommitFile, CommitInfo, CommitPage, FileChange, FileTreeEntry, RepositoryStatus, WorktreeInfo } from '../../shared/git-types';
-import { isKnownImagePath, isSvgPath } from '../../shared/image-types';
 import type { RepositoryChangeScope } from '../../shared/repository-change';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -29,7 +28,8 @@ import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { FilesView } from '@/features/files/FilesView';
-import { fileSnapshotFingerprint, isEditableTarget, isHtmlPath, isMarkdownPath, pathContains, selectedFileChanged, snapshotPathPresence } from '@/features/files/file-tree';
+import { fileSnapshotFingerprint, isEditableTarget, pathContains, selectedFileChanged, snapshotPathPresence } from '@/features/files/file-tree';
+import { shouldOpenChangePreview } from '@/features/changes/change-preview';
 import {
   activateTab, applyKeyboardAction, closeTab, dirtyTabs, dirtyTabsUnder, DRAFT_MEMORY_WARNING_BYTES, draftBytes,
   emptyFileSession, type FileSession, markTabsPresent, moveTab, type OpenMode, openTab, removeTabsUnder, renameTabPaths,
@@ -2639,7 +2639,7 @@ function ChangeFileRow({ change, disabled, action, depth = 0, showDirectory = fa
   const name = slash < 0 ? normalizedPath : normalizedPath.slice(slash + 1);
   const directory = slash < 0 ? '' : normalizedPath.slice(0, slash);
   const directorySummary = change.path.endsWith('/') || change.path.endsWith('\\');
-  const previewable = !directorySummary && change.kind !== 'deleted' && isRichPreviewPath(change.path);
+  const previewable = shouldOpenChangePreview(change.path, change.kind);
   return (
     <div ref={rowRef} role={showDirectory ? 'listitem' : 'treeitem'} className="change-row" style={{ paddingLeft: 12 + depth * 14 }} onClick={(event) => {
       if (!shouldActivateChangeRow(event.target)) return;
@@ -2662,10 +2662,6 @@ function ChangeFileRow({ change, disabled, action, depth = 0, showDirectory = fa
       <span className={`status-code ${change.conflict ? 'conflict' : ''}`} data-kind={change.kind}>{changeStatusCode(change.kind)}</span>
     </div>
   );
-}
-
-function isRichPreviewPath(path: string): boolean {
-  return isMarkdownPath(path) || isHtmlPath(path) || isSvgPath(path) || isKnownImagePath(path);
 }
 
 function ChangeActions({ paths, action, disabled, onDiscard, onAction }: {
