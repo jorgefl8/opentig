@@ -32,6 +32,7 @@ It is intentionally not an IDE, hosting service, or replacement for the Git CLI.
 ### Repositories and projects
 
 - Open existing local repositories and return to recently used repositories.
+- Relocate a recent repository when its folder moved, preserving its project assignment, open tabs, and expanded folders.
 - Group related repositories into named JustGit projects without moving anything on disk.
 - Create, rename, delete, and reassign project groups.
 - Switch quickly between repositories, branches, and available worktrees.
@@ -94,6 +95,7 @@ It is intentionally not an IDE, hosting service, or replacement for the Git CLI.
 ### History
 
 - Browse commit history incrementally instead of loading the entire repository at once; refreshes preserve loaded pages without duplicating commits.
+- Follow current-branch history through a compact Git graph with colored lanes for merges and parent relationships.
 - Inspect commit subjects, full descriptions, authors, dates, refs, publication state, and changed files. Expanded history rows show the complete description; long descriptions in the commit viewer can be revealed without hiding the diff.
 - Copy full commit hashes.
 - Open complete commit diffs or the diff for one file, including renamed paths.

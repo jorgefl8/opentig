@@ -57,6 +57,7 @@ export interface CommitInfo {
   email: string;
   date: string;
   decorations: string[];
+  parentOids: string[];
   parentCount: number;
   upstreamState: CommitUpstreamState;
   isHead: boolean;

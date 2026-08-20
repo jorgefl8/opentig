@@ -311,7 +311,7 @@ export class GitRepositoryOperations {
     const revision = cursor ?? 'HEAD';
     try {
       const [output, status] = await Promise.all([
-        this.git.run(repository.path, ['log', '--max-count=101', '--date=iso-strict', `--format=${LOG_FORMAT}`, revision, '--'], { operation: 'history', readOnly: true, maxOutputBytes: 8 * 1024 * 1024 }),
+        this.git.run(repository.path, ['log', '--topo-order', '--max-count=101', '--date=iso-strict', `--format=${LOG_FORMAT}`, revision, '--'], { operation: 'history', readOnly: true, maxOutputBytes: 8 * 1024 * 1024 }),
         this.repositories.status(repositoryId, false),
       ]);
       let commits = parseLog(output.stdout.toString('utf8'));

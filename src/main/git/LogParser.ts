@@ -11,6 +11,7 @@ export function parseLog(output: string): CommitInfo[] {
     if (fields.length < 9) return [];
     const oid = fields[0] ?? '';
     if (!/^[0-9a-f]{40,64}$/i.test(oid)) return [];
+    const parentOids = (fields[8] ?? '').split(' ').filter((value) => /^[0-9a-f]{40,64}$/i.test(value));
     return [{
       oid,
       shortOid: fields[1] ?? oid.slice(0, 7),
@@ -20,7 +21,8 @@ export function parseLog(output: string): CommitInfo[] {
       email: fields[5] ?? '',
       date: fields[6] ?? '',
       decorations: (fields[7] ?? '').split(',').map((value) => value.trim()).filter(Boolean),
-      parentCount: (fields[8] ?? '').split(' ').filter(Boolean).length,
+      parentOids,
+      parentCount: parentOids.length,
       upstreamState: 'unknown',
       isHead: false,
     }];

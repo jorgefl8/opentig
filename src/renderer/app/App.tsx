@@ -12,7 +12,8 @@ import type { AiHarnessId, AiHarnessStatus, BootstrapData, ChangesLayoutPreferen
 import { matchesCombo, resolveShortcuts, type ShortcutMap } from '../../shared/shortcuts';
 import { ShortcutsProvider } from './ShortcutsContext';
 import { useShortcuts } from './useShortcuts';
-import type { OpenFilesState } from '../../shared/open-files-state';
+import { normalizeOpenFilesStates, type OpenFilesState } from '../../shared/open-files-state';
+import { normalizeFilesTreeStates } from '../../shared/files-tree-state';
 import { normalizeRepositoryKey } from '../../shared/repository-projects';
 import type { SerializedAiError } from '../../shared/errors';
 import type { BranchInfo, ChangeKind, CommitFile, CommitInfo, CommitPage, FileChange, FileTreeEntry, RepositoryStatus, WorktreeInfo } from '../../shared/git-types';
@@ -44,6 +45,7 @@ import { PullRequestsView } from '@/features/pulls/PullRequestsView';
 import { LocalRefsDialog } from '@/features/refs/LocalRefsDialog';
 import type { LocalRefsTab } from '@/features/refs/local-refs-model';
 import { RepositoryProjectsDialog } from '@/features/repositories/RepositoryProjectsDialog';
+import { buildCommitGraph, type CommitGraphRow } from '@/features/history/commit-graph';
 import { AiLogDialog } from '@/features/ai/AiLogDialog';
 import { SearchView } from '@/features/search/SearchView';
 import { buildRepositoryPickerModel, getRepositoryPickerDisplayOrder, groupRecentRepositories, shortenRepositoryPath, touchRecentRepositories, type RepositoryOption } from '@/features/repositories/repository-select-model';
@@ -606,14 +608,65 @@ export default function App() {
     };
   }, [refreshFilesOnly, repository, view]);
 
-  const recordOpenedRepository = useCallback((selected: RepositoryInfo) => {
+  const recordOpenedRepository = useCallback((selected: RepositoryInfo, previousId?: string) => {
+    if (previousId && previousId !== selected.id) {
+      const expandedPaths = filesTreeStates.get(previousId);
+      filesTreeStates.delete(previousId);
+      if (expandedPaths) filesTreeStates.set(selected.id, expandedPaths);
+
+      const previousSession = fileSessionsRef.current.get(previousId);
+      if (previousSession) {
+        const sessions = new Map(fileSessionsRef.current);
+        sessions.delete(previousId);
+        sessions.set(selected.id, previousSession);
+        fileSessionsRef.current = sessions;
+        setFileSessions(sessions);
+      }
+      const drafts = fileDraftsRef.current.get(previousId);
+      if (drafts) {
+        fileDraftsRef.current.delete(previousId);
+        fileDraftsRef.current.set(selected.id, drafts);
+      }
+      const persisted = persistedSessionsRef.current.get(previousId);
+      if (persisted) {
+        persistedSessionsRef.current.delete(previousId);
+        persistedSessionsRef.current.set(selected.id, persisted);
+      }
+    }
     setRepository(selected);
-    setBootstrap((current) => current ? {
-      ...current,
-      activeRepository: selected,
-      recentRepositories: touchRecentRepositories(current.recentRepositories, selected, current.repositoryProjects),
-    } : current);
-  }, []);
+    setBootstrap((current) => {
+      if (!current) return current;
+      const previous = previousId && previousId !== selected.id
+        ? current.recentRepositories.find((item) => item.id === previousId)
+        : null;
+      let repositoryProjects = current.repositoryProjects;
+      if (previous) {
+        const previousKey = normalizeRepositoryKey(previous.commonDir);
+        const nextKey = normalizeRepositoryKey(selected.commonDir);
+        const destinationAlreadyAssigned = repositoryProjects.some((project) => (
+          project.repositoryKeys.some((key) => key === nextKey && key !== previousKey)
+        ));
+        repositoryProjects = repositoryProjects.map((project) => ({
+          ...project,
+          repositoryKeys: [...new Set(project.repositoryKeys.flatMap((key) => (
+            key !== previousKey ? [key] : destinationAlreadyAssigned ? [] : [nextKey]
+          )))],
+        }));
+      }
+      return {
+        ...current,
+        activeRepository: selected,
+        repositoryProjects,
+        recentRepositories: touchRecentRepositories(current.recentRepositories, selected, repositoryProjects),
+        filesTreeStates: previous ? normalizeFilesTreeStates(current.filesTreeStates.map((state) => (
+          state.repositoryId === previousId ? { ...state, repositoryId: selected.id } : state
+        ))) : current.filesTreeStates,
+        openFilesStates: previous ? normalizeOpenFilesStates(current.openFilesStates.map((state) => (
+          state.repositoryId === previousId ? { ...state, repositoryId: selected.id } : state
+        ))) : current.openFilesStates,
+      };
+    });
+  }, [filesTreeStates]);
 
   const openRepository = useCallback(async () => {
     try {
@@ -1255,7 +1308,10 @@ export default function App() {
 
   const selectRecent = async (id: string | null) => {
     if (!id || id === repository?.id) return;
-    try { recordOpenedRepository(await window.justgit.repository.openRecent(id)); }
+    try {
+      const selected = await window.justgit.repository.openRecent(id);
+      if (selected) recordOpenedRepository(selected, id);
+    }
     catch (reason) { setError(messageOf(reason)); }
   };
 
@@ -2638,11 +2694,13 @@ interface HistoryViewProps {
 function HistoryView({ repositoryId, upstream, readOnly, operation, commits, nextCursor, loading, undoing, onSelectCommit, onSelectFile, onUndo, onMore }: HistoryViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [expandedCommits, setExpandedCommits] = useState<Set<string>>(new Set());
+  const graph = useMemo(() => buildCommitGraph(commits ?? []), [commits]);
+  const graphWidth = graphWidthForLanes(graph.laneCount);
   // eslint-disable-next-line react-hooks/incompatible-library -- TanStack Virtual is intentionally imperative.
   const commitVirtualizer = useVirtualizer({
     count: commits?.length ?? 0,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => 66,
+    estimateSize: () => 52,
     getItemKey: (index) => commits?.[index]?.oid ?? index,
     overscan: 8,
   });
@@ -2672,6 +2730,8 @@ function HistoryView({ repositoryId, upstream, readOnly, operation, commits, nex
                     repositoryId={repositoryId}
                     upstream={upstream}
                     commit={commit}
+                    graphRow={graph.rows[virtualRow.index]!}
+                    graphWidth={graphWidth}
                     expanded={expandedCommits.has(commit.oid)}
                     onExpandedChange={(expanded) => setExpandedCommits((current) => {
                       const next = new Set(current);
@@ -2708,8 +2768,9 @@ function HistoryView({ repositoryId, upstream, readOnly, operation, commits, nex
 // Commit contents are immutable per oid, so cached file lists never go stale.
 const commitFilesCache = new Map<string, CommitFile[]>();
 
-function CommitRow({ repositoryId, upstream, commit, expanded, onExpandedChange, canUndo, onSelectCommit, onSelectFile, onUndo }: {
+function CommitRow({ repositoryId, upstream, commit, graphRow, graphWidth, expanded, onExpandedChange, canUndo, onSelectCommit, onSelectFile, onUndo }: {
   repositoryId: string; upstream: string | null; commit: CommitInfo; expanded: boolean; canUndo: boolean;
+  graphRow: CommitGraphRow; graphWidth: number;
   onExpandedChange(expanded: boolean): void;
   onSelectCommit(commit: CommitInfo): void; onSelectFile(oid: string, file: CommitFile): void; onUndo(commit: CommitInfo): void;
 }) {
@@ -2743,44 +2804,46 @@ function CommitRow({ repositoryId, upstream, commit, expanded, onExpandedChange,
   return (
     <div className="commit-item" role="listitem">
       <div className="commit-header">
+        <CommitGraph graph={graphRow} width={graphWidth} />
         <button className="commit-expand" aria-expanded={expanded} aria-label={expanded ? 'Collapse commit' : 'Expand commit'} onClick={() => onExpandedChange(!expanded)}>
           <IconChevronRight className={`folder-chevron ${expanded ? 'open' : ''}`} />
         </button>
         <div className="commit-main">
-          <Tooltip>
-            <TooltipTrigger render={<button className="commit-subject" onClick={() => onSelectCommit(commit)} />}>{commit.subject || '(no subject)'}</TooltipTrigger>
-            <TooltipContent side="right">View the full commit diff</TooltipContent>
-          </Tooltip>
+          <span className="commit-title-row">
+            <Tooltip>
+              <TooltipTrigger render={<button className="commit-subject" onClick={() => onSelectCommit(commit)} />}>{commit.subject || '(no subject)'}</TooltipTrigger>
+              <TooltipContent side="right">View the full commit diff</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger render={<span className="commit-date" />}>{formatRelativeDate(commit.date)}</TooltipTrigger>
+              <TooltipContent>{formatDate(commit.date)}</TooltipContent>
+            </Tooltip>
+          </span>
           <span className="commit-meta">
             <Tooltip>
               <TooltipTrigger render={<button className="commit-oid" onClick={() => void copyOid()} aria-label={`Copiar hash ${commit.shortOid}`} />}>{commit.shortOid}</TooltipTrigger>
               <TooltipContent>Copy full hash</TooltipContent>
             </Tooltip>
             <span className="commit-author">{commit.author}</span>
-            <span aria-hidden="true">·</span>
-            <Tooltip>
-              <TooltipTrigger render={<span className="commit-date" />}>{formatRelativeDate(commit.date)}</TooltipTrigger>
-              <TooltipContent>{formatDate(commit.date)}</TooltipContent>
-            </Tooltip>
+            {(refs.length > 0 || commit.parentCount > 1 || commit.upstreamState === 'local-only') && (
+              <span className="commit-refs">
+                {commit.upstreamState === 'local-only' && (
+                  <Tooltip>
+                    <TooltipTrigger render={<span className="ref-chip local-only" />}>Local</TooltipTrigger>
+                    <TooltipContent>{commit.isHead ? `Not in ${upstream ?? 'the upstream'} according to the latest known remote state.` : 'Not published. To avoid rewriting multiple commits, only the latest can be undone.'}</TooltipContent>
+                  </Tooltip>
+                )}
+                {commit.parentCount > 1 && <span className="ref-chip merge">merge</span>}
+                {shownRefs.map((ref) => <span key={`${ref.kind}:${ref.label}`} className={`ref-chip ${ref.kind}`}>{ref.label}</span>)}
+                {hiddenRefs.length > 0 && (
+                  <Tooltip>
+                    <TooltipTrigger render={<span className="ref-chip more" />}>+{hiddenRefs.length}</TooltipTrigger>
+                    <TooltipContent>{hiddenRefs.map((ref) => ref.label).join(' · ')}</TooltipContent>
+                  </Tooltip>
+                )}
+              </span>
+            )}
           </span>
-          {(refs.length > 0 || commit.parentCount > 1 || commit.upstreamState === 'local-only') && (
-            <span className="commit-refs">
-              {commit.upstreamState === 'local-only' && (
-                <Tooltip>
-                  <TooltipTrigger render={<span className="ref-chip local-only" />}>Local only</TooltipTrigger>
-                  <TooltipContent>{commit.isHead ? `Not in ${upstream ?? 'the upstream'} according to the latest known remote state.` : 'Not published. To avoid rewriting multiple commits, only the latest can be undone.'}</TooltipContent>
-                </Tooltip>
-              )}
-              {commit.parentCount > 1 && <span className="ref-chip merge">merge</span>}
-              {shownRefs.map((ref) => <span key={`${ref.kind}:${ref.label}`} className={`ref-chip ${ref.kind}`}>{ref.label}</span>)}
-              {hiddenRefs.length > 0 && (
-                <Tooltip>
-                  <TooltipTrigger render={<span className="ref-chip more" />}>+{hiddenRefs.length}</TooltipTrigger>
-                  <TooltipContent>{hiddenRefs.map((ref) => ref.label).join(' · ')}</TooltipContent>
-                </Tooltip>
-              )}
-            </span>
-          )}
         </div>
         {canUndo && (
           <Tooltip>
@@ -2789,8 +2852,9 @@ function CommitRow({ repositoryId, upstream, commit, expanded, onExpandedChange,
           </Tooltip>
         )}
       </div>
+      {expanded && graphRow.continuations.length > 0 && <CommitGraphContinuation graph={graphRow} width={graphWidth} />}
       {expanded && (
-        <div className="commit-files">
+        <div className="commit-files" style={{ paddingLeft: graphWidth + 31 }}>
           {commit.body && <p className="commit-description">{commit.body}</p>}
           {filesError && <div className="commit-files-message error">{filesError}</div>}
           {!files && !filesError && <div className="commit-files-message"><IconLoader4 className="spinner" /> <ShimmeringText text="Loading files…" /></div>}
@@ -2809,6 +2873,53 @@ function CommitRow({ repositoryId, upstream, commit, expanded, onExpandedChange,
         </div>
       )}
     </div>
+  );
+}
+
+const GRAPH_LANE_GAP = 10;
+const GRAPH_NODE_Y = 26;
+const GRAPH_ROW_HEIGHT = 52;
+const GRAPH_COLORS = ['var(--primary)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)'];
+
+function graphWidthForLanes(laneCount: number): number {
+  return 14 + Math.max(0, laneCount - 1) * GRAPH_LANE_GAP;
+}
+
+function graphX(lane: number): number {
+  return 7 + lane * GRAPH_LANE_GAP;
+}
+
+function graphColor(index: number): string {
+  return GRAPH_COLORS[index % GRAPH_COLORS.length]!;
+}
+
+function CommitGraph({ graph, width }: { graph: CommitGraphRow; width: number }) {
+  return (
+    <svg className="commit-graph" width={width} height={GRAPH_ROW_HEIGHT} viewBox={`0 0 ${width} ${GRAPH_ROW_HEIGHT}`} aria-hidden="true">
+      {graph.segments.map((segment, index) => {
+        const fromX = graphX(segment.fromLane);
+        const toX = graphX(segment.toLane);
+        const fromY = segment.from === 'top' ? 0 : GRAPH_NODE_Y;
+        const toY = segment.to === 'node' ? GRAPH_NODE_Y : GRAPH_ROW_HEIGHT;
+        const middleY = (fromY + toY) / 2;
+        const d = fromX === toX
+          ? `M ${fromX} ${fromY} L ${toX} ${toY}`
+          : `M ${fromX} ${fromY} C ${fromX} ${middleY}, ${toX} ${middleY}, ${toX} ${toY}`;
+        return <path key={`${index}:${d}`} d={d} stroke={graphColor(segment.color)} />;
+      })}
+      <circle cx={graphX(graph.lane)} cy={GRAPH_NODE_Y} r="4" fill="var(--sidebar)" stroke={graphColor(graph.color)} />
+      <circle cx={graphX(graph.lane)} cy={GRAPH_NODE_Y} r="1.5" fill={graphColor(graph.color)} />
+    </svg>
+  );
+}
+
+function CommitGraphContinuation({ graph, width }: { graph: CommitGraphRow; width: number }) {
+  return (
+    <svg className="commit-graph-continuation" width={width} viewBox={`0 0 ${width} 100`} preserveAspectRatio="none" aria-hidden="true">
+      {graph.continuations.map((lane) => (
+        <line key={lane.lane} x1={graphX(lane.lane)} y1="0" x2={graphX(lane.lane)} y2="100" stroke={graphColor(lane.color)} />
+      ))}
+    </svg>
   );
 }
 

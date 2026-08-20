@@ -444,30 +444,35 @@
   @media (prefers-reduced-motion: reduce) {
     .file-tree-row, .file-drag-overlay { transition: none !important; }
   }
-  .history-list { display: flex; height: 100%; min-height: 0; flex-direction: column; padding-top: 5px; }
+  .history-list { display: flex; height: 100%; min-height: 0; flex-direction: column; }
   .history-scroll { min-height: 0; flex: 1; overflow: auto; padding-bottom: 12px; }
   .history-more { position: absolute; left: 12px; right: 12px; width: calc(100% - 24px); margin-top: 6px; }
   .history-upstream-notice { flex: none; margin: 5px 9px 9px; border: 1px solid var(--sidebar-border); border-radius: var(--radius-md); background: color-mix(in oklch, var(--muted) 60%, transparent); padding: 8px 9px; color: var(--muted-foreground); font-size: 10px; line-height: 1.4; }
-  .commit-item { border-bottom: 1px solid color-mix(in oklch, var(--sidebar-border) 55%, transparent); }
-  .commit-header { display: flex; width: 100%; align-items: center; gap: 6px; padding: 8px 10px 8px 8px; transition: background-color .12s ease; }
+  .commit-item { position: relative; border-bottom: 1px solid color-mix(in oklch, var(--sidebar-border) 55%, transparent); }
+  .commit-header { position: relative; z-index: 1; display: flex; width: 100%; min-height: 52px; align-items: center; gap: 4px; padding: 0 6px 0 4px; transition: background-color .12s ease; }
   .commit-header:hover { background: var(--sidebar-accent); }
   .commit-header:focus-within { background: var(--sidebar-accent); }
-  .commit-expand { display: grid; width: 26px; height: 26px; flex: none; place-items: center; margin: 0 -5px; border-radius: var(--radius-md); color: var(--muted-foreground); transition: background-color .12s ease, color .12s ease, box-shadow .12s ease; }
-  .commit-expand svg { width: 13px; height: 13px; }
+  .commit-graph { display: block; flex: none; overflow: visible; }
+  .commit-graph path, .commit-graph-continuation line { fill: none; stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+  .commit-graph circle { stroke-width: 1.75; vector-effect: non-scaling-stroke; }
+  .commit-graph-continuation { position: absolute; top: 52px; bottom: 0; left: 4px; z-index: 0; height: calc(100% - 52px); pointer-events: none; }
+  .commit-expand { display: grid; width: 20px; height: 24px; flex: none; place-items: center; border-radius: var(--radius-md); color: var(--muted-foreground); transition: background-color .12s ease, color .12s ease, box-shadow .12s ease; }
+  .commit-expand svg { width: 12px; height: 12px; }
   .commit-expand:hover { background: color-mix(in oklch, var(--foreground) 11%, transparent); color: var(--foreground); box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--foreground) 8%, transparent); }
-  .commit-main { display: grid; min-width: 0; flex: 1; gap: 3px; }
-  .commit-subject { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 600; text-align: left; transition: color .12s ease; }
+  .commit-main { display: grid; min-width: 0; flex: 1; gap: 3px; padding: 5px 0; }
+  .commit-title-row { display: flex; min-width: 0; align-items: baseline; gap: 8px; }
+  .commit-subject { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 650; text-align: left; transition: color .12s ease; }
   .commit-subject:hover { color: var(--primary); }
-  .commit-meta { display: flex; min-width: 0; align-items: center; gap: 5px; overflow: hidden; color: var(--muted-foreground); font-size: 10px; white-space: nowrap; }
+  .commit-meta { display: flex; min-width: 0; align-items: center; gap: 5px; overflow: hidden; color: var(--muted-foreground); font-size: 9.5px; white-space: nowrap; }
   .commit-undo { flex: none; opacity: 0; color: var(--muted-foreground); transition: opacity .12s ease, background-color .12s ease, color .12s ease, box-shadow .12s ease; }
   .commit-header:hover .commit-undo, .commit-header:focus-within .commit-undo, .commit-undo:focus-visible { opacity: 1; }
   .commit-undo:hover { color: var(--destructive); }
-  .commit-author { overflow: hidden; text-overflow: ellipsis; }
-  .commit-date { flex: none; }
-  .commit-oid { flex: none; border-radius: var(--radius-sm); background: var(--muted); padding: 0 5px; color: var(--muted-foreground); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 9.5px; font-weight: 600; transition: background-color .12s ease, color .12s ease; }
+  .commit-author { max-width: 34%; overflow: hidden; text-overflow: ellipsis; }
+  .commit-date { flex: none; color: var(--muted-foreground); font-size: 9.5px; }
+  .commit-oid { flex: none; border-radius: var(--radius-sm); background: var(--muted); padding: 0 4px; color: var(--muted-foreground); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 9px; font-weight: 600; transition: background-color .12s ease, color .12s ease; }
   .commit-oid:hover { background: color-mix(in oklch, var(--primary) 16%, var(--muted)); color: var(--foreground); }
-  .commit-refs { display: flex; min-width: 0; flex-wrap: wrap; gap: 4px; }
-  .ref-chip { display: inline-block; max-width: 170px; overflow: hidden; border-radius: 999px; padding: 1px 7px; font-size: 9px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+  .commit-refs { display: flex; min-width: 0; flex: 1; gap: 3px; overflow: hidden; }
+  .ref-chip { display: inline-block; max-width: 120px; flex: none; overflow: hidden; border-radius: 999px; padding: 1px 5px; font-size: 8.5px; font-weight: 700; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
   .ref-chip.head { background: color-mix(in oklch, var(--primary) 16%, transparent); color: color-mix(in oklch, var(--primary) 70%, var(--foreground)); box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--primary) 32%, transparent); }
   .ref-chip.branch { background: color-mix(in oklch, var(--chart-2) 16%, transparent); color: color-mix(in oklch, var(--chart-2) 62%, var(--foreground)); box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--chart-2) 30%, transparent); }
   .ref-chip.remote { background: var(--muted); color: var(--muted-foreground); box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--foreground) 8%, transparent); }
@@ -475,7 +480,7 @@
   .ref-chip.more { background: var(--muted); color: var(--muted-foreground); cursor: default; }
   .ref-chip.local-only { background: color-mix(in oklch, var(--chart-3) 17%, transparent); color: color-mix(in oklch, var(--chart-3) 65%, var(--foreground)); box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--chart-3) 30%, transparent); }
   .ref-chip.merge { background: var(--muted); color: var(--muted-foreground); box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--foreground) 8%, transparent); }
-  .commit-files { display: grid; gap: 1px; padding: 0 8px 9px 31px; animation: fade-rise var(--motion-med) var(--ease-out); }
+  .commit-files { position: relative; z-index: 1; display: grid; gap: 1px; padding: 0 8px 9px 31px; animation: fade-rise var(--motion-med) var(--ease-out); }
   .commit-description { margin: 1px 6px 7px; border-left: 2px solid var(--sidebar-border); padding: 2px 8px; color: var(--muted-foreground); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; white-space: pre-wrap; }
   .commit-files-summary { padding: 1px 6px 5px; color: var(--muted-foreground); font-size: 10px; font-weight: 600; }
   .commit-files-summary .add { color: var(--diff-added); }

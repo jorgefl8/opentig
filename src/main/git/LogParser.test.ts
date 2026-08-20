@@ -11,6 +11,7 @@ describe('parseLog', () => {
       body: 'First paragraph.\n\nMore detail.',
       upstreamState: 'unknown',
       isHead: false,
+      parentOids: [parent],
       parentCount: 1,
     })]);
   });
