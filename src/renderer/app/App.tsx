@@ -4,7 +4,7 @@ import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-quer
 import {
   IconChevronDown, IconChevronRight, IconDeviceDesktop, IconFileArrowRight, IconFolder, IconFolderOpen,
   IconFiles, IconGitBranch, IconGitCompare, IconGitPullRequest, IconHierarchy2, IconHistory,
-  IconKeyboard, IconList, IconLoader4, IconMinus, IconMoon, IconPlus,
+  IconArrowDown, IconArrowUp, IconKeyboard, IconList, IconLoader4, IconMinus, IconMoon, IconPlus,
   IconRefresh, IconRestore, IconSearch, IconSettings, IconSparkles, IconSun, IconX,
 } from '@tabler/icons-react';
 import { Toaster, sileo } from 'sileo';
@@ -55,6 +55,7 @@ import { refreshOperationsForScope } from './refresh-policy';
 import { resolveWindowControlsInset } from './window-controls';
 import { queryKeys, queryResourcesForScope } from '@/lib/query-client';
 import { shouldActivateChangeRow } from '@/features/changes/row-activation';
+import { projectPullBlockedCopy, projectPullSuccessCopy, projectPushBlockedCopy, projectPushSuccessCopy, repositorySyncLoadingToast, visibleRepositorySyncActions, type ProjectSyncAction, type RepositorySyncCounts } from '@/features/repositories/project-sync';
 
 const Viewer = lazy(() => import('@/features/viewer/Viewer'));
 const NO_OPEN_FILES_STATES: OpenFilesState[] = [];
@@ -102,6 +103,7 @@ export default function App() {
   const [completedCommitIndices, setCompletedCommitIndices] = useState<ReadonlySet<number>>(() => new Set());
   const [commitPlanCollapsed, setCommitPlanCollapsed] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
+  const [repositorySyncOperations, setRepositorySyncOperations] = useState<ReadonlyMap<string, ProjectSyncAction>>(() => new Map());
   const [error, setError] = useState<string | null>(null);
   const [refreshVersion, setRefreshVersion] = useState(0);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -125,6 +127,7 @@ export default function App() {
   // an in-flight (stale) file snapshot, so don't declare it deleted until it appears.
   const pendingViewerPathRef = useRef<string | null>(null);
   const generationRequest = useRef<{ id: string; repositoryId: string } | null>(null);
+  const repositorySyncOperationsRef = useRef<Map<string, ProjectSyncAction>>(new Map());
   const [filesTreeStates] = useState<Map<string, string[]>>(() => new Map());
   const repositoryRef = useRef<RepositoryInfo | null>(null);
   const fileSessionsRef = useRef<ReadonlyMap<string, FileSession>>(fileSessions);
@@ -1559,6 +1562,49 @@ export default function App() {
     }
   };
 
+  const syncRepository = async (item: RepositoryOption, projectName: string | null, action: ProjectSyncAction) => {
+    const repositoryId = item.recent.id;
+    if (repositorySyncOperationsRef.current.has(repositoryId)) return;
+    repositorySyncOperationsRef.current.set(repositoryId, action);
+    setRepositorySyncOperations(new Map(repositorySyncOperationsRef.current));
+
+    try {
+      const label = projectName ? `${projectName} · ${item.name}` : item.name;
+      if (action === 'pull') {
+        await sileo.promise(async () => {
+          const result = await window.justgit.refs.pull(repositoryId);
+          if (repositoryRef.current?.id === repositoryId) await refresh({ background: true });
+          if (result.status === 'success' || result.status === 'up-to-date') return result;
+          throw new PullBlocked(result);
+        }, {
+          loading: repositorySyncLoadingToast(repositoryId, action, `Pulling ${label}…`),
+          success: (result) => projectPullSuccessCopy(label, result),
+          error: (reason) => reason instanceof PullBlocked
+            ? projectPullBlockedCopy(label, reason.result)
+            : { title: `Could not pull ${label}`, description: messageOf(reason), duration: 10_000 },
+        });
+      } else {
+        await sileo.promise(async () => {
+          const result = await window.justgit.refs.push(repositoryId);
+          if (repositoryRef.current?.id === repositoryId) await refresh({ background: true });
+          if (result.status === 'success' || result.status === 'up-to-date') return result;
+          throw new PushBlocked(result);
+        }, {
+          loading: repositorySyncLoadingToast(repositoryId, action, `Pushing ${label}…`),
+          success: (result) => projectPushSuccessCopy(label, result),
+          error: (reason) => reason instanceof PushBlocked
+            ? projectPushBlockedCopy(label, reason.result)
+            : { title: `Could not push ${label}`, description: messageOf(reason), duration: 10_000 },
+        });
+      }
+    } catch {
+      // Sileo rendered the repository-specific failure.
+    } finally {
+      repositorySyncOperationsRef.current.delete(repositoryId);
+      setRepositorySyncOperations(new Map(repositorySyncOperationsRef.current));
+    }
+  };
+
   if (!bootstrap) return <div className="splash"><IconLoader4 className="spinner" /><span>Loading JustGit…</span></div>;
   if (!repository) return <Welcome recent={bootstrap.recentRepositories} onOpen={openRepository} onRecent={(id) => void selectRecent(id)} error={error} />;
 
@@ -1640,6 +1686,7 @@ export default function App() {
           worktrees={worktrees}
           preferences={bootstrap.preferences}
           busy={busy}
+          repositorySyncOperations={repositorySyncOperations}
           onOpen={openRepository}
           onRecent={selectRecent}
           onBranch={switchBranch}
@@ -1647,6 +1694,7 @@ export default function App() {
           onRefresh={() => void refresh()}
           onPull={() => void pullUpdates()}
           onPush={() => void pushUpdates()}
+          onRepositorySync={syncRepository}
           onPreference={(partial) => void updatePreference(partial)}
           onOrganizationChange={(organization) => setBootstrap((current) => current ? { ...current, ...organization } : current)}
           onRefsManaged={handleRefsManaged}
@@ -1869,6 +1917,8 @@ interface ToolbarProps {
   onCloseFileTab(path: string): void;
   onReorderFileTab(path: string, toIndex: number): void;
   onPull(): void; onPush(): void;
+  repositorySyncOperations: ReadonlyMap<string, ProjectSyncAction>;
+  onRepositorySync(repository: RepositoryOption, projectName: string | null, action: ProjectSyncAction): Promise<void>;
   settingsOpen: boolean; settingsSection: SettingsSection;
   onSettingsOpen(open: boolean): void; onSettingsSection(section: SettingsSection): void;
 }
@@ -1886,8 +1936,10 @@ function Toolbar(props: ToolbarProps) {
   const [projectsOpen, setProjectsOpen] = useState(false);
   const [refsOpen, setRefsOpen] = useState(false);
   const [refsTab, setRefsTab] = useState<LocalRefsTab>('branches');
+  const [repositorySyncCounts, setRepositorySyncCounts] = useState<ReadonlyMap<string, RepositorySyncCounts>>(() => new Map());
   const repositoryNumberBuffer = useRef('');
   const repositoryNumberTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const repositoryStatusVersions = useRef<Map<string, number>>(new Map());
   // A pending delete/remove must not race a switcher action.
   const [refsBusy, setRefsBusy] = useState(false);
   const openRefsManager = (tab: LocalRefsTab) => { setRefsTab(tab); setRefsOpen(true); };
@@ -1899,6 +1951,47 @@ function Toolbar(props: ToolbarProps) {
     [visibleRepositories],
   );
   const currentRepositoryKey = normalizeRepositoryKey(props.repository.commonDir);
+  const currentRepositorySyncBusy = props.repositorySyncOperations.has(props.repository.id);
+
+  const refreshRepositorySyncCounts = useCallback(async (repositories: RepositoryOption[]) => {
+    await Promise.all(repositories.map(async (item) => {
+      const repositoryId = item.recent.id;
+      const version = (repositoryStatusVersions.current.get(repositoryId) ?? 0) + 1;
+      repositoryStatusVersions.current.set(repositoryId, version);
+      try {
+        const nextStatus = await window.justgit.repository.getStatus(repositoryId, false);
+        if (repositoryStatusVersions.current.get(repositoryId) !== version) return;
+        setRepositorySyncCounts((current) => {
+          const next = new Map(current);
+          next.set(repositoryId, { ahead: nextStatus.ahead, behind: nextStatus.behind });
+          return next;
+        });
+      } catch {
+        if (repositoryStatusVersions.current.get(repositoryId) !== version) return;
+        setRepositorySyncCounts((current) => {
+          const next = new Map(current);
+          next.delete(repositoryId);
+          return next;
+        });
+      }
+    }));
+  }, []);
+
+  useEffect(() => {
+    const currentStatus = props.status;
+    if (!currentStatus) return;
+    const repositoryId = props.repository.id;
+    repositoryStatusVersions.current.set(repositoryId, (repositoryStatusVersions.current.get(repositoryId) ?? 0) + 1);
+    setRepositorySyncCounts((current) => {
+      const next = new Map(current);
+      next.set(repositoryId, { ahead: currentStatus.ahead, behind: currentStatus.behind });
+      return next;
+    });
+  }, [props.repository.id, props.status]);
+
+  useEffect(() => {
+    if (repositorySelectOpen) void refreshRepositorySyncCounts(picker.repositories);
+  }, [picker.repositories, refreshRepositorySyncCounts, repositorySelectOpen]);
 
   const clearRepositoryNumberShortcut = useCallback(() => {
     repositoryNumberBuffer.current = '';
@@ -1977,11 +2070,43 @@ function Toolbar(props: ToolbarProps) {
   }, [clearRepositoryNumberShortcut, projectsOpen, props.settingsOpen, refsOpen, repoSwitcherKey, repositorySelectOpen, selectRepositoryAt, visibleRepositories]);
 
   // The row already shows the tail of the path, so no hover tooltip repeats it.
-  const repositoryItem = (group: RepositoryOption) => (
+  const repositoryItem = (group: RepositoryOption, projectName: string | null = null) => (
     <SelectItem key={group.key} value={group.key} className="repo-select-item">
       <span className="repo-select-item-copy">
         <strong>{group.name}</strong>
         <small>{shortenRepositoryPath(group.rootPath)}</small>
+      </span>
+      <span className="repository-sync-actions">
+        {visibleRepositorySyncActions(repositorySyncCounts.get(group.recent.id), props.repositorySyncOperations.get(group.recent.id)).map((action) => {
+          const running = props.repositorySyncOperations.get(group.recent.id);
+          const disabled = Boolean(running) || (Boolean(props.busy) && group.recent.id === props.repository.id);
+          const label = action === 'pull' ? 'Pull' : 'Push';
+          const count = action === 'pull' ? repositorySyncCounts.get(group.recent.id)?.behind ?? 0 : repositorySyncCounts.get(group.recent.id)?.ahead ?? 0;
+          return (
+            <Tooltip key={action}>
+              <TooltipTrigger render={(
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="xs"
+                  disabled={disabled}
+                  aria-label={`${label} ${group.name}`}
+                  onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); }}
+                  onKeyDown={(event) => event.stopPropagation()}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    void props.onRepositorySync(group, projectName, action).finally(() => refreshRepositorySyncCounts([group]));
+                  }}
+                />
+              )}>
+                {running === action ? <IconLoader4 data-icon="inline-start" className="animate-spin" /> : action === 'pull' ? <IconArrowDown data-icon="inline-start" /> : <IconArrowUp data-icon="inline-start" />}
+                <span>{count}</span>
+              </TooltipTrigger>
+              <TooltipContent>{label} {count} {count === 1 ? 'commit' : 'commits'} · {group.name}</TooltipContent>
+            </Tooltip>
+          );
+        })}
       </span>
       <Kbd className="repo-select-index">{repositoryIndex.get(group.key)}</Kbd>
     </SelectItem>
@@ -2011,14 +2136,14 @@ function Toolbar(props: ToolbarProps) {
         <SelectContent align="start" alignItemWithTrigger={false} className="w-max max-w-[min(380px,calc(100vw-24px))] p-1">
           {picker.projectSections.map((section) => (
             <SelectGroup key={section.id} className="repo-select-group p-0">
-              <SelectLabel className="repo-select-label"><span>{section.name}</span></SelectLabel>
-              {section.repositories.map(repositoryItem)}
+              <SelectLabel className="repo-select-label"><span className="repo-select-label-name">{section.name}</span></SelectLabel>
+              {section.repositories.map((repository) => repositoryItem(repository, section.name))}
             </SelectGroup>
           ))}
           {picker.unassigned.length > 0 && (
             <SelectGroup className="repo-select-group p-0">
               <SelectLabel className="repo-select-label plain"><span>Repositories</span></SelectLabel>
-              {picker.unassigned.map(repositoryItem)}
+              {picker.unassigned.map((repository) => repositoryItem(repository))}
             </SelectGroup>
           )}
           <SelectItem value={MANAGE_PROJECTS_VALUE} className="repo-select-manage"><IconSettings /><span>Manage projects…</span></SelectItem>
@@ -2041,7 +2166,7 @@ function Toolbar(props: ToolbarProps) {
         <div className="branch-stats" aria-label="Branch and local changes summary">
           {(props.status.behind > 0 || props.busy === 'pull') && (
             <Tooltip>
-              <TooltipTrigger render={<button className="branch-sync" disabled={Boolean(props.busy)} onClick={props.onPull} aria-label={`Pull ${props.status.behind} commits`} />}>
+              <TooltipTrigger render={<button className="branch-sync" disabled={Boolean(props.busy) || currentRepositorySyncBusy} onClick={props.onPull} aria-label={`Pull ${props.status.behind} commits`} />}>
                 {props.busy === 'pull' ? <IconLoader4 className="animate-spin" /> : <span>↓{props.status.behind}</span>}
               </TooltipTrigger>
               <TooltipContent>{props.busy === 'pull' ? 'Pulling changes…' : `Pull ${props.status.behind} ${props.status.behind === 1 ? 'commit' : 'commits'}`}</TooltipContent>
@@ -2049,7 +2174,7 @@ function Toolbar(props: ToolbarProps) {
           )}
           {(props.status.ahead > 0 || props.busy === 'push') && (
             <Tooltip>
-              <TooltipTrigger render={<button className="branch-push" disabled={Boolean(props.busy)} onClick={props.onPush} aria-label={`Push ${props.status.ahead} commits`} />}>
+              <TooltipTrigger render={<button className="branch-push" disabled={Boolean(props.busy) || currentRepositorySyncBusy} onClick={props.onPush} aria-label={`Push ${props.status.ahead} commits`} />}>
                 {props.busy === 'push' ? <IconLoader4 className="animate-spin" /> : <span>↑{props.status.ahead}</span>}
               </TooltipTrigger>
               <TooltipContent>{props.busy === 'push' ? 'Pushing commits…' : `Push ${props.status.ahead} ${props.status.ahead === 1 ? 'commit' : 'commits'}`}</TooltipContent>

@@ -133,7 +133,10 @@ export function registerHandlers(services: Services): () => void {
     services.watcher.start(repository);
     return repository;
   });
-  handle(IPC.repositoryStatus, 'status', (id) => services.repositories.status(stringArg(id, 'status', 64)));
+  handle(IPC.repositoryStatus, 'status', (id, includeStats) => services.repositories.status(
+    stringArg(id, 'status', 64),
+    includeStats === undefined ? true : booleanArg(includeStats, 'status'),
+  ));
   handle(IPC.repositoryFiles, 'files', (id) => services.files.list(stringArg(id, 'files', 64)));
   handle(IPC.repositorySearch, 'search', (id, options) => services.search.search(
     stringArg(id, 'search', 64),

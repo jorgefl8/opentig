@@ -36,7 +36,7 @@ export function createApi(ipcRenderer: IpcRenderer, setZoomFactor: (factor: numb
     repository: {
       select: () => invoke(IPC.repositorySelect),
       openRecent: (id) => invoke(IPC.repositoryOpenRecent, id),
-      getStatus: (id) => invoke(IPC.repositoryStatus, id),
+      getStatus: (id, includeStats) => invoke(IPC.repositoryStatus, id, includeStats),
       getFiles: (id) => invoke(IPC.repositoryFiles, id),
       getDirectoryEntries: (id, path) => invoke(IPC.repositoryDirectoryEntries, id, path),
       readFile: (id, path, allowLarge) => invoke(IPC.repositoryReadFile, id, path, allowLarge),

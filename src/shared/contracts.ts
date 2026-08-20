@@ -416,7 +416,7 @@ export interface JustGitApi {
   repository: {
     select(): Promise<RepositoryInfo | null>;
     openRecent(id: string): Promise<RepositoryInfo | null>;
-    getStatus(id: string): Promise<RepositoryStatus>;
+    getStatus(id: string, includeStats?: boolean): Promise<RepositoryStatus>;
     getFiles(id: string): Promise<FileTreeEntry[]>;
     /** One level of a folder the tree left collapsed (ignored folders such as node_modules/). */
     getDirectoryEntries(id: string, path: string): Promise<FileTreeEntry[]>;
