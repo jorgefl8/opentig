@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { z } from 'zod';
-import type { AiHarnessId, Preferences, RecentRepository, RepositoryOrganization, RepositoryProject } from '../../shared/contracts';
+import type { AiHarnessId, Preferences, RecentRepository, RepositoryInfo, RepositoryOrganization, RepositoryProject } from '../../shared/contracts';
 import { GitOperationError } from '../../shared/errors';
 import { sanitizeShortcutOverrides } from '../../shared/shortcuts';
 import { FILES_TREE_SAVE_DEBOUNCE_MS, normalizeFilesTreeStates, type FilesTreeState, upsertFilesTreeState } from '../../shared/files-tree-state';
@@ -83,6 +83,43 @@ export class SettingsStore {
     const recent = { ...repository, lastOpenedAt: new Date().toISOString() };
     this.data.recentRepositories = [recent, ...this.data.recentRepositories.filter((item) => item.id !== repository.id)];
     this.data.activeRepositoryId = repository.id;
+    this.pruneRecentRepositories();
+    await this.save();
+  }
+
+  /**
+   * Rebinds one saved worktree after its directory moved. The new location is
+   * validated by RepositoryService before this method runs, so every persisted
+   * reference can move in one atomic settings write.
+   */
+  async relocateRepository(previousId: string, repository: RepositoryInfo): Promise<void> {
+    const previous = this.data.recentRepositories.find((item) => item.id === previousId);
+    if (!previous) throw projectError('Unknown repository.');
+
+    const previousKey = normalizeRepositoryKey(previous.commonDir);
+    const nextKey = normalizeRepositoryKey(repository.commonDir);
+    const destinationAlreadyAssigned = this.data.repositoryProjects.some((project) => (
+      project.repositoryKeys.some((key) => key === nextKey && key !== previousKey)
+    ));
+
+    this.data.repositoryProjects = this.data.repositoryProjects.map((project) => {
+      const repositoryKeys = project.repositoryKeys.flatMap((key) => {
+        if (key !== previousKey) return [key];
+        return destinationAlreadyAssigned ? [] : [nextKey];
+      });
+      return { ...project, repositoryKeys: [...new Set(repositoryKeys)] };
+    });
+    this.data.filesTreeStates = normalizeFilesTreeStates(this.data.filesTreeStates.map((state) => (
+      state.repositoryId === previousId ? { ...state, repositoryId: repository.id } : state
+    )));
+    this.data.openFilesStates = normalizeOpenFilesStates(this.data.openFilesStates.map((state) => (
+      state.repositoryId === previousId ? { ...state, repositoryId: repository.id } : state
+    )));
+    this.data.recentRepositories = [
+      { ...repository, lastOpenedAt: new Date().toISOString() },
+      ...this.data.recentRepositories.filter((item) => item.id !== previousId && item.id !== repository.id),
+    ];
+    if (this.data.activeRepositoryId === previousId) this.data.activeRepositoryId = repository.id;
     this.pruneRecentRepositories();
     await this.save();
   }

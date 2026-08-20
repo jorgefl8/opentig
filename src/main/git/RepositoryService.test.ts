@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rename, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -34,6 +34,21 @@ describe('RepositoryService change stats', () => {
     await writeFile(target, 'uno\ndos\n');
     expect((await fixture.repositories.status(fixture.repositoryId)).insertions).toBe(2);
   });
+
+  it('rebinds a recent repository after its directory moves', async () => {
+    const fixture = await repository();
+    const previousId = fixture.repositoryId;
+    const moved = path.join(fixture.root, 'moved');
+    await rename(fixture.work, moved);
+
+    await expect(fixture.repositories.openRecent(previousId)).rejects.toThrow();
+    const relocated = await fixture.repositories.relocateRecent(previousId, moved);
+
+    expect(relocated.path).toBe(path.resolve(moved));
+    expect(relocated.id).not.toBe(previousId);
+    expect(fixture.repositories.recents()).toEqual([expect.objectContaining({ id: relocated.id, path: relocated.path })]);
+    expect(await fixture.repositories.openRecent(relocated.id)).toMatchObject({ id: relocated.id, path: relocated.path });
+  });
 });
 
 async function repository() {
@@ -50,5 +65,5 @@ async function repository() {
   await settings.load();
   const repositories = new RepositoryService(new GitProcess(), settings);
   const repositoryInfo = await repositories.openPath(work);
-  return { work, repositories, repositoryId: repositoryInfo.id };
+  return { root, work, repositories, repositoryId: repositoryInfo.id };
 }

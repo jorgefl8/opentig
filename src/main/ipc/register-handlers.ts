@@ -104,7 +104,31 @@ export function registerHandlers(services: Services): () => void {
     return repository;
   });
   handle(IPC.repositoryOpenRecent, 'open-recent', async (id) => {
-    const repository = await services.repositories.openRecent(stringArg(id, 'open-recent', 64));
+    const repositoryId = stringArg(id, 'open-recent', 64);
+    let repository;
+    try {
+      repository = await services.repositories.openRecent(repositoryId);
+    } catch (error) {
+      const recent = services.repositories.recent(repositoryId);
+      if (!recent) throw error;
+      const prompt = await dialog.showMessageBox(services.window, {
+        type: 'warning',
+        title: 'Repository unavailable',
+        message: `JustGit could not open ${recent.repositoryName}.`,
+        detail: `${recent.path}\n\nIf the repository moved, locate its new folder. Its project assignment, open tabs, and expanded folders will be preserved.`,
+        buttons: ['Locate repository', 'Cancel'],
+        defaultId: 0,
+        cancelId: 1,
+        noLink: true,
+      });
+      if (prompt.response !== 0) return null;
+      const selection = await dialog.showOpenDialog(services.window, {
+        properties: ['openDirectory'],
+        title: `Locate ${recent.repositoryName}`,
+      });
+      if (selection.canceled || !selection.filePaths[0]) return null;
+      repository = await services.repositories.relocateRecent(repositoryId, selection.filePaths[0]);
+    }
     pendingCutPaths = null;
     services.watcher.start(repository);
     return repository;

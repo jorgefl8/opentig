@@ -126,6 +126,28 @@ describe('SettingsStore repository projects', () => {
     expect(store.recentRepositories.some((item) => item.id === 'repo-0')).toBe(false);
     expect(store.recentRepositories.some((item) => item.id === 'repo-11')).toBe(true);
   });
+
+  it('relocates repository references in one persisted update', async () => {
+    const file = await settingsFile({});
+    const store = new SettingsStore(file);
+    await store.load();
+    const previous = { id: '1111111111111111', name: 'app', repositoryName: 'app', path: 'C:\\old\\app', commonDir: 'C:\\old\\app\\.git' };
+    const relocated = { id: '2222222222222222', name: 'app', repositoryName: 'app', path: 'D:\\new\\app', commonDir: 'D:\\new\\app\\.git' };
+    await store.touchRepository(previous);
+    const projectId = (await store.createRepositoryProject('Client')).repositoryProjects[0]!.id;
+    await store.assignRepositoryProject(previous.commonDir, projectId);
+    store.setFilesTreeExpandedPaths(previous.id, ['src', 'docs']);
+    store.setOpenFilesState(previous.id, [{ path: 'src/app.ts', pinned: true }], 'src/app.ts', null);
+
+    await store.relocateRepository(previous.id, relocated);
+
+    expect(store.recentRepositories).toEqual([expect.objectContaining(relocated)]);
+    expect(store.repositoryProjects[0]?.repositoryKeys).toEqual(['d:/new/app/.git']);
+    expect(store.filesTreeStates).toEqual([expect.objectContaining({ repositoryId: relocated.id, expandedPaths: ['docs', 'src'] })]);
+    expect(store.openFilesStates).toEqual([expect.objectContaining({ repositoryId: relocated.id, activePath: 'src/app.ts' })]);
+    expect(store.activeRepositoryId).toBe(relocated.id);
+    expect(JSON.parse(await readFile(file, 'utf8'))).toMatchObject({ activeRepositoryId: relocated.id });
+  });
 });
 
 describe('SettingsStore worktree recents', () => {

@@ -27,6 +27,28 @@ export class RepositoryService {
   }
 
   async openPath(selectedPath: string): Promise<RepositoryInfo> {
+    const repository = await this.inspectPath(selectedPath);
+    this.repositories.set(repository.id, repository);
+    await this.settings.touchRepository(repository);
+    return repository;
+  }
+
+  async relocateRecent(id: string, selectedPath: string): Promise<RepositoryInfo> {
+    if (!this.settings.recentRepositories.some((item) => item.id === id)) {
+      throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'relocate-repository', message: 'The recent repository no longer exists.' });
+    }
+    const repository = await this.inspectPath(selectedPath);
+    await this.settings.relocateRepository(id, repository);
+    this.repositories.delete(id);
+    this.repositories.set(repository.id, repository);
+    return repository;
+  }
+
+  recent(id: string): RecentRepository | null {
+    return this.settings.recentRepositories.find((item) => item.id === id) ?? null;
+  }
+
+  private async inspectPath(selectedPath: string): Promise<RepositoryInfo> {
     const selected = path.resolve(selectedPath);
     const inside = (await this.git.run(selected, ['rev-parse', '--is-inside-work-tree'], { operation: 'validate-repository', readOnly: true, timeoutMs: 10_000 })).stdout.toString('utf8').trim();
     if (inside !== 'true') throw new GitOperationError({ code: 'NOT_REPOSITORY', operation: 'validate-repository', message: 'The folder is not part of a Git worktree.' });
@@ -34,10 +56,7 @@ export class RepositoryService {
     const commonRaw = (await this.git.run(root, ['rev-parse', '--git-common-dir'], { operation: 'git-common-dir', readOnly: true })).stdout.toString('utf8').trim();
     const commonDir = path.resolve(root, commonRaw);
     const id = createHash('sha256').update(root.toLocaleLowerCase()).digest('hex').slice(0, 16);
-    const repository = { id, name: path.basename(root), repositoryName: path.basename(path.dirname(commonDir)), path: root, commonDir };
-    this.repositories.set(id, repository);
-    await this.settings.touchRepository(repository);
-    return repository;
+    return { id, name: path.basename(root), repositoryName: path.basename(path.dirname(commonDir)), path: root, commonDir };
   }
 
   get(id: string): RepositoryInfo {
