@@ -31,7 +31,7 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
   const detailsQuery = useQuery<{ details: PullRequestDetails; bodyHtml: string }>({
     queryKey: queryKeys.pullRequest(repositoryId, prNumber),
     queryFn: async () => {
-      const details = await window.justgit.github.getPullRequest(repositoryId, prNumber);
+      const details = await window.opentig.github.getPullRequest(repositoryId, prNumber);
       const bodyHtml = details.body.trim() ? await renderMarkdown(details.body).catch(() => '<p>Could not render the description.</p>') : '';
       return { details, bodyHtml };
     },
@@ -41,7 +41,7 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
   const detailsError = detailsQuery.error instanceof Error ? detailsQuery.error.message : detailsQuery.error ? 'Could not load the pull request.' : null;
   const diffQuery = useQuery<DiffResult>({
     queryKey: queryKeys.pullRequestDiff(repositoryId, prNumber),
-    queryFn: () => window.justgit.github.getPullRequestDiff(repositoryId, prNumber),
+    queryFn: () => window.opentig.github.getPullRequestDiff(repositoryId, prNumber),
     enabled: tab === 'diff' && details !== null,
   });
   const diff = diffQuery.data ?? null;

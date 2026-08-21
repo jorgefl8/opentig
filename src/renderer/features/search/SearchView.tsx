@@ -54,7 +54,7 @@ export function SearchView({ repositoryId, active, revision, onOpenFile, unsaved
     queryKey: queryKeys.search(repositoryId, {
       query: debouncedQuery, matchCase, wholeWord, regex, includeIgnored: searchIgnored, revision, replaceRevision,
     }),
-    queryFn: () => window.justgit.repository.search(repositoryId, { ...options, query: debouncedQuery }),
+    queryFn: () => window.opentig.repository.search(repositoryId, { ...options, query: debouncedQuery }),
     enabled: active && debouncedQuery.length > 0,
     placeholderData: (previousData, previousQuery) => previousQuery?.queryKey[1] === repositoryId ? previousData : undefined,
   });
@@ -131,7 +131,7 @@ export function SearchView({ repositoryId, active, revision, onOpenFile, unsaved
 
     setReplacing(true);
     try {
-      const outcome = await window.justgit.repository.replaceSearch(repositoryId, {
+      const outcome = await window.opentig.repository.replaceSearch(repositoryId, {
         options: { ...options, query: query.trim() }, replacement, scope: replaceScope,
       });
       if (outcome.status === 'stale') {

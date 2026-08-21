@@ -1,8 +1,8 @@
-import type { JustGitApi } from '../shared/contracts';
+import type { OpenTigApi } from '../shared/contracts';
 
 declare global {
   interface Window {
-    justgit: JustGitApi;
+    opentig: OpenTigApi;
     __justgitPerformanceAutomation?: boolean;
     __justgitPerformanceResults?: Array<{
       kind: string;

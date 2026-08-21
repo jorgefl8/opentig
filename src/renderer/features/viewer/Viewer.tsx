@@ -101,12 +101,12 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
       try {
         if (selection.type === 'file' || selection.type === 'conflict') {
           if (selection.type === 'file' && isKnownImagePath(selection.path)) {
-            const value = await window.justgit.repository.readImage(repositoryId, selection.path);
+            const value = await window.opentig.repository.readImage(repositoryId, selection.path);
             if (token !== requestToken.current) return;
             setData({ docKey, type: 'image', value });
             return;
           }
-          const value = await window.justgit.repository.readFile(repositoryId, selection.path, selection.type === 'conflict' ? true : allowLarge);
+          const value = await window.opentig.repository.readFile(repositoryId, selection.path, selection.type === 'conflict' ? true : allowLarge);
           if (token !== requestToken.current) return;
           if (selection.type === 'conflict') {
             setData({ docKey, type: 'conflict', value });
@@ -125,10 +125,10 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
           let value = immutable ? diffCache.get(docKey) : undefined;
           if (!value) {
             value = selection.type === 'commit'
-              ? await window.justgit.diff.getCommit(repositoryId, selection.oid)
+              ? await window.opentig.diff.getCommit(repositoryId, selection.oid)
               : selection.type === 'commit-file'
-                ? await window.justgit.diff.getCommitFile(repositoryId, selection.oid, selection.path, selection.oldPath)
-                : await window.justgit.diff.get({ repositoryId, path: selection.path, kind: selection.kind });
+                ? await window.opentig.diff.getCommitFile(repositoryId, selection.oid, selection.path, selection.oldPath)
+                : await window.opentig.diff.get({ repositoryId, path: selection.path, kind: selection.kind });
             if (immutable) diffCache.set(docKey, value);
           }
           if (token !== requestToken.current) return;
@@ -159,7 +159,7 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
     // edit began; saving against a freshly read disk copy would overwrite an
     // external change instead of reporting the conflict.
     const draft = draftFor(path);
-    const result = await window.justgit.repository.writeFile(repositoryId, path, content, draft?.expectedContent ?? expectedContent);
+    const result = await window.opentig.repository.writeFile(repositoryId, path, content, draft?.expectedContent ?? expectedContent);
     if (result.status === 'saved') {
       fileDirty.current = false;
       onDraftSaved(path);

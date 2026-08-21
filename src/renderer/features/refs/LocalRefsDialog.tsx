@@ -47,7 +47,7 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
 
   const snapshotQuery = useQuery({
     queryKey: queryKeys.localRefs(repositoryId),
-    queryFn: () => window.justgit.refs.localRefsSnapshot(repositoryId),
+    queryFn: () => window.opentig.refs.localRefsSnapshot(repositoryId),
     enabled: open,
   });
   const snapshot = snapshotQuery.data ?? null;
@@ -60,19 +60,19 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
   const worktree = worktrees.find((item) => worktreeKey(item) === selectedWorktree) ?? null;
   const branchDetailsQuery = useQuery({
     queryKey: queryKeys.branchDetails(repositoryId, branch?.fullName ?? ''),
-    queryFn: () => window.justgit.refs.branchDetails({ repositoryId, fullName: branch!.fullName }),
+    queryFn: () => window.opentig.refs.branchDetails({ repositoryId, fullName: branch!.fullName }),
     enabled: open && tab === 'branches' && branch !== null,
   });
   const branchDetails = branchDetailsQuery.data ?? null;
   const branchPullRequestQuery = useQuery({
     queryKey: queryKeys.branchPullRequest(repositoryId, branchDetails?.name ?? ''),
-    queryFn: () => window.justgit.github.findPullRequestForBranch(repositoryId, branchDetails!.name),
+    queryFn: () => window.opentig.github.findPullRequestForBranch(repositoryId, branchDetails!.name),
     enabled: open && tab === 'branches' && branchDetails !== null && (branchDetails.deletion === 'unknown' || branchDetails.deletion === 'unmerged'),
   });
   const branchPullRequest = branchPullRequestQuery.data ?? null;
   const worktreeDetailsQuery = useQuery({
     queryKey: queryKeys.worktreeDetails(repositoryId, worktree?.path ?? ''),
-    queryFn: () => window.justgit.refs.worktreeDetails({ repositoryId, path: worktree!.path }),
+    queryFn: () => window.opentig.refs.worktreeDetails({ repositoryId, path: worktree!.path }),
     enabled: open && tab === 'worktrees' && worktree !== null,
   });
   const worktreeDetails = worktreeDetailsQuery.data ?? null;
@@ -119,7 +119,7 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
   };
 
   const deleteBranch = (target: BranchDetails, force: boolean) => run('delete-branch', async () => {
-    const result = await window.justgit.refs.deleteBranch({ repositoryId, fullName: target.fullName, expectedOid: target.oid, force });
+    const result = await window.opentig.refs.deleteBranch({ repositoryId, fullName: target.fullName, expectedOid: target.oid, force });
     if (result.status !== 'deleted') {
       setActionError(branchFailure(result.status));
       await load();
@@ -131,7 +131,7 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
   });
 
   const removeWorktree = (target: WorktreeDetails, force: boolean, deleteBranch: boolean) => run('remove-worktree', async () => {
-    const result = await window.justgit.refs.removeWorktree({ repositoryId, path: target.path, expectedOid: target.oid, force, deleteBranch });
+    const result = await window.opentig.refs.removeWorktree({ repositoryId, path: target.path, expectedOid: target.oid, force, deleteBranch });
     if (result.status !== 'removed') {
       setActionError(worktreeFailure(result.status));
       await load();
@@ -144,7 +144,7 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
 
   const copyPath = async (value: string) => {
     try {
-      await window.justgit.clipboard.writeText(value);
+      await window.opentig.clipboard.writeText(value);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1600);
     } catch (reason) {

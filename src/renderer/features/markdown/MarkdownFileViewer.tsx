@@ -194,7 +194,7 @@ export function MarkdownFileViewer({ file, initialContent, revision, themeType, 
       if (!encoded) return;
       try {
         const code = decodeURIComponent(encoded);
-        await window.justgit.clipboard.writeText(code);
+        await window.opentig.clipboard.writeText(code);
         const previous = copyFeedback.current;
         if (previous) {
           window.clearTimeout(previous.timer);
@@ -227,7 +227,7 @@ export function MarkdownFileViewer({ file, initialContent, revision, themeType, 
       return;
     }
     if (EXTERNAL_LINK_RE.test(href) || href.startsWith('mailto:')) {
-      void window.justgit.shell.openExternal(href).catch(() => undefined);
+      void window.opentig.shell.openExternal(href).catch(() => undefined);
       return;
     }
     const repositoryPath = resolveMarkdownRepositoryPath(file.path, href);

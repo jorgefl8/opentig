@@ -53,24 +53,24 @@ export function RepositoryProjectsDialog({ open, projects, repositories, onOpenC
     event.preventDefault();
     const name = newName.trim();
     if (!name || busy) return;
-    if (await run('create', () => window.justgit.projects.create(name))) setNewName('');
+    if (await run('create', () => window.opentig.projects.create(name))) setNewName('');
   };
 
   const saveRename = async (event: FormEvent) => {
     event.preventDefault();
     const name = editingName.trim();
     if (!editingId || !name || busy) return;
-    if (await run(`rename:${editingId}`, () => window.justgit.projects.rename(editingId, name))) setEditingId(null);
+    if (await run(`rename:${editingId}`, () => window.opentig.projects.rename(editingId, name))) setEditingId(null);
   };
 
   const removeProject = async (projectId: string) => {
     if (busy) return;
-    if (await run(`remove:${projectId}`, () => window.justgit.projects.remove(projectId))) setDeletingId(null);
+    if (await run(`remove:${projectId}`, () => window.opentig.projects.remove(projectId))) setDeletingId(null);
   };
 
   const assignProject = async (repositoryKey: string, projectId: string | null) => {
     if (busy) return;
-    await run(`assign:${repositoryKey}`, () => window.justgit.projects.assign(repositoryKey, projectId));
+    await run(`assign:${repositoryKey}`, () => window.opentig.projects.assign(repositoryKey, projectId));
   };
 
   return (

@@ -45,7 +45,7 @@ export function PierreEditBoundary({ enabled, children }: PropsWithChildren<{ en
   const createEditor = useCallback((options: EditorOptions<undefined>) => {
     if (!EditorClass) throw new Error('Pierre edit mode has not loaded.');
     return new EditorClass({
-      clipboard: { readText: () => window.justgit.clipboard.readText() },
+      clipboard: { readText: () => window.opentig.clipboard.readText() },
       ...options,
     });
   }, [EditorClass]);
