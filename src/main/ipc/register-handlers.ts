@@ -56,7 +56,7 @@ export function registerHandlers(services: Services): () => void {
       openFilesStates: services.settings.openFilesStates,
       activeRepository,
       preferences: services.settings.preferences,
-      performanceAutomation: process.env.JUSTGIT_PERF_AUTOMATION === '1',
+      performanceAutomation: process.env.OPENTIG_PERF_AUTOMATION === '1',
     };
   });
   handle(IPC.preferences, 'preferences', async (partial) => {

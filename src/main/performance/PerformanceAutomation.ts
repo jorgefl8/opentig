@@ -49,8 +49,8 @@ export function startPerformanceAutomation(
   sampler: PerformanceSampler | null,
   env: NodeJS.ProcessEnv = process.env,
 ): () => void {
-  if (env.JUSTGIT_PERF_AUTOMATION !== '1') return () => undefined;
-  const steps = parsePerformanceAutomationSteps(env.JUSTGIT_PERF_ACTIONS);
+  if (env.OPENTIG_PERF_AUTOMATION !== '1') return () => undefined;
+  const steps = parsePerformanceAutomationSteps(env.OPENTIG_PERF_ACTIONS);
   const timers: NodeJS.Timeout[] = [];
 
   for (const step of steps) {
@@ -59,7 +59,7 @@ export function startPerformanceAutomation(
       sampler?.mark(`${step.label}-before`);
       sampler?.sampleNow();
       if (step.action.type === 'heap-snapshot') {
-        const directory = env.JUSTGIT_PERF_SNAPSHOT_DIR;
+        const directory = env.OPENTIG_PERF_SNAPSHOT_DIR;
         if (!directory || !path.isAbsolute(directory)) {
           sampler?.mark(`${step.label}-after`, { snapshotUnavailable: true });
           return;
@@ -72,7 +72,7 @@ export function startPerformanceAutomation(
       }
       const actionJson = JSON.stringify(step.action);
       void window.webContents.executeJavaScript(
-        `window.dispatchEvent(new CustomEvent('justgit:performance-action',{detail:${actionJson}}))`,
+        `window.dispatchEvent(new CustomEvent('opentig:performance-action',{detail:${actionJson}}))`,
         true,
       ).then(() => {
         timers.push(setTimeout(() => {
@@ -86,7 +86,7 @@ export function startPerformanceAutomation(
     }, step.atMs));
   }
 
-  const exitMs = Number(env.JUSTGIT_PERF_EXIT_MS);
+  const exitMs = Number(env.OPENTIG_PERF_EXIT_MS);
   if (Number.isFinite(exitMs) && exitMs > 0 && exitMs <= MAX_DURATION_MS) {
     timers.push(setTimeout(() => {
       if (!window.isDestroyed()) window.close();
@@ -103,8 +103,8 @@ async function collectRendererDiagnostics(window: BrowserWindow): Promise<Record
   try {
     return await window.webContents.executeJavaScript(`(() => {
       const memory = performance.memory;
-      const results = Array.isArray(window.__justgitPerformanceResults)
-        ? window.__justgitPerformanceResults.splice(0)
+      const results = Array.isArray(window.__opentigPerformanceResults)
+        ? window.__opentigPerformanceResults.splice(0)
         : [];
       const grammarChunks = performance.getEntriesByType('resource')
         .map((entry) => String(entry.name).split('/').pop() ?? '')

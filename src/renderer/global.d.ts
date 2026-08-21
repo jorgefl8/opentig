@@ -3,8 +3,8 @@ import type { OpenTigApi } from '../shared/contracts';
 declare global {
   interface Window {
     opentig: OpenTigApi;
-    __justgitPerformanceAutomation?: boolean;
-    __justgitPerformanceResults?: Array<{
+    __opentigPerformanceAutomation?: boolean;
+    __opentigPerformanceResults?: Array<{
       kind: string;
       durationMs: number;
     }>;

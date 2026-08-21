@@ -30,7 +30,7 @@ interface MarkdownFileViewerProps {
 
 type ContentWidth = 'reading' | 'fit';
 
-const CONTENT_WIDTH_STORAGE_KEY = 'justgit:markdown-content-width';
+const CONTENT_WIDTH_STORAGE_KEY = 'opentig:markdown-content-width';
 
 // Matches absolute URLs (`https://…`), protocol-relative URLs (`//…`), and `mailto:` links -
 // anything that should be handed off to the OS instead of resolved as a repository-relative path.
@@ -161,13 +161,13 @@ export function MarkdownFileViewer({ file, initialContent, revision, themeType, 
     const token = ++requestToken.current;
     setLoading(true);
     const timer = window.setTimeout(() => {
-      const startedAt = window.__justgitPerformanceAutomation ? performance.now() : null;
+      const startedAt = window.__opentigPerformanceAutomation ? performance.now() : null;
       renderMarkdown(draft).then((result) => {
         if (token === requestToken.current) {
           setHtml(result);
           if (startedAt !== null) {
-            window.__justgitPerformanceResults ??= [];
-            window.__justgitPerformanceResults.push({
+            window.__opentigPerformanceResults ??= [];
+            window.__opentigPerformanceResults.push({
               kind: 'markdown-render',
               durationMs: Math.round((performance.now() - startedAt) * 100) / 100,
             });

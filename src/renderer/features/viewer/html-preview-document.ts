@@ -1,4 +1,4 @@
-const STYLE_MARKER = 'data-justgit-preview-scrollbar';
+const STYLE_MARKER = 'data-opentig-preview-scrollbar';
 
 export function buildHtmlPreviewDocument(content: string, dark: boolean): string {
   const foreground = dark ? '255 255 255' : '0 0 0';

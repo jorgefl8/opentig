@@ -8,7 +8,7 @@ import type { DiffResult, DiffViewPreference, ThemePreference } from '@shared/co
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { getVsCodeFileIconUrl } from '@/lib/vscode-icons';
-import { JUSTGIT_CODE_THEMES } from './diffThemes';
+import { OPENTIG_CODE_THEMES } from './diffThemes';
 import { buildDiffFileEntries, VIEWER_SCROLLBAR_CSS } from './patch-utils';
 
 interface DiffWorkspaceProps {
@@ -103,7 +103,7 @@ export function DiffWorkspace({ contentKey, diff, diffView, themeType, wrapLines
                   key={`${contentKey}:${file.key}:${diffView}:${wrapLines}`}
                   patch={file.patch}
                   disableWorkerPool={diff.lineCount > 10_000}
-                  options={{ diffStyle: diffView, diffIndicators: 'classic', themeType, theme: JUSTGIT_CODE_THEMES, overflow: wrapLines ? 'wrap' : 'scroll', disableFileHeader: true, hunkSeparators: 'line-info-basic', unsafeCSS: VIEWER_SCROLLBAR_CSS }}
+                  options={{ diffStyle: diffView, diffIndicators: 'classic', themeType, theme: OPENTIG_CODE_THEMES, overflow: wrapLines ? 'wrap' : 'scroll', disableFileHeader: true, hunkSeparators: 'line-info-basic', unsafeCSS: VIEWER_SCROLLBAR_CSS }}
                 />
               )}
             </section>

@@ -4,7 +4,7 @@ import type { MergeConflictRegion, MergeConflictResolution } from '@pierre/diffs
 import type { DiffResult, DiffViewPreference, FileResult, ThemePreference } from '@shared/contracts';
 import { Button } from '@/components/ui/button';
 import { DiffWorkspace } from './DiffWorkspace';
-import { JUSTGIT_CODE_THEMES } from './diffThemes';
+import { OPENTIG_CODE_THEMES } from './diffThemes';
 import { VIEWER_SCROLLBAR_CSS } from './patch-utils';
 import { PierreWorkerPool } from './PierreWorkerPool';
 
@@ -123,7 +123,7 @@ function ConflictViewer({ file, themeType, overflow, onUpdate, onResolve }: {
             key={`${file.path}:${draftRevision}`}
             file={{ name: file.path, contents: draft, cacheKey: `${file.path}:conflict:${draftRevision}` }}
             disableWorkerPool={draft.length > 500_000}
-            options={{ themeType, theme: JUSTGIT_CODE_THEMES, diffIndicators: 'classic', overflow, mergeConflictActionsType: 'none', unsafeCSS: VIEWER_SCROLLBAR_CSS }}
+            options={{ themeType, theme: OPENTIG_CODE_THEMES, diffIndicators: 'classic', overflow, mergeConflictActionsType: 'none', unsafeCSS: VIEWER_SCROLLBAR_CSS }}
             renderMergeConflictUtility={(action) => (
               <div className="conflict-actions">
                 <Button size="xs" variant="outline" disabled={applying} onClick={() => void applyResolution(action.conflict, 'current')}>Accept current</Button>
@@ -135,7 +135,7 @@ function ConflictViewer({ file, themeType, overflow, onUpdate, onResolve }: {
         ) : (
           <File
             file={{ name: file.path, contents: draft, cacheKey: `${file.path}:resolved:${draftRevision}` }}
-            options={{ themeType, theme: JUSTGIT_CODE_THEMES, overflow, unsafeCSS: VIEWER_SCROLLBAR_CSS }}
+            options={{ themeType, theme: OPENTIG_CODE_THEMES, overflow, unsafeCSS: VIEWER_SCROLLBAR_CSS }}
           />
         )}
       </Virtualizer>

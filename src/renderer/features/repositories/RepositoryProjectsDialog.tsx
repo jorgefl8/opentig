@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { shortenRepositoryPath, type RepositoryOption } from './repository-select-model';
 
-const NO_PROJECT = '__justgit_no_project__';
+const NO_PROJECT = '__opentig_no_project__';
 
 interface RepositoryProjectsDialogProps {
   open: boolean;

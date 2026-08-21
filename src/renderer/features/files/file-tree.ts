@@ -12,7 +12,7 @@ export interface ExpandedPathsReconciliation {
 export type SnapshotPathPresence = 'present' | 'deferred' | 'missing';
 
 /** DOM host used to bridge Files' DndContext into the toolbar tab strip. */
-export const OPEN_FILES_DROP_HOST_ID = 'justgit-open-files-drop-host';
+export const OPEN_FILES_DROP_HOST_ID = 'opentig-open-files-drop-host';
 
 /** The row that initiated a drag can open beside, without opening its selected peers. */
 export function canOpenPinnedDrop(entry: FileTreeEntry, sourcePaths: readonly string[]): boolean {

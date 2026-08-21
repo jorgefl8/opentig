@@ -70,7 +70,7 @@ describe('PerformanceSampler', () => {
     });
     const sampler = await createPerformanceSampler(
       { getAppMetrics: () => [], getPath, getVersion: () => '1.0.0' },
-      runtime({ JUSTGIT_PERF_LOG: 'true' }),
+      runtime({ OPENTIG_PERF_LOG: 'true' }),
     );
     expect(sampler).toBeNull();
     expect(getPath).not.toHaveBeenCalled();
@@ -163,9 +163,9 @@ describe('PerformanceSampler', () => {
         getVersion: () => '1.0.0',
       },
       runtime({
-        JUSTGIT_PERF_LOG: '1',
-        JUSTGIT_PERF_SCENARIO: ' Repo / Idle ',
-        JUSTGIT_PERF_REPETITION: '#3',
+        OPENTIG_PERF_LOG: '1',
+        OPENTIG_PERF_SCENARIO: ' Repo / Idle ',
+        OPENTIG_PERF_REPETITION: '#3',
       }),
     );
 

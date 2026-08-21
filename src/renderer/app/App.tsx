@@ -262,8 +262,8 @@ export default function App() {
 
   useEffect(() => {
     if (!bootstrap?.performanceAutomation) return;
-    window.__justgitPerformanceAutomation = true;
-    window.__justgitPerformanceResults = [];
+    window.__opentigPerformanceAutomation = true;
+    window.__opentigPerformanceResults = [];
     const handleAction = (event: Event) => {
       const action = (event as CustomEvent<unknown>).detail;
       if (!action || typeof action !== 'object') return;
@@ -282,11 +282,11 @@ export default function App() {
         setViewerSelection(record.selection);
       }
     };
-    window.addEventListener('justgit:performance-action', handleAction);
+    window.addEventListener('opentig:performance-action', handleAction);
     return () => {
-      window.removeEventListener('justgit:performance-action', handleAction);
-      delete window.__justgitPerformanceAutomation;
-      delete window.__justgitPerformanceResults;
+      window.removeEventListener('opentig:performance-action', handleAction);
+      delete window.__opentigPerformanceAutomation;
+      delete window.__opentigPerformanceResults;
     };
   }, [bootstrap?.performanceAutomation]);
 
@@ -636,8 +636,8 @@ export default function App() {
         void refresh({ background: true, scope });
       }
     };
-    window.addEventListener('justgit:performance-action', handleBurst);
-    return () => window.removeEventListener('justgit:performance-action', handleBurst);
+    window.addEventListener('opentig:performance-action', handleBurst);
+    return () => window.removeEventListener('opentig:performance-action', handleBurst);
   }, [bootstrap?.performanceAutomation, refresh]);
 
   useEffect(() => {
@@ -1975,10 +1975,10 @@ interface ToolbarProps {
   onSettingsOpen(open: boolean): void; onSettingsSection(section: SettingsSection): void;
 }
 
-const MANAGE_PROJECTS_VALUE = '__justgit_manage_projects__';
+const MANAGE_PROJECTS_VALUE = '__opentig_manage_projects__';
 // A sentinel that can never equal a filesystem path, so it cannot collide with
 // a real worktree even on a repository with unusual directory names.
-const MANAGE_WORKTREES_VALUE = '\0__justgit_manage_worktrees__';
+const MANAGE_WORKTREES_VALUE = '\0__opentig_manage_worktrees__';
 
 function Toolbar(props: ToolbarProps) {
   const { onRecent } = props;
