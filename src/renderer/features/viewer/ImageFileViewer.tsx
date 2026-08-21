@@ -31,7 +31,7 @@ interface Dimensions {
 }
 
 const SVG_SAVE_MESSAGES = {
-  conflictTitle: 'SVG was changed outside JustGit',
+  conflictTitle: 'SVG was changed outside OpenTig',
   successTitle: 'SVG saved',
   errorTitle: 'Could not save SVG',
 };

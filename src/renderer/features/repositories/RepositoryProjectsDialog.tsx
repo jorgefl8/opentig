@@ -79,7 +79,7 @@ export function RepositoryProjectsDialog({ open, projects, repositories, onOpenC
         <header className="repository-projects-header">
           <div>
             <DialogTitle>Manage projects</DialogTitle>
-            <DialogDescription>Group repositories inside JustGit. Nothing moves on disk.</DialogDescription>
+            <DialogDescription>Group repositories inside OpenTig. Nothing moves on disk.</DialogDescription>
           </div>
           <DialogClose render={<Button variant="ghost" size="icon-sm" aria-label="Close project management" />}><IconX /></DialogClose>
         </header>

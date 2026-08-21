@@ -1,15 +1,15 @@
-# JustGit
+# OpenTig
 
-JustGit is a focused, local-first Git desktop client for Windows. It is designed for the everyday repository loop: understand what changed, edit or inspect files, stage the right work, create a commit, synchronise it, and review pull requests without turning Git into a project-management suite.
+OpenTig is a focused, local-first Git desktop client for Windows. It is designed for the everyday repository loop: understand what changed, edit or inspect files, stage the right work, create a commit, synchronise it, and review pull requests without turning Git into a project-management suite.
 
 The application works directly with repositories already on your machine. Git remains the source of truth, repository contents stay local, and optional integrations use command-line tools that you install and authenticate yourself.
 
 > [!NOTE]
-> JustGit is pre-release software. Back up important work and review destructive Git or filesystem operations before confirming them.
+> OpenTig is pre-release software. Back up important work and review destructive Git or filesystem operations before confirming them.
 
-## Why JustGit?
+## Why OpenTig?
 
-JustGit aims to keep common Git work visible and understandable:
+OpenTig aims to keep common Git work visible and understandable:
 
 - changes, files, history, pull requests, and repository search share one compact workspace;
 - potentially destructive actions have explicit safeguards and useful recovery paths;
@@ -33,7 +33,7 @@ It is intentionally not an IDE, hosting service, or replacement for the Git CLI.
 
 - Open existing local repositories and return to recently used repositories.
 - Relocate a recent repository when its folder moved, preserving its project assignment, open tabs, and expanded folders.
-- Group related repositories into named JustGit projects without moving anything on disk.
+- Group related repositories into named OpenTig projects without moving anything on disk.
 - Pull or push an individual repository from its row in the repository picker. Only pending operations are shown, each with its ahead/behind commit count; multiple repositories can sync concurrently, and their separate Sileo progress and outcome cards remain visible together. Opening the picker fetches each listed repository so those counts match the remote, not a stale local cache.
 - Fetch remotes in the background so toolbar ahead/behind counts stay current. The default interval is 30 seconds and can be raised, lowered, or turned off in **Settings → General**.
 - Create, rename, delete, and reassign project groups.
@@ -53,14 +53,14 @@ It is intentionally not an IDE, hosting service, or replacement for the Git CLI.
 - Create commits from staged files, or create and push in one action when an upstream exists.
 - Let the selected AI CLI suggest a reviewed multi-commit plan when staged files represent independent responsibilities, then prepare one complete-file group at a time without creating commits automatically.
 - Work through that plan at your own pace: groups keep their original numbering as you commit them, show how many are done, open any listed file's diff for review, and each group is independently rechecked against its files so a plan cannot be applied after those files changed.
-- When a split cannot be offered, JustGit says why instead of staying silent, for example because a file is only partially staged or was renamed.
+- When a split cannot be offered, OpenTig says why instead of staying silent, for example because a file is only partially staged or was renamed.
 - Every generation is recorded locally for diagnostics: harness, model, outcome, duration, the tokens and cost the harness reported, and why a proposed split was refused. Only this metadata is stored; prompts and file contents never leave the repository.
 - Review that history from **Settings → AI commit messages → View history**, in a sortable table (click a column header to sort) that scrolls within the dialog, with totals for runs, failures, tokens, and reported cost, and clear it whenever you want.
-- Undo the latest unpublished commit while keeping its changes staged. JustGit verifies the expected commit and upstream state before rewriting history.
+- Undo the latest unpublished commit while keeping its changes staged. OpenTig verifies the expected commit and upstream state before rewriting history.
 
 ### Safe pull and push
 
-- Pull by fast-forward when the branch has no local commits, or rebase those local commits onto the updated remote when the histories have diverged and there are no conflicts. The unpublished commits stay on top, ready to push. JustGit does not create an implicit merge commit.
+- Pull by fast-forward when the branch has no local commits, or rebase those local commits onto the updated remote when the histories have diverged and there are no conflicts. The unpublished commits stay on top, ready to push. OpenTig does not create an implicit merge commit.
 - If a rebase would conflict, abort it and leave the branch unchanged instead of stranding the repository mid-rebase.
 - Preserve local changes through a temporary safety stash when pulling, including untracked files.
 - Keep and report the recovery stash if changes cannot be restored cleanly.
@@ -79,7 +79,7 @@ It is intentionally not an IDE, hosting service, or replacement for the Git CLI.
 - Only working-tree files become tabs; diffs, conflicts, commits, and pull requests stay transient. Up to 50 tabs are kept per worktree, and opening past that closes the clean tab you used least recently.
 - Press `Ctrl+F` in any editable file to open one integrated find-and-replace panel, with single or global replacement, case, whole-word, regular-expression, and undo support.
 - Preview and edit Markdown, HTML, and SVG files through compact Preview/Code controls; switching between them restores roughly the same scroll position in the tab you land on, holding it while diagrams, formulas, and syntax highlighting finish laying out, and releasing it the moment you scroll yourself.
-- Render GitHub-flavoured Markdown with syntax-highlighted code, copy buttons, alerts, footnotes, KaTeX, and Mermaid diagrams. External links (`http(s)://`, protocol-relative, and `mailto:`) open in your system browser or mail client instead of navigating inside JustGit; relative links to repository files open that file in a new tab, and `#anchor` links scroll within the preview. Hovering any link shows a tooltip with its destination (truncated when long) and what clicking it will do (open in browser, open in mail app, or open file).
+- Render GitHub-flavoured Markdown with syntax-highlighted code, copy buttons, alerts, footnotes, KaTeX, and Mermaid diagrams. External links (`http(s)://`, protocol-relative, and `mailto:`) open in your system browser or mail client instead of navigating inside OpenTig; relative links to repository files open that file in a new tab, and `#anchor` links scroll within the preview. Hovering any link shows a tooltip with its destination (truncated when long) and what clicking it will do (open in browser, open in mail app, or open file).
 - Preview raster images with fit, 1:1, keyboard/wheel zoom, dimensions, and file-size information.
 - Select multiple files and folders, then copy, cut, paste, rename, create, or delete them. Drag and drop moves one or many selected entries with a lifted preview, a count badge, and clear folder or repository-root destination feedback.
 - Copy file paths or contents and reveal entries in Windows File Explorer.
@@ -102,7 +102,7 @@ It is intentionally not an IDE, hosting service, or replacement for the Git CLI.
 - Inspect commit subjects, full descriptions, authors, dates, refs, publication state, and changed files. Expanded history rows show the complete description; long descriptions in the commit viewer can be revealed without hiding the diff.
 - Copy full commit hashes.
 - Open complete commit diffs or the diff for one file, including renamed paths.
-- Undo only the latest commit when JustGit can prove it is still local and safe to undo.
+- Undo only the latest commit when OpenTig can prove it is still local and safe to undo.
 
 ### Branches and worktrees
 
@@ -128,7 +128,7 @@ GitHub features use the authenticated GitHub CLI (`gh`):
 
 ### Optional AI assistance
 
-JustGit supports locally installed Codex, Claude Code, and OpenCode CLIs. It can:
+OpenTig supports locally installed Codex, Claude Code, and OpenCode CLIs. It can:
 
 - generate an editable commit message from staged changes;
 - propose multiple focused commits, including their messages, reasons, and complete-file groups, when a split is clearly beneficial;
@@ -147,7 +147,7 @@ AI never creates a commit or pull request automatically. You review and edit the
 - Optional display of Git-ignored files.
 - Per-provider AI model selection.
 - Rebind most keyboard shortcuts from **Settings → Shortcuts**, with per-shortcut conflict detection and one-click reset to defaults; the shortcuts marked fixed below follow platform or file-manager conventions and cannot be changed.
-- Turn off the double-tap-Control shortcut that brings JustGit to the front from any application, also from **Settings → Shortcuts**.
+- Turn off the double-tap-Control shortcut that brings OpenTig to the front from any application, also from **Settings → Shortcuts**.
 - Persisted sidebar width, viewer preferences, shortcut customizations, recent repositories, projects, expanded file-tree paths, and each worktree's open file tabs.
 
 ## Keyboard shortcuts
@@ -156,7 +156,7 @@ The shortcuts below are defaults; rebind most of them from **Settings → Shortc
 
 | Shortcut | Action |
 | --- | --- |
-| `Ctrl` `Ctrl` (double-tap, fixed) | Bring JustGit to the front from any application |
+| `Ctrl` `Ctrl` (double-tap, fixed) | Bring OpenTig to the front from any application |
 | `Ctrl+O` | Open a repository |
 | `Ctrl+P` | Quick-open a file |
 | `Ctrl+R` | Refresh repository state |
@@ -214,7 +214,7 @@ npm run package
 npm run make
 ```
 
-The unpacked executable is written to `out/JustGit-win32-x64/JustGit.exe`.
+The unpacked executable is written to `out/OpenTig-win32-x64/OpenTig.exe`.
 
 ## Local-first and security model
 
@@ -224,13 +224,13 @@ The unpacked executable is written to `out/JustGit-win32-x64/JustGit.exe`.
 - Git commands use argument arrays with `shell: false`, bounded output, timeouts, path validation, and per-repository write serialisation.
 - External links are validated before opening in the system browser.
 - HTML previews run in a sandbox; rendered Markdown is sanitised before display.
-- JustGit does not read or persist GitHub or AI API tokens. Connected CLIs manage their own authentication.
+- OpenTig does not read or persist GitHub or AI API tokens. Connected CLIs manage their own authentication.
 
 ## AI privacy
 
-For commit-message generation, JustGit sends the selected local AI CLI only a bounded staged diff, its summary, staged paths, the branch name, and up to ten recent commit subjects. It does not include unstaged content; untracked files are included only after you stage them.
+For commit-message generation, OpenTig sends the selected local AI CLI only a bounded staged diff, its summary, staged paths, the branch name, and up to ten recent commit subjects. It does not include unstaged content; untracked files are included only after you stage them.
 
-Multi-commit proposals are accepted only when they partition every staged path exactly once. JustGit suppresses them for truncated context, partially staged files, and staged renames, and verifies that the staged snapshot has not changed before preparing the first group. Preparing a group changes only the Git index; every commit still requires an explicit review and confirmation.
+Multi-commit proposals are accepted only when they partition every staged path exactly once. OpenTig suppresses them for truncated context, partially staged files, and staged renames, and verifies that the staged snapshot has not changed before preparing the first group. Preparing a group changes only the Git index; every commit still requires an explicit review and confirmation.
 
 For pull-request drafting, it sends a bounded comparison between the current branch and the selected base branch. If the context is truncated, the interface tells you to review the result carefully.
 
@@ -248,7 +248,7 @@ Generated content remains editable and pending. No commit is created and no pull
 - Windows desktop only.
 - Opens existing local repositories; cloning and initial remote setup remain Git CLI tasks.
 - GitHub integration currently depends on `gh` and the repository's configured GitHub remote.
-- JustGit deliberately avoids force push, forced branch deletion, automatic merge commits, and automatic AI actions. Periodic fetch only updates remote-tracking refs; it never rebases or merges on its own.
+- OpenTig deliberately avoids force push, forced branch deletion, automatic merge commits, and automatic AI actions. Periodic fetch only updates remote-tracking refs; it never rebases or merges on its own.
 
 ## Contributing
 
@@ -256,4 +256,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). Security issues must follow [SECURITY.md
 
 ## License
 
-JustGit source code is available under the [MIT License](LICENSE). Bundled third-party assets retain their own licences; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+OpenTig source code is available under the [MIT License](LICENSE). Bundled third-party assets retain their own licences; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

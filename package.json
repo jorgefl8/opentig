@@ -1,6 +1,6 @@
 {
-  "name": "justgit",
-  "productName": "JustGit",
+  "name": "opentig",
+  "productName": "OpenTig",
   "version": "0.1.0",
   "description": "A focused, local-first Git desktop client for Windows",
   "main": ".vite/build/main.js",
@@ -22,7 +22,7 @@
     "git-client",
     "windows"
   ],
-  "author": "JustGit contributors",
+  "author": "OpenTig contributors",
   "license": "MIT",
   "engines": {
     "node": ">=24"

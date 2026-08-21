@@ -973,7 +973,7 @@ export default function App() {
         return;
       }
       if (result.status === 'recycle-bin') {
-        sileo.info({ title: `${result.label} cannot be undone in JustGit`, description: 'Restore it from the Recycle Bin.' });
+        sileo.info({ title: `${result.label} cannot be undone in OpenTig`, description: 'Restore it from the Recycle Bin.' });
         return;
       }
       reconcileViewerPaths(result.pathChanges, result.removedPaths);
@@ -1657,7 +1657,7 @@ export default function App() {
     }
   };
 
-  if (!bootstrap) return <div className="splash"><IconLoader4 className="spinner" /><span>Loading JustGit…</span></div>;
+  if (!bootstrap) return <div className="splash"><IconLoader4 className="spinner" /><span>Loading OpenTig…</span></div>;
   if (!repository) return <Welcome recent={bootstrap.recentRepositories} onOpen={openRepository} onRecent={(id) => void selectRecent(id)} error={error} />;
 
   const conflicts = status?.changes.filter((change) => change.conflict) ?? [];
@@ -2169,9 +2169,9 @@ function Toolbar(props: ToolbarProps) {
   );
   return (
     <header className="toolbar">
-      <div className="toolbar-brand" aria-label="JustGit">
+      <div className="toolbar-brand" aria-label="OpenTig">
         <IconGitBranch aria-hidden="true" />
-        <span>JustGit</span>
+        <span>OpenTig</span>
       </div>
       <Select open={repositorySelectOpen} onOpenChange={(open) => {
         setRepositorySelectOpen(open);
@@ -2456,7 +2456,7 @@ function SettingsDialog({ preferences, onPreference, open, onOpenChange, section
     : [...modelOptions, { id: selectedModel, label: `${selectedModel} (unavailable)` }];
   const title = section === 'general' ? 'General' : section === 'shortcuts' ? 'Shortcuts' : 'AI commit messages';
   const description = section === 'general'
-    ? 'JustGit appearance and behavior.'
+    ? 'OpenTig appearance and behavior.'
     : section === 'shortcuts'
       ? 'Rebind commands or review the shortcuts that stay fixed.'
       : 'Local harness and model used to suggest messages.';
@@ -2525,7 +2525,7 @@ function SettingsDialog({ preferences, onPreference, open, onOpenChange, section
               <div className="settings-field settings-field-separated">
                 <div className="settings-field-label">
                   <strong>Remote check interval</strong>
-                  <span>How often JustGit fetches remotes so ahead and behind counts stay current. Set to Off to check only when you pull or push.</span>
+                  <span>How often OpenTig fetches remotes so ahead and behind counts stay current. Set to Off to check only when you pull or push.</span>
                 </div>
                 <div className="settings-zoom-control">
                   <input
@@ -2558,7 +2558,7 @@ function SettingsDialog({ preferences, onPreference, open, onOpenChange, section
                 <div className="ai-settings-heading">
                   <div className="settings-field-label">
                     <strong>Local harness</strong>
-                    <span>JustGit uses the selected CLI session. It does not copy or store credentials.</span>
+                    <span>OpenTig uses the selected CLI session. It does not copy or store credentials.</span>
                   </div>
                   <Button variant="outline" size="sm" onClick={() => void loadStatuses(true)} disabled={loadingStatuses}>
                     {loadingStatuses ? <IconLoader4 className="animate-spin" /> : <IconRefresh />} {loadingStatuses ? <ShimmeringText text="Checking…" /> : 'Check again'}
@@ -2585,7 +2585,7 @@ function SettingsDialog({ preferences, onPreference, open, onOpenChange, section
                 <div className="settings-field settings-field-separated">
                   <div className="settings-field-label">
                     <strong>{harnessLabel(selectedHarness)} model</strong>
-                    <span>Default lets the CLI choose. JustGit remembers a separate selection for each harness.</span>
+                    <span>Default lets the CLI choose. OpenTig remembers a separate selection for each harness.</span>
                   </div>
                   <Select value={selectedModel} onValueChange={(model) => onPreference({ commitMessageModels: { ...preferences.commitMessageModels, [selectedHarness]: model } })}>
                     <SelectTrigger className="ai-model-select"><SelectValue /></SelectTrigger>
@@ -3178,7 +3178,7 @@ function Welcome({ recent, onOpen, onRecent, error }: { recent: BootstrapData['r
   const repositories = groupRecentRepositories(recent);
   return (
     <div className="welcome">
-      <h1>JustGit</h1><p>Open a repository to review changes, explore files, and create commits.</p>
+      <h1>OpenTig</h1><p>Open a repository to review changes, explore files, and create commits.</p>
       <Button size="lg" onClick={onOpen}><IconFolderOpen /> Open repository</Button>
       {error && <div className="welcome-error">{error}</div>}
       {repositories.length > 0 && <section><h2>Recent</h2>{repositories.map((item) => <button key={item.key} onClick={() => onRecent(item.recent.id)}><IconFolder /><span><strong>{item.name}</strong><small>{item.rootPath}</small></span></button>)}</section>}

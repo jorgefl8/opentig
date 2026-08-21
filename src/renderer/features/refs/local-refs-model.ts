@@ -136,7 +136,7 @@ function pullRequestReason(pullRequest: PullRequestSummary | null): string | nul
 /** Every reason a worktree cannot be removed, in the order the user should see. */
 export function worktreeRemoveEligibility(details: WorktreeDetails): DeleteEligibility {
   if (details.main) return { allowed: false, reason: 'This is the repository\'s main worktree. Git can never remove it.' };
-  if (details.current) return { allowed: false, reason: 'JustGit has this worktree open. Switch to another worktree first.' };
+  if (details.current) return { allowed: false, reason: 'OpenTig has this worktree open. Switch to another worktree first.' };
   if (details.bare) return { allowed: false, reason: 'This entry is a bare repository, not a removable worktree.' };
   if (details.locked) return { allowed: false, reason: `Locked${details.locked === 'locked' ? '' : `: ${details.locked}`}. Unlock it in Git before removing it.` };
   if (details.prunable) return { allowed: false, reason: 'Git can no longer find this worktree on disk, so there is nothing to remove.' };

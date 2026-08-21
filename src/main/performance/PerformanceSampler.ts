@@ -160,7 +160,7 @@ export class PerformanceSampler {
       .catch((error: unknown) => {
         if (this.writeFailureReported) return;
         this.writeFailureReported = true;
-        console.error('JustGit performance log write failed.', error);
+        console.error('OpenTig performance log write failed.', error);
       });
   }
 }

@@ -9,9 +9,9 @@ import type { ForgeConfig } from '@electron-forge/shared-types';
 const config: ForgeConfig = {
   packagerConfig: {
     asar: true,
-    name: 'JustGit',
-    executableName: 'JustGit',
-    appBundleId: 'dev.justgit.app',
+    name: 'OpenTig',
+    executableName: 'OpenTig',
+    appBundleId: 'com.opentig.app',
     // The Vite plugin bundles JavaScript dependencies and otherwise excludes
     // node_modules. Keep the native keyboard hook and its loader alongside the
     // bundle so Electron can load the platform binary at runtime.
@@ -27,7 +27,7 @@ const config: ForgeConfig = {
   // would unnecessarily require a local Visual Studio C++ toolchain.
   rebuildConfig: { onlyModules: [] },
   makers: [
-    new MakerSquirrel({ name: 'JustGit', setupExe: 'JustGit-Setup.exe' }),
+    new MakerSquirrel({ name: 'OpenTig', setupExe: 'OpenTig-Setup.exe' }),
     new MakerZIP({}, ['win32']),
   ],
   plugins: [

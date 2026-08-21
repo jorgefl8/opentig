@@ -134,7 +134,7 @@ export function CommitComposer({
                   );
                 })}
               </div>
-              <small className="commit-plan-note">Preparing changes only the Git index, in the listed order. Review the diff before committing; JustGit never creates the commits automatically.</small>
+              <small className="commit-plan-note">Preparing changes only the Git index, in the listed order. Review the diff before committing; OpenTig never creates the commits automatically.</small>
             </>
           )}
         </section>

@@ -42,7 +42,7 @@ export class OpenCodeProvider implements AiProvider {
     const client = createOpencodeClient({ baseUrl: server.url, directory: input.repositoryPath });
     let sessionId: string | null = null;
     try {
-      const created = await client.session.create({ body: { title: 'JustGit commit message' }, query: { directory: input.repositoryPath } });
+      const created = await client.session.create({ body: { title: 'OpenTig commit message' }, query: { directory: input.repositoryPath } });
       if (!created.data?.id) throw new Error('missing session');
       sessionId = created.data.id;
       const model = input.model === 'default' ? undefined : parseModel(input.model);

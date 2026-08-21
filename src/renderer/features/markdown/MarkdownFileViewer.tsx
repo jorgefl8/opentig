@@ -37,7 +37,7 @@ const CONTENT_WIDTH_STORAGE_KEY = 'justgit:markdown-content-width';
 const EXTERNAL_LINK_RE = /^([a-z][a-z0-9+.-]*:)?\/\//i;
 
 const MARKDOWN_SAVE_MESSAGES = {
-  conflictTitle: 'Markdown was changed outside JustGit',
+  conflictTitle: 'Markdown was changed outside OpenTig',
   successTitle: 'Markdown saved',
   errorTitle: 'Could not save Markdown',
 };

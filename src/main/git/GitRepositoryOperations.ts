@@ -352,9 +352,9 @@ export class GitRepositoryOperations {
       if (!parentOid) return { status: 'unsupported-root' };
 
       const message = (await run(['show', '-s', '--format=%B', expectedOid], { operation: 'undo-message', readOnly: true, maxOutputBytes: 256 * 1024 })).stdout.toString('utf8').trim();
-      await run(['update-ref', '-m', 'JustGit: undo local commit', 'ORIG_HEAD', expectedOid], { operation: 'undo-save-orig-head' });
+      await run(['update-ref', '-m', 'OpenTig: undo local commit', 'ORIG_HEAD', expectedOid], { operation: 'undo-save-orig-head' });
       try {
-        await run(['update-ref', '-m', 'JustGit: undo local commit', 'HEAD', parentOid, expectedOid], { operation: 'undo-move-head' });
+        await run(['update-ref', '-m', 'OpenTig: undo local commit', 'HEAD', parentOid, expectedOid], { operation: 'undo-move-head' });
       } catch {
         return { status: 'stale-head' };
       }
@@ -429,7 +429,7 @@ export class GitRepositoryOperations {
         readOnly: true,
       })).stdout.toString('utf8').trim();
       await this.git.runWrite(repository.path, [
-        'stash', 'push', '--include-untracked', '--message', `JustGit autostash ${new Date().toISOString()}`,
+        'stash', 'push', '--include-untracked', '--message', `OpenTig autostash ${new Date().toISOString()}`,
       ], {
         operation: 'pull-autostash',
         timeoutMs: 120_000,
@@ -780,7 +780,7 @@ export class GitRepositoryOperations {
 
   private async ensureWritable(repositoryId: string): Promise<void> {
     const status = await this.repositories.status(repositoryId, false);
-    if (status.readOnly) throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'write', message: `The repository is in the middle of ${status.operation}; JustGit keeps it read-only.` });
+    if (status.readOnly) throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'write', message: `The repository is in the middle of ${status.operation}; OpenTig keeps it read-only.` });
   }
 
   private async localOnlyOids(repositoryPath: string, upstream: string | null, unavailable: boolean): Promise<Set<string> | null> {
@@ -918,7 +918,7 @@ function splitBlockedReason(stagedChanges: FileChange[], summaryTruncated: boole
 
 function bounded(value: string, limit: number): { value: string; truncated: boolean } {
   if (value.length <= limit) return { value, truncated: false };
-  return { value: `${value.slice(0, limit)}\n[content truncated by JustGit]`, truncated: true };
+  return { value: `${value.slice(0, limit)}\n[content truncated by OpenTig]`, truncated: true };
 }
 
 function pushFailure(error: unknown): Extract<PushResult, { status: 'rejected' }> {

@@ -511,7 +511,7 @@ function worktreeFailure(status: string): string {
   switch (status) {
     case 'stale': return 'The worktree moved since this view loaded. It was refreshed; check the new state before removing.';
     case 'main': return 'Git can never remove the main worktree.';
-    case 'current': return 'JustGit has this worktree open. Switch to another one first.';
+    case 'current': return 'OpenTig has this worktree open. Switch to another one first.';
     case 'dirty': return 'The worktree has local changes or an operation in progress, so it was kept.';
     case 'locked': return 'The worktree is locked. Unlock it in Git first.';
     case 'prunable': return 'Git can no longer find this worktree on disk.';

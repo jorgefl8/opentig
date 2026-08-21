@@ -419,7 +419,7 @@ export class FileService {
     const resolved = pairs.map(({ from, to }) => ({ from, to, source: this.repositories.resolvePath(repositoryId, from), destination: this.repositories.resolvePath(repositoryId, to) }));
     if (!(await Promise.all(resolved.map((item) => pathExists(item.source)))).every(Boolean)
       || (await Promise.all(resolved.map(async (item) => !samePath(item.source, item.destination) && await pathExists(item.destination)))).some(Boolean)) {
-      throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'move-exact', message: 'An item was changed outside JustGit.' });
+      throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'move-exact', message: 'An item was changed outside OpenTig.' });
     }
     const completed: typeof resolved = [];
     try {

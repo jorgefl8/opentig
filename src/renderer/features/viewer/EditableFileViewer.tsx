@@ -213,7 +213,7 @@ interface EditableFileViewerProps {
 }
 
 const FILE_SAVE_MESSAGES = {
-  conflictTitle: 'File was changed outside JustGit',
+  conflictTitle: 'File was changed outside OpenTig',
   successTitle: 'File saved',
   errorTitle: 'Could not save file',
 };

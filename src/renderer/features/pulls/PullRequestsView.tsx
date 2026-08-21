@@ -43,7 +43,7 @@ export function PullRequestsView(props: PullRequestsViewProps) {
   if (!props.ghStatus.installed) {
     return (
       <PullsNotice icon={<IconBrandGithub />} title="GitHub CLI is required">
-        JustGit uses your local <code>gh</code> session to read and create pull requests. It does not copy or store credentials.
+        OpenTig uses your local <code>gh</code> session to read and create pull requests. It does not copy or store credentials.
         <span className="pulls-notice-actions">
           <Button variant="outline" size="sm" onClick={() => props.onCopyCommand('winget install GitHub.cli')}><IconCopy /> Copy install command</Button>
           <Button variant="ghost" size="sm" onClick={props.onRefresh}><IconRefresh /> Check again</Button>

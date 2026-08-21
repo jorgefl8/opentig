@@ -20,7 +20,7 @@ interface HtmlFileViewerProps {
 }
 
 const HTML_SAVE_MESSAGES = {
-  conflictTitle: 'HTML was changed outside JustGit',
+  conflictTitle: 'HTML was changed outside OpenTig',
   successTitle: 'HTML saved',
   errorTitle: 'Could not save HTML',
 };

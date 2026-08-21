@@ -64,7 +64,7 @@ export function ShortcutsSettings({ preferences, onPreference }: ShortcutsSettin
       <div className="settings-field settings-toggle-row">
         <div className="settings-field-label">
           <strong>Show and focus from anywhere</strong>
-          <span>Double-tap Control to bring JustGit to the front, even while another app is focused.</span>
+          <span>Double-tap Control to bring OpenTig to the front, even while another app is focused.</span>
         </div>
         <button
           type="button"
