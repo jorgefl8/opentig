@@ -28,8 +28,8 @@ describe('repository select model', () => {
   });
 
   it('keeps the deepest segments when shortening a repository path', () => {
-    expect(shortenRepositoryPath('C:\\Users\\dev\\Desktop\\justgit')).toBe('…/dev/Desktop/justgit');
-    expect(shortenRepositoryPath('/home/dev/justgit/')).toBe('…/home/dev/justgit');
+    expect(shortenRepositoryPath('C:\\Users\\dev\\Desktop\\opentig')).toBe('…/dev/Desktop/opentig');
+    expect(shortenRepositoryPath('/home/dev/opentig/')).toBe('…/home/dev/opentig');
     expect(shortenRepositoryPath('C:\\repos\\one')).toBe('C:/repos/one');
   });
 

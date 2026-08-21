@@ -234,11 +234,11 @@ describe('GitRepositoryOperations local refs snapshot', () => {
     const snapshot = await fixture.operations.localRefsSnapshot(fixture.repositoryId);
     expect(snapshot.branches.map((branch) => branch.name)).toEqual(['main', 'alpha', 'zeta']);
     expect(snapshot.branches.every((branch) => !branch.remote)).toBe(true);
-    expect(snapshot.branches[0]).toMatchObject({ current: true, oid: headOid, subject: 'Base commit', author: 'JustGit Test' });
+    expect(snapshot.branches[0]).toMatchObject({ current: true, oid: headOid, subject: 'Base commit', author: 'OpenTig Test' });
     expect(snapshot.branches[0]?.date).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
 
-  it('identifies the main worktree and the one JustGit currently has open', async () => {
+  it('identifies the main worktree and the one OpenTig currently has open', async () => {
     const fixture = await managementRepository();
     const review = await addWorktree(fixture, 'review', 'review');
 
@@ -433,7 +433,7 @@ describe('GitRepositoryOperations safe worktree removal', () => {
     expect(await exists(fixture.work)).toBe(true);
   });
 
-  it('refuses a linked worktree that JustGit currently has open', async () => {
+  it('refuses a linked worktree that OpenTig currently has open', async () => {
     const fixture = await managementRepository();
     const review = await addWorktree(fixture, 'review', 'review');
     const opened = await fixture.repositories.openPath(review);
@@ -554,7 +554,7 @@ describe('GitRepositoryOperations worktree details', () => {
       branch: 'review', main: false, current: false, available: true, detached: false,
       stagedCount: 1, unstagedCount: 1, untrackedCount: 0, conflictCount: 0, operation: null, readOnly: false,
     });
-    expect(details.lastCommit).toMatchObject({ subject: 'Base commit', author: 'JustGit Test' });
+    expect(details.lastCommit).toMatchObject({ subject: 'Base commit', author: 'OpenTig Test' });
     expect(details.lastCommit?.oid).toBe(await git(review, ['rev-parse', 'HEAD']));
   });
 
@@ -567,7 +567,7 @@ describe('GitRepositoryOperations worktree details', () => {
     expect(details.prunable).toBeTruthy();
   });
 
-  it('reports the main worktree as current while JustGit has it open', async () => {
+  it('reports the main worktree as current while OpenTig has it open', async () => {
     const fixture = await managementRepository();
     expect(await fixture.operations.worktreeDetails(fixture.repositoryId, fixture.work))
       .toMatchObject({ main: true, current: true, branch: 'main', available: true });
@@ -626,7 +626,7 @@ describe('GitRepositoryOperations fetch and pull', () => {
 });
 
 async function managementRepository() {
-  const root = await mkdtemp(path.join(os.tmpdir(), 'justgit-manage-'));
+  const root = await mkdtemp(path.join(os.tmpdir(), 'opentig-manage-'));
   directories.push(root);
   const work = path.join(root, 'work');
   await git(root, ['init', '-b', 'main', work]);
@@ -671,7 +671,7 @@ async function realPath(target: string): Promise<string> {
 }
 
 async function repositoryWithUpstream() {
-  const root = await mkdtemp(path.join(os.tmpdir(), 'justgit-history-'));
+  const root = await mkdtemp(path.join(os.tmpdir(), 'opentig-history-'));
   directories.push(root);
   const remote = path.join(root, 'remote.git');
   const work = path.join(root, 'work');
@@ -706,7 +706,7 @@ async function commitOnRemote(
 }
 
 async function standaloneRepository() {
-  const root = await mkdtemp(path.join(os.tmpdir(), 'justgit-history-'));
+  const root = await mkdtemp(path.join(os.tmpdir(), 'opentig-history-'));
   directories.push(root);
   const work = path.join(root, 'work');
   await git(root, ['init', '-b', 'main', work]);
@@ -729,8 +729,8 @@ async function createOperations(root: string, work: string) {
 }
 
 async function configure(work: string): Promise<void> {
-  await git(work, ['config', 'user.name', 'JustGit Test']);
-  await git(work, ['config', 'user.email', 'justgit@example.invalid']);
+  await git(work, ['config', 'user.name', 'OpenTig Test']);
+  await git(work, ['config', 'user.email', 'opentig@example.invalid']);
 }
 
 async function git(cwd: string, args: string[]): Promise<string> {

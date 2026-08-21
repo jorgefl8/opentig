@@ -652,7 +652,7 @@ export class GitRepositoryOperations {
       if (deleteBranch && worktree.branch) {
         await run(['branch', '--delete', '--force', '--', worktree.branch], { operation: 'remove-worktree-branch', timeoutMs: 30_000, maxOutputBytes: 1024 * 1024 });
       }
-      // Only after Git succeeded does JustGit forget the directory.
+      // Only after Git succeeded does OpenTig forget the directory.
       const recentRepositories = await this.repositories.forgetWorktree(worktree.path);
       return { status: 'removed', path: worktree.path, branch: worktree.branch, recentRepositories };
     }, repository.commonDir);

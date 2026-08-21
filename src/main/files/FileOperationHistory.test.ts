@@ -129,9 +129,9 @@ describe('FileOperationHistory', () => {
 });
 
 async function createFixture() {
-  const root = await mkdtemp(path.join(os.tmpdir(), 'justgit-history-')); directories.push(root);
+  const root = await mkdtemp(path.join(os.tmpdir(), 'opentig-history-')); directories.push(root);
   const work = path.join(root, 'work'); const trashRoot = path.join(root, 'trash');
-  await git(root, ['init', '-b', 'main', work]); await git(work, ['config', 'user.name', 'JustGit Test']); await git(work, ['config', 'user.email', 'justgit@example.invalid']);
+  await git(root, ['init', '-b', 'main', work]); await git(work, ['config', 'user.name', 'OpenTig Test']); await git(work, ['config', 'user.email', 'opentig@example.invalid']);
   await writeFile(path.join(work, 'tracked.txt'), 'tracked'); await git(work, ['add', '.']); await git(work, ['commit', '-m', 'Initial']); await mkdir(trashRoot);
   const settings = new SettingsStore(path.join(root, 'settings.json')); await settings.load();
   const process = new GitProcess(); const repositories = new RepositoryService(process, settings); const files = new FileService(process, repositories); const repository = await repositories.openPath(work);

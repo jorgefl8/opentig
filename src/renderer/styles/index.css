@@ -966,7 +966,7 @@
 
 * { scrollbar-width: thin; scrollbar-color: color-mix(in oklch, var(--foreground) 18%, transparent) transparent; }
 
-/* JustGit visual system ------------------------------------------------------
+/* OpenTig visual system ------------------------------------------------------
    Flat desktop chrome: one neutral canvas, borders for hierarchy, and no
    gradients or decorative shadows. Electric blue is spent only on primary
    actions, focus and drop targets. Green and red never mean anything except

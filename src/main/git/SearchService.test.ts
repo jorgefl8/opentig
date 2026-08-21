@@ -124,12 +124,12 @@ describe('SearchService result fidelity', () => {
 });
 
 async function createFixture() {
-  const root = await mkdtemp(path.join(os.tmpdir(), 'justgit-search-'));
+  const root = await mkdtemp(path.join(os.tmpdir(), 'opentig-search-'));
   directories.push(root);
   const work = path.join(root, 'work');
   await git(root, ['init', '-b', 'main', work]);
-  await git(work, ['config', 'user.name', 'JustGit Test']);
-  await git(work, ['config', 'user.email', 'justgit@example.invalid']);
+  await git(work, ['config', 'user.name', 'OpenTig Test']);
+  await git(work, ['config', 'user.email', 'opentig@example.invalid']);
   await writeFile(path.join(work, '.gitignore'), 'ignored.txt\n');
   await writeFile(path.join(work, 'tracked.txt'), 'foo foo\nFOO\n');
   await writeFile(path.join(work, 'second.txt'), 'foo\n');

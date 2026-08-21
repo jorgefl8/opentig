@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { buildHtmlPreviewDocument } from './html-preview-document';
 
 describe('buildHtmlPreviewDocument', () => {
-  it('adds JustGit scrollbar styling without changing the source body', () => {
+  it('adds OpenTig scrollbar styling without changing the source body', () => {
     const source = '<!doctype html><html><head><title>Preview</title></head><body><main>Content</main></body></html>';
     const result = buildHtmlPreviewDocument(source, true);
 

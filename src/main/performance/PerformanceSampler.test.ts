@@ -154,7 +154,7 @@ describe('PerformanceSampler', () => {
   });
 
   it('creates a private NDJSON log with normalized labels when enabled', async () => {
-    const directory = await mkdtemp(path.join(os.tmpdir(), 'justgit-performance-'));
+    const directory = await mkdtemp(path.join(os.tmpdir(), 'opentig-performance-'));
     temporaryDirectories.push(directory);
     const sampler = await createPerformanceSampler(
       {

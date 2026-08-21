@@ -413,12 +413,12 @@ describe('FileService', () => {
 });
 
 async function createFixture() {
-  const root = await mkdtemp(path.join(os.tmpdir(), 'justgit-files-'));
+  const root = await mkdtemp(path.join(os.tmpdir(), 'opentig-files-'));
   directories.push(root);
   const work = path.join(root, 'work');
   await git(root, ['init', '-b', 'main', work]);
-  await git(work, ['config', 'user.name', 'JustGit Test']);
-  await git(work, ['config', 'user.email', 'justgit@example.invalid']);
+  await git(work, ['config', 'user.name', 'OpenTig Test']);
+  await git(work, ['config', 'user.email', 'opentig@example.invalid']);
   await writeFile(path.join(work, '.gitignore'), '.env*\n');
   await writeFile(path.join(work, 'tracked.txt'), 'tracked\n');
   await git(work, ['add', '.']);

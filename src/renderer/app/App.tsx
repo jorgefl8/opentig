@@ -147,7 +147,7 @@ export default function App() {
   const draftWarningShownRef = useRef(false);
   const dirtyCloseResolverRef = useRef<((choice: DirtyCloseChoice) => void) | null>(null);
   const commitTextareaRef = useRef<HTMLTextAreaElement>(null);
-  // The last message JustGit itself put in the composer, so an edited one is
+  // The last message OpenTig itself put in the composer, so an edited one is
   // never replaced without asking.
   const lastAppliedMessageRef = useRef('');
   const forceGhStatusRef = useRef(false);
@@ -1269,7 +1269,7 @@ export default function App() {
         title: `Message generated with ${harnessLabel(result.harness)}`,
         description: result.proposal
           ? `${result.proposal.commits.length} focused commits may be clearer than one.`
-          // Silence used to hide both "the model saw no split" and "JustGit
+          // Silence used to hide both "the model saw no split" and "OpenTig
           // refused to offer one"; only the second needs explaining.
           : result.splitBlockedReason
             ? `No commit split was offered: ${result.splitBlockedReason.charAt(0).toLowerCase()}${result.splitBlockedReason.slice(1)}`
@@ -1671,7 +1671,7 @@ export default function App() {
       {/* Sileo names its themes after the page, not the toast: `light` fills the
           toast with #1a1a1a and `dark` with #f2f2f2. Pinning it to `light` keeps
           every toast dark whatever the app theme is, and also sidesteps `system`,
-          which sileo resolves from the OS instead of JustGit's own preference. */}
+          which sileo resolves from the OS instead of OpenTig's own preference. */}
       <Toaster theme="light" position="bottom-right" />
       <QuickOpenDialog
         open={quickOpen}

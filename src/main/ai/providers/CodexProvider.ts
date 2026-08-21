@@ -34,7 +34,7 @@ export class CodexProvider implements AiProvider {
   async generate(input: ProviderGenerateInput) {
     const executable = await this.resolver.resolve('codex');
     if (!executable) throw new AiOperationError({ code: 'AI_CLI_NOT_FOUND', operation: 'codex-generate', harness: this.id, message: 'Codex is not installed.' });
-    const temporary = await mkdtemp(path.join(os.tmpdir(), 'justgit-codex-'));
+    const temporary = await mkdtemp(path.join(os.tmpdir(), 'opentig-codex-'));
     const schemaPath = path.join(temporary, 'schema.json');
     const outputPath = path.join(temporary, 'output.json');
     try {

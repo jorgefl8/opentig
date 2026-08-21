@@ -249,7 +249,7 @@ export class FileService {
 
     const writable = await open(resolved, 'r+');
     await writable.close();
-    const temporary = path.join(path.dirname(resolved), `.${path.basename(resolved)}.justgit-${process.pid}-${randomUUID()}.tmp`);
+    const temporary = path.join(path.dirname(resolved), `.${path.basename(resolved)}.opentig-${process.pid}-${randomUUID()}.tmp`);
     try {
       const handle = await open(temporary, 'wx', metadata.mode);
       try {
@@ -260,7 +260,7 @@ export class FileService {
       }
 
       // Re-check immediately before replacement so a concurrent Explorer/editor
-      // write never gets silently overwritten by an older JustGit draft.
+      // write never gets silently overwritten by an older OpenTig draft.
       if (await readFile(resolved, 'utf8') !== expectedContent) return { status: 'conflict' };
       await rename(temporary, resolved);
       const saved = await stat(resolved);

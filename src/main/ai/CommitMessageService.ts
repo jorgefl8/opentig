@@ -62,7 +62,7 @@ export class CommitMessageService {
         splitOffered: proposal !== null,
         splitGroups: proposal ? proposal.commits.length : null,
         // The one field that makes the prompt tunable: a plan the model did
-        // offer and JustGit refused, and exactly why.
+        // offer and OpenTig refused, and exactly why.
         splitRejectedReason: parsed?.status === 'rejected' ? parsed.reason : null,
         splitBlockedReason: context.splitBlockedReason,
       });

@@ -362,7 +362,7 @@ function worktree(id: string, worktreePath: string) {
 }
 
 async function settingsFile(value: object): Promise<string> {
-  const directory = await mkdtemp(path.join(os.tmpdir(), 'justgit-settings-'));
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'opentig-settings-'));
   directories.push(directory);
   const file = path.join(directory, 'settings.json');
   await writeFile(file, JSON.stringify(value));
