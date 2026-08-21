@@ -34,7 +34,8 @@ It is intentionally not an IDE, hosting service, or replacement for the Git CLI.
 - Open existing local repositories and return to recently used repositories.
 - Relocate a recent repository when its folder moved, preserving its project assignment, open tabs, and expanded folders.
 - Group related repositories into named JustGit projects without moving anything on disk.
-- Pull or push an individual repository from its row in the repository picker. Only pending operations are shown, each with its ahead/behind commit count; multiple repositories can sync concurrently, and their separate Sileo progress and outcome cards remain visible together.
+- Pull or push an individual repository from its row in the repository picker. Only pending operations are shown, each with its ahead/behind commit count; multiple repositories can sync concurrently, and their separate Sileo progress and outcome cards remain visible together. Opening the picker fetches each listed repository so those counts match the remote, not a stale local cache.
+- Fetch remotes in the background so toolbar ahead/behind counts stay current. The default interval is 30 seconds and can be raised, lowered, or turned off in **Settings → General**.
 - Create, rename, delete, and reassign project groups.
 - Switch quickly between repositories, branches, and available worktrees.
 - Display current branch, ahead/behind state, and worktree insertion/deletion totals in the main toolbar.
@@ -59,10 +60,11 @@ It is intentionally not an IDE, hosting service, or replacement for the Git CLI.
 
 ### Safe pull and push
 
-- Pull only by fast-forward after fetching; JustGit does not create an implicit merge commit.
+- Pull by fast-forward when the branch has no local commits, or rebase those local commits onto the updated remote when the histories have diverged and there are no conflicts. The unpublished commits stay on top, ready to push. JustGit does not create an implicit merge commit.
+- If a rebase would conflict, abort it and leave the branch unchanged instead of stranding the repository mid-rebase.
 - Preserve local changes through a temporary safety stash when pulling, including untracked files.
 - Keep and report the recovery stash if changes cannot be restored cleanly.
-- Refuse unsafe pull or push states such as unresolved conflicts, an active Git operation, missing upstream configuration, or diverged history.
+- Refuse unsafe pull or push states such as unresolved conflicts, an active Git operation, or missing upstream configuration.
 - Surface remote rejection, branch-protection, authentication, and configuration failures as actionable messages.
 
 ### Files and editing
@@ -246,7 +248,7 @@ Generated content remains editable and pending. No commit is created and no pull
 - Windows desktop only.
 - Opens existing local repositories; cloning and initial remote setup remain Git CLI tasks.
 - GitHub integration currently depends on `gh` and the repository's configured GitHub remote.
-- JustGit deliberately avoids force push, forced branch deletion, automatic merge commits, and automatic AI actions.
+- JustGit deliberately avoids force push, forced branch deletion, automatic merge commits, and automatic AI actions. Periodic fetch only updates remote-tracking refs; it never rebases or merges on its own.
 
 ## Contributing
 

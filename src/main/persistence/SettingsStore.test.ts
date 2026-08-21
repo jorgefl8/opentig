@@ -63,6 +63,20 @@ describe('SettingsStore AI preferences', () => {
     await store.load();
     expect(store.preferences.shortcutOverrides).toEqual({});
     expect(store.preferences.doubleControlShortcutEnabled).toBe(true);
+    expect(store.preferences.remoteFetchIntervalSeconds).toBe(30);
+  });
+
+  it('persists a remote fetch interval and clamps out-of-range values', async () => {
+    const file = await settingsFile({});
+    const store = new SettingsStore(file);
+    await store.load();
+    expect(store.preferences.remoteFetchIntervalSeconds).toBe(30);
+    await store.setPreferences({ remoteFetchIntervalSeconds: 45 });
+    expect(store.preferences.remoteFetchIntervalSeconds).toBe(45);
+    await store.setPreferences({ remoteFetchIntervalSeconds: 0 });
+    expect(store.preferences.remoteFetchIntervalSeconds).toBe(0);
+    await store.setPreferences({ remoteFetchIntervalSeconds: 900 });
+    expect(store.preferences.remoteFetchIntervalSeconds).toBe(300);
   });
 
   it('persists valid shortcut overrides and drops invalid, reserved, or colliding ones', async () => {

@@ -574,6 +574,57 @@ describe('GitRepositoryOperations worktree details', () => {
   });
 });
 
+describe('GitRepositoryOperations fetch and pull', () => {
+  it('fetches remote commits so behind counts become visible', async () => {
+    const fixture = await repositoryWithUpstream();
+    await commitOnRemote(fixture, 'incoming.txt', 'from origin\n', 'Remote commit');
+    expect(await fixture.repositories.status(fixture.repositoryId, false)).toMatchObject({ ahead: 0, behind: 0 });
+    expect(await fixture.operations.fetch(fixture.repositoryId)).toEqual({ status: 'success', ahead: 0, behind: 1 });
+    expect(await fixture.repositories.status(fixture.repositoryId, false)).toMatchObject({ ahead: 0, behind: 1 });
+  });
+
+  it('fast-forwards when the branch has no local commits', async () => {
+    const fixture = await repositoryWithUpstream();
+    await commitOnRemote(fixture, 'incoming.txt', 'from origin\n', 'Remote commit');
+    expect(await fixture.operations.pull(fixture.repositoryId)).toEqual({
+      status: 'success', commits: 1, restoredLocalChanges: false, rebased: false, localCommits: 0,
+    });
+    expect(await fixture.repositories.status(fixture.repositoryId, false)).toMatchObject({ ahead: 0, behind: 0 });
+  });
+
+  it('rebases a local commit onto remote changes when there is no conflict', async () => {
+    const fixture = await repositoryWithUpstream();
+    await writeFile(path.join(fixture.work, 'local.txt'), 'mine\n');
+    await git(fixture.work, ['add', 'local.txt']);
+    await git(fixture.work, ['commit', '-m', 'Local commit']);
+    const localOid = await git(fixture.work, ['rev-parse', 'HEAD']);
+    await commitOnRemote(fixture, 'incoming.txt', 'from origin\n', 'Remote commit');
+
+    expect(await fixture.operations.pull(fixture.repositoryId)).toEqual({
+      status: 'success', commits: 1, restoredLocalChanges: false, rebased: true, localCommits: 1,
+    });
+    const status = await fixture.repositories.status(fixture.repositoryId, false);
+    expect(status).toMatchObject({ ahead: 1, behind: 0 });
+    expect(await git(fixture.work, ['rev-parse', 'HEAD'])).not.toBe(localOid);
+    expect(await git(fixture.work, ['log', '-1', '--format=%s'])).toBe('Local commit');
+    expect(await git(fixture.work, ['merge-base', '--is-ancestor', '@{upstream}', 'HEAD'])).toBe('');
+  });
+
+  it('aborts a conflicting rebase and leaves the local commit unchanged', async () => {
+    const fixture = await repositoryWithUpstream();
+    await writeFile(path.join(fixture.work, 'committed.txt'), 'local edit\n');
+    await git(fixture.work, ['add', 'committed.txt']);
+    await git(fixture.work, ['commit', '-m', 'Local edit']);
+    const localOid = await git(fixture.work, ['rev-parse', 'HEAD']);
+    await commitOnRemote(fixture, 'committed.txt', 'remote edit\n', 'Remote edit');
+
+    const result = await fixture.operations.pull(fixture.repositoryId);
+    expect(result.status).toBe('rebase-conflict');
+    expect(await git(fixture.work, ['rev-parse', 'HEAD'])).toBe(localOid);
+    expect(await fixture.repositories.status(fixture.repositoryId, false)).toMatchObject({ operation: null, ahead: 1, behind: 1 });
+  });
+});
+
 async function managementRepository() {
   const root = await mkdtemp(path.join(os.tmpdir(), 'justgit-manage-'));
   directories.push(root);
@@ -634,7 +685,24 @@ async function repositoryWithUpstream() {
   await git(work, ['commit', '-m', 'Base commit']);
   await git(work, ['remote', 'add', 'origin', remote]);
   await git(work, ['push', '-u', 'origin', 'main']);
-  return createOperations(root, work);
+  await git(remote, ['symbolic-ref', 'HEAD', 'refs/heads/main']);
+  return { root, remote, ...await createOperations(root, work) };
+}
+
+async function commitOnRemote(
+  fixture: { root: string; remote: string },
+  filename: string,
+  content: string,
+  message: string,
+): Promise<void> {
+  const other = path.join(fixture.root, `remote-work-${filename.replace(/[^\w.-]+/g, '-')}`);
+  await git(fixture.root, ['clone', fixture.remote, other]);
+  await configure(other);
+  await git(other, ['checkout', '-B', 'main', 'origin/main']);
+  await writeFile(path.join(other, filename), content);
+  await git(other, ['add', '.']);
+  await git(other, ['commit', '-m', message]);
+  await git(other, ['push', 'origin', 'main']);
 }
 
 async function standaloneRepository() {

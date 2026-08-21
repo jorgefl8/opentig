@@ -87,6 +87,7 @@ export function createApi(ipcRenderer: IpcRenderer, setZoomFactor: (factor: numb
       selectWorktree: (id, path) => invoke(IPC.worktreeSelect, id, path),
       pull: (id) => invoke(IPC.refsPull, id),
       push: (id) => invoke(IPC.refsPush, id),
+      fetch: (id) => invoke(IPC.refsFetch, id),
       localRefsSnapshot: (id) => invoke(IPC.localRefsSnapshot, id),
       branchDetails: (request) => invoke(IPC.branchDetails, request),
       worktreeDetails: (request) => invoke(IPC.worktreeDetails, request),

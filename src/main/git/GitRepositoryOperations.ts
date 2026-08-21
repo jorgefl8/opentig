@@ -1,4 +1,4 @@
-import type { CommitResult, DiffRequest, DiffResult, GitResult, PrepareCommitGroupInput, PullResult, PushResult, UndoLatestCommitResult, WorktreeRemovalResult } from '../../shared/contracts';
+import type { CommitResult, DiffRequest, DiffResult, FetchResult, GitResult, PrepareCommitGroupInput, PullResult, PushResult, UndoLatestCommitResult, WorktreeRemovalResult } from '../../shared/contracts';
 import type {
   BranchComparisonKind, BranchDeletionResult, BranchDetails, BranchInfo, CommitFile, CommitPage, CommitSummary,
   FileChange, LocalRefsSnapshot, WorktreeDetails, WorktreeInfo,
@@ -388,6 +388,20 @@ export class GitRepositoryOperations {
     return { ok: true };
   }
 
+  async fetch(repositoryId: string): Promise<FetchResult> {
+    const repository = this.repositories.get(repositoryId);
+    try {
+      await this.runFetch(repository.path, 'fetch');
+    } catch (error) {
+      const message = error instanceof GitOperationError
+        ? error.detail.message
+        : error instanceof Error ? error.message : 'Could not fetch from the remote.';
+      return { status: 'failed', message };
+    }
+    const status = await this.repositories.status(repositoryId, false);
+    return { status: 'success', ahead: status.ahead, behind: status.behind };
+  }
+
   async pull(repositoryId: string): Promise<PullResult> {
     const repository = this.repositories.get(repositoryId);
     let status = await this.repositories.status(repositoryId, false);
@@ -396,20 +410,16 @@ export class GitRepositoryOperations {
     if (status.operation) return { status: 'blocked-operation', operation: status.operation };
     if (!status.upstream) return { status: 'no-upstream' };
 
-    await this.git.runWrite(repository.path, ['fetch'], {
-      operation: 'pull-fetch',
-      timeoutMs: 120_000,
-      maxOutputBytes: 8 * 1024 * 1024,
-    });
+    await this.runFetch(repository.path, 'pull-fetch');
 
     status = await this.repositories.status(repositoryId, false);
     const conflictsAfterFetch = conflictPaths(status);
     if (conflictsAfterFetch.length > 0) return { status: 'blocked-conflicts', files: conflictsAfterFetch };
     if (!status.upstream) return { status: 'no-upstream' };
     if (status.behind === 0) return { status: 'up-to-date' };
-    if (status.ahead > 0) return { status: 'diverged', ahead: status.ahead, behind: status.behind };
 
     const commits = status.behind;
+    const rebased = status.ahead > 0;
     const hasLocalChanges = status.changes.length > 0;
     let stashOid: string | null = null;
 
@@ -439,16 +449,28 @@ export class GitRepositoryOperations {
     }
 
     try {
-      await this.git.runWrite(repository.path, ['merge', '--ff-only', '--no-edit', '@{upstream}'], {
-        operation: 'pull-fast-forward',
-        timeoutMs: 120_000,
-        maxOutputBytes: 16 * 1024 * 1024,
-      });
+      if (rebased) {
+        await this.git.runWrite(repository.path, ['rebase', '@{upstream}'], {
+          operation: 'pull-rebase',
+          timeoutMs: 120_000,
+          maxOutputBytes: 16 * 1024 * 1024,
+        });
+      } else {
+        await this.git.runWrite(repository.path, ['merge', '--ff-only', '--no-edit', '@{upstream}'], {
+          operation: 'pull-fast-forward',
+          timeoutMs: 120_000,
+          maxOutputBytes: 16 * 1024 * 1024,
+        });
+      }
     } catch (error) {
+      const statusAfter = await this.repositories.status(repositoryId, false);
+      const files = conflictPaths(statusAfter);
+      if (statusAfter.operation === 'rebase') await this.abortRebase(repository.path);
       if (stashOid) {
         const restored = await this.restoreAutostash(repositoryId, stashOid, false);
         if (restored) return restored;
       }
+      if (rebased) return { status: 'rebase-conflict', files };
       throw error;
     }
 
@@ -456,7 +478,8 @@ export class GitRepositoryOperations {
       const restored = await this.restoreAutostash(repositoryId, stashOid, true);
       if (restored) return restored;
     }
-    return { status: 'success', commits, restoredLocalChanges: hasLocalChanges };
+    const nextStatus = await this.repositories.status(repositoryId, false);
+    return { status: 'success', commits, restoredLocalChanges: hasLocalChanges, rebased, localCommits: nextStatus.ahead };
   }
 
   async push(repositoryId: string): Promise<PushResult> {
@@ -469,11 +492,7 @@ export class GitRepositoryOperations {
     if (status.ahead === 0) return { status: 'up-to-date' };
 
     try {
-      await this.git.runWrite(repository.path, ['fetch'], {
-        operation: 'push-fetch',
-        timeoutMs: 120_000,
-        maxOutputBytes: 8 * 1024 * 1024,
-      });
+      await this.runFetch(repository.path, 'push-fetch');
     } catch (error) {
       return pushFailure(error);
     }
@@ -773,6 +792,26 @@ export class GitRepositoryOperations {
       return new Set(values);
     } catch {
       return null;
+    }
+  }
+
+  private async runFetch(repositoryPath: string, operation: string): Promise<void> {
+    await this.git.runWrite(repositoryPath, ['fetch'], {
+      operation,
+      timeoutMs: 120_000,
+      maxOutputBytes: 8 * 1024 * 1024,
+    });
+  }
+
+  private async abortRebase(repositoryPath: string): Promise<void> {
+    try {
+      await this.git.runWrite(repositoryPath, ['rebase', '--abort'], {
+        operation: 'pull-rebase-abort',
+        timeoutMs: 60_000,
+        maxOutputBytes: 4 * 1024 * 1024,
+      });
+    } catch {
+      // Leaving a rebase in progress would lock the worktree; a failed abort is still reported by status.
     }
   }
 

@@ -412,6 +412,7 @@ export function registerHandlers(services: Services): () => void {
   });
   handle(IPC.refsPull, 'pull', (id) => services.operations.pull(stringArg(id, 'pull', 64)));
   handle(IPC.refsPush, 'push', (id) => services.operations.push(stringArg(id, 'push', 64)));
+  handle(IPC.refsFetch, 'fetch', (id) => services.operations.fetch(stringArg(id, 'fetch', 64)));
   handle(IPC.aiStatuses, 'ai-statuses', (forceRefresh) => services.ai.statuses(booleanArg(forceRefresh, 'ai-statuses')));
   handle(IPC.aiGenerateCommitMessage, 'ai-generate-commit-message', (input) => services.ai.generate(generateCommitMessageArg(input)));
   handle(IPC.aiLog, 'ai-log', () => services.aiLog.list());

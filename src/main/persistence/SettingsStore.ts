@@ -8,6 +8,7 @@ import { sanitizeShortcutOverrides } from '../../shared/shortcuts';
 import { FILES_TREE_SAVE_DEBOUNCE_MS, normalizeFilesTreeStates, type FilesTreeState, upsertFilesTreeState } from '../../shared/files-tree-state';
 import { cloneOpenFilesState, normalizeOpenFilesStates, OPEN_FILES_SAVE_DEBOUNCE_MS, type OpenFilesState, upsertOpenFilesState } from '../../shared/open-files-state';
 import { MAX_PROJECT_NAME_LENGTH, MAX_REPOSITORIES_PER_PROJECT, MAX_REPOSITORY_KEY_LENGTH, MAX_REPOSITORY_PROJECTS, normalizeRepositoryKey, UNASSIGNED_RECENT_LIMIT } from '../../shared/repository-projects';
+import { DEFAULT_REMOTE_FETCH_INTERVAL_SECONDS, normalizeRemoteFetchIntervalSeconds } from '../../shared/remote-fetch';
 
 interface WindowBounds { width: number; height: number; x?: number; y?: number }
 interface SettingsData {
@@ -33,6 +34,7 @@ const defaults: SettingsData = {
     theme: 'system', diffView: 'unified', changesLayout: 'tree', wrapLines: false, sidebarWidth: 400, showDotEnvFiles: true, uiZoom: 100,
     commitMessageHarness: 'codex', commitMessageModels: { codex: 'default', claude: 'default', opencode: 'default' },
     shortcutOverrides: {}, doubleControlShortcutEnabled: true,
+    remoteFetchIntervalSeconds: DEFAULT_REMOTE_FETCH_INTERVAL_SECONDS,
   },
   windowBounds: { width: 1280, height: 800 },
 };
@@ -207,6 +209,7 @@ export class SettingsStore {
     next.commitMessageModels = modelPreferences(next.commitMessageModels);
     next.shortcutOverrides = sanitizeShortcutOverrides(next.shortcutOverrides);
     next.doubleControlShortcutEnabled = typeof next.doubleControlShortcutEnabled === 'boolean' ? next.doubleControlShortcutEnabled : true;
+    next.remoteFetchIntervalSeconds = normalizeRemoteFetchIntervalSeconds(next.remoteFetchIntervalSeconds);
     this.data.preferences = next;
     await this.save();
     return this.preferences;
@@ -345,6 +348,11 @@ function validate(value: unknown): SettingsData {
         commitMessageModels: modelPreferences(parsedPreferences.data.commitMessageModels),
         shortcutOverrides: sanitizeShortcutOverrides(parsedPreferences.data.shortcutOverrides),
         doubleControlShortcutEnabled: typeof parsedPreferences.data.doubleControlShortcutEnabled === 'boolean' ? parsedPreferences.data.doubleControlShortcutEnabled : true,
+        remoteFetchIntervalSeconds: normalizeRemoteFetchIntervalSeconds(
+          parsedPreferences.data.remoteFetchIntervalSeconds === undefined
+            ? DEFAULT_REMOTE_FETCH_INTERVAL_SECONDS
+            : parsedPreferences.data.remoteFetchIntervalSeconds,
+        ),
       } as Preferences
     : { ...defaults.preferences };
   const parsedBounds = windowBoundsRecordSchema.safeParse(input.windowBounds);

@@ -33,15 +33,35 @@ export function projectPullSuccessCopy(repository: string, result: Extract<PullR
   if (result.status === 'up-to-date') return { title: `${repository} is already up to date` };
   return {
     title: `${repository}: ${result.commits} ${result.commits === 1 ? 'commit pulled' : 'commits pulled'}`,
-    ...(result.restoredLocalChanges ? { description: 'Local and staged changes were restored.' } : {}),
+    ...pullSuccessDetails(result),
   };
+}
+
+export function pullSuccessCopy(result: Extract<PullResult, { status: 'success' | 'up-to-date' }>): ProjectSyncToastCopy {
+  if (result.status === 'up-to-date') return { title: 'Branch is already up to date' };
+  return {
+    title: `${result.commits} ${result.commits === 1 ? 'commit pulled' : 'commits pulled'}`,
+    ...pullSuccessDetails(result),
+  };
+}
+
+function pullSuccessDetails(result: Extract<PullResult, { status: 'success' }>): { description?: string } {
+  const parts: string[] = [];
+  if (result.rebased && result.localCommits > 0) {
+    parts.push(result.localCommits === 1
+      ? 'Your local commit was kept on top and is ready to push.'
+      : `Your ${result.localCommits} local commits were kept on top and are ready to push.`);
+  }
+  if (result.restoredLocalChanges) parts.push('Local and staged changes were restored.');
+  return parts.length > 0 ? { description: parts.join(' ') } : {};
 }
 
 export function projectPullBlockedCopy(repository: string, result: Exclude<PullResult, { status: 'success' | 'up-to-date' }>): ProjectSyncToastCopy {
   if (result.status === 'blocked-conflicts') return { title: `Could not pull ${repository}`, description: `${result.files.length} pending ${result.files.length === 1 ? 'conflict' : 'conflicts'} must be resolved.`, duration: 10_000 };
   if (result.status === 'blocked-operation') return { title: `Could not pull ${repository}`, description: `Finish or cancel ${result.operation} first.`, duration: 10_000 };
   if (result.status === 'no-upstream') return { title: `Could not pull ${repository}`, description: 'Current branch has no upstream configured.', duration: 10_000 };
-  if (result.status === 'diverged') return { title: `Could not pull ${repository}`, description: `Branch is ${result.ahead} ahead and ${result.behind} behind. Choose rebase or merge first.`, duration: 10_000 };
+  if (result.status === 'diverged') return { title: `Could not pull ${repository}`, description: `Branch is ${result.ahead} ahead and ${result.behind} behind.`, duration: 10_000 };
+  if (result.status === 'rebase-conflict') return { title: `Could not pull ${repository}`, description: result.files.length > 0 ? `Your local commits overlap the remote changes in ${result.files.length === 1 ? result.files[0] : `${result.files.length} files`}. The branch was left unchanged.` : 'Your local commits overlap the remote changes. The branch was left unchanged.', duration: 10_000 };
   if (result.status === 'stash-conflict') return { title: result.updated ? `${repository} updated with local conflicts` : `Could not restore ${repository}`, description: 'Safety stash was preserved. Resolve conflicts before continuing.', duration: null };
   return {
     title: `Could not restore ${repository}`,
@@ -60,6 +80,6 @@ export function projectPushBlockedCopy(repository: string, result: Exclude<PushR
   if (result.status === 'blocked-conflicts') return { title: `Could not push ${repository}`, description: `${result.files.length} pending ${result.files.length === 1 ? 'conflict' : 'conflicts'} must be resolved.`, duration: 10_000 };
   if (result.status === 'blocked-operation') return { title: `Could not push ${repository}`, description: `Finish or cancel ${result.operation} first.`, duration: 10_000 };
   if (result.status === 'no-upstream') return { title: `Could not push ${repository}`, description: 'Current branch has no upstream configured.', duration: 10_000 };
-  if (result.status === 'diverged') return { title: `Could not push ${repository}`, description: `Remote has new changes; branch is ${result.ahead} ahead and ${result.behind} behind. Pull first.`, duration: 10_000 };
+  if (result.status === 'diverged') return { title: `Could not push ${repository}`, description: `Remote has new changes; branch is ${result.ahead} ahead and ${result.behind} behind. Pull first — JustGit rebases your local commits on top when there are no conflicts.`, duration: 10_000 };
   return { title: `Could not push ${repository}`, description: result.message, duration: 10_000 };
 }

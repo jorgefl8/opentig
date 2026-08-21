@@ -23,17 +23,21 @@ describe('project sync toast copy', () => {
   });
 
   it('identifies each repository in successful pull and push results', () => {
-    expect(projectPullSuccessCopy('Web · frontend', { status: 'success', commits: 2, restoredLocalChanges: true })).toEqual({
+    expect(projectPullSuccessCopy('Web · frontend', { status: 'success', commits: 2, restoredLocalChanges: true, rebased: false, localCommits: 0 })).toEqual({
       title: 'Web · frontend: 2 commits pulled',
       description: 'Local and staged changes were restored.',
+    });
+    expect(projectPullSuccessCopy('repotest', { status: 'success', commits: 73, restoredLocalChanges: false, rebased: true, localCommits: 1 })).toEqual({
+      title: 'repotest: 73 commits pulled',
+      description: 'Your local commit was kept on top and is ready to push.',
     });
     expect(projectPushSuccessCopy('API · backend', { status: 'up-to-date' })).toEqual({ title: 'API · backend: no commits pending push' });
   });
 
   it('keeps blocked operations attributable and actionable', () => {
-    expect(projectPullBlockedCopy('Web · frontend', { status: 'diverged', ahead: 2, behind: 3 })).toEqual({
+    expect(projectPullBlockedCopy('Web · frontend', { status: 'rebase-conflict', files: ['netpol.yaml'] })).toEqual({
       title: 'Could not pull Web · frontend',
-      description: 'Branch is 2 ahead and 3 behind. Choose rebase or merge first.',
+      description: 'Your local commits overlap the remote changes in netpol.yaml. The branch was left unchanged.',
       duration: 10_000,
     });
     expect(projectPushBlockedCopy('API · backend', { status: 'no-upstream' })).toEqual({

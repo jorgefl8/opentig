@@ -160,14 +160,19 @@ export type UndoLatestCommitResult =
   | { status: 'unsupported-root' };
 
 export type PullResult =
-  | { status: 'success'; commits: number; restoredLocalChanges: boolean }
+  | { status: 'success'; commits: number; restoredLocalChanges: boolean; rebased: boolean; localCommits: number }
   | { status: 'up-to-date' }
   | { status: 'blocked-conflicts'; files: string[] }
   | { status: 'blocked-operation'; operation: string }
   | { status: 'no-upstream' }
   | { status: 'diverged'; ahead: number; behind: number }
+  | { status: 'rebase-conflict'; files: string[] }
   | { status: 'stash-conflict'; files: string[]; stashOid: string; updated: boolean }
   | { status: 'restore-failed'; stashOid: string; updated: boolean; recoveredChanges: boolean };
+
+export type FetchResult =
+  | { status: 'success'; ahead: number; behind: number }
+  | { status: 'failed'; message: string };
 
 export type PushResult =
   | { status: 'success'; commits: number }
@@ -384,6 +389,8 @@ export interface Preferences {
   commitMessageModels: Partial<Record<AiHarnessId, string>>;
   shortcutOverrides: ShortcutOverrides;
   doubleControlShortcutEnabled: boolean;
+  /** Seconds between background `git fetch` checks. `0` disables periodic fetch. */
+  remoteFetchIntervalSeconds: number;
 }
 
 export interface BootstrapData {
@@ -469,6 +476,8 @@ export interface JustGitApi {
     selectWorktree(repositoryId: string, path: string): Promise<RepositoryInfo>;
     pull(repositoryId: string): Promise<PullResult>;
     push(repositoryId: string): Promise<PushResult>;
+    /** Updates remote-tracking refs without merging or rebasing. */
+    fetch(repositoryId: string): Promise<FetchResult>;
     /** Local branches plus every worktree; runs no per-worktree status scan. */
     localRefsSnapshot(repositoryId: string): Promise<LocalRefsSnapshot>;
     branchDetails(request: BranchDetailsRequest): Promise<BranchDetails>;
@@ -522,7 +531,7 @@ export const IPC = {
   diffGet: 'diff:get', diffCommit: 'diff:commit', diffCommitFile: 'diff:commit-file', indexStage: 'index:stage',
   indexUnstage: 'index:unstage', indexDiscard: 'index:discard', indexStageAll: 'index:stage-all', indexUnstageAll: 'index:unstage-all', indexPrepareCommitGroup: 'index:prepare-commit-group', indexUpdateConflict: 'index:update-conflict', indexResolveConflict: 'index:resolve-conflict', commitCreate: 'commit:create', commitUndoLatest: 'commit:undo-latest',
   commitsList: 'commits:list', commitsFiles: 'commits:files', branchesList: 'refs:branches', branchSwitch: 'refs:switch', worktreesList: 'refs:worktrees',
-  worktreeSelect: 'refs:select-worktree', refsPull: 'refs:pull', refsPush: 'refs:push', repositoryChanged: 'repository:changed',
+  worktreeSelect: 'refs:select-worktree', refsPull: 'refs:pull', refsPush: 'refs:push', refsFetch: 'refs:fetch', repositoryChanged: 'repository:changed',
   localRefsSnapshot: 'refs:local-snapshot', branchDetails: 'refs:branch-details', worktreeDetails: 'refs:worktree-details',
   branchDelete: 'refs:delete-branch', worktreeRemove: 'refs:remove-worktree',
   aiStatuses: 'ai:statuses', aiGenerateCommitMessage: 'ai:generate-commit-message', aiCancelGeneration: 'ai:cancel-generation', aiLog: 'ai:log', aiClearLog: 'ai:clear-log',

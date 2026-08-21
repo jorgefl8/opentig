@@ -55,7 +55,13 @@ import { refreshOperationsForScope } from './refresh-policy';
 import { resolveWindowControlsInset } from './window-controls';
 import { queryKeys, queryResourcesForScope } from '@/lib/query-client';
 import { shouldActivateChangeRow } from '@/features/changes/row-activation';
-import { projectPullBlockedCopy, projectPullSuccessCopy, projectPushBlockedCopy, projectPushSuccessCopy, repositorySyncLoadingToast, visibleRepositorySyncActions, type ProjectSyncAction, type RepositorySyncCounts } from '@/features/repositories/project-sync';
+import { projectPullBlockedCopy, projectPullSuccessCopy, projectPushBlockedCopy, projectPushSuccessCopy, pullSuccessCopy, repositorySyncLoadingToast, visibleRepositorySyncActions, type ProjectSyncAction, type RepositorySyncCounts } from '@/features/repositories/project-sync';
+import {
+  DEFAULT_REMOTE_FETCH_INTERVAL_SECONDS,
+  formatRemoteFetchInterval,
+  MAX_REMOTE_FETCH_INTERVAL_SECONDS,
+  REMOTE_FETCH_INTERVAL_STEP_SECONDS,
+} from '../../shared/remote-fetch';
 
 const Viewer = lazy(() => import('@/features/viewer/Viewer'));
 const NO_OPEN_FILES_STATES: OpenFilesState[] = [];
@@ -128,6 +134,7 @@ export default function App() {
   const pendingViewerPathRef = useRef<string | null>(null);
   const generationRequest = useRef<{ id: string; repositoryId: string } | null>(null);
   const repositorySyncOperationsRef = useRef<Map<string, ProjectSyncAction>>(new Map());
+  const busyRef = useRef<string | null>(null);
   const [filesTreeStates] = useState<Map<string, string[]>>(() => new Map());
   const repositoryRef = useRef<RepositoryInfo | null>(null);
   const fileSessionsRef = useRef<ReadonlyMap<string, FileSession>>(fileSessions);
@@ -537,6 +544,41 @@ export default function App() {
     background: options?.background === true,
     scope: options?.scope ?? 'unknown',
   }), [performRefresh]);
+
+  useEffect(() => { busyRef.current = busy; }, [busy]);
+
+  const remoteFetchIntervalSeconds = bootstrap?.preferences.remoteFetchIntervalSeconds ?? DEFAULT_REMOTE_FETCH_INTERVAL_SECONDS;
+  useEffect(() => {
+    if (!repository || remoteFetchIntervalSeconds <= 0) return;
+    const repositoryId = repository.id;
+    let cancelled = false;
+    let inFlight = false;
+
+    const run = async () => {
+      if (cancelled || inFlight || document.visibilityState === 'hidden') return;
+      if (busyRef.current || repositorySyncOperationsRef.current.has(repositoryId)) return;
+      inFlight = true;
+      try {
+        const result = await window.justgit.refs.fetch(repositoryId);
+        if (cancelled || repositoryRef.current?.id !== repositoryId || result.status !== 'success') return;
+        await refresh({ background: true, scope: 'refs' });
+      } catch {
+        // Periodic fetch stays silent; pull and push still surface remote errors.
+      } finally {
+        inFlight = false;
+      }
+    };
+
+    void run();
+    const timer = window.setInterval(() => { void run(); }, remoteFetchIntervalSeconds * 1000);
+    const onVisible = () => { if (document.visibilityState === 'visible') void run(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [refresh, remoteFetchIntervalSeconds, repository]);
 
   useEffect(() => {
     setSnapshotRepositoryId(null);
@@ -1433,8 +1475,9 @@ export default function App() {
   };
 
   const pullUpdates = async () => {
-    if (!repository || !status || status.behind === 0 || busy) return;
+    if (!repository || busy) return;
     const repositoryId = repository.id;
+    const pendingBehind = status?.behind ?? 0;
     setBusy('pull');
     setError(null);
     try {
@@ -1444,13 +1487,8 @@ export default function App() {
         if (result.status === 'success' || result.status === 'up-to-date') return result;
         throw new PullBlocked(result);
       }, {
-        loading: { title: `Pulling ${status.behind} ${status.behind === 1 ? 'commit' : 'commits'}…` },
-        success: (result) => result.status === 'success'
-          ? {
-            title: `${result.commits} ${result.commits === 1 ? 'commit pulled' : 'commits pulled'}`,
-            description: result.restoredLocalChanges ? 'Your local changes and staged changes were restored.' : undefined,
-          }
-          : { title: 'Branch is already up to date' },
+        loading: { title: pendingBehind > 0 ? `Pulling ${pendingBehind} ${pendingBehind === 1 ? 'commit' : 'commits'}…` : 'Pulling changes…' },
+        success: (result) => pullSuccessCopy(result),
         error: (err) => {
           if (err instanceof PullBlocked) {
             const result = err.result;
@@ -1479,10 +1517,19 @@ export default function App() {
                 duration: null,
               };
             }
+            if (result.status === 'rebase-conflict') {
+              return {
+                title: 'Could not rebase onto the remote',
+                description: result.files.length > 0
+                  ? `Your local commits overlap the remote changes in ${result.files.length === 1 ? result.files[0] : `${result.files.length} files`}. The branch was left unchanged.`
+                  : 'Your local commits overlap the remote changes. The branch was left unchanged.',
+                duration: 10_000,
+              };
+            }
             if (result.status === 'diverged') {
               return {
                 title: 'Branch has diverged',
-                description: `${result.ahead} ahead and ${result.behind} behind. Choose rebase or merge before continuing.`,
+                description: `${result.ahead} ahead and ${result.behind} behind.`,
                 duration: 10_000,
               };
             }
@@ -1546,7 +1593,12 @@ export default function App() {
               return { title: 'Branch has no upstream configured', description: 'Configure a remote branch before pushing.', duration: 10_000 };
             }
             if (result.status === 'diverged') {
-              return { title: 'The remote contains new changes', description: `${result.ahead} ahead and ${result.behind} behind. Pull and resolve the changes before pushing.`, duration: 10_000 };
+              return {
+                title: 'The remote contains new changes',
+                description: `${result.ahead} ahead and ${result.behind} behind. Pull rebases your local commits on top when there are no conflicts.`,
+                duration: 10_000,
+                button: { title: 'Pull', onClick: () => void pullUpdates() },
+              };
             }
             return { title: 'Could not push commits', description: result.message, duration: 10_000 };
           }
@@ -1959,11 +2011,15 @@ function Toolbar(props: ToolbarProps) {
       const version = (repositoryStatusVersions.current.get(repositoryId) ?? 0) + 1;
       repositoryStatusVersions.current.set(repositoryId, version);
       try {
-        const nextStatus = await window.justgit.repository.getStatus(repositoryId, false);
+        const fetched = await window.justgit.refs.fetch(repositoryId);
+        if (repositoryStatusVersions.current.get(repositoryId) !== version) return;
+        const counts = fetched.status === 'success'
+          ? { ahead: fetched.ahead, behind: fetched.behind }
+          : await window.justgit.repository.getStatus(repositoryId, false).then((nextStatus) => ({ ahead: nextStatus.ahead, behind: nextStatus.behind }));
         if (repositoryStatusVersions.current.get(repositoryId) !== version) return;
         setRepositorySyncCounts((current) => {
           const next = new Map(current);
-          next.set(repositoryId, { ahead: nextStatus.ahead, behind: nextStatus.behind });
+          next.set(repositoryId, counts);
           return next;
         });
       } catch {
@@ -2464,6 +2520,24 @@ function SettingsDialog({ preferences, onPreference, open, onOpenChange, section
                       <Icon /> <span>{label}</span>
                     </button>
                   ))}
+                </div>
+              </div>
+              <div className="settings-field settings-field-separated">
+                <div className="settings-field-label">
+                  <strong>Remote check interval</strong>
+                  <span>How often JustGit fetches remotes so ahead and behind counts stay current. Set to Off to check only when you pull or push.</span>
+                </div>
+                <div className="settings-zoom-control">
+                  <input
+                    type="range"
+                    min="0"
+                    max={MAX_REMOTE_FETCH_INTERVAL_SECONDS}
+                    step={REMOTE_FETCH_INTERVAL_STEP_SECONDS}
+                    value={preferences.remoteFetchIntervalSeconds}
+                    onChange={(event) => onPreference({ remoteFetchIntervalSeconds: Number(event.target.value) })}
+                    aria-label="Remote check interval"
+                  />
+                  <output>{formatRemoteFetchInterval(preferences.remoteFetchIntervalSeconds)}</output>
                 </div>
               </div>
               <div className="settings-field settings-field-separated settings-toggle-row">
