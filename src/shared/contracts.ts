@@ -126,7 +126,7 @@ export type FileHistoryResult =
   | { status: 'applied'; direction: 'undo' | 'redo'; label: string; pathChanges: FileHistoryPathChange[]; removedPaths: string[]; restoredPaths: string[]; state: FileHistoryState }
   | { status: 'empty'; state: FileHistoryState }
   | { status: 'conflict'; label: string; message: string; state: FileHistoryState }
-  | { status: 'recycle-bin'; label: string; paths: string[]; state: FileHistoryState };
+  | { status: 'system-trash'; label: string; paths: string[]; state: FileHistoryState };
 
 export type RenameEntryResult =
   | { status: 'renamed'; from: string; to: string }
@@ -139,7 +139,7 @@ export type CreateEntryResult =
 
 export interface DeleteEntriesResult {
   deleted: number;
-  recovery?: 'undo' | 'recycle-bin';
+  recovery?: 'undo' | 'system-trash';
 }
 
 export type WriteFileResult =

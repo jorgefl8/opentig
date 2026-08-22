@@ -8,24 +8,96 @@ import { VitePlugin } from '@electron-forge/plugin-vite';
 import type { ForgeConfig } from '@electron-forge/shared-types';
 
 const appIcon = path.resolve(__dirname, 'assets', 'opentig.ico');
+const trashRuntimeModules = new Set([
+  '@nodelib/fs.scandir',
+  '@nodelib/fs.stat',
+  '@nodelib/fs.walk',
+  '@sindresorhus/df',
+  '@sindresorhus/merge-streams',
+  '@stroncium/procfs',
+  'braces',
+  'chunkify',
+  'cross-spawn',
+  'end-of-stream',
+  'execa',
+  'fast-glob',
+  'fastq',
+  'fill-range',
+  'get-stream',
+  'glob-parent',
+  'globby',
+  'ignore',
+  'is-docker',
+  'is-extglob',
+  'is-glob',
+  'is-inside-container',
+  'is-number',
+  'is-path-inside',
+  'is-stream',
+  'is-wsl',
+  'merge-stream',
+  'merge2',
+  'micromatch',
+  'mimic-fn',
+  'mount-point',
+  'move-file',
+  'npm-run-path',
+  'once',
+  'onetime',
+  'os-homedir',
+  'p-finally',
+  'p-map',
+  'path-key',
+  'path-type',
+  'picomatch',
+  'pify',
+  'pinkie',
+  'pinkie-promise',
+  'powershell-utils',
+  'pump',
+  'queue-microtask',
+  'reusify',
+  'run-parallel',
+  'signal-exit',
+  'slash',
+  'strip-final-newline',
+  'to-regex-range',
+  'trash',
+  'unicorn-magic',
+  'user-home',
+  'wrappy',
+  'wsl-utils',
+  'xdg-basedir',
+  'xdg-trashdir',
+]);
+
+function isTrashRuntimeModule(file: string): boolean {
+  const normalized = file.replace(/\\/g, '/');
+  for (const moduleName of trashRuntimeModules) {
+    const moduleRoot = `/node_modules/${moduleName}`;
+    if (normalized === moduleRoot || normalized.startsWith(`${moduleRoot}/`)) return true;
+  }
+  return false;
+}
 
 const config: ForgeConfig = {
   packagerConfig: {
-    asar: true,
+    asar: { unpackDir: 'node_modules' },
     name: 'OpenTig',
     executableName: 'OpenTig',
     appBundleId: 'com.opentig.app',
     icon: appIcon,
     extraResource: appIcon,
     // The Vite plugin bundles JavaScript dependencies and otherwise excludes
-    // node_modules. Keep the native keyboard hook and its loader alongside the
-    // bundle so Electron can load the platform binary at runtime.
+    // node_modules. Keep the native keyboard hook plus the externalized Trash
+    // dependency closure alongside the bundle.
     ignore: (file) => {
       if (!file) return false;
       return !(file.startsWith('/.vite')
         || file === '/node_modules'
         || file.startsWith('/node_modules/uiohook-napi')
-        || file.startsWith('/node_modules/node-gyp-build'));
+        || file.startsWith('/node_modules/node-gyp-build')
+        || isTrashRuntimeModule(file));
     },
   },
   // uiohook-napi ships an ABI-stable N-API binary for Windows. Rebuilding it

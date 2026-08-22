@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { app, BrowserWindow, nativeTheme, session, shell } from 'electron';
+import { app, BrowserWindow, nativeTheme, session } from 'electron';
 import started from 'electron-squirrel-startup';
 import { registerHandlers } from './main/ipc/register-handlers';
 import { IPC } from './shared/contracts';
@@ -7,6 +7,7 @@ import { createPerformanceSampler, type PerformanceSampler } from './main/perfor
 import { startPerformanceAutomation } from './main/performance/PerformanceAutomation';
 import type { OpenTigRuntime } from './main/runtime/OpenTigRuntime';
 import { createOpenTigRuntime, normalizeRuntimePlatform } from './main/runtime/create-runtime';
+import { SystemTrash } from './main/platform/SystemTrash';
 import { startGlobalDoubleControlShortcut } from './main/shortcuts/GlobalDoubleControlShortcut';
 import { getWindowTitleBarOptions, shouldUseDarkTitleBar } from './main/window/WindowTitleBar';
 
@@ -55,7 +56,13 @@ async function createWindow(): Promise<void> {
     aiLogPath: path.join(app.getPath('userData'), 'ai-log.jsonl'),
     runtimeMode: 'desktop',
     platform: normalizeRuntimePlatform(process.platform),
-    trash: { trashItem: (target) => shell.trashItem(target) },
+    trash: new SystemTrash(
+      undefined,
+      process.platform,
+      app.isPackaged
+        ? path.join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', 'trash', 'index.js')
+        : undefined,
+    ),
     onEvent: (event) => {
       if (event.type !== 'repository.changed') return;
       if (!mainWindow || mainWindow.isDestroyed()) return;

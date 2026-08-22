@@ -59,7 +59,7 @@ export function destructiveActionCopy(action: DestructiveAction): DestructiveAct
       title: 'Discard changes',
       message: `Discard changes to ${action.paths.length === 1 ? 'this file' : `these ${action.paths.length} files`}?`,
       detail: action.hasUntracked
-        ? 'Untracked files will be moved to the Recycle Bin. Other local changes will be lost.'
+        ? 'Untracked files will be moved to system Trash. Other local changes will be lost.'
         : 'The selected local changes will be lost.',
       confirmLabel: 'Discard',
     };
@@ -67,10 +67,10 @@ export function destructiveActionCopy(action: DestructiveAction): DestructiveAct
   return {
     title: action.paths.length === 1 ? 'Delete item' : `Delete ${action.paths.length} items`,
     message: action.paths.length === 1
-      ? 'Move this item to the Recycle Bin?'
-      : `Move ${action.paths.length} items to the Recycle Bin?`,
+      ? 'Move this item to system Trash?'
+      : `Move ${action.paths.length} items to system Trash?`,
     detail: action.paths.join('\n'),
-    confirmLabel: 'Move to Recycle Bin',
+    confirmLabel: 'Move to Trash',
   };
 }
 

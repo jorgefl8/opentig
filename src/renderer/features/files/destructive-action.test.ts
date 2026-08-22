@@ -30,7 +30,7 @@ describe('destructive file actions', () => {
     expect(destructiveActionCopy(action)).toEqual({
       title: 'Discard changes',
       message: 'Discard changes to these 2 files?',
-      detail: 'Untracked files will be moved to the Recycle Bin. Other local changes will be lost.',
+      detail: 'Untracked files will be moved to system Trash. Other local changes will be lost.',
       confirmLabel: 'Discard',
     });
   });
@@ -40,9 +40,9 @@ describe('destructive file actions', () => {
 
     expect(destructiveActionCopy(action)).toEqual({
       title: 'Delete 2 items',
-      message: 'Move 2 items to the Recycle Bin?',
+      message: 'Move 2 items to system Trash?',
       detail: 'one.txt\nfolder/two.txt',
-      confirmLabel: 'Move to Recycle Bin',
+      confirmLabel: 'Move to Trash',
     });
   });
 
@@ -65,7 +65,7 @@ describe('destructive file actions', () => {
 
   it('sends exactly one discard mutation on confirm', async () => {
     const discard = vi.fn(async () => ({ ok: true as const }));
-    const deleteEntries = vi.fn(async () => ({ deleted: 0 as const, recovery: 'recycle-bin' as const }));
+    const deleteEntries = vi.fn(async () => ({ deleted: 0 as const, recovery: 'system-trash' as const }));
     const action = createDiscardAction('repo', ['tracked.txt'], [change('tracked.txt', 'modified')]);
 
     await expect(dispatchDestructiveAction(action, true, { discard, deleteEntries })).resolves.toEqual({

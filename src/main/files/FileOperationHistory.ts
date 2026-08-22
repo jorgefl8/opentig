@@ -1,23 +1,23 @@
 import type { FileHistoryPathChange, FileHistoryResult, FileHistoryState } from '../../shared/contracts';
+import type { TrashAdapter } from '../platform/SystemTrash';
 import type { FileService, FileSnapshot } from './FileService';
 
 const MAX_STEPS = 50;
 export const MAX_UNDO_FILE_SIZE = 5_000_000;
 export const MAX_SNAPSHOT_BYTES = 50_000_000;
 
-export interface TrashAdapter { trashItem(path: string): Promise<void> }
 type MoveHistoryEntry = { type: 'rename' | 'move'; label: string; sequence: number; bytes: 0; pairs: FileHistoryPathChange[] };
 type CreateHistoryEntry = { type: 'create'; label: string; sequence: number; bytes: 0; entries: { path: string; kind: 'file' | 'directory' }[] };
 type PasteHistoryEntry = { type: 'paste' | 'paste-image'; label: string; sequence: number; bytes: number; created: string[]; sources?: { source: string; destination: string }[]; snapshots?: FileSnapshot[] };
 type DeleteHistoryEntry = { type: 'delete'; label: string; sequence: number; bytes: number; snapshots: FileSnapshot[] };
 type EditHistoryEntry = { type: 'edit'; label: string; sequence: number; bytes: number; before: FileSnapshot[]; after: FileSnapshot[] };
-type RecycleHistoryEntry = { type: 'recycle-bin-only'; label: string; sequence: number; bytes: 0; paths: string[] };
-type HistoryEntry = MoveHistoryEntry | CreateHistoryEntry | PasteHistoryEntry | DeleteHistoryEntry | EditHistoryEntry | RecycleHistoryEntry;
+type SystemTrashHistoryEntry = { type: 'system-trash-only'; label: string; sequence: number; bytes: 0; paths: string[] };
+type HistoryEntry = MoveHistoryEntry | CreateHistoryEntry | PasteHistoryEntry | DeleteHistoryEntry | EditHistoryEntry | SystemTrashHistoryEntry;
 interface RepositoryHistory { undo: HistoryEntry[]; redo: HistoryEntry[] }
 
 export type PreparedDelete =
   | { recovery: 'undo'; snapshots: FileSnapshot[] }
-  | { recovery: 'recycle-bin'; paths: string[] };
+  | { recovery: 'system-trash'; paths: string[] };
 
 export class FileOperationHistory {
   private readonly histories = new Map<string, RepositoryHistory>();
@@ -65,25 +65,25 @@ export class FileOperationHistory {
     let total = 0;
     for (const item of paths) {
       const snapshot = await this.files.snapshot(repositoryId, item, MAX_UNDO_FILE_SIZE);
-      if (!snapshot) return { recovery: 'recycle-bin', paths };
+      if (!snapshot) return { recovery: 'system-trash', paths };
       total += snapshot.bytes.byteLength;
-      if (total > MAX_SNAPSHOT_BYTES) return { recovery: 'recycle-bin', paths };
+      if (total > MAX_SNAPSHOT_BYTES) return { recovery: 'system-trash', paths };
       snapshots.push(snapshot);
     }
     this.evictFor(total);
-    if (this.snapshotBytes + total > MAX_SNAPSHOT_BYTES) return { recovery: 'recycle-bin', paths };
+    if (this.snapshotBytes + total > MAX_SNAPSHOT_BYTES) return { recovery: 'system-trash', paths };
     return { recovery: 'undo', snapshots };
   }
 
-  recordDelete(repositoryId: string, prepared: PreparedDelete, deletedPaths: string[]): 'undo' | 'recycle-bin' {
+  recordDelete(repositoryId: string, prepared: PreparedDelete, deletedPaths: string[]): 'undo' | 'system-trash' {
     if (prepared.recovery === 'undo') {
       const selected = prepared.snapshots.filter((item) => deletedPaths.includes(item.path));
       const bytes = selected.reduce((total, item) => total + item.bytes.byteLength, 0);
       this.record(repositoryId, { type: 'delete', label: deletedPaths.length === 1 ? 'Delete item' : `Delete ${deletedPaths.length} items`, snapshots: selected, bytes, sequence: ++this.sequence });
       return 'undo';
     }
-    this.record(repositoryId, { type: 'recycle-bin-only', label: deletedPaths.length === 1 ? 'Delete item' : `Delete ${deletedPaths.length} items`, paths: deletedPaths, bytes: 0, sequence: ++this.sequence });
-    return 'recycle-bin';
+    this.record(repositoryId, { type: 'system-trash-only', label: deletedPaths.length === 1 ? 'Delete item' : `Delete ${deletedPaths.length} items`, paths: deletedPaths, bytes: 0, sequence: ++this.sequence });
+    return 'system-trash';
   }
 
   recordEdit(repositoryId: string, label: string, before: FileSnapshot[], after: FileSnapshot[]): void {
@@ -103,9 +103,9 @@ export class FileOperationHistory {
     const destination = direction === 'undo' ? history.redo : history.undo;
     const entry = source.at(-1);
     if (!entry) return { status: 'empty', state: this.state(repositoryId) };
-    if (entry.type === 'recycle-bin-only') {
+    if (entry.type === 'system-trash-only') {
       source.pop();
-      return { status: 'recycle-bin', label: entry.label, paths: entry.paths, state: this.state(repositoryId) };
+      return { status: 'system-trash', label: entry.label, paths: entry.paths, state: this.state(repositoryId) };
     }
     try {
       const changes: FileHistoryPathChange[] = [];

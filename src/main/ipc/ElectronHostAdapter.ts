@@ -11,7 +11,6 @@ export function createElectronHostAdapter(
 ): OpenTigHost {
   return {
     capabilities: {
-      systemTrash: true,
       nativePicker: true,
       fileClipboard: true,
       revealInFileManager: true,
@@ -43,7 +42,6 @@ export function createElectronHostAdapter(
       return result.response === 0;
     },
     openExternal: (url) => shell.openExternal(url),
-    trashItem: (target) => shell.trashItem(target),
     revealItem: (target) => shell.showItemInFolder(target),
   };
 }

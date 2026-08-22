@@ -9,3 +9,11 @@ Files under `public/vscode-icons/` and the derived mapping in `src/renderer/asse
 - Branded icons: remain subject to their respective owners' copyright and trademark terms
 
 The assets are bundled for file-type identification. OpenTig does not claim ownership of third-party marks and does not imply endorsement by their owners.
+
+## trash
+
+OpenTig uses the [`trash`](https://github.com/sindresorhus/trash) package to move files and folders to system Trash on Windows, macOS, and Linux.
+
+- Version: 10.1.1
+- License: MIT
+- Linux support follows the XDG Trash specification; upstream documents it as weakly maintained, so OpenTig runs an Ubuntu Trash smoke test as a release gate.

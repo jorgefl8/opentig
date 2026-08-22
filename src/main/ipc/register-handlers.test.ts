@@ -23,7 +23,6 @@ const electron = vi.hoisted(() => {
     shell: {
       openExternal: vi.fn(),
       showItemInFolder: vi.fn(),
-      trashItem: vi.fn(),
     },
   };
 });
@@ -54,6 +53,7 @@ function services() {
     recent: vi.fn(() => ({ ...repository, lastOpenedAt: '2026-08-22T00:00:00.000Z' })),
     relocateRecent: vi.fn(async () => repository),
     validatePaths: vi.fn((_repositoryId: string, paths: string[]) => paths),
+    resolvePath: vi.fn((_repositoryId: string, filePath: string) => `C:\\repo\\${filePath}`),
     status: vi.fn(async () => ({
       changes: [{
         path: 'tracked.txt', kind: 'modified', indexStatus: ' ', worktreeStatus: 'M',
@@ -62,6 +62,7 @@ function services() {
     })),
   };
   const operations = { discard: vi.fn(async () => undefined) };
+  const trash = { available: true, trashItem: vi.fn(async () => undefined) };
   const watcher = { start: vi.fn() };
   const github = {
     status: vi.fn(async () => ({
@@ -90,6 +91,7 @@ function services() {
     ai,
     events,
     operations,
+    trash,
     value: {
       runtimeMode: 'desktop',
       platform: 'win32',
@@ -99,6 +101,7 @@ function services() {
       ai,
       events,
       operations,
+      trash,
     } as unknown as Services,
   };
 }
@@ -205,5 +208,24 @@ describe('server IPC ownership additions', () => {
     });
     expect(fixture.operations.discard).toHaveBeenCalledWith('repo-id', ['tracked.txt']);
     expect(electron.dialog.showMessageBox).not.toHaveBeenCalled();
+  });
+
+  it('uses server-owned system Trash for untracked discard', async () => {
+    const fixture = services();
+    fixture.repositories.status.mockResolvedValueOnce({
+      changes: [{
+        path: 'new.txt', kind: 'untracked', indexStatus: '?', worktreeStatus: '?',
+        staged: false, unstaged: true, conflict: false, submodule: '',
+      }],
+    });
+    registerHandlers(fixture.value);
+
+    await expect(invoke(IPC.indexDiscard, 'repo-id', ['new.txt'])).resolves.toEqual({
+      ok: true,
+      value: { ok: true },
+    });
+    expect(fixture.operations.discard).toHaveBeenCalledWith('repo-id', []);
+    expect(fixture.trash.trashItem).toHaveBeenCalledOnce();
+    expect(fixture.trash.trashItem).toHaveBeenCalledWith('C:\\repo\\new.txt');
   });
 });

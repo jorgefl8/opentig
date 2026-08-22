@@ -1,7 +1,6 @@
 import type { Preferences } from '../../shared/contracts';
 
 export interface OpenTigHostCapabilities {
-  systemTrash: boolean;
   nativePicker: boolean;
   fileClipboard: boolean;
   revealInFileManager: boolean;
@@ -27,6 +26,5 @@ export interface OpenTigHost {
   selectDirectory(title: string): Promise<string | null>;
   confirm(options: OpenTigHostConfirmation): Promise<boolean>;
   openExternal(url: string): Promise<void>;
-  trashItem(path: string): Promise<void>;
   revealItem(path: string): void;
 }

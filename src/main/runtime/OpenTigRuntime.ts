@@ -15,6 +15,7 @@ import type { SearchService } from '../git/SearchService';
 import type { GitHubService } from '../github/GitHubService';
 import type { AiLogStore } from '../persistence/AiLogStore';
 import type { SettingsStore } from '../persistence/SettingsStore';
+import type { TrashAdapter } from '../platform/SystemTrash';
 
 export interface OpenTigRuntimeServices {
   runtimeMode: OpenTigRuntimeMode;
@@ -23,6 +24,7 @@ export interface OpenTigRuntimeServices {
   git: GitProcess;
   repositories: RepositoryService;
   files: FileService;
+  trash: TrashAdapter;
   fileHistory: FileOperationHistory;
   search: SearchService;
   operations: GitRepositoryOperations;

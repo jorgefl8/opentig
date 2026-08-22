@@ -6,7 +6,7 @@ import { PullRequestDraftService } from '../ai/PullRequestDraftService';
 import { ClaudeProvider } from '../ai/providers/ClaudeProvider';
 import { CodexProvider } from '../ai/providers/CodexProvider';
 import { OpenCodeProvider } from '../ai/providers/OpenCodeProvider';
-import { FileOperationHistory, type TrashAdapter } from '../files/FileOperationHistory';
+import { FileOperationHistory } from '../files/FileOperationHistory';
 import { FileService } from '../files/FileService';
 import { RepositoryWatcher } from '../files/RepositoryWatcher';
 import { GitProcess } from '../git/GitProcess';
@@ -16,6 +16,7 @@ import { SearchService } from '../git/SearchService';
 import { GitHubService } from '../github/GitHubService';
 import { AiLogStore } from '../persistence/AiLogStore';
 import { SettingsStore } from '../persistence/SettingsStore';
+import { SystemTrash, type TrashAdapter } from '../platform/SystemTrash';
 import { OpenTigRuntime, type OpenTigRuntimeEventSink } from './OpenTigRuntime';
 
 export interface CreateOpenTigRuntimeOptions {
@@ -23,7 +24,7 @@ export interface CreateOpenTigRuntimeOptions {
   aiLogPath: string;
   runtimeMode: OpenTigRuntimeMode;
   platform: OpenTigPlatform;
-  trash: TrashAdapter;
+  trash?: TrashAdapter;
   onEvent: OpenTigRuntimeEventSink;
 }
 
@@ -35,7 +36,8 @@ export async function createOpenTigRuntime(
   const git = new GitProcess();
   const repositories = new RepositoryService(git, settings);
   const files = new FileService(git, repositories);
-  const fileHistory = new FileOperationHistory(files, options.trash);
+  const trash = options.trash ?? new SystemTrash();
+  const fileHistory = new FileOperationHistory(files, trash);
   const search = new SearchService(git, repositories, files, fileHistory);
   const operations = new GitRepositoryOperations(git, repositories, files);
   const cliResolver = new CliResolver();
@@ -70,6 +72,7 @@ export async function createOpenTigRuntime(
     git,
     repositories,
     files,
+    trash,
     fileHistory,
     search,
     operations,

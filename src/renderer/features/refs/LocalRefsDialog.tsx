@@ -426,8 +426,8 @@ function WorktreeDetailPanel({ details, busy, anyBusy, confirming, actionError, 
         allowed={removalAllowed}
         confirmation={<>
           {force
-            ? <>Permanently remove the worktree at <strong className="local-refs-path">{details.path}</strong>? <strong>{changes ?? `The ${details.operation ?? 'current Git operation'}`}</strong> and every uncommitted file will be lost. The folder is deleted from disk and is <strong>not</strong> moved to the Recycle Bin. </>
-            : <>Remove the worktree at <strong className="local-refs-path">{details.path}</strong>? The folder is deleted from disk and is <strong>not</strong> moved to the Recycle Bin. </>}
+            ? <>Permanently remove the worktree at <strong className="local-refs-path">{details.path}</strong>? <strong>{changes ?? `The ${details.operation ?? 'current Git operation'}`}</strong> and every uncommitted file will be lost. The folder is deleted from disk and is <strong>not</strong> moved to system Trash. </>
+            : <>Remove the worktree at <strong className="local-refs-path">{details.path}</strong>? The folder is deleted from disk and is <strong>not</strong> moved to system Trash. </>}
           {deleteBranch && details.branch
             ? <>The branch <strong>{details.branch}</strong> will also be force-deleted. Commits found only on that branch may become inaccessible.</>
             : details.branch ? <>The branch <strong>{details.branch}</strong> and its commits stay in the repository.</> : 'No branch is deleted.'}

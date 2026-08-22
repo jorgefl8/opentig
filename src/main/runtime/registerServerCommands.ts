@@ -58,6 +58,7 @@ export function registerServerCommands(
     return {
       runtimeMode: services.runtimeMode,
       platform: services.platform,
+      systemTrash: services.trash.available,
       ...host.capabilities,
       githubCli,
       aiProviders,
@@ -213,7 +214,7 @@ export function registerServerCommands(
     await lstat(target);
     return services.fileHistory.serialize(repositoryId, async () => {
       const prepared = await services.fileHistory.prepareDelete(repositoryId, [relativePath]);
-      await host.trashItem(target);
+      await services.trash.trashItem(target);
       services.fileHistory.recordDelete(repositoryId, prepared, [relativePath]);
       return { deleted: true } as const;
     });
@@ -231,7 +232,7 @@ export function registerServerCommands(
         // A selection can include both a folder and files inside it; the folder is
         // trashed first, so skip any target that no longer exists.
         try { await lstat(target); } catch { continue; }
-        try { await host.trashItem(target); }
+        try { await services.trash.trashItem(target); }
         catch (error) {
           if (deletedPaths.length) services.fileHistory.recordDelete(repositoryId, prepared, deletedPaths);
           throw error;
@@ -295,7 +296,7 @@ export function registerServerCommands(
     const untracked = status.changes.filter((change) => selected.has(change.path) && change.kind === 'untracked').map((change) => change.path);
     const tracked = validPaths.filter((filePath) => !untracked.includes(filePath));
     await services.operations.discard(repositoryId, tracked);
-    for (const filePath of untracked) await host.trashItem(services.repositories.resolvePath(repositoryId, filePath));
+    for (const filePath of untracked) await services.trash.trashItem(services.repositories.resolvePath(repositoryId, filePath));
     return { ok: true };
   });
   handle(IPC.indexStageAll, 'stage-all', (id) => services.operations.stageAll(stringArg(id, 'stage-all', 64)));

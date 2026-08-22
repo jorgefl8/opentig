@@ -972,8 +972,8 @@ export default function App() {
         sileo.error({ title: `Could not ${direction} ${result.label}`, description: result.message, duration: 10_000 });
         return;
       }
-      if (result.status === 'recycle-bin') {
-        sileo.info({ title: `${result.label} cannot be undone in OpenTig`, description: 'Restore it from the Recycle Bin.' });
+      if (result.status === 'system-trash') {
+        sileo.info({ title: `${result.label} cannot be undone in OpenTig`, description: 'Restore it from system Trash.' });
         return;
       }
       reconcileViewerPaths(result.pathChanges, result.removedPaths);
@@ -1147,10 +1147,10 @@ export default function App() {
       await refreshFilesOnly();
       await refreshFileHistoryState();
       sileo.success({
-        title: result.deleted === 1 ? 'Moved to Recycle Bin' : `${result.deleted} items moved to Recycle Bin`,
+        title: result.deleted === 1 ? 'Moved to system Trash' : `${result.deleted} items moved to system Trash`,
         ...(result.recovery === 'undo'
           ? { description: 'Undo available', button: { title: 'Undo', onClick: () => void performFileHistory('undo') } }
-          : { description: 'Restore from the Recycle Bin' }),
+          : { description: 'Restore from system Trash' }),
       });
     } catch (reason) {
       const message = messageOf(reason);
