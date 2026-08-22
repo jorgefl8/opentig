@@ -2,7 +2,11 @@ import { lstat } from 'node:fs/promises';
 import path from 'node:path';
 import { ipcMain } from 'electron';
 import type { IpcResult } from '../../shared/contracts';
-import { OPEN_TIG_DESKTOP_IPC } from '../../shared/desktop-api';
+import {
+  OPEN_TIG_DESKTOP_IPC,
+  type OpenTigPairingLink,
+  type OpenTigWebAccessStatus,
+} from '../../shared/desktop-api';
 import { serializeError } from '../../shared/errors';
 import type { OpenTigHost } from '../runtime/OpenTigHost';
 import { booleanArg, stringArg } from '../runtime/validators';
@@ -10,6 +14,12 @@ import { booleanArg, stringArg } from '../runtime/validators';
 export function registerDesktopHandlers(
   host: OpenTigHost,
   onDoubleControlShortcutChanged?: (enabled: boolean) => void,
+  webAccess?: {
+    getStatus(): Promise<OpenTigWebAccessStatus>;
+    setEnabled(enabled: boolean): Promise<OpenTigWebAccessStatus>;
+    createPairingLink(endpoint: string): Promise<OpenTigPairingLink>;
+    revokeAllSessions(): Promise<{ revokedCount: number }>;
+  },
 ): () => void {
   const channels: string[] = [];
   const handle = <T>(
@@ -63,5 +73,21 @@ export function registerDesktopHandlers(
     host.revealItem(target);
   });
 
+  handle(OPEN_TIG_DESKTOP_IPC.webAccessStatus, 'web-access-status', () => requireWebAccess(webAccess).getStatus());
+  handle(OPEN_TIG_DESKTOP_IPC.webAccessSetEnabled, 'web-access-set-enabled', (enabled) => (
+    requireWebAccess(webAccess).setEnabled(booleanArg(enabled, 'web-access-set-enabled'))
+  ));
+  handle(OPEN_TIG_DESKTOP_IPC.webAccessCreatePairingLink, 'web-access-create-pairing-link', (endpoint) => (
+    requireWebAccess(webAccess).createPairingLink(stringArg(endpoint, 'web-access-create-pairing-link', 2_048))
+  ));
+  handle(OPEN_TIG_DESKTOP_IPC.webAccessRevokeAllSessions, 'web-access-revoke-all-sessions', () => (
+    requireWebAccess(webAccess).revokeAllSessions()
+  ));
+
   return () => { for (const channel of channels) ipcMain.removeHandler(channel); };
+}
+
+function requireWebAccess<T>(value: T | undefined): T {
+  if (!value) throw new Error('Web Access controls are unavailable.');
+  return value;
 }

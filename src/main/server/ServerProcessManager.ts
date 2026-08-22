@@ -5,8 +5,11 @@ import type { OpenTigPlatform } from '../../shared/contracts';
 import { redactSensitiveText } from '../../shared/redaction';
 import {
   OPEN_TIG_UTILITY_PROTOCOL_VERSION,
+  type OpenTigServerHost,
   type OpenTigUtilityChildMessage,
   type OpenTigUtilityConfig,
+  type OpenTigUtilityControlAction,
+  type OpenTigUtilityControlResult,
   type OpenTigUtilityParentMessage,
 } from '../../shared/server-process';
 import { OPEN_TIG_PROTOCOL_VERSION } from '../../shared/server-protocol';
@@ -67,6 +70,7 @@ export interface ServerProcessManagerOptions {
   trashModulePath?: string;
   appVersion: string;
   platform: OpenTigPlatform;
+  host?: OpenTigServerHost;
   port?: number;
   env?: NodeJS.ProcessEnv;
   fork: UtilityFork;
@@ -80,6 +84,7 @@ export interface ServerProcessManagerOptions {
   restartDelaysMs?: readonly number[];
   logMaxBytes?: number;
   logBackups?: number;
+  controlTimeoutMs?: number;
 }
 
 export class ServerPortConflictError extends Error {
@@ -108,10 +113,19 @@ export class ServerProcessManager {
   private restartTimer: NodeJS.Timeout | null = null;
   private stableTimer: NodeJS.Timeout | null = null;
   private activePort: number | null = null;
+  private desiredHost: OpenTigServerHost;
   private consecutiveFailures = 0;
   private stopping = false;
+  private restartQueue: Promise<void> = Promise.resolve();
+  private readonly pendingControls = new Map<string, {
+    action: OpenTigUtilityControlAction;
+    resolve(result: OpenTigUtilityControlResult): void;
+    reject(error: Error): void;
+    timeout: NodeJS.Timeout;
+  }>();
 
   constructor(private readonly options: ServerProcessManagerOptions) {
+    this.desiredHost = options.host ?? '127.0.0.1';
     this.restartDelaysMs = options.restartDelaysMs ?? [250, 500, 1_000, 2_000, 5_000];
     if (this.restartDelaysMs.length === 0 || this.restartDelaysMs.some((delay) => !Number.isFinite(delay) || delay < 0)) {
       throw new Error('At least one valid restart delay is required.');
@@ -136,6 +150,58 @@ export class ServerProcessManager {
   stop(): Promise<void> {
     this.stopPromise ??= this.stopOwnedProcess();
     return this.stopPromise;
+  }
+
+  restart(host: OpenTigServerHost): Promise<ServerProcessAddress> {
+    if (this.stopping || this.stopPromise) return Promise.reject(new Error('Server process manager is stopping.'));
+    const operation = this.restartQueue.then(() => this.restartForHost(host));
+    this.restartQueue = operation.then(() => undefined, () => undefined);
+    return operation;
+  }
+
+  async getStatus(): Promise<{ connectedSessionCount: number }> {
+    const result = await this.requestControl('status');
+    if (result.action !== 'status' || !Number.isSafeInteger(result.connectedSessionCount) || result.connectedSessionCount < 0) {
+      throw new Error('OpenTig utility returned an invalid server status.');
+    }
+    return { connectedSessionCount: result.connectedSessionCount };
+  }
+
+  async createPairingLink(publicOrigin: string): Promise<{ url: string; expiresAt: string }> {
+    const result = await this.requestControl('create-pairing-link');
+    if (result.action !== 'create-pairing-link' || Number.isNaN(Date.parse(result.expiresAt))) {
+      throw new Error('OpenTig utility returned an invalid pairing link.');
+    }
+    const privateUrl = new URL(result.url);
+    const token = new URLSearchParams(privateUrl.hash.slice(1)).get('token');
+    const expiresAt = Date.parse(result.expiresAt);
+    if (privateUrl.protocol !== 'http:'
+      || privateUrl.username
+      || privateUrl.password
+      || privateUrl.pathname !== '/pair'
+      || privateUrl.search
+      || !token
+      || !/^[A-Za-z0-9_-]{43}$/.test(token)
+      || expiresAt <= Date.now()
+      || expiresAt > Date.now() + 15 * 60 * 1_000) {
+      throw new Error('OpenTig utility returned an invalid pairing link.');
+    }
+    const endpoint = normalizePublicOrigin(publicOrigin);
+    const url = new URL('/pair', endpoint);
+    url.hash = privateUrl.hash;
+    return { url: url.href, expiresAt: result.expiresAt };
+  }
+
+  async revokeAllSessions(): Promise<{ revokedCount: number; desktopCookie: string }> {
+    const result = await this.requestControl('revoke-all-sessions');
+    if (result.action !== 'revoke-all-sessions'
+      || !Number.isSafeInteger(result.revokedCount)
+      || result.revokedCount < 0
+      || typeof result.desktopCookie !== 'string'
+      || !/^opentig_session=[A-Za-z0-9_-]{43}; Path=\/; HttpOnly; SameSite=Strict(?:; Secure)?$/.test(result.desktopCookie)) {
+      throw new Error('OpenTig utility returned an invalid session revocation result.');
+    }
+    return { revokedCount: result.revokedCount, desktopCookie: result.desktopCookie };
   }
 
   private async startInitial(): Promise<ServerProcessAddress> {
@@ -168,6 +234,39 @@ export class ServerProcessManager {
     );
   }
 
+  private async restartForHost(host: OpenTigServerHost): Promise<ServerProcessAddress> {
+    if (host !== '127.0.0.1' && host !== '0.0.0.0') throw new Error('Invalid OpenTig server host.');
+    const previous = await this.start();
+    if (previous.host === host) return previous;
+    const previousHost = this.desiredHost;
+    const port = previous.port;
+    await this.shutdownCurrentChild();
+    this.desiredHost = host;
+    this.options.onState?.({ status: 'starting', port });
+    try {
+      const address = await this.spawnAndAdopt(port);
+      this.startPromise = Promise.resolve(address);
+      this.consecutiveFailures = 0;
+      this.armStabilityReset();
+      return address;
+    } catch (error) {
+      this.desiredHost = previousHost;
+      this.options.onState?.({ status: 'starting', port });
+      try {
+        const restored = await this.spawnAndAdopt(port);
+        this.startPromise = Promise.resolve(restored);
+        this.consecutiveFailures = 0;
+        this.armStabilityReset();
+      } catch (restoreError) {
+        this.startPromise = null;
+        const message = `OpenTig server restart failed and previous binding recovery also failed: ${restoreError instanceof Error ? restoreError.message : String(restoreError)}`;
+        this.options.onState?.({ status: 'failed', message });
+        void this.log.write('manager', `${message}\n`);
+      }
+      throw error;
+    }
+  }
+
   private spawnAndAdopt(port: number): Promise<ServerProcessAddress> {
     const desktopSecret = (this.options.randomSecret ?? defaultSecret)();
     const utilityConfig: OpenTigUtilityConfig = {
@@ -179,7 +278,7 @@ export class ServerProcessManager {
       clientRoot: this.options.clientRoot,
       ...(this.options.trashModulePath ? { trashModulePath: this.options.trashModulePath } : {}),
       platform: this.options.platform,
-      host: '127.0.0.1',
+      host: this.desiredHost,
       port,
     };
 
@@ -235,7 +334,12 @@ export class ServerProcessManager {
         });
       });
       child.on('message', (value) => {
-        if (finished || processingReady || !isChildMessage(value)) return;
+        if (!isChildMessage(value)) return;
+        if (value.type === 'control-result') {
+          this.handleControlResult(child, value);
+          return;
+        }
+        if (finished || processingReady) return;
         if (value.type === 'error') {
           fail(new UtilityStartError(value.code, value.message));
           return;
@@ -245,7 +349,7 @@ export class ServerProcessManager {
         void (async () => {
           const pid = child.pid;
           if (!pid) throw new UtilityStartError('EARLY_EXIT', 'OpenTig server process has no PID.');
-          const address: ServerProcessAddress = {
+          const reportedAddress: ServerProcessAddress = {
             host: value.host,
             port: value.port,
             origin: value.origin,
@@ -253,7 +357,11 @@ export class ServerProcessManager {
             appVersion: value.appVersion,
             pid,
           };
-          validateReadyAddress(address, utilityConfig);
+          validateReadyAddress(reportedAddress, utilityConfig);
+          const address: ServerProcessAddress = {
+            ...reportedAddress,
+            origin: `http://127.0.0.1:${reportedAddress.port}`,
+          };
           await (this.options.probe ?? probeReady)(address);
           await this.options.onReady?.(address, desktopSecret);
           if (finished || this.stopping) throw new Error('Server startup was cancelled.');
@@ -270,10 +378,59 @@ export class ServerProcessManager {
     });
   }
 
+  private requestControl(action: OpenTigUtilityControlAction): Promise<OpenTigUtilityControlResult> {
+    const child = this.child;
+    if (!child?.pid || !this.address) return Promise.reject(new Error('OpenTig server is not ready.'));
+    const requestId = randomBytes(12).toString('base64url');
+    return new Promise<OpenTigUtilityControlResult>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        this.pendingControls.delete(requestId);
+        reject(new Error('OpenTig server control request timed out.'));
+      }, this.options.controlTimeoutMs ?? 5_000);
+      timeout.unref();
+      this.pendingControls.set(requestId, { action, resolve, reject, timeout });
+      try { child.postMessage({ type: 'control', requestId, action }); }
+      catch (error) {
+        clearTimeout(timeout);
+        this.pendingControls.delete(requestId);
+        reject(error instanceof Error ? error : new Error(String(error)));
+      }
+    });
+  }
+
+  private handleControlResult(
+    child: UtilityProcessLike,
+    message: Extract<OpenTigUtilityChildMessage, { type: 'control-result' }>,
+  ): void {
+    if (this.child !== child) return;
+    const pending = this.pendingControls.get(message.requestId);
+    if (!pending) return;
+    clearTimeout(pending.timeout);
+    this.pendingControls.delete(message.requestId);
+    if (!message.ok) {
+      pending.reject(new Error(message.message.slice(0, 512) || 'OpenTig server control request failed.'));
+      return;
+    }
+    if (message.result.action !== pending.action) {
+      pending.reject(new Error('OpenTig utility returned a mismatched control response.'));
+      return;
+    }
+    pending.resolve(message.result);
+  }
+
+  private rejectPendingControls(message: string): void {
+    for (const pending of this.pendingControls.values()) {
+      clearTimeout(pending.timeout);
+      pending.reject(new Error(message));
+    }
+    this.pendingControls.clear();
+  }
+
   private handleUnexpectedExit(child: UtilityProcessLike, code: number): void {
     if (this.child !== child) return;
     this.child = null;
     this.address = null;
+    this.rejectPendingControls('OpenTig server stopped before the control request completed.');
     this.clearStableTimer();
     if (this.stopping) return;
     this.consecutiveFailures += 1;
@@ -336,10 +493,19 @@ export class ServerProcessManager {
     if (this.restartTimer) clearTimeout(this.restartTimer);
     this.restartTimer = null;
     this.clearStableTimer();
+    await this.restartQueue.catch(() => undefined);
+    await this.shutdownCurrentChild();
+    this.startPromise = null;
+    await this.log.close();
+    this.options.onState?.({ status: 'stopped' });
+  }
+
+  private async shutdownCurrentChild(): Promise<void> {
     const child = this.child ?? this.attemptChild;
     this.child = null;
     this.attemptChild = null;
     this.address = null;
+    this.rejectPendingControls('OpenTig server stopped before the control request completed.');
     if (child?.pid) {
       const exited = new Promise<boolean>((resolve) => {
         const onExit = () => {
@@ -356,8 +522,6 @@ export class ServerProcessManager {
       try { child.postMessage({ type: 'shutdown' }); } catch { /* process already gone */ }
       if (!(await exited)) child.kill();
     }
-    await this.log.close();
-    this.options.onState?.({ status: 'stopped' });
   }
 }
 
@@ -385,6 +549,14 @@ function isChildMessage(value: unknown): value is OpenTigUtilityChildMessage {
 
 function defaultSecret(): string {
   return randomBytes(32).toString('base64url');
+}
+
+function normalizePublicOrigin(value: string): string {
+  const url = new URL(value);
+  if (url.protocol !== 'http:' || url.username || url.password || url.pathname !== '/' || url.search || url.hash) {
+    throw new Error('Invalid OpenTig network endpoint.');
+  }
+  return url.origin;
 }
 
 class RotatingServerLog {

@@ -1,4 +1,4 @@
-/* global AbortSignal, clearTimeout, fetch, setTimeout */
+/* global AbortSignal, clearTimeout, fetch, setTimeout, URL, URLSearchParams */
 import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { createServer } from 'node:net';
@@ -32,7 +32,13 @@ if (typeof electron === 'string') {
     });
 }
 
-async function verifyPackagedUtility({ utilityProcess }) {
+async function verifyPackagedUtility(electron) {
+  await verifyPackagedUtilityHost(electron, '127.0.0.1');
+  await verifyPackagedUtilityHost(electron, '0.0.0.0');
+  process.stdout.write('PACKAGED_UTILITY_PROCESS_SMOKE_OK\n');
+}
+
+async function verifyPackagedUtilityHost({ utilityProcess }, host) {
   const resources = path.join(repositoryRoot, 'out', 'OpenTig-win32-x64', 'resources');
   const serverRoot = path.join(resources, 'opentig-server');
   const directory = await mkdtemp(path.join(tmpdir(), 'opentig-packaged-utility-'));
@@ -62,7 +68,7 @@ async function verifyPackagedUtility({ utilityProcess }) {
           clientRoot: path.join(serverRoot, 'client'),
           trashModulePath: path.join(resources, 'app.asar.unpacked', 'node_modules', 'trash', 'index.js'),
           platform: 'win32',
-          host: '127.0.0.1',
+          host,
           port,
         },
       }));
@@ -80,16 +86,43 @@ async function verifyPackagedUtility({ utilityProcess }) {
         reject(new Error(`Packaged utility exited before ready with code ${code}. ${stderr.join('').slice(-500)}`));
       });
     });
-    const response = await fetch(`${ready.origin}/readyz`, { signal: AbortSignal.timeout(5_000) });
+    if (ready.host !== host) throw new Error(`Packaged utility returned unexpected host ${ready.host}.`);
+    const response = await fetch(`http://127.0.0.1:${ready.port}/readyz`, { signal: AbortSignal.timeout(5_000) });
     if (!response.ok || (await response.json()).status !== 'ready') throw new Error('Packaged utility readiness check failed.');
+    const status = await control(child, 'status');
+    if (status.action !== 'status' || status.connectedSessionCount !== 0) throw new Error('Packaged utility status control failed.');
+    const pairing = await control(child, 'create-pairing-link');
+    const pairingToken = new URLSearchParams(new URL(pairing.url).hash.slice(1)).get('token');
+    if (pairing.action !== 'create-pairing-link' || !pairingToken || !/^[A-Za-z0-9_-]{43}$/.test(pairingToken)) {
+      throw new Error('Packaged utility pairing control failed.');
+    }
+    const revoked = await control(child, 'revoke-all-sessions');
+    if (revoked.action !== 'revoke-all-sessions' || !/^opentig_session=[A-Za-z0-9_-]{43};/.test(revoked.desktopCookie)) {
+      throw new Error('Packaged utility revocation control failed.');
+    }
     const exited = new Promise((resolve) => child.once('exit', resolve));
     child.postMessage({ type: 'shutdown' });
     if (await Promise.race([exited, delay(5_000).then(() => 'timeout')]) === 'timeout') throw new Error('Packaged utility ignored graceful shutdown.');
-    process.stdout.write('PACKAGED_UTILITY_PROCESS_SMOKE_OK\n');
   } finally {
     child?.kill();
     await rm(directory, { recursive: true, force: true });
   }
+}
+
+function control(child, action) {
+  const requestId = `smoke-${action}`;
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error(`Packaged utility ${action} control timed out.`)), 5_000);
+    const onMessage = (message) => {
+      if (message?.type !== 'control-result' || message.requestId !== requestId) return;
+      clearTimeout(timeout);
+      child.off('message', onMessage);
+      if (!message.ok) reject(new Error(`Packaged utility ${action} control failed: ${message.message}`));
+      else resolve(message.result);
+    };
+    child.on('message', onMessage);
+    child.postMessage({ type: 'control', requestId, action });
+  });
 }
 
 function reservePort() {

@@ -82,6 +82,23 @@ describe('authoritative HTTP server', () => {
     expect(Date.parse(pairing.expiresAt)).toBeGreaterThan(Date.now());
   });
 
+  it('reports connected sessions and replaces the private desktop session after revocation', async () => {
+    const fixture = await startFixture();
+    const authenticated = await postJson(`${fixture.server.origin}/api/auth/desktop`, { secret: fixture.desktopSecret }, fixture.server.origin);
+    const socket = await openWebSocket(fixture.server.origin, cookieValue(authenticated.cookie));
+    expect(fixture.server.getStatus()).toEqual({ connectedSessionCount: 1 });
+    const socketClosed = closed(socket);
+
+    const revoked = await fixture.server.revokeAllSessions();
+
+    expect(revoked.revokedCount).toBe(1);
+    expect(revoked.desktopCookie).toMatch(/^opentig_session=[A-Za-z0-9_-]+; Path=\/; HttpOnly; SameSite=Strict$/);
+    await expect(socketClosed).resolves.toBe(1008);
+    const replacement = await openWebSocket(fixture.server.origin, cookieValue(revoked.desktopCookie));
+    expect(fixture.server.getStatus()).toEqual({ connectedSessionCount: 1 });
+    replacement.close();
+  });
+
   it('blocks traversal and symlink escape without SPA fallback', async () => {
     const fixture = await startFixture();
     const outside = await temporaryDirectory();

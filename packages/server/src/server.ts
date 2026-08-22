@@ -38,6 +38,8 @@ export interface RunningOpenTigServer extends OpenTigServerAddress {
   readonly runtime: OpenTigRuntime;
   readonly clientRoot: string;
   createPairingLink(): { url: string; expiresAt: string };
+  getStatus(): { connectedSessionCount: number };
+  revokeAllSessions(): Promise<{ revokedCount: number; desktopCookie: string }>;
   close(): Promise<void>;
 }
 
@@ -100,6 +102,8 @@ export async function runOpenTigServer(config: OpenTigServerConfig): Promise<Run
       clientRoot,
       ...address,
       createPairingLink: () => pairingLink(address.origin, transport!.createPairingToken()),
+      getStatus: () => transport!.getStatus(),
+      revokeAllSessions: () => transport!.revokeAllSessions(),
       close: () => transport!.stop(),
     };
   } catch (error) {

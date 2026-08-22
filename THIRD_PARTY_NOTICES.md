@@ -24,3 +24,10 @@ OpenTig uses [`ws`](https://github.com/websockets/ws) for its authenticated serv
 
 - Version: 8.21.3
 - License: MIT
+
+## uqr
+
+OpenTig uses [`uqr`](https://github.com/unjs/uqr) to render one-use Web Access pairing links as QR codes locally in the renderer.
+
+- Version: 0.1.3
+- License: MIT

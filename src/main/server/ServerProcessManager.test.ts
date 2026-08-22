@@ -16,6 +16,9 @@ import {
 } from './ServerProcessManager';
 
 const temporaryDirectories: string[] = [];
+const PAIRING_TOKEN = 'p'.repeat(43);
+const PAIRING_EXPIRES_AT = new Date(Date.now() + 5 * 60 * 1_000).toISOString();
+const DESKTOP_COOKIE = `opentig_session=${'d'.repeat(43)}; Path=/; HttpOnly; SameSite=Strict`;
 
 afterEach(async () => {
   await Promise.all(temporaryDirectories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })));
@@ -86,6 +89,38 @@ describe('ServerProcessManager', () => {
     await manager.stop();
   });
 
+  it('restarts the sole utility on the same port when network exposure changes', async () => {
+    const fixture = await createFixture([readyBehavior, readyBehavior]);
+    const manager = new ServerProcessManager(fixture.options);
+    const initial = await manager.start();
+
+    const exposed = await manager.restart('0.0.0.0');
+
+    expect(fixture.children).toHaveLength(2);
+    expect(fixture.children[0]!.messages).toContainEqual({ type: 'shutdown' });
+    expect(bootstrapHost(fixture.children[1]!)).toBe('0.0.0.0');
+    expect(exposed).toMatchObject({ host: '0.0.0.0', port: initial.port, origin: `http://127.0.0.1:${initial.port}` });
+    expect(fixture.children.filter((child) => !child.exited)).toHaveLength(1);
+    await manager.stop();
+  });
+
+  it('uses parent-port controls without exposing pairing credentials in the bind origin', async () => {
+    const fixture = await createFixture([readyBehavior]);
+    const manager = new ServerProcessManager(fixture.options);
+    await manager.start();
+
+    await expect(manager.getStatus()).resolves.toEqual({ connectedSessionCount: 3 });
+    await expect(manager.createPairingLink('http://192.168.1.50:6767')).resolves.toEqual({
+      url: `http://192.168.1.50:6767/pair#token=${PAIRING_TOKEN}`,
+      expiresAt: PAIRING_EXPIRES_AT,
+    });
+    await expect(manager.revokeAllSessions()).resolves.toEqual({
+      revokedCount: 4,
+      desktopCookie: DESKTOP_COOKIE,
+    });
+    await manager.stop();
+  });
+
   it('redacts bootstrap secrets and rotates captured utility output', async () => {
     const fixture = await createFixture([readyBehavior]);
     const manager = new ServerProcessManager({ ...fixture.options, logMaxBytes: 160, logBackups: 2 });
@@ -141,6 +176,7 @@ class FakeUtility extends EventEmitter {
     if (!this.spawned) this.postedBeforeSpawn = true;
     this.messages.push(message);
     if (message.type === 'bootstrap') this.behavior(this, message);
+    else if (message.type === 'control') this.respondToControl(message);
     else if (!this.ignoreShutdown) queueMicrotask(() => this.exit(0));
   }
 
@@ -152,6 +188,15 @@ class FakeUtility extends EventEmitter {
 
   crash(code: number): void {
     this.exit(code);
+  }
+
+  private respondToControl(message: Extract<OpenTigUtilityParentMessage, { type: 'control' }>): void {
+    const result = message.action === 'status'
+      ? { action: 'status' as const, connectedSessionCount: 3 }
+      : message.action === 'create-pairing-link'
+        ? { action: 'create-pairing-link' as const, url: `http://127.0.0.1:6767/pair#token=${PAIRING_TOKEN}`, expiresAt: PAIRING_EXPIRES_AT }
+        : { action: 'revoke-all-sessions' as const, revokedCount: 4, desktopCookie: DESKTOP_COOKIE };
+    queueMicrotask(() => this.emit('message', { type: 'control-result', requestId: message.requestId, ok: true, result }));
   }
 
   private exit(code: number): void {
@@ -224,6 +269,10 @@ const portConflictBehavior: ChildBehavior = (child) => {
 
 function bootstrapPort(child: FakeUtility): number {
   return (child.messages[0] as Extract<OpenTigUtilityParentMessage, { type: 'bootstrap' }>).config.port;
+}
+
+function bootstrapHost(child: FakeUtility): string {
+  return (child.messages[0] as Extract<OpenTigUtilityParentMessage, { type: 'bootstrap' }>).config.host;
 }
 
 async function waitFor(predicate: () => boolean, timeoutMs = 1_000): Promise<void> {

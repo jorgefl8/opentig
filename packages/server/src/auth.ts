@@ -91,6 +91,11 @@ export class OpenTigSessionAuth {
     return this.store.revokeAll();
   }
 
+  async revokeAllAndIssueDesktopCookie(): Promise<{ sessionIds: string[]; cookie: string }> {
+    const sessionIds = await this.store.revokeAll();
+    return { sessionIds, cookie: await this.issueCookie() };
+  }
+
   hasSession(sessionId: string): boolean {
     return this.store.hasSession(sessionId);
   }

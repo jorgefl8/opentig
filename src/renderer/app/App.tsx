@@ -5,7 +5,7 @@ import {
   IconChevronDown, IconChevronRight, IconDeviceDesktop, IconFileArrowRight, IconFolder, IconFolderOpen,
   IconFiles, IconGitBranch, IconGitCompare, IconGitPullRequest, IconHierarchy2, IconHistory,
   IconArrowDown, IconArrowUp, IconKeyboard, IconList, IconLoader4, IconMinus, IconMoon, IconPlus,
-  IconRefresh, IconRestore, IconSearch, IconSettings, IconSparkles, IconSun, IconTrash, IconX,
+  IconNetwork, IconRefresh, IconRestore, IconSearch, IconSettings, IconSparkles, IconSun, IconTrash, IconX,
 } from '@tabler/icons-react';
 import { Toaster, sileo } from 'sileo';
 import type { AiHarnessId, AiHarnessStatus, BootstrapData, ChangesLayoutPreference, CommitSplitProposal, FileHistoryPathChange, FileHistoryState, GhCliStatus, GitHubRepositoryInfo, OpenTigCapabilities, Preferences, PullRequestState, PullRequestSummary, PullResult, PushResult, RecentRepository, RepositoryInfo, RepositoryOrganization, RepositoryProject, ThemePreference, UndoLatestCommitResult } from '../../shared/contracts';
@@ -40,6 +40,7 @@ import type { RuntimeFileDraft } from '@/features/viewer/Viewer';
 import { OpenFilesStrip } from '@/features/files/OpenFilesStrip';
 import { QuickOpenDialog } from '@/features/files/QuickOpenDialog';
 import { ShortcutsSettings } from '@/features/settings/ShortcutsSettings';
+import { WebAccessSettings } from '@/features/settings/WebAccessSettings';
 import { CommitComposer } from '@/features/commit/CommitComposer';
 import { CreatePullRequestDialog } from '@/features/pulls/CreatePullRequestDialog';
 import { PullRequestsView } from '@/features/pulls/PullRequestsView';
@@ -2492,6 +2493,7 @@ const SETTINGS_SECTIONS = [
   { id: 'general', label: 'General', icon: IconSettings },
   { id: 'shortcuts', label: 'Shortcuts', icon: IconKeyboard },
   { id: 'ai', label: 'AI commit messages', icon: IconSparkles },
+  { id: 'webAccess', label: 'Network access', icon: IconNetwork },
 ] as const;
 type SettingsSection = (typeof SETTINGS_SECTIONS)[number]['id'];
 const THEME_OPTIONS: { value: ThemePreference; label: string; icon: typeof IconSun }[] = [
@@ -2535,12 +2537,14 @@ function SettingsDialog({ preferences, onPreference, open, onOpenChange, section
   const visibleModels = modelOptions.some((model) => model.id === selectedModel)
     ? modelOptions
     : [...modelOptions, { id: selectedModel, label: `${selectedModel} (unavailable)` }];
-  const title = section === 'general' ? 'General' : section === 'shortcuts' ? 'Shortcuts' : 'AI commit messages';
+  const title = section === 'general' ? 'General' : section === 'shortcuts' ? 'Shortcuts' : section === 'ai' ? 'AI commit messages' : 'Network access';
   const description = section === 'general'
     ? 'OpenTig appearance and behavior.'
     : section === 'shortcuts'
       ? 'Rebind commands or review the shortcuts that stay fixed.'
-      : 'Local harness and model used to suggest messages.';
+      : section === 'ai'
+        ? 'Local harness and model used to suggest messages.'
+        : 'Expose the existing OpenTig backend to trusted browsers.';
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <Tooltip>
@@ -2551,7 +2555,7 @@ function SettingsDialog({ preferences, onPreference, open, onOpenChange, section
         <div className="settings-shell">
           <aside className="settings-nav">
             <div className="settings-nav-title">Settings</div>
-            {SETTINGS_SECTIONS.map(({ id, label, icon: Icon }) => (
+            {SETTINGS_SECTIONS.filter(({ id }) => id !== 'webAccess' || Boolean(window.opentigDesktop)).map(({ id, label, icon: Icon }) => (
               <button key={id} className={`settings-nav-item ${section === id ? 'active' : ''}`} onClick={() => onSectionChange(id)} aria-current={section === id}>
                 <Icon /> {label}
               </button>
@@ -2635,7 +2639,7 @@ function SettingsDialog({ preferences, onPreference, open, onOpenChange, section
                 </div>
                 <button type="button" role="switch" aria-label="Show files ignored by Git" aria-checked={preferences.showDotEnvFiles} className="settings-switch" onClick={() => onPreference({ showDotEnvFiles: !preferences.showDotEnvFiles })}><span /></button>
               </div>
-              </> : section === 'shortcuts' ? <ShortcutsSettings preferences={preferences} onPreference={onPreference} /> : <>
+              </> : section === 'shortcuts' ? <ShortcutsSettings preferences={preferences} onPreference={onPreference} /> : section === 'webAccess' ? <WebAccessSettings /> : <>
                 <div className="ai-settings-heading">
                   <div className="settings-field-label">
                     <strong>Local harness</strong>

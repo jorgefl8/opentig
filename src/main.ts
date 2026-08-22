@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { networkInterfaces } from 'node:os';
 import {
   app,
   BrowserWindow,
@@ -20,10 +21,13 @@ import {
   type ServerProcessAddress,
   type ServerProcessState,
 } from './main/server/ServerProcessManager';
+import { DesktopServerSettings } from './main/server/DesktopServerSettings';
 import { startGlobalDoubleControlShortcut } from './main/shortcuts/GlobalDoubleControlShortcut';
 import { DesktopWindowState } from './main/window/DesktopWindowState';
 import { getWindowTitleBarOptions } from './main/window/WindowTitleBar';
 import { normalizeExternalUrl } from './shared/external-url';
+import type { OpenTigPairingLink, OpenTigWebAccessStatus } from './shared/desktop-api';
+import type { OpenTigServerHost } from './shared/server-process';
 import { OPEN_TIG_SESSION_COOKIE } from './shared/server-protocol';
 
 if (started) app.quit();
@@ -33,12 +37,17 @@ if (!hasLock) app.quit();
 
 let mainWindow: BrowserWindow | null = null;
 let serverManager: ServerProcessManager | null = null;
+let desktopServerSettings: DesktopServerSettings | null = null;
 let windowState: DesktopWindowState | null = null;
 let allowedServerOrigin: string | null = null;
 let performanceSampler: PerformanceSampler | null = null;
 let stopGlobalDoubleControlShortcut: (() => void) | null = null;
 let shutdownStarted = false;
 let shutdownReady = false;
+let webAccessEnabled = false;
+let serverState: ServerProcessState = { status: 'stopped' };
+let webAccessRestartError: string | null = null;
+let webAccessMutation: Promise<void> = Promise.resolve();
 
 const CONNECTING_PAGE_URL = startupPageUrl('Starting OpenTig…', 'Connecting to the local server.');
 const ERROR_PAGE_URL = startupPageUrl('OpenTig server is offline', 'See the server log for details, then restart OpenTig.');
@@ -100,7 +109,12 @@ async function createWindow(): Promise<void> {
 
   let stopPerformanceAutomation: () => void = () => {};
   const host = createElectronHostAdapter(mainWindow);
-  const removeHandlers = registerDesktopHandlers(host, applyDoubleControlShortcutPreference);
+  const removeHandlers = registerDesktopHandlers(host, applyDoubleControlShortcutPreference, {
+    getStatus: getWebAccessStatus,
+    setEnabled: setWebAccessEnabled,
+    createPairingLink,
+    revokeAllSessions,
+  });
 
   const openExternal = (value: string) => {
     const url = normalizeExternalUrl(value);
@@ -168,6 +182,7 @@ function createServerManager(): ServerProcessManager {
       : {}),
     appVersion: app.getVersion(),
     platform: normalizePlatform(process.platform),
+    host: webAccessEnabled ? '0.0.0.0' : '127.0.0.1',
     fork: (modulePath, args, options) => utilityProcess.fork(modulePath, args, options),
     onReady: installDesktopSession,
     onState: applyServerState,
@@ -175,6 +190,7 @@ function createServerManager(): ServerProcessManager {
 }
 
 function applyServerState(state: ServerProcessState): void {
+  serverState = state;
   if (state.status === 'ready') {
     allowedServerOrigin = state.origin;
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setTitle('OpenTig');
@@ -185,8 +201,84 @@ function applyServerState(state: ServerProcessState): void {
   }
 }
 
+function setWebAccessEnabled(enabled: boolean): Promise<OpenTigWebAccessStatus> {
+  const operation = webAccessMutation.then(async () => {
+    const manager = serverManager;
+    const settings = desktopServerSettings;
+    if (!manager || !settings) throw new Error('OpenTig desktop server is not initialized.');
+    if (enabled === webAccessEnabled) return getWebAccessStatus();
+    webAccessRestartError = null;
+    const previousHost: OpenTigServerHost = webAccessEnabled ? '0.0.0.0' : '127.0.0.1';
+    const nextHost: OpenTigServerHost = enabled ? '0.0.0.0' : '127.0.0.1';
+    try {
+      await manager.restart(nextHost);
+      try {
+        await settings.save(enabled);
+      } catch (error) {
+        await manager.restart(previousHost);
+        throw error;
+      }
+      webAccessEnabled = enabled;
+      return getWebAccessStatus();
+    } catch (error) {
+      webAccessRestartError = error instanceof Error ? error.message : 'OpenTig could not restart network access.';
+      throw error;
+    }
+  });
+  webAccessMutation = operation.then(() => undefined, () => undefined);
+  return operation;
+}
+
+async function getWebAccessStatus(): Promise<OpenTigWebAccessStatus> {
+  const manager = serverManager;
+  const current = manager?.current ?? null;
+  let connectedSessionCount = 0;
+  if (current) {
+    try { connectedSessionCount = (await manager!.getStatus()).connectedSessionCount; }
+    catch { /* restarting or offline */ }
+  }
+  const actualPort = current?.port ?? ('port' in serverState ? serverState.port : null);
+  return {
+    enabled: webAccessEnabled,
+    serverState: serverState.status,
+    actualPort,
+    localEndpoint: actualPort === null ? null : `http://127.0.0.1:${actualPort}`,
+    networkEndpoints: actualPort === null ? [] : networkEndpoints(actualPort),
+    connectedSessionCount,
+    restartError: webAccessRestartError,
+  };
+}
+
+async function createPairingLink(endpoint: string): Promise<OpenTigPairingLink> {
+  const manager = serverManager;
+  if (!manager?.current) throw new Error('OpenTig server is not ready.');
+  if (!webAccessEnabled) throw new Error('Enable network access before creating a pairing link.');
+  if (!networkEndpoints(manager.current.port).includes(endpoint)) throw new Error('Select an active OpenTig network endpoint.');
+  return manager.createPairingLink(endpoint);
+}
+
+async function revokeAllSessions(): Promise<{ revokedCount: number }> {
+  const manager = serverManager;
+  const current = manager?.current;
+  if (!manager || !current) throw new Error('OpenTig server is not ready.');
+  const result = await manager.revokeAllSessions();
+  await installDesktopSessionCookie(current.origin, result.desktopCookie);
+  return { revokedCount: result.revokedCount };
+}
+
+function networkEndpoints(port: number): string[] {
+  const endpoints = new Set<string>();
+  for (const entries of Object.values(networkInterfaces())) {
+    for (const entry of entries ?? []) {
+      if (entry.internal || entry.family !== 'IPv4' || entry.address.startsWith('169.254.')) continue;
+      endpoints.add(`http://${entry.address}:${port}`);
+    }
+  }
+  return [...endpoints].sort();
+}
+
 async function installDesktopSession(server: ServerProcessAddress, desktopSecret: string): Promise<void> {
-  let cookies = await session.defaultSession.cookies.get({ url: server.origin, name: OPEN_TIG_SESSION_COOKIE });
+  const cookies = await session.defaultSession.cookies.get({ url: server.origin, name: OPEN_TIG_SESSION_COOKIE });
   const currentCookie = cookies[0]?.value;
   const descriptor = await fetch(`${server.origin}/api/auth/descriptor`, {
     headers: currentCookie ? { Cookie: `${OPEN_TIG_SESSION_COOKIE}=${currentCookie}` } : {},
@@ -201,17 +293,23 @@ async function installDesktopSession(server: ServerProcessAddress, desktopSecret
     body: JSON.stringify({ secret: desktopSecret }),
   });
   if (response.status !== 204) throw new Error('Could not authenticate the desktop with the OpenTig server.');
-  const value = response.headers.get('set-cookie')?.match(new RegExp(`^${OPEN_TIG_SESSION_COOKIE}=([^;]+)`))?.[1];
-  if (!value) throw new Error('OpenTig server did not return a desktop session.');
+  const cookie = response.headers.get('set-cookie');
+  if (!cookie) throw new Error('OpenTig server did not return a desktop session.');
+  await installDesktopSessionCookie(server.origin, cookie);
+}
+
+async function installDesktopSessionCookie(origin: string, cookie: string): Promise<void> {
+  const value = cookie.match(new RegExp(`^${OPEN_TIG_SESSION_COOKIE}=([^;]+)`))?.[1];
+  if (!value) throw new Error('OpenTig server returned an invalid desktop session.');
   await session.defaultSession.cookies.set({
-    url: server.origin,
+    url: origin,
     name: OPEN_TIG_SESSION_COOKIE,
     value,
     path: '/',
     httpOnly: true,
     sameSite: 'strict',
   });
-  cookies = await session.defaultSession.cookies.get({ url: server.origin, name: OPEN_TIG_SESSION_COOKIE });
+  const cookies = await session.defaultSession.cookies.get({ url: origin, name: OPEN_TIG_SESSION_COOKIE });
   if (cookies.length === 0) throw new Error('Could not install the OpenTig desktop session.');
 }
 
@@ -244,6 +342,8 @@ app.whenReady().then(async () => {
     path.join(userData, 'desktop-window.json'),
     path.join(userData, 'settings.json'),
   );
+  desktopServerSettings = new DesktopServerSettings(path.join(userData, 'desktop-server.json'));
+  webAccessEnabled = await desktopServerSettings.load();
   serverManager = createServerManager();
 
   const clipboardPermissions = new Set(['clipboard-read', 'clipboard-sanitized-write']);
@@ -265,13 +365,16 @@ app.on('before-quit', (event) => {
   const sampler = performanceSampler;
   const manager = serverManager;
   const desktopState = windowState;
+  const serverSettings = desktopServerSettings;
   performanceSampler = null;
   serverManager = null;
   windowState = null;
+  desktopServerSettings = null;
   const tasks: Promise<unknown>[] = [];
   if (manager) tasks.push(manager.stop());
   if (sampler) tasks.push(sampler.stop());
   if (desktopState) tasks.push(desktopState.flush());
+  if (serverSettings) tasks.push(serverSettings.flush());
   void Promise.allSettled(tasks).then((results) => {
     for (const result of results) {
       if (result.status === 'rejected') console.error('Could not finish an OpenTig shutdown task.', result.reason);

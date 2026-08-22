@@ -70,6 +70,10 @@ export class OpenTigWebSocketTransport {
     this.heartbeat.unref();
   }
 
+  get connectedSessionCount(): number {
+    return new Set([...this.clients.values()].map((client) => client.sessionId)).size;
+  }
+
   publish(event: OpenTigRuntimeEvent): void {
     this.broadcast({ type: 'event', event });
   }

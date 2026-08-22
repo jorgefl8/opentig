@@ -43,6 +43,16 @@ describe('renderer/server boundary', () => {
     expect(source).not.toContain('runOpenTigServer');
     expect(source).toContain('utilityProcess.fork');
   });
+
+  it('keeps network exposure controls desktop-only and free of native tooltips', async () => {
+    const appSource = await readFile(path.join(process.cwd(), 'src', 'renderer', 'app', 'App.tsx'), 'utf8');
+    const settingsSource = await readFile(path.join(process.cwd(), 'src', 'renderer', 'features', 'settings', 'WebAccessSettings.tsx'), 'utf8');
+
+    expect(appSource).toContain("id !== 'webAccess' || Boolean(window.opentigDesktop)");
+    expect(settingsSource).toContain('window.opentigDesktop?.webAccess');
+    expect(settingsSource).not.toMatch(/\stitle=/);
+    expect(settingsSource).toContain('Never expose the raw port publicly.');
+  });
 });
 
 async function sourceFiles(directory: string): Promise<string[]> {

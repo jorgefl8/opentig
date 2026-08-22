@@ -36,5 +36,11 @@ export function createDesktopApi(
       ),
       revealEntry: (target) => invoke(OPEN_TIG_DESKTOP_IPC.repositoryRevealEntry, target),
     },
+    webAccess: {
+      getStatus: () => invoke(OPEN_TIG_DESKTOP_IPC.webAccessStatus),
+      setEnabled: (enabled) => invoke(OPEN_TIG_DESKTOP_IPC.webAccessSetEnabled, enabled),
+      createPairingLink: (endpoint) => invoke(OPEN_TIG_DESKTOP_IPC.webAccessCreatePairingLink, endpoint),
+      revokeAllSessions: () => invoke(OPEN_TIG_DESKTOP_IPC.webAccessRevokeAllSessions),
+    },
   };
 }

@@ -53,10 +53,7 @@ export class OpenTigServer {
       mode: options.mode ?? 'desktop',
       allowedOrigins,
       isReady: () => this.ready,
-      onSessionsRevoked: (sessionIds) => {
-        for (const sessionId of sessionIds) options.registry.clearSession(sessionId);
-        this.webSockets.revokeSessions(sessionIds);
-      },
+      onSessionsRevoked: (sessionIds) => this.disconnectSessions(sessionIds),
       logger: this.logger,
     }));
     this.webSockets = new OpenTigWebSocketTransport({
@@ -87,6 +84,17 @@ export class OpenTigServer {
   createPairingToken(): PairingToken {
     if (!this.ready) throw new Error('Server is not ready.');
     return this.options.auth.createPairingToken();
+  }
+
+  getStatus(): { connectedSessionCount: number } {
+    return { connectedSessionCount: this.webSockets.connectedSessionCount };
+  }
+
+  async revokeAllSessions(): Promise<{ revokedCount: number; desktopCookie: string }> {
+    if (!this.ready) throw new Error('Server is not ready.');
+    const { sessionIds, cookie } = await this.options.auth.revokeAllAndIssueDesktopCookie();
+    this.disconnectSessions(sessionIds);
+    return { revokedCount: sessionIds.length, desktopCookie: cookie };
   }
 
   stop(): Promise<void> {
@@ -127,6 +135,11 @@ export class OpenTigServer {
     this.options.registry.clear();
     await this.options.auth.close();
     await this.options.runtime.close();
+  }
+
+  private disconnectSessions(sessionIds: readonly string[]): void {
+    for (const sessionId of sessionIds) this.options.registry.clearSession(sessionId);
+    this.webSockets.revokeSessions(sessionIds);
   }
 }
 

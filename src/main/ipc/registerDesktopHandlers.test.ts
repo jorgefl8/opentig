@@ -30,7 +30,29 @@ function fixture() {
     confirm: vi.fn(async () => true),
     revealItem: vi.fn(),
   };
-  return { host };
+  const webAccess = {
+    getStatus: vi.fn(async () => ({
+      enabled: false,
+      serverState: 'ready' as const,
+      actualPort: 6767,
+      localEndpoint: 'http://127.0.0.1:6767',
+      networkEndpoints: ['http://192.168.1.50:6767'],
+      connectedSessionCount: 1,
+      restartError: null,
+    })),
+    setEnabled: vi.fn(async (enabled: boolean) => ({
+      enabled,
+      serverState: 'ready' as const,
+      actualPort: 6767,
+      localEndpoint: 'http://127.0.0.1:6767',
+      networkEndpoints: ['http://192.168.1.50:6767'],
+      connectedSessionCount: 1,
+      restartError: null,
+    })),
+    createPairingLink: vi.fn(async () => ({ url: 'http://192.168.1.50:6767/pair#token=secret', expiresAt: '2030-01-01T00:00:00.000Z' })),
+    revokeAllSessions: vi.fn(async () => ({ revokedCount: 2 })),
+  };
+  return { host, webAccess };
 }
 
 async function invoke<T>(channel: string, ...args: unknown[]): Promise<IpcResult<T>> {
@@ -43,7 +65,7 @@ describe('desktop IPC boundary', () => {
   it('registers only the named native desktop channels', () => {
     electron.handlers.clear();
     const value = fixture();
-    registerDesktopHandlers(value.host);
+    registerDesktopHandlers(value.host, undefined, value.webAccess);
 
     expect([...electron.handlers.keys()].sort()).toEqual(Object.values(OPEN_TIG_DESKTOP_IPC).sort());
     expect([...electron.handlers.keys()].every((channel) => channel.startsWith('desktop:'))).toBe(true);
@@ -71,6 +93,24 @@ describe('desktop IPC boundary', () => {
       value: 'C:\\repo',
     });
     expect(value.host.selectDirectory).toHaveBeenCalledWith('Open Git repository');
+  });
+
+  it('keeps network exposure behind validated desktop-only handlers', async () => {
+    electron.handlers.clear();
+    const value = fixture();
+    registerDesktopHandlers(value.host, undefined, value.webAccess);
+
+    await expect(invoke(OPEN_TIG_DESKTOP_IPC.webAccessSetEnabled, true)).resolves.toEqual(expect.objectContaining({
+      ok: true,
+      value: expect.objectContaining({ enabled: true }),
+    }));
+    expect(value.webAccess.setEnabled).toHaveBeenCalledWith(true);
+    await expect(invoke(OPEN_TIG_DESKTOP_IPC.webAccessSetEnabled, 'yes')).resolves.toEqual(expect.objectContaining({ ok: false }));
+    await expect(invoke(OPEN_TIG_DESKTOP_IPC.webAccessCreatePairingLink, 'http://192.168.1.50:6767')).resolves.toEqual(expect.objectContaining({
+      ok: true,
+      value: expect.objectContaining({ url: expect.stringContaining('#token=') }),
+    }));
+    expect(value.webAccess.createPairingLink).toHaveBeenCalledWith('http://192.168.1.50:6767');
   });
 
   it('accepts only an absolute server-resolved reveal target', async () => {

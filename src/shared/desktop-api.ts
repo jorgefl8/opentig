@@ -8,7 +8,33 @@ export const OPEN_TIG_DESKTOP_IPC = {
   repositorySelect: 'desktop:repository-select',
   repositorySelectRelocation: 'desktop:repository-select-relocation',
   repositoryRevealEntry: 'desktop:repository-reveal-entry',
+  webAccessStatus: 'desktop:web-access-status',
+  webAccessSetEnabled: 'desktop:web-access-set-enabled',
+  webAccessCreatePairingLink: 'desktop:web-access-create-pairing-link',
+  webAccessRevokeAllSessions: 'desktop:web-access-revoke-all-sessions',
 } as const;
+
+export interface OpenTigWebAccessStatus {
+  enabled: boolean;
+  serverState: 'starting' | 'ready' | 'restarting' | 'failed' | 'stopped';
+  actualPort: number | null;
+  localEndpoint: string | null;
+  networkEndpoints: string[];
+  connectedSessionCount: number;
+  restartError: string | null;
+}
+
+export interface OpenTigPairingLink {
+  url: string;
+  expiresAt: string;
+}
+
+export interface OpenTigWebAccessApi {
+  getStatus(): Promise<OpenTigWebAccessStatus>;
+  setEnabled(enabled: boolean): Promise<OpenTigWebAccessStatus>;
+  createPairingLink(endpoint: string): Promise<OpenTigPairingLink>;
+  revokeAllSessions(): Promise<{ revokedCount: number }>;
+}
 
 /**
  * Native desktop capabilities kept outside the server. Text clipboard and
@@ -23,4 +49,5 @@ export interface OpenTigDesktopApi {
     /** Absolute path already resolved and authorized by the server. */
     revealEntry(target: string): Promise<void>;
   };
+  webAccess: OpenTigWebAccessApi;
 }

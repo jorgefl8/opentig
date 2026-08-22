@@ -33,6 +33,7 @@ parentPort.on('message', ({ data }) => {
     return;
   }
   if (message?.type === 'shutdown') void shutdown(0);
+  else if (message?.type === 'control') void handleControl(message);
   else if (message?.type === 'bootstrap') void failAndExit('DUPLICATE_BOOTSTRAP', 'Server bootstrap may only be sent once.');
 });
 
@@ -50,7 +51,7 @@ async function start(message: Partial<OpenTigUtilityParentMessage> | null): Prom
       platform: config.platform,
       host: config.host,
       port: config.port,
-      mode: 'desktop',
+      mode: config.host === '127.0.0.1' ? 'desktop' : 'web-access',
       logger: (level, value) => console[level](`[server] ${redactSensitiveText(value)}`),
     });
     parentPort!.postMessage({
@@ -63,6 +64,32 @@ async function start(message: Partial<OpenTigUtilityParentMessage> | null): Prom
     });
   } catch (error) {
     failAndExit(errorCode(error), publicError(error));
+  }
+}
+
+async function handleControl(message: { type?: unknown; requestId?: unknown; action?: unknown }): Promise<void> {
+  const requestId = typeof message.requestId === 'string' && message.requestId.length > 0 && message.requestId.length <= 128
+    ? message.requestId
+    : null;
+  if (!requestId) return;
+  try {
+    if (!server) throw new Error('OpenTig server is not ready.');
+    if (message.action === 'status') {
+      parentPort!.postMessage({ type: 'control-result', requestId, ok: true, result: { action: 'status', ...server.getStatus() } });
+    } else if (message.action === 'create-pairing-link') {
+      parentPort!.postMessage({ type: 'control-result', requestId, ok: true, result: { action: 'create-pairing-link', ...server.createPairingLink() } });
+    } else if (message.action === 'revoke-all-sessions') {
+      parentPort!.postMessage({ type: 'control-result', requestId, ok: true, result: { action: 'revoke-all-sessions', ...await server.revokeAllSessions() } });
+    } else {
+      throw new Error('Unknown OpenTig server control action.');
+    }
+  } catch (error) {
+    parentPort!.postMessage({
+      type: 'control-result',
+      requestId,
+      ok: false,
+      message: redactSensitiveText(error instanceof Error ? error.message : String(error)),
+    });
   }
 }
 
@@ -106,7 +133,7 @@ function validateBootstrap(message: Partial<OpenTigUtilityParentMessage> | null)
     throw invalid('Trash module path');
   }
   if (!['win32', 'darwin', 'linux', 'other'].includes(String(config.platform))) throw invalid('platform');
-  if (config.host !== '127.0.0.1') throw invalid('host');
+  if (config.host !== '127.0.0.1' && config.host !== '0.0.0.0') throw invalid('host');
   if (!Number.isInteger(config.port) || Number(config.port) < 1 || Number(config.port) > 65_535) throw invalid('port');
   return config as OpenTigUtilityConfig;
 }
