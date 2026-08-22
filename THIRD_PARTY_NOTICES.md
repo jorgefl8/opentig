@@ -17,3 +17,10 @@ OpenTig uses the [`trash`](https://github.com/sindresorhus/trash) package to mov
 - Version: 10.1.1
 - License: MIT
 - Linux support follows the XDG Trash specification; upstream documents it as weakly maintained, so OpenTig runs an Ubuntu Trash smoke test as a release gate.
+
+## ws
+
+OpenTig uses [`ws`](https://github.com/websockets/ws) for its authenticated server WebSocket transport.
+
+- Version: 8.21.3
+- License: MIT

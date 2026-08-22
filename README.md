@@ -222,6 +222,7 @@ The unpacked executable is written to `out/OpenTig-win32-x64/OpenTig.exe`.
 - Repository contents are read from and written to their existing local paths.
 - The renderer has no direct Node.js, filesystem, or process access.
 - Git, filesystem, persistence, AI, and GitHub operations run through one typed, validated server-command boundary. Electron IPC is a temporary transport for that boundary.
+- The private server transport binds to loopback by default, requires an owner session for commands and image bytes, validates exact mutation/WebSocket origins, and blocks static-file traversal and symlink escape.
 - The narrow preload bridge contains only proven desktop capabilities such as folder selection/relocation, file clipboard import, Explorer reveal, title-bar theming, and zoom. Text clipboard access stays in the renderer's browser API.
 - Git commands use argument arrays with `shell: false`, bounded output, timeouts, path validation, and per-repository write serialisation.
 - External links are allowlisted to `http(s)://` and `mailto:` before Electron's window-navigation interception opens them in the system browser.
@@ -242,7 +243,7 @@ Generated content remains editable and pending. No commit is created and no pull
 
 - `src/main/runtime`: Electron-free service graph and validated server-command registry for Git, filesystem, persistence, AI, GitHub, watchers, and shutdown.
 - `src/main/ipc`: thin Electron transport plus handlers for native-only desktop capabilities.
-- `packages/server`: private, Electron-free server build containing one runtime entry and the exact production web client. Network transport is added incrementally; desktop keeps its current IPC rollback path during that migration.
+- `packages/server`: private, Electron-free server build containing one runtime entry, authenticated HTTP/WebSocket transport, and the exact production web client. It is packaged but not yet started by Electron; desktop keeps its current IPC rollback path until the supervisor and renderer migrations are complete.
 - `src/preload.ts`: narrow, context-isolated typed bridge exposed to the renderer.
 - `src/renderer`: React interface and feature modules.
 - `src/shared`: IPC contracts, shared models, and validation helpers.

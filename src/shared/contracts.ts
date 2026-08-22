@@ -1,6 +1,7 @@
 import type { SerializedOperationError } from './errors';
 import type { BranchDeletionResult, BranchDetails, BranchInfo, CommitFile, CommitPage, FileTreeEntry, LocalRefsSnapshot, RepositoryStatus, WorktreeDetails, WorktreeInfo, WorktreeRemovalBlocked } from './git-types';
 import type { RasterImageMime } from './image-types';
+import type { OpenTigServerIdentity } from './server-protocol';
 import type { RepositoryChangeScope } from './repository-change';
 import type { AiLogEntry } from './ai-log';
 import type { FilesTreeState } from './files-tree-state';
@@ -419,6 +420,8 @@ export interface BootstrapData {
   activeRepository: RepositoryInfo | null;
   preferences: Preferences;
   performanceAutomation: boolean;
+  /** Present when bootstrap arrived through the authoritative server transport. */
+  server?: OpenTigServerIdentity;
 }
 
 /**

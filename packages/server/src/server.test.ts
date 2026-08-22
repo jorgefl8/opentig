@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
+import { OneTimeBootstrapAuthSource } from './auth';
 import { resolveServerClientRoot, runOpenTigServer } from './server';
 
 describe('private server workspace', () => {
@@ -21,6 +22,9 @@ describe('private server workspace', () => {
         trash: { available: true, trashItem: vi.fn(async () => undefined) },
         onEvent: vi.fn(),
         clientRoot: path.join(directory, 'client'),
+        appVersion: 'test',
+        auth: new OneTimeBootstrapAuthSource({ desktopSecret: 'desktop-secret' }),
+        port: 0,
       });
 
       expect(server.runtime.services.runtimeMode).toBe('headless');
