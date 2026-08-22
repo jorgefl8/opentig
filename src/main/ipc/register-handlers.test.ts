@@ -69,12 +69,22 @@ function services() {
       checkedAt: '2026-08-22T00:00:00.000Z',
     }]),
   };
+  const events = { activeRepositoryChanged: vi.fn(), repositoryChanged: vi.fn() };
   return {
     repositories,
     watcher,
     github,
     ai,
-    value: { repositories, watcher, github, ai } as unknown as Services,
+    events,
+    value: {
+      runtimeMode: 'desktop',
+      platform: 'win32',
+      repositories,
+      watcher,
+      github,
+      ai,
+      events,
+    } as unknown as Services,
   };
 }
 
@@ -97,6 +107,7 @@ describe('server IPC ownership additions', () => {
     });
     expect(fixture.repositories.openPath).toHaveBeenCalledWith('C:\\repo');
     expect(fixture.watcher.start).toHaveBeenCalledWith(repository);
+    expect(fixture.events.activeRepositoryChanged).toHaveBeenCalledWith(repository);
   });
 
   it('reports serializable desktop capabilities and dependency status', async () => {

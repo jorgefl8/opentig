@@ -19,6 +19,10 @@ export interface CliRunResult {
 }
 
 export class CliProcessRunner {
+  private readonly active = new Set<AbortController>();
+  private readonly idleWaiters = new Set<() => void>();
+  private closePromise: Promise<void> | null = null;
+
   async run(command: string, args: string[], options: CliRunOptions = {}): Promise<CliRunResult> {
     const timeoutMs = options.timeoutMs ?? 15_000;
     const maxOutputBytes = options.maxOutputBytes ?? 2 * 1024 * 1024;
@@ -27,26 +31,40 @@ export class CliProcessRunner {
     );
     for (const key of options.removeEnv ?? []) delete environment[key];
 
-    if (options.signal?.aborted) throw cancelled();
+    if (this.closePromise || options.signal?.aborted) throw cancelled();
+    const lifecycle = new AbortController();
+    this.active.add(lifecycle);
+    const signal = options.signal
+      ? AbortSignal.any([options.signal, lifecycle.signal])
+      : lifecycle.signal;
     const resolvedCommand = resolveProcessCommand(command, options.cwd ?? process.cwd(), environment);
-    const result = await execa(resolvedCommand.file, args, {
-      ...(options.cwd ? { cwd: options.cwd } : {}),
-      ...(options.signal ? { cancelSignal: options.signal } : {}),
-      env: environment,
-      extendEnv: false,
-      shell: false,
-      windowsHide: true,
-      cleanup: true,
-      killDescendants: true,
-      timeout: timeoutMs,
-      maxBuffer: maxOutputBytes,
-      input: options.stdin ?? '',
-      stripFinalNewline: false,
-      reject: false,
-    }).catch(() => {
-      if (options.signal?.aborted) throw cancelled();
-      throw processFailed();
-    });
+    let result;
+    try {
+      result = await execa(resolvedCommand.file, args, {
+        ...(options.cwd ? { cwd: options.cwd } : {}),
+        cancelSignal: signal,
+        env: environment,
+        extendEnv: false,
+        shell: false,
+        windowsHide: true,
+        cleanup: true,
+        killDescendants: true,
+        timeout: timeoutMs,
+        maxBuffer: maxOutputBytes,
+        input: options.stdin ?? '',
+        stripFinalNewline: false,
+        reject: false,
+      }).catch(() => {
+        if (signal.aborted) throw cancelled();
+        throw processFailed();
+      });
+    } finally {
+      this.active.delete(lifecycle);
+      if (this.active.size === 0) {
+        for (const resolve of this.idleWaiters) resolve();
+        this.idleWaiters.clear();
+      }
+    }
 
     if (result.isCanceled) throw cancelled();
     if (result.timedOut) {
@@ -59,6 +77,25 @@ export class CliProcessRunner {
       throw processFailed();
     }
     return { exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr };
+  }
+
+  close(timeoutMs = 2_000): Promise<void> {
+    this.closePromise ??= this.closeOwnedProcesses(timeoutMs);
+    return this.closePromise;
+  }
+
+  private async closeOwnedProcesses(timeoutMs: number): Promise<void> {
+    for (const controller of this.active) controller.abort();
+    if (this.active.size === 0) return;
+    await new Promise<void>((resolve) => {
+      const finish = () => {
+        clearTimeout(timeout);
+        this.idleWaiters.delete(finish);
+        resolve();
+      };
+      const timeout = setTimeout(finish, timeoutMs);
+      this.idleWaiters.add(finish);
+    });
   }
 }
 

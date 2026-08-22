@@ -24,8 +24,6 @@ interface RunOptions {
   truncateOverflow?: boolean;
 }
 
-const activeChildren = new Set<number>();
-
 /**
  * Two spellings of the same directory must share one queue. Collapsing case and
  * separators can only over-serialize, never let two writers through at once.
@@ -37,6 +35,10 @@ function normalizeLockKey(value: string): string {
 
 export class GitProcess {
   private readonly writeQueues = new Map<string, Promise<void>>();
+  private readonly activeChildren = new Set<number>();
+  private readonly activeControllers = new Set<AbortController>();
+  private readonly idleWaiters = new Set<() => void>();
+  private closePromise: Promise<void> | null = null;
 
   run(cwd: string, args: string[], options: RunOptions): Promise<GitOutput> {
     const globalArgs = ['--no-pager'];
@@ -75,10 +77,18 @@ export class GitProcess {
   }
 
   hasActiveProcess(): boolean {
-    return activeChildren.size > 0;
+    return this.activeChildren.size > 0;
+  }
+
+  close(timeoutMs = 2_000): Promise<void> {
+    this.closePromise ??= this.closeOwnedProcesses(timeoutMs);
+    return this.closePromise;
   }
 
   private async spawnGit(cwd: string, args: string[], options: RunOptions): Promise<GitOutput> {
+    if (this.closePromise) {
+      throw new GitOperationError({ code: 'UNKNOWN', operation: options.operation, message: 'Git runtime is closed.' });
+    }
     const timeoutMs = options.timeoutMs ?? 30_000;
     const maxOutputBytes = options.maxOutputBytes ?? 16 * 1024 * 1024;
     const environment = Object.fromEntries(
@@ -92,6 +102,8 @@ export class GitProcess {
     );
     const resolvedCommand = resolveProcessCommand('git', cwd, environment);
     const outputLimit = new AbortController();
+    const lifecycle = new AbortController();
+    this.activeControllers.add(lifecycle);
     let outputSize = 0;
     let overLimit = false;
     const enforceCombinedLimit = function* (chunk: Uint8Array): Generator<Uint8Array> {
@@ -116,7 +128,7 @@ export class GitProcess {
         cleanup: true,
         killDescendants: true,
         timeout: timeoutMs,
-        cancelSignal: outputLimit.signal,
+        cancelSignal: AbortSignal.any([outputLimit.signal, lifecycle.signal]),
         input: options.stdin ?? Buffer.alloc(0),
         encoding: 'buffer',
         stripFinalNewline: false,
@@ -126,7 +138,7 @@ export class GitProcess {
         reject: false,
       });
       childPid = subprocess.pid;
-      if (childPid) activeChildren.add(childPid);
+      if (childPid) this.activeChildren.add(childPid);
       const result = await subprocess;
       const stdout = Buffer.from(result.stdout);
       const stderr = Buffer.from(result.stderr);
@@ -147,8 +159,27 @@ export class GitProcess {
       if (error instanceof GitOperationError) throw error;
       throw this.mapError(options.operation, error);
     } finally {
-      if (childPid) activeChildren.delete(childPid);
+      if (childPid) this.activeChildren.delete(childPid);
+      this.activeControllers.delete(lifecycle);
+      if (this.activeControllers.size === 0) {
+        for (const resolve of this.idleWaiters) resolve();
+        this.idleWaiters.clear();
+      }
     }
+  }
+
+  private async closeOwnedProcesses(timeoutMs: number): Promise<void> {
+    for (const controller of this.activeControllers) controller.abort();
+    if (this.activeControllers.size === 0) return;
+    await new Promise<void>((resolve) => {
+      const finish = () => {
+        clearTimeout(timeout);
+        this.idleWaiters.delete(finish);
+        resolve();
+      };
+      const timeout = setTimeout(finish, timeoutMs);
+      this.idleWaiters.add(finish);
+    });
   }
 
   private mapError(operation: string, error: unknown): GitOperationError {
