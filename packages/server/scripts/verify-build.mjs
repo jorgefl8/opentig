@@ -11,6 +11,7 @@ const FORBIDDEN_PACKAGES = [
 
 export async function verifyServerBuild(serverDist) {
   await access(path.join(serverDist, 'server.mjs'));
+  await access(path.join(serverDist, 'utility.mjs'));
   await access(path.join(serverDist, 'client', 'index.html'));
   const modules = await findModules(serverDist);
   if (modules.length === 0) throw new Error('Server build contains no JavaScript entry.');

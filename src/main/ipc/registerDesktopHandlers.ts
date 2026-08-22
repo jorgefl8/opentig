@@ -1,14 +1,13 @@
 import { lstat } from 'node:fs/promises';
+import path from 'node:path';
 import { ipcMain } from 'electron';
 import type { IpcResult } from '../../shared/contracts';
 import { OPEN_TIG_DESKTOP_IPC } from '../../shared/desktop-api';
 import { serializeError } from '../../shared/errors';
-import type { RepositoryService } from '../git/RepositoryService';
 import type { OpenTigHost } from '../runtime/OpenTigHost';
 import { booleanArg, stringArg } from '../runtime/validators';
 
 export function registerDesktopHandlers(
-  repositories: RepositoryService,
   host: OpenTigHost,
   onDoubleControlShortcutChanged?: (enabled: boolean) => void,
 ): () => void {
@@ -57,10 +56,9 @@ export function registerDesktopHandlers(
     return locate ? host.selectDirectory(`Locate ${name}`) : null;
   });
 
-  handle(OPEN_TIG_DESKTOP_IPC.repositoryRevealEntry, 'reveal-entry', async (id, filePath) => {
-    const repositoryId = stringArg(id, 'reveal-entry', 64);
-    const relativePath = stringArg(filePath, 'reveal-entry');
-    const target = repositories.resolvePath(repositoryId, relativePath);
+  handle(OPEN_TIG_DESKTOP_IPC.repositoryRevealEntry, 'reveal-entry', async (value) => {
+    const target = stringArg(value, 'reveal-entry', 32_768);
+    if (!path.isAbsolute(target)) throw new Error('Reveal requires an absolute path.');
     await lstat(target);
     host.revealItem(target);
   });

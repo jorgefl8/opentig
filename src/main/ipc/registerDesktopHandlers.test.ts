@@ -20,7 +20,6 @@ vi.mock('electron', () => ({ ipcMain: electron.ipcMain }));
 import { registerDesktopHandlers } from './registerDesktopHandlers';
 
 function fixture() {
-  const repositories = { resolvePath: vi.fn(() => 'C:\\repo\\file.txt') };
   const host = {
     capabilities: { nativePicker: true, fileClipboard: true, revealInFileManager: true },
     preferencesChanged: vi.fn(),
@@ -31,7 +30,7 @@ function fixture() {
     confirm: vi.fn(async () => true),
     revealItem: vi.fn(),
   };
-  return { repositories, host };
+  return { host };
 }
 
 async function invoke<T>(channel: string, ...args: unknown[]): Promise<IpcResult<T>> {
@@ -44,7 +43,7 @@ describe('desktop IPC boundary', () => {
   it('registers only the named native desktop channels', () => {
     electron.handlers.clear();
     const value = fixture();
-    registerDesktopHandlers(value.repositories as never, value.host);
+    registerDesktopHandlers(value.host);
 
     expect([...electron.handlers.keys()].sort()).toEqual(Object.values(OPEN_TIG_DESKTOP_IPC).sort());
     expect([...electron.handlers.keys()].every((channel) => channel.startsWith('desktop:'))).toBe(true);
@@ -54,7 +53,7 @@ describe('desktop IPC boundary', () => {
     electron.handlers.clear();
     const changed = vi.fn();
     const value = fixture();
-    registerDesktopHandlers(value.repositories as never, value.host, changed);
+    registerDesktopHandlers(value.host, changed);
 
     await expect(invoke(OPEN_TIG_DESKTOP_IPC.preferencesChanged, {
       doubleControlShortcutEnabled: true,
@@ -65,12 +64,21 @@ describe('desktop IPC boundary', () => {
   it('keeps directory selection native without opening a repository', async () => {
     electron.handlers.clear();
     const value = fixture();
-    registerDesktopHandlers(value.repositories as never, value.host);
+    registerDesktopHandlers(value.host);
 
     await expect(invoke(OPEN_TIG_DESKTOP_IPC.repositorySelect)).resolves.toEqual({
       ok: true,
       value: 'C:\\repo',
     });
     expect(value.host.selectDirectory).toHaveBeenCalledWith('Open Git repository');
+  });
+
+  it('accepts only an absolute server-resolved reveal target', async () => {
+    electron.handlers.clear();
+    const value = fixture();
+    registerDesktopHandlers(value.host);
+
+    await expect(invoke(OPEN_TIG_DESKTOP_IPC.repositoryRevealEntry, 'relative.txt')).resolves.toEqual(expect.objectContaining({ ok: false }));
+    expect(value.host.revealItem).not.toHaveBeenCalled();
   });
 });

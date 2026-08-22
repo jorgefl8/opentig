@@ -27,3 +27,7 @@ await verifyServerBuild(serverDist);
 await rm(resourceRoot, { recursive: true, force: true });
 await mkdir(path.dirname(resourceRoot), { recursive: true });
 await cp(serverDist, resourceRoot, { recursive: true, force: true });
+await cp(path.join(repositoryRoot, 'node_modules', 'ws'), path.join(resourceRoot, 'node_modules', 'ws'), {
+  recursive: true,
+  force: true,
+});

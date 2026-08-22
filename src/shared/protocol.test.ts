@@ -14,7 +14,7 @@ type Equal<Left, Right> =
 type RendererDesktopSurface = {
   app: Pick<OpenTigDesktopApi['app'], 'setZoomFactor' | 'setTitleBarTheme'>;
   clipboard: OpenTigDesktopApi['clipboard'];
-  repository: OpenTigDesktopApi['repository'];
+  repository: Pick<OpenTigApi['repository'], 'select' | 'selectRelocation' | 'revealEntry'>;
 };
 type SplitApi = OpenTigServerApi & RendererDesktopSurface;
 

@@ -1,8 +1,9 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import type { IncomingHttpHeaders } from 'node:http';
+import { OPEN_TIG_SESSION_COOKIE } from '../../../src/shared/server-protocol';
 import { PersistentAuthStore } from './auth-store';
 
-export const OPEN_TIG_SESSION_COOKIE = 'opentig_session';
+export { OPEN_TIG_SESSION_COOKIE } from '../../../src/shared/server-protocol';
 export const DEFAULT_PAIRING_TTL_MS = 5 * 60 * 1_000;
 
 export interface OpenTigAuthDescriptor {

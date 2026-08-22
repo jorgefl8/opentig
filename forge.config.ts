@@ -98,7 +98,6 @@ const config: ForgeConfig = {
         || file === '/node_modules'
         || file.startsWith('/node_modules/uiohook-napi')
         || file.startsWith('/node_modules/node-gyp-build')
-        || file.startsWith('/node_modules/ws')
         || isTrashRuntimeModule(file));
     },
   },

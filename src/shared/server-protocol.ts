@@ -2,6 +2,7 @@ import type { IpcResult } from './contracts';
 import type { OpenTigRuntimeEvent } from './runtime-events';
 
 export const OPEN_TIG_PROTOCOL_VERSION = 1;
+export const OPEN_TIG_SESSION_COOKIE = 'opentig_session';
 
 export type OpenTigClientMessage =
   | { type: 'request'; id: string; command: string; args: unknown[] }

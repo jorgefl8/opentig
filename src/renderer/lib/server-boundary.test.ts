@@ -34,6 +34,15 @@ describe('renderer/server boundary', () => {
   it('removed the temporary server IPC adapter', async () => {
     await expect(access(path.join(process.cwd(), 'src', 'main', 'ipc', 'registerServerIpcAdapter.ts'))).rejects.toThrow();
   });
+
+  it('keeps Electron main free of the domain runtime and in-process server', async () => {
+    const source = await readFile(path.join(process.cwd(), 'src', 'main.ts'), 'utf8');
+    expect(source).not.toContain('packages/server');
+    expect(source).not.toContain("./main/runtime/");
+    expect(source).not.toContain("./main/git/");
+    expect(source).not.toContain('runOpenTigServer');
+    expect(source).toContain('utilityProcess.fork');
+  });
 });
 
 async function sourceFiles(directory: string): Promise<string[]> {

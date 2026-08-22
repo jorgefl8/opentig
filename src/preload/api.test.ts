@@ -21,7 +21,9 @@ describe('preload desktop API', () => {
 
     api.app.setZoomFactor(2);
     await api.app.setTitleBarTheme(true);
+    await api.repository.revealEntry('C:\\repo\\file.txt');
     expect(setZoom).toHaveBeenCalledWith(1.3);
     expect(ipc.invoke).toHaveBeenCalledWith(OPEN_TIG_DESKTOP_IPC.titleBarTheme, true);
+    expect(ipc.invoke).toHaveBeenCalledWith(OPEN_TIG_DESKTOP_IPC.repositoryRevealEntry, 'C:\\repo\\file.txt');
   });
 });

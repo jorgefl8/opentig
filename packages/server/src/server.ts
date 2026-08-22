@@ -8,6 +8,7 @@ import {
 } from '../../../src/main/runtime/create-runtime';
 import type { OpenTigHost } from '../../../src/main/runtime/OpenTigHost';
 import { registerServerCommands } from '../../../src/main/runtime/registerServerCommands';
+import { SystemTrash } from '../../../src/main/platform/SystemTrash';
 import { OPEN_TIG_PROTOCOL_VERSION } from '../../../src/shared/server-protocol';
 import { OpenTigSessionAuth, type OpenTigBootstrapAuthSource } from './auth';
 import { OpenTigServer, type OpenTigServerAddress } from './OpenTigServer';
@@ -18,6 +19,7 @@ export interface OpenTigServerConfig extends Omit<CreateOpenTigRuntimeOptions, '
   auth: OpenTigBootstrapAuthSource;
   serverDataPath?: string;
   clientRoot?: string;
+  trashModulePath?: string;
   host?: string;
   port?: number;
   mode?: OpenTigServerMode;
@@ -40,9 +42,8 @@ export interface RunningOpenTigServer extends OpenTigServerAddress {
 }
 
 /**
- * Single construction boundary shared by future CLI and utility-process
- * adapters. HTTP/WebSocket and persistent owner authentication live here;
- * current desktop boot remains untouched as rollback path.
+ * Single construction boundary shared by CLI and utility-process adapters.
+ * HTTP/WebSocket and persistent owner authentication live here.
  */
 export async function runOpenTigServer(config: OpenTigServerConfig): Promise<RunningOpenTigServer> {
   let transport: OpenTigServer | null = null;
@@ -58,7 +59,11 @@ export async function runOpenTigServer(config: OpenTigServerConfig): Promise<Run
       aiLogPath: config.aiLogPath,
       runtimeMode: 'headless',
       platform: config.platform,
-      ...(config.trash ? { trash: config.trash } : {}),
+      ...(config.trash
+        ? { trash: config.trash }
+        : config.trashModulePath
+          ? { trash: new SystemTrash(undefined, process.platform, config.trashModulePath) }
+          : {}),
       onEvent: (event) => {
         config.onEvent?.(event);
         transport?.publish(event);

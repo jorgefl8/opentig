@@ -19,5 +19,8 @@ export interface OpenTigDesktopApi {
     preferencesChanged(preferences: Preferences): Promise<void>;
   };
   clipboard: OpenTigApi['clipboard'];
-  repository: Pick<OpenTigApi['repository'], 'select' | 'selectRelocation' | 'revealEntry'>;
+  repository: Pick<OpenTigApi['repository'], 'select' | 'selectRelocation'> & {
+    /** Absolute path already resolved and authorized by the server. */
+    revealEntry(target: string): Promise<void>;
+  };
 }

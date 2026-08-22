@@ -34,7 +34,7 @@ export function createDesktopApi(
         repositoryName,
         previousPath,
       ),
-      revealEntry: (id, path) => invoke(OPEN_TIG_DESKTOP_IPC.repositoryRevealEntry, id, path),
+      revealEntry: (target) => invoke(OPEN_TIG_DESKTOP_IPC.repositoryRevealEntry, target),
     },
   };
 }

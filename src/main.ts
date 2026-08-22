@@ -1,18 +1,30 @@
-import { randomBytes } from 'node:crypto';
 import path from 'node:path';
-import { app, BrowserWindow, nativeTheme, session, shell, type WebContents } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  nativeTheme,
+  session,
+  shell,
+  utilityProcess,
+  type WebContents,
+} from 'electron';
 import started from 'electron-squirrel-startup';
-import { OPEN_TIG_SESSION_COOKIE, OneTimeBootstrapAuthSource } from '../packages/server/src/auth';
-import { runOpenTigServer, type RunningOpenTigServer } from '../packages/server/src/server';
 import { createElectronHostAdapter } from './main/ipc/ElectronHostAdapter';
 import { registerDesktopHandlers } from './main/ipc/registerDesktopHandlers';
 import { createPerformanceSampler, type PerformanceSampler } from './main/performance/PerformanceSampler';
 import { startPerformanceAutomation } from './main/performance/PerformanceAutomation';
-import { normalizeRuntimePlatform } from './main/runtime/create-runtime';
-import { SystemTrash } from './main/platform/SystemTrash';
+import {
+  ServerPortConflictError,
+  ServerProcessManager,
+  type ServerProcessAddress,
+  type ServerProcessState,
+} from './main/server/ServerProcessManager';
 import { startGlobalDoubleControlShortcut } from './main/shortcuts/GlobalDoubleControlShortcut';
-import { getWindowTitleBarOptions, shouldUseDarkTitleBar } from './main/window/WindowTitleBar';
+import { DesktopWindowState } from './main/window/DesktopWindowState';
+import { getWindowTitleBarOptions } from './main/window/WindowTitleBar';
 import { normalizeExternalUrl } from './shared/external-url';
+import { OPEN_TIG_SESSION_COOKIE } from './shared/server-protocol';
 
 if (started) app.quit();
 
@@ -20,11 +32,16 @@ const hasLock = app.requestSingleInstanceLock();
 if (!hasLock) app.quit();
 
 let mainWindow: BrowserWindow | null = null;
-let runningServer: RunningOpenTigServer | null = null;
+let serverManager: ServerProcessManager | null = null;
+let windowState: DesktopWindowState | null = null;
+let allowedServerOrigin: string | null = null;
 let performanceSampler: PerformanceSampler | null = null;
 let stopGlobalDoubleControlShortcut: (() => void) | null = null;
 let shutdownStarted = false;
 let shutdownReady = false;
+
+const CONNECTING_PAGE_URL = startupPageUrl('Starting OpenTig…', 'Connecting to the local server.');
+const ERROR_PAGE_URL = startupPageUrl('OpenTig server is offline', 'See the server log for details, then restart OpenTig.');
 
 function getAppIconPath(): string {
   return app.isPackaged
@@ -54,23 +71,19 @@ function applyDoubleControlShortcutPreference(enabled: boolean): void {
 }
 
 async function createWindow(): Promise<void> {
-  const server = await ensureServer();
-  const runtime = server.runtime;
-  const { settings } = runtime.services;
+  if (!serverManager || !windowState) throw new Error('Desktop services are not initialized.');
+  const bounds = await windowState.load();
 
   mainWindow = new BrowserWindow({
-    ...settings.windowBounds,
+    ...bounds,
     minWidth: 900,
     minHeight: 600,
     show: false,
     backgroundColor: '#171614',
-    title: 'OpenTig',
+    title: 'OpenTig — Connecting…',
     icon: getAppIconPath(),
     autoHideMenuBar: true,
-    ...getWindowTitleBarOptions(
-      shouldUseDarkTitleBar(settings.preferences.theme, nativeTheme.shouldUseDarkColors),
-      process.platform,
-    ),
+    ...getWindowTitleBarOptions(nativeTheme.shouldUseDarkColors, process.platform),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
@@ -80,17 +93,14 @@ async function createWindow(): Promise<void> {
     },
   });
 
-  // Always start maximized (filling the work area); persisted bounds remain the
-  // restore-down size. Maximizing while hidden avoids a non-maximized flash.
+  await mainWindow.loadURL(CONNECTING_PAGE_URL);
   mainWindow.maximize();
+  mainWindow.show();
+  mainWindow.focus();
 
   let stopPerformanceAutomation: () => void = () => {};
   const host = createElectronHostAdapter(mainWindow);
-  const removeHandlers = registerDesktopHandlers(
-    runtime.services.repositories,
-    host,
-    applyDoubleControlShortcutPreference,
-  );
+  const removeHandlers = registerDesktopHandlers(host, applyDoubleControlShortcutPreference);
 
   const openExternal = (value: string) => {
     const url = normalizeExternalUrl(value);
@@ -101,15 +111,14 @@ async function createWindow(): Promise<void> {
     return { action: 'deny' };
   });
   mainWindow.webContents.on('will-navigate', (event, url) => {
-    if (new URL(url).origin === server.origin) return;
+    if (url === CONNECTING_PAGE_URL || url === ERROR_PAGE_URL || (allowedServerOrigin && safeOrigin(url) === allowedServerOrigin)) return;
     event.preventDefault();
     openExternal(url);
   });
-  mainWindow.on('focus', () => runtime.refreshActiveRepositoryIfStale());
   mainWindow.on('close', () => {
-    if (!mainWindow) return;
-    const bounds = mainWindow.getNormalBounds();
-    void settings.setWindowBounds({ width: bounds.width, height: bounds.height, x: bounds.x, y: bounds.y });
+    if (!mainWindow || !windowState) return;
+    const normal = mainWindow.getNormalBounds();
+    void windowState.save({ width: normal.width, height: normal.height, x: normal.x, y: normal.y });
   });
   mainWindow.on('closed', () => {
     stopPerformanceAutomation();
@@ -117,79 +126,106 @@ async function createWindow(): Promise<void> {
     mainWindow = null;
   });
 
-  await mainWindow.loadURL(server.origin);
-  if (!mainWindow.isDestroyed()) {
-    mainWindow.show();
-    mainWindow.focus();
-    stopPerformanceAutomation = startPerformanceAutomation(mainWindow, performanceSampler);
+  try {
+    await serverManager.start();
+    const server = serverManager.current;
+    if (!server) throw new Error('OpenTig server stopped during startup.');
+    allowedServerOrigin = server.origin;
+    await mainWindow.loadURL(server.origin);
+    if (!mainWindow.isDestroyed()) {
+      mainWindow.setTitle('OpenTig');
+      mainWindow.show();
+      mainWindow.focus();
+      stopPerformanceAutomation = startPerformanceAutomation(mainWindow, performanceSampler);
+    }
+  } catch (error) {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.setTitle('OpenTig — Server error');
+      await mainWindow.loadURL(ERROR_PAGE_URL).catch(() => undefined);
+    }
+    const message = error instanceof ServerPortConflictError
+      ? error.message
+      : 'The OpenTig server could not start. See the desktop server log for details.';
+    dialog.showErrorBox('OpenTig server error', message);
   }
-  applyDoubleControlShortcutPreference(settings.preferences.doubleControlShortcutEnabled);
 }
 
-async function ensureServer(): Promise<RunningOpenTigServer> {
-  if (runningServer) return runningServer;
-  const desktopSecret = randomBytes(32).toString('base64url');
+function createServerManager(): ServerProcessManager {
   const userData = app.getPath('userData');
-  const server = await runOpenTigServer({
-    appVersion: app.getVersion(),
-    auth: new OneTimeBootstrapAuthSource({ desktopSecret }),
+  const serverRoot = app.isPackaged
+    ? path.join(process.resourcesPath, 'opentig-server')
+    : path.join(app.getAppPath(), 'packages', 'server', '.resource', 'opentig-server');
+  return new ServerProcessManager({
+    modulePath: path.join(serverRoot, 'utility.mjs'),
+    cwd: userData,
+    logPath: path.join(userData, 'logs', 'server.log'),
     settingsPath: path.join(userData, 'settings.json'),
     aiLogPath: path.join(userData, 'ai-log.jsonl'),
     serverDataPath: path.join(userData, 'server'),
-    clientRoot: app.isPackaged
-      ? path.join(process.resourcesPath, 'opentig-server', 'client')
-      : path.join(app.getAppPath(), 'packages', 'server', '.client'),
-    platform: normalizeRuntimePlatform(process.platform),
-    trash: new SystemTrash(
-      undefined,
-      process.platform,
-      app.isPackaged
-        ? path.join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', 'trash', 'index.js')
-        : undefined,
-    ),
-    host: '127.0.0.1',
-    port: 0,
-    mode: 'desktop',
-    logger: (level, message) => console[level](`[server] ${message}`),
+    clientRoot: path.join(serverRoot, 'client'),
+    ...(app.isPackaged
+      ? { trashModulePath: path.join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', 'trash', 'index.js') }
+      : {}),
+    appVersion: app.getVersion(),
+    platform: normalizePlatform(process.platform),
+    fork: (modulePath, args, options) => utilityProcess.fork(modulePath, args, options),
+    onReady: installDesktopSession,
+    onState: applyServerState,
   });
-  try {
-    await installDesktopSession(server.origin, desktopSecret);
-  } catch (error) {
-    await server.close();
-    throw error;
-  }
-  runningServer = server;
-  return server;
 }
 
-async function installDesktopSession(origin: string, desktopSecret: string): Promise<void> {
-  let cookies = await session.defaultSession.cookies.get({ url: origin, name: OPEN_TIG_SESSION_COOKIE });
+function applyServerState(state: ServerProcessState): void {
+  if (state.status === 'ready') {
+    allowedServerOrigin = state.origin;
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setTitle('OpenTig');
+  } else if (state.status === 'restarting') {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setTitle('OpenTig — Reconnecting…');
+  } else if (state.status === 'failed') {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setTitle('OpenTig — Server offline');
+  }
+}
+
+async function installDesktopSession(server: ServerProcessAddress, desktopSecret: string): Promise<void> {
+  let cookies = await session.defaultSession.cookies.get({ url: server.origin, name: OPEN_TIG_SESSION_COOKIE });
   const currentCookie = cookies[0]?.value;
-  const descriptor = await fetch(`${origin}/api/auth/descriptor`, {
+  const descriptor = await fetch(`${server.origin}/api/auth/descriptor`, {
     headers: currentCookie ? { Cookie: `${OPEN_TIG_SESSION_COOKIE}=${currentCookie}` } : {},
   });
   if (descriptor.ok) {
     const state = await descriptor.json() as { authenticated?: unknown };
     if (state.authenticated === true) return;
   }
-  const response = await fetch(`${origin}/api/auth/desktop`, {
+  const response = await fetch(`${server.origin}/api/auth/desktop`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Origin: origin },
+    headers: { 'Content-Type': 'application/json', Origin: server.origin },
     body: JSON.stringify({ secret: desktopSecret }),
   });
   if (response.status !== 204) throw new Error('Could not authenticate the desktop with the OpenTig server.');
   const value = response.headers.get('set-cookie')?.match(new RegExp(`^${OPEN_TIG_SESSION_COOKIE}=([^;]+)`))?.[1];
   if (!value) throw new Error('OpenTig server did not return a desktop session.');
   await session.defaultSession.cookies.set({
-    url: origin,
+    url: server.origin,
     name: OPEN_TIG_SESSION_COOKIE,
     value,
     path: '/',
     httpOnly: true,
     sameSite: 'strict',
   });
-  cookies = await session.defaultSession.cookies.get({ url: origin, name: OPEN_TIG_SESSION_COOKIE });
+  cookies = await session.defaultSession.cookies.get({ url: server.origin, name: OPEN_TIG_SESSION_COOKIE });
   if (cookies.length === 0) throw new Error('Could not install the OpenTig desktop session.');
+}
+
+function safeOrigin(value: string): string | null {
+  try { return new URL(value).origin; } catch { return null; }
+}
+
+function startupPageUrl(heading: string, detail: string): string {
+  const html = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><style>html,body{height:100%;margin:0;background:#171614;color:#f4f1ed;font-family:system-ui,sans-serif}body{display:grid;place-items:center}.state{text-align:center}.mark{width:28px;height:28px;margin:0 auto 18px;border:3px solid #5b5752;border-top-color:#e87847;border-radius:50%;animation:spin .8s linear infinite}h1{font-size:18px;margin:0 0 8px}p{font-size:13px;color:#aaa39c;margin:0}@keyframes spin{to{transform:rotate(360deg)}}</style></head><body><main class="state"><div class="mark" aria-hidden="true"></div><h1>${heading}</h1><p>${detail}</p></main></body></html>`;
+  return `data:text/html;charset=UTF-8,${encodeURIComponent(html)}`;
+}
+
+function normalizePlatform(platform: NodeJS.Platform): 'win32' | 'darwin' | 'linux' | 'other' {
+  return platform === 'win32' || platform === 'darwin' || platform === 'linux' ? platform : 'other';
 }
 
 app.on('second-instance', () => {
@@ -203,6 +239,13 @@ app.whenReady().then(async () => {
   } catch (error) {
     console.error('Could not start the OpenTig performance sampler.', error);
   }
+  const userData = app.getPath('userData');
+  windowState = new DesktopWindowState(
+    path.join(userData, 'desktop-window.json'),
+    path.join(userData, 'settings.json'),
+  );
+  serverManager = createServerManager();
+
   const clipboardPermissions = new Set(['clipboard-read', 'clipboard-sanitized-write']);
   const trustedClipboardRequest = (webContents: WebContents | null, permission: string) => (
     webContents === mainWindow?.webContents && clipboardPermissions.has(permission)
@@ -220,12 +263,15 @@ app.on('before-quit', (event) => {
   stopGlobalDoubleControlShortcut?.();
   stopGlobalDoubleControlShortcut = null;
   const sampler = performanceSampler;
-  const server = runningServer;
+  const manager = serverManager;
+  const desktopState = windowState;
   performanceSampler = null;
-  runningServer = null;
+  serverManager = null;
+  windowState = null;
   const tasks: Promise<unknown>[] = [];
-  if (server) tasks.push(server.close());
+  if (manager) tasks.push(manager.stop());
   if (sampler) tasks.push(sampler.stop());
+  if (desktopState) tasks.push(desktopState.flush());
   void Promise.allSettled(tasks).then((results) => {
     for (const result of results) {
       if (result.status === 'rejected') console.error('Could not finish an OpenTig shutdown task.', result.reason);

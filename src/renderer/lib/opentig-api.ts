@@ -11,6 +11,11 @@ export const opentig: OpenTigApi = {
   ...server,
   app: {
     ...server.app,
+    bootstrap: async () => {
+      const data = await server.app.bootstrap();
+      await desktop?.app.preferencesChanged(data.preferences);
+      return data;
+    },
     capabilities: async () => {
       const capabilities = await server.app.capabilities();
       return {
@@ -48,7 +53,10 @@ export const opentig: OpenTigApi = {
       const value = window.prompt(`New server path for ${repositoryName}`, previousPath);
       return value?.trim() || null;
     },
-    revealEntry: (repositoryId, path) => desktop?.repository.revealEntry(repositoryId, path)
-      ?? Promise.reject(new Error('Reveal in file manager is available only in the desktop app.')),
+    revealEntry: async (repositoryId, filePath) => {
+      if (!desktop) throw new Error('Reveal in file manager is available only in the desktop app.');
+      const target = await server.repository.getAbsolutePath(repositoryId, filePath);
+      await desktop.repository.revealEntry(target);
+    },
   },
 };
