@@ -1,13 +1,11 @@
 import type { OpenTigApi } from './contracts';
 
 /**
- * Native desktop and renderer-local capabilities kept outside the server.
- * Text clipboard and external links remain in this compatibility surface until
- * the renderer switches to browser APIs in Plan 002.
+ * Native desktop capabilities kept outside the server. Text clipboard and
+ * external links are renderer-local browser actions and never enter preload.
  */
 export interface OpenTigDesktopApi {
   app: Pick<OpenTigApi['app'], 'setZoomFactor' | 'setTitleBarTheme'>;
   clipboard: OpenTigApi['clipboard'];
-  shell: OpenTigApi['shell'];
-  repository: Pick<OpenTigApi['repository'], 'select' | 'revealEntry'>;
+  repository: Pick<OpenTigApi['repository'], 'select' | 'selectRelocation' | 'revealEntry'>;
 }

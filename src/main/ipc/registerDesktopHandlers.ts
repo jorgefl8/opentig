@@ -1,17 +1,13 @@
 import { lstat } from 'node:fs/promises';
 import { ipcMain } from 'electron';
-import type { IpcResult, RepositoryInfo } from '../../shared/contracts';
+import type { IpcResult } from '../../shared/contracts';
 import { IPC } from '../../shared/contracts';
-import { GitOperationError, serializeError } from '../../shared/errors';
+import { serializeError } from '../../shared/errors';
 import type { RepositoryService } from '../git/RepositoryService';
-import type { CommandRegistry } from '../runtime/CommandRegistry';
 import type { OpenTigHost } from '../runtime/OpenTigHost';
-import { FILE_CLIPBOARD_SESSION_STATE } from '../runtime/registerServerCommands';
-import { booleanArg, stringArg, textArg } from '../runtime/validators';
-import { DESKTOP_SESSION_ID } from './registerServerIpcAdapter';
+import { booleanArg, stringArg } from '../runtime/validators';
 
 export function registerDesktopHandlers(
-  registry: CommandRegistry,
   repositories: RepositoryService,
   host: OpenTigHost,
 ): () => void {
@@ -31,32 +27,23 @@ export function registerDesktopHandlers(
   handle(IPC.titleBarTheme, 'title-bar-theme', (dark) => {
     host.setTitleBarTheme(booleanArg(dark, 'title-bar-theme'));
   });
-  handle(IPC.clipboardReadText, 'clipboard-read-text', () => host.readClipboardText());
-  handle(IPC.clipboardWriteText, 'clipboard-write-text', (text) => {
-    registry.clearSessionState(DESKTOP_SESSION_ID, FILE_CLIPBOARD_SESSION_STATE);
-    host.writeClipboardText(textArg(text, 'clipboard-write-text', 8 * 1024 * 1024));
-  });
-  handle(IPC.shellOpenExternal, 'open-external', async (url) => {
-    const value = stringArg(url, 'open-external', 2_048);
-    let parsed: URL;
-    try { parsed = new URL(value); } catch {
-      throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'open-external', message: 'Invalid URL.' });
-    }
-    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:' && parsed.protocol !== 'mailto:') {
-      throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'open-external', message: 'Only web or mail links can be opened.' });
-    }
-    await host.openExternal(parsed.toString());
-  });
+  handle(IPC.clipboardReadFilePaths, 'clipboard-read-file-paths', () => host.readClipboardFilePaths());
+  handle(IPC.clipboardReadImagePng, 'clipboard-read-image-png', () => host.readClipboardImagePng());
 
-  channels.push(IPC.repositorySelect);
-  ipcMain.handle(IPC.repositorySelect, async (): Promise<IpcResult<RepositoryInfo | null>> => {
-    try {
-      const selectedPath = await host.selectDirectory('Open Git repository');
-      if (!selectedPath) return { ok: true, value: null };
-      return registry.execute(DESKTOP_SESSION_ID, IPC.repositoryOpenPath, [selectedPath]);
-    } catch (error) {
-      return { ok: false, error: serializeError(error, 'select-repository') };
-    }
+  handle(IPC.repositorySelect, 'select-repository', (title) => host.selectDirectory(
+    title === undefined ? 'Open Git repository' : stringArg(title, 'select-repository', 256),
+  ));
+  handle(IPC.repositorySelectRelocation, 'select-repository-relocation', async (repositoryName, previousPath) => {
+    const name = stringArg(repositoryName, 'select-repository-relocation', 512);
+    const oldPath = stringArg(previousPath, 'select-repository-relocation', 32_768);
+    const locate = await host.confirm({
+      title: 'Repository unavailable',
+      message: `OpenTig could not open ${name}.`,
+      detail: `${oldPath}\n\nIf the repository moved, locate its new folder. Its project assignment, open tabs, and expanded folders will be preserved.`,
+      confirmLabel: 'Locate repository',
+      defaultAction: 'confirm',
+    });
+    return locate ? host.selectDirectory(`Locate ${name}`) : null;
   });
 
   handle(IPC.repositoryRevealEntry, 'reveal-entry', async (id, filePath) => {

@@ -18,6 +18,7 @@ import {
 } from './local-refs-model';
 import { openOnGitHub } from '@/features/pulls/gh-utils';
 import { queryKeys } from '@/lib/query-client';
+import { writeClipboardText } from '@/lib/browser-capabilities';
 
 interface LocalRefsDialogProps {
   open: boolean;
@@ -144,7 +145,7 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
 
   const copyPath = async (value: string) => {
     try {
-      await window.opentig.clipboard.writeText(value);
+      await writeClipboardText(value);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1600);
     } catch (reason) {

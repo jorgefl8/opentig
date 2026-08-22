@@ -13,6 +13,7 @@ import { syncScrollFraction } from './scroll-sync';
 import { buildFileEditorKeymap } from './source-editor-keymap';
 import { useEditableFileDraft } from './useEditableFileDraft';
 import { useShortcuts } from '@/app/useShortcuts';
+import { readClipboardText } from '@/lib/browser-capabilities';
 import './source-editor.css';
 
 type EditorConstructor = typeof import('@pierre/diffs/edit').Editor;
@@ -45,7 +46,7 @@ export function PierreEditBoundary({ enabled, children }: PropsWithChildren<{ en
   const createEditor = useCallback((options: EditorOptions<undefined>) => {
     if (!EditorClass) throw new Error('Pierre edit mode has not loaded.');
     return new EditorClass({
-      clipboard: { readText: () => window.opentig.clipboard.readText() },
+      clipboard: { readText: () => readClipboardText() },
       ...options,
     });
   }, [EditorClass]);

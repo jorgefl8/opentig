@@ -20,6 +20,11 @@ const TYPE_PROOF: readonly true[] = [
   true satisfies Equal<OpenTigServerCommandMap[typeof IPC.bootstrap]['args'], []>,
   true satisfies Equal<OpenTigServerCommandMap[typeof IPC.capabilities]['args'], []>,
   true satisfies Equal<OpenTigServerCommandMap[typeof IPC.repositoryOpenPath]['args'], [path: string]>,
+  true satisfies Equal<OpenTigServerCommandMap[typeof IPC.repositoryRelocateRecent]['args'], [id: string, path: string]>,
+  true satisfies Equal<
+    OpenTigServerCommandMap[typeof IPC.repositoryPasteEntries]['args'],
+    Parameters<OpenTigApi['repository']['pasteEntries']>
+  >,
   true satisfies Equal<
     OpenTigServerCommandMap[typeof IPC.preferences]['args'],
     Parameters<OpenTigApi['app']['setPreferences']>
@@ -32,7 +37,7 @@ const TYPE_PROOF: readonly true[] = [
 
 describe('OpenTig server protocol ownership', () => {
   it('keeps the combined compatibility API structurally exact', () => {
-    expect(TYPE_PROOF).toEqual([true, true, true, true, true, true, true]);
+    expect(TYPE_PROOF).toEqual([true, true, true, true, true, true, true, true, true]);
   });
 
   it('partitions every IPC channel into one server command or non-server channel', () => {

@@ -37,7 +37,7 @@ describe('preload API ownership additions', () => {
     expect(invoke).toHaveBeenCalledWith(IPC.capabilities);
   });
 
-  it('opens a typed server path without changing native selection', async () => {
+  it('keeps native selection separate from typed server opening', async () => {
     const { renderer, invoke } = createRenderer();
     const repository: RepositoryInfo = {
       id: 'repo-id',
@@ -48,12 +48,15 @@ describe('preload API ownership additions', () => {
     };
     invoke
       .mockResolvedValueOnce({ ok: true, value: repository })
+      .mockResolvedValueOnce({ ok: true, value: 'C:\\repo' })
       .mockResolvedValueOnce({ ok: true, value: repository });
     const api = createApi(renderer, vi.fn());
 
     await expect(api.repository.openPath('C:\\repo')).resolves.toEqual(repository);
-    await expect(api.repository.select()).resolves.toEqual(repository);
+    await expect(api.repository.select()).resolves.toBe('C:\\repo');
+    await expect(api.repository.relocateRecent('repo-id', 'C:\\repo')).resolves.toEqual(repository);
     expect(invoke).toHaveBeenNthCalledWith(1, IPC.repositoryOpenPath, 'C:\\repo');
     expect(invoke).toHaveBeenNthCalledWith(2, IPC.repositorySelect);
+    expect(invoke).toHaveBeenNthCalledWith(3, IPC.repositoryRelocateRecent, 'repo-id', 'C:\\repo');
   });
 });

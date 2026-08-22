@@ -47,6 +47,7 @@ interface FilesViewProps {
   showDotEnvFiles: boolean;
   activePath: string | null;
   readOnly: boolean;
+  fileClipboardAvailable: boolean;
   historyState: FileHistoryState;
   onUndo(): Promise<void>;
   onRedo(): Promise<void>;
@@ -128,6 +129,7 @@ export function FilesView({
   showDotEnvFiles,
   activePath,
   readOnly,
+  fileClipboardAvailable,
   historyState,
   onUndo,
   onRedo,
@@ -491,7 +493,7 @@ export function FilesView({
       void onCutEntries(entries);
       return;
     }
-    if (command && key === 'v' && !readOnly) {
+    if (command && key === 'v' && !readOnly && fileClipboardAvailable) {
       event.preventDefault();
       const target = lead ? targetDirectoryFor(lead) : parentDirectory(entries[0]?.path ?? '');
       void onPaste(target);
@@ -683,6 +685,7 @@ export function FilesView({
                   active={activePath === entry.path}
                   multiSelected={multiSelected}
                   readOnly={readOnly}
+                  fileClipboardAvailable={fileClipboardAvailable}
                   historyState={historyState}
                   onUndo={onUndo}
                   onRedo={onRedo}
@@ -769,6 +772,7 @@ interface FileRowProps {
   active: boolean;
   multiSelected: boolean;
   readOnly: boolean;
+  fileClipboardAvailable: boolean;
   historyState: FileHistoryState;
   onUndo(): Promise<void>;
   onRedo(): Promise<void>;
@@ -802,6 +806,7 @@ function FileRow({
   active,
   multiSelected,
   readOnly,
+  fileClipboardAvailable,
   historyState,
   onUndo,
   onRedo,
@@ -904,9 +909,11 @@ function FileRow({
         <ContextMenuItem disabled={readOnly} onClick={() => onCut(entry)}>
           <IconCut aria-hidden="true" /> Cut <span className="ml-auto text-[10px] text-muted-foreground">Ctrl+X</span>
         </ContextMenuItem>
-        <ContextMenuItem disabled={readOnly} onClick={() => onPasteInto(entry)}>
-          <IconClipboard aria-hidden="true" /> Paste <span className="ml-auto text-[10px] text-muted-foreground">Ctrl+V</span>
-        </ContextMenuItem>
+        {fileClipboardAvailable && (
+          <ContextMenuItem disabled={readOnly} onClick={() => onPasteInto(entry)}>
+            <IconClipboard aria-hidden="true" /> Paste <span className="ml-auto text-[10px] text-muted-foreground">Ctrl+V</span>
+          </ContextMenuItem>
+        )}
         <ContextMenuSeparator />
         <ContextMenuItem disabled={readOnly || multiSelected} onClick={() => onRename(entry)}>
           <IconEdit aria-hidden="true" /> Rename <span className="ml-auto text-[10px] text-muted-foreground">F2</span>

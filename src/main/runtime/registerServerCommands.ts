@@ -1,4 +1,5 @@
 import { lstat } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import type { DiffRequest, Preferences } from '../../shared/contracts';
 import { IPC } from '../../shared/contracts';
 import { GitOperationError } from '../../shared/errors';
@@ -31,7 +32,7 @@ export function registerServerCommands(
   };
   const openRepositoryPath = async (selectedPath: string, context: CommandExecutionContext) => {
     const repository = await services.repositories.openPath(selectedPath);
-    fileClipboardState(context).pendingCutPaths = null;
+    fileClipboardState(context).pendingCut = null;
     services.watcher.start(repository);
     services.events.activeRepositoryChanged(repository);
     return repository;
@@ -86,25 +87,18 @@ export function registerServerCommands(
   ));
   handleWithContext(IPC.repositoryOpenRecent, 'open-recent', async (context, id) => {
     const repositoryId = stringArg(id, 'open-recent', 64);
-    let repository;
-    try {
-      repository = await services.repositories.openRecent(repositoryId);
-    } catch (error) {
-      const recent = services.repositories.recent(repositoryId);
-      if (!recent) throw error;
-      const locate = await host.confirm({
-        title: 'Repository unavailable',
-        message: `OpenTig could not open ${recent.repositoryName}.`,
-        detail: `${recent.path}\n\nIf the repository moved, locate its new folder. Its project assignment, open tabs, and expanded folders will be preserved.`,
-        confirmLabel: 'Locate repository',
-        defaultAction: 'confirm',
-      });
-      if (!locate) return null;
-      const selectedPath = await host.selectDirectory(`Locate ${recent.repositoryName}`);
-      if (!selectedPath) return null;
-      repository = await services.repositories.relocateRecent(repositoryId, selectedPath);
-    }
-    fileClipboardState(context).pendingCutPaths = null;
+    const repository = await services.repositories.openRecent(repositoryId);
+    fileClipboardState(context).pendingCut = null;
+    services.watcher.start(repository);
+    services.events.activeRepositoryChanged(repository);
+    return repository;
+  });
+  handleWithContext(IPC.repositoryRelocateRecent, 'relocate-recent', async (context, id, selectedPath) => {
+    const repository = await services.repositories.relocateRecent(
+      stringArg(id, 'relocate-recent', 64),
+      stringArg(selectedPath, 'relocate-recent', 32_768),
+    );
+    fileClipboardState(context).pendingCut = null;
     services.watcher.start(repository);
     services.events.activeRepositoryChanged(repository);
     return repository;
@@ -145,44 +139,44 @@ export function registerServerCommands(
     const validPaths = services.repositories.validatePaths(repositoryId, pathsArg(rawPaths, 'copy-entries'));
     const absolutePaths = validPaths.map((filePath) => services.repositories.resolvePath(repositoryId, filePath));
     await Promise.all(absolutePaths.map((filePath) => lstat(filePath)));
-    fileClipboardState(context).pendingCutPaths = null;
-    host.writeClipboardText(absolutePaths.join('\r\n'));
-    return { copied: absolutePaths.length };
+    fileClipboardState(context).pendingCut = null;
+    return { copied: absolutePaths.length, paths: absolutePaths };
   });
   handleWithContext(IPC.repositoryCutEntries, 'cut-entries', async (context, id, rawPaths) => {
     const repositoryId = stringArg(id, 'cut-entries', 64);
     const validPaths = services.repositories.validatePaths(repositoryId, pathsArg(rawPaths, 'cut-entries'));
     const absolutePaths = validPaths.map((filePath) => services.repositories.resolvePath(repositoryId, filePath));
     await Promise.all(absolutePaths.map((filePath) => lstat(filePath)));
-    fileClipboardState(context).pendingCutPaths = absolutePaths;
-    host.writeClipboardText(absolutePaths.join('\r\n'));
-    return { cut: absolutePaths.length };
+    const transferId = randomUUID();
+    fileClipboardState(context).pendingCut = { paths: absolutePaths, transferId };
+    return { cut: absolutePaths.length, paths: absolutePaths, transferId };
   });
-  handleWithContext(IPC.repositoryPasteEntries, 'paste-entries', async (context, id, targetDirectory) => {
+  handleWithContext(IPC.repositoryPasteEntries, 'paste-entries', async (context, id, targetDirectory, rawSourcePaths, rawCutTransferId, rawImagePng) => {
     const repositoryId = stringArg(id, 'paste-entries', 64);
     const destination = textArg(targetDirectory, 'paste-entries', 32_768);
+    const filePaths = pathsArg(rawSourcePaths, 'paste-entries');
+    const cutTransferId = rawCutTransferId == null ? null : stringArg(rawCutTransferId, 'paste-entries', 64);
+    const imagePng = clipboardImageArg(rawImagePng);
     return services.fileHistory.serialize(repositoryId, async () => {
-      const filePaths = await host.readClipboardFilePaths();
       if (filePaths.length > 0) {
         const clipboardState = fileClipboardState(context);
-        if (clipboardState.pendingCutPaths && samePathSelection(filePaths, clipboardState.pendingCutPaths)) {
-          const sources = [...clipboardState.pendingCutPaths];
+        if (clipboardState.pendingCut?.transferId === cutTransferId && samePathSelection(filePaths, clipboardState.pendingCut.paths)) {
+          const sources = [...clipboardState.pendingCut.paths];
           const repository = services.repositories.get(repositoryId);
           const created = await services.files.movePaths(repositoryId, sources, destination);
-          clipboardState.pendingCutPaths = null;
+          clipboardState.pendingCut = null;
           const pairs = created.map((to, index) => ({ from: sources[index]!.slice(repository.path.length + 1).replace(/\\/g, '/'), to }));
           services.fileHistory.recordMove(repositoryId, created.length === 1 ? 'Move item' : `Move ${created.length} items`, pairs);
           return { status: 'pasted', source: 'cut', created } as const;
         }
-        clipboardState.pendingCutPaths = null;
+        clipboardState.pendingCut = null;
         const created = await services.files.pastePaths(repositoryId, filePaths, destination);
         services.fileHistory.recordPaste(repositoryId, { label: created.length === 1 ? 'Paste item' : `Paste ${created.length} items`, created, sources: created.map((to, index) => ({ source: filePaths[index]!, destination: to })) });
         return { status: 'pasted', source: 'files', created } as const;
       }
-      fileClipboardState(context).pendingCutPaths = null;
-      const image = host.readClipboardImagePng();
-      if (image) {
-        const created = await services.files.pasteImage(repositoryId, destination, image);
+      fileClipboardState(context).pendingCut = null;
+      if (imagePng) {
+        const created = await services.files.pasteImage(repositoryId, destination, imagePng);
         const snapshot = await services.files.snapshot(repositoryId, created, 50_000_000);
         services.fileHistory.recordPaste(repositoryId, { label: 'Paste image', created: [created], ...(snapshot ? { snapshots: [snapshot] } : {}), image: true });
         return { status: 'pasted', source: 'image', created: [created] } as const;
@@ -386,10 +380,10 @@ export function registerServerCommands(
 }
 
 export const FILE_CLIPBOARD_SESSION_STATE = 'file-clipboard';
-interface FileClipboardSessionState { pendingCutPaths: string[] | null }
+interface FileClipboardSessionState { pendingCut: { paths: string[]; transferId: string } | null }
 
 function fileClipboardState(context: CommandExecutionContext): FileClipboardSessionState {
-  return context.state(FILE_CLIPBOARD_SESSION_STATE, () => ({ pendingCutPaths: null }));
+  return context.state(FILE_CLIPBOARD_SESSION_STATE, () => ({ pendingCut: null }));
 }
 
 function samePathSelection(left: string[], right: string[]): boolean {
@@ -398,4 +392,10 @@ function samePathSelection(left: string[], right: string[]): boolean {
     ? value.replace(/[\\/]+$/, '').toLocaleLowerCase()
     : value.replace(/[\\/]+$/, '');
   return left.every((value, index) => normalize(value) === normalize(right[index]!));
+}
+
+function clipboardImageArg(value: unknown): Uint8Array | null {
+  if (value == null) return null;
+  if (value instanceof Uint8Array) return value;
+  throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'paste-entries', message: 'Invalid clipboard image.' });
 }

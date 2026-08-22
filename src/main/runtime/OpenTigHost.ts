@@ -19,12 +19,9 @@ export interface OpenTigHost {
   readonly capabilities: OpenTigHostCapabilities;
   preferencesChanged(preferences: Preferences): void;
   setTitleBarTheme(dark: boolean): void;
-  readClipboardText(): string;
-  writeClipboardText(text: string): void;
   readClipboardFilePaths(): Promise<string[]>;
   readClipboardImagePng(): Buffer | null;
   selectDirectory(title: string): Promise<string | null>;
   confirm(options: OpenTigHostConfirmation): Promise<boolean>;
-  openExternal(url: string): Promise<void>;
   revealItem(path: string): void;
 }

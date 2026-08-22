@@ -8,7 +8,7 @@ import {
   IconRefresh, IconRestore, IconSearch, IconSettings, IconSparkles, IconSun, IconTrash, IconX,
 } from '@tabler/icons-react';
 import { Toaster, sileo } from 'sileo';
-import type { AiHarnessId, AiHarnessStatus, BootstrapData, ChangesLayoutPreference, CommitSplitProposal, FileHistoryPathChange, FileHistoryState, GhCliStatus, GitHubRepositoryInfo, Preferences, PullRequestState, PullRequestSummary, PullResult, PushResult, RecentRepository, RepositoryInfo, RepositoryOrganization, RepositoryProject, ThemePreference, UndoLatestCommitResult } from '../../shared/contracts';
+import type { AiHarnessId, AiHarnessStatus, BootstrapData, ChangesLayoutPreference, CommitSplitProposal, FileHistoryPathChange, FileHistoryState, GhCliStatus, GitHubRepositoryInfo, OpenTigCapabilities, Preferences, PullRequestState, PullRequestSummary, PullResult, PushResult, RecentRepository, RepositoryInfo, RepositoryOrganization, RepositoryProject, ThemePreference, UndoLatestCommitResult } from '../../shared/contracts';
 import { matchesCombo, resolveShortcuts, type ShortcutMap } from '../../shared/shortcuts';
 import { ShortcutsProvider } from './ShortcutsContext';
 import { useShortcuts } from './useShortcuts';
@@ -56,6 +56,7 @@ import { refreshOperationsForScope } from './refresh-policy';
 import { resolveWindowControlsInset } from './window-controls';
 import { queryKeys, queryResourcesForScope } from '@/lib/query-client';
 import { shouldActivateChangeRow } from '@/features/changes/row-activation';
+import { fileCutTransferId, writeClipboardText, writeFileTransfer } from '@/lib/browser-capabilities';
 import { projectPullBlockedCopy, projectPullSuccessCopy, projectPushBlockedCopy, projectPushSuccessCopy, pullSuccessCopy, repositorySyncLoadingToast, visibleRepositorySyncActions, type ProjectSyncAction, type RepositorySyncCounts } from '@/features/repositories/project-sync';
 import opentigLogo from '../../../assets/opentig.svg';
 import {
@@ -92,6 +93,7 @@ class PushBlocked extends Error {
 export default function App() {
   const ipcQueryClient = useQueryClient();
   const [bootstrap, setBootstrap] = useState<BootstrapData | null>(null);
+  const [capabilities, setCapabilities] = useState<OpenTigCapabilities | null>(null);
   const [repository, setRepository] = useState<RepositoryInfo | null>(null);
   const [statusState, setStatus] = useState<RepositoryStatus | null>(null);
   const [filesState, setFiles] = useState<FileTreeEntry[] | null>(null);
@@ -213,6 +215,9 @@ export default function App() {
       setBootstrap(data);
       setRepository(data.activeRepository);
     }).catch((reason) => setError(messageOf(reason)));
+    window.opentig.app.capabilities().then((available) => {
+      if (active) setCapabilities(available);
+    }).catch(() => undefined);
     return () => { active = false; };
   }, [filesTreeStates]);
 
@@ -719,9 +724,9 @@ export default function App() {
 
   const openRepository = useCallback(async () => {
     try {
-      const selected = await window.opentig.repository.select();
-      if (!selected) return;
-      recordOpenedRepository(selected);
+      const selectedPath = await window.opentig.repository.select();
+      if (!selectedPath) return;
+      recordOpenedRepository(await window.opentig.repository.openPath(selectedPath));
     } catch (reason) { setError(messageOf(reason)); }
   }, [recordOpenedRepository]);
 
@@ -988,7 +993,7 @@ export default function App() {
     if (!repository || entries.length === 0) return;
     try {
       const paths = await Promise.all(entries.map((entry) => window.opentig.repository.getAbsolutePath(repository.id, entry.path)));
-      await window.opentig.clipboard.writeText(paths.join('\n'));
+      await writeClipboardText(paths.join('\n'));
       sileo.success({
         title: paths.length === 1 ? 'Path copied' : `${paths.length} paths copied`,
         description: entries.length === 1 ? entries[0]!.path : undefined,
@@ -1010,7 +1015,7 @@ export default function App() {
         sileo.info({ title: 'File is too large to copy safely', description: entry.path });
         return;
       }
-      await window.opentig.clipboard.writeText(result.content);
+      await writeClipboardText(result.content);
       sileo.success({ title: 'File copied', description: entry.path });
     } catch (reason) {
       sileo.error({ title: 'Could not copy file', description: messageOf(reason) });
@@ -1020,7 +1025,8 @@ export default function App() {
   const copyFileEntries = async (entries: FileTreeEntry[]) => {
     if (!repository || entries.length === 0) return;
     try {
-      await window.opentig.repository.copyEntries(repository.id, entries.map((entry) => entry.path));
+      const result = await window.opentig.repository.copyEntries(repository.id, entries.map((entry) => entry.path));
+      await writeFileTransfer(result.paths);
       sileo.success({
         title: entries.length === 1 ? (entries[0]!.type === 'directory' ? 'Folder copied' : 'File copied') : `${entries.length} items copied`,
         description: 'Select a destination folder in Files and press Ctrl+V.',
@@ -1038,7 +1044,8 @@ export default function App() {
       return;
     }
     try {
-      await window.opentig.repository.cutEntries(repository.id, entries.map((entry) => entry.path));
+      const result = await window.opentig.repository.cutEntries(repository.id, entries.map((entry) => entry.path));
+      await writeFileTransfer(result.paths, result.transferId);
       sileo.success({
         title: entries.length === 1 ? (entries[0]!.type === 'directory' ? 'Folder cut' : 'File cut') : `${entries.length} items cut`,
         description: 'Select a destination folder in Files and press Ctrl+V.',
@@ -1049,10 +1056,12 @@ export default function App() {
   };
 
   const pasteFileEntries = async (targetDirectory: string) => {
-    if (!repository || busy || status?.readOnly) return;
+    if (!repository || busy || status?.readOnly || !capabilities?.fileClipboard) return;
     setBusy('paste-file');
     try {
-      const result = await window.opentig.repository.pasteEntries(repository.id, targetDirectory);
+      const sourcePaths = await window.opentig.clipboard.readFilePaths();
+      const imagePng = sourcePaths.length === 0 ? await window.opentig.clipboard.readImagePng() : null;
+      const result = await window.opentig.repository.pasteEntries(repository.id, targetDirectory, sourcePaths, fileCutTransferId(sourcePaths), imagePng);
       if (result.status === 'empty') {
         sileo.info({ title: 'Clipboard does not contain files or an image' });
         return;
@@ -1389,8 +1398,16 @@ export default function App() {
   const selectRecent = async (id: string | null) => {
     if (!id || id === repository?.id) return;
     try {
-      const selected = await window.opentig.repository.openRecent(id);
-      if (selected) recordOpenedRepository(selected, id);
+      try {
+        const selected = await window.opentig.repository.openRecent(id);
+        if (selected) recordOpenedRepository(selected, id);
+      } catch (reason) {
+        const recent = bootstrap?.recentRepositories.find((candidate) => candidate.id === id);
+        if (!recent || !capabilities?.nativePicker) throw reason;
+        const selectedPath = await window.opentig.repository.selectRelocation(recent.repositoryName, recent.path);
+        if (!selectedPath) return;
+        recordOpenedRepository(await window.opentig.repository.relocateRecent(id, selectedPath), id);
+      }
     }
     catch (reason) { setError(messageOf(reason)); }
   };
@@ -1872,6 +1889,7 @@ export default function App() {
                   showDotEnvFiles={bootstrap.preferences.showDotEnvFiles}
                   activePath={viewerSelection?.type === 'file' ? viewerSelection.path : null}
                   readOnly={Boolean(status?.readOnly || busy)}
+                  fileClipboardAvailable={capabilities?.fileClipboard === true}
                   historyState={fileHistoryState}
                   onUndo={() => performFileHistory('undo')}
                   onRedo={() => performFileHistory('redo')}
@@ -1938,7 +1956,7 @@ export default function App() {
                   onSelect={(pr) => { selectViewer({ type: 'pull-request', number: pr.number }); }}
                   onCreate={() => setCreatePrOpen(true)}
                   onCopyCommand={(command) => {
-                    void window.opentig.clipboard.writeText(command)
+                    void writeClipboardText(command)
                       .then(() => sileo.success({ title: 'Command copied', description: command }))
                       .catch(() => sileo.error({ title: 'Could not copy the command' }));
                   }}
@@ -3049,7 +3067,7 @@ function CommitRow({ repositoryId, upstream, commit, graphRow, graphWidth, expan
   const deletions = files?.reduce((total, file) => total + file.deletions, 0) ?? 0;
 
   const copyOid = async () => {
-    try { await window.opentig.clipboard.writeText(commit.oid); sileo.success({ title: 'Hash copied', description: commit.oid }); }
+    try { await writeClipboardText(commit.oid); sileo.success({ title: 'Hash copied', description: commit.oid }); }
     catch { sileo.error({ title: 'Could not copy hash' }); }
   };
 

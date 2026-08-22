@@ -68,6 +68,24 @@ describe('CommandRegistry', () => {
     expect(handler).not.toHaveBeenCalled();
   });
 
+  it('counts typed-array payloads by binary bytes instead of JSON expansion', async () => {
+    const registry = new CommandRegistry();
+    const definition = { ...OPEN_TIG_SERVER_COMMANDS['repository.pasteEntries'], maxRequestBytes: 512 };
+    const handler = vi.fn(() => ({ status: 'empty' as const, created: [] as [] }));
+    registry.register(definition, handler);
+
+    const accepted = new Uint8Array(128);
+    await expect(registry.execute('session', IPC.repositoryPasteEntries, ['repo', '', [], null, accepted])).resolves.toMatchObject({ ok: true });
+    expect(handler).toHaveBeenCalledOnce();
+
+    const oversized = new Uint8Array(600);
+    await expect(registry.execute('session', IPC.repositoryPasteEntries, ['repo', '', [], null, oversized])).resolves.toMatchObject({
+      ok: false,
+      error: { code: 'INVALID_ARGUMENT', operation: 'paste-entries' },
+    });
+    expect(handler).toHaveBeenCalledOnce();
+  });
+
   it('preserves operation errors from command handlers', async () => {
     const registry = new CommandRegistry();
     registry.register(OPEN_TIG_SERVER_COMMANDS['repository.openPath'], () => {

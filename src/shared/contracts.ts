@@ -82,10 +82,13 @@ export type DeleteEntryResult = { deleted: true } | { deleted: false };
 
 export interface CopyEntriesResult {
   copied: number;
+  paths: string[];
 }
 
 export interface CutEntriesResult {
   cut: number;
+  paths: string[];
+  transferId: string;
 }
 
 export type PasteEntriesResult =
@@ -433,17 +436,19 @@ export interface OpenTigApi {
     setTitleBarTheme(dark: boolean): Promise<void>;
   };
   clipboard: {
-    readText(): Promise<string>;
-    writeText(text: string): Promise<void>;
-  };
-  shell: {
-    /** Opens an http(s):// or mailto: URL in the default browser/mail client; anything else is rejected. */
-    openExternal(url: string): Promise<void>;
+    /** Native file paths exposed only in direct response to an explicit paste action. */
+    readFilePaths(): Promise<string[]>;
+    /** Native clipboard image used by Files paste when no file paths are present. */
+    readImagePng(): Promise<Uint8Array | null>;
   };
   repository: {
-    select(): Promise<RepositoryInfo | null>;
+    /** Native directory picker only; opening and Git validation stay server-owned. */
+    select(title?: string): Promise<string | null>;
+    /** Native moved-repository confirmation and directory picker. */
+    selectRelocation(repositoryName: string, previousPath: string): Promise<string | null>;
     openPath(path: string): Promise<RepositoryInfo>;
-    openRecent(id: string): Promise<RepositoryInfo | null>;
+    openRecent(id: string): Promise<RepositoryInfo>;
+    relocateRecent(id: string, path: string): Promise<RepositoryInfo>;
     getStatus(id: string, includeStats?: boolean): Promise<RepositoryStatus>;
     getFiles(id: string): Promise<FileTreeEntry[]>;
     /** One level of a folder the tree left collapsed (ignored folders such as node_modules/). */
@@ -454,7 +459,7 @@ export interface OpenTigApi {
     getAbsolutePath(id: string, path: string): Promise<string>;
     copyEntries(id: string, paths: string[]): Promise<CopyEntriesResult>;
     cutEntries(id: string, paths: string[]): Promise<CutEntriesResult>;
-    pasteEntries(id: string, targetDirectory: string): Promise<PasteEntriesResult>;
+    pasteEntries(id: string, targetDirectory: string, sourcePaths: string[], cutTransferId?: string | null, imagePng?: Uint8Array | null): Promise<PasteEntriesResult>;
     moveEntry(id: string, path: string, targetDirectory: string): Promise<MoveEntryResult>;
     moveEntries(id: string, paths: string[], targetDirectory: string): Promise<MoveEntriesResult>;
     deleteEntry(id: string, path: string): Promise<DeleteEntryResult>;
@@ -542,8 +547,8 @@ export interface OpenTigApi {
 export type IpcResult<T> = { ok: true; value: T } | { ok: false; error: SerializedOperationError };
 
 export const IPC = {
-  bootstrap: 'app:bootstrap', capabilities: 'app:capabilities', preferences: 'app:preferences', filesTreeStateUpdate: 'app:files-tree-state', openFilesStateUpdate: 'app:open-files-state', titleBarTheme: 'app:title-bar-theme', projectCreate: 'projects:create', projectRename: 'projects:rename', projectRemove: 'projects:remove', projectAssign: 'projects:assign', clipboardReadText: 'clipboard:read-text', clipboardWriteText: 'clipboard:write-text', shellOpenExternal: 'shell:open-external', repositorySelect: 'repository:select',
-  repositoryOpenPath: 'repository:open-path', repositoryOpenRecent: 'repository:open-recent', repositoryStatus: 'repository:status', repositoryFiles: 'repository:files', repositoryDirectoryEntries: 'repository:directory-entries',
+  bootstrap: 'app:bootstrap', capabilities: 'app:capabilities', preferences: 'app:preferences', filesTreeStateUpdate: 'app:files-tree-state', openFilesStateUpdate: 'app:open-files-state', titleBarTheme: 'app:title-bar-theme', projectCreate: 'projects:create', projectRename: 'projects:rename', projectRemove: 'projects:remove', projectAssign: 'projects:assign', clipboardReadFilePaths: 'clipboard:read-file-paths', clipboardReadImagePng: 'clipboard:read-image-png', repositorySelect: 'repository:select', repositorySelectRelocation: 'repository:select-relocation',
+  repositoryOpenPath: 'repository:open-path', repositoryOpenRecent: 'repository:open-recent', repositoryRelocateRecent: 'repository:relocate-recent', repositoryStatus: 'repository:status', repositoryFiles: 'repository:files', repositoryDirectoryEntries: 'repository:directory-entries',
   repositoryReadFile: 'repository:read-file', repositoryReadImage: 'repository:read-image', repositoryWriteFile: 'repository:write-file', repositoryAbsolutePath: 'repository:absolute-path',
   repositoryCopyEntries: 'repository:copy-entries', repositoryCutEntries: 'repository:cut-entries', repositoryPasteEntries: 'repository:paste-entries', repositoryMoveEntry: 'repository:move-entry', repositoryDeleteEntry: 'repository:delete-entry',
   repositoryMoveEntries: 'repository:move-entries', repositoryDeleteEntries: 'repository:delete-entries', repositoryRevealEntry: 'repository:reveal-entry', repositoryRenameEntry: 'repository:rename-entry', repositoryCreateEntry: 'repository:create-entry',

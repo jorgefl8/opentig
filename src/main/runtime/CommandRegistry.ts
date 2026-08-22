@@ -117,7 +117,13 @@ export class CommandRegistry {
 
 function requestBytes(args: readonly unknown[]): number {
   try {
-    return Buffer.byteLength(JSON.stringify(args), 'utf8');
+    let binaryBytes = 0;
+    const serialized = JSON.stringify(args, (_key, value: unknown) => {
+      if (!(value instanceof Uint8Array)) return value;
+      binaryBytes += value.byteLength;
+      return { binaryBytes: value.byteLength };
+    });
+    return Buffer.byteLength(serialized, 'utf8') + binaryBytes;
   } catch {
     return Number.POSITIVE_INFINITY;
   }

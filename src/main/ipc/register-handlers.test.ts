@@ -1,4 +1,7 @@
-import type { IpcResult, RepositoryInfo } from '../../shared/contracts';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import type { CutEntriesResult, IpcResult, RepositoryInfo } from '../../shared/contracts';
 import { IPC } from '../../shared/contracts';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -52,6 +55,7 @@ function services() {
     openRecent: vi.fn(async () => repository),
     recent: vi.fn(() => ({ ...repository, lastOpenedAt: '2026-08-22T00:00:00.000Z' })),
     relocateRecent: vi.fn(async () => repository),
+    get: vi.fn(() => repository),
     validatePaths: vi.fn((_repositoryId: string, paths: string[]) => paths),
     resolvePath: vi.fn((_repositoryId: string, filePath: string) => `C:\\repo\\${filePath}`),
     status: vi.fn(async () => ({
@@ -62,6 +66,17 @@ function services() {
     })),
   };
   const operations = { discard: vi.fn(async () => undefined) };
+  const files = {
+    pastePaths: vi.fn(async () => ['destination.txt']),
+    movePaths: vi.fn(async () => ['destination.txt']),
+    pasteImage: vi.fn(async () => 'pasted-image.png'),
+    snapshot: vi.fn(async () => null),
+  };
+  const fileHistory = {
+    serialize: vi.fn(async (_repositoryId: string, action: () => Promise<unknown>) => action()),
+    recordMove: vi.fn(),
+    recordPaste: vi.fn(),
+  };
   const trash = { available: true, trashItem: vi.fn(async () => undefined) };
   const watcher = { start: vi.fn() };
   const github = {
@@ -91,6 +106,8 @@ function services() {
     ai,
     events,
     operations,
+    files,
+    fileHistory,
     trash,
     value: {
       runtimeMode: 'desktop',
@@ -101,6 +118,8 @@ function services() {
       ai,
       events,
       operations,
+      files,
+      fileHistory,
       trash,
     } as unknown as Services,
   };
@@ -159,30 +178,33 @@ describe('server IPC ownership additions', () => {
     expect(fixture.ai.statuses).toHaveBeenCalledOnce();
   });
 
-  it('keeps native selection as a thin adapter over server openPath', async () => {
+  it('returns a native selected path without opening it', async () => {
     const fixture = services();
     electron.dialog.showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: ['C:\\repo'] });
     registerHandlers(fixture.value);
 
-    await expect(invoke<RepositoryInfo | null>(IPC.repositorySelect)).resolves.toEqual({
+    await expect(invoke<string | null>(IPC.repositorySelect)).resolves.toEqual({
       ok: true,
-      value: repository,
+      value: 'C:\\repo',
     });
     expect(electron.dialog.showOpenDialog).toHaveBeenCalledWith(undefined, {
       properties: ['openDirectory'],
       title: 'Open Git repository',
     });
-    expect(fixture.repositories.openPath).toHaveBeenCalledWith('C:\\repo');
+    expect(fixture.repositories.openPath).not.toHaveBeenCalled();
   });
 
-  it('preserves relocation confirmation and native picker behavior', async () => {
+  it('keeps native relocation selection separate from server validation', async () => {
     const fixture = services();
-    fixture.repositories.openRecent.mockRejectedValueOnce(new Error('moved'));
     electron.dialog.showMessageBox.mockResolvedValueOnce({ response: 0 });
     electron.dialog.showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: ['C:\\repo-moved'] });
     registerHandlers(fixture.value);
 
-    await expect(invoke<RepositoryInfo | null>(IPC.repositoryOpenRecent, 'repo-id')).resolves.toEqual({
+    await expect(invoke<string | null>(IPC.repositorySelectRelocation, 'repo', 'C:\\repo')).resolves.toEqual({
+      ok: true,
+      value: 'C:\\repo-moved',
+    });
+    await expect(invoke<RepositoryInfo>(IPC.repositoryRelocateRecent, 'repo-id', 'C:\\repo-moved')).resolves.toEqual({
       ok: true,
       value: repository,
     });
@@ -196,6 +218,46 @@ describe('server IPC ownership additions', () => {
       title: 'Locate repo',
     });
     expect(fixture.repositories.relocateRecent).toHaveBeenCalledWith('repo-id', 'C:\\repo-moved');
+    expect(fixture.watcher.start).toHaveBeenCalledWith(repository);
+  });
+
+  it('passes explicit paste sources to server-owned validation and copying', async () => {
+    const fixture = services();
+    registerHandlers(fixture.value);
+
+    await expect(invoke(IPC.repositoryPasteEntries, 'repo-id', 'target', ['C:\\source.txt'], null, null)).resolves.toEqual({
+      ok: true,
+      value: { status: 'pasted', source: 'files', created: ['destination.txt'] },
+    });
+    expect(fixture.files.pastePaths).toHaveBeenCalledWith('repo-id', ['C:\\source.txt'], 'target');
+    expect(fixture.fileHistory.recordPaste).toHaveBeenCalledOnce();
+    expect(electron.clipboard.readText).not.toHaveBeenCalled();
+  });
+
+  it('moves a cut transfer only when the server-issued transfer id returns', async () => {
+    const temporary = await mkdtemp(path.join(tmpdir(), 'opentig-cut-transfer-'));
+    const source = path.join(temporary, 'source.txt');
+    await writeFile(source, 'source');
+    try {
+      const fixture = services();
+      fixture.repositories.resolvePath.mockReturnValue(source);
+      fixture.repositories.get.mockReturnValue({ ...repository, path: temporary });
+      registerHandlers(fixture.value);
+
+      const cut = await invoke<CutEntriesResult>(IPC.repositoryCutEntries, 'repo-id', ['source.txt']);
+      expect(cut.ok).toBe(true);
+      if (!cut.ok) throw new Error(cut.error.message);
+      const pasted = await invoke(IPC.repositoryPasteEntries, 'repo-id', 'target', [source], cut.value.transferId, null);
+
+      expect(pasted).toEqual({
+        ok: true,
+        value: { status: 'pasted', source: 'cut', created: ['destination.txt'] },
+      });
+      expect(fixture.files.movePaths).toHaveBeenCalledWith('repo-id', [source], 'target');
+      expect(fixture.files.pastePaths).not.toHaveBeenCalled();
+    } finally {
+      await rm(temporary, { recursive: true, force: true });
+    }
   });
 
   it('executes discard without asking the Electron host for confirmation', async () => {

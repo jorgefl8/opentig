@@ -1,5 +1,6 @@
 import type { PullRequestSummary } from '../../../shared/contracts';
 import type { SerializedGhError } from '../../../shared/errors';
+import { openExternalUrl } from '@/lib/browser-capabilities';
 
 export function ghDetail(reason: unknown): SerializedGhError | null {
   if (!(reason instanceof Error) || !('detail' in reason) || !reason.detail || typeof reason.detail !== 'object') return null;
@@ -33,5 +34,5 @@ export function reviewDecisionLabel(decision: string | null): string | null {
 }
 
 export function openOnGitHub(url: string): void {
-  void window.opentig.shell.openExternal(url).catch(() => undefined);
+  try { openExternalUrl(url); } catch { /* GitHub returned an invalid URL. */ }
 }

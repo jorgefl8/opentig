@@ -17,8 +17,6 @@ export function createElectronHostAdapter(
     },
     preferencesChanged: (preferences) => onPreferencesChanged?.(preferences),
     setTitleBarTheme: (dark) => applyWindowTitleBarTheme(window, dark),
-    readClipboardText: () => clipboard.readText(),
-    writeClipboardText: (text) => clipboard.writeText(text),
     readClipboardFilePaths: () => readClipboardFilePaths(clipboard),
     readClipboardImagePng: () => {
       const image = clipboard.readImage();
@@ -41,7 +39,6 @@ export function createElectronHostAdapter(
       });
       return result.response === 0;
     },
-    openExternal: (url) => shell.openExternal(url),
     revealItem: (target) => shell.showItemInFolder(target),
   };
 }

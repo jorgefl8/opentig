@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { app, BrowserWindow, nativeTheme, session } from 'electron';
+import { app, BrowserWindow, nativeTheme, session, shell, type WebContents } from 'electron';
 import started from 'electron-squirrel-startup';
 import { registerHandlers } from './main/ipc/register-handlers';
 import { IPC } from './shared/contracts';
@@ -10,6 +10,7 @@ import { createOpenTigRuntime, normalizeRuntimePlatform } from './main/runtime/c
 import { SystemTrash } from './main/platform/SystemTrash';
 import { startGlobalDoubleControlShortcut } from './main/shortcuts/GlobalDoubleControlShortcut';
 import { getWindowTitleBarOptions, shouldUseDarkTitleBar } from './main/window/WindowTitleBar';
+import { normalizeExternalUrl } from './shared/external-url';
 
 if (started) app.quit();
 
@@ -105,8 +106,18 @@ async function createWindow(): Promise<void> {
     onPreferencesChanged: (preferences) => applyDoubleControlShortcutPreference(preferences.doubleControlShortcutEnabled),
   });
 
-  mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-  mainWindow.webContents.on('will-navigate', (event) => event.preventDefault());
+  const openExternal = (value: string) => {
+    const url = normalizeExternalUrl(value);
+    if (url) void shell.openExternal(url).catch((error) => console.error('Could not open external URL.', error));
+  };
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    openExternal(url);
+    return { action: 'deny' };
+  });
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    event.preventDefault();
+    openExternal(url);
+  });
   mainWindow.on('focus', () => runtime.refreshActiveRepositoryIfStale());
   mainWindow.on('close', () => {
     if (!mainWindow) return;
@@ -143,7 +154,12 @@ app.whenReady().then(async () => {
   } catch (error) {
     console.error('Could not start the OpenTig performance sampler.', error);
   }
-  session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
+  const clipboardPermissions = new Set(['clipboard-read', 'clipboard-sanitized-write']);
+  const trustedClipboardRequest = (webContents: WebContents | null, permission: string) => (
+    webContents === mainWindow?.webContents && clipboardPermissions.has(permission)
+  );
+  session.defaultSession.setPermissionCheckHandler((webContents, permission) => trustedClipboardRequest(webContents, permission));
+  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => callback(trustedClipboardRequest(webContents, permission)));
   await createWindow();
 });
 

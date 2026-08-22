@@ -9,7 +9,7 @@ export interface OpenTigServerApi {
     | 'setFilesTreeExpandedPaths'
     | 'setOpenFilesState'>;
   projects: OpenTigApi['projects'];
-  repository: Omit<OpenTigApi['repository'], 'select' | 'revealEntry'>;
+  repository: Omit<OpenTigApi['repository'], 'select' | 'selectRelocation' | 'revealEntry'>;
   diff: OpenTigApi['diff'];
   index: OpenTigApi['index'];
   commits: OpenTigApi['commits'];

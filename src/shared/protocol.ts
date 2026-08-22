@@ -8,10 +8,10 @@ const FILE_WRITE_MAX_REQUEST_BYTES = 17 * 1024 * 1024;
 /** IPC entries that are intentionally not server request commands. */
 export const OPEN_TIG_NON_SERVER_IPC_KEYS = [
   'titleBarTheme',
-  'clipboardReadText',
-  'clipboardWriteText',
-  'shellOpenExternal',
+  'clipboardReadFilePaths',
+  'clipboardReadImagePng',
   'repositorySelect',
+  'repositorySelectRelocation',
   'repositoryRevealEntry',
   'repositoryChanged',
 ] as const satisfies readonly (keyof typeof IPC)[];
@@ -57,6 +57,7 @@ export const OPEN_TIG_SERVER_COMMANDS = {
 
   'repository.openPath': command(IPC.repositoryOpenPath, 'open-path', true),
   'repository.openRecent': command(IPC.repositoryOpenRecent, 'open-recent', true),
+  'repository.relocateRecent': command(IPC.repositoryRelocateRecent, 'relocate-recent', true),
   'repository.getStatus': command(IPC.repositoryStatus, 'status', false),
   'repository.getFiles': command(IPC.repositoryFiles, 'files', false),
   'repository.getDirectoryEntries': command(IPC.repositoryDirectoryEntries, 'directory-entries', false),
@@ -66,7 +67,7 @@ export const OPEN_TIG_SERVER_COMMANDS = {
   'repository.getAbsolutePath': command(IPC.repositoryAbsolutePath, 'absolute-path', false),
   'repository.copyEntries': command(IPC.repositoryCopyEntries, 'copy-entries', true),
   'repository.cutEntries': command(IPC.repositoryCutEntries, 'cut-entries', true),
-  'repository.pasteEntries': command(IPC.repositoryPasteEntries, 'paste-entries', true),
+  'repository.pasteEntries': command(IPC.repositoryPasteEntries, 'paste-entries', true, 66 * 1024 * 1024),
   'repository.moveEntry': command(IPC.repositoryMoveEntry, 'move-entry', true),
   'repository.moveEntries': command(IPC.repositoryMoveEntries, 'move-entries', true),
   'repository.deleteEntry': command(IPC.repositoryDeleteEntry, 'delete-entry', true),

@@ -82,7 +82,7 @@ It is intentionally not an IDE, hosting service, or replacement for the Git CLI.
 - Preview and edit Markdown, HTML, and SVG files through compact Preview/Code controls; switching between them restores roughly the same scroll position in the tab you land on, holding it while diagrams, formulas, and syntax highlighting finish laying out, and releasing it the moment you scroll yourself.
 - Render GitHub-flavoured Markdown with syntax-highlighted code, copy buttons, alerts, footnotes, KaTeX, and Mermaid diagrams. External links (`http(s)://`, protocol-relative, and `mailto:`) open in your system browser or mail client instead of navigating inside OpenTig; relative links to repository files open that file in a new tab, and `#anchor` links scroll within the preview. Hovering any link shows a tooltip with its destination (truncated when long) and what clicking it will do (open in browser, open in mail app, or open file).
 - Preview raster images with fit, 1:1, keyboard/wheel zoom, dimensions, and file-size information.
-- Select multiple files and folders, then copy, cut, paste, rename, create, or delete them. Deletion requires an in-app confirmation that lists the affected paths. Drag and drop moves one or many selected entries with a lifted preview, a count badge, and clear folder or repository-root destination feedback.
+- Select multiple files and folders, then copy, cut, paste, rename, create, or delete them. Desktop paste imports explicit file paths (or a clipboard image) only when you press `Ctrl+V` or choose Paste; runtimes without native file-clipboard support hide that action. Deletion requires an in-app confirmation that lists the affected paths. Drag and drop moves one or many selected entries with a lifted preview, a count badge, and clear folder or repository-root destination feedback.
 - Copy file paths or contents and reveal entries in Windows File Explorer.
 - Undo and redo supported file operations. Large or directory deletions fall back to system Trash when an in-app snapshot is not practical.
 - Optionally include Git-ignored files in the tree.
@@ -221,9 +221,10 @@ The unpacked executable is written to `out/OpenTig-win32-x64/OpenTig.exe`.
 
 - Repository contents are read from and written to their existing local paths.
 - The renderer has no direct Node.js, filesystem, or process access.
-- Privileged work stays in the Electron main process behind a narrow, typed preload bridge.
+- Git, filesystem, persistence, AI, and GitHub operations run through one typed, validated server-command boundary. Electron IPC is a temporary transport for that boundary.
+- The narrow preload bridge contains only proven desktop capabilities such as folder selection/relocation, file clipboard import, Explorer reveal, title-bar theming, and zoom. Text clipboard access stays in the renderer's browser API.
 - Git commands use argument arrays with `shell: false`, bounded output, timeouts, path validation, and per-repository write serialisation.
-- External links are validated before opening in the system browser.
+- External links are allowlisted to `http(s)://` and `mailto:` before Electron's window-navigation interception opens them in the system browser.
 - HTML previews run in a sandbox; rendered Markdown is sanitised before display.
 - OpenTig does not read or persist GitHub or AI API tokens. Connected CLIs manage their own authentication.
 
@@ -239,8 +240,9 @@ Generated content remains editable and pending. No commit is created and no pull
 
 ## Architecture
 
-- `src/main`: Electron main process, Git execution, filesystem access, persistence, and external CLI integrations.
-- `src/preload.ts`: narrow, typed bridge exposed to the renderer.
+- `src/main/runtime`: Electron-free service graph and validated server-command registry for Git, filesystem, persistence, AI, GitHub, watchers, and shutdown.
+- `src/main/ipc`: thin Electron transport plus handlers for native-only desktop capabilities.
+- `src/preload.ts`: narrow, context-isolated typed bridge exposed to the renderer.
 - `src/renderer`: React interface and feature modules.
 - `src/shared`: IPC contracts, shared models, and validation helpers.
 

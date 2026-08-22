@@ -17,7 +17,7 @@ export function registerHandlers(services: Services): () => void {
   const host = createElectronHostAdapter(services.window, services.onPreferencesChanged);
   registerServerCommands(registry, services, host);
   const removeServerHandlers = registerServerIpcAdapter(registry);
-  const removeDesktopHandlers = registerDesktopHandlers(registry, services.repositories, host);
+  const removeDesktopHandlers = registerDesktopHandlers(services.repositories, host);
   return () => {
     removeServerHandlers();
     removeDesktopHandlers();
