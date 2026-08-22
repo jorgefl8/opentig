@@ -78,6 +78,20 @@ describe('OpenTigWebSocketTransport', () => {
     transport.close();
   });
 
+  it('omits trailing optional arguments instead of serializing them as null', async () => {
+    const { transport, sockets } = fixture();
+    const status = transport.request(IPC.repositoryStatus, ['repo-id', undefined]);
+    sockets[0]!.open();
+    await Promise.resolve();
+
+    const request = JSON.parse(sockets[0]!.sent[0]!) as { id: string; command: string; args: unknown[] };
+    expect(request).toMatchObject({ command: IPC.repositoryStatus, args: ['repo-id'] });
+    sockets[0]!.message({ type: 'result', id: request.id, result: { ok: true, value: { changes: [] } } });
+
+    await expect(status).resolves.toMatchObject({ changes: [] });
+    transport.close();
+  });
+
   it('rejects sent requests on disconnect and never replays them', async () => {
     vi.useFakeTimers();
     const { transport, sockets } = fixture();

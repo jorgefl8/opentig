@@ -53,6 +53,13 @@ describe('renderer/server boundary', () => {
     expect(settingsSource).not.toMatch(/\stitle=/);
     expect(settingsSource).toContain('Never expose the raw port publicly.');
   });
+
+  it('replaces a revoked browser session with pairing instructions', async () => {
+    const source = await readFile(path.join(process.cwd(), 'src', 'renderer', 'components', 'ServerConnectionBoundary.tsx'), 'utf8');
+
+    expect(source).toContain("if (state === 'auth-required')");
+    expect(source).toContain('Create a fresh pairing link in desktop OpenTig under Settings → Web Access');
+  });
 });
 
 async function sourceFiles(directory: string): Promise<string[]> {

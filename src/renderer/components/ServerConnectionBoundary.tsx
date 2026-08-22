@@ -26,6 +26,22 @@ export function ServerConnectionBoundary({ children }: { children: ReactNode }) 
     return () => { delete document.documentElement.dataset.serverConnection; };
   }, [state]);
 
+  if (state === 'auth-required') {
+    const desktop = Boolean(window.opentigDesktop);
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-background p-6 text-foreground">
+        <section className="w-full max-w-md rounded-xl border border-border bg-card p-6 shadow-sm" role="status">
+          <h1 className="text-lg font-semibold">Authentication required</h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            {desktop
+              ? 'Restart OpenTig to restore its private desktop session.'
+              : 'Create a fresh pairing link in desktop OpenTig under Settings → Web Access, then open that link in this browser.'}
+          </p>
+        </section>
+      </main>
+    );
+  }
+
   if (!connectedBefore && state !== 'connected') {
     return (
       <div className="splash" role="status">

@@ -137,7 +137,9 @@ export class OpenTigWebSocketTransport {
       }
       this.pending.set(id, pending);
       try {
-        socket.send(JSON.stringify({ type: 'request', id, command, args }));
+        const wireArgs: unknown[] = [...args];
+        while (wireArgs.length > 0 && wireArgs.at(-1) === undefined) wireArgs.pop();
+        socket.send(JSON.stringify({ type: 'request', id, command, args: wireArgs }));
       } catch {
         this.finishPending(id);
         reject(new ServerDisconnectedError('Could not send request to the OpenTig server.'));
