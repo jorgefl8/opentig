@@ -18,7 +18,7 @@ export interface OpenTigHttpContext {
   mode: OpenTigServerMode;
   allowedOrigins: ReadonlySet<string>;
   isReady(): boolean;
-  onSessionRevoked(sessionId: string): void;
+  onSessionsRevoked(sessionIds: readonly string[]): void;
   logger: OpenTigServerLogger;
 }
 
@@ -63,9 +63,17 @@ async function handleRequest(context: OpenTigHttpContext, request: IncomingMessa
     }
 
     if (rawPath === '/api/auth/logout') {
-      const sessionId = context.auth.revoke(request.headers);
+      const sessionId = await context.auth.revoke(request.headers);
       if (!sessionId) return sendJson(response, 401, { error: 'Authentication required.' });
-      context.onSessionRevoked(sessionId);
+      context.onSessionsRevoked([sessionId]);
+      return sendJson(response, 204, null, { 'Set-Cookie': context.auth.expiredCookie() });
+    }
+
+    if (rawPath === '/api/auth/revoke-all') {
+      const sessionId = context.auth.authenticate(request.headers);
+      if (!sessionId) return sendJson(response, 401, { error: 'Authentication required.' });
+      const revoked = await context.auth.revokeAll();
+      context.onSessionsRevoked(revoked);
       return sendJson(response, 204, null, { 'Set-Cookie': context.auth.expiredCookie() });
     }
   }

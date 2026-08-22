@@ -108,7 +108,10 @@ async function startFixture(
     status: 'saved', path: 'large.txt', size: 0, mtimeMs: 0,
   }));
   const desktopSecret = `desktop-${crypto.randomUUID()}`;
-  const auth = new OpenTigSessionAuth(new OneTimeBootstrapAuthSource({ desktopSecret }));
+  const auth = await OpenTigSessionAuth.open({
+    source: new OneTimeBootstrapAuthSource({ desktopSecret }),
+    dataDirectory: path.join(directory, 'auth'),
+  });
   const closeRuntime = vi.fn(async () => undefined);
   const runtime = { close: closeRuntime, services: { files: {} } } as unknown as OpenTigRuntime;
   const server = new OpenTigServer({

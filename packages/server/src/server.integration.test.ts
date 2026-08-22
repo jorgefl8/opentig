@@ -69,6 +69,18 @@ describe('authoritative HTTP server', () => {
     expect((await fetch(`${fixture.server.origin}/api/image/missing/file.png`, { headers: { Cookie: 'opentig_session=invalid' } })).status).toBe(401);
   });
 
+  it('creates short-lived pairing links with credentials only in the fragment', async () => {
+    const fixture = await startFixture();
+    const pairing = fixture.server.createPairingLink();
+    const url = new URL(pairing.url);
+    const token = new URLSearchParams(url.hash.slice(1)).get('token');
+    expect(url.pathname).toBe('/pair');
+    expect(url.search).toBe('');
+    expect(Buffer.from(token ?? '', 'base64url')).toHaveLength(32);
+    expect(url.href.slice(0, url.href.indexOf('#'))).not.toContain(token!);
+    expect(Date.parse(pairing.expiresAt)).toBeGreaterThan(Date.now());
+  });
+
   it('blocks traversal and symlink escape without SPA fallback', async () => {
     const fixture = await startFixture();
     const outside = await temporaryDirectory();
@@ -118,6 +130,28 @@ describe('authoritative HTTP server', () => {
       host: '127.0.0.1',
       port: fixture.server.port,
     })).rejects.toMatchObject({ code: 'EADDRINUSE' });
+  });
+
+  it('restores an authenticated browser session after server restart', async () => {
+    const fixture = await startFixture();
+    const authenticated = await postJson(`${fixture.server.origin}/api/auth/desktop`, { secret: fixture.desktopSecret }, fixture.server.origin);
+    const cookie = cookieValue(authenticated.cookie);
+    await fixture.server.close();
+
+    const restarted = await runOpenTigServer({
+      settingsPath: path.join(fixture.directory, 'settings.json'),
+      aiLogPath: path.join(fixture.directory, 'ai-log.jsonl'),
+      platform: 'win32',
+      trash: { available: true, trashItem: async () => undefined },
+      clientRoot: fixture.clientRoot,
+      appVersion: '0.1-test',
+      auth: new OneTimeBootstrapAuthSource({ desktopSecret: 'restart-bootstrap-secret' }),
+      port: 0,
+    });
+    servers.push(restarted);
+    const socket = await openWebSocket(restarted.origin, cookie);
+    expect(await sendAndReceive(socket, { type: 'ping' })).toEqual({ type: 'pong' });
+    socket.close();
   });
 });
 
@@ -175,6 +209,25 @@ describe('authenticated WebSocket protocol', () => {
     socket.send(Buffer.from([1, 2, 3]), { binary: true });
     await expect(binaryClosed).resolves.toBe(1003);
   });
+
+  it('revokes every session and disconnects all authenticated clients', async () => {
+    const fixture = await startFixture();
+    const first = await postJson(`${fixture.server.origin}/api/auth/pair`, { token: fixture.pairingToken }, fixture.server.origin);
+    const nextPairing = fixture.server.createPairingLink();
+    const nextToken = new URLSearchParams(new URL(nextPairing.url).hash.slice(1)).get('token');
+    const second = await postJson(`${fixture.server.origin}/api/auth/pair`, { token: nextToken }, fixture.server.origin);
+    const firstCookie = cookieValue(first.cookie);
+    const secondCookie = cookieValue(second.cookie);
+    const firstSocket = await openWebSocket(fixture.server.origin, firstCookie);
+    const secondSocket = await openWebSocket(fixture.server.origin, secondCookie);
+    const firstClosed = closed(firstSocket);
+    const secondClosed = closed(secondSocket);
+
+    const revoked = await postJson(`${fixture.server.origin}/api/auth/revoke-all`, {}, fixture.server.origin, firstCookie);
+    expect(revoked.status).toBe(204);
+    await expect(Promise.all([firstClosed, secondClosed])).resolves.toEqual([1008, 1008]);
+    await expectWebSocketFailure(fixture.server.origin, fixture.server.origin, secondCookie, 401);
+  });
 });
 
 async function startFixture(): Promise<{
@@ -190,7 +243,6 @@ async function startFixture(): Promise<{
   await writeFile(path.join(clientRoot, 'index.html'), '<!doctype html><title>OpenTig test client</title>');
   await writeFile(path.join(clientRoot, 'assets', 'app-12345678.js'), 'export const test = true;');
   const desktopSecret = `desktop-${crypto.randomUUID()}`;
-  const pairingToken = `pair-${crypto.randomUUID()}`;
   const server = await runOpenTigServer({
     settingsPath: path.join(directory, 'settings.json'),
     aiLogPath: path.join(directory, 'ai-log.jsonl'),
@@ -198,9 +250,12 @@ async function startFixture(): Promise<{
     trash: { available: true, trashItem: async () => undefined },
     clientRoot,
     appVersion: '0.1-test',
-    auth: new OneTimeBootstrapAuthSource({ desktopSecret, pairingTokens: [pairingToken] }),
+    auth: new OneTimeBootstrapAuthSource({ desktopSecret }),
     port: 0,
   });
+  const pairingLink = server.createPairingLink();
+  const pairingToken = new URLSearchParams(new URL(pairingLink.url).hash.slice(1)).get('token');
+  if (!pairingToken) throw new Error('Pairing token missing.');
   servers.push(server);
   return { server, directory, clientRoot, desktopSecret, pairingToken };
 }

@@ -222,7 +222,7 @@ The unpacked executable is written to `out/OpenTig-win32-x64/OpenTig.exe`.
 - Repository contents are read from and written to their existing local paths.
 - The renderer has no direct Node.js, filesystem, or process access.
 - Git, filesystem, persistence, AI, and GitHub operations run through one typed, validated server-command boundary. Electron IPC is a temporary transport for that boundary.
-- The private server transport binds to loopback by default, requires an owner session for commands and image bytes, validates exact mutation/WebSocket origins, and blocks static-file traversal and symlink escape.
+- The private server transport binds to loopback by default, requires an owner session for commands and image bytes, validates exact mutation/WebSocket origins, and blocks static-file traversal and symlink escape. New browsers pair through a short-lived, one-use URL fragment; steady-state credentials use host-only `HttpOnly`, `SameSite=Strict` cookies. Only credential hashes are persisted, and owner sessions can be individually logged out or revoked together.
 - The narrow preload bridge contains only proven desktop capabilities such as folder selection/relocation, file clipboard import, Explorer reveal, title-bar theming, and zoom. Text clipboard access stays in the renderer's browser API.
 - Git commands use argument arrays with `shell: false`, bounded output, timeouts, path validation, and per-repository write serialisation.
 - External links are allowlisted to `http(s)://` and `mailto:` before Electron's window-navigation interception opens them in the system browser.

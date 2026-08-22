@@ -4,7 +4,7 @@ import type { OpenTigRuntime } from '../../../src/main/runtime/OpenTigRuntime';
 import { CommandRegistry } from '../../../src/main/runtime/CommandRegistry';
 import type { OpenTigRuntimeEvent } from '../../../src/shared/runtime-events';
 import type { OpenTigServerIdentity } from '../../../src/shared/server-protocol';
-import { OpenTigSessionAuth } from './auth';
+import { OpenTigSessionAuth, type PairingToken } from './auth';
 import { createOpenTigHttpHandler, type OpenTigServerLogger, type OpenTigServerMode } from './http';
 import { normalizeOrigins } from './origin';
 import { OpenTigWebSocketTransport } from './websocket';
@@ -53,9 +53,9 @@ export class OpenTigServer {
       mode: options.mode ?? 'desktop',
       allowedOrigins,
       isReady: () => this.ready,
-      onSessionRevoked: (sessionId) => {
-        options.registry.clearSession(sessionId);
-        this.webSockets.revokeSession(sessionId);
+      onSessionsRevoked: (sessionIds) => {
+        for (const sessionId of sessionIds) options.registry.clearSession(sessionId);
+        this.webSockets.revokeSessions(sessionIds);
       },
       logger: this.logger,
     }));
@@ -82,6 +82,11 @@ export class OpenTigServer {
 
   publish(event: OpenTigRuntimeEvent): void {
     if (this.ready) this.webSockets.publish(event);
+  }
+
+  createPairingToken(): PairingToken {
+    if (!this.ready) throw new Error('Server is not ready.');
+    return this.options.auth.createPairingToken();
   }
 
   stop(): Promise<void> {
@@ -120,7 +125,7 @@ export class OpenTigServer {
       });
     }
     this.options.registry.clear();
-    this.options.auth.clear();
+    await this.options.auth.close();
     await this.options.runtime.close();
   }
 }

@@ -24,7 +24,6 @@ try {
     auth: {
       descriptor: () => ({ authenticationRequired: true, pairingAvailable: false }),
       consumeDesktopSecret: () => false,
-      consumePairingToken: () => false,
     },
     port: 0,
   });

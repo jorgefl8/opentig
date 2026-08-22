@@ -74,9 +74,10 @@ export class OpenTigWebSocketTransport {
     this.broadcast({ type: 'event', event });
   }
 
-  revokeSession(sessionId: string): void {
+  revokeSessions(sessionIds: readonly string[]): void {
+    const revoked = new Set(sessionIds);
     for (const [socket, state] of this.clients) {
-      if (state.sessionId === sessionId) socket.close(1008, 'Session revoked');
+      if (revoked.has(state.sessionId)) socket.close(1008, 'Session revoked');
     }
   }
 

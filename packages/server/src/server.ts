@@ -1,4 +1,5 @@
 import { fileURLToPath } from 'node:url';
+import path from 'node:path';
 import { CommandRegistry } from '../../../src/main/runtime/CommandRegistry';
 import type { OpenTigRuntime } from '../../../src/main/runtime/OpenTigRuntime';
 import {
@@ -15,6 +16,7 @@ import type { OpenTigServerLogger, OpenTigServerMode } from './http';
 export interface OpenTigServerConfig extends Omit<CreateOpenTigRuntimeOptions, 'runtimeMode' | 'onEvent'> {
   appVersion: string;
   auth: OpenTigBootstrapAuthSource;
+  serverDataPath?: string;
   clientRoot?: string;
   host?: string;
   port?: number;
@@ -33,52 +35,71 @@ export interface OpenTigServerConfig extends Omit<CreateOpenTigRuntimeOptions, '
 export interface RunningOpenTigServer extends OpenTigServerAddress {
   readonly runtime: OpenTigRuntime;
   readonly clientRoot: string;
+  createPairingLink(): { url: string; expiresAt: string };
   close(): Promise<void>;
 }
 
 /**
  * Single construction boundary shared by future CLI and utility-process
- * adapters. HTTP/WebSocket ownership is added in Step 2; current desktop boot
- * remains untouched as rollback path.
+ * adapters. HTTP/WebSocket and persistent owner authentication live here;
+ * current desktop boot remains untouched as rollback path.
  */
 export async function runOpenTigServer(config: OpenTigServerConfig): Promise<RunningOpenTigServer> {
   let transport: OpenTigServer | null = null;
-  const runtime = await createOpenTigRuntime({
-    settingsPath: config.settingsPath,
-    aiLogPath: config.aiLogPath,
-    runtimeMode: 'headless',
-    platform: config.platform,
-    ...(config.trash ? { trash: config.trash } : {}),
-    onEvent: (event) => {
-      config.onEvent?.(event);
-      transport?.publish(event);
-    },
+  const auth = await OpenTigSessionAuth.open({
+    source: config.auth,
+    dataDirectory: config.serverDataPath ?? path.join(path.dirname(config.settingsPath), 'server'),
+    ...(config.secureCookies === undefined ? {} : { secureCookies: config.secureCookies }),
   });
-  const registry = new CommandRegistry();
-  registerServerCommands(registry, runtime.services, headlessHost);
-  const clientRoot = config.clientRoot ?? resolveServerClientRoot();
-  transport = new OpenTigServer({
-    runtime,
-    registry,
-    clientRoot,
-    auth: new OpenTigSessionAuth(config.auth, config.secureCookies),
-    identity: { protocolVersion: OPEN_TIG_PROTOCOL_VERSION, appVersion: config.appVersion },
-    ...(config.host === undefined ? {} : { host: config.host }),
-    ...(config.port === undefined ? {} : { port: config.port }),
-    ...(config.mode === undefined ? {} : { mode: config.mode }),
-    ...(config.allowedOrigins === undefined ? {} : { allowedOrigins: config.allowedOrigins }),
-    ...(config.logger === undefined ? {} : { logger: config.logger }),
-    ...(config.commandTimeoutMs === undefined ? {} : { commandTimeoutMs: config.commandTimeoutMs }),
-    ...(config.connectionLimit === undefined ? {} : { connectionLimit: config.connectionLimit }),
-    ...(config.heartbeatMs === undefined ? {} : { heartbeatMs: config.heartbeatMs }),
-    ...(config.requestRateLimit === undefined ? {} : { requestRateLimit: config.requestRateLimit }),
-    ...(config.requestRateWindowMs === undefined ? {} : { requestRateWindowMs: config.requestRateWindowMs }),
-  });
+  let runtime: OpenTigRuntime;
   try {
-    const address = await transport.start();
-    return { runtime, clientRoot, ...address, close: () => transport!.stop() };
+    runtime = await createOpenTigRuntime({
+      settingsPath: config.settingsPath,
+      aiLogPath: config.aiLogPath,
+      runtimeMode: 'headless',
+      platform: config.platform,
+      ...(config.trash ? { trash: config.trash } : {}),
+      onEvent: (event) => {
+        config.onEvent?.(event);
+        transport?.publish(event);
+      },
+    });
   } catch (error) {
-    await transport.stop();
+    await auth.close();
+    throw error;
+  }
+  const registry = new CommandRegistry();
+  const clientRoot = config.clientRoot ?? resolveServerClientRoot();
+  try {
+    registerServerCommands(registry, runtime.services, headlessHost);
+    transport = new OpenTigServer({
+      runtime,
+      registry,
+      clientRoot,
+      auth,
+      identity: { protocolVersion: OPEN_TIG_PROTOCOL_VERSION, appVersion: config.appVersion },
+      ...(config.host === undefined ? {} : { host: config.host }),
+      ...(config.port === undefined ? {} : { port: config.port }),
+      ...(config.mode === undefined ? {} : { mode: config.mode }),
+      ...(config.allowedOrigins === undefined ? {} : { allowedOrigins: config.allowedOrigins }),
+      ...(config.logger === undefined ? {} : { logger: config.logger }),
+      ...(config.commandTimeoutMs === undefined ? {} : { commandTimeoutMs: config.commandTimeoutMs }),
+      ...(config.connectionLimit === undefined ? {} : { connectionLimit: config.connectionLimit }),
+      ...(config.heartbeatMs === undefined ? {} : { heartbeatMs: config.heartbeatMs }),
+      ...(config.requestRateLimit === undefined ? {} : { requestRateLimit: config.requestRateLimit }),
+      ...(config.requestRateWindowMs === undefined ? {} : { requestRateWindowMs: config.requestRateWindowMs }),
+    });
+    const address = await transport.start();
+    return {
+      runtime,
+      clientRoot,
+      ...address,
+      createPairingLink: () => pairingLink(address.origin, transport!.createPairingToken()),
+      close: () => transport!.stop(),
+    };
+  } catch (error) {
+    if (transport) await transport.stop();
+    else await Promise.all([auth.close(), runtime.close()]);
     throw error;
   }
 }
@@ -86,6 +107,12 @@ export async function runOpenTigServer(config: OpenTigServerConfig): Promise<Run
 /** Assets resolve beside bundled server entry, never from process.cwd(). */
 export function resolveServerClientRoot(moduleUrl: string = import.meta.url): string {
   return fileURLToPath(new URL('./client/', moduleUrl));
+}
+
+function pairingLink(origin: string, pairing: { token: string; expiresAt: string }): { url: string; expiresAt: string } {
+  const url = new URL('/pair', origin);
+  url.hash = new URLSearchParams({ token: pairing.token }).toString();
+  return { url: url.href, expiresAt: pairing.expiresAt };
 }
 
 const headlessHost: OpenTigHost = {
