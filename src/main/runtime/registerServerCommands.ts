@@ -1,49 +1,41 @@
 import { lstat } from 'node:fs/promises';
-import { clipboard, dialog, ipcMain, shell } from 'electron';
-import type { BrowserWindow } from 'electron';
-import type { DiffRequest, IpcResult, Preferences } from '../../shared/contracts';
+import { randomUUID } from 'node:crypto';
+import type { DiffRequest, Preferences } from '../../shared/contracts';
 import { IPC } from '../../shared/contracts';
-import { GitOperationError, serializeError } from '../../shared/errors';
-import type { FileService } from '../files/FileService';
-import type { FileOperationHistory } from '../files/FileOperationHistory';
-import type { RepositoryWatcher } from '../files/RepositoryWatcher';
-import type { GitRepositoryOperations } from '../git/GitRepositoryOperations';
-import type { RepositoryService } from '../git/RepositoryService';
-import type { SearchService } from '../git/SearchService';
-import type { SettingsStore } from '../persistence/SettingsStore';
-import type { CommitMessageService } from '../ai/CommitMessageService';
-import type { AiLogStore } from '../persistence/AiLogStore';
-import type { PullRequestDraftService } from '../ai/PullRequestDraftService';
-import type { GitHubService } from '../github/GitHubService';
-import { readClipboardFilePaths } from '../files/ClipboardFileTransfer';
-import { applyWindowTitleBarTheme } from '../window/WindowTitleBar';
+import { GitOperationError } from '../../shared/errors';
+import { OPEN_TIG_SERVER_COMMANDS, type OpenTigServerCommandDefinition } from '../../shared/protocol';
 import { aiString, booleanArg, branchDetailsArg, createPullRequestArg, deleteBranchArg, filesTreeStateArg, generateCommitMessageArg, generatePullRequestDraftArg, nullableProjectIdArg, oidArg, openFilesStateArg, pathsArg, prepareCommitGroupArg, prNumberArg, projectIdArg, projectNameArg, pullRequestStatesArg, removeWorktreeArg, repositoryKeyArg, searchOptionsArg, searchReplaceArg, stringArg, textArg, worktreeDetailsArg } from './validators';
+import { CommandRegistry, type CommandExecutionContext } from './CommandRegistry';
+import type { OpenTigHost } from './OpenTigHost';
+import type { OpenTigRuntimeServices } from './OpenTigRuntime';
 
-interface Services {
-  window: BrowserWindow;
-  settings: SettingsStore;
-  repositories: RepositoryService;
-  search: SearchService;
-  files: FileService;
-  fileHistory: FileOperationHistory;
-  operations: GitRepositoryOperations;
-  watcher: RepositoryWatcher;
-  ai: CommitMessageService;
-  aiLog: AiLogStore;
-  github: GitHubService;
-  prDrafts: PullRequestDraftService;
-  onPreferencesChanged?: (preferences: Preferences) => void;
-}
-
-export function registerHandlers(services: Services): () => void {
-  const channels: string[] = [];
-  let pendingCutPaths: string[] | null = null;
+export function registerServerCommands(
+  registry: CommandRegistry,
+  services: OpenTigRuntimeServices,
+  host: OpenTigHost,
+): void {
+  const serverDefinitions = new Map<string, OpenTigServerCommandDefinition>(
+    Object.values(OPEN_TIG_SERVER_COMMANDS).map((definition) => [definition.command, definition]),
+  );
+  const handleWithContext = <T>(
+    channel: string,
+    operation: string,
+    handler: (context: CommandExecutionContext, ...args: unknown[]) => Promise<T> | T,
+  ) => {
+    const definition = serverDefinitions.get(channel);
+    if (!definition) throw new Error(`Not a server command: ${channel}`);
+    if (definition.operation !== operation) throw new Error(`Operation mismatch for ${channel}: ${operation}`);
+    registry.registerHandler(definition, (context, args) => handler(context, ...args));
+  };
   const handle = <T>(channel: string, operation: string, handler: (...args: unknown[]) => Promise<T> | T) => {
-    channels.push(channel);
-    ipcMain.handle(channel, async (_event, ...args): Promise<IpcResult<T>> => {
-      try { return { ok: true, value: await handler(...args) }; }
-      catch (error) { return { ok: false, error: serializeError(error, operation) }; }
-    });
+    handleWithContext(channel, operation, (_context, ...args) => handler(...args));
+  };
+  const openRepositoryPath = async (selectedPath: string, context: CommandExecutionContext) => {
+    const repository = await services.repositories.openPath(selectedPath);
+    fileClipboardState(context).pendingCut = null;
+    services.watcher.start(repository);
+    services.events.activeRepositoryChanged(repository);
+    return repository;
   };
 
   handle(IPC.bootstrap, 'bootstrap', async () => {
@@ -59,13 +51,24 @@ export function registerHandlers(services: Services): () => void {
       performanceAutomation: process.env.OPENTIG_PERF_AUTOMATION === '1',
     };
   });
+  handle(IPC.capabilities, 'capabilities', async () => {
+    const [githubCli, aiProviders] = await Promise.all([
+      services.github.status(),
+      services.ai.statuses(),
+    ]);
+    return {
+      runtimeMode: services.runtimeMode,
+      platform: services.platform,
+      systemTrash: services.trash.available,
+      ...host.capabilities,
+      githubCli,
+      aiProviders,
+    } as const;
+  });
   handle(IPC.preferences, 'preferences', async (partial) => {
     const preferences = await services.settings.setPreferences((partial ?? {}) as Partial<Preferences>);
-    services.onPreferencesChanged?.(preferences);
+    host.preferencesChanged(preferences);
     return preferences;
-  });
-  handle(IPC.titleBarTheme, 'title-bar-theme', (dark) => {
-    applyWindowTitleBarTheme(services.window, booleanArg(dark, 'title-bar-theme'));
   });
   handle(IPC.filesTreeStateUpdate, 'files-tree-state', (repositoryId, expandedPaths) => {
     const state = filesTreeStateArg(repositoryId, expandedPaths, 'files-tree-state');
@@ -79,58 +82,25 @@ export function registerHandlers(services: Services): () => void {
   handle(IPC.projectRename, 'project-rename', (projectId, name) => services.settings.renameRepositoryProject(projectIdArg(projectId, 'project-rename'), projectNameArg(name, 'project-rename')));
   handle(IPC.projectRemove, 'project-remove', (projectId) => services.settings.removeRepositoryProject(projectIdArg(projectId, 'project-remove')));
   handle(IPC.projectAssign, 'project-assign', (repositoryKey, projectId) => services.settings.assignRepositoryProject(repositoryKeyArg(repositoryKey, 'project-assign'), nullableProjectIdArg(projectId, 'project-assign')));
-  handle(IPC.clipboardReadText, 'clipboard-read-text', () => clipboard.readText());
-  handle(IPC.clipboardWriteText, 'clipboard-write-text', (text) => {
-    pendingCutPaths = null;
-    clipboard.writeText(textArg(text, 'clipboard-write-text', 8 * 1024 * 1024));
-  });
-  handle(IPC.shellOpenExternal, 'open-external', async (url) => {
-    const value = stringArg(url, 'open-external', 2_048);
-    let parsed: URL;
-    try { parsed = new URL(value); } catch {
-      throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'open-external', message: 'Invalid URL.' });
-    }
-    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:' && parsed.protocol !== 'mailto:') {
-      throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'open-external', message: 'Only web or mail links can be opened.' });
-    }
-    await shell.openExternal(parsed.toString());
-  });
-  handle(IPC.repositorySelect, 'select-repository', async () => {
-    const selection = await dialog.showOpenDialog(services.window, { properties: ['openDirectory'], title: 'Open Git repository' });
-    if (selection.canceled || !selection.filePaths[0]) return null;
-    const repository = await services.repositories.openPath(selection.filePaths[0]);
-    pendingCutPaths = null;
+  handleWithContext(IPC.repositoryOpenPath, 'open-path', (context, selectedPath) => openRepositoryPath(
+    stringArg(selectedPath, 'open-path', 32_768), context,
+  ));
+  handleWithContext(IPC.repositoryOpenRecent, 'open-recent', async (context, id) => {
+    const repositoryId = stringArg(id, 'open-recent', 64);
+    const repository = await services.repositories.openRecent(repositoryId);
+    fileClipboardState(context).pendingCut = null;
     services.watcher.start(repository);
+    services.events.activeRepositoryChanged(repository);
     return repository;
   });
-  handle(IPC.repositoryOpenRecent, 'open-recent', async (id) => {
-    const repositoryId = stringArg(id, 'open-recent', 64);
-    let repository;
-    try {
-      repository = await services.repositories.openRecent(repositoryId);
-    } catch (error) {
-      const recent = services.repositories.recent(repositoryId);
-      if (!recent) throw error;
-      const prompt = await dialog.showMessageBox(services.window, {
-        type: 'warning',
-        title: 'Repository unavailable',
-        message: `OpenTig could not open ${recent.repositoryName}.`,
-        detail: `${recent.path}\n\nIf the repository moved, locate its new folder. Its project assignment, open tabs, and expanded folders will be preserved.`,
-        buttons: ['Locate repository', 'Cancel'],
-        defaultId: 0,
-        cancelId: 1,
-        noLink: true,
-      });
-      if (prompt.response !== 0) return null;
-      const selection = await dialog.showOpenDialog(services.window, {
-        properties: ['openDirectory'],
-        title: `Locate ${recent.repositoryName}`,
-      });
-      if (selection.canceled || !selection.filePaths[0]) return null;
-      repository = await services.repositories.relocateRecent(repositoryId, selection.filePaths[0]);
-    }
-    pendingCutPaths = null;
+  handleWithContext(IPC.repositoryRelocateRecent, 'relocate-recent', async (context, id, selectedPath) => {
+    const repository = await services.repositories.relocateRecent(
+      stringArg(id, 'relocate-recent', 64),
+      stringArg(selectedPath, 'relocate-recent', 32_768),
+    );
+    fileClipboardState(context).pendingCut = null;
     services.watcher.start(repository);
+    services.events.activeRepositoryChanged(repository);
     return repository;
   });
   handle(IPC.repositoryStatus, 'status', (id, includeStats) => services.repositories.status(
@@ -164,48 +134,49 @@ export function registerHandlers(services: Services): () => void {
     await lstat(target);
     return target;
   });
-  handle(IPC.repositoryCopyEntries, 'copy-entries', async (id, rawPaths) => {
+  handleWithContext(IPC.repositoryCopyEntries, 'copy-entries', async (context, id, rawPaths) => {
     const repositoryId = stringArg(id, 'copy-entries', 64);
     const validPaths = services.repositories.validatePaths(repositoryId, pathsArg(rawPaths, 'copy-entries'));
     const absolutePaths = validPaths.map((filePath) => services.repositories.resolvePath(repositoryId, filePath));
     await Promise.all(absolutePaths.map((filePath) => lstat(filePath)));
-    pendingCutPaths = null;
-    clipboard.writeText(absolutePaths.join('\r\n'));
-    return { copied: absolutePaths.length };
+    fileClipboardState(context).pendingCut = null;
+    return { copied: absolutePaths.length, paths: absolutePaths };
   });
-  handle(IPC.repositoryCutEntries, 'cut-entries', async (id, rawPaths) => {
+  handleWithContext(IPC.repositoryCutEntries, 'cut-entries', async (context, id, rawPaths) => {
     const repositoryId = stringArg(id, 'cut-entries', 64);
     const validPaths = services.repositories.validatePaths(repositoryId, pathsArg(rawPaths, 'cut-entries'));
     const absolutePaths = validPaths.map((filePath) => services.repositories.resolvePath(repositoryId, filePath));
     await Promise.all(absolutePaths.map((filePath) => lstat(filePath)));
-    pendingCutPaths = absolutePaths;
-    clipboard.writeText(absolutePaths.join('\r\n'));
-    return { cut: absolutePaths.length };
+    const transferId = randomUUID();
+    fileClipboardState(context).pendingCut = { paths: absolutePaths, transferId };
+    return { cut: absolutePaths.length, paths: absolutePaths, transferId };
   });
-  handle(IPC.repositoryPasteEntries, 'paste-entries', async (id, targetDirectory) => {
+  handleWithContext(IPC.repositoryPasteEntries, 'paste-entries', async (context, id, targetDirectory, rawSourcePaths, rawCutTransferId, rawImagePng) => {
     const repositoryId = stringArg(id, 'paste-entries', 64);
     const destination = textArg(targetDirectory, 'paste-entries', 32_768);
+    const filePaths = pathsArg(rawSourcePaths, 'paste-entries');
+    const cutTransferId = rawCutTransferId == null ? null : stringArg(rawCutTransferId, 'paste-entries', 64);
+    const imagePng = clipboardImageArg(rawImagePng);
     return services.fileHistory.serialize(repositoryId, async () => {
-      const filePaths = await readClipboardFilePaths(clipboard);
       if (filePaths.length > 0) {
-        if (pendingCutPaths && samePathSelection(filePaths, pendingCutPaths)) {
-          const sources = [...pendingCutPaths];
+        const clipboardState = fileClipboardState(context);
+        if (clipboardState.pendingCut?.transferId === cutTransferId && samePathSelection(filePaths, clipboardState.pendingCut.paths)) {
+          const sources = [...clipboardState.pendingCut.paths];
           const repository = services.repositories.get(repositoryId);
           const created = await services.files.movePaths(repositoryId, sources, destination);
-          pendingCutPaths = null;
+          clipboardState.pendingCut = null;
           const pairs = created.map((to, index) => ({ from: sources[index]!.slice(repository.path.length + 1).replace(/\\/g, '/'), to }));
           services.fileHistory.recordMove(repositoryId, created.length === 1 ? 'Move item' : `Move ${created.length} items`, pairs);
           return { status: 'pasted', source: 'cut', created } as const;
         }
-        pendingCutPaths = null;
+        clipboardState.pendingCut = null;
         const created = await services.files.pastePaths(repositoryId, filePaths, destination);
         services.fileHistory.recordPaste(repositoryId, { label: created.length === 1 ? 'Paste item' : `Paste ${created.length} items`, created, sources: created.map((to, index) => ({ source: filePaths[index]!, destination: to })) });
         return { status: 'pasted', source: 'files', created } as const;
       }
-      pendingCutPaths = null;
-      const image = clipboard.readImage();
-      if (!image.isEmpty()) {
-        const created = await services.files.pasteImage(repositoryId, destination, image.toPNG());
+      fileClipboardState(context).pendingCut = null;
+      if (imagePng) {
+        const created = await services.files.pasteImage(repositoryId, destination, imagePng);
         const snapshot = await services.files.snapshot(repositoryId, created, 50_000_000);
         services.fileHistory.recordPaste(repositoryId, { label: 'Paste image', created: [created], ...(snapshot ? { snapshots: [snapshot] } : {}), image: true });
         return { status: 'pasted', source: 'image', created: [created] } as const;
@@ -234,22 +205,10 @@ export function registerHandlers(services: Services): () => void {
     const repositoryId = stringArg(id, 'delete-entry', 64);
     const relativePath = stringArg(filePath, 'delete-entry');
     const target = services.repositories.resolvePath(repositoryId, relativePath);
-    const metadata = await lstat(target);
-    const isDirectory = metadata.isDirectory();
-    const confirmation = await dialog.showMessageBox(services.window, {
-      type: 'warning',
-      title: isDirectory ? 'Delete folder' : 'Delete file',
-      message: `Move this ${isDirectory ? 'folder' : 'file'} to the Recycle Bin?`,
-      detail: relativePath,
-      buttons: ['Move to Recycle Bin', 'Cancel'],
-      defaultId: 1,
-      cancelId: 1,
-      noLink: true,
-    });
-    if (confirmation.response !== 0) return { deleted: false } as const;
+    await lstat(target);
     return services.fileHistory.serialize(repositoryId, async () => {
       const prepared = await services.fileHistory.prepareDelete(repositoryId, [relativePath]);
-      await shell.trashItem(target);
+      await services.trash.trashItem(target);
       services.fileHistory.recordDelete(repositoryId, prepared, [relativePath]);
       return { deleted: true } as const;
     });
@@ -259,18 +218,6 @@ export function registerHandlers(services: Services): () => void {
     const validPaths = services.repositories.validatePaths(repositoryId, pathsArg(rawPaths, 'delete-entries'));
     if (validPaths.length === 0) return { deleted: 0 } as const;
     const targets = validPaths.map((filePath) => services.repositories.resolvePath(repositoryId, filePath));
-    const count = validPaths.length;
-    const confirmation = await dialog.showMessageBox(services.window, {
-      type: 'warning',
-      title: count === 1 ? 'Delete item' : `Delete ${count} items`,
-      message: count === 1 ? 'Move this item to the Recycle Bin?' : `Move ${count} items to the Recycle Bin?`,
-      detail: validPaths.join('\n'),
-      buttons: ['Move to Recycle Bin', 'Cancel'],
-      defaultId: 1,
-      cancelId: 1,
-      noLink: true,
-    });
-    if (confirmation.response !== 0) return { deleted: 0 } as const;
     return services.fileHistory.serialize(repositoryId, async () => {
       const prepared = await services.fileHistory.prepareDelete(repositoryId, validPaths);
       const deletedPaths: string[] = [];
@@ -279,7 +226,7 @@ export function registerHandlers(services: Services): () => void {
         // A selection can include both a folder and files inside it; the folder is
         // trashed first, so skip any target that no longer exists.
         try { await lstat(target); } catch { continue; }
-        try { await shell.trashItem(target); }
+        try { await services.trash.trashItem(target); }
         catch (error) {
           if (deletedPaths.length) services.fileHistory.recordDelete(repositoryId, prepared, deletedPaths);
           throw error;
@@ -290,13 +237,6 @@ export function registerHandlers(services: Services): () => void {
       const recovery = services.fileHistory.recordDelete(repositoryId, prepared, deletedPaths);
       return { deleted: deletedPaths.length, recovery } as const;
     });
-  });
-  handle(IPC.repositoryRevealEntry, 'reveal-entry', async (id, filePath) => {
-    const repositoryId = stringArg(id, 'reveal-entry', 64);
-    const relativePath = stringArg(filePath, 'reveal-entry');
-    const target = services.repositories.resolvePath(repositoryId, relativePath);
-    await lstat(target);
-    shell.showItemInFolder(target);
   });
   handle(IPC.repositoryRenameEntry, 'rename-entry', async (id, filePath, newName) => {
     const repositoryId = stringArg(id, 'rename-entry', 64);
@@ -349,21 +289,8 @@ export function registerHandlers(services: Services): () => void {
     const status = await services.repositories.status(repositoryId, false);
     const untracked = status.changes.filter((change) => selected.has(change.path) && change.kind === 'untracked').map((change) => change.path);
     const tracked = validPaths.filter((filePath) => !untracked.includes(filePath));
-    const confirmation = await dialog.showMessageBox(services.window, {
-      type: 'warning',
-      title: 'Discard changes',
-      message: `Discard changes to ${validPaths.length === 1 ? 'this file' : `these ${validPaths.length} files`}?`,
-      detail: untracked.length > 0
-        ? 'Untracked files will be moved to the Recycle Bin. Other local changes will be lost.'
-        : 'The selected local changes will be lost.',
-      buttons: ['Discard', 'Cancel'],
-      defaultId: 1,
-      cancelId: 1,
-      noLink: true,
-    });
-    if (confirmation.response !== 0) return { ok: true };
     await services.operations.discard(repositoryId, tracked);
-    for (const filePath of untracked) await shell.trashItem(services.repositories.resolvePath(repositoryId, filePath));
+    for (const filePath of untracked) await services.trash.trashItem(services.repositories.resolvePath(repositoryId, filePath));
     return { ok: true };
   });
   handle(IPC.indexStageAll, 'stage-all', (id) => services.operations.stageAll(stringArg(id, 'stage-all', 64)));
@@ -391,7 +318,9 @@ export function registerHandlers(services: Services): () => void {
   handle(IPC.worktreesList, 'worktrees', (id) => services.operations.worktrees(stringArg(id, 'worktrees', 64)));
   handle(IPC.worktreeSelect, 'select-worktree', async (id, targetPath) => {
     const repository = await services.operations.selectWorktree(stringArg(id, 'select-worktree', 64), stringArg(targetPath, 'select-worktree'));
-    services.watcher.start(repository); return repository;
+    services.watcher.start(repository);
+    services.events.activeRepositoryChanged(repository);
+    return repository;
   });
   handle(IPC.localRefsSnapshot, 'local-refs-snapshot', (id) => services.operations.localRefsSnapshot(stringArg(id, 'local-refs-snapshot', 64)));
   handle(IPC.branchDetails, 'branch-details', (request) => {
@@ -444,7 +373,17 @@ export function registerHandlers(services: Services): () => void {
     services.prDrafts.cancel(aiString(requestId, 'ai-pr-draft-cancel', 100, true));
   });
 
-  return () => { for (const channel of channels) ipcMain.removeHandler(channel); };
+  const registered = new Set(registry.registeredCommands());
+  for (const definition of serverDefinitions.values()) {
+    if (!registered.has(definition.command)) throw new Error(`Missing server handler: ${definition.command}`);
+  }
+}
+
+export const FILE_CLIPBOARD_SESSION_STATE = 'file-clipboard';
+interface FileClipboardSessionState { pendingCut: { paths: string[]; transferId: string } | null }
+
+function fileClipboardState(context: CommandExecutionContext): FileClipboardSessionState {
+  return context.state(FILE_CLIPBOARD_SESSION_STATE, () => ({ pendingCut: null }));
 }
 
 function samePathSelection(left: string[], right: string[]): boolean {
@@ -453,4 +392,10 @@ function samePathSelection(left: string[], right: string[]): boolean {
     ? value.replace(/[\\/]+$/, '').toLocaleLowerCase()
     : value.replace(/[\\/]+$/, '');
   return left.every((value, index) => normalize(value) === normalize(right[index]!));
+}
+
+function clipboardImageArg(value: unknown): Uint8Array | null {
+  if (value == null) return null;
+  if (value instanceof Uint8Array) return value;
+  throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'paste-entries', message: 'Invalid clipboard image.' });
 }

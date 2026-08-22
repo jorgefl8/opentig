@@ -10,6 +10,7 @@ import { ViewerTabs, ViewerTabsList, ViewerTabsPanel } from '@/components/ui/vie
 import { renderMarkdown } from '@/features/markdown/render-markdown';
 import { openOnGitHub, prStateLabel, reviewDecisionLabel } from './gh-utils';
 import { GitHubAvatar } from './GitHubAvatar';
+import { opentig } from '@/lib/opentig-api';
 import { queryKeys } from '@/lib/query-client';
 import '@/features/markdown/markdown.css';
 
@@ -31,7 +32,7 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
   const detailsQuery = useQuery<{ details: PullRequestDetails; bodyHtml: string }>({
     queryKey: queryKeys.pullRequest(repositoryId, prNumber),
     queryFn: async () => {
-      const details = await window.opentig.github.getPullRequest(repositoryId, prNumber);
+      const details = await opentig.github.getPullRequest(repositoryId, prNumber);
       const bodyHtml = details.body.trim() ? await renderMarkdown(details.body).catch(() => '<p>Could not render the description.</p>') : '';
       return { details, bodyHtml };
     },
@@ -41,7 +42,7 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
   const detailsError = detailsQuery.error instanceof Error ? detailsQuery.error.message : detailsQuery.error ? 'Could not load the pull request.' : null;
   const diffQuery = useQuery<DiffResult>({
     queryKey: queryKeys.pullRequestDiff(repositoryId, prNumber),
-    queryFn: () => window.opentig.github.getPullRequestDiff(repositoryId, prNumber),
+    queryFn: () => opentig.github.getPullRequestDiff(repositoryId, prNumber),
     enabled: tab === 'diff' && details !== null,
   });
   const diff = diffQuery.data ?? null;

@@ -78,14 +78,14 @@ describe('FileOperationHistory', () => {
     expect(fixture.history.state(fixture.repositoryId).canRedo).toBe(true);
   });
 
-  it('uses a recycle-bin marker for folders and consumes it without redo', async () => {
+  it('uses a system-Trash marker for folders and consumes it without redo', async () => {
     const fixture = await createFixture();
     await mkdir(path.join(fixture.work, 'folder'));
     const prepared = await fixture.history.prepareDelete(fixture.repositoryId, ['folder']);
-    expect(prepared.recovery).toBe('recycle-bin');
+    expect(prepared.recovery).toBe('system-trash');
     await fixture.trash.trashItem(path.join(fixture.work, 'folder'));
     fixture.history.recordDelete(fixture.repositoryId, prepared, ['folder']);
-    expect(await fixture.history.undo(fixture.repositoryId)).toMatchObject({ status: 'recycle-bin', paths: ['folder'] });
+    expect(await fixture.history.undo(fixture.repositoryId)).toMatchObject({ status: 'system-trash', paths: ['folder'] });
     expect(fixture.history.state(fixture.repositoryId).canRedo).toBe(false);
   });
 
@@ -136,7 +136,7 @@ async function createFixture() {
   const settings = new SettingsStore(path.join(root, 'settings.json')); await settings.load();
   const process = new GitProcess(); const repositories = new RepositoryService(process, settings); const files = new FileService(process, repositories); const repository = await repositories.openPath(work);
   let counter = 0;
-  const trash = { trashItem: async (target: string) => { await rename(target, path.join(trashRoot, `${++counter}-${path.basename(target)}`)); } };
+  const trash = { available: true, trashItem: async (target: string) => { await rename(target, path.join(trashRoot, `${++counter}-${path.basename(target)}`)); } };
   const history = new FileOperationHistory(files, trash);
   return { root, work, files, history, trash, repositoryId: repository.id };
 }

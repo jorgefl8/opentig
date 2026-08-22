@@ -54,6 +54,19 @@ describe('CliProcessRunner', () => {
     await expect(result).rejects.toMatchObject({ detail: { code: 'AI_CANCELLED' } });
   });
 
+  it('cancels owned processes during bounded close', async () => {
+    const runner = new CliProcessRunner();
+    const running = runner.run(process.execPath, ['-e', 'setInterval(() => {}, 1_000)'], { timeoutMs: 10_000 });
+    const settled = expect(running).rejects.toMatchObject({ detail: { code: 'AI_CANCELLED' } });
+    await delay(100);
+
+    await runner.close();
+    await settled;
+    await expect(runner.run(process.execPath, ['-e', 'process.exit(0)'])).rejects.toMatchObject({
+      detail: { code: 'AI_CANCELLED' },
+    });
+  });
+
   it('merges and removes environment variables', async () => {
     const runner = new CliProcessRunner();
     const result = await runner.run(process.execPath, ['-e', 'process.stdout.write(`${process.env.OPENTIG_KEEP ?? ""}|${process.env.OPENTIG_REMOVE ?? "missing"}`)'], {

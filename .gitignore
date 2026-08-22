@@ -5,6 +5,8 @@ dist/
 out/
 coverage/
 *.tsbuildinfo
+packages/server/.client/
+packages/server/.resource/
 
 # Logs and local environment
 *.log

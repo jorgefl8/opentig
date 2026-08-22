@@ -5,7 +5,7 @@ import reactRefresh from 'eslint-plugin-react-refresh';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-  { ignores: ['.vite', 'dist', 'out', 'node_modules', '.forge-scaffold', 'memory'] },
+  { ignores: ['.vite', '**/dist/**', 'out', 'node_modules', '.forge-scaffold', 'memory', 'packages/server/.client/**', 'packages/server/.resource/**'] },
   eslint.configs.recommended,
   ...tseslint.configs.recommended,
   {
@@ -19,7 +19,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ['src/main/**/*.ts', 'src/preload/**/*.ts', 'src/main.ts', 'src/preload.ts'],
+    files: ['src/main/**/*.ts', 'src/preload/**/*.ts', 'src/main.ts', 'src/preload.ts', 'packages/server/**/*.{ts,mjs}'],
     languageOptions: { globals: globals.node },
   },
 );

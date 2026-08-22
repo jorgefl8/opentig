@@ -1,30 +1,34 @@
 import path from 'node:path';
-import { app, BrowserWindow, nativeTheme, session, shell } from 'electron';
+import { networkInterfaces } from 'node:os';
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  nativeTheme,
+  session,
+  shell,
+  utilityProcess,
+  type WebContents,
+} from 'electron';
 import started from 'electron-squirrel-startup';
-import { FileService } from './main/files/FileService';
-import { FileOperationHistory } from './main/files/FileOperationHistory';
-import { RepositoryWatcher } from './main/files/RepositoryWatcher';
-import { GitProcess } from './main/git/GitProcess';
-import { GitRepositoryOperations } from './main/git/GitRepositoryOperations';
-import { RepositoryService } from './main/git/RepositoryService';
-import { SearchService } from './main/git/SearchService';
-import { registerHandlers } from './main/ipc/register-handlers';
-import { AiLogStore } from './main/persistence/AiLogStore';
-import { SettingsStore } from './main/persistence/SettingsStore';
-import { IPC } from './shared/contracts';
-import { CliProcessRunner } from './main/ai/CliProcessRunner';
-import { CliResolver } from './main/ai/CliResolver';
-import { CommitMessageService } from './main/ai/CommitMessageService';
-import { CodexProvider } from './main/ai/providers/CodexProvider';
-import { ClaudeProvider } from './main/ai/providers/ClaudeProvider';
-import { OpenCodeProvider } from './main/ai/providers/OpenCodeProvider';
-import { PullRequestDraftService } from './main/ai/PullRequestDraftService';
-import { GitHubService } from './main/github/GitHubService';
+import { createElectronHostAdapter } from './main/ipc/ElectronHostAdapter';
+import { registerDesktopHandlers } from './main/ipc/registerDesktopHandlers';
 import { createPerformanceSampler, type PerformanceSampler } from './main/performance/PerformanceSampler';
 import { startPerformanceAutomation } from './main/performance/PerformanceAutomation';
-import { mergeRepositoryChangeScopes, type RepositoryChangeScope } from './shared/repository-change';
+import {
+  ServerPortConflictError,
+  ServerProcessManager,
+  type ServerProcessAddress,
+  type ServerProcessState,
+} from './main/server/ServerProcessManager';
+import { DesktopServerSettings } from './main/server/DesktopServerSettings';
 import { startGlobalDoubleControlShortcut } from './main/shortcuts/GlobalDoubleControlShortcut';
-import { getWindowTitleBarOptions, shouldUseDarkTitleBar } from './main/window/WindowTitleBar';
+import { DesktopWindowState } from './main/window/DesktopWindowState';
+import { getWindowTitleBarOptions } from './main/window/WindowTitleBar';
+import { normalizeExternalUrl } from './shared/external-url';
+import type { OpenTigPairingLink, OpenTigWebAccessStatus } from './shared/desktop-api';
+import type { OpenTigServerHost } from './shared/server-process';
+import { OPEN_TIG_SESSION_COOKIE } from './shared/server-protocol';
 
 if (started) app.quit();
 
@@ -32,11 +36,21 @@ const hasLock = app.requestSingleInstanceLock();
 if (!hasLock) app.quit();
 
 let mainWindow: BrowserWindow | null = null;
+let serverManager: ServerProcessManager | null = null;
+let desktopServerSettings: DesktopServerSettings | null = null;
+let windowState: DesktopWindowState | null = null;
+let allowedServerOrigin: string | null = null;
 let performanceSampler: PerformanceSampler | null = null;
 let stopGlobalDoubleControlShortcut: (() => void) | null = null;
-const settingsStores = new Set<SettingsStore>();
 let shutdownStarted = false;
 let shutdownReady = false;
+let webAccessEnabled = false;
+let serverState: ServerProcessState = { status: 'stopped' };
+let webAccessRestartError: string | null = null;
+let webAccessMutation: Promise<void> = Promise.resolve();
+
+const CONNECTING_PAGE_URL = startupPageUrl('Starting OpenTig…', 'Connecting to the local server.');
+const ERROR_PAGE_URL = startupPageUrl('OpenTig server is offline', 'See the server log for details, then restart OpenTig.');
 
 function getAppIconPath(): string {
   return app.isPackaged
@@ -66,41 +80,19 @@ function applyDoubleControlShortcutPreference(enabled: boolean): void {
 }
 
 async function createWindow(): Promise<void> {
-  const settings = new SettingsStore(path.join(app.getPath('userData'), 'settings.json'));
-  settingsStores.add(settings);
-  await settings.load();
-  const git = new GitProcess();
-  const repositories = new RepositoryService(git, settings);
-  const files = new FileService(git, repositories);
-  const fileHistory = new FileOperationHistory(files, { trashItem: (target) => shell.trashItem(target) });
-  const search = new SearchService(git, repositories, files, fileHistory);
-  const operations = new GitRepositoryOperations(git, repositories, files);
-  const cliResolver = new CliResolver();
-  const cliRunner = new CliProcessRunner();
-  const providers = [
-    new CodexProvider(cliResolver, cliRunner),
-    new ClaudeProvider(cliResolver, cliRunner),
-    new OpenCodeProvider(cliResolver, cliRunner),
-  ];
-  const aiLog = new AiLogStore(path.join(app.getPath('userData'), 'ai-log.jsonl'));
-  await aiLog.load();
-  const ai = new CommitMessageService(operations, providers, aiLog);
-  const prDrafts = new PullRequestDraftService(operations, providers, aiLog);
-  const github = new GitHubService(cliResolver, cliRunner, git, repositories);
+  if (!serverManager || !windowState) throw new Error('Desktop services are not initialized.');
+  const bounds = await windowState.load();
 
   mainWindow = new BrowserWindow({
-    ...settings.windowBounds,
+    ...bounds,
     minWidth: 900,
     minHeight: 600,
     show: false,
     backgroundColor: '#171614',
-    title: 'OpenTig',
+    title: 'OpenTig — Connecting…',
     icon: getAppIconPath(),
     autoHideMenuBar: true,
-    ...getWindowTitleBarOptions(
-      shouldUseDarkTitleBar(settings.preferences.theme, nativeTheme.shouldUseDarkColors),
-      process.platform,
-    ),
+    ...getWindowTitleBarOptions(nativeTheme.shouldUseDarkColors, process.platform),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
@@ -110,84 +102,228 @@ async function createWindow(): Promise<void> {
     },
   });
 
-  // Always start maximized (filling the work area); persisted bounds remain the
-  // restore-down size. Maximizing while hidden avoids a non-maximized flash.
+  await mainWindow.loadURL(CONNECTING_PAGE_URL);
   mainWindow.maximize();
+  mainWindow.show();
+  mainWindow.focus();
 
-  let lastNotifiedAt = 0;
-  let trailingNotify: NodeJS.Timeout | null = null;
   let stopPerformanceAutomation: () => void = () => {};
-  let trailingChange: { repositoryId: string; scope: RepositoryChangeScope } | null = null;
-  const notifyRepositoryChanged = (repositoryId: string, scope: RepositoryChangeScope) => {
-    if (!mainWindow || mainWindow.isDestroyed() || !mainWindow.isVisible()) return;
-    const elapsed = Date.now() - lastNotifiedAt;
-    // At most one refresh per second: bursts collapse into a trailing send.
-    if (elapsed < 1_000) {
-      trailingChange = trailingChange?.repositoryId === repositoryId
-        ? { repositoryId, scope: mergeRepositoryChangeScopes(trailingChange.scope, scope) }
-        : { repositoryId, scope };
-      if (!trailingNotify) {
-        trailingNotify = setTimeout(() => {
-          trailingNotify = null;
-          const change = trailingChange;
-          trailingChange = null;
-          if (change) notifyRepositoryChanged(change.repositoryId, change.scope);
-        }, 1_000 - elapsed);
-      }
-      return;
-    }
-    lastNotifiedAt = Date.now();
-    mainWindow.webContents.send(IPC.repositoryChanged, repositoryId, scope);
-  };
-  const watcher = new RepositoryWatcher(notifyRepositoryChanged, () => git.hasActiveProcess());
-  const removeHandlers = registerHandlers({
-    window: mainWindow, settings, repositories, search, files, fileHistory, operations, watcher, ai, aiLog, github, prDrafts,
-    onPreferencesChanged: (preferences) => applyDoubleControlShortcutPreference(preferences.doubleControlShortcutEnabled),
+  const host = createElectronHostAdapter(mainWindow);
+  const removeHandlers = registerDesktopHandlers(host, applyDoubleControlShortcutPreference, {
+    getStatus: getWebAccessStatus,
+    setEnabled: setWebAccessEnabled,
+    createPairingLink,
+    revokeAllSessions,
   });
 
-  mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-  mainWindow.webContents.on('will-navigate', (event) => event.preventDefault());
-  mainWindow.on('hide', () => watcher.stop());
-  mainWindow.on('show', () => {
-    const id = settings.activeRepositoryId;
-    if (id) {
-      try { watcher.start(repositories.get(id)); } catch { /* recent path may have gone away */ }
-    }
+  const openExternal = (value: string) => {
+    const url = normalizeExternalUrl(value);
+    if (url) void shell.openExternal(url).catch((error) => console.error('Could not open external URL.', error));
+  };
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    openExternal(url);
+    return { action: 'deny' };
   });
-  mainWindow.on('focus', () => {
-    if (Date.now() - lastNotifiedAt < 2_000) return;
-    const id = settings.activeRepositoryId;
-    if (id) notifyRepositoryChanged(id, 'unknown');
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    if (url === CONNECTING_PAGE_URL || url === ERROR_PAGE_URL || (allowedServerOrigin && safeOrigin(url) === allowedServerOrigin)) return;
+    event.preventDefault();
+    openExternal(url);
   });
   mainWindow.on('close', () => {
-    if (!mainWindow) return;
-    const bounds = mainWindow.getNormalBounds();
-    void settings.setWindowBounds({ width: bounds.width, height: bounds.height, x: bounds.x, y: bounds.y });
+    if (!mainWindow || !windowState) return;
+    const normal = mainWindow.getNormalBounds();
+    void windowState.save({ width: normal.width, height: normal.height, x: normal.x, y: normal.y });
   });
   mainWindow.on('closed', () => {
-    if (trailingNotify) clearTimeout(trailingNotify);
-    trailingNotify = null;
-    trailingChange = null;
     stopPerformanceAutomation();
-    watcher.stop();
-    void ai.close();
-    prDrafts.close();
     removeHandlers();
-    fileHistory.clear();
-    void settings.flush()
-      .then(() => settingsStores.delete(settings))
-      .catch((error) => console.error('Could not flush OpenTig settings.', error));
     mainWindow = null;
   });
 
-  if (MAIN_WINDOW_VITE_DEV_SERVER_URL) await mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
-  else await mainWindow.loadFile(path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`));
-  if (!mainWindow.isDestroyed()) {
-    mainWindow.show();
-    mainWindow.focus();
-    stopPerformanceAutomation = startPerformanceAutomation(mainWindow, performanceSampler);
+  try {
+    await serverManager.start();
+    const server = serverManager.current;
+    if (!server) throw new Error('OpenTig server stopped during startup.');
+    allowedServerOrigin = server.origin;
+    await mainWindow.loadURL(server.origin);
+    if (!mainWindow.isDestroyed()) {
+      mainWindow.setTitle('OpenTig');
+      mainWindow.show();
+      mainWindow.focus();
+      stopPerformanceAutomation = startPerformanceAutomation(mainWindow, performanceSampler);
+    }
+  } catch (error) {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.setTitle('OpenTig — Server error');
+      await mainWindow.loadURL(ERROR_PAGE_URL).catch(() => undefined);
+    }
+    const message = error instanceof ServerPortConflictError
+      ? error.message
+      : 'The OpenTig server could not start. See the desktop server log for details.';
+    dialog.showErrorBox('OpenTig server error', message);
   }
-  applyDoubleControlShortcutPreference(settings.preferences.doubleControlShortcutEnabled);
+}
+
+function createServerManager(): ServerProcessManager {
+  const userData = app.getPath('userData');
+  const serverRoot = app.isPackaged
+    ? path.join(process.resourcesPath, 'opentig-server')
+    : path.join(app.getAppPath(), 'packages', 'server', '.resource', 'opentig-server');
+  return new ServerProcessManager({
+    modulePath: path.join(serverRoot, 'utility.mjs'),
+    cwd: userData,
+    logPath: path.join(userData, 'logs', 'server.log'),
+    settingsPath: path.join(userData, 'settings.json'),
+    aiLogPath: path.join(userData, 'ai-log.jsonl'),
+    serverDataPath: path.join(userData, 'server'),
+    clientRoot: path.join(serverRoot, 'client'),
+    ...(app.isPackaged
+      ? { trashModulePath: path.join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', 'trash', 'index.js') }
+      : {}),
+    appVersion: app.getVersion(),
+    platform: normalizePlatform(process.platform),
+    host: webAccessEnabled ? '0.0.0.0' : '127.0.0.1',
+    fork: (modulePath, args, options) => utilityProcess.fork(modulePath, args, options),
+    onReady: installDesktopSession,
+    onState: applyServerState,
+  });
+}
+
+function applyServerState(state: ServerProcessState): void {
+  serverState = state;
+  if (state.status === 'ready') {
+    allowedServerOrigin = state.origin;
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setTitle('OpenTig');
+  } else if (state.status === 'restarting') {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setTitle('OpenTig — Reconnecting…');
+  } else if (state.status === 'failed') {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setTitle('OpenTig — Server offline');
+  }
+}
+
+function setWebAccessEnabled(enabled: boolean): Promise<OpenTigWebAccessStatus> {
+  const operation = webAccessMutation.then(async () => {
+    const manager = serverManager;
+    const settings = desktopServerSettings;
+    if (!manager || !settings) throw new Error('OpenTig desktop server is not initialized.');
+    if (enabled === webAccessEnabled) return getWebAccessStatus();
+    webAccessRestartError = null;
+    const previousHost: OpenTigServerHost = webAccessEnabled ? '0.0.0.0' : '127.0.0.1';
+    const nextHost: OpenTigServerHost = enabled ? '0.0.0.0' : '127.0.0.1';
+    try {
+      await manager.restart(nextHost);
+      try {
+        await settings.save(enabled);
+      } catch (error) {
+        await manager.restart(previousHost);
+        throw error;
+      }
+      webAccessEnabled = enabled;
+      return getWebAccessStatus();
+    } catch (error) {
+      webAccessRestartError = error instanceof Error ? error.message : 'OpenTig could not restart network access.';
+      throw error;
+    }
+  });
+  webAccessMutation = operation.then(() => undefined, () => undefined);
+  return operation;
+}
+
+async function getWebAccessStatus(): Promise<OpenTigWebAccessStatus> {
+  const manager = serverManager;
+  const current = manager?.current ?? null;
+  let connectedSessionCount = 0;
+  if (current) {
+    try { connectedSessionCount = (await manager!.getStatus()).connectedSessionCount; }
+    catch { /* restarting or offline */ }
+  }
+  const actualPort = current?.port ?? ('port' in serverState ? serverState.port : null);
+  return {
+    enabled: webAccessEnabled,
+    serverState: serverState.status,
+    actualPort,
+    localEndpoint: actualPort === null ? null : `http://127.0.0.1:${actualPort}`,
+    networkEndpoints: actualPort === null ? [] : networkEndpoints(actualPort),
+    connectedSessionCount,
+    restartError: webAccessRestartError,
+  };
+}
+
+async function createPairingLink(endpoint: string): Promise<OpenTigPairingLink> {
+  const manager = serverManager;
+  if (!manager?.current) throw new Error('OpenTig server is not ready.');
+  if (!webAccessEnabled) throw new Error('Enable network access before creating a pairing link.');
+  if (!networkEndpoints(manager.current.port).includes(endpoint)) throw new Error('Select an active OpenTig network endpoint.');
+  return manager.createPairingLink(endpoint);
+}
+
+async function revokeAllSessions(): Promise<{ revokedCount: number }> {
+  const manager = serverManager;
+  const current = manager?.current;
+  if (!manager || !current) throw new Error('OpenTig server is not ready.');
+  const result = await manager.revokeAllSessions();
+  await installDesktopSessionCookie(current.origin, result.desktopCookie);
+  return { revokedCount: result.revokedCount };
+}
+
+function networkEndpoints(port: number): string[] {
+  const endpoints = new Set<string>();
+  for (const entries of Object.values(networkInterfaces())) {
+    for (const entry of entries ?? []) {
+      if (entry.internal || entry.family !== 'IPv4' || entry.address.startsWith('169.254.')) continue;
+      endpoints.add(`http://${entry.address}:${port}`);
+    }
+  }
+  return [...endpoints].sort();
+}
+
+async function installDesktopSession(server: ServerProcessAddress, desktopSecret: string): Promise<void> {
+  const cookies = await session.defaultSession.cookies.get({ url: server.origin, name: OPEN_TIG_SESSION_COOKIE });
+  const currentCookie = cookies[0]?.value;
+  const descriptor = await fetch(`${server.origin}/api/auth/descriptor`, {
+    headers: currentCookie ? { Cookie: `${OPEN_TIG_SESSION_COOKIE}=${currentCookie}` } : {},
+  });
+  if (descriptor.ok) {
+    const state = await descriptor.json() as { authenticated?: unknown };
+    if (state.authenticated === true) return;
+  }
+  const response = await fetch(`${server.origin}/api/auth/desktop`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Origin: server.origin },
+    body: JSON.stringify({ secret: desktopSecret }),
+  });
+  if (response.status !== 204) throw new Error('Could not authenticate the desktop with the OpenTig server.');
+  const cookie = response.headers.get('set-cookie');
+  if (!cookie) throw new Error('OpenTig server did not return a desktop session.');
+  await installDesktopSessionCookie(server.origin, cookie);
+}
+
+async function installDesktopSessionCookie(origin: string, cookie: string): Promise<void> {
+  const value = cookie.match(new RegExp(`^${OPEN_TIG_SESSION_COOKIE}=([^;]+)`))?.[1];
+  if (!value) throw new Error('OpenTig server returned an invalid desktop session.');
+  await session.defaultSession.cookies.set({
+    url: origin,
+    name: OPEN_TIG_SESSION_COOKIE,
+    value,
+    path: '/',
+    httpOnly: true,
+    sameSite: 'strict',
+  });
+  const cookies = await session.defaultSession.cookies.get({ url: origin, name: OPEN_TIG_SESSION_COOKIE });
+  if (cookies.length === 0) throw new Error('Could not install the OpenTig desktop session.');
+}
+
+function safeOrigin(value: string): string | null {
+  try { return new URL(value).origin; } catch { return null; }
+}
+
+function startupPageUrl(heading: string, detail: string): string {
+  const html = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><style>html,body{height:100%;margin:0;background:#171614;color:#f4f1ed;font-family:system-ui,sans-serif}body{display:grid;place-items:center}.state{text-align:center}.mark{width:28px;height:28px;margin:0 auto 18px;border:3px solid #5b5752;border-top-color:#e87847;border-radius:50%;animation:spin .8s linear infinite}h1{font-size:18px;margin:0 0 8px}p{font-size:13px;color:#aaa39c;margin:0}@keyframes spin{to{transform:rotate(360deg)}}</style></head><body><main class="state"><div class="mark" aria-hidden="true"></div><h1>${heading}</h1><p>${detail}</p></main></body></html>`;
+  return `data:text/html;charset=UTF-8,${encodeURIComponent(html)}`;
+}
+
+function normalizePlatform(platform: NodeJS.Platform): 'win32' | 'darwin' | 'linux' | 'other' {
+  return platform === 'win32' || platform === 'darwin' || platform === 'linux' ? platform : 'other';
 }
 
 app.on('second-instance', () => {
@@ -201,7 +337,21 @@ app.whenReady().then(async () => {
   } catch (error) {
     console.error('Could not start the OpenTig performance sampler.', error);
   }
-  session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
+  const userData = app.getPath('userData');
+  windowState = new DesktopWindowState(
+    path.join(userData, 'desktop-window.json'),
+    path.join(userData, 'settings.json'),
+  );
+  desktopServerSettings = new DesktopServerSettings(path.join(userData, 'desktop-server.json'));
+  webAccessEnabled = await desktopServerSettings.load();
+  serverManager = createServerManager();
+
+  const clipboardPermissions = new Set(['clipboard-read', 'clipboard-sanitized-write']);
+  const trustedClipboardRequest = (webContents: WebContents | null, permission: string) => (
+    webContents === mainWindow?.webContents && clipboardPermissions.has(permission)
+  );
+  session.defaultSession.setPermissionCheckHandler((webContents, permission) => trustedClipboardRequest(webContents, permission));
+  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => callback(trustedClipboardRequest(webContents, permission)));
   await createWindow();
 });
 
@@ -213,9 +363,18 @@ app.on('before-quit', (event) => {
   stopGlobalDoubleControlShortcut?.();
   stopGlobalDoubleControlShortcut = null;
   const sampler = performanceSampler;
+  const manager = serverManager;
+  const desktopState = windowState;
+  const serverSettings = desktopServerSettings;
   performanceSampler = null;
-  const tasks: Promise<unknown>[] = [...settingsStores].map((settings) => settings.flush());
+  serverManager = null;
+  windowState = null;
+  desktopServerSettings = null;
+  const tasks: Promise<unknown>[] = [];
+  if (manager) tasks.push(manager.stop());
   if (sampler) tasks.push(sampler.stop());
+  if (desktopState) tasks.push(desktopState.flush());
+  if (serverSettings) tasks.push(serverSettings.flush());
   void Promise.allSettled(tasks).then((results) => {
     for (const result of results) {
       if (result.status === 'rejected') console.error('Could not finish an OpenTig shutdown task.', result.reason);

@@ -10,6 +10,7 @@ import {
 import { IconArrowsSort, IconLoader4, IconRefresh, IconSortAscending, IconSortDescending, IconTrash, IconX } from '@tabler/icons-react';
 import { sileo } from 'sileo';
 import type { AiLogEntry } from '@shared/ai-log';
+import { opentig } from '@/lib/opentig-api';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogClose, DialogDescription, DialogPopup, DialogTitle } from '@/components/ui/dialog';
@@ -120,7 +121,7 @@ export function AiLogDialog({ open, onOpenChange }: AiLogDialogProps) {
 
   const load = useCallback(async () => {
     setLoading(true);
-    try { setEntries(await window.opentig.ai.log()); }
+    try { setEntries(await opentig.ai.log()); }
     catch (reason) { sileo.error({ title: 'Could not read the AI history', description: messageOf(reason) }); }
     finally { setLoading(false); }
   }, []);
@@ -151,7 +152,7 @@ export function AiLogDialog({ open, onOpenChange }: AiLogDialogProps) {
   const clear = async () => {
     if (!window.confirm('Delete the whole AI history? This cannot be undone.')) return;
     try {
-      await window.opentig.ai.clearLog();
+      await opentig.ai.clearLog();
       setEntries([]);
     } catch (reason) {
       sileo.error({ title: 'Could not clear the AI history', description: messageOf(reason) });

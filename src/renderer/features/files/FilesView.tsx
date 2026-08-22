@@ -47,6 +47,8 @@ interface FilesViewProps {
   showDotEnvFiles: boolean;
   activePath: string | null;
   readOnly: boolean;
+  fileClipboardAvailable: boolean;
+  revealAvailable: boolean;
   historyState: FileHistoryState;
   onUndo(): Promise<void>;
   onRedo(): Promise<void>;
@@ -128,6 +130,8 @@ export function FilesView({
   showDotEnvFiles,
   activePath,
   readOnly,
+  fileClipboardAvailable,
+  revealAvailable,
   historyState,
   onUndo,
   onRedo,
@@ -491,7 +495,7 @@ export function FilesView({
       void onCutEntries(entries);
       return;
     }
-    if (command && key === 'v' && !readOnly) {
+    if (command && key === 'v' && !readOnly && fileClipboardAvailable) {
       event.preventDefault();
       const target = lead ? targetDirectoryFor(lead) : parentDirectory(entries[0]?.path ?? '');
       void onPaste(target);
@@ -683,6 +687,8 @@ export function FilesView({
                   active={activePath === entry.path}
                   multiSelected={multiSelected}
                   readOnly={readOnly}
+                  fileClipboardAvailable={fileClipboardAvailable}
+                  revealAvailable={revealAvailable}
                   historyState={historyState}
                   onUndo={onUndo}
                   onRedo={onRedo}
@@ -769,6 +775,8 @@ interface FileRowProps {
   active: boolean;
   multiSelected: boolean;
   readOnly: boolean;
+  fileClipboardAvailable: boolean;
+  revealAvailable: boolean;
   historyState: FileHistoryState;
   onUndo(): Promise<void>;
   onRedo(): Promise<void>;
@@ -802,6 +810,8 @@ function FileRow({
   active,
   multiSelected,
   readOnly,
+  fileClipboardAvailable,
+  revealAvailable,
   historyState,
   onUndo,
   onRedo,
@@ -904,9 +914,11 @@ function FileRow({
         <ContextMenuItem disabled={readOnly} onClick={() => onCut(entry)}>
           <IconCut aria-hidden="true" /> Cut <span className="ml-auto text-[10px] text-muted-foreground">Ctrl+X</span>
         </ContextMenuItem>
-        <ContextMenuItem disabled={readOnly} onClick={() => onPasteInto(entry)}>
-          <IconClipboard aria-hidden="true" /> Paste <span className="ml-auto text-[10px] text-muted-foreground">Ctrl+V</span>
-        </ContextMenuItem>
+        {fileClipboardAvailable && (
+          <ContextMenuItem disabled={readOnly} onClick={() => onPasteInto(entry)}>
+            <IconClipboard aria-hidden="true" /> Paste <span className="ml-auto text-[10px] text-muted-foreground">Ctrl+V</span>
+          </ContextMenuItem>
+        )}
         <ContextMenuSeparator />
         <ContextMenuItem disabled={readOnly || multiSelected} onClick={() => onRename(entry)}>
           <IconEdit aria-hidden="true" /> Rename <span className="ml-auto text-[10px] text-muted-foreground">F2</span>
@@ -924,9 +936,11 @@ function FileRow({
         <ContextMenuItem disabled={entry.type !== 'file' || multiSelected} onClick={() => void onCopyContents(entry)}>
           <IconCopy aria-hidden="true" /> Copy contents
         </ContextMenuItem>
-        <ContextMenuItem disabled={multiSelected} onClick={() => void onReveal(entry)}>
-          <IconExternalLink aria-hidden="true" /> Reveal in File Explorer
-        </ContextMenuItem>
+        {revealAvailable && (
+          <ContextMenuItem disabled={multiSelected} onClick={() => void onReveal(entry)}>
+            <IconExternalLink aria-hidden="true" /> Reveal in File Explorer
+          </ContextMenuItem>
+        )}
         <ContextMenuSeparator />
         <ContextMenuItem className="text-destructive data-highlighted:text-destructive" disabled={readOnly} onClick={() => onDelete(entry)}>
           <IconTrash aria-hidden="true" /> Delete <span className="ml-auto text-[10px] text-muted-foreground">Del</span>

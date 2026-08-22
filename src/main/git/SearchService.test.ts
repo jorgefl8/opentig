@@ -142,7 +142,7 @@ async function createFixture() {
   const repositories = new RepositoryService(process, settings);
   const files = new FileService(process, repositories);
   const repository = await repositories.openPath(work);
-  const history = new FileOperationHistory(files, { trashItem: async () => {} });
+  const history = new FileOperationHistory(files, { available: true, trashItem: async () => {} });
   const search = new SearchService(process, repositories, files, history);
   return { work, search, history, repositoryId: repository.id };
 }

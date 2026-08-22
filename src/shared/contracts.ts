@@ -1,6 +1,7 @@
 import type { SerializedOperationError } from './errors';
 import type { BranchDeletionResult, BranchDetails, BranchInfo, CommitFile, CommitPage, FileTreeEntry, LocalRefsSnapshot, RepositoryStatus, WorktreeDetails, WorktreeInfo, WorktreeRemovalBlocked } from './git-types';
 import type { RasterImageMime } from './image-types';
+import type { OpenTigServerIdentity } from './server-protocol';
 import type { RepositoryChangeScope } from './repository-change';
 import type { AiLogEntry } from './ai-log';
 import type { FilesTreeState } from './files-tree-state';
@@ -82,10 +83,13 @@ export type DeleteEntryResult = { deleted: true } | { deleted: false };
 
 export interface CopyEntriesResult {
   copied: number;
+  paths: string[];
 }
 
 export interface CutEntriesResult {
   cut: number;
+  paths: string[];
+  transferId: string;
 }
 
 export type PasteEntriesResult =
@@ -126,7 +130,7 @@ export type FileHistoryResult =
   | { status: 'applied'; direction: 'undo' | 'redo'; label: string; pathChanges: FileHistoryPathChange[]; removedPaths: string[]; restoredPaths: string[]; state: FileHistoryState }
   | { status: 'empty'; state: FileHistoryState }
   | { status: 'conflict'; label: string; message: string; state: FileHistoryState }
-  | { status: 'recycle-bin'; label: string; paths: string[]; state: FileHistoryState };
+  | { status: 'system-trash'; label: string; paths: string[]; state: FileHistoryState };
 
 export type RenameEntryResult =
   | { status: 'renamed'; from: string; to: string }
@@ -139,7 +143,7 @@ export type CreateEntryResult =
 
 export interface DeleteEntriesResult {
   deleted: number;
-  recovery?: 'undo' | 'recycle-bin';
+  recovery?: 'undo' | 'system-trash';
 }
 
 export type WriteFileResult =
@@ -393,6 +397,21 @@ export interface Preferences {
   remoteFetchIntervalSeconds: number;
 }
 
+export type OpenTigRuntimeMode = 'desktop' | 'headless';
+export type OpenTigPlatform = 'win32' | 'darwin' | 'linux' | 'other';
+
+/** Serializable runtime and host capabilities exposed by the server boundary. */
+export interface OpenTigCapabilities {
+  runtimeMode: OpenTigRuntimeMode;
+  platform: OpenTigPlatform;
+  systemTrash: boolean;
+  nativePicker: boolean;
+  fileClipboard: boolean;
+  revealInFileManager: boolean;
+  githubCli: GhCliStatus;
+  aiProviders: AiHarnessStatus[];
+}
+
 export interface BootstrapData {
   recentRepositories: RecentRepository[];
   repositoryProjects: RepositoryProject[];
@@ -401,11 +420,18 @@ export interface BootstrapData {
   activeRepository: RepositoryInfo | null;
   preferences: Preferences;
   performanceAutomation: boolean;
+  /** Present when bootstrap arrived through the authoritative server transport. */
+  server?: OpenTigServerIdentity;
 }
 
+/**
+ * Compatibility facade exposed by the current preload bridge. Execution
+ * ownership is defined by OpenTigServerApi and OpenTigDesktopApi.
+ */
 export interface OpenTigApi {
   app: {
     bootstrap(): Promise<BootstrapData>;
+    capabilities(): Promise<OpenTigCapabilities>;
     setPreferences(preferences: Partial<Preferences>): Promise<Preferences>;
     setFilesTreeExpandedPaths(repositoryId: string, expandedPaths: string[]): Promise<void>;
     setOpenFilesState(repositoryId: string, tabs: OpenFileTab[], activePath: string | null, previewPath: string | null): Promise<void>;
@@ -413,16 +439,19 @@ export interface OpenTigApi {
     setTitleBarTheme(dark: boolean): Promise<void>;
   };
   clipboard: {
-    readText(): Promise<string>;
-    writeText(text: string): Promise<void>;
-  };
-  shell: {
-    /** Opens an http(s):// or mailto: URL in the default browser/mail client; anything else is rejected. */
-    openExternal(url: string): Promise<void>;
+    /** Native file paths exposed only in direct response to an explicit paste action. */
+    readFilePaths(): Promise<string[]>;
+    /** Native clipboard image used by Files paste when no file paths are present. */
+    readImagePng(): Promise<Uint8Array | null>;
   };
   repository: {
-    select(): Promise<RepositoryInfo | null>;
-    openRecent(id: string): Promise<RepositoryInfo | null>;
+    /** Native directory picker only; opening and Git validation stay server-owned. */
+    select(title?: string): Promise<string | null>;
+    /** Native moved-repository confirmation and directory picker. */
+    selectRelocation(repositoryName: string, previousPath: string): Promise<string | null>;
+    openPath(path: string): Promise<RepositoryInfo>;
+    openRecent(id: string): Promise<RepositoryInfo>;
+    relocateRecent(id: string, path: string): Promise<RepositoryInfo>;
     getStatus(id: string, includeStats?: boolean): Promise<RepositoryStatus>;
     getFiles(id: string): Promise<FileTreeEntry[]>;
     /** One level of a folder the tree left collapsed (ignored folders such as node_modules/). */
@@ -433,7 +462,7 @@ export interface OpenTigApi {
     getAbsolutePath(id: string, path: string): Promise<string>;
     copyEntries(id: string, paths: string[]): Promise<CopyEntriesResult>;
     cutEntries(id: string, paths: string[]): Promise<CutEntriesResult>;
-    pasteEntries(id: string, targetDirectory: string): Promise<PasteEntriesResult>;
+    pasteEntries(id: string, targetDirectory: string, sourcePaths: string[], cutTransferId?: string | null, imagePng?: Uint8Array | null): Promise<PasteEntriesResult>;
     moveEntry(id: string, path: string, targetDirectory: string): Promise<MoveEntryResult>;
     moveEntries(id: string, paths: string[], targetDirectory: string): Promise<MoveEntriesResult>;
     deleteEntry(id: string, path: string): Promise<DeleteEntryResult>;
@@ -509,6 +538,7 @@ export interface OpenTigApi {
   };
   events: {
     onRepositoryChanged(callback: (repositoryId: string, scope: RepositoryChangeScope) => void): () => void;
+    onActiveRepositoryChanged(callback: (repository: RepositoryInfo) => void): () => void;
   };
   projects: {
     create(name: string): Promise<RepositoryOrganization>;
@@ -521,17 +551,17 @@ export interface OpenTigApi {
 export type IpcResult<T> = { ok: true; value: T } | { ok: false; error: SerializedOperationError };
 
 export const IPC = {
-  bootstrap: 'app:bootstrap', preferences: 'app:preferences', filesTreeStateUpdate: 'app:files-tree-state', openFilesStateUpdate: 'app:open-files-state', titleBarTheme: 'app:title-bar-theme', projectCreate: 'projects:create', projectRename: 'projects:rename', projectRemove: 'projects:remove', projectAssign: 'projects:assign', clipboardReadText: 'clipboard:read-text', clipboardWriteText: 'clipboard:write-text', shellOpenExternal: 'shell:open-external', repositorySelect: 'repository:select',
-  repositoryOpenRecent: 'repository:open-recent', repositoryStatus: 'repository:status', repositoryFiles: 'repository:files', repositoryDirectoryEntries: 'repository:directory-entries',
+  bootstrap: 'app:bootstrap', capabilities: 'app:capabilities', preferences: 'app:preferences', filesTreeStateUpdate: 'app:files-tree-state', openFilesStateUpdate: 'app:open-files-state', projectCreate: 'projects:create', projectRename: 'projects:rename', projectRemove: 'projects:remove', projectAssign: 'projects:assign',
+  repositoryOpenPath: 'repository:open-path', repositoryOpenRecent: 'repository:open-recent', repositoryRelocateRecent: 'repository:relocate-recent', repositoryStatus: 'repository:status', repositoryFiles: 'repository:files', repositoryDirectoryEntries: 'repository:directory-entries',
   repositoryReadFile: 'repository:read-file', repositoryReadImage: 'repository:read-image', repositoryWriteFile: 'repository:write-file', repositoryAbsolutePath: 'repository:absolute-path',
   repositoryCopyEntries: 'repository:copy-entries', repositoryCutEntries: 'repository:cut-entries', repositoryPasteEntries: 'repository:paste-entries', repositoryMoveEntry: 'repository:move-entry', repositoryDeleteEntry: 'repository:delete-entry',
-  repositoryMoveEntries: 'repository:move-entries', repositoryDeleteEntries: 'repository:delete-entries', repositoryRevealEntry: 'repository:reveal-entry', repositoryRenameEntry: 'repository:rename-entry', repositoryCreateEntry: 'repository:create-entry',
+  repositoryMoveEntries: 'repository:move-entries', repositoryDeleteEntries: 'repository:delete-entries', repositoryRenameEntry: 'repository:rename-entry', repositoryCreateEntry: 'repository:create-entry',
   repositoryFileHistoryState: 'repository:file-history-state', repositoryUndoFileOperation: 'repository:undo-file-operation', repositoryRedoFileOperation: 'repository:redo-file-operation',
   repositorySearch: 'repository:search', repositoryReplaceSearch: 'repository:replace-search',
   diffGet: 'diff:get', diffCommit: 'diff:commit', diffCommitFile: 'diff:commit-file', indexStage: 'index:stage',
   indexUnstage: 'index:unstage', indexDiscard: 'index:discard', indexStageAll: 'index:stage-all', indexUnstageAll: 'index:unstage-all', indexPrepareCommitGroup: 'index:prepare-commit-group', indexUpdateConflict: 'index:update-conflict', indexResolveConflict: 'index:resolve-conflict', commitCreate: 'commit:create', commitUndoLatest: 'commit:undo-latest',
   commitsList: 'commits:list', commitsFiles: 'commits:files', branchesList: 'refs:branches', branchSwitch: 'refs:switch', worktreesList: 'refs:worktrees',
-  worktreeSelect: 'refs:select-worktree', refsPull: 'refs:pull', refsPush: 'refs:push', refsFetch: 'refs:fetch', repositoryChanged: 'repository:changed',
+  worktreeSelect: 'refs:select-worktree', refsPull: 'refs:pull', refsPush: 'refs:push', refsFetch: 'refs:fetch',
   localRefsSnapshot: 'refs:local-snapshot', branchDetails: 'refs:branch-details', worktreeDetails: 'refs:worktree-details',
   branchDelete: 'refs:delete-branch', worktreeRemove: 'refs:remove-worktree',
   aiStatuses: 'ai:statuses', aiGenerateCommitMessage: 'ai:generate-commit-message', aiCancelGeneration: 'ai:cancel-generation', aiLog: 'ai:log', aiClearLog: 'ai:clear-log',

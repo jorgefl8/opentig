@@ -24,3 +24,25 @@ jobs:
       - run: npm run lint
       - run: npm test
       - run: npm run audit:prod
+
+  system-trash-smoke:
+    strategy:
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx vitest run src/main/platform/SystemTrash.integration.test.ts
+        env:
+          OPENTIG_SYSTEM_TRASH_INTEGRATION: '1'
+      - if: runner.os == 'Windows'
+        run: npm run package
+      - if: runner.os == 'Windows'
+        run: npm run verify:packaged-trash

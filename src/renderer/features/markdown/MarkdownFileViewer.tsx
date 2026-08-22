@@ -12,6 +12,7 @@ import { useEditableFileDraft } from '@/features/viewer/useEditableFileDraft';
 import { resolveMarkdownRepositoryPath } from './markdown-links';
 import { renderMarkdown } from './render-markdown';
 import { useMermaid } from './useMermaid';
+import { openExternalUrl, writeClipboardText } from '@/lib/browser-capabilities';
 import './markdown.css';
 
 interface MarkdownFileViewerProps {
@@ -194,7 +195,7 @@ export function MarkdownFileViewer({ file, initialContent, revision, themeType, 
       if (!encoded) return;
       try {
         const code = decodeURIComponent(encoded);
-        await window.opentig.clipboard.writeText(code);
+        await writeClipboardText(code);
         const previous = copyFeedback.current;
         if (previous) {
           window.clearTimeout(previous.timer);
@@ -227,7 +228,7 @@ export function MarkdownFileViewer({ file, initialContent, revision, themeType, 
       return;
     }
     if (EXTERNAL_LINK_RE.test(href) || href.startsWith('mailto:')) {
-      void window.opentig.shell.openExternal(href).catch(() => undefined);
+      try { openExternalUrl(href); } catch { /* Invalid links stay inside OpenTig. */ }
       return;
     }
     const repositoryPath = resolveMarkdownRepositoryPath(file.path, href);

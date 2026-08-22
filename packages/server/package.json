@@ -1,0 +1,27 @@
+{
+  "name": "@opentig/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/server.mjs",
+  "exports": {
+    ".": "./dist/server.mjs"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "verify:build": "node scripts/verify-build.mjs"
+  },
+  "dependencies": {
+    "trash": "10.1.1",
+    "ws": "8.21.3"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "devDependencies": {
+    "@types/ws": "8.18.1"
+  }
+}

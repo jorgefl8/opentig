@@ -32,6 +32,8 @@ It is intentionally not an IDE, hosting service, or replacement for the Git CLI.
 ### Repositories and projects
 
 - Open existing local repositories and return to recently used repositories.
+- Use the same authenticated WebSocket backend from the desktop app or a paired browser. On desktop the backend runs in a supervised utility process, so a renderer reload or crash does not stop repository watchers or in-flight server state while the desktop process remains open; an unexpected backend exit is restarted with bounded backoff. Repository switches and filesystem/Git events propagate to every connected tab, and reconnecting clients bootstrap fresh state without replaying interrupted mutations. Browser clients enter paths on the server directly, while native folder selection and Explorer reveal remain desktop-only.
+- Keep that backend loopback-only by default, or enable **Settings → Network access** to restart the same utility listener on trusted LAN interfaces. The desktop pane shows server state, actual port, local and network endpoints, and connected owner sessions; it creates five-minute one-use pairing links with a QR code and can revoke every existing owner session without exposing a permanent token. Browsers without a valid owner session show fresh-pairing instructions instead of leaving the application loading indefinitely. Healthy connections stay unobtrusive; reconnecting and failed states remain visible.
 - Relocate a recent repository when its folder moved, preserving its project assignment, open tabs, and expanded folders.
 - Group related repositories into named OpenTig projects without moving anything on disk.
 - Pull or push an individual repository from its row in the repository picker. Only pending operations are shown, each with its ahead/behind commit count; multiple repositories can sync concurrently, and their separate Sileo progress and outcome cards remain visible together. Opening the picker fetches each listed repository so those counts match the remote, not a stale local cache.
@@ -47,7 +49,7 @@ It is intentionally not an IDE, hosting service, or replacement for the Git CLI.
 - Display changes as a flat list or recursive tree.
 - Treat each visually highlighted change or folder row as one continuous click target, with a pointer cursor across the active surface, while preserving its dedicated diff, open, stage, unstage, and discard controls.
 - Stage or unstage individual files, folders, selections, or everything at once.
-- Discard selected unstaged changes with confirmation; untracked files are sent to the Windows Recycle Bin.
+- Discard selected unstaged changes through an in-app confirmation; untracked files are sent to system Trash (the Recycle Bin on Windows).
 - Review syntax-aware diffs in unified or split mode, with optional line wrapping, colored with the same One Light/One Dark Pro token palette as the Files editor and Markdown code blocks; added, deleted, and modified lines keep their own diff colors.
 - Open changed Markdown files directly in their staged or unstaged diff, while keeping **Open file** available for the rendered preview. Changed HTML, SVG, and image files retain their direct rich preview and separate diff action.
 - Resolve merge conflicts in the built-in conflict editor, syntax-highlighted with the same palette as diffs and the Files editor, and mark resolved files for staging.
@@ -82,9 +84,9 @@ It is intentionally not an IDE, hosting service, or replacement for the Git CLI.
 - Preview and edit Markdown, HTML, and SVG files through compact Preview/Code controls; switching between them restores roughly the same scroll position in the tab you land on, holding it while diagrams, formulas, and syntax highlighting finish laying out, and releasing it the moment you scroll yourself.
 - Render GitHub-flavoured Markdown with syntax-highlighted code, copy buttons, alerts, footnotes, KaTeX, and Mermaid diagrams. External links (`http(s)://`, protocol-relative, and `mailto:`) open in your system browser or mail client instead of navigating inside OpenTig; relative links to repository files open that file in a new tab, and `#anchor` links scroll within the preview. Hovering any link shows a tooltip with its destination (truncated when long) and what clicking it will do (open in browser, open in mail app, or open file).
 - Preview raster images with fit, 1:1, keyboard/wheel zoom, dimensions, and file-size information.
-- Select multiple files and folders, then copy, cut, paste, rename, create, or delete them. Drag and drop moves one or many selected entries with a lifted preview, a count badge, and clear folder or repository-root destination feedback.
+- Select multiple files and folders, then copy, cut, paste, rename, create, or delete them. Desktop paste imports explicit file paths (or a clipboard image) only when you press `Ctrl+V` or choose Paste; runtimes without native file-clipboard support hide that action. Deletion requires an in-app confirmation that lists the affected paths. Drag and drop moves one or many selected entries with a lifted preview, a count badge, and clear folder or repository-root destination feedback.
 - Copy file paths or contents and reveal entries in Windows File Explorer.
-- Undo and redo supported file operations. Large or directory deletions fall back to the Windows Recycle Bin when an in-app snapshot is not practical.
+- Undo and redo supported file operations. Large or directory deletions fall back to system Trash when an in-app snapshot is not practical.
 - Optionally include Git-ignored files in the tree.
 
 ### Quick open and repository search
@@ -221,9 +223,13 @@ The unpacked executable is written to `out/OpenTig-win32-x64/OpenTig.exe`.
 
 - Repository contents are read from and written to their existing local paths.
 - The renderer has no direct Node.js, filesystem, or process access.
-- Privileged work stays in the Electron main process behind a narrow, typed preload bridge.
+- Git, filesystem, persistence, AI, and GitHub operations run through one typed, validated WebSocket command boundary in both desktop and browser clients. Requests have correlation IDs, cancellation and timeouts; interrupted operations are rejected rather than replayed after reconnect.
+- The private server transport binds to loopback by default, requires an owner session for commands and image bytes, validates exact mutation/WebSocket origins, and blocks static-file traversal and symlink escape. Enabling **Settings → Network access** persists a desktop-only setting and restarts that same backend on `0.0.0.0`; disabling it returns to `127.0.0.1`. OpenTig never starts a second Web Access server.
+- New browsers pair through a five-minute, one-use URL fragment displayed as a link and local QR code; the fragment is cleared before exchange. Steady-state credentials use host-only `HttpOnly`, `SameSite=Strict` cookies, only credential hashes are persisted, and revoking all sessions disconnects paired browsers while replacing the private desktop session. Network access grants owner-level file, Git, GitHub, and AI CLI authority as the OS user: use only a trusted LAN or VPN, an HTTPS reverse proxy, or an SSH tunnel, and never expose the raw port publicly.
+- Electron starts the backend after readiness on preferred port `6767`, scanning a bounded range upward only when that implicit port is occupied. Its one-use desktop bootstrap secret crosses the private parent/utility message port exactly once; it is absent from process arguments, environment variables, renderer JavaScript, and redacted rotating logs. Unexpected exits restart one utility process on the same selected port.
+- The narrow preload bridge contains only proven desktop capabilities such as folder selection/relocation, file clipboard import, Explorer reveal, title-bar theming, and zoom. Text clipboard access stays in the renderer's browser API.
 - Git commands use argument arrays with `shell: false`, bounded output, timeouts, path validation, and per-repository write serialisation.
-- External links are validated before opening in the system browser.
+- External links are allowlisted to `http(s)://` and `mailto:` before Electron's window-navigation interception opens them in the system browser.
 - HTML previews run in a sandbox; rendered Markdown is sanitised before display.
 - OpenTig does not read or persist GitHub or AI API tokens. Connected CLIs manage their own authentication.
 
@@ -239,10 +245,19 @@ Generated content remains editable and pending. No commit is created and no pull
 
 ## Architecture
 
-- `src/main`: Electron main process, Git execution, filesystem access, persistence, and external CLI integrations.
-- `src/preload.ts`: narrow, typed bridge exposed to the renderer.
+- `src/main/runtime`: Electron-free service graph and validated server-command registry for Git, filesystem, persistence, AI, GitHub, watchers, and shutdown.
+- `src/main/ipc`: handlers for native-only desktop capabilities; no domain commands are registered here.
+- `packages/server`: private, Electron-free server build containing the reusable server factory, a thin utility-process adapter, authenticated HTTP/WebSocket transport, and the exact production web client.
+- `src/main/server`: Electron utility-process supervisor and desktop-only exposure state for port selection, loopback/LAN binding, readiness probing, pairing controls over the private parent port, redacted rotating logs, bounded restart, and graceful shutdown. Electron main owns only window/session/native integration; Git, filesystem, persistence, AI, GitHub, and watchers remain in the utility server.
+- `src/preload.ts`: narrow, context-isolated typed bridge exposed to the renderer.
 - `src/renderer`: React interface and feature modules.
-- `src/shared`: IPC contracts, shared models, and validation helpers.
+- `src/shared`: server/desktop transport contracts, shared models, and validation helpers.
+
+Detailed guides:
+
+- [Server architecture](docs/architecture.md): process model, ownership boundaries, request/event flow, recovery, persistence, and source map.
+- [Network access and browser pairing](docs/web-access.md): trusted-LAN operation, authentication, revocation, diagnostics, and security guidance.
+- [Documentation index](docs/README.md): implemented scope and the remaining headless/release work.
 
 ## Current scope
 

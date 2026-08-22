@@ -1,0 +1,18 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "../.."
+  },
+  "include": [
+    "src",
+    "../../src/main/runtime",
+    "../../src/main/ai",
+    "../../src/main/files",
+    "../../src/main/git",
+    "../../src/main/github",
+    "../../src/main/persistence",
+    "../../src/main/platform",
+    "../../src/shared"
+  ]
+}

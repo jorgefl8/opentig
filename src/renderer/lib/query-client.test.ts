@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { queryClient, queryKeys, queryResourcesForScope } from './query-client';
 
 describe('renderer query policy', () => {
-  it('uses explicit local IPC defaults', () => {
+  it('uses explicit local server defaults', () => {
     expect(queryClient.getDefaultOptions().queries).toMatchObject({
       networkMode: 'always', retry: false, refetchOnWindowFocus: false, refetchOnReconnect: false,
     });
@@ -31,7 +31,7 @@ describe('renderer query policy', () => {
     expect(queryClient.getQueryData(queryKeys.search('repo', { query: 'ab' }))).toBe('new result');
   });
 
-  it('deduplicates simultaneous IPC reads for the same resource key', async () => {
+  it('deduplicates simultaneous server reads for the same resource key', async () => {
     let calls = 0;
     let release: (() => void) | undefined;
     const gate = new Promise<void>((resolve) => { release = resolve; });

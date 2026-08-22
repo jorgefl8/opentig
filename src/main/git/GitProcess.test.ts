@@ -33,6 +33,24 @@ describe('GitProcess', () => {
     })).rejects.toMatchObject({ detail: { code: 'TIMEOUT', operation: 'wait' } });
   });
 
+  it('cancels owned processes during bounded close', async () => {
+    const git = new GitProcess();
+    const running = git.run(process.cwd(), alias('close-wait', 'setInterval(() => {}, 1000)'), {
+      operation: 'close-wait',
+      readOnly: true,
+      timeoutMs: 10_000,
+    });
+    const settled = expect(running).rejects.toMatchObject({ detail: { operation: 'close-wait' } });
+    await delay(100);
+
+    await git.close();
+    await settled;
+    expect(git.hasActiveProcess()).toBe(false);
+    await expect(git.run(process.cwd(), ['status'], {
+      operation: 'after-close', readOnly: true,
+    })).rejects.toMatchObject({ detail: { operation: 'after-close', message: 'Git runtime is closed.' } });
+  });
+
   it('kills descendant processes when Git times out', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'opentig-git-tree-'));
     const pidPath = join(directory, 'child.pid');
