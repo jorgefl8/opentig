@@ -253,6 +253,12 @@ Generated content remains editable and pending. No commit is created and no pull
 - `src/renderer`: React interface and feature modules.
 - `src/shared`: server/desktop transport contracts, shared models, and validation helpers.
 
+Detailed guides:
+
+- [Server architecture](docs/architecture.md): process model, ownership boundaries, request/event flow, recovery, persistence, and source map.
+- [Network access and browser pairing](docs/web-access.md): trusted-LAN operation, authentication, revocation, diagnostics, and security guidance.
+- [Documentation index](docs/README.md): implemented scope and the remaining headless/release work.
+
 ## Current scope
 
 - Windows desktop only.
