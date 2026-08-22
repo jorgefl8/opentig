@@ -393,6 +393,21 @@ export interface Preferences {
   remoteFetchIntervalSeconds: number;
 }
 
+export type OpenTigRuntimeMode = 'desktop' | 'headless';
+export type OpenTigPlatform = 'win32' | 'darwin' | 'linux' | 'other';
+
+/** Serializable runtime and host capabilities exposed by the server boundary. */
+export interface OpenTigCapabilities {
+  runtimeMode: OpenTigRuntimeMode;
+  platform: OpenTigPlatform;
+  systemTrash: boolean;
+  nativePicker: boolean;
+  fileClipboard: boolean;
+  revealInFileManager: boolean;
+  githubCli: GhCliStatus;
+  aiProviders: AiHarnessStatus[];
+}
+
 export interface BootstrapData {
   recentRepositories: RecentRepository[];
   repositoryProjects: RepositoryProject[];
@@ -403,9 +418,14 @@ export interface BootstrapData {
   performanceAutomation: boolean;
 }
 
+/**
+ * Compatibility facade exposed by the current preload bridge. Execution
+ * ownership is defined by OpenTigServerApi and OpenTigDesktopApi.
+ */
 export interface OpenTigApi {
   app: {
     bootstrap(): Promise<BootstrapData>;
+    capabilities(): Promise<OpenTigCapabilities>;
     setPreferences(preferences: Partial<Preferences>): Promise<Preferences>;
     setFilesTreeExpandedPaths(repositoryId: string, expandedPaths: string[]): Promise<void>;
     setOpenFilesState(repositoryId: string, tabs: OpenFileTab[], activePath: string | null, previewPath: string | null): Promise<void>;
@@ -422,6 +442,7 @@ export interface OpenTigApi {
   };
   repository: {
     select(): Promise<RepositoryInfo | null>;
+    openPath(path: string): Promise<RepositoryInfo>;
     openRecent(id: string): Promise<RepositoryInfo | null>;
     getStatus(id: string, includeStats?: boolean): Promise<RepositoryStatus>;
     getFiles(id: string): Promise<FileTreeEntry[]>;
@@ -521,8 +542,8 @@ export interface OpenTigApi {
 export type IpcResult<T> = { ok: true; value: T } | { ok: false; error: SerializedOperationError };
 
 export const IPC = {
-  bootstrap: 'app:bootstrap', preferences: 'app:preferences', filesTreeStateUpdate: 'app:files-tree-state', openFilesStateUpdate: 'app:open-files-state', titleBarTheme: 'app:title-bar-theme', projectCreate: 'projects:create', projectRename: 'projects:rename', projectRemove: 'projects:remove', projectAssign: 'projects:assign', clipboardReadText: 'clipboard:read-text', clipboardWriteText: 'clipboard:write-text', shellOpenExternal: 'shell:open-external', repositorySelect: 'repository:select',
-  repositoryOpenRecent: 'repository:open-recent', repositoryStatus: 'repository:status', repositoryFiles: 'repository:files', repositoryDirectoryEntries: 'repository:directory-entries',
+  bootstrap: 'app:bootstrap', capabilities: 'app:capabilities', preferences: 'app:preferences', filesTreeStateUpdate: 'app:files-tree-state', openFilesStateUpdate: 'app:open-files-state', titleBarTheme: 'app:title-bar-theme', projectCreate: 'projects:create', projectRename: 'projects:rename', projectRemove: 'projects:remove', projectAssign: 'projects:assign', clipboardReadText: 'clipboard:read-text', clipboardWriteText: 'clipboard:write-text', shellOpenExternal: 'shell:open-external', repositorySelect: 'repository:select',
+  repositoryOpenPath: 'repository:open-path', repositoryOpenRecent: 'repository:open-recent', repositoryStatus: 'repository:status', repositoryFiles: 'repository:files', repositoryDirectoryEntries: 'repository:directory-entries',
   repositoryReadFile: 'repository:read-file', repositoryReadImage: 'repository:read-image', repositoryWriteFile: 'repository:write-file', repositoryAbsolutePath: 'repository:absolute-path',
   repositoryCopyEntries: 'repository:copy-entries', repositoryCutEntries: 'repository:cut-entries', repositoryPasteEntries: 'repository:paste-entries', repositoryMoveEntry: 'repository:move-entry', repositoryDeleteEntry: 'repository:delete-entry',
   repositoryMoveEntries: 'repository:move-entries', repositoryDeleteEntries: 'repository:delete-entries', repositoryRevealEntry: 'repository:reveal-entry', repositoryRenameEntry: 'repository:rename-entry', repositoryCreateEntry: 'repository:create-entry',

@@ -1,7 +1,7 @@
 import { lstat } from 'node:fs/promises';
 import { clipboard, dialog, ipcMain, shell } from 'electron';
 import type { BrowserWindow } from 'electron';
-import type { DiffRequest, IpcResult, Preferences } from '../../shared/contracts';
+import type { DiffRequest, IpcResult, OpenTigPlatform, Preferences } from '../../shared/contracts';
 import { IPC } from '../../shared/contracts';
 import { GitOperationError, serializeError } from '../../shared/errors';
 import type { FileService } from '../files/FileService';
@@ -45,6 +45,12 @@ export function registerHandlers(services: Services): () => void {
       catch (error) { return { ok: false, error: serializeError(error, operation) }; }
     });
   };
+  const openRepositoryPath = async (selectedPath: string) => {
+    const repository = await services.repositories.openPath(selectedPath);
+    pendingCutPaths = null;
+    services.watcher.start(repository);
+    return repository;
+  };
 
   handle(IPC.bootstrap, 'bootstrap', async () => {
     const activeRepository = await services.repositories.restore();
@@ -58,6 +64,22 @@ export function registerHandlers(services: Services): () => void {
       preferences: services.settings.preferences,
       performanceAutomation: process.env.OPENTIG_PERF_AUTOMATION === '1',
     };
+  });
+  handle(IPC.capabilities, 'capabilities', async () => {
+    const [githubCli, aiProviders] = await Promise.all([
+      services.github.status(),
+      services.ai.statuses(),
+    ]);
+    return {
+      runtimeMode: 'desktop',
+      platform: supportedPlatform(process.platform),
+      systemTrash: true,
+      nativePicker: true,
+      fileClipboard: true,
+      revealInFileManager: true,
+      githubCli,
+      aiProviders,
+    } as const;
   });
   handle(IPC.preferences, 'preferences', async (partial) => {
     const preferences = await services.settings.setPreferences((partial ?? {}) as Partial<Preferences>);
@@ -98,11 +120,11 @@ export function registerHandlers(services: Services): () => void {
   handle(IPC.repositorySelect, 'select-repository', async () => {
     const selection = await dialog.showOpenDialog(services.window, { properties: ['openDirectory'], title: 'Open Git repository' });
     if (selection.canceled || !selection.filePaths[0]) return null;
-    const repository = await services.repositories.openPath(selection.filePaths[0]);
-    pendingCutPaths = null;
-    services.watcher.start(repository);
-    return repository;
+    return openRepositoryPath(selection.filePaths[0]);
   });
+  handle(IPC.repositoryOpenPath, 'open-path', (selectedPath) => openRepositoryPath(
+    stringArg(selectedPath, 'open-path', 32_768),
+  ));
   handle(IPC.repositoryOpenRecent, 'open-recent', async (id) => {
     const repositoryId = stringArg(id, 'open-recent', 64);
     let repository;
@@ -445,6 +467,10 @@ export function registerHandlers(services: Services): () => void {
   });
 
   return () => { for (const channel of channels) ipcMain.removeHandler(channel); };
+}
+
+function supportedPlatform(platform: NodeJS.Platform): OpenTigPlatform {
+  return platform === 'win32' || platform === 'darwin' || platform === 'linux' ? platform : 'other';
 }
 
 function samePathSelection(left: string[], right: string[]): boolean {

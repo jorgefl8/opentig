@@ -14,6 +14,7 @@ export function createApi(ipcRenderer: IpcRenderer, setZoomFactor: (factor: numb
   return {
     app: {
       bootstrap: () => invoke(IPC.bootstrap),
+      capabilities: () => invoke(IPC.capabilities),
       setPreferences: (preferences) => invoke(IPC.preferences, preferences),
       setFilesTreeExpandedPaths: (repositoryId, expandedPaths) => invoke(IPC.filesTreeStateUpdate, repositoryId, expandedPaths),
       setOpenFilesState: (repositoryId, tabs, activePath, previewPath) => invoke(IPC.openFilesStateUpdate, repositoryId, tabs, activePath, previewPath),
@@ -35,6 +36,7 @@ export function createApi(ipcRenderer: IpcRenderer, setZoomFactor: (factor: numb
     },
     repository: {
       select: () => invoke(IPC.repositorySelect),
+      openPath: (path) => invoke(IPC.repositoryOpenPath, path),
       openRecent: (id) => invoke(IPC.repositoryOpenRecent, id),
       getStatus: (id, includeStats) => invoke(IPC.repositoryStatus, id, includeStats),
       getFiles: (id) => invoke(IPC.repositoryFiles, id),
