@@ -89,6 +89,10 @@ export class CommandRegistry {
     this.sessions.delete(sessionId);
   }
 
+  clearSessionState(sessionId: string, key: string): void {
+    this.sessions.get(sessionId)?.delete(key);
+  }
+
   clear(): void {
     this.commands.clear();
     this.sessions.clear();

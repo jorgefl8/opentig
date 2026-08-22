@@ -48,7 +48,12 @@ const repository: RepositoryInfo = {
 };
 
 function services() {
-  const repositories = { openPath: vi.fn(async () => repository) };
+  const repositories = {
+    openPath: vi.fn(async () => repository),
+    openRecent: vi.fn(async () => repository),
+    recent: vi.fn(() => ({ ...repository, lastOpenedAt: '2026-08-22T00:00:00.000Z' })),
+    relocateRecent: vi.fn(async () => repository),
+  };
   const watcher = { start: vi.fn() };
   const github = {
     status: vi.fn(async () => ({
@@ -97,6 +102,15 @@ async function invoke<T>(channel: string, ...args: unknown[]): Promise<IpcResult
 describe('server IPC ownership additions', () => {
   beforeEach(() => electron.handlers.clear());
 
+  it('registers every request channel exactly once', () => {
+    const removeHandlers = registerHandlers(services().value);
+
+    expect([...electron.handlers.keys()].sort()).toEqual(
+      Object.values(IPC).filter((channel) => channel !== IPC.repositoryChanged).sort(),
+    );
+    removeHandlers();
+  });
+
   it('opens an explicit repository path and starts its watcher', async () => {
     const fixture = services();
     registerHandlers(fixture.value);
@@ -130,5 +144,44 @@ describe('server IPC ownership additions', () => {
     });
     expect(fixture.github.status).toHaveBeenCalledOnce();
     expect(fixture.ai.statuses).toHaveBeenCalledOnce();
+  });
+
+  it('keeps native selection as a thin adapter over server openPath', async () => {
+    const fixture = services();
+    electron.dialog.showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: ['C:\\repo'] });
+    registerHandlers(fixture.value);
+
+    await expect(invoke<RepositoryInfo | null>(IPC.repositorySelect)).resolves.toEqual({
+      ok: true,
+      value: repository,
+    });
+    expect(electron.dialog.showOpenDialog).toHaveBeenCalledWith(undefined, {
+      properties: ['openDirectory'],
+      title: 'Open Git repository',
+    });
+    expect(fixture.repositories.openPath).toHaveBeenCalledWith('C:\\repo');
+  });
+
+  it('preserves relocation confirmation and native picker behavior', async () => {
+    const fixture = services();
+    fixture.repositories.openRecent.mockRejectedValueOnce(new Error('moved'));
+    electron.dialog.showMessageBox.mockResolvedValueOnce({ response: 0 });
+    electron.dialog.showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: ['C:\\repo-moved'] });
+    registerHandlers(fixture.value);
+
+    await expect(invoke<RepositoryInfo | null>(IPC.repositoryOpenRecent, 'repo-id')).resolves.toEqual({
+      ok: true,
+      value: repository,
+    });
+    expect(electron.dialog.showMessageBox).toHaveBeenCalledWith(undefined, expect.objectContaining({
+      buttons: ['Locate repository', 'Cancel'],
+      defaultId: 0,
+      cancelId: 1,
+    }));
+    expect(electron.dialog.showOpenDialog).toHaveBeenCalledWith(undefined, {
+      properties: ['openDirectory'],
+      title: 'Locate repo',
+    });
+    expect(fixture.repositories.relocateRecent).toHaveBeenCalledWith('repo-id', 'C:\\repo-moved');
   });
 });
