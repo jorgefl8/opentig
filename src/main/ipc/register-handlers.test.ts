@@ -53,7 +53,15 @@ function services() {
     openRecent: vi.fn(async () => repository),
     recent: vi.fn(() => ({ ...repository, lastOpenedAt: '2026-08-22T00:00:00.000Z' })),
     relocateRecent: vi.fn(async () => repository),
+    validatePaths: vi.fn((_repositoryId: string, paths: string[]) => paths),
+    status: vi.fn(async () => ({
+      changes: [{
+        path: 'tracked.txt', kind: 'modified', indexStatus: ' ', worktreeStatus: 'M',
+        staged: false, unstaged: true, conflict: false, submodule: '',
+      }],
+    })),
   };
+  const operations = { discard: vi.fn(async () => undefined) };
   const watcher = { start: vi.fn() };
   const github = {
     status: vi.fn(async () => ({
@@ -81,6 +89,7 @@ function services() {
     github,
     ai,
     events,
+    operations,
     value: {
       runtimeMode: 'desktop',
       platform: 'win32',
@@ -89,6 +98,7 @@ function services() {
       github,
       ai,
       events,
+      operations,
     } as unknown as Services,
   };
 }
@@ -183,5 +193,17 @@ describe('server IPC ownership additions', () => {
       title: 'Locate repo',
     });
     expect(fixture.repositories.relocateRecent).toHaveBeenCalledWith('repo-id', 'C:\\repo-moved');
+  });
+
+  it('executes discard without asking the Electron host for confirmation', async () => {
+    const fixture = services();
+    registerHandlers(fixture.value);
+
+    await expect(invoke(IPC.indexDiscard, 'repo-id', ['tracked.txt'])).resolves.toEqual({
+      ok: true,
+      value: { ok: true },
+    });
+    expect(fixture.operations.discard).toHaveBeenCalledWith('repo-id', ['tracked.txt']);
+    expect(electron.dialog.showMessageBox).not.toHaveBeenCalled();
   });
 });

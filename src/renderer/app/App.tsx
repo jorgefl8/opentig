@@ -5,7 +5,7 @@ import {
   IconChevronDown, IconChevronRight, IconDeviceDesktop, IconFileArrowRight, IconFolder, IconFolderOpen,
   IconFiles, IconGitBranch, IconGitCompare, IconGitPullRequest, IconHierarchy2, IconHistory,
   IconArrowDown, IconArrowUp, IconKeyboard, IconList, IconLoader4, IconMinus, IconMoon, IconPlus,
-  IconRefresh, IconRestore, IconSearch, IconSettings, IconSparkles, IconSun, IconX,
+  IconRefresh, IconRestore, IconSearch, IconSettings, IconSparkles, IconSun, IconTrash, IconX,
 } from '@tabler/icons-react';
 import { Toaster, sileo } from 'sileo';
 import type { AiHarnessId, AiHarnessStatus, BootstrapData, ChangesLayoutPreference, CommitSplitProposal, FileHistoryPathChange, FileHistoryState, GhCliStatus, GitHubRepositoryInfo, Preferences, PullRequestState, PullRequestSummary, PullResult, PushResult, RecentRepository, RepositoryInfo, RepositoryOrganization, RepositoryProject, ThemePreference, UndoLatestCommitResult } from '../../shared/contracts';
@@ -28,6 +28,7 @@ import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { FilesView } from '@/features/files/FilesView';
+import { createDeleteAction, createDiscardAction, destructiveActionCopy, dispatchDestructiveAction, type DestructiveAction } from '@/features/files/destructive-action';
 import { fileSnapshotFingerprint, isEditableTarget, pathContains, selectedFileChanged, snapshotPathPresence } from '@/features/files/file-tree';
 import { shouldOpenChangePreview } from '@/features/changes/change-preview';
 import {
@@ -125,6 +126,7 @@ export default function App() {
   // draft text of a dirty tab lives in a ref-backed map, never in React state.
   const [fileSessions, setFileSessions] = useState<ReadonlyMap<string, FileSession>>(() => new Map());
   const [dirtyClosePath, setDirtyClosePath] = useState<string | null>(null);
+  const [destructiveAction, setDestructiveAction] = useState<DestructiveAction | null>(null);
   // Holding Ctrl reveals the section numbers, so the shortcut is discoverable
   // without a cheat sheet.
   const [ctrlHeld, setCtrlHeld] = useState(false);
@@ -147,6 +149,7 @@ export default function App() {
   const draftBytesRef = useRef(0);
   const draftWarningShownRef = useRef(false);
   const dirtyCloseResolverRef = useRef<((choice: DirtyCloseChoice) => void) | null>(null);
+  const destructiveActionInFlightRef = useRef(false);
   const commitTextareaRef = useRef<HTMLTextAreaElement>(null);
   // The last message OpenTig itself put in the composer, so an edited one is
   // never replaced without asking.
@@ -768,17 +771,13 @@ export default function App() {
     } finally { setBusy(null); }
   };
 
-  const discardChanges = async (paths: string[]) => {
-    if (!repository || paths.length === 0) return;
+  const discardChanges = (paths: string[]) => {
+    if (!repository || busy || status?.readOnly || paths.length === 0) return;
     setBusy('discard');
     setError(null);
     setCommitProposal(null);
     setPreparedCommitIndex(null);
-    try {
-      await window.opentig.index.discard(repository.id, paths);
-      await refresh({ background: true });
-    } catch (reason) { setError(messageOf(reason)); }
-    finally { setBusy(null); }
+    setDestructiveAction(createDiscardAction(repository.id, paths, status?.changes ?? []));
   };
 
   /**
@@ -1108,12 +1107,43 @@ export default function App() {
   const deleteFileEntries = async (entries: FileTreeEntry[]) => {
     if (!repository || busy || status?.readOnly || entries.length === 0) return;
     setBusy('delete-file');
+    setDestructiveAction(createDeleteAction(repository.id, entries));
+  };
+
+  const settleDestructiveAction = async (confirmed: boolean) => {
+    const action = destructiveAction;
+    if (!action || destructiveActionInFlightRef.current) return;
+    if (repositoryRef.current?.id !== action.repositoryId) {
+      setDestructiveAction(null);
+      setBusy(null);
+      return;
+    }
+    if (!confirmed) {
+      await dispatchDestructiveAction(action, false, {
+        discard: (repositoryId, paths) => window.opentig.index.discard(repositoryId, paths),
+        deleteEntries: (repositoryId, paths) => window.opentig.repository.deleteEntries(repositoryId, paths),
+      });
+      setDestructiveAction(null);
+      setBusy(null);
+      return;
+    }
+    destructiveActionInFlightRef.current = true;
+    setDestructiveAction(null);
     try {
-      const result = await window.opentig.repository.deleteEntries(repository.id, entries.map((entry) => entry.path));
+      const outcome = await dispatchDestructiveAction(action, true, {
+        discard: (repositoryId, paths) => window.opentig.index.discard(repositoryId, paths),
+        deleteEntries: (repositoryId, paths) => window.opentig.repository.deleteEntries(repositoryId, paths),
+      });
+      if (!outcome) return;
+      if (outcome.kind === 'discard') {
+        await refresh({ background: true });
+        return;
+      }
+      const result = outcome.result;
       if (result.deleted === 0) return;
       // Clean tabs under the deleted paths close; a tab with unsaved changes is
       // kept and flagged missing so its text can still be recovered.
-      reconcileViewerPaths([], entries.map((entry) => entry.path));
+      reconcileViewerPaths([], action.paths);
       await refreshFilesOnly();
       await refreshFileHistoryState();
       sileo.success({
@@ -1123,8 +1153,12 @@ export default function App() {
           : { description: 'Restore from the Recycle Bin' }),
       });
     } catch (reason) {
-      sileo.error({ title: 'Could not delete item', description: messageOf(reason), duration: 10_000 });
+      const message = messageOf(reason);
+      if (action.kind === 'delete') {
+        sileo.error({ title: 'Could not delete item', description: message, duration: 10_000 });
+      } else setError(message);
     } finally {
+      destructiveActionInFlightRef.current = false;
       setBusy(null);
     }
   };
@@ -1661,6 +1695,7 @@ export default function App() {
   if (!bootstrap) return <div className="splash"><IconLoader4 className="spinner" /><span>Loading OpenTig…</span></div>;
   if (!repository) return <Welcome recent={bootstrap.recentRepositories} onOpen={openRepository} onRecent={(id) => void selectRecent(id)} error={error} />;
 
+  const pendingDestructiveCopy = destructiveAction ? destructiveActionCopy(destructiveAction) : null;
   const conflicts = status?.changes.filter((change) => change.conflict) ?? [];
   const staged = status?.changes.filter((change) => change.staged && !change.conflict) ?? [];
   const changed = status?.changes.filter((change) => change.unstaged && !change.conflict) ?? [];
@@ -1696,6 +1731,27 @@ export default function App() {
             <Button variant="ghost" onClick={() => dirtyCloseResolverRef.current?.('cancel')}>Cancel</Button>
             <Button variant="destructive" onClick={() => dirtyCloseResolverRef.current?.('discard')}>Discard</Button>
             <Button onClick={() => dirtyCloseResolverRef.current?.('save')}>Save</Button>
+          </div>
+        </DialogPopup>
+      </Dialog>
+      <Dialog
+        open={destructiveAction !== null}
+        onOpenChange={(open) => { if (!open) void settleDestructiveAction(false); }}
+      >
+        <DialogPopup className="undo-commit-dialog">
+          <div className="undo-commit-content">
+            <DialogTitle>{pendingDestructiveCopy?.title}</DialogTitle>
+            <DialogDescription>{pendingDestructiveCopy?.message}</DialogDescription>
+            {pendingDestructiveCopy?.detail && (
+              <div className="destructive-confirmation-detail">{pendingDestructiveCopy.detail}</div>
+            )}
+          </div>
+          <div className="undo-commit-actions">
+            <Button variant="ghost" onClick={() => void settleDestructiveAction(false)}>Cancel</Button>
+            <Button variant="destructive" onClick={() => void settleDestructiveAction(true)}>
+              {destructiveAction?.kind === 'discard' ? <IconRestore /> : <IconTrash />}
+              {pendingDestructiveCopy?.confirmLabel}
+            </Button>
           </div>
         </DialogPopup>
       </Dialog>

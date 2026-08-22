@@ -210,16 +210,7 @@ export function registerServerCommands(
     const repositoryId = stringArg(id, 'delete-entry', 64);
     const relativePath = stringArg(filePath, 'delete-entry');
     const target = services.repositories.resolvePath(repositoryId, relativePath);
-    const metadata = await lstat(target);
-    const isDirectory = metadata.isDirectory();
-    const confirmed = await host.confirm({
-      title: isDirectory ? 'Delete folder' : 'Delete file',
-      message: `Move this ${isDirectory ? 'folder' : 'file'} to the Recycle Bin?`,
-      detail: relativePath,
-      confirmLabel: 'Move to Recycle Bin',
-      defaultAction: 'cancel',
-    });
-    if (!confirmed) return { deleted: false } as const;
+    await lstat(target);
     return services.fileHistory.serialize(repositoryId, async () => {
       const prepared = await services.fileHistory.prepareDelete(repositoryId, [relativePath]);
       await host.trashItem(target);
@@ -232,15 +223,6 @@ export function registerServerCommands(
     const validPaths = services.repositories.validatePaths(repositoryId, pathsArg(rawPaths, 'delete-entries'));
     if (validPaths.length === 0) return { deleted: 0 } as const;
     const targets = validPaths.map((filePath) => services.repositories.resolvePath(repositoryId, filePath));
-    const count = validPaths.length;
-    const confirmed = await host.confirm({
-      title: count === 1 ? 'Delete item' : `Delete ${count} items`,
-      message: count === 1 ? 'Move this item to the Recycle Bin?' : `Move ${count} items to the Recycle Bin?`,
-      detail: validPaths.join('\n'),
-      confirmLabel: 'Move to Recycle Bin',
-      defaultAction: 'cancel',
-    });
-    if (!confirmed) return { deleted: 0 } as const;
     return services.fileHistory.serialize(repositoryId, async () => {
       const prepared = await services.fileHistory.prepareDelete(repositoryId, validPaths);
       const deletedPaths: string[] = [];
@@ -312,16 +294,6 @@ export function registerServerCommands(
     const status = await services.repositories.status(repositoryId, false);
     const untracked = status.changes.filter((change) => selected.has(change.path) && change.kind === 'untracked').map((change) => change.path);
     const tracked = validPaths.filter((filePath) => !untracked.includes(filePath));
-    const confirmed = await host.confirm({
-      title: 'Discard changes',
-      message: `Discard changes to ${validPaths.length === 1 ? 'this file' : `these ${validPaths.length} files`}?`,
-      detail: untracked.length > 0
-        ? 'Untracked files will be moved to the Recycle Bin. Other local changes will be lost.'
-        : 'The selected local changes will be lost.',
-      confirmLabel: 'Discard',
-      defaultAction: 'cancel',
-    });
-    if (!confirmed) return { ok: true };
     await services.operations.discard(repositoryId, tracked);
     for (const filePath of untracked) await host.trashItem(services.repositories.resolvePath(repositoryId, filePath));
     return { ok: true };
