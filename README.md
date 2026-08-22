@@ -39,6 +39,7 @@ It is intentionally not an IDE, hosting service, or replacement for the Git CLI.
 - Create, rename, delete, and reassign project groups.
 - Switch quickly between repositories, branches, and available worktrees.
 - Display current branch, ahead/behind state, and worktree insertion/deletion totals in the main toolbar.
+- Carry the OpenTig logo through the main toolbar, packaged Windows application, installer, and taskbar.
 
 ### Changes, diffs, and commits
 

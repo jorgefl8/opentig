@@ -56,6 +56,7 @@ import { resolveWindowControlsInset } from './window-controls';
 import { queryKeys, queryResourcesForScope } from '@/lib/query-client';
 import { shouldActivateChangeRow } from '@/features/changes/row-activation';
 import { projectPullBlockedCopy, projectPullSuccessCopy, projectPushBlockedCopy, projectPushSuccessCopy, pullSuccessCopy, repositorySyncLoadingToast, visibleRepositorySyncActions, type ProjectSyncAction, type RepositorySyncCounts } from '@/features/repositories/project-sync';
+import opentigLogo from '../../../assets/opentig.svg';
 import {
   DEFAULT_REMOTE_FETCH_INTERVAL_SECONDS,
   formatRemoteFetchInterval,
@@ -2170,7 +2171,7 @@ function Toolbar(props: ToolbarProps) {
   return (
     <header className="toolbar">
       <div className="toolbar-brand" aria-label="OpenTig">
-        <IconGitBranch aria-hidden="true" />
+        <img src={opentigLogo} alt="" aria-hidden="true" />
         <span>OpenTig</span>
       </div>
       <Select open={repositorySelectOpen} onOpenChange={(open) => {

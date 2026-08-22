@@ -38,6 +38,12 @@ const settingsStores = new Set<SettingsStore>();
 let shutdownStarted = false;
 let shutdownReady = false;
 
+function getAppIconPath(): string {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, 'opentig.ico')
+    : path.join(app.getAppPath(), 'assets', 'opentig.ico');
+}
+
 function showAndFocusMainWindow(): void {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   if (mainWindow.isMinimized()) mainWindow.restore();
@@ -89,6 +95,7 @@ async function createWindow(): Promise<void> {
     show: false,
     backgroundColor: '#171614',
     title: 'OpenTig',
+    icon: getAppIconPath(),
     autoHideMenuBar: true,
     ...getWindowTitleBarOptions(
       shouldUseDarkTitleBar(settings.preferences.theme, nativeTheme.shouldUseDarkColors),

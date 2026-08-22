@@ -1,4 +1,5 @@
 import { FuseV1Options, FuseVersion } from '@electron/fuses';
+import path from 'node:path';
 import { MakerSquirrel } from '@electron-forge/maker-squirrel';
 import { MakerZIP } from '@electron-forge/maker-zip';
 import { FusesPlugin } from '@electron-forge/plugin-fuses';
@@ -6,12 +7,16 @@ import { AutoUnpackNativesPlugin } from '@electron-forge/plugin-auto-unpack-nati
 import { VitePlugin } from '@electron-forge/plugin-vite';
 import type { ForgeConfig } from '@electron-forge/shared-types';
 
+const appIcon = path.resolve(__dirname, 'assets', 'opentig.ico');
+
 const config: ForgeConfig = {
   packagerConfig: {
     asar: true,
     name: 'OpenTig',
     executableName: 'OpenTig',
     appBundleId: 'com.opentig.app',
+    icon: appIcon,
+    extraResource: appIcon,
     // The Vite plugin bundles JavaScript dependencies and otherwise excludes
     // node_modules. Keep the native keyboard hook and its loader alongside the
     // bundle so Electron can load the platform binary at runtime.
@@ -27,7 +32,7 @@ const config: ForgeConfig = {
   // would unnecessarily require a local Visual Studio C++ toolchain.
   rebuildConfig: { onlyModules: [] },
   makers: [
-    new MakerSquirrel({ name: 'OpenTig', setupExe: 'OpenTig-Setup.exe' }),
+    new MakerSquirrel({ name: 'OpenTig', setupExe: 'OpenTig-Setup.exe', setupIcon: appIcon }),
     new MakerZIP({}, ['win32']),
   ],
   plugins: [

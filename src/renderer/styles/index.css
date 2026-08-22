@@ -218,7 +218,7 @@
   .toolbar { display: flex; height: var(--toolbar-height); flex: none; align-items: center; gap: 8px; border-bottom: 1px solid var(--border); padding: 0 calc(14px + var(--window-controls-inset)) 0 calc(14px + var(--window-controls-inset-left)); background: color-mix(in oklch, var(--sidebar) 60%, var(--background)); -webkit-app-region: drag; }
   .toolbar button, .toolbar input, .toolbar textarea, .toolbar select, .toolbar a, .toolbar [role="button"] { -webkit-app-region: no-drag; }
   .toolbar-brand { display: flex; flex: none; align-items: center; gap: 7px; color: var(--foreground); font-size: 13px; font-weight: 760; letter-spacing: -.02em; }
-  .toolbar-brand svg { width: 16px; height: 16px; color: var(--primary); }
+  .toolbar-brand img { width: 18px; height: 20px; object-fit: contain; }
   .toolbar-spacer { flex: 1; }
   /* The toolbar is a window drag region, and a drag region swallows wheel and
      pointer events. The strip opts out for itself, not only for its buttons, and
