@@ -242,6 +242,7 @@ Generated content remains editable and pending. No commit is created and no pull
 
 - `src/main/runtime`: Electron-free service graph and validated server-command registry for Git, filesystem, persistence, AI, GitHub, watchers, and shutdown.
 - `src/main/ipc`: thin Electron transport plus handlers for native-only desktop capabilities.
+- `packages/server`: private, Electron-free server build containing one runtime entry and the exact production web client. Network transport is added incrementally; desktop keeps its current IPC rollback path during that migration.
 - `src/preload.ts`: narrow, context-isolated typed bridge exposed to the renderer.
 - `src/renderer`: React interface and feature modules.
 - `src/shared`: IPC contracts, shared models, and validation helpers.

@@ -8,6 +8,7 @@ import { VitePlugin } from '@electron-forge/plugin-vite';
 import type { ForgeConfig } from '@electron-forge/shared-types';
 
 const appIcon = path.resolve(__dirname, 'assets', 'opentig.ico');
+const serverResource = path.resolve(__dirname, 'packages', 'server', '.resource', 'opentig-server');
 const trashRuntimeModules = new Set([
   '@nodelib/fs.scandir',
   '@nodelib/fs.stat',
@@ -87,7 +88,7 @@ const config: ForgeConfig = {
     executableName: 'OpenTig',
     appBundleId: 'com.opentig.app',
     icon: appIcon,
-    extraResource: appIcon,
+    extraResource: [appIcon, serverResource],
     // The Vite plugin bundles JavaScript dependencies and otherwise excludes
     // node_modules. Keep the native keyboard hook plus the externalized Trash
     // dependency closure alongside the bundle.

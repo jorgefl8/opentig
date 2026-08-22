@@ -1,15 +1,20 @@
 {
-  "name": "opentig",
+  "name": "@opentig/desktop",
   "productName": "OpenTig",
   "version": "0.1.0",
   "description": "A focused, local-first Git desktop client for Windows",
   "main": ".vite/build/main.js",
   "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
     "start": "electron-forge start",
-    "package": "electron-forge package",
+    "build:server": "npm run build --workspace @opentig/server",
+    "package": "npm run build:server && electron-forge package",
     "verify:packaged-trash": "electron scripts/verify-packaged-trash.mjs",
-    "make": "electron-forge make",
+    "verify:packaged-server": "node scripts/verify-packaged-server.mjs",
+    "make": "npm run build:server && electron-forge make",
     "test": "vitest run",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
