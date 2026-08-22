@@ -51,7 +51,7 @@ export interface AiLogEntry {
    * without this the prompt cannot be tuned.
    */
   splitRejectedReason: string | null;
-  /** Why JustGit did not ask for a split at all. */
+  /** Why OpenTig did not ask for a split at all. */
   splitBlockedReason: string | null;
 }
 

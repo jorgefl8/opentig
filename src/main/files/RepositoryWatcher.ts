@@ -7,7 +7,7 @@ import { mergeRepositoryChangeScopes } from '../../shared/repository-change';
 
 const MAX_DEFERRALS = 10;
 
-// Inside the git dir only these paths change what JustGit displays; everything
+// Inside the git dir only these paths change what OpenTig displays; everything
 // else (objects, logs, fsmonitor cookies, gc.pid, sharedindex…) is bookkeeping
 // that must never trigger a refresh, or git's own activity loops the watcher.
 const GIT_DIR_FILES = new Set(['HEAD', 'ORIG_HEAD', 'MERGE_HEAD', 'CHERRY_PICK_HEAD', 'REVERT_HEAD', 'BISECT_LOG', 'index', 'packed-refs', 'config']);
@@ -103,7 +103,7 @@ export class RepositoryWatcher {
 
   private fire(): void {
     if (!this.active) return;
-    // JustGit's own git writes trigger watcher events; wait for the process to
+    // OpenTig's own git writes trigger watcher events; wait for the process to
     // finish (bounded) so one operation does not fan out into several refreshes.
     if (this.hasActiveGitProcess() && this.deferrals < MAX_DEFERRALS) {
       this.deferrals += 1;

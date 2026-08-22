@@ -120,7 +120,7 @@ export function AiLogDialog({ open, onOpenChange }: AiLogDialogProps) {
 
   const load = useCallback(async () => {
     setLoading(true);
-    try { setEntries(await window.justgit.ai.log()); }
+    try { setEntries(await window.opentig.ai.log()); }
     catch (reason) { sileo.error({ title: 'Could not read the AI history', description: messageOf(reason) }); }
     finally { setLoading(false); }
   }, []);
@@ -151,7 +151,7 @@ export function AiLogDialog({ open, onOpenChange }: AiLogDialogProps) {
   const clear = async () => {
     if (!window.confirm('Delete the whole AI history? This cannot be undone.')) return;
     try {
-      await window.justgit.ai.clearLog();
+      await window.opentig.ai.clearLog();
       setEntries([]);
     } catch (reason) {
       sileo.error({ title: 'Could not clear the AI history', description: messageOf(reason) });

@@ -7,9 +7,9 @@ import { registerCustomTheme, type ThemeRegistration } from '@pierre/diffs';
 // diffs, conflicts, and Markdown previews.
 const BASE_TOKEN_COLORS = { light: lightTheme.tokenColors ?? [], dark: darkTheme.tokenColors ?? [] };
 
-export const JUSTGIT_CODE_THEMES = {
-  light: 'justgit-light',
-  dark: 'justgit-dark',
+export const OPENTIG_CODE_THEMES = {
+  light: 'opentig-light',
+  dark: 'opentig-dark',
 } as const;
 
 const THEME_CSS_VARIABLES = [
@@ -84,7 +84,7 @@ function resolveThemeColors(type: 'light' | 'dark'): Record<(typeof THEME_CSS_VA
   return resolved;
 }
 
-function createJustGitTheme(name: string, type: 'light' | 'dark'): ThemeRegistration {
+function createOpenTigTheme(name: string, type: 'light' | 'dark'): ThemeRegistration {
   const colors = resolveThemeColors(type);
   const added = colors['diff-added'];
   const deleted = colors['diff-deleted'];
@@ -129,9 +129,9 @@ function createJustGitTheme(name: string, type: 'light' | 'dark'): ThemeRegistra
   };
 }
 
-registerCustomTheme(JUSTGIT_CODE_THEMES.light, async () =>
-  createJustGitTheme(JUSTGIT_CODE_THEMES.light, 'light'),
+registerCustomTheme(OPENTIG_CODE_THEMES.light, async () =>
+  createOpenTigTheme(OPENTIG_CODE_THEMES.light, 'light'),
 );
-registerCustomTheme(JUSTGIT_CODE_THEMES.dark, async () =>
-  createJustGitTheme(JUSTGIT_CODE_THEMES.dark, 'dark'),
+registerCustomTheme(OPENTIG_CODE_THEMES.dark, async () =>
+  createOpenTigTheme(OPENTIG_CODE_THEMES.dark, 'dark'),
 );

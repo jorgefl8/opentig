@@ -147,14 +147,14 @@ export default function App() {
   const draftWarningShownRef = useRef(false);
   const dirtyCloseResolverRef = useRef<((choice: DirtyCloseChoice) => void) | null>(null);
   const commitTextareaRef = useRef<HTMLTextAreaElement>(null);
-  // The last message JustGit itself put in the composer, so an edited one is
+  // The last message OpenTig itself put in the composer, so an edited one is
   // never replaced without asking.
   const lastAppliedMessageRef = useRef('');
   const forceGhStatusRef = useRef(false);
 
   const historyQuery = useInfiniteQuery({
     queryKey: queryKeys.history(repository?.id ?? ''),
-    queryFn: ({ pageParam }) => window.justgit.commits.list(repository!.id, pageParam),
+    queryFn: ({ pageParam }) => window.opentig.commits.list(repository!.id, pageParam),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
     enabled: repository !== null && view === 'history',
@@ -165,7 +165,7 @@ export default function App() {
   const githubInfoQuery = useQuery<GitHubRepositoryInfo>({
     queryKey: queryKeys.githubInfo(repository?.id ?? ''),
     queryFn: async () => {
-      try { return await window.justgit.github.repositoryInfo(repository!.id); }
+      try { return await window.opentig.github.repositoryInfo(repository!.id); }
       catch { return { isGitHub: false, nameWithOwner: null }; }
     },
     enabled: repository !== null,
@@ -176,9 +176,9 @@ export default function App() {
     queryFn: async () => {
       const forceStatus = forceGhStatusRef.current;
       forceGhStatusRef.current = false;
-      const nextGhStatus = await window.justgit.github.status(forceStatus);
+      const nextGhStatus = await window.opentig.github.status(forceStatus);
       if (!nextGhStatus.installed || nextGhStatus.authStatus === 'unauthenticated') return { ghStatus: nextGhStatus, pulls: null };
-      const nextPulls = pullRequestStates.length ? await window.justgit.github.listPullRequests(repository!.id, pullRequestStates) : [];
+      const nextPulls = pullRequestStates.length ? await window.opentig.github.listPullRequests(repository!.id, pullRequestStates) : [];
       return { ghStatus: nextGhStatus, pulls: nextPulls };
     },
     enabled: view === 'prs' && repository !== null && githubInfo?.isGitHub === true,
@@ -202,7 +202,7 @@ export default function App() {
 
   useEffect(() => {
     let active = true;
-    window.justgit.app.bootstrap().then((data) => {
+    window.opentig.app.bootstrap().then((data) => {
       if (!active) return;
       filesTreeStates.clear();
       for (const state of data.filesTreeStates) filesTreeStates.set(state.repositoryId, [...state.expandedPaths]);
@@ -249,7 +249,7 @@ export default function App() {
     const apply = () => {
       const dark = theme === 'dark' || (theme === 'system' && media.matches);
       document.documentElement.classList.toggle('dark', dark);
-      void window.justgit.app.setTitleBarTheme(dark).catch(() => undefined);
+      void window.opentig.app.setTitleBarTheme(dark).catch(() => undefined);
     };
     apply();
     media.addEventListener('change', apply);
@@ -257,13 +257,13 @@ export default function App() {
   }, [theme]);
 
   useEffect(() => {
-    window.justgit.app.setZoomFactor(uiZoom / 100);
+    window.opentig.app.setZoomFactor(uiZoom / 100);
   }, [uiZoom]);
 
   useEffect(() => {
     if (!bootstrap?.performanceAutomation) return;
-    window.__justgitPerformanceAutomation = true;
-    window.__justgitPerformanceResults = [];
+    window.__opentigPerformanceAutomation = true;
+    window.__opentigPerformanceResults = [];
     const handleAction = (event: Event) => {
       const action = (event as CustomEvent<unknown>).detail;
       if (!action || typeof action !== 'object') return;
@@ -282,11 +282,11 @@ export default function App() {
         setViewerSelection(record.selection);
       }
     };
-    window.addEventListener('justgit:performance-action', handleAction);
+    window.addEventListener('opentig:performance-action', handleAction);
     return () => {
-      window.removeEventListener('justgit:performance-action', handleAction);
-      delete window.__justgitPerformanceAutomation;
-      delete window.__justgitPerformanceResults;
+      window.removeEventListener('opentig:performance-action', handleAction);
+      delete window.__opentigPerformanceAutomation;
+      delete window.__opentigPerformanceResults;
     };
   }, [bootstrap?.performanceAutomation]);
 
@@ -315,7 +315,7 @@ export default function App() {
     const fingerprint = JSON.stringify(payload);
     if (persistedSessionsRef.current.get(repositoryId) !== fingerprint) {
       persistedSessionsRef.current.set(repositoryId, fingerprint);
-      void window.justgit.app.setOpenFilesState(repositoryId, payload.tabs, payload.activePath, payload.previewPath).catch(() => undefined);
+      void window.opentig.app.setOpenFilesState(repositoryId, payload.tabs, payload.activePath, payload.previewPath).catch(() => undefined);
     }
     return session;
   }, []);
@@ -460,7 +460,7 @@ export default function App() {
     const repositoryId = repository.id;
     try {
       const nextFiles = await ipcQueryClient.fetchQuery({
-        queryKey: queryKeys.files(repositoryId), queryFn: () => window.justgit.repository.getFiles(repositoryId),
+        queryKey: queryKeys.files(repositoryId), queryFn: () => window.opentig.repository.getFiles(repositoryId),
       });
       if (repositoryRef.current?.id === repositoryId) applyFilesSnapshot(nextFiles);
     } catch (reason) {
@@ -473,7 +473,7 @@ export default function App() {
   const loadDirectoryEntries = useCallback(async (directoryPath: string): Promise<FileTreeEntry[]> => {
     if (!repository) return [];
     try {
-      return await window.justgit.repository.getDirectoryEntries(repository.id, directoryPath);
+      return await window.opentig.repository.getDirectoryEntries(repository.id, directoryPath);
     } catch (reason) {
       sileo.error({ title: 'Could not read folder', description: messageOf(reason) });
       return [];
@@ -484,7 +484,7 @@ export default function App() {
     if (!repository) return;
     const repositoryId = repository.id;
     const next = await ipcQueryClient.fetchQuery({
-      queryKey: queryKeys.fileHistory(repositoryId), queryFn: () => window.justgit.repository.fileHistoryState(repositoryId),
+      queryKey: queryKeys.fileHistory(repositoryId), queryFn: () => window.opentig.repository.fileHistoryState(repositoryId),
     });
     if (repositoryRef.current?.id === repositoryId) setFileHistoryState(next);
   }, [ipcQueryClient, repository]);
@@ -513,13 +513,13 @@ export default function App() {
         refetchType: 'none',
       })));
       const [nextStatus, nextBranches, nextWorktrees, nextFiles, nextHistory] = await Promise.all([
-        ipcQueryClient.fetchQuery({ queryKey: queryKeys.status(repositoryId), queryFn: () => window.justgit.repository.getStatus(repositoryId) }),
-        operations.branches ? ipcQueryClient.fetchQuery({ queryKey: queryKeys.branches(repositoryId), queryFn: () => window.justgit.refs.listBranches(repositoryId) }) : Promise.resolve(null),
-        operations.worktrees ? ipcQueryClient.fetchQuery({ queryKey: queryKeys.worktrees(repositoryId), queryFn: () => window.justgit.refs.listWorktrees(repositoryId) }) : Promise.resolve(null),
-        operations.files ? ipcQueryClient.fetchQuery({ queryKey: queryKeys.files(repositoryId), queryFn: () => window.justgit.repository.getFiles(repositoryId) }) : Promise.resolve(null),
+        ipcQueryClient.fetchQuery({ queryKey: queryKeys.status(repositoryId), queryFn: () => window.opentig.repository.getStatus(repositoryId) }),
+        operations.branches ? ipcQueryClient.fetchQuery({ queryKey: queryKeys.branches(repositoryId), queryFn: () => window.opentig.refs.listBranches(repositoryId) }) : Promise.resolve(null),
+        operations.worktrees ? ipcQueryClient.fetchQuery({ queryKey: queryKeys.worktrees(repositoryId), queryFn: () => window.opentig.refs.listWorktrees(repositoryId) }) : Promise.resolve(null),
+        operations.files ? ipcQueryClient.fetchQuery({ queryKey: queryKeys.files(repositoryId), queryFn: () => window.opentig.repository.getFiles(repositoryId) }) : Promise.resolve(null),
         operations.history ? ipcQueryClient.fetchInfiniteQuery({
           queryKey: queryKeys.history(repositoryId),
-          queryFn: ({ pageParam }) => window.justgit.commits.list(repositoryId, pageParam),
+          queryFn: ({ pageParam }) => window.opentig.commits.list(repositoryId, pageParam),
           initialPageParam: undefined as string | undefined,
           getNextPageParam: (lastPage: CommitPage) => lastPage.nextCursor ?? undefined,
         }) : Promise.resolve(null),
@@ -559,7 +559,7 @@ export default function App() {
       if (busyRef.current || repositorySyncOperationsRef.current.has(repositoryId)) return;
       inFlight = true;
       try {
-        const result = await window.justgit.refs.fetch(repositoryId);
+        const result = await window.opentig.refs.fetch(repositoryId);
         if (cancelled || repositoryRef.current?.id !== repositoryId || result.status !== 'success') return;
         await refresh({ background: true, scope: 'refs' });
       } catch {
@@ -619,7 +619,7 @@ export default function App() {
     selectFilePath(view === 'files' ? session.activePath : null);
   }, [openFilesStates, repository?.id, selectFilePath, view]);
 
-  useEffect(() => window.justgit.events.onRepositoryChanged((repositoryId, scope) => {
+  useEffect(() => window.opentig.events.onRepositoryChanged((repositoryId, scope) => {
     if (repositoryId === repository?.id) void refresh({ background: true, scope });
   }), [refresh, repository?.id]);
 
@@ -636,8 +636,8 @@ export default function App() {
         void refresh({ background: true, scope });
       }
     };
-    window.addEventListener('justgit:performance-action', handleBurst);
-    return () => window.removeEventListener('justgit:performance-action', handleBurst);
+    window.addEventListener('opentig:performance-action', handleBurst);
+    return () => window.removeEventListener('opentig:performance-action', handleBurst);
   }, [bootstrap?.performanceAutomation, refresh]);
 
   useEffect(() => {
@@ -715,7 +715,7 @@ export default function App() {
 
   const openRepository = useCallback(async () => {
     try {
-      const selected = await window.justgit.repository.select();
+      const selected = await window.opentig.repository.select();
       if (!selected) return;
       recordOpenedRepository(selected);
     } catch (reason) { setError(messageOf(reason)); }
@@ -737,7 +737,7 @@ export default function App() {
 
   const updatePreference = async (partial: Partial<Preferences>) => {
     try {
-      const preferences = await window.justgit.app.setPreferences(partial);
+      const preferences = await window.opentig.app.setPreferences(partial);
       setBootstrap((current) => current ? { ...current, preferences } : current);
     } catch (reason) { setError(messageOf(reason)); }
   };
@@ -745,7 +745,7 @@ export default function App() {
   const persistFilesTreeExpandedPaths = useCallback((paths: string[]) => {
     if (!repository) return;
     filesTreeStates.set(repository.id, [...paths]);
-    void window.justgit.app.setFilesTreeExpandedPaths(repository.id, paths)
+    void window.opentig.app.setFilesTreeExpandedPaths(repository.id, paths)
       .catch((reason) => setError(messageOf(reason)));
   }, [filesTreeStates, repository]);
 
@@ -758,8 +758,8 @@ export default function App() {
     setCommitProposal(null);
     setPreparedCommitIndex(null);
     try {
-      if (mode === 'stage') await window.justgit.index.stage(repository.id, paths);
-      else await window.justgit.index.unstage(repository.id, paths);
+      if (mode === 'stage') await window.opentig.index.stage(repository.id, paths);
+      else await window.opentig.index.unstage(repository.id, paths);
       await refresh({ background: true });
     } catch (reason) {
       setStatus(previous);
@@ -774,7 +774,7 @@ export default function App() {
     setCommitProposal(null);
     setPreparedCommitIndex(null);
     try {
-      await window.justgit.index.discard(repository.id, paths);
+      await window.opentig.index.discard(repository.id, paths);
       await refresh({ background: true });
     } catch (reason) { setError(messageOf(reason)); }
     finally { setBusy(null); }
@@ -829,7 +829,7 @@ export default function App() {
     const draft = readFileDraft(repositoryId, path);
     if (!draft) return true;
     try {
-      const result = await window.justgit.repository.writeFile(repositoryId, path, draft.content, draft.expectedContent);
+      const result = await window.opentig.repository.writeFile(repositoryId, path, draft.content, draft.expectedContent);
       if (result.status === 'conflict') {
         sileo.error({ title: 'File changed on disk', description: `${path} — the unsaved version is still open.`, duration: 10_000 });
         return false;
@@ -964,8 +964,8 @@ export default function App() {
     setBusy(`${direction}-file`);
     try {
       const result = direction === 'undo'
-        ? await window.justgit.repository.undoFileOperation(repository.id)
-        : await window.justgit.repository.redoFileOperation(repository.id);
+        ? await window.opentig.repository.undoFileOperation(repository.id)
+        : await window.opentig.repository.redoFileOperation(repository.id);
       setFileHistoryState(result.state);
       if (result.status === 'empty') return;
       if (result.status === 'conflict') {
@@ -973,7 +973,7 @@ export default function App() {
         return;
       }
       if (result.status === 'recycle-bin') {
-        sileo.info({ title: `${result.label} cannot be undone in JustGit`, description: 'Restore it from the Recycle Bin.' });
+        sileo.info({ title: `${result.label} cannot be undone in OpenTig`, description: 'Restore it from the Recycle Bin.' });
         return;
       }
       reconcileViewerPaths(result.pathChanges, result.removedPaths);
@@ -987,8 +987,8 @@ export default function App() {
   const copyFilePaths = async (entries: FileTreeEntry[]) => {
     if (!repository || entries.length === 0) return;
     try {
-      const paths = await Promise.all(entries.map((entry) => window.justgit.repository.getAbsolutePath(repository.id, entry.path)));
-      await window.justgit.clipboard.writeText(paths.join('\n'));
+      const paths = await Promise.all(entries.map((entry) => window.opentig.repository.getAbsolutePath(repository.id, entry.path)));
+      await window.opentig.clipboard.writeText(paths.join('\n'));
       sileo.success({
         title: paths.length === 1 ? 'Path copied' : `${paths.length} paths copied`,
         description: entries.length === 1 ? entries[0]!.path : undefined,
@@ -1001,7 +1001,7 @@ export default function App() {
   const copyFileContents = async (entry: FileTreeEntry) => {
     if (!repository || entry.type !== 'file') return;
     try {
-      const result = await window.justgit.repository.readFile(repository.id, entry.path);
+      const result = await window.opentig.repository.readFile(repository.id, entry.path);
       if (result.binary) {
         sileo.info({ title: 'Binary files cannot be copied as text', description: entry.path });
         return;
@@ -1010,7 +1010,7 @@ export default function App() {
         sileo.info({ title: 'File is too large to copy safely', description: entry.path });
         return;
       }
-      await window.justgit.clipboard.writeText(result.content);
+      await window.opentig.clipboard.writeText(result.content);
       sileo.success({ title: 'File copied', description: entry.path });
     } catch (reason) {
       sileo.error({ title: 'Could not copy file', description: messageOf(reason) });
@@ -1020,7 +1020,7 @@ export default function App() {
   const copyFileEntries = async (entries: FileTreeEntry[]) => {
     if (!repository || entries.length === 0) return;
     try {
-      await window.justgit.repository.copyEntries(repository.id, entries.map((entry) => entry.path));
+      await window.opentig.repository.copyEntries(repository.id, entries.map((entry) => entry.path));
       sileo.success({
         title: entries.length === 1 ? (entries[0]!.type === 'directory' ? 'Folder copied' : 'File copied') : `${entries.length} items copied`,
         description: 'Select a destination folder in Files and press Ctrl+V.',
@@ -1038,7 +1038,7 @@ export default function App() {
       return;
     }
     try {
-      await window.justgit.repository.cutEntries(repository.id, entries.map((entry) => entry.path));
+      await window.opentig.repository.cutEntries(repository.id, entries.map((entry) => entry.path));
       sileo.success({
         title: entries.length === 1 ? (entries[0]!.type === 'directory' ? 'Folder cut' : 'File cut') : `${entries.length} items cut`,
         description: 'Select a destination folder in Files and press Ctrl+V.',
@@ -1052,7 +1052,7 @@ export default function App() {
     if (!repository || busy || status?.readOnly) return;
     setBusy('paste-file');
     try {
-      const result = await window.justgit.repository.pasteEntries(repository.id, targetDirectory);
+      const result = await window.opentig.repository.pasteEntries(repository.id, targetDirectory);
       if (result.status === 'empty') {
         sileo.info({ title: 'Clipboard does not contain files or an image' });
         return;
@@ -1085,7 +1085,7 @@ export default function App() {
     }
     setBusy('move-file');
     try {
-      const result = await window.justgit.repository.moveEntries(repository.id, entries.map((entry) => entry.path), targetDirectory);
+      const result = await window.opentig.repository.moveEntries(repository.id, entries.map((entry) => entry.path), targetDirectory);
       const moved = result.moved.length;
       const conflicts = result.conflicts.length;
       reconcileViewerPaths(result.moved, []);
@@ -1108,7 +1108,7 @@ export default function App() {
     if (!repository || busy || status?.readOnly || entries.length === 0) return;
     setBusy('delete-file');
     try {
-      const result = await window.justgit.repository.deleteEntries(repository.id, entries.map((entry) => entry.path));
+      const result = await window.opentig.repository.deleteEntries(repository.id, entries.map((entry) => entry.path));
       if (result.deleted === 0) return;
       // Clean tabs under the deleted paths close; a tab with unsaved changes is
       // kept and flagged missing so its text can still be recovered.
@@ -1131,7 +1131,7 @@ export default function App() {
   const revealFileEntry = async (entry: FileTreeEntry) => {
     if (!repository) return;
     try {
-      await window.justgit.repository.revealEntry(repository.id, entry.path);
+      await window.opentig.repository.revealEntry(repository.id, entry.path);
     } catch (reason) {
       sileo.error({ title: 'Could not reveal item', description: messageOf(reason) });
     }
@@ -1146,7 +1146,7 @@ export default function App() {
     }
     setBusy('rename-file');
     try {
-      const result = await window.justgit.repository.renameEntry(repository.id, entry.path, newName);
+      const result = await window.opentig.repository.renameEntry(repository.id, entry.path, newName);
       if (result.status === 'noop') return;
       if (result.status === 'conflict') {
         sileo.error({ title: 'An item with that name already exists', description: result.path });
@@ -1167,7 +1167,7 @@ export default function App() {
     if (!repository || busy || status?.readOnly) return;
     setBusy('create-file');
     try {
-      const result = await window.justgit.repository.createEntry(repository.id, targetDirectory, name, kind);
+      const result = await window.opentig.repository.createEntry(repository.id, targetDirectory, name, kind);
       if (result.status === 'conflict') {
         sileo.error({ title: 'An item with that name already exists', description: result.path });
         return;
@@ -1196,8 +1196,8 @@ export default function App() {
     setCommitProposal(null);
     setPreparedCommitIndex(null);
     try {
-      if (mode === 'stage') await window.justgit.index.stageAll(repository.id);
-      else await window.justgit.index.unstageAll(repository.id);
+      if (mode === 'stage') await window.opentig.index.stageAll(repository.id);
+      else await window.opentig.index.unstageAll(repository.id);
       await refresh({ background: true });
     } catch (reason) { setStatus(previous); setError(messageOf(reason)); }
     finally { setBusy(null); }
@@ -1208,7 +1208,7 @@ export default function App() {
     setBusy('commit'); setError(null);
     let committed = false;
     try {
-      const result = await window.justgit.commits.create(repository.id, commitMessage);
+      const result = await window.opentig.commits.create(repository.id, commitMessage);
       const subject = commitMessage.split(/\r?\n/, 1)[0] ?? commitMessage;
       setCommitMessage('');
       // Completed groups stay in the plan, marked done. Removing them would
@@ -1246,7 +1246,7 @@ export default function App() {
   const cancelCommitMessageGeneration = async () => {
     const active = generationRequest.current;
     if (!active) return;
-    await window.justgit.ai.cancelGeneration(active.id).catch(() => undefined);
+    await window.opentig.ai.cancelGeneration(active.id).catch(() => undefined);
   };
 
   const generateCommitMessage = async () => {
@@ -1257,7 +1257,7 @@ export default function App() {
     generationRequest.current = { id: requestId, repositoryId: repository.id };
     setGenerating(requestId);
     try {
-      const result = await window.justgit.ai.generateCommitMessage({ repositoryId: repository.id, harness, model, requestId });
+      const result = await window.opentig.ai.generateCommitMessage({ repositoryId: repository.id, harness, model, requestId });
       if (generationRequest.current?.id !== requestId || generationRequest.current.repositoryId !== repository.id) return;
       setCommitMessage(result.message);
       lastAppliedMessageRef.current = result.message;
@@ -1269,7 +1269,7 @@ export default function App() {
         title: `Message generated with ${harnessLabel(result.harness)}`,
         description: result.proposal
           ? `${result.proposal.commits.length} focused commits may be clearer than one.`
-          // Silence used to hide both "the model saw no split" and "JustGit
+          // Silence used to hide both "the model saw no split" and "OpenTig
           // refused to offer one"; only the second needs explaining.
           : result.splitBlockedReason
             ? `No commit split was offered: ${result.splitBlockedReason.charAt(0).toLowerCase()}${result.splitBlockedReason.slice(1)}`
@@ -1316,7 +1316,7 @@ export default function App() {
     setBusy('prepare-commit-group');
     setError(null);
     try {
-      await window.justgit.index.prepareCommitGroup({
+      await window.opentig.index.prepareCommitGroup({
         repositoryId: repository.id,
         paths: group.paths,
         expectedStagedPaths: status.changes.filter((change) => change.staged && !change.conflict).map((change) => change.path).sort(),
@@ -1341,20 +1341,20 @@ export default function App() {
 
   useEffect(() => {
     const active = generationRequest.current;
-    if (active && active.repositoryId !== repository?.id) void window.justgit.ai.cancelGeneration(active.id);
+    if (active && active.repositoryId !== repository?.id) void window.opentig.ai.cancelGeneration(active.id);
     setCommitProposal(null);
     setPreparedCommitIndex(null);
   }, [repository?.id]);
 
   useEffect(() => () => {
     const active = generationRequest.current;
-    if (active) void window.justgit.ai.cancelGeneration(active.id);
+    if (active) void window.opentig.ai.cancelGeneration(active.id);
   }, []);
 
   const selectRecent = async (id: string | null) => {
     if (!id || id === repository?.id) return;
     try {
-      const selected = await window.justgit.repository.openRecent(id);
+      const selected = await window.opentig.repository.openRecent(id);
       if (selected) recordOpenedRepository(selected, id);
     }
     catch (reason) { setError(messageOf(reason)); }
@@ -1363,7 +1363,7 @@ export default function App() {
   const switchBranch = async (name: string | null) => {
     if (!repository || !name || name === status?.branch) return;
     setBusy('branch');
-    try { await window.justgit.refs.switchBranch(repository.id, name); await refresh({ background: true }); }
+    try { await window.opentig.refs.switchBranch(repository.id, name); await refresh({ background: true }); }
     catch (reason) { setError(messageOf(reason)); }
     finally { setBusy(null); }
   };
@@ -1371,7 +1371,7 @@ export default function App() {
   const switchWorktree = async (targetPath: string | null) => {
     if (!repository || !targetPath || targetPath === repository.path) return;
     setBusy('worktree');
-    try { recordOpenedRepository(await window.justgit.refs.selectWorktree(repository.id, targetPath)); }
+    try { recordOpenedRepository(await window.opentig.refs.selectWorktree(repository.id, targetPath)); }
     catch (reason) { setError(messageOf(reason)); }
     finally { setBusy(null); }
   };
@@ -1402,7 +1402,7 @@ export default function App() {
     const selected = undoCommit;
     setUndoingCommit(true);
     try {
-      const result = await window.justgit.commits.undoLatest(repository.id, selected.oid);
+      const result = await window.opentig.commits.undoLatest(repository.id, selected.oid);
       if (result.status === 'success') {
         setUndoCommit(null);
         setViewerSelection(null);
@@ -1446,7 +1446,7 @@ export default function App() {
     setBusy('resolve-conflict');
     setError(null);
     try {
-      await window.justgit.index.resolveConflict(repository.id, path, content);
+      await window.opentig.index.resolveConflict(repository.id, path, content);
       sileo.success({ title: 'Conflict marked as resolved', description: path });
       setViewerSelection({ type: 'diff', path, kind: 'staged' });
       await refresh({ background: true });
@@ -1464,7 +1464,7 @@ export default function App() {
   const updateConflictFile = async (path: string, content: string): Promise<boolean> => {
     if (!repository) return false;
     try {
-      await window.justgit.index.updateConflict(repository.id, path, content);
+      await window.opentig.index.updateConflict(repository.id, path, content);
       return true;
     } catch (reason) {
       const message = messageOf(reason);
@@ -1482,7 +1482,7 @@ export default function App() {
     setError(null);
     try {
       await sileo.promise(async () => {
-        const result = await window.justgit.refs.pull(repositoryId);
+        const result = await window.opentig.refs.pull(repositoryId);
         await refresh({ background: true });
         if (result.status === 'success' || result.status === 'up-to-date') return result;
         throw new PullBlocked(result);
@@ -1566,7 +1566,7 @@ export default function App() {
     setError(null);
     try {
       await sileo.promise(async () => {
-        const result = await window.justgit.refs.push(repositoryId);
+        const result = await window.opentig.refs.push(repositoryId);
         await refresh({ background: true });
         if (result.status === 'success' || result.status === 'up-to-date') return result;
         throw new PushBlocked(result);
@@ -1624,7 +1624,7 @@ export default function App() {
       const label = projectName ? `${projectName} · ${item.name}` : item.name;
       if (action === 'pull') {
         await sileo.promise(async () => {
-          const result = await window.justgit.refs.pull(repositoryId);
+          const result = await window.opentig.refs.pull(repositoryId);
           if (repositoryRef.current?.id === repositoryId) await refresh({ background: true });
           if (result.status === 'success' || result.status === 'up-to-date') return result;
           throw new PullBlocked(result);
@@ -1637,7 +1637,7 @@ export default function App() {
         });
       } else {
         await sileo.promise(async () => {
-          const result = await window.justgit.refs.push(repositoryId);
+          const result = await window.opentig.refs.push(repositoryId);
           if (repositoryRef.current?.id === repositoryId) await refresh({ background: true });
           if (result.status === 'success' || result.status === 'up-to-date') return result;
           throw new PushBlocked(result);
@@ -1657,7 +1657,7 @@ export default function App() {
     }
   };
 
-  if (!bootstrap) return <div className="splash"><IconLoader4 className="spinner" /><span>Loading JustGit…</span></div>;
+  if (!bootstrap) return <div className="splash"><IconLoader4 className="spinner" /><span>Loading OpenTig…</span></div>;
   if (!repository) return <Welcome recent={bootstrap.recentRepositories} onOpen={openRepository} onRecent={(id) => void selectRecent(id)} error={error} />;
 
   const conflicts = status?.changes.filter((change) => change.conflict) ?? [];
@@ -1671,7 +1671,7 @@ export default function App() {
       {/* Sileo names its themes after the page, not the toast: `light` fills the
           toast with #1a1a1a and `dark` with #f2f2f2. Pinning it to `light` keeps
           every toast dark whatever the app theme is, and also sidesteps `system`,
-          which sileo resolves from the OS instead of JustGit's own preference. */}
+          which sileo resolves from the OS instead of OpenTig's own preference. */}
       <Toaster theme="light" position="bottom-right" />
       <QuickOpenDialog
         open={quickOpen}
@@ -1881,7 +1881,7 @@ export default function App() {
                   onSelect={(pr) => { selectViewer({ type: 'pull-request', number: pr.number }); }}
                   onCreate={() => setCreatePrOpen(true)}
                   onCopyCommand={(command) => {
-                    void window.justgit.clipboard.writeText(command)
+                    void window.opentig.clipboard.writeText(command)
                       .then(() => sileo.success({ title: 'Command copied', description: command }))
                       .catch(() => sileo.error({ title: 'Could not copy the command' }));
                   }}
@@ -1975,10 +1975,10 @@ interface ToolbarProps {
   onSettingsOpen(open: boolean): void; onSettingsSection(section: SettingsSection): void;
 }
 
-const MANAGE_PROJECTS_VALUE = '__justgit_manage_projects__';
+const MANAGE_PROJECTS_VALUE = '__opentig_manage_projects__';
 // A sentinel that can never equal a filesystem path, so it cannot collide with
 // a real worktree even on a repository with unusual directory names.
-const MANAGE_WORKTREES_VALUE = '\0__justgit_manage_worktrees__';
+const MANAGE_WORKTREES_VALUE = '\0__opentig_manage_worktrees__';
 
 function Toolbar(props: ToolbarProps) {
   const { onRecent } = props;
@@ -2011,11 +2011,11 @@ function Toolbar(props: ToolbarProps) {
       const version = (repositoryStatusVersions.current.get(repositoryId) ?? 0) + 1;
       repositoryStatusVersions.current.set(repositoryId, version);
       try {
-        const fetched = await window.justgit.refs.fetch(repositoryId);
+        const fetched = await window.opentig.refs.fetch(repositoryId);
         if (repositoryStatusVersions.current.get(repositoryId) !== version) return;
         const counts = fetched.status === 'success'
           ? { ahead: fetched.ahead, behind: fetched.behind }
-          : await window.justgit.repository.getStatus(repositoryId, false).then((nextStatus) => ({ ahead: nextStatus.ahead, behind: nextStatus.behind }));
+          : await window.opentig.repository.getStatus(repositoryId, false).then((nextStatus) => ({ ahead: nextStatus.ahead, behind: nextStatus.behind }));
         if (repositoryStatusVersions.current.get(repositoryId) !== version) return;
         setRepositorySyncCounts((current) => {
           const next = new Map(current);
@@ -2169,9 +2169,9 @@ function Toolbar(props: ToolbarProps) {
   );
   return (
     <header className="toolbar">
-      <div className="toolbar-brand" aria-label="JustGit">
+      <div className="toolbar-brand" aria-label="OpenTig">
         <IconGitBranch aria-hidden="true" />
-        <span>JustGit</span>
+        <span>OpenTig</span>
       </div>
       <Select open={repositorySelectOpen} onOpenChange={(open) => {
         setRepositorySelectOpen(open);
@@ -2438,7 +2438,7 @@ function SettingsDialog({ preferences, onPreference, open, onOpenChange, section
 
   const loadStatuses = useCallback(async (forceRefresh = false) => {
     setLoadingStatuses(true);
-    try { setStatuses(await window.justgit.ai.statuses(forceRefresh)); }
+    try { setStatuses(await window.opentig.ai.statuses(forceRefresh)); }
     catch (reason) { sileo.error({ title: 'Could not check local AI', description: messageOf(reason) }); }
     finally { setLoadingStatuses(false); }
   }, []);
@@ -2456,7 +2456,7 @@ function SettingsDialog({ preferences, onPreference, open, onOpenChange, section
     : [...modelOptions, { id: selectedModel, label: `${selectedModel} (unavailable)` }];
   const title = section === 'general' ? 'General' : section === 'shortcuts' ? 'Shortcuts' : 'AI commit messages';
   const description = section === 'general'
-    ? 'JustGit appearance and behavior.'
+    ? 'OpenTig appearance and behavior.'
     : section === 'shortcuts'
       ? 'Rebind commands or review the shortcuts that stay fixed.'
       : 'Local harness and model used to suggest messages.';
@@ -2525,7 +2525,7 @@ function SettingsDialog({ preferences, onPreference, open, onOpenChange, section
               <div className="settings-field settings-field-separated">
                 <div className="settings-field-label">
                   <strong>Remote check interval</strong>
-                  <span>How often JustGit fetches remotes so ahead and behind counts stay current. Set to Off to check only when you pull or push.</span>
+                  <span>How often OpenTig fetches remotes so ahead and behind counts stay current. Set to Off to check only when you pull or push.</span>
                 </div>
                 <div className="settings-zoom-control">
                   <input
@@ -2558,7 +2558,7 @@ function SettingsDialog({ preferences, onPreference, open, onOpenChange, section
                 <div className="ai-settings-heading">
                   <div className="settings-field-label">
                     <strong>Local harness</strong>
-                    <span>JustGit uses the selected CLI session. It does not copy or store credentials.</span>
+                    <span>OpenTig uses the selected CLI session. It does not copy or store credentials.</span>
                   </div>
                   <Button variant="outline" size="sm" onClick={() => void loadStatuses(true)} disabled={loadingStatuses}>
                     {loadingStatuses ? <IconLoader4 className="animate-spin" /> : <IconRefresh />} {loadingStatuses ? <ShimmeringText text="Checking…" /> : 'Check again'}
@@ -2585,7 +2585,7 @@ function SettingsDialog({ preferences, onPreference, open, onOpenChange, section
                 <div className="settings-field settings-field-separated">
                   <div className="settings-field-label">
                     <strong>{harnessLabel(selectedHarness)} model</strong>
-                    <span>Default lets the CLI choose. JustGit remembers a separate selection for each harness.</span>
+                    <span>Default lets the CLI choose. OpenTig remembers a separate selection for each harness.</span>
                   </div>
                   <Select value={selectedModel} onValueChange={(model) => onPreference({ commitMessageModels: { ...preferences.commitMessageModels, [selectedHarness]: model } })}>
                     <SelectTrigger className="ai-model-select"><SelectValue /></SelectTrigger>
@@ -2976,7 +2976,7 @@ function CommitRow({ repositoryId, upstream, commit, graphRow, graphWidth, expan
   useEffect(() => {
     if (!expanded || files || filesError) return;
     let active = true;
-    window.justgit.commits.files(repositoryId, commit.oid).then((value) => {
+    window.opentig.commits.files(repositoryId, commit.oid).then((value) => {
       if (!active) return;
       commitFilesCache.set(cacheKey, value);
       while (commitFilesCache.size > 100) commitFilesCache.delete(commitFilesCache.keys().next().value as string);
@@ -2992,7 +2992,7 @@ function CommitRow({ repositoryId, upstream, commit, graphRow, graphWidth, expan
   const deletions = files?.reduce((total, file) => total + file.deletions, 0) ?? 0;
 
   const copyOid = async () => {
-    try { await window.justgit.clipboard.writeText(commit.oid); sileo.success({ title: 'Hash copied', description: commit.oid }); }
+    try { await window.opentig.clipboard.writeText(commit.oid); sileo.success({ title: 'Hash copied', description: commit.oid }); }
     catch { sileo.error({ title: 'Could not copy hash' }); }
   };
 
@@ -3178,7 +3178,7 @@ function Welcome({ recent, onOpen, onRecent, error }: { recent: BootstrapData['r
   const repositories = groupRecentRepositories(recent);
   return (
     <div className="welcome">
-      <h1>JustGit</h1><p>Open a repository to review changes, explore files, and create commits.</p>
+      <h1>OpenTig</h1><p>Open a repository to review changes, explore files, and create commits.</p>
       <Button size="lg" onClick={onOpen}><IconFolderOpen /> Open repository</Button>
       {error && <div className="welcome-error">{error}</div>}
       {repositories.length > 0 && <section><h2>Recent</h2>{repositories.map((item) => <button key={item.key} onClick={() => onRecent(item.recent.id)}><IconFolder /><span><strong>{item.name}</strong><small>{item.rootPath}</small></span></button>)}</section>}

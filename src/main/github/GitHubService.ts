@@ -125,7 +125,7 @@ export class GitHubService {
 
     // The body travels through a private temporary file: it avoids argument
     // length limits and any shell/flag interpretation of its content.
-    const temporary = await mkdtemp(path.join(os.tmpdir(), 'justgit-gh-'));
+    const temporary = await mkdtemp(path.join(os.tmpdir(), 'opentig-gh-'));
     const bodyPath = path.join(temporary, 'body.md');
     try {
       await writeFile(bodyPath, input.body, { encoding: 'utf8', mode: 0o600 });

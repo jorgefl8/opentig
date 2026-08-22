@@ -2,7 +2,7 @@ import darkTheme from '@shikijs/themes/one-dark-pro';
 import lightTheme from '@shikijs/themes/one-light';
 import { createJavaScriptRawEngine } from 'shiki/engine/javascript';
 import { createHighlighterCore, type HighlighterCore } from 'shiki/core';
-import { JUSTGIT_SYNTAX_THEMES } from '../viewer/syntaxThemes';
+import { OPENTIG_SYNTAX_THEMES } from '../viewer/syntaxThemes';
 import { LazyLanguageLoader } from './LazyLanguageLoader';
 
 type LanguageInput = Parameters<HighlighterCore['loadLanguage']>[0];
@@ -108,7 +108,7 @@ export function getLoadedMarkdownLanguages(): string[] {
 function codeToHtml(instance: HighlighterCore, code: string, language: string): string {
   return instance.codeToHtml(code, {
     lang: language,
-    themes: JUSTGIT_SYNTAX_THEMES,
+    themes: OPENTIG_SYNTAX_THEMES,
     defaultColor: false,
   });
 }

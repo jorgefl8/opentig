@@ -6,7 +6,7 @@ import type { EditorOptions } from '@pierre/diffs/edit';
 import { sileo } from 'sileo';
 import type { FileResult, ThemePreference, WriteFileResult } from '@shared/contracts';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { JUSTGIT_CODE_THEMES } from './diffThemes';
+import { OPENTIG_CODE_THEMES } from './diffThemes';
 import { VIEWER_SCROLLBAR_CSS } from './patch-utils';
 import { PierreWorkerPool } from './PierreWorkerPool';
 import { syncScrollFraction } from './scroll-sync';
@@ -45,7 +45,7 @@ export function PierreEditBoundary({ enabled, children }: PropsWithChildren<{ en
   const createEditor = useCallback((options: EditorOptions<undefined>) => {
     if (!EditorClass) throw new Error('Pierre edit mode has not loaded.');
     return new EditorClass({
-      clipboard: { readText: () => window.justgit.clipboard.readText() },
+      clipboard: { readText: () => window.opentig.clipboard.readText() },
       ...options,
     });
   }, [EditorClass]);
@@ -136,7 +136,7 @@ export function SourceCodeEditor({ path, cacheKey, value, themeType, wrapLines, 
   const options = useMemo(() => ({
     disableFileHeader: true,
     themeType,
-    theme: JUSTGIT_CODE_THEMES,
+    theme: OPENTIG_CODE_THEMES,
     overflow: wrapLines ? 'wrap' as const : 'scroll' as const,
     unsafeCSS: VIEWER_SCROLLBAR_CSS,
   }), [themeType, wrapLines]);
@@ -186,7 +186,7 @@ export function SourceCodeEditor({ path, cacheKey, value, themeType, wrapLines, 
   }), []);
 
   return (
-    <PierreWorkerPool theme={JUSTGIT_CODE_THEMES}>
+    <PierreWorkerPool theme={OPENTIG_CODE_THEMES}>
       <Virtualizer className="source-code-editor" contentClassName="source-code-editor-content">
         <VirtualizerScrollBridge handleRef={virtualizerRef} />
         <File
@@ -213,7 +213,7 @@ interface EditableFileViewerProps {
 }
 
 const FILE_SAVE_MESSAGES = {
-  conflictTitle: 'File was changed outside JustGit',
+  conflictTitle: 'File was changed outside OpenTig',
   successTitle: 'File saved',
   errorTitle: 'Could not save file',
 };

@@ -30,9 +30,9 @@ describe('CliProcessRunner', () => {
 
   it('maps spawn failures', async () => {
     const runner = new CliProcessRunner();
-    await expect(runner.run('justgit-command-that-does-not-exist', [], { timeoutMs: 5_000 })).rejects.toMatchObject({ detail: { code: 'AI_PROCESS_FAILED' } });
+    await expect(runner.run('opentig-command-that-does-not-exist', [], { timeoutMs: 5_000 })).rejects.toMatchObject({ detail: { code: 'AI_PROCESS_FAILED' } });
     await expect(runner.run(process.execPath, ['-e', 'process.exit(0)'], {
-      cwd: join(tmpdir(), `justgit-missing-cwd-${Date.now()}`),
+      cwd: join(tmpdir(), `opentig-missing-cwd-${Date.now()}`),
       timeoutMs: 5_000,
     })).rejects.toMatchObject({ detail: { code: 'AI_PROCESS_FAILED' } });
   });
@@ -56,16 +56,16 @@ describe('CliProcessRunner', () => {
 
   it('merges and removes environment variables', async () => {
     const runner = new CliProcessRunner();
-    const result = await runner.run(process.execPath, ['-e', 'process.stdout.write(`${process.env.JUSTGIT_KEEP ?? ""}|${process.env.JUSTGIT_REMOVE ?? "missing"}`)'], {
-      env: { JUSTGIT_KEEP: 'kept', JUSTGIT_REMOVE: 'removed' },
-      removeEnv: ['JUSTGIT_REMOVE'],
+    const result = await runner.run(process.execPath, ['-e', 'process.stdout.write(`${process.env.OPENTIG_KEEP ?? ""}|${process.env.OPENTIG_REMOVE ?? "missing"}`)'], {
+      env: { OPENTIG_KEEP: 'kept', OPENTIG_REMOVE: 'removed' },
+      removeEnv: ['OPENTIG_REMOVE'],
       timeoutMs: 5_000,
     });
     expect(result.stdout).toBe('kept|missing');
   });
 
   it('kills descendant processes when cancelled', async () => {
-    const directory = await mkdtemp(join(tmpdir(), 'justgit-cli-tree-'));
+    const directory = await mkdtemp(join(tmpdir(), 'opentig-cli-tree-'));
     const pidPath = join(directory, 'child.pid');
     const controller = new AbortController();
     let descendantPid: number | undefined;

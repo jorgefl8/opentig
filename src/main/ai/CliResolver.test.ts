@@ -14,7 +14,7 @@ afterEach(async () => {
 
 describe('CliResolver', () => {
   it('resolves only a fixed CLI name from PATH', async () => {
-    const directory = await mkdtemp(path.join(os.tmpdir(), 'justgit-resolver-'));
+    const directory = await mkdtemp(path.join(os.tmpdir(), 'opentig-resolver-'));
     temporaryDirectories.push(directory);
     const executable = path.join(directory, process.platform === 'win32' ? 'codex.exe' : 'codex');
     await writeFile(executable, '');

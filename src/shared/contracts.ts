@@ -403,7 +403,7 @@ export interface BootstrapData {
   performanceAutomation: boolean;
 }
 
-export interface JustGitApi {
+export interface OpenTigApi {
   app: {
     bootstrap(): Promise<BootstrapData>;
     setPreferences(preferences: Partial<Preferences>): Promise<Preferences>;

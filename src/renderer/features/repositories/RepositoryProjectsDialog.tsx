@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { shortenRepositoryPath, type RepositoryOption } from './repository-select-model';
 
-const NO_PROJECT = '__justgit_no_project__';
+const NO_PROJECT = '__opentig_no_project__';
 
 interface RepositoryProjectsDialogProps {
   open: boolean;
@@ -53,24 +53,24 @@ export function RepositoryProjectsDialog({ open, projects, repositories, onOpenC
     event.preventDefault();
     const name = newName.trim();
     if (!name || busy) return;
-    if (await run('create', () => window.justgit.projects.create(name))) setNewName('');
+    if (await run('create', () => window.opentig.projects.create(name))) setNewName('');
   };
 
   const saveRename = async (event: FormEvent) => {
     event.preventDefault();
     const name = editingName.trim();
     if (!editingId || !name || busy) return;
-    if (await run(`rename:${editingId}`, () => window.justgit.projects.rename(editingId, name))) setEditingId(null);
+    if (await run(`rename:${editingId}`, () => window.opentig.projects.rename(editingId, name))) setEditingId(null);
   };
 
   const removeProject = async (projectId: string) => {
     if (busy) return;
-    if (await run(`remove:${projectId}`, () => window.justgit.projects.remove(projectId))) setDeletingId(null);
+    if (await run(`remove:${projectId}`, () => window.opentig.projects.remove(projectId))) setDeletingId(null);
   };
 
   const assignProject = async (repositoryKey: string, projectId: string | null) => {
     if (busy) return;
-    await run(`assign:${repositoryKey}`, () => window.justgit.projects.assign(repositoryKey, projectId));
+    await run(`assign:${repositoryKey}`, () => window.opentig.projects.assign(repositoryKey, projectId));
   };
 
   return (
@@ -79,7 +79,7 @@ export function RepositoryProjectsDialog({ open, projects, repositories, onOpenC
         <header className="repository-projects-header">
           <div>
             <DialogTitle>Manage projects</DialogTitle>
-            <DialogDescription>Group repositories inside JustGit. Nothing moves on disk.</DialogDescription>
+            <DialogDescription>Group repositories inside OpenTig. Nothing moves on disk.</DialogDescription>
           </div>
           <DialogClose render={<Button variant="ghost" size="icon-sm" aria-label="Close project management" />}><IconX /></DialogClose>
         </header>

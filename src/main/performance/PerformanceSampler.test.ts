@@ -70,7 +70,7 @@ describe('PerformanceSampler', () => {
     });
     const sampler = await createPerformanceSampler(
       { getAppMetrics: () => [], getPath, getVersion: () => '1.0.0' },
-      runtime({ JUSTGIT_PERF_LOG: 'true' }),
+      runtime({ OPENTIG_PERF_LOG: 'true' }),
     );
     expect(sampler).toBeNull();
     expect(getPath).not.toHaveBeenCalled();
@@ -154,7 +154,7 @@ describe('PerformanceSampler', () => {
   });
 
   it('creates a private NDJSON log with normalized labels when enabled', async () => {
-    const directory = await mkdtemp(path.join(os.tmpdir(), 'justgit-performance-'));
+    const directory = await mkdtemp(path.join(os.tmpdir(), 'opentig-performance-'));
     temporaryDirectories.push(directory);
     const sampler = await createPerformanceSampler(
       {
@@ -163,9 +163,9 @@ describe('PerformanceSampler', () => {
         getVersion: () => '1.0.0',
       },
       runtime({
-        JUSTGIT_PERF_LOG: '1',
-        JUSTGIT_PERF_SCENARIO: ' Repo / Idle ',
-        JUSTGIT_PERF_REPETITION: '#3',
+        OPENTIG_PERF_LOG: '1',
+        OPENTIG_PERF_SCENARIO: ' Repo / Idle ',
+        OPENTIG_PERF_REPETITION: '#3',
       }),
     );
 

@@ -1,9 +1,9 @@
 import type { IpcRenderer } from 'electron';
-import type { IpcResult, JustGitApi } from '../shared/contracts';
+import type { IpcResult, OpenTigApi } from '../shared/contracts';
 import { IPC } from '../shared/contracts';
 import type { RepositoryChangeScope } from '../shared/repository-change';
 
-export function createApi(ipcRenderer: IpcRenderer, setZoomFactor: (factor: number) => void): JustGitApi {
+export function createApi(ipcRenderer: IpcRenderer, setZoomFactor: (factor: number) => void): OpenTigApi {
   const invoke = async <T>(channel: string, ...args: unknown[]): Promise<T> => {
     const result = await ipcRenderer.invoke(channel, ...args) as IpcResult<T>;
     if (result.ok) return result.value;

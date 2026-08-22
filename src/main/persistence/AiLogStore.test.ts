@@ -30,7 +30,7 @@ function entry(overrides: Partial<Parameters<AiLogStore['append']>[0]> = {}) {
 }
 
 async function store(): Promise<AiLogStore> {
-  const directory = await mkdtemp(path.join(os.tmpdir(), 'justgit-ailog-'));
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'opentig-ailog-'));
   directories.push(directory);
   const created = new AiLogStore(path.join(directory, 'ai-log.jsonl'));
   await created.load();
@@ -98,7 +98,7 @@ describe('AiLogStore', () => {
   });
 
   it('survives an unwritable path without throwing at the caller', async () => {
-    const log = new AiLogStore(path.join(os.tmpdir(), 'justgit-missing', '\0invalid', 'ai-log.jsonl'));
+    const log = new AiLogStore(path.join(os.tmpdir(), 'opentig-missing', '\0invalid', 'ai-log.jsonl'));
     await log.load();
     expect(() => log.append(entry())).not.toThrow();
     await expect(log.flush()).resolves.toBeUndefined();

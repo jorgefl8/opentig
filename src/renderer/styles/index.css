@@ -534,7 +534,7 @@
   .view-fade { display: flex; height: 100%; min-height: 0; flex-direction: column; animation: fade-rise var(--motion-med) var(--ease-out); }
   .view-fade > * { min-width: 0; }
   .view-loading { display: flex; flex: 1; align-items: center; justify-content: center; padding: 24px; color: var(--muted-foreground); font-size: 12px; }
-  @keyframes justgit-shimmer-text {
+  @keyframes opentig-shimmer-text {
     0%, 100% { color: var(--shimmer-text-base); }
     45%, 55% { color: var(--shimmer-text-highlight); }
   }
@@ -966,7 +966,7 @@
 
 * { scrollbar-width: thin; scrollbar-color: color-mix(in oklch, var(--foreground) 18%, transparent) transparent; }
 
-/* JustGit visual system ------------------------------------------------------
+/* OpenTig visual system ------------------------------------------------------
    Flat desktop chrome: one neutral canvas, borders for hierarchy, and no
    gradients or decorative shadows. Electric blue is spent only on primary
    actions, focus and drop targets. Green and red never mean anything except

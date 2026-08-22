@@ -52,12 +52,12 @@ describe('RepositoryService change stats', () => {
 });
 
 async function repository() {
-  const root = await mkdtemp(path.join(os.tmpdir(), 'justgit-status-'));
+  const root = await mkdtemp(path.join(os.tmpdir(), 'opentig-status-'));
   directories.push(root);
   const work = path.join(root, 'work');
   await execFileAsync('git', ['init', '-b', 'main', work], { windowsHide: true });
-  await execFileAsync('git', ['config', 'user.name', 'JustGit Test'], { cwd: work, windowsHide: true });
-  await execFileAsync('git', ['config', 'user.email', 'justgit@example.invalid'], { cwd: work, windowsHide: true });
+  await execFileAsync('git', ['config', 'user.name', 'OpenTig Test'], { cwd: work, windowsHide: true });
+  await execFileAsync('git', ['config', 'user.email', 'opentig@example.invalid'], { cwd: work, windowsHide: true });
   await writeFile(path.join(work, 'file.txt'), 'content\n');
   await execFileAsync('git', ['add', '.'], { cwd: work, windowsHide: true });
   await execFileAsync('git', ['commit', '-m', 'Initial commit'], { cwd: work, windowsHide: true });

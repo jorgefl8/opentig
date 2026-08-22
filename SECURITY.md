@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-JustGit is pre-release software. Security fixes target the latest code on `main`; older builds are not supported.
+OpenTig is pre-release software. Security fixes target the latest code on `main`; older builds are not supported.
 
 ## Reporting a vulnerability
 

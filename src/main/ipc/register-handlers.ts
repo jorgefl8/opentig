@@ -56,7 +56,7 @@ export function registerHandlers(services: Services): () => void {
       openFilesStates: services.settings.openFilesStates,
       activeRepository,
       preferences: services.settings.preferences,
-      performanceAutomation: process.env.JUSTGIT_PERF_AUTOMATION === '1',
+      performanceAutomation: process.env.OPENTIG_PERF_AUTOMATION === '1',
     };
   });
   handle(IPC.preferences, 'preferences', async (partial) => {
@@ -114,7 +114,7 @@ export function registerHandlers(services: Services): () => void {
       const prompt = await dialog.showMessageBox(services.window, {
         type: 'warning',
         title: 'Repository unavailable',
-        message: `JustGit could not open ${recent.repositoryName}.`,
+        message: `OpenTig could not open ${recent.repositoryName}.`,
         detail: `${recent.path}\n\nIf the repository moved, locate its new folder. Its project assignment, open tabs, and expanded folders will be preserved.`,
         buttons: ['Locate repository', 'Cancel'],
         defaultId: 0,

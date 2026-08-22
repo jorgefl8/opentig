@@ -160,7 +160,7 @@ export class PerformanceSampler {
       .catch((error: unknown) => {
         if (this.writeFailureReported) return;
         this.writeFailureReported = true;
-        console.error('JustGit performance log write failed.', error);
+        console.error('OpenTig performance log write failed.', error);
       });
   }
 }
@@ -169,10 +169,10 @@ export async function createPerformanceSampler(
   app: PerformanceApp,
   runtime: RuntimeInfo = process,
 ): Promise<PerformanceSampler | null> {
-  if (runtime.env.JUSTGIT_PERF_LOG !== '1') return null;
+  if (runtime.env.OPENTIG_PERF_LOG !== '1') return null;
 
-  const scenario = normalizeLabel(runtime.env.JUSTGIT_PERF_SCENARIO, 'unlabelled');
-  const repetition = normalizeLabel(runtime.env.JUSTGIT_PERF_REPETITION, '1');
+  const scenario = normalizeLabel(runtime.env.OPENTIG_PERF_SCENARIO, 'unlabelled');
+  const repetition = normalizeLabel(runtime.env.OPENTIG_PERF_REPETITION, '1');
   const logsDirectory = app.getPath('logs');
   await mkdir(logsDirectory, { recursive: true });
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');

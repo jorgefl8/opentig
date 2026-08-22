@@ -1,4 +1,4 @@
-# Contributing to JustGit
+# Contributing to OpenTig
 
 ## Before starting
 

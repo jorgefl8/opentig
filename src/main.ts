@@ -88,7 +88,7 @@ async function createWindow(): Promise<void> {
     minHeight: 600,
     show: false,
     backgroundColor: '#171614',
-    title: 'JustGit',
+    title: 'OpenTig',
     autoHideMenuBar: true,
     ...getWindowTitleBarOptions(
       shouldUseDarkTitleBar(settings.preferences.theme, nativeTheme.shouldUseDarkColors),
@@ -169,7 +169,7 @@ async function createWindow(): Promise<void> {
     fileHistory.clear();
     void settings.flush()
       .then(() => settingsStores.delete(settings))
-      .catch((error) => console.error('Could not flush JustGit settings.', error));
+      .catch((error) => console.error('Could not flush OpenTig settings.', error));
     mainWindow = null;
   });
 
@@ -192,7 +192,7 @@ app.whenReady().then(async () => {
     performanceSampler = await createPerformanceSampler(app);
     performanceSampler?.start();
   } catch (error) {
-    console.error('Could not start the JustGit performance sampler.', error);
+    console.error('Could not start the OpenTig performance sampler.', error);
   }
   session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
   await createWindow();
@@ -211,7 +211,7 @@ app.on('before-quit', (event) => {
   if (sampler) tasks.push(sampler.stop());
   void Promise.allSettled(tasks).then((results) => {
     for (const result of results) {
-      if (result.status === 'rejected') console.error('Could not finish a JustGit shutdown task.', result.reason);
+      if (result.status === 'rejected') console.error('Could not finish an OpenTig shutdown task.', result.reason);
     }
   }).finally(() => {
     shutdownReady = true;

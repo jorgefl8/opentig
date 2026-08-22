@@ -13,4 +13,4 @@ export function buildFileEditorKeymap(editorSearchCombo: string): EditorKeymap {
   return [{ bindings: { [toEditorShortcut(editorSearchCombo)]: 'openSearchReplacePanel' } }];
 }
 
-export const JUSTGIT_FILE_EDITOR_KEYMAP = buildFileEditorKeymap(DEFAULT_SHORTCUT_MAP.editorSearch);
+export const OPENTIG_FILE_EDITOR_KEYMAP = buildFileEditorKeymap(DEFAULT_SHORTCUT_MAP.editorSearch);

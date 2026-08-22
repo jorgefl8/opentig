@@ -18,7 +18,7 @@ describe('GitProcess', () => {
   });
 
   it('maps nonzero Git exits without changing their diagnostics', async () => {
-    await expect(new GitProcess().run(process.cwd(), ['rev-parse', '--verify', 'refs/heads/justgit-ref-that-does-not-exist'], {
+    await expect(new GitProcess().run(process.cwd(), ['rev-parse', '--verify', 'refs/heads/opentig-ref-that-does-not-exist'], {
       operation: 'inspect',
       readOnly: true,
       timeoutMs: 5_000,
@@ -34,7 +34,7 @@ describe('GitProcess', () => {
   });
 
   it('kills descendant processes when Git times out', async () => {
-    const directory = await mkdtemp(join(tmpdir(), 'justgit-git-tree-'));
+    const directory = await mkdtemp(join(tmpdir(), 'opentig-git-tree-'));
     const pidPath = join(directory, 'child.pid');
     let descendantPid: number | undefined;
     try {

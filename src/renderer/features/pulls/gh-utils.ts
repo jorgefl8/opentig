@@ -33,5 +33,5 @@ export function reviewDecisionLabel(decision: string | null): string | null {
 }
 
 export function openOnGitHub(url: string): void {
-  void window.justgit.shell.openExternal(url).catch(() => undefined);
+  void window.opentig.shell.openExternal(url).catch(() => undefined);
 }

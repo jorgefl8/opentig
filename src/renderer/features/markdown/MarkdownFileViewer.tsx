@@ -30,14 +30,14 @@ interface MarkdownFileViewerProps {
 
 type ContentWidth = 'reading' | 'fit';
 
-const CONTENT_WIDTH_STORAGE_KEY = 'justgit:markdown-content-width';
+const CONTENT_WIDTH_STORAGE_KEY = 'opentig:markdown-content-width';
 
 // Matches absolute URLs (`https://…`), protocol-relative URLs (`//…`), and `mailto:` links -
 // anything that should be handed off to the OS instead of resolved as a repository-relative path.
 const EXTERNAL_LINK_RE = /^([a-z][a-z0-9+.-]*:)?\/\//i;
 
 const MARKDOWN_SAVE_MESSAGES = {
-  conflictTitle: 'Markdown was changed outside JustGit',
+  conflictTitle: 'Markdown was changed outside OpenTig',
   successTitle: 'Markdown saved',
   errorTitle: 'Could not save Markdown',
 };
@@ -161,13 +161,13 @@ export function MarkdownFileViewer({ file, initialContent, revision, themeType, 
     const token = ++requestToken.current;
     setLoading(true);
     const timer = window.setTimeout(() => {
-      const startedAt = window.__justgitPerformanceAutomation ? performance.now() : null;
+      const startedAt = window.__opentigPerformanceAutomation ? performance.now() : null;
       renderMarkdown(draft).then((result) => {
         if (token === requestToken.current) {
           setHtml(result);
           if (startedAt !== null) {
-            window.__justgitPerformanceResults ??= [];
-            window.__justgitPerformanceResults.push({
+            window.__opentigPerformanceResults ??= [];
+            window.__opentigPerformanceResults.push({
               kind: 'markdown-render',
               durationMs: Math.round((performance.now() - startedAt) * 100) / 100,
             });
@@ -194,7 +194,7 @@ export function MarkdownFileViewer({ file, initialContent, revision, themeType, 
       if (!encoded) return;
       try {
         const code = decodeURIComponent(encoded);
-        await window.justgit.clipboard.writeText(code);
+        await window.opentig.clipboard.writeText(code);
         const previous = copyFeedback.current;
         if (previous) {
           window.clearTimeout(previous.timer);
@@ -227,7 +227,7 @@ export function MarkdownFileViewer({ file, initialContent, revision, themeType, 
       return;
     }
     if (EXTERNAL_LINK_RE.test(href) || href.startsWith('mailto:')) {
-      void window.justgit.shell.openExternal(href).catch(() => undefined);
+      void window.opentig.shell.openExternal(href).catch(() => undefined);
       return;
     }
     const repositoryPath = resolveMarkdownRepositoryPath(file.path, href);

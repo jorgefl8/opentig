@@ -106,7 +106,7 @@ export interface WorktreeInfo {
   main: boolean;
 }
 
-/** A worktree row annotated with whether JustGit currently has it open. */
+/** A worktree row annotated with whether OpenTig currently has it open. */
 export interface ManagedWorktree extends WorktreeInfo {
   current: boolean;
 }
@@ -123,7 +123,7 @@ export interface LocalRefsSnapshot {
 /**
  * Why a local branch can or cannot be deleted with Git's non-forced path.
  * `unknown` means the promised comparison ref did not resolve locally, so
- * JustGit refuses to guess instead of offering deletion.
+ * OpenTig refuses to guess instead of offering deletion.
  */
 export type BranchDeletionState = 'safe' | 'current' | 'checked-out' | 'unmerged' | 'unknown';
 

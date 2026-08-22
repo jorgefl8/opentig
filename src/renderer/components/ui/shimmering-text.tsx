@@ -40,7 +40,7 @@ export function ShimmeringText({ text, duration = 1.35, repeatDelay = 0.25, spre
           key={`${character}-${index}`}
           className="inline-block whitespace-pre"
           style={{
-            animationName: 'justgit-shimmer-text',
+            animationName: 'opentig-shimmer-text',
             animationDuration: `${cycleDuration}s`,
             animationTimingFunction: 'ease-in-out',
             animationDelay: `${index * stagger}s`,

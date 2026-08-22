@@ -3,7 +3,7 @@ export interface PatchAllocation {
   truncated: boolean;
 }
 
-const TRIM_MARKER = '[diff trimmed by JustGit]';
+const TRIM_MARKER = '[diff trimmed by OpenTig]';
 
 /**
  * Fits a multi-file patch into a character budget without letting the first

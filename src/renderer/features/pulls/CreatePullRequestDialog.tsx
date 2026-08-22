@@ -63,7 +63,7 @@ export function CreatePullRequestDialog(props: CreatePullRequestDialogProps) {
   useEffect(() => {
     if (props.open) return;
     const active = generationRequest.current;
-    if (active) void window.justgit.github.cancelDraft(active).catch(() => undefined);
+    if (active) void window.opentig.github.cancelDraft(active).catch(() => undefined);
   }, [props.open]);
 
   const needsPublish = props.status !== null && !props.status.upstream;
@@ -73,7 +73,7 @@ export function CreatePullRequestDialog(props: CreatePullRequestDialogProps) {
 
   const cancelGeneration = async () => {
     const active = generationRequest.current;
-    if (active) await window.justgit.github.cancelDraft(active).catch(() => undefined);
+    if (active) await window.opentig.github.cancelDraft(active).catch(() => undefined);
   };
 
   const generateDraft = async () => {
@@ -84,7 +84,7 @@ export function CreatePullRequestDialog(props: CreatePullRequestDialogProps) {
     generationRequest.current = requestId;
     setGenerating(requestId);
     try {
-      const result = await window.justgit.github.generateDraft({ repositoryId: props.repositoryId, base, harness, model, requestId });
+      const result = await window.opentig.github.generateDraft({ repositoryId: props.repositoryId, base, harness, model, requestId });
       if (generationRequest.current !== requestId) return;
       setTitle(result.title);
       setBody(result.body);
@@ -107,7 +107,7 @@ export function CreatePullRequestDialog(props: CreatePullRequestDialogProps) {
     if (blocked || creating || generating || !title.trim() || !base) return;
     setCreating(true);
     try {
-      const result = await window.justgit.github.createPullRequest({ repositoryId: props.repositoryId, title: title.trim(), body, base, draft });
+      const result = await window.opentig.github.createPullRequest({ repositoryId: props.repositoryId, title: title.trim(), body, base, draft });
       setTitle('');
       setBody('');
       setDraft(false);
