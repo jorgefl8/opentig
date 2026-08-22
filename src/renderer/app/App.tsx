@@ -55,6 +55,7 @@ import { getVsCodeFileIconUrl, getVsCodeFolderIconUrl } from '@/lib/vscode-icons
 import { refreshOperationsForScope } from './refresh-policy';
 import { resolveWindowControlsInset } from './window-controls';
 import { queryKeys, queryResourcesForScope } from '@/lib/query-client';
+import { opentig } from '@/lib/opentig-api';
 import { shouldActivateChangeRow } from '@/features/changes/row-activation';
 import { fileCutTransferId, writeClipboardText, writeFileTransfer } from '@/lib/browser-capabilities';
 import { projectPullBlockedCopy, projectPullSuccessCopy, projectPushBlockedCopy, projectPushSuccessCopy, pullSuccessCopy, repositorySyncLoadingToast, visibleRepositorySyncActions, type ProjectSyncAction, type RepositorySyncCounts } from '@/features/repositories/project-sync';
@@ -91,7 +92,7 @@ class PushBlocked extends Error {
 }
 
 export default function App() {
-  const ipcQueryClient = useQueryClient();
+  const appQueryClient = useQueryClient();
   const [bootstrap, setBootstrap] = useState<BootstrapData | null>(null);
   const [capabilities, setCapabilities] = useState<OpenTigCapabilities | null>(null);
   const [repository, setRepository] = useState<RepositoryInfo | null>(null);
@@ -143,7 +144,7 @@ export default function App() {
   const [filesTreeStates] = useState<Map<string, string[]>>(() => new Map());
   const repositoryRef = useRef<RepositoryInfo | null>(null);
   const fileSessionsRef = useRef<ReadonlyMap<string, FileSession>>(fileSessions);
-  // Last payload sent per worktree, so pure activation bumps do not produce IPC.
+  // Last payload sent per worktree, so pure activation bumps do not produce a server write.
   const persistedSessionsRef = useRef<Map<string, string>>(new Map());
   // Unsaved draft text, keyed by worktree then path. Deliberately a ref: an
   // editor keystroke must not rerender App or the toolbar.
@@ -160,7 +161,7 @@ export default function App() {
 
   const historyQuery = useInfiniteQuery({
     queryKey: queryKeys.history(repository?.id ?? ''),
-    queryFn: ({ pageParam }) => window.opentig.commits.list(repository!.id, pageParam),
+    queryFn: ({ pageParam }) => opentig.commits.list(repository!.id, pageParam),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
     enabled: repository !== null && view === 'history',
@@ -171,7 +172,7 @@ export default function App() {
   const githubInfoQuery = useQuery<GitHubRepositoryInfo>({
     queryKey: queryKeys.githubInfo(repository?.id ?? ''),
     queryFn: async () => {
-      try { return await window.opentig.github.repositoryInfo(repository!.id); }
+      try { return await opentig.github.repositoryInfo(repository!.id); }
       catch { return { isGitHub: false, nameWithOwner: null }; }
     },
     enabled: repository !== null,
@@ -182,9 +183,9 @@ export default function App() {
     queryFn: async () => {
       const forceStatus = forceGhStatusRef.current;
       forceGhStatusRef.current = false;
-      const nextGhStatus = await window.opentig.github.status(forceStatus);
+      const nextGhStatus = await opentig.github.status(forceStatus);
       if (!nextGhStatus.installed || nextGhStatus.authStatus === 'unauthenticated') return { ghStatus: nextGhStatus, pulls: null };
-      const nextPulls = pullRequestStates.length ? await window.opentig.github.listPullRequests(repository!.id, pullRequestStates) : [];
+      const nextPulls = pullRequestStates.length ? await opentig.github.listPullRequests(repository!.id, pullRequestStates) : [];
       return { ghStatus: nextGhStatus, pulls: nextPulls };
     },
     enabled: view === 'prs' && repository !== null && githubInfo?.isGitHub === true,
@@ -208,14 +209,14 @@ export default function App() {
 
   useEffect(() => {
     let active = true;
-    window.opentig.app.bootstrap().then((data) => {
+    opentig.app.bootstrap().then((data) => {
       if (!active) return;
       filesTreeStates.clear();
       for (const state of data.filesTreeStates) filesTreeStates.set(state.repositoryId, [...state.expandedPaths]);
       setBootstrap(data);
       setRepository(data.activeRepository);
     }).catch((reason) => setError(messageOf(reason)));
-    window.opentig.app.capabilities().then((available) => {
+    opentig.app.capabilities().then((available) => {
       if (active) setCapabilities(available);
     }).catch(() => undefined);
     return () => { active = false; };
@@ -258,7 +259,7 @@ export default function App() {
     const apply = () => {
       const dark = theme === 'dark' || (theme === 'system' && media.matches);
       document.documentElement.classList.toggle('dark', dark);
-      void window.opentig.app.setTitleBarTheme(dark).catch(() => undefined);
+      void opentig.app.setTitleBarTheme(dark).catch(() => undefined);
     };
     apply();
     media.addEventListener('change', apply);
@@ -266,7 +267,7 @@ export default function App() {
   }, [theme]);
 
   useEffect(() => {
-    window.opentig.app.setZoomFactor(uiZoom / 100);
+    opentig.app.setZoomFactor(uiZoom / 100);
   }, [uiZoom]);
 
   useEffect(() => {
@@ -324,7 +325,7 @@ export default function App() {
     const fingerprint = JSON.stringify(payload);
     if (persistedSessionsRef.current.get(repositoryId) !== fingerprint) {
       persistedSessionsRef.current.set(repositoryId, fingerprint);
-      void window.opentig.app.setOpenFilesState(repositoryId, payload.tabs, payload.activePath, payload.previewPath).catch(() => undefined);
+      void opentig.app.setOpenFilesState(repositoryId, payload.tabs, payload.activePath, payload.previewPath).catch(() => undefined);
     }
     return session;
   }, []);
@@ -468,21 +469,21 @@ export default function App() {
     if (!repository) return;
     const repositoryId = repository.id;
     try {
-      const nextFiles = await ipcQueryClient.fetchQuery({
-        queryKey: queryKeys.files(repositoryId), queryFn: () => window.opentig.repository.getFiles(repositoryId),
+      const nextFiles = await appQueryClient.fetchQuery({
+        queryKey: queryKeys.files(repositoryId), queryFn: () => opentig.repository.getFiles(repositoryId),
       });
       if (repositoryRef.current?.id === repositoryId) applyFilesSnapshot(nextFiles);
     } catch (reason) {
       if (repositoryRef.current?.id === repositoryId) setError(messageOf(reason));
     }
-  }, [applyFilesSnapshot, ipcQueryClient, repository]);
+  }, [applyFilesSnapshot, appQueryClient, repository]);
 
   // Folders the file tree leaves collapsed (git-ignored trees) are read one level
   // at a time, the first time the user opens them.
   const loadDirectoryEntries = useCallback(async (directoryPath: string): Promise<FileTreeEntry[]> => {
     if (!repository) return [];
     try {
-      return await window.opentig.repository.getDirectoryEntries(repository.id, directoryPath);
+      return await opentig.repository.getDirectoryEntries(repository.id, directoryPath);
     } catch (reason) {
       sileo.error({ title: 'Could not read folder', description: messageOf(reason) });
       return [];
@@ -492,11 +493,11 @@ export default function App() {
   const refreshFileHistoryState = useCallback(async () => {
     if (!repository) return;
     const repositoryId = repository.id;
-    const next = await ipcQueryClient.fetchQuery({
-      queryKey: queryKeys.fileHistory(repositoryId), queryFn: () => window.opentig.repository.fileHistoryState(repositoryId),
+    const next = await appQueryClient.fetchQuery({
+      queryKey: queryKeys.fileHistory(repositoryId), queryFn: () => opentig.repository.fileHistoryState(repositoryId),
     });
     if (repositoryRef.current?.id === repositoryId) setFileHistoryState(next);
-  }, [ipcQueryClient, repository]);
+  }, [appQueryClient, repository]);
 
   useEffect(() => {
     if (!repository) { setFileHistoryState({ canUndo: false, undoLabel: null, canRedo: false, redoLabel: null }); return; }
@@ -512,7 +513,7 @@ export default function App() {
     if (!background) setBusy('refresh');
     setError(null);
     try {
-      await Promise.all(resources.map((resource) => ipcQueryClient.invalidateQueries({
+      await Promise.all(resources.map((resource) => appQueryClient.invalidateQueries({
         queryKey: resource === 'status' ? queryKeys.status(repositoryId)
           : resource === 'branches' ? queryKeys.branches(repositoryId)
             : resource === 'worktrees' ? queryKeys.worktrees(repositoryId)
@@ -522,13 +523,13 @@ export default function App() {
         refetchType: 'none',
       })));
       const [nextStatus, nextBranches, nextWorktrees, nextFiles, nextHistory] = await Promise.all([
-        ipcQueryClient.fetchQuery({ queryKey: queryKeys.status(repositoryId), queryFn: () => window.opentig.repository.getStatus(repositoryId) }),
-        operations.branches ? ipcQueryClient.fetchQuery({ queryKey: queryKeys.branches(repositoryId), queryFn: () => window.opentig.refs.listBranches(repositoryId) }) : Promise.resolve(null),
-        operations.worktrees ? ipcQueryClient.fetchQuery({ queryKey: queryKeys.worktrees(repositoryId), queryFn: () => window.opentig.refs.listWorktrees(repositoryId) }) : Promise.resolve(null),
-        operations.files ? ipcQueryClient.fetchQuery({ queryKey: queryKeys.files(repositoryId), queryFn: () => window.opentig.repository.getFiles(repositoryId) }) : Promise.resolve(null),
-        operations.history ? ipcQueryClient.fetchInfiniteQuery({
+        appQueryClient.fetchQuery({ queryKey: queryKeys.status(repositoryId), queryFn: () => opentig.repository.getStatus(repositoryId) }),
+        operations.branches ? appQueryClient.fetchQuery({ queryKey: queryKeys.branches(repositoryId), queryFn: () => opentig.refs.listBranches(repositoryId) }) : Promise.resolve(null),
+        operations.worktrees ? appQueryClient.fetchQuery({ queryKey: queryKeys.worktrees(repositoryId), queryFn: () => opentig.refs.listWorktrees(repositoryId) }) : Promise.resolve(null),
+        operations.files ? appQueryClient.fetchQuery({ queryKey: queryKeys.files(repositoryId), queryFn: () => opentig.repository.getFiles(repositoryId) }) : Promise.resolve(null),
+        operations.history ? appQueryClient.fetchInfiniteQuery({
           queryKey: queryKeys.history(repositoryId),
-          queryFn: ({ pageParam }) => window.opentig.commits.list(repositoryId, pageParam),
+          queryFn: ({ pageParam }) => opentig.commits.list(repositoryId, pageParam),
           initialPageParam: undefined as string | undefined,
           getNextPageParam: (lastPage: CommitPage) => lastPage.nextCursor ?? undefined,
         }) : Promise.resolve(null),
@@ -546,8 +547,8 @@ export default function App() {
     } finally {
       if (!background && repositoryRef.current?.id === repositoryId) setBusy(null);
     }
-  }, [applyFilesSnapshot, ipcQueryClient, repository, view]);
-  // Query keys deduplicate simultaneous IPC reads. Separate scoped refreshes
+  }, [applyFilesSnapshot, appQueryClient, repository, view]);
+  // Query keys deduplicate simultaneous server reads. Separate scoped refreshes
   // naturally form a union because each invalidates only the resources it owns.
   const refresh = useCallback((options?: AppRefreshOptions) => performRefresh({
     background: options?.background === true,
@@ -568,7 +569,7 @@ export default function App() {
       if (busyRef.current || repositorySyncOperationsRef.current.has(repositoryId)) return;
       inFlight = true;
       try {
-        const result = await window.opentig.refs.fetch(repositoryId);
+        const result = await opentig.refs.fetch(repositoryId);
         if (cancelled || repositoryRef.current?.id !== repositoryId || result.status !== 'success') return;
         await refresh({ background: true, scope: 'refs' });
       } catch {
@@ -628,7 +629,7 @@ export default function App() {
     selectFilePath(view === 'files' ? session.activePath : null);
   }, [openFilesStates, repository?.id, selectFilePath, view]);
 
-  useEffect(() => window.opentig.events.onRepositoryChanged((repositoryId, scope) => {
+  useEffect(() => opentig.events.onRepositoryChanged((repositoryId, scope) => {
     if (repositoryId === repository?.id) void refresh({ background: true, scope });
   }), [refresh, repository?.id]);
 
@@ -724,11 +725,15 @@ export default function App() {
 
   const openRepository = useCallback(async () => {
     try {
-      const selectedPath = await window.opentig.repository.select();
+      const selectedPath = await opentig.repository.select();
       if (!selectedPath) return;
-      recordOpenedRepository(await window.opentig.repository.openPath(selectedPath));
+      recordOpenedRepository(await opentig.repository.openPath(selectedPath));
     } catch (reason) { setError(messageOf(reason)); }
   }, [recordOpenedRepository]);
+
+  useEffect(() => opentig.events.onActiveRepositoryChanged((selected) => {
+    if (selected.id !== repositoryRef.current?.id) recordOpenedRepository(selected);
+  }), [recordOpenedRepository]);
 
   useEffect(() => {
     const update = (event: KeyboardEvent) => setCtrlHeld(event.ctrlKey && !event.altKey && !event.metaKey);
@@ -746,7 +751,7 @@ export default function App() {
 
   const updatePreference = async (partial: Partial<Preferences>) => {
     try {
-      const preferences = await window.opentig.app.setPreferences(partial);
+      const preferences = await opentig.app.setPreferences(partial);
       setBootstrap((current) => current ? { ...current, preferences } : current);
     } catch (reason) { setError(messageOf(reason)); }
   };
@@ -754,7 +759,7 @@ export default function App() {
   const persistFilesTreeExpandedPaths = useCallback((paths: string[]) => {
     if (!repository) return;
     filesTreeStates.set(repository.id, [...paths]);
-    void window.opentig.app.setFilesTreeExpandedPaths(repository.id, paths)
+    void opentig.app.setFilesTreeExpandedPaths(repository.id, paths)
       .catch((reason) => setError(messageOf(reason)));
   }, [filesTreeStates, repository]);
 
@@ -767,8 +772,8 @@ export default function App() {
     setCommitProposal(null);
     setPreparedCommitIndex(null);
     try {
-      if (mode === 'stage') await window.opentig.index.stage(repository.id, paths);
-      else await window.opentig.index.unstage(repository.id, paths);
+      if (mode === 'stage') await opentig.index.stage(repository.id, paths);
+      else await opentig.index.unstage(repository.id, paths);
       await refresh({ background: true });
     } catch (reason) {
       setStatus(previous);
@@ -834,7 +839,7 @@ export default function App() {
     const draft = readFileDraft(repositoryId, path);
     if (!draft) return true;
     try {
-      const result = await window.opentig.repository.writeFile(repositoryId, path, draft.content, draft.expectedContent);
+      const result = await opentig.repository.writeFile(repositoryId, path, draft.content, draft.expectedContent);
       if (result.status === 'conflict') {
         sileo.error({ title: 'File changed on disk', description: `${path} — the unsaved version is still open.`, duration: 10_000 });
         return false;
@@ -969,8 +974,8 @@ export default function App() {
     setBusy(`${direction}-file`);
     try {
       const result = direction === 'undo'
-        ? await window.opentig.repository.undoFileOperation(repository.id)
-        : await window.opentig.repository.redoFileOperation(repository.id);
+        ? await opentig.repository.undoFileOperation(repository.id)
+        : await opentig.repository.redoFileOperation(repository.id);
       setFileHistoryState(result.state);
       if (result.status === 'empty') return;
       if (result.status === 'conflict') {
@@ -992,7 +997,7 @@ export default function App() {
   const copyFilePaths = async (entries: FileTreeEntry[]) => {
     if (!repository || entries.length === 0) return;
     try {
-      const paths = await Promise.all(entries.map((entry) => window.opentig.repository.getAbsolutePath(repository.id, entry.path)));
+      const paths = await Promise.all(entries.map((entry) => opentig.repository.getAbsolutePath(repository.id, entry.path)));
       await writeClipboardText(paths.join('\n'));
       sileo.success({
         title: paths.length === 1 ? 'Path copied' : `${paths.length} paths copied`,
@@ -1006,7 +1011,7 @@ export default function App() {
   const copyFileContents = async (entry: FileTreeEntry) => {
     if (!repository || entry.type !== 'file') return;
     try {
-      const result = await window.opentig.repository.readFile(repository.id, entry.path);
+      const result = await opentig.repository.readFile(repository.id, entry.path);
       if (result.binary) {
         sileo.info({ title: 'Binary files cannot be copied as text', description: entry.path });
         return;
@@ -1025,7 +1030,7 @@ export default function App() {
   const copyFileEntries = async (entries: FileTreeEntry[]) => {
     if (!repository || entries.length === 0) return;
     try {
-      const result = await window.opentig.repository.copyEntries(repository.id, entries.map((entry) => entry.path));
+      const result = await opentig.repository.copyEntries(repository.id, entries.map((entry) => entry.path));
       await writeFileTransfer(result.paths);
       sileo.success({
         title: entries.length === 1 ? (entries[0]!.type === 'directory' ? 'Folder copied' : 'File copied') : `${entries.length} items copied`,
@@ -1044,7 +1049,7 @@ export default function App() {
       return;
     }
     try {
-      const result = await window.opentig.repository.cutEntries(repository.id, entries.map((entry) => entry.path));
+      const result = await opentig.repository.cutEntries(repository.id, entries.map((entry) => entry.path));
       await writeFileTransfer(result.paths, result.transferId);
       sileo.success({
         title: entries.length === 1 ? (entries[0]!.type === 'directory' ? 'Folder cut' : 'File cut') : `${entries.length} items cut`,
@@ -1059,9 +1064,9 @@ export default function App() {
     if (!repository || busy || status?.readOnly || !capabilities?.fileClipboard) return;
     setBusy('paste-file');
     try {
-      const sourcePaths = await window.opentig.clipboard.readFilePaths();
-      const imagePng = sourcePaths.length === 0 ? await window.opentig.clipboard.readImagePng() : null;
-      const result = await window.opentig.repository.pasteEntries(repository.id, targetDirectory, sourcePaths, fileCutTransferId(sourcePaths), imagePng);
+      const sourcePaths = await opentig.clipboard.readFilePaths();
+      const imagePng = sourcePaths.length === 0 ? await opentig.clipboard.readImagePng() : null;
+      const result = await opentig.repository.pasteEntries(repository.id, targetDirectory, sourcePaths, fileCutTransferId(sourcePaths), imagePng);
       if (result.status === 'empty') {
         sileo.info({ title: 'Clipboard does not contain files or an image' });
         return;
@@ -1094,7 +1099,7 @@ export default function App() {
     }
     setBusy('move-file');
     try {
-      const result = await window.opentig.repository.moveEntries(repository.id, entries.map((entry) => entry.path), targetDirectory);
+      const result = await opentig.repository.moveEntries(repository.id, entries.map((entry) => entry.path), targetDirectory);
       const moved = result.moved.length;
       const conflicts = result.conflicts.length;
       reconcileViewerPaths(result.moved, []);
@@ -1129,8 +1134,8 @@ export default function App() {
     }
     if (!confirmed) {
       await dispatchDestructiveAction(action, false, {
-        discard: (repositoryId, paths) => window.opentig.index.discard(repositoryId, paths),
-        deleteEntries: (repositoryId, paths) => window.opentig.repository.deleteEntries(repositoryId, paths),
+        discard: (repositoryId, paths) => opentig.index.discard(repositoryId, paths),
+        deleteEntries: (repositoryId, paths) => opentig.repository.deleteEntries(repositoryId, paths),
       });
       setDestructiveAction(null);
       setBusy(null);
@@ -1140,8 +1145,8 @@ export default function App() {
     setDestructiveAction(null);
     try {
       const outcome = await dispatchDestructiveAction(action, true, {
-        discard: (repositoryId, paths) => window.opentig.index.discard(repositoryId, paths),
-        deleteEntries: (repositoryId, paths) => window.opentig.repository.deleteEntries(repositoryId, paths),
+        discard: (repositoryId, paths) => opentig.index.discard(repositoryId, paths),
+        deleteEntries: (repositoryId, paths) => opentig.repository.deleteEntries(repositoryId, paths),
       });
       if (!outcome) return;
       if (outcome.kind === 'discard') {
@@ -1175,7 +1180,7 @@ export default function App() {
   const revealFileEntry = async (entry: FileTreeEntry) => {
     if (!repository) return;
     try {
-      await window.opentig.repository.revealEntry(repository.id, entry.path);
+      await opentig.repository.revealEntry(repository.id, entry.path);
     } catch (reason) {
       sileo.error({ title: 'Could not reveal item', description: messageOf(reason) });
     }
@@ -1190,7 +1195,7 @@ export default function App() {
     }
     setBusy('rename-file');
     try {
-      const result = await window.opentig.repository.renameEntry(repository.id, entry.path, newName);
+      const result = await opentig.repository.renameEntry(repository.id, entry.path, newName);
       if (result.status === 'noop') return;
       if (result.status === 'conflict') {
         sileo.error({ title: 'An item with that name already exists', description: result.path });
@@ -1211,7 +1216,7 @@ export default function App() {
     if (!repository || busy || status?.readOnly) return;
     setBusy('create-file');
     try {
-      const result = await window.opentig.repository.createEntry(repository.id, targetDirectory, name, kind);
+      const result = await opentig.repository.createEntry(repository.id, targetDirectory, name, kind);
       if (result.status === 'conflict') {
         sileo.error({ title: 'An item with that name already exists', description: result.path });
         return;
@@ -1240,8 +1245,8 @@ export default function App() {
     setCommitProposal(null);
     setPreparedCommitIndex(null);
     try {
-      if (mode === 'stage') await window.opentig.index.stageAll(repository.id);
-      else await window.opentig.index.unstageAll(repository.id);
+      if (mode === 'stage') await opentig.index.stageAll(repository.id);
+      else await opentig.index.unstageAll(repository.id);
       await refresh({ background: true });
     } catch (reason) { setStatus(previous); setError(messageOf(reason)); }
     finally { setBusy(null); }
@@ -1252,7 +1257,7 @@ export default function App() {
     setBusy('commit'); setError(null);
     let committed = false;
     try {
-      const result = await window.opentig.commits.create(repository.id, commitMessage);
+      const result = await opentig.commits.create(repository.id, commitMessage);
       const subject = commitMessage.split(/\r?\n/, 1)[0] ?? commitMessage;
       setCommitMessage('');
       // Completed groups stay in the plan, marked done. Removing them would
@@ -1290,7 +1295,7 @@ export default function App() {
   const cancelCommitMessageGeneration = async () => {
     const active = generationRequest.current;
     if (!active) return;
-    await window.opentig.ai.cancelGeneration(active.id).catch(() => undefined);
+    await opentig.ai.cancelGeneration(active.id).catch(() => undefined);
   };
 
   const generateCommitMessage = async () => {
@@ -1301,7 +1306,7 @@ export default function App() {
     generationRequest.current = { id: requestId, repositoryId: repository.id };
     setGenerating(requestId);
     try {
-      const result = await window.opentig.ai.generateCommitMessage({ repositoryId: repository.id, harness, model, requestId });
+      const result = await opentig.ai.generateCommitMessage({ repositoryId: repository.id, harness, model, requestId });
       if (generationRequest.current?.id !== requestId || generationRequest.current.repositoryId !== repository.id) return;
       setCommitMessage(result.message);
       lastAppliedMessageRef.current = result.message;
@@ -1360,7 +1365,7 @@ export default function App() {
     setBusy('prepare-commit-group');
     setError(null);
     try {
-      await window.opentig.index.prepareCommitGroup({
+      await opentig.index.prepareCommitGroup({
         repositoryId: repository.id,
         paths: group.paths,
         expectedStagedPaths: status.changes.filter((change) => change.staged && !change.conflict).map((change) => change.path).sort(),
@@ -1385,28 +1390,28 @@ export default function App() {
 
   useEffect(() => {
     const active = generationRequest.current;
-    if (active && active.repositoryId !== repository?.id) void window.opentig.ai.cancelGeneration(active.id);
+    if (active && active.repositoryId !== repository?.id) void opentig.ai.cancelGeneration(active.id);
     setCommitProposal(null);
     setPreparedCommitIndex(null);
   }, [repository?.id]);
 
   useEffect(() => () => {
     const active = generationRequest.current;
-    if (active) void window.opentig.ai.cancelGeneration(active.id);
+    if (active) void opentig.ai.cancelGeneration(active.id);
   }, []);
 
   const selectRecent = async (id: string | null) => {
     if (!id || id === repository?.id) return;
     try {
       try {
-        const selected = await window.opentig.repository.openRecent(id);
+        const selected = await opentig.repository.openRecent(id);
         if (selected) recordOpenedRepository(selected, id);
       } catch (reason) {
         const recent = bootstrap?.recentRepositories.find((candidate) => candidate.id === id);
-        if (!recent || !capabilities?.nativePicker) throw reason;
-        const selectedPath = await window.opentig.repository.selectRelocation(recent.repositoryName, recent.path);
+        if (!recent) throw reason;
+        const selectedPath = await opentig.repository.selectRelocation(recent.repositoryName, recent.path);
         if (!selectedPath) return;
-        recordOpenedRepository(await window.opentig.repository.relocateRecent(id, selectedPath), id);
+        recordOpenedRepository(await opentig.repository.relocateRecent(id, selectedPath), id);
       }
     }
     catch (reason) { setError(messageOf(reason)); }
@@ -1415,7 +1420,7 @@ export default function App() {
   const switchBranch = async (name: string | null) => {
     if (!repository || !name || name === status?.branch) return;
     setBusy('branch');
-    try { await window.opentig.refs.switchBranch(repository.id, name); await refresh({ background: true }); }
+    try { await opentig.refs.switchBranch(repository.id, name); await refresh({ background: true }); }
     catch (reason) { setError(messageOf(reason)); }
     finally { setBusy(null); }
   };
@@ -1423,7 +1428,7 @@ export default function App() {
   const switchWorktree = async (targetPath: string | null) => {
     if (!repository || !targetPath || targetPath === repository.path) return;
     setBusy('worktree');
-    try { recordOpenedRepository(await window.opentig.refs.selectWorktree(repository.id, targetPath)); }
+    try { recordOpenedRepository(await opentig.refs.selectWorktree(repository.id, targetPath)); }
     catch (reason) { setError(messageOf(reason)); }
     finally { setBusy(null); }
   };
@@ -1454,7 +1459,7 @@ export default function App() {
     const selected = undoCommit;
     setUndoingCommit(true);
     try {
-      const result = await window.opentig.commits.undoLatest(repository.id, selected.oid);
+      const result = await opentig.commits.undoLatest(repository.id, selected.oid);
       if (result.status === 'success') {
         setUndoCommit(null);
         setViewerSelection(null);
@@ -1498,7 +1503,7 @@ export default function App() {
     setBusy('resolve-conflict');
     setError(null);
     try {
-      await window.opentig.index.resolveConflict(repository.id, path, content);
+      await opentig.index.resolveConflict(repository.id, path, content);
       sileo.success({ title: 'Conflict marked as resolved', description: path });
       setViewerSelection({ type: 'diff', path, kind: 'staged' });
       await refresh({ background: true });
@@ -1516,7 +1521,7 @@ export default function App() {
   const updateConflictFile = async (path: string, content: string): Promise<boolean> => {
     if (!repository) return false;
     try {
-      await window.opentig.index.updateConflict(repository.id, path, content);
+      await opentig.index.updateConflict(repository.id, path, content);
       return true;
     } catch (reason) {
       const message = messageOf(reason);
@@ -1534,7 +1539,7 @@ export default function App() {
     setError(null);
     try {
       await sileo.promise(async () => {
-        const result = await window.opentig.refs.pull(repositoryId);
+        const result = await opentig.refs.pull(repositoryId);
         await refresh({ background: true });
         if (result.status === 'success' || result.status === 'up-to-date') return result;
         throw new PullBlocked(result);
@@ -1618,7 +1623,7 @@ export default function App() {
     setError(null);
     try {
       await sileo.promise(async () => {
-        const result = await window.opentig.refs.push(repositoryId);
+        const result = await opentig.refs.push(repositoryId);
         await refresh({ background: true });
         if (result.status === 'success' || result.status === 'up-to-date') return result;
         throw new PushBlocked(result);
@@ -1676,7 +1681,7 @@ export default function App() {
       const label = projectName ? `${projectName} · ${item.name}` : item.name;
       if (action === 'pull') {
         await sileo.promise(async () => {
-          const result = await window.opentig.refs.pull(repositoryId);
+          const result = await opentig.refs.pull(repositoryId);
           if (repositoryRef.current?.id === repositoryId) await refresh({ background: true });
           if (result.status === 'success' || result.status === 'up-to-date') return result;
           throw new PullBlocked(result);
@@ -1689,7 +1694,7 @@ export default function App() {
         });
       } else {
         await sileo.promise(async () => {
-          const result = await window.opentig.refs.push(repositoryId);
+          const result = await opentig.refs.push(repositoryId);
           if (repositoryRef.current?.id === repositoryId) await refresh({ background: true });
           if (result.status === 'success' || result.status === 'up-to-date') return result;
           throw new PushBlocked(result);
@@ -1890,6 +1895,7 @@ export default function App() {
                   activePath={viewerSelection?.type === 'file' ? viewerSelection.path : null}
                   readOnly={Boolean(status?.readOnly || busy)}
                   fileClipboardAvailable={capabilities?.fileClipboard === true}
+                  revealAvailable={capabilities?.revealInFileManager === true}
                   historyState={fileHistoryState}
                   onUndo={() => performFileHistory('undo')}
                   onRedo={() => performFileHistory('redo')}
@@ -2086,11 +2092,11 @@ function Toolbar(props: ToolbarProps) {
       const version = (repositoryStatusVersions.current.get(repositoryId) ?? 0) + 1;
       repositoryStatusVersions.current.set(repositoryId, version);
       try {
-        const fetched = await window.opentig.refs.fetch(repositoryId);
+        const fetched = await opentig.refs.fetch(repositoryId);
         if (repositoryStatusVersions.current.get(repositoryId) !== version) return;
         const counts = fetched.status === 'success'
           ? { ahead: fetched.ahead, behind: fetched.behind }
-          : await window.opentig.repository.getStatus(repositoryId, false).then((nextStatus) => ({ ahead: nextStatus.ahead, behind: nextStatus.behind }));
+          : await opentig.repository.getStatus(repositoryId, false).then((nextStatus) => ({ ahead: nextStatus.ahead, behind: nextStatus.behind }));
         if (repositoryStatusVersions.current.get(repositoryId) !== version) return;
         setRepositorySyncCounts((current) => {
           const next = new Map(current);
@@ -2513,7 +2519,7 @@ function SettingsDialog({ preferences, onPreference, open, onOpenChange, section
 
   const loadStatuses = useCallback(async (forceRefresh = false) => {
     setLoadingStatuses(true);
-    try { setStatuses(await window.opentig.ai.statuses(forceRefresh)); }
+    try { setStatuses(await opentig.ai.statuses(forceRefresh)); }
     catch (reason) { sileo.error({ title: 'Could not check local AI', description: messageOf(reason) }); }
     finally { setLoadingStatuses(false); }
   }, []);
@@ -3051,7 +3057,7 @@ function CommitRow({ repositoryId, upstream, commit, graphRow, graphWidth, expan
   useEffect(() => {
     if (!expanded || files || filesError) return;
     let active = true;
-    window.opentig.commits.files(repositoryId, commit.oid).then((value) => {
+    opentig.commits.files(repositoryId, commit.oid).then((value) => {
       if (!active) return;
       commitFilesCache.set(cacheKey, value);
       while (commitFilesCache.size > 100) commitFilesCache.delete(commitFilesCache.keys().next().value as string);

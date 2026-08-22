@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import WebSocket from 'ws';
-import { CommandRegistry } from '../../../src/main/runtime/CommandRegistry';
+import { CommandRegistry, type CommandExecutionContext } from '../../../src/main/runtime/CommandRegistry';
 import type { OpenTigRuntime } from '../../../src/main/runtime/OpenTigRuntime';
 import { OPEN_TIG_SERVER_COMMANDS } from '../../../src/shared/protocol';
 import { OneTimeBootstrapAuthSource, OpenTigSessionAuth } from './auth';
@@ -73,6 +73,27 @@ describe('WebSocket safety limits', () => {
     first.close();
   });
 
+  it('keeps owner-session state while another tab remains connected', async () => {
+    const fixture = await startFixture((context: CommandExecutionContext) => {
+      const shared = context.state('shared', () => ({ count: 0 }));
+      shared.count += 1;
+      return { ...emptyBootstrap(), count: shared.count };
+    });
+    const first = await fixture.socket();
+    const second = await fixture.socket();
+
+    expect(await sendAndReceive(first, { type: 'request', id: 'first', command: 'app:bootstrap', args: [] }))
+      .toMatchObject({ result: { value: { count: 1 } } });
+    expect(await sendAndReceive(second, { type: 'request', id: 'second', command: 'app:bootstrap', args: [] }))
+      .toMatchObject({ result: { value: { count: 2 } } });
+    const firstClosed = closed(first);
+    first.close();
+    await firstClosed;
+    expect(await sendAndReceive(second, { type: 'request', id: 'third', command: 'app:bootstrap', args: [] }))
+      .toMatchObject({ result: { value: { count: 3 } } });
+    second.close();
+  });
+
   it('rate-limits requests within a bounded window', async () => {
     const fixture = await startFixture(() => emptyBootstrap(), { requestRateLimit: 2, requestRateWindowMs: 60_000 });
     const socket = await fixture.socket();
@@ -94,7 +115,7 @@ describe('WebSocket safety limits', () => {
 });
 
 async function startFixture(
-  handler: () => Promise<unknown> | unknown,
+  handler: (context: CommandExecutionContext, args: readonly unknown[]) => Promise<unknown> | unknown,
   limits: { commandTimeoutMs?: number; connectionLimit?: number; requestRateLimit?: number; requestRateWindowMs?: number } = {},
 ): Promise<Fixture> {
   const directory = await mkdtemp(path.join(tmpdir(), 'opentig-ws-limits-'));

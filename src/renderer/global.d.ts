@@ -1,8 +1,8 @@
-import type { OpenTigApi } from '../shared/contracts';
+import type { OpenTigDesktopApi } from '../shared/desktop-api';
 
 declare global {
   interface Window {
-    opentig: OpenTigApi;
+    opentigDesktop?: OpenTigDesktopApi;
     __opentigPerformanceAutomation?: boolean;
     __opentigPerformanceResults?: Array<{
       kind: string;

@@ -30,6 +30,7 @@ describe('authoritative HTTP server', () => {
     expect(await descriptor.json()).toEqual({
       authenticationRequired: true,
       pairingAvailable: true,
+      authenticated: false,
       mode: 'desktop',
       protocolVersion: 1,
       appVersion: '0.1-test',
@@ -108,6 +109,7 @@ describe('authoritative HTTP server', () => {
 
     expect(image.status).toBe(200);
     expect(image.headers.get('content-type')).toBe('image/png');
+    expect(Number(image.headers.get('x-opentig-mtime-ms'))).toBeGreaterThan(0);
     expect(Buffer.from(await image.arrayBuffer())).toEqual(png);
     expect(image.headers.get('cache-control')).toBe('private, no-store');
   });
@@ -158,7 +160,7 @@ describe('authoritative HTTP server', () => {
 describe('authenticated WebSocket protocol', () => {
   it('rejects missing/wrong auth and carries command, error, ping, and runtime event messages', async () => {
     const fixture = await startFixture();
-    await expectWebSocketFailure(fixture.server.origin, fixture.server.origin, undefined, 401);
+    await expectWebSocketClose(fixture.server.origin, fixture.server.origin, undefined, 1008);
     const authenticated = await postJson(`${fixture.server.origin}/api/auth/desktop`, { secret: fixture.desktopSecret }, fixture.server.origin);
     await expectWebSocketFailure(fixture.server.origin, 'http://evil.invalid', cookieValue(authenticated.cookie), 403);
 
@@ -226,7 +228,7 @@ describe('authenticated WebSocket protocol', () => {
     const revoked = await postJson(`${fixture.server.origin}/api/auth/revoke-all`, {}, fixture.server.origin, firstCookie);
     expect(revoked.status).toBe(204);
     await expect(Promise.all([firstClosed, secondClosed])).resolves.toEqual([1008, 1008]);
-    await expectWebSocketFailure(fixture.server.origin, fixture.server.origin, secondCookie, 401);
+    await expectWebSocketClose(fixture.server.origin, fixture.server.origin, secondCookie, 1008);
   });
 });
 
@@ -318,6 +320,21 @@ function expectWebSocketFailure(origin: string, requestOrigin: string, cookie: s
     });
     socket.once('open', () => reject(new Error('WebSocket unexpectedly opened.')));
     socket.once('error', () => undefined);
+  });
+}
+
+async function expectWebSocketClose(origin: string, requestOrigin: string, cookie: string | undefined, code: number): Promise<void> {
+  const socket = new WebSocket(origin.replace(/^http/, 'ws') + '/ws', {
+    headers: { Origin: requestOrigin, ...(cookie ? { Cookie: cookie } : {}) },
+  });
+  await new Promise<void>((resolve, reject) => {
+    socket.once('close', (actual) => {
+      try {
+        expect(actual).toBe(code);
+        resolve();
+      } catch (error) { reject(error); }
+    });
+    socket.once('error', reject);
   });
 }
 

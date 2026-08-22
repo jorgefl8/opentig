@@ -10,6 +10,7 @@ import { Dialog, DialogDescription, DialogPopup, DialogTitle } from '@/component
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { Textarea } from '@/components/ui/textarea';
+import { opentig } from '@/lib/opentig-api';
 import { ViewerTabs, ViewerTabsList, ViewerTabsPanel } from '@/components/ui/viewer-tabs';
 import { renderMarkdown } from '@/features/markdown/render-markdown';
 import { ghDetail, ghErrorTitle, openOnGitHub } from './gh-utils';
@@ -63,7 +64,7 @@ export function CreatePullRequestDialog(props: CreatePullRequestDialogProps) {
   useEffect(() => {
     if (props.open) return;
     const active = generationRequest.current;
-    if (active) void window.opentig.github.cancelDraft(active).catch(() => undefined);
+    if (active) void opentig.github.cancelDraft(active).catch(() => undefined);
   }, [props.open]);
 
   const needsPublish = props.status !== null && !props.status.upstream;
@@ -73,7 +74,7 @@ export function CreatePullRequestDialog(props: CreatePullRequestDialogProps) {
 
   const cancelGeneration = async () => {
     const active = generationRequest.current;
-    if (active) await window.opentig.github.cancelDraft(active).catch(() => undefined);
+    if (active) await opentig.github.cancelDraft(active).catch(() => undefined);
   };
 
   const generateDraft = async () => {
@@ -84,7 +85,7 @@ export function CreatePullRequestDialog(props: CreatePullRequestDialogProps) {
     generationRequest.current = requestId;
     setGenerating(requestId);
     try {
-      const result = await window.opentig.github.generateDraft({ repositoryId: props.repositoryId, base, harness, model, requestId });
+      const result = await opentig.github.generateDraft({ repositoryId: props.repositoryId, base, harness, model, requestId });
       if (generationRequest.current !== requestId) return;
       setTitle(result.title);
       setBody(result.body);
@@ -107,7 +108,7 @@ export function CreatePullRequestDialog(props: CreatePullRequestDialogProps) {
     if (blocked || creating || generating || !title.trim() || !base) return;
     setCreating(true);
     try {
-      const result = await window.opentig.github.createPullRequest({ repositoryId: props.repositoryId, title: title.trim(), body, base, draft });
+      const result = await opentig.github.createPullRequest({ repositoryId: props.repositoryId, title: title.trim(), body, base, draft });
       setTitle('');
       setBody('');
       setDraft(false);

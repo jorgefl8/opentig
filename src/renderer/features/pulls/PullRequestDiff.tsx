@@ -7,6 +7,7 @@ import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { DiffWorkspace } from '@/features/viewer/DiffWorkspace';
 import { PierreWorkerPool } from '@/features/viewer/PierreWorkerPool';
 import { queryKeys } from '@/lib/query-client';
+import { opentig } from '@/lib/opentig-api';
 
 interface PullRequestDiffProps {
   diff: DiffResult;
@@ -29,7 +30,7 @@ export default function PullRequestDiff({ diff, prNumber, repositoryId, commits,
   const selectedCommit = useMemo(() => commits.find((commit) => commit.oid === selectedOid) ?? commits[0] ?? null, [commits, selectedOid]);
   const commitDiffQuery = useQuery({
     queryKey: queryKeys.pullRequestCommitDiff(repositoryId, selectedCommit?.oid ?? ''),
-    queryFn: () => window.opentig.github.getPullRequestCommitDiff(repositoryId, selectedCommit!.oid),
+    queryFn: () => opentig.github.getPullRequestCommitDiff(repositoryId, selectedCommit!.oid),
     enabled: mode === 'commit' && selectedCommit !== null,
   });
   const commitError = commitDiffQuery.error instanceof Error ? commitDiffQuery.error.message : commitDiffQuery.error ? 'Could not load the commit diff.' : null;

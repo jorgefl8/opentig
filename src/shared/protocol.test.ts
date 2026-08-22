@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import { IPC, type OpenTigApi } from './contracts';
 import type { OpenTigDesktopApi } from './desktop-api';
 import {
-  OPEN_TIG_NON_SERVER_IPC_KEYS,
   OPEN_TIG_SERVER_COMMANDS,
   type OpenTigServerCommandMap,
 } from './protocol';
@@ -12,7 +11,12 @@ type Equal<Left, Right> =
   (<Value>() => Value extends Left ? 1 : 2) extends
   (<Value>() => Value extends Right ? 1 : 2) ? true : false;
 
-type SplitApi = OpenTigServerApi & OpenTigDesktopApi;
+type RendererDesktopSurface = {
+  app: Pick<OpenTigDesktopApi['app'], 'setZoomFactor' | 'setTitleBarTheme'>;
+  clipboard: OpenTigDesktopApi['clipboard'];
+  repository: OpenTigDesktopApi['repository'];
+};
+type SplitApi = OpenTigServerApi & RendererDesktopSurface;
 
 const TYPE_PROOF: readonly true[] = [
   true satisfies (OpenTigApi extends SplitApi ? true : false),
@@ -40,14 +44,11 @@ describe('OpenTig server protocol ownership', () => {
     expect(TYPE_PROOF).toEqual([true, true, true, true, true, true, true, true, true]);
   });
 
-  it('partitions every IPC channel into one server command or non-server channel', () => {
+  it('maps every remaining IPC command to the server transport', () => {
     const serverChannels = Object.values(OPEN_TIG_SERVER_COMMANDS).map((definition) => definition.command);
-    const nonServerChannels = OPEN_TIG_NON_SERVER_IPC_KEYS.map((key) => IPC[key]);
-    const classified = [...serverChannels, ...nonServerChannels];
 
     expect(new Set(serverChannels).size).toBe(serverChannels.length);
-    expect(new Set(classified).size).toBe(classified.length);
-    expect([...classified].sort()).toEqual(Object.values(IPC).sort());
+    expect([...serverChannels].sort()).toEqual(Object.values(IPC).sort());
   });
 
   it('gives every server method stable execution metadata', () => {

@@ -1,62 +1,27 @@
 import type { IpcRenderer } from 'electron';
 import { describe, expect, it, vi } from 'vitest';
-import { IPC, type OpenTigCapabilities, type RepositoryInfo } from '../shared/contracts';
-import { createApi } from './api';
+import { OPEN_TIG_DESKTOP_IPC } from '../shared/desktop-api';
+import { createDesktopApi } from './api';
 
-function createRenderer() {
-  const invoke = vi.fn();
-  const renderer = {
-    invoke,
-    on: vi.fn(),
-    removeListener: vi.fn(),
-  } as unknown as IpcRenderer;
-  return { renderer, invoke };
+function renderer() {
+  const invoke = vi.fn(async () => ({ ok: true, value: undefined }));
+  return { invoke, value: { invoke } as unknown as IpcRenderer };
 }
 
-describe('preload API ownership additions', () => {
-  it('requests serializable runtime capabilities', async () => {
-    const { renderer, invoke } = createRenderer();
-    const capabilities: OpenTigCapabilities = {
-      runtimeMode: 'desktop',
-      platform: 'win32',
-      systemTrash: true,
-      nativePicker: true,
-      fileClipboard: true,
-      revealInFileManager: true,
-      githubCli: {
-        installed: true,
-        availability: 'ready',
-        authStatus: 'authenticated',
-        checkedAt: '2026-08-22T00:00:00.000Z',
-      },
-      aiProviders: [],
-    };
-    invoke.mockResolvedValueOnce({ ok: true, value: capabilities });
+describe('preload desktop API', () => {
+  it('exposes only the narrow desktop surface', async () => {
+    const ipc = renderer();
+    const setZoom = vi.fn();
+    const api = createDesktopApi(ipc.value, setZoom);
 
-    await expect(createApi(renderer, vi.fn()).app.capabilities()).resolves.toEqual(capabilities);
-    expect(invoke).toHaveBeenCalledWith(IPC.capabilities);
-  });
+    expect(Object.keys(api).sort()).toEqual(['app', 'clipboard', 'repository']);
+    expect(Object.keys(api.repository).sort()).toEqual(['revealEntry', 'select', 'selectRelocation']);
+    expect('commits' in api).toBe(false);
+    expect('github' in api).toBe(false);
 
-  it('keeps native selection separate from typed server opening', async () => {
-    const { renderer, invoke } = createRenderer();
-    const repository: RepositoryInfo = {
-      id: 'repo-id',
-      name: 'main',
-      repositoryName: 'repo',
-      path: 'C:\\repo',
-      commonDir: 'C:\\repo\\.git',
-    };
-    invoke
-      .mockResolvedValueOnce({ ok: true, value: repository })
-      .mockResolvedValueOnce({ ok: true, value: 'C:\\repo' })
-      .mockResolvedValueOnce({ ok: true, value: repository });
-    const api = createApi(renderer, vi.fn());
-
-    await expect(api.repository.openPath('C:\\repo')).resolves.toEqual(repository);
-    await expect(api.repository.select()).resolves.toBe('C:\\repo');
-    await expect(api.repository.relocateRecent('repo-id', 'C:\\repo')).resolves.toEqual(repository);
-    expect(invoke).toHaveBeenNthCalledWith(1, IPC.repositoryOpenPath, 'C:\\repo');
-    expect(invoke).toHaveBeenNthCalledWith(2, IPC.repositorySelect);
-    expect(invoke).toHaveBeenNthCalledWith(3, IPC.repositoryRelocateRecent, 'repo-id', 'C:\\repo');
+    api.app.setZoomFactor(2);
+    await api.app.setTitleBarTheme(true);
+    expect(setZoom).toHaveBeenCalledWith(1.3);
+    expect(ipc.invoke).toHaveBeenCalledWith(OPEN_TIG_DESKTOP_IPC.titleBarTheme, true);
   });
 });

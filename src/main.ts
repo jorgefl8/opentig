@@ -1,12 +1,14 @@
+import { randomBytes } from 'node:crypto';
 import path from 'node:path';
 import { app, BrowserWindow, nativeTheme, session, shell, type WebContents } from 'electron';
 import started from 'electron-squirrel-startup';
-import { registerHandlers } from './main/ipc/register-handlers';
-import { IPC } from './shared/contracts';
+import { OPEN_TIG_SESSION_COOKIE, OneTimeBootstrapAuthSource } from '../packages/server/src/auth';
+import { runOpenTigServer, type RunningOpenTigServer } from '../packages/server/src/server';
+import { createElectronHostAdapter } from './main/ipc/ElectronHostAdapter';
+import { registerDesktopHandlers } from './main/ipc/registerDesktopHandlers';
 import { createPerformanceSampler, type PerformanceSampler } from './main/performance/PerformanceSampler';
 import { startPerformanceAutomation } from './main/performance/PerformanceAutomation';
-import type { OpenTigRuntime } from './main/runtime/OpenTigRuntime';
-import { createOpenTigRuntime, normalizeRuntimePlatform } from './main/runtime/create-runtime';
+import { normalizeRuntimePlatform } from './main/runtime/create-runtime';
 import { SystemTrash } from './main/platform/SystemTrash';
 import { startGlobalDoubleControlShortcut } from './main/shortcuts/GlobalDoubleControlShortcut';
 import { getWindowTitleBarOptions, shouldUseDarkTitleBar } from './main/window/WindowTitleBar';
@@ -18,7 +20,7 @@ const hasLock = app.requestSingleInstanceLock();
 if (!hasLock) app.quit();
 
 let mainWindow: BrowserWindow | null = null;
-let mainRuntime: OpenTigRuntime | null = null;
+let runningServer: RunningOpenTigServer | null = null;
 let performanceSampler: PerformanceSampler | null = null;
 let stopGlobalDoubleControlShortcut: (() => void) | null = null;
 let shutdownStarted = false;
@@ -52,25 +54,8 @@ function applyDoubleControlShortcutPreference(enabled: boolean): void {
 }
 
 async function createWindow(): Promise<void> {
-  const runtime = await createOpenTigRuntime({
-    settingsPath: path.join(app.getPath('userData'), 'settings.json'),
-    aiLogPath: path.join(app.getPath('userData'), 'ai-log.jsonl'),
-    runtimeMode: 'desktop',
-    platform: normalizeRuntimePlatform(process.platform),
-    trash: new SystemTrash(
-      undefined,
-      process.platform,
-      app.isPackaged
-        ? path.join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', 'trash', 'index.js')
-        : undefined,
-    ),
-    onEvent: (event) => {
-      if (event.type !== 'repository.changed') return;
-      if (!mainWindow || mainWindow.isDestroyed()) return;
-      mainWindow.webContents.send(IPC.repositoryChanged, event.repositoryId, event.scope);
-    },
-  });
-  mainRuntime = runtime;
+  const server = await ensureServer();
+  const runtime = server.runtime;
   const { settings } = runtime.services;
 
   mainWindow = new BrowserWindow({
@@ -100,11 +85,12 @@ async function createWindow(): Promise<void> {
   mainWindow.maximize();
 
   let stopPerformanceAutomation: () => void = () => {};
-  const removeHandlers = registerHandlers({
-    ...runtime.services,
-    window: mainWindow,
-    onPreferencesChanged: (preferences) => applyDoubleControlShortcutPreference(preferences.doubleControlShortcutEnabled),
-  });
+  const host = createElectronHostAdapter(mainWindow);
+  const removeHandlers = registerDesktopHandlers(
+    runtime.services.repositories,
+    host,
+    applyDoubleControlShortcutPreference,
+  );
 
   const openExternal = (value: string) => {
     const url = normalizeExternalUrl(value);
@@ -115,6 +101,7 @@ async function createWindow(): Promise<void> {
     return { action: 'deny' };
   });
   mainWindow.webContents.on('will-navigate', (event, url) => {
+    if (new URL(url).origin === server.origin) return;
     event.preventDefault();
     openExternal(url);
   });
@@ -127,20 +114,82 @@ async function createWindow(): Promise<void> {
   mainWindow.on('closed', () => {
     stopPerformanceAutomation();
     removeHandlers();
-    void runtime.close()
-      .then(() => { if (mainRuntime === runtime) mainRuntime = null; })
-      .catch((error) => console.error('Could not flush OpenTig settings.', error));
     mainWindow = null;
   });
 
-  if (MAIN_WINDOW_VITE_DEV_SERVER_URL) await mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
-  else await mainWindow.loadFile(path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`));
+  await mainWindow.loadURL(server.origin);
   if (!mainWindow.isDestroyed()) {
     mainWindow.show();
     mainWindow.focus();
     stopPerformanceAutomation = startPerformanceAutomation(mainWindow, performanceSampler);
   }
   applyDoubleControlShortcutPreference(settings.preferences.doubleControlShortcutEnabled);
+}
+
+async function ensureServer(): Promise<RunningOpenTigServer> {
+  if (runningServer) return runningServer;
+  const desktopSecret = randomBytes(32).toString('base64url');
+  const userData = app.getPath('userData');
+  const server = await runOpenTigServer({
+    appVersion: app.getVersion(),
+    auth: new OneTimeBootstrapAuthSource({ desktopSecret }),
+    settingsPath: path.join(userData, 'settings.json'),
+    aiLogPath: path.join(userData, 'ai-log.jsonl'),
+    serverDataPath: path.join(userData, 'server'),
+    clientRoot: app.isPackaged
+      ? path.join(process.resourcesPath, 'opentig-server', 'client')
+      : path.join(app.getAppPath(), 'packages', 'server', '.client'),
+    platform: normalizeRuntimePlatform(process.platform),
+    trash: new SystemTrash(
+      undefined,
+      process.platform,
+      app.isPackaged
+        ? path.join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', 'trash', 'index.js')
+        : undefined,
+    ),
+    host: '127.0.0.1',
+    port: 0,
+    mode: 'desktop',
+    logger: (level, message) => console[level](`[server] ${message}`),
+  });
+  try {
+    await installDesktopSession(server.origin, desktopSecret);
+  } catch (error) {
+    await server.close();
+    throw error;
+  }
+  runningServer = server;
+  return server;
+}
+
+async function installDesktopSession(origin: string, desktopSecret: string): Promise<void> {
+  let cookies = await session.defaultSession.cookies.get({ url: origin, name: OPEN_TIG_SESSION_COOKIE });
+  const currentCookie = cookies[0]?.value;
+  const descriptor = await fetch(`${origin}/api/auth/descriptor`, {
+    headers: currentCookie ? { Cookie: `${OPEN_TIG_SESSION_COOKIE}=${currentCookie}` } : {},
+  });
+  if (descriptor.ok) {
+    const state = await descriptor.json() as { authenticated?: unknown };
+    if (state.authenticated === true) return;
+  }
+  const response = await fetch(`${origin}/api/auth/desktop`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Origin: origin },
+    body: JSON.stringify({ secret: desktopSecret }),
+  });
+  if (response.status !== 204) throw new Error('Could not authenticate the desktop with the OpenTig server.');
+  const value = response.headers.get('set-cookie')?.match(new RegExp(`^${OPEN_TIG_SESSION_COOKIE}=([^;]+)`))?.[1];
+  if (!value) throw new Error('OpenTig server did not return a desktop session.');
+  await session.defaultSession.cookies.set({
+    url: origin,
+    name: OPEN_TIG_SESSION_COOKIE,
+    value,
+    path: '/',
+    httpOnly: true,
+    sameSite: 'strict',
+  });
+  cookies = await session.defaultSession.cookies.get({ url: origin, name: OPEN_TIG_SESSION_COOKIE });
+  if (cookies.length === 0) throw new Error('Could not install the OpenTig desktop session.');
 }
 
 app.on('second-instance', () => {
@@ -171,11 +220,11 @@ app.on('before-quit', (event) => {
   stopGlobalDoubleControlShortcut?.();
   stopGlobalDoubleControlShortcut = null;
   const sampler = performanceSampler;
-  const runtime = mainRuntime;
+  const server = runningServer;
   performanceSampler = null;
-  mainRuntime = null;
+  runningServer = null;
   const tasks: Promise<unknown>[] = [];
-  if (runtime) tasks.push(runtime.close());
+  if (server) tasks.push(server.close());
   if (sampler) tasks.push(sampler.stop());
   void Promise.allSettled(tasks).then((results) => {
     for (const result of results) {

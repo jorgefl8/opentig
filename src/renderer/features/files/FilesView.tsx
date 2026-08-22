@@ -48,6 +48,7 @@ interface FilesViewProps {
   activePath: string | null;
   readOnly: boolean;
   fileClipboardAvailable: boolean;
+  revealAvailable: boolean;
   historyState: FileHistoryState;
   onUndo(): Promise<void>;
   onRedo(): Promise<void>;
@@ -130,6 +131,7 @@ export function FilesView({
   activePath,
   readOnly,
   fileClipboardAvailable,
+  revealAvailable,
   historyState,
   onUndo,
   onRedo,
@@ -686,6 +688,7 @@ export function FilesView({
                   multiSelected={multiSelected}
                   readOnly={readOnly}
                   fileClipboardAvailable={fileClipboardAvailable}
+                  revealAvailable={revealAvailable}
                   historyState={historyState}
                   onUndo={onUndo}
                   onRedo={onRedo}
@@ -773,6 +776,7 @@ interface FileRowProps {
   multiSelected: boolean;
   readOnly: boolean;
   fileClipboardAvailable: boolean;
+  revealAvailable: boolean;
   historyState: FileHistoryState;
   onUndo(): Promise<void>;
   onRedo(): Promise<void>;
@@ -807,6 +811,7 @@ function FileRow({
   multiSelected,
   readOnly,
   fileClipboardAvailable,
+  revealAvailable,
   historyState,
   onUndo,
   onRedo,
@@ -931,9 +936,11 @@ function FileRow({
         <ContextMenuItem disabled={entry.type !== 'file' || multiSelected} onClick={() => void onCopyContents(entry)}>
           <IconCopy aria-hidden="true" /> Copy contents
         </ContextMenuItem>
-        <ContextMenuItem disabled={multiSelected} onClick={() => void onReveal(entry)}>
-          <IconExternalLink aria-hidden="true" /> Reveal in File Explorer
-        </ContextMenuItem>
+        {revealAvailable && (
+          <ContextMenuItem disabled={multiSelected} onClick={() => void onReveal(entry)}>
+            <IconExternalLink aria-hidden="true" /> Reveal in File Explorer
+          </ContextMenuItem>
+        )}
         <ContextMenuSeparator />
         <ContextMenuItem className="text-destructive data-highlighted:text-destructive" disabled={readOnly} onClick={() => onDelete(entry)}>
           <IconTrash aria-hidden="true" /> Delete <span className="ml-auto text-[10px] text-muted-foreground">Del</span>

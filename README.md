@@ -32,6 +32,7 @@ It is intentionally not an IDE, hosting service, or replacement for the Git CLI.
 ### Repositories and projects
 
 - Open existing local repositories and return to recently used repositories.
+- Use the same authenticated WebSocket backend from the desktop app or a paired browser. Repository switches and filesystem/Git events propagate to every connected tab; reconnecting clients bootstrap fresh state without replaying interrupted mutations. Browser clients enter paths on the server directly, while native folder selection and Explorer reveal remain desktop-only.
 - Relocate a recent repository when its folder moved, preserving its project assignment, open tabs, and expanded folders.
 - Group related repositories into named OpenTig projects without moving anything on disk.
 - Pull or push an individual repository from its row in the repository picker. Only pending operations are shown, each with its ahead/behind commit count; multiple repositories can sync concurrently, and their separate Sileo progress and outcome cards remain visible together. Opening the picker fetches each listed repository so those counts match the remote, not a stale local cache.
@@ -221,7 +222,7 @@ The unpacked executable is written to `out/OpenTig-win32-x64/OpenTig.exe`.
 
 - Repository contents are read from and written to their existing local paths.
 - The renderer has no direct Node.js, filesystem, or process access.
-- Git, filesystem, persistence, AI, and GitHub operations run through one typed, validated server-command boundary. Electron IPC is a temporary transport for that boundary.
+- Git, filesystem, persistence, AI, and GitHub operations run through one typed, validated WebSocket command boundary in both desktop and browser clients. Requests have correlation IDs, cancellation and timeouts; interrupted operations are rejected rather than replayed after reconnect.
 - The private server transport binds to loopback by default, requires an owner session for commands and image bytes, validates exact mutation/WebSocket origins, and blocks static-file traversal and symlink escape. New browsers pair through a short-lived, one-use URL fragment; steady-state credentials use host-only `HttpOnly`, `SameSite=Strict` cookies. Only credential hashes are persisted, and owner sessions can be individually logged out or revoked together.
 - The narrow preload bridge contains only proven desktop capabilities such as folder selection/relocation, file clipboard import, Explorer reveal, title-bar theming, and zoom. Text clipboard access stays in the renderer's browser API.
 - Git commands use argument arrays with `shell: false`, bounded output, timeouts, path validation, and per-repository write serialisation.
@@ -242,11 +243,11 @@ Generated content remains editable and pending. No commit is created and no pull
 ## Architecture
 
 - `src/main/runtime`: Electron-free service graph and validated server-command registry for Git, filesystem, persistence, AI, GitHub, watchers, and shutdown.
-- `src/main/ipc`: thin Electron transport plus handlers for native-only desktop capabilities.
-- `packages/server`: private, Electron-free server build containing one runtime entry, authenticated HTTP/WebSocket transport, and the exact production web client. It is packaged but not yet started by Electron; desktop keeps its current IPC rollback path until the supervisor and renderer migrations are complete.
+- `src/main/ipc`: handlers for native-only desktop capabilities; no domain commands are registered here.
+- `packages/server`: private, Electron-free server build containing one runtime entry, authenticated HTTP/WebSocket transport, and the exact production web client. Electron currently starts that authoritative server in-process; the next migration moves the unchanged server factory under a supervised utility process.
 - `src/preload.ts`: narrow, context-isolated typed bridge exposed to the renderer.
 - `src/renderer`: React interface and feature modules.
-- `src/shared`: IPC contracts, shared models, and validation helpers.
+- `src/shared`: server/desktop transport contracts, shared models, and validation helpers.
 
 ## Current scope
 

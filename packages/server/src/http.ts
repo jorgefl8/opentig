@@ -46,7 +46,12 @@ async function handleRequest(context: OpenTigHttpContext, request: IncomingMessa
     });
   }
   if (method === 'GET' && rawPath === '/api/auth/descriptor') {
-    return sendJson(response, 200, { ...context.auth.descriptor(), mode: context.mode, ...context.identity });
+    return sendJson(response, 200, {
+      ...context.auth.descriptor(),
+      authenticated: context.auth.authenticate(request.headers) !== null,
+      mode: context.mode,
+      ...context.identity,
+    });
   }
 
   if (method === 'POST' && rawPath.startsWith('/api/')) {
@@ -84,14 +89,15 @@ async function handleRequest(context: OpenTigHttpContext, request: IncomingMessa
     const target = parseImageTarget(rawPath);
     if (!target) return sendJson(response, 400, { error: 'Invalid image path.' });
     const result = await context.runtime.services.files.readImage(target.repositoryId, target.path);
-    if (result.status === 'too-large') return sendJson(response, 413, { status: result.status, limit: result.limit, size: result.size });
-    if (result.status === 'unsupported') return sendJson(response, 415, { status: result.status });
+    if (result.status === 'too-large') return sendJson(response, 413, result);
+    if (result.status === 'unsupported') return sendJson(response, 415, result);
     const bytes = Buffer.from(result.data);
     response.writeHead(200, {
       ...STATIC_SECURITY_HEADERS,
       'Cache-Control': 'private, no-store',
       'Content-Length': String(bytes.byteLength),
       'Content-Type': result.mimeType,
+      'X-OpenTig-Mtime-Ms': String(result.mtimeMs),
     });
     response.end(bytes);
     return;

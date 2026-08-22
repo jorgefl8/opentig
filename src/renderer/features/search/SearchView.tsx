@@ -8,6 +8,7 @@ import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { buildSearchRegex, type SearchFileResult, type SearchMatch, type SearchOptions, type SearchResult } from '../../../shared/search';
 import { queryKeys } from '@/lib/query-client';
+import { opentig } from '@/lib/opentig-api';
 
 const DEBOUNCE_MS = 250;
 const FILE_ROW_HEIGHT = 28;
@@ -54,7 +55,7 @@ export function SearchView({ repositoryId, active, revision, onOpenFile, unsaved
     queryKey: queryKeys.search(repositoryId, {
       query: debouncedQuery, matchCase, wholeWord, regex, includeIgnored: searchIgnored, revision, replaceRevision,
     }),
-    queryFn: () => window.opentig.repository.search(repositoryId, { ...options, query: debouncedQuery }),
+    queryFn: () => opentig.repository.search(repositoryId, { ...options, query: debouncedQuery }),
     enabled: active && debouncedQuery.length > 0,
     placeholderData: (previousData, previousQuery) => previousQuery?.queryKey[1] === repositoryId ? previousData : undefined,
   });
@@ -131,7 +132,7 @@ export function SearchView({ repositoryId, active, revision, onOpenFile, unsaved
 
     setReplacing(true);
     try {
-      const outcome = await window.opentig.repository.replaceSearch(repositoryId, {
+      const outcome = await opentig.repository.replaceSearch(repositoryId, {
         options: { ...options, query: query.trim() }, replacement, scope: replaceScope,
       });
       if (outcome.status === 'stale') {

@@ -90,11 +90,9 @@ export class OpenTigWebSocketTransport {
     const rawPath = (request.url ?? '').split(/[?#]/, 1)[0];
     if (rawPath !== '/ws') return rejectUpgrade(socket, 404, 'Not Found');
     if (!isAllowedOrigin(request, this.options.allowedOrigins)) return rejectUpgrade(socket, 403, 'Forbidden');
-    const sessionId = this.options.auth.authenticate(request.headers);
-    if (!sessionId) return rejectUpgrade(socket, 401, 'Unauthorized');
     if (this.clients.size >= this.connectionLimit) return rejectUpgrade(socket, 503, 'Connection limit reached');
     this.webSocketServer.handleUpgrade(request, socket, head, (webSocket) => {
-      this.webSocketServer.emit('connection', webSocket, request, sessionId);
+      this.webSocketServer.emit('connection', webSocket, request);
     });
   }
 
@@ -110,7 +108,9 @@ export class OpenTigWebSocketTransport {
     socket.on('message', (data, isBinary) => { void this.message(socket, state, data, isBinary); });
     socket.on('close', () => {
       this.clients.delete(socket);
-      this.options.registry.clearSession(sessionId);
+      if (![...this.clients.values()].some((client) => client.sessionId === sessionId)) {
+        this.options.registry.clearSession(sessionId);
+      }
     });
     socket.on('error', () => this.options.logger('warn', 'WebSocket connection failed.'));
   }

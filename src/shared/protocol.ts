@@ -5,21 +5,7 @@ const DEFAULT_MAX_REQUEST_BYTES = 1024 * 1024;
 const CONTENT_MAX_REQUEST_BYTES = 9 * 1024 * 1024;
 const FILE_WRITE_MAX_REQUEST_BYTES = 17 * 1024 * 1024;
 
-/** IPC entries that are intentionally not server request commands. */
-export const OPEN_TIG_NON_SERVER_IPC_KEYS = [
-  'titleBarTheme',
-  'clipboardReadFilePaths',
-  'clipboardReadImagePng',
-  'repositorySelect',
-  'repositorySelectRelocation',
-  'repositoryRevealEntry',
-  'repositoryChanged',
-] as const satisfies readonly (keyof typeof IPC)[];
-
-type OpenTigNonServerIpcKey = (typeof OPEN_TIG_NON_SERVER_IPC_KEYS)[number];
-type OpenTigServerCommandKey = Exclude<keyof typeof IPC, OpenTigNonServerIpcKey>;
-
-export type OpenTigServerCommandName = (typeof IPC)[OpenTigServerCommandKey];
+export type OpenTigServerCommandName = (typeof IPC)[keyof typeof IPC];
 
 type ApiMethodPath<Api> = {
   [Group in Extract<keyof Api, string>]: {

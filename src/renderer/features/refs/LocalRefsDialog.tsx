@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogClose, DialogDescription, DialogPopup, DialogTitle } from '@/components/ui/dialog';
+import { opentig } from '@/lib/opentig-api';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   branchBadges, branchDeleteEligibility, branchDetailBadges, branchKey, filterBranches, filterWorktrees,
@@ -48,7 +49,7 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
 
   const snapshotQuery = useQuery({
     queryKey: queryKeys.localRefs(repositoryId),
-    queryFn: () => window.opentig.refs.localRefsSnapshot(repositoryId),
+    queryFn: () => opentig.refs.localRefsSnapshot(repositoryId),
     enabled: open,
   });
   const snapshot = snapshotQuery.data ?? null;
@@ -61,19 +62,19 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
   const worktree = worktrees.find((item) => worktreeKey(item) === selectedWorktree) ?? null;
   const branchDetailsQuery = useQuery({
     queryKey: queryKeys.branchDetails(repositoryId, branch?.fullName ?? ''),
-    queryFn: () => window.opentig.refs.branchDetails({ repositoryId, fullName: branch!.fullName }),
+    queryFn: () => opentig.refs.branchDetails({ repositoryId, fullName: branch!.fullName }),
     enabled: open && tab === 'branches' && branch !== null,
   });
   const branchDetails = branchDetailsQuery.data ?? null;
   const branchPullRequestQuery = useQuery({
     queryKey: queryKeys.branchPullRequest(repositoryId, branchDetails?.name ?? ''),
-    queryFn: () => window.opentig.github.findPullRequestForBranch(repositoryId, branchDetails!.name),
+    queryFn: () => opentig.github.findPullRequestForBranch(repositoryId, branchDetails!.name),
     enabled: open && tab === 'branches' && branchDetails !== null && (branchDetails.deletion === 'unknown' || branchDetails.deletion === 'unmerged'),
   });
   const branchPullRequest = branchPullRequestQuery.data ?? null;
   const worktreeDetailsQuery = useQuery({
     queryKey: queryKeys.worktreeDetails(repositoryId, worktree?.path ?? ''),
-    queryFn: () => window.opentig.refs.worktreeDetails({ repositoryId, path: worktree!.path }),
+    queryFn: () => opentig.refs.worktreeDetails({ repositoryId, path: worktree!.path }),
     enabled: open && tab === 'worktrees' && worktree !== null,
   });
   const worktreeDetails = worktreeDetailsQuery.data ?? null;
@@ -120,7 +121,7 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
   };
 
   const deleteBranch = (target: BranchDetails, force: boolean) => run('delete-branch', async () => {
-    const result = await window.opentig.refs.deleteBranch({ repositoryId, fullName: target.fullName, expectedOid: target.oid, force });
+    const result = await opentig.refs.deleteBranch({ repositoryId, fullName: target.fullName, expectedOid: target.oid, force });
     if (result.status !== 'deleted') {
       setActionError(branchFailure(result.status));
       await load();
@@ -132,7 +133,7 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
   });
 
   const removeWorktree = (target: WorktreeDetails, force: boolean, deleteBranch: boolean) => run('remove-worktree', async () => {
-    const result = await window.opentig.refs.removeWorktree({ repositoryId, path: target.path, expectedOid: target.oid, force, deleteBranch });
+    const result = await opentig.refs.removeWorktree({ repositoryId, path: target.path, expectedOid: target.oid, force, deleteBranch });
     if (result.status !== 'removed') {
       setActionError(worktreeFailure(result.status));
       await load();
