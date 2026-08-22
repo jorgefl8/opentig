@@ -558,7 +558,6 @@
   .splash { display: flex; height: 100%; align-items: center; justify-content: center; gap: 14px; background: var(--background); color: var(--muted-foreground); font-size: 13px; }
   .server-connection-state { position: fixed; right: 12px; bottom: 10px; z-index: 100; display: flex; align-items: center; gap: 7px; border: 1px solid var(--border); border-radius: 999px; background: color-mix(in srgb, var(--background) 92%, transparent); padding: 5px 9px; color: var(--muted-foreground); font-size: 11px; box-shadow: 0 4px 18px rgb(0 0 0 / 18%); backdrop-filter: blur(8px); }
   .server-connection-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
-  .server-connection-state.connected { color: var(--success-foreground, #58a66b); }
   .server-connection-state.reconnecting,
   .server-connection-state.connecting { color: var(--warning-foreground, #c99545); }
   .server-connection-state.auth-required,
@@ -778,8 +777,6 @@
   .web-access-actions { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
   .web-access-actions .settings-field-label { min-width: 0; }
   .web-access-endpoint-select { display: grid; max-width: 380px; gap: 5px; margin-top: 10px; color: var(--muted-foreground); font-size: 10px; }
-  .web-access-endpoint-select select { width: 100%; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--background); padding: 6px 8px; color: var(--foreground); font-size: 11px; outline: none; }
-  .web-access-endpoint-select select:focus-visible { border-color: var(--ring); box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 22%, transparent); }
   .web-access-pairing { display: grid; grid-template-columns: minmax(0, 1fr) 112px; gap: 12px; margin-top: 14px; border: 1px solid color-mix(in oklch, var(--primary) 35%, var(--border)); border-radius: var(--radius-lg); background: color-mix(in oklch, var(--primary) 6%, var(--background)); padding: 12px; }
   .web-access-pairing-copy { display: flex; min-width: 0; align-items: flex-start; gap: 8px; }
   .web-access-pairing-copy > svg { width: 17px; height: 17px; flex: none; color: var(--primary); }

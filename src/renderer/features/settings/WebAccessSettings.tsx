@@ -14,6 +14,7 @@ import type { OpenTigPairingLink, OpenTigWebAccessStatus } from '@shared/desktop
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogClose, DialogDescription, DialogPopup, DialogTitle } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { writeClipboardText } from '@/lib/browser-capabilities';
 
@@ -155,12 +156,27 @@ export function WebAccessSettings() {
         </Button>
       </div>
       {status.networkEndpoints.length > 1 && (
-        <label className="web-access-endpoint-select">
-          <span>Address to place in the pairing link</span>
-          <select value={selectedEndpoint} onChange={(event) => { setSelectedEndpoint(event.target.value); setPairing(null); }} disabled={!status.enabled || action !== null}>
-            {status.networkEndpoints.map((endpoint) => <option key={endpoint} value={endpoint}>{endpoint}</option>)}
-          </select>
-        </label>
+        <div className="web-access-endpoint-select">
+          <label htmlFor="web-access-endpoint">Address to place in the pairing link</label>
+          <Select
+            value={selectedEndpoint}
+            onValueChange={(endpoint) => {
+              if (!endpoint) return;
+              setSelectedEndpoint(endpoint);
+              setPairing(null);
+            }}
+            disabled={!status.enabled || action !== null}
+          >
+            <SelectTrigger id="web-access-endpoint" className="w-full">
+              <SelectValue>{selectedEndpoint}</SelectValue>
+            </SelectTrigger>
+            <SelectContent alignItemWithTrigger={false}>
+              <SelectGroup>
+                {status.networkEndpoints.map((endpoint) => <SelectItem key={endpoint} value={endpoint}>{endpoint}</SelectItem>)}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+        </div>
       )}
 
       {pairing && (

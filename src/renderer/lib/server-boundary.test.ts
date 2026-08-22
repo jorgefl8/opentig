@@ -60,6 +60,16 @@ describe('renderer/server boundary', () => {
     expect(source).toContain("if (state === 'auth-required')");
     expect(source).toContain('Create a fresh pairing link in desktop OpenTig under Settings → Web Access');
   });
+
+  it('uses the shared endpoint selector and hides healthy connection status', async () => {
+    const settingsSource = await readFile(path.join(process.cwd(), 'src', 'renderer', 'features', 'settings', 'WebAccessSettings.tsx'), 'utf8');
+    const boundarySource = await readFile(path.join(process.cwd(), 'src', 'renderer', 'components', 'ServerConnectionBoundary.tsx'), 'utf8');
+
+    expect(settingsSource).toContain("from '@/components/ui/select'");
+    expect(settingsSource).toContain('<SelectGroup>');
+    expect(settingsSource).not.toContain('<select');
+    expect(boundarySource).toContain("state !== 'connected' && (");
+  });
 });
 
 async function sourceFiles(directory: string): Promise<string[]> {

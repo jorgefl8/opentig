@@ -54,10 +54,12 @@ export function ServerConnectionBoundary({ children }: { children: ReactNode }) 
   return (
     <>
       {children}
-      <div className={`server-connection-state ${state}`} role="status" aria-live="polite">
-        <span className="server-connection-dot" aria-hidden="true" />
-        {COPY[state]}
-      </div>
+      {state !== 'connected' && (
+        <div className={`server-connection-state ${state}`} role="status" aria-live="polite">
+          <span className="server-connection-dot" aria-hidden="true" />
+          {COPY[state]}
+        </div>
+      )}
     </>
   );
 }
