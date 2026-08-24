@@ -53,7 +53,9 @@ describe('renderer/server boundary', () => {
     expect(settingsSource).toContain('desktopApi && status');
     expect(settingsSource).toContain('loadOwnerSessions()');
     expect(settingsSource).not.toMatch(/\stitle=/);
-    expect(settingsSource).toContain('Only this exact HTTPS origin is trusted.');
+    expect(settingsSource).toContain('The pairing code also works through a same-machine HTTPS tunnel.');
+    expect(settingsSource).toContain('renameOwnerSession');
+    expect(settingsSource).not.toContain('External HTTPS URL');
   });
 
   it('replaces a revoked browser session with pairing instructions', async () => {

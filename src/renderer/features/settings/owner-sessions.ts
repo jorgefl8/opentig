@@ -16,6 +16,16 @@ export async function revokeAllBrowserSessions(): Promise<number> {
   return revoke('/api/auth/sessions/revoke-all', {});
 }
 
+export async function renameOwnerSession(sessionId: string, clientName: string): Promise<void> {
+  const response = await fetch('/api/auth/sessions/rename', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sessionId, clientName }),
+  });
+  if (!response.ok) throw new Error(await responseError(response, 'Could not rename the browser session.'));
+}
+
 async function revoke(url: string, body: Record<string, unknown>): Promise<number> {
   const response = await fetch(url, {
     method: 'POST',

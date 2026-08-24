@@ -62,7 +62,15 @@ export class OpenTigSessionAuth {
 
   async exchangeDesktopSecret(secret: unknown): Promise<string | null> {
     if (!isCredential(secret) || !await this.source.consumeDesktopSecret(secret)) return null;
-    return this.issueCookie({ kind: 'desktop', clientName: 'OpenTig desktop', remoteAddress: null });
+    return this.issueCookie({
+      kind: 'desktop',
+      clientName: 'OpenTig desktop',
+      deviceType: 'desktop',
+      os: null,
+      browser: null,
+      remoteAddress: null,
+      viaProxy: false,
+    });
   }
 
   async exchangePairingToken(token: unknown, metadata?: Omit<SessionMetadata, 'kind'>, secure = false): Promise<string | null> {
@@ -74,7 +82,11 @@ export class OpenTigSessionAuth {
       return await this.issueCookie({
         kind: 'browser',
         clientName: metadata?.clientName ?? 'Browser',
+        deviceType: metadata?.deviceType ?? 'unknown',
+        os: metadata?.os ?? null,
+        browser: metadata?.browser ?? null,
         remoteAddress: metadata?.remoteAddress ?? null,
+        viaProxy: metadata?.viaProxy ?? false,
       }, secure);
     } catch (error) {
       if (this.now() < pairing.expiresAt && !this.pairing) this.pairing = pairing;
@@ -106,6 +118,16 @@ export class OpenTigSessionAuth {
     return this.store.revokeSession(sessionId);
   }
 
+  async renameBrowserSession(sessionId: string, clientName: string): Promise<boolean> {
+    const session = this.store.listSessions().find((candidate) => candidate.id === sessionId);
+    if (!session || session.kind === 'desktop') return false;
+    return this.store.renameSession(sessionId, clientName);
+  }
+
+  recordConnection(sessionId: string): Promise<boolean> {
+    return this.store.recordConnection(sessionId, new Date(this.now()).toISOString());
+  }
+
   revokeBrowserSessions(): Promise<string[]> {
     return this.store.revokeBrowserSessions();
   }
@@ -114,7 +136,15 @@ export class OpenTigSessionAuth {
     const sessionIds = await this.store.revokeAll();
     return {
       sessionIds,
-      cookie: await this.issueCookie({ kind: 'desktop', clientName: 'OpenTig desktop', remoteAddress: null }),
+      cookie: await this.issueCookie({
+        kind: 'desktop',
+        clientName: 'OpenTig desktop',
+        deviceType: 'desktop',
+        os: null,
+        browser: null,
+        remoteAddress: null,
+        viaProxy: false,
+      }),
     };
   }
 

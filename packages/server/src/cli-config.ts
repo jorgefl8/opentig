@@ -2,14 +2,15 @@ import os from 'node:os';
 import path from 'node:path';
 import { DEFAULT_SERVER_HOST, DEFAULT_SERVER_PORT } from '../../../src/shared/server-config';
 
-export type OpenTigCliCommand = 'start' | 'serve' | 'pair' | 'help' | 'version';
+export type OpenTigCliCommand = 'start' | 'serve' | 'pair' | 'service' | 'help' | 'version';
+export type OpenTigServiceAction = 'install' | 'status' | 'uninstall';
 
 export interface OpenTigCliConfig {
   command: OpenTigCliCommand;
+  serviceAction: OpenTigServiceAction | null;
   cwd: string;
   host: string;
   port: number;
-  portExplicit: boolean;
   home: string;
   openBrowser: boolean;
 }
@@ -31,12 +32,12 @@ export function parseCliArguments(
 ): OpenTigCliConfig {
   let command: OpenTigCliCommand = 'start';
   let commandSelected = false;
+  let serviceAction: OpenTigServiceAction | null = null;
   let cwdValue: string | undefined;
   let hostValue: string | undefined;
   let portValue: string | undefined;
   let homeValue: string | undefined;
   let noBrowser = false;
-  let portExplicit = false;
   let optionsEnded = false;
 
   for (let index = 0; index < args.length; index += 1) {
@@ -56,7 +57,7 @@ export function parseCliArguments(
       const value = inline ?? args[++index];
       if (value === undefined || value.startsWith('--')) throw new CliUsageError(`Missing value for ${name}.`);
       if (name === '--host') hostValue = value;
-      else if (name === '--port') { portValue = value; portExplicit = true; }
+      else if (name === '--port') portValue = value;
       else if (name === '--home') homeValue = value;
       else throw new CliUsageError(`Unknown option: ${name}.`);
       continue;
@@ -64,6 +65,10 @@ export function parseCliArguments(
     if (!commandSelected && cwdValue === undefined && isCommand(argument)) {
       command = argument;
       commandSelected = true;
+      continue;
+    }
+    if (command === 'service' && serviceAction === null && isServiceAction(argument)) {
+      serviceAction = argument;
       continue;
     }
     if (cwdValue !== undefined) throw new CliUsageError('Only one working directory may be supplied.');
@@ -74,14 +79,21 @@ export function parseCliArguments(
   if (command === 'pair' && (hostValue !== undefined || portValue !== undefined || noBrowser)) {
     throw new CliUsageError('The pair command only accepts --home.');
   }
+  if (command === 'service' && serviceAction === null) throw new CliUsageError('The service command requires install, status, or uninstall.');
+  if (command === 'service' && serviceAction !== 'install' && cwdValue !== undefined) {
+    throw new CliUsageError(`The service ${serviceAction} command does not accept a working directory.`);
+  }
+  if (command === 'service' && serviceAction !== 'install' && (hostValue !== undefined || portValue !== undefined || noBrowser)) {
+    throw new CliUsageError(`The service ${serviceAction} command only accepts --home.`);
+  }
 
   if (command === 'pair') {
     return {
       command,
+      serviceAction: null,
       cwd: path.resolve(currentDirectory),
       host: DEFAULT_SERVER_HOST,
       port: DEFAULT_SERVER_PORT,
-      portExplicit: false,
       home: resolvePath(homeValue ?? environment.OPENTIG_HOME ?? path.join(homeDirectory, '.opentig'), currentDirectory, 'home'),
       openBrowser: false,
     };
@@ -90,16 +102,15 @@ export function parseCliArguments(
   const host = validateHost(hostValue ?? environment.OPENTIG_HOST ?? DEFAULT_SERVER_HOST);
   const environmentPort = environment.OPENTIG_PORT;
   const port = validatePort(portValue ?? environmentPort ?? String(DEFAULT_SERVER_PORT));
-  portExplicit ||= environmentPort !== undefined;
   const home = resolvePath(homeValue ?? environment.OPENTIG_HOME ?? path.join(homeDirectory, '.opentig'), currentDirectory, 'home');
   const cwd = resolvePath(cwdValue ?? currentDirectory, currentDirectory, 'working directory');
 
   return {
     command,
+    serviceAction,
     cwd,
     host,
     port,
-    portExplicit,
     home,
     openBrowser: command === 'start' && !noBrowser,
   };
@@ -113,11 +124,13 @@ Usage:
   opentig start [cwd] [options]
   opentig serve [cwd] [options]
   opentig pair [--home <path>]
+  opentig service <install|status|uninstall> [cwd] [options]
 
 Commands:
   start       Start OpenTig and open the one-time pairing link (default)
   serve       Start OpenTig without opening a browser
   pair        Create a new one-time link for a running server
+  service     Explicitly manage startup at boot (Linux/systemd)
 
 Options:
   --host <host>       Listener host (default: ${DEFAULT_SERVER_HOST}; env: OPENTIG_HOST)
@@ -133,10 +146,10 @@ Node.js 24 or later and Git are required. Plain bunx launches this Node executab
 function terminalConfig(command: 'help' | 'version', cwd: string, home: string): OpenTigCliConfig {
   return {
     command,
+    serviceAction: null,
     cwd: path.resolve(cwd),
     host: DEFAULT_SERVER_HOST,
     port: DEFAULT_SERVER_PORT,
-    portExplicit: false,
     home: path.resolve(home, '.opentig'),
     openBrowser: false,
   };
@@ -149,8 +162,12 @@ function splitOption(argument: string): [string, string | undefined] {
     : [argument.slice(0, separator), argument.slice(separator + 1)];
 }
 
-function isCommand(value: string): value is 'start' | 'serve' | 'pair' {
-  return value === 'start' || value === 'serve' || value === 'pair';
+function isCommand(value: string): value is 'start' | 'serve' | 'pair' | 'service' {
+  return value === 'start' || value === 'serve' || value === 'pair' || value === 'service';
+}
+
+function isServiceAction(value: string): value is OpenTigServiceAction {
+  return value === 'install' || value === 'status' || value === 'uninstall';
 }
 
 function validateHost(value: string): string {

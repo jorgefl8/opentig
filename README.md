@@ -33,8 +33,8 @@ It is intentionally not an IDE, hosting service, or replacement for the Git CLI.
 
 - Open existing local repositories and return to recently used repositories.
 - Use the same authenticated WebSocket backend from the desktop app or a paired browser. On desktop the backend runs in a supervised utility process, so a renderer reload or crash does not stop repository watchers or in-flight server state while the desktop process remains open; an unexpected backend exit is restarted with bounded backoff. Repository switches and filesystem/Git events propagate to every connected tab, and reconnecting clients bootstrap fresh state without replaying interrupted mutations. Browser clients enter paths on the server directly, native folder selection and Explorer reveal remain desktop-only, and their header uses the full browser width instead of reserving space for desktop window controls.
-- Run that exact server/runtime/client bundle through `npx --yes @opentig/cli@<version>` or plain `bunx @opentig/cli@<version>`. The default/start command opens a five-minute one-use pairing link, while `serve` stays headless and prints the link plus a terminal QR code. `opentig pair` safely mints a fresh link for a server already using the same private home directory.
-- Keep that backend loopback-only by default, or enable **Settings → Web access → LAN access** to restart the same utility listener on trusted LAN interfaces. Localhost is always a valid pairing target. For Cloudflare Tunnel or another local HTTPS reverse proxy, configure its exact external URL while leaving LAN access disabled; OpenTig trusts that origin for HTTP/WebSocket, creates the pairing link with it, and issues a `Secure` browser cookie. The same pane distinguishes the private desktop session from paired browsers, shows live connection state and creation details, and revokes browser sessions individually or together. Browsers can review and manage those sessions but cannot change the native listener or tunnel configuration. Browsers without a valid owner session show fresh-pairing instructions instead of leaving the application loading indefinitely.
+- Run that exact server/runtime/client bundle through `npx --yes @opentig/cli@<version>` or plain `bunx @opentig/cli@<version>`. The default/start command opens a five-minute one-use pairing link, while `serve` stays headless and prints its portable code, link, and terminal QR. `opentig pair` safely mints a fresh code for a server already using the same private home directory. The CLI keeps its configured port stable—`6767` by default—and reports a conflict instead of silently moving a tunnel target.
+- Keep that backend loopback-only by default, or enable **Settings → Web access → LAN access** to restart the same utility listener on trusted LAN interfaces. Every browser still requires a one-use pairing code. A same-machine Cloudflare Tunnel or HTTPS reverse proxy can point straight to `http://127.0.0.1:<port>` without registering the public URL in OpenTig: open `/pair` on that domain and paste the generated code. OpenTig validates each HTTP/WebSocket origin against the authority used for that request, trusts forwarded authority/client-IP metadata only from loopback, and issues a `Secure` cookie for HTTPS. The same pane gives paired devices editable names, shows browser/OS, proxy/IP and connection activity, and revokes them individually or together; stale desktop sessions are replaced rather than accumulated. Browsers can manage sessions but cannot change the native listener.
 - Relocate a recent repository when its folder moved, preserving its project assignment, open tabs, and expanded folders.
 - Group related repositories into named OpenTig projects without moving anything on disk.
 - Pull or push an individual repository from its row in the repository picker. Only pending operations are shown, each with its ahead/behind commit count; multiple repositories can sync concurrently, and their separate Sileo progress and outcome cards remain visible together. Opening the picker fetches each listed repository so those counts match the remote, not a stale local cache.
@@ -214,7 +214,17 @@ bunx @opentig/cli@0.1.0 serve C:\repos\project
 opentig pair --home C:\path\to\opentig-home
 ```
 
-Options are `--host`, `--port`, `--home`, and `--no-browser`, with `OPENTIG_HOST`, `OPENTIG_PORT`, and `OPENTIG_HOME` environment equivalents. Defaults are `127.0.0.1`, preferred port `6767`, and `~/.opentig`. An explicit occupied port fails; an omitted port scans a bounded range upward. The home contains private settings, hash-only sessions, a local-admin credential, credential-free runtime state, AI history, and rotating logs. SIGINT or SIGTERM closes WebSockets, the HTTP listener, watchers, Git/AI children, settings, and logs; a second signal forces exit.
+Options are `--host`, `--port`, `--home`, and `--no-browser`, with `OPENTIG_HOST`, `OPENTIG_PORT`, and `OPENTIG_HOME` environment equivalents. Defaults are `127.0.0.1`, port `6767`, and `~/.opentig`. An occupied port fails clearly so reverse-proxy configuration remains predictable. The home contains private settings, hash-only sessions, a local-admin credential, credential-free runtime state, AI history, and rotating logs. SIGINT or SIGTERM closes WebSockets, the HTTP listener, watchers, Git/AI children, settings, and logs; a second signal forces exit.
+
+Running through `npx` or `bunx` never installs startup persistence. On a Linux server with systemd, opt in explicitly after installing the CLI globally or invoking its executable:
+
+```bash
+opentig service install /path/to/repository --host 127.0.0.1 --port 6767
+opentig service status
+opentig service uninstall
+```
+
+Installation stages the exact CLI/client version under the selected OpenTig home, enables a user service and user lingering, and keeps the listener on loopback unless `--host` says otherwise. Windows and macOS service installers are not included yet.
 
 For local tarball testing on Windows:
 
@@ -223,7 +233,7 @@ npx --yes --package C:\absolute\path\opentig-cli-0.1.0.tgz opentig --help
 bunx --package C:\absolute\path\opentig-cli-0.1.0.tgz opentig --help
 ```
 
-Use `latest` only for evaluation after a public release. To upgrade or roll back production, stop the process and run a different pinned immutable version. OpenTig does not ship Docker, a systemd installer, built-in TLS, Tailscale/SSH automation, multi-user roles, or server self-update.
+Use `latest` only for evaluation after a public release. To upgrade or roll back production, stop the process and run a different pinned immutable version. OpenTig does not ship Docker, built-in TLS, Tailscale/SSH automation, multi-user roles, or server self-update.
 
 ## Run from source
 

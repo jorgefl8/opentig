@@ -3,12 +3,11 @@ import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 interface PersistedDesktopServerSettings {
-  version: 2;
+  version: 3;
   webAccessEnabled: boolean;
-  externalOrigin: string | null;
 }
 
-export type DesktopServerConfig = Pick<PersistedDesktopServerSettings, 'webAccessEnabled' | 'externalOrigin'>;
+export type DesktopServerConfig = Pick<PersistedDesktopServerSettings, 'webAccessEnabled'>;
 
 /** Desktop-only network exposure state. Server domain settings never own it. */
 export class DesktopServerSettings {
@@ -19,21 +18,18 @@ export class DesktopServerSettings {
   async load(): Promise<DesktopServerConfig> {
     try {
       const value = JSON.parse(await readFile(this.filePath, 'utf8')) as Record<string, unknown> | null;
-      if (value?.version === 1 && typeof value.webAccessEnabled === 'boolean') {
-        return { webAccessEnabled: value.webAccessEnabled, externalOrigin: null };
+      if ((value?.version === 1 || value?.version === 2 || value?.version === 3)
+        && typeof value.webAccessEnabled === 'boolean') {
+        return { webAccessEnabled: value.webAccessEnabled };
       }
-      return value?.version === 2
-        && typeof value.webAccessEnabled === 'boolean'
-        && (value.externalOrigin === null || isHttpsOrigin(value.externalOrigin))
-        ? { webAccessEnabled: value.webAccessEnabled, externalOrigin: value.externalOrigin }
-        : defaults();
+      return defaults();
     } catch {
       return defaults();
     }
   }
 
   save(config: DesktopServerConfig): Promise<void> {
-    const value: PersistedDesktopServerSettings = { version: 2, ...config };
+    const value: PersistedDesktopServerSettings = { version: 3, ...config };
     const write = this.pendingWrite.then(async () => {
       await mkdir(path.dirname(this.filePath), { recursive: true });
       const temporary = `${this.filePath}.${randomUUID()}.tmp`;
@@ -55,13 +51,5 @@ export class DesktopServerSettings {
 }
 
 function defaults(): DesktopServerConfig {
-  return { webAccessEnabled: false, externalOrigin: null };
-}
-
-function isHttpsOrigin(value: unknown): value is string {
-  if (typeof value !== 'string') return false;
-  try {
-    const url = new URL(value);
-    return url.protocol === 'https:' && url.origin === value && url.pathname === '/';
-  } catch { return false; }
+  return { webAccessEnabled: false };
 }

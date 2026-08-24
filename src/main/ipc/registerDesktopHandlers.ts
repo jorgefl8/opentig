@@ -17,7 +17,6 @@ export function registerDesktopHandlers(
   webAccess?: {
     getStatus(): Promise<OpenTigWebAccessStatus>;
     setEnabled(enabled: boolean): Promise<OpenTigWebAccessStatus>;
-    setExternalOrigin(origin: string | null): Promise<OpenTigWebAccessStatus>;
     createPairingLink(endpoint: string): Promise<OpenTigPairingLink>;
   },
 ): () => void {
@@ -76,9 +75,6 @@ export function registerDesktopHandlers(
   handle(OPEN_TIG_DESKTOP_IPC.webAccessStatus, 'web-access-status', () => requireWebAccess(webAccess).getStatus());
   handle(OPEN_TIG_DESKTOP_IPC.webAccessSetEnabled, 'web-access-set-enabled', (enabled) => (
     requireWebAccess(webAccess).setEnabled(booleanArg(enabled, 'web-access-set-enabled'))
-  ));
-  handle(OPEN_TIG_DESKTOP_IPC.webAccessSetExternalOrigin, 'web-access-set-external-origin', (origin) => (
-    requireWebAccess(webAccess).setExternalOrigin(origin === null ? null : stringArg(origin, 'web-access-set-external-origin', 2_048))
   ));
   handle(OPEN_TIG_DESKTOP_IPC.webAccessCreatePairingLink, 'web-access-create-pairing-link', (endpoint) => (
     requireWebAccess(webAccess).createPairingLink(stringArg(endpoint, 'web-access-create-pairing-link', 2_048))

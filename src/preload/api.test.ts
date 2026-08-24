@@ -16,7 +16,7 @@ describe('preload desktop API', () => {
 
     expect(Object.keys(api).sort()).toEqual(['app', 'clipboard', 'repository', 'webAccess']);
     expect(Object.keys(api.repository).sort()).toEqual(['revealEntry', 'select', 'selectRelocation']);
-    expect(Object.keys(api.webAccess).sort()).toEqual(['createPairingLink', 'getStatus', 'setEnabled', 'setExternalOrigin']);
+    expect(Object.keys(api.webAccess).sort()).toEqual(['createPairingLink', 'getStatus', 'setEnabled']);
     expect('commits' in api).toBe(false);
     expect('github' in api).toBe(false);
 
@@ -24,13 +24,11 @@ describe('preload desktop API', () => {
     await api.app.setTitleBarTheme(true);
     await api.repository.revealEntry('C:\\repo\\file.txt');
     await api.webAccess.setEnabled(true);
-    await api.webAccess.setExternalOrigin('https://opentig.example.com');
     await api.webAccess.createPairingLink('http://192.168.1.50:6767');
     expect(setZoom).toHaveBeenCalledWith(1.3);
     expect(ipc.invoke).toHaveBeenCalledWith(OPEN_TIG_DESKTOP_IPC.titleBarTheme, true);
     expect(ipc.invoke).toHaveBeenCalledWith(OPEN_TIG_DESKTOP_IPC.repositoryRevealEntry, 'C:\\repo\\file.txt');
     expect(ipc.invoke).toHaveBeenCalledWith(OPEN_TIG_DESKTOP_IPC.webAccessSetEnabled, true);
-    expect(ipc.invoke).toHaveBeenCalledWith(OPEN_TIG_DESKTOP_IPC.webAccessSetExternalOrigin, 'https://opentig.example.com');
     expect(ipc.invoke).toHaveBeenCalledWith(OPEN_TIG_DESKTOP_IPC.webAccessCreatePairingLink, 'http://192.168.1.50:6767');
   });
 });

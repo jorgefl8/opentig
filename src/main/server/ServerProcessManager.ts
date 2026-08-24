@@ -71,7 +71,6 @@ export interface ServerProcessManagerOptions {
   appVersion: string;
   platform: OpenTigPlatform;
   host?: OpenTigServerHost;
-  allowedOrigins?: readonly string[];
   port?: number;
   env?: NodeJS.ProcessEnv;
   fork: UtilityFork;
@@ -115,7 +114,6 @@ export class ServerProcessManager {
   private stableTimer: NodeJS.Timeout | null = null;
   private activePort: number | null = null;
   private desiredHost: OpenTigServerHost;
-  private desiredAllowedOrigins: string[];
   private consecutiveFailures = 0;
   private stopping = false;
   private restartQueue: Promise<void> = Promise.resolve();
@@ -128,7 +126,6 @@ export class ServerProcessManager {
 
   constructor(private readonly options: ServerProcessManagerOptions) {
     this.desiredHost = options.host ?? '127.0.0.1';
-    this.desiredAllowedOrigins = [...(options.allowedOrigins ?? [])];
     this.restartDelaysMs = options.restartDelaysMs ?? [250, 500, 1_000, 2_000, 5_000];
     if (this.restartDelaysMs.length === 0 || this.restartDelaysMs.some((delay) => !Number.isFinite(delay) || delay < 0)) {
       throw new Error('At least one valid restart delay is required.');
@@ -155,9 +152,9 @@ export class ServerProcessManager {
     return this.stopPromise;
   }
 
-  restart(host: OpenTigServerHost, allowedOrigins: readonly string[] = this.desiredAllowedOrigins): Promise<ServerProcessAddress> {
+  restart(host: OpenTigServerHost): Promise<ServerProcessAddress> {
     if (this.stopping || this.stopPromise) return Promise.reject(new Error('Server process manager is stopping.'));
-    const operation = this.restartQueue.then(() => this.restartForConfig(host, allowedOrigins));
+    const operation = this.restartQueue.then(() => this.restartForConfig(host));
     this.restartQueue = operation.then(() => undefined, () => undefined);
     return operation;
   }
@@ -225,17 +222,14 @@ export class ServerProcessManager {
     );
   }
 
-  private async restartForConfig(host: OpenTigServerHost, allowedOrigins: readonly string[]): Promise<ServerProcessAddress> {
+  private async restartForConfig(host: OpenTigServerHost): Promise<ServerProcessAddress> {
     if (host !== '127.0.0.1' && host !== '0.0.0.0') throw new Error('Invalid OpenTig server host.');
     const previous = await this.start();
-    const nextOrigins = [...allowedOrigins];
-    if (previous.host === host && sameStrings(this.desiredAllowedOrigins, nextOrigins)) return previous;
+    if (previous.host === host) return previous;
     const previousHost = this.desiredHost;
-    const previousOrigins = this.desiredAllowedOrigins;
     const port = previous.port;
     await this.shutdownCurrentChild();
     this.desiredHost = host;
-    this.desiredAllowedOrigins = nextOrigins;
     this.options.onState?.({ status: 'starting', port });
     try {
       const address = await this.spawnAndAdopt(port);
@@ -245,7 +239,6 @@ export class ServerProcessManager {
       return address;
     } catch (error) {
       this.desiredHost = previousHost;
-      this.desiredAllowedOrigins = previousOrigins;
       this.options.onState?.({ status: 'starting', port });
       try {
         const restored = await this.spawnAndAdopt(port);
@@ -275,7 +268,6 @@ export class ServerProcessManager {
       platform: this.options.platform,
       host: this.desiredHost,
       port,
-      ...(this.desiredAllowedOrigins.length ? { allowedOrigins: [...this.desiredAllowedOrigins] } : {}),
     };
 
     return new Promise<ServerProcessAddress>((resolve, reject) => {
@@ -519,10 +511,6 @@ export class ServerProcessManager {
       if (!(await exited)) child.kill();
     }
   }
-}
-
-function sameStrings(left: readonly string[], right: readonly string[]): boolean {
-  return left.length === right.length && left.every((value, index) => value === right[index]);
 }
 
 async function probeReady(address: ServerProcessAddress): Promise<void> {

@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { publicOrigin, runCli, startWithPortFallback } from './cli';
+import { publicOrigin, runCli, startOnConfiguredPort } from './cli';
 
 const directories: string[] = [];
 afterEach(async () => Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true }))));
@@ -15,7 +15,7 @@ describe('OpenTig CLI runtime helpers', () => {
     expect(publicOrigin('192.168.1.5', 7000)).toBe('http://192.168.1.5:7000');
   });
 
-  it('scans after an implicit conflict and fails an explicit conflict', async () => {
+  it('fails clearly instead of changing the configured port after a conflict', async () => {
     const blocker = createServer();
     await new Promise<void>((resolve) => blocker.listen(0, '127.0.0.1', resolve));
     const address = blocker.address();
@@ -31,11 +31,7 @@ describe('OpenTig CLI runtime helpers', () => {
       serverDataPath: path.join(directory, 'server'), clientRoot, platform: 'win32' as const,
       host: '127.0.0.1', trash: { available: true, trashItem: async () => undefined },
     };
-    await expect(startWithPortFallback(base, address.port, true)).rejects.toThrow(`Port ${address.port}`);
-    const server = await startWithPortFallback(base, address.port, false);
-    expect(server.port).toBeGreaterThan(address.port);
-    expect(server.port).toBeLessThan(address.port + 10);
-    await server.close();
+    await expect(startOnConfiguredPort(base, address.port)).rejects.toThrow(`Port ${address.port}`);
     await new Promise<void>((resolve, reject) => blocker.close((error) => error ? reject(error) : resolve()));
   });
 

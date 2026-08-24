@@ -24,7 +24,6 @@ export interface OpenTigServerConfig extends Omit<CreateOpenTigRuntimeOptions, '
   port?: number;
   mode?: OpenTigServerMode;
   secureCookies?: boolean;
-  allowedOrigins?: readonly string[];
   logger?: OpenTigServerLogger;
   onEvent?: CreateOpenTigRuntimeOptions['onEvent'];
   commandTimeoutMs?: number;
@@ -89,7 +88,6 @@ export async function runOpenTigServer(config: OpenTigServerConfig): Promise<Run
       ...(config.host === undefined ? {} : { host: config.host }),
       ...(config.port === undefined ? {} : { port: config.port }),
       ...(config.mode === undefined ? {} : { mode: config.mode }),
-      ...(config.allowedOrigins === undefined ? {} : { allowedOrigins: config.allowedOrigins }),
       ...(config.logger === undefined ? {} : { logger: config.logger }),
       ...(config.commandTimeoutMs === undefined ? {} : { commandTimeoutMs: config.commandTimeoutMs }),
       ...(config.connectionLimit === undefined ? {} : { connectionLimit: config.connectionLimit }),

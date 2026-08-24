@@ -55,6 +55,12 @@ describe('authoritative HTTP server', () => {
     const fixture = await startFixture();
     const wrongOrigin = await postJson(`${fixture.server.origin}/api/auth/pair`, { token: fixture.pairingToken }, 'http://evil.invalid');
     expect(wrongOrigin.status).toBe(403);
+    const missingName = await fetch(`${fixture.server.origin}/api/auth/pair`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: fixture.server.origin },
+      body: JSON.stringify({ token: fixture.pairingToken }),
+    });
+    expect(missingName.status).toBe(400);
     const invalid = await postJson(`${fixture.server.origin}/api/auth/pair`, { token: 'invalid' }, fixture.server.origin);
     expect(invalid.status).toBe(401);
 
@@ -83,28 +89,51 @@ describe('authoritative HTTP server', () => {
     expect(Date.parse(pairing.expiresAt)).toBeGreaterThan(Date.now());
   });
 
-  it('accepts an explicit HTTPS tunnel origin and manages browser sessions individually', async () => {
+  it('accepts a loopback HTTPS reverse proxy and manages named browser sessions individually', async () => {
     const externalOrigin = 'https://opentig.example.com';
-    const fixture = await startFixture({ allowedOrigins: [externalOrigin] });
+    const fixture = await startFixture();
     const pairedResponse = await fetch(`${fixture.server.origin}/api/auth/pair`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Origin: externalOrigin, 'User-Agent': 'Mozilla/5.0 Chrome/140.0.0.0' },
-      body: JSON.stringify({ token: fixture.pairingToken }),
+      headers: {
+        'Content-Type': 'application/json',
+        Origin: externalOrigin,
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/140.0.0.0',
+        'X-Forwarded-Host': 'opentig.example.com',
+        'CF-Connecting-IP': '203.0.113.42',
+      },
+      body: JSON.stringify({ token: fixture.pairingToken, clientName: 'Office laptop' }),
     });
     expect(pairedResponse.status).toBe(204);
     const browserCookie = cookieValue(pairedResponse.headers.get('set-cookie') ?? '');
     expect(pairedResponse.headers.get('set-cookie')).toContain('; Secure');
-    const browserSocket = await openWebSocket(fixture.server.origin, browserCookie, externalOrigin);
+    const browserSocket = await openWebSocket(fixture.server.origin, browserCookie, externalOrigin, { 'X-Forwarded-Host': 'opentig.example.com' });
 
     const browserList = await fetch(`${fixture.server.origin}/api/auth/sessions`, { headers: { Cookie: browserCookie } });
     expect(browserList.status).toBe(200);
     const browserSessions = (await browserList.json() as { sessions: Array<Record<string, unknown>> }).sessions;
     expect(browserSessions).toEqual([
-      expect.objectContaining({ kind: 'browser', clientName: 'Chrome', connected: true, connectionCount: 1, current: true }),
+      expect.objectContaining({
+        kind: 'browser',
+        clientName: 'Office laptop',
+        deviceType: 'desktop',
+        browser: 'Chrome',
+        os: 'Windows',
+        remoteAddress: '203.0.113.42',
+        viaProxy: true,
+        connected: true,
+        connectionCount: 1,
+        current: true,
+      }),
     ]);
 
     const desktop = await postJson(`${fixture.server.origin}/api/auth/desktop`, { secret: fixture.desktopSecret }, fixture.server.origin);
     const browserSessionId = String(browserSessions[0]!.id);
+    const renamed = await fetch(`${fixture.server.origin}/api/auth/sessions/rename`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: fixture.server.origin, Cookie: cookieValue(desktop.cookie) },
+      body: JSON.stringify({ sessionId: browserSessionId, clientName: 'Travel laptop' }),
+    });
+    expect(renamed.status).toBe(200);
     const closedBrowser = closed(browserSocket);
     const revoked = await fetch(`${fixture.server.origin}/api/auth/sessions/revoke`, {
       method: 'POST',
@@ -312,7 +341,7 @@ describe('authenticated WebSocket protocol', () => {
   });
 });
 
-async function startFixture(options: { admin?: { token: string; instanceId: string }; allowedOrigins?: string[] } = {}): Promise<{
+async function startFixture(options: { admin?: { token: string; instanceId: string } } = {}): Promise<{
   server: RunningOpenTigServer;
   directory: string;
   clientRoot: string;
@@ -335,7 +364,6 @@ async function startFixture(options: { admin?: { token: string; instanceId: stri
     auth: new OneTimeBootstrapAuthSource({ desktopSecret }),
     port: 0,
     ...(options.admin ? { admin: options.admin } : {}),
-    ...(options.allowedOrigins ? { allowedOrigins: options.allowedOrigins } : {}),
   });
   const pairingLink = server.createPairingLink();
   const pairingToken = new URLSearchParams(new URL(pairingLink.url).hash.slice(1)).get('token');
@@ -357,10 +385,13 @@ async function expectJson(url: string, status: number, expected: unknown): Promi
 }
 
 async function postJson(url: string, body: unknown, origin: string, cookie?: string): Promise<{ status: number; cookie: string }> {
+  const payload = url.endsWith('/api/auth/pair') && body && typeof body === 'object' && !Array.isArray(body)
+    ? { clientName: 'Test browser', ...body }
+    : body;
   const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Origin: origin, ...(cookie ? { Cookie: cookie } : {}) },
-    body: JSON.stringify(body),
+    body: JSON.stringify(payload),
   });
   return { status: response.status, cookie: response.headers.get('set-cookie') ?? '' };
 }
@@ -382,8 +413,8 @@ function rawGet(origin: string, requestPath: string): Promise<{ status: number; 
   });
 }
 
-function openWebSocket(origin: string, cookie: string, requestOrigin = origin): Promise<WebSocket> {
-  const socket = new WebSocket(origin.replace(/^http/, 'ws') + '/ws', { headers: { Origin: requestOrigin, Cookie: cookie } });
+function openWebSocket(origin: string, cookie: string, requestOrigin = origin, additionalHeaders: Record<string, string> = {}): Promise<WebSocket> {
+  const socket = new WebSocket(origin.replace(/^http/, 'ws') + '/ws', { headers: { Origin: requestOrigin, Cookie: cookie, ...additionalHeaders } });
   return new Promise((resolve, reject) => {
     socket.once('open', () => resolve(socket));
     socket.once('error', reject);

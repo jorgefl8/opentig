@@ -33,7 +33,6 @@ export interface OpenTigWebSocketOptions {
   registry: CommandRegistry;
   auth: OpenTigSessionAuth;
   identity: OpenTigServerIdentity;
-  allowedOrigins: ReadonlySet<string>;
   logger: OpenTigServerLogger;
   commandTimeoutMs?: number;
   connectionLimit?: number;
@@ -101,7 +100,7 @@ export class OpenTigWebSocketTransport {
   private upgrade(request: IncomingMessage, socket: Duplex, head: Buffer): void {
     const rawPath = (request.url ?? '').split(/[?#]/, 1)[0];
     if (rawPath !== '/ws') return rejectUpgrade(socket, 404, 'Not Found');
-    if (!isAllowedOrigin(request, this.options.allowedOrigins)) return rejectUpgrade(socket, 403, 'Forbidden');
+    if (!isAllowedOrigin(request)) return rejectUpgrade(socket, 403, 'Forbidden');
     if (this.clients.size >= this.connectionLimit) return rejectUpgrade(socket, 503, 'Connection limit reached');
     this.webSocketServer.handleUpgrade(request, socket, head, (webSocket) => {
       this.webSocketServer.emit('connection', webSocket, request);
@@ -116,6 +115,9 @@ export class OpenTigWebSocketTransport {
     }
     const state: ClientState = { sessionId, alive: true, requestIds: new Set(), requestTimes: [] };
     this.clients.set(socket, state);
+    void this.options.auth.recordConnection(sessionId).catch(() => {
+      this.options.logger('warn', 'Could not update owner session activity.');
+    });
     socket.on('pong', () => { state.alive = true; });
     socket.on('message', (data, isBinary) => { void this.message(socket, state, data, isBinary); });
     socket.on('close', () => {

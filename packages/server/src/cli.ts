@@ -5,9 +5,9 @@ import { renderUnicodeCompact } from 'uqr';
 import { normalizeRuntimePlatform } from '../../../src/main/runtime/create-runtime';
 import { openRuntimeRepositoryPath } from '../../../src/main/runtime/registerServerCommands';
 import { redactSensitiveText } from '../../../src/shared/redaction';
-import { DEFAULT_SERVER_PORT_SCAN_COUNT } from '../../../src/shared/server-config';
 import { openSystemBrowser } from './browser';
 import { CliUsageError, cliHelp, parseCliArguments, type OpenTigCliConfig } from './cli-config';
+import { manageCliService } from './cli-service';
 import {
   clearRuntimeState,
   loadOrCreateAdminToken,
@@ -47,6 +47,7 @@ export async function runCli(args: readonly string[], environment: NodeJS.Proces
       io.out(OPEN_TIG_APP_VERSION);
       return 0;
     }
+    if (config.command === 'service') return await manageCliService(config, io);
     if (config.command === 'pair') return await pairRunningServer(config, io);
     return await startCliServer(config, io);
   } catch (error) {
@@ -67,7 +68,7 @@ async function startCliServer(config: OpenTigCliConfig, io: CliIo): Promise<numb
   const log = new CliServerLog(paths.serverLog);
   let server: RunningOpenTigServer | null = null;
   try {
-    server = await startWithPortFallback({
+    server = await startOnConfiguredPort({
       appVersion: OPEN_TIG_APP_VERSION,
       auth: { consumeDesktopSecret: () => false },
       settingsPath: paths.settings,
@@ -78,7 +79,7 @@ async function startCliServer(config: OpenTigCliConfig, io: CliIo): Promise<numb
       mode: 'web-access',
       logger: log.logger,
       admin: { token: adminToken, instanceId },
-    }, config.port, config.portExplicit);
+    }, config.port);
 
     await writeRuntimeState(paths.runtimeState, {
       pid: process.pid,
@@ -150,23 +151,16 @@ async function pairRunningServer(config: OpenTigCliConfig, io: CliIo): Promise<n
   return 0;
 }
 
-export async function startWithPortFallback(
+export async function startOnConfiguredPort(
   baseConfig: Omit<OpenTigServerConfig, 'port'>,
-  preferredPort: number,
-  explicitPort: boolean,
+  port: number,
 ): Promise<RunningOpenTigServer> {
-  const attempts = explicitPort ? 1 : DEFAULT_SERVER_PORT_SCAN_COUNT;
-  let lastConflict: unknown;
-  for (let offset = 0; offset < attempts && preferredPort + offset <= 65_535; offset += 1) {
-    try {
-      return await runOpenTigServer({ ...baseConfig, port: preferredPort + offset });
-    } catch (error) {
-      if (!isAddressInUse(error)) throw error;
-      lastConflict = error;
-    }
+  try {
+    return await runOpenTigServer({ ...baseConfig, port });
+  } catch (error) {
+    if (isAddressInUse(error)) throw new Error(`Port ${port} is already in use. Stop that process or select another port with --port.`, { cause: error });
+    throw error;
   }
-  if (explicitPort) throw new Error(`Port ${preferredPort} is already in use.`, { cause: lastConflict });
-  throw new Error(`No available port was found in ${preferredPort}-${Math.min(65_535, preferredPort + attempts - 1)}.`, { cause: lastConflict });
 }
 
 export function publicOrigin(host: string, port: number): string {
@@ -222,8 +216,13 @@ function waitForShutdown(server: RunningOpenTigServer, afterClose: () => Promise
 }
 
 function printPairing(pairing: { url: string; expiresAt: string }, io: CliIo, includeQr: boolean): void {
+  const token = new URLSearchParams(new URL(pairing.url).hash.slice(1)).get('token');
   io.out(`One-time pairing link (expires ${pairing.expiresAt}):`);
   io.out(pairing.url);
+  if (token) {
+    io.out('Pairing code (paste at /pair on this OpenTig server):');
+    io.out(token);
+  }
   if (includeQr) io.out(renderUnicodeCompact(pairing.url, { border: 2 }));
 }
 

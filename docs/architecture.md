@@ -26,14 +26,15 @@ Paired browser ──────────────────┤
 Electron main
 ├─ starts, probes, restarts, and stops the utility server
 ├─ installs the private desktop owner session
-├─ changes loopback/LAN exposure and exact external HTTPS origins
+├─ changes loopback/LAN exposure
 └─ provides narrow native-only capabilities through preload
 
 Node CLI
 ├─ parses host/port/home/presentation options
 ├─ invokes the same runOpenTigServer factory in-process
 ├─ writes credential-free runtime identity for `opentig pair`
-└─ owns browser launch and SIGINT/SIGTERM shutdown
+├─ owns browser launch and SIGINT/SIGTERM shutdown
+└─ optionally installs the exact build as a Linux systemd user service
 ```
 
 The desktop window loads the production client from the local server origin.
@@ -101,7 +102,7 @@ Desktop paths are derived from Electron's user-data directory:
 | --- | --- |
 | `settings.json` | repositories, preferences, and application state |
 | `ai-log.jsonl` | local AI-operation log |
-| `desktop-server.json` | persisted loopback/LAN exposure and external HTTPS origin |
+| `desktop-server.json` | persisted loopback/LAN exposure |
 | `server/` | hash-only owner-session authentication state |
 | `logs/server.log` | redacted rotating utility-server log |
 
@@ -116,18 +117,19 @@ The headless CLI derives equivalent paths from `~/.opentig` or `--home`:
 | `logs/server.log` | redacted rotating CLI server log |
 
 Pairing secrets are memory-only. Persistent session files contain credential
-hashes rather than usable cookie values, plus non-secret session metadata used
-to distinguish the private desktop session, paired browsers, and migrated
-legacy sessions. Live connection counts are derived from WebSockets and are not
-persisted.
+hashes rather than usable cookie values, plus editable device names and
+non-secret browser, OS, device, proxy/IP, and last-connection metadata. The
+private desktop session is replaced on a new desktop bootstrap instead of
+accumulating duplicates. Live connection counts are derived from WebSockets and
+are not persisted.
 
 ## Native capability boundary
 
 The preload bridge is intentionally narrow. It exposes only capabilities that a
 normal browser cannot reproduce safely: selecting/relocating a directory,
 reading explicit file paths or an image from the desktop clipboard, revealing a
-path in Explorer, title-bar theming, zoom, and desktop-only listener/external-
-origin controls. Authenticated session inventory and browser revocation remain
+path in Explorer, title-bar theming, zoom, and desktop-only listener controls.
+Authenticated session inventory, renaming, and browser revocation remain
 ordinary server APIs, so the same management view works in desktop and browser.
 
 Confirmation dialogs live in React. Cross-platform deletion moves content to

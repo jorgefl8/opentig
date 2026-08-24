@@ -4,12 +4,12 @@ import {
   IconBrowser,
   IconCopy,
   IconDeviceDesktop,
+  IconEdit,
   IconLink,
   IconLoader4,
   IconQrcode,
   IconShieldLock,
   IconTrash,
-  IconWorld,
 } from '@tabler/icons-react';
 import { renderSVG } from 'uqr';
 import { sileo } from 'sileo';
@@ -21,7 +21,7 @@ import { Dialog, DialogClose, DialogDescription, DialogPopup, DialogTitle } from
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { writeClipboardText } from '@/lib/browser-capabilities';
-import { loadOwnerSessions, revokeAllBrowserSessions, revokeOwnerSession } from './owner-sessions';
+import { loadOwnerSessions, renameOwnerSession, revokeAllBrowserSessions, revokeOwnerSession } from './owner-sessions';
 
 const STATUS_COPY: Record<OpenTigWebAccessStatus['serverState'], string> = {
   starting: 'Starting',
@@ -31,7 +31,7 @@ const STATUS_COPY: Record<OpenTigWebAccessStatus['serverState'], string> = {
   stopped: 'Stopped',
 };
 
-type Action = 'toggle' | 'external' | 'pair' | 'revoke-all' | `revoke:${string}`;
+type Action = 'toggle' | 'pair' | 'revoke-all' | `rename:${string}` | `revoke:${string}`;
 
 export function WebAccessSettings() {
   const desktopApi = window.opentigDesktop?.webAccess;
@@ -39,11 +39,12 @@ export function WebAccessSettings() {
   const [sessions, setSessions] = useState<OpenTigOwnerSession[]>([]);
   const [pairing, setPairing] = useState<OpenTigPairingLink | null>(null);
   const [selectedEndpoint, setSelectedEndpoint] = useState('');
-  const [externalInput, setExternalInput] = useState('');
   const [loading, setLoading] = useState(true);
   const [action, setAction] = useState<Action | null>(null);
   const [enableWarningOpen, setEnableWarningOpen] = useState(false);
   const [revokeTarget, setRevokeTarget] = useState<OpenTigOwnerSession | 'all' | null>(null);
+  const [renameTarget, setRenameTarget] = useState<OpenTigOwnerSession | null>(null);
+  const [renameInput, setRenameInput] = useState('');
 
   const loadState = useCallback(async (showErrors = true) => {
     const results = await Promise.allSettled([
@@ -69,13 +70,12 @@ export function WebAccessSettings() {
     else if (!status.pairingEndpoints.includes(selectedEndpoint)) setSelectedEndpoint(status.pairingEndpoints[0]!);
   }, [selectedEndpoint, status]);
 
-  useEffect(() => {
-    setExternalInput(status?.externalOrigin ?? '');
-  }, [status?.externalOrigin]);
-
   const qrSource = useMemo(() => pairing
     ? `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(renderSVG(pairing.url, { ecc: 'M', border: 2 }))}`
     : null, [pairing]);
+  const pairingCode = useMemo(() => pairing
+    ? new URLSearchParams(new URL(pairing.url).hash.slice(1)).get('token') ?? ''
+    : '', [pairing]);
 
   if (loading && (!desktopApi || !status) && sessions.length === 0) {
     return <div className="web-access-loading" role="status"><IconLoader4 className="animate-spin" /> Loading web access…</div>;
@@ -97,21 +97,6 @@ export function WebAccessSettings() {
     }
   };
 
-  const saveExternalOrigin = async () => {
-    if (!desktopApi) return;
-    setAction('external');
-    setPairing(null);
-    try {
-      const next = await desktopApi.setExternalOrigin(externalInput.trim() || null);
-      setStatus(next);
-      setExternalInput(next.externalOrigin ?? '');
-      sileo.success({ title: next.externalOrigin ? 'External URL saved' : 'External URL removed' });
-    } catch (error) {
-      sileo.error({ title: 'Could not save external URL', description: messageOf(error) });
-      await loadState(false);
-    } finally { setAction(null); }
-  };
-
   const createLink = async () => {
     if (!desktopApi) return;
     setAction('pair');
@@ -126,6 +111,28 @@ export function WebAccessSettings() {
       await writeClipboardText(pairing.url);
       sileo.success({ title: 'Pairing link copied' });
     } catch (error) { sileo.error({ title: 'Could not copy pairing link', description: messageOf(error) }); }
+  };
+
+  const copyCode = async () => {
+    if (!pairingCode) return;
+    try {
+      await writeClipboardText(pairingCode);
+      sileo.success({ title: 'Pairing code copied' });
+    } catch (error) { sileo.error({ title: 'Could not copy pairing code', description: messageOf(error) }); }
+  };
+
+  const renameConfirmed = async () => {
+    const target = renameTarget;
+    const name = renameInput.trim();
+    if (!target || !name || name.length > 64) return;
+    setAction(`rename:${target.id}`);
+    try {
+      await renameOwnerSession(target.id, name);
+      sileo.success({ title: 'Device renamed' });
+      await loadState(false);
+      setRenameTarget(null);
+    } catch (error) { sileo.error({ title: 'Could not rename device', description: messageOf(error) }); }
+    finally { setAction(null); }
   };
 
   const revokeConfirmed = async () => {
@@ -184,24 +191,10 @@ export function WebAccessSettings() {
 
         {status.restartError && <div className="web-access-error" role="alert"><IconAlertTriangle /> <span>{status.restartError}</span></div>}
 
-        <div className="web-access-external settings-field-separated">
-          <div className="settings-field-label">
-            <strong>External HTTPS URL</strong>
-            <span>For a local reverse proxy or tunnel pointing to {status.localEndpoint ?? 'this OpenTig server'}.</span>
-          </div>
-          <div className="web-access-external-control">
-            <div className="web-access-input-wrap"><IconWorld /><input value={externalInput} onChange={(event) => setExternalInput(event.target.value)} placeholder="https://opentig.example.com" aria-label="External HTTPS URL" disabled={action !== null} /></div>
-            <Button variant="outline" size="sm" onClick={() => void saveExternalOrigin()} disabled={action !== null || externalInput.trim() === (status.externalOrigin ?? '')}>
-              {action === 'external' && <IconLoader4 className="animate-spin" />} Save
-            </Button>
-          </div>
-          <p className="web-access-hint">The tunnel can target localhost; LAN access does not need to be enabled. Only this exact HTTPS origin is trusted.</p>
-        </div>
-
         <div className="web-access-actions settings-field-separated">
           <div className="settings-field-label">
             <strong>Pair a browser</strong>
-            <span>Create a five-minute, one-use link for this computer, a LAN device, or the configured external URL.</span>
+            <span>Create a five-minute, one-use link for this computer or a LAN device. The pairing code also works through a same-machine HTTPS tunnel.</span>
           </div>
           <Button size="sm" onClick={() => void createLink()} disabled={!ready || !selectedEndpoint || action !== null}>
             {action === 'pair' ? <IconLoader4 className="animate-spin" /> : <IconLink />} Create pairing link
@@ -227,6 +220,10 @@ export function WebAccessSettings() {
               <Tooltip><TooltipTrigger render={<code className="web-access-link" />}>{pairing.url}</TooltipTrigger><TooltipContent side="bottom">One-use link; do not share publicly</TooltipContent></Tooltip>
               <Tooltip><TooltipTrigger render={<Button variant="outline" size="icon-sm" aria-label="Copy pairing link" onClick={() => void copyLink()} />}><IconCopy /></TooltipTrigger><TooltipContent>Copy pairing link</TooltipContent></Tooltip>
             </div>
+            <div className="web-access-link-row">
+              <Tooltip><TooltipTrigger render={<code className="web-access-link" />}>{pairingCode}</TooltipTrigger><TooltipContent side="bottom">Paste this code on any /pair page served by this OpenTig instance</TooltipContent></Tooltip>
+              <Tooltip><TooltipTrigger render={<Button variant="outline" size="icon-sm" aria-label="Copy pairing code" onClick={() => void copyCode()} />}><IconCopy /></TooltipTrigger><TooltipContent>Copy pairing code</TooltipContent></Tooltip>
+            </div>
           </div>
         )}
       </>}
@@ -251,13 +248,19 @@ export function WebAccessSettings() {
               </div>
               <div className="web-access-session-copy">
                 <div><strong>{session.clientName}</strong>{session.current && <Badge variant="secondary">This session</Badge>}{session.kind === 'desktop' && <Badge variant="outline">Desktop</Badge>}</div>
-                <span>{session.connected ? `Connected${session.connectionCount > 1 ? ` (${session.connectionCount} tabs)` : ''}` : 'Not currently connected'} · Created {formatDate(session.createdAt)}{session.remoteAddress ? ` · ${session.remoteAddress}` : ''}</span>
+                <span>{session.connected ? `Connected${session.connectionCount > 1 ? ` (${session.connectionCount} tabs)` : ''}` : session.lastConnectedAt ? `Last connected ${formatDate(session.lastConnectedAt)}` : 'Not yet connected'} · {session.browser && session.os ? `${session.browser} on ${session.os}` : session.browser ?? session.os ?? deviceLabel(session.deviceType)}{session.viaProxy ? ' · Via proxy' : ''}{session.remoteAddress ? ` · ${session.remoteAddress}` : ''}</span>
               </div>
               {session.kind !== 'desktop' && (
-                <Tooltip>
-                  <TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label={`Revoke ${session.clientName} session`} onClick={() => setRevokeTarget(session)} disabled={action !== null} />}><IconTrash /></TooltipTrigger>
-                  <TooltipContent>Revoke this browser session</TooltipContent>
-                </Tooltip>
+                <div className="web-access-session-controls">
+                  <Tooltip>
+                    <TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label={`Rename ${session.clientName}`} onClick={() => { setRenameTarget(session); setRenameInput(session.clientName); }} disabled={action !== null} />}><IconEdit /></TooltipTrigger>
+                    <TooltipContent>Rename this device</TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label={`Revoke ${session.clientName} session`} onClick={() => setRevokeTarget(session)} disabled={action !== null} />}><IconTrash /></TooltipTrigger>
+                    <TooltipContent>Revoke this browser session</TooltipContent>
+                  </Tooltip>
+                </div>
               )}
             </div>
           ))}
@@ -278,6 +281,14 @@ export function WebAccessSettings() {
           <div className="web-access-warning-actions"><DialogClose render={<Button variant="ghost" size="sm" />}>Cancel</DialogClose><Button variant="destructive" size="sm" onClick={() => void revokeConfirmed()} disabled={action !== null}>Revoke</Button></div>
         </DialogPopup>
       </Dialog>
+
+      <Dialog open={renameTarget !== null} onOpenChange={(open) => { if (!open) setRenameTarget(null); }}>
+        <DialogPopup className="web-access-warning-dialog">
+          <div className="web-access-rename-content"><DialogTitle>Rename paired device</DialogTitle><DialogDescription>Use a name that makes this browser easy to identify later.</DialogDescription></div>
+          <input className="web-access-rename-input" value={renameInput} onChange={(event) => setRenameInput(event.target.value)} maxLength={64} aria-label="Device name" autoComplete="off" />
+          <div className="web-access-warning-actions"><DialogClose render={<Button variant="ghost" size="sm" />}>Cancel</DialogClose><Button size="sm" onClick={() => void renameConfirmed()} disabled={action !== null || !renameInput.trim()}>Save</Button></div>
+        </DialogPopup>
+      </Dialog>
     </div>
   );
 }
@@ -294,6 +305,10 @@ function Endpoint({ value, muted = false }: { value: string | null; muted?: bool
 function formatDate(value: string): string {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? 'unknown' : date.toLocaleString();
+}
+
+function deviceLabel(type: OpenTigOwnerSession['deviceType']): string {
+  return type === 'desktop' ? 'Desktop browser' : type === 'mobile' ? 'Mobile browser' : type === 'tablet' ? 'Tablet browser' : type === 'bot' ? 'Automated client' : 'Unknown browser';
 }
 
 function messageOf(error: unknown): string {

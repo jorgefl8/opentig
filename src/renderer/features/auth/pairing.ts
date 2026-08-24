@@ -1,4 +1,4 @@
-export type PairingExchangeResult = 'paired' | 'missing-token' | 'rejected' | 'unavailable';
+export type PairingExchangeResult = 'paired' | 'rejected' | 'unavailable';
 
 interface PairingLocation {
   pathname: string;
@@ -12,26 +12,47 @@ interface PairingHistory {
 
 type PairingRequest = (input: string, init: RequestInit) => Promise<Pick<Response, 'ok'>>;
 
-/** Exchanges a fragment credential without ever writing it to browser storage. */
-export async function exchangePairingFragment(
-  location: PairingLocation,
-  history: PairingHistory,
-  request: PairingRequest = fetch,
-): Promise<PairingExchangeResult> {
+/** Reads and immediately removes a fragment credential without persisting it. */
+export function consumePairingFragment(location: PairingLocation, history: PairingHistory): string {
   const fragment = location.hash;
   history.replaceState(null, '', `${location.pathname}${location.search}`);
-  const token = new URLSearchParams(fragment.startsWith('#') ? fragment.slice(1) : fragment).get('token');
-  if (!token) return 'missing-token';
+  return new URLSearchParams(fragment.startsWith('#') ? fragment.slice(1) : fragment).get('token') ?? '';
+}
 
+export async function exchangePairingToken(
+  token: string,
+  clientName: string,
+  request: PairingRequest = fetch,
+): Promise<PairingExchangeResult> {
   try {
     const response = await request('/api/auth/pair', {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token }),
+      body: JSON.stringify({ token, clientName }),
     });
     return response.ok ? 'paired' : 'rejected';
   } catch {
     return 'unavailable';
   }
+}
+
+export function defaultDeviceName(userAgent: string): string {
+  const browser = ([
+    [/Edg\//, 'Edge'],
+    [/Firefox\//, 'Firefox'],
+    [/OPR\//, 'Opera'],
+    [/Chrome\//, 'Chrome'],
+    [/Safari\//, 'Safari'],
+  ] satisfies Array<[RegExp, string]>).find(([pattern]) => pattern.test(userAgent))?.[1] ?? 'Browser';
+  const os = ([
+    [/Windows NT/, 'Windows'],
+    [/Android/, 'Android'],
+    [/(?:iPhone|iPod)/, 'iPhone'],
+    [/iPad/, 'iPad'],
+    [/CrOS/, 'ChromeOS'],
+    [/Macintosh|Mac OS X/, 'Mac'],
+    [/Linux/, 'Linux'],
+  ] satisfies Array<[RegExp, string]>).find(([pattern]) => pattern.test(userAgent))?.[1];
+  return os ? `${browser} on ${os}` : browser;
 }

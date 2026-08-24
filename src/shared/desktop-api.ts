@@ -10,7 +10,6 @@ export const OPEN_TIG_DESKTOP_IPC = {
   repositoryRevealEntry: 'desktop:repository-reveal-entry',
   webAccessStatus: 'desktop:web-access-status',
   webAccessSetEnabled: 'desktop:web-access-set-enabled',
-  webAccessSetExternalOrigin: 'desktop:web-access-set-external-origin',
   webAccessCreatePairingLink: 'desktop:web-access-create-pairing-link',
 } as const;
 
@@ -21,7 +20,6 @@ export interface OpenTigWebAccessStatus {
   localEndpoint: string | null;
   networkEndpoints: string[];
   pairingEndpoints: string[];
-  externalOrigin: string | null;
   connectedSessionCount: number;
   restartError: string | null;
 }
@@ -34,7 +32,6 @@ export interface OpenTigPairingLink {
 export interface OpenTigWebAccessApi {
   getStatus(): Promise<OpenTigWebAccessStatus>;
   setEnabled(enabled: boolean): Promise<OpenTigWebAccessStatus>;
-  setExternalOrigin(origin: string | null): Promise<OpenTigWebAccessStatus>;
   createPairingLink(endpoint: string): Promise<OpenTigPairingLink>;
 }
 

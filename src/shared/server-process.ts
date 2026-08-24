@@ -16,7 +16,6 @@ export interface OpenTigUtilityConfig {
   platform: OpenTigPlatform;
   host: OpenTigServerHost;
   port: number;
-  allowedOrigins?: string[];
 }
 
 export type OpenTigUtilityControlAction =

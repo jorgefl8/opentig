@@ -103,18 +103,6 @@ describe('ServerProcessManager', () => {
     await manager.stop();
   });
 
-  it('restarts on the same loopback listener when an external HTTPS origin changes', async () => {
-    const fixture = await createFixture([readyBehavior, readyBehavior]);
-    const manager = new ServerProcessManager(fixture.options);
-    await manager.start();
-
-    await manager.restart('127.0.0.1', ['https://opentig.example.com']);
-
-    const bootstrap = fixture.children[1]!.messages[0] as Extract<OpenTigUtilityParentMessage, { type: 'bootstrap' }>;
-    expect(bootstrap.config).toMatchObject({ host: '127.0.0.1', allowedOrigins: ['https://opentig.example.com'] });
-    await manager.stop();
-  });
-
   it('uses parent-port controls without exposing pairing credentials in the bind origin', async () => {
     const fixture = await createFixture([readyBehavior]);
     const manager = new ServerProcessManager(fixture.options);

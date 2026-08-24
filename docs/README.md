@@ -16,7 +16,7 @@ retains only capabilities that ordinary browsers cannot provide.
 
 The Electron-free workspace is now the public-package candidate `@opentig/cli`.
 Its thin `opentig` executable, deterministic tarball interface, `npx`/`bunx`
-local verification, private home, pairing control, and graceful lifecycle reuse
-the desktop server factory. The production `0.1.0` npm version and unified
+local verification, private home, named-device pairing, graceful lifecycle, and
+explicit Linux systemd installer reuse the desktop server factory. The production `0.1.0` npm version and unified
 signed release pipeline are not published yet; release publication remains a
 separate delivery stage.

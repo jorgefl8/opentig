@@ -1,11 +1,12 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
+import { isIP } from 'node:net';
 import { networkInterfaces } from 'node:os';
 import type { OpenTigRuntime } from '../../../src/main/runtime/OpenTigRuntime';
 import type { OpenTigServerIdentity } from '../../../src/shared/server-protocol';
 import type { OpenTigOwnerSession } from '../../../src/shared/server-protocol';
 import { OpenTigSessionAuth } from './auth';
-import { isAllowedOrigin } from './origin';
+import { isAllowedOrigin, requestOriginIsSecure } from './origin';
 import { serveStatic, STATIC_SECURITY_HEADERS } from './static';
 
 const AUTH_BODY_LIMIT = 64 * 1024;
@@ -19,7 +20,6 @@ export interface OpenTigHttpContext {
   auth: OpenTigSessionAuth;
   identity: OpenTigServerIdentity;
   mode: OpenTigServerMode;
-  allowedOrigins: ReadonlySet<string>;
   isReady(): boolean;
   sessionConnectionCount(sessionId: string): number;
   onSessionsRevoked(sessionIds: readonly string[]): void;
@@ -87,15 +87,20 @@ async function handleRequest(context: OpenTigHttpContext, request: IncomingMessa
   }
 
   if (method === 'POST' && rawPath.startsWith('/api/')) {
-    if (!isAllowedOrigin(request, context.allowedOrigins)) return sendJson(response, 403, { error: 'Forbidden origin.' });
+    if (!isAllowedOrigin(request)) return sendJson(response, 403, { error: 'Forbidden origin.' });
 
     if (rawPath === '/api/auth/pair' || rawPath === '/api/auth/desktop') {
       const body = await readJsonObject(request, response);
       if (!body) return;
       const secure = requestOriginIsSecure(request);
-      const cookie = rawPath.endsWith('/pair')
-        ? await context.auth.exchangePairingToken(body.token, browserSessionMetadata(request), secure)
-        : await context.auth.exchangeDesktopSecret(body.secret);
+      let cookie: string | null;
+      if (rawPath.endsWith('/pair')) {
+        const clientName = normalizeClientName(body.clientName);
+        if (!clientName) return sendJson(response, 400, { error: 'Enter a device name between 1 and 64 characters.' });
+        cookie = await context.auth.exchangePairingToken(body.token, browserSessionMetadata(request, clientName), secure);
+      } else {
+        cookie = await context.auth.exchangeDesktopSecret(body.secret);
+      }
       if (!cookie) return sendJson(response, 401, { error: 'Authentication failed.' });
       return sendJson(response, 204, null, { 'Set-Cookie': cookie });
     }
@@ -123,6 +128,22 @@ async function handleRequest(context: OpenTigHttpContext, request: IncomingMessa
       return sendJson(response, 200, { revokedCount: 1 }, body.sessionId === currentSessionId
         ? { 'Set-Cookie': context.auth.expiredCookie(requestOriginIsSecure(request)) }
         : {});
+    }
+
+    if (rawPath === '/api/auth/sessions/rename') {
+      const currentSessionId = context.auth.authenticate(request.headers);
+      if (!currentSessionId) return sendJson(response, 401, { error: 'Authentication required.' });
+      const body = await readJsonObject(request, response);
+      if (!body) return;
+      if (typeof body.sessionId !== 'string' || !/^[A-Za-z0-9_-]{24}$/.test(body.sessionId)) {
+        return sendJson(response, 400, { error: 'Invalid session.' });
+      }
+      const clientName = normalizeClientName(body.clientName);
+      if (!clientName) return sendJson(response, 400, { error: 'Enter a device name between 1 and 64 characters.' });
+      if (!await context.auth.renameBrowserSession(body.sessionId, clientName)) {
+        return sendJson(response, 404, { error: 'Browser session not found.' });
+      }
+      return sendJson(response, 200, { renamed: true });
     }
 
     if (rawPath === '/api/auth/sessions/revoke-all') {
@@ -169,16 +190,28 @@ async function handleRequest(context: OpenTigHttpContext, request: IncomingMessa
   await serveStatic(context.clientRoot, request.url ?? '/', response);
 }
 
-function browserSessionMetadata(request: IncomingMessage): { clientName: string; remoteAddress: string | null } {
+function browserSessionMetadata(request: IncomingMessage, clientName: string): {
+  clientName: string;
+  deviceType: 'desktop' | 'mobile' | 'tablet' | 'bot' | 'unknown';
+  os: string | null;
+  browser: string | null;
+  remoteAddress: string | null;
+  viaProxy: boolean;
+} {
   const userAgent = Array.isArray(request.headers['user-agent']) ? undefined : request.headers['user-agent'];
+  const proxy = isLoopbackAddress(request.socket.remoteAddress) ? forwardedClientAddress(request) : null;
   return {
-    clientName: browserName(userAgent),
-    remoteAddress: normalizedRemoteAddress(request.socket.remoteAddress),
+    clientName,
+    deviceType: deviceType(userAgent),
+    os: operatingSystem(userAgent),
+    browser: browserName(userAgent),
+    remoteAddress: proxy ?? normalizedRemoteAddress(request.socket.remoteAddress),
+    viaProxy: proxy !== null || Boolean(request.headers.forwarded || request.headers['x-forwarded-host']),
   };
 }
 
-function browserName(userAgent: string | undefined): string {
-  if (!userAgent) return 'Browser';
+function browserName(userAgent: string | undefined): string | null {
+  if (!userAgent) return null;
   const candidates: Array<[RegExp, string]> = [
     [/Edg\//, 'Microsoft Edge'],
     [/Firefox\//, 'Firefox'],
@@ -186,18 +219,62 @@ function browserName(userAgent: string | undefined): string {
     [/Chrome\//, 'Chrome'],
     [/Safari\//, 'Safari'],
   ];
-  return candidates.find(([pattern]) => pattern.test(userAgent))?.[1] ?? 'Browser';
+  return candidates.find(([pattern]) => pattern.test(userAgent))?.[1] ?? null;
+}
+
+function operatingSystem(userAgent: string | undefined): string | null {
+  if (!userAgent) return null;
+  const candidates: Array<[RegExp, string]> = [
+    [/Windows NT/, 'Windows'],
+    [/Android/, 'Android'],
+    [/(?:iPhone|iPod)/, 'iOS'],
+    [/iPad/, 'iPadOS'],
+    [/CrOS/, 'ChromeOS'],
+    [/Macintosh|Mac OS X/, 'macOS'],
+    [/Linux/, 'Linux'],
+  ];
+  return candidates.find(([pattern]) => pattern.test(userAgent))?.[1] ?? null;
+}
+
+function deviceType(userAgent: string | undefined): 'desktop' | 'mobile' | 'tablet' | 'bot' | 'unknown' {
+  if (!userAgent) return 'unknown';
+  if (/bot|crawler|spider|headless/i.test(userAgent)) return 'bot';
+  if (/iPad|Tablet/i.test(userAgent)) return 'tablet';
+  if (/Mobile|iPhone|iPod|Android/i.test(userAgent)) return 'mobile';
+  if (/Windows NT|Macintosh|CrOS|Linux/i.test(userAgent)) return 'desktop';
+  return 'unknown';
+}
+
+function forwardedClientAddress(request: IncomingMessage): string | null {
+  const cloudflare = singleHeader(request.headers['cf-connecting-ip']);
+  if (cloudflare) return normalizedRemoteAddress(cloudflare);
+  const forwardedFor = singleHeader(request.headers['x-forwarded-for'])?.split(',', 1)[0]?.trim();
+  return normalizedRemoteAddress(forwardedFor);
+}
+
+function singleHeader(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
 }
 
 function normalizedRemoteAddress(value: string | undefined): string | null {
   if (!value) return null;
   const normalized = value.startsWith('::ffff:') ? value.slice('::ffff:'.length) : value;
-  return normalized.slice(0, 128);
+  return isIP(normalized) ? normalized : null;
 }
 
-function requestOriginIsSecure(request: IncomingMessage): boolean {
-  const origin = request.headers.origin;
-  return typeof origin === 'string' && origin.toLowerCase().startsWith('https://');
+function normalizeClientName(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const name = value.trim();
+  return name.length > 0 && name.length <= 64 && ![...name].some((character) => {
+    const code = character.charCodeAt(0);
+    return code <= 31 || code === 127;
+  }) ? name : null;
+}
+
+function isLoopbackAddress(value: string | undefined): boolean {
+  if (!value) return false;
+  const normalized = value.startsWith('::ffff:') ? value.slice('::ffff:'.length) : value;
+  return normalized === '::1' || normalized.startsWith('127.');
 }
 
 async function handleLocalAdminPair(
