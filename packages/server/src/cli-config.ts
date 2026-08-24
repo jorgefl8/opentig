@@ -63,6 +63,9 @@ export function parseCliArguments(
       continue;
     }
     if (!commandSelected && cwdValue === undefined && isCommand(argument)) {
+      if (argument === 'help' || argument === 'version') {
+        return terminalConfig(argument, currentDirectory, homeDirectory);
+      }
       command = argument;
       commandSelected = true;
       continue;
@@ -125,12 +128,16 @@ Usage:
   opentig serve [cwd] [options]
   opentig pair [--home <path>]
   opentig service <install|status|uninstall> [cwd] [options]
+  opentig help
+  opentig version
 
 Commands:
-  start       Start OpenTig and open the one-time pairing link (default)
-  serve       Start OpenTig without opening a browser
-  pair        Create a new one-time link for a running server
-  service     Explicitly manage startup at boot (Linux/systemd)
+  start       Start OpenTig and open the one-use pairing link (default)
+  serve       Start OpenTig without opening a browser; ideal for servers
+  pair        Print a fresh five-minute code/link for a running server
+  service     Explicitly manage startup at boot (Linux/systemd only)
+  help        Show this help
+  version     Show the OpenTig version
 
 Options:
   --host <host>       Listener host (default: ${DEFAULT_SERVER_HOST}; env: OPENTIG_HOST)
@@ -140,7 +147,29 @@ Options:
   -h, --help          Show help
   -v, --version       Show version
 
-Node.js 24 or later and Git are required. Plain bunx launches this Node executable.`;
+Examples:
+  opentig .
+  opentig serve /srv/repos/project
+  opentig serve /srv/repos/project --host 127.0.0.1 --port 6767
+  opentig pair --home ~/.opentig
+  opentig service install /srv/repos/project --host 127.0.0.1 --port 6767
+  opentig service status
+
+Pairing and remote access:
+  Every browser needs the printed five-minute, one-use code. Open the printed
+  link, or open https://your-domain.example/pair and paste the code there.
+  A same-machine HTTPS tunnel can point directly to http://127.0.0.1:6767;
+  no public URL needs to be registered in OpenTig. Use --host 0.0.0.0 only for
+  a trusted LAN/VPN; pairing is still required.
+
+Runtime behavior:
+  The configured port is never changed silently. If it is occupied, OpenTig
+  exits and asks you to stop that process or choose another --port. SIGINT and
+  SIGTERM shut the server down cleanly. npx and bunx never install a service;
+  service installation is an explicit Linux/systemd action.
+
+Requirements: Node.js 24 or later and Git. Plain bunx launches the Node shebang;
+running OpenTig with the Bun runtime itself is not supported.`;
 }
 
 function terminalConfig(command: 'help' | 'version', cwd: string, home: string): OpenTigCliConfig {
@@ -162,8 +191,8 @@ function splitOption(argument: string): [string, string | undefined] {
     : [argument.slice(0, separator), argument.slice(separator + 1)];
 }
 
-function isCommand(value: string): value is 'start' | 'serve' | 'pair' | 'service' {
-  return value === 'start' || value === 'serve' || value === 'pair' || value === 'service';
+function isCommand(value: string): value is OpenTigCliCommand {
+  return value === 'start' || value === 'serve' || value === 'pair' || value === 'service' || value === 'help' || value === 'version';
 }
 
 function isServiceAction(value: string): value is OpenTigServiceAction {

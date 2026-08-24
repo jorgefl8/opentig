@@ -16,6 +16,8 @@ bunx @opentig/cli@0.1.0 serve /path/to/repository
 
 Plain `bunx` installs and launches the Node-shebang executable. Running OpenTig under the Bun runtime itself is not supported.
 
+Run `opentig help` or `opentig --help` for commands, examples, pairing/tunnel guidance, service management, environment variables, and shutdown behavior.
+
 `opentig [cwd]` and `opentig start [cwd]` open the pairing link in the system browser. `opentig serve [cwd]` keeps browser launch disabled and prints a terminal QR. Use `--no-browser` to suppress presentation in start mode. A missing or non-Git CWD is not created and does not stop the server; choose a valid server-side path in the UI.
 
 The default listener is `127.0.0.1:6767`. If the configured port is busy, OpenTig fails instead of silently changing a reverse-proxy target. Configuration precedence is command line, `OPENTIG_HOST` / `OPENTIG_PORT` / `OPENTIG_HOME`, then defaults. Data lives under `~/.opentig` unless `--home` is supplied. Settings, hash-only sessions, AI history, credential-free runtime identity, a private same-host admin credential, and rotating logs are kept there.

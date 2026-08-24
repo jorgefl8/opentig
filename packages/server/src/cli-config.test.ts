@@ -57,5 +57,7 @@ describe('OpenTig CLI arguments', () => {
   it('recognizes help and version without evaluating unrelated environment', () => {
     expect(parseCliArguments(['--help'], { OPENTIG_PORT: 'bad' }, cwd, home).command).toBe('help');
     expect(parseCliArguments(['--version'], { OPENTIG_PORT: 'bad' }, cwd, home).command).toBe('version');
+    expect(parseCliArguments(['help'], { OPENTIG_PORT: 'bad' }, cwd, home).command).toBe('help');
+    expect(parseCliArguments(['version'], { OPENTIG_PORT: 'bad' }, cwd, home).command).toBe('version');
   });
 });
