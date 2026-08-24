@@ -108,10 +108,12 @@ code, link, and terminal QR. The credential is stored separately with private fi
 permissions; `runtime.json` never contains it.
 
 Running the package with `npx` or `bunx` never changes startup configuration.
-On Linux/systemd, `opentig service install [cwd]` explicitly stages the exact
-package version under the selected OpenTig home, installs a user unit, starts it,
-and enables user lingering for reboot persistence. Use `opentig service status`
-or `opentig service uninstall`; service management for Windows and macOS is not
+On Linux/systemd, `opentig service install` explicitly stages the exact package
+version under the selected OpenTig home, installs a project-independent user
+unit, starts it, and enables user lingering for reboot persistence. Repositories
+are added, opened, and switched exclusively from the web UI; neither CLI startup
+nor the service is scoped to a repository. Use `opentig service status` or
+`opentig service uninstall`; service management for Windows and macOS is not
 included yet.
 
 ## Connection behavior

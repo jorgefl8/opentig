@@ -6,17 +6,18 @@ const cwd = path.resolve('C:/work/project');
 const home = path.resolve('C:/Users/test');
 
 describe('OpenTig CLI arguments', () => {
-  it('defaults to start with the current directory and loopback endpoint', () => {
+  it('defaults to a project-independent server on the loopback endpoint', () => {
     expect(parseCliArguments([], {}, cwd, home)).toEqual({
-      command: 'start', serviceAction: null, cwd, host: '127.0.0.1', port: 6767,
+      command: 'start', serviceAction: null, host: '127.0.0.1', port: 6767,
       home: path.join(home, '.opentig'), openBrowser: true,
     });
   });
 
-  it('supports implicit cwd, explicit start, and headless serve', () => {
-    expect(parseCliArguments(['repo'], {}, cwd, home)).toMatchObject({ command: 'start', cwd: path.join(cwd, 'repo'), openBrowser: true });
-    expect(parseCliArguments(['start', 'repo', '--no-browser'], {}, cwd, home)).toMatchObject({ command: 'start', openBrowser: false });
-    expect(parseCliArguments(['serve', 'repo'], {}, cwd, home)).toMatchObject({ command: 'serve', cwd: path.join(cwd, 'repo'), openBrowser: false });
+  it('supports explicit start and headless serve without a repository argument', () => {
+    expect(parseCliArguments(['start', '--no-browser'], {}, cwd, home)).toMatchObject({ command: 'start', openBrowser: false });
+    expect(parseCliArguments(['serve'], {}, cwd, home)).toMatchObject({ command: 'serve', openBrowser: false });
+    expect(() => parseCliArguments(['repo'], {}, cwd, home)).toThrow('Add and select repositories from the OpenTig web UI');
+    expect(() => parseCliArguments(['serve', 'repo'], {}, cwd, home)).toThrow('Add and select repositories from the OpenTig web UI');
   });
 
   it('gives flags precedence over environment', () => {
@@ -34,14 +35,14 @@ describe('OpenTig CLI arguments', () => {
   });
 
   it('parses explicit service management without silently enabling it', () => {
-    expect(parseCliArguments(['service', 'install', 'repo'], {}, cwd, home)).toMatchObject({
-      command: 'service', serviceAction: 'install', cwd: path.join(cwd, 'repo'), host: '127.0.0.1', port: 6767,
+    expect(parseCliArguments(['service', 'install'], {}, cwd, home)).toMatchObject({
+      command: 'service', serviceAction: 'install', host: '127.0.0.1', port: 6767,
     });
     expect(parseCliArguments(['service', 'status', '--home', 'state'], {}, cwd, home)).toMatchObject({
       command: 'service', serviceAction: 'status', home: path.join(cwd, 'state'),
     });
     expect(() => parseCliArguments(['service'], {}, cwd, home)).toThrow('requires install, status, or uninstall');
-    expect(() => parseCliArguments(['service', 'uninstall', 'repo'], {}, cwd, home)).toThrow('does not accept a working directory');
+    expect(() => parseCliArguments(['service', 'install', 'repo'], {}, cwd, home)).toThrow('Add and select repositories from the OpenTig web UI');
   });
 
   it.each([
@@ -49,7 +50,7 @@ describe('OpenTig CLI arguments', () => {
     [['--port', '70000'], 'Port'],
     [['--host', 'bad host'], 'host'],
     [['--wat'], 'Missing value'],
-    [['one', 'two'], 'Only one'],
+    [['one'], 'Unexpected argument'],
   ] as const)('rejects invalid input %j', (args, message) => {
     expect(() => parseCliArguments(args, {}, cwd, home)).toThrow(message);
   });

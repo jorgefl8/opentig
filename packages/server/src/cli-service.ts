@@ -50,7 +50,6 @@ async function installService(config: OpenTigCliConfig, unitPath: string, io: Se
   const unit = renderSystemdUnit({
     nodeExecutable: process.execPath,
     cliEntrypoint: path.join(target, 'dist', 'bin.mjs'),
-    cwd: config.cwd,
     host: config.host,
     port: config.port,
     home: config.home,
@@ -95,7 +94,6 @@ async function uninstallService(home: string, unitPath: string, io: ServiceIo): 
 export function renderSystemdUnit(input: {
   nodeExecutable: string;
   cliEntrypoint: string;
-  cwd: string;
   host: string;
   port: number;
   home: string;
@@ -104,7 +102,6 @@ export function renderSystemdUnit(input: {
     input.nodeExecutable,
     input.cliEntrypoint,
     'serve',
-    input.cwd,
     '--host', input.host,
     '--port', String(input.port),
     '--home', input.home,
@@ -115,7 +112,7 @@ After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=${systemdQuote(input.cwd)}
+WorkingDirectory=${systemdQuote(input.home)}
 ExecStart=${args.map(systemdQuote).join(' ')}
 Environment=NODE_ENV=production
 Restart=on-failure

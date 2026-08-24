@@ -8,7 +8,6 @@ export type OpenTigServiceAction = 'install' | 'status' | 'uninstall';
 export interface OpenTigCliConfig {
   command: OpenTigCliCommand;
   serviceAction: OpenTigServiceAction | null;
-  cwd: string;
   host: string;
   port: number;
   home: string;
@@ -33,7 +32,6 @@ export function parseCliArguments(
   let command: OpenTigCliCommand = 'start';
   let commandSelected = false;
   let serviceAction: OpenTigServiceAction | null = null;
-  let cwdValue: string | undefined;
   let hostValue: string | undefined;
   let portValue: string | undefined;
   let homeValue: string | undefined;
@@ -46,8 +44,8 @@ export function parseCliArguments(
       optionsEnded = true;
       continue;
     }
-    if (!optionsEnded && (argument === '--help' || argument === '-h')) return terminalConfig('help', currentDirectory, homeDirectory);
-    if (!optionsEnded && (argument === '--version' || argument === '-v')) return terminalConfig('version', currentDirectory, homeDirectory);
+    if (!optionsEnded && (argument === '--help' || argument === '-h')) return terminalConfig('help', homeDirectory);
+    if (!optionsEnded && (argument === '--version' || argument === '-v')) return terminalConfig('version', homeDirectory);
     if (!optionsEnded && argument === '--no-browser') {
       noBrowser = true;
       continue;
@@ -62,9 +60,9 @@ export function parseCliArguments(
       else throw new CliUsageError(`Unknown option: ${name}.`);
       continue;
     }
-    if (!commandSelected && cwdValue === undefined && isCommand(argument)) {
+    if (!commandSelected && isCommand(argument)) {
       if (argument === 'help' || argument === 'version') {
-        return terminalConfig(argument, currentDirectory, homeDirectory);
+        return terminalConfig(argument, homeDirectory);
       }
       command = argument;
       commandSelected = true;
@@ -74,18 +72,13 @@ export function parseCliArguments(
       serviceAction = argument;
       continue;
     }
-    if (cwdValue !== undefined) throw new CliUsageError('Only one working directory may be supplied.');
-    cwdValue = argument;
+    throw new CliUsageError(`Unexpected argument: ${argument}. Add and select repositories from the OpenTig web UI.`);
   }
 
-  if (command === 'pair' && cwdValue !== undefined) throw new CliUsageError('The pair command does not accept a working directory.');
   if (command === 'pair' && (hostValue !== undefined || portValue !== undefined || noBrowser)) {
     throw new CliUsageError('The pair command only accepts --home.');
   }
   if (command === 'service' && serviceAction === null) throw new CliUsageError('The service command requires install, status, or uninstall.');
-  if (command === 'service' && serviceAction !== 'install' && cwdValue !== undefined) {
-    throw new CliUsageError(`The service ${serviceAction} command does not accept a working directory.`);
-  }
   if (command === 'service' && serviceAction !== 'install' && (hostValue !== undefined || portValue !== undefined || noBrowser)) {
     throw new CliUsageError(`The service ${serviceAction} command only accepts --home.`);
   }
@@ -94,7 +87,6 @@ export function parseCliArguments(
     return {
       command,
       serviceAction: null,
-      cwd: path.resolve(currentDirectory),
       host: DEFAULT_SERVER_HOST,
       port: DEFAULT_SERVER_PORT,
       home: resolvePath(homeValue ?? environment.OPENTIG_HOME ?? path.join(homeDirectory, '.opentig'), currentDirectory, 'home'),
@@ -106,12 +98,10 @@ export function parseCliArguments(
   const environmentPort = environment.OPENTIG_PORT;
   const port = validatePort(portValue ?? environmentPort ?? String(DEFAULT_SERVER_PORT));
   const home = resolvePath(homeValue ?? environment.OPENTIG_HOME ?? path.join(homeDirectory, '.opentig'), currentDirectory, 'home');
-  const cwd = resolvePath(cwdValue ?? currentDirectory, currentDirectory, 'working directory');
 
   return {
     command,
     serviceAction,
-    cwd,
     host,
     port,
     home,
@@ -123,11 +113,11 @@ export function cliHelp(version: string): string {
   return `OpenTig ${version}
 
 Usage:
-  opentig [cwd] [options]
-  opentig start [cwd] [options]
-  opentig serve [cwd] [options]
+  opentig [options]
+  opentig start [options]
+  opentig serve [options]
   opentig pair [--home <path>]
-  opentig service <install|status|uninstall> [cwd] [options]
+  opentig service <install|status|uninstall> [options]
   opentig help
   opentig version
 
@@ -148,12 +138,16 @@ Options:
   -v, --version       Show version
 
 Examples:
-  opentig .
-  opentig serve /srv/repos/project
-  opentig serve /srv/repos/project --host 127.0.0.1 --port 6767
+  opentig start
+  opentig serve
+  opentig serve --host 127.0.0.1 --port 6767
   opentig pair --home ~/.opentig
-  opentig service install /srv/repos/project --host 127.0.0.1 --port 6767
+  opentig service install --host 127.0.0.1 --port 6767
   opentig service status
+
+Repositories:
+  Add, open, and switch server-side Git repositories from the web UI. The CLI
+  starts one OpenTig instance and is never scoped to a project directory.
 
 Pairing and remote access:
   Every browser needs the printed five-minute, one-use code. Open the printed
@@ -172,11 +166,10 @@ Requirements: Node.js 24 or later and Git. Plain bunx launches the Node shebang;
 running OpenTig with the Bun runtime itself is not supported.`;
 }
 
-function terminalConfig(command: 'help' | 'version', cwd: string, home: string): OpenTigCliConfig {
+function terminalConfig(command: 'help' | 'version', home: string): OpenTigCliConfig {
   return {
     command,
     serviceAction: null,
-    cwd: path.resolve(cwd),
     host: DEFAULT_SERVER_HOST,
     port: DEFAULT_SERVER_PORT,
     home: path.resolve(home, '.opentig'),

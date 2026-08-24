@@ -1,9 +1,7 @@
 import { execFile } from 'node:child_process';
-import { stat } from 'node:fs/promises';
 import process from 'node:process';
 import { renderUnicodeCompact } from 'uqr';
 import { normalizeRuntimePlatform } from '../../../src/main/runtime/create-runtime';
-import { openRuntimeRepositoryPath } from '../../../src/main/runtime/registerServerCommands';
 import { redactSensitiveText } from '../../../src/shared/redaction';
 import { openSystemBrowser } from './browser';
 import { CliUsageError, cliHelp, parseCliArguments, type OpenTigCliConfig } from './cli-config';
@@ -91,8 +89,6 @@ async function startCliServer(config: OpenTigCliConfig, io: CliIo): Promise<numb
       startedAt: new Date().toISOString(),
     });
     log.logger('info', `OpenTig CLI ready on ${publicOrigin(config.host, server.port)}.`);
-    await tryOpenInitialRepository(server, config.cwd, io);
-
     const origin = publicOrigin(config.host, server.port);
     const pairing = rewritePairingOrigin(server.createPairingLink(), origin);
     io.out(`OpenTig ${server.appVersion} is ready.`);
@@ -166,16 +162,6 @@ export async function startOnConfiguredPort(
 export function publicOrigin(host: string, port: number): string {
   const displayHost = host === '0.0.0.0' ? '127.0.0.1' : host === '::' ? '::1' : host;
   return `http://${displayHost.includes(':') ? `[${displayHost}]` : displayHost}:${port}`;
-}
-
-async function tryOpenInitialRepository(server: RunningOpenTigServer, cwd: string, io: CliIo): Promise<void> {
-  try {
-    const details = await stat(cwd);
-    if (!details.isDirectory()) throw new Error('path is not a directory');
-    await openRuntimeRepositoryPath(server.runtime.services, cwd);
-  } catch {
-    io.error(`Working directory was not opened because it is missing or is not a Git worktree: ${cwd}`);
-  }
 }
 
 async function refuseActiveRuntime(runtimeStatePath: string): Promise<void> {

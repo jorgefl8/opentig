@@ -32,6 +32,7 @@ Electron main
 Node CLI
 ├─ parses host/port/home/presentation options
 ├─ invokes the same runOpenTigServer factory in-process
+├─ leaves repository discovery and selection to the shared web UI
 ├─ writes credential-free runtime identity for `opentig pair`
 ├─ owns browser launch and SIGINT/SIGTERM shutdown
 └─ optionally installs the exact build as a Linux systemd user service

@@ -203,12 +203,12 @@ Only install the tools you intend to use. GitHub functionality requires `gh`; AI
 Pin an exact version for repeatable or production use:
 
 ```powershell
-npx --yes @opentig/cli@0.1.0 C:\repos\project
-npx --yes @opentig/cli@0.1.0 serve C:\repos\project
-bunx @opentig/cli@0.1.0 serve C:\repos\project
+npx --yes @opentig/cli@0.1.0
+npx --yes @opentig/cli@0.1.0 serve
+bunx @opentig/cli@0.1.0 serve
 ```
 
-`opentig [cwd]` and `opentig start [cwd]` start the server and open its one-time pairing link. `opentig serve [cwd]` does not open a browser. An invalid or missing working directory is not created; the server remains available without opening it. After a global installation, a new device can request a fresh link from the same OS account with:
+`opentig` and `opentig start` start the server and open its one-time pairing link. `opentig serve` does not open a browser. The CLI starts one project-independent OpenTig instance: repositories are added, opened, and switched exclusively from the web UI using paths on the server. After a global installation, a new device can request a fresh link from the same OS account with:
 
 ```powershell
 opentig pair --home C:\path\to\opentig-home
@@ -221,12 +221,12 @@ Options are `--host`, `--port`, `--home`, and `--no-browser`, with `OPENTIG_HOST
 Running through `npx` or `bunx` never installs startup persistence. On a Linux server with systemd, opt in explicitly after installing the CLI globally or invoking its executable:
 
 ```bash
-opentig service install /path/to/repository --host 127.0.0.1 --port 6767
+opentig service install --host 127.0.0.1 --port 6767
 opentig service status
 opentig service uninstall
 ```
 
-Installation stages the exact CLI/client version under the selected OpenTig home, enables a user service and user lingering, and keeps the listener on loopback unless `--host` says otherwise. Windows and macOS service installers are not included yet.
+Installation stages the exact CLI/client version under the selected OpenTig home, uses that private home as its stable service working directory, enables a user service and user lingering, and keeps the listener on loopback unless `--host` says otherwise. It never binds the service to a repository. Windows and macOS service installers are not included yet.
 
 For local tarball testing on Windows:
 
