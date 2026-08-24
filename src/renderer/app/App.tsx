@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -223,7 +223,7 @@ export default function App() {
     return () => { active = false; };
   }, [filesTreeStates]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const overlay = (navigator as Navigator & {
       windowControlsOverlay?: {
         visible: boolean;
@@ -238,6 +238,7 @@ export default function App() {
         rect,
         viewportWidth: window.innerWidth,
         mac: navigator.userAgent.includes('Mac OS X'),
+        desktop: Boolean(window.opentigDesktop),
       });
       document.documentElement.style.setProperty('--window-controls-inset', `${inset.right}px`);
       document.documentElement.style.setProperty('--window-controls-inset-left', `${inset.left}px`);
