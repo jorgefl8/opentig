@@ -88,6 +88,33 @@ describe('persistent owner authentication', () => {
     await afterRevoke.close();
   });
 
+  it('migrates existing unlabelled sessions without losing authentication', async () => {
+    const directory = await authDirectory();
+    const first = await OpenTigSessionAuth.open({
+      source: new OneTimeBootstrapAuthSource({ desktopSecret: 'desktop-secret' }),
+      dataDirectory: directory,
+    });
+    const pairing = first.createPairingToken();
+    const cookie = await first.exchangePairingToken(pairing.token);
+    await first.close();
+
+    const sessionsPath = path.join(directory, 'sessions.json');
+    const current = JSON.parse(await readFile(sessionsPath, 'utf8')) as { sessions: Array<Record<string, unknown>> };
+    await writeFile(sessionsPath, JSON.stringify({
+      version: 1,
+      sessions: current.sessions.map(({ id, digest, createdAt }) => ({ id, digest, createdAt })),
+    }));
+
+    const migrated = await OpenTigSessionAuth.open({
+      source: new OneTimeBootstrapAuthSource({ desktopSecret: 'next-secret' }),
+      dataDirectory: directory,
+    });
+    expect(migrated.authenticate({ cookie: cookieValue(cookie!) })).toBeTruthy();
+    expect(migrated.sessions()).toEqual([expect.objectContaining({ kind: 'legacy', clientName: 'Existing owner session' })]);
+    expect(JSON.parse(await readFile(sessionsPath, 'utf8'))).toEqual(expect.objectContaining({ version: 2 }));
+    await migrated.close();
+  });
+
   it('revokes every persisted owner session without affecting pairing rotation', async () => {
     const directory = await authDirectory();
     const auth = await OpenTigSessionAuth.open({

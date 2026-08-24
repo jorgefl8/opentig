@@ -54,6 +54,7 @@ export class OpenTigServer {
       mode: options.mode ?? 'desktop',
       allowedOrigins,
       isReady: () => this.ready,
+      sessionConnectionCount: (sessionId) => this.webSockets.connectionCount(sessionId),
       onSessionsRevoked: (sessionIds) => this.disconnectSessions(sessionIds),
       logger: this.logger,
       ...(options.admin ? {

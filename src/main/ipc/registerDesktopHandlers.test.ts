@@ -37,6 +37,8 @@ function fixture() {
       actualPort: 6767,
       localEndpoint: 'http://127.0.0.1:6767',
       networkEndpoints: ['http://192.168.1.50:6767'],
+      pairingEndpoints: ['http://127.0.0.1:6767'],
+      externalOrigin: null,
       connectedSessionCount: 1,
       restartError: null,
     })),
@@ -46,11 +48,23 @@ function fixture() {
       actualPort: 6767,
       localEndpoint: 'http://127.0.0.1:6767',
       networkEndpoints: ['http://192.168.1.50:6767'],
+      pairingEndpoints: ['http://127.0.0.1:6767'],
+      externalOrigin: null,
+      connectedSessionCount: 1,
+      restartError: null,
+    })),
+    setExternalOrigin: vi.fn(async (externalOrigin: string | null) => ({
+      enabled: false,
+      serverState: 'ready' as const,
+      actualPort: 6767,
+      localEndpoint: 'http://127.0.0.1:6767',
+      networkEndpoints: ['http://192.168.1.50:6767'],
+      pairingEndpoints: ['http://127.0.0.1:6767', ...(externalOrigin ? [externalOrigin] : [])],
+      externalOrigin,
       connectedSessionCount: 1,
       restartError: null,
     })),
     createPairingLink: vi.fn(async () => ({ url: 'http://192.168.1.50:6767/pair#token=secret', expiresAt: '2030-01-01T00:00:00.000Z' })),
-    revokeAllSessions: vi.fn(async () => ({ revokedCount: 2 })),
   };
   return { host, webAccess };
 }
@@ -105,6 +119,8 @@ describe('desktop IPC boundary', () => {
       value: expect.objectContaining({ enabled: true }),
     }));
     expect(value.webAccess.setEnabled).toHaveBeenCalledWith(true);
+    await expect(invoke(OPEN_TIG_DESKTOP_IPC.webAccessSetExternalOrigin, 'https://opentig.example.com')).resolves.toEqual(expect.objectContaining({ ok: true }));
+    expect(value.webAccess.setExternalOrigin).toHaveBeenCalledWith('https://opentig.example.com');
     await expect(invoke(OPEN_TIG_DESKTOP_IPC.webAccessSetEnabled, 'yes')).resolves.toEqual(expect.objectContaining({ ok: false }));
     await expect(invoke(OPEN_TIG_DESKTOP_IPC.webAccessCreatePairingLink, 'http://192.168.1.50:6767')).resolves.toEqual(expect.objectContaining({
       ok: true,

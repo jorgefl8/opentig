@@ -74,6 +74,14 @@ export class OpenTigWebSocketTransport {
     return new Set([...this.clients.values()].map((client) => client.sessionId)).size;
   }
 
+  connectionCount(sessionId: string): number {
+    let count = 0;
+    for (const client of this.clients.values()) {
+      if (client.sessionId === sessionId) count += 1;
+    }
+    return count;
+  }
+
   publish(event: OpenTigRuntimeEvent): void {
     this.broadcast({ type: 'event', event });
   }

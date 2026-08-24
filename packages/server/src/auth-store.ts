@@ -2,7 +2,7 @@ import { createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypt
 import { chmod, mkdir, open, readFile, rename, rm } from 'node:fs/promises';
 import path from 'node:path';
 
-const AUTH_DATA_VERSION = 1;
+const AUTH_DATA_VERSION = 2;
 const SECRET_BYTES = 32;
 const SECRET_FILE = 'server-secret';
 const SESSIONS_FILE = 'sessions.json';
@@ -10,6 +10,9 @@ const SESSIONS_FILE = 'sessions.json';
 interface PersistedSession {
   id: string;
   digest: string;
+  kind: 'desktop' | 'browser' | 'legacy';
+  clientName: string;
+  remoteAddress: string | null;
   createdAt: string;
 }
 
@@ -22,6 +25,14 @@ export interface IssuedSession {
   id: string;
   token: string;
 }
+
+export interface SessionMetadata {
+  kind: 'desktop' | 'browser';
+  clientName: string;
+  remoteAddress: string | null;
+}
+
+export type StoredSession = Omit<PersistedSession, 'digest'>;
 
 /** Atomic, hash-only persistence for owner sessions. */
 export class PersistentAuthStore {
@@ -42,9 +53,9 @@ export class PersistentAuthStore {
     await chmod(resolved, 0o700);
     const secret = await loadOrCreateSecret(path.join(resolved, SECRET_FILE));
     const dataPath = path.join(resolved, SESSIONS_FILE);
-    const sessions = await loadSessions(dataPath);
+    const { sessions, migrated } = await loadSessions(dataPath);
     const store = new PersistentAuthStore(resolved, secret, sessions);
-    if (!(await exists(dataPath))) await store.writeSessions([]);
+    if (migrated || !(await exists(dataPath))) await store.writeSessions(sessions);
     return store;
   }
 
@@ -65,11 +76,14 @@ export class PersistentAuthStore {
     return sessionId;
   }
 
-  issue(): Promise<IssuedSession> {
+  issue(metadata: SessionMetadata): Promise<IssuedSession> {
     const token = randomBytes(32).toString('base64url');
     const session: PersistedSession = {
       id: randomBytes(18).toString('base64url'),
       digest: this.digestCredential(token),
+      kind: metadata.kind,
+      clientName: metadata.clientName,
+      remoteAddress: metadata.remoteAddress,
       createdAt: new Date().toISOString(),
     };
     return this.mutate((sessions) => ({
@@ -93,6 +107,30 @@ export class PersistentAuthStore {
 
   revokeAll(): Promise<string[]> {
     return this.mutate((sessions) => ({ next: [], result: sessions.map((session) => session.id) }));
+  }
+
+  revokeSession(sessionId: string): Promise<boolean> {
+    return this.mutate((sessions) => {
+      const next = sessions.filter((session) => session.id !== sessionId);
+      return { next: next.length === sessions.length ? sessions : next, result: next.length !== sessions.length };
+    });
+  }
+
+  revokeBrowserSessions(): Promise<string[]> {
+    return this.mutate((sessions) => {
+      const revoked = sessions.filter((session) => session.kind !== 'desktop').map((session) => session.id);
+      return { next: revoked.length ? sessions.filter((session) => session.kind === 'desktop') : sessions, result: revoked };
+    });
+  }
+
+  listSessions(): StoredSession[] {
+    return this.sessions.map((session) => ({
+      id: session.id,
+      kind: session.kind,
+      clientName: session.clientName,
+      remoteAddress: session.remoteAddress,
+      createdAt: session.createdAt,
+    }));
   }
 
   hasSession(sessionId: string): boolean {
@@ -167,14 +205,26 @@ async function loadOrCreateSecret(filePath: string): Promise<Buffer> {
   }
 }
 
-async function loadSessions(filePath: string): Promise<PersistedSession[]> {
+async function loadSessions(filePath: string): Promise<{ sessions: PersistedSession[]; migrated: boolean }> {
   try {
     const parsed = JSON.parse(await readFile(filePath, 'utf8')) as unknown;
+    if (isLegacyAuthData(parsed)) {
+      await chmod(filePath, 0o600);
+      return {
+        sessions: parsed.sessions.map((session) => ({
+          ...session,
+          kind: 'legacy',
+          clientName: 'Existing owner session',
+          remoteAddress: null,
+        })),
+        migrated: true,
+      };
+    }
     if (!isAuthData(parsed)) throw corrupt('session data');
     await chmod(filePath, 0o600);
-    return parsed.sessions.map((session) => ({ ...session }));
+    return { sessions: parsed.sessions.map((session) => ({ ...session })), migrated: false };
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { sessions: [], migrated: false };
     if (error instanceof SyntaxError) throw corrupt('session data');
     throw error;
   }
@@ -184,6 +234,32 @@ function isAuthData(value: unknown): value is PersistedAuthData {
   const data = value as Partial<PersistedAuthData> | null;
   return Boolean(data
     && data.version === AUTH_DATA_VERSION
+    && Array.isArray(data.sessions)
+    && data.sessions.every((session) => (
+      session
+      && typeof session.id === 'string'
+      && /^[A-Za-z0-9_-]{24}$/.test(session.id)
+      && typeof session.digest === 'string'
+      && /^[A-Za-z0-9_-]{43}$/.test(session.digest)
+      && (session.kind === 'desktop' || session.kind === 'browser' || session.kind === 'legacy')
+      && typeof session.clientName === 'string'
+      && session.clientName.length > 0
+      && session.clientName.length <= 160
+      && (session.remoteAddress === null || (typeof session.remoteAddress === 'string' && session.remoteAddress.length <= 128))
+      && typeof session.createdAt === 'string'
+      && !Number.isNaN(Date.parse(session.createdAt))
+    )));
+}
+
+interface LegacyAuthData {
+  version: 1;
+  sessions: Array<Pick<PersistedSession, 'id' | 'digest' | 'createdAt'>>;
+}
+
+function isLegacyAuthData(value: unknown): value is LegacyAuthData {
+  const data = value as Partial<LegacyAuthData> | null;
+  return Boolean(data
+    && data.version === 1
     && Array.isArray(data.sessions)
     && data.sessions.every((session) => (
       session

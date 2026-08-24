@@ -776,6 +776,14 @@
   .web-access-error svg { width: 15px; height: 15px; flex: none; }
   .web-access-actions { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
   .web-access-actions .settings-field-label { min-width: 0; }
+  .web-access-external { display: grid; gap: 10px; }
+  .web-access-external-control { display: flex; max-width: 520px; align-items: center; gap: 8px; }
+  .web-access-input-wrap { display: flex; min-width: 0; flex: 1; align-items: center; gap: 7px; border: 1px solid var(--input); border-radius: var(--radius-md); background: var(--background); padding: 0 9px; }
+  .web-access-input-wrap:focus-within { border-color: var(--ring); box-shadow: 0 0 0 2px color-mix(in oklch, var(--ring) 20%, transparent); }
+  .web-access-input-wrap svg { width: 15px; height: 15px; flex: none; color: var(--muted-foreground); }
+  .web-access-input-wrap input { min-width: 0; flex: 1; background: transparent; padding: 7px 0; font-size: 11px; outline: none; }
+  .web-access-input-wrap input:disabled { cursor: not-allowed; opacity: .55; }
+  .web-access-hint { margin: 8px 0 0; color: var(--muted-foreground); font-size: 10px; line-height: 1.45; }
   .web-access-endpoint-select { display: grid; max-width: 380px; gap: 5px; margin-top: 10px; color: var(--muted-foreground); font-size: 10px; }
   .web-access-pairing { display: grid; grid-template-columns: minmax(0, 1fr) 112px; gap: 12px; margin-top: 14px; border: 1px solid color-mix(in oklch, var(--primary) 35%, var(--border)); border-radius: var(--radius-lg); background: color-mix(in oklch, var(--primary) 6%, var(--background)); padding: 12px; }
   .web-access-pairing-copy { display: flex; min-width: 0; align-items: flex-start; gap: 8px; }
@@ -786,6 +794,17 @@
   .web-access-pairing img { width: 112px; height: 112px; grid-row: span 2; border-radius: var(--radius-md); background: white; padding: 5px; }
   .web-access-link-row { display: flex; min-width: 0; align-self: end; align-items: center; gap: 6px; }
   .web-access-link { min-width: 0; flex: 1; overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--background); padding: 6px 7px; font-size: 9.5px; text-overflow: ellipsis; white-space: nowrap; }
+  .web-access-session-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+  .web-access-session-list { display: grid; gap: 7px; margin-top: 12px; }
+  .web-access-session { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--background); padding: 9px 9px 9px 11px; }
+  .web-access-session-icon { display: grid; width: 29px; height: 29px; place-items: center; border-radius: 50%; background: var(--muted); color: var(--muted-foreground); }
+  .web-access-session-icon.connected { background: color-mix(in oklch, var(--diff-added) 15%, var(--muted)); color: var(--diff-added); }
+  .web-access-session-icon svg { width: 15px; height: 15px; }
+  .web-access-session-copy { display: grid; min-width: 0; gap: 3px; }
+  .web-access-session-copy > div { display: flex; min-width: 0; align-items: center; gap: 6px; }
+  .web-access-session-copy strong { overflow: hidden; font-size: 11.5px; text-overflow: ellipsis; white-space: nowrap; }
+  .web-access-session-copy > span { overflow: hidden; color: var(--muted-foreground); font-size: 9.5px; text-overflow: ellipsis; white-space: nowrap; }
+  .web-access-empty-session { border: 1px dashed var(--border); border-radius: var(--radius-lg); padding: 14px; color: var(--muted-foreground); font-size: 10.5px; text-align: center; }
   .web-access-warning-dialog { width: min(520px, calc(100vw - 2rem)); }
   .web-access-warning-content { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 11px; padding: 18px 18px 16px; }
   .web-access-warning-content > svg { width: 20px; height: 20px; color: var(--destructive); }

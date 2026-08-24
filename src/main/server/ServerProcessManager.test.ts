@@ -18,7 +18,6 @@ import {
 const temporaryDirectories: string[] = [];
 const PAIRING_TOKEN = 'p'.repeat(43);
 const PAIRING_EXPIRES_AT = new Date(Date.now() + 5 * 60 * 1_000).toISOString();
-const DESKTOP_COOKIE = `opentig_session=${'d'.repeat(43)}; Path=/; HttpOnly; SameSite=Strict`;
 
 afterEach(async () => {
   await Promise.all(temporaryDirectories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })));
@@ -104,6 +103,18 @@ describe('ServerProcessManager', () => {
     await manager.stop();
   });
 
+  it('restarts on the same loopback listener when an external HTTPS origin changes', async () => {
+    const fixture = await createFixture([readyBehavior, readyBehavior]);
+    const manager = new ServerProcessManager(fixture.options);
+    await manager.start();
+
+    await manager.restart('127.0.0.1', ['https://opentig.example.com']);
+
+    const bootstrap = fixture.children[1]!.messages[0] as Extract<OpenTigUtilityParentMessage, { type: 'bootstrap' }>;
+    expect(bootstrap.config).toMatchObject({ host: '127.0.0.1', allowedOrigins: ['https://opentig.example.com'] });
+    await manager.stop();
+  });
+
   it('uses parent-port controls without exposing pairing credentials in the bind origin', async () => {
     const fixture = await createFixture([readyBehavior]);
     const manager = new ServerProcessManager(fixture.options);
@@ -114,9 +125,9 @@ describe('ServerProcessManager', () => {
       url: `http://192.168.1.50:6767/pair#token=${PAIRING_TOKEN}`,
       expiresAt: PAIRING_EXPIRES_AT,
     });
-    await expect(manager.revokeAllSessions()).resolves.toEqual({
-      revokedCount: 4,
-      desktopCookie: DESKTOP_COOKIE,
+    await expect(manager.createPairingLink('https://opentig.example.com')).resolves.toEqual({
+      url: `https://opentig.example.com/pair#token=${PAIRING_TOKEN}`,
+      expiresAt: PAIRING_EXPIRES_AT,
     });
     await manager.stop();
   });
@@ -193,9 +204,7 @@ class FakeUtility extends EventEmitter {
   private respondToControl(message: Extract<OpenTigUtilityParentMessage, { type: 'control' }>): void {
     const result = message.action === 'status'
       ? { action: 'status' as const, connectedSessionCount: 3 }
-      : message.action === 'create-pairing-link'
-        ? { action: 'create-pairing-link' as const, url: `http://127.0.0.1:6767/pair#token=${PAIRING_TOKEN}`, expiresAt: PAIRING_EXPIRES_AT }
-        : { action: 'revoke-all-sessions' as const, revokedCount: 4, desktopCookie: DESKTOP_COOKIE };
+      : { action: 'create-pairing-link' as const, url: `http://127.0.0.1:6767/pair#token=${PAIRING_TOKEN}`, expiresAt: PAIRING_EXPIRES_AT };
     queueMicrotask(() => this.emit('message', { type: 'control-result', requestId: message.requestId, ok: true, result }));
   }
 

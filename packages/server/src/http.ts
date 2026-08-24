@@ -3,6 +3,7 @@ import { timingSafeEqual } from 'node:crypto';
 import { networkInterfaces } from 'node:os';
 import type { OpenTigRuntime } from '../../../src/main/runtime/OpenTigRuntime';
 import type { OpenTigServerIdentity } from '../../../src/shared/server-protocol';
+import type { OpenTigOwnerSession } from '../../../src/shared/server-protocol';
 import { OpenTigSessionAuth } from './auth';
 import { isAllowedOrigin } from './origin';
 import { serveStatic, STATIC_SECURITY_HEADERS } from './static';
@@ -20,6 +21,7 @@ export interface OpenTigHttpContext {
   mode: OpenTigServerMode;
   allowedOrigins: ReadonlySet<string>;
   isReady(): boolean;
+  sessionConnectionCount(sessionId: string): number;
   onSessionsRevoked(sessionIds: readonly string[]): void;
   logger: OpenTigServerLogger;
   admin?: {
@@ -53,12 +55,31 @@ async function handleRequest(context: OpenTigHttpContext, request: IncomingMessa
     });
   }
   if (method === 'GET' && rawPath === '/api/auth/descriptor') {
+    const currentSessionId = context.auth.authenticate(request.headers);
     return sendJson(response, 200, {
       ...context.auth.descriptor(),
-      authenticated: context.auth.authenticate(request.headers) !== null,
+      authenticated: currentSessionId !== null,
+      currentSessionKind: currentSessionId
+        ? context.auth.sessions().find((session) => session.id === currentSessionId)?.kind ?? null
+        : null,
       mode: context.mode,
       ...context.identity,
     });
+  }
+
+  if (method === 'GET' && rawPath === '/api/auth/sessions') {
+    const currentSessionId = context.auth.authenticate(request.headers);
+    if (!currentSessionId) return sendJson(response, 401, { error: 'Authentication required.' });
+    const sessions: OpenTigOwnerSession[] = context.auth.sessions().map((session) => {
+      const connectionCount = context.sessionConnectionCount(session.id);
+      return {
+        ...session,
+        connected: connectionCount > 0,
+        connectionCount,
+        current: session.id === currentSessionId,
+      };
+    });
+    return sendJson(response, 200, { sessions });
   }
 
   if (method === 'POST' && rawPath === '/api/admin/pair') {
@@ -71,8 +92,9 @@ async function handleRequest(context: OpenTigHttpContext, request: IncomingMessa
     if (rawPath === '/api/auth/pair' || rawPath === '/api/auth/desktop') {
       const body = await readJsonObject(request, response);
       if (!body) return;
+      const secure = requestOriginIsSecure(request);
       const cookie = rawPath.endsWith('/pair')
-        ? await context.auth.exchangePairingToken(body.token)
+        ? await context.auth.exchangePairingToken(body.token, browserSessionMetadata(request), secure)
         : await context.auth.exchangeDesktopSecret(body.secret);
       if (!cookie) return sendJson(response, 401, { error: 'Authentication failed.' });
       return sendJson(response, 204, null, { 'Set-Cookie': cookie });
@@ -82,7 +104,35 @@ async function handleRequest(context: OpenTigHttpContext, request: IncomingMessa
       const sessionId = await context.auth.revoke(request.headers);
       if (!sessionId) return sendJson(response, 401, { error: 'Authentication required.' });
       context.onSessionsRevoked([sessionId]);
-      return sendJson(response, 204, null, { 'Set-Cookie': context.auth.expiredCookie() });
+      return sendJson(response, 204, null, { 'Set-Cookie': context.auth.expiredCookie(requestOriginIsSecure(request)) });
+    }
+
+
+    if (rawPath === '/api/auth/sessions/revoke') {
+      const currentSessionId = context.auth.authenticate(request.headers);
+      if (!currentSessionId) return sendJson(response, 401, { error: 'Authentication required.' });
+      const body = await readJsonObject(request, response);
+      if (!body) return;
+      if (typeof body.sessionId !== 'string' || !/^[A-Za-z0-9_-]{24}$/.test(body.sessionId)) {
+        return sendJson(response, 400, { error: 'Invalid session.' });
+      }
+      if (!await context.auth.revokeBrowserSession(body.sessionId)) {
+        return sendJson(response, 404, { error: 'Browser session not found.' });
+      }
+      context.onSessionsRevoked([body.sessionId]);
+      return sendJson(response, 200, { revokedCount: 1 }, body.sessionId === currentSessionId
+        ? { 'Set-Cookie': context.auth.expiredCookie(requestOriginIsSecure(request)) }
+        : {});
+    }
+
+    if (rawPath === '/api/auth/sessions/revoke-all') {
+      const currentSessionId = context.auth.authenticate(request.headers);
+      if (!currentSessionId) return sendJson(response, 401, { error: 'Authentication required.' });
+      const revoked = await context.auth.revokeBrowserSessions();
+      context.onSessionsRevoked(revoked);
+      return sendJson(response, 200, { revokedCount: revoked.length }, revoked.includes(currentSessionId)
+        ? { 'Set-Cookie': context.auth.expiredCookie(requestOriginIsSecure(request)) }
+        : {});
     }
 
     if (rawPath === '/api/auth/revoke-all') {
@@ -117,6 +167,37 @@ async function handleRequest(context: OpenTigHttpContext, request: IncomingMessa
   if (rawPath.startsWith('/api/')) return sendJson(response, 404, { error: 'Not found.' });
   if (method !== 'GET') return sendJson(response, 405, { error: 'Method not allowed.' }, { Allow: 'GET' });
   await serveStatic(context.clientRoot, request.url ?? '/', response);
+}
+
+function browserSessionMetadata(request: IncomingMessage): { clientName: string; remoteAddress: string | null } {
+  const userAgent = Array.isArray(request.headers['user-agent']) ? undefined : request.headers['user-agent'];
+  return {
+    clientName: browserName(userAgent),
+    remoteAddress: normalizedRemoteAddress(request.socket.remoteAddress),
+  };
+}
+
+function browserName(userAgent: string | undefined): string {
+  if (!userAgent) return 'Browser';
+  const candidates: Array<[RegExp, string]> = [
+    [/Edg\//, 'Microsoft Edge'],
+    [/Firefox\//, 'Firefox'],
+    [/OPR\//, 'Opera'],
+    [/Chrome\//, 'Chrome'],
+    [/Safari\//, 'Safari'],
+  ];
+  return candidates.find(([pattern]) => pattern.test(userAgent))?.[1] ?? 'Browser';
+}
+
+function normalizedRemoteAddress(value: string | undefined): string | null {
+  if (!value) return null;
+  const normalized = value.startsWith('::ffff:') ? value.slice('::ffff:'.length) : value;
+  return normalized.slice(0, 128);
+}
+
+function requestOriginIsSecure(request: IncomingMessage): boolean {
+  const origin = request.headers.origin;
+  return typeof origin === 'string' && origin.toLowerCase().startsWith('https://');
 }
 
 async function handleLocalAdminPair(

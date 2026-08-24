@@ -5,6 +5,19 @@ import protocolMetadata from './protocol-version.json';
 export const OPEN_TIG_PROTOCOL_VERSION = protocolMetadata.protocolVersion;
 export const OPEN_TIG_SESSION_COOKIE = 'opentig_session';
 
+export type OpenTigOwnerSessionKind = 'desktop' | 'browser' | 'legacy';
+
+export interface OpenTigOwnerSession {
+  id: string;
+  kind: OpenTigOwnerSessionKind;
+  clientName: string;
+  remoteAddress: string | null;
+  createdAt: string;
+  connected: boolean;
+  connectionCount: number;
+  current: boolean;
+}
+
 export type OpenTigClientMessage =
   | { type: 'request'; id: string; command: string; args: unknown[] }
   | { type: 'ping' };

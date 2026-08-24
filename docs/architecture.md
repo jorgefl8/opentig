@@ -26,7 +26,7 @@ Paired browser ──────────────────┤
 Electron main
 ├─ starts, probes, restarts, and stops the utility server
 ├─ installs the private desktop owner session
-├─ changes loopback/LAN exposure
+├─ changes loopback/LAN exposure and exact external HTTPS origins
 └─ provides narrow native-only capabilities through preload
 
 Node CLI
@@ -101,7 +101,7 @@ Desktop paths are derived from Electron's user-data directory:
 | --- | --- |
 | `settings.json` | repositories, preferences, and application state |
 | `ai-log.jsonl` | local AI-operation log |
-| `desktop-server.json` | persisted loopback/LAN exposure preference |
+| `desktop-server.json` | persisted loopback/LAN exposure and external HTTPS origin |
 | `server/` | hash-only owner-session authentication state |
 | `logs/server.log` | redacted rotating utility-server log |
 
@@ -116,15 +116,19 @@ The headless CLI derives equivalent paths from `~/.opentig` or `--home`:
 | `logs/server.log` | redacted rotating CLI server log |
 
 Pairing secrets are memory-only. Persistent session files contain credential
-hashes, not usable cookie values.
+hashes rather than usable cookie values, plus non-secret session metadata used
+to distinguish the private desktop session, paired browsers, and migrated
+legacy sessions. Live connection counts are derived from WebSockets and are not
+persisted.
 
 ## Native capability boundary
 
 The preload bridge is intentionally narrow. It exposes only capabilities that a
 normal browser cannot reproduce safely: selecting/relocating a directory,
 reading explicit file paths or an image from the desktop clipboard, revealing a
-path in Explorer, title-bar theming, zoom, and desktop-only Network Access
-controls.
+path in Explorer, title-bar theming, zoom, and desktop-only listener/external-
+origin controls. Authenticated session inventory and browser revocation remain
+ordinary server APIs, so the same management view works in desktop and browser.
 
 Confirmation dialogs live in React. Cross-platform deletion moves content to
 the operating system Trash from the server runtime.

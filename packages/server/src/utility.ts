@@ -52,6 +52,7 @@ async function start(message: Partial<OpenTigUtilityParentMessage> | null): Prom
       host: config.host,
       port: config.port,
       mode: config.host === '127.0.0.1' ? 'desktop' : 'web-access',
+      ...(config.allowedOrigins ? { allowedOrigins: config.allowedOrigins } : {}),
       logger: (level, value) => console[level](`[server] ${redactSensitiveText(value)}`),
     });
     parentPort!.postMessage({
@@ -78,8 +79,6 @@ async function handleControl(message: { type?: unknown; requestId?: unknown; act
       parentPort!.postMessage({ type: 'control-result', requestId, ok: true, result: { action: 'status', ...server.getStatus() } });
     } else if (message.action === 'create-pairing-link') {
       parentPort!.postMessage({ type: 'control-result', requestId, ok: true, result: { action: 'create-pairing-link', ...server.createPairingLink() } });
-    } else if (message.action === 'revoke-all-sessions') {
-      parentPort!.postMessage({ type: 'control-result', requestId, ok: true, result: { action: 'revoke-all-sessions', ...await server.revokeAllSessions() } });
     } else {
       throw new Error('Unknown OpenTig server control action.');
     }
@@ -135,6 +134,10 @@ function validateBootstrap(message: Partial<OpenTigUtilityParentMessage> | null)
   if (!['win32', 'darwin', 'linux', 'other'].includes(String(config.platform))) throw invalid('platform');
   if (config.host !== '127.0.0.1' && config.host !== '0.0.0.0') throw invalid('host');
   if (!Number.isInteger(config.port) || Number(config.port) < 1 || Number(config.port) > 65_535) throw invalid('port');
+  if (config.allowedOrigins !== undefined && (!Array.isArray(config.allowedOrigins)
+    || config.allowedOrigins.some((origin) => typeof origin !== 'string' || origin.length > 2_048))) {
+    throw invalid('allowed origins');
+  }
   return config as OpenTigUtilityConfig;
 }
 

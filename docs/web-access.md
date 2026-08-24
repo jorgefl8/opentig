@@ -1,41 +1,57 @@
-# Network access and browser pairing
+# Web access, tunnels, and browser pairing
 
-OpenTig can expose its existing desktop backend to trusted browsers on the same
-LAN or VPN. Enabling Network Access does not start a second server: Electron
-restarts the same supervised utility listener on network interfaces.
+OpenTig can connect browsers on the same computer, on a trusted LAN/VPN, or
+through a local HTTPS reverse proxy such as Cloudflare Tunnel. These are three
+addresses for the same authenticated server/runtime/client; no duplicate
+headless backend is started.
 
 The headless `@opentig/cli` package exposes the same backend directly. It binds
 to loopback by default; `--host` is required for another interface and prints
 the same owner-authority warning.
 
-## Enable access
+## Choose how the browser connects
 
-1. Open **Settings → Network access** in the desktop application.
-2. Enable **Network access** and accept the owner-level authority warning.
-3. Select the address that the pairing link should use when more than one
-   network interface is available.
-4. Choose **Create pairing link**.
-5. Open the link or scan its QR code within five minutes.
+Open **Settings → Web access** in the desktop application, choose the address
+for the pairing link, create it, then open the link or scan its QR within five
+minutes.
 
-The setting is desktop-only. A browser cannot expose the listener, mint a link
-through Electron, or change desktop server configuration.
-
-Loopback is the default:
+For a browser on the same PC, select the always-available loopback endpoint:
 
 ```text
 http://127.0.0.1:<actual-port>
 ```
 
-When enabled, the listener binds to `0.0.0.0` and the settings pane lists usable
-LAN endpoints. Port `6767` is preferred; the displayed actual port is
-authoritative if OpenTig had to select another one.
+For another device on a trusted LAN or VPN, enable **LAN access**, accept the
+owner-authority warning, and select a listed interface address. The same
+supervised utility restarts on `0.0.0.0`; it does not start a second server.
+
+For Cloudflare Tunnel or another reverse proxy running on the OpenTig PC:
+
+1. Leave **LAN access** disabled so the listener remains on loopback.
+2. Point the tunnel origin service to `http://127.0.0.1:<actual-port>`.
+3. Save the exact public origin under **External HTTPS URL**, for example
+   `https://opentig.example.com`.
+4. Select that HTTPS address and create the pairing link.
+
+The external URL must be an HTTPS origin without credentials, path, query, or
+fragment. OpenTig allows that exact origin for authenticated HTTP mutations and
+WebSocket upgrades and marks the resulting session cookie `Secure`. It does not
+trust arbitrary `Host`, `Origin`, or forwarded-protocol values. LAN exposure is
+not required for a tunnel process running on the same computer.
+
+Listener, external-origin, and Electron pairing controls are desktop-only. An
+authenticated browser can inspect and revoke sessions, but cannot rebind the
+desktop listener or change its trusted external origin.
+
+Port `6767` is preferred; the displayed actual port is authoritative if OpenTig
+had to select another one.
 
 ## Pairing and sessions
 
 The pairing URL has this form:
 
 ```text
-http://<trusted-address>:<port>/pair#token=<one-use-secret>
+<http-or-https-origin>/pair#token=<one-use-secret>
 ```
 
 The secret is carried in the URL fragment, so it is not sent in the initial HTTP
@@ -43,10 +59,11 @@ request. The client exchanges it once, clears the fragment, and receives a
 host-only `HttpOnly`, `SameSite=Strict` owner-session cookie. Generating another
 pairing link invalidates the previous unconsumed link.
 
-Owner sessions persist across server restarts. Only credential hashes are stored
-under the server data directory. The desktop has its own private session,
-established with a one-use bootstrap secret sent over Electron's private utility
-message channel.
+Owner sessions persist across server restarts. Only credential hashes and
+non-secret display metadata are stored under the server data directory. The
+desktop has its own private session, established with a one-use bootstrap secret
+sent over Electron's private utility message channel. It is labelled separately
+from paired browser sessions.
 
 ## Authority model
 
@@ -63,9 +80,11 @@ Do not pair a device or person that should not receive this authority.
 
 ## Revoke access
 
-Choose **Revoke all sessions** in the desktop settings pane to disconnect every
-paired browser immediately. OpenTig replaces its private desktop session so the
-desktop can continue without reopening the application.
+Open **Settings → Web access** in either desktop OpenTig or an authenticated
+browser. The session list shows the private desktop session, each paired browser,
+its creation time, observed peer address, current browser, and live WebSocket
+connection/tab count. Revoke one browser or all browser sessions. The private
+desktop session is not revoked by these controls.
 
 A revoked browser shows fresh-pairing instructions. Create a new one-use link
 from the desktop to admit it again.
@@ -94,11 +113,12 @@ again.
 
 ## Diagnostics
 
-The desktop Network Access pane reports:
+The desktop Web Access pane reports:
 
 - server state and actual port;
 - local and detected network endpoints;
-- connected owner-session count;
+- local, LAN, and configured external pairing targets;
+- individual owner sessions and live connection counts;
 - restart errors.
 
 Additional checks:
@@ -120,10 +140,11 @@ log and `/readyz` response.
 
 ## Safe deployment
 
-Treat raw Network Access as trusted-network functionality:
+Treat raw LAN access as trusted-network functionality:
 
 - use a trusted LAN or VPN;
-- for access across networks, use an HTTPS reverse proxy or SSH tunnel;
+- for access across networks, configure an exact external HTTPS URL and use a
+  reverse proxy/tunnel with its own access policy or MFA;
 - restrict the port with the host firewall;
 - never forward the raw HTTP port to the public Internet;
 - avoid untrusted Wi-Fi because non-loopback HTTP is not encrypted;

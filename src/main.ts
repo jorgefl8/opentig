@@ -26,6 +26,7 @@ import { startGlobalDoubleControlShortcut } from './main/shortcuts/GlobalDoubleC
 import { DesktopWindowState } from './main/window/DesktopWindowState';
 import { getWindowTitleBarOptions } from './main/window/WindowTitleBar';
 import { normalizeExternalUrl } from './shared/external-url';
+import { normalizeExternalOrigin } from './shared/external-origin';
 import type { OpenTigPairingLink, OpenTigWebAccessStatus } from './shared/desktop-api';
 import type { OpenTigServerHost } from './shared/server-process';
 import { OPEN_TIG_SESSION_COOKIE } from './shared/server-protocol';
@@ -45,6 +46,7 @@ let stopGlobalDoubleControlShortcut: (() => void) | null = null;
 let shutdownStarted = false;
 let shutdownReady = false;
 let webAccessEnabled = false;
+let externalOrigin: string | null = null;
 let serverState: ServerProcessState = { status: 'stopped' };
 let webAccessRestartError: string | null = null;
 let webAccessMutation: Promise<void> = Promise.resolve();
@@ -112,8 +114,8 @@ async function createWindow(): Promise<void> {
   const removeHandlers = registerDesktopHandlers(host, applyDoubleControlShortcutPreference, {
     getStatus: getWebAccessStatus,
     setEnabled: setWebAccessEnabled,
+    setExternalOrigin,
     createPairingLink,
-    revokeAllSessions,
   });
 
   const openExternal = (value: string) => {
@@ -183,6 +185,7 @@ function createServerManager(): ServerProcessManager {
     appVersion: app.getVersion(),
     platform: normalizePlatform(process.platform),
     host: webAccessEnabled ? '0.0.0.0' : '127.0.0.1',
+    ...(externalOrigin ? { allowedOrigins: [externalOrigin] } : {}),
     fork: (modulePath, args, options) => utilityProcess.fork(modulePath, args, options),
     onReady: installDesktopSession,
     onState: applyServerState,
@@ -211,17 +214,46 @@ function setWebAccessEnabled(enabled: boolean): Promise<OpenTigWebAccessStatus> 
     const previousHost: OpenTigServerHost = webAccessEnabled ? '0.0.0.0' : '127.0.0.1';
     const nextHost: OpenTigServerHost = enabled ? '0.0.0.0' : '127.0.0.1';
     try {
-      await manager.restart(nextHost);
+      await manager.restart(nextHost, externalOrigin ? [externalOrigin] : []);
       try {
-        await settings.save(enabled);
+        await settings.save({ webAccessEnabled: enabled, externalOrigin });
       } catch (error) {
-        await manager.restart(previousHost);
+        await manager.restart(previousHost, externalOrigin ? [externalOrigin] : []);
         throw error;
       }
       webAccessEnabled = enabled;
       return getWebAccessStatus();
     } catch (error) {
       webAccessRestartError = error instanceof Error ? error.message : 'OpenTig could not restart network access.';
+      throw error;
+    }
+  });
+  webAccessMutation = operation.then(() => undefined, () => undefined);
+  return operation;
+}
+
+function setExternalOrigin(value: string | null): Promise<OpenTigWebAccessStatus> {
+  const operation = webAccessMutation.then(async () => {
+    const manager = serverManager;
+    const settings = desktopServerSettings;
+    if (!manager || !settings) throw new Error('OpenTig desktop server is not initialized.');
+    const nextOrigin = value?.trim() ? normalizeExternalOrigin(value) : null;
+    if (nextOrigin === externalOrigin) return getWebAccessStatus();
+    const host: OpenTigServerHost = webAccessEnabled ? '0.0.0.0' : '127.0.0.1';
+    const previousOrigin = externalOrigin;
+    webAccessRestartError = null;
+    try {
+      await manager.restart(host, nextOrigin ? [nextOrigin] : []);
+      try {
+        await settings.save({ webAccessEnabled, externalOrigin: nextOrigin });
+      } catch (error) {
+        await manager.restart(host, previousOrigin ? [previousOrigin] : []);
+        throw error;
+      }
+      externalOrigin = nextOrigin;
+      return getWebAccessStatus();
+    } catch (error) {
+      webAccessRestartError = error instanceof Error ? error.message : 'OpenTig could not update the external URL.';
       throw error;
     }
   });
@@ -244,6 +276,8 @@ async function getWebAccessStatus(): Promise<OpenTigWebAccessStatus> {
     actualPort,
     localEndpoint: actualPort === null ? null : `http://127.0.0.1:${actualPort}`,
     networkEndpoints: actualPort === null ? [] : networkEndpoints(actualPort),
+    pairingEndpoints: actualPort === null ? [] : pairingEndpoints(actualPort),
+    externalOrigin,
     connectedSessionCount,
     restartError: webAccessRestartError,
   };
@@ -252,18 +286,15 @@ async function getWebAccessStatus(): Promise<OpenTigWebAccessStatus> {
 async function createPairingLink(endpoint: string): Promise<OpenTigPairingLink> {
   const manager = serverManager;
   if (!manager?.current) throw new Error('OpenTig server is not ready.');
-  if (!webAccessEnabled) throw new Error('Enable network access before creating a pairing link.');
-  if (!networkEndpoints(manager.current.port).includes(endpoint)) throw new Error('Select an active OpenTig network endpoint.');
+  if (!pairingEndpoints(manager.current.port).includes(endpoint)) throw new Error('Select an active OpenTig pairing endpoint.');
   return manager.createPairingLink(endpoint);
 }
 
-async function revokeAllSessions(): Promise<{ revokedCount: number }> {
-  const manager = serverManager;
-  const current = manager?.current;
-  if (!manager || !current) throw new Error('OpenTig server is not ready.');
-  const result = await manager.revokeAllSessions();
-  await installDesktopSessionCookie(current.origin, result.desktopCookie);
-  return { revokedCount: result.revokedCount };
+function pairingEndpoints(port: number): string[] {
+  const endpoints = [`http://127.0.0.1:${port}`];
+  if (webAccessEnabled) endpoints.push(...networkEndpoints(port));
+  if (externalOrigin) endpoints.push(externalOrigin);
+  return [...new Set(endpoints)];
 }
 
 function networkEndpoints(port: number): string[] {
@@ -284,8 +315,8 @@ async function installDesktopSession(server: ServerProcessAddress, desktopSecret
     headers: currentCookie ? { Cookie: `${OPEN_TIG_SESSION_COOKIE}=${currentCookie}` } : {},
   });
   if (descriptor.ok) {
-    const state = await descriptor.json() as { authenticated?: unknown };
-    if (state.authenticated === true) return;
+    const state = await descriptor.json() as { authenticated?: unknown; currentSessionKind?: unknown };
+    if (state.authenticated === true && state.currentSessionKind === 'desktop') return;
   }
   const response = await fetch(`${server.origin}/api/auth/desktop`, {
     method: 'POST',
@@ -343,7 +374,9 @@ app.whenReady().then(async () => {
     path.join(userData, 'settings.json'),
   );
   desktopServerSettings = new DesktopServerSettings(path.join(userData, 'desktop-server.json'));
-  webAccessEnabled = await desktopServerSettings.load();
+  const serverSettings = await desktopServerSettings.load();
+  webAccessEnabled = serverSettings.webAccessEnabled;
+  externalOrigin = serverSettings.externalOrigin;
   serverManager = createServerManager();
 
   const clipboardPermissions = new Set(['clipboard-read', 'clipboard-sanitized-write']);
