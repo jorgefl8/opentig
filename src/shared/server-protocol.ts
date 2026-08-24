@@ -1,7 +1,8 @@
 import type { IpcResult } from './contracts';
 import type { OpenTigRuntimeEvent } from './runtime-events';
+import protocolMetadata from './protocol-version.json';
 
-export const OPEN_TIG_PROTOCOL_VERSION = 1;
+export const OPEN_TIG_PROTOCOL_VERSION = protocolMetadata.protocolVersion;
 export const OPEN_TIG_SESSION_COOKIE = 'opentig_session';
 
 export type OpenTigClientMessage =

@@ -12,7 +12,7 @@ Electron renderer ───────────────┐
                                  │ authenticated HTTP + WebSocket
 Paired browser ──────────────────┤
                                  ▼
-                         OpenTig utility server
+                         OpenTig server runtime
                          ├─ Git and filesystem services
                          ├─ settings and repository state
                          ├─ GitHub and optional AI CLI adapters
@@ -28,6 +28,12 @@ Electron main
 ├─ installs the private desktop owner session
 ├─ changes loopback/LAN exposure
 └─ provides narrow native-only capabilities through preload
+
+Node CLI
+├─ parses host/port/home/presentation options
+├─ invokes the same runOpenTigServer factory in-process
+├─ writes credential-free runtime identity for `opentig pair`
+└─ owns browser launch and SIGINT/SIGTERM shutdown
 ```
 
 The desktop window loads the production client from the local server origin.
@@ -99,6 +105,16 @@ Desktop paths are derived from Electron's user-data directory:
 | `server/` | hash-only owner-session authentication state |
 | `logs/server.log` | redacted rotating utility-server log |
 
+The headless CLI derives equivalent paths from `~/.opentig` or `--home`:
+
+| Path | Purpose |
+| --- | --- |
+| `settings.json` | repositories, preferences, and application state |
+| `ai-log.jsonl` | local AI-operation history |
+| `server/` | hash-only sessions plus a private same-host admin credential |
+| `runtime.json` | PID, bind address, version/protocol, and instance identity; no credential |
+| `logs/server.log` | redacted rotating CLI server log |
+
 Pairing secrets are memory-only. Persistent session files contain credential
 hashes, not usable cookie values.
 
@@ -125,6 +141,7 @@ the operating system Trash from the server runtime.
 | `packages/server/src/websocket.ts` | authenticated command/event transport |
 | `packages/server/src/auth*.ts` | pairing and persistent owner sessions |
 | `packages/server/src/utility.ts` | thin Electron utility-process adapter |
+| `packages/server/src/bin.ts` / `cli.ts` | Node shebang and thin headless lifecycle adapter |
 | `src/main/server/` | Electron supervisor and exposure settings |
 | `src/renderer/lib/websocket-transport.ts` | browser/Electron client transport |
 | `src/main/ipc/` | native-only desktop handlers |
@@ -144,6 +161,8 @@ Focused server coverage lives under `packages/server/src/*.test.ts`; runtime
 boundary tests live under `src/main/runtime`; supervisor tests live under
 `src/main/server`; renderer transport tests live under `src/renderer/lib`.
 
-The next architecture stage is a thin public CLI adapter around the existing
-`runOpenTigServer(config)` factory. It must reuse this runtime, protocol, auth,
-and bundled client rather than creating a headless fork.
+`npm run release:pack:headless` builds the web client and server once, then emits
+one tarball plus JSON metadata containing its version, SHA-256, npm integrity,
+and exact file list. `npm run release:inspect:headless` rejects version drift,
+checkout paths, source/tests/state, Electron/native imports, and undeclared
+artifacts. Release automation consumes that tested tarball rather than rebuilding it.

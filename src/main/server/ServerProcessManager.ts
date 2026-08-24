@@ -13,9 +13,9 @@ import {
   type OpenTigUtilityParentMessage,
 } from '../../shared/server-process';
 import { OPEN_TIG_PROTOCOL_VERSION } from '../../shared/server-protocol';
+import { DEFAULT_SERVER_PORT, DEFAULT_SERVER_PORT_SCAN_COUNT } from '../../shared/server-config';
 
-export const DEFAULT_SERVER_PORT = 6767;
-export const DEFAULT_SERVER_PORT_SCAN_COUNT = 10;
+export { DEFAULT_SERVER_PORT, DEFAULT_SERVER_PORT_SCAN_COUNT } from '../../shared/server-config';
 
 export interface UtilityProcessLike {
   readonly pid: number | undefined;

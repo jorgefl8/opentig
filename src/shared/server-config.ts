@@ -1,0 +1,3 @@
+export const DEFAULT_SERVER_HOST = '127.0.0.1';
+export const DEFAULT_SERVER_PORT = 6767;
+export const DEFAULT_SERVER_PORT_SCAN_COUNT = 10;

@@ -46,3 +46,32 @@ jobs:
         run: npm run package
       - if: runner.os == 'Windows'
         run: npm run verify:packaged-trash
+
+  headless-tarball-smoke:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run release:pack:headless
+      - run: npm run release:inspect:headless
+      - name: Run packed CLI with npx
+        shell: bash
+        run: |
+          artifact="$(node -p "require('./dist/headless/opentig-headless.json').filename")"
+          npx --yes --package "./dist/headless/$artifact" opentig --version
+      - run: npm install --global bun@1.3.0
+      - name: Run packed CLI with bunx
+        shell: bash
+        run: |
+          artifact="$(node -p "require('./dist/headless/opentig-headless.json').filename")"
+          bunx --package "./dist/headless/$artifact" opentig --version

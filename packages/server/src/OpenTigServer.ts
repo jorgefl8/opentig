@@ -25,6 +25,7 @@ export interface OpenTigServerOptions {
   heartbeatMs?: number;
   requestRateLimit?: number;
   requestRateWindowMs?: number;
+  admin?: { token: string; instanceId: string };
 }
 
 export interface OpenTigServerAddress extends OpenTigServerIdentity {
@@ -55,6 +56,12 @@ export class OpenTigServer {
       isReady: () => this.ready,
       onSessionsRevoked: (sessionIds) => this.disconnectSessions(sessionIds),
       logger: this.logger,
+      ...(options.admin ? {
+        admin: {
+          ...options.admin,
+          createPairingToken: () => options.auth.createPairingToken(),
+        },
+      } : {}),
     }));
     this.webSockets = new OpenTigWebSocketTransport({
       server: this.httpServer,

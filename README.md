@@ -1,6 +1,6 @@
 # OpenTig
 
-OpenTig is a focused, local-first Git desktop client for Windows. It is designed for the everyday repository loop: understand what changed, edit or inspect files, stage the right work, create a commit, synchronise it, and review pull requests without turning Git into a project-management suite.
+OpenTig is a focused, local-first Git client available as a Windows desktop application and as a headless Node.js CLI with a browser interface. It is designed for the everyday repository loop: understand what changed, edit or inspect files, stage the right work, create a commit, synchronise it, and review pull requests without turning Git into a project-management suite.
 
 The application works directly with repositories already on your machine. Git remains the source of truth, repository contents stay local, and optional integrations use command-line tools that you install and authenticate yourself.
 
@@ -33,6 +33,7 @@ It is intentionally not an IDE, hosting service, or replacement for the Git CLI.
 
 - Open existing local repositories and return to recently used repositories.
 - Use the same authenticated WebSocket backend from the desktop app or a paired browser. On desktop the backend runs in a supervised utility process, so a renderer reload or crash does not stop repository watchers or in-flight server state while the desktop process remains open; an unexpected backend exit is restarted with bounded backoff. Repository switches and filesystem/Git events propagate to every connected tab, and reconnecting clients bootstrap fresh state without replaying interrupted mutations. Browser clients enter paths on the server directly, while native folder selection and Explorer reveal remain desktop-only.
+- Run that exact server/runtime/client bundle through `npx --yes @opentig/cli@<version>` or plain `bunx @opentig/cli@<version>`. The default/start command opens a five-minute one-use pairing link, while `serve` stays headless and prints the link plus a terminal QR code. `opentig pair` safely mints a fresh link for a server already using the same private home directory.
 - Keep that backend loopback-only by default, or enable **Settings → Network access** to restart the same utility listener on trusted LAN interfaces. The desktop pane shows server state, actual port, local and network endpoints, and connected owner sessions; it creates five-minute one-use pairing links with a QR code and can revoke every existing owner session without exposing a permanent token. Browsers without a valid owner session show fresh-pairing instructions instead of leaving the application loading indefinitely. Healthy connections stay unobtrusive; reconnecting and failed states remain visible.
 - Relocate a recent repository when its folder moved, preserving its project assignment, open tabs, and expanded folders.
 - Group related repositories into named OpenTig projects without moving anything on disk.
@@ -182,9 +183,9 @@ The shortcuts below are defaults; rebind most of them from **Settings → Shortc
 
 ## Requirements
 
-- Windows 10 or later
-- Git available on `PATH`
-- Node.js 24 or later and npm 11 or later when building from source
+- Windows 10 or later for the desktop application.
+- Node.js 24 or later and Git on `PATH` for the headless CLI. Plain `bunx` installs and launches the Node shebang; a Bun-only runtime is not supported.
+- Node.js 24 or later and npm 11 or later when building from source.
 
 Optional integrations require their own installed and authenticated CLI:
 
@@ -196,6 +197,33 @@ opencode auth login
 ```
 
 Only install the tools you intend to use. GitHub functionality requires `gh`; AI features require at least one supported AI CLI.
+
+## Run the headless CLI
+
+Pin an exact version for repeatable or production use:
+
+```powershell
+npx --yes @opentig/cli@0.1.0 C:\repos\project
+npx --yes @opentig/cli@0.1.0 serve C:\repos\project
+bunx @opentig/cli@0.1.0 serve C:\repos\project
+```
+
+`opentig [cwd]` and `opentig start [cwd]` start the server and open its one-time pairing link. `opentig serve [cwd]` does not open a browser. An invalid or missing working directory is not created; the server remains available without opening it. After a global installation, a new device can request a fresh link from the same OS account with:
+
+```powershell
+opentig pair --home C:\path\to\opentig-home
+```
+
+Options are `--host`, `--port`, `--home`, and `--no-browser`, with `OPENTIG_HOST`, `OPENTIG_PORT`, and `OPENTIG_HOME` environment equivalents. Defaults are `127.0.0.1`, preferred port `6767`, and `~/.opentig`. An explicit occupied port fails; an omitted port scans a bounded range upward. The home contains private settings, hash-only sessions, a local-admin credential, credential-free runtime state, AI history, and rotating logs. SIGINT or SIGTERM closes WebSockets, the HTTP listener, watchers, Git/AI children, settings, and logs; a second signal forces exit.
+
+For local tarball testing on Windows:
+
+```powershell
+npx --yes --package C:\absolute\path\opentig-cli-0.1.0.tgz opentig --help
+bunx --package C:\absolute\path\opentig-cli-0.1.0.tgz opentig --help
+```
+
+Use `latest` only for evaluation after a public release. To upgrade or roll back production, stop the process and run a different pinned immutable version. OpenTig does not ship Docker, a systemd installer, built-in TLS, Tailscale/SSH automation, multi-user roles, or server self-update.
 
 ## Run from source
 
@@ -226,6 +254,7 @@ The unpacked executable is written to `out/OpenTig-win32-x64/OpenTig.exe`.
 - Git, filesystem, persistence, AI, and GitHub operations run through one typed, validated WebSocket command boundary in both desktop and browser clients. Requests have correlation IDs, cancellation and timeouts; interrupted operations are rejected rather than replayed after reconnect.
 - The private server transport binds to loopback by default, requires an owner session for commands and image bytes, validates exact mutation/WebSocket origins, and blocks static-file traversal and symlink escape. Enabling **Settings → Network access** persists a desktop-only setting and restarts that same backend on `0.0.0.0`; disabling it returns to `127.0.0.1`. OpenTig never starts a second Web Access server.
 - New browsers pair through a five-minute, one-use URL fragment displayed as a link and local QR code; the fragment is cleared before exchange. Steady-state credentials use host-only `HttpOnly`, `SameSite=Strict` cookies, only credential hashes are persisted, and revoking all sessions disconnects paired browsers while replacing the private desktop session. Network access grants owner-level file, Git, GitHub, and AI CLI authority as the OS user: use only a trusted LAN or VPN, an HTTPS reverse proxy, or an SSH tunnel, and never expose the raw port publicly.
+- Headless `pair` authenticates over a same-host-only administrative route using a separate private file under `~/.opentig/server`; `runtime.json` contains PID/address/version identity but no credential. Pairing secrets remain memory-only and appear only in the deliberate one-time terminal output/URL fragment, never in arguments, environment variables, routine logs, query strings, or persisted state.
 - Electron starts the backend after readiness on preferred port `6767`, scanning a bounded range upward only when that implicit port is occupied. Its one-use desktop bootstrap secret crosses the private parent/utility message port exactly once; it is absent from process arguments, environment variables, renderer JavaScript, and redacted rotating logs. Unexpected exits restart one utility process on the same selected port.
 - The narrow preload bridge contains only proven desktop capabilities such as folder selection/relocation, file clipboard import, Explorer reveal, title-bar theming, and zoom. Text clipboard access stays in the renderer's browser API.
 - Git commands use argument arrays with `shell: false`, bounded output, timeouts, path validation, and per-repository write serialisation.
@@ -247,7 +276,7 @@ Generated content remains editable and pending. No commit is created and no pull
 
 - `src/main/runtime`: Electron-free service graph and validated server-command registry for Git, filesystem, persistence, AI, GitHub, watchers, and shutdown.
 - `src/main/ipc`: handlers for native-only desktop capabilities; no domain commands are registered here.
-- `packages/server`: private, Electron-free server build containing the reusable server factory, a thin utility-process adapter, authenticated HTTP/WebSocket transport, and the exact production web client.
+- `packages/server`: public `@opentig/cli`, Electron-free server build containing the reusable server factory, thin CLI and utility-process adapters, authenticated HTTP/WebSocket transport, and the exact production web client.
 - `src/main/server`: Electron utility-process supervisor and desktop-only exposure state for port selection, loopback/LAN binding, readiness probing, pairing controls over the private parent port, redacted rotating logs, bounded restart, and graceful shutdown. Electron main owns only window/session/native integration; Git, filesystem, persistence, AI, GitHub, and watchers remain in the utility server.
 - `src/preload.ts`: narrow, context-isolated typed bridge exposed to the renderer.
 - `src/renderer`: React interface and feature modules.
@@ -261,7 +290,7 @@ Detailed guides:
 
 ## Current scope
 
-- Windows desktop only.
+- Windows x64 desktop application; the Node.js headless package is OS-neutral and tested independently through its generated tarball.
 - Opens existing local repositories; cloning and initial remote setup remain Git CLI tasks.
 - GitHub integration currently depends on `gh` and the repository's configured GitHub remote.
 - OpenTig deliberately avoids force push, forced branch deletion, automatic merge commits, and automatic AI actions. Periodic fetch only updates remote-tracking refs; it never rebases or merges on its own.

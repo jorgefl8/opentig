@@ -1,4 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { timingSafeEqual } from 'node:crypto';
+import { networkInterfaces } from 'node:os';
 import type { OpenTigRuntime } from '../../../src/main/runtime/OpenTigRuntime';
 import type { OpenTigServerIdentity } from '../../../src/shared/server-protocol';
 import { OpenTigSessionAuth } from './auth';
@@ -20,6 +22,11 @@ export interface OpenTigHttpContext {
   isReady(): boolean;
   onSessionsRevoked(sessionIds: readonly string[]): void;
   logger: OpenTigServerLogger;
+  admin?: {
+    token: string;
+    instanceId: string;
+    createPairingToken(): { token: string; expiresAt: string };
+  };
 }
 
 export function createOpenTigHttpHandler(context: OpenTigHttpContext) {
@@ -52,6 +59,10 @@ async function handleRequest(context: OpenTigHttpContext, request: IncomingMessa
       mode: context.mode,
       ...context.identity,
     });
+  }
+
+  if (method === 'POST' && rawPath === '/api/admin/pair') {
+    return handleLocalAdminPair(context, request, response);
   }
 
   if (method === 'POST' && rawPath.startsWith('/api/')) {
@@ -108,6 +119,32 @@ async function handleRequest(context: OpenTigHttpContext, request: IncomingMessa
   await serveStatic(context.clientRoot, request.url ?? '/', response);
 }
 
+async function handleLocalAdminPair(
+  context: OpenTigHttpContext,
+  request: IncomingMessage,
+  response: ServerResponse,
+): Promise<void> {
+  const admin = context.admin;
+  const suppliedToken = request.headers['x-opentig-admin'];
+  if (!admin
+    || !isLocalAddress(request.socket.remoteAddress)
+    || typeof suppliedToken !== 'string'
+    || !sameSecret(admin.token, suppliedToken)) {
+    return sendJson(response, 404, { error: 'Not found.' });
+  }
+  const body = await readJsonObject(request, response);
+  if (!body) return;
+  if (body.instanceId !== admin.instanceId || typeof body.publicOrigin !== 'string') {
+    return sendJson(response, 409, { error: 'OpenTig server identity mismatch.' });
+  }
+  const origin = normalizePublicOrigin(body.publicOrigin);
+  if (!origin) return sendJson(response, 400, { error: 'Invalid public origin.' });
+  const pairing = admin.createPairingToken();
+  const url = new URL('/pair', origin);
+  url.hash = new URLSearchParams({ token: pairing.token }).toString();
+  return sendJson(response, 200, { url: url.href, expiresAt: pairing.expiresAt });
+}
+
 function parseImageTarget(rawPath: string): { repositoryId: string; path: string } | null {
   try {
     const decoded = decodeURIComponent(rawPath.slice('/api/image/'.length));
@@ -116,6 +153,29 @@ function parseImageTarget(rawPath: string): { repositoryId: string; path: string
     const repositoryId = parts.shift();
     if (!repositoryId || repositoryId.length > 64 || parts.length === 0 || parts.some((part) => !part || part === '.' || part === '..')) return null;
     return { repositoryId, path: parts.join('/') };
+  } catch {
+    return null;
+  }
+}
+
+function isLocalAddress(value: string | undefined): boolean {
+  if (!value) return false;
+  const normalized = value.startsWith('::ffff:') ? value.slice('::ffff:'.length) : value;
+  if (normalized === '127.0.0.1' || normalized === '::1') return true;
+  return Object.values(networkInterfaces()).flat().some((address) => address?.address === normalized);
+}
+
+function sameSecret(expected: string, actual: string): boolean {
+  const left = Buffer.from(expected);
+  const right = Buffer.from(actual);
+  return left.byteLength === right.byteLength && timingSafeEqual(left, right);
+}
+
+function normalizePublicOrigin(value: string): string | null {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== 'http:' || url.username || url.password || url.pathname !== '/' || url.search || url.hash) return null;
+    return url.origin;
   } catch {
     return null;
   }

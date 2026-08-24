@@ -82,6 +82,30 @@ describe('authoritative HTTP server', () => {
     expect(Date.parse(pairing.expiresAt)).toBeGreaterThan(Date.now());
   });
 
+  it('mints pairing links through the authenticated loopback admin channel', async () => {
+    const admin = { token: 'a'.repeat(43), instanceId: 'b'.repeat(32) };
+    const fixture = await startFixture({ admin });
+    const endpoint = `${fixture.server.origin}/api/admin/pair`;
+    const body = { instanceId: admin.instanceId, publicOrigin: fixture.server.origin };
+
+    const missing = await fetch(endpoint, { method: 'POST', body: JSON.stringify(body) });
+    expect(missing.status).toBe(404);
+    const mismatch = await fetch(endpoint, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'X-OpenTig-Admin': admin.token },
+      body: JSON.stringify({ ...body, instanceId: 'c'.repeat(32) }),
+    });
+    expect(mismatch.status).toBe(409);
+    const response = await fetch(endpoint, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'X-OpenTig-Admin': admin.token },
+      body: JSON.stringify(body),
+    });
+    expect(response.status).toBe(200);
+    const pairing = await response.json() as { url: string; expiresAt: string };
+    expect(new URL(pairing.url).pathname).toBe('/pair');
+    expect(new URLSearchParams(new URL(pairing.url).hash.slice(1)).get('token')).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(Date.parse(pairing.expiresAt)).toBeGreaterThan(Date.now());
+  });
+
   it('reports connected sessions and replaces the private desktop session after revocation', async () => {
     const fixture = await startFixture();
     const authenticated = await postJson(`${fixture.server.origin}/api/auth/desktop`, { secret: fixture.desktopSecret }, fixture.server.origin);
@@ -249,7 +273,7 @@ describe('authenticated WebSocket protocol', () => {
   });
 });
 
-async function startFixture(): Promise<{
+async function startFixture(options: { admin?: { token: string; instanceId: string } } = {}): Promise<{
   server: RunningOpenTigServer;
   directory: string;
   clientRoot: string;
@@ -271,6 +295,7 @@ async function startFixture(): Promise<{
     appVersion: '0.1-test',
     auth: new OneTimeBootstrapAuthSource({ desktopSecret }),
     port: 0,
+    ...(options.admin ? { admin: options.admin } : {}),
   });
   const pairingLink = server.createPairingLink();
   const pairingToken = new URLSearchParams(new URL(pairingLink.url).hash.slice(1)).get('token');

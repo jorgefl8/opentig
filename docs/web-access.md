@@ -4,6 +4,10 @@ OpenTig can expose its existing desktop backend to trusted browsers on the same
 LAN or VPN. Enabling Network Access does not start a second server: Electron
 restarts the same supervised utility listener on network interfaces.
 
+The headless `@opentig/cli` package exposes the same backend directly. It binds
+to loopback by default; `--host` is required for another interface and prints
+the same owner-authority warning.
+
 ## Enable access
 
 1. Open **Settings → Network access** in the desktop application.
@@ -66,6 +70,12 @@ desktop can continue without reopening the application.
 A revoked browser shows fresh-pairing instructions. Create a new one-use link
 from the desktop to admit it again.
 
+For a headless server, run `opentig pair --home <same-home>` as the same OS user.
+The command verifies the PID, readiness identity, app/protocol version, private
+instance ID, and same-host admin credential before printing a new five-minute
+link and terminal QR. The credential is stored separately with private file
+permissions; `runtime.json` never contains it.
+
 ## Connection behavior
 
 Healthy connections do not show a persistent status pill. A visible pill means
@@ -100,7 +110,8 @@ Invoke-RestMethod http://127.0.0.1:6767/readyz
 Use the actual port shown by the application if it is not `6767`. A ready server
 returns its status, protocol version, and application version. The rotating
 server log is stored at `logs/server.log` inside Electron's OpenTig user-data
-directory; authentication material and URL secrets are redacted.
+directory or the selected CLI home; authentication material and URL secrets are
+redacted.
 
 If a browser remains on **Authentication required**, revoke stale sessions if
 appropriate, create a fresh pairing link, and open that exact link. If the

@@ -31,10 +31,8 @@ export function registerServerCommands(
     handleWithContext(channel, operation, (_context, ...args) => handler(...args));
   };
   const openRepositoryPath = async (selectedPath: string, context: CommandExecutionContext) => {
-    const repository = await services.repositories.openPath(selectedPath);
+    const repository = await openRuntimeRepositoryPath(services, selectedPath);
     fileClipboardState(context).pendingCut = null;
-    services.watcher.start(repository);
-    services.events.activeRepositoryChanged(repository);
     return repository;
   };
 
@@ -377,6 +375,14 @@ export function registerServerCommands(
   for (const definition of serverDefinitions.values()) {
     if (!registered.has(definition.command)) throw new Error(`Missing server handler: ${definition.command}`);
   }
+}
+
+/** Shared repository-open lifecycle used by authenticated commands and CLI bootstrap. */
+export async function openRuntimeRepositoryPath(services: OpenTigRuntimeServices, selectedPath: string) {
+  const repository = await services.repositories.openPath(selectedPath);
+  services.watcher.start(repository);
+  services.events.activeRepositoryChanged(repository);
+  return repository;
 }
 
 export const FILE_CLIPBOARD_SESSION_STATE = 'file-clipboard';
