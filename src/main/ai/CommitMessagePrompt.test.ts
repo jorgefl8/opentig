@@ -27,9 +27,14 @@ describe('CommitMessagePrompt', () => {
     { subject: '', body: '' },
     { subject: 'Line one\nLine two', body: '' },
     { subject: `${'x'.repeat(73)}`, body: '' },
-    { subject: 'Ends with a period.', body: '' },
   ])('rejects invalid subjects', (value) => {
     expect(() => parseGeneratedParts(value)).toThrow(/invalid format/);
+  });
+
+  it('normalizes trailing subject punctuation instead of rejecting the response', () => {
+    expect(parseGeneratedParts({ subject: 'Add the feature.', body: '' })).toEqual({
+      subject: 'Add the feature', body: '',
+    });
   });
 
   it('accepts a complete, non-overlapping commit split', () => {
@@ -105,5 +110,6 @@ describe('CommitMessagePrompt', () => {
     // Harnesses without schema enforcement only ever see the shape stated here.
     expect(prompt).toContain('"rationale"?: string');
     expect(prompt).toContain('"commits"?:');
+    expect(prompt).toContain('set rationale to "" and commits to []');
   });
 });

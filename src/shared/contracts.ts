@@ -26,6 +26,11 @@ export interface RecentRepository {
   lastOpenedAt: string;
 }
 
+export interface RepositoryFavicon {
+  mimeType: string;
+  dataUrl: string;
+}
+
 export type DiffKind = 'staged' | 'unstaged' | 'commit';
 
 export interface DiffRequest {
@@ -246,6 +251,8 @@ export interface AiHarnessStatus {
   authStatus: AiAuthStatus;
   version?: string;
   message?: string;
+  /** Installed CLI name when it differs from the harness id, e.g. OpenCode 2's `opencode2`. */
+  cliName?: string;
   models: AiModelOption[];
   checkedAt: string;
 }
@@ -381,6 +388,9 @@ export interface GeneratedPullRequestDraft {
   contextWasTruncated: boolean;
 }
 
+export type UiFontPreference = 'geist' | 'plus-jakarta-sans' | 'space-grotesk';
+export type MonoFontPreference = 'geist-mono' | 'jetbrains-mono' | 'inconsolata' | 'departure' | 'space-grotesk';
+
 export interface Preferences {
   theme: ThemePreference;
   diffView: DiffViewPreference;
@@ -389,6 +399,8 @@ export interface Preferences {
   sidebarWidth: number;
   showDotEnvFiles: boolean;
   uiZoom: number;
+  uiFont: UiFontPreference;
+  monoFont: MonoFontPreference;
   commitMessageHarness: AiHarnessId;
   commitMessageModels: Partial<Record<AiHarnessId, string>>;
   shortcutOverrides: ShortcutOverrides;
@@ -458,6 +470,8 @@ export interface OpenTigApi {
     getDirectoryEntries(id: string, path: string): Promise<FileTreeEntry[]>;
     readFile(id: string, path: string, allowLarge?: boolean): Promise<FileResult>;
     readImage(id: string, path: string): Promise<ImageFileResult>;
+    /** Discovers a favicon or app icon in the repository root when one exists. */
+    getFavicon(id: string): Promise<RepositoryFavicon | null>;
     writeFile(id: string, path: string, content: string, expectedContent: string): Promise<WriteFileResult>;
     getAbsolutePath(id: string, path: string): Promise<string>;
     copyEntries(id: string, paths: string[]): Promise<CopyEntriesResult>;
@@ -553,7 +567,7 @@ export type IpcResult<T> = { ok: true; value: T } | { ok: false; error: Serializ
 export const IPC = {
   bootstrap: 'app:bootstrap', capabilities: 'app:capabilities', preferences: 'app:preferences', filesTreeStateUpdate: 'app:files-tree-state', openFilesStateUpdate: 'app:open-files-state', projectCreate: 'projects:create', projectRename: 'projects:rename', projectRemove: 'projects:remove', projectAssign: 'projects:assign',
   repositoryOpenPath: 'repository:open-path', repositoryOpenRecent: 'repository:open-recent', repositoryRelocateRecent: 'repository:relocate-recent', repositoryStatus: 'repository:status', repositoryFiles: 'repository:files', repositoryDirectoryEntries: 'repository:directory-entries',
-  repositoryReadFile: 'repository:read-file', repositoryReadImage: 'repository:read-image', repositoryWriteFile: 'repository:write-file', repositoryAbsolutePath: 'repository:absolute-path',
+  repositoryReadFile: 'repository:read-file', repositoryReadImage: 'repository:read-image', repositoryGetFavicon: 'repository:favicon', repositoryWriteFile: 'repository:write-file', repositoryAbsolutePath: 'repository:absolute-path',
   repositoryCopyEntries: 'repository:copy-entries', repositoryCutEntries: 'repository:cut-entries', repositoryPasteEntries: 'repository:paste-entries', repositoryMoveEntry: 'repository:move-entry', repositoryDeleteEntry: 'repository:delete-entry',
   repositoryMoveEntries: 'repository:move-entries', repositoryDeleteEntries: 'repository:delete-entries', repositoryRenameEntry: 'repository:rename-entry', repositoryCreateEntry: 'repository:create-entry',
   repositoryFileHistoryState: 'repository:file-history-state', repositoryUndoFileOperation: 'repository:undo-file-operation', repositoryRedoFileOperation: 'repository:redo-file-operation',

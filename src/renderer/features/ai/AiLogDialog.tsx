@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogClose, DialogDescription, DialogPopup, DialogTitle } from '@/components/ui/dialog';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 interface AiLogDialogProps {
   open: boolean;
@@ -94,16 +95,17 @@ const columns = columnHelper.columns([
     header: 'Notes',
     cell: ({ row }) => {
       const entry = row.original;
-      const notes: { key: string; text: string; tone?: 'error' | 'warn' }[] = [];
+      const notes: { key: string; text: string; tone?: 'error' | 'warn'; detail?: string }[] = [];
       if (entry.errorCode) notes.push({ key: 'error', text: entry.errorCode, tone: 'error' });
+      if (entry.errorMessage) notes.push({ key: 'error-message', text: entry.errorMessage, tone: 'error', detail: entry.errorMessage });
       if (entry.splitOffered === true) notes.push({ key: 'split', text: `split: ${entry.splitGroups} commits` });
-      if (entry.splitRejectedReason) notes.push({ key: 'rejected', text: `split refused: ${entry.splitRejectedReason}`, tone: 'warn' });
-      if (entry.splitBlockedReason) notes.push({ key: 'blocked', text: `no split: ${entry.splitBlockedReason}` });
+      if (entry.splitRejectedReason) notes.push({ key: 'rejected', text: `split refused: ${entry.splitRejectedReason}`, tone: 'warn', detail: entry.splitRejectedReason });
+      if (entry.splitBlockedReason) notes.push({ key: 'blocked', text: `no split: ${entry.splitBlockedReason}`, detail: entry.splitBlockedReason });
       if (entry.contextTruncated === true) notes.push({ key: 'truncated', text: 'context trimmed' });
       if (notes.length === 0) return null;
       return (
         <div className="ai-log-row-notes">
-          {notes.map((note) => <span key={note.key} className={`ai-log-note ${note.tone ?? ''}`}>{note.text}</span>)}
+          {notes.map((note) => <LogNote key={note.key} text={note.text} tone={note.tone} detail={note.detail} />)}
         </div>
       );
     },
@@ -217,6 +219,24 @@ export function AiLogDialog({ open, onOpenChange }: AiLogDialogProps) {
         </div>
       </DialogPopup>
     </Dialog>
+  );
+}
+
+const NOTE_PREVIEW = 140;
+
+function LogNote({ text, tone, detail }: { text: string; tone?: 'error' | 'warn' | undefined; detail?: string | undefined }) {
+  const preview = text.length > NOTE_PREVIEW ? `${text.slice(0, NOTE_PREVIEW - 1)}…` : text;
+  const className = `ai-log-note ${tone ?? ''}`;
+  if (!detail) return <span className={className}>{preview}</span>;
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={<button type="button" className={className} {...(preview === detail ? {} : { 'aria-label': detail })} />}
+      >
+        {preview}
+      </TooltipTrigger>
+      <TooltipContent className="max-w-md">{detail}</TooltipContent>
+    </Tooltip>
   );
 }
 

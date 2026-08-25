@@ -2,8 +2,9 @@ import { randomUUID } from 'node:crypto';
 import { appendFile, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import {
-  AI_LOG_COMPACTION_SLACK, type AiLogEntry, MAX_AI_LOG_ENTRIES, normalizeAiLogEntry, parseAiLogLines, sortAiLogEntries,
+  AI_LOG_COMPACTION_SLACK, type AiLogEntry, type AiLogStatus, MAX_AI_LOG_ENTRIES, normalizeAiLogEntry, parseAiLogLines, sortAiLogEntries,
 } from '../../shared/ai-log';
+import { AiOperationError } from '../../shared/errors';
 
 /** The write side, so the AI services depend on recording rather than on storage. */
 export interface AiLogRecorder {
@@ -16,6 +17,15 @@ export interface AiLogRecorder {
  */
 export function recordSafely(log: AiLogRecorder | undefined, entry: Omit<AiLogEntry, 'id' | 'at'>): void {
   try { log?.append(entry); } catch { /* a lost diagnostic must never fail a generation */ }
+}
+
+export function failureLogFields(error: unknown): { status: AiLogStatus; errorCode: string; errorMessage: string | null } {
+  const code = error instanceof AiOperationError ? error.detail.code : 'AI_PROCESS_FAILED';
+  return {
+    status: code === 'AI_CANCELLED' ? 'cancelled' : 'failed',
+    errorCode: code,
+    errorMessage: error instanceof AiOperationError ? error.detail.message : error instanceof Error ? error.message : null,
+  };
 }
 
 /**

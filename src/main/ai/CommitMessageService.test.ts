@@ -110,7 +110,7 @@ describe('CommitMessageService', () => {
 
     expect(log.entries).toHaveLength(1);
     expect(log.entries[0]).toMatchObject({
-      operation: 'commit-message', harness: 'codex', status: 'success', errorCode: null,
+      operation: 'commit-message', harness: 'codex', status: 'success', errorCode: null, errorMessage: null,
       stagedFileCount: 2, contextTruncated: false, splitOffered: true, splitGroups: 2,
       splitRejectedReason: null, splitBlockedReason: null,
       usage: { inputTokens: 120, outputTokens: 40, costUsd: 0.02 },
@@ -153,8 +153,36 @@ describe('CommitMessageService', () => {
     await new CommitMessageService(operations(), [failing('AI_RATE_LIMITED')], failed)
       .generate({ repositoryId: 'repo', harness: 'codex', model: 'default', requestId: 'request-11' }).catch(() => undefined);
 
-    expect(cancelled.entries[0]).toMatchObject({ status: 'cancelled', errorCode: 'AI_CANCELLED' });
-    expect(failed.entries[0]).toMatchObject({ status: 'failed', errorCode: 'AI_RATE_LIMITED' });
+    expect(cancelled.entries[0]).toMatchObject({ status: 'cancelled', errorCode: 'AI_CANCELLED', errorMessage: 'AI_CANCELLED' });
+    expect(failed.entries[0]).toMatchObject({ status: 'failed', errorCode: 'AI_RATE_LIMITED', errorMessage: 'AI_RATE_LIMITED' });
+  });
+
+  it('propagates transport cancellation to the selected provider', async () => {
+    const log = recorder();
+    const providerState: { signal: AbortSignal | null } = { signal: null };
+    const provider: AiProvider = {
+      id: 'codex',
+      status: async () => ready('codex'),
+      generate: async (input) => new Promise((_resolve, reject) => {
+        providerState.signal = input.signal;
+        input.signal.addEventListener('abort', () => reject(new AiOperationError({
+          code: 'AI_CANCELLED', operation: 'test', harness: 'codex', message: 'Generation canceled.',
+        })), { once: true });
+      }),
+    };
+    const service = new CommitMessageService(operations(), [provider], log);
+    const controller = new AbortController();
+    const generation = service.generate(
+      { repositoryId: 'repo', harness: 'codex', model: 'default', requestId: 'transport-cancel' },
+      controller.signal,
+    );
+    await vi.waitFor(() => expect(providerState.signal).not.toBeNull());
+
+    controller.abort();
+
+    await expect(generation).rejects.toMatchObject({ detail: { code: 'AI_CANCELLED' } });
+    expect(providerState.signal?.aborted).toBe(true);
+    expect(log.entries[0]).toMatchObject({ status: 'cancelled', errorCode: 'AI_CANCELLED' });
   });
 
   it('never lets a logging failure reach the caller', async () => {

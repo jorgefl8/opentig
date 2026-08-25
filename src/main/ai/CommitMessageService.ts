@@ -2,7 +2,7 @@ import { EMPTY_AI_USAGE, type AiUsage } from '../../shared/ai-log';
 import type { AiHarnessId, AiHarnessStatus, CommitSplitProposal, GenerateCommitMessageInput, GeneratedCommitMessage } from '../../shared/contracts';
 import { AiOperationError } from '../../shared/errors';
 import type { GitRepositoryOperations } from '../git/GitRepositoryOperations';
-import { type AiLogRecorder, recordSafely } from '../persistence/AiLogStore';
+import { type AiLogRecorder, failureLogFields, recordSafely } from '../persistence/AiLogStore';
 import { buildCommitMessagePrompt, COMMIT_MESSAGE_SCHEMA, type ParsedCommitPlan, parseCommitSplitProposal, parseGeneratedParts } from './CommitMessagePrompt';
 import type { AiProvider } from './types';
 
@@ -26,7 +26,7 @@ export class CommitMessageService {
     return value;
   }
 
-  async generate(input: GenerateCommitMessageInput): Promise<GeneratedCommitMessage> {
+  async generate(input: GenerateCommitMessageInput, externalSignal?: AbortSignal): Promise<GeneratedCommitMessage> {
     if (this.active.has(input.requestId) || [...this.active.values()].some((entry) => entry.repositoryId === input.repositoryId) || this.active.size >= 3) {
       throw new AiOperationError({ code: 'AI_PROCESS_FAILED', operation: 'ai-generate', harness: input.harness, message: 'A generation is already in progress for this repository.' });
     }
@@ -35,8 +35,10 @@ export class CommitMessageService {
     const status = await provider.status();
     if (!status.installed) throw new AiOperationError({ code: 'AI_CLI_NOT_FOUND', operation: 'ai-generate', harness: input.harness, message: `${status.label} is not installed.` });
     if (status.authStatus === 'unauthenticated') throw new AiOperationError({ code: 'AI_AUTH_REQUIRED', operation: 'ai-generate', harness: input.harness, message: `Sign in to ${status.label} to generate the message.` });
+    throwIfCancelled(externalSignal, input.harness);
 
     const controller = new AbortController();
+    const signal = externalSignal ? AbortSignal.any([controller.signal, externalSignal]) : controller.signal;
     this.active.set(input.requestId, { repositoryId: input.repositoryId, controller });
     const startedAt = Date.now();
     let usage: AiUsage = { ...EMPTY_AI_USAGE };
@@ -46,10 +48,12 @@ export class CommitMessageService {
       const context = await this.operations.getCommitMessageContext(input.repositoryId);
       stagedFileCount = context.stagedPaths.length;
       contextTruncated = context.truncated;
-      const generated = await provider.generate({ repositoryPath: context.repositoryPath, prompt: buildCommitMessagePrompt(context), schema: COMMIT_MESSAGE_SCHEMA, model: input.model, signal: controller.signal });
+      throwIfCancelled(signal, input.harness);
+      const generated = await provider.generate({ repositoryPath: context.repositoryPath, prompt: buildCommitMessagePrompt(context), schema: COMMIT_MESSAGE_SCHEMA, model: input.model, signal });
       usage = generated.usage;
       const parts = parseGeneratedParts(generated.output);
       const current = await this.operations.getCommitMessageContext(input.repositoryId);
+      throwIfCancelled(signal, input.harness);
       if (current.fingerprint !== context.fingerprint) throw new AiOperationError({ code: 'AI_STAGED_CHANGES_CHANGED', operation: 'ai-generate', harness: input.harness, message: 'Staged changes changed during generation.' });
       // A truncated patch no longer blocks the split: grouping needs the file
       // list, which `splitBlockedReason` already guarantees is complete.
@@ -57,7 +61,7 @@ export class CommitMessageService {
       const proposal = parsed?.status === 'accepted' ? await this.withGroupFingerprints(input.repositoryId, parsed.plan) : null;
       recordSafely(this.log, {
         operation: 'commit-message', harness: input.harness, model: input.model, repositoryId: input.repositoryId,
-        status: 'success', durationMs: Date.now() - startedAt, errorCode: null, usage,
+        status: 'success', durationMs: Date.now() - startedAt, errorCode: null, errorMessage: null, usage,
         stagedFileCount, contextTruncated,
         splitOffered: proposal !== null,
         splitGroups: proposal ? proposal.commits.length : null,
@@ -76,13 +80,13 @@ export class CommitMessageService {
         splitBlockedReason: context.splitBlockedReason,
       };
     } catch (error) {
-      const code = error instanceof AiOperationError ? error.detail.code : 'AI_PROCESS_FAILED';
+      const failure = failureLogFields(error);
       recordSafely(this.log, {
         operation: 'commit-message', harness: input.harness, model: input.model, repositoryId: input.repositoryId,
         // A cancellation is a decision, not a failure; merging the two would
         // poison any reliability figure taken from this log.
-        status: code === 'AI_CANCELLED' ? 'cancelled' : 'failed',
-        durationMs: Date.now() - startedAt, errorCode: code, usage,
+        status: failure.status, durationMs: Date.now() - startedAt,
+        errorCode: failure.errorCode, errorMessage: failure.errorMessage, usage,
         stagedFileCount, contextTruncated,
         splitOffered: null, splitGroups: null, splitRejectedReason: null, splitBlockedReason: null,
       });
@@ -113,4 +117,9 @@ export class CommitMessageService {
     await Promise.all([...this.providers.values()].map(async (provider) => provider.close?.()));
     this.active.clear();
   }
+}
+
+function throwIfCancelled(signal: AbortSignal | undefined, harness: AiHarnessId): void {
+  if (!signal?.aborted) return;
+  throw new AiOperationError({ code: 'AI_CANCELLED', operation: 'ai-generate', harness, message: 'Generation canceled.' });
 }

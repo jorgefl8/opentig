@@ -45,6 +45,22 @@ describe('WebSocket safety limits', () => {
     release(emptyBootstrap());
   });
 
+  it('aborts the command when its server timeout expires', async () => {
+    let aborted = false;
+    const fixture = await startFixture((context) => new Promise((resolve) => {
+      context.signal.addEventListener('abort', () => {
+        aborted = true;
+        resolve(emptyBootstrap());
+      }, { once: true });
+    }), { commandTimeoutMs: 50 });
+    const socket = await fixture.socket();
+
+    const response = await sendAndReceive(socket, { type: 'request', id: 'timeout', command: 'app:bootstrap', args: [] });
+
+    expect(response).toMatchObject({ result: { ok: false, error: { code: 'TIMEOUT' } } });
+    expect(aborted).toBe(true);
+  });
+
   it('disconnects a client when one result would exceed the bounded send queue', async () => {
     const fixture = await startFixture(() => ({ payload: 'x'.repeat(5 * 1024 * 1024) }));
     const socket = await fixture.socket();

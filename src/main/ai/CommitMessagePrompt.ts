@@ -35,8 +35,11 @@ const commitMessageResponseSchema = z.object({
   commits: z.array(commitPlanItemSchema).max(8).optional(),
 });
 const generatedPartsSchema = commitMessageResponseSchema.pick({ subject: true, body: true }).transform(({ subject, body }) => ({
-  subject: subject.trim(), body: body.trim(),
-})).refine(({ subject }) => Boolean(subject) && !subject.endsWith('.') && !hasControlCharacters(subject, false))
+  // A trailing full stop is a harmless formatting mismatch that models may
+  // still produce despite the prompt. Normalize it instead of discarding an
+  // otherwise valid structured response after an expensive generation.
+  subject: subject.trim().replace(/\.+$/u, ''), body: body.trim(),
+})).refine(({ subject }) => Boolean(subject) && !hasControlCharacters(subject, false))
   .refine(({ body }) => !hasControlCharacters(body, true));
 
 // Only the message itself is required. A model that sees no useful split can
@@ -64,7 +67,7 @@ Splitting decision. Make it deliberately; it is not optional work:
 
 Answer with one JSON object and nothing else, using exactly this shape:
 {"subject": string, "body": string, "rationale"?: string, "commits"?: [{"subject": string, "body": string, "reason": string, "paths": [string]}]}
-For one commit, omit rationale and commits. For a split, rationale says why in one sentence and every commit has subject, body, reason, and paths.
+For one commit, omit rationale and commits, or set rationale to "" and commits to []. For a split, rationale says why in one sentence and every commit has subject, body, reason, and paths.
 
 Branch: ${context.branch}
 

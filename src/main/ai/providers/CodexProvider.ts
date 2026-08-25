@@ -3,12 +3,13 @@ import os from 'node:os';
 import path from 'node:path';
 import type { AiHarnessStatus, AiModelOption } from '../../../shared/contracts';
 import { AiOperationError } from '../../../shared/errors';
+import { AI_PROVIDER_TIMEOUT_MS } from '../../../shared/ai-timeouts';
 import type { CliProcessRunner } from '../CliProcessRunner';
 import type { CliResolver } from '../CliResolver';
 import { parseJsonPayload } from '../CommitMessagePrompt';
 import { DEFAULT_MODEL, type AiProvider, type ProviderGenerateInput } from '../types';
 import { codexUsage } from '../usage';
-import { requireSuccess } from './provider-utils';
+import { requireSuccess, toCodexOutputSchema } from './provider-utils';
 
 export class CodexProvider implements AiProvider {
   readonly id = 'codex' as const;
@@ -38,14 +39,14 @@ export class CodexProvider implements AiProvider {
     const schemaPath = path.join(temporary, 'schema.json');
     const outputPath = path.join(temporary, 'output.json');
     try {
-      await writeFile(schemaPath, JSON.stringify(input.schema), { encoding: 'utf8', mode: 0o600 });
+      await writeFile(schemaPath, JSON.stringify(toCodexOutputSchema(input.schema)), { encoding: 'utf8', mode: 0o600 });
       // `--json` turns stdout into a JSONL event stream carrying the token
       // usage. The answer itself still comes from --output-last-message, so this
       // only adds information that was previously discarded.
       const args = ['exec', '--json', '--ephemeral', '--skip-git-repo-check', '-s', 'read-only'];
       if (input.model !== 'default') args.push('--model', input.model);
       args.push('--config', 'model_reasoning_effort="low"', '--output-schema', schemaPath, '--output-last-message', outputPath, '-');
-      const result = await this.runner.run(executable, args, { cwd: input.repositoryPath, stdin: input.prompt, timeoutMs: 180_000, signal: input.signal, removeEnv: ['OPENAI_API_KEY'] });
+      const result = await this.runner.run(executable, args, { cwd: input.repositoryPath, stdin: input.prompt, timeoutMs: AI_PROVIDER_TIMEOUT_MS, signal: input.signal, removeEnv: ['OPENAI_API_KEY'] });
       requireSuccess(result, this.id, 'codex-generate');
       return { output: parseJsonPayload(await readFile(outputPath, 'utf8')), usage: codexUsage(result.stdout) };
     } finally {

@@ -1,9 +1,11 @@
 import { IPC } from './contracts';
 import type { OpenTigServerApi } from './server-api';
+import { AI_SERVER_TIMEOUT_MS } from './ai-timeouts';
 
 const DEFAULT_MAX_REQUEST_BYTES = 1024 * 1024;
 const CONTENT_MAX_REQUEST_BYTES = 9 * 1024 * 1024;
 const FILE_WRITE_MAX_REQUEST_BYTES = 17 * 1024 * 1024;
+export const DEFAULT_COMMAND_TIMEOUT_MS = 30_000;
 
 export type OpenTigServerCommandName = (typeof IPC)[keyof typeof IPC];
 
@@ -23,6 +25,7 @@ export interface OpenTigServerCommandDefinition {
   operation: string;
   mutation: boolean;
   maxRequestBytes: number;
+  timeoutMs: number;
 }
 
 /**
@@ -49,11 +52,12 @@ export const OPEN_TIG_SERVER_COMMANDS = {
   'repository.getDirectoryEntries': command(IPC.repositoryDirectoryEntries, 'directory-entries', false),
   'repository.readFile': command(IPC.repositoryReadFile, 'read-file', false),
   'repository.readImage': command(IPC.repositoryReadImage, 'read-image', false),
-  'repository.writeFile': command(IPC.repositoryWriteFile, 'write-file', true, FILE_WRITE_MAX_REQUEST_BYTES),
+  'repository.getFavicon': command(IPC.repositoryGetFavicon, 'favicon', false),
+  'repository.writeFile': command(IPC.repositoryWriteFile, 'write-file', true, { maxRequestBytes: FILE_WRITE_MAX_REQUEST_BYTES }),
   'repository.getAbsolutePath': command(IPC.repositoryAbsolutePath, 'absolute-path', false),
   'repository.copyEntries': command(IPC.repositoryCopyEntries, 'copy-entries', true),
   'repository.cutEntries': command(IPC.repositoryCutEntries, 'cut-entries', true),
-  'repository.pasteEntries': command(IPC.repositoryPasteEntries, 'paste-entries', true, 66 * 1024 * 1024),
+  'repository.pasteEntries': command(IPC.repositoryPasteEntries, 'paste-entries', true, { maxRequestBytes: 66 * 1024 * 1024 }),
   'repository.moveEntry': command(IPC.repositoryMoveEntry, 'move-entry', true),
   'repository.moveEntries': command(IPC.repositoryMoveEntries, 'move-entries', true),
   'repository.deleteEntry': command(IPC.repositoryDeleteEntry, 'delete-entry', true),
@@ -76,8 +80,8 @@ export const OPEN_TIG_SERVER_COMMANDS = {
   'index.stageAll': command(IPC.indexStageAll, 'stage-all', true),
   'index.unstageAll': command(IPC.indexUnstageAll, 'unstage-all', true),
   'index.prepareCommitGroup': command(IPC.indexPrepareCommitGroup, 'prepare-commit-group', true),
-  'index.updateConflict': command(IPC.indexUpdateConflict, 'update-conflict', true, CONTENT_MAX_REQUEST_BYTES),
-  'index.resolveConflict': command(IPC.indexResolveConflict, 'resolve-conflict', true, CONTENT_MAX_REQUEST_BYTES),
+  'index.updateConflict': command(IPC.indexUpdateConflict, 'update-conflict', true, { maxRequestBytes: CONTENT_MAX_REQUEST_BYTES }),
+  'index.resolveConflict': command(IPC.indexResolveConflict, 'resolve-conflict', true, { maxRequestBytes: CONTENT_MAX_REQUEST_BYTES }),
 
   'commits.create': command(IPC.commitCreate, 'commit', true),
   'commits.undoLatest': command(IPC.commitUndoLatest, 'undo-latest-commit', true),
@@ -98,7 +102,7 @@ export const OPEN_TIG_SERVER_COMMANDS = {
   'refs.removeWorktree': command(IPC.worktreeRemove, 'remove-worktree', true),
 
   'ai.statuses': command(IPC.aiStatuses, 'ai-statuses', false),
-  'ai.generateCommitMessage': command(IPC.aiGenerateCommitMessage, 'ai-generate-commit-message', true),
+  'ai.generateCommitMessage': command(IPC.aiGenerateCommitMessage, 'ai-generate-commit-message', true, { timeoutMs: AI_SERVER_TIMEOUT_MS }),
   'ai.log': command(IPC.aiLog, 'ai-log', false),
   'ai.clearLog': command(IPC.aiClearLog, 'ai-clear-log', true),
   'ai.cancelGeneration': command(IPC.aiCancelGeneration, 'ai-cancel-generation', true),
@@ -111,7 +115,7 @@ export const OPEN_TIG_SERVER_COMMANDS = {
   'github.getPullRequestDiff': command(IPC.githubPrDiff, 'gh-pr-diff', false),
   'github.getPullRequestCommitDiff': command(IPC.githubPrCommitDiff, 'gh-pr-commit-diff', false),
   'github.createPullRequest': command(IPC.githubPrCreate, 'gh-pr-create', true),
-  'github.generateDraft': command(IPC.githubPrDraft, 'ai-pr-draft', true),
+  'github.generateDraft': command(IPC.githubPrDraft, 'ai-pr-draft', true, { timeoutMs: AI_SERVER_TIMEOUT_MS }),
   'github.cancelDraft': command(IPC.githubPrDraftCancel, 'ai-pr-draft-cancel', true),
 } as const satisfies Record<OpenTigServerMethodPath, OpenTigServerCommandDefinition>;
 
@@ -137,7 +141,13 @@ function command<Name extends OpenTigServerCommandName>(
   commandName: Name,
   operation: string,
   mutation: boolean,
-  maxRequestBytes = DEFAULT_MAX_REQUEST_BYTES,
+  options: { maxRequestBytes?: number; timeoutMs?: number } = {},
 ): OpenTigServerCommandDefinition & { command: Name } {
-  return { command: commandName, operation, mutation, maxRequestBytes };
+  return {
+    command: commandName,
+    operation,
+    mutation,
+    maxRequestBytes: options.maxRequestBytes ?? DEFAULT_MAX_REQUEST_BYTES,
+    timeoutMs: options.timeoutMs ?? DEFAULT_COMMAND_TIMEOUT_MS,
+  };
 }
