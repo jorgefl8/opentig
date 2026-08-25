@@ -21,4 +21,24 @@ describe('CliResolver', () => {
     process.env.PATH = directory;
     expect(await new CliResolver().resolve('codex')).toBe(executable);
   });
+
+  it('resolves OpenCode 2 when only opencode2 is on PATH', async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), 'opentig-resolver-'));
+    temporaryDirectories.push(directory);
+    const executable = path.join(directory, process.platform === 'win32' ? 'opencode2.cmd' : 'opencode2');
+    await writeFile(executable, '');
+    process.env.PATH = directory;
+    expect(await new CliResolver().resolve('opencode')).toBe(executable);
+  });
+
+  it('prefers OpenCode 1 over OpenCode 2 when both are on PATH', async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), 'opentig-resolver-'));
+    temporaryDirectories.push(directory);
+    const v1 = path.join(directory, process.platform === 'win32' ? 'opencode.exe' : 'opencode');
+    const v2 = path.join(directory, process.platform === 'win32' ? 'opencode2.cmd' : 'opencode2');
+    await writeFile(v1, '');
+    await writeFile(v2, '');
+    process.env.PATH = directory;
+    expect(await new CliResolver().resolve('opencode')).toBe(v1);
+  });
 });
