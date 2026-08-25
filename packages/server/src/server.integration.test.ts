@@ -43,6 +43,7 @@ describe('authoritative HTTP server', () => {
     expect(await index.text()).toContain('OpenTig test client');
     expect(index.headers.get('cache-control')).toBe('no-cache');
     expect(index.headers.get('content-security-policy')).toContain("frame-ancestors 'none'");
+    expect(index.headers.get('content-security-policy')).toMatch(/img-src [^;]*blob:/);
     expect(index.headers.get('x-content-type-options')).toBe('nosniff');
 
     const asset = await fetch(`${fixture.server.origin}/assets/app-12345678.js`);

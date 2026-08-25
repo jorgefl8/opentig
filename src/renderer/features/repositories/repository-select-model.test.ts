@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { RecentRepository, RepositoryProject } from '../../../shared/contracts';
-import { buildRepositoryPickerModel, getRepositoryPickerDisplayOrder, groupRecentRepositories, shortenRepositoryPath, touchRecentRepositories } from './repository-select-model';
+import { buildRepositoryPickerModel, formatRepositoryCheckout, getRepositoryPickerDisplayOrder, groupRecentRepositories, isLinkedWorktree, repositoryWorktreeLabel, shortenRepositoryPath, touchRecentRepositories } from './repository-select-model';
 
 function recent(id: string, commonDir = `C:\\repos\\${id}\\.git`, path = `C:\\repos\\${id}`): RecentRepository {
   return { id, name: id, repositoryName: id, path, commonDir, lastOpenedAt: '2026-01-01T00:00:00.000Z' };
@@ -31,6 +31,32 @@ describe('repository select model', () => {
     expect(shortenRepositoryPath('C:\\Users\\dev\\Desktop\\opentig')).toBe('…/dev/Desktop/opentig');
     expect(shortenRepositoryPath('/home/dev/opentig/')).toBe('…/home/dev/opentig');
     expect(shortenRepositoryPath('C:\\repos\\one')).toBe('C:/repos/one');
+  });
+
+  it('labels worktrees by folder name', () => {
+    const root = recent('root', 'C:\\repos\\opentig\\.git', 'C:\\repos\\opentig');
+    const linked = recent('linked', 'C:\\repos\\opentig\\.git', 'C:\\worktrees\\hotfix');
+    expect(repositoryWorktreeLabel({ key: 'c:/repos/opentig/.git', name: 'opentig', rootPath: 'C:\\repos\\opentig', recent: root })).toBe('opentig');
+    expect(repositoryWorktreeLabel({ key: 'c:/repos/opentig/.git', name: 'opentig', rootPath: 'C:\\repos\\opentig', recent: linked })).toBe('hotfix');
+  });
+
+  it('treats the repository root as the primary worktree and other folders as linked', () => {
+    const root = recent('root', 'C:\\repos\\opentig\\.git', 'C:\\repos\\opentig');
+    const linked = recent('linked', 'C:\\repos\\opentig\\.git', 'C:\\worktrees\\hotfix');
+    expect(isLinkedWorktree({ key: 'c:/repos/opentig/.git', name: 'opentig', rootPath: 'C:\\repos\\opentig', recent: root })).toBe(false);
+    expect(isLinkedWorktree({ key: 'c:/repos/opentig/.git', name: 'opentig', rootPath: 'C:\\repos\\opentig', recent: linked })).toBe(true);
+  });
+
+  it('shows only the branch for the primary worktree, and branch plus folder for a linked worktree', () => {
+    const root = recent('root', 'C:\\repos\\opentig\\.git', 'C:\\repos\\opentig');
+    const linked = recent('linked', 'C:\\repos\\opentig\\.git', 'C:\\worktrees\\hotfix');
+    const primary = { key: 'c:/repos/opentig/.git', name: 'opentig', rootPath: 'C:\\repos\\opentig', recent: root };
+    const linkedOption = { key: 'c:/repos/opentig/.git', name: 'opentig', rootPath: 'C:\\repos\\opentig', recent: linked };
+    expect(formatRepositoryCheckout(primary)).toBe('');
+    expect(formatRepositoryCheckout(primary, { branch: 'feat/headless', detached: false })).toBe('feat/headless');
+    expect(formatRepositoryCheckout(linkedOption)).toBe('hotfix');
+    expect(formatRepositoryCheckout(linkedOption, { branch: 'feat/headless', detached: false })).toBe('feat/headless · hotfix');
+    expect(formatRepositoryCheckout(linkedOption, { branch: null, detached: true })).toBe('Detached HEAD · hotfix');
   });
 
   it('exposes the same numbered order shown in the picker', () => {

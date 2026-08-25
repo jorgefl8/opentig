@@ -19,7 +19,7 @@ const MIME_TYPES: Readonly<Record<string, string>> = {
 };
 
 export const STATIC_SECURITY_HEADERS = {
-  'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' ws: wss:; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
+  'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' ws: wss:; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
   'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), payment=(), usb=()',
   'Referrer-Policy': 'no-referrer',
   'X-Content-Type-Options': 'nosniff',

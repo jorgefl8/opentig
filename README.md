@@ -37,12 +37,12 @@ It is intentionally not an IDE, hosting service, or replacement for the Git CLI.
 - Keep that backend loopback-only by default, or enable **Settings → Web access → LAN access** to restart the same utility listener on trusted LAN interfaces. Every browser still requires a one-use pairing code. A same-machine Cloudflare Tunnel or HTTPS reverse proxy can point straight to `http://127.0.0.1:<port>` without registering the public URL in OpenTig: open `/pair` on that domain and paste the generated code. OpenTig validates each HTTP/WebSocket origin against the authority used for that request, trusts forwarded authority/client-IP metadata only from loopback, and issues a `Secure` cookie for HTTPS. The same pane gives paired devices editable names, shows browser/OS, proxy/IP and connection activity, and revokes them individually or together; stale desktop sessions are replaced rather than accumulated. Browsers can manage sessions but cannot change the native listener.
 - Relocate a recent repository when its folder moved, preserving its project assignment, open tabs, and expanded folders.
 - Group related repositories into named OpenTig projects without moving anything on disk.
-- Pull or push an individual repository from its row in the repository picker. Only pending operations are shown, each with its ahead/behind commit count; multiple repositories can sync concurrently, and their separate Sileo progress and outcome cards remain visible together. Opening the picker fetches each listed repository so those counts match the remote, not a stale local cache.
+- Pull or push an individual repository from its row in the repository picker. Each row shows the repository name plus the branch that pull or push will use, and the worktree folder when that checkout is a linked worktree (the filesystem path is on the hover tooltip). When the repository has a favicon or app icon on disk (`favicon.svg`/`favicon.ico` at the root or under `public/`, `app/`, and similar locations, or a `<link rel="icon">` in `index.html`), that icon appears beside the name in the toolbar picker and in each row. Only pending operations are shown, each with its ahead/behind commit count; multiple repositories can sync concurrently, and their separate Sileo progress and outcome cards remain visible together. Opening the picker fetches each listed repository so those counts and checkouts match the remote, not a stale local cache.
 - Fetch remotes in the background so toolbar ahead/behind counts stay current. The default interval is 30 seconds and can be raised, lowered, or turned off in **Settings → General**.
 - Create, rename, delete, and reassign project groups.
 - Switch quickly between repositories, branches, and available worktrees.
 - Display current branch, ahead/behind state, and worktree insertion/deletion totals in the main toolbar.
-- Carry the OpenTig logo through the main toolbar, packaged Windows application, installer, and taskbar.
+- Carry the OpenTig logo through the main toolbar, browser favicon, packaged Windows application, installer, and taskbar. In the toolbar the ring follows the theme text colour so it stays visible in light and dark, while the T stays brand blue. The favicon and Windows application icon place that mark on a dark rounded badge. Desktop and browser clients share the same logo splash while starting or connecting to the server.
 
 ### Changes, diffs, and commits
 
@@ -50,7 +50,7 @@ It is intentionally not an IDE, hosting service, or replacement for the Git CLI.
 - Display changes as a flat list or recursive tree.
 - Treat each visually highlighted change or folder row as one continuous click target, with a pointer cursor across the active surface, while preserving its dedicated diff, open, stage, unstage, and discard controls.
 - Stage or unstage individual files, folders, selections, or everything at once.
-- Discard selected unstaged changes through an in-app confirmation; untracked files are sent to system Trash (the Recycle Bin on Windows).
+- Discard selected unstaged changes through an in-app confirmation that lists the affected paths; untracked files are sent to system Trash (the Recycle Bin on Windows).
 - Review syntax-aware diffs in unified or split mode, with optional line wrapping, colored with the same One Light/One Dark Pro token palette as the Files editor and Markdown code blocks; added, deleted, and modified lines keep their own diff colors.
 - Open changed Markdown files directly in their staged or unstaged diff, while keeping **Open file** available for the rendered preview. Changed HTML, SVG, and image files retain their direct rich preview and separate diff action.
 - Resolve merge conflicts in the built-in conflict editor, syntax-highlighted with the same palette as diffs and the Files editor, and mark resolved files for staging.
@@ -58,8 +58,8 @@ It is intentionally not an IDE, hosting service, or replacement for the Git CLI.
 - Let the selected AI CLI suggest a reviewed multi-commit plan when staged files represent independent responsibilities, then prepare one complete-file group at a time without creating commits automatically.
 - Work through that plan at your own pace: groups keep their original numbering as you commit them, show how many are done, open any listed file's diff for review, and each group is independently rechecked against its files so a plan cannot be applied after those files changed.
 - When a split cannot be offered, OpenTig says why instead of staying silent, for example because a file is only partially staged or was renamed.
-- Every generation is recorded locally for diagnostics: harness, model, outcome, duration, the tokens and cost the harness reported, and why a proposed split was refused. Only this metadata is stored; prompts and file contents never leave the repository.
-- Review that history from **Settings → AI commit messages → View history**, in a sortable table (click a column header to sort) that scrolls within the dialog, with totals for runs, failures, tokens, and reported cost, and clear it whenever you want.
+- Every generation is recorded locally for diagnostics: harness, model, outcome, duration, the tokens and cost the harness reported, why a proposed split was refused, and, when a run fails, the error the harness returned. Only this metadata is stored; prompts and file contents never leave the repository.
+- Review that history from **Settings → AI assistance → View history**, in a sortable table (click a column header to sort) that scrolls within the dialog, with totals for runs, failures, tokens, and reported cost, and clear it whenever you want.
 - Undo the latest unpublished commit while keeping its changes staged. OpenTig verifies the expected commit and upstream state before rewriting history.
 
 ### Safe pull and push
@@ -69,7 +69,7 @@ It is intentionally not an IDE, hosting service, or replacement for the Git CLI.
 - Preserve local changes through a temporary safety stash when pulling, including untracked files.
 - Keep and report the recovery stash if changes cannot be restored cleanly.
 - Refuse unsafe pull or push states such as unresolved conflicts, an active Git operation, or missing upstream configuration.
-- Surface remote rejection, branch-protection, authentication, and configuration failures as actionable messages.
+- Surface remote rejection, branch-protection, authentication, configuration, and other one-shot operation failures as Sileo toasts rather than a persistent top banner. Those toasts stay above open dialogs, so an action started from Settings or a confirmation can still report its outcome. Read-only Git operations and pending conflicts still use in-app banners.
 
 ### Files and editing
 
@@ -132,19 +132,22 @@ GitHub features use the authenticated GitHub CLI (`gh`):
 
 ### Optional AI assistance
 
-OpenTig supports locally installed Codex, Claude Code, and OpenCode CLIs. It can:
+OpenTig supports locally installed Codex, Claude Code, and OpenCode CLIs. OpenCode 1 installs as `opencode` (`opencode-ai`); OpenCode 2 installs as `opencode2` (`@opencode-ai/cli`). OpenTig detects either binary and prefers OpenCode 1 when both are on `PATH`. It can:
 
 - generate an editable commit message from staged changes;
 - propose multiple focused commits, including their messages, reasons, and complete-file groups, when a split is clearly beneficial;
 - generate an editable pull-request title and description from the current branch diff;
 - detect installed providers, authentication state, and available models;
-- cancel an in-progress generation request.
+- keep large commit and pull-request analyses running for up to ten minutes without a generic transport timeout discarding a valid result;
+- normalize harmless trailing periods in generated commit subjects instead of discarding an otherwise valid result;
+- cancel an in-progress generation request, including when its client disconnects or its bounded execution window expires.
 
 AI never creates a commit or pull request automatically. You review and edit the generated text before any Git or GitHub action occurs.
 
 ### Preferences
 
 - System, light, and dark themes.
+- Interface and code fonts from **Settings → General**, each with its own dropdown. Interface: Geist, Plus Jakarta Sans, or Space Grotesk. Code: Geist Mono, JetBrains Mono, Inconsolata, Departure Mono, or Space Grotesk. Defaults are Geist and Inconsolata.
 - Adjustable interface scale.
 - Tree or list layout for changes.
 - Optional line wrapping in viewers.
@@ -152,6 +155,7 @@ AI never creates a commit or pull request automatically. You review and edit the
 - Per-provider AI model selection.
 - Rebind most keyboard shortcuts from **Settings → Shortcuts**, with per-shortcut conflict detection and one-click reset to defaults; the shortcuts marked fixed below follow platform or file-manager conventions and cannot be changed.
 - Turn off the double-tap-Control shortcut that brings OpenTig to the front from any application, also from **Settings → Shortcuts**.
+- Confirmations and secondary windows opened from Settings (revoking a browser, enabling LAN access, renaming a device, or viewing AI history) overlay the app at their own size, instead of inheriting the Settings window's width.
 - Persisted sidebar width, viewer preferences, shortcut customizations, recent repositories, projects, expanded file-tree paths, and each worktree's open file tabs.
 
 ## Keyboard shortcuts
@@ -194,6 +198,7 @@ gh auth login
 codex login
 claude auth login
 opencode auth login
+opencode2 auth login
 ```
 
 Only install the tools you intend to use. GitHub functionality requires `gh`; AI features require at least one supported AI CLI.
@@ -278,7 +283,7 @@ The unpacked executable is written to `out/OpenTig-win32-x64/OpenTig.exe`.
 
 For commit-message generation, OpenTig sends the selected local AI CLI only a bounded staged diff, its summary, staged paths, the branch name, and up to ten recent commit subjects. It does not include unstaged content; untracked files are included only after you stage them.
 
-Multi-commit proposals are accepted only when they partition every staged path exactly once. OpenTig suppresses them for truncated context, partially staged files, and staged renames, and verifies that the staged snapshot has not changed before preparing the first group. Preparing a group changes only the Git index; every commit still requires an explicit review and confirmation.
+Multi-commit proposals are accepted only when they partition every staged path exactly once. OpenTig preserves its generous, fairly distributed patch budget for large staged changes; a trimmed individual diff can still be grouped from the complete path list and summary. Proposals remain blocked when the complete file set cannot be trusted, such as partially staged files or staged renames, and OpenTig verifies that the staged snapshot has not changed before preparing the first group. Preparing a group changes only the Git index; every commit still requires an explicit review and confirmation.
 
 For pull-request drafting, it sends a bounded comparison between the current branch and the selected base branch. If the context is truncated, the interface tells you to review the result carefully.
 
