@@ -314,7 +314,9 @@ function invalidGh(operation: string): GhOperationError {
 
 export function booleanArg(value: unknown, operation: string, fallback = false): boolean {
   const parsed = booleanWithDefaultSchema(fallback).safeParse(value);
-  if (!parsed.success) throw invalidAi(operation);
+  if (!parsed.success) {
+    throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation, message: 'Invalid argument.' });
+  }
   return parsed.data;
 }
 

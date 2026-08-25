@@ -57,10 +57,10 @@ export function destructiveActionCopy(action: DestructiveAction): DestructiveAct
   if (action.kind === 'discard') {
     return {
       title: 'Discard changes',
-      message: `Discard changes to ${action.paths.length === 1 ? 'this file' : `these ${action.paths.length} files`}?`,
-      detail: action.hasUntracked
+      message: action.hasUntracked
         ? 'Untracked files will be moved to system Trash. Other local changes will be lost.'
-        : 'The selected local changes will be lost.',
+        : 'These local changes will be lost.',
+      detail: action.paths.join('\n'),
       confirmLabel: 'Discard',
     };
   }

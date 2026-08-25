@@ -12,8 +12,17 @@ function DialogPopup({
   ...props
 }: DialogPrimitive.Popup.Props) {
   return (
-    <DialogPrimitive.Portal>
+    <DialogPrimitive.Portal
+      // Nested FloatingPortals mount inside the parent portal by default, so a
+      // confirm from Settings inherits that popup's transform, overflow, and
+      // 760px width. Always land on `document.body` instead.
+      container={typeof document === "undefined" ? undefined : document.body}
+      className="isolate z-50"
+    >
       <DialogPrimitive.Backdrop
+        // Nested dialogs omit their backdrop unless forced, which leaves the
+        // parent fully visible around the child (a card sitting on Settings).
+        forceRender
         data-slot="dialog-backdrop"
         className="fixed inset-0 z-50 bg-black/45 backdrop-blur-[2px] duration-150 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0"
       />

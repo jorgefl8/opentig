@@ -269,24 +269,47 @@ export function WebAccessSettings() {
       {!desktopApi && <p className="web-access-hint">Listener addresses and new pairing links are controlled by the OpenTig desktop app or CLI running the server.</p>}
 
       <Dialog open={enableWarningOpen} onOpenChange={setEnableWarningOpen}>
-        <DialogPopup className="web-access-warning-dialog">
-          <div className="web-access-warning-content"><IconAlertTriangle /><div><DialogTitle>Enable owner-level LAN access?</DialogTitle><DialogDescription>Any paired browser can edit or delete files and act with your OS user permissions. Use only a trusted LAN or VPN.</DialogDescription></div></div>
-          <div className="web-access-warning-actions"><DialogClose render={<Button variant="ghost" size="sm" />}>Cancel</DialogClose><Button size="sm" onClick={() => void changeExposure(true)} disabled={action !== null}>Enable LAN access</Button></div>
+        <DialogPopup className="undo-commit-dialog">
+          <div className="undo-commit-content">
+            <DialogTitle>Enable owner-level LAN access?</DialogTitle>
+            <DialogDescription>Any paired browser can edit or delete files and act with your OS user permissions. Use only a trusted LAN or VPN.</DialogDescription>
+          </div>
+          <div className="undo-commit-actions">
+            <DialogClose render={<Button variant="ghost" />}>Cancel</DialogClose>
+            <Button onClick={() => void changeExposure(true)} disabled={action !== null}>Enable LAN access</Button>
+          </div>
         </DialogPopup>
       </Dialog>
 
       <Dialog open={revokeTarget !== null} onOpenChange={(open) => { if (!open) setRevokeTarget(null); }}>
-        <DialogPopup className="web-access-warning-dialog">
-          <div className="web-access-warning-content"><IconShieldLock /><div><DialogTitle>{revokeTarget === 'all' ? 'Revoke all browser sessions?' : 'Revoke this browser session?'}</DialogTitle><DialogDescription>{revokeTarget === 'all' ? 'Every paired browser disconnects immediately. The private desktop session remains signed in.' : revokeTarget?.current ? 'This browser will disconnect immediately and require a new pairing link.' : 'That browser disconnects immediately and will require a new pairing link.'}</DialogDescription></div></div>
-          <div className="web-access-warning-actions"><DialogClose render={<Button variant="ghost" size="sm" />}>Cancel</DialogClose><Button variant="destructive" size="sm" onClick={() => void revokeConfirmed()} disabled={action !== null}>Revoke</Button></div>
+        <DialogPopup className="undo-commit-dialog">
+          <div className="undo-commit-content">
+            <DialogTitle>{revokeTarget === 'all' ? 'Revoke all browser sessions?' : 'Revoke this browser session?'}</DialogTitle>
+            <DialogDescription>{revokeTarget === 'all' ? 'Every paired browser disconnects immediately. The private desktop session remains signed in.' : revokeTarget?.current ? 'This browser will disconnect immediately and require a new pairing link.' : 'That browser disconnects immediately and will require a new pairing link.'}</DialogDescription>
+            {revokeTarget && revokeTarget !== 'all' && (
+              <div className="undo-commit-summary"><strong>{revokeTarget.clientName}</strong></div>
+            )}
+          </div>
+          <div className="undo-commit-actions">
+            <DialogClose render={<Button variant="ghost" />}>Cancel</DialogClose>
+            <Button variant="destructive" onClick={() => void revokeConfirmed()} disabled={action !== null}>
+              <IconShieldLock /> Revoke
+            </Button>
+          </div>
         </DialogPopup>
       </Dialog>
 
       <Dialog open={renameTarget !== null} onOpenChange={(open) => { if (!open) setRenameTarget(null); }}>
-        <DialogPopup className="web-access-warning-dialog">
-          <div className="web-access-rename-content"><DialogTitle>Rename paired device</DialogTitle><DialogDescription>Use a name that makes this browser easy to identify later.</DialogDescription></div>
-          <input className="web-access-rename-input" value={renameInput} onChange={(event) => setRenameInput(event.target.value)} maxLength={64} aria-label="Device name" autoComplete="off" />
-          <div className="web-access-warning-actions"><DialogClose render={<Button variant="ghost" size="sm" />}>Cancel</DialogClose><Button size="sm" onClick={() => void renameConfirmed()} disabled={action !== null || !renameInput.trim()}>Save</Button></div>
+        <DialogPopup className="undo-commit-dialog">
+          <div className="undo-commit-content">
+            <DialogTitle>Rename paired device</DialogTitle>
+            <DialogDescription>Use a name that makes this browser easy to identify later.</DialogDescription>
+            <input className="web-access-rename-input" value={renameInput} onChange={(event) => setRenameInput(event.target.value)} maxLength={64} aria-label="Device name" autoComplete="off" />
+          </div>
+          <div className="undo-commit-actions">
+            <DialogClose render={<Button variant="ghost" />}>Cancel</DialogClose>
+            <Button onClick={() => void renameConfirmed()} disabled={action !== null || !renameInput.trim()}>Save</Button>
+          </div>
         </DialogPopup>
       </Dialog>
     </div>
