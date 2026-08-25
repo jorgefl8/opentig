@@ -11,6 +11,7 @@ import { VIEWER_SCROLLBAR_CSS } from './patch-utils';
 import { PierreWorkerPool } from './PierreWorkerPool';
 import { syncScrollFraction } from './scroll-sync';
 import { buildFileEditorKeymap } from './source-editor-keymap';
+import { shouldVirtualizeSourceEditor } from './source-editor-virtualization';
 import { useEditableFileDraft } from './useEditableFileDraft';
 import { useShortcuts } from '@/app/useShortcuts';
 import { readClipboardText } from '@/lib/browser-capabilities';
@@ -129,9 +130,13 @@ function VirtualizerScrollBridge({ handleRef }: { handleRef: MutableRefObject<Vi
 export function SourceCodeEditor({ path, cacheKey, value, themeType, wrapLines, readOnly, onChange, ref }: SourceCodeEditorProps) {
   const editReady = useContext(EditReadyContext);
   const shortcuts = useShortcuts();
+  // Keep the surface type stable for this mount. Crossing the threshold while
+  // typing must not replace the editor DOM, caret, history, or scroll position.
+  const [virtualized] = useState(() => shouldVirtualizeSourceEditor(value));
   const onChangeRef = useRef(onChange);
   useEffect(() => { onChangeRef.current = onChange; }, [onChange]);
   const virtualizerRef = useRef<VirtualizerHandle>(undefined);
+  const plainScrollRef = useRef<HTMLDivElement>(null);
 
   const file = useMemo(() => ({ name: path, contents: value, cacheKey }), [cacheKey, path, value]);
   const options = useMemo(() => ({
@@ -155,7 +160,7 @@ export function SourceCodeEditor({ path, cacheKey, value, themeType, wrapLines, 
 
   useImperativeHandle(ref, () => ({
     getScrollFraction() {
-      const root = virtualizerRef.current?.getRoot();
+      const root = virtualizerRef.current?.getRoot() ?? plainScrollRef.current;
       if (!(root instanceof HTMLElement)) return 0;
       const max = root.scrollHeight - root.clientHeight;
       return max > 0 ? root.scrollTop / max : 0;
@@ -167,36 +172,47 @@ export function SourceCodeEditor({ path, cacheKey, value, themeType, wrapLines, 
       // of the target line. Reapply until its height settles.
       cancelScrollSync.current = syncScrollFraction({
         getScrollRange() {
-          const root = virtualizerRef.current?.getRoot();
+          const root = virtualizerRef.current?.getRoot() ?? plainScrollRef.current;
           return root instanceof HTMLElement ? Math.max(0, root.scrollHeight - root.clientHeight) : 0;
         },
         getScrollTop() {
-          const root = virtualizerRef.current?.getRoot();
+          const root = virtualizerRef.current?.getRoot() ?? plainScrollRef.current;
           return root instanceof HTMLElement ? root.scrollTop : 0;
         },
         getContentHeight() {
-          const root = virtualizerRef.current?.getRoot();
+          const root = virtualizerRef.current?.getRoot() ?? plainScrollRef.current;
           return root instanceof HTMLElement ? root.scrollHeight : 0;
         },
         scrollTo(top) {
           const virtualizer = virtualizerRef.current;
-          if (virtualizer && virtualizerRef.current?.getRoot() instanceof HTMLElement) virtualizer.scrollTo({ top });
+          if (virtualizer && virtualizer.getRoot() instanceof HTMLElement) virtualizer.scrollTo({ top });
+          else plainScrollRef.current?.scrollTo({ top });
         },
       }, fraction);
     },
   }), []);
 
+  const fileSurface = (
+    <File
+      file={file}
+      options={options}
+      editorOptions={editorOptions}
+      edit={editReady && !readOnly}
+    />
+  );
+
   return (
     <PierreWorkerPool theme={OPENTIG_CODE_THEMES}>
+      {virtualized ? (
       <Virtualizer className="source-code-editor" contentClassName="source-code-editor-content">
         <VirtualizerScrollBridge handleRef={virtualizerRef} />
-        <File
-          file={file}
-          options={options}
-          editorOptions={editorOptions}
-          edit={editReady && !readOnly}
-        />
+        {fileSurface}
       </Virtualizer>
+      ) : (
+        <div ref={plainScrollRef} className="source-code-editor">
+          <div className="source-code-editor-content">{fileSurface}</div>
+        </div>
+      )}
     </PierreWorkerPool>
   );
 }
