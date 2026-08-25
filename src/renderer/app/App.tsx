@@ -53,6 +53,7 @@ import { useRepositoryFavicons } from '@/features/repositories/useRepositoryFavi
 import { RepositoryProjectsDialog } from '@/features/repositories/RepositoryProjectsDialog';
 import { buildCommitGraph, type CommitGraphRow } from '@/features/history/commit-graph';
 import { AiLogDialog } from '@/features/ai/AiLogDialog';
+import { AiProviderIcon } from '@/features/ai/AiProviderIcon';
 import { SearchView } from '@/features/search/SearchView';
 import { buildRepositoryPickerModel, formatRepositoryCheckout, getRepositoryPickerDisplayOrder, groupRecentRepositories, touchRecentRepositories, type RepositoryOption } from '@/features/repositories/repository-select-model';
 import type { ViewerSelection } from '@/features/viewer/Viewer';
@@ -2027,7 +2028,13 @@ export default function App() {
           stagedCount={status?.stagedCount ?? 0}
           message={commitMessage}
           generating={Boolean(generating)}
-          harness={harnessLabel(bootstrap.preferences.commitMessageHarness)}
+          harness={bootstrap.preferences.commitMessageHarness}
+          harnessLabel={harnessLabel(bootstrap.preferences.commitMessageHarness)}
+          modelLabel={aiModelLabel(
+            capabilities?.aiProviders,
+            bootstrap.preferences.commitMessageHarness,
+            bootstrap.preferences.commitMessageModels[bootstrap.preferences.commitMessageHarness] ?? 'default',
+          )}
           busy={busy}
           readOnly={Boolean(status?.readOnly)}
           canPush={Boolean(status?.upstream)}
@@ -2759,8 +2766,11 @@ function SettingsDialog({ preferences, onPreference, open, onOpenChange, section
                     return (
                       <button key={harness} type="button" role="radio" aria-checked={selected} className={`ai-harness-card ${selected ? 'active' : ''}`} onClick={() => onPreference({ commitMessageHarness: harness })}>
                         <span className="ai-harness-card-main">
-                          <strong>{harnessLabel(harness)}</strong>
-                          <small>{harnessStatus?.version || (loadingStatuses ? 'Checking…' : 'Status not checked')}</small>
+                          <AiProviderIcon harness={harness} />
+                          <span className="ai-harness-card-copy">
+                            <strong>{harnessLabel(harness)}</strong>
+                            <small>{harnessStatus?.version || (loadingStatuses ? 'Checking…' : 'Status not checked')}</small>
+                          </span>
                         </span>
                         <Badge variant={availabilityBadgeVariant(harnessStatus)} className={`ai-status-badge ${harnessStatus?.availability ?? 'unknown'}`}>
                           {availabilityLabel(harnessStatus)}
@@ -3497,6 +3507,11 @@ function aiErrorTitle(detail: SerializedAiError | null): string {
   return 'Could not generate the message';
 }
 function harnessLabel(harness: AiHarnessId): string { return harness === 'codex' ? 'Codex' : harness === 'claude' ? 'Claude Code' : 'OpenCode'; }
+
+function aiModelLabel(providers: AiHarnessStatus[] | undefined, harness: AiHarnessId, model: string): string {
+  return providers?.find((provider) => provider.id === harness)?.models.find((option) => option.id === model)?.label
+    ?? (model === 'default' ? 'Default (CLI)' : model);
+}
 function availabilityLabel(status: AiHarnessStatus | undefined): string {
   if (!status) return 'Not checked';
   if (!status.installed) return 'Not installed';

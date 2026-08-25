@@ -831,9 +831,16 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   .ai-harness-card { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 5px 12px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--background); padding: 12px 13px; text-align: left; transition: border-color .14s ease, background-color .14s ease, box-shadow .14s ease; }
   .ai-harness-card:hover { background: var(--muted); }
   .ai-harness-card.active { border-color: color-mix(in oklch, var(--primary) 55%, transparent); background: color-mix(in oklch, var(--primary) 8%, var(--background)); box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--primary) 20%, transparent); }
-  .ai-harness-card-main { display: grid; min-width: 0; gap: 2px; }
+  .ai-harness-card-main { display: flex; min-width: 0; align-items: center; gap: 10px; }
+  .ai-harness-card-copy { display: grid; min-width: 0; gap: 2px; }
   .ai-harness-card-main strong { font-size: 12px; }
   .ai-harness-card-main small, .ai-harness-message { overflow: hidden; color: var(--muted-foreground); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+  .ai-provider-icon { display: inline-flex; width: 18px; height: 18px; flex: none; color: var(--foreground); }
+  .ai-provider-icon-themed { position: relative; }
+  .ai-provider-icon-themed img { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .ai-provider-icon-for-dark { display: none; }
+  .dark .ai-provider-icon-for-light { display: none; }
+  .dark .ai-provider-icon-for-dark { display: block; }
   .ai-harness-message { grid-column: 1 / -1; white-space: normal; }
   .ai-status-badge.ready { background: color-mix(in oklch, var(--diff-added) 18%, transparent); color: var(--diff-added); }
   .ai-model-select { width: min(100%, 420px); }
@@ -1330,7 +1337,10 @@ section[data-sileo-viewport] { z-index: 200; }
   .commit-composer-actions [data-slot="button"] { height: 36px; font-weight: 600; }
   .commit-composer-generate { width: 100%; border-color: var(--border); background: transparent; color: var(--muted-foreground); }
   .commit-composer-generate:hover:not(:disabled) { background: var(--row-hover); color: var(--foreground); }
+  .commit-composer-generate > .ai-provider-icon { width: 16px; height: 16px; }
+  .commit-composer-provider { display: inline-flex; min-width: 0; align-items: center; gap: 5px; }
   .commit-composer-harness { color: var(--primary); font-weight: 650; }
+  .commit-composer-model { color: var(--foreground); font-weight: 560; }
   .commit-plan { display: grid; gap: 7px; border: 1px solid color-mix(in oklch, var(--primary) 28%, var(--border)); border-radius: var(--radius-lg); background: color-mix(in oklch, var(--primary) 6%, var(--background)); padding: 9px; }
   .commit-plan-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
   .commit-plan-heading > span { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; }
