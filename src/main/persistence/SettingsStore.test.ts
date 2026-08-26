@@ -11,6 +11,42 @@ afterEach(async () => {
   await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true, maxRetries: 3 })));
 });
 
+describe('SettingsStore document recovery', () => {
+  it('restores recents from the backup when settings.json does not parse', async () => {
+    const file = await settingsFile({
+      recentRepositories: [{ id: 'kept', name: 'kept', path: 'C:\\repos\\kept', lastOpenedAt: '2026-01-01T00:00:00.000Z' }],
+    });
+    const store = new SettingsStore(file);
+    await store.load();
+    await writeFile(file, '{truncated');
+    const recovered = new SettingsStore(file);
+    await recovered.load();
+    expect(recovered.recentRepositories.map((item) => item.id)).toEqual(['kept']);
+    expect(JSON.parse(await readFile(file, 'utf8')).version).toBe(1);
+  });
+
+  it('falls back to defaults when both the document and backup are unreadable', async () => {
+    const file = await settingsFile({ recentRepositories: [{ id: 'gone', name: 'gone', path: 'C:\\repos\\gone', lastOpenedAt: '2026-01-01T00:00:00.000Z' }] });
+    await writeFile(file, '{truncated');
+    await writeFile(`${file}.bak`, '{also-bad');
+    const kinds: string[] = [];
+    const store = new SettingsStore(file, (kind) => { kinds.push(kind); });
+    await store.load();
+    expect(store.recentRepositories).toEqual([]);
+    expect(kinds).toEqual(['defaults']);
+  });
+
+  it('rewrites a versioned canonical document after repairing a valid home', async () => {
+    const file = await settingsFile({ preferences: { theme: 'dark', diffView: 'split', sidebarWidth: 360, showDotEnvFiles: true, uiZoom: 100 } });
+    const store = new SettingsStore(file);
+    await store.load();
+    const persisted = JSON.parse(await readFile(file, 'utf8'));
+    expect(persisted.version).toBe(1);
+    expect(persisted.preferences.theme).toBe('dark');
+    expect(JSON.parse(await readFile(`${file}.bak`, 'utf8')).version).toBe(1);
+  });
+});
+
 describe('SettingsStore AI preferences', () => {
   it('migrates settings created before AI preferences existed', async () => {
     const file = await settingsFile({ preferences: { theme: 'dark', diffView: 'split', sidebarWidth: 360, showDotEnvFiles: true, uiZoom: 100 } });
@@ -248,7 +284,7 @@ describe('SettingsStore Files tree state', () => {
     store.setFilesTreeExpandedPaths(repositoryId, ['src']);
     store.setFilesTreeExpandedPaths(repositoryId, ['src', 'docs']);
     await vi.advanceTimersByTimeAsync(749);
-    expect(JSON.parse(await readFile(file, 'utf8')).filesTreeStates).toBeUndefined();
+    expect(JSON.parse(await readFile(file, 'utf8')).filesTreeStates ?? []).toEqual([]);
     await vi.advanceTimersByTimeAsync(1);
     await store.flush();
     expect(JSON.parse(await readFile(file, 'utf8')).filesTreeStates[0].expandedPaths).toEqual(['docs', 'src']);
@@ -327,7 +363,7 @@ describe('SettingsStore open files state', () => {
     store.setOpenFilesState(repositoryId, [{ path: 'src/a.ts', pinned: false }], 'src/a.ts', 'src/a.ts');
     store.setOpenFilesState(repositoryId, tabs, 'src/b.ts', null);
     await vi.advanceTimersByTimeAsync(749);
-    expect(JSON.parse(await readFile(file, 'utf8')).openFilesStates).toBeUndefined();
+    expect(JSON.parse(await readFile(file, 'utf8')).openFilesStates ?? []).toEqual([]);
     await vi.advanceTimersByTimeAsync(1);
     await store.flush();
     const persisted = JSON.parse(await readFile(file, 'utf8'));

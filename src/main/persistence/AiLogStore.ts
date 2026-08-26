@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
-import { appendFile, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
+import { writeFileAtomically } from './atomicWrite';
 import {
   AI_LOG_COMPACTION_SLACK, type AiLogEntry, type AiLogStatus, MAX_AI_LOG_ENTRIES, normalizeAiLogEntry, parseAiLogLines, sortAiLogEntries,
 } from '../../shared/ai-log';
@@ -74,8 +75,7 @@ export class AiLogStore implements AiLogRecorder {
 
   async clear(): Promise<void> {
     await this.flush();
-    await mkdir(path.dirname(this.filePath), { recursive: true });
-    await writeFile(this.filePath, '', { encoding: 'utf8', mode: 0o600 });
+    await writeFileAtomically(this.filePath, '');
     this.lines = 0;
   }
 
@@ -95,10 +95,8 @@ export class AiLogStore implements AiLogRecorder {
   /** Rewrites the file with the newest entries, replacing it atomically. */
   private async compact(): Promise<void> {
     const kept = sortAiLogEntries(await this.readEntries());
-    const temporary = `${this.filePath}.${randomUUID()}.tmp`;
     const body = kept.map((entry) => JSON.stringify(entry)).join('\n');
-    await writeFile(temporary, body ? `${body}\n` : '', { encoding: 'utf8', mode: 0o600 });
-    await rename(temporary, this.filePath);
+    await writeFileAtomically(this.filePath, body ? `${body}\n` : '');
     this.lines = kept.length;
   }
 }

@@ -1,6 +1,5 @@
-import { randomUUID } from 'node:crypto';
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
-import path from 'node:path';
+import { readFile } from 'node:fs/promises';
+import { writeFileAtomically } from '../persistence/atomicWrite';
 
 export interface DesktopWindowBounds {
   width: number;
@@ -30,10 +29,7 @@ export class DesktopWindowState {
   save(bounds: DesktopWindowBounds): Promise<void> {
     const normalized = normalizeBounds(bounds) ?? { ...DEFAULT_BOUNDS };
     const write = this.pendingWrite.then(async () => {
-      await mkdir(path.dirname(this.filePath), { recursive: true });
-      const temporary = `${this.filePath}.${randomUUID()}.tmp`;
-      await writeFile(temporary, JSON.stringify(normalized, null, 2), { encoding: 'utf8', mode: 0o600 });
-      await rename(temporary, this.filePath);
+      await writeFileAtomically(this.filePath, `${JSON.stringify(normalized, null, 2)}\n`, { parseJson: true });
     });
     this.pendingWrite = write.catch(() => undefined);
     return write;

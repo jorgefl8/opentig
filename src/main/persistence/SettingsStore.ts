@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { z } from 'zod';
 import type { AiHarnessId, MonoFontPreference, Preferences, RecentRepository, RepositoryInfo, RepositoryOrganization, RepositoryProject, UiFontPreference } from '../../shared/contracts';
@@ -9,9 +9,14 @@ import { FILES_TREE_SAVE_DEBOUNCE_MS, normalizeFilesTreeStates, type FilesTreeSt
 import { cloneOpenFilesState, normalizeOpenFilesStates, OPEN_FILES_SAVE_DEBOUNCE_MS, type OpenFilesState, upsertOpenFilesState } from '../../shared/open-files-state';
 import { MAX_PROJECT_NAME_LENGTH, MAX_REPOSITORIES_PER_PROJECT, MAX_REPOSITORY_KEY_LENGTH, MAX_REPOSITORY_PROJECTS, normalizeRepositoryKey, UNASSIGNED_RECENT_LIMIT } from '../../shared/repository-projects';
 import { DEFAULT_REMOTE_FETCH_INTERVAL_SECONDS, normalizeRemoteFetchIntervalSeconds } from '../../shared/remote-fetch';
+import { backupPathFor, writeFileAtomically } from './atomicWrite';
+
+export const SETTINGS_SCHEMA_VERSION = 1;
+export type SettingsRecovery = 'backup' | 'defaults';
 
 interface WindowBounds { width: number; height: number; x?: number; y?: number }
 interface SettingsData {
+  version: number;
   recentRepositories: RecentRepository[];
   repositoryProjects: RepositoryProject[];
   filesTreeStates: FilesTreeState[];
@@ -25,6 +30,7 @@ interface SettingsData {
 type BackgroundChannel = 'filesTree' | 'openFiles';
 
 const defaults: SettingsData = {
+  version: SETTINGS_SCHEMA_VERSION,
   recentRepositories: [],
   repositoryProjects: [],
   filesTreeStates: [],
@@ -43,6 +49,7 @@ const defaults: SettingsData = {
 // Disk input is intentionally permissive. Each field is repaired independently
 // so one legacy or corrupt preference never resets valid sibling settings.
 const settingsRecordSchema = z.looseObject({
+  version: z.unknown().optional(),
   recentRepositories: z.unknown().optional(), repositoryProjects: z.unknown().optional(), filesTreeStates: z.unknown().optional(),
   openFilesStates: z.unknown().optional(), activeRepositoryId: z.unknown().optional(), preferences: z.unknown().optional(), windowBounds: z.unknown().optional(),
 });
@@ -59,17 +66,36 @@ export class SettingsStore {
   private readonly backgroundDirty = new Set<BackgroundChannel>();
   private lastBackgroundWriteError: unknown = null;
 
-  constructor(private readonly filePath: string) {}
+  constructor(
+    private readonly filePath: string,
+    private readonly onRecovery?: (kind: SettingsRecovery) => void,
+  ) {}
 
   async load(): Promise<void> {
     if (this.loaded) return;
-    try {
-      const parsed: unknown = JSON.parse(await readFile(this.filePath, 'utf8'));
-      this.data = validate(parsed);
-    } catch {
-      this.data = structuredClone(defaults);
+    const primary = await readJsonDocument(this.filePath);
+    let recovery: SettingsRecovery | null = null;
+    if (primary.ok) {
+      this.data = validate(primary.value);
+    } else {
+      const backup = await readJsonDocument(backupPathFor(this.filePath));
+      if (backup.ok) {
+        this.data = validate(backup.value);
+        recovery = 'backup';
+      } else {
+        this.data = structuredClone(defaults);
+        if (primary.reason === 'invalid' || backup.reason === 'invalid') recovery = 'defaults';
+      }
     }
     this.loaded = true;
+    if (recovery) this.onRecovery?.(recovery);
+    const snapshot = this.snapshot();
+    if (recovery || !primary.ok || primary.raw !== snapshot) {
+      await this.enqueueWrite();
+      return;
+    }
+    const backup = await readJsonDocument(backupPathFor(this.filePath));
+    if (!backup.ok || backup.raw !== snapshot) await writeFileAtomically(backupPathFor(this.filePath), snapshot, { parseJson: true });
   }
 
   get recentRepositories(): RecentRepository[] { return [...this.data.recentRepositories]; }
@@ -282,13 +308,15 @@ export class SettingsStore {
     }
   }
 
+  private snapshot(): string {
+    return `${JSON.stringify(this.data, null, 2)}\n`;
+  }
+
   private enqueueWrite(): Promise<void> {
-    const snapshot = JSON.stringify(this.data, null, 2);
+    const snapshot = this.snapshot();
     const write = this.pendingWrite.then(async () => {
-      await mkdir(path.dirname(this.filePath), { recursive: true });
-      const temporary = `${this.filePath}.${randomUUID()}.tmp`;
-      await writeFile(temporary, snapshot, { encoding: 'utf8', mode: 0o600 });
-      await rename(temporary, this.filePath);
+      await writeFileAtomically(this.filePath, snapshot, { parseJson: true });
+      await writeFileAtomically(backupPathFor(this.filePath), snapshot, { parseJson: true });
     });
     this.pendingWrite = write.catch(() => undefined);
     return write;
@@ -366,6 +394,7 @@ function validate(value: unknown): SettingsData {
     ? { width: Math.max(900, bounds.width), height: Math.max(600, bounds.height), ...(typeof bounds.x === 'number' && Number.isFinite(bounds.x) ? { x: bounds.x } : {}), ...(typeof bounds.y === 'number' && Number.isFinite(bounds.y) ? { y: bounds.y } : {}) }
     : { ...defaults.windowBounds };
   return {
+    version: SETTINGS_SCHEMA_VERSION,
     recentRepositories,
     repositoryProjects,
     filesTreeStates,
@@ -374,6 +403,17 @@ function validate(value: unknown): SettingsData {
     preferences,
     windowBounds,
   };
+}
+
+async function readJsonDocument(filePath: string): Promise<
+  { ok: true; value: unknown; raw: string } | { ok: false; reason: 'missing' | 'invalid' }
+> {
+  try {
+    const raw = await readFile(filePath, 'utf8');
+    return { ok: true, value: JSON.parse(raw), raw };
+  } catch (error) {
+    return { ok: false, reason: (error as NodeJS.ErrnoException).code === 'ENOENT' ? 'missing' : 'invalid' };
+  }
 }
 
 function normalizeProjects(value: unknown): RepositoryProject[] {

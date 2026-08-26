@@ -1,6 +1,7 @@
-import { randomBytes, randomUUID } from 'node:crypto';
-import { chmod, mkdir, open, readFile, rename, rm } from 'node:fs/promises';
+import { randomBytes } from 'node:crypto';
+import { chmod, mkdir, readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
+import { writeFileAtomically } from '../../../src/main/persistence/atomicWrite';
 
 const RUNTIME_STATE_VERSION = 1;
 
@@ -8,6 +9,7 @@ export interface OpenTigCliPaths {
   home: string;
   settings: string;
   aiLog: string;
+  problems: string;
   serverData: string;
   logs: string;
   serverLog: string;
@@ -34,6 +36,7 @@ export function resolveCliPaths(home: string): OpenTigCliPaths {
     home: resolved,
     settings: path.join(resolved, 'settings.json'),
     aiLog: path.join(resolved, 'ai-log.jsonl'),
+    problems: path.join(resolved, 'problems.jsonl'),
     serverData,
     logs,
     serverLog: path.join(logs, 'server.log'),
@@ -60,7 +63,7 @@ export async function loadOrCreateAdminToken(filePath: string): Promise<string> 
   }
 
   const token = randomBytes(32).toString('base64url');
-  await writePrivateAtomic(filePath, `${token}\n`);
+  await writeFileAtomically(filePath, `${token}\n`, { directoryMode: 0o700 });
   return token;
 }
 
@@ -72,7 +75,11 @@ export async function readAdminToken(filePath: string): Promise<string> {
 }
 
 export async function writeRuntimeState(filePath: string, state: Omit<OpenTigRuntimeState, 'version'>): Promise<void> {
-  await writePrivateAtomic(filePath, `${JSON.stringify({ version: RUNTIME_STATE_VERSION, ...state }, null, 2)}\n`);
+  await writeFileAtomically(
+    filePath,
+    `${JSON.stringify({ version: RUNTIME_STATE_VERSION, ...state }, null, 2)}\n`,
+    { parseJson: true, directoryMode: 0o700 },
+  );
 }
 
 export async function readRuntimeState(filePath: string): Promise<OpenTigRuntimeState> {
@@ -99,25 +106,6 @@ export async function clearRuntimeState(filePath: string, instanceId: string): P
 
 export function newInstanceId(): string {
   return randomBytes(24).toString('base64url');
-}
-
-async function writePrivateAtomic(filePath: string, contents: string): Promise<void> {
-  await mkdir(path.dirname(filePath), { recursive: true, mode: 0o700 });
-  const temporary = `${filePath}.${randomUUID()}.tmp`;
-  try {
-    const handle = await open(temporary, 'wx', 0o600);
-    try {
-      await handle.writeFile(contents, 'utf8');
-      await handle.sync();
-    } finally {
-      await handle.close();
-    }
-    await rename(temporary, filePath);
-    await chmod(filePath, 0o600);
-  } catch (error) {
-    await rm(temporary, { force: true });
-    throw error;
-  }
 }
 
 function isToken(value: string): boolean {

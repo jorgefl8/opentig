@@ -1,6 +1,5 @@
-import { randomUUID } from 'node:crypto';
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
-import path from 'node:path';
+import { readFile } from 'node:fs/promises';
+import { writeFileAtomically } from '../persistence/atomicWrite';
 
 interface PersistedDesktopServerSettings {
   version: 3;
@@ -31,15 +30,7 @@ export class DesktopServerSettings {
   save(config: DesktopServerConfig): Promise<void> {
     const value: PersistedDesktopServerSettings = { version: 3, ...config };
     const write = this.pendingWrite.then(async () => {
-      await mkdir(path.dirname(this.filePath), { recursive: true });
-      const temporary = `${this.filePath}.${randomUUID()}.tmp`;
-      try {
-        await writeFile(temporary, JSON.stringify(value, null, 2), { encoding: 'utf8', mode: 0o600 });
-        await rename(temporary, this.filePath);
-      } catch (error) {
-        await rm(temporary, { force: true });
-        throw error;
-      }
+      await writeFileAtomically(this.filePath, `${JSON.stringify(value, null, 2)}\n`, { parseJson: true });
     });
     this.pendingWrite = write.catch(() => undefined);
     return write;
