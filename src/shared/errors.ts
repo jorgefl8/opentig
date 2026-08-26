@@ -95,3 +95,13 @@ export function serializeError(error: unknown, operation = 'unknown'): Serialize
   }
   return { code: 'UNKNOWN', operation, message: 'Unknown error' };
 }
+
+export function serializedErrorFromReason(reason: unknown): SerializedOperationError | null {
+  if (!reason || typeof reason !== 'object' || !('detail' in reason)) return null;
+  const detail = (reason as { detail?: unknown }).detail;
+  if (!detail || typeof detail !== 'object') return null;
+  const record = detail as Partial<SerializedOperationError>;
+  return typeof record.code === 'string' && typeof record.operation === 'string' && typeof record.message === 'string'
+    ? record as SerializedOperationError
+    : null;
+}

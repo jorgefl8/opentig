@@ -16,5 +16,6 @@ export interface OpenTigServerApi {
   refs: OpenTigApi['refs'];
   ai: OpenTigApi['ai'];
   github: OpenTigApi['github'];
+  diagnostics: OpenTigApi['diagnostics'];
   events: OpenTigApi['events'];
 }

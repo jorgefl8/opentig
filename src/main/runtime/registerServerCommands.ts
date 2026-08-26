@@ -356,6 +356,21 @@ export function registerServerCommands(
   ));
   handle(IPC.aiLog, 'ai-log', () => services.aiLog.list());
   handle(IPC.aiClearLog, 'ai-clear-log', () => services.aiLog.clear());
+  handle(IPC.diagnosticsList, 'diagnostics-list', () => services.problems.list());
+  handle(IPC.diagnosticsClear, 'diagnostics-clear', () => services.problems.clear());
+  handle(IPC.diagnosticsRecord, 'diagnostics-record', (entry) => {
+    if (!entry || typeof entry !== 'object') return;
+    const input = entry as { operation?: unknown; message?: unknown; level?: unknown; code?: unknown; repositoryId?: unknown };
+    if (typeof input.operation !== 'string' || typeof input.message !== 'string') return;
+    services.problems.record({
+      source: 'client',
+      operation: input.operation,
+      message: input.message,
+      ...(typeof input.level === 'string' ? { level: input.level as 'error' | 'warn' } : {}),
+      ...(typeof input.code === 'string' || input.code === null ? { code: input.code } : {}),
+      ...(typeof input.repositoryId === 'string' || input.repositoryId === null ? { repositoryId: input.repositoryId } : {}),
+    });
+  });
   handle(IPC.aiCancelGeneration, 'ai-cancel-generation', (requestId) => {
     services.ai.cancel(aiString(requestId, 'ai-cancel-generation', 100, true));
   });

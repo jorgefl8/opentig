@@ -5,7 +5,7 @@ import {
   IconChevronDown, IconChevronRight, IconDeviceDesktop, IconFileArrowRight, IconFolder, IconFolderOpen,
   IconFiles, IconGitBranch, IconGitCompare, IconGitPullRequest, IconHierarchy2, IconHistory,
   IconArrowDown, IconArrowUp, IconKeyboard, IconList, IconLoader4, IconMinus, IconMoon, IconPlus,
-  IconNetwork, IconRefresh, IconRestore, IconSearch, IconSettings, IconSparkles, IconSun, IconTrash, IconX,
+  IconAlertTriangle, IconNetwork, IconRefresh, IconRestore, IconSearch, IconSettings, IconSparkles, IconSun, IconTrash, IconX,
 } from '@tabler/icons-react';
 import { Toaster, sileo } from 'sileo';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
@@ -16,7 +16,7 @@ import { useShortcuts } from './useShortcuts';
 import { normalizeOpenFilesStates, type OpenFilesState } from '../../shared/open-files-state';
 import { normalizeFilesTreeStates } from '../../shared/files-tree-state';
 import { normalizeRepositoryKey } from '../../shared/repository-projects';
-import type { SerializedAiError } from '../../shared/errors';
+import { serializedErrorFromReason, type SerializedAiError } from '../../shared/errors';
 import type { BranchInfo, ChangeKind, CommitFile, CommitInfo, CommitPage, FileChange, FileTreeEntry, RepositoryStatus, WorktreeInfo } from '../../shared/git-types';
 import type { RepositoryChangeScope } from '../../shared/repository-change';
 import { Badge } from '@/components/ui/badge';
@@ -43,6 +43,7 @@ import type { RuntimeFileDraft } from '@/features/viewer/Viewer';
 import { OpenFilesStrip } from '@/features/files/OpenFilesStrip';
 import { QuickOpenDialog } from '@/features/files/QuickOpenDialog';
 import { ShortcutsSettings } from '@/features/settings/ShortcutsSettings';
+import { ProblemsLogDialog } from '@/features/settings/ProblemsLogDialog';
 import { WebAccessSettings } from '@/features/settings/WebAccessSettings';
 import { CommitComposer } from '@/features/commit/CommitComposer';
 import { CreatePullRequestDialog } from '@/features/pulls/CreatePullRequestDialog';
@@ -2673,9 +2674,16 @@ const SETTINGS_SECTIONS = [
   { id: 'general', label: 'General', icon: IconSettings },
   { id: 'shortcuts', label: 'Shortcuts', icon: IconKeyboard },
   { id: 'ai', label: 'AI assistance', icon: IconSparkles },
+  { id: 'diagnostics', label: 'Diagnostics', icon: IconAlertTriangle },
   { id: 'webAccess', label: 'Web access', icon: IconNetwork },
 ] as const;
 type SettingsSection = (typeof SETTINGS_SECTIONS)[number]['id'];
+const SETTINGS_COPY: Record<Exclude<SettingsSection, 'webAccess'>, { title: string; description: string }> = {
+  general: { title: 'General', description: 'OpenTig appearance and behavior.' },
+  shortcuts: { title: 'Shortcuts', description: 'Rebind commands or review the shortcuts that stay fixed.' },
+  ai: { title: 'AI assistance', description: 'Local harness and model used to suggest commit messages and pull-request drafts.' },
+  diagnostics: { title: 'Diagnostics', description: 'Recent local failures on this machine. Prompts and file contents are never recorded.' },
+};
 const THEME_OPTIONS: { value: ThemePreference; label: string; icon: typeof IconSun }[] = [
   { value: 'system', label: 'System', icon: IconDeviceDesktop },
   { value: 'light', label: 'Light', icon: IconSun },
@@ -2710,6 +2718,7 @@ function SettingsDialog({ preferences, onPreference, open, onOpenChange, section
   const [statuses, setStatuses] = useState<AiHarnessStatus[]>([]);
   const [loadingStatuses, setLoadingStatuses] = useState(false);
   const [aiLogOpen, setAiLogOpen] = useState(false);
+  const [problemsOpen, setProblemsOpen] = useState(false);
   const settingsBodyRef = useRef<HTMLDivElement>(null);
   const reduceMotion = useReducedMotion();
   const settingsTransition = reduceMotion
@@ -2738,16 +2747,14 @@ function SettingsDialog({ preferences, onPreference, open, onOpenChange, section
   const visibleModels = modelOptions.some((model) => model.id === selectedModel)
     ? modelOptions
     : [...modelOptions, { id: selectedModel, label: `${selectedModel} (unavailable)` }];
-  const title = section === 'general' ? 'General' : section === 'shortcuts' ? 'Shortcuts' : section === 'ai' ? 'AI assistance' : 'Web access';
-  const description = section === 'general'
-    ? 'OpenTig appearance and behavior.'
-    : section === 'shortcuts'
-      ? 'Rebind commands or review the shortcuts that stay fixed.'
-      : section === 'ai'
-        ? 'Local harness and model used to suggest commit messages and pull-request drafts.'
-        : window.opentigDesktop
+  const { title, description } = section === 'webAccess'
+    ? {
+        title: 'Web access',
+        description: window.opentigDesktop
           ? 'Connect trusted browsers locally, over your LAN, or through an HTTPS tunnel.'
-          : 'Review and disconnect browsers authorised to use this OpenTig server.';
+          : 'Review and disconnect browsers authorised to use this OpenTig server.',
+      }
+    : SETTINGS_COPY[section];
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <Tooltip>
@@ -2909,7 +2916,16 @@ function SettingsDialog({ preferences, onPreference, open, onOpenChange, section
                 </div>
                 <button type="button" role="switch" aria-label="Show files ignored by Git" aria-checked={preferences.showDotEnvFiles} className="settings-switch" onClick={() => onPreference({ showDotEnvFiles: !preferences.showDotEnvFiles })}><span /></button>
               </div>
-              </> : section === 'shortcuts' ? <ShortcutsSettings preferences={preferences} onPreference={onPreference} /> : section === 'webAccess' ? <WebAccessSettings /> : <>
+              </> : section === 'shortcuts' ? <ShortcutsSettings preferences={preferences} onPreference={onPreference} /> : section === 'webAccess' ? <WebAccessSettings /> : section === 'diagnostics' ? <>
+                <div className="settings-field">
+                  <div className="settings-field-label">
+                    <strong>Problem history</strong>
+                    <span>Failed Git, file, and network operations recorded locally. Prompts and file contents are never stored.</span>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={() => setProblemsOpen(true)}><IconAlertTriangle /> View problems</Button>
+                </div>
+                <ProblemsLogDialog open={problemsOpen} onOpenChange={setProblemsOpen} />
+              </> : <>
                 <div className="ai-settings-heading">
                   <div className="settings-field-label">
                     <strong>Local harness</strong>
@@ -3646,6 +3662,8 @@ function sentenceCaseLabel(label: string): string {
 }
 function reportError(title: string, reason: unknown): void {
   sileo.error({ title, description: messageOf(reason), duration: 10_000 });
+  if (serializedErrorFromReason(reason)) return;
+  void opentig.diagnostics.record({ operation: title, message: messageOf(reason) }).catch(() => undefined);
 }
 function undoBlockedCopy(result: Exclude<UndoLatestCommitResult, { status: 'success' }>): { title: string; description: string } {
   if (result.status === 'stale-head') return { title: 'History changed', description: 'The view was refreshed without undoing any commit.' };

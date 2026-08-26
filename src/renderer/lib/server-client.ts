@@ -133,6 +133,11 @@ export function createOpenTigServerClient(options: ServerClientOptions = {}): Op
       generateDraft: (input) => transport.request(IPC.githubPrDraft, [input], { timeoutMs: AI_CLIENT_TIMEOUT_MS }),
       cancelDraft: (requestId) => invoke(IPC.githubPrDraftCancel, requestId),
     },
+    diagnostics: {
+      list: () => invoke(IPC.diagnosticsList),
+      clear: () => invoke(IPC.diagnosticsClear),
+      record: (entry) => invoke(IPC.diagnosticsRecord, entry),
+    },
     events: {
       onRepositoryChanged: (callback) => subscribe(repositoryChanged, callback),
       onActiveRepositoryChanged: (callback) => subscribe(activeRepositoryChanged, callback),

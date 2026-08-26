@@ -1,5 +1,11 @@
 import type { IpcResult } from '../../shared/contracts';
 import { GitOperationError, serializeError } from '../../shared/errors';
+import type { ProblemLogRecorder } from '../persistence/ProblemsLogStore';
+import { recordProblemSafely } from '../persistence/ProblemsLogStore';
+import {
+  repositoryIdFromCommandArgs,
+  shouldRecordCommandProblem,
+} from '../../shared/problems-log';
 import type {
   OpenTigServerCommandDefinition,
   OpenTigServerCommandMap,
@@ -31,6 +37,11 @@ interface RegisteredCommand {
 export class CommandRegistry {
   private readonly commands = new Map<OpenTigServerCommandName, RegisteredCommand>();
   private readonly sessions = new Map<string, Map<string, unknown>>();
+  private problemLog: ProblemLogRecorder | null = null;
+
+  setProblemLog(log: ProblemLogRecorder | null): void {
+    this.problemLog = log;
+  }
 
   register<Command extends OpenTigServerCommandName>(
     definition: OpenTigServerCommandDefinition & { command: Command },
@@ -79,7 +90,22 @@ export class CommandRegistry {
       const context = this.context(sessionId, options.signal);
       return { ok: true, value: await registered.handler(context, args) };
     } catch (error) {
-      return { ok: false, error: serializeError(error, operation) };
+      const serialized = serializeError(error, operation);
+      if (this.problemLog && shouldRecordCommandProblem({
+        command,
+        code: serialized.code,
+        aborted: options.signal?.aborted === true,
+        error,
+      })) {
+        recordProblemSafely(this.problemLog, {
+          source: 'command',
+          operation,
+          code: serialized.code,
+          message: serialized.message,
+          repositoryId: repositoryIdFromCommandArgs(args),
+        });
+      }
+      return { ok: false, error: serialized };
     }
   }
 

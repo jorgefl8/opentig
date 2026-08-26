@@ -4,6 +4,7 @@ import type { RasterImageMime } from './image-types';
 import type { OpenTigServerIdentity } from './server-protocol';
 import type { RepositoryChangeScope } from './repository-change';
 import type { AiLogEntry } from './ai-log';
+import type { ProblemLogEntry, ProblemLogRecordInput } from './problems-log';
 import type { FilesTreeState } from './files-tree-state';
 import type { OpenFileTab, OpenFilesState } from './open-files-state';
 import type { SearchOptions, SearchReplaceRequest, SearchReplaceResult, SearchResult } from './search';
@@ -556,6 +557,11 @@ export interface OpenTigApi {
     generateDraft(input: GeneratePullRequestDraftInput): Promise<GeneratedPullRequestDraft>;
     cancelDraft(requestId: string): Promise<void>;
   };
+  diagnostics: {
+    list(): Promise<ProblemLogEntry[]>;
+    clear(): Promise<void>;
+    record(entry: Pick<ProblemLogRecordInput, 'operation' | 'message'> & Partial<Pick<ProblemLogRecordInput, 'level' | 'code' | 'repositoryId'>>): Promise<void>;
+  };
   events: {
     onRepositoryChanged(callback: (repositoryId: string, scope: RepositoryChangeScope) => void): () => void;
     onActiveRepositoryChanged(callback: (repository: RepositoryInfo) => void): () => void;
@@ -585,6 +591,7 @@ export const IPC = {
   localRefsSnapshot: 'refs:local-snapshot', branchDetails: 'refs:branch-details', worktreeDetails: 'refs:worktree-details',
   branchDelete: 'refs:delete-branch', worktreeRemove: 'refs:remove-worktree',
   aiStatuses: 'ai:statuses', aiGenerateCommitMessage: 'ai:generate-commit-message', aiCancelGeneration: 'ai:cancel-generation', aiLog: 'ai:log', aiClearLog: 'ai:clear-log',
+  diagnosticsList: 'diagnostics:list', diagnosticsClear: 'diagnostics:clear', diagnosticsRecord: 'diagnostics:record',
   githubStatus: 'github:status', githubRepositoryInfo: 'github:repository-info', githubPrForBranch: 'github:pr-for-branch', githubPrList: 'github:pr-list', githubPrView: 'github:pr-view',
   githubPrDiff: 'github:pr-diff', githubPrCommitDiff: 'github:pr-commit-diff', githubPrCreate: 'github:pr-create', githubPrDraft: 'github:pr-draft', githubPrDraftCancel: 'github:pr-draft-cancel',
 } as const;

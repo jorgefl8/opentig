@@ -102,6 +102,43 @@ describe('CommandRegistry', () => {
     });
   });
 
+  it('records typed command failures and skips cancels and invalid arguments', async () => {
+    const registry = new CommandRegistry();
+    const recorded: unknown[] = [];
+    registry.setProblemLog({ record: (entry) => { recorded.push(entry); } });
+    registry.register(OPEN_TIG_SERVER_COMMANDS['repository.openPath'], () => {
+      throw new GitOperationError({
+        code: 'NOT_REPOSITORY',
+        operation: 'open-path',
+        message: 'Not a Git repository.',
+      });
+    });
+
+    await registry.execute('session', IPC.repositoryOpenPath, ['C:\\invalid']);
+    await registry.execute('session', 'missing:command', []);
+    const controller = new AbortController();
+    controller.abort();
+    registry.register(OPEN_TIG_SERVER_COMMANDS['refs.pull'], () => {
+      throw new GitOperationError({ code: 'TIMEOUT', operation: 'pull', message: 'Timed out.' });
+    });
+    await registry.execute('session', IPC.refsPull, ['0123456789abcdef'], { signal: controller.signal });
+
+    expect(recorded).toEqual([
+      expect.objectContaining({ source: 'command', operation: 'open-path', code: 'NOT_REPOSITORY' }),
+    ]);
+  });
+
+  it('does not record diagnostics command failures', async () => {
+    const registry = new CommandRegistry();
+    const recorded: unknown[] = [];
+    registry.setProblemLog({ record: (entry) => { recorded.push(entry); } });
+    registry.register(OPEN_TIG_SERVER_COMMANDS['diagnostics.list'], () => {
+      throw new Error('disk');
+    });
+    await registry.execute('session', IPC.diagnosticsList, []);
+    expect(recorded).toEqual([]);
+  });
+
   it('passes request cancellation to the command handler', async () => {
     const registry = new CommandRegistry();
     const controller = new AbortController();

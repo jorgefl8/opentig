@@ -88,5 +88,5 @@ function isAllowedPath(filePath) {
   if (!filePath.startsWith('dist/')) return false;
   return !/(?:^|\/)(?:node_modules|tests?|coverage|cache|\.git)(?:\/|$)/i.test(filePath)
     && !/(?:\.node|\.map|\.ts|\.tsx)$/i.test(filePath)
-    && !/(?:^|\/)(?:admin-token|server-secret|sessions\.json|settings\.json|runtime\.json|ai-log\.jsonl)$/i.test(filePath);
+    && !/(?:^|\/)(?:admin-token|server-secret|sessions\.json|settings\.json|runtime\.json|ai-log\.jsonl|problems\.jsonl)$/i.test(filePath);
 }

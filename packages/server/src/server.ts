@@ -79,6 +79,7 @@ export async function runOpenTigServer(config: OpenTigServerConfig): Promise<Run
   const clientRoot = config.clientRoot ?? resolveServerClientRoot();
   try {
     registerServerCommands(registry, runtime.services, headlessHost);
+    registry.setProblemLog(runtime.services.problems);
     transport = new OpenTigServer({
       runtime,
       registry,

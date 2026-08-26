@@ -117,6 +117,10 @@ export const OPEN_TIG_SERVER_COMMANDS = {
   'github.createPullRequest': command(IPC.githubPrCreate, 'gh-pr-create', true),
   'github.generateDraft': command(IPC.githubPrDraft, 'ai-pr-draft', true, { timeoutMs: AI_SERVER_TIMEOUT_MS }),
   'github.cancelDraft': command(IPC.githubPrDraftCancel, 'ai-pr-draft-cancel', true),
+
+  'diagnostics.list': command(IPC.diagnosticsList, 'diagnostics-list', false),
+  'diagnostics.clear': command(IPC.diagnosticsClear, 'diagnostics-clear', true),
+  'diagnostics.record': command(IPC.diagnosticsRecord, 'diagnostics-record', true),
 } as const satisfies Record<OpenTigServerMethodPath, OpenTigServerCommandDefinition>;
 
 type ApiMethodAtPath<Api, Path extends string> = Path extends `${infer Group}.${infer Method}`

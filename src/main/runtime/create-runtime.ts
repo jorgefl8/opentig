@@ -15,6 +15,7 @@ import { RepositoryService } from '../git/RepositoryService';
 import { SearchService } from '../git/SearchService';
 import { GitHubService } from '../github/GitHubService';
 import { AiLogStore } from '../persistence/AiLogStore';
+import { ProblemsLogStore, problemsLogPathFromSettings, recordProblemSafely } from '../persistence/ProblemsLogStore';
 import { SettingsStore } from '../persistence/SettingsStore';
 import { SystemTrash, type TrashAdapter } from '../platform/SystemTrash';
 import { OpenTigRuntime, type OpenTigRuntimeEventSink } from './OpenTigRuntime';
@@ -31,7 +32,18 @@ export interface CreateOpenTigRuntimeOptions {
 export async function createOpenTigRuntime(
   options: CreateOpenTigRuntimeOptions,
 ): Promise<OpenTigRuntime> {
-  const settings = new SettingsStore(options.settingsPath);
+  const problems = new ProblemsLogStore(problemsLogPathFromSettings(options.settingsPath));
+  await problems.load();
+  const settings = new SettingsStore(options.settingsPath, (kind) => {
+    recordProblemSafely(problems, {
+      source: 'persistence',
+      operation: 'settings-load',
+      code: kind === 'backup' ? 'JSON_PARSE' : 'SETTINGS_RESET',
+      message: kind === 'backup'
+        ? 'Settings were restored from the last known-good backup.'
+        : 'Settings could not be parsed and were reset to defaults.',
+    });
+  });
   await settings.load();
   const git = new GitProcess();
   const repositories = new RepositoryService(git, settings);
@@ -80,6 +92,7 @@ export async function createOpenTigRuntime(
     ai,
     cliRunner,
     aiLog,
+    problems,
     github,
     prDrafts,
     events,

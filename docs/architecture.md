@@ -102,7 +102,9 @@ Desktop paths are derived from Electron's user-data directory:
 | Path | Purpose |
 | --- | --- |
 | `settings.json` | repositories, preferences, and application state |
+| `settings.json.bak` | last known-good settings document, used if the primary file cannot be parsed |
 | `ai-log.jsonl` | local AI-operation log |
+| `problems.jsonl` | local Git, file, and network failure log |
 | `desktop-server.json` | persisted loopback/LAN exposure |
 | `server/` | hash-only owner-session authentication state |
 | `logs/server.log` | redacted rotating utility-server log |
@@ -112,7 +114,9 @@ The headless CLI derives equivalent paths from `~/.opentig` or `--home`:
 | Path | Purpose |
 | --- | --- |
 | `settings.json` | repositories, preferences, and application state |
+| `settings.json.bak` | last known-good settings document, used if the primary file cannot be parsed |
 | `ai-log.jsonl` | local AI-operation history |
+| `problems.jsonl` | local Git, file, and network failure log |
 | `server/` | hash-only sessions plus a private same-host admin credential |
 | `runtime.json` | PID, bind address, version/protocol, and instance identity; no credential |
 | `logs/server.log` | redacted rotating CLI server log |

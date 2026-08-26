@@ -11,6 +11,7 @@ function fixture(activeRepositoryId: string | null = 'repo-id') {
   const cliRunner = { close: vi.fn(async () => undefined) };
   const git = { close: vi.fn(async () => undefined) };
   const aiLog = { flush: vi.fn(async () => undefined) };
+  const problems = { flush: vi.fn(async () => undefined) };
   const settings = {
     activeRepositoryId,
     flush: vi.fn(async () => undefined),
@@ -23,9 +24,10 @@ function fixture(activeRepositoryId: string | null = 'repo-id') {
     cliRunner,
     git,
     aiLog,
+    problems,
     settings,
   } as unknown as OpenTigRuntimeServices;
-  return { services, watcher, prDrafts, fileHistory, ai, cliRunner, git, aiLog, settings };
+  return { services, watcher, prDrafts, fileHistory, ai, cliRunner, git, aiLog, problems, settings };
 }
 
 describe('OpenTigRuntime', () => {
@@ -98,6 +100,7 @@ describe('OpenTigRuntime', () => {
     expect(state.cliRunner.close).toHaveBeenCalledOnce();
     expect(state.git.close).toHaveBeenCalledOnce();
     expect(state.aiLog.flush).toHaveBeenCalledOnce();
+    expect(state.problems.flush).toHaveBeenCalledOnce();
     expect(state.settings.flush).toHaveBeenCalledOnce();
   });
 });

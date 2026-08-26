@@ -61,6 +61,7 @@ It is intentionally not an IDE, hosting service, or replacement for the Git CLI.
 - When a split cannot be offered, OpenTig says why instead of staying silent, for example because a file is only partially staged or was renamed.
 - Every generation is recorded locally for diagnostics: harness, model, outcome, duration, the tokens and cost the harness reported, why a proposed split was refused, and, when a run fails, the error the harness returned. Only this metadata is stored; prompts and file contents never leave the repository.
 - Review that history from **Settings → AI assistance → View history**, in a sortable table (click a column header to sort) that scrolls within the dialog, with totals for runs, failures, tokens, and reported cost, and clear it whenever you want.
+- Record failed Git, file, and network operations locally for diagnostics: operation, error code, and a redacted message. Prompts and file contents are never stored. Review that history from **Settings → Diagnostics → View problems**, and clear it whenever you want.
 - Undo the latest unpublished commit while keeping its changes staged. OpenTig verifies the expected commit and upstream state before rewriting history.
 
 ### Safe pull and push

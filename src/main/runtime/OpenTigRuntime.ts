@@ -14,6 +14,7 @@ import type { RepositoryService } from '../git/RepositoryService';
 import type { SearchService } from '../git/SearchService';
 import type { GitHubService } from '../github/GitHubService';
 import type { AiLogStore } from '../persistence/AiLogStore';
+import type { ProblemsLogStore } from '../persistence/ProblemsLogStore';
 import type { SettingsStore } from '../persistence/SettingsStore';
 import type { TrashAdapter } from '../platform/SystemTrash';
 
@@ -32,6 +33,7 @@ export interface OpenTigRuntimeServices {
   ai: CommitMessageService;
   cliRunner: CliProcessRunner;
   aiLog: AiLogStore;
+  problems: ProblemsLogStore;
   github: GitHubService;
   prDrafts: PullRequestDraftService;
   events: OpenTigRuntimeEventPublisher;
@@ -108,6 +110,7 @@ export class OpenTigRuntime {
       this.services.cliRunner.close(),
       this.services.git.close(),
       this.services.aiLog.flush(),
+      this.services.problems.flush(),
       this.settings.flush(),
     ]);
   }
