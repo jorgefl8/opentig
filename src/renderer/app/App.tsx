@@ -3018,7 +3018,7 @@ function ConflictSection({ scrollRef, changes, onSelect, onOpenFile }: { scrollR
   const virtualizer = useVirtualizer({
     count: sortedChanges.length,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => 30,
+    estimateSize: () => 38,
     getItemKey: (index) => sortedChanges[index]?.path ?? index,
     scrollMargin,
     overscan: 8,

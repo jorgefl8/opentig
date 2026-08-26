@@ -465,12 +465,23 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   .folder-name { min-width: 0; flex: 1; overflow: hidden; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
   .change-row:hover, .file-tree-row:hover { background: var(--sidebar-accent); }
   .change-row[aria-selected="true"] { background: color-mix(in oklch, var(--primary) 12%, var(--sidebar)); box-shadow: inset 2px 0 0 var(--primary); }
-  .file-label { display: flex; min-width: 0; flex: 1; align-items: center; gap: 7px; text-align: left; }
+  /* File-label is a nested <button>; Chromium clips button glyphs when the
+     wrapper itself is overflow:hidden with a tight line box. Ellipsis belongs
+     on the name/path, not on the two-line grid. */
+  .file-label { display: flex; min-width: 0; flex: 1; align-items: center; gap: 7px; overflow: visible; padding: 0; border: 0; background: transparent; color: inherit; text-align: left; }
   .file-label > svg, .file-tree-row > svg, .tree-folder > svg { width: 15px; height: 15px; flex: none; }
-  .file-label span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .change-list .change-row { height: 38px; }
-  .change-file-text { display: grid; min-width: 0; flex: 1; line-height: 1.15; }
-  .change-file-text small { overflow: hidden; color: var(--muted-foreground); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+  .change-file-text { display: grid; min-width: 0; flex: 1; align-content: center; gap: 1px; line-height: 1.4; }
+  .change-file-text > span,
+  .change-file-text small {
+    min-width: 0;
+    overflow: hidden;
+    padding-right: 2px;
+    line-height: 1.4;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .change-file-text small { color: var(--muted-foreground); font-size: 9px; }
   .change-row-actions, .change-actions { display: flex; flex: none; align-items: center; gap: 3px; }
   .change-row-actions .change-actions { display: contents; }
   .change-action-button { min-width: 26px; min-height: 26px; color: color-mix(in oklch, var(--muted-foreground) 82%, var(--foreground)); }
@@ -1270,7 +1281,7 @@ section[data-sileo-viewport] [data-sileo-title] { text-transform: none; }
 
   /* Lists ---------------------------------------------------------------- */
   .tree-folder, .change-row, .file-tree-row { font-family: var(--font-sans); }
-  .change-list .change-row { height: 34px; }
+  .change-list .change-row { height: 38px; }
   .tree-folder, .file-tree-row { min-height: 30px; }
   .change-row:hover, .file-tree-row:hover, .tree-folder:hover,
   .commit-header:hover, .commit-file-row:hover, .pull-item:hover, .files-sticky-row:hover {
@@ -1556,13 +1567,41 @@ section[data-sileo-viewport] [data-sileo-title] { text-transform: none; }
   }
   .diff-file-header:hover { background: var(--row-hover); }
   .diff-file-header:focus-visible { z-index: 4; outline: 2px solid var(--ring); outline-offset: -2px; }
-  .diff-file-header-compact { min-height: 42px; cursor: default; padding-right: 8px; }
+  .diff-file-header-compact { min-height: 48px; cursor: default; padding-right: 8px; }
   .diff-file-header-compact:hover { background: color-mix(in oklch, var(--background) 94%, var(--muted)); }
   .diff-file-header-compact .diff-workspace-actions { margin-left: 4px; }
   .diff-file-chevron { width: 14px; height: 14px; flex: none; color: var(--muted-foreground); }
   .diff-file-icon { width: 16px; height: 16px; flex: none; object-fit: contain; }
-  .diff-file-path { min-width: 0; overflow: hidden; font-family: var(--font-mono); font-size: 11.5px; font-weight: 550; text-overflow: ellipsis; white-space: nowrap; }
-  .diff-file-previous { min-width: 0; overflow: hidden; color: var(--muted-foreground); font-family: var(--font-mono); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+  .diff-file-path {
+    display: grid;
+    min-width: 0;
+    flex: 1;
+    align-content: center;
+    gap: 1px;
+    overflow: visible;
+    font-family: var(--font-mono);
+    line-height: 1.4;
+  }
+  .diff-file-name {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    padding-right: 2px;
+    font-size: 12px;
+    font-weight: 550;
+    line-height: 1.4;
+    white-space: normal;
+  }
+  .diff-file-directory {
+    min-width: 0;
+    overflow: hidden;
+    padding-right: 2px;
+    color: var(--muted-foreground);
+    font-size: 10px;
+    line-height: 1.4;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .diff-file-previous { min-width: 0; overflow: hidden; color: var(--muted-foreground); font-family: var(--font-mono); font-size: 10px; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
   .diff-file-stats { margin-left: auto; }
 
   .pr-viewer-title { align-items: flex-start; }

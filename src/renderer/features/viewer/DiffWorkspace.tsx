@@ -79,7 +79,9 @@ export function DiffWorkspace({ contentKey, diff, diffView, themeType, wrapLines
                 <div className="diff-file-header diff-file-header-compact">
                   <img src={getVsCodeFileIconUrl(file.path)} className="diff-file-icon" alt="" />
                   <Tooltip>
-                    <TooltipTrigger render={<span className="diff-file-path" />}>{file.path}</TooltipTrigger>
+                    <TooltipTrigger render={<span className="diff-file-path" />}>
+                      <DiffFilePathLabel path={file.path} />
+                    </TooltipTrigger>
                     <TooltipContent>{file.path}</TooltipContent>
                   </Tooltip>
                   {file.previousPath && file.previousPath !== file.path && <span className="diff-file-previous">from {file.previousPath}</span>}
@@ -91,7 +93,7 @@ export function DiffWorkspace({ contentKey, diff, diffView, themeType, wrapLines
                   <TooltipTrigger render={<button type="button" className="diff-file-header" aria-expanded={!isCollapsed} onClick={() => toggleFile(file.key)} />}>
                     {isCollapsed ? <IconChevronRight className="diff-file-chevron" /> : <IconChevronDown className="diff-file-chevron" />}
                     <img src={getVsCodeFileIconUrl(file.path)} className="diff-file-icon" alt="" />
-                    <span className="diff-file-path">{file.path}</span>
+                    <span className="diff-file-path"><DiffFilePathLabel path={file.path} /></span>
                     {file.previousPath && file.previousPath !== file.path && <span className="diff-file-previous">from {file.previousPath}</span>}
                     <span className="diff-file-stats"><span className="add">+{file.additions}</span><span className="del">−{file.deletions}</span></span>
                   </TooltipTrigger>
@@ -111,6 +113,24 @@ export function DiffWorkspace({ contentKey, diff, diffView, themeType, wrapLines
         })}
       </Virtualizer>
     </div>
+  );
+}
+
+function diffPathParts(path: string): { name: string; directory: string } {
+  const normalized = path.replaceAll('\\', '/');
+  const slash = normalized.lastIndexOf('/');
+  return slash < 0
+    ? { name: normalized, directory: '' }
+    : { name: normalized.slice(slash + 1), directory: normalized.slice(0, slash) };
+}
+
+function DiffFilePathLabel({ path }: { path: string }) {
+  const { name, directory } = diffPathParts(path);
+  return (
+    <>
+      <span className="diff-file-name">{name}</span>
+      {directory ? <small className="diff-file-directory">{directory}</small> : null}
+    </>
   );
 }
 
