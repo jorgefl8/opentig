@@ -42,6 +42,20 @@ describe('renderer/server boundary', () => {
     expect(source).not.toContain("./main/git/");
     expect(source).not.toContain('runOpenTigServer');
     expect(source).toContain('utilityProcess.fork');
+    expect(source).not.toContain('CONNECTING_PAGE_URL');
+    expect(source).toContain('ready-to-show');
+    expect(source).toContain('backgroundThrottling: false');
+    expect(source).toContain('if (placement.isMaximized) await maximizeWhileHidden(mainWindow)');
+    expect(source.indexOf('maximizeWhileHidden')).toBeLessThan(source.indexOf('loadURL(server.origin)'));
+    expect(source).toContain('isMaximized: mainWindow.isMaximized()');
+  });
+
+  it('paints the splash in index.html before React mounts', async () => {
+    const html = await readFile(path.join(process.cwd(), 'index.html'), 'utf8');
+    expect(html).toContain('id="boot-shell"');
+    expect(html).toContain('/boot-theme.js');
+    expect(html).toContain('position: fixed');
+    expect(html).toContain('inset: 0');
   });
 
   it('keeps listener controls desktop-only while exposing session management without native tooltips', async () => {
@@ -72,7 +86,9 @@ describe('renderer/server boundary', () => {
     expect(settingsSource).toContain("from '@/components/ui/select'");
     expect(settingsSource).toContain('<SelectGroup>');
     expect(settingsSource).not.toContain('<select');
-    expect(boundarySource).toContain("state !== 'connected' && (");
+    expect(boundarySource).toContain("connectedBefore && state !== 'connected'");
+    expect(boundarySource).toContain("if (!connectedBefore && (state === 'offline' || state === 'incompatible-version'))");
+    expect(boundarySource).not.toContain('Starting OpenTig');
   });
 });
 

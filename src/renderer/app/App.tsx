@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -65,7 +65,9 @@ import {
 } from './refresh-policy';
 import { resolveWindowControlsInset } from './window-controls';
 import { queryKeys, queryResourcesForScope } from '@/lib/query-client';
-import { opentig } from '@/lib/opentig-api';
+import { persistTheme } from '@/lib/boot-theme';
+import { opentig, serverClient } from '@/lib/opentig-api';
+import { startupSplashDetail } from '@/lib/startup-splash';
 import { shouldActivateChangeRow } from '@/features/changes/row-activation';
 import { conflictNotificationAction, conflictToastId } from '@/features/changes/conflict-notification';
 import { fileCutTransferId, writeClipboardText, writeFileTransfer } from '@/lib/browser-capabilities';
@@ -215,6 +217,11 @@ export default function App() {
   const worktrees = currentSnapshot ? worktreesState : [];
 
   const openFilesStates = bootstrap?.openFilesStates ?? NO_OPEN_FILES_STATES;
+  const connectionState = useSyncExternalStore(
+    serverClient.transport.subscribeState,
+    serverClient.transport.getState,
+    serverClient.transport.getState,
+  );
   const theme = bootstrap?.preferences.theme ?? 'system';
   const diffView = bootstrap?.preferences.diffView ?? 'unified';
   const wrapLines = bootstrap?.preferences.wrapLines ?? false;
@@ -271,17 +278,20 @@ export default function App() {
     };
   }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    if (!bootstrap) return;
     const media = window.matchMedia('(prefers-color-scheme: dark)');
     const apply = () => {
       const dark = theme === 'dark' || (theme === 'system' && media.matches);
       document.documentElement.classList.toggle('dark', dark);
+      document.documentElement.classList.toggle('light', !dark);
+      persistTheme(theme);
       void opentig.app.setTitleBarTheme(dark).catch(() => undefined);
     };
     apply();
     media.addEventListener('change', apply);
     return () => media.removeEventListener('change', apply);
-  }, [theme]);
+  }, [bootstrap, theme]);
 
   useEffect(() => {
     opentig.app.setZoomFactor(uiZoom / 100);
@@ -1834,12 +1844,7 @@ export default function App() {
   };
 
   if (!bootstrap) {
-    return (
-      <TooltipProvider>
-        <Toaster theme="light" position="bottom-right" />
-        <SplashScreen heading="Loading OpenTig…" detail="Restoring your workspace." />
-      </TooltipProvider>
-    );
+    return <SplashScreen heading="OpenTig" detail={startupSplashDetail(connectionState)} />;
   }
   if (!repository) {
     return (

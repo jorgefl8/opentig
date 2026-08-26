@@ -6,9 +6,17 @@ export interface DesktopWindowBounds {
   height: number;
   x?: number;
   y?: number;
+  isMaximized: boolean;
 }
 
-const DEFAULT_BOUNDS: DesktopWindowBounds = { width: 1280, height: 800 };
+export interface DisplayWorkArea {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+const DEFAULT_BOUNDS: DesktopWindowBounds = { width: 1280, height: 800, isMaximized: false };
 
 /** Desktop-owned bounds with a read-only fallback from the former shared settings file. */
 export class DesktopWindowState {
@@ -40,6 +48,41 @@ export class DesktopWindowState {
   }
 }
 
+/** BrowserWindow constructor options: size and position only, never the maximized flag. */
+export function browserWindowBounds(state: DesktopWindowBounds): {
+  width: number;
+  height: number;
+  x?: number;
+  y?: number;
+} {
+  return {
+    width: state.width,
+    height: state.height,
+    ...(state.x != null ? { x: state.x } : {}),
+    ...(state.y != null ? { y: state.y } : {}),
+  };
+}
+
+/**
+ * Drop x/y when the restored rectangle does not intersect any display work area
+ * (unplugged monitor). Electron then centers on the current display.
+ */
+export function boundsVisibleOnDisplays(
+  bounds: { width: number; height: number; x?: number; y?: number },
+  workAreas: readonly DisplayWorkArea[],
+): { width: number; height: number; x?: number; y?: number } {
+  const { width, height, x, y } = bounds;
+  if (x == null || y == null || workAreas.length === 0) return { width, height, ...(x != null ? { x } : {}), ...(y != null ? { y } : {}) };
+  const visible = workAreas.some((area) => (
+    x < area.x + area.width
+    && x + width > area.x
+    && y < area.y + area.height
+    && y + height > area.y
+  ));
+  if (visible) return { width, height, x, y };
+  return { width, height };
+}
+
 async function readBounds(filePath: string, nested: boolean): Promise<DesktopWindowBounds | null> {
   try {
     const parsed = JSON.parse(await readFile(filePath, 'utf8')) as unknown;
@@ -61,5 +104,6 @@ function normalizeBounds(value: unknown): DesktopWindowBounds | null {
     height: Math.max(600, Math.round(bounds.height)),
     ...(typeof bounds.x === 'number' && Number.isFinite(bounds.x) ? { x: Math.round(bounds.x) } : {}),
     ...(typeof bounds.y === 'number' && Number.isFinite(bounds.y) ? { y: Math.round(bounds.y) } : {}),
+    isMaximized: bounds.isMaximized === true,
   };
 }

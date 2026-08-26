@@ -12,13 +12,6 @@ const COPY: Record<ServerConnectionState, string> = {
   offline: 'OpenTig server is offline',
 };
 
-const SPLASH: Record<Exclude<ServerConnectionState, 'connected' | 'auth-required'>, { heading: string; detail: string }> = {
-  connecting: { heading: 'Starting OpenTig…', detail: 'Connecting to the local server.' },
-  reconnecting: { heading: 'Starting OpenTig…', detail: 'Reconnecting to OpenTig server…' },
-  'incompatible-version': { heading: 'OpenTig cannot continue', detail: 'Client and server versions are incompatible.' },
-  offline: { heading: 'OpenTig server is offline', detail: 'See the server log for details, then restart OpenTig.' },
-};
-
 export function ServerConnectionBoundary({ children }: { children: ReactNode }) {
   const state = useSyncExternalStore(
     serverClient.transport.subscribeState,
@@ -49,15 +42,22 @@ export function ServerConnectionBoundary({ children }: { children: ReactNode }) 
     );
   }
 
-  if (!connectedBefore && state !== 'connected') {
-    const splash = SPLASH[state];
-    return <SplashScreen heading={splash.heading} detail={splash.detail} />;
+  if (!connectedBefore && (state === 'offline' || state === 'incompatible-version')) {
+    return (
+      <SplashScreen
+        heading={state === 'offline' ? 'OpenTig server is offline' : 'OpenTig cannot continue'}
+        detail={state === 'offline'
+          ? 'See the server log for details, then restart OpenTig.'
+          : 'Client and server versions are incompatible.'}
+        busy={false}
+      />
+    );
   }
 
   return (
     <>
       {children}
-      {state !== 'connected' && (
+      {connectedBefore && state !== 'connected' && (
         <div className={`server-connection-state ${state}`} role="status" aria-live="polite">
           <span className="server-connection-dot" aria-hidden="true" />
           {COPY[state]}

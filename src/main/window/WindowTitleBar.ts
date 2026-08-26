@@ -1,5 +1,9 @@
+import { readFile } from 'node:fs/promises';
 import type { BrowserWindow, BrowserWindowConstructorOptions } from 'electron';
 import type { ThemePreference } from '../../shared/contracts';
+
+export const STARTUP_BACKGROUND_DARK = '#171717';
+export const STARTUP_BACKGROUND_LIGHT = '#fbfbfb';
 
 /** Matches the `.toolbar` height so the controls stay inside the toolbar row. */
 export const WINDOW_TITLE_BAR_HEIGHT = 42;
@@ -14,6 +18,24 @@ type WindowTitleBarOptions = Pick<
 
 export function shouldUseDarkTitleBar(theme: ThemePreference, systemDark: boolean): boolean {
   return theme === 'dark' || (theme === 'system' && systemDark);
+}
+
+export function parseSettingsTheme(value: unknown): ThemePreference {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return 'system';
+  const theme = (value as { preferences?: { theme?: unknown } }).preferences?.theme;
+  return theme === 'light' || theme === 'dark' || theme === 'system' ? theme : 'system';
+}
+
+export function startupBackground(dark: boolean): string {
+  return dark ? STARTUP_BACKGROUND_DARK : STARTUP_BACKGROUND_LIGHT;
+}
+
+export async function readStartupDark(settingsPath: string, systemDark: boolean): Promise<boolean> {
+  try {
+    return shouldUseDarkTitleBar(parseSettingsTheme(JSON.parse(await readFile(settingsPath, 'utf8'))), systemDark);
+  } catch {
+    return systemDark;
+  }
 }
 
 export function getWindowTitleBarOptions(dark: boolean, platform: NodeJS.Platform): WindowTitleBarOptions {

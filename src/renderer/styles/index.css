@@ -632,16 +632,20 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   .viewer-empty h2 { margin-top: 18px; color: var(--foreground); font-size: 20px; font-weight: 700; letter-spacing: -0.03em; }
   .viewer-empty p { margin-top: 5px; font-size: 13px; }
   .splash {
-    display: flex; height: 100%; flex-direction: column; align-items: center; justify-content: center; gap: 18px;
-    background: #1c1c1c; color: #a3a3a3; font-size: 13px;
+    position: fixed; inset: 0; z-index: 9999;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px;
+    background: var(--background); color: var(--muted-foreground); font-size: 13px;
   }
-  .splash svg { width: 48px; height: 52px; flex: none; color: #fafafa; }
+  .splash svg { width: 48px; height: 52px; flex: none; color: var(--foreground); }
   .splash-copy { display: grid; gap: 8px; text-align: center; }
-  .splash-copy strong { color: #f4f4f4; font-size: 18px; font-weight: 650; letter-spacing: -.02em; }
-  .splash-copy span { font-size: 13px; }
+  .splash-copy strong { color: var(--foreground); font-size: 18px; font-weight: 650; letter-spacing: -.02em; }
+  .splash-copy span { display: block; min-height: 1.35em; font-size: 13px; }
   .splash-mark {
-    width: 28px; height: 28px; border: 3px solid #3a3a3a; border-top-color: #2266ea;
+    width: 28px; height: 28px; border: 3px solid color-mix(in oklch, var(--foreground) 16%, transparent); border-top-color: var(--primary);
     border-radius: 50%; animation: spin .8s linear infinite;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .splash-mark { animation: none; }
   }
   .server-connection-state { position: fixed; right: 12px; bottom: 10px; z-index: 100; display: flex; align-items: center; gap: 7px; border: 1px solid var(--border); border-radius: 999px; background: color-mix(in srgb, var(--background) 92%, transparent); padding: 5px 9px; color: var(--muted-foreground); font-size: 11px; box-shadow: 0 4px 18px rgb(0 0 0 / 18%); backdrop-filter: blur(8px); }
   .server-connection-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }

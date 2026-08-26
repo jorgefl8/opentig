@@ -1,14 +1,14 @@
 import { OpenTigMark } from '@/components/OpenTigMark';
 
-export function SplashScreen({ heading, detail }: { heading: string; detail?: string }) {
+export function SplashScreen({ heading, detail, busy = true }: { heading: string; detail?: string; busy?: boolean }) {
   return (
-    <div className="splash" role="status">
+    <div className="splash">
       <OpenTigMark />
       <div className="splash-copy">
         <strong>{heading}</strong>
-        {detail ? <span>{detail}</span> : null}
+        <span role="status" aria-live="polite">{detail ?? ''}</span>
       </div>
-      <div className="splash-mark" aria-hidden="true" />
+      {busy ? <div className="splash-mark" aria-hidden="true" /> : null}
     </div>
   );
 }
