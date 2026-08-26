@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { IconGitPullRequest, IconLoader4, IconPlayerStop, IconSparkles, IconUpload } from '@tabler/icons-react';
+import { IconGitPullRequest, IconLoader4, IconPlayerStop, IconUpload } from '@tabler/icons-react';
 import { sileo } from 'sileo';
-import type { AiHarnessId, Preferences } from '../../../shared/contracts';
+import type { AiHarnessId, AiHarnessStatus, Preferences } from '../../../shared/contracts';
 import type { BranchInfo, RepositoryStatus } from '../../../shared/git-types';
 import type { SerializedAiError } from '../../../shared/errors';
 import { Button } from '@/components/ui/button';
@@ -13,6 +13,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { opentig } from '@/lib/opentig-api';
 import { ViewerTabs, ViewerTabsList, ViewerTabsPanel } from '@/components/ui/viewer-tabs';
 import { renderMarkdown } from '@/features/markdown/render-markdown';
+import { AiProviderIcon } from '@/features/ai/AiProviderIcon';
 import { ghDetail, ghErrorTitle, openOnGitHub } from './gh-utils';
 import '@/features/markdown/markdown.css';
 
@@ -23,6 +24,7 @@ interface CreatePullRequestDialogProps {
   branches: BranchInfo[];
   status: RepositoryStatus | null;
   preferences: Preferences;
+  aiProviders: AiHarnessStatus[] | undefined;
   pushBusy: boolean;
   onPush(): void;
   onCreated(prNumber: number | null): void;
@@ -41,6 +43,9 @@ export function CreatePullRequestDialog(props: CreatePullRequestDialogProps) {
   const previewToken = useRef(0);
 
   const currentBranch = props.status?.branch ?? null;
+  const harness = props.preferences.commitMessageHarness;
+  const model = props.preferences.commitMessageModels[harness] ?? 'default';
+  const modelLabel = aiModelLabel(props.aiProviders, harness, model);
   const baseOptions = useMemo(() => props.branches
     .filter((branch) => branch.remote && !branch.fullName.endsWith('/HEAD') && branch.name !== `origin/${currentBranch ?? ''}`)
     .map((branch) => branch.name), [currentBranch, props.branches]);
@@ -79,8 +84,6 @@ export function CreatePullRequestDialog(props: CreatePullRequestDialogProps) {
 
   const generateDraft = async () => {
     if (blocked || generating || creating || !base) return;
-    const harness = props.preferences.commitMessageHarness;
-    const model = props.preferences.commitMessageModels[harness] ?? 'default';
     const requestId = crypto.randomUUID();
     generationRequest.current = requestId;
     setGenerating(requestId);
@@ -153,14 +156,20 @@ export function CreatePullRequestDialog(props: CreatePullRequestDialogProps) {
           {baseOptions.length === 0 && !detachedOrUnborn && (
             <div className="create-pr-notice"><span>No remote branches are available to use as a base. Fetch the remote first.</span></div>
           )}
-          <div className="create-pr-field">
-            <label htmlFor="create-pr-base">Base branch</label>
-            <Select value={base} onValueChange={(value) => setBase(value ?? '')}>
-              <SelectTrigger id="create-pr-base" className="create-pr-base" disabled={blocked || creating || Boolean(generating)}><SelectValue>{base ? stripOrigin(base) : 'Select a base'}</SelectValue></SelectTrigger>
-              <SelectContent alignItemWithTrigger={false}>
-                {baseOptions.map((option) => <SelectItem key={option} value={option}>{stripOrigin(option)}</SelectItem>)}
-              </SelectContent>
-            </Select>
+          <div className="create-pr-base-row">
+            <div className="create-pr-field">
+              <label htmlFor="create-pr-base">Base branch</label>
+              <Select value={base} onValueChange={(value) => setBase(value ?? '')}>
+                <SelectTrigger id="create-pr-base" className="create-pr-base" disabled={blocked || creating || Boolean(generating)}><SelectValue>{base ? stripOrigin(base) : 'Select a base'}</SelectValue></SelectTrigger>
+                <SelectContent alignItemWithTrigger={false}>
+                  {baseOptions.map((option) => <SelectItem key={option} value={option}>{stripOrigin(option)}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <label className="create-pr-draft">
+              <Checkbox checked={draft} onCheckedChange={(checked) => setDraft(checked === true)} disabled={blocked || creating || Boolean(generating)} />
+              <span>Create as draft</span>
+            </label>
           </div>
           <div className="create-pr-field">
             <label htmlFor="create-pr-title">Title</label>
@@ -195,26 +204,26 @@ export function CreatePullRequestDialog(props: CreatePullRequestDialogProps) {
             </ViewerTabsPanel>
             <ViewerTabsPanel value="preview" className="create-pr-preview markdown-prose" dangerouslySetInnerHTML={{ __html: previewHtml }} />
           </ViewerTabs>
+        </div>
+        <div className="create-pr-actions">
           <Button
             variant="outline"
-            className="create-pr-generate commit-generate"
+            className="create-pr-generate commit-composer-generate"
             disabled={blocked || creating}
             aria-label={generating ? 'Cancel generation' : undefined}
             onClick={() => generating ? void cancelGeneration() : void generateDraft()}
           >
-            {generating ? <IconPlayerStop className="text-destructive" /> : <IconSparkles />}
-            {generating ? <ShimmeringText text="Generating draft…" /> : `Generate with ${harnessLabel(props.preferences.commitMessageHarness)}`}
+            {generating ? <IconPlayerStop className="text-destructive" /> : <AiProviderIcon harness={harness} />}
+            {generating
+              ? <ShimmeringText text="Generating draft…" />
+              : <span className="commit-composer-provider">Generate with <span className="commit-composer-harness">{harnessLabel(harness)}</span><span aria-hidden="true">·</span><span className="commit-composer-model">{modelLabel}</span></span>}
           </Button>
-          <label className="create-pr-draft">
-            <Checkbox checked={draft} onCheckedChange={(checked) => setDraft(checked === true)} disabled={blocked || creating || Boolean(generating)} />
-            <span>Create as draft</span>
-          </label>
-        </div>
-        <div className="create-pr-actions">
-          <Button variant="ghost" onClick={() => props.onOpenChange(false)} disabled={creating}>Cancel</Button>
-          <Button onClick={() => void create()} disabled={blocked || creating || Boolean(generating) || !title.trim() || !base}>
-            {creating ? <IconLoader4 className="animate-spin" /> : <IconGitPullRequest />} {creating ? 'Creating…' : 'Create pull request'}
-          </Button>
+          <div className="create-pr-submit-actions">
+            <Button variant="ghost" onClick={() => props.onOpenChange(false)} disabled={creating}>Cancel</Button>
+            <Button onClick={() => void create()} disabled={blocked || creating || Boolean(generating) || !title.trim() || !base}>
+              {creating ? <IconLoader4 className="animate-spin" /> : <IconGitPullRequest />} {creating ? 'Creating…' : 'Create pull request'}
+            </Button>
+          </div>
         </div>
       </DialogPopup>
     </Dialog>
@@ -234,6 +243,11 @@ function stripOrigin(value: string): string {
 
 function harnessLabel(harness: AiHarnessId): string {
   return harness === 'codex' ? 'Codex' : harness === 'claude' ? 'Claude Code' : 'OpenCode';
+}
+
+function aiModelLabel(providers: AiHarnessStatus[] | undefined, harness: AiHarnessId, model: string): string {
+  return providers?.find((provider) => provider.id === harness)?.models.find((option) => option.id === model)?.label
+    ?? (model === 'default' ? 'Default (CLI)' : model);
 }
 
 function aiDetail(reason: unknown): SerializedAiError | null {

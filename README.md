@@ -70,6 +70,7 @@ It is intentionally not an IDE, hosting service, or replacement for the Git CLI.
 - Keep and report the recovery stash if changes cannot be restored cleanly.
 - Refuse unsafe pull or push states such as unresolved conflicts, an active Git operation, or missing upstream configuration.
 - Surface remote rejection, branch-protection, authentication, configuration, and other one-shot operation failures as Sileo toasts rather than a persistent top banner. Those toasts stay above open dialogs, so an action started from Settings or a confirmation can still report its outcome. Read-only Git operations and pending conflicts still use in-app banners.
+- Keep dialogs above virtualized diff content, including sticky file headers, so Settings and confirmations cannot be partially covered by the viewer.
 
 ### Files and editing
 
@@ -125,10 +126,10 @@ GitHub features use the authenticated GitHub CLI (`gh`):
 - Inspect pull-request metadata, Markdown description, and full diff.
 - Switch the pull-request **Code** view between all cumulative changes and the diff introduced by an individual commit.
 - Open a pull request in the browser.
-- Create a pull request or draft pull request with a selected remote base branch.
+- Create a pull request or draft pull request from a wider, viewport-fitted dialog that keeps the draft toggle beside the base branch, the editor visible without an outer card scrollbar, and AI generation in the footer with its provider and model.
 - Edit and preview the GitHub Markdown description before publishing.
 - Require the current branch to be published and up to date before PR creation.
-- Optionally generate an editable title and description from the branch diff with the selected local AI CLI.
+- Optionally generate an editable title and description from the branch diff with the selected local AI CLI. PR generation uses the same generous, fairly distributed diff budget as commit generation so large branches keep coverage across all changed files.
 
 ### Optional AI assistance
 

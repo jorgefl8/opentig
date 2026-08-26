@@ -1815,6 +1815,7 @@ export default function App() {
         branches={branches}
         status={status}
         preferences={bootstrap.preferences}
+        aiProviders={capabilities?.aiProviders}
         pushBusy={busy === 'push'}
         onPush={() => void pushUpdates()}
         onCreated={(prNumber) => {
