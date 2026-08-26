@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { repositorySyncLoadingToast } from '../repositories/project-sync';
 import { conflictNotificationAction, conflictToastId } from './conflict-notification';
 
 describe('conflict notifications', () => {
@@ -15,8 +16,9 @@ describe('conflict notifications', () => {
     expect(conflictNotificationAction([], [])).toBe('none');
   });
 
-  it('uses a repository-specific stable toast id', () => {
-    expect(conflictToastId('repo-one')).toBe('repository-conflicts:repo-one');
+  it('shares the repository pull toast id so the conflict lifecycle replaces and dismisses it', () => {
+    expect(conflictToastId('repo-one')).toBe('repository-sync:repo-one:pull');
+    expect(conflictToastId('repo-one')).toBe(repositorySyncLoadingToast('repo-one', 'pull', 'Pulling…').id);
     expect(conflictToastId('repo-one')).not.toBe(conflictToastId('repo-two'));
   });
 });

@@ -1664,7 +1664,7 @@ export default function App() {
         if (result.status === 'success' || result.status === 'up-to-date') return result;
         throw new PullBlocked(result);
       }, {
-        loading: { title: pendingBehind > 0 ? `Pulling ${pendingBehind} ${pendingBehind === 1 ? 'commit' : 'commits'}…` : 'Pulling changes…' },
+        loading: repositorySyncLoadingToast(repositoryId, 'pull', pendingBehind > 0 ? `Pulling ${pendingBehind} ${pendingBehind === 1 ? 'commit' : 'commits'}…` : 'Pulling changes…'),
         success: (result) => pullSuccessCopy(result),
         error: (err) => {
           if (err instanceof PullBlocked) {
@@ -1681,7 +1681,7 @@ export default function App() {
               return {
                 title: result.updated ? 'Update completed with local conflicts' : 'Could not restore local changes',
                 description: 'The safety stash was preserved. Resolve the conflicts to continue.',
-                duration: null,
+                duration: 12_000,
                 button: { title: 'View conflicts', onClick: () => showConflicts(result.files) },
               };
             }
@@ -1691,7 +1691,7 @@ export default function App() {
                 description: result.recoveredChanges
                   ? 'Some changes are visible and the safety stash was preserved. Do not continue until you review them.'
                   : 'The worktree is still clean and the safety stash remains intact.',
-                duration: null,
+                duration: 12_000,
               };
             }
             if (result.status === 'rebase-conflict') {

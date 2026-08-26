@@ -16,5 +16,5 @@ export function conflictNotificationAction(
 }
 
 export function conflictToastId(repositoryId: string): string {
-  return `repository-conflicts:${repositoryId}`;
+  return `repository-sync:${repositoryId}:pull`;
 }

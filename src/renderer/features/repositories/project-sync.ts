@@ -64,11 +64,11 @@ export function projectPullBlockedCopy(repository: string, result: Exclude<PullR
   if (result.status === 'no-upstream') return { title: `Could not pull ${repository}`, description: 'Current branch has no upstream configured.', duration: 10_000 };
   if (result.status === 'diverged') return { title: `Could not pull ${repository}`, description: `Branch is ${result.ahead} ahead and ${result.behind} behind.`, duration: 10_000 };
   if (result.status === 'rebase-conflict') return { title: `Could not pull ${repository}`, description: result.files.length > 0 ? `Your local commits overlap the remote changes in ${result.files.length === 1 ? result.files[0] : `${result.files.length} files`}. The branch was left unchanged.` : 'Your local commits overlap the remote changes. The branch was left unchanged.', duration: 10_000 };
-  if (result.status === 'stash-conflict') return { title: result.updated ? `${repository} updated with local conflicts` : `Could not restore ${repository}`, description: 'Safety stash was preserved. Resolve conflicts before continuing.', duration: null };
+  if (result.status === 'stash-conflict') return { title: result.updated ? `${repository} updated with local conflicts` : `Could not restore ${repository}`, description: 'Safety stash was preserved. Resolve conflicts before continuing.', duration: 12_000 };
   return {
     title: `Could not restore ${repository}`,
     description: result.recoveredChanges ? 'Some local changes were recovered; safety stash was preserved.' : 'Worktree remains clean; safety stash was preserved.',
-    duration: null,
+    duration: 12_000,
   };
 }
 
