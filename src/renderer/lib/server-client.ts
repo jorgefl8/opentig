@@ -102,7 +102,7 @@ export function createOpenTigServerClient(options: ServerClientOptions = {}): Op
     },
     refs: {
       listBranches: (repositoryId) => invoke(IPC.branchesList, repositoryId),
-      switchBranch: (repositoryId, branch) => invoke(IPC.branchSwitch, repositoryId, branch),
+      switchBranch: (repositoryId, branch, moveChanges) => invoke(IPC.branchSwitch, repositoryId, branch, moveChanges),
       listWorktrees: (repositoryId) => invoke(IPC.worktreesList, repositoryId),
       selectWorktree: (repositoryId, path) => invoke(IPC.worktreeSelect, repositoryId, path),
       pull: (repositoryId) => invoke(IPC.refsPull, repositoryId),

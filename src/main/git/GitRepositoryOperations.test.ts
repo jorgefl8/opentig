@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdtemp, realpath, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -264,6 +264,54 @@ describe('GitRepositoryOperations local refs snapshot', () => {
     expect(snapshot.worktrees[0]).toMatchObject({ main: true, current: true, branch: 'main' });
     expect(snapshot.worktrees[1]).toMatchObject({ main: false, current: false, branch: 'review' });
     expect(await realPath(snapshot.worktrees[1]!.path)).toBe(await realPath(review));
+  });
+});
+
+describe('GitRepositoryOperations branch switching', () => {
+  it('offers blocked local changes and then moves them to the destination unstaged', async () => {
+    const fixture = await standaloneRepository();
+    await writeFile(path.join(fixture.work, 'file.txt'), 'first\nsecond\nthird\n');
+    await git(fixture.work, ['commit', '-am', 'Expand fixture']);
+    await git(fixture.work, ['switch', '-c', 'destination']);
+    await writeFile(path.join(fixture.work, 'file.txt'), 'destination\nsecond\nthird\n');
+    await git(fixture.work, ['commit', '-am', 'Change destination']);
+    await git(fixture.work, ['switch', 'main']);
+    await writeFile(path.join(fixture.work, 'file.txt'), 'first\nsecond\nlocal staged\n');
+    await git(fixture.work, ['add', 'file.txt']);
+    await writeFile(path.join(fixture.work, 'file.txt'), 'first\nsecond\nlocal staged\nlocal unstaged\n');
+    await writeFile(path.join(fixture.work, 'untracked.txt'), 'untracked\n');
+
+    expect(await fixture.operations.switchBranch(fixture.repositoryId, 'destination')).toEqual({
+      status: 'blocked-local-changes', files: ['file.txt', 'untracked.txt'],
+    });
+    expect(await git(fixture.work, ['branch', '--show-current'])).toBe('main');
+
+    expect(await fixture.operations.switchBranch(fixture.repositoryId, 'destination', true)).toEqual({
+      status: 'switched', movedChanges: true,
+    });
+    expect(await git(fixture.work, ['branch', '--show-current'])).toBe('destination');
+    expect(await gitRaw(fixture.work, ['diff', '--cached', '--name-only'])).toBe('');
+    expect(await gitRaw(fixture.work, ['diff', '--name-only'])).toBe('file.txt\n');
+    expect(await gitRaw(fixture.work, ['status', '--porcelain', '--', 'untracked.txt'])).toBe('?? untracked.txt\n');
+    expect(await gitRaw(fixture.work, ['stash', 'list'])).toBe('');
+    expect((await readFile(path.join(fixture.work, 'file.txt'), 'utf8')).replace(/\r\n/g, '\n'))
+      .toBe('destination\nsecond\nlocal staged\nlocal unstaged\n');
+  });
+
+  it('keeps the safety stash when moved changes conflict on the destination', async () => {
+    const fixture = await standaloneRepository();
+    await git(fixture.work, ['switch', '-c', 'destination']);
+    await writeFile(path.join(fixture.work, 'file.txt'), 'destination\n');
+    await git(fixture.work, ['commit', '-am', 'Change destination']);
+    await git(fixture.work, ['switch', 'main']);
+    await writeFile(path.join(fixture.work, 'file.txt'), 'local\n');
+
+    expect((await fixture.operations.switchBranch(fixture.repositoryId, 'destination')).status).toBe('blocked-local-changes');
+    const result = await fixture.operations.switchBranch(fixture.repositoryId, 'destination', true);
+    expect(result).toMatchObject({ status: 'moved-with-conflicts', files: ['file.txt'] });
+    expect(await git(fixture.work, ['branch', '--show-current'])).toBe('destination');
+    expect(await gitRaw(fixture.work, ['status', '--porcelain', '--', 'file.txt'])).toContain('UU file.txt');
+    expect(await gitRaw(fixture.work, ['stash', 'list'])).toContain('OpenTig branch move to destination');
   });
 });
 

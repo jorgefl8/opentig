@@ -1,4 +1,4 @@
-import type { CommitResult, DiffRequest, DiffResult, FetchResult, GitResult, PrepareCommitGroupInput, PullResult, PushResult, UndoLatestCommitResult, WorktreeRemovalResult } from '../../shared/contracts';
+import type { BranchSwitchResult, CommitResult, DiffRequest, DiffResult, FetchResult, GitResult, PrepareCommitGroupInput, PullResult, PushResult, UndoLatestCommitResult, WorktreeRemovalResult } from '../../shared/contracts';
 import type {
   BranchComparisonKind, BranchDeletionResult, BranchDetails, BranchInfo, CommitFile, CommitPage, CommitSummary,
   FileChange, LocalRefsSnapshot, WorktreeDetails, WorktreeInfo,
@@ -25,6 +25,10 @@ import { parseWorktrees } from './WorktreeParser';
  */
 const AI_PATCH_BUDGET = 400_000;
 const AI_SUMMARY_BUDGET = 24_000;
+type GitTaskRunner = (
+  args: string[],
+  options: { operation: string; readOnly?: boolean; timeoutMs?: number; maxOutputBytes?: number; stdin?: string | Buffer; truncateOverflow?: boolean },
+) => Promise<{ stdout: Buffer }>;
 
 export class GitRepositoryOperations {
   private readonly knownOids = new Map<string, Set<string>>();
@@ -372,23 +376,106 @@ export class GitRepositoryOperations {
     return parseRefs(output.stdout);
   }
 
-  async switchBranch(repositoryId: string, branch: string): Promise<GitResult> {
+  async switchBranch(repositoryId: string, branch: string, moveChanges = false): Promise<BranchSwitchResult> {
     await this.ensureWritable(repositoryId);
-    const branches = await this.branches(repositoryId);
-    const selected = branches.find((item) => item.fullName === branch)
-      ?? branches.find((item) => !item.remote && item.name === branch);
-    if (!selected || selected.fullName.endsWith('/HEAD')) throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'switch-branch', message: 'The branch does not exist.' });
     const repository = this.repositories.get(repositoryId);
-    if (!selected.remote) {
-      await this.git.runWrite(repository.path, ['switch', selected.name], { operation: 'switch-branch', timeoutMs: 60_000 });
-      return { ok: true };
-    }
+    return this.git.runWriteTask(repository.path, async (run) => {
+      const branches = await this.branches(repositoryId);
+      const selected = branches.find((item) => item.fullName === branch)
+        ?? branches.find((item) => !item.remote && item.name === branch);
+      if (!selected || selected.fullName.endsWith('/HEAD')) {
+        throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'switch-branch', message: 'The branch does not exist.' });
+      }
 
-    const slash = selected.name.indexOf('/');
-    const localName = slash >= 0 ? selected.name.slice(slash + 1) : selected.name;
-    const existingLocal = branches.find((item) => !item.remote && item.name === localName);
-    await this.git.runWrite(repository.path, existingLocal ? ['switch', existingLocal.name] : ['switch', '--track', selected.name], { operation: 'switch-branch', timeoutMs: 60_000 });
-    return { ok: true };
+      let switchArgs: string[];
+      if (!selected.remote) {
+        switchArgs = ['switch', selected.name];
+      } else {
+        const slash = selected.name.indexOf('/');
+        const localName = slash >= 0 ? selected.name.slice(slash + 1) : selected.name;
+        const existingLocal = branches.find((item) => !item.remote && item.name === localName);
+        switchArgs = existingLocal ? ['switch', existingLocal.name] : ['switch', '--track', selected.name];
+      }
+
+      if (!moveChanges) {
+        try {
+          await run(switchArgs, { operation: 'switch-branch', timeoutMs: 60_000 });
+          return { status: 'switched', movedChanges: false };
+        } catch (error) {
+          if (!(error instanceof GitOperationError) || error.detail.code !== 'DIRTY_WORKTREE') throw error;
+          const status = await this.repositories.status(repositoryId, false);
+          return { status: 'blocked-local-changes', files: status.changes.map((change) => change.path) };
+        }
+      }
+
+      const sourceStatus = await this.repositories.status(repositoryId, false);
+      if (sourceStatus.changes.length === 0) {
+        await run(switchArgs, { operation: 'switch-branch', timeoutMs: 60_000 });
+        return { status: 'switched', movedChanges: false };
+      }
+
+      const previousStashOid = (await run(['for-each-ref', '--format=%(objectname)', 'refs/stash'], {
+        operation: 'switch-previous-stash', readOnly: true,
+      })).stdout.toString('utf8').trim();
+      await run([
+        'stash', 'push', '--include-untracked', '--message',
+        `OpenTig branch move to ${selected.name} ${new Date().toISOString()}`,
+      ], { operation: 'switch-stash-changes', timeoutMs: 120_000, maxOutputBytes: 8 * 1024 * 1024 });
+      const stashOid = (await run(['rev-parse', '--verify', 'refs/stash'], {
+        operation: 'switch-stash-oid', readOnly: true,
+      })).stdout.toString('utf8').trim();
+      if (!stashOid || stashOid === previousStashOid) {
+        throw new GitOperationError({
+          code: 'UNKNOWN', operation: 'switch-stash-changes', message: 'Git could not safely save all local changes.',
+        });
+      }
+
+      try {
+        await run(switchArgs, { operation: 'switch-branch-with-changes', timeoutMs: 60_000 });
+      } catch (error) {
+        // Switching failed after the safety stash was created. Restore the
+        // original worktree before surfacing Git's real failure.
+        try {
+          await run(['stash', 'apply', '--index', stashOid], {
+            operation: 'switch-rollback-stash', timeoutMs: 120_000, maxOutputBytes: 16 * 1024 * 1024,
+          });
+          await this.dropStash(run, stashOid, 'switch-rollback-drop-stash');
+        } catch {
+          // The stash remains as a recovery copy if rollback itself fails.
+        }
+        throw error;
+      }
+
+      try {
+        // Omitting --index intentionally restores staged and unstaged changes
+        // together; OpenTig then clears any staged state so the destination gets
+        // exactly the requested unstaged working tree.
+        await run(['stash', 'apply', stashOid], {
+          operation: 'switch-restore-stash', timeoutMs: 120_000, maxOutputBytes: 16 * 1024 * 1024,
+        });
+      } catch {
+        const status = await this.repositories.status(repositoryId, false);
+        const files = conflictPaths(status);
+        if (files.length > 0) return { status: 'moved-with-conflicts', files, stashOid };
+        return { status: 'move-restore-failed', stashOid, recoveredChanges: status.changes.length > 0 };
+      }
+
+      try {
+        await run(['restore', '--staged', '--', '.'], {
+          operation: 'switch-unstage-restored-changes', timeoutMs: 60_000, maxOutputBytes: 8 * 1024 * 1024,
+        });
+      } catch {
+        const status = await this.repositories.status(repositoryId, false);
+        return { status: 'move-restore-failed', stashOid, recoveredChanges: status.changes.length > 0 };
+      }
+      try {
+        await this.dropStash(run, stashOid, 'switch-drop-stash');
+      } catch {
+        // The move is complete. An extra safety stash is preferable to turning
+        // a successful branch switch into a misleading failure.
+      }
+      return { status: 'switched', movedChanges: true };
+    }, repository.commonDir);
   }
 
   async fetch(repositoryId: string): Promise<FetchResult> {
@@ -865,6 +952,16 @@ export class GitRepositoryOperations {
       // The working tree is restored; keeping an extra recovery stash is safe.
     }
     return null;
+  }
+
+  private async dropStash(run: GitTaskRunner, stashOid: string, operation: string): Promise<void> {
+    const list = (await run(['stash', 'list', '--format=%H%x09%gd'], {
+      operation: `${operation}-find`, readOnly: true,
+    })).stdout.toString('utf8');
+    const selector = list.split(/\r?\n/).map((line) => line.split('\t')).find(([oid]) => oid === stashOid)?.[1];
+    if (selector) {
+      await run(['stash', 'drop', selector], { operation, maxOutputBytes: 4 * 1024 * 1024 });
+    }
   }
 
   private rememberOid(repositoryId: string, oid: string): void {

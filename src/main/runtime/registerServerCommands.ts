@@ -318,7 +318,11 @@ export function registerServerCommands(
   handle(IPC.commitsList, 'history', (id, cursor) => services.operations.listCommits(stringArg(id, 'history', 64), cursor === undefined ? undefined : stringArg(cursor, 'history', 128)));
   handle(IPC.commitsFiles, 'commit-files', (id, oid) => services.operations.commitFiles(stringArg(id, 'commit-files', 64), stringArg(oid, 'commit-files', 128)));
   handle(IPC.branchesList, 'branches', (id) => services.operations.branches(stringArg(id, 'branches', 64)));
-  handle(IPC.branchSwitch, 'switch-branch', (id, branch) => services.operations.switchBranch(stringArg(id, 'switch-branch', 64), stringArg(branch, 'switch-branch', 512)));
+  handle(IPC.branchSwitch, 'switch-branch', (id, branch, moveChanges) => services.operations.switchBranch(
+    stringArg(id, 'switch-branch', 64),
+    stringArg(branch, 'switch-branch', 512),
+    booleanArg(moveChanges, 'switch-branch'),
+  ));
   handle(IPC.worktreesList, 'worktrees', (id) => services.operations.worktrees(stringArg(id, 'worktrees', 64)));
   handle(IPC.worktreeSelect, 'select-worktree', async (id, targetPath) => {
     const repository = await services.operations.selectWorktree(stringArg(id, 'select-worktree', 64), stringArg(targetPath, 'select-worktree'));

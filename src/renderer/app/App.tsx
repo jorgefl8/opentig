@@ -135,6 +135,7 @@ export default function App() {
   const [fileSessions, setFileSessions] = useState<ReadonlyMap<string, FileSession>>(() => new Map());
   const [dirtyClosePath, setDirtyClosePath] = useState<string | null>(null);
   const [destructiveAction, setDestructiveAction] = useState<DestructiveAction | null>(null);
+  const [blockedBranchSwitch, setBlockedBranchSwitch] = useState<{ name: string; files: string[] } | null>(null);
   // Holding Ctrl reveals the section numbers, so the shortcut is discoverable
   // without a cheat sheet.
   const [ctrlHeld, setCtrlHeld] = useState(false);
@@ -1429,9 +1430,57 @@ export default function App() {
   const switchBranch = async (name: string | null) => {
     if (!repository || !name || name === status?.branch) return;
     setBusy('branch');
-    try { await opentig.refs.switchBranch(repository.id, name); await refresh({ background: true }); }
+    try {
+      const result = await opentig.refs.switchBranch(repository.id, name, false);
+      if (result.status === 'blocked-local-changes') {
+        setBlockedBranchSwitch({ name, files: result.files });
+        return;
+      }
+      await refresh({ background: true });
+    }
     catch (reason) { reportError('Could not switch branch', reason); }
     finally { setBusy(null); }
+  };
+
+  const moveChangesAndSwitchBranch = async () => {
+    const pending = blockedBranchSwitch;
+    if (!repository || !pending) return;
+    setBusy('branch');
+    try {
+      const result = await opentig.refs.switchBranch(repository.id, pending.name, true);
+      if (result.status === 'blocked-local-changes') {
+        setBlockedBranchSwitch({ name: pending.name, files: result.files });
+        return;
+      }
+      setBlockedBranchSwitch(null);
+      setView('changes');
+      await refresh({ background: true });
+      if (result.status === 'switched') {
+        sileo.success({
+          title: `Switched to ${pending.name}`,
+          description: result.movedChanges ? 'Local changes were moved here and left unstaged.' : 'The branch was switched successfully.',
+        });
+      } else if (result.status === 'moved-with-conflicts') {
+        sileo.error({
+          title: `Switched to ${pending.name} with conflicts`,
+          description: `${result.files.length} ${result.files.length === 1 ? 'file needs' : 'files need'} resolution. The safety stash was kept.`,
+          duration: 12_000,
+        });
+      } else {
+        sileo.error({
+          title: 'Could not restore every local change',
+          description: result.recoveredChanges
+            ? 'Some changes were recovered and the safety stash was kept.'
+            : 'The safety stash was kept so the changes can be recovered.',
+          duration: 12_000,
+        });
+      }
+    } catch (reason) {
+      reportError('Could not move changes to the branch', reason);
+      await refresh({ background: true });
+    } finally {
+      setBusy(null);
+    }
   };
 
   const switchWorktree = async (targetPath: string | null) => {
@@ -1789,6 +1838,30 @@ export default function App() {
             <Button variant="destructive" onClick={() => void settleDestructiveAction(true)}>
               {destructiveAction?.kind === 'discard' ? <IconRestore /> : <IconTrash />}
               {pendingDestructiveCopy?.confirmLabel}
+            </Button>
+          </div>
+        </DialogPopup>
+      </Dialog>
+      <Dialog
+        open={blockedBranchSwitch !== null}
+        onOpenChange={(open) => { if (!open && busy !== 'branch') setBlockedBranchSwitch(null); }}
+      >
+        <DialogPopup className="undo-commit-dialog">
+          <div className="undo-commit-content">
+            <DialogTitle>Move local changes to {blockedBranchSwitch?.name}?</DialogTitle>
+            <DialogDescription>
+              OpenTig will save all tracked and untracked changes temporarily, switch branches, restore them, and leave them unstaged. If Git finds conflicts, the safety stash will be kept.
+            </DialogDescription>
+            {blockedBranchSwitch && blockedBranchSwitch.files.length > 0 && (
+              <div className="destructive-confirmation-detail">
+                {blockedBranchSwitch.files.join('\n')}
+              </div>
+            )}
+          </div>
+          <div className="undo-commit-actions">
+            <Button variant="ghost" onClick={() => setBlockedBranchSwitch(null)} disabled={busy === 'branch'}>Cancel</Button>
+            <Button onClick={() => void moveChangesAndSwitchBranch()} disabled={busy === 'branch'}>
+              <IconFileArrowRight /> {busy === 'branch' ? 'Moving changes…' : `Move changes to ${blockedBranchSwitch?.name ?? 'branch'}`}
             </Button>
           </div>
         </DialogPopup>

@@ -111,7 +111,7 @@ It is intentionally not an IDE, hosting service, or replacement for the Git CLI.
 
 ### Branches and worktrees
 
-- Search and switch between local and remote branches; selecting a remote branch creates or uses its local tracking branch.
+- Search and switch between local and remote branches; selecting a remote branch creates or uses its local tracking branch. If local changes would be overwritten, OpenTig offers to move all tracked and untracked changes to the destination branch and leaves them unstaged. Conflicts open in the Changes view and retain a safety stash for recovery.
 - Prevent switching to a branch already checked out in another worktree.
 - Inspect local branch tips, upstreams, ahead/behind state, unique commits, and owning worktrees.
 - Delete local branches only through Git's non-forced, fully merged path.

@@ -84,6 +84,12 @@ export interface GitResult {
   ok: true;
 }
 
+export type BranchSwitchResult =
+  | { status: 'switched'; movedChanges: boolean }
+  | { status: 'blocked-local-changes'; files: string[] }
+  | { status: 'moved-with-conflicts'; files: string[]; stashOid: string }
+  | { status: 'move-restore-failed'; stashOid: string; recoveredChanges: boolean };
+
 export type DeleteEntryResult = { deleted: true } | { deleted: false };
 
 export interface CopyEntriesResult {
@@ -514,7 +520,7 @@ export interface OpenTigApi {
   };
   refs: {
     listBranches(repositoryId: string): Promise<BranchInfo[]>;
-    switchBranch(repositoryId: string, branch: string): Promise<GitResult>;
+    switchBranch(repositoryId: string, branch: string, moveChanges: boolean): Promise<BranchSwitchResult>;
     listWorktrees(repositoryId: string): Promise<WorktreeInfo[]>;
     selectWorktree(repositoryId: string, path: string): Promise<RepositoryInfo>;
     pull(repositoryId: string): Promise<PullResult>;
