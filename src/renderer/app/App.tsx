@@ -58,7 +58,9 @@ import { SearchView } from '@/features/search/SearchView';
 import { buildRepositoryPickerModel, formatRepositoryCheckout, getRepositoryPickerDisplayOrder, groupRecentRepositories, touchRecentRepositories, type RepositoryOption } from '@/features/repositories/repository-select-model';
 import type { ViewerSelection } from '@/features/viewer/Viewer';
 import { getVsCodeFileIconUrl, getVsCodeFolderIconUrl } from '@/lib/vscode-icons';
-import { refreshOperationsForScope } from './refresh-policy';
+import {
+  mergeRefreshRequests, refreshOperationsForScope, shouldRefreshSearch, shouldRefreshViewer, type RefreshRequest,
+} from './refresh-policy';
 import { resolveWindowControlsInset } from './window-controls';
 import { queryKeys, queryResourcesForScope } from '@/lib/query-client';
 import { opentig } from '@/lib/opentig-api';
@@ -123,6 +125,7 @@ export default function App() {
   const [repositorySyncOperations, setRepositorySyncOperations] = useState<ReadonlyMap<string, ProjectSyncAction>>(() => new Map());
 
   const [refreshVersion, setRefreshVersion] = useState(0);
+  const [searchRevision, setSearchRevision] = useState(0);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<SettingsSection>('general');
   const [generating, setGenerating] = useState<string | null>(null);
@@ -166,6 +169,7 @@ export default function App() {
   const lastAppliedMessageRef = useRef('');
   const forceGhStatusRef = useRef(false);
   const knownConflictPathsRef = useRef<Map<string, string[]>>(new Map());
+  const refreshCyclesRef = useRef<Map<string, { queued: RefreshRequest | null; promise: Promise<void> }>>(new Map());
 
   const historyQuery = useInfiniteQuery({
     queryKey: queryKeys.history(repository?.id ?? ''),
@@ -296,6 +300,7 @@ export default function App() {
       const record = action as Record<string, unknown>;
       if (record.type === 'refresh') {
         setRefreshVersion((version) => version + 1);
+        setSearchRevision((version) => version + 1);
         return;
       }
       if (record.type === 'view'
@@ -520,12 +525,10 @@ export default function App() {
     void refreshFileHistoryState();
   }, [refreshFileHistoryState, repository]);
 
-  const performRefresh = useCallback(async (request: { scope: RepositoryChangeScope; background: boolean }) => {
-    if (!repository) return;
-    const { background, scope } = request;
-    const operations = refreshOperationsForScope(scope, view);
-    const repositoryId = repository.id;
-    const resources = queryResourcesForScope(scope, view);
+  const performRefresh = useCallback(async (repositoryId: string, request: RefreshRequest) => {
+    const { background, scope, view: refreshView } = request;
+    const operations = refreshOperationsForScope(scope, refreshView);
+    const resources = queryResourcesForScope(scope, refreshView);
     if (!background) setBusy('refresh');
     try {
       await Promise.all(resources.map((resource) => appQueryClient.invalidateQueries({
@@ -556,19 +559,49 @@ export default function App() {
       if (nextWorktrees) setWorktrees(nextWorktrees);
       if (nextFiles) applyFilesSnapshot(nextFiles);
       void nextHistory;
-      setRefreshVersion((version) => version + 1);
+      if (shouldRefreshViewer(scope, viewerSelectionRef.current?.type ?? null)) {
+        setRefreshVersion((version) => version + 1);
+      }
+      if (shouldRefreshSearch(scope)) setSearchRevision((version) => version + 1);
     } catch (reason) {
       if (repositoryRef.current?.id === repositoryId) reportError('Could not refresh', reason);
     } finally {
       if (!background && repositoryRef.current?.id === repositoryId) setBusy(null);
     }
-  }, [applyFilesSnapshot, appQueryClient, repository, view]);
-  // Query keys deduplicate simultaneous server reads. Separate scoped refreshes
-  // naturally form a union because each invalidates only the resources it owns.
-  const refresh = useCallback((options?: AppRefreshOptions) => performRefresh({
-    background: options?.background === true,
-    scope: options?.scope ?? 'unknown',
-  }), [performRefresh]);
+  }, [applyFilesSnapshot, appQueryClient]);
+  // One cycle per repository folds watcher bursts and explicit mutation
+  // refreshes into a single follow-up snapshot with the union of their scopes.
+  const refresh = useCallback((options?: AppRefreshOptions): Promise<void> => {
+    if (!repository) return Promise.resolve();
+    const repositoryId = repository.id;
+    const request: RefreshRequest = {
+      background: options?.background === true,
+      scope: options?.scope ?? 'unknown',
+      view,
+    };
+    const existing = refreshCyclesRef.current.get(repositoryId);
+    if (existing) {
+      existing.queued = existing.queued ? mergeRefreshRequests(existing.queued, request) : request;
+      return existing.promise;
+    }
+
+    const cycle: { queued: RefreshRequest | null; promise: Promise<void> } = {
+      queued: null,
+      promise: Promise.resolve(),
+    };
+    cycle.promise = (async () => {
+      let current: RefreshRequest | null = request;
+      while (current) {
+        await performRefresh(repositoryId, current);
+        current = cycle.queued;
+        cycle.queued = null;
+      }
+    })().finally(() => {
+      if (refreshCyclesRef.current.get(repositoryId) === cycle) refreshCyclesRef.current.delete(repositoryId);
+    });
+    refreshCyclesRef.current.set(repositoryId, cycle);
+    return cycle.promise;
+  }, [performRefresh, repository, view]);
 
   useEffect(() => { busyRef.current = busy; }, [busy]);
 
@@ -2048,7 +2081,7 @@ export default function App() {
                 <SearchView
                   repositoryId={repository.id}
                   active={view === 'search'}
-                  revision={refreshVersion}
+                  revision={searchRevision}
                   onOpenFile={openFile}
                   unsavedPathsAmong={unsavedTabsUnder}
                   onReplaced={() => { void refresh({ background: true }); }}

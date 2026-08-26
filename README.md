@@ -42,6 +42,7 @@ It is intentionally not an IDE, hosting service, or replacement for the Git CLI.
 - Create, rename, delete, and reassign project groups.
 - Switch quickly between repositories, branches, and available worktrees.
 - Display current branch, ahead/behind state, and worktree insertion/deletion totals in the main toolbar.
+- Coalesce overlapping watcher and manual refreshes, and keep the current diff mounted when a refresh changes only status or refs.
 - Carry the OpenTig logo through the main toolbar, browser favicon, packaged Windows application, installer, and taskbar. In the toolbar the ring follows the theme text colour so it stays visible in light and dark, while the T stays brand blue. The favicon and Windows application icon place that mark on a dark rounded badge. Desktop and browser clients share the same logo splash while starting or connecting to the server.
 
 ### Changes, diffs, and commits

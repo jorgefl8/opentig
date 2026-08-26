@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { refreshOperationsForScope } from './refresh-policy';
+import {
+  mergeRefreshRequests, refreshOperationsForScope, shouldRefreshSearch, shouldRefreshViewer,
+} from './refresh-policy';
 
 describe('refreshOperationsForScope', () => {
   it('refreshes only status for a worktree event outside Files', () => {
@@ -30,5 +32,28 @@ describe('refreshOperationsForScope', () => {
       status: true, branches: true, worktrees: true, files: true, history: false,
     });
     expect(refreshOperationsForScope('unknown', 'history').history).toBe(true);
+  });
+});
+
+describe('refresh scheduling', () => {
+  it('coalesces scopes without hiding a foreground refresh', () => {
+    expect(mergeRefreshRequests(
+      { scope: 'worktree', background: true, view: 'changes' },
+      { scope: 'refs', background: false, view: 'history' },
+    )).toEqual({ scope: 'unknown', background: false, view: 'history' });
+  });
+
+  it('reloads mutable viewers only for worktree-bearing scopes', () => {
+    expect(shouldRefreshViewer('worktree', 'diff')).toBe(true);
+    expect(shouldRefreshViewer('index', 'conflict')).toBe(true);
+    expect(shouldRefreshViewer('refs', 'diff')).toBe(false);
+    expect(shouldRefreshViewer('unknown', 'file')).toBe(false);
+    expect(shouldRefreshViewer('unknown', 'commit')).toBe(false);
+  });
+
+  it('keeps search stable for ref-only refreshes', () => {
+    expect(shouldRefreshSearch('worktree')).toBe(true);
+    expect(shouldRefreshSearch('index')).toBe(true);
+    expect(shouldRefreshSearch('refs')).toBe(false);
   });
 });
