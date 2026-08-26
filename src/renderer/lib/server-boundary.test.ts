@@ -44,14 +44,18 @@ describe('renderer/server boundary', () => {
     expect(source).toContain('utilityProcess.fork');
   });
 
-  it('keeps network exposure controls desktop-only and free of native tooltips', async () => {
+  it('keeps listener controls desktop-only while exposing session management without native tooltips', async () => {
     const appSource = await readFile(path.join(process.cwd(), 'src', 'renderer', 'app', 'App.tsx'), 'utf8');
     const settingsSource = await readFile(path.join(process.cwd(), 'src', 'renderer', 'features', 'settings', 'WebAccessSettings.tsx'), 'utf8');
 
-    expect(appSource).toContain("id !== 'webAccess' || Boolean(window.opentigDesktop)");
+    expect(appSource).toContain('SETTINGS_SECTIONS.map');
     expect(settingsSource).toContain('window.opentigDesktop?.webAccess');
+    expect(settingsSource).toContain('desktopApi && status');
+    expect(settingsSource).toContain('loadOwnerSessions()');
     expect(settingsSource).not.toMatch(/\stitle=/);
-    expect(settingsSource).toContain('Never expose the raw port publicly.');
+    expect(settingsSource).toContain('The pairing code also works through a same-machine HTTPS tunnel.');
+    expect(settingsSource).toContain('renameOwnerSession');
+    expect(settingsSource).not.toContain('External HTTPS URL');
   });
 
   it('replaces a revoked browser session with pairing instructions', async () => {

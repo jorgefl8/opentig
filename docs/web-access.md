@@ -1,48 +1,80 @@
-# Network access and browser pairing
+# Web access, tunnels, and browser pairing
 
-OpenTig can expose its existing desktop backend to trusted browsers on the same
-LAN or VPN. Enabling Network Access does not start a second server: Electron
-restarts the same supervised utility listener on network interfaces.
+OpenTig can connect browsers on the same computer, on a trusted LAN/VPN, or
+through a local HTTPS reverse proxy such as Cloudflare Tunnel. These are three
+addresses for the same authenticated server/runtime/client; no duplicate
+headless backend is started.
 
-## Enable access
+The headless `@opentig/cli` package exposes the same backend directly. It binds
+to loopback by default; `--host` is required for another interface and prints
+the same owner-authority warning.
 
-1. Open **Settings → Network access** in the desktop application.
-2. Enable **Network access** and accept the owner-level authority warning.
-3. Select the address that the pairing link should use when more than one
-   network interface is available.
-4. Choose **Create pairing link**.
-5. Open the link or scan its QR code within five minutes.
+## Choose how the browser connects
 
-The setting is desktop-only. A browser cannot expose the listener, mint a link
-through Electron, or change desktop server configuration.
+Open **Settings → Web access** in the desktop application, create a pairing
+code, then open its link/QR or paste the code into `/pair` on any address that
+reaches this same OpenTig instance. The code is one-use and valid for five
+minutes.
 
-Loopback is the default:
+For a browser on the same PC, select the always-available loopback endpoint:
 
 ```text
 http://127.0.0.1:<actual-port>
 ```
 
-When enabled, the listener binds to `0.0.0.0` and the settings pane lists usable
-LAN endpoints. Port `6767` is preferred; the displayed actual port is
-authoritative if OpenTig had to select another one.
+For another device on a trusted LAN or VPN, enable **LAN access**, accept the
+owner-authority warning, and select a listed interface address. The same
+supervised utility restarts on `0.0.0.0`; it does not start a second server.
+
+For Cloudflare Tunnel or another reverse proxy running on the OpenTig PC:
+
+1. Leave **LAN access** disabled so the listener remains on loopback.
+2. Point the tunnel origin service to `http://127.0.0.1:<actual-port>`.
+3. Open `https://your-domain.example/pair` in the remote browser.
+4. Create a pairing code in OpenTig, paste it there, and choose a recognizable
+   device name.
+
+There is no public-URL field to keep in sync. OpenTig validates the `Origin`
+authority against the authority used for each HTTP or WebSocket request; the
+scheme may differ because TLS terminates at the local proxy. A forwarded host
+is accepted only when the immediate TCP peer is loopback, preventing a LAN
+client from forging proxy headers. Cloudflare client IP or `X-Forwarded-For`
+metadata is likewise trusted only from loopback. HTTPS pairing produces a
+`Secure` session cookie. The proxy should preserve `Host` (the normal behavior)
+or send `X-Forwarded-Host`. LAN exposure is not required for a same-machine
+tunnel.
+
+Listener and Electron pairing-link controls are desktop-only. An authenticated
+browser can inspect, rename, and revoke sessions, but cannot rebind the desktop
+listener.
+
+The desktop prefers port `6767`; its displayed actual port is authoritative if
+it had to select another one. The CLI uses its configured port exactly (`6767`
+by default) and fails on conflict so a tunnel target never moves silently.
 
 ## Pairing and sessions
 
 The pairing URL has this form:
 
 ```text
-http://<trusted-address>:<port>/pair#token=<one-use-secret>
+<http-or-https-origin>/pair#token=<one-use-secret>
 ```
 
 The secret is carried in the URL fragment, so it is not sent in the initial HTTP
-request. The client exchanges it once, clears the fragment, and receives a
-host-only `HttpOnly`, `SameSite=Strict` owner-session cookie. Generating another
-pairing link invalidates the previous unconsumed link.
+request. The client clears the fragment before displaying the confirmation form,
+then exchanges the secret together with an editable device name and receives a
+host-only `HttpOnly`, `SameSite=Strict` owner-session cookie. The raw code can
+also be pasted into `/pair` on another domain serving the same instance; it is
+never put in a query string or browser storage. Generating another pairing code
+invalidates the previous unconsumed one.
 
-Owner sessions persist across server restarts. Only credential hashes are stored
-under the server data directory. The desktop has its own private session,
-established with a one-use bootstrap secret sent over Electron's private utility
-message channel.
+Owner sessions persist across server restarts. Only credential hashes and
+non-secret display metadata are stored under the server data directory. The
+desktop has its own private session, established with a one-use bootstrap secret
+sent over Electron's private utility message channel. A new desktop bootstrap
+replaces older desktop records. Browser records retain their editable name,
+browser/OS/device type, trusted peer address, proxy indicator, and last
+connection time.
 
 ## Authority model
 
@@ -59,12 +91,30 @@ Do not pair a device or person that should not receive this authority.
 
 ## Revoke access
 
-Choose **Revoke all sessions** in the desktop settings pane to disconnect every
-paired browser immediately. OpenTig replaces its private desktop session so the
-desktop can continue without reopening the application.
+Open **Settings → Web access** in either desktop OpenTig or an authenticated
+browser. The session list shows the private desktop session, each paired browser,
+its browser/OS, trusted peer address, proxy state, last activity, and live
+WebSocket connection/tab count. Rename a device, revoke one browser, or revoke
+all browser sessions. The private desktop session is not revoked by these
+controls.
 
 A revoked browser shows fresh-pairing instructions. Create a new one-use link
 from the desktop to admit it again.
+
+For a headless server, run `opentig pair --home <same-home>` as the same OS user.
+The command verifies the PID, readiness identity, app/protocol version, private
+instance ID, and same-host admin credential before printing a new five-minute
+code, link, and terminal QR. The credential is stored separately with private file
+permissions; `runtime.json` never contains it.
+
+Running the package with `npx` or `bunx` never changes startup configuration.
+On Linux/systemd, `opentig service install` explicitly stages the exact package
+version under the selected OpenTig home, installs a project-independent user
+unit, starts it, and enables user lingering for reboot persistence. Repositories
+are added, opened, and switched exclusively from the web UI; neither CLI startup
+nor the service is scoped to a repository. Use `opentig service status` or
+`opentig service uninstall`; service management for Windows and macOS is not
+included yet.
 
 ## Connection behavior
 
@@ -84,11 +134,12 @@ again.
 
 ## Diagnostics
 
-The desktop Network Access pane reports:
+The desktop Web Access pane reports:
 
 - server state and actual port;
 - local and detected network endpoints;
-- connected owner-session count;
+- local and LAN link/QR targets plus a domain-independent pairing code;
+- named owner sessions, connection metadata, and live connection counts;
 - restart errors.
 
 Additional checks:
@@ -100,7 +151,8 @@ Invoke-RestMethod http://127.0.0.1:6767/readyz
 Use the actual port shown by the application if it is not `6767`. A ready server
 returns its status, protocol version, and application version. The rotating
 server log is stored at `logs/server.log` inside Electron's OpenTig user-data
-directory; authentication material and URL secrets are redacted.
+directory or the selected CLI home; authentication material and URL secrets are
+redacted.
 
 If a browser remains on **Authentication required**, revoke stale sessions if
 appropriate, create a fresh pairing link, and open that exact link. If the
@@ -109,15 +161,16 @@ log and `/readyz` response.
 
 ## Safe deployment
 
-Treat raw Network Access as trusted-network functionality:
+Treat raw LAN access as trusted-network functionality:
 
 - use a trusted LAN or VPN;
-- for access across networks, use an HTTPS reverse proxy or SSH tunnel;
+- for access across networks, point a same-machine HTTPS reverse proxy/tunnel
+  at loopback and use its own access policy or MFA;
 - restrict the port with the host firewall;
 - never forward the raw HTTP port to the public Internet;
 - avoid untrusted Wi-Fi because non-loopback HTTP is not encrypted;
 - revoke sessions when a paired device is lost or no longer trusted.
 
 OpenTig does not currently ship built-in TLS, user roles, a relay, Tailscale/SSH
-automation, Docker packaging, or a service manager. Those omissions are
-intentional; external network controls must protect remote deployments.
+automation, Docker packaging, or Windows/macOS service installers. External
+network controls must protect remote deployments.

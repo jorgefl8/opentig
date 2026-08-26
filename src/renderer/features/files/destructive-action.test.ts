@@ -21,6 +21,19 @@ const change = (path: string, kind: FileChange['kind']): FileChange => ({
 const entry = (path: string): FileTreeEntry => ({ path, name: path, type: 'file', size: 1, mtimeMs: 0 });
 
 describe('destructive file actions', () => {
+  it('lists discarded paths instead of repeating the title', () => {
+    const action = createDiscardAction('repo', ['src/main.ts'], [
+      change('src/main.ts', 'modified'),
+    ]);
+
+    expect(destructiveActionCopy(action)).toEqual({
+      title: 'Discard changes',
+      message: 'These local changes will be lost.',
+      detail: 'src/main.ts',
+      confirmLabel: 'Discard',
+    });
+  });
+
   it('preserves discard warning copy for untracked files', () => {
     const action = createDiscardAction('repo', ['new.txt', 'tracked.txt'], [
       change('new.txt', 'untracked'),
@@ -29,8 +42,8 @@ describe('destructive file actions', () => {
 
     expect(destructiveActionCopy(action)).toEqual({
       title: 'Discard changes',
-      message: 'Discard changes to these 2 files?',
-      detail: 'Untracked files will be moved to system Trash. Other local changes will be lost.',
+      message: 'Untracked files will be moved to system Trash. Other local changes will be lost.',
+      detail: 'new.txt\ntracked.txt',
       confirmLabel: 'Discard',
     });
   });

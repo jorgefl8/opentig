@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { IPC, type OpenTigApi } from './contracts';
+import { AI_SERVER_TIMEOUT_MS } from './ai-timeouts';
 import type { OpenTigDesktopApi } from './desktop-api';
 import {
   OPEN_TIG_SERVER_COMMANDS,
@@ -59,7 +60,15 @@ describe('OpenTig server protocol ownership', () => {
       expect(definition.operation.length).toBeGreaterThan(0);
       expect(Number.isSafeInteger(definition.maxRequestBytes)).toBe(true);
       expect(definition.maxRequestBytes).toBeGreaterThan(0);
+      expect(Number.isSafeInteger(definition.timeoutMs)).toBe(true);
+      expect(definition.timeoutMs).toBeGreaterThan(0);
     }
+  });
+
+  it('reserves long execution windows for AI generation commands', () => {
+    expect(OPEN_TIG_SERVER_COMMANDS['ai.generateCommitMessage'].timeoutMs).toBe(AI_SERVER_TIMEOUT_MS);
+    expect(OPEN_TIG_SERVER_COMMANDS['github.generateDraft'].timeoutMs).toBe(AI_SERVER_TIMEOUT_MS);
+    expect(AI_SERVER_TIMEOUT_MS).toBeGreaterThan(OPEN_TIG_SERVER_COMMANDS['repository.getStatus'].timeoutMs);
   });
 
   it('marks representative reads and writes correctly', () => {

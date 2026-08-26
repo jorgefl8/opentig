@@ -13,24 +13,36 @@ afterEach(async () => {
 describe('DesktopServerSettings', () => {
   it('defaults to loopback without creating state', async () => {
     const fixture = await createFixture();
-    await expect(fixture.store.load()).resolves.toBe(false);
+    await expect(fixture.store.load()).resolves.toEqual({ webAccessEnabled: false });
   });
 
   it('atomically persists network exposure', async () => {
     const fixture = await createFixture();
-    await fixture.store.save(true);
+    await fixture.store.save({ webAccessEnabled: true });
     await fixture.store.flush();
 
-    expect(JSON.parse(await readFile(fixture.filePath, 'utf8'))).toEqual({ version: 1, webAccessEnabled: true });
-    await expect(fixture.store.load()).resolves.toBe(true);
+    expect(JSON.parse(await readFile(fixture.filePath, 'utf8'))).toEqual({ version: 3, webAccessEnabled: true });
+    await expect(fixture.store.load()).resolves.toEqual({ webAccessEnabled: true });
+  });
+
+  it('migrates the previous LAN-only setting', async () => {
+    const fixture = await createFixture();
+    await writeFile(fixture.filePath, JSON.stringify({ version: 1, webAccessEnabled: true }));
+    await expect(fixture.store.load()).resolves.toEqual({ webAccessEnabled: true });
+  });
+
+  it('drops the obsolete external URL while migrating version 2', async () => {
+    const fixture = await createFixture();
+    await writeFile(fixture.filePath, JSON.stringify({ version: 2, webAccessEnabled: false, externalOrigin: 'https://opentig.example.com' }));
+    await expect(fixture.store.load()).resolves.toEqual({ webAccessEnabled: false });
   });
 
   it('fails closed for corrupt or unsupported state', async () => {
     const fixture = await createFixture();
-    await writeFile(fixture.filePath, JSON.stringify({ version: 2, webAccessEnabled: true }));
-    await expect(fixture.store.load()).resolves.toBe(false);
+    await writeFile(fixture.filePath, JSON.stringify({ version: 4, webAccessEnabled: true }));
+    await expect(fixture.store.load()).resolves.toEqual({ webAccessEnabled: false });
     await writeFile(fixture.filePath, '{corrupt');
-    await expect(fixture.store.load()).resolves.toBe(false);
+    await expect(fixture.store.load()).resolves.toEqual({ webAccessEnabled: false });
   });
 });
 

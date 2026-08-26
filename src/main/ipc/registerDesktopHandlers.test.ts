@@ -37,6 +37,7 @@ function fixture() {
       actualPort: 6767,
       localEndpoint: 'http://127.0.0.1:6767',
       networkEndpoints: ['http://192.168.1.50:6767'],
+      pairingEndpoints: ['http://127.0.0.1:6767'],
       connectedSessionCount: 1,
       restartError: null,
     })),
@@ -46,11 +47,11 @@ function fixture() {
       actualPort: 6767,
       localEndpoint: 'http://127.0.0.1:6767',
       networkEndpoints: ['http://192.168.1.50:6767'],
+      pairingEndpoints: ['http://127.0.0.1:6767'],
       connectedSessionCount: 1,
       restartError: null,
     })),
     createPairingLink: vi.fn(async () => ({ url: 'http://192.168.1.50:6767/pair#token=secret', expiresAt: '2030-01-01T00:00:00.000Z' })),
-    revokeAllSessions: vi.fn(async () => ({ revokedCount: 2 })),
   };
   return { host, webAccess };
 }

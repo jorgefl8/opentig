@@ -20,13 +20,11 @@ export interface OpenTigUtilityConfig {
 
 export type OpenTigUtilityControlAction =
   | 'status'
-  | 'create-pairing-link'
-  | 'revoke-all-sessions';
+  | 'create-pairing-link';
 
 export type OpenTigUtilityControlResult =
   | { action: 'status'; connectedSessionCount: number }
-  | { action: 'create-pairing-link'; url: string; expiresAt: string }
-  | { action: 'revoke-all-sessions'; revokedCount: number; desktopCookie: string };
+  | { action: 'create-pairing-link'; url: string; expiresAt: string };
 
 export type OpenTigUtilityParentMessage =
   | {

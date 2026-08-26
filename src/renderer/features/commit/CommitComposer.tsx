@@ -1,6 +1,6 @@
 import { useEffect, useState, type RefObject } from 'react';
-import { IconArrowUp, IconCheck, IconGitCommit, IconListDetails, IconPlayerStop, IconSparkles, IconX } from '@tabler/icons-react';
-import type { CommitSplitProposal } from '@shared/contracts';
+import { IconArrowUp, IconCheck, IconGitCommit, IconListDetails, IconPlayerStop, IconX } from '@tabler/icons-react';
+import type { AiHarnessId, CommitSplitProposal } from '@shared/contracts';
 import { normalizeCombo } from '@shared/shortcuts';
 import { Button } from '@/components/ui/button';
 import { Kbd } from '@/components/ui/kbd';
@@ -8,6 +8,7 @@ import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useShortcuts } from '@/app/useShortcuts';
+import { AiProviderIcon } from '@/features/ai/AiProviderIcon';
 
 /** Keep the exit animations in sync with the durations declared in index.css. */
 const EXIT_MS = 170;
@@ -17,7 +18,9 @@ interface CommitComposerProps {
   stagedCount: number;
   message: string;
   generating: boolean;
-  harness: string;
+  harness: AiHarnessId;
+  harnessLabel: string;
+  modelLabel: string;
   busy: string | null;
   readOnly: boolean;
   canPush: boolean;
@@ -52,7 +55,7 @@ function useExitAnimation(open: boolean, duration: number): { mounted: boolean; 
 }
 
 export function CommitComposer({
-  open, stagedCount, message, generating, harness, busy, readOnly, canPush, proposal, preparedIndex, completed, collapsed, textareaRef,
+  open, stagedCount, message, generating, harness, harnessLabel, modelLabel, busy, readOnly, canPush, proposal, preparedIndex, completed, collapsed, textareaRef,
   onMessage, onGenerate, onCancelGenerate, onDismissProposal, onToggleCollapsed, onOpenPath, onPrepare, onCommit,
 }: CommitComposerProps) {
   const shortcuts = useShortcuts();
@@ -164,8 +167,10 @@ export function CommitComposer({
           disabled={blocked || Boolean(busy && busy !== 'refresh')}
           onClick={() => generating ? onCancelGenerate() : onGenerate()}
         >
-          {generating ? <IconPlayerStop className="text-destructive" /> : <IconSparkles />}
-          {generating ? <ShimmeringText text="Generating message…" /> : <span>Generate with <span className="commit-composer-harness">{harness}</span></span>}
+          {generating ? <IconPlayerStop className="text-destructive" /> : <AiProviderIcon harness={harness} />}
+          {generating
+            ? <ShimmeringText text="Generating message…" />
+            : <span className="commit-composer-provider">Generate with <span className="commit-composer-harness">{harnessLabel}</span><span aria-hidden="true">·</span><span className="commit-composer-model">{modelLabel}</span></span>}
         </Button>
         {actions.mounted && (
           <div className="commit-composer-commit" data-state={actions.state}>

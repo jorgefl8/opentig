@@ -1,5 +1,5 @@
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
-import { IconLoader4 } from '@tabler/icons-react';
+import { SplashScreen } from '@/components/SplashScreen';
 import { serverClient } from '@/lib/opentig-api';
 import type { ServerConnectionState } from '@/lib/websocket-transport';
 
@@ -10,6 +10,13 @@ const COPY: Record<ServerConnectionState, string> = {
   'auth-required': 'Authentication required',
   'incompatible-version': 'Client and server versions are incompatible',
   offline: 'OpenTig server is offline',
+};
+
+const SPLASH: Record<Exclude<ServerConnectionState, 'connected' | 'auth-required'>, { heading: string; detail: string }> = {
+  connecting: { heading: 'Starting OpenTig…', detail: 'Connecting to the local server.' },
+  reconnecting: { heading: 'Starting OpenTig…', detail: 'Reconnecting to OpenTig server…' },
+  'incompatible-version': { heading: 'OpenTig cannot continue', detail: 'Client and server versions are incompatible.' },
+  offline: { heading: 'OpenTig server is offline', detail: 'See the server log for details, then restart OpenTig.' },
 };
 
 export function ServerConnectionBoundary({ children }: { children: ReactNode }) {
@@ -43,12 +50,8 @@ export function ServerConnectionBoundary({ children }: { children: ReactNode }) 
   }
 
   if (!connectedBefore && state !== 'connected') {
-    return (
-      <div className="splash" role="status">
-        {(state === 'connecting' || state === 'reconnecting') && <IconLoader4 className="spinner" />}
-        <span>{COPY[state]}</span>
-      </div>
-    );
+    const splash = SPLASH[state];
+    return <SplashScreen heading={splash.heading} detail={splash.detail} />;
   }
 
   return (

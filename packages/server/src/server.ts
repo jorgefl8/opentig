@@ -24,7 +24,6 @@ export interface OpenTigServerConfig extends Omit<CreateOpenTigRuntimeOptions, '
   port?: number;
   mode?: OpenTigServerMode;
   secureCookies?: boolean;
-  allowedOrigins?: readonly string[];
   logger?: OpenTigServerLogger;
   onEvent?: CreateOpenTigRuntimeOptions['onEvent'];
   commandTimeoutMs?: number;
@@ -32,6 +31,7 @@ export interface OpenTigServerConfig extends Omit<CreateOpenTigRuntimeOptions, '
   heartbeatMs?: number;
   requestRateLimit?: number;
   requestRateWindowMs?: number;
+  admin?: { token: string; instanceId: string };
 }
 
 export interface RunningOpenTigServer extends OpenTigServerAddress {
@@ -88,13 +88,13 @@ export async function runOpenTigServer(config: OpenTigServerConfig): Promise<Run
       ...(config.host === undefined ? {} : { host: config.host }),
       ...(config.port === undefined ? {} : { port: config.port }),
       ...(config.mode === undefined ? {} : { mode: config.mode }),
-      ...(config.allowedOrigins === undefined ? {} : { allowedOrigins: config.allowedOrigins }),
       ...(config.logger === undefined ? {} : { logger: config.logger }),
       ...(config.commandTimeoutMs === undefined ? {} : { commandTimeoutMs: config.commandTimeoutMs }),
       ...(config.connectionLimit === undefined ? {} : { connectionLimit: config.connectionLimit }),
       ...(config.heartbeatMs === undefined ? {} : { heartbeatMs: config.heartbeatMs }),
       ...(config.requestRateLimit === undefined ? {} : { requestRateLimit: config.requestRateLimit }),
       ...(config.requestRateWindowMs === undefined ? {} : { requestRateWindowMs: config.requestRateWindowMs }),
+      ...(config.admin === undefined ? {} : { admin: validateAdmin(config.admin) }),
     });
     const address = await transport.start();
     return {
@@ -111,6 +111,13 @@ export async function runOpenTigServer(config: OpenTigServerConfig): Promise<Run
     else await Promise.all([auth.close(), runtime.close()]);
     throw error;
   }
+}
+
+function validateAdmin(admin: { token: string; instanceId: string }): { token: string; instanceId: string } {
+  if (!/^[A-Za-z0-9_-]{43}$/.test(admin.token) || !/^[A-Za-z0-9_-]{32}$/.test(admin.instanceId)) {
+    throw new Error('Invalid OpenTig local admin configuration.');
+  }
+  return admin;
 }
 
 /** Assets resolve beside bundled server entry, never from process.cwd(). */

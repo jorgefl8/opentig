@@ -30,8 +30,10 @@ export function resolveWindowControlsInset(input: {
   rect: TitlebarAreaRect | null;
   viewportWidth: number;
   mac: boolean;
+  desktop: boolean;
 }): WindowControlsInset {
-  const { rect, viewportWidth, mac } = input;
+  const { rect, viewportWidth, mac, desktop } = input;
+  if (!desktop) return { left: 0, right: 0, height: 0 };
   if (rect && rect.width > 0) {
     return {
       left: Math.max(0, Math.round(rect.x)),

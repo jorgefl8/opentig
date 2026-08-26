@@ -1,6 +1,6 @@
 # OpenTig
 
-OpenTig is a focused, local-first Git desktop client for Windows. It is designed for the everyday repository loop: understand what changed, edit or inspect files, stage the right work, create a commit, synchronise it, and review pull requests without turning Git into a project-management suite.
+OpenTig is a focused, local-first Git client available as a Windows desktop application and as a headless Node.js CLI with a browser interface. It is designed for the everyday repository loop: understand what changed, edit or inspect files, stage the right work, create a commit, synchronise it, and review pull requests without turning Git into a project-management suite.
 
 The application works directly with repositories already on your machine. Git remains the source of truth, repository contents stay local, and optional integrations use command-line tools that you install and authenticate yourself.
 
@@ -32,16 +32,17 @@ It is intentionally not an IDE, hosting service, or replacement for the Git CLI.
 ### Repositories and projects
 
 - Open existing local repositories and return to recently used repositories.
-- Use the same authenticated WebSocket backend from the desktop app or a paired browser. On desktop the backend runs in a supervised utility process, so a renderer reload or crash does not stop repository watchers or in-flight server state while the desktop process remains open; an unexpected backend exit is restarted with bounded backoff. Repository switches and filesystem/Git events propagate to every connected tab, and reconnecting clients bootstrap fresh state without replaying interrupted mutations. Browser clients enter paths on the server directly, while native folder selection and Explorer reveal remain desktop-only.
-- Keep that backend loopback-only by default, or enable **Settings → Network access** to restart the same utility listener on trusted LAN interfaces. The desktop pane shows server state, actual port, local and network endpoints, and connected owner sessions; it creates five-minute one-use pairing links with a QR code and can revoke every existing owner session without exposing a permanent token. Browsers without a valid owner session show fresh-pairing instructions instead of leaving the application loading indefinitely. Healthy connections stay unobtrusive; reconnecting and failed states remain visible.
+- Use the same authenticated WebSocket backend from the desktop app or a paired browser. On desktop the backend runs in a supervised utility process, so a renderer reload or crash does not stop repository watchers or in-flight server state while the desktop process remains open; an unexpected backend exit is restarted with bounded backoff. Repository switches and filesystem/Git events propagate to every connected tab, and reconnecting clients bootstrap fresh state without replaying interrupted mutations. Browser clients enter paths on the server directly, native folder selection and Explorer reveal remain desktop-only, and their header uses the full browser width instead of reserving space for desktop window controls.
+- Run that exact server/runtime/client bundle through `npx --yes @opentig/cli@<version>` or plain `bunx @opentig/cli@<version>`. The default/start command opens a five-minute one-use pairing link, while `serve` stays headless and prints its portable code, link, and terminal QR. `opentig pair` safely mints a fresh code for a server already using the same private home directory. The CLI keeps its configured port stable—`6767` by default—and reports a conflict instead of silently moving a tunnel target.
+- Keep that backend loopback-only by default, or enable **Settings → Web access → LAN access** to restart the same utility listener on trusted LAN interfaces. Every browser still requires a one-use pairing code. A same-machine Cloudflare Tunnel or HTTPS reverse proxy can point straight to `http://127.0.0.1:<port>` without registering the public URL in OpenTig: open `/pair` on that domain and paste the generated code. OpenTig validates each HTTP/WebSocket origin against the authority used for that request, trusts forwarded authority/client-IP metadata only from loopback, and issues a `Secure` cookie for HTTPS. The same pane gives paired devices editable names, shows browser/OS, proxy/IP and connection activity, and revokes them individually or together; stale desktop sessions are replaced rather than accumulated. Browsers can manage sessions but cannot change the native listener.
 - Relocate a recent repository when its folder moved, preserving its project assignment, open tabs, and expanded folders.
 - Group related repositories into named OpenTig projects without moving anything on disk.
-- Pull or push an individual repository from its row in the repository picker. Only pending operations are shown, each with its ahead/behind commit count; multiple repositories can sync concurrently, and their separate Sileo progress and outcome cards remain visible together. Opening the picker fetches each listed repository so those counts match the remote, not a stale local cache.
+- Pull or push an individual repository from its row in the repository picker. Each row shows the repository name plus the branch that pull or push will use, and the worktree folder when that checkout is a linked worktree (the filesystem path is on the hover tooltip). When the repository has a favicon or app icon on disk (`favicon.svg`/`favicon.ico` at the root or under `public/`, `app/`, and similar locations, or a `<link rel="icon">` in `index.html`), that icon appears beside the name in the toolbar picker and in each row. Only pending operations are shown, each with its ahead/behind commit count; multiple repositories can sync concurrently, and their separate Sileo progress and outcome cards remain visible together. Opening the picker fetches each listed repository so those counts and checkouts match the remote, not a stale local cache.
 - Fetch remotes in the background so toolbar ahead/behind counts stay current. The default interval is 30 seconds and can be raised, lowered, or turned off in **Settings → General**.
 - Create, rename, delete, and reassign project groups.
 - Switch quickly between repositories, branches, and available worktrees.
 - Display current branch, ahead/behind state, and worktree insertion/deletion totals in the main toolbar.
-- Carry the OpenTig logo through the main toolbar, packaged Windows application, installer, and taskbar.
+- Carry the OpenTig logo through the main toolbar, browser favicon, packaged Windows application, installer, and taskbar. In the toolbar the ring follows the theme text colour so it stays visible in light and dark, while the T stays brand blue. The favicon and Windows application icon place that mark on a dark rounded badge. Desktop and browser clients share the same logo splash while starting or connecting to the server.
 
 ### Changes, diffs, and commits
 
@@ -49,7 +50,7 @@ It is intentionally not an IDE, hosting service, or replacement for the Git CLI.
 - Display changes as a flat list or recursive tree.
 - Treat each visually highlighted change or folder row as one continuous click target, with a pointer cursor across the active surface, while preserving its dedicated diff, open, stage, unstage, and discard controls.
 - Stage or unstage individual files, folders, selections, or everything at once.
-- Discard selected unstaged changes through an in-app confirmation; untracked files are sent to system Trash (the Recycle Bin on Windows).
+- Discard selected unstaged changes through an in-app confirmation that lists the affected paths; untracked files are sent to system Trash (the Recycle Bin on Windows).
 - Review syntax-aware diffs in unified or split mode, with optional line wrapping, colored with the same One Light/One Dark Pro token palette as the Files editor and Markdown code blocks; added, deleted, and modified lines keep their own diff colors.
 - Open changed Markdown files directly in their staged or unstaged diff, while keeping **Open file** available for the rendered preview. Changed HTML, SVG, and image files retain their direct rich preview and separate diff action.
 - Resolve merge conflicts in the built-in conflict editor, syntax-highlighted with the same palette as diffs and the Files editor, and mark resolved files for staging.
@@ -57,8 +58,8 @@ It is intentionally not an IDE, hosting service, or replacement for the Git CLI.
 - Let the selected AI CLI suggest a reviewed multi-commit plan when staged files represent independent responsibilities, then prepare one complete-file group at a time without creating commits automatically.
 - Work through that plan at your own pace: groups keep their original numbering as you commit them, show how many are done, open any listed file's diff for review, and each group is independently rechecked against its files so a plan cannot be applied after those files changed.
 - When a split cannot be offered, OpenTig says why instead of staying silent, for example because a file is only partially staged or was renamed.
-- Every generation is recorded locally for diagnostics: harness, model, outcome, duration, the tokens and cost the harness reported, and why a proposed split was refused. Only this metadata is stored; prompts and file contents never leave the repository.
-- Review that history from **Settings → AI commit messages → View history**, in a sortable table (click a column header to sort) that scrolls within the dialog, with totals for runs, failures, tokens, and reported cost, and clear it whenever you want.
+- Every generation is recorded locally for diagnostics: harness, model, outcome, duration, the tokens and cost the harness reported, why a proposed split was refused, and, when a run fails, the error the harness returned. Only this metadata is stored; prompts and file contents never leave the repository.
+- Review that history from **Settings → AI assistance → View history**, in a sortable table (click a column header to sort) that scrolls within the dialog, with totals for runs, failures, tokens, and reported cost, and clear it whenever you want.
 - Undo the latest unpublished commit while keeping its changes staged. OpenTig verifies the expected commit and upstream state before rewriting history.
 
 ### Safe pull and push
@@ -68,14 +69,15 @@ It is intentionally not an IDE, hosting service, or replacement for the Git CLI.
 - Preserve local changes through a temporary safety stash when pulling, including untracked files.
 - Keep and report the recovery stash if changes cannot be restored cleanly.
 - Refuse unsafe pull or push states such as unresolved conflicts, an active Git operation, or missing upstream configuration.
-- Surface remote rejection, branch-protection, authentication, and configuration failures as actionable messages.
+- Surface remote rejection, branch-protection, authentication, configuration, and other one-shot operation failures as Sileo toasts rather than a persistent top banner. Those toasts stay above open dialogs, so an action started from Settings or a confirmation can still report its outcome. Read-only Git operations and pending conflicts still use in-app banners.
+- Keep dialogs above virtualized diff content, including sticky file headers, so Settings and confirmations cannot be partially covered by the viewer.
 
 ### Files and editing
 
 - Browse the repository as a virtualised tree with sticky parent folders and persisted expansion state.
 - Keep open files in a compact tab strip in the header: a single click previews a file and the next preview replaces it, while editing, double-clicking, or `Ctrl`-clicking pins the tab so it opens alongside the preview instead of replacing it. Tabs can be reordered through a lifted drag preview with animated live placement, closed with the middle mouse button, show the parent folder when two files share a name, and expose their full path and state in a styled tooltip.
 - Open a file from its **Files** context menu as a replaceable preview or choose **Open to the Side** (`Ctrl`-click) to pin it beside the current file. Dragging a file from the tree onto the header tab strip performs the same pinned open with explicit drop feedback.
-- Open text files in the built-in syntax-aware editor, using the same One Light/One Dark Pro palette as Markdown code blocks, and save with external-change protection. A floating Save button appears over the editor while a file is dirty - the tab's own dot already marks it unsaved, so the button carries no redundant label - and saving keeps your scroll position instead of jumping to the top. Markdown, HTML, and SVG previews share accessible Preview/Code tabs with mouse and keyboard navigation.
+- Open text files in the built-in syntax-aware editor, using the same One Light/One Dark Pro palette as Markdown code blocks, and save with external-change protection. Repeated blank lines can be appended at the end of ordinary files without flashing an internal render error or losing editor focus, while large files retain virtualised rendering. A floating Save button appears over the editor while a file is dirty - the tab's own dot already marks it unsaved, so the button carries no redundant label - and saving keeps your scroll position instead of jumping to the top. Markdown, HTML, and SVG previews share accessible Preview/Code tabs with mouse and keyboard navigation.
 - Move freely between open files without losing work: unsaved changes stay in memory for the running application, closing a modified tab offers Save, Discard, or Cancel, and only the active file keeps an editor loaded.
 - Restore each worktree's open tabs, their order, and the file that was active when you return to it. Tab paths are remembered between sessions; unsaved text is never written to disk.
 - Keep a tab whose file was renamed or moved pointing at its new path. A tab with unsaved changes whose file disappears stays open and is marked unavailable so its text can still be recovered, while clean tabs simply close.
@@ -124,26 +126,30 @@ GitHub features use the authenticated GitHub CLI (`gh`):
 - Inspect pull-request metadata, Markdown description, and full diff.
 - Switch the pull-request **Code** view between all cumulative changes and the diff introduced by an individual commit.
 - Open a pull request in the browser.
-- Create a pull request or draft pull request with a selected remote base branch.
+- Create a pull request or draft pull request from a wider, viewport-fitted dialog that keeps the draft toggle beside the base branch, the editor visible without an outer card scrollbar, and AI generation in the footer with its provider and model.
 - Edit and preview the GitHub Markdown description before publishing.
 - Require the current branch to be published and up to date before PR creation.
-- Optionally generate an editable title and description from the branch diff with the selected local AI CLI.
+- Optionally generate an editable title and description from the branch diff with the selected local AI CLI. PR generation uses the same generous, fairly distributed diff budget as commit generation so large branches keep coverage across all changed files.
 
 ### Optional AI assistance
 
-OpenTig supports locally installed Codex, Claude Code, and OpenCode CLIs. It can:
+OpenTig supports locally installed Codex, Claude Code, and OpenCode CLIs. OpenCode 1 installs as `opencode` (`opencode-ai`); OpenCode 2 installs as `opencode2` (`@opencode-ai/cli`). OpenTig detects either binary and prefers OpenCode 1 when both are on `PATH`. It can:
 
 - generate an editable commit message from staged changes;
 - propose multiple focused commits, including their messages, reasons, and complete-file groups, when a split is clearly beneficial;
 - generate an editable pull-request title and description from the current branch diff;
 - detect installed providers, authentication state, and available models;
-- cancel an in-progress generation request.
+- identify Codex, Claude Code, and OpenCode with their provider marks in AI settings and show the selected provider and model together in the commit composer;
+- keep large commit and pull-request analyses running for up to ten minutes without a generic transport timeout discarding a valid result;
+- normalize harmless trailing periods in generated commit subjects instead of discarding an otherwise valid result;
+- cancel an in-progress generation request, including when its client disconnects or its bounded execution window expires.
 
 AI never creates a commit or pull request automatically. You review and edit the generated text before any Git or GitHub action occurs.
 
 ### Preferences
 
 - System, light, and dark themes.
+- Interface and code fonts from **Settings → General**, each with its own dropdown. Interface: Geist, Plus Jakarta Sans, or Space Grotesk. Code: Geist Mono, JetBrains Mono, Inconsolata, Departure Mono, or Space Grotesk. Defaults are Geist and Inconsolata.
 - Adjustable interface scale.
 - Tree or list layout for changes.
 - Optional line wrapping in viewers.
@@ -151,6 +157,7 @@ AI never creates a commit or pull request automatically. You review and edit the
 - Per-provider AI model selection.
 - Rebind most keyboard shortcuts from **Settings → Shortcuts**, with per-shortcut conflict detection and one-click reset to defaults; the shortcuts marked fixed below follow platform or file-manager conventions and cannot be changed.
 - Turn off the double-tap-Control shortcut that brings OpenTig to the front from any application, also from **Settings → Shortcuts**.
+- Confirmations and secondary windows opened from Settings (revoking a browser, enabling LAN access, renaming a device, or viewing AI history) overlay the app at their own size, instead of inheriting the Settings window's width.
 - Persisted sidebar width, viewer preferences, shortcut customizations, recent repositories, projects, expanded file-tree paths, and each worktree's open file tabs.
 
 ## Keyboard shortcuts
@@ -182,9 +189,9 @@ The shortcuts below are defaults; rebind most of them from **Settings → Shortc
 
 ## Requirements
 
-- Windows 10 or later
-- Git available on `PATH`
-- Node.js 24 or later and npm 11 or later when building from source
+- Windows 10 or later for the desktop application.
+- Node.js 24 or later and Git on `PATH` for the headless CLI. Plain `bunx` installs and launches the Node shebang; a Bun-only runtime is not supported.
+- Node.js 24 or later and npm 11 or later when building from source.
 
 Optional integrations require their own installed and authenticated CLI:
 
@@ -193,9 +200,49 @@ gh auth login
 codex login
 claude auth login
 opencode auth login
+opencode2 auth login
 ```
 
 Only install the tools you intend to use. GitHub functionality requires `gh`; AI features require at least one supported AI CLI.
+
+## Run the headless CLI
+
+Pin an exact version for repeatable or production use:
+
+```powershell
+npx --yes @opentig/cli@0.1.0
+npx --yes @opentig/cli@0.1.0 serve
+bunx @opentig/cli@0.1.0 serve
+```
+
+`opentig` and `opentig start` start the server and open its one-time pairing link. `opentig serve` does not open a browser. The CLI starts one project-independent OpenTig instance: repositories are added, opened, and switched exclusively from the web UI using paths on the server. After a global installation, a new device can request a fresh link from the same OS account with:
+
+```powershell
+opentig pair --home C:\path\to\opentig-home
+```
+
+`opentig help` and `opentig --help` show the complete command reference, examples, pairing/tunnel instructions, fixed-port behavior, and explicit Linux service commands.
+
+Options are `--host`, `--port`, `--home`, and `--no-browser`, with `OPENTIG_HOST`, `OPENTIG_PORT`, and `OPENTIG_HOME` environment equivalents. Defaults are `127.0.0.1`, port `6767`, and `~/.opentig`. An occupied port fails clearly so reverse-proxy configuration remains predictable. The home contains private settings, hash-only sessions, a local-admin credential, credential-free runtime state, AI history, and rotating logs. SIGINT or SIGTERM closes WebSockets, the HTTP listener, watchers, Git/AI children, settings, and logs; a second signal forces exit.
+
+Running through `npx` or `bunx` never installs startup persistence. On a Linux server with systemd, opt in explicitly after installing the CLI globally or invoking its executable:
+
+```bash
+opentig service install --host 127.0.0.1 --port 6767
+opentig service status
+opentig service uninstall
+```
+
+Installation stages the exact CLI/client version under the selected OpenTig home, uses that private home as its stable service working directory, enables a user service and user lingering, and keeps the listener on loopback unless `--host` says otherwise. It never binds the service to a repository. Windows and macOS service installers are not included yet.
+
+For local tarball testing on Windows:
+
+```powershell
+npx --yes --package C:\absolute\path\opentig-cli-0.1.0.tgz opentig --help
+bunx --package C:\absolute\path\opentig-cli-0.1.0.tgz opentig --help
+```
+
+Use `latest` only for evaluation after a public release. To upgrade or roll back production, stop the process and run a different pinned immutable version. OpenTig does not ship Docker, built-in TLS, Tailscale/SSH automation, multi-user roles, or server self-update.
 
 ## Run from source
 
@@ -226,6 +273,7 @@ The unpacked executable is written to `out/OpenTig-win32-x64/OpenTig.exe`.
 - Git, filesystem, persistence, AI, and GitHub operations run through one typed, validated WebSocket command boundary in both desktop and browser clients. Requests have correlation IDs, cancellation and timeouts; interrupted operations are rejected rather than replayed after reconnect.
 - The private server transport binds to loopback by default, requires an owner session for commands and image bytes, validates exact mutation/WebSocket origins, and blocks static-file traversal and symlink escape. Enabling **Settings → Network access** persists a desktop-only setting and restarts that same backend on `0.0.0.0`; disabling it returns to `127.0.0.1`. OpenTig never starts a second Web Access server.
 - New browsers pair through a five-minute, one-use URL fragment displayed as a link and local QR code; the fragment is cleared before exchange. Steady-state credentials use host-only `HttpOnly`, `SameSite=Strict` cookies, only credential hashes are persisted, and revoking all sessions disconnects paired browsers while replacing the private desktop session. Network access grants owner-level file, Git, GitHub, and AI CLI authority as the OS user: use only a trusted LAN or VPN, an HTTPS reverse proxy, or an SSH tunnel, and never expose the raw port publicly.
+- Headless `pair` authenticates over a same-host-only administrative route using a separate private file under `~/.opentig/server`; `runtime.json` contains PID/address/version identity but no credential. Pairing secrets remain memory-only and appear only in the deliberate one-time terminal output/URL fragment, never in arguments, environment variables, routine logs, query strings, or persisted state.
 - Electron starts the backend after readiness on preferred port `6767`, scanning a bounded range upward only when that implicit port is occupied. Its one-use desktop bootstrap secret crosses the private parent/utility message port exactly once; it is absent from process arguments, environment variables, renderer JavaScript, and redacted rotating logs. Unexpected exits restart one utility process on the same selected port.
 - The narrow preload bridge contains only proven desktop capabilities such as folder selection/relocation, file clipboard import, Explorer reveal, title-bar theming, and zoom. Text clipboard access stays in the renderer's browser API.
 - Git commands use argument arrays with `shell: false`, bounded output, timeouts, path validation, and per-repository write serialisation.
@@ -237,7 +285,7 @@ The unpacked executable is written to `out/OpenTig-win32-x64/OpenTig.exe`.
 
 For commit-message generation, OpenTig sends the selected local AI CLI only a bounded staged diff, its summary, staged paths, the branch name, and up to ten recent commit subjects. It does not include unstaged content; untracked files are included only after you stage them.
 
-Multi-commit proposals are accepted only when they partition every staged path exactly once. OpenTig suppresses them for truncated context, partially staged files, and staged renames, and verifies that the staged snapshot has not changed before preparing the first group. Preparing a group changes only the Git index; every commit still requires an explicit review and confirmation.
+Multi-commit proposals are accepted only when they partition every staged path exactly once. OpenTig preserves its generous, fairly distributed patch budget for large staged changes; a trimmed individual diff can still be grouped from the complete path list and summary. Proposals remain blocked when the complete file set cannot be trusted, such as partially staged files or staged renames, and OpenTig verifies that the staged snapshot has not changed before preparing the first group. Preparing a group changes only the Git index; every commit still requires an explicit review and confirmation.
 
 For pull-request drafting, it sends a bounded comparison between the current branch and the selected base branch. If the context is truncated, the interface tells you to review the result carefully.
 
@@ -247,7 +295,7 @@ Generated content remains editable and pending. No commit is created and no pull
 
 - `src/main/runtime`: Electron-free service graph and validated server-command registry for Git, filesystem, persistence, AI, GitHub, watchers, and shutdown.
 - `src/main/ipc`: handlers for native-only desktop capabilities; no domain commands are registered here.
-- `packages/server`: private, Electron-free server build containing the reusable server factory, a thin utility-process adapter, authenticated HTTP/WebSocket transport, and the exact production web client.
+- `packages/server`: public `@opentig/cli`, Electron-free server build containing the reusable server factory, thin CLI and utility-process adapters, authenticated HTTP/WebSocket transport, and the exact production web client.
 - `src/main/server`: Electron utility-process supervisor and desktop-only exposure state for port selection, loopback/LAN binding, readiness probing, pairing controls over the private parent port, redacted rotating logs, bounded restart, and graceful shutdown. Electron main owns only window/session/native integration; Git, filesystem, persistence, AI, GitHub, and watchers remain in the utility server.
 - `src/preload.ts`: narrow, context-isolated typed bridge exposed to the renderer.
 - `src/renderer`: React interface and feature modules.
@@ -261,7 +309,7 @@ Detailed guides:
 
 ## Current scope
 
-- Windows desktop only.
+- Windows x64 desktop application; the Node.js headless package is OS-neutral and tested independently through its generated tarball.
 - Opens existing local repositories; cloning and initial remote setup remain Git CLI tasks.
 - GitHub integration currently depends on `gh` and the repository's configured GitHub remote.
 - OpenTig deliberately avoids force push, forced branch deletion, automatic merge commits, and automatic AI actions. Periodic fetch only updates remote-tracking refs; it never rebases or merges on its own.

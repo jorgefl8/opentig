@@ -1,5 +1,23 @@
 # Third-party notices
 
+## Geist, Inconsolata, JetBrains Mono, Plus Jakarta Sans, and Space Grotesk
+
+OpenTig bundles these variable fonts via Fontsource.
+
+- [Geist](https://vercel.com/font): SIL Open Font License 1.1, Vercel
+- [Inconsolata](https://fonts.google.com/specimen/Inconsolata): SIL Open Font License 1.1, Raph Levien
+- [JetBrains Mono](https://www.jetbrains.com/lp/mono/): SIL Open Font License 1.1, JetBrains
+- [Plus Jakarta Sans](https://github.com/tokotype/PlusJakartaSans): SIL Open Font License 1.1, Tokotype / Gumpita Rahayu
+- [Space Grotesk](https://floriankarsten.github.io/space-grotesk/): SIL Open Font License 1.1, Florian Karsten Typefaces
+
+## Departure Mono
+
+OpenTig vendors [Departure Mono](https://departuremono.com/) (v1.500) as a selectable monospaced pixel font for diffs and the editor.
+
+- Author: Helena Zhang
+- License: SIL Open Font License 1.1
+- Files: `src/renderer/assets/fonts/departure-mono/`
+
 ## vscode-icons
 
 Files under `public/vscode-icons/` and the derived mapping in `src/renderer/assets/vscode-icons-theme.json` originate from the [vscode-icons project](https://github.com/vscode-icons/vscode-icons).

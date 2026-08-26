@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { IPC, type BootstrapData } from '@shared/contracts';
+import { AI_CLIENT_TIMEOUT_MS } from '@shared/ai-timeouts';
 import type { OpenTigRuntimeEvent } from '@shared/runtime-events';
 import { OPEN_TIG_PROTOCOL_VERSION } from '@shared/server-protocol';
 import { createOpenTigServerClient } from './server-client';
@@ -50,6 +51,19 @@ describe('OpenTig server client', () => {
 
     expect(fixture.request).toHaveBeenNthCalledWith(1, IPC.commitsList, ['repo-id', 'cursor']);
     expect(fixture.request).toHaveBeenNthCalledWith(2, IPC.indexStage, ['repo-id', ['one.txt']]);
+  });
+
+  it('keeps AI generation requests open for long-running analysis', async () => {
+    const fixture = transportFixture();
+    const { api } = createOpenTigServerClient({ transport: fixture.transport });
+    const commitInput = { repositoryId: 'repo-id', harness: 'codex' as const, model: 'default', requestId: 'commit-request' };
+    const draftInput = { repositoryId: 'repo-id', base: 'main', harness: 'codex' as const, model: 'default', requestId: 'draft-request' };
+
+    await api.ai.generateCommitMessage(commitInput);
+    await api.github.generateDraft(draftInput);
+
+    expect(fixture.request).toHaveBeenNthCalledWith(1, IPC.aiGenerateCommitMessage, [commitInput], { timeoutMs: AI_CLIENT_TIMEOUT_MS });
+    expect(fixture.request).toHaveBeenNthCalledWith(2, IPC.githubPrDraft, [draftInput], { timeoutMs: AI_CLIENT_TIMEOUT_MS });
   });
 
   it('fails closed on an incompatible protocol version', async () => {

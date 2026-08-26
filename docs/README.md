@@ -14,7 +14,9 @@ The Windows desktop application and paired browsers already use one authenticate
 HTTP/WebSocket server. Electron supervises that server in a utility process and
 retains only capabilities that ordinary browsers cannot provide.
 
-The public `opentig` npm CLI, `npx`/`bunx` distribution, release automation, and
-signed public release pipeline are not shipped yet. They are the next delivery
-stage; the current `@opentig/server` workspace remains private and is packaged
-only as part of the desktop application.
+The Electron-free workspace is now the public-package candidate `@opentig/cli`.
+Its thin `opentig` executable, deterministic tarball interface, `npx`/`bunx`
+local verification, private home, named-device pairing, graceful lifecycle, and
+explicit Linux systemd installer reuse the desktop server factory. The production `0.1.0` npm version and unified
+signed release pipeline are not published yet; release publication remains a
+separate delivery stage.

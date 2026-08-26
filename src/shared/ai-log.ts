@@ -1,5 +1,6 @@
-import type { AiHarnessId } from './contracts';
 import { z } from 'zod';
+import type { AiHarnessId } from './contracts';
+import { redactSensitiveText } from './redaction';
 
 export const MAX_AI_LOG_ENTRIES = 500;
 /** Appends past the cap are tolerated until compaction is worth a rewrite. */
@@ -39,6 +40,8 @@ export interface AiLogEntry {
   status: AiLogStatus;
   durationMs: number;
   errorCode: string | null;
+  /** Harness-facing reason, never the prompt or a diff. */
+  errorMessage: string | null;
   usage: AiUsage;
   /** Commit-message runs only; null for other operations. */
   stagedFileCount: number | null;
@@ -59,6 +62,7 @@ const OPERATIONS: AiLogOperation[] = ['commit-message', 'pull-request-draft'];
 const STATUSES: AiLogStatus[] = ['success', 'failed', 'cancelled'];
 const HARNESSES: AiHarnessId[] = ['codex', 'claude', 'opencode'];
 const MAX_TEXT = 200;
+const MAX_ERROR_TEXT = 400;
 const aiUsageRecordSchema = z.looseObject({
   inputTokens: z.unknown().optional(), outputTokens: z.unknown().optional(), reasoningTokens: z.unknown().optional(),
   cacheReadTokens: z.unknown().optional(), cacheWriteTokens: z.unknown().optional(), costUsd: z.unknown().optional(),
@@ -66,7 +70,7 @@ const aiUsageRecordSchema = z.looseObject({
 const aiLogRecordSchema = z.looseObject({
   id: z.unknown().optional(), at: z.unknown().optional(), operation: z.unknown().optional(), harness: z.unknown().optional(),
   model: z.unknown().optional(), repositoryId: z.unknown().optional(), status: z.unknown().optional(), durationMs: z.unknown().optional(),
-  errorCode: z.unknown().optional(), usage: z.unknown().optional(), stagedFileCount: z.unknown().optional(), contextTruncated: z.unknown().optional(),
+  errorCode: z.unknown().optional(), errorMessage: z.unknown().optional(), usage: z.unknown().optional(), stagedFileCount: z.unknown().optional(), contextTruncated: z.unknown().optional(),
   splitOffered: z.unknown().optional(), splitGroups: z.unknown().optional(), splitRejectedReason: z.unknown().optional(), splitBlockedReason: z.unknown().optional(),
 });
 
@@ -103,6 +107,7 @@ export function normalizeAiLogEntry(value: unknown): AiLogEntry | null {
     status,
     durationMs: count(input.durationMs) ?? 0,
     errorCode: text(input.errorCode, 64),
+    errorMessage: diagnosticText(input.errorMessage, MAX_ERROR_TEXT),
     usage: normalizeAiUsage(input.usage),
     stagedFileCount: count(input.stagedFileCount),
     contextTruncated: flag(input.contextTruncated),
@@ -157,6 +162,13 @@ function text(value: unknown, maxLength: number): string | null {
   return trimmed.length > 0 && !hasControlCharacters(trimmed) ? trimmed : null;
 }
 
+function diagnosticText(value: unknown, maxLength: number): string | null {
+  if (typeof value !== 'string') return null;
+  const flattened = flattenWhitespace(redactSensitiveText(value));
+  if (!flattened) return null;
+  return flattened.slice(0, maxLength);
+}
+
 function isIsoDate(value: unknown): value is string {
   if (typeof value !== 'string') return false;
   const timestamp = Date.parse(value);
@@ -165,4 +177,13 @@ function isIsoDate(value: unknown): value is string {
 
 function hasControlCharacters(value: string): boolean {
   return [...value].some((character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127);
+}
+
+function flattenWhitespace(value: string): string {
+  let flattened = '';
+  for (const character of value) {
+    const code = character.charCodeAt(0);
+    flattened += code < 32 || code === 127 ? ' ' : character;
+  }
+  return flattened.replace(/ {2,}/g, ' ').trim();
 }

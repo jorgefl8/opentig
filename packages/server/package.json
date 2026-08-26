@@ -1,14 +1,20 @@
 {
-  "name": "@opentig/server",
+  "name": "@opentig/cli",
   "version": "0.1.0",
-  "private": true,
+  "description": "Run the OpenTig local-first Git client in a browser from any Git worktree.",
   "type": "module",
   "main": "dist/server.mjs",
+  "bin": {
+    "opentig": "dist/bin.mjs"
+  },
   "exports": {
     ".": "./dist/server.mjs"
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md",
+    "LICENSE",
+    "THIRD_PARTY_NOTICES.md"
   ],
   "scripts": {
     "build": "node scripts/build.mjs",
@@ -21,7 +27,35 @@
   "engines": {
     "node": ">=24"
   },
+  "os": [
+    "darwin",
+    "linux",
+    "win32"
+  ],
+  "keywords": [
+    "git",
+    "git-client",
+    "local-first",
+    "cli",
+    "headless"
+  ],
+  "author": "OpenTig contributors",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jorgefl8/opentig.git",
+    "directory": "packages/server"
+  },
+  "bugs": {
+    "url": "https://github.com/jorgefl8/opentig/issues"
+  },
+  "homepage": "https://github.com/jorgefl8/opentig#readme",
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "devDependencies": {
-    "@types/ws": "8.18.1"
+    "@types/ws": "8.18.1",
+    "uqr": "0.1.3"
   }
 }

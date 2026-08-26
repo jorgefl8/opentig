@@ -16,7 +16,7 @@ describe('preload desktop API', () => {
 
     expect(Object.keys(api).sort()).toEqual(['app', 'clipboard', 'repository', 'webAccess']);
     expect(Object.keys(api.repository).sort()).toEqual(['revealEntry', 'select', 'selectRelocation']);
-    expect(Object.keys(api.webAccess).sort()).toEqual(['createPairingLink', 'getStatus', 'revokeAllSessions', 'setEnabled']);
+    expect(Object.keys(api.webAccess).sort()).toEqual(['createPairingLink', 'getStatus', 'setEnabled']);
     expect('commits' in api).toBe(false);
     expect('github' in api).toBe(false);
 

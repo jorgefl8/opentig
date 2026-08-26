@@ -78,8 +78,6 @@ async function handleControl(message: { type?: unknown; requestId?: unknown; act
       parentPort!.postMessage({ type: 'control-result', requestId, ok: true, result: { action: 'status', ...server.getStatus() } });
     } else if (message.action === 'create-pairing-link') {
       parentPort!.postMessage({ type: 'control-result', requestId, ok: true, result: { action: 'create-pairing-link', ...server.createPairingLink() } });
-    } else if (message.action === 'revoke-all-sessions') {
-      parentPort!.postMessage({ type: 'control-result', requestId, ok: true, result: { action: 'revoke-all-sessions', ...await server.revokeAllSessions() } });
     } else {
       throw new Error('Unknown OpenTig server control action.');
     }

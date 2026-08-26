@@ -6,7 +6,6 @@ import type { OpenTigRuntimeEvent } from '../../../src/shared/runtime-events';
 import type { OpenTigServerIdentity } from '../../../src/shared/server-protocol';
 import { OpenTigSessionAuth, type PairingToken } from './auth';
 import { createOpenTigHttpHandler, type OpenTigServerLogger, type OpenTigServerMode } from './http';
-import { normalizeOrigins } from './origin';
 import { OpenTigWebSocketTransport } from './websocket';
 
 export interface OpenTigServerOptions {
@@ -18,13 +17,13 @@ export interface OpenTigServerOptions {
   host?: string;
   port?: number;
   mode?: OpenTigServerMode;
-  allowedOrigins?: readonly string[];
   logger?: OpenTigServerLogger;
   commandTimeoutMs?: number;
   connectionLimit?: number;
   heartbeatMs?: number;
   requestRateLimit?: number;
   requestRateWindowMs?: number;
+  admin?: { token: string; instanceId: string };
 }
 
 export interface OpenTigServerAddress extends OpenTigServerIdentity {
@@ -44,24 +43,28 @@ export class OpenTigServer {
 
   constructor(private readonly options: OpenTigServerOptions) {
     this.logger = options.logger ?? (() => undefined);
-    const allowedOrigins = normalizeOrigins(options.allowedOrigins);
     this.httpServer = createServer(createOpenTigHttpHandler({
       runtime: options.runtime,
       clientRoot: options.clientRoot,
       auth: options.auth,
       identity: options.identity,
       mode: options.mode ?? 'desktop',
-      allowedOrigins,
       isReady: () => this.ready,
+      sessionConnectionCount: (sessionId) => this.webSockets.connectionCount(sessionId),
       onSessionsRevoked: (sessionIds) => this.disconnectSessions(sessionIds),
       logger: this.logger,
+      ...(options.admin ? {
+        admin: {
+          ...options.admin,
+          createPairingToken: () => options.auth.createPairingToken(),
+        },
+      } : {}),
     }));
     this.webSockets = new OpenTigWebSocketTransport({
       server: this.httpServer,
       registry: options.registry,
       auth: options.auth,
       identity: options.identity,
-      allowedOrigins,
       logger: this.logger,
       ...(options.commandTimeoutMs === undefined ? {} : { commandTimeoutMs: options.commandTimeoutMs }),
       ...(options.connectionLimit === undefined ? {} : { connectionLimit: options.connectionLimit }),

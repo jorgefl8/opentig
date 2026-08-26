@@ -3,9 +3,11 @@ import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 interface PersistedDesktopServerSettings {
-  version: 1;
+  version: 3;
   webAccessEnabled: boolean;
 }
+
+export type DesktopServerConfig = Pick<PersistedDesktopServerSettings, 'webAccessEnabled'>;
 
 /** Desktop-only network exposure state. Server domain settings never own it. */
 export class DesktopServerSettings {
@@ -13,19 +15,21 @@ export class DesktopServerSettings {
 
   constructor(private readonly filePath: string) {}
 
-  async load(): Promise<boolean> {
+  async load(): Promise<DesktopServerConfig> {
     try {
-      const value = JSON.parse(await readFile(this.filePath, 'utf8')) as Partial<PersistedDesktopServerSettings> | null;
-      return value?.version === 1 && typeof value.webAccessEnabled === 'boolean'
-        ? value.webAccessEnabled
-        : false;
+      const value = JSON.parse(await readFile(this.filePath, 'utf8')) as Record<string, unknown> | null;
+      if ((value?.version === 1 || value?.version === 2 || value?.version === 3)
+        && typeof value.webAccessEnabled === 'boolean') {
+        return { webAccessEnabled: value.webAccessEnabled };
+      }
+      return defaults();
     } catch {
-      return false;
+      return defaults();
     }
   }
 
-  save(webAccessEnabled: boolean): Promise<void> {
-    const value: PersistedDesktopServerSettings = { version: 1, webAccessEnabled };
+  save(config: DesktopServerConfig): Promise<void> {
+    const value: PersistedDesktopServerSettings = { version: 3, ...config };
     const write = this.pendingWrite.then(async () => {
       await mkdir(path.dirname(this.filePath), { recursive: true });
       const temporary = `${this.filePath}.${randomUUID()}.tmp`;
@@ -44,4 +48,8 @@ export class DesktopServerSettings {
   flush(): Promise<void> {
     return this.pendingWrite;
   }
+}
+
+function defaults(): DesktopServerConfig {
+  return { webAccessEnabled: false };
 }

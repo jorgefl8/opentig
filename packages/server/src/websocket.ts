@@ -1,7 +1,7 @@
 import type { IncomingMessage, Server as HttpServer } from 'node:http';
 import type { Duplex } from 'node:stream';
 import { IPC, type IpcResult } from '../../../src/shared/contracts';
-import { OPEN_TIG_SERVER_COMMANDS } from '../../../src/shared/protocol';
+import { DEFAULT_COMMAND_TIMEOUT_MS, OPEN_TIG_SERVER_COMMANDS, type OpenTigServerCommandDefinition } from '../../../src/shared/protocol';
 import type { OpenTigRuntimeEvent } from '../../../src/shared/runtime-events';
 import type { OpenTigServerIdentity, OpenTigServerMessage } from '../../../src/shared/server-protocol';
 import { CommandRegistry } from '../../../src/main/runtime/CommandRegistry';
@@ -16,7 +16,6 @@ const CONTENT_FRAME_LIMIT = 9 * 1024 * 1024;
 const FILE_WRITE_FRAME_LIMIT = 17 * 1024 * 1024;
 const MAX_IN_FLIGHT = 32;
 const MAX_BUFFERED_SEND_BYTES = 4 * 1024 * 1024;
-const DEFAULT_COMMAND_TIMEOUT_MS = 30_000;
 const DEFAULT_CONNECTION_LIMIT = 16;
 const DEFAULT_REQUEST_RATE_LIMIT = 120;
 const DEFAULT_REQUEST_RATE_WINDOW_MS = 10_000;
@@ -24,7 +23,7 @@ const DEFAULT_REQUEST_RATE_WINDOW_MS = 10_000;
 interface ClientState {
   sessionId: string;
   alive: boolean;
-  requestIds: Set<string>;
+  requests: Map<string, AbortController>;
   requestTimes: number[];
 }
 
@@ -33,7 +32,6 @@ export interface OpenTigWebSocketOptions {
   registry: CommandRegistry;
   auth: OpenTigSessionAuth;
   identity: OpenTigServerIdentity;
-  allowedOrigins: ReadonlySet<string>;
   logger: OpenTigServerLogger;
   commandTimeoutMs?: number;
   connectionLimit?: number;
@@ -50,7 +48,7 @@ export class OpenTigWebSocketTransport {
   });
   private readonly clients = new Map<WebSocket, ClientState>();
   private readonly pendingOperations = new Set<Promise<unknown>>();
-  private readonly commandTimeoutMs: number;
+  private readonly commandTimeoutMs: number | undefined;
   private readonly connectionLimit: number;
   private readonly requestRateLimit: number;
   private readonly requestRateWindowMs: number;
@@ -59,7 +57,7 @@ export class OpenTigWebSocketTransport {
   private closePromise: Promise<void> | null = null;
 
   constructor(private readonly options: OpenTigWebSocketOptions) {
-    this.commandTimeoutMs = options.commandTimeoutMs ?? DEFAULT_COMMAND_TIMEOUT_MS;
+    this.commandTimeoutMs = options.commandTimeoutMs;
     this.connectionLimit = options.connectionLimit ?? DEFAULT_CONNECTION_LIMIT;
     this.requestRateLimit = options.requestRateLimit ?? DEFAULT_REQUEST_RATE_LIMIT;
     this.requestRateWindowMs = options.requestRateWindowMs ?? DEFAULT_REQUEST_RATE_WINDOW_MS;
@@ -72,6 +70,14 @@ export class OpenTigWebSocketTransport {
 
   get connectedSessionCount(): number {
     return new Set([...this.clients.values()].map((client) => client.sessionId)).size;
+  }
+
+  connectionCount(sessionId: string): number {
+    let count = 0;
+    for (const client of this.clients.values()) {
+      if (client.sessionId === sessionId) count += 1;
+    }
+    return count;
   }
 
   publish(event: OpenTigRuntimeEvent): void {
@@ -93,7 +99,7 @@ export class OpenTigWebSocketTransport {
   private upgrade(request: IncomingMessage, socket: Duplex, head: Buffer): void {
     const rawPath = (request.url ?? '').split(/[?#]/, 1)[0];
     if (rawPath !== '/ws') return rejectUpgrade(socket, 404, 'Not Found');
-    if (!isAllowedOrigin(request, this.options.allowedOrigins)) return rejectUpgrade(socket, 403, 'Forbidden');
+    if (!isAllowedOrigin(request)) return rejectUpgrade(socket, 403, 'Forbidden');
     if (this.clients.size >= this.connectionLimit) return rejectUpgrade(socket, 503, 'Connection limit reached');
     this.webSocketServer.handleUpgrade(request, socket, head, (webSocket) => {
       this.webSocketServer.emit('connection', webSocket, request);
@@ -106,11 +112,15 @@ export class OpenTigWebSocketTransport {
       socket.close(1008, 'Unauthorized');
       return;
     }
-    const state: ClientState = { sessionId, alive: true, requestIds: new Set(), requestTimes: [] };
+    const state: ClientState = { sessionId, alive: true, requests: new Map(), requestTimes: [] };
     this.clients.set(socket, state);
+    void this.options.auth.recordConnection(sessionId).catch(() => {
+      this.options.logger('warn', 'Could not update owner session activity.');
+    });
     socket.on('pong', () => { state.alive = true; });
     socket.on('message', (data, isBinary) => { void this.message(socket, state, data, isBinary); });
     socket.on('close', () => {
+      for (const controller of state.requests.values()) controller.abort();
       this.clients.delete(socket);
       if (![...this.clients.values()].some((client) => client.sessionId === sessionId)) {
         this.options.registry.clearSession(sessionId);
@@ -134,23 +144,25 @@ export class OpenTigWebSocketTransport {
     state.requestTimes = state.requestTimes.filter((requestedAt) => now - requestedAt < this.requestRateWindowMs);
     if (state.requestTimes.length >= this.requestRateLimit) return this.sendProtocolError(socket, input.id, 'Request rate limit exceeded.');
     state.requestTimes.push(now);
-    if (state.requestIds.has(input.id)) return this.sendProtocolError(socket, input.id, 'Duplicate request id.');
-    if (state.requestIds.size >= MAX_IN_FLIGHT) return this.sendProtocolError(socket, input.id, 'Too many in-flight requests.');
+    if (state.requests.has(input.id)) return this.sendProtocolError(socket, input.id, 'Duplicate request id.');
+    if (state.requests.size >= MAX_IN_FLIGHT) return this.sendProtocolError(socket, input.id, 'Too many in-flight requests.');
     if (bytes.byteLength > frameLimit(input.command)) return this.sendProtocolError(socket, input.id, 'Command request exceeded the transport limit.');
     if (input.command === IPC.repositoryReadImage) return this.sendProtocolError(socket, input.id, 'Image previews use authenticated HTTP.');
 
-    state.requestIds.add(input.id);
-    const execution = this.options.registry.execute(state.sessionId, input.command, input.args);
+    const controller = new AbortController();
+    state.requests.set(input.id, controller);
+    const execution = this.options.registry.execute(state.sessionId, input.command, input.args, { signal: controller.signal });
     this.pendingOperations.add(execution);
     void execution.finally(() => this.pendingOperations.delete(execution));
     try {
-      const result = redactOperationResult(await withTimeout(execution, this.commandTimeoutMs, input.command));
+      const timeoutMs = this.commandTimeoutMs ?? commandDefinition(input.command)?.timeoutMs ?? DEFAULT_COMMAND_TIMEOUT_MS;
+      const result = redactOperationResult(await withTimeout(execution, timeoutMs, input.command, () => controller.abort()));
       if (input.command === IPC.bootstrap && result.ok && isRecord(result.value)) {
         result.value = { ...result.value, server: this.options.identity };
       }
       this.send(socket, { type: 'result', id: input.id, result });
     } finally {
-      state.requestIds.delete(input.id);
+      state.requests.delete(input.id);
     }
   }
 
@@ -192,7 +204,10 @@ export class OpenTigWebSocketTransport {
   private async closeTransport(): Promise<void> {
     clearInterval(this.heartbeat);
     this.options.server.off('upgrade', this.upgradeHandler);
-    for (const socket of this.clients.keys()) socket.close(1001, 'Server shutting down');
+    for (const [socket, state] of this.clients) {
+      for (const controller of state.requests.values()) controller.abort();
+      socket.close(1001, 'Server shutting down');
+    }
     await Promise.race([
       Promise.allSettled([...this.pendingOperations]),
       new Promise((resolve) => setTimeout(resolve, 1_000)),
@@ -206,8 +221,12 @@ export class OpenTigWebSocketTransport {
 function frameLimit(command: string): number {
   if (command === IPC.repositoryWriteFile) return FILE_WRITE_FRAME_LIMIT;
   if (command === IPC.indexResolveConflict || command === IPC.indexUpdateConflict) return CONTENT_FRAME_LIMIT;
-  const definition = Object.values(OPEN_TIG_SERVER_COMMANDS).find((candidate) => candidate.command === command);
+  const definition = commandDefinition(command);
   return Math.min(definition?.maxRequestBytes ?? NORMAL_FRAME_LIMIT, NORMAL_FRAME_LIMIT);
+}
+
+function commandDefinition(command: string): OpenTigServerCommandDefinition | undefined {
+  return Object.values(OPEN_TIG_SERVER_COMMANDS).find((candidate) => candidate.command === command);
 }
 
 function isPing(value: unknown): value is { type: 'ping' } {
@@ -245,13 +264,17 @@ async function withTimeout(
   operation: Promise<IpcResult<unknown>>,
   timeoutMs: number,
   command: string,
+  onTimeout: () => void,
 ): Promise<IpcResult<unknown>> {
   let timer: NodeJS.Timeout | undefined;
   const timeout = new Promise<IpcResult<unknown>>((resolve) => {
-    timer = setTimeout(() => resolve({
-      ok: false,
-      error: { code: 'TIMEOUT', operation: command, message: 'Command timed out.' },
-    }), timeoutMs);
+    timer = setTimeout(() => {
+      onTimeout();
+      resolve({
+        ok: false,
+        error: { code: 'TIMEOUT', operation: command, message: 'Command timed out.' },
+      });
+    }, timeoutMs);
   });
   try { return await Promise.race([operation, timeout]); }
   finally { if (timer) clearTimeout(timer); }

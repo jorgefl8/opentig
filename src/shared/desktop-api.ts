@@ -11,7 +11,6 @@ export const OPEN_TIG_DESKTOP_IPC = {
   webAccessStatus: 'desktop:web-access-status',
   webAccessSetEnabled: 'desktop:web-access-set-enabled',
   webAccessCreatePairingLink: 'desktop:web-access-create-pairing-link',
-  webAccessRevokeAllSessions: 'desktop:web-access-revoke-all-sessions',
 } as const;
 
 export interface OpenTigWebAccessStatus {
@@ -20,6 +19,7 @@ export interface OpenTigWebAccessStatus {
   actualPort: number | null;
   localEndpoint: string | null;
   networkEndpoints: string[];
+  pairingEndpoints: string[];
   connectedSessionCount: number;
   restartError: string | null;
 }
@@ -33,7 +33,6 @@ export interface OpenTigWebAccessApi {
   getStatus(): Promise<OpenTigWebAccessStatus>;
   setEnabled(enabled: boolean): Promise<OpenTigWebAccessStatus>;
   createPairingLink(endpoint: string): Promise<OpenTigPairingLink>;
-  revokeAllSessions(): Promise<{ revokedCount: number }>;
 }
 
 /**

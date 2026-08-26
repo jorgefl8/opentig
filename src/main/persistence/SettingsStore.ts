@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { z } from 'zod';
-import type { AiHarnessId, Preferences, RecentRepository, RepositoryInfo, RepositoryOrganization, RepositoryProject } from '../../shared/contracts';
+import type { AiHarnessId, MonoFontPreference, Preferences, RecentRepository, RepositoryInfo, RepositoryOrganization, RepositoryProject, UiFontPreference } from '../../shared/contracts';
 import { GitOperationError } from '../../shared/errors';
 import { sanitizeShortcutOverrides } from '../../shared/shortcuts';
 import { FILES_TREE_SAVE_DEBOUNCE_MS, normalizeFilesTreeStates, type FilesTreeState, upsertFilesTreeState } from '../../shared/files-tree-state';
@@ -32,6 +32,7 @@ const defaults: SettingsData = {
   activeRepositoryId: null,
   preferences: {
     theme: 'system', diffView: 'unified', changesLayout: 'tree', wrapLines: false, sidebarWidth: 400, showDotEnvFiles: true, uiZoom: 100,
+    uiFont: 'geist', monoFont: 'inconsolata',
     commitMessageHarness: 'codex', commitMessageModels: { codex: 'default', claude: 'default', opencode: 'default' },
     shortcutOverrides: {}, doubleControlShortcutEnabled: true,
     remoteFetchIntervalSeconds: DEFAULT_REMOTE_FETCH_INTERVAL_SECONDS,
@@ -205,6 +206,8 @@ export class SettingsStore {
     next.sidebarWidth = normalizeSidebarWidth(next.sidebarWidth);
     next.showDotEnvFiles = typeof next.showDotEnvFiles === 'boolean' ? next.showDotEnvFiles : true;
     next.uiZoom = Math.max(80, Math.min(130, Math.round(Number(next.uiZoom) || 100)));
+    next.uiFont = normalizeUiFont(next.uiFont);
+    next.monoFont = isMonoFont(next.monoFont) ? next.monoFont : 'inconsolata';
     next.commitMessageHarness = isHarness(next.commitMessageHarness) ? next.commitMessageHarness : 'codex';
     next.commitMessageModels = modelPreferences(next.commitMessageModels);
     next.shortcutOverrides = sanitizeShortcutOverrides(next.shortcutOverrides);
@@ -344,6 +347,8 @@ function validate(value: unknown): SettingsData {
         sidebarWidth: normalizeSidebarWidth(parsedPreferences.data.sidebarWidth),
         showDotEnvFiles: typeof parsedPreferences.data.showDotEnvFiles === 'boolean' ? parsedPreferences.data.showDotEnvFiles : true,
         uiZoom: Math.max(80, Math.min(130, Math.round(Number(parsedPreferences.data.uiZoom) || 100))),
+        uiFont: normalizeUiFont(parsedPreferences.data.uiFont),
+        monoFont: isMonoFont(parsedPreferences.data.monoFont) ? parsedPreferences.data.monoFont : 'inconsolata',
         commitMessageHarness: isHarness(parsedPreferences.data.commitMessageHarness) ? parsedPreferences.data.commitMessageHarness : 'codex',
         commitMessageModels: modelPreferences(parsedPreferences.data.commitMessageModels),
         shortcutOverrides: sanitizeShortcutOverrides(parsedPreferences.data.shortcutOverrides),
@@ -420,6 +425,16 @@ function projectError(message: string): GitOperationError {
 
 function isHarness(value: unknown): value is AiHarnessId {
   return value === 'codex' || value === 'claude' || value === 'opencode';
+}
+
+function normalizeUiFont(value: unknown): UiFontPreference {
+  // Replace preferences saved by versions that exposed the removed Fontshare faces.
+  if (value === 'cabinet-grotesk' || value === 'satoshi') return 'plus-jakarta-sans';
+  return value === 'geist' || value === 'plus-jakarta-sans' || value === 'space-grotesk' ? value : 'geist';
+}
+
+function isMonoFont(value: unknown): value is MonoFontPreference {
+  return value === 'geist-mono' || value === 'jetbrains-mono' || value === 'inconsolata' || value === 'departure' || value === 'space-grotesk';
 }
 
 function normalizeSidebarWidth(value: unknown): number {

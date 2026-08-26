@@ -1,9 +1,23 @@
 import { describe, expect, it } from 'vitest';
-import { branchDetailsArg, deleteBranchArg, filesTreeStateArg, nullableProjectIdArg, openFilesStateArg, prepareCommitGroupArg, projectIdArg, projectNameArg, pullRequestStatesArg, removeWorktreeArg, repositoryKeyArg, searchOptionsArg, searchReplaceArg, worktreeDetailsArg } from './validators';
+import { booleanArg, branchDetailsArg, deleteBranchArg, filesTreeStateArg, nullableProjectIdArg, openFilesStateArg, prepareCommitGroupArg, projectIdArg, projectNameArg, pullRequestStatesArg, removeWorktreeArg, repositoryKeyArg, searchOptionsArg, searchReplaceArg, worktreeDetailsArg } from './validators';
 import { GitOperationError } from '../../shared/errors';
 
 const OID = 'a'.repeat(40);
 const REVISION = 'b'.repeat(64);
+
+describe('boolean argument validator', () => {
+  it('accepts booleans and applies the default for omitted values', () => {
+    expect(booleanArg(true, 'status')).toBe(true);
+    expect(booleanArg(undefined, 'status', true)).toBe(true);
+  });
+
+  it('rejects non-booleans as a generic invalid argument', () => {
+    try { booleanArg('yes', 'status'); } catch (error) {
+      expect(error).toBeInstanceOf(GitOperationError);
+      expect(error).toMatchObject({ detail: { code: 'INVALID_ARGUMENT', operation: 'status', message: 'Invalid argument.' } });
+    }
+  });
+});
 
 describe('search replacement validator', () => {
   it('keeps legacy boolean defaults and strips unknown request fields', () => {

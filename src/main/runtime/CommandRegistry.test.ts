@@ -101,4 +101,19 @@ describe('CommandRegistry', () => {
       error: { code: 'NOT_REPOSITORY', operation: 'open-path', message: 'Not a Git repository.' },
     });
   });
+
+  it('passes request cancellation to the command handler', async () => {
+    const registry = new CommandRegistry();
+    const controller = new AbortController();
+    const received: { signal: AbortSignal | null } = { signal: null };
+    registry.register(OPEN_TIG_SERVER_COMMANDS['repository.openPath'], (context, [path]) => {
+      received.signal = context.signal;
+      return repository(path, 1);
+    });
+
+    await registry.execute('session', IPC.repositoryOpenPath, ['C:\\repo'], { signal: controller.signal });
+    controller.abort();
+
+    expect(received.signal?.aborted).toBe(true);
+  });
 });

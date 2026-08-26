@@ -1,5 +1,6 @@
 import type { AiHarnessStatus } from '../../../shared/contracts';
 import { AiOperationError } from '../../../shared/errors';
+import { AI_PROVIDER_TIMEOUT_MS } from '../../../shared/ai-timeouts';
 import type { CliProcessRunner } from '../CliProcessRunner';
 import type { CliResolver } from '../CliResolver';
 import { DEFAULT_MODEL, type AiProvider, type ProviderGenerateInput } from '../types';
@@ -32,7 +33,7 @@ export class ClaudeProvider implements AiProvider {
     if (!executable) throw new AiOperationError({ code: 'AI_CLI_NOT_FOUND', operation: 'claude-generate', harness: this.id, message: 'Claude Code is not installed.' });
     const args = ['-p', '--output-format', 'json', '--json-schema', JSON.stringify(input.schema), '--tools', '', '--no-session-persistence', '--safe-mode'];
     if (input.model !== 'default') args.push('--model', input.model);
-    const result = await this.runner.run(executable, args, { cwd: input.repositoryPath, stdin: input.prompt, timeoutMs: 180_000, signal: input.signal, removeEnv: ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN'] });
+    const result = await this.runner.run(executable, args, { cwd: input.repositoryPath, stdin: input.prompt, timeoutMs: AI_PROVIDER_TIMEOUT_MS, signal: input.signal, removeEnv: ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN'] });
     requireSuccess(result, this.id, 'claude-generate');
     try {
       const envelope = JSON.parse(result.stdout) as { structured_output?: unknown };

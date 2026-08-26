@@ -23,8 +23,8 @@ import { parseWorktrees } from './WorktreeParser';
  * purpose: a commit plan is only as good as the changes it can actually see, and
  * the budget is shared fairly across files rather than spent on the first ones.
  */
-const COMMIT_PATCH_BUDGET = 400_000;
-const COMMIT_SUMMARY_BUDGET = 24_000;
+const AI_PATCH_BUDGET = 400_000;
+const AI_SUMMARY_BUDGET = 24_000;
 
 export class GitRepositoryOperations {
   private readonly knownOids = new Map<string, Set<string>>();
@@ -241,10 +241,10 @@ export class GitRepositoryOperations {
     ]);
     const fullSummary = summaryOutput.stdout.toString('utf8');
     const fullPatch = patchOutput.stdout.toString('utf8');
-    const summary = bounded(fullSummary, COMMIT_SUMMARY_BUDGET);
+    const summary = bounded(fullSummary, AI_SUMMARY_BUDGET);
     // Split evenly across files: a prefix cut would leave the alphabetically
     // last files with nothing but a path for the model to guess from.
-    const patch = allocatePatchBudget(fullPatch, COMMIT_PATCH_BUDGET);
+    const patch = allocatePatchBudget(fullPatch, AI_PATCH_BUDGET);
     const stagedChanges = status.changes.filter((change) => change.staged && !change.conflict);
     return {
       repositoryId,
@@ -290,8 +290,11 @@ export class GitRepositoryOperations {
     if (subjects.length === 0 && !fullPatch.trim()) {
       throw new AiOperationError({ code: 'AI_PROCESS_FAILED', operation: 'ai-pr-context', message: 'There are no changes against the base branch to describe.' });
     }
-    const summary = bounded(fullSummary, 6_000);
-    const patch = bounded(fullPatch, 40_000);
+    // Pull-request drafts need the same breadth as commit planning. The former
+    // 40k prefix cut routinely dropped later files from a branch-sized diff.
+    // Keep the full summary budget and share patch space fairly across files.
+    const summary = bounded(fullSummary, AI_SUMMARY_BUDGET);
+    const patch = allocatePatchBudget(fullPatch, AI_PATCH_BUDGET);
     return {
       repositoryId,
       repositoryPath: repository.path,

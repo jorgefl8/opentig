@@ -1,22 +1,27 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   IconAlertTriangle,
+  IconBrowser,
   IconCopy,
+  IconDeviceDesktop,
+  IconEdit,
   IconLink,
   IconLoader4,
   IconQrcode,
-  IconRefresh,
   IconShieldLock,
+  IconTrash,
 } from '@tabler/icons-react';
 import { renderSVG } from 'uqr';
 import { sileo } from 'sileo';
 import type { OpenTigPairingLink, OpenTigWebAccessStatus } from '@shared/desktop-api';
+import type { OpenTigOwnerSession } from '@shared/server-protocol';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogClose, DialogDescription, DialogPopup, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { writeClipboardText } from '@/lib/browser-capabilities';
+import { loadOwnerSessions, renameOwnerSession, revokeAllBrowserSessions, revokeOwnerSession } from './owner-sessions';
 
 const STATUS_COPY: Record<OpenTigWebAccessStatus['serverState'], string> = {
   starting: 'Starting',
@@ -26,57 +31,66 @@ const STATUS_COPY: Record<OpenTigWebAccessStatus['serverState'], string> = {
   stopped: 'Stopped',
 };
 
+type Action = 'toggle' | 'pair' | 'revoke-all' | `rename:${string}` | `revoke:${string}`;
+
 export function WebAccessSettings() {
-  const api = window.opentigDesktop?.webAccess;
+  const desktopApi = window.opentigDesktop?.webAccess;
   const [status, setStatus] = useState<OpenTigWebAccessStatus | null>(null);
+  const [sessions, setSessions] = useState<OpenTigOwnerSession[]>([]);
   const [pairing, setPairing] = useState<OpenTigPairingLink | null>(null);
   const [selectedEndpoint, setSelectedEndpoint] = useState('');
   const [loading, setLoading] = useState(true);
-  const [action, setAction] = useState<'toggle' | 'pair' | 'revoke' | null>(null);
+  const [action, setAction] = useState<Action | null>(null);
   const [enableWarningOpen, setEnableWarningOpen] = useState(false);
-  const [revokeWarningOpen, setRevokeWarningOpen] = useState(false);
+  const [revokeTarget, setRevokeTarget] = useState<OpenTigOwnerSession | 'all' | null>(null);
+  const [renameTarget, setRenameTarget] = useState<OpenTigOwnerSession | null>(null);
+  const [renameInput, setRenameInput] = useState('');
 
-  const loadStatus = useCallback(async () => {
-    if (!api) return;
-    try { setStatus(await api.getStatus()); }
-    catch (error) { sileo.error({ title: 'Could not read Web Access status', description: messageOf(error) }); }
-    finally { setLoading(false); }
-  }, [api]);
+  const loadState = useCallback(async (showErrors = true) => {
+    const results = await Promise.allSettled([
+      desktopApi?.getStatus() ?? Promise.resolve(null),
+      loadOwnerSessions(),
+    ]);
+    if (results[0].status === 'fulfilled') setStatus(results[0].value);
+    else if (showErrors) sileo.error({ title: 'Could not read web access status', description: messageOf(results[0].reason) });
+    if (results[1].status === 'fulfilled') setSessions(results[1].value);
+    else if (showErrors) sileo.error({ title: 'Could not read owner sessions', description: messageOf(results[1].reason) });
+    setLoading(false);
+  }, [desktopApi]);
 
   useEffect(() => {
-    void loadStatus();
-    const timer = window.setInterval(() => void loadStatus(), 2_000);
+    void loadState();
+    const timer = window.setInterval(() => void loadState(false), 2_000);
     return () => window.clearInterval(timer);
-  }, [loadStatus]);
+  }, [loadState]);
 
   useEffect(() => {
-    if (!status?.networkEndpoints.length) {
-      setSelectedEndpoint('');
-      return;
-    }
-    if (!status.networkEndpoints.includes(selectedEndpoint)) setSelectedEndpoint(status.networkEndpoints[0]!);
+    if (!status) return;
+    if (!status.pairingEndpoints.length) setSelectedEndpoint('');
+    else if (!status.pairingEndpoints.includes(selectedEndpoint)) setSelectedEndpoint(status.pairingEndpoints[0]!);
   }, [selectedEndpoint, status]);
 
   const qrSource = useMemo(() => pairing
     ? `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(renderSVG(pairing.url, { ecc: 'M', border: 2 }))}`
     : null, [pairing]);
+  const pairingCode = useMemo(() => pairing
+    ? new URLSearchParams(new URL(pairing.url).hash.slice(1)).get('token') ?? ''
+    : '', [pairing]);
 
-  if (!api) return <p className="web-access-unavailable">Network access can only be changed from the OpenTig desktop app.</p>;
-  if (loading && !status) return <div className="web-access-loading" role="status"><IconLoader4 className="animate-spin" /> Loading network status…</div>;
-  if (!status) return <Button variant="outline" size="sm" onClick={() => void loadStatus()}><IconRefresh /> Try again</Button>;
-
-  const ready = status.serverState === 'ready';
-  const networkReady = status.enabled && ready && status.networkEndpoints.includes(selectedEndpoint);
+  if (loading && (!desktopApi || !status) && sessions.length === 0) {
+    return <div className="web-access-loading" role="status"><IconLoader4 className="animate-spin" /> Loading web access…</div>;
+  }
 
   const changeExposure = async (enabled: boolean) => {
+    if (!desktopApi) return;
     setAction('toggle');
     setPairing(null);
     try {
-      setStatus(await api.setEnabled(enabled));
-      sileo.success({ title: enabled ? 'Network access enabled' : 'Network access disabled' });
+      setStatus(await desktopApi.setEnabled(enabled));
+      sileo.success({ title: enabled ? 'LAN access enabled' : 'LAN access disabled' });
     } catch (error) {
-      sileo.error({ title: 'Could not restart Web Access', description: messageOf(error) });
-      await loadStatus();
+      sileo.error({ title: 'Could not restart web access', description: messageOf(error) });
+      await loadState(false);
     } finally {
       setAction(null);
       setEnableWarningOpen(false);
@@ -84,8 +98,9 @@ export function WebAccessSettings() {
   };
 
   const createLink = async () => {
+    if (!desktopApi) return;
     setAction('pair');
-    try { setPairing(await api.createPairingLink(selectedEndpoint)); }
+    try { setPairing(await desktopApi.createPairingLink(selectedEndpoint)); }
     catch (error) { sileo.error({ title: 'Could not create pairing link', description: messageOf(error) }); }
     finally { setAction(null); }
   };
@@ -98,150 +113,202 @@ export function WebAccessSettings() {
     } catch (error) { sileo.error({ title: 'Could not copy pairing link', description: messageOf(error) }); }
   };
 
-  const revokeSessions = async () => {
-    setAction('revoke');
+  const copyCode = async () => {
+    if (!pairingCode) return;
     try {
-      const result = await api.revokeAllSessions();
+      await writeClipboardText(pairingCode);
+      sileo.success({ title: 'Pairing code copied' });
+    } catch (error) { sileo.error({ title: 'Could not copy pairing code', description: messageOf(error) }); }
+  };
+
+  const renameConfirmed = async () => {
+    const target = renameTarget;
+    const name = renameInput.trim();
+    if (!target || !name || name.length > 64) return;
+    setAction(`rename:${target.id}`);
+    try {
+      await renameOwnerSession(target.id, name);
+      sileo.success({ title: 'Device renamed' });
+      await loadState(false);
+      setRenameTarget(null);
+    } catch (error) { sileo.error({ title: 'Could not rename device', description: messageOf(error) }); }
+    finally { setAction(null); }
+  };
+
+  const revokeConfirmed = async () => {
+    const target = revokeTarget;
+    if (!target) return;
+    const nextAction: Action = target === 'all' ? 'revoke-all' : `revoke:${target.id}`;
+    setAction(nextAction);
+    try {
+      const count = target === 'all'
+        ? await revokeAllBrowserSessions()
+        : await revokeOwnerSession(target.id);
       setPairing(null);
-      sileo.success({ title: `${result.revokedCount} owner ${result.revokedCount === 1 ? 'session' : 'sessions'} revoked` });
-      await loadStatus();
-    } catch (error) { sileo.error({ title: 'Could not revoke sessions', description: messageOf(error) }); }
+      sileo.success({ title: `${count} browser ${count === 1 ? 'session' : 'sessions'} revoked` });
+      await loadState(false);
+    } catch (error) { sileo.error({ title: 'Could not revoke session', description: messageOf(error) }); }
     finally {
       setAction(null);
-      setRevokeWarningOpen(false);
+      setRevokeTarget(null);
     }
   };
 
+  const ready = status?.serverState === 'ready';
+  const browserSessions = sessions.filter((session) => session.kind !== 'desktop');
+
   return (
     <div className="web-access-settings">
-      <div className="web-access-summary">
-        <div className="settings-field-label">
-          <strong>Network access</strong>
-          <span>Use this same OpenTig backend from another browser on your network.</span>
-        </div>
-        <button
-          type="button"
-          role="switch"
-          aria-label="Network access"
-          aria-checked={status.enabled}
-          className="settings-switch"
-          disabled={action === 'toggle' || !ready}
-          onClick={() => status.enabled ? void changeExposure(false) : setEnableWarningOpen(true)}
-        ><span /></button>
-      </div>
-
-      <div className="web-access-facts" aria-live="polite">
-        <WebAccessFact label="Server status"><Badge variant={ready ? 'secondary' : 'outline'}>{STATUS_COPY[status.serverState]}</Badge></WebAccessFact>
-        <WebAccessFact label="Actual port"><code>{status.actualPort ?? 'Unavailable'}</code></WebAccessFact>
-        <WebAccessFact label="Connected owner sessions"><strong>{status.connectedSessionCount}</strong></WebAccessFact>
-        <WebAccessFact label="Local endpoint"><Endpoint value={status.localEndpoint} /></WebAccessFact>
-        <WebAccessFact label="Network endpoints">
-          <div className="web-access-endpoints">
-            {status.networkEndpoints.length === 0
-              ? <span>None detected</span>
-              : status.networkEndpoints.map((endpoint) => <Endpoint key={endpoint} value={endpoint} muted={!status.enabled} />)}
+      {desktopApi && status && <>
+        <div className="web-access-summary">
+          <div className="settings-field-label">
+            <strong>LAN access</strong>
+            <span>Listen on this computer&apos;s network interfaces for trusted local devices.</span>
           </div>
-        </WebAccessFact>
-      </div>
-
-      {status.restartError && <div className="web-access-error" role="alert"><IconAlertTriangle /> <span>{status.restartError}</span></div>}
-
-      <div className="web-access-actions settings-field-separated">
-        <div className="settings-field-label">
-          <strong>Pair a browser</strong>
-          <span>Creates a five-minute, one-use link. Creating another link invalidates the previous one.</span>
+          <button
+            type="button"
+            role="switch"
+            aria-label="LAN access"
+            aria-checked={status.enabled}
+            className="settings-switch"
+            disabled={action === 'toggle' || !ready}
+            onClick={() => status.enabled ? void changeExposure(false) : setEnableWarningOpen(true)}
+          ><span /></button>
         </div>
-        <Button size="sm" onClick={() => void createLink()} disabled={!networkReady || action !== null}>
-          {action === 'pair' ? <IconLoader4 className="animate-spin" /> : <IconLink />} Create pairing link
-        </Button>
-      </div>
-      {status.networkEndpoints.length > 1 && (
-        <div className="web-access-endpoint-select">
-          <label htmlFor="web-access-endpoint">Address to place in the pairing link</label>
-          <Select
-            value={selectedEndpoint}
-            onValueChange={(endpoint) => {
-              if (!endpoint) return;
-              setSelectedEndpoint(endpoint);
-              setPairing(null);
-            }}
-            disabled={!status.enabled || action !== null}
-          >
-            <SelectTrigger id="web-access-endpoint" className="w-full">
-              <SelectValue>{selectedEndpoint}</SelectValue>
-            </SelectTrigger>
-            <SelectContent alignItemWithTrigger={false}>
-              <SelectGroup>
-                {status.networkEndpoints.map((endpoint) => <SelectItem key={endpoint} value={endpoint}>{endpoint}</SelectItem>)}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
-        </div>
-      )}
 
-      {pairing && (
-        <div className="web-access-pairing" role="status">
-          <div className="web-access-pairing-copy">
-            <IconQrcode aria-hidden="true" />
-            <div>
-              <strong>Pairing link ready</strong>
-              <span>Expires {new Date(pairing.expiresAt).toLocaleString()}.</span>
+        <div className="web-access-facts" aria-live="polite">
+          <WebAccessFact label="Server status"><Badge variant={ready ? 'secondary' : 'outline'}>{STATUS_COPY[status.serverState]}</Badge></WebAccessFact>
+          <WebAccessFact label="Actual port"><code>{status.actualPort ?? 'Unavailable'}</code></WebAccessFact>
+          <WebAccessFact label="Local endpoint"><Endpoint value={status.localEndpoint} /></WebAccessFact>
+          <WebAccessFact label="LAN endpoints">
+            <div className="web-access-endpoints">
+              {status.networkEndpoints.length === 0
+                ? <span>None detected</span>
+                : status.networkEndpoints.map((endpoint) => <Endpoint key={endpoint} value={endpoint} muted={!status.enabled} />)}
+            </div>
+          </WebAccessFact>
+        </div>
+
+        {status.restartError && <div className="web-access-error" role="alert"><IconAlertTriangle /> <span>{status.restartError}</span></div>}
+
+        <div className="web-access-actions settings-field-separated">
+          <div className="settings-field-label">
+            <strong>Pair a browser</strong>
+            <span>Create a five-minute, one-use link for this computer or a LAN device. The pairing code also works through a same-machine HTTPS tunnel.</span>
+          </div>
+          <Button size="sm" onClick={() => void createLink()} disabled={!ready || !selectedEndpoint || action !== null}>
+            {action === 'pair' ? <IconLoader4 className="animate-spin" /> : <IconLink />} Create pairing link
+          </Button>
+        </div>
+        {status.pairingEndpoints.length > 0 && (
+          <div className="web-access-endpoint-select">
+            <label htmlFor="web-access-endpoint">Address to place in the pairing link</label>
+            <Select value={selectedEndpoint} onValueChange={(endpoint) => { if (endpoint) { setSelectedEndpoint(endpoint); setPairing(null); } }} disabled={action !== null}>
+              <SelectTrigger id="web-access-endpoint" className="w-full"><SelectValue>{selectedEndpoint}</SelectValue></SelectTrigger>
+              <SelectContent alignItemWithTrigger={false}>
+                <SelectGroup>{status.pairingEndpoints.map((endpoint) => <SelectItem key={endpoint} value={endpoint}>{endpoint}</SelectItem>)}</SelectGroup>
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+
+        {pairing && (
+          <div className="web-access-pairing" role="status">
+            <div className="web-access-pairing-copy"><IconQrcode aria-hidden="true" /><div><strong>Pairing link ready</strong><span>Expires {new Date(pairing.expiresAt).toLocaleString()}.</span></div></div>
+            {qrSource && <img src={qrSource} alt="QR code for the one-use OpenTig pairing link" />}
+            <div className="web-access-link-row">
+              <Tooltip><TooltipTrigger render={<code className="web-access-link" />}>{pairing.url}</TooltipTrigger><TooltipContent side="bottom">One-use link; do not share publicly</TooltipContent></Tooltip>
+              <Tooltip><TooltipTrigger render={<Button variant="outline" size="icon-sm" aria-label="Copy pairing link" onClick={() => void copyLink()} />}><IconCopy /></TooltipTrigger><TooltipContent>Copy pairing link</TooltipContent></Tooltip>
+            </div>
+            <div className="web-access-link-row">
+              <Tooltip><TooltipTrigger render={<code className="web-access-link" />}>{pairingCode}</TooltipTrigger><TooltipContent side="bottom">Paste this code on any /pair page served by this OpenTig instance</TooltipContent></Tooltip>
+              <Tooltip><TooltipTrigger render={<Button variant="outline" size="icon-sm" aria-label="Copy pairing code" onClick={() => void copyCode()} />}><IconCopy /></TooltipTrigger><TooltipContent>Copy pairing code</TooltipContent></Tooltip>
             </div>
           </div>
-          {qrSource && <img src={qrSource} alt="QR code for the one-use OpenTig pairing link" />}
-          <div className="web-access-link-row">
-            <Tooltip>
-              <TooltipTrigger render={<code className="web-access-link" />}>{pairing.url}</TooltipTrigger>
-              <TooltipContent side="bottom">One-use link; do not share publicly</TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger render={<Button variant="outline" size="icon-sm" aria-label="Copy pairing link" onClick={() => void copyLink()} />}><IconCopy /></TooltipTrigger>
-              <TooltipContent>Copy pairing link</TooltipContent>
-            </Tooltip>
-          </div>
-        </div>
-      )}
+        )}
+      </>}
 
-      <div className="web-access-actions settings-field-separated">
+      <div className={`web-access-session-heading ${desktopApi ? 'settings-field-separated' : ''}`}>
         <div className="settings-field-label">
           <strong>Owner sessions</strong>
-          <span>Disconnect every paired browser. OpenTig immediately replaces its private desktop session.</span>
+          <span>Desktop authentication stays private. Paired browsers can be disconnected individually.</span>
         </div>
-        <Button variant="destructive" size="sm" onClick={() => setRevokeWarningOpen(true)} disabled={!ready || action !== null}>
-          <IconShieldLock /> Revoke all sessions
+        <Button variant="destructive" size="sm" onClick={() => setRevokeTarget('all')} disabled={browserSessions.length === 0 || action !== null}>
+          <IconShieldLock /> Revoke browsers
         </Button>
       </div>
 
-      <Dialog open={enableWarningOpen} onOpenChange={setEnableWarningOpen}>
-        <DialogPopup className="web-access-warning-dialog">
-          <div className="web-access-warning-content">
-            <IconAlertTriangle />
-            <div>
-              <DialogTitle>Enable owner-level network access?</DialogTitle>
-              <DialogDescription>
-                Any paired browser can edit or delete files, run Git, GitHub and AI CLIs, and act with your OS user permissions. Use only a trusted LAN or VPN, an HTTPS reverse proxy, or an SSH tunnel. Never expose the raw port publicly.
-              </DialogDescription>
+      <div className="web-access-session-list" aria-live="polite">
+        {sessions.length === 0
+          ? <div className="web-access-empty-session">No owner sessions found.</div>
+          : sessions.map((session) => (
+            <div className="web-access-session" key={session.id}>
+              <div className={`web-access-session-icon ${session.connected ? 'connected' : ''}`}>
+                {session.kind === 'desktop' ? <IconDeviceDesktop /> : <IconBrowser />}
+              </div>
+              <div className="web-access-session-copy">
+                <div><strong>{session.clientName}</strong>{session.current && <Badge variant="secondary">This session</Badge>}{session.kind === 'desktop' && <Badge variant="outline">Desktop</Badge>}</div>
+                <span>{session.connected ? `Connected${session.connectionCount > 1 ? ` (${session.connectionCount} tabs)` : ''}` : session.lastConnectedAt ? `Last connected ${formatDate(session.lastConnectedAt)}` : 'Not yet connected'} · {session.browser && session.os ? `${session.browser} on ${session.os}` : session.browser ?? session.os ?? deviceLabel(session.deviceType)}{session.viaProxy ? ' · Via proxy' : ''}{session.remoteAddress ? ` · ${session.remoteAddress}` : ''}</span>
+              </div>
+              {session.kind !== 'desktop' && (
+                <div className="web-access-session-controls">
+                  <Tooltip>
+                    <TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label={`Rename ${session.clientName}`} onClick={() => { setRenameTarget(session); setRenameInput(session.clientName); }} disabled={action !== null} />}><IconEdit /></TooltipTrigger>
+                    <TooltipContent>Rename this device</TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label={`Revoke ${session.clientName} session`} onClick={() => setRevokeTarget(session)} disabled={action !== null} />}><IconTrash /></TooltipTrigger>
+                    <TooltipContent>Revoke this browser session</TooltipContent>
+                  </Tooltip>
+                </div>
+              )}
             </div>
+          ))}
+      </div>
+
+      {!desktopApi && <p className="web-access-hint">Listener addresses and new pairing links are controlled by the OpenTig desktop app or CLI running the server.</p>}
+
+      <Dialog open={enableWarningOpen} onOpenChange={setEnableWarningOpen}>
+        <DialogPopup className="undo-commit-dialog">
+          <div className="undo-commit-content">
+            <DialogTitle>Enable owner-level LAN access?</DialogTitle>
+            <DialogDescription>Any paired browser can edit or delete files and act with your OS user permissions. Use only a trusted LAN or VPN.</DialogDescription>
           </div>
-          <div className="web-access-warning-actions">
-            <DialogClose render={<Button variant="ghost" size="sm" />}>Cancel</DialogClose>
-            <Button size="sm" onClick={() => void changeExposure(true)} disabled={action !== null}>Enable network access</Button>
+          <div className="undo-commit-actions">
+            <DialogClose render={<Button variant="ghost" />}>Cancel</DialogClose>
+            <Button onClick={() => void changeExposure(true)} disabled={action !== null}>Enable LAN access</Button>
           </div>
         </DialogPopup>
       </Dialog>
 
-      <Dialog open={revokeWarningOpen} onOpenChange={setRevokeWarningOpen}>
-        <DialogPopup className="web-access-warning-dialog">
-          <div className="web-access-warning-content">
-            <IconShieldLock />
-            <div>
-              <DialogTitle>Revoke all owner sessions?</DialogTitle>
-              <DialogDescription>Every paired browser disconnects immediately. Pairing links already created remain one-use but should be replaced.</DialogDescription>
-            </div>
+      <Dialog open={revokeTarget !== null} onOpenChange={(open) => { if (!open) setRevokeTarget(null); }}>
+        <DialogPopup className="undo-commit-dialog">
+          <div className="undo-commit-content">
+            <DialogTitle>{revokeTarget === 'all' ? 'Revoke all browser sessions?' : 'Revoke this browser session?'}</DialogTitle>
+            <DialogDescription>{revokeTarget === 'all' ? 'Every paired browser disconnects immediately. The private desktop session remains signed in.' : revokeTarget?.current ? 'This browser will disconnect immediately and require a new pairing link.' : 'That browser disconnects immediately and will require a new pairing link.'}</DialogDescription>
+            {revokeTarget && revokeTarget !== 'all' && (
+              <div className="undo-commit-summary"><strong>{revokeTarget.clientName}</strong></div>
+            )}
           </div>
-          <div className="web-access-warning-actions">
-            <DialogClose render={<Button variant="ghost" size="sm" />}>Cancel</DialogClose>
-            <Button variant="destructive" size="sm" onClick={() => void revokeSessions()} disabled={action !== null}>Revoke sessions</Button>
+          <div className="undo-commit-actions">
+            <DialogClose render={<Button variant="ghost" />}>Cancel</DialogClose>
+            <Button variant="destructive" onClick={() => void revokeConfirmed()} disabled={action !== null}>
+              <IconShieldLock /> Revoke
+            </Button>
+          </div>
+        </DialogPopup>
+      </Dialog>
+
+      <Dialog open={renameTarget !== null} onOpenChange={(open) => { if (!open) setRenameTarget(null); }}>
+        <DialogPopup className="undo-commit-dialog">
+          <div className="undo-commit-content">
+            <DialogTitle>Rename paired device</DialogTitle>
+            <DialogDescription>Use a name that makes this browser easy to identify later.</DialogDescription>
+            <input className="web-access-rename-input" value={renameInput} onChange={(event) => setRenameInput(event.target.value)} maxLength={64} aria-label="Device name" autoComplete="off" />
+          </div>
+          <div className="undo-commit-actions">
+            <DialogClose render={<Button variant="ghost" />}>Cancel</DialogClose>
+            <Button onClick={() => void renameConfirmed()} disabled={action !== null || !renameInput.trim()}>Save</Button>
           </div>
         </DialogPopup>
       </Dialog>
@@ -255,12 +322,16 @@ function WebAccessFact({ label, children }: { label: string; children: ReactNode
 
 function Endpoint({ value, muted = false }: { value: string | null; muted?: boolean }) {
   if (!value) return <span>Unavailable</span>;
-  return (
-    <Tooltip>
-      <TooltipTrigger render={<code className={muted ? 'muted' : undefined} />}>{value}</TooltipTrigger>
-      <TooltipContent side="bottom">{muted ? 'Enable network access to use this endpoint' : value}</TooltipContent>
-    </Tooltip>
-  );
+  return <Tooltip><TooltipTrigger render={<code className={muted ? 'muted' : undefined} />}>{value}</TooltipTrigger><TooltipContent side="bottom">{muted ? 'Enable LAN access to use this endpoint' : value}</TooltipContent></Tooltip>;
+}
+
+function formatDate(value: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? 'unknown' : date.toLocaleString();
+}
+
+function deviceLabel(type: OpenTigOwnerSession['deviceType']): string {
+  return type === 'desktop' ? 'Desktop browser' : type === 'mobile' ? 'Mobile browser' : type === 'tablet' ? 'Tablet browser' : type === 'bot' ? 'Automated client' : 'Unknown browser';
 }
 
 function messageOf(error: unknown): string {

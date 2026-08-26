@@ -18,6 +18,7 @@ export default defineConfig({
       // the utility entry before that entry becomes executable.
       external: [/^node:/, 'trash', 'ws'],
       input: {
+        bin: path.join(packageRoot, 'src', 'bin.ts'),
         server: path.join(packageRoot, 'src', 'server.ts'),
         utility: path.join(packageRoot, 'src', 'utility.ts'),
       },

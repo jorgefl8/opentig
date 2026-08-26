@@ -4,10 +4,12 @@ import type { DiffRequest, Preferences } from '../../shared/contracts';
 import { IPC } from '../../shared/contracts';
 import { GitOperationError } from '../../shared/errors';
 import { OPEN_TIG_SERVER_COMMANDS, type OpenTigServerCommandDefinition } from '../../shared/protocol';
-import { aiString, booleanArg, branchDetailsArg, createPullRequestArg, deleteBranchArg, filesTreeStateArg, generateCommitMessageArg, generatePullRequestDraftArg, nullableProjectIdArg, oidArg, openFilesStateArg, pathsArg, prepareCommitGroupArg, prNumberArg, projectIdArg, projectNameArg, pullRequestStatesArg, removeWorktreeArg, repositoryKeyArg, searchOptionsArg, searchReplaceArg, stringArg, textArg, worktreeDetailsArg } from './validators';
+import { repositoryRootFromCommonDir } from '../../shared/repository-favicon';
+import { readRepositoryFavicon } from '../files/RepositoryFavicon';
 import { CommandRegistry, type CommandExecutionContext } from './CommandRegistry';
 import type { OpenTigHost } from './OpenTigHost';
 import type { OpenTigRuntimeServices } from './OpenTigRuntime';
+import { aiString, booleanArg, branchDetailsArg, createPullRequestArg, deleteBranchArg, filesTreeStateArg, generateCommitMessageArg, generatePullRequestDraftArg, nullableProjectIdArg, oidArg, openFilesStateArg, pathsArg, prepareCommitGroupArg, prNumberArg, projectIdArg, projectNameArg, pullRequestStatesArg, removeWorktreeArg, repositoryKeyArg, searchOptionsArg, searchReplaceArg, stringArg, textArg, worktreeDetailsArg } from './validators';
 
 export function registerServerCommands(
   registry: CommandRegistry,
@@ -31,10 +33,8 @@ export function registerServerCommands(
     handleWithContext(channel, operation, (_context, ...args) => handler(...args));
   };
   const openRepositoryPath = async (selectedPath: string, context: CommandExecutionContext) => {
-    const repository = await services.repositories.openPath(selectedPath);
+    const repository = await openRuntimeRepositoryPath(services, selectedPath);
     fileClipboardState(context).pendingCut = null;
-    services.watcher.start(repository);
-    services.events.activeRepositoryChanged(repository);
     return repository;
   };
 
@@ -121,6 +121,10 @@ export function registerServerCommands(
     stringArg(id, 'read-image', 64),
     stringArg(filePath, 'read-image'),
   ));
+  handle(IPC.repositoryGetFavicon, 'favicon', (id) => {
+    const repository = services.repositories.get(stringArg(id, 'favicon', 64));
+    return readRepositoryFavicon(repositoryRootFromCommonDir(repository.commonDir));
+  });
   handle(IPC.repositoryWriteFile, 'write-file', (id, filePath, content, expectedContent) => services.files.write(
     stringArg(id, 'write-file', 64),
     stringArg(filePath, 'write-file'),
@@ -343,7 +347,9 @@ export function registerServerCommands(
   handle(IPC.refsPush, 'push', (id) => services.operations.push(stringArg(id, 'push', 64)));
   handle(IPC.refsFetch, 'fetch', (id) => services.operations.fetch(stringArg(id, 'fetch', 64)));
   handle(IPC.aiStatuses, 'ai-statuses', (forceRefresh) => services.ai.statuses(booleanArg(forceRefresh, 'ai-statuses')));
-  handle(IPC.aiGenerateCommitMessage, 'ai-generate-commit-message', (input) => services.ai.generate(generateCommitMessageArg(input)));
+  handleWithContext(IPC.aiGenerateCommitMessage, 'ai-generate-commit-message', (context, input) => (
+    services.ai.generate(generateCommitMessageArg(input), context.signal)
+  ));
   handle(IPC.aiLog, 'ai-log', () => services.aiLog.list());
   handle(IPC.aiClearLog, 'ai-clear-log', () => services.aiLog.clear());
   handle(IPC.aiCancelGeneration, 'ai-cancel-generation', (requestId) => {
@@ -368,7 +374,9 @@ export function registerServerCommands(
   handle(IPC.githubPrDiff, 'gh-pr-diff', (id, prNumber) => services.github.getPullRequestDiff(stringArg(id, 'gh-pr-diff', 64), prNumberArg(prNumber, 'gh-pr-diff')));
   handle(IPC.githubPrCommitDiff, 'gh-pr-commit-diff', (id, oid) => services.github.getPullRequestCommitDiff(stringArg(id, 'gh-pr-commit-diff', 64), oidArg(oid, 'gh-pr-commit-diff')));
   handle(IPC.githubPrCreate, 'gh-pr-create', (input) => services.github.createPullRequest(createPullRequestArg(input)));
-  handle(IPC.githubPrDraft, 'ai-pr-draft', (input) => services.prDrafts.generate(generatePullRequestDraftArg(input)));
+  handleWithContext(IPC.githubPrDraft, 'ai-pr-draft', (context, input) => (
+    services.prDrafts.generate(generatePullRequestDraftArg(input), context.signal)
+  ));
   handle(IPC.githubPrDraftCancel, 'ai-pr-draft-cancel', (requestId) => {
     services.prDrafts.cancel(aiString(requestId, 'ai-pr-draft-cancel', 100, true));
   });
@@ -377,6 +385,14 @@ export function registerServerCommands(
   for (const definition of serverDefinitions.values()) {
     if (!registered.has(definition.command)) throw new Error(`Missing server handler: ${definition.command}`);
   }
+}
+
+/** Shared repository-open lifecycle used by authenticated commands and CLI bootstrap. */
+export async function openRuntimeRepositoryPath(services: OpenTigRuntimeServices, selectedPath: string) {
+  const repository = await services.repositories.openPath(selectedPath);
+  services.watcher.start(repository);
+  services.events.activeRepositoryChanged(repository);
+  return repository;
 }
 
 export const FILE_CLIPBOARD_SESSION_STATE = 'file-clipboard';

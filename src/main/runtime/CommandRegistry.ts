@@ -8,8 +8,13 @@ import type {
 
 export interface CommandExecutionContext {
   readonly sessionId: string;
+  readonly signal: AbortSignal;
   state<Value>(key: string, initialize: () => Value): Value;
   deleteState(key: string): void;
+}
+
+export interface CommandExecutionOptions {
+  signal?: AbortSignal;
 }
 
 type CommandHandler = (
@@ -58,9 +63,10 @@ export class CommandRegistry {
     sessionId: string,
     command: Command,
     args: OpenTigServerCommandMap[Command]['args'],
+    options?: CommandExecutionOptions,
   ): Promise<IpcResult<OpenTigServerCommandMap[Command]['result']>>;
-  async execute(sessionId: string, command: string, args: unknown): Promise<IpcResult<unknown>>;
-  async execute(sessionId: string, command: string, args: unknown): Promise<IpcResult<unknown>> {
+  async execute(sessionId: string, command: string, args: unknown, options?: CommandExecutionOptions): Promise<IpcResult<unknown>>;
+  async execute(sessionId: string, command: string, args: unknown, options: CommandExecutionOptions = {}): Promise<IpcResult<unknown>> {
     const registered = this.commands.get(command as OpenTigServerCommandName);
     const operation = registered?.definition.operation ?? 'command';
     try {
@@ -70,7 +76,7 @@ export class CommandRegistry {
       if (requestBytes(args) > registered.definition.maxRequestBytes) {
         throw invalidCommand(operation, 'Command request exceeded the safety limit.');
       }
-      const context = this.context(sessionId);
+      const context = this.context(sessionId, options.signal);
       return { ok: true, value: await registered.handler(context, args) };
     } catch (error) {
       return { ok: false, error: serializeError(error, operation) };
@@ -98,7 +104,7 @@ export class CommandRegistry {
     this.sessions.clear();
   }
 
-  private context(sessionId: string): CommandExecutionContext {
+  private context(sessionId: string, signal = NEVER_ABORTED_SIGNAL): CommandExecutionContext {
     let values = this.sessions.get(sessionId);
     if (!values) {
       values = new Map<string, unknown>();
@@ -106,6 +112,7 @@ export class CommandRegistry {
     }
     return {
       sessionId,
+      signal,
       state: <Value>(key: string, initialize: () => Value): Value => {
         if (!values!.has(key)) values!.set(key, initialize());
         return values!.get(key) as Value;
@@ -114,6 +121,8 @@ export class CommandRegistry {
     };
   }
 }
+
+const NEVER_ABORTED_SIGNAL = new AbortController().signal;
 
 function requestBytes(args: readonly unknown[]): number {
   try {

@@ -100,9 +100,7 @@
 }
 
 .source-code-editor {
-  --diffs-font-family: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  --diffs-font-size: 13px;
-  --diffs-line-height: 22px;
+  --diffs-font-family: var(--opentig-font-mono);
   height: 100%;
   width: 100%;
   overflow: auto;

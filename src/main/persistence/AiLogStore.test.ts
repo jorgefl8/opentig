@@ -18,6 +18,7 @@ function entry(overrides: Partial<Parameters<AiLogStore['append']>[0]> = {}) {
     status: 'success' as const,
     durationMs: 1200,
     errorCode: null,
+    errorMessage: null,
     usage: { ...EMPTY_AI_USAGE, inputTokens: 10, outputTokens: 2, costUsd: 0.01 },
     stagedFileCount: 3,
     contextTruncated: false,
@@ -41,12 +42,12 @@ describe('AiLogStore', () => {
   it('appends runs and returns them newest first', async () => {
     const log = await store();
     log.append(entry({ model: 'first' }));
-    log.append(entry({ model: 'second', status: 'failed', errorCode: 'AI_RATE_LIMITED' }));
+    log.append(entry({ model: 'second', status: 'failed', errorCode: 'AI_RATE_LIMITED', errorMessage: 'usage limit' }));
 
     const entries = await log.list();
     expect(entries).toHaveLength(2);
     expect(entries[0]?.model).toBe('second');
-    expect(entries[0]).toMatchObject({ status: 'failed', errorCode: 'AI_RATE_LIMITED' });
+    expect(entries[0]).toMatchObject({ status: 'failed', errorCode: 'AI_RATE_LIMITED', errorMessage: 'usage limit' });
     expect(entries[1]?.usage).toMatchObject({ inputTokens: 10, costUsd: 0.01 });
     expect(entries.every((item) => /^[0-9a-f-]{36}$/.test(item.id))).toBe(true);
   });

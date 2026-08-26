@@ -6,6 +6,8 @@ export type ProjectSyncAction = 'pull' | 'push';
 export interface RepositorySyncCounts {
   ahead: number;
   behind: number;
+  branch?: string | null;
+  detached?: boolean;
 }
 
 /** Sileo otherwise reuses `sileo-default`, replacing concurrent operations. */

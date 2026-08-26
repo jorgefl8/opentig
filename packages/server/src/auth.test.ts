@@ -88,6 +88,75 @@ describe('persistent owner authentication', () => {
     await afterRevoke.close();
   });
 
+  it('migrates existing unlabelled sessions without losing authentication', async () => {
+    const directory = await authDirectory();
+    const first = await OpenTigSessionAuth.open({
+      source: new OneTimeBootstrapAuthSource({ desktopSecret: 'desktop-secret' }),
+      dataDirectory: directory,
+    });
+    const pairing = first.createPairingToken();
+    const cookie = await first.exchangePairingToken(pairing.token);
+    await first.close();
+
+    const sessionsPath = path.join(directory, 'sessions.json');
+    const current = JSON.parse(await readFile(sessionsPath, 'utf8')) as { sessions: Array<Record<string, unknown>> };
+    await writeFile(sessionsPath, JSON.stringify({
+      version: 1,
+      sessions: current.sessions.map(({ id, digest, createdAt }) => ({ id, digest, createdAt })),
+    }));
+
+    const migrated = await OpenTigSessionAuth.open({
+      source: new OneTimeBootstrapAuthSource({ desktopSecret: 'next-secret' }),
+      dataDirectory: directory,
+    });
+    expect(migrated.authenticate({ cookie: cookieValue(cookie!) })).toBeTruthy();
+    expect(migrated.sessions()).toEqual([expect.objectContaining({
+      kind: 'legacy',
+      clientName: 'Legacy browser session',
+      deviceType: 'unknown',
+      lastConnectedAt: null,
+    })]);
+    expect(JSON.parse(await readFile(sessionsPath, 'utf8'))).toEqual(expect.objectContaining({ version: 3 }));
+    await migrated.close();
+  });
+
+  it('keeps one desktop session and allows browser names and activity to be updated', async () => {
+    const directory = await authDirectory();
+    const first = await OpenTigSessionAuth.open({
+      source: new OneTimeBootstrapAuthSource({ desktopSecret: 'first-secret' }),
+      dataDirectory: directory,
+    });
+    await first.exchangeDesktopSecret('first-secret');
+    await first.close();
+
+    const auth = await OpenTigSessionAuth.open({
+      source: new OneTimeBootstrapAuthSource({ desktopSecret: 'second-secret' }),
+      dataDirectory: directory,
+    });
+    await auth.exchangeDesktopSecret('second-secret');
+    const pairing = auth.createPairingToken();
+    const cookie = await auth.exchangePairingToken(pairing.token, {
+      clientName: 'Work laptop',
+      deviceType: 'desktop',
+      os: 'Windows',
+      browser: 'Chrome',
+      remoteAddress: '203.0.113.42',
+      viaProxy: true,
+    });
+    const browserId = auth.authenticate({ cookie: cookieValue(cookie!) })!;
+    await expect(auth.renameBrowserSession(browserId, 'Travel laptop')).resolves.toBe(true);
+    await expect(auth.recordConnection(browserId)).resolves.toBe(true);
+    expect(auth.sessions().filter((session) => session.kind === 'desktop')).toHaveLength(1);
+    expect(auth.sessions()).toContainEqual(expect.objectContaining({
+      id: browserId,
+      clientName: 'Travel laptop',
+      browser: 'Chrome',
+      viaProxy: true,
+      lastConnectedAt: expect.any(String),
+    }));
+    await auth.close();
+  });
+
   it('revokes every persisted owner session without affecting pairing rotation', async () => {
     const directory = await authDirectory();
     const auth = await OpenTigSessionAuth.open({

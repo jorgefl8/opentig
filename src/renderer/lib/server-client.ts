@@ -1,5 +1,6 @@
 import type { ImageFileResult } from '@shared/contracts';
 import { IPC } from '@shared/contracts';
+import { AI_CLIENT_TIMEOUT_MS } from '@shared/ai-timeouts';
 import type { OpenTigRuntimeEvent } from '@shared/runtime-events';
 import type { OpenTigServerApi } from '@shared/server-api';
 import { OPEN_TIG_PROTOCOL_VERSION } from '@shared/server-protocol';
@@ -60,6 +61,7 @@ export function createOpenTigServerClient(options: ServerClientOptions = {}): Op
       getDirectoryEntries: (id, path) => invoke(IPC.repositoryDirectoryEntries, id, path),
       readFile: (id, path, allowLarge) => invoke(IPC.repositoryReadFile, id, path, allowLarge),
       readImage: (id, path) => readImage(fetchRequest, httpOrigin, id, path),
+      getFavicon: (id) => invoke(IPC.repositoryGetFavicon, id),
       writeFile: (id, path, content, expectedContent) => invoke(IPC.repositoryWriteFile, id, path, content, expectedContent),
       getAbsolutePath: (id, path) => invoke(IPC.repositoryAbsolutePath, id, path),
       copyEntries: (id, paths) => invoke(IPC.repositoryCopyEntries, id, paths),
@@ -114,7 +116,7 @@ export function createOpenTigServerClient(options: ServerClientOptions = {}): Op
     },
     ai: {
       statuses: (forceRefresh) => invoke(IPC.aiStatuses, forceRefresh),
-      generateCommitMessage: (input) => invoke(IPC.aiGenerateCommitMessage, input),
+      generateCommitMessage: (input) => transport.request(IPC.aiGenerateCommitMessage, [input], { timeoutMs: AI_CLIENT_TIMEOUT_MS }),
       cancelGeneration: (requestId) => invoke(IPC.aiCancelGeneration, requestId),
       log: () => invoke(IPC.aiLog),
       clearLog: () => invoke(IPC.aiClearLog),
@@ -128,7 +130,7 @@ export function createOpenTigServerClient(options: ServerClientOptions = {}): Op
       getPullRequestDiff: (repositoryId, number) => invoke(IPC.githubPrDiff, repositoryId, number),
       getPullRequestCommitDiff: (repositoryId, oid) => invoke(IPC.githubPrCommitDiff, repositoryId, oid),
       createPullRequest: (input) => invoke(IPC.githubPrCreate, input),
-      generateDraft: (input) => invoke(IPC.githubPrDraft, input),
+      generateDraft: (input) => transport.request(IPC.githubPrDraft, [input], { timeoutMs: AI_CLIENT_TIMEOUT_MS }),
       cancelDraft: (requestId) => invoke(IPC.githubPrDraftCancel, requestId),
     },
     events: {

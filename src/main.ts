@@ -88,7 +88,7 @@ async function createWindow(): Promise<void> {
     minWidth: 900,
     minHeight: 600,
     show: false,
-    backgroundColor: '#171614',
+    backgroundColor: '#1c1c1c',
     title: 'OpenTig — Connecting…',
     icon: getAppIconPath(),
     autoHideMenuBar: true,
@@ -113,7 +113,6 @@ async function createWindow(): Promise<void> {
     getStatus: getWebAccessStatus,
     setEnabled: setWebAccessEnabled,
     createPairingLink,
-    revokeAllSessions,
   });
 
   const openExternal = (value: string) => {
@@ -213,7 +212,7 @@ function setWebAccessEnabled(enabled: boolean): Promise<OpenTigWebAccessStatus> 
     try {
       await manager.restart(nextHost);
       try {
-        await settings.save(enabled);
+        await settings.save({ webAccessEnabled: enabled });
       } catch (error) {
         await manager.restart(previousHost);
         throw error;
@@ -244,6 +243,7 @@ async function getWebAccessStatus(): Promise<OpenTigWebAccessStatus> {
     actualPort,
     localEndpoint: actualPort === null ? null : `http://127.0.0.1:${actualPort}`,
     networkEndpoints: actualPort === null ? [] : networkEndpoints(actualPort),
+    pairingEndpoints: actualPort === null ? [] : pairingEndpoints(actualPort),
     connectedSessionCount,
     restartError: webAccessRestartError,
   };
@@ -252,18 +252,14 @@ async function getWebAccessStatus(): Promise<OpenTigWebAccessStatus> {
 async function createPairingLink(endpoint: string): Promise<OpenTigPairingLink> {
   const manager = serverManager;
   if (!manager?.current) throw new Error('OpenTig server is not ready.');
-  if (!webAccessEnabled) throw new Error('Enable network access before creating a pairing link.');
-  if (!networkEndpoints(manager.current.port).includes(endpoint)) throw new Error('Select an active OpenTig network endpoint.');
+  if (!pairingEndpoints(manager.current.port).includes(endpoint)) throw new Error('Select an active OpenTig pairing endpoint.');
   return manager.createPairingLink(endpoint);
 }
 
-async function revokeAllSessions(): Promise<{ revokedCount: number }> {
-  const manager = serverManager;
-  const current = manager?.current;
-  if (!manager || !current) throw new Error('OpenTig server is not ready.');
-  const result = await manager.revokeAllSessions();
-  await installDesktopSessionCookie(current.origin, result.desktopCookie);
-  return { revokedCount: result.revokedCount };
+function pairingEndpoints(port: number): string[] {
+  const endpoints = [`http://127.0.0.1:${port}`];
+  if (webAccessEnabled) endpoints.push(...networkEndpoints(port));
+  return [...new Set(endpoints)];
 }
 
 function networkEndpoints(port: number): string[] {
@@ -284,8 +280,8 @@ async function installDesktopSession(server: ServerProcessAddress, desktopSecret
     headers: currentCookie ? { Cookie: `${OPEN_TIG_SESSION_COOKIE}=${currentCookie}` } : {},
   });
   if (descriptor.ok) {
-    const state = await descriptor.json() as { authenticated?: unknown };
-    if (state.authenticated === true) return;
+    const state = await descriptor.json() as { authenticated?: unknown; currentSessionKind?: unknown };
+    if (state.authenticated === true && state.currentSessionKind === 'desktop') return;
   }
   const response = await fetch(`${server.origin}/api/auth/desktop`, {
     method: 'POST',
@@ -318,7 +314,8 @@ function safeOrigin(value: string): string | null {
 }
 
 function startupPageUrl(heading: string, detail: string): string {
-  const html = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><style>html,body{height:100%;margin:0;background:#171614;color:#f4f1ed;font-family:system-ui,sans-serif}body{display:grid;place-items:center}.state{text-align:center}.mark{width:28px;height:28px;margin:0 auto 18px;border:3px solid #5b5752;border-top-color:#e87847;border-radius:50%;animation:spin .8s linear infinite}h1{font-size:18px;margin:0 0 8px}p{font-size:13px;color:#aaa39c;margin:0}@keyframes spin{to{transform:rotate(360deg)}}</style></head><body><main class="state"><div class="mark" aria-hidden="true"></div><h1>${heading}</h1><p>${detail}</p></main></body></html>`;
+  const logo = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 117.9 128" aria-hidden="true"><path fill="#FAFAFA" d="m113.9 42.6c-3.7-11.3-10.8-21.2-20.1-28.6-7.4-5.7-16.1-10-25.4-11.5-6.5-0.9-9.4-1.1-15.9-0.3-7.4 0.9-14.3 3.4-20.7 7-15.4 9.1-27.6 26.2-29.8 44.5-0.3 2.9-0.4 5.8-0.2 8.7 0.7 15.5 9.7 33.2 27.2 44.1l3.9 2.2c1.5 1.3 2.9 1.8 5.1 1.3 3.5-0.9 5.1-6.1 0.1-8.6-7.3-3.5-13.7-8.7-18.1-14.6-5-7-9-15.8-9.3-26.9-0.2-10 3.5-21.4 11.6-31.3 4.5-5.2 10.5-9.8 16.4-12.7 10.1-4.9 20.5-6.6 31.2-3.8 13.2 3.5 25.6 13.1 32.3 26.5 2.3 4.9 4.2 10.7 4.9 17.4 0.9 9.9-1.4 19.2-6.9 27.4-4.3 6.5-9.2 11-16.1 15.8l-4.1 2.1c-4.4 2.4-3.2 9.4 2.8 9 1.2 0 2.5-0.8 3.6-1.4 3.9-2 7.5-4.3 10.8-7 9.4-8 17.6-20.3 19.1-36.8 0.6-7.4-0.4-15.6-2.4-22.5z"/><path fill="#2266ea" d="m88.1 42.8c-3.6 0.3-7.4 2.9-9 7.3-5.5 0.8-14.1 3.6-20.3 12-4.3-6.3-11.6-10.7-19.7-12-1.1-3.8-5-7.5-10.2-7.2-4.1 0.4-8.7 3.8-8.7 9.7 0.2 6 5.7 10.3 11.1 9.3 2.8-0.3 5.2-2 6.6-4.3 6.7 1 14.9 4.7 17.3 14.1v36.7c-3.2 1.5-5.5 4.7-5.5 8.4 0 4.8 3.7 9.3 9.4 9.3s9.5-4.5 9.4-9.1c0.1-3.6-2.3-7.3-5.8-8.7v-36.4c1-5.6 5.9-10.9 13.3-13.3l3.9-1c1.8 2.9 4.9 4.6 8.6 4.5 4.6-0.2 9.3-3.6 9.3-9.5 0-5.6-4.9-10-9.7-9.8z"/></svg>';
+  const html = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><style>html,body{height:100%;margin:0;background:#1c1c1c;color:#a3a3a3;font-family:system-ui,sans-serif}body{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px}.logo{width:48px;height:52px}.logo svg{width:100%;height:100%}.copy{display:grid;gap:8px;text-align:center}h1{font-size:18px;font-weight:650;letter-spacing:-.02em;margin:0;color:#f4f4f4}p{font-size:13px;margin:0}.mark{width:28px;height:28px;border:3px solid #3a3a3a;border-top-color:#2266ea;border-radius:50%;animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}</style></head><body><div class="logo">${logo}</div><div class="copy"><h1>${heading}</h1><p>${detail}</p></div><div class="mark" aria-hidden="true"></div></body></html>`;
   return `data:text/html;charset=UTF-8,${encodeURIComponent(html)}`;
 }
 
@@ -343,7 +340,8 @@ app.whenReady().then(async () => {
     path.join(userData, 'settings.json'),
   );
   desktopServerSettings = new DesktopServerSettings(path.join(userData, 'desktop-server.json'));
-  webAccessEnabled = await desktopServerSettings.load();
+  const serverSettings = await desktopServerSettings.load();
+  webAccessEnabled = serverSettings.webAccessEnabled;
   serverManager = createServerManager();
 
   const clipboardPermissions = new Set(['clipboard-read', 'clipboard-sanitized-write']);

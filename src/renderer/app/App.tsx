@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -8,7 +8,7 @@ import {
   IconNetwork, IconRefresh, IconRestore, IconSearch, IconSettings, IconSparkles, IconSun, IconTrash, IconX,
 } from '@tabler/icons-react';
 import { Toaster, sileo } from 'sileo';
-import type { AiHarnessId, AiHarnessStatus, BootstrapData, ChangesLayoutPreference, CommitSplitProposal, FileHistoryPathChange, FileHistoryState, GhCliStatus, GitHubRepositoryInfo, OpenTigCapabilities, Preferences, PullRequestState, PullRequestSummary, PullResult, PushResult, RecentRepository, RepositoryInfo, RepositoryOrganization, RepositoryProject, ThemePreference, UndoLatestCommitResult } from '../../shared/contracts';
+import type { AiHarnessId, AiHarnessStatus, BootstrapData, ChangesLayoutPreference, CommitSplitProposal, FileHistoryPathChange, FileHistoryState, GhCliStatus, GitHubRepositoryInfo, MonoFontPreference, OpenTigCapabilities, Preferences, PullRequestState, PullRequestSummary, PullResult, PushResult, RecentRepository, RepositoryInfo, RepositoryOrganization, RepositoryProject, ThemePreference, UiFontPreference, UndoLatestCommitResult } from '../../shared/contracts';
 import { matchesCombo, resolveShortcuts, type ShortcutMap } from '../../shared/shortcuts';
 import { ShortcutsProvider } from './ShortcutsContext';
 import { useShortcuts } from './useShortcuts';
@@ -25,6 +25,8 @@ import { Kbd } from '@/components/ui/kbd';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Combobox, ComboboxContent, ComboboxGroup, ComboboxGroupLabel, ComboboxInput, ComboboxItem, ComboboxList, ComboboxTrigger } from '@/components/ui/combobox';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { OpenTigMark } from '@/components/OpenTigMark';
+import { SplashScreen } from '@/components/SplashScreen';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { FilesView } from '@/features/files/FilesView';
@@ -46,11 +48,14 @@ import { CreatePullRequestDialog } from '@/features/pulls/CreatePullRequestDialo
 import { PullRequestsView } from '@/features/pulls/PullRequestsView';
 import { LocalRefsDialog } from '@/features/refs/LocalRefsDialog';
 import type { LocalRefsTab } from '@/features/refs/local-refs-model';
+import { RepositoryFaviconImage } from '@/features/repositories/RepositoryFavicon';
+import { useRepositoryFavicons } from '@/features/repositories/useRepositoryFavicons';
 import { RepositoryProjectsDialog } from '@/features/repositories/RepositoryProjectsDialog';
 import { buildCommitGraph, type CommitGraphRow } from '@/features/history/commit-graph';
 import { AiLogDialog } from '@/features/ai/AiLogDialog';
+import { AiProviderIcon } from '@/features/ai/AiProviderIcon';
 import { SearchView } from '@/features/search/SearchView';
-import { buildRepositoryPickerModel, getRepositoryPickerDisplayOrder, groupRecentRepositories, shortenRepositoryPath, touchRecentRepositories, type RepositoryOption } from '@/features/repositories/repository-select-model';
+import { buildRepositoryPickerModel, formatRepositoryCheckout, getRepositoryPickerDisplayOrder, groupRecentRepositories, touchRecentRepositories, type RepositoryOption } from '@/features/repositories/repository-select-model';
 import type { ViewerSelection } from '@/features/viewer/Viewer';
 import { getVsCodeFileIconUrl, getVsCodeFolderIconUrl } from '@/lib/vscode-icons';
 import { refreshOperationsForScope } from './refresh-policy';
@@ -60,7 +65,6 @@ import { opentig } from '@/lib/opentig-api';
 import { shouldActivateChangeRow } from '@/features/changes/row-activation';
 import { fileCutTransferId, writeClipboardText, writeFileTransfer } from '@/lib/browser-capabilities';
 import { projectPullBlockedCopy, projectPullSuccessCopy, projectPushBlockedCopy, projectPushSuccessCopy, pullSuccessCopy, repositorySyncLoadingToast, visibleRepositorySyncActions, type ProjectSyncAction, type RepositorySyncCounts } from '@/features/repositories/project-sync';
-import opentigLogo from '../../../assets/opentig.svg';
 import {
   DEFAULT_REMOTE_FETCH_INTERVAL_SECONDS,
   formatRemoteFetchInterval,
@@ -116,7 +120,7 @@ export default function App() {
   const [commitPlanCollapsed, setCommitPlanCollapsed] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [repositorySyncOperations, setRepositorySyncOperations] = useState<ReadonlyMap<string, ProjectSyncAction>>(() => new Map());
-  const [error, setError] = useState<string | null>(null);
+
   const [refreshVersion, setRefreshVersion] = useState(0);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<SettingsSection>('general');
@@ -206,6 +210,8 @@ export default function App() {
   const diffView = bootstrap?.preferences.diffView ?? 'unified';
   const wrapLines = bootstrap?.preferences.wrapLines ?? false;
   const uiZoom = bootstrap?.preferences.uiZoom ?? 100;
+  const uiFont = bootstrap?.preferences.uiFont ?? 'geist';
+  const monoFont = bootstrap?.preferences.monoFont ?? 'inconsolata';
   const shortcuts = useMemo(() => resolveShortcuts(bootstrap?.preferences.shortcutOverrides), [bootstrap?.preferences.shortcutOverrides]);
 
   useEffect(() => {
@@ -216,14 +222,14 @@ export default function App() {
       for (const state of data.filesTreeStates) filesTreeStates.set(state.repositoryId, [...state.expandedPaths]);
       setBootstrap(data);
       setRepository(data.activeRepository);
-    }).catch((reason) => setError(messageOf(reason)));
+    }).catch((reason) => reportError('Could not start OpenTig', reason));
     opentig.app.capabilities().then((available) => {
       if (active) setCapabilities(available);
     }).catch(() => undefined);
     return () => { active = false; };
   }, [filesTreeStates]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const overlay = (navigator as Navigator & {
       windowControlsOverlay?: {
         visible: boolean;
@@ -238,6 +244,7 @@ export default function App() {
         rect,
         viewportWidth: window.innerWidth,
         mac: navigator.userAgent.includes('Mac OS X'),
+        desktop: Boolean(window.opentigDesktop),
       });
       document.documentElement.style.setProperty('--window-controls-inset', `${inset.right}px`);
       document.documentElement.style.setProperty('--window-controls-inset-left', `${inset.left}px`);
@@ -270,6 +277,11 @@ export default function App() {
   useEffect(() => {
     opentig.app.setZoomFactor(uiZoom / 100);
   }, [uiZoom]);
+
+  useLayoutEffect(() => {
+    document.documentElement.dataset.uiFont = uiFont;
+    document.documentElement.dataset.monoFont = monoFont;
+  }, [monoFont, uiFont]);
 
   useEffect(() => {
     if (!bootstrap?.performanceAutomation) return;
@@ -475,7 +487,7 @@ export default function App() {
       });
       if (repositoryRef.current?.id === repositoryId) applyFilesSnapshot(nextFiles);
     } catch (reason) {
-      if (repositoryRef.current?.id === repositoryId) setError(messageOf(reason));
+      if (repositoryRef.current?.id === repositoryId) reportError('Could not refresh files', reason);
     }
   }, [applyFilesSnapshot, appQueryClient, repository]);
 
@@ -512,7 +524,6 @@ export default function App() {
     const repositoryId = repository.id;
     const resources = queryResourcesForScope(scope, view);
     if (!background) setBusy('refresh');
-    setError(null);
     try {
       await Promise.all(resources.map((resource) => appQueryClient.invalidateQueries({
         queryKey: resource === 'status' ? queryKeys.status(repositoryId)
@@ -544,7 +555,7 @@ export default function App() {
       void nextHistory;
       setRefreshVersion((version) => version + 1);
     } catch (reason) {
-      if (repositoryRef.current?.id === repositoryId) setError(messageOf(reason));
+      if (repositoryRef.current?.id === repositoryId) reportError('Could not refresh', reason);
     } finally {
       if (!background && repositoryRef.current?.id === repositoryId) setBusy(null);
     }
@@ -729,7 +740,7 @@ export default function App() {
       const selectedPath = await opentig.repository.select();
       if (!selectedPath) return;
       recordOpenedRepository(await opentig.repository.openPath(selectedPath));
-    } catch (reason) { setError(messageOf(reason)); }
+    } catch (reason) { reportError('Could not open repository', reason); }
   }, [recordOpenedRepository]);
 
   useEffect(() => opentig.events.onActiveRepositoryChanged((selected) => {
@@ -754,14 +765,14 @@ export default function App() {
     try {
       const preferences = await opentig.app.setPreferences(partial);
       setBootstrap((current) => current ? { ...current, preferences } : current);
-    } catch (reason) { setError(messageOf(reason)); }
+    } catch (reason) { reportError('Could not save settings', reason); }
   };
 
   const persistFilesTreeExpandedPaths = useCallback((paths: string[]) => {
     if (!repository) return;
     filesTreeStates.set(repository.id, [...paths]);
     void opentig.app.setFilesTreeExpandedPaths(repository.id, paths)
-      .catch((reason) => setError(messageOf(reason)));
+      .catch((reason) => reportError('Could not save folder state', reason));
   }, [filesTreeStates, repository]);
 
   const runIndexOperation = async (mode: 'stage' | 'unstage', paths: string[]) => {
@@ -769,7 +780,6 @@ export default function App() {
     const previous = status;
     setStatus(optimisticStatus(status, paths, mode));
     setBusy(mode);
-    setError(null);
     setCommitProposal(null);
     setPreparedCommitIndex(null);
     try {
@@ -778,14 +788,13 @@ export default function App() {
       await refresh({ background: true });
     } catch (reason) {
       setStatus(previous);
-      setError(messageOf(reason));
+      reportError(mode === 'stage' ? 'Could not stage changes' : 'Could not unstage changes', reason);
     } finally { setBusy(null); }
   };
 
   const discardChanges = (paths: string[]) => {
     if (!repository || busy || status?.readOnly || paths.length === 0) return;
     setBusy('discard');
-    setError(null);
     setCommitProposal(null);
     setPreparedCommitIndex(null);
     setDestructiveAction(createDiscardAction(repository.id, paths, status?.changes ?? []));
@@ -1171,7 +1180,7 @@ export default function App() {
       const message = messageOf(reason);
       if (action.kind === 'delete') {
         sileo.error({ title: 'Could not delete item', description: message, duration: 10_000 });
-      } else setError(message);
+      } else sileo.error({ title: 'Could not discard changes', description: message, duration: 10_000 });
     } finally {
       destructiveActionInFlightRef.current = false;
       setBusy(null);
@@ -1249,13 +1258,13 @@ export default function App() {
       if (mode === 'stage') await opentig.index.stageAll(repository.id);
       else await opentig.index.unstageAll(repository.id);
       await refresh({ background: true });
-    } catch (reason) { setStatus(previous); setError(messageOf(reason)); }
+    } catch (reason) { setStatus(previous); reportError(mode === 'stage' ? 'Could not stage changes' : 'Could not unstage changes', reason); }
     finally { setBusy(null); }
   };
 
   const createCommit = async (options?: { push?: boolean }) => {
     if (!repository || !status?.stagedCount || !commitMessage.trim()) return;
-    setBusy('commit'); setError(null);
+    setBusy('commit');
     let committed = false;
     try {
       const result = await opentig.commits.create(repository.id, commitMessage);
@@ -1281,7 +1290,7 @@ export default function App() {
       setViewerSelection({ type: 'commit', oid: result.oid, subject });
       await refresh({ background: true });
       committed = true;
-    } catch (reason) { setError(messageOf(reason)); }
+    } catch (reason) { reportError('Could not create the commit', reason); }
     finally { setBusy(null); }
     // The refreshed status has not reached this closure yet, so push without
     // re-checking how many commits are ahead.
@@ -1364,7 +1373,6 @@ export default function App() {
       return;
     }
     setBusy('prepare-commit-group');
-    setError(null);
     try {
       await opentig.index.prepareCommitGroup({
         repositoryId: repository.id,
@@ -1415,14 +1423,14 @@ export default function App() {
         recordOpenedRepository(await opentig.repository.relocateRecent(id, selectedPath), id);
       }
     }
-    catch (reason) { setError(messageOf(reason)); }
+    catch (reason) { reportError('Could not open repository', reason); }
   };
 
   const switchBranch = async (name: string | null) => {
     if (!repository || !name || name === status?.branch) return;
     setBusy('branch');
     try { await opentig.refs.switchBranch(repository.id, name); await refresh({ background: true }); }
-    catch (reason) { setError(messageOf(reason)); }
+    catch (reason) { reportError('Could not switch branch', reason); }
     finally { setBusy(null); }
   };
 
@@ -1430,7 +1438,7 @@ export default function App() {
     if (!repository || !targetPath || targetPath === repository.path) return;
     setBusy('worktree');
     try { recordOpenedRepository(await opentig.refs.selectWorktree(repository.id, targetPath)); }
-    catch (reason) { setError(messageOf(reason)); }
+    catch (reason) { reportError('Could not switch worktree', reason); }
     finally { setBusy(null); }
   };
 
@@ -1451,7 +1459,7 @@ export default function App() {
     setBusy('history');
     try {
       await historyQuery.fetchNextPage();
-    } catch (reason) { setError(messageOf(reason)); }
+    } catch (reason) { reportError('Could not load more history', reason); }
     finally { setBusy(null); }
   };
 
@@ -1502,7 +1510,6 @@ export default function App() {
   const resolveConflictFile = async (path: string, content: string): Promise<boolean> => {
     if (!repository || busy) return false;
     setBusy('resolve-conflict');
-    setError(null);
     try {
       await opentig.index.resolveConflict(repository.id, path, content);
       sileo.success({ title: 'Conflict marked as resolved', description: path });
@@ -1511,7 +1518,6 @@ export default function App() {
       return true;
     } catch (reason) {
       const message = messageOf(reason);
-      setError(message);
       sileo.error({ title: 'Could not resolve conflict', description: message, duration: 10_000 });
       return false;
     } finally {
@@ -1526,7 +1532,6 @@ export default function App() {
       return true;
     } catch (reason) {
       const message = messageOf(reason);
-      setError(message);
       sileo.error({ title: 'Could not apply selection', description: message, duration: 10_000 });
       return false;
     }
@@ -1537,7 +1542,6 @@ export default function App() {
     const repositoryId = repository.id;
     const pendingBehind = status?.behind ?? 0;
     setBusy('pull');
-    setError(null);
     try {
       await sileo.promise(async () => {
         const result = await opentig.refs.pull(repositoryId);
@@ -1601,7 +1605,6 @@ export default function App() {
             };
           }
           const message = messageOf(err);
-          setError(message);
           return { title: 'Could not pull changes', description: message, duration: 10_000 };
         },
       });
@@ -1621,7 +1624,6 @@ export default function App() {
     if (!repository) return;
     const repositoryId = repository.id;
     setBusy('push');
-    setError(null);
     try {
       await sileo.promise(async () => {
         const result = await opentig.refs.push(repositoryId);
@@ -1661,7 +1663,6 @@ export default function App() {
             return { title: 'Could not push commits', description: result.message, duration: 10_000 };
           }
           const message = messageOf(err);
-          setError(message);
           return { title: 'Could not push commits', description: message, duration: 10_000 };
         },
       });
@@ -1715,8 +1716,22 @@ export default function App() {
     }
   };
 
-  if (!bootstrap) return <div className="splash"><IconLoader4 className="spinner" /><span>Loading OpenTig…</span></div>;
-  if (!repository) return <Welcome recent={bootstrap.recentRepositories} onOpen={openRepository} onRecent={(id) => void selectRecent(id)} error={error} />;
+  if (!bootstrap) {
+    return (
+      <TooltipProvider>
+        <Toaster theme="light" position="bottom-right" />
+        <SplashScreen heading="Loading OpenTig…" detail="Restoring your workspace." />
+      </TooltipProvider>
+    );
+  }
+  if (!repository) {
+    return (
+      <TooltipProvider>
+        <Toaster theme="light" position="bottom-right" />
+        <Welcome recent={bootstrap.recentRepositories} onOpen={openRepository} onRecent={(id) => void selectRecent(id)} />
+      </TooltipProvider>
+    );
+  }
 
   const pendingDestructiveCopy = destructiveAction ? destructiveActionCopy(destructiveAction) : null;
   const conflicts = status?.changes.filter((change) => change.conflict) ?? [];
@@ -1800,6 +1815,7 @@ export default function App() {
         branches={branches}
         status={status}
         preferences={bootstrap.preferences}
+        aiProviders={capabilities?.aiProviders}
         pushBusy={busy === 'push'}
         onPush={() => void pushUpdates()}
         onCreated={(prNumber) => {
@@ -1847,7 +1863,6 @@ export default function App() {
             <Button variant="ghost" size="xs" onClick={() => showConflicts(conflictFiles)}>View conflicts</Button>
           </div>
         )}
-        {error && <div className="error-banner"><span>{error}</span><button onClick={() => setError(null)} aria-label="Close">×</button></div>}
         <main className="workspace">
           <aside className="sidebar" style={{ width: bootstrap.preferences.sidebarWidth }}>
             <nav className="sidebar-tabs" data-shortcuts={ctrlHeld ? 'visible' : undefined} aria-label="Repository views">
@@ -2014,7 +2029,13 @@ export default function App() {
           stagedCount={status?.stagedCount ?? 0}
           message={commitMessage}
           generating={Boolean(generating)}
-          harness={harnessLabel(bootstrap.preferences.commitMessageHarness)}
+          harness={bootstrap.preferences.commitMessageHarness}
+          harnessLabel={harnessLabel(bootstrap.preferences.commitMessageHarness)}
+          modelLabel={aiModelLabel(
+            capabilities?.aiProviders,
+            bootstrap.preferences.commitMessageHarness,
+            bootstrap.preferences.commitMessageModels[bootstrap.preferences.commitMessageHarness] ?? 'default',
+          )}
           busy={busy}
           readOnly={Boolean(status?.readOnly)}
           canPush={Boolean(status?.upstream)}
@@ -2086,6 +2107,11 @@ function Toolbar(props: ToolbarProps) {
   );
   const currentRepositoryKey = normalizeRepositoryKey(props.repository.commonDir);
   const currentRepositorySyncBusy = props.repositorySyncOperations.has(props.repository.id);
+  const faviconSources = useMemo(
+    () => [{ key: currentRepositoryKey, recent: { id: props.repository.id } }, ...picker.repositories],
+    [currentRepositoryKey, picker.repositories, props.repository.id],
+  );
+  const favicons = useRepositoryFavicons(faviconSources);
 
   const refreshRepositorySyncCounts = useCallback(async (repositories: RepositoryOption[]) => {
     await Promise.all(repositories.map(async (item) => {
@@ -2095,13 +2121,16 @@ function Toolbar(props: ToolbarProps) {
       try {
         const fetched = await opentig.refs.fetch(repositoryId);
         if (repositoryStatusVersions.current.get(repositoryId) !== version) return;
-        const counts = fetched.status === 'success'
-          ? { ahead: fetched.ahead, behind: fetched.behind }
-          : await opentig.repository.getStatus(repositoryId, false).then((nextStatus) => ({ ahead: nextStatus.ahead, behind: nextStatus.behind }));
+        const status = await opentig.repository.getStatus(repositoryId, false);
         if (repositoryStatusVersions.current.get(repositoryId) !== version) return;
         setRepositorySyncCounts((current) => {
           const next = new Map(current);
-          next.set(repositoryId, counts);
+          next.set(repositoryId, {
+            ahead: fetched.status === 'success' ? fetched.ahead : status.ahead,
+            behind: fetched.status === 'success' ? fetched.behind : status.behind,
+            branch: status.branch,
+            detached: status.detached,
+          });
           return next;
         });
       } catch {
@@ -2122,7 +2151,12 @@ function Toolbar(props: ToolbarProps) {
     repositoryStatusVersions.current.set(repositoryId, (repositoryStatusVersions.current.get(repositoryId) ?? 0) + 1);
     setRepositorySyncCounts((current) => {
       const next = new Map(current);
-      next.set(repositoryId, { ahead: currentStatus.ahead, behind: currentStatus.behind });
+      next.set(repositoryId, {
+        ahead: currentStatus.ahead,
+        behind: currentStatus.behind,
+        branch: currentStatus.branch,
+        detached: currentStatus.detached,
+      });
       return next;
     });
   }, [props.repository.id, props.status]);
@@ -2207,19 +2241,30 @@ function Toolbar(props: ToolbarProps) {
     };
   }, [clearRepositoryNumberShortcut, projectsOpen, props.settingsOpen, refsOpen, repoSwitcherKey, repositorySelectOpen, selectRepositoryAt, visibleRepositories]);
 
-  // The row already shows the tail of the path, so no hover tooltip repeats it.
-  const repositoryItem = (group: RepositoryOption, projectName: string | null = null) => (
+  const repositoryItem = (group: RepositoryOption, projectName: string | null = null) => {
+    const counts = repositorySyncCounts.get(group.recent.id);
+    const checkout = counts && (counts.branch !== undefined || counts.detached !== undefined)
+      ? { branch: counts.branch ?? null, detached: counts.detached === true }
+      : group.recent.id === props.repository.id && props.status
+        ? { branch: props.status.branch, detached: props.status.detached }
+        : undefined;
+    const checkoutLabel = formatRepositoryCheckout(group, checkout);
+    return (
     <SelectItem key={group.key} value={group.key} className="repo-select-item">
-      <span className="repo-select-item-copy">
-        <strong>{group.name}</strong>
-        <small>{shortenRepositoryPath(group.rootPath)}</small>
-      </span>
+      <RepositoryFaviconImage src={favicons.get(group.key)} />
+      <Tooltip>
+        <TooltipTrigger render={<span className="repo-select-item-copy" />}>
+          <strong>{group.name}</strong>
+          {checkoutLabel ? <small>{checkoutLabel}</small> : null}
+        </TooltipTrigger>
+        <TooltipContent>{group.recent.path}</TooltipContent>
+      </Tooltip>
       <span className="repository-sync-actions">
-        {visibleRepositorySyncActions(repositorySyncCounts.get(group.recent.id), props.repositorySyncOperations.get(group.recent.id)).map((action) => {
+        {visibleRepositorySyncActions(counts, props.repositorySyncOperations.get(group.recent.id)).map((action) => {
           const running = props.repositorySyncOperations.get(group.recent.id);
           const disabled = Boolean(running) || (Boolean(props.busy) && group.recent.id === props.repository.id);
           const label = action === 'pull' ? 'Pull' : 'Push';
-          const count = action === 'pull' ? repositorySyncCounts.get(group.recent.id)?.behind ?? 0 : repositorySyncCounts.get(group.recent.id)?.ahead ?? 0;
+          const count = action === 'pull' ? counts?.behind ?? 0 : counts?.ahead ?? 0;
           return (
             <Tooltip key={action}>
               <TooltipTrigger render={(
@@ -2241,18 +2286,19 @@ function Toolbar(props: ToolbarProps) {
                 {running === action ? <IconLoader4 data-icon="inline-start" className="animate-spin" /> : action === 'pull' ? <IconArrowDown data-icon="inline-start" /> : <IconArrowUp data-icon="inline-start" />}
                 <span>{count}</span>
               </TooltipTrigger>
-              <TooltipContent>{label} {count} {count === 1 ? 'commit' : 'commits'} · {group.name}</TooltipContent>
+              <TooltipContent>{label} {count} {count === 1 ? 'commit' : 'commits'} · {checkoutLabel}</TooltipContent>
             </Tooltip>
           );
         })}
       </span>
       <Kbd className="repo-select-index">{repositoryIndex.get(group.key)}</Kbd>
     </SelectItem>
-  );
+    );
+  };
   return (
     <header className="toolbar">
       <div className="toolbar-brand" aria-label="OpenTig">
-        <img src={opentigLogo} alt="" aria-hidden="true" />
+        <OpenTigMark />
         <span>OpenTig</span>
       </div>
       <Select open={repositorySelectOpen} onOpenChange={(open) => {
@@ -2268,6 +2314,7 @@ function Toolbar(props: ToolbarProps) {
           aria-label="Select project or repository"
           aria-keyshortcuts="Q"
         >
+          <RepositoryFaviconImage src={favicons.get(currentRepositoryKey)} />
           <SelectValue>{props.repository.repositoryName}</SelectValue>
           <Kbd className="repo-select-shortcut" aria-hidden="true">Q</Kbd>
         </SelectTrigger>
@@ -2492,14 +2539,26 @@ function BranchMoreRow({ count, onClick }: { count: number; onClick(): void }) {
 const SETTINGS_SECTIONS = [
   { id: 'general', label: 'General', icon: IconSettings },
   { id: 'shortcuts', label: 'Shortcuts', icon: IconKeyboard },
-  { id: 'ai', label: 'AI commit messages', icon: IconSparkles },
-  { id: 'webAccess', label: 'Network access', icon: IconNetwork },
+  { id: 'ai', label: 'AI assistance', icon: IconSparkles },
+  { id: 'webAccess', label: 'Web access', icon: IconNetwork },
 ] as const;
 type SettingsSection = (typeof SETTINGS_SECTIONS)[number]['id'];
 const THEME_OPTIONS: { value: ThemePreference; label: string; icon: typeof IconSun }[] = [
   { value: 'system', label: 'System', icon: IconDeviceDesktop },
   { value: 'light', label: 'Light', icon: IconSun },
   { value: 'dark', label: 'Dark', icon: IconMoon },
+];
+const UI_FONT_OPTIONS: { value: UiFontPreference; label: string; family: string }[] = [
+  { value: 'geist', label: 'Geist', family: "'Geist Variable', sans-serif" },
+  { value: 'plus-jakarta-sans', label: 'Plus Jakarta Sans', family: "'Plus Jakarta Sans Variable', sans-serif" },
+  { value: 'space-grotesk', label: 'Space Grotesk', family: "'Space Grotesk Variable', sans-serif" },
+];
+const MONO_FONT_OPTIONS: { value: MonoFontPreference; label: string; family: string }[] = [
+  { value: 'geist-mono', label: 'Geist Mono', family: "'Geist Mono Variable', ui-monospace, monospace" },
+  { value: 'jetbrains-mono', label: 'JetBrains Mono', family: "'JetBrains Mono Variable', ui-monospace, monospace" },
+  { value: 'inconsolata', label: 'Inconsolata', family: "'Inconsolata Variable', ui-monospace, monospace" },
+  { value: 'departure', label: 'Departure Mono', family: "'Departure Mono', ui-monospace, monospace" },
+  { value: 'space-grotesk', label: 'Space Grotesk', family: "'Space Grotesk Variable', sans-serif" },
 ];
 
 const CHANGES_LAYOUT_OPTIONS: { value: ChangesLayoutPreference; label: string; icon: typeof IconSun }[] = [
@@ -2537,14 +2596,16 @@ function SettingsDialog({ preferences, onPreference, open, onOpenChange, section
   const visibleModels = modelOptions.some((model) => model.id === selectedModel)
     ? modelOptions
     : [...modelOptions, { id: selectedModel, label: `${selectedModel} (unavailable)` }];
-  const title = section === 'general' ? 'General' : section === 'shortcuts' ? 'Shortcuts' : section === 'ai' ? 'AI commit messages' : 'Network access';
+  const title = section === 'general' ? 'General' : section === 'shortcuts' ? 'Shortcuts' : section === 'ai' ? 'AI assistance' : 'Web access';
   const description = section === 'general'
     ? 'OpenTig appearance and behavior.'
     : section === 'shortcuts'
       ? 'Rebind commands or review the shortcuts that stay fixed.'
       : section === 'ai'
-        ? 'Local harness and model used to suggest messages.'
-        : 'Expose the existing OpenTig backend to trusted browsers.';
+        ? 'Local harness and model used to suggest commit messages and pull-request drafts.'
+        : window.opentigDesktop
+          ? 'Connect trusted browsers locally, over your LAN, or through an HTTPS tunnel.'
+          : 'Review and disconnect browsers authorised to use this OpenTig server.';
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <Tooltip>
@@ -2555,7 +2616,7 @@ function SettingsDialog({ preferences, onPreference, open, onOpenChange, section
         <div className="settings-shell">
           <aside className="settings-nav">
             <div className="settings-nav-title">Settings</div>
-            {SETTINGS_SECTIONS.filter(({ id }) => id !== 'webAccess' || Boolean(window.opentigDesktop)).map(({ id, label, icon: Icon }) => (
+            {SETTINGS_SECTIONS.map(({ id, label, icon: Icon }) => (
               <button key={id} className={`settings-nav-item ${section === id ? 'active' : ''}`} onClick={() => onSectionChange(id)} aria-current={section === id}>
                 <Icon /> {label}
               </button>
@@ -2582,6 +2643,56 @@ function SettingsDialog({ preferences, onPreference, open, onOpenChange, section
                       <Icon /> <span>{label}</span>
                     </button>
                   ))}
+                </div>
+              </div>
+              <div className="settings-field settings-field-separated">
+                <div className="settings-field-label">
+                  <strong>Fonts</strong>
+                  <span>Interface chrome and code, chosen independently. Space Grotesk appears in both lists.</span>
+                </div>
+                <div className="settings-font-pickers">
+                  <label className="settings-font-picker">
+                    <span>Interface</span>
+                    <Select
+                      value={preferences.uiFont}
+                      onValueChange={(value) => {
+                        const next = UI_FONT_OPTIONS.find((option) => option.value === value);
+                        if (next) onPreference({ uiFont: next.value });
+                      }}
+                    >
+                      <SelectTrigger className="settings-font-select" aria-label="Interface font" style={{ fontFamily: UI_FONT_OPTIONS.find((option) => option.value === preferences.uiFont)?.family }}>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent align="start" alignItemWithTrigger={false} className="w-max min-w-[16rem]">
+                        {UI_FONT_OPTIONS.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            <span style={{ fontFamily: option.family }}>{option.label}</span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </label>
+                  <label className="settings-font-picker">
+                    <span>Code</span>
+                    <Select
+                      value={preferences.monoFont}
+                      onValueChange={(value) => {
+                        const next = MONO_FONT_OPTIONS.find((option) => option.value === value);
+                        if (next) onPreference({ monoFont: next.value });
+                      }}
+                    >
+                      <SelectTrigger className="settings-font-select" aria-label="Code font" style={{ fontFamily: MONO_FONT_OPTIONS.find((option) => option.value === preferences.monoFont)?.family }}>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent align="start" alignItemWithTrigger={false} className="w-max min-w-[16rem]">
+                        {MONO_FONT_OPTIONS.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            <span style={{ fontFamily: option.family }}>{option.label}</span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </label>
                 </div>
               </div>
               <div className="settings-field settings-field-separated">
@@ -2649,15 +2760,18 @@ function SettingsDialog({ preferences, onPreference, open, onOpenChange, section
                     {loadingStatuses ? <IconLoader4 className="animate-spin" /> : <IconRefresh />} {loadingStatuses ? <ShimmeringText text="Checking…" /> : 'Check again'}
                   </Button>
                 </div>
-                <div className="ai-harness-list" role="radiogroup" aria-label="Harness for commit messages">
+                <div className="ai-harness-list" role="radiogroup" aria-label="Harness for AI assistance">
                   {(['codex', 'claude', 'opencode'] as const).map((harness) => {
                     const harnessStatus = statuses.find((status) => status.id === harness);
                     const selected = selectedHarness === harness;
                     return (
                       <button key={harness} type="button" role="radio" aria-checked={selected} className={`ai-harness-card ${selected ? 'active' : ''}`} onClick={() => onPreference({ commitMessageHarness: harness })}>
                         <span className="ai-harness-card-main">
-                          <strong>{harnessLabel(harness)}</strong>
-                          <small>{harnessStatus?.version || (loadingStatuses ? 'Checking…' : 'Status not checked')}</small>
+                          <AiProviderIcon harness={harness} />
+                          <span className="ai-harness-card-copy">
+                            <strong>{harnessLabel(harness)}</strong>
+                            <small>{harnessStatus?.version || (loadingStatuses ? 'Checking…' : 'Status not checked')}</small>
+                          </span>
                         </span>
                         <Badge variant={availabilityBadgeVariant(harnessStatus)} className={`ai-status-badge ${harnessStatus?.availability ?? 'unknown'}`}>
                           {availabilityLabel(harnessStatus)}
@@ -2676,7 +2790,7 @@ function SettingsDialog({ preferences, onPreference, open, onOpenChange, section
                     <SelectTrigger className="ai-model-select"><SelectValue /></SelectTrigger>
                     <SelectContent>{visibleModels.map((model) => <SelectItem key={model.id} value={model.id}>{model.label}</SelectItem>)}</SelectContent>
                   </Select>
-                  {selectedStatus?.authStatus === 'unauthenticated' && <p className="ai-login-hint">Sign in from a terminal with <code>{loginCommand(selectedHarness)}</code> and check again.</p>}
+                  {selectedStatus?.authStatus === 'unauthenticated' && <p className="ai-login-hint">Sign in from a terminal with <code>{loginCommand(selectedHarness, selectedStatus.cliName)}</code> and check again.</p>}
                   {selectedStatus && !selectedStatus.installed && <p className="ai-login-hint">Install {harnessLabel(selectedHarness)} and check its availability again.</p>}
                 </div>
                 <div className="settings-field settings-field-separated">
@@ -3259,13 +3373,12 @@ function formatRelativeDate(value: string): string {
   return 'right now';
 }
 
-function Welcome({ recent, onOpen, onRecent, error }: { recent: BootstrapData['recentRepositories']; onOpen(): void; onRecent(id: string): void; error: string | null }) {
+function Welcome({ recent, onOpen, onRecent }: { recent: BootstrapData['recentRepositories']; onOpen(): void; onRecent(id: string): void }) {
   const repositories = groupRecentRepositories(recent);
   return (
     <div className="welcome">
       <h1>OpenTig</h1><p>Open a repository to review changes, explore files, and create commits.</p>
       <Button size="lg" onClick={onOpen}><IconFolderOpen /> Open repository</Button>
-      {error && <div className="welcome-error">{error}</div>}
       {repositories.length > 0 && <section><h2>Recent</h2>{repositories.map((item) => <button key={item.key} onClick={() => onRecent(item.recent.id)}><IconFolder /><span><strong>{item.name}</strong><small>{item.rootPath}</small></span></button>)}</section>}
       <small className="shortcut">Ctrl+O to open · Ctrl+R to refresh</small>
     </div>
@@ -3367,6 +3480,9 @@ function isPerformanceSelection(value: unknown): value is ViewerSelection {
 }
 
 function messageOf(reason: unknown): string { return reason instanceof Error ? reason.message : 'An unexpected error occurred.'; }
+function reportError(title: string, reason: unknown): void {
+  sileo.error({ title, description: messageOf(reason), duration: 10_000 });
+}
 function undoBlockedCopy(result: Exclude<UndoLatestCommitResult, { status: 'success' }>): { title: string; description: string } {
   if (result.status === 'stale-head') return { title: 'History changed', description: 'The view was refreshed without undoing any commit.' };
   if (result.status === 'no-upstream') return { title: 'Branch has no upstream', description: 'Cannot confirm that the commit is still local only.' };
@@ -3392,6 +3508,11 @@ function aiErrorTitle(detail: SerializedAiError | null): string {
   return 'Could not generate the message';
 }
 function harnessLabel(harness: AiHarnessId): string { return harness === 'codex' ? 'Codex' : harness === 'claude' ? 'Claude Code' : 'OpenCode'; }
+
+function aiModelLabel(providers: AiHarnessStatus[] | undefined, harness: AiHarnessId, model: string): string {
+  return providers?.find((provider) => provider.id === harness)?.models.find((option) => option.id === model)?.label
+    ?? (model === 'default' ? 'Default (CLI)' : model);
+}
 function availabilityLabel(status: AiHarnessStatus | undefined): string {
   if (!status) return 'Not checked';
   if (!status.installed) return 'Not installed';
@@ -3404,7 +3525,11 @@ function availabilityBadgeVariant(status: AiHarnessStatus | undefined): 'default
   if (!status.installed || status.authStatus === 'unauthenticated' || status.availability === 'error') return 'destructive';
   return status.availability === 'ready' ? 'default' : 'secondary';
 }
-function loginCommand(harness: AiHarnessId): string { return harness === 'codex' ? 'codex login' : harness === 'claude' ? 'claude auth login' : 'opencode auth login'; }
+function loginCommand(harness: AiHarnessId, cliName?: string): string {
+  if (harness === 'codex') return 'codex login';
+  if (harness === 'claude') return 'claude auth login';
+  return cliName === 'opencode2' ? 'opencode2 auth login' : 'opencode auth login';
+}
 function changeStatusCode(kind: ChangeKind): string {
   return ({ modified: 'M', added: 'A', deleted: 'D', renamed: 'R', copied: 'C', untracked: 'U', conflicted: 'C', 'type-changed': 'T' } as const)[kind];
 }

@@ -40,7 +40,6 @@ export function createDesktopApi(
       getStatus: () => invoke(OPEN_TIG_DESKTOP_IPC.webAccessStatus),
       setEnabled: (enabled) => invoke(OPEN_TIG_DESKTOP_IPC.webAccessSetEnabled, enabled),
       createPairingLink: (endpoint) => invoke(OPEN_TIG_DESKTOP_IPC.webAccessCreatePairingLink, endpoint),
-      revokeAllSessions: () => invoke(OPEN_TIG_DESKTOP_IPC.webAccessRevokeAllSessions),
     },
   };
 }

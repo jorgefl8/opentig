@@ -18,7 +18,6 @@ export function registerDesktopHandlers(
     getStatus(): Promise<OpenTigWebAccessStatus>;
     setEnabled(enabled: boolean): Promise<OpenTigWebAccessStatus>;
     createPairingLink(endpoint: string): Promise<OpenTigPairingLink>;
-    revokeAllSessions(): Promise<{ revokedCount: number }>;
   },
 ): () => void {
   const channels: string[] = [];
@@ -80,10 +79,6 @@ export function registerDesktopHandlers(
   handle(OPEN_TIG_DESKTOP_IPC.webAccessCreatePairingLink, 'web-access-create-pairing-link', (endpoint) => (
     requireWebAccess(webAccess).createPairingLink(stringArg(endpoint, 'web-access-create-pairing-link', 2_048))
   ));
-  handle(OPEN_TIG_DESKTOP_IPC.webAccessRevokeAllSessions, 'web-access-revoke-all-sessions', () => (
-    requireWebAccess(webAccess).revokeAllSessions()
-  ));
-
   return () => { for (const channel of channels) ipcMain.removeHandler(channel); };
 }
 

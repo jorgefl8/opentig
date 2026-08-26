@@ -1,39 +1,32 @@
 import { describe, expect, it, vi } from 'vitest';
-import { exchangePairingFragment } from './pairing';
+import { consumePairingFragment, defaultDeviceName, exchangePairingToken } from './pairing';
 
-describe('pairing fragment exchange', () => {
-  it('clears the fragment before exchanging the one-time token', async () => {
-    const order: string[] = [];
-    const replaceState = vi.fn(() => order.push('cleared'));
-    const request = vi.fn(async (_input: string, init: RequestInit) => {
-      order.push('requested');
-      expect(init).toMatchObject({ method: 'POST', credentials: 'include' });
-      expect(JSON.parse(String(init.body))).toEqual({ token: 'one-time-secret' });
-      return { ok: true };
-    });
-
-    await expect(exchangePairingFragment(
+describe('browser pairing', () => {
+  it('clears and returns a fragment credential before any exchange', () => {
+    const replaceState = vi.fn();
+    expect(consumePairingFragment(
       { pathname: '/pair', search: '', hash: '#token=one-time-secret' },
       { replaceState },
-      request,
-    )).resolves.toBe('paired');
-    expect(order).toEqual(['cleared', 'requested']);
+    )).toBe('one-time-secret');
     expect(replaceState).toHaveBeenCalledWith(null, '', '/pair');
   });
 
-  it('does not send a request when the fragment contains no token', async () => {
-    const request = vi.fn();
-    await expect(exchangePairingFragment(
-      { pathname: '/pair', search: '', hash: '#other=value' },
-      { replaceState: vi.fn() },
-      request,
-    )).resolves.toBe('missing-token');
-    expect(request).not.toHaveBeenCalled();
+  it('submits both the one-use code and the user-visible device name', async () => {
+    const request = vi.fn(async (_input: string, init: RequestInit) => {
+      expect(init).toMatchObject({ method: 'POST', credentials: 'include' });
+      expect(JSON.parse(String(init.body))).toEqual({ token: 'one-time-secret', clientName: 'Work laptop' });
+      return { ok: true };
+    });
+    await expect(exchangePairingToken('one-time-secret', 'Work laptop', request)).resolves.toBe('paired');
   });
 
-  it('reports rejected and unavailable exchanges without retaining credentials', async () => {
-    const location = { pathname: '/pair', search: '', hash: '#token=secret' };
-    await expect(exchangePairingFragment(location, { replaceState: vi.fn() }, async () => ({ ok: false }))).resolves.toBe('rejected');
-    await expect(exchangePairingFragment(location, { replaceState: vi.fn() }, async () => { throw new Error('offline'); })).resolves.toBe('unavailable');
+  it('reports rejected and unavailable exchanges', async () => {
+    await expect(exchangePairingToken('secret', 'Browser', async () => ({ ok: false }))).resolves.toBe('rejected');
+    await expect(exchangePairingToken('secret', 'Browser', async () => { throw new Error('offline'); })).resolves.toBe('unavailable');
+  });
+
+  it('suggests a recognizable browser and operating system name', () => {
+    expect(defaultDeviceName('Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/140.0.0.0')).toBe('Chrome on Windows');
+    expect(defaultDeviceName('unknown')).toBe('Browser');
   });
 });

@@ -13,9 +13,9 @@ import {
   type OpenTigUtilityParentMessage,
 } from '../../shared/server-process';
 import { OPEN_TIG_PROTOCOL_VERSION } from '../../shared/server-protocol';
+import { DEFAULT_SERVER_PORT, DEFAULT_SERVER_PORT_SCAN_COUNT } from '../../shared/server-config';
 
-export const DEFAULT_SERVER_PORT = 6767;
-export const DEFAULT_SERVER_PORT_SCAN_COUNT = 10;
+export { DEFAULT_SERVER_PORT, DEFAULT_SERVER_PORT_SCAN_COUNT } from '../../shared/server-config';
 
 export interface UtilityProcessLike {
   readonly pid: number | undefined;
@@ -154,7 +154,7 @@ export class ServerProcessManager {
 
   restart(host: OpenTigServerHost): Promise<ServerProcessAddress> {
     if (this.stopping || this.stopPromise) return Promise.reject(new Error('Server process manager is stopping.'));
-    const operation = this.restartQueue.then(() => this.restartForHost(host));
+    const operation = this.restartQueue.then(() => this.restartForConfig(host));
     this.restartQueue = operation.then(() => undefined, () => undefined);
     return operation;
   }
@@ -192,18 +192,6 @@ export class ServerProcessManager {
     return { url: url.href, expiresAt: result.expiresAt };
   }
 
-  async revokeAllSessions(): Promise<{ revokedCount: number; desktopCookie: string }> {
-    const result = await this.requestControl('revoke-all-sessions');
-    if (result.action !== 'revoke-all-sessions'
-      || !Number.isSafeInteger(result.revokedCount)
-      || result.revokedCount < 0
-      || typeof result.desktopCookie !== 'string'
-      || !/^opentig_session=[A-Za-z0-9_-]{43}; Path=\/; HttpOnly; SameSite=Strict(?:; Secure)?$/.test(result.desktopCookie)) {
-      throw new Error('OpenTig utility returned an invalid session revocation result.');
-    }
-    return { revokedCount: result.revokedCount, desktopCookie: result.desktopCookie };
-  }
-
   private async startInitial(): Promise<ServerProcessAddress> {
     const explicitPort = this.options.port;
     const firstPort = explicitPort ?? DEFAULT_SERVER_PORT;
@@ -234,7 +222,7 @@ export class ServerProcessManager {
     );
   }
 
-  private async restartForHost(host: OpenTigServerHost): Promise<ServerProcessAddress> {
+  private async restartForConfig(host: OpenTigServerHost): Promise<ServerProcessAddress> {
     if (host !== '127.0.0.1' && host !== '0.0.0.0') throw new Error('Invalid OpenTig server host.');
     const previous = await this.start();
     if (previous.host === host) return previous;
@@ -553,7 +541,7 @@ function defaultSecret(): string {
 
 function normalizePublicOrigin(value: string): string {
   const url = new URL(value);
-  if (url.protocol !== 'http:' || url.username || url.password || url.pathname !== '/' || url.search || url.hash) {
+  if ((url.protocol !== 'http:' && url.protocol !== 'https:') || url.username || url.password || url.pathname !== '/' || url.search || url.hash) {
     throw new Error('Invalid OpenTig network endpoint.');
   }
   return url.origin;
