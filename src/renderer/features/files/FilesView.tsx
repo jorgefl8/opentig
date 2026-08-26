@@ -411,11 +411,11 @@ export function FilesView({
     setLeadPath(path);
   };
 
-  // Clicking a sticky ancestor scrolls its folder to the top and selects it.
+  // Clicking a sticky ancestor only scrolls that folder into view. Selecting or
+  // collapsing it belongs on the real tree row, not this overlay.
   const handleStickyClick = (entry: FileTreeEntry) => {
     const index = rows.findIndex((row) => row.entry.path === entry.path);
     if (index >= 0) virtualizer.scrollToIndex(index, { align: 'start' });
-    selectOnly(entry.path);
   };
 
   const handleRowClick = (entry: FileTreeEntry, mods: { ctrl: boolean; shift: boolean }) => {
@@ -626,7 +626,7 @@ export function FilesView({
         onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
       >
         {stickyScroll.headers.length > 0 && (
-        <div className="files-sticky" aria-hidden="true">
+        <div className="files-sticky">
           {stickyScroll.headers.map((row, index) => {
             const isDeepest = index === stickyScroll.headers.length - 1;
             return (
@@ -634,6 +634,7 @@ export function FilesView({
                 key={row.entry.path}
                 type="button"
                 className="file-tree-row files-sticky-row"
+                aria-label={`Scroll to ${row.entry.path}`}
                 style={{
                   top: index * FILE_ROW_HEIGHT - (isDeepest ? stickyScroll.push : 0),
                   paddingLeft: 12 + row.depth * 14,

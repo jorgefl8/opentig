@@ -1283,8 +1283,8 @@ section[data-sileo-viewport] [data-sileo-title] { text-transform: none; }
   .tree-folder, .change-row, .file-tree-row { font-family: var(--font-sans); }
   .change-list .change-row { height: 38px; }
   .tree-folder, .file-tree-row { min-height: 30px; }
-  .change-row:hover, .file-tree-row:hover, .tree-folder:hover,
-  .commit-header:hover, .commit-file-row:hover, .pull-item:hover, .files-sticky-row:hover {
+  .change-row:hover, .file-tree-row:hover:not(.files-sticky-row), .tree-folder:hover,
+  .commit-header:hover, .commit-file-row:hover, .pull-item:hover {
     background: var(--row-hover);
   }
   /* Selection is a neutral surface with no accent rail: contrast and weight
@@ -1311,7 +1311,10 @@ section[data-sileo-viewport] [data-sileo-title] { text-transform: none; }
     background: color-mix(in oklch, var(--primary) 6%, transparent);
     box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--primary) 45%, transparent);
   }
-  .files-sticky-row { background: var(--sidebar); }
+  /* Sticky folder overlays must stay opaque: the shared row-hover token is a
+     transparent wash, which would let files show through and steal clicks. */
+  .file-tree-row.files-sticky-row { background: var(--sidebar); }
+  .file-tree-row.files-sticky-row:hover { background: color-mix(in oklch, var(--foreground) 8%, var(--sidebar)); }
   .change-file-text small, .commit-meta, .pull-meta { letter-spacing: .005em; }
   .status-code, .commit-oid, .ref-chip, .pull-branch, .branch-stats, .line-stats, code, kbd {
     font-family: var(--font-mono);
