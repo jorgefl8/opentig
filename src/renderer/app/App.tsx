@@ -1015,7 +1015,7 @@ export default function App() {
     if (!repository || busy || status?.readOnly) return;
     const dirty = anyDirtyTab();
     if (dirty.length > 0) {
-      sileo.info({ title: `Save open files before ${direction === 'undo' ? 'undoing' : 'redoing'} a Files operation`, description: dirty.join(', ') });
+      sileo.info({ title: `Save open files before ${direction === 'undo' ? 'undoing' : 'redoing'} a file operation`, description: dirty.join(', ') });
       return;
     }
     setBusy(`${direction}-file`);
@@ -1026,18 +1026,18 @@ export default function App() {
       setFileHistoryState(result.state);
       if (result.status === 'empty') return;
       if (result.status === 'conflict') {
-        sileo.error({ title: `Could not ${direction} ${result.label}`, description: result.message, duration: 10_000 });
+        sileo.error({ title: `Could not ${direction} ${sentenceCaseLabel(result.label)}`, description: result.message, duration: 10_000 });
         return;
       }
       if (result.status === 'system-trash') {
-        sileo.info({ title: `${result.label} cannot be undone in OpenTig`, description: 'Restore it from system Trash.' });
+        sileo.info({ title: `${sentenceCaseLabel(result.label)} cannot be undone in OpenTig`, description: 'Restore it from system trash.' });
         return;
       }
       reconcileViewerPaths(result.pathChanges, result.removedPaths);
       await refresh({ background: true });
-      sileo.success({ title: `${direction === 'undo' ? 'Undid' : 'Redid'} ${result.label}` });
+      sileo.success({ title: `${direction === 'undo' ? 'Undid' : 'Redid'} ${sentenceCaseLabel(result.label)}` });
     } catch (reason) {
-      sileo.error({ title: `Could not ${direction} Files operation`, description: messageOf(reason), duration: 10_000 });
+      sileo.error({ title: `Could not ${direction} a file operation`, description: messageOf(reason), duration: 10_000 });
     } finally { setBusy(null); }
   };
 
@@ -1081,7 +1081,7 @@ export default function App() {
       await writeFileTransfer(result.paths);
       sileo.success({
         title: entries.length === 1 ? (entries[0]!.type === 'directory' ? 'Folder copied' : 'File copied') : `${entries.length} items copied`,
-        description: 'Select a destination folder in Files and press Ctrl+V.',
+        description: 'Select a destination folder in the file browser and press Ctrl+V.',
       });
     } catch (reason) {
       sileo.error({ title: 'Could not copy item', description: messageOf(reason) });
@@ -1100,7 +1100,7 @@ export default function App() {
       await writeFileTransfer(result.paths, result.transferId);
       sileo.success({
         title: entries.length === 1 ? (entries[0]!.type === 'directory' ? 'Folder cut' : 'File cut') : `${entries.length} items cut`,
-        description: 'Select a destination folder in Files and press Ctrl+V.',
+        description: 'Select a destination folder in the file browser and press Ctrl+V.',
       });
     } catch (reason) {
       sileo.error({ title: 'Could not cut item', description: messageOf(reason) });
@@ -1208,10 +1208,10 @@ export default function App() {
       await refreshFilesOnly();
       await refreshFileHistoryState();
       sileo.success({
-        title: result.deleted === 1 ? 'Moved to system Trash' : `${result.deleted} items moved to system Trash`,
+        title: result.deleted === 1 ? 'Moved to system trash' : `${result.deleted} items moved to system trash`,
         ...(result.recovery === 'undo'
           ? { description: 'Undo available', button: { title: 'Undo', onClick: () => void performFileHistory('undo') } }
-          : { description: 'Restore from system Trash' }),
+          : { description: 'Restore from system trash' }),
       });
     } catch (reason) {
       const message = messageOf(reason);
@@ -1616,7 +1616,7 @@ export default function App() {
     const toast = {
       id,
       title: paths.length === 1 ? 'Conflict needs resolution' : `${paths.length} conflicts need resolution`,
-      description: 'Open the Conflicts section to choose the version to keep.',
+      description: 'Open the conflicts section to choose the version to keep.',
       duration: 10_000,
       button: { title: 'View conflicts', onClick: () => showConflicts(paths) },
     };
@@ -3641,6 +3641,9 @@ function isPerformanceSelection(value: unknown): value is ViewerSelection {
 }
 
 function messageOf(reason: unknown): string { return reason instanceof Error ? reason.message : 'An unexpected error occurred.'; }
+function sentenceCaseLabel(label: string): string {
+  return label.length > 0 ? `${label[0]!.toLocaleLowerCase()}${label.slice(1)}` : label;
+}
 function reportError(title: string, reason: unknown): void {
   sileo.error({ title, description: messageOf(reason), duration: 10_000 });
 }

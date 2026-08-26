@@ -1087,6 +1087,9 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
    in-dialog action would paint behind the dialog. Beat their unlayered rule
    with the element + attribute selector they render. */
 section[data-sileo-viewport] { z-index: 1100; }
+/* Sileo capitalizes every word in titles by default; keep the app's toast
+   copy in sentence case instead. */
+section[data-sileo-viewport] [data-sileo-title] { text-transform: none; }
 .repo-select-item[data-selected] { background: var(--row-selected); color: var(--foreground); box-shadow: none; }
 .repo-select-item[data-selected]:hover, .repo-select-item[data-selected][data-highlighted] { background: color-mix(in oklch, var(--foreground) 14%, transparent); }
 /* 12px keeps every glyph — group labels, repository rows and the manage action —
