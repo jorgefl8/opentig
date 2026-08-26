@@ -145,6 +145,23 @@ describe('GitRepositoryOperations diff', () => {
   });
 });
 
+describe('GitRepositoryOperations AI context', () => {
+  it('gives pull-request drafts the same generous patch budget as commit generation', async () => {
+    const fixture = await standaloneRepository();
+    await git(fixture.work, ['switch', '-c', 'feature']);
+    const content = Array.from({ length: 8_000 }, (_, index) => `branch change ${index}`).join('\n');
+    await writeFile(path.join(fixture.work, 'large-change.txt'), `${content}\n`);
+    await git(fixture.work, ['add', 'large-change.txt']);
+    await git(fixture.work, ['commit', '-m', 'Add large branch change']);
+
+    const context = await fixture.operations.getPullRequestDraftContext(fixture.repositoryId, 'main');
+
+    expect(context.patch.length).toBeGreaterThan(40_000);
+    expect(context.patch).toContain('+branch change 7999');
+    expect(context.truncated).toBe(false);
+  });
+});
+
 describe('GitRepositoryOperations commit groups', () => {
   it('prepares proposed file groups without creating commits', async () => {
     const fixture = await standaloneRepository();
