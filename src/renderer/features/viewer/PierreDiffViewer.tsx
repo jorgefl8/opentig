@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { File, UnresolvedFile, Virtualizer } from '@pierre/diffs/react';
 import type { MergeConflictRegion, MergeConflictResolution } from '@pierre/diffs/react';
 import type { DiffResult, DiffViewPreference, FileResult, ThemePreference } from '@shared/contracts';
@@ -7,6 +7,9 @@ import { DiffWorkspace } from './DiffWorkspace';
 import { OPENTIG_CODE_THEMES } from './diffThemes';
 import { VIEWER_SCROLLBAR_CSS } from './patch-utils';
 import { PierreWorkerPool } from './PierreWorkerPool';
+import {
+  applyConflictDraft, createConflictDraft, markConflictDraftPersisted, reconcileConflictDraft,
+} from './conflict-draft';
 
 type PierreDiffViewerProps =
   | {
@@ -27,7 +30,6 @@ type PierreDiffViewerProps =
       kind: 'conflict';
       contentKey: string;
       file: FileResult;
-      revision: number;
       themeType: ThemePreference;
       overflow: 'scroll' | 'wrap';
       onUpdate(path: string, content: string): Promise<boolean>;
@@ -42,7 +44,7 @@ export default function PierreDiffViewer(props: PierreDiffViewerProps) {
           ? <DiffContent {...props} />
           : (
             <ConflictViewer
-              key={`${props.file.path}:${props.revision}`}
+              key={props.file.path}
               file={props.file}
               themeType={props.themeType}
               overflow={props.overflow}
@@ -81,23 +83,28 @@ function ConflictViewer({ file, themeType, overflow, onUpdate, onResolve }: {
   onUpdate(path: string, content: string): Promise<boolean>;
   onResolve(path: string, content: string): Promise<boolean>;
 }) {
-  const [draft, setDraft] = useState(file.content);
-  const [draftRevision, setDraftRevision] = useState(0);
+  const [draftState, setDraftState] = useState(() => createConflictDraft(file.content));
   const [applying, setApplying] = useState(false);
   const [saving, setSaving] = useState(false);
+  const draft = draftState.draft;
+  const draftRevision = draftState.revision;
   const unresolved = countConflictBlocks(draft);
+
+  useEffect(() => {
+    setDraftState((current) => reconcileConflictDraft(current, file.content));
+  }, [file.content]);
 
   const applyResolution = async (conflict: MergeConflictRegion, resolution: MergeConflictResolution) => {
     if (applying) return;
     setApplying(true);
-    const previous = draft;
+    const previous = draftState;
     const next = resolveConflictContent(draft, conflict, resolution);
-    setDraft(next);
-    setDraftRevision((value) => value + 1);
+    setDraftState((current) => applyConflictDraft(current, next));
     try {
       if (!await onUpdate(file.path, next)) {
-        setDraft(previous);
-        setDraftRevision((value) => value + 1);
+        setDraftState((current) => current.draft === next ? previous : current);
+      } else {
+        setDraftState((current) => markConflictDraftPersisted(current, next));
       }
     } finally {
       setApplying(false);

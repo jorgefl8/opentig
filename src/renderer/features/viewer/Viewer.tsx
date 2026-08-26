@@ -238,7 +238,6 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
           kind="conflict"
           contentKey={data.docKey}
           file={data.value}
-          revision={revision}
           themeType={themeType}
           overflow={overflow}
           onUpdate={onUpdateConflict}
