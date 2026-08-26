@@ -387,7 +387,6 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   .line-additions { color: var(--diff-added); }
   .line-deletions { color: var(--diff-deleted); }
   .operation-banner { flex: none; border-bottom: 1px solid color-mix(in oklch, var(--chart-2) 30%, var(--border)); background: color-mix(in oklch, var(--chart-2) 12%, var(--background)); padding: 7px 16px; color: var(--foreground); font-size: 12px; }
-  .conflict-banner { display: flex; flex: none; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid color-mix(in oklch, var(--destructive) 38%, var(--border)); background: color-mix(in oklch, var(--destructive) 11%, var(--background)); padding: 5px 12px 5px 16px; color: var(--destructive); font-size: 12px; font-weight: 600; }
 
   .workspace { display: flex; min-height: 0; flex: 1; }
   .sidebar { display: flex; min-width: 300px; max-width: 680px; flex: none; flex-direction: column; border-right: 1px solid var(--border); background: var(--sidebar); }
@@ -1628,7 +1627,7 @@ section[data-sileo-viewport] { z-index: 1100; }
   .welcome section button:hover { background: var(--row-hover); }
 
   .operation-banner { border-bottom-color: var(--border); background: var(--muted); color: var(--muted-foreground); }
-  .operation-banner, .conflict-banner { font-family: var(--font-sans); }
+  .operation-banner { font-family: var(--font-sans); }
 }
 
 @media (max-width: 1100px) {

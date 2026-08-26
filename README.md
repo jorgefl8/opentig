@@ -69,7 +69,7 @@ It is intentionally not an IDE, hosting service, or replacement for the Git CLI.
 - Preserve local changes through a temporary safety stash when pulling, including untracked files.
 - Keep and report the recovery stash if changes cannot be restored cleanly.
 - Refuse unsafe pull or push states such as unresolved conflicts, an active Git operation, or missing upstream configuration.
-- Surface remote rejection, branch-protection, authentication, configuration, and other one-shot operation failures as Sileo toasts rather than a persistent top banner. Those toasts stay above open dialogs, so an action started from Settings or a confirmation can still report its outcome. Read-only Git operations and pending conflicts still use in-app banners.
+- Surface remote rejection, branch-protection, authentication, configuration, pending conflicts, and other one-shot operation failures as Sileo toasts rather than a persistent top banner. Conflict notifications are deduplicated across refreshes, while the Changes view remains the persistent source of truth. Read-only Git operations still use an in-app banner.
 - Keep dialogs above virtualized diff content, including sticky file headers, so Settings and confirmations cannot be partially covered by the viewer.
 
 ### Files and editing

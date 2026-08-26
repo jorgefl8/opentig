@@ -63,6 +63,7 @@ import { resolveWindowControlsInset } from './window-controls';
 import { queryKeys, queryResourcesForScope } from '@/lib/query-client';
 import { opentig } from '@/lib/opentig-api';
 import { shouldActivateChangeRow } from '@/features/changes/row-activation';
+import { conflictNotificationAction, conflictToastId } from '@/features/changes/conflict-notification';
 import { fileCutTransferId, writeClipboardText, writeFileTransfer } from '@/lib/browser-capabilities';
 import { projectPullBlockedCopy, projectPullSuccessCopy, projectPushBlockedCopy, projectPushSuccessCopy, pullSuccessCopy, repositorySyncLoadingToast, visibleRepositorySyncActions, type ProjectSyncAction, type RepositorySyncCounts } from '@/features/repositories/project-sync';
 import {
@@ -135,7 +136,7 @@ export default function App() {
   const [fileSessions, setFileSessions] = useState<ReadonlyMap<string, FileSession>>(() => new Map());
   const [dirtyClosePath, setDirtyClosePath] = useState<string | null>(null);
   const [destructiveAction, setDestructiveAction] = useState<DestructiveAction | null>(null);
-  const [blockedBranchSwitch, setBlockedBranchSwitch] = useState<{ name: string; files: string[] } | null>(null);
+  const [blockedBranchSwitch, setBlockedBranchSwitch] = useState<{ ref: string; label: string; files: string[] } | null>(null);
   // Holding Ctrl reveals the section numbers, so the shortcut is discoverable
   // without a cheat sheet.
   const [ctrlHeld, setCtrlHeld] = useState(false);
@@ -164,6 +165,7 @@ export default function App() {
   // never replaced without asking.
   const lastAppliedMessageRef = useRef('');
   const forceGhStatusRef = useRef(false);
+  const knownConflictPathsRef = useRef<Map<string, string[]>>(new Map());
 
   const historyQuery = useInfiniteQuery({
     queryKey: queryKeys.history(repository?.id ?? ''),
@@ -1433,7 +1435,8 @@ export default function App() {
     try {
       const result = await opentig.refs.switchBranch(repository.id, name, false);
       if (result.status === 'blocked-local-changes') {
-        setBlockedBranchSwitch({ name, files: result.files });
+        const label = branches.find((branch) => branch.fullName === name)?.name ?? name.replace(/^refs\/(?:heads|remotes)\//, '');
+        setBlockedBranchSwitch({ ref: name, label, files: result.files });
         return;
       }
       await refresh({ background: true });
@@ -1447,9 +1450,9 @@ export default function App() {
     if (!repository || !pending) return;
     setBusy('branch');
     try {
-      const result = await opentig.refs.switchBranch(repository.id, pending.name, true);
+      const result = await opentig.refs.switchBranch(repository.id, pending.ref, true);
       if (result.status === 'blocked-local-changes') {
-        setBlockedBranchSwitch({ name: pending.name, files: result.files });
+        setBlockedBranchSwitch({ ...pending, files: result.files });
         return;
       }
       setBlockedBranchSwitch(null);
@@ -1457,15 +1460,18 @@ export default function App() {
       await refresh({ background: true });
       if (result.status === 'switched') {
         sileo.success({
-          title: `Switched to ${pending.name}`,
+          title: `Switched to ${pending.label}`,
           description: result.movedChanges ? 'Local changes were moved here and left unstaged.' : 'The branch was switched successfully.',
         });
       } else if (result.status === 'moved-with-conflicts') {
-        sileo.error({
-          title: `Switched to ${pending.name} with conflicts`,
+        const toast = {
+          id: conflictToastId(repository.id),
+          title: `Switched to ${pending.label} with conflicts`,
           description: `${result.files.length} ${result.files.length === 1 ? 'file needs' : 'files need'} resolution. The safety stash was kept.`,
           duration: 12_000,
-        });
+          button: { title: 'View conflicts', onClick: () => showConflicts(result.files) },
+        };
+        sileo.error(toast);
       } else {
         sileo.error({
           title: 'Could not restore every local change',
@@ -1550,11 +1556,38 @@ export default function App() {
     }
   };
 
-  const showConflicts = (files: string[]) => {
+  const showConflicts = useCallback((files: string[]) => {
     setView('changes');
     const first = files[0];
     if (first) setViewerSelection({ type: 'conflict', path: first });
-  };
+  }, []);
+
+  const conflictPathSignature = (status?.changes ?? [])
+    .filter((change) => change.conflict)
+    .map((change) => change.path)
+    .sort()
+    .join('\0');
+  useEffect(() => {
+    if (!repository || !status) return;
+    const paths = conflictPathSignature ? conflictPathSignature.split('\0') : [];
+    const previous = knownConflictPathsRef.current.get(repository.id);
+    const action = conflictNotificationAction(previous, paths);
+    knownConflictPathsRef.current.set(repository.id, paths);
+    const id = conflictToastId(repository.id);
+    if (action === 'dismiss') {
+      sileo.dismiss(id);
+      return;
+    }
+    if (action !== 'show') return;
+    const toast = {
+      id,
+      title: paths.length === 1 ? 'Conflict needs resolution' : `${paths.length} conflicts need resolution`,
+      description: 'Open the Conflicts section to choose the version to keep.',
+      duration: 10_000,
+      button: { title: 'View conflicts', onClick: () => showConflicts(paths) },
+    };
+    sileo.error(toast);
+  }, [conflictPathSignature, repository, showConflicts, status]);
 
   const resolveConflictFile = async (path: string, content: string): Promise<boolean> => {
     if (!repository || busy) return false;
@@ -1786,7 +1819,6 @@ export default function App() {
   const conflicts = status?.changes.filter((change) => change.conflict) ?? [];
   const staged = status?.changes.filter((change) => change.staged && !change.conflict) ?? [];
   const changed = status?.changes.filter((change) => change.unstaged && !change.conflict) ?? [];
-  const conflictFiles = conflicts.map((change) => change.path);
 
   return (
     <ShortcutsProvider shortcuts={shortcuts}>
@@ -1848,7 +1880,7 @@ export default function App() {
       >
         <DialogPopup className="undo-commit-dialog">
           <div className="undo-commit-content">
-            <DialogTitle>Move local changes to {blockedBranchSwitch?.name}?</DialogTitle>
+            <DialogTitle>Move local changes to {blockedBranchSwitch?.label}?</DialogTitle>
             <DialogDescription>
               OpenTig will save all tracked and untracked changes temporarily, switch branches, restore them, and leave them unstaged. If Git finds conflicts, the safety stash will be kept.
             </DialogDescription>
@@ -1861,7 +1893,7 @@ export default function App() {
           <div className="undo-commit-actions">
             <Button variant="ghost" onClick={() => setBlockedBranchSwitch(null)} disabled={busy === 'branch'}>Cancel</Button>
             <Button onClick={() => void moveChangesAndSwitchBranch()} disabled={busy === 'branch'}>
-              <IconFileArrowRight /> {busy === 'branch' ? 'Moving changes…' : `Move changes to ${blockedBranchSwitch?.name ?? 'branch'}`}
+              <IconFileArrowRight /> {busy === 'branch' ? 'Moving changes…' : `Move changes to ${blockedBranchSwitch?.label ?? 'branch'}`}
             </Button>
           </div>
         </DialogPopup>
@@ -1930,12 +1962,6 @@ export default function App() {
           onSettingsSection={setSettingsSection}
         />
         {status?.readOnly && <div className="operation-banner">Repository is read-only: {status.operation} is in progress.</div>}
-        {conflictFiles.length > 0 && (
-          <div className="conflict-banner">
-            <span>{conflictFiles.length === 1 ? 'There is 1 pending conflict.' : `There are ${conflictFiles.length} pending conflicts.`}</span>
-            <Button variant="ghost" size="xs" onClick={() => showConflicts(conflictFiles)}>View conflicts</Button>
-          </div>
-        )}
         <main className="workspace">
           <aside className="sidebar" style={{ width: bootstrap.preferences.sidebarWidth }}>
             <nav className="sidebar-tabs" data-shortcuts={ctrlHeld ? 'visible' : undefined} aria-label="Repository views">
