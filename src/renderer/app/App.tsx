@@ -8,6 +8,7 @@ import {
   IconNetwork, IconRefresh, IconRestore, IconSearch, IconSettings, IconSparkles, IconSun, IconTrash, IconX,
 } from '@tabler/icons-react';
 import { Toaster, sileo } from 'sileo';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import type { AiHarnessId, AiHarnessStatus, BootstrapData, ChangesLayoutPreference, CommitSplitProposal, FileHistoryPathChange, FileHistoryState, GhCliStatus, GitHubRepositoryInfo, MonoFontPreference, OpenTigCapabilities, Preferences, PullRequestState, PullRequestSummary, PullResult, PushResult, RecentRepository, RepositoryInfo, RepositoryOrganization, RepositoryProject, ThemePreference, UiFontPreference, UndoLatestCommitResult } from '../../shared/contracts';
 import { matchesCombo, resolveShortcuts, type ShortcutMap } from '../../shared/shortcuts';
 import { ShortcutsProvider } from './ShortcutsContext';
@@ -2709,6 +2710,11 @@ function SettingsDialog({ preferences, onPreference, open, onOpenChange, section
   const [statuses, setStatuses] = useState<AiHarnessStatus[]>([]);
   const [loadingStatuses, setLoadingStatuses] = useState(false);
   const [aiLogOpen, setAiLogOpen] = useState(false);
+  const settingsBodyRef = useRef<HTMLDivElement>(null);
+  const reduceMotion = useReducedMotion();
+  const settingsTransition = reduceMotion
+    ? { duration: 0 }
+    : { duration: 0.16, ease: [0.22, 1, 0.36, 1] as const };
 
   const loadStatuses = useCallback(async (forceRefresh = false) => {
     setLoadingStatuses(true);
@@ -2720,6 +2726,10 @@ function SettingsDialog({ preferences, onPreference, open, onOpenChange, section
   useEffect(() => {
     if (open && section === 'ai' && statuses.length === 0) void loadStatuses();
   }, [loadStatuses, open, section, statuses.length]);
+
+  useLayoutEffect(() => {
+    if (open && settingsBodyRef.current) settingsBodyRef.current.scrollTop = 0;
+  }, [open, section]);
 
   const selectedHarness = preferences.commitMessageHarness;
   const selectedStatus = statuses.find((status) => status.id === selectedHarness);
@@ -2756,13 +2766,30 @@ function SettingsDialog({ preferences, onPreference, open, onOpenChange, section
           </aside>
           <section className="settings-panel">
             <header className="settings-panel-header">
-              <div>
-                <DialogTitle>{title}</DialogTitle>
-                <DialogDescription>{description}</DialogDescription>
-              </div>
+              <AnimatePresence initial={false} mode="wait">
+                <motion.div
+                  key={section}
+                  initial={reduceMotion ? false : { opacity: 0, y: 4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={reduceMotion ? { opacity: 1 } : { opacity: 0, y: -3 }}
+                  transition={settingsTransition}
+                >
+                  <DialogTitle>{title}</DialogTitle>
+                  <DialogDescription>{description}</DialogDescription>
+                </motion.div>
+              </AnimatePresence>
               <DialogClose render={<Button variant="ghost" size="icon-sm" aria-label="Close settings" />}><IconX /></DialogClose>
             </header>
-            <div className="settings-panel-body">
+            <div ref={settingsBodyRef} className="settings-panel-body">
+              <AnimatePresence initial={false} mode="wait">
+                <motion.div
+                  key={section}
+                  className="settings-panel-section"
+                  initial={reduceMotion ? false : { opacity: 0, y: 7 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={reduceMotion ? { opacity: 1 } : { opacity: 0, y: -5 }}
+                  transition={settingsTransition}
+                >
               {section === 'general' ? <>
               <div className="settings-field">
                 <div className="settings-field-label">
@@ -2935,6 +2962,8 @@ function SettingsDialog({ preferences, onPreference, open, onOpenChange, section
                 <p className="ai-privacy-note">Only the staged diff, its summary, the branch, and recent subjects are sent to the selected harness. The generated message always remains pending your review, and the history records metadata only.</p>
                 <AiLogDialog open={aiLogOpen} onOpenChange={setAiLogOpen} />
               </>}
+                </motion.div>
+              </AnimatePresence>
             </div>
           </section>
         </div>

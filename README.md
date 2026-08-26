@@ -149,6 +149,7 @@ AI never creates a commit or pull request automatically. You review and edit the
 
 ### Preferences
 
+- Move smoothly between Settings sections with a short reduced-motion-aware transition while the navigation and dialog controls stay fixed.
 - System, light, and dark themes.
 - Interface and code fonts from **Settings → General**, each with its own dropdown. Interface: Geist, Plus Jakarta Sans, or Space Grotesk. Code: Geist Mono, JetBrains Mono, Inconsolata, Departure Mono, or Space Grotesk. Defaults are Geist and Inconsolata.
 - Adjustable interface scale.
