@@ -59,10 +59,10 @@ describe('renderer/server boundary', () => {
   });
 
   it('keeps listener controls desktop-only while exposing session management without native tooltips', async () => {
-    const appSource = await readFile(path.join(process.cwd(), 'src', 'renderer', 'app', 'App.tsx'), 'utf8');
+    const settingsDialogSource = await readFile(path.join(process.cwd(), 'src', 'renderer', 'features', 'settings', 'SettingsDialog.tsx'), 'utf8');
     const settingsSource = await readFile(path.join(process.cwd(), 'src', 'renderer', 'features', 'settings', 'WebAccessSettings.tsx'), 'utf8');
 
-    expect(appSource).toContain('SETTINGS_SECTIONS.map');
+    expect(settingsDialogSource).toContain('SETTINGS_SECTIONS.map');
     expect(settingsSource).toContain('window.opentigDesktop?.webAccess');
     expect(settingsSource).toContain('desktopApi && status');
     expect(settingsSource).toContain('loadOwnerSessions()');

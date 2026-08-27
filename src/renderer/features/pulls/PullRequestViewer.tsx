@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { ViewerTabs, ViewerTabsList, ViewerTabsPanel } from '@/components/ui/viewer-tabs';
-import { renderMarkdown } from '@/features/markdown/render-markdown';
+
 import { openOnGitHub, prStateLabel, reviewDecisionLabel } from './gh-utils';
 import { GitHubAvatar } from './GitHubAvatar';
 import { opentig } from '@/lib/opentig-api';
@@ -33,7 +33,11 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
     queryKey: queryKeys.pullRequest(repositoryId, prNumber),
     queryFn: async () => {
       const details = await opentig.github.getPullRequest(repositoryId, prNumber);
-      const bodyHtml = details.body.trim() ? await renderMarkdown(details.body).catch(() => '<p>Could not render the description.</p>') : '';
+      const bodyHtml = details.body.trim()
+        ? await import('@/features/markdown/render-markdown')
+          .then(({ renderMarkdown }) => renderMarkdown(details.body))
+          .catch(() => '<p>Could not render the description.</p>')
+        : '';
       return { details, bodyHtml };
     },
   });

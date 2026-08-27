@@ -1,64 +1,20 @@
-import { createContext, useCallback, useContext, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { MutableRefObject, PropsWithChildren, Ref } from 'react';
+import { useContext, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import type { MutableRefObject, Ref } from 'react';
 import { IconDeviceFloppy } from '@tabler/icons-react';
-import { EditProvider, File, Virtualizer, useVirtualizer } from '@pierre/diffs/react';
+import { File, Virtualizer, useVirtualizer } from '@pierre/diffs/react';
 import type { EditorOptions } from '@pierre/diffs/edit';
-import { sileo } from 'sileo';
 import type { FileResult, ThemePreference, WriteFileResult } from '@shared/contracts';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { OPENTIG_CODE_THEMES } from './diffThemes';
 import { VIEWER_SCROLLBAR_CSS } from './patch-utils';
+import { EditReadyContext } from './PierreEditBoundary';
 import { PierreWorkerPool } from './PierreWorkerPool';
 import { syncScrollFraction } from './scroll-sync';
 import { buildFileEditorKeymap } from './source-editor-keymap';
 import { shouldVirtualizeSourceEditor } from './source-editor-virtualization';
 import { useEditableFileDraft } from './useEditableFileDraft';
 import { useShortcuts } from '@/app/useShortcuts';
-import { readClipboardText } from '@/lib/browser-capabilities';
 import './source-editor.css';
-
-type EditorConstructor = typeof import('@pierre/diffs/edit').Editor;
-
-const EditReadyContext = createContext(false);
-
-/**
- * Pierre keeps one editor per stable editorOptions object. Mount this provider
- * above every file surface and keep it alive while the viewer changes files.
- * The standalone edit bundle is fetched only after an editable file is opened.
- */
-export function PierreEditBoundary({ enabled, children }: PropsWithChildren<{ enabled: boolean }>) {
-  const [EditorClass, setEditorClass] = useState<EditorConstructor | null>(null);
-
-  useEffect(() => {
-    if (!enabled || EditorClass) return;
-    let active = true;
-    void import('@pierre/diffs/edit').then((module) => {
-      if (active) setEditorClass(() => module.Editor);
-    }).catch((reason) => {
-      if (!active) return;
-      sileo.error({
-        title: 'Could not load the code editor',
-        description: reason instanceof Error ? reason.message : 'Unknown error',
-      });
-    });
-    return () => { active = false; };
-  }, [EditorClass, enabled]);
-
-  const createEditor = useCallback((options: EditorOptions<undefined>) => {
-    if (!EditorClass) throw new Error('Pierre edit mode has not loaded.');
-    return new EditorClass({
-      clipboard: { readText: () => readClipboardText() },
-      ...options,
-    });
-  }, [EditorClass]);
-
-  if (!EditorClass) return <EditReadyContext.Provider value={false}>{children}</EditReadyContext.Provider>;
-  return (
-    <EditProvider createEditor={createEditor}>
-      <EditReadyContext.Provider value>{children}</EditReadyContext.Provider>
-    </EditProvider>
-  );
-}
 
 interface FileSaveControlsProps {
   dirty: boolean;

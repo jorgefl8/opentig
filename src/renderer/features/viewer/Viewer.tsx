@@ -7,15 +7,16 @@ import { Button } from '@/components/ui/button';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { isHtmlPath, isMarkdownPath } from '@/features/files/file-tree';
-import { MarkdownFileViewer } from '@/features/markdown/MarkdownFileViewer';
-import { PullRequestViewer } from '@/features/pulls/PullRequestViewer';
 import { ByteBudgetLru } from '@/lib/ByteBudgetLru';
 import { opentig } from '@/lib/opentig-api';
-import { EditableFileViewer, PierreEditBoundary } from './EditableFileViewer';
-import { HtmlFileViewer } from './HtmlFileViewer';
-import { ImageFileViewer, SvgFileViewer } from './ImageFileViewer';
-
 const PierreDiffViewer = lazy(() => import('./PierreDiffViewer'));
+const PierreEditBoundary = lazy(() => import('./PierreEditBoundary').then((module) => ({ default: module.PierreEditBoundary })));
+const MarkdownFileViewer = lazy(() => import('@/features/markdown/MarkdownFileViewer').then((module) => ({ default: module.MarkdownFileViewer })));
+const PullRequestViewer = lazy(() => import('@/features/pulls/PullRequestViewer').then((module) => ({ default: module.PullRequestViewer })));
+const EditableFileViewer = lazy(() => import('./EditableFileViewer').then((module) => ({ default: module.EditableFileViewer })));
+const HtmlFileViewer = lazy(() => import('./HtmlFileViewer').then((module) => ({ default: module.HtmlFileViewer })));
+const ImageFileViewer = lazy(() => import('./ImageFileViewer').then((module) => ({ default: module.ImageFileViewer })));
+const SvgFileViewer = lazy(() => import('./ImageFileViewer').then((module) => ({ default: module.SvgFileViewer })));
 
 export type ViewerSelection =
   | { type: 'diff'; path: string; kind: 'staged' | 'unstaged' }
@@ -199,24 +200,30 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
     content = <EmptyViewer />;
   } else if (selection.type === 'pull-request') {
     content = (
-      <PullRequestViewer
-        key={`${repositoryId}:${selection.number}`}
-        repositoryId={repositoryId}
-        prNumber={selection.number}
-        diffView={diffView}
-        themeType={themeType}
-        wrapLines={wrapLines}
-        onDiffViewChange={onDiffViewChange}
-        onWrapLinesChange={onWrapLinesChange}
-        onClose={() => onSelect(null)}
-      />
+      <Suspense fallback={<ViewerLoading />}>
+        <PullRequestViewer
+          key={`${repositoryId}:${selection.number}`}
+          repositoryId={repositoryId}
+          prNumber={selection.number}
+          diffView={diffView}
+          themeType={themeType}
+          wrapLines={wrapLines}
+          onDiffViewChange={onDiffViewChange}
+          onWrapLinesChange={onWrapLinesChange}
+          onClose={() => onSelect(null)}
+        />
+      </Suspense>
     );
   } else if (error) {
     content = <div className="viewer-message text-destructive">{error}</div>;
   } else if (!data) {
     content = <div className="viewer-message"><IconLoader4 className="spinner" /> <ShimmeringText text="Loading…" /></div>;
   } else if (data.type === 'image') {
-    content = <ImageFileViewer key={`${data.value.path}:${data.value.mtimeMs}`} image={data.value} />;
+    content = (
+      <Suspense fallback={<ViewerLoading />}>
+        <ImageFileViewer key={`${data.value.path}:${data.value.mtimeMs}`} image={data.value} />
+      </Suspense>
+    );
   } else if (data.type !== 'diff' && data.value.binary) {
     content = <div className="viewer-message">Binary file · {formatBytes(data.value.size)}</div>;
   } else if (data.type === 'file' && data.value.tooLarge && !allowLarge) {
@@ -248,64 +255,72 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
   } else if (data.type === 'file' && isMarkdownPath(data.value.path)) {
     const file = data.value;
     content = (
-      <MarkdownFileViewer
-        key={fileMountKey(file)}
-        file={file}
-        initialContent={draftContent(file)}
-        revision={revision}
-        themeType={themeType}
-        wrapLines={wrapLines}
-        readOnly={readOnly || file.tooLarge}
-        onOpenFile={onOpenFile}
-        onDirtyChange={handleFileDirtyChange}
-        onDraftChange={reportDraft(file)}
-        onSave={saveFile}
-      />
+      <Suspense fallback={<ViewerLoading />}>
+        <MarkdownFileViewer
+          key={fileMountKey(file)}
+          file={file}
+          initialContent={draftContent(file)}
+          revision={revision}
+          themeType={themeType}
+          wrapLines={wrapLines}
+          readOnly={readOnly || file.tooLarge}
+          onOpenFile={onOpenFile}
+          onDirtyChange={handleFileDirtyChange}
+          onDraftChange={reportDraft(file)}
+          onSave={saveFile}
+        />
+      </Suspense>
     );
   } else if (data.type === 'file' && isSvgPath(data.value.path)) {
     const file = data.value;
     content = (
-      <SvgFileViewer
-        key={fileMountKey(file)}
-        file={file}
-        initialContent={draftContent(file)}
-        themeType={themeType}
-        wrapLines={wrapLines}
-        readOnly={readOnly || file.tooLarge}
-        onDirtyChange={handleFileDirtyChange}
-        onDraftChange={reportDraft(file)}
-        onSave={saveFile}
-      />
+      <Suspense fallback={<ViewerLoading />}>
+        <SvgFileViewer
+          key={fileMountKey(file)}
+          file={file}
+          initialContent={draftContent(file)}
+          themeType={themeType}
+          wrapLines={wrapLines}
+          readOnly={readOnly || file.tooLarge}
+          onDirtyChange={handleFileDirtyChange}
+          onDraftChange={reportDraft(file)}
+          onSave={saveFile}
+        />
+      </Suspense>
     );
   } else if (data.type === 'file' && isHtmlPath(data.value.path)) {
     const file = data.value;
     content = (
-      <HtmlFileViewer
-        key={fileMountKey(file)}
-        file={file}
-        initialContent={draftContent(file)}
-        themeType={themeType}
-        wrapLines={wrapLines}
-        readOnly={readOnly || file.tooLarge}
-        onDirtyChange={handleFileDirtyChange}
-        onDraftChange={reportDraft(file)}
-        onSave={saveFile}
-      />
+      <Suspense fallback={<ViewerLoading />}>
+        <HtmlFileViewer
+          key={fileMountKey(file)}
+          file={file}
+          initialContent={draftContent(file)}
+          themeType={themeType}
+          wrapLines={wrapLines}
+          readOnly={readOnly || file.tooLarge}
+          onDirtyChange={handleFileDirtyChange}
+          onDraftChange={reportDraft(file)}
+          onSave={saveFile}
+        />
+      </Suspense>
     );
   } else if (data.type === 'file') {
     const file = data.value;
     content = (
-      <EditableFileViewer
-        key={fileMountKey(file)}
-        file={file}
-        initialContent={draftContent(file)}
-        themeType={themeType}
-        wrapLines={wrapLines}
-        readOnly={readOnly}
-        onDirtyChange={handleFileDirtyChange}
-        onDraftChange={reportDraft(file)}
-        onSave={saveFile}
-      />
+      <Suspense fallback={<ViewerLoading />}>
+        <EditableFileViewer
+          key={fileMountKey(file)}
+          file={file}
+          initialContent={draftContent(file)}
+          themeType={themeType}
+          wrapLines={wrapLines}
+          readOnly={readOnly}
+          onDirtyChange={handleFileDirtyChange}
+          onDraftChange={reportDraft(file)}
+          onSave={saveFile}
+        />
+      </Suspense>
     );
   } else if (data.type === 'diff' && data.value.patch) {
     const commitSelection = selection.type === 'commit' || selection.type === 'commit-file' ? selection : null;
@@ -341,12 +356,17 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
     content = <div className="viewer-message">This file cannot be edited.</div>;
   }
 
-  return (
-    <PierreEditBoundary enabled={data?.type === 'file'}>
-      {/* Keyed by the displayed document: the fade runs when new content lands, not while it loads. */}
+  const body = (
+    <>
       {pierreContent ?? <div key={data ? data.docKey : docKey} className="viewer-transition">{content}</div>}
       {reloading && <span className="viewer-reloading" aria-hidden="true"><IconLoader4 className="spinner" /></span>}
-    </PierreEditBoundary>
+    </>
+  );
+  if (data?.type !== 'file') return body;
+  return (
+    <Suspense fallback={<ViewerLoading />}>
+      <PierreEditBoundary enabled>{body}</PierreEditBoundary>
+    </Suspense>
   );
 }
 

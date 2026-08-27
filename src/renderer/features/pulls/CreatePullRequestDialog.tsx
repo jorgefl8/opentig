@@ -12,7 +12,7 @@ import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { Textarea } from '@/components/ui/textarea';
 import { opentig } from '@/lib/opentig-api';
 import { ViewerTabs, ViewerTabsList, ViewerTabsPanel } from '@/components/ui/viewer-tabs';
-import { renderMarkdown } from '@/features/markdown/render-markdown';
+
 import { AiProviderIcon } from '@/features/ai/AiProviderIcon';
 import { ghDetail, ghErrorTitle, openOnGitHub } from './gh-utils';
 import '@/features/markdown/markdown.css';
@@ -58,11 +58,14 @@ export function CreatePullRequestDialog(props: CreatePullRequestDialogProps) {
   useEffect(() => {
     if (!props.open || bodyTab !== 'preview') return;
     const token = ++previewToken.current;
-    renderMarkdown(body || '_No description._').then((html) => {
-      if (token === previewToken.current) setPreviewHtml(html);
-    }).catch(() => {
-      if (token === previewToken.current) setPreviewHtml('<p>Could not render the preview.</p>');
-    });
+    void import('@/features/markdown/render-markdown')
+      .then(({ renderMarkdown }) => renderMarkdown(body || '_No description._'))
+      .then((html) => {
+        if (token === previewToken.current) setPreviewHtml(html);
+      })
+      .catch(() => {
+        if (token === previewToken.current) setPreviewHtml('<p>Could not render the preview.</p>');
+      });
   }, [body, bodyTab, props.open]);
 
   // Closing the dialog aborts any generation still in flight.

@@ -4,7 +4,6 @@ import { ViewerTabs, ViewerTabsList, ViewerTabsPanel } from '@/components/ui/vie
 import { FileSaveControls, SourceCodeEditor } from './EditableFileViewer';
 import { buildHtmlPreviewDocument } from './html-preview-document';
 import { useEditableFileDraft } from './useEditableFileDraft';
-import '@/features/markdown/markdown.css';
 import './html-file-viewer.css';
 
 interface HtmlFileViewerProps {
