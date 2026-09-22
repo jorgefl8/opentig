@@ -6,7 +6,7 @@ import {
   useDraggable, useDroppable, useSensor, useSensors, type CollisionDetection, type DragEndEvent, type DragOverEvent, type DragStartEvent,
 } from '@dnd-kit/core';
 import {
-  IconArrowBackUp, IconArrowForwardUp, IconChevronRight, IconClipboard, IconColumns2, IconCopy, IconCut, IconEdit,
+  IconSearch, IconDots, IconArrowBackUp, IconArrowForwardUp, IconChevronRight, IconClipboard, IconColumns2, IconCopy, IconCut, IconEdit,
   IconExternalLink, IconFileArrowRight, IconFilePlus, IconFiles, IconFileText, IconFolderPlus, IconTrash,
 } from '@tabler/icons-react';
 import type { FileHistoryState } from '@shared/contracts';
@@ -22,6 +22,7 @@ import {
 import { Dialog, DialogDescription, DialogPopup, DialogTitle } from '@/components/ui/dialog';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { getVsCodeFileIconUrl, getVsCodeFolderIconUrl } from '@/lib/vscode-icons';
+import { useMobileLayout } from '@/lib/use-mobile-layout';
 import { useShortcuts } from '@/app/useShortcuts';
 import {
   canMovePathsToDirectory, canOpenPinnedDrop, fileHistoryShortcut, filterIgnoredEntries, findEntry, isEditableTarget, mergeLoadedDirectories,
@@ -50,6 +51,7 @@ interface FilesViewProps {
   fileClipboardAvailable: boolean;
   revealAvailable: boolean;
   historyState: FileHistoryState;
+  onQuickOpen(): void;
   onUndo(): Promise<void>;
   onRedo(): Promise<void>;
   /** A single click previews a file; a double click or Ctrl+click pins its tab. */
@@ -133,6 +135,7 @@ export function FilesView({
   fileClipboardAvailable,
   revealAvailable,
   historyState,
+  onQuickOpen,
   onUndo,
   onRedo,
   onOpenFile,
@@ -150,6 +153,9 @@ export function FilesView({
   onCreate,
 }: FilesViewProps) {
   const shortcuts = useShortcuts();
+  const mobile = useMobileLayout();
+  const [selecting, setSelecting] = useState(false);
+  const rowHeight = mobile ? 44 : FILE_ROW_HEIGHT;
   const scrollRef = useRef<HTMLDivElement>(null);
   const revealedPathRef = useRef<string | null>(null);
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
@@ -302,12 +308,13 @@ export function FilesView({
     enabled: active,
     count: rows.length,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => FILE_ROW_HEIGHT,
+    estimateSize: () => rowHeight,
     getItemKey: (index) => rows[index]?.entry.path ?? index,
     overscan: 12,
     paddingStart: TREE_PADDING_START,
     paddingEnd: 12,
   });
+  useEffect(() => { virtualizer.measure(); }, [virtualizer, rowHeight]);
 
   // Reveal the active file: expand its ancestor folders so a freshly opened or
   // just-created file is never left hidden behind a collapsed directory.
@@ -361,7 +368,7 @@ export function FilesView({
       activeAncestors.add(activeAccumulated);
     }
     if (activeAncestors.size === 0) return empty;
-    const firstIndex = Math.min(rows.length - 1, Math.max(0, Math.floor((scrollTop - TREE_PADDING_START) / FILE_ROW_HEIGHT)));
+    const firstIndex = Math.min(rows.length - 1, Math.max(0, Math.floor((scrollTop - TREE_PADDING_START) / rowHeight)));
     const topRow = rows[firstIndex];
     if (!topRow) return empty;
     const parts = topRow.entry.path.split('/');
@@ -376,23 +383,23 @@ export function FilesView({
     if (headers.length > STICKY_MAX_DEPTH) headers.splice(0, headers.length - STICKY_MAX_DEPTH);
     if (headers.length === 0) return empty;
     const deepest = headers[headers.length - 1]!;
-    const stackHeight = headers.length * FILE_ROW_HEIGHT;
+    const stackHeight = headers.length * rowHeight;
     // The deepest folder's subtree ends at the first later row at its depth or shallower.
     let boundaryTop = Infinity;
-    const maxScan = Math.ceil((scrollTop + stackHeight - TREE_PADDING_START) / FILE_ROW_HEIGHT) + 2;
+    const maxScan = Math.ceil((scrollTop + stackHeight - TREE_PADDING_START) / rowHeight) + 2;
     for (let i = firstIndex; i < rows.length && i <= maxScan; i += 1) {
-      if (rows[i]!.depth <= deepest.depth) { boundaryTop = TREE_PADDING_START + i * FILE_ROW_HEIGHT; break; }
+      if (rows[i]!.depth <= deepest.depth) { boundaryTop = TREE_PADDING_START + i * rowHeight; break; }
     }
-    const push = Math.max(0, Math.min(FILE_ROW_HEIGHT, stackHeight - (boundaryTop - scrollTop)));
+    const push = Math.max(0, Math.min(rowHeight, stackHeight - (boundaryTop - scrollTop)));
     return { headers, push };
-  }, [rows, rowByPath, scrollTop, activePath]);
+  }, [rows, rowByPath, scrollTop, activePath, rowHeight]);
 
   if (visibleFiles === null) {
     return <div className="view-loading" role="status" hidden={!active}><ShimmeringText text="Loading files…" /></div>;
   }
 
   // When nothing is explicitly selected, mirror the open file so it stays highlighted.
-  const highlightedPaths = selectedPaths.size > 0
+  const highlightedPaths = selecting || selectedPaths.size > 0
     ? selectedPaths
     : (activePath ? new Set([activePath]) : new Set<string>());
   const selectionPaths = selectedPaths.size > 0 ? [...selectedPaths] : (activePath ? [activePath] : []);
@@ -419,6 +426,15 @@ export function FilesView({
   };
 
   const handleRowClick = (entry: FileTreeEntry, mods: { ctrl: boolean; shift: boolean }) => {
+    if (mobile && selecting) {
+      setSelectedPaths((current) => {
+        const next = new Set(current);
+        if (next.has(entry.path)) next.delete(entry.path);
+        else next.add(entry.path);
+        return next;
+      });
+      return;
+    }
     if (mods.shift && (anchorPath || leadPath)) {
       const range = pathRange(rows, anchorPath ?? leadPath!, entry.path);
       setSelectedPaths(new Set(range));
@@ -448,7 +464,7 @@ export function FilesView({
   // The preceding single click already previewed the file, so the double click
   // only has to pin it; selection and multi-selection are left untouched.
   const handleRowDoubleClick = (entry: FileTreeEntry) => {
-    if (entry.type === 'file') onOpenFile(entry.path, 'pinned');
+    if (!(mobile && selecting) && entry.type === 'file') onOpenFile(entry.path, 'pinned');
   };
 
   // Right-clicking outside the current selection collapses it to that single row,
@@ -619,6 +635,13 @@ export function FilesView({
       onDragCancel={endDrag}
       onDragEnd={handleDragEnd}
     >
+      <div className="files-mobile-tools">
+        <Button variant="ghost" size="sm" onClick={onQuickOpen}><IconSearch /> Find file</Button>
+        <Button variant="ghost" size="sm" aria-pressed={selecting} onClick={() => { setSelecting(!selecting); setSelectedPaths(new Set()); }}>{selecting ? `Done (${selectedPaths.size})` : 'Select'}</Button>
+        <Button variant="ghost" size="sm" disabled={readOnly} onClick={() => setDialogState({ mode: 'new-file', entry: { type: 'directory', path: '', name: '', children: [] } })}><IconFilePlus /> New file</Button>
+        <Button variant="ghost" size="sm" disabled={readOnly} onClick={() => setDialogState({ mode: 'new-folder', entry: { type: 'directory', path: '', name: '', children: [] } })}><IconFolderPlus /> Folder</Button>
+        {fileClipboardAvailable && <Button variant="ghost" size="sm" disabled={readOnly} onClick={() => void onPaste('')}><IconClipboard /> Paste</Button>}
+      </div>
       <div
         ref={scrollRef}
         className="files-view virtual-scroll"
@@ -636,7 +659,7 @@ export function FilesView({
                 className="file-tree-row files-sticky-row"
                 aria-label={`Scroll to ${row.entry.path}`}
                 style={{
-                  top: index * FILE_ROW_HEIGHT - (isDeepest ? stickyScroll.push : 0),
+                  top: index * rowHeight - (isDeepest ? stickyScroll.push : 0),
                   paddingLeft: 12 + row.depth * 14,
                   zIndex: stickyScroll.headers.length - index,
                 }}
@@ -659,7 +682,7 @@ export function FilesView({
           tabIndex={0}
           onKeyDown={handleKeyDown}
           onPointerDown={(event) => {
-            if ((event.target as HTMLElement).closest('.file-tree-row')) return;
+            if ((event.target as HTMLElement).closest('.file-tree-row, .file-touch-actions')) return;
             setSelectedPaths(new Set());
             setAnchorPath(null);
             setLeadPath(null);
@@ -836,6 +859,7 @@ function FileRow({
   onDelete,
   dragPaths,
 }: FileRowProps) {
+  const rowElement = useRef<HTMLButtonElement | null>(null);
   const targetDirectory = targetDirectoryFor(entry);
   const { attributes, listeners, setNodeRef: setDraggableRef, isDragging } = useDraggable({
     id: `file-drag:${entry.path}`,
@@ -847,6 +871,7 @@ function FileRow({
     data: { targetDirectory, expandPath: entry.type === 'directory' ? entry.path : null },
   });
   const setRowRef = (element: HTMLButtonElement | null) => {
+    rowElement.current = element;
     setDraggableRef(element);
     setDroppableRef(element);
   };
@@ -890,6 +915,12 @@ function FileRow({
   return (
     <ContextMenu>
       <ContextMenuTrigger render={row} />
+      <button type="button" className="file-touch-actions" aria-label={`Actions for ${entry.name}`} aria-haspopup="menu" onClick={(event) => {
+        event.stopPropagation();
+        const rect = event.currentTarget.getBoundingClientRect();
+        // Reuse the row's context menu, selection handling and focus restoration.
+        rowElement.current?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: rect.left, clientY: rect.bottom }));
+      }}><IconDots /></button>
       <ContextMenuContent>
         {entry.type === 'file' && (
           <>

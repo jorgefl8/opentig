@@ -38,6 +38,7 @@ interface LocalRefsDialogProps {
 export function LocalRefsDialog(props: LocalRefsDialogProps) {
   const { open, tab, repositoryId, onMutated, onBusyChange } = props;
   const [query, setQuery] = useState('');
+  const [mobileDetail, setMobileDetail] = useState(false);
   const [selectedBranch, setSelectedBranch] = useState<string | null>(null);
   const [selectedWorktree, setSelectedWorktree] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null);
@@ -46,6 +47,8 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
   const [copied, setCopied] = useState(false);
   // The previous ordering, so a deleted row hands its place to a neighbour.
   const snapshotRef = useRef<LocalRefsSnapshot | null>(null);
+
+  useEffect(() => { setMobileDetail(false); }, [open, repositoryId]);
 
   const snapshotQuery = useQuery({
     queryKey: queryKeys.localRefs(repositoryId),
@@ -179,7 +182,7 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
                 aria-selected={tab === value}
                 aria-controls={`local-refs-panel-${value}`}
                 className="local-refs-tab"
-                onClick={() => props.onTabChange(value)}
+                onClick={() => { props.onTabChange(value); setMobileDetail(false); }}
               >
                 {value === 'branches' ? <IconGitBranch aria-hidden="true" /> : <IconHierarchy2 aria-hidden="true" />}
                 <span>{value === 'branches' ? 'Branches' : 'Worktrees'}</span>
@@ -209,9 +212,11 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
 
         {error && <div className="local-refs-error" role="alert"><IconAlertTriangle aria-hidden="true" /><span>{error}</span></div>}
 
+        {mobileDetail && <button type="button" className="local-refs-mobile-back" onClick={() => setMobileDetail(false)}>← Back to {tab}</button>}
         <div
           key={tab}
           className="local-refs-body"
+          data-mobile-detail={mobileDetail}
           role="tabpanel"
           id={`local-refs-panel-${tab}`}
           aria-labelledby={`local-refs-tab-${tab}`}
@@ -229,7 +234,7 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
                     role="option"
                     aria-selected={branchKey(item) === selectedBranch}
                     className="local-refs-row"
-                    onClick={() => setSelectedBranch(branchKey(item))}
+                    onClick={() => { setSelectedBranch(branchKey(item)); setMobileDetail(true); }}
                   />
                 }>
                   <span className="local-refs-row-head">
@@ -254,7 +259,7 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
                     role="option"
                     aria-selected={worktreeKey(item) === selectedWorktree}
                     className="local-refs-row"
-                    onClick={() => setSelectedWorktree(worktreeKey(item))}
+                    onClick={() => { setSelectedWorktree(worktreeKey(item)); setMobileDetail(true); }}
                   />
                 }>
                   <span className="local-refs-row-head">

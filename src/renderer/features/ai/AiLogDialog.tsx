@@ -225,18 +225,28 @@ export function AiLogDialog({ open, onOpenChange }: AiLogDialogProps) {
 const NOTE_PREVIEW = 140;
 
 function LogNote({ text, tone, detail }: { text: string; tone?: 'error' | 'warn' | undefined; detail?: string | undefined }) {
+  const [expanded, setExpanded] = useState(false);
   const preview = text.length > NOTE_PREVIEW ? `${text.slice(0, NOTE_PREVIEW - 1)}…` : text;
   const className = `ai-log-note ${tone ?? ''}`;
   if (!detail) return <span className={className}>{preview}</span>;
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={<button type="button" className={className} {...(preview === detail ? {} : { 'aria-label': detail })} />}
-      >
-        {preview}
-      </TooltipTrigger>
-      <TooltipContent className="max-w-md">{detail}</TooltipContent>
-    </Tooltip>
+    <>
+      <Tooltip>
+        <TooltipTrigger render={<button type="button" className={className} onClick={() => setExpanded(true)} aria-label="Read generation details" />}>
+          {preview}
+        </TooltipTrigger>
+        <TooltipContent className="max-w-md">{detail}</TooltipContent>
+      </Tooltip>
+      <Dialog open={expanded} onOpenChange={setExpanded}>
+        <DialogPopup className="name-dialog">
+          <div className="name-dialog-content">
+            <DialogTitle>Generation details</DialogTitle>
+            <DialogDescription className="whitespace-pre-wrap break-words">{detail}</DialogDescription>
+            <div className="name-dialog-actions"><DialogClose render={<Button variant="outline" />}>Close</DialogClose></div>
+          </div>
+        </DialogPopup>
+      </Dialog>
+    </>
   );
 }
 

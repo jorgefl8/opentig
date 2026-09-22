@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  IconFileArrowRight, IconFiles, IconGitCompare, IconGitPullRequest, IconHistory,
+  IconArrowLeft, IconGitCommit, IconFileArrowRight, IconFiles, IconGitCompare, IconGitPullRequest, IconHistory,
   IconLoader4, IconRestore, IconSearch, IconTrash,
 } from '@tabler/icons-react';
 import { Toaster, sileo } from 'sileo';
@@ -32,6 +32,7 @@ import {
 } from '@/features/files/open-files-model';
 import { CommitComposer } from '@/features/commit/CommitComposer';
 import { clearCommitFilesCache } from '@/features/history/commit-files-cache';
+import { OpenRepositoryDialog } from '@/features/repositories/OpenRepositoryDialog';
 import { Welcome } from '@/features/repositories/Welcome';
 import { touchRecentRepositories, type RepositoryOption } from '@/features/repositories/repository-select-model';
 import type { RuntimeFileDraft, ViewerSelection } from '@/features/viewer/Viewer';
@@ -41,6 +42,7 @@ import {
 import { resolveWindowControlsInset } from './window-controls';
 import { queryKeys, queryResourcesForScope } from '@/lib/query-client';
 import { persistTheme } from '@/lib/boot-theme';
+import { useMobileLayout } from '@/lib/use-mobile-layout';
 import { opentig, serverClient } from '@/lib/opentig-api';
 import { startupSplashDetail } from '@/lib/startup-splash';
 import { conflictNotificationAction, conflictToastId } from '@/features/changes/conflict-notification';
@@ -82,6 +84,14 @@ class PushBlocked extends Error {
 
 export default function App() {
   const appQueryClient = useQueryClient();
+  const mobile = useMobileLayout();
+  const [openRepositoryDialog, setOpenRepositoryDialog] = useState(false);
+  const [mobilePane, setMobilePane] = useState<'list' | 'viewer' | 'commit'>('list');
+  const [mobileDiffView, setMobileDiffView] = useState<Preferences['diffView']>('unified');
+  const mobileBackRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (mobile && mobilePane !== 'list') mobileBackRef.current?.focus();
+  }, [mobile, mobilePane]);
   const [bootstrap, setBootstrap] = useState<BootstrapData | null>(null);
   const [capabilities, setCapabilities] = useState<OpenTigCapabilities | null>(null);
   const [repository, setRepository] = useState<RepositoryInfo | null>(null);
@@ -187,6 +197,7 @@ export default function App() {
   const pulls = pullsQuery.data?.pulls ?? null;
   const pullsLoading = pullsQuery.isFetching;
   const pullsError = pullsQuery.error ? messageOf(pullsQuery.error) : null;
+  useEffect(() => { setMobilePane('list'); }, [repository?.id]);
   const currentSnapshot = snapshotRepositoryId === repository?.id;
   const status = currentSnapshot ? statusState : null;
   const files = currentSnapshot ? filesState : null;
@@ -200,7 +211,7 @@ export default function App() {
     serverClient.transport.getState,
   );
   const theme = bootstrap?.preferences.theme ?? 'system';
-  const diffView = bootstrap?.preferences.diffView ?? 'unified';
+  const diffView = mobile ? mobileDiffView : bootstrap?.preferences.diffView ?? 'unified';
   const wrapLines = bootstrap?.preferences.wrapLines ?? false;
   const uiZoom = bootstrap?.preferences.uiZoom ?? 100;
   const uiFont = bootstrap?.preferences.uiFont ?? 'geist';
@@ -271,8 +282,8 @@ export default function App() {
   }, [bootstrap, theme]);
 
   useEffect(() => {
-    opentig.app.setZoomFactor(uiZoom / 100);
-  }, [uiZoom]);
+    opentig.app.setZoomFactor(mobile ? 1 : uiZoom / 100);
+  }, [uiZoom, mobile]);
 
   useLayoutEffect(() => {
     document.documentElement.dataset.uiFont = uiFont;
@@ -349,6 +360,7 @@ export default function App() {
     const selection: ViewerSelection = path ? { type: 'file', path } : null;
     viewerSelectionRef.current = selection;
     setViewerSelection(selection);
+    if (!path) setMobilePane((pane) => pane === 'viewer' ? 'list' : pane);
   }, []);
 
   const dropFileDraft = useCallback((repositoryId: string, path: string) => {
@@ -761,6 +773,7 @@ export default function App() {
   }, [filesTreeStates]);
 
   const openRepository = useCallback(async () => {
+    if (!window.opentigDesktop) { setOpenRepositoryDialog(true); return; }
     try {
       const selectedPath = await opentig.repository.select();
       if (!selectedPath) return;
@@ -833,6 +846,7 @@ export default function App() {
   const selectViewer = useCallback((selection: ViewerSelection): boolean => {
     viewerSelectionRef.current = selection;
     setViewerSelection(selection);
+    if (selection) setMobilePane('viewer');
     return true;
   }, []);
 
@@ -930,6 +944,7 @@ export default function App() {
     commitFileSession(repositoryId, result.session);
     if (result.session.activePath !== session.activePath) {
       selectFilePath(result.session.activePath);
+      setMobilePane('viewer');
       setView('files');
     }
   }, [closeFileTab, commitFileSession, selectFilePath]);
@@ -1313,6 +1328,7 @@ export default function App() {
       }
       lastAppliedMessageRef.current = '';
       setViewerSelection({ type: 'commit', oid: result.oid, subject });
+      setMobilePane('viewer');
       await refresh({ background: true });
       committed = true;
     } catch (reason) { reportError('Could not create the commit', reason); }
@@ -1581,7 +1597,7 @@ export default function App() {
   const showConflicts = useCallback((files: string[]) => {
     setView('changes');
     const first = files[0];
-    if (first) setViewerSelection({ type: 'conflict', path: first });
+    if (first) { setViewerSelection({ type: 'conflict', path: first }); setMobilePane('viewer'); }
   }, []);
 
   const conflictPathSignature = (status?.changes ?? [])
@@ -1820,6 +1836,10 @@ export default function App() {
     }
   };
 
+  const browserRepositoryDialog = <OpenRepositoryDialog open={openRepositoryDialog} onOpenChange={setOpenRepositoryDialog} onOpen={async (path) => {
+    recordOpenedRepository(await opentig.repository.openPath(path));
+  }} />;
+
   if (!bootstrap) {
     return <SplashScreen heading="OpenTig" detail={startupSplashDetail(connectionState)} />;
   }
@@ -1827,6 +1847,7 @@ export default function App() {
     return (
       <TooltipProvider>
         <Toaster theme="light" position="bottom-right" />
+        {browserRepositoryDialog}
         <Welcome recent={bootstrap.recentRepositories} onOpen={openRepository} onRecent={(id) => void selectRecent(id)} />
       </TooltipProvider>
     );
@@ -1840,6 +1861,7 @@ export default function App() {
   return (
     <ShortcutsProvider shortcuts={shortcuts}>
     <TooltipProvider>
+      {browserRepositoryDialog}
       {/* Sileo names its themes after the page, not the toast: `light` fills the
           toast with #1a1a1a and `dark` with #f2f2f2. Pinning it to `light` keeps
           every toast dark whatever the app theme is, and also sidesteps `system`,
@@ -1954,7 +1976,7 @@ export default function App() {
           />
         </Suspense>
       )}
-      <div className="app-shell">
+      <div className="app-shell" data-mobile-pane={mobilePane}>
         <Toolbar
           repository={repository}
           recent={bootstrap.recentRepositories}
@@ -1987,6 +2009,21 @@ export default function App() {
           onSettingsSection={setSettingsSection}
         />
         {status?.readOnly && <div className="operation-banner">Repository is read-only: {status.operation} is in progress.</div>}
+        <nav className="mobile-navigation" aria-label="Repository views">
+          {SIDEBAR_VIEWS.map((item) => (
+            <button key={item} aria-current={view === item ? 'page' : undefined} onClick={() => { setView(item); setMobilePane('list'); }}>
+              {item === 'changes' ? <IconGitCompare /> : item === 'files' ? <IconFiles /> : item === 'history' ? <IconHistory /> : item === 'prs' ? <IconGitPullRequest /> : <IconSearch />}
+              <span>{item === 'changes' ? 'Changes' : item === 'files' ? 'Files' : item === 'history' ? 'History' : item === 'prs' ? 'PRs' : 'Search'}</span>
+            </button>
+          ))}
+        </nav>
+        <div className="mobile-workspace-actions">
+          {mobilePane !== 'list' ? (
+            <button ref={mobileBackRef} onClick={() => setMobilePane('list')}><IconArrowLeft /> Back to {view === 'prs' ? 'PRs' : view}</button>
+          ) : <span>{view === 'changes' ? `${status?.changes.length ?? 0} changes` : view === 'files' ? 'Repository files' : view === 'history' ? 'Commit history' : view === 'prs' ? 'Pull requests' : 'Search files'}</span>}
+          {Boolean(status?.stagedCount || commitProposal) && <button aria-pressed={mobilePane === 'commit'} onClick={() => { setView('changes'); setMobilePane('commit'); }}><IconGitCommit /> Commit{status?.stagedCount ? ` (${status.stagedCount})` : ''}</button>}
+          {mobilePane === 'list' && viewerSelection && <button onClick={() => setMobilePane('viewer')}>View selection</button>}
+        </div>
         <main className="workspace">
           <aside className="sidebar" style={{ width: bootstrap.preferences.sidebarWidth }}>
             <nav className="sidebar-tabs" data-shortcuts={ctrlHeld ? 'visible' : undefined} aria-label="Repository views">
@@ -2038,6 +2075,7 @@ export default function App() {
                     readOnly={Boolean(status?.readOnly || busy)}
                     fileClipboardAvailable={capabilities?.fileClipboard === true}
                     revealAvailable={capabilities?.revealInFileManager === true}
+                    onQuickOpen={() => setQuickOpen(true)}
                     historyState={fileHistoryState}
                     onUndo={() => performFileHistory('undo')}
                     onRedo={() => performFileHistory('redo')}
@@ -2144,7 +2182,7 @@ export default function App() {
                   draftFor={(path) => readFileDraft(repository.id, path)}
                   onSelect={selectViewer}
                   onOpenFile={openFile}
-                  onDiffViewChange={(value) => void updatePreference({ diffView: value })}
+                  onDiffViewChange={(value) => { if (mobile) setMobileDiffView(value); else void updatePreference({ diffView: value }); }}
                   onWrapLinesChange={(value) => void updatePreference({ wrapLines: value })}
                   onDraftChange={storeFileDraft}
                   onDraftSaved={(path) => {
@@ -2159,7 +2197,7 @@ export default function App() {
           </section>
         </main>
         <CommitComposer
-          open={view === 'changes' && Boolean(status?.stagedCount || commitProposal)}
+          open={mobile ? mobilePane === 'commit' : view === 'changes' && Boolean(status?.stagedCount || commitProposal)}
           stagedCount={status?.stagedCount ?? 0}
           message={commitMessage}
           generating={Boolean(generating)}

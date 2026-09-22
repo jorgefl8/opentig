@@ -69,6 +69,7 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
   return (
     <ViewerTabs value={tab} onValueChange={(value) => setTab(value as typeof tab)} className="pr-viewer">
       <header className="pr-viewer-header">
+        <div className="pr-viewer-overview">
         <div className="pr-viewer-title">
           <Badge variant={details.state === 'OPEN' && !details.isDraft ? 'default' : 'secondary'} className={`pr-state-badge ${stateLabel.toLowerCase().replace(/\s+/g, '-')}`}>{stateLabel}</Badge>
           <h2>{details.title || '(no title)'} <span className="pr-number">#{details.number}</span></h2>
@@ -101,6 +102,7 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
             ))}
           </div>
         )}
+        </div>
         <ViewerTabsList
           label="Pull request view"
           className="markdown-viewer-tabs pr-viewer-tabs"

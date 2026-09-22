@@ -5,6 +5,7 @@ import './renderer/styles/index.css';
 import { lazy, StrictMode, Suspense } from 'react';
 import { createRoot } from 'react-dom/client';
 import { QueryClientProvider } from '@tanstack/react-query';
+import { MobileViewport } from './renderer/components/MobileViewport';
 import { ServerConnectionBoundary } from './renderer/components/ServerConnectionBoundary';
 import { queryClient } from './renderer/lib/query-client';
 
@@ -18,6 +19,7 @@ const application = window.location.pathname === '/pair'
   : <ServerConnectionBoundary><App /></ServerConnectionBoundary>;
 createRoot(root).render(
   <StrictMode>
+    <MobileViewport />
     <QueryClientProvider client={queryClient}>
       <Suspense fallback={null}>{application}</Suspense>
     </QueryClientProvider>

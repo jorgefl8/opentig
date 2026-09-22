@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMobileLayout } from '@/lib/use-mobile-layout';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { IconChevronRight, IconFileArrowRight, IconGitCompare, IconMinus, IconPlus, IconRestore } from '@tabler/icons-react';
 import type { ChangesLayoutPreference } from '../../../shared/contracts';
@@ -35,6 +36,7 @@ export function ChangesView(props: ChangesViewProps) {
 }
 
 function ConflictSection({ scrollRef, changes, onSelect, onOpenFile }: { scrollRef: React.RefObject<HTMLDivElement | null>; changes: FileChange[]; onSelect(path: string): void; onOpenFile(path: string): void }) {
+  const mobile = useMobileLayout();
   const listRef = useRef<HTMLDivElement>(null);
   const sortedChanges = useMemo(() => [...changes].sort((a, b) => a.path.localeCompare(b.path)), [changes]);
   const scrollMargin = useVirtualScrollMargin(listRef, scrollRef);
@@ -42,11 +44,12 @@ function ConflictSection({ scrollRef, changes, onSelect, onOpenFile }: { scrollR
   const virtualizer = useVirtualizer({
     count: sortedChanges.length,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => 38,
+    estimateSize: () => mobile ? 48 : 38,
     getItemKey: (index) => sortedChanges[index]?.path ?? index,
     scrollMargin,
     overscan: 8,
   });
+  useEffect(() => { virtualizer.measure(); }, [virtualizer, mobile]);
   if (changes.length === 0) return null;
   return (
     <section className="change-section conflict-section">
@@ -101,9 +104,10 @@ function ChangeSection({ scrollRef, displayMode, title, changes, disabled, actio
   const rows: ChangeVirtualRow[] = displayMode === 'list'
     ? sortedChanges.map((change) => ({ kind: 'file', change, depth: 0 }))
     : treeRows;
+  const mobile = useMobileLayout();
   const listRef = useRef<HTMLDivElement>(null);
   const scrollMargin = useVirtualScrollMargin(listRef, scrollRef);
-  const rowHeight = displayMode === 'list' ? 38 : 30;
+  const rowHeight = mobile ? 48 : displayMode === 'list' ? 38 : 30;
   // eslint-disable-next-line react-hooks/incompatible-library -- TanStack Virtual is intentionally imperative.
   const virtualizer = useVirtualizer({
     count: rows.length,
@@ -116,12 +120,13 @@ function ChangeSection({ scrollRef, displayMode, title, changes, disabled, actio
     scrollMargin,
     overscan: 10,
   });
+  useEffect(() => { virtualizer.measure(); }, [virtualizer, rowHeight]);
   return (
     <section className="change-section">
       <div className="section-heading">
         <span>{title}</span><Badge variant="secondary">{changes.length}</Badge>
         <div className="heading-actions">
-          <Tooltip><TooltipTrigger render={<Button variant="ghost" size="icon-xs" className="change-action-button" disabled={disabled || changes.length === 0} onClick={onAll} />}>{action === 'stage' ? <IconPlus /> : <IconMinus />}</TooltipTrigger><TooltipContent>{action === 'stage' ? 'Stage all' : 'Unstage all'}</TooltipContent></Tooltip>
+          <Tooltip><TooltipTrigger render={<Button variant="ghost" size="icon-xs" className="change-action-button" disabled={disabled || changes.length === 0} aria-label={action === 'stage' ? 'Stage all' : 'Unstage all'} onClick={onAll} />}>{action === 'stage' ? <IconPlus /> : <IconMinus />}</TooltipTrigger><TooltipContent>{action === 'stage' ? 'Stage all' : 'Unstage all'}</TooltipContent></Tooltip>
         </div>
       </div>
       {changes.length === 0 ? <p className="empty-list">No changes</p> : (

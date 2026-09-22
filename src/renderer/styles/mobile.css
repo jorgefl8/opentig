@@ -1,0 +1,227 @@
+/* Phone layouts are intentionally independent of the saved desktop layout. */
+.pr-viewer-overview { display: contents; }
+.mobile-navigation, .mobile-workspace-actions, .file-touch-actions, .files-mobile-tools, .local-refs-mobile-back { display: none; }
+
+@media (max-width: 767px) {
+  html { --diffs-font-size: 16px; --diffs-line-height: 26px; }
+  html, body, #root { width: 100%; min-width: 0; overscroll-behavior: none; }
+  html #root { height: var(--mobile-viewport-height, 100dvh); }
+  html .app-shell {
+    min-width: 0;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+  html button, html a, html [role="button"] { touch-action: manipulation; }
+  /* 16px prevents iOS focus zoom, without disabling browser zoom. */
+  html input:not([type="checkbox"]):not([type="range"]), html textarea, html select { font-size: 16px; }
+  html [data-slot="button"], html [data-slot="select-trigger"], html [data-slot="combobox-trigger"] { min-height: 40px; }
+  html [data-slot="button"][data-size^="icon"] { min-width: 40px; }
+  html [data-slot="select-item"], html [data-slot="combobox-item"], html [data-slot="context-menu-item"] { height: auto; min-height: 44px; }
+  html [data-slot="select-content"], html [data-slot="combobox-content"], html [data-slot="context-menu-content"] {
+    max-width: calc(100vw - 16px); max-height: min(var(--available-height, 80dvh), calc(var(--mobile-viewport-height, 100dvh) - 24px)); overflow-y: auto; overscroll-behavior: contain;
+  }
+  html [data-slot="context-menu-content"] { min-width: min(280px, calc(100vw - 16px)); }
+  html [data-slot="context-menu-item"] > span { white-space: normal; }
+
+  /* Repository identity stays on the first row; refs/actions wrap below it.
+     Open files get their own horizontal strip, never squeezing the controls. */
+  html .toolbar { height: auto; min-height: 48px; flex-wrap: wrap; gap: 4px; padding: 5px 8px; -webkit-app-region: no-drag; }
+  html .toolbar-brand { order: 0; }
+  html .toolbar-brand > span, html .repo-select-shortcut, html .repo-select-index, html .toolbar-spacer { display: none; }
+  html .toolbar .repo-select { flex: 1 1 calc(100% - 76px); max-width: none; width: auto; }
+  html .toolbar > .toolbar-worktree { flex: 1 1 70px; max-width: none; }
+  html .toolbar > [data-slot="combobox-trigger"] { flex: 1 1 70px; max-width: none; }
+  html .toolbar .branch-stats { flex: none; gap: 3px; }
+  html .toolbar .line-stats { display: none; }
+  html .branch-sync, html .branch-push { min-width: 36px; min-height: 40px; }
+  html .open-files-strip { order: 2; flex: 1 0 100%; width: 100%; min-width: 0; border-top: 1px solid var(--border); padding-top: 3px; }
+  html .open-files-strip:empty { display: none; }
+  html .open-file-tab { min-height: 40px; }
+  html .open-file-tab-close { width: 32px; height: 32px; opacity: 1; }
+  html .open-file-tab.dirty .open-file-tab-close-icon { opacity: 1; }
+  html .open-file-tab.dirty .open-file-tab-dot { right: 3px; top: 3px; }
+
+  html .mobile-navigation { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); flex: none; border-bottom: 1px solid var(--border); background: var(--sidebar); }
+  html .mobile-navigation button { display: flex; min-width: 0; min-height: 52px; flex-direction: column; align-items: center; justify-content: center; gap: 3px; color: var(--muted-foreground); font-size: 11px; }
+  html .mobile-navigation button > svg { width: 19px; height: 19px; }
+  html .mobile-navigation button[aria-current="page"] { color: var(--foreground); background: var(--row-selected); box-shadow: inset 0 -2px var(--primary); }
+  html .mobile-workspace-actions { display: flex; min-height: 44px; flex: none; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px; padding: 2px 8px; border-bottom: 1px solid var(--border); font-size: 12px; }
+  html .mobile-workspace-actions > span { color: var(--muted-foreground); }
+  html .mobile-workspace-actions button { display: inline-flex; min-height: 40px; align-items: center; gap: 5px; border-radius: var(--radius-md); padding: 0 6px; }
+  html .mobile-workspace-actions button[aria-pressed="true"] { background: var(--row-selected); }
+  html .mobile-workspace-actions svg { width: 17px; height: 17px; }
+  html .workspace { min-width: 0; }
+  html .sidebar { width: 100% !important; min-width: 0; max-width: none; flex: 1; border-right: 0; }
+  html .sidebar-tabs { display: none; }
+  html .viewer-pane { width: 100%; min-width: 0; }
+  html .app-shell[data-mobile-pane="list"] .viewer-pane,
+  html .app-shell[data-mobile-pane="viewer"] .sidebar,
+  html .app-shell[data-mobile-pane="commit"] .workspace { display: none; }
+  html .viewer-message, html .viewer-empty { padding: 20px; overflow-wrap: anywhere; }
+  html .operation-banner { flex: none; white-space: normal; overflow-wrap: anywhere; }
+
+  /* Match these heights to the virtualizer estimates in the list components. */
+  html .file-tree-row { height: 44px; }
+  html .change-row { min-height: 48px; height: 48px; }
+  html .tree-folder { min-height: 48px; }
+  html .change-row-actions { opacity: 1; }
+  html .change-action-button { min-width: 36px; min-height: 40px; }
+  html .folder-toggle { width: 36px; height: 44px; }
+  html .file-label { min-height: 44px; }
+  html .section-heading { min-height: 44px; }
+  html .files-mobile-tools { display: flex; flex: none; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--border); padding: 4px 8px; }
+  html .file-touch-actions { display: inline-flex; position: absolute; top: 0; right: 0; width: 44px; height: 44px; align-items: center; justify-content: center; background: var(--sidebar); }
+  html .file-touch-actions svg { width: 18px; height: 18px; }
+  html .file-tree-row:not(.files-sticky-row) { padding-right: 48px; }
+  html .files-sticky { display: none; }
+  html .files-view { height: auto; flex: 1; }
+  html .commit-undo, html .search-replace-action, html .pull-open-external, html .repository-row-actions { opacity: 1; }
+  html .commit-expand { width: 32px; height: 44px; }
+  html .search-query-row { flex-wrap: wrap; }
+  html .search-query-row .search-input { flex-basis: calc(100% - 44px); }
+  html .search-input input, html .search-replace-row > input { height: 40px; }
+  html .search-replace-row { padding-left: 0; }
+  html .search-options { flex-wrap: wrap; }
+  html .search-match-open { padding-left: 12px; }
+
+  /* The commit form is a workspace destination on phones, so it cannot cover
+     staging controls. Going back leaves the draft and suggested plan intact. */
+  html .commit-composer { position: relative; bottom: auto; left: auto; min-height: 0; max-height: none; width: 100%; flex: 1; align-content: start; border: 0; border-radius: 0; padding: 16px; box-shadow: none; animation: none; transform: none; }
+  html .commit-composer[data-state="closed"] { display: none; }
+  html .commit-composer-hint { display: none; }
+  html .commit-composer-input { min-height: 120px; }
+  html .commit-composer-header, html .commit-plan-heading { flex-wrap: wrap; }
+  html .commit-composer-provider { flex-wrap: wrap; justify-content: center; overflow-wrap: anywhere; }
+  html .commit-composer-generate { flex-wrap: wrap; height: auto; padding-block: 10px; white-space: normal; }
+  html .commit-composer-commit { grid-template-columns: minmax(0, 1fr); }
+  html .commit-plan-heading-actions { margin-left: auto; }
+
+  html .diff-workspace-toolbar { flex-wrap: wrap; gap: 6px; padding: 6px 8px; }
+  html .diff-workspace-scope { flex: 1 1 100%; }
+  html .diff-workspace-actions { flex-wrap: wrap; }
+  html .pr-code-scope { flex-wrap: wrap; }
+  html .pr-commit-select { max-width: 100%; min-height: 40px; }
+  html .diff-file-header { gap: 5px; padding-inline: 8px; }
+  html .diff-file-stats { font-size: 10px; gap: 3px; }
+  html .commit-diff-header { padding: 12px; }
+  html .commit-diff-header h2 { font-size: 15px; overflow-wrap: anywhere; }
+  html .conflict-viewer-toolbar { flex-wrap: wrap; gap: 8px; padding: 8px; }
+  html .conflict-viewer-toolbar > div { min-width: 0; overflow-wrap: anywhere; }
+  html .conflict-actions { flex-wrap: wrap; }
+  html .pr-viewer-header { display: flex; flex-direction: column; max-height: 45%; overflow: hidden; padding: 10px; }
+  html .pr-viewer-overview { display: grid; min-height: 0; flex: 0 1 auto; gap: 8px; overflow-y: auto; }
+  html .pr-viewer-title { flex-wrap: wrap; }
+  html .pr-viewer-title h2 { flex: 1 1 100%; white-space: normal; overflow-wrap: anywhere; }
+  html .viewer-tabs-list > button { min-height: 44px; }
+  html .pr-viewer-tabs { flex: none; align-self: flex-start; max-width: 100%; overflow-x: auto; }
+  html .pr-summary-section, html .pr-timeline { padding: 12px; }
+  html .pr-branches { max-width: 100%; }
+  html .file-viewer-pill { position: relative; top: auto; left: auto; transform: none; flex: none; align-self: stretch; max-width: 100%; min-height: 48px; border-radius: 0; border-width: 0 0 1px; box-shadow: none; }
+  html .file-viewer-pill button { min-height: 40px; }
+  html .source-file-toolbar { top: 4px; right: 4px; }
+  html .file-save-button { width: 40px; height: 40px; }
+  html .source-file-viewer:has(> .source-file-toolbar) { padding-top: 48px; }
+  html .image-preview-toolbar { flex-wrap: wrap; overflow-x: auto; }
+  html .markdown-prose { padding: 16px; overflow-wrap: anywhere; }
+  html .markdown-prose pre, html .markdown-prose table { max-width: 100%; overflow-x: auto; }
+
+  /* Shared sheets use the visual viewport on browsers whose keyboards overlay
+     the layout viewport. Each long form owns a scroll area; short confirms can
+     scroll the popup itself. Safe areas leave close/submit controls reachable. */
+  html [data-slot="dialog-popup"] {
+    top: calc(var(--mobile-viewport-top, 0px) + env(safe-area-inset-top) + 8px);
+    left: max(8px, env(safe-area-inset-left));
+    width: calc(100vw - max(8px, env(safe-area-inset-left)) - max(8px, env(safe-area-inset-right)));
+    max-width: none; max-height: calc(var(--mobile-viewport-height, 100dvh) - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 16px);
+    --tw-translate-x: 0px; --tw-translate-y: 0px;
+    animation: none; transform: none; translate: none; overflow-y: auto; overscroll-behavior: contain;
+  }
+  html .settings-dialog, html .local-refs-dialog, html .create-pr-dialog { height: calc(var(--mobile-viewport-height, 100dvh) - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 16px); }
+  html .settings-shell { min-height: 0; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  html .settings-nav { display: flex; flex-direction: row; min-width: 0; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--border); padding: 6px; gap: 3px; }
+  html .settings-nav-title { display: none; }
+  html .settings-nav-item { flex: none; min-height: 44px; padding: 8px; }
+  html .settings-panel-header, html .settings-panel-body { padding: 12px; }
+  html .settings-font-pickers { grid-template-columns: minmax(0, 1fr); }
+  html .settings-theme-option { min-height: 44px; }
+  html .settings-switch { width: 44px; height: 28px; }
+  html .settings-switch span { width: 24px; height: 24px; }
+  html .settings-switch[aria-checked="true"] span { transform: translateX(16px); }
+  html .web-access-fact { grid-template-columns: minmax(0, 1fr); gap: 5px; }
+  html .web-access-fact > div { justify-content: flex-start; text-align: left; }
+  html .web-access-endpoints { justify-items: start; }
+  html .web-access-pairing { grid-template-columns: minmax(0, 1fr); }
+  html .web-access-pairing img { grid-row: auto; }
+  html .web-access-session { grid-template-columns: minmax(0, 1fr) auto; }
+  html .web-access-session-icon { display: none; }
+  html .web-access-session-copy > div { flex-wrap: wrap; }
+  html .ai-harness-card { grid-template-columns: minmax(0, 1fr); }
+  html .ai-harness-card > [data-slot="badge"] { justify-self: start; }
+  html .shortcuts-row, html .shortcuts-fixed-row { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  html .shortcuts-row-actions { justify-content: flex-start; }
+  html .local-refs-toolbar { flex-wrap: wrap; padding: 8px; }
+  html .local-refs-search { flex-basis: 100%; }
+  html .local-refs-tabs { flex: 1; }
+  html .local-refs-tab { min-height: 40px; flex: 1; }
+  html .local-refs-body { grid-template-rows: minmax(0, 1fr); }
+  html .local-refs-body[data-mobile-detail="false"] .local-refs-detail,
+  html .local-refs-body[data-mobile-detail="true"] .local-refs-list { display: none; }
+  html .local-refs-mobile-back { display: block; min-height: 44px; flex: none; padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--border); font-size: 13px; }
+  html .local-refs-header, html .repository-projects-header { padding: 12px; gap: 8px; }
+  html .local-refs-footer, html .local-refs-detail-actions { flex-wrap: wrap; }
+  html .repository-projects-body { padding: 12px; }
+  html .repository-assignment-row [data-slot="select-trigger"] { margin-left: 0; }
+  html .ai-log-dialog { padding: 12px; grid-template-rows: auto auto minmax(0, 1fr); }
+  html .ai-log-header { flex-wrap: wrap; }
+  html .ai-log-header-actions { margin-left: auto; }
+  html .ai-log-table-wrap { max-width: 100%; }
+  html .ai-log-note { white-space: normal; overflow-wrap: anywhere; }
+  html .undo-commit-actions, html .name-dialog-actions { flex-wrap: wrap; }
+  html .undo-commit-summary { overflow-wrap: anywhere; flex-wrap: wrap; }
+  html .create-pr-content { overflow-y: auto; flex: 1; padding: 12px; }
+  html .create-pr-content > * { flex-shrink: 0; }
+  html .create-pr-base-row { grid-template-columns: minmax(0, 1fr); }
+  html .create-pr-body-panel { min-height: 180px; }
+  html .create-pr-actions { flex-wrap: wrap; padding: 10px; }
+  html .create-pr-actions .create-pr-generate { width: 100%; min-width: 0; height: auto; min-height: 44px; white-space: normal; }
+  html .create-pr-submit-actions { flex-wrap: wrap; }
+  html .create-pr-notice { flex-wrap: wrap; overflow-wrap: anywhere; }
+  html .create-pr-draft { min-height: 44px; }
+  html .create-pr-submit-actions { width: 100%; justify-content: flex-end; }
+  html .name-dialog-input, html .web-access-rename-input { width: 100%; min-width: 0; min-height: 44px; }
+  html .ai-log-note { min-height: 40px; text-align: left; }
+  html .quick-open-dialog { max-height: calc(var(--mobile-viewport-height, 100dvh) - 24px); }
+  html .quick-open-result { min-height: 48px; }
+  html .quick-open-hints { display: none; }
+
+  html .welcome { height: 100%; justify-content: flex-start; overflow-y: auto; padding: max(40px, env(safe-area-inset-top)) 20px max(24px, env(safe-area-inset-bottom)); }
+  html .welcome section { width: 100%; margin-top: 28px; }
+  html .welcome > * { flex-shrink: 0; }
+  html .welcome .shortcut { display: none; }
+  html .pairing-page, html .access-page { height: 100%; min-height: 0; overflow-y: auto; align-items: safe center; padding: 20px; }
+  html .pairing-page section, html .access-page section { min-width: 0; padding: 20px; overflow-wrap: anywhere; }
+  html .server-connection-state { right: 8px; bottom: max(8px, env(safe-area-inset-bottom)); max-width: calc(100vw - 16px); flex-wrap: wrap; }
+}
+
+/* Tablets and touch-enabled desktop windows retain the wide layout, while
+   essential actions are still visible without hovering. */
+@media (hover: none), (pointer: coarse) {
+  .open-file-tab-close, .change-row-actions, .commit-undo, .search-replace-action, .pull-open-external, .repository-row-actions { opacity: 1; }
+  .file-touch-actions { display: inline-flex; position: absolute; right: 0; top: 0; height: 100%; width: 36px; align-items: center; justify-content: center; background: var(--sidebar); }
+  .file-touch-actions svg { width: 18px; height: 18px; }
+  .file-tree-row:not(.files-sticky-row) { padding-right: 40px; }
+}
+
+@media (min-width: 768px) and (max-width: 1100px) {
+  html .toolbar { height: auto; min-height: var(--toolbar-height); flex-wrap: wrap; padding-block: 5px; }
+  html .open-files-strip { order: 2; flex: 1 0 100%; min-width: 0; }
+}
+
+/* Sileo's decorative SVG and header coordinates assume a fixed 350px canvas.
+   Below that width, retain its content/actions in a plain bounded card. */
+@media (max-width: 374px) {
+  html [data-sileo-viewport] { right: 0; left: 0; width: 100%; max-width: 100%; padding: 12px; padding-bottom: max(12px, env(safe-area-inset-bottom)); }
+  html [data-sileo-toast] { --sileo-width: calc(100vw - 24px); border-radius: 16px; background: #1a1a1a; overflow: hidden; }
+  html [data-sileo-canvas] { display: none; }
+  html [data-sileo-header] { left: 0; right: 0; max-width: 100%; transform: none; }
+  html [data-sileo-button] { min-height: 40px; }
+}

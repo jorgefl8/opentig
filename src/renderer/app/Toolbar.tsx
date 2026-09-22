@@ -349,7 +349,7 @@ export function Toolbar(props: ToolbarProps) {
         if (value === MANAGE_WORKTREES_VALUE) { openRefsManager('worktrees'); return; }
         props.onWorktree(value);
       }} disabled={refsBusy}>
-        <SelectTrigger size="sm" className="max-w-[190px]"><IconHierarchy2 /><SelectValue>{currentWorktree?.path.split(/[\\/]/).pop() ?? props.repository.name}</SelectValue></SelectTrigger>
+        <SelectTrigger size="sm" className="toolbar-worktree max-w-[190px]" aria-label="Select worktree"><IconHierarchy2 /><SelectValue>{currentWorktree?.path.split(/[\\/]/).pop() ?? props.repository.name}</SelectValue></SelectTrigger>
         <SelectContent align="end" alignItemWithTrigger={false} className="w-max max-w-[min(280px,calc(100vw-24px))]">
           {props.worktrees.map((item) => <SelectItem key={item.path} value={item.path} disabled={Boolean(item.locked || item.prunable || item.bare)}><span className="min-w-0 flex-1 truncate">{item.path.split(/[\\/]/).pop()} {item.branch ? `· ${item.branch}` : '· detached'}</span></SelectItem>)}
           <SelectItem value={MANAGE_WORKTREES_VALUE} className="repo-select-manage"><IconSettings /><span>Manage worktrees…</span></SelectItem>
@@ -376,7 +376,7 @@ export function Toolbar(props: ToolbarProps) {
           />
         </Suspense>
       )}
-      <Tooltip><TooltipTrigger render={<Button variant="ghost" size="icon-sm" onClick={props.onRefresh} disabled={props.busy === 'refresh'} />}>{props.busy === 'refresh' ? <IconLoader4 className="animate-spin" /> : <IconRefresh />}</TooltipTrigger><TooltipContent>Refresh (Ctrl+R)</TooltipContent></Tooltip>
+      <Tooltip><TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Refresh" onClick={props.onRefresh} disabled={props.busy === 'refresh'} />}>{props.busy === 'refresh' ? <IconLoader4 className="animate-spin" /> : <IconRefresh />}</TooltipTrigger><TooltipContent>Refresh (Ctrl+R)</TooltipContent></Tooltip>
       <Tooltip>
         <TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Settings" onClick={() => props.onSettingsOpen(true)} />}><IconSettings /></TooltipTrigger>
         <TooltipContent>Settings</TooltipContent>

@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { useMobileLayout } from '@/lib/use-mobile-layout';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useQuery } from '@tanstack/react-query';
 import { IconChevronDown, IconChevronRight, IconEyeOff, IconLetterCase, IconLoader4, IconRegex, IconReplace, IconReplaceFilled, IconSearch, IconTextWrapDisabled } from '@tabler/icons-react';
@@ -30,6 +31,7 @@ interface SearchViewProps {
 }
 
 export function SearchView({ repositoryId, active, revision, onOpenFile, unsavedPathsAmong, onReplaced }: SearchViewProps) {
+  const mobile = useMobileLayout();
   const [query, setQuery] = useState('');
   const [matchCase, setMatchCase] = useState(false);
   const [wholeWord, setWholeWord] = useState(false);
@@ -88,7 +90,7 @@ export function SearchView({ repositoryId, active, revision, onOpenFile, unsaved
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => scrollRef.current,
-    estimateSize: (index) => rows[index]?.kind === 'file' ? FILE_ROW_HEIGHT : MATCH_ROW_HEIGHT,
+    estimateSize: (index) => mobile ? 44 : rows[index]?.kind === 'file' ? FILE_ROW_HEIGHT : MATCH_ROW_HEIGHT,
     getItemKey: (index) => {
       const row = rows[index];
       if (!row) return index;
@@ -96,6 +98,7 @@ export function SearchView({ repositoryId, active, revision, onOpenFile, unsaved
     },
     overscan: 12,
   });
+  useEffect(() => { virtualizer.measure(); }, [virtualizer, mobile]);
 
   const toggleFile = (path: string) => setCollapsed((current) => {
     const next = new Set(current);

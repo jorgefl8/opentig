@@ -18,6 +18,13 @@ export const VIEWER_SCROLLBAR_CSS = `
     width: 0;
     height: 0;
   }
+
+  /* Editor widgets live in Pierre's shadow tree and cannot inherit the app's
+     input rules. Keep keyboard focus from triggering iOS viewport zoom. */
+  @media (max-width: 767px) {
+    input, textarea, [contenteditable="true"] { font-size: 16px; }
+    button { min-height: 40px; touch-action: manipulation; }
+  }
 `;
 
 /**

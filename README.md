@@ -161,6 +161,7 @@ AI never creates a commit or pull request automatically. You review and edit the
 - Per-provider AI model selection.
 - Rebind most keyboard shortcuts from **Settings → Shortcuts**, with per-shortcut conflict detection and one-click reset to defaults; the shortcuts marked fixed below follow platform or file-manager conventions and cannot be changed.
 - Turn off the double-tap-Control shortcut that brings OpenTig to the front from any application, also from **Settings → Shortcuts**.
+- Phone browsers use a single workspace pane with persistent Changes, Files, History, PRs, and Search navigation. Open a row to review its content, use Back to return to the list, and open Commit to write a message without covering staging controls. Files have visible action menus, selection mode, filename search, and creation controls; repository, branch, worktree, settings, and diagnostics controls remain available on touch screens. Dialogs and forms fit the keyboard and safe areas, and AI history details open with a tap. Browser repository opening uses a server-path form. Phone diffs start unified with a session-only layout choice, preserving the saved desktop layout.
 - Confirmations and secondary windows opened from Settings (revoking a browser, enabling LAN access, renaming a device, or viewing AI history) overlay the app at their own size, instead of inheriting the Settings window's width.
 - Persisted sidebar width, viewer preferences, shortcut customizations, recent repositories, projects, expanded file-tree paths, and each worktree's open file tabs.
 
