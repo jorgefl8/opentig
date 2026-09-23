@@ -12,6 +12,7 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: write
+      pull-requests: read
     concurrency:
       group: opentig-stable-release-draft
       cancel-in-progress: false

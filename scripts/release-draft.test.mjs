@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { expect, it, vi } from 'vitest';
-import { NOTES_START, NOTES_END, readCommits, renderNotes, replaceNotes, selectDraft, updateDraft } from './release-draft.mjs';
+import { NOTES_START, NOTES_END, attributeChanges, readCommits, renderNotes, replaceNotes, selectDraft, updateDraft } from './release-draft.mjs';
 
 const head = 'a'.repeat(40);
 const body = `${NOTES_START}\nOld notes\n${NOTES_END}`;
@@ -15,6 +15,9 @@ function fixture(releases = [], options = {}) {
     if (method === 'GET') {
       if (route === '/commits/main') return { sha: options.main || head };
       if (route === '/commits/v0.1.1') return { sha: options.tagCommit || head };
+      if (route.includes('&author=')) return [];
+      if (route.startsWith('/commits?')) return [{ sha: head, author: { login: 'contributor', type: 'User' }, commit: { author: { name: 'Contributor' } } }];
+      if (route.startsWith('/pulls?')) return [];
       if (route.startsWith('/releases?')) return releases;
       if (route.startsWith('/git/ref/')) return options.tagExists ? { ref: route } : null;
       if (route === '/releases/2') return options.current || releases.find((r) => r.id === 2);
@@ -32,6 +35,54 @@ it('starts the first draft at the package version and ignores prereleases when p
   expect(selectDraft([], '0.1.0').tag).toBe('v0.1.0');
   expect(selectDraft([published, { id: 3, tag_name: 'v1.0.0-rc.1', prerelease: true }], '0.1.0').tag).toBe('v0.1.1');
   expect(selectDraft([published, { ...published, id: 4, tag_name: 'v0.1.10' }], '0.1.0').tag).toBe('v0.1.11');
+});
+
+it('credits PR creators instead of mergers, preserves unlinked names, and lists only new human contributors once', async () => {
+  const shas = ['a', 'b', 'c', 'd', 'e', 'f', '1'].map((char) => char.repeat(40));
+  const commits = shas.map((sha, index) => ({ sha, message: index === 0 ? 'Merge pull request #12 from alice/feature\n\nfeat: folders' : 'fix: repair' }));
+  const users = ['merger', 'alice', 'previous-pr-author', 'old-commit-author', 'dependabot[bot]', null, 'alice'];
+  const previousSha = '9'.repeat(40);
+  const api = vi.fn(async (_method, route) => {
+    if (route.startsWith('/pulls?')) return [
+      { number: 12, title: 'feat: folders', merged_at: '2026-01-02', merge_commit_sha: shas[0], user: { login: 'alice', type: 'User' } },
+      { number: 1, merged_at: '2026-01-01', merge_commit_sha: previousSha, user: { login: 'previous-pr-author', type: 'User' } },
+    ];
+    if (route.includes('&author=')) return route.includes('old-commit-author') ? [{ sha: previousSha }] : [];
+    return shas.map((sha, i) => ({ sha, author: users[i] ? { login: users[i], type: i === 4 ? 'Bot' : 'User' } : null,
+      commit: { author: { name: 'Unlinked <Author>', email: 'private@example.invalid' } } }));
+  });
+  const result = await attributeChanges({ api, git: () => previousSha, commits, previousTag: 'v0.1.0', head });
+  expect(result.newContributors.map((entry) => entry.author.login)).toEqual(['alice']);
+  const notes = renderNotes(result.entries, 'jorgefl8/opentig', 'v0.1.0', head, result.newContributors);
+  expect(notes).toContain('feat: folders by @alice in [#12]');
+  expect(notes).not.toContain('@merger');
+  expect(notes).toContain('by Unlinked &lt;Author&gt;');
+  expect(notes).not.toContain('private@example.invalid');
+  expect(notes).toContain('by @dependabot[bot]');
+  expect(notes.split('## New Contributors')[1]).toContain('@alice made their first contribution in [#12]');
+  expect(notes.split('## New Contributors')[1]).not.toContain('dependabot');
+  expect(api).not.toHaveBeenCalledWith('GET', expect.stringContaining('author=previous-pr-author'));
+});
+
+it('checks every metadata page and does not attribute an unrelated PR number to its creator', async () => {
+  const api = vi.fn(async (_method, route) => {
+    if (route.startsWith('/pulls?')) return route.endsWith('page=1')
+      ? Array.from({ length: 100 }, (_, number) => ({ number, merged_at: null }))
+      : [{ number: 321, merged_at: '2026-01-01', merge_commit_sha: 'b'.repeat(40), user: { login: 'unrelated' } }];
+    return route.endsWith('page=1') ? Array.from({ length: 100 }, (_, sha) => ({ sha: String(sha) }))
+      : [{ sha: head, author: { login: 'actual', type: 'User' } }];
+  });
+  const result = await attributeChanges({ api, git: () => '', commits: [{ sha: head, message: 'fix: change (#321)' }], head });
+  expect(result.entries[0]).toMatchObject({ pr: null, author: { login: 'actual' } });
+  expect(result.newContributors.map((entry) => entry.author.login)).toEqual(['actual']);
+  expect(api).toHaveBeenCalledWith('GET', expect.stringContaining('/pulls?state=closed&base=main&per_page=100&page=2'));
+  expect(renderNotes(result.entries, 'jorgefl8/opentig', null, head)).toContain(`/commit/${head}`);
+});
+
+it('omits an empty new-contributors section and refuses to invent attribution when metadata is missing', async () => {
+  expect(renderNotes([{ sha: head, message: 'fix: old author', author: { login: 'old' } }], 'jorgefl8/opentig', null, head)).not.toContain('New Contributors');
+  await expect(attributeChanges({ api: async () => [], git: () => '', commits: [{ sha: head, message: 'fix: missing' }], head }))
+    .rejects.toThrow('author metadata is missing');
 });
 
 it('promotes the same draft for explicit package bumps and preserves a higher manually chosen version', () => {

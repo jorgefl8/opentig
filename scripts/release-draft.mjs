@@ -53,22 +53,92 @@ function escapeMarkdown(value) {
     .replace(/([\\`*_[\]])/g, '\\$1');
 }
 
-export function renderNotes(commits, repository, previousTag, head) {
+function describeCommit({ message }) {
+  const lines = message.trim().split('\n');
+  const merge = /^Merge pull request #(\d+)\b/.exec(lines[0]);
+  const subject = (merge ? lines.slice(1).find((line) => line.trim()) : lines[0]) || lines[0];
+  return { subject, pr: merge?.[1] || /\(#(\d+)\)$/.exec(subject)?.[1] || null };
+}
+
+function creditedAuthor(user, name) {
+  const login = user?.login;
+  return {
+    login: typeof login === 'string' && /^[a-z\d-]+(?:\[bot\])?$/i.test(login) ? login : null,
+    name: name || 'Unknown author',
+    bot: user?.type === 'Bot' || /\[bot\]$/i.test(login || ''),
+  };
+}
+
+export async function attributeChanges({ api, git, commits, previousTag, head }) {
+  const wanted = new Set(commits.map(({ sha }) => sha));
+  const metadata = new Map();
+  for (let page = 1; wanted.size; page += 1) {
+    const batch = await api('GET', `/commits?sha=${head}&per_page=100&page=${page}`);
+    for (const commit of batch) {
+      if (wanted.delete(commit.sha)) metadata.set(commit.sha, commit);
+    }
+    if (batch.length < 100) break;
+  }
+  if (wanted.size) throw new Error('GitHub author metadata is missing for release commits.');
+
+  const previousCommits = new Set(previousTag ? git('rev-list', previousTag, '--').trim().split('\n') : []);
+  const previousPrAuthors = new Set();
+  const pulls = new Map();
+  // PR creators can differ from both the commit author and the merger. Use
+  // actual merged PR metadata, never interpret an arbitrary #number as proof.
+  for (let page = 1; ; page += 1) {
+    const batch = await api('GET', `/pulls?state=closed&base=main&per_page=100&page=${page}`);
+    for (const pr of batch) {
+      if (!pr.merged_at) continue;
+      pulls.set(String(pr.number), pr);
+      if (previousCommits.has(pr.merge_commit_sha) && pr.user?.login) previousPrAuthors.add(pr.user.login.toLowerCase());
+    }
+    if (batch.length < 100) break;
+  }
+  const entries = commits.map((commit) => {
+    const details = describeCommit(commit);
+    const pull = pulls.get(details.pr);
+    const verifiedPr = pull?.merge_commit_sha === commit.sha;
+    const data = metadata.get(commit.sha);
+    return { ...commit,
+      subject: verifiedPr ? pull.title : details.subject,
+      pr: verifiedPr ? details.pr : null,
+      author: verifiedPr ? creditedAuthor(pull.user) : creditedAuthor(data.author, data.commit?.author?.name),
+    };
+  });
+  const newContributors = [];
+  const seen = new Set(previousPrAuthors);
+  for (const entry of entries) {
+    const { login, bot } = entry.author;
+    if (!login || bot || seen.has(login.toLowerCase())) continue;
+    seen.add(login.toLowerCase());
+    const previous = previousTag
+      ? await api('GET', `/commits?sha=${encodeURIComponent(previousTag)}&author=${encodeURIComponent(login)}&per_page=1`)
+      : [];
+    if (!previous.length) newContributors.push(entry);
+  }
+  return { entries, newContributors };
+}
+
+function changeLink(entry, base) {
+  return entry.pr ? `[#${entry.pr}](${base}/pull/${entry.pr})` : `[${entry.sha.slice(0, 7)}](${base}/commit/${entry.sha})`;
+}
+
+export function renderNotes(commits, repository, previousTag, head, newContributors = []) {
   const base = `https://github.com/${repository}`;
   const groups = new Map(['Features', 'Fixes', 'Maintenance'].map((name) => [name, []]));
-  for (const { sha, message } of commits) {
-    const lines = message.trim().split('\n');
-    const merge = /^Merge pull request #(\d+)\b/.exec(lines[0]);
-    const subject = (merge ? lines.slice(1).find((line) => line.trim()) : lines[0]) || lines[0];
-    const squash = /\(#(\d+)\)$/.exec(subject);
-    const pr = merge?.[1] || squash?.[1];
+  for (const commit of commits) {
+    const entry = { ...describeCommit(commit), ...commit };
+    const { subject, author } = entry;
     const type = /^(\w+)(?:\([^)]*\))?!?:/.exec(subject)?.[1];
     const group = type === 'feat' ? 'Features' : type === 'fix' || type === 'perf' ? 'Fixes' : 'Maintenance';
-    const link = pr ? `[#${pr}](${base}/pull/${pr})` : `[${sha.slice(0, 7)}](${base}/commit/${sha})`;
-    groups.get(group).push(`- ${escapeMarkdown(subject.replace(/\s*\(#\d+\)$/, ''))} (${link})`);
+    const by = author?.login ? `@${author.login}` : escapeMarkdown((author?.name || 'Unknown author').replace(/\s+/g, ' '));
+    groups.get(group).push(`- ${escapeMarkdown(subject.replace(/\s*\(#\d+\)$/, ''))} by ${by} in ${changeLink(entry, base)}`);
   }
   const sections = [...groups].filter(([, items]) => items.length)
     .map(([name, items]) => `### ${name}\n\n${items.join('\n')}`);
+  if (newContributors.length) sections.push(`## New Contributors\n\n${newContributors.map((entry) =>
+    `- @${entry.author.login} made their first contribution in ${changeLink(entry, base)}`).join('\n')}`);
   const compare = previousTag ? `${base}/compare/${previousTag}...${head}` : `${base}/commits/${head}`;
   return `${NOTES_START}\n## What's changed\n\n${sections.join('\n\n')}\n\n[Full changelog](${compare})\n${NOTES_END}`;
 }
@@ -129,7 +199,8 @@ export async function updateDraft({ api, git, repository, packageVersion, dryRun
   }
   const commits = readCommits(git, published?.tag_name, target);
   if (!commits.length) return 'No changes since the last published stable release.';
-  const body = replaceNotes(draft?.body, renderNotes(commits, repository, published?.tag_name, target));
+  const { entries, newContributors } = await attributeChanges({ api, git, commits, previousTag: published?.tag_name, head: target });
+  const body = replaceNotes(draft?.body, renderNotes(entries, repository, published?.tag_name, target, newContributors));
   if (Buffer.byteLength(body, 'utf8') > 120000) throw new Error('Release notes exceed the supported size.');
   if (dryRun) return JSON.stringify({ tag, commit: target, body }, null, 2);
   // Re-read immediately before patching: never set draft:true on an existing
