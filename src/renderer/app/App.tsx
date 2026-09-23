@@ -1837,7 +1837,7 @@ export default function App() {
     }
   };
 
-  const browserRepositoryDialog = <OpenRepositoryDialog open={openRepositoryDialog} onOpenChange={setOpenRepositoryDialog} onOpen={async (path) => {
+  const browserRepositoryDialog = <OpenRepositoryDialog open={openRepositoryDialog} onOpenChange={setOpenRepositoryDialog} onBrowse={opentig.repository.browseDirectories} onOpen={async (path) => {
     recordOpenedRepository(await opentig.repository.openPath(path));
   }} />;
 

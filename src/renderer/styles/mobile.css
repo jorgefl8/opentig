@@ -194,6 +194,7 @@
   html .quick-open-hints { display: none; }
 
   html .welcome { height: 100%; justify-content: flex-start; overflow-y: auto; padding: max(40px, env(safe-area-inset-top)) 20px max(24px, env(safe-area-inset-bottom)); }
+  html .welcome::before, html .welcome::after { content: ''; flex: 1 0 0; }
   html .welcome section { width: 100%; margin-top: 28px; }
   html .welcome > * { flex-shrink: 0; }
   html .welcome .shortcut { display: none; }

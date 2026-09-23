@@ -42,6 +42,15 @@ function transportFixture() {
 }
 
 describe('OpenTig server client', () => {
+  it('omits an absent directory path instead of serializing it as null', async () => {
+    const fixture = transportFixture();
+    const { api } = createOpenTigServerClient({ transport: fixture.transport });
+    await api.repository.browseDirectories();
+    await api.repository.browseDirectories('/home/projects');
+    expect(fixture.request).toHaveBeenNthCalledWith(1, IPC.repositoryBrowseDirectories, []);
+    expect(fixture.request).toHaveBeenNthCalledWith(2, IPC.repositoryBrowseDirectories, ['/home/projects']);
+  });
+
   it('maps typed domain methods to their wire commands', async () => {
     const fixture = transportFixture();
     const { api } = createOpenTigServerClient({ transport: fixture.transport });

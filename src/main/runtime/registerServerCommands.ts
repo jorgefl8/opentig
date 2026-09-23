@@ -6,6 +6,7 @@ import { GitOperationError } from '../../shared/errors';
 import { OPEN_TIG_SERVER_COMMANDS, type OpenTigServerCommandDefinition } from '../../shared/protocol';
 import { repositoryRootFromCommonDir } from '../../shared/repository-favicon';
 import { readRepositoryFavicon } from '../files/RepositoryFavicon';
+import { browseServerDirectories } from '../files/ServerDirectoryBrowser';
 import { CommandRegistry, type CommandExecutionContext } from './CommandRegistry';
 import type { OpenTigHost } from './OpenTigHost';
 import type { OpenTigRuntimeServices } from './OpenTigRuntime';
@@ -84,6 +85,9 @@ export function registerServerCommands(
   handle(IPC.projectAssign, 'project-assign', (repositoryKey, projectId) => services.settings.assignRepositoryProject(repositoryKeyArg(repositoryKey, 'project-assign'), nullableProjectIdArg(projectId, 'project-assign')));
   handleWithContext(IPC.repositoryOpenPath, 'open-path', (context, selectedPath) => openRepositoryPath(
     stringArg(selectedPath, 'open-path', 32_768), context,
+  ));
+  handle(IPC.repositoryBrowseDirectories, 'browse-directories', (path) => browseServerDirectories(
+    path === undefined ? undefined : stringArg(path, 'browse-directories', 32_768),
   ));
   handleWithContext(IPC.repositoryOpenRecent, 'open-recent', async (context, id) => {
     const repositoryId = stringArg(id, 'open-recent', 64);

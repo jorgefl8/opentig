@@ -45,6 +45,7 @@ export const OPEN_TIG_SERVER_COMMANDS = {
   'projects.assign': command(IPC.projectAssign, 'project-assign', true),
 
   'repository.openPath': command(IPC.repositoryOpenPath, 'open-path', true),
+  'repository.browseDirectories': command(IPC.repositoryBrowseDirectories, 'browse-directories', false),
   'repository.openRecent': command(IPC.repositoryOpenRecent, 'open-recent', true),
   'repository.relocateRecent': command(IPC.repositoryRelocateRecent, 'relocate-recent', true),
   'repository.getStatus': command(IPC.repositoryStatus, 'status', false),

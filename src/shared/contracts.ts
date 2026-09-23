@@ -443,6 +443,12 @@ export interface BootstrapData {
   server?: OpenTigServerIdentity;
 }
 
+export interface ServerDirectoryListing {
+  path: string;
+  parentPath: string | null;
+  directories: { name: string; path: string }[];
+}
+
 /**
  * Compatibility facade exposed by the current preload bridge. Execution
  * ownership is defined by OpenTigServerApi and OpenTigDesktopApi.
@@ -469,6 +475,8 @@ export interface OpenTigApi {
     /** Native moved-repository confirmation and directory picker. */
     selectRelocation(repositoryName: string, previousPath: string): Promise<string | null>;
     openPath(path: string): Promise<RepositoryInfo>;
+    /** Browse folders on the server before opening a repository. Defaults to the server home. */
+    browseDirectories(path?: string): Promise<ServerDirectoryListing>;
     openRecent(id: string): Promise<RepositoryInfo>;
     relocateRecent(id: string, path: string): Promise<RepositoryInfo>;
     getStatus(id: string, includeStats?: boolean): Promise<RepositoryStatus>;
@@ -578,7 +586,7 @@ export type IpcResult<T> = { ok: true; value: T } | { ok: false; error: Serializ
 
 export const IPC = {
   bootstrap: 'app:bootstrap', capabilities: 'app:capabilities', preferences: 'app:preferences', filesTreeStateUpdate: 'app:files-tree-state', openFilesStateUpdate: 'app:open-files-state', projectCreate: 'projects:create', projectRename: 'projects:rename', projectRemove: 'projects:remove', projectAssign: 'projects:assign',
-  repositoryOpenPath: 'repository:open-path', repositoryOpenRecent: 'repository:open-recent', repositoryRelocateRecent: 'repository:relocate-recent', repositoryStatus: 'repository:status', repositoryFiles: 'repository:files', repositoryDirectoryEntries: 'repository:directory-entries',
+  repositoryOpenPath: 'repository:open-path', repositoryBrowseDirectories: 'repository:browse-directories', repositoryOpenRecent: 'repository:open-recent', repositoryRelocateRecent: 'repository:relocate-recent', repositoryStatus: 'repository:status', repositoryFiles: 'repository:files', repositoryDirectoryEntries: 'repository:directory-entries',
   repositoryReadFile: 'repository:read-file', repositoryReadImage: 'repository:read-image', repositoryGetFavicon: 'repository:favicon', repositoryWriteFile: 'repository:write-file', repositoryAbsolutePath: 'repository:absolute-path',
   repositoryCopyEntries: 'repository:copy-entries', repositoryCutEntries: 'repository:cut-entries', repositoryPasteEntries: 'repository:paste-entries', repositoryMoveEntry: 'repository:move-entry', repositoryDeleteEntry: 'repository:delete-entry',
   repositoryMoveEntries: 'repository:move-entries', repositoryDeleteEntries: 'repository:delete-entries', repositoryRenameEntry: 'repository:rename-entry', repositoryCreateEntry: 'repository:create-entry',
