@@ -28,6 +28,10 @@ assert.equal(feed.owner, repository.owner);
 assert.equal(feed.repo, repository.repo);
 if (signed) assert.deepEqual(Array.isArray(feed.publisherName) ? feed.publisherName : [feed.publisherName], [publisher]);
 else assert.equal(feed.publisherName, undefined);
+// A PowerShell 7 parent exports its module search path. Windows PowerShell 5
+// must reconstruct its own defaults or it may load incompatible PS7 modules.
+const signatureEnvironment = Object.fromEntries(Object.entries(process.env)
+  .filter(([key]) => key.toLowerCase() !== 'psmodulepath'));
 execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-File', path.join(repositoryRoot, 'scripts/verify-windows-signature.ps1'),
-  '-Installer', installer, '-Application', path.join(resources, '../OpenTig.exe'), ...(signed ? ['-Publisher', publisher] : ['-Unsigned'])], { stdio: 'inherit', windowsHide: true });
+  '-Installer', installer, '-Application', path.join(resources, '../OpenTig.exe'), ...(signed ? ['-Publisher', publisher] : ['-Unsigned'])], { stdio: 'inherit', windowsHide: true, env: signatureEnvironment });
 console.log(signed ? 'SIGNED_WINDOWS_RELEASE_OK' : 'UNSIGNED_WINDOWS_RELEASE_OK');
