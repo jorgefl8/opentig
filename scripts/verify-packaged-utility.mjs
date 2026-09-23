@@ -1,4 +1,3 @@
-/* global AbortSignal, clearTimeout, fetch, setTimeout, URL, URLSearchParams */
 import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { createServer } from 'node:net';
@@ -8,6 +7,8 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
+import { packagedPaths } from './packaged-paths.mjs';
+
 const scriptPath = fileURLToPath(import.meta.url);
 const repositoryRoot = path.resolve(path.dirname(scriptPath), '..');
 const loadModule = createRequire(import.meta.url);
@@ -16,7 +17,7 @@ const electron = loadModule('electron');
 if (typeof electron === 'string') {
   const environment = { ...process.env };
   delete environment.ELECTRON_RUN_AS_NODE;
-  const result = spawnSync(electron, [scriptPath], { env: environment, stdio: 'inherit' });
+  const result = spawnSync(electron, [scriptPath, ...process.argv.slice(2)], { env: environment, stdio: 'inherit' });
   if (result.error) throw result.error;
   process.exitCode = result.status ?? 1;
 } else {
@@ -33,13 +34,16 @@ if (typeof electron === 'string') {
 }
 
 async function verifyPackagedUtility(electron) {
+  const { resources } = packagedPaths();
+  const { uIOhook } = loadModule(path.join(resources, 'app.asar.unpacked', 'node_modules', 'uiohook-napi'));
+  if (typeof uIOhook?.start !== 'function') throw new Error('Packaged native keyboard module did not load.');
   await verifyPackagedUtilityHost(electron, '127.0.0.1');
   await verifyPackagedUtilityHost(electron, '0.0.0.0');
   process.stdout.write('PACKAGED_UTILITY_PROCESS_SMOKE_OK\n');
 }
 
 async function verifyPackagedUtilityHost({ utilityProcess }, host) {
-  const resources = path.join(repositoryRoot, 'out', 'OpenTig-win32-x64', 'resources');
+  const { resources, profile } = packagedPaths();
   const serverRoot = path.join(resources, 'opentig-server');
   const directory = await mkdtemp(path.join(tmpdir(), 'opentig-packaged-utility-'));
   const port = await reservePort();
@@ -67,7 +71,8 @@ async function verifyPackagedUtilityHost({ utilityProcess }, host) {
           serverDataPath: path.join(directory, 'server'),
           clientRoot: path.join(serverRoot, 'client'),
           trashModulePath: path.join(resources, 'app.asar.unpacked', 'node_modules', 'trash', 'index.js'),
-          platform: 'win32',
+          platform: process.platform,
+          profile,
           host,
           port,
         },
@@ -96,10 +101,25 @@ async function verifyPackagedUtilityHost({ utilityProcess }, host) {
     if (pairing.action !== 'create-pairing-link' || !pairingToken || !/^[A-Za-z0-9_-]{43}$/.test(pairingToken)) {
       throw new Error('Packaged utility pairing control failed.');
     }
-    const revoked = await control(child, 'revoke-all-sessions');
-    if (revoked.action !== 'revoke-all-sessions' || !/^opentig_session=[A-Za-z0-9_-]{43};/.test(revoked.desktopCookie)) {
-      throw new Error('Packaged utility revocation control failed.');
+    const origin = `http://127.0.0.1:${ready.port}`;
+    const authenticated = await fetch(`${origin}/api/auth/desktop`, {
+      method: 'POST',
+      headers: { Origin: origin, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ secret: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' }),
+      signal: AbortSignal.timeout(5_000),
+    });
+    const cookie = authenticated.headers.get('set-cookie')?.split(';', 1)[0];
+    if (authenticated.status !== 204 || !cookie?.startsWith(profile === 'dev' ? 'opentig_dev_session=' : 'opentig_session=')) {
+      throw new Error('Packaged utility desktop bootstrap failed.');
     }
+    // Session revocation now uses authenticated HTTP, not the old utility control action.
+    const revoked = await fetch(`${origin}/api/auth/revoke-all`, {
+      method: 'POST',
+      headers: { Origin: origin, Cookie: cookie, 'Content-Type': 'application/json' },
+      body: '{}',
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (revoked.status !== 204) throw new Error('Packaged utility session revocation failed.');
     const exited = new Promise((resolve) => child.once('exit', resolve));
     child.postMessage({ type: 'shutdown' });
     if (await Promise.race([exited, delay(5_000).then(() => 'timeout')]) === 'timeout') throw new Error('Packaged utility ignored graceful shutdown.');

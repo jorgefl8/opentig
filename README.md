@@ -258,7 +258,7 @@ npx --yes npm@11.6.2 ci
 npm start
 ```
 
-`npm start` always uses **OpenTig Dev**. Its data lives in the OS application-data directory under `OpenTig Dev` (normally `~/.config/OpenTig Dev` on Linux or `%APPDATA%/OpenTig Dev` on Windows), without copying or falling back to production data. The profile is selected before Electron takes its instance lock or opens a session. Development can run on Linux; Windows installers and Windows-specific behavior must still be verified on Windows.
+`npm start` builds the shared server/client and Electron main/preload with Vite, then launches **OpenTig Dev**. Restart the command after source changes; this launcher does not provide live reload. Its data lives in the OS application-data directory under `OpenTig Dev` (normally `~/.config/OpenTig Dev` on Linux or `%APPDATA%/OpenTig Dev` on Windows), without copying or falling back to production data. The profile is selected before Electron takes its instance lock or opens a session. Development can run on Linux; Windows installers and Windows-specific behavior must still be verified on Windows.
 
 For browser development on a Linux machine without a desktop session, run:
 
@@ -312,19 +312,42 @@ Build a separate Dev application to evaluate local changes or a checked-out PR:
 
 ```bash
 npm run package:dev
+npm run verify:packaged-desktop -- --dev
 npm run verify:packaged-server -- --dev
 ```
 
 On Linux x64 the executable is `out/OpenTig Dev-linux-x64/OpenTig Dev`; on Windows x64 it is `out/OpenTig Dev-win32-x64/OpenTig Dev.exe`. The Dev identity is baked into the build, so moving the executable does not change its profile. All local Dev builds share the same Dev data; use a separate worktree for a PR's source and test repository changes in a disposable clone. Dev isolates application data, not your actual repositories or authenticated Git/GitHub/AI CLIs.
 
-`npm run make:dev` builds a portable Dev ZIP on Windows. Build production with the existing commands:
+Desktop packages use **electron-builder**; Vite remains the compiler. The web client is built once and served by the included server in both Electron and browser sessions. Only the Electron runtime dependencies are shipped, with native N-API binaries and platform Trash executables unpacked from ASAR.
+
+`npm run make:dev` creates a **portable Dev ZIP** for the current OS. Extract the complete ZIP before launching; it needs no installer, but still stores settings in the separate OS Dev data directory. It has no updater or stable update feed. Artifacts are written under `out/make/dev/<platform>-<arch>/`.
+
+Build the stable Windows x64 application and **NSIS installer** on Windows:
 
 ```powershell
 npm run package
 npm run make
+npm run verify:packaged-desktop
+npm run verify:packaged-server
+npm run verify:packaged-utility
+npm run verify:packaged-trash
 ```
 
-The unpacked executable is written to `out/OpenTig-win32-x64/OpenTig.exe`.
+The executable is `out/OpenTig-win32-x64/OpenTig.exe`; the installer is `out/make/production/win32-x64/OpenTig-<version>-win32-x64-Setup.exe`. The one-click installer installs for the current user, creates desktop/Start menu shortcuts, and preserves application data on uninstall. Stable keeps the `OpenTig` identity and existing production data location. An existing Squirrel installation is not automatically migrated or removed; installer migration and Windows behavior must be checked on Windows before release.
+
+To cross-build Windows targets from Linux, pass `-- --platform=win32 --arch=x64` to `package`, `make`, `package:dev`, or `make:dev`. Building NSIS on Linux also requires a working Wine installation and its runtime libraries, such as the environment in the electron-builder `electronuserland/builder:wine` container. ZIP builds do not need Wine. Use the same target flags with `verify:packaged-desktop` to inspect an artifact without executing it. The utility/Trash checks must run on the target OS with a graphical Electron environment; add `-- --dev` for Dev packages. `package` alone creates an unpacked application for the current OS; stable `make` is deliberately limited to the planned Windows x64 installer.
+
+With dependencies already installed in the Linux checkout, the NSIS build can run in that container without installing Wine on the host:
+
+```bash
+docker run --rm --init --user "$(id -u):$(id -g)" \
+  -e HOME=/tmp/opentig-builder-home \
+  -v "$PWD:$PWD" -w "$PWD" \
+  electronuserland/builder:wine \
+  bash -c 'mkdir -p "$HOME" && npm run make -- --platform=win32 --arch=x64'
+```
+
+Each package includes `opentig-build.json` with its profile, target and distribution (`directory`, `zip`, or `installer`), plus signed-release provenance and the update repository. Local commands never publish artifacts. Unsigned local installers are candidates without an update feed; only `make -- --release` enables the release feed and requires code signing.
 
 ## Desktop builds and releases on GitHub
 

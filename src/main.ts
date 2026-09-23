@@ -11,7 +11,6 @@ import {
   utilityProcess,
   type WebContents,
 } from 'electron';
-import started from 'electron-squirrel-startup';
 import { createElectronHostAdapter } from './main/ipc/ElectronHostAdapter';
 import { registerDesktopHandlers } from './main/ipc/registerDesktopHandlers';
 import { createPerformanceSampler, type PerformanceSampler } from './main/performance/PerformanceSampler';
@@ -32,7 +31,6 @@ import type { OpenTigServerHost } from './shared/server-process';
 import { applicationName, preferredServerPort, sessionCookieName } from './shared/application-profile';
 import { configureDesktopProfile } from './main/profile/DesktopProfile';
 
-if (started) app.exit(0);
 
 const applicationProfile = (() => {
   try { return configureDesktopProfile(app, __OPENTIG_BUILD_PROFILE__, process.platform); }

@@ -6,13 +6,13 @@ import process from 'node:process';
 import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
+import { packagedPaths } from './packaged-paths.mjs';
 const scriptPath = fileURLToPath(import.meta.url);
 const loadModule = createRequire(import.meta.url);
 const electron = loadModule('electron');
 
 async function verifyPackagedTrash() {
-  const resources = path.resolve(scriptDirectory, '..', 'out', 'OpenTig-win32-x64', 'resources');
+  const resources = packagedPaths().resources;
   const moduleUrl = pathToFileURL(path.join(resources, 'app.asar.unpacked', 'node_modules', 'trash', 'index.js')).href;
   const directory = await mkdtemp(path.join(os.tmpdir(), 'opentig-packaged-trash-'));
   if (!directory.startsWith(path.join(os.tmpdir(), 'opentig-packaged-trash-'))) {
@@ -43,7 +43,7 @@ async function expectMissing(target) {
 if (typeof electron === 'string') {
   const environment = { ...process.env };
   delete environment.ELECTRON_RUN_AS_NODE;
-  const result = spawnSync(electron, [scriptPath], { env: environment, stdio: 'inherit' });
+  const result = spawnSync(electron, [scriptPath, ...process.argv.slice(2)], { env: environment, stdio: 'inherit' });
   if (result.error) throw result.error;
   process.exitCode = result.status ?? 1;
 } else {

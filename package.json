@@ -9,11 +9,11 @@
     "packages/*"
   ],
   "scripts": {
-    "start": "npm run build:server && electron-forge start",
+    "start": "node scripts/start-desktop.mjs",
     "start:web:dev": "npm run build:server && node packages/server/dist/dev.mjs serve",
     "pair:web:dev": "node packages/server/dist/dev.mjs pair",
     "build:server": "npm run build --workspace packages/server",
-    "package": "npm run build:server && electron-forge package",
+    "package": "node scripts/package-desktop.mjs package",
     "package:dev": "node scripts/package-dev.mjs package",
     "make:dev": "node scripts/package-dev.mjs make",
     "verify:packaged-trash": "electron scripts/verify-packaged-trash.mjs",
@@ -21,12 +21,15 @@
     "verify:packaged-utility": "electron scripts/verify-packaged-utility.mjs",
     "release:pack:headless": "npm run build:server && node scripts/pack-headless.mjs",
     "release:inspect:headless": "node scripts/inspect-headless.mjs",
-    "make": "npm run build:server && electron-forge make",
+    "make": "node scripts/package-desktop.mjs make",
     "test": "vitest run",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "audit:prod": "npm audit --omit=dev --audit-level=high",
-    "check": "npm run typecheck && npm run lint && npm test && npm run audit:prod"
+    "check": "npm run typecheck && npm run lint && npm test && npm run audit:prod",
+    "build:desktop": "node scripts/build-desktop.mjs",
+    "verify:packaged-desktop": "node scripts/verify-packaged-desktop.mjs",
+    "verify:release": "node scripts/verify-release.mjs"
   },
   "keywords": [
     "git",
@@ -63,7 +66,7 @@
     "@tanstack/react-virtual": "^3.14.8",
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
-    "electron-squirrel-startup": "1.0.1",
+    "electron-updater": "6.8.9",
     "execa": "^10.0.1",
     "isomorphic-dompurify": "^3.18.0",
     "katex": "^0.17.0",
@@ -86,22 +89,16 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@electron-forge/cli": "7.11.2",
-    "@electron-forge/maker-squirrel": "7.11.2",
-    "@electron-forge/maker-zip": "7.11.2",
-    "@electron-forge/plugin-auto-unpack-natives": "7.11.2",
-    "@electron-forge/plugin-fuses": "7.11.2",
-    "@electron-forge/plugin-vite": "7.11.2",
-    "@electron-forge/shared-types": "7.11.2",
+    "@electron/asar": "4.2.0",
     "@electron/fuses": "1.8.0",
     "@eslint/js": "10.0.0",
     "@tailwindcss/vite": "4.3.3",
-    "@types/electron-squirrel-startup": "1.0.2",
     "@types/node": "24.10.1",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "5.1.4",
     "electron": "43.1.1",
+    "electron-builder": "26.15.3",
     "eslint": "10.0.0",
     "eslint-plugin-react-hooks": "7.1.1",
     "eslint-plugin-react-refresh": "0.5.2",
@@ -111,6 +108,7 @@
     "typescript": "6.0.2",
     "typescript-eslint": "8.65.0",
     "vite": "7.3.6",
-    "vitest": "4.1.9"
+    "vitest": "4.1.9",
+    "yaml": "2.9.1"
   }
 }
