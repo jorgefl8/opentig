@@ -6,10 +6,11 @@ import WebSocket from 'ws';
 import { CommandRegistry, type CommandExecutionContext } from '../../../src/main/runtime/CommandRegistry';
 import type { OpenTigRuntime } from '../../../src/main/runtime/OpenTigRuntime';
 import { OPEN_TIG_SERVER_COMMANDS } from '../../../src/shared/protocol';
-import { OneTimeBootstrapAuthSource, OpenTigSessionAuth } from './auth';
+import { BROWSER_SESSION_MAX_AGE_SECONDS, OneTimeBootstrapAuthSource, OpenTigSessionAuth } from './auth';
 import { OpenTigServer } from './OpenTigServer';
 
 interface Fixture {
+  auth: OpenTigSessionAuth;
   server: OpenTigServer;
   origin: string;
   socket(): Promise<WebSocket>;
@@ -25,6 +26,48 @@ afterEach(async () => {
 });
 
 describe('WebSocket safety limits', () => {
+  it('renews both the cookie and server lifetime over trusted HTTP without disconnecting the socket', async () => {
+    let now = Date.parse('2026-09-23T00:00:00.000Z');
+    const fixture = await startFixture(() => emptyBootstrap(), {}, () => now);
+    const cookie = (await fixture.auth.exchangePairingToken(fixture.auth.createPairingToken().token))!.split(';', 1)[0]!;
+    const socket = await openWebSocket(fixture.origin, cookie);
+    const renew = (origin: string, forwarded = false) => fetch(`${fixture.origin}/api/auth/renew`, {
+      method: 'POST', headers: { Cookie: cookie, Origin: origin, ...(forwarded ? { 'X-Forwarded-Host': 'opentig.example.com' } : {}) },
+    });
+    now += 29 * 24 * 60 * 60 * 1_000;
+    expect((await renew('https://foreign.example')).status).toBe(403);
+    const response = await renew('https://opentig.example.com', true);
+    expect(response.status).toBe(204);
+    expect(response.headers.get('cache-control')).toContain('no-store');
+    expect(response.headers.get('set-cookie')).toBe(`${cookie}; Path=/; HttpOnly; SameSite=Strict; Max-Age=2592000; Secure`);
+    now += 2 * 24 * 60 * 60 * 1_000;
+    expect(await sendAndReceive(socket, { type: 'request', id: 'renewed', command: 'app:bootstrap', args: [] })).toMatchObject({ result: { ok: true } });
+    expect(fixture.auth.sessions()).toHaveLength(2); // One desktop fixture and the same browser session.
+    const close = closed(socket);
+    await fetch(`${fixture.origin}/api/auth/logout`, { method: 'POST', headers: { Cookie: cookie, Origin: fixture.origin } });
+    await expect(close).resolves.toBe(1008);
+    const denied = await renew(fixture.origin);
+    expect(denied.status).toBe(401);
+    expect(denied.headers.get('set-cookie')).toBeNull();
+  });
+
+  it.each(['request', 'heartbeat'] as const)('rejects expired browser HTTP access and closes its existing socket on %s', async (trigger) => {
+    let now = Date.parse('2026-09-23T00:00:00.000Z');
+    const handler = vi.fn(() => emptyBootstrap());
+    const fixture = await startFixture(handler, { heartbeatMs: trigger === 'heartbeat' ? 20 : 60_000 }, () => now);
+    const cookie = (await fixture.auth.exchangePairingToken(fixture.auth.createPairingToken().token))!.split(';', 1)[0]!;
+    const socket = await openWebSocket(fixture.origin, cookie);
+    await sendAndReceive(socket, { type: 'request', id: 'before-expiry', command: 'app:bootstrap', args: [] });
+    expect(handler).toHaveBeenCalledTimes(1);
+    const close = closed(socket);
+    now += BROWSER_SESSION_MAX_AGE_SECONDS * 1_000;
+    if (trigger === 'request') socket.send(JSON.stringify({ type: 'request', id: 'expired', command: 'app:bootstrap', args: [] }));
+    await expect(close).resolves.toBe(1008);
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect((await fetch(`${fixture.origin}/api/auth/sessions`, { headers: { Cookie: cookie } })).status).toBe(401);
+    expect(await (await fetch(`${fixture.origin}/api/auth/descriptor`, { headers: { Cookie: cookie } })).json()).toMatchObject({ authenticated: false });
+  });
+
   it('caps in-flight requests at 32 and times out bounded commands', async () => {
     let release!: (value: unknown) => void;
     const pending = new Promise((resolve) => { release = resolve; });
@@ -132,7 +175,8 @@ describe('WebSocket safety limits', () => {
 
 async function startFixture(
   handler: (context: CommandExecutionContext, args: readonly unknown[]) => Promise<unknown> | unknown,
-  limits: { commandTimeoutMs?: number; connectionLimit?: number; requestRateLimit?: number; requestRateWindowMs?: number } = {},
+  limits: { commandTimeoutMs?: number; connectionLimit?: number; requestRateLimit?: number; requestRateWindowMs?: number; heartbeatMs?: number } = {},
+  now?: () => number,
 ): Promise<Fixture> {
   const directory = await mkdtemp(path.join(tmpdir(), 'opentig-ws-limits-'));
   directories.push(directory);
@@ -148,6 +192,7 @@ async function startFixture(
   const auth = await OpenTigSessionAuth.open({
     source: new OneTimeBootstrapAuthSource({ desktopSecret }),
     dataDirectory: path.join(directory, 'auth'),
+    ...(now ? { now } : {}),
   });
   const closeRuntime = vi.fn(async () => undefined);
   const runtime = { close: closeRuntime, services: { files: {} } } as unknown as OpenTigRuntime;
@@ -169,6 +214,7 @@ async function startFixture(
   const cookie = response.headers.get('set-cookie')?.split(';', 1)[0];
   if (!cookie) throw new Error('Authentication cookie missing.');
   const fixture: Fixture = {
+    auth,
     server,
     origin: address.origin,
     closeRuntime,

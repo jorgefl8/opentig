@@ -89,6 +89,12 @@ async function handleRequest(context: OpenTigHttpContext, request: IncomingMessa
   if (method === 'POST' && rawPath.startsWith('/api/')) {
     if (!isAllowedOrigin(request)) return sendJson(response, 403, { error: 'Forbidden origin.' });
 
+    if (rawPath === '/api/auth/renew') {
+      const cookie = await context.auth.renewBrowserCookie(request.headers, requestOriginIsSecure(request));
+      if (!cookie) return sendJson(response, 401, { error: 'Authentication required.' });
+      return sendJson(response, 204, null, { 'Set-Cookie': cookie });
+    }
+
     if (rawPath === '/api/auth/pair' || rawPath === '/api/auth/desktop') {
       const body = await readJsonObject(request, response);
       if (!body) return;

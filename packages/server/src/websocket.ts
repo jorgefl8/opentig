@@ -139,7 +139,7 @@ export class OpenTigWebSocketTransport {
     catch { return this.sendProtocolError(socket, '', 'Malformed request.'); }
     if (isPing(input)) return void this.send(socket, { type: 'pong' });
     if (!isRequest(input)) return this.sendProtocolError(socket, requestId(input), 'Malformed request.');
-    if (!this.options.auth.hasSession(state.sessionId)) return socket.close(1008, 'Session revoked');
+    if (!this.options.auth.hasSession(state.sessionId)) return socket.close(1008, 'Session expired or revoked');
     const now = Date.now();
     state.requestTimes = state.requestTimes.filter((requestedAt) => now - requestedAt < this.requestRateWindowMs);
     if (state.requestTimes.length >= this.requestRateLimit) return this.sendProtocolError(socket, input.id, 'Request rate limit exceeded.');
@@ -180,6 +180,8 @@ export class OpenTigWebSocketTransport {
 
   private send(socket: WebSocket, message: OpenTigServerMessage): void {
     if (socket.readyState !== WebSocket.OPEN) return;
+    const state = this.clients.get(socket);
+    if (state && !this.options.auth.hasSession(state.sessionId)) return socket.close(1008, 'Session expired or revoked');
     const serialized = JSON.stringify(message);
     if (socket.bufferedAmount + Buffer.byteLength(serialized) > MAX_BUFFERED_SEND_BYTES) {
       socket.close(1013, 'Client is too slow');
@@ -192,6 +194,10 @@ export class OpenTigWebSocketTransport {
 
   private checkHeartbeats(): void {
     for (const [socket, state] of this.clients) {
+      if (!this.options.auth.hasSession(state.sessionId)) {
+        socket.close(1008, 'Session expired or revoked');
+        continue;
+      }
       if (!state.alive) {
         socket.terminate();
         continue;

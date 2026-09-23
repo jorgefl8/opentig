@@ -1,11 +1,14 @@
-import { appDisplayName, isDevProfile } from '@/lib/app-identity';
-import { useState, type FormEvent } from 'react';
+import { appDisplayName } from '@/lib/app-identity';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Button } from '@/components/ui/button';
+import { PairingCommand } from './PairingCommand';
 import {
+  checkPairingSession,
   consumePairingFragment,
   defaultDeviceName,
   exchangePairingToken,
   type PairingExchangeResult,
+  type PairingSessionResult,
 } from './pairing';
 
 const messages: Record<Exclude<PairingExchangeResult, 'paired'>, string> = {
@@ -17,6 +20,20 @@ export default function PairingPage() {
   const [token, setToken] = useState(() => consumePairingFragment(window.location, window.history));
   const [clientName, setClientName] = useState(() => defaultDeviceName(window.navigator.userAgent));
   const [status, setStatus] = useState<'idle' | 'pairing' | Exclude<PairingExchangeResult, 'paired'>>('idle');
+  const [session, setSession] = useState<'checking' | PairingSessionResult>('checking');
+  const [checkAttempt, setCheckAttempt] = useState(0);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let active = true;
+    const timeout = window.setTimeout(() => controller.abort(), 10_000);
+    void checkPairingSession(controller.signal).then((result) => {
+      if (!active) return;
+      if (result === 'authenticated') window.location.replace('/');
+      setSession(result);
+    }).finally(() => window.clearTimeout(timeout));
+    return () => { active = false; controller.abort(); window.clearTimeout(timeout); };
+  }, [checkAttempt]);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -29,13 +46,28 @@ export default function PairingPage() {
     else setStatus(result);
   };
 
+  if (session !== 'unpaired') {
+    return (
+      <main className="access-page pairing-page flex min-h-dvh items-center justify-center bg-background px-4 py-6 text-foreground">
+        <section className="w-full max-w-md rounded-xl border border-border bg-card p-6 shadow-sm">
+          <h1 className="text-lg font-semibold">{session === 'unavailable' ? 'Could not check this browser' : 'Checking this browser…'}</h1>
+          <p className="mt-2 text-sm text-muted-foreground" role="status">
+            {session === 'unavailable' ? 'Could not verify your saved session. Check your connection and try again.' : 'Checking your saved session before asking you to pair again.'}
+          </p>
+          {session === 'unavailable' && <Button className="mt-5" onClick={() => { setSession('checking'); setCheckAttempt((value) => value + 1); }}>Try again</Button>}
+        </section>
+      </main>
+    );
+  }
+
   return (
     <main className="access-page pairing-page flex min-h-dvh items-center justify-center bg-background px-4 py-6 text-foreground">
       <section className="w-full max-w-md rounded-xl border border-border bg-card p-6 shadow-sm">
         <h1 className="text-lg font-semibold">Pair this browser</h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          Enter the one-use code shown by the {appDisplayName} desktop app or <code>{isDevProfile ? 'npm run pair:web:dev' : 'opentig pair'}</code>. It expires after five minutes.
+          Enter the one-use code shown by the {appDisplayName} desktop app or generated with the command below on the server. It expires after five minutes.
         </p>
+        <PairingCommand />
         <form className="mt-5 grid gap-4" onSubmit={(event) => void submit(event)}>
           <label className="grid gap-1.5 text-sm" htmlFor="pairing-code">
             <span className="font-medium">Pairing code</span>
@@ -69,6 +101,7 @@ export default function PairingPage() {
           <p className="mt-4 text-sm text-destructive" role="alert">{messages[status]}</p>
         )}
         <p className="mt-4 text-xs text-muted-foreground">The code is removed from the address bar immediately and is never stored by the browser.</p>
+        <p className="mt-2 text-xs text-muted-foreground">This browser remembers its access and renews it automatically while you use OpenTig. Pair again after 30 days without renewal, clearing cookies, or revoking access.</p>
       </section>
     </main>
   );

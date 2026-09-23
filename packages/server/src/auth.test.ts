@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { OneTimeBootstrapAuthSource, OpenTigSessionAuth } from './auth';
+import { BROWSER_SESSION_MAX_AGE_SECONDS, OneTimeBootstrapAuthSource, OpenTigSessionAuth } from './auth';
 
 const directories: string[] = [];
 
@@ -11,6 +11,127 @@ afterEach(async () => {
 });
 
 describe('persistent owner authentication', () => {
+  it.each(['production', 'dev'] as const)('renews %s browser access across the original expiry and a restart without changing its credential', async (profile) => {
+    let now = Date.parse('2026-09-23T00:00:00.000Z');
+    const directory = await authDirectory();
+    const config = { source: new OneTimeBootstrapAuthSource({ desktopSecret: 'desktop-secret' }), dataDirectory: directory, now: () => now, profile };
+    const auth = await OpenTigSessionAuth.open(config);
+    const cookie = cookieValue((await auth.exchangePairingToken(auth.createPairingToken().token))!);
+    const id = auth.authenticate({ cookie });
+    now += 29 * 24 * 60 * 60 * 1_000;
+    const renewed = await auth.renewBrowserCookie({ cookie }, true);
+    expect(cookieValue(renewed!)).toBe(cookie);
+    expect(renewed).toContain('HttpOnly; SameSite=Strict; Max-Age=2592000; Secure');
+    expect(auth.sessions()[0]?.expiresAt).toBe('2026-11-21T00:00:00.000Z');
+    expect(auth.sessions()[0]?.createdAt).toBe('2026-09-23T00:00:00.000Z');
+    await auth.close();
+    now += 2 * 24 * 60 * 60 * 1_000;
+    const restarted = await OpenTigSessionAuth.open(config);
+    expect(restarted.authenticate({ cookie })).toBe(id);
+    now = Date.parse('2026-11-21T00:00:00.000Z');
+    await expect(restarted.renewBrowserCookie({ cookie })).resolves.toBeNull();
+    expect(restarted.authenticate({ cookie })).toBeNull();
+    await restarted.close();
+  });
+
+  it('does not renew desktop cookies or resurrect access revoked alongside a renewal', async () => {
+    const directory = await authDirectory();
+    const auth = await OpenTigSessionAuth.open({ source: new OneTimeBootstrapAuthSource({ desktopSecret: 'desktop-secret' }), dataDirectory: directory });
+    const desktop = cookieValue((await auth.exchangeDesktopSecret('desktop-secret'))!);
+    await expect(auth.renewBrowserCookie({ cookie: desktop })).resolves.toBeNull();
+    const cookie = cookieValue((await auth.exchangePairingToken(auth.createPairingToken().token))!);
+    await Promise.all([auth.renewBrowserCookie({ cookie }), auth.revoke({ cookie })]);
+    expect(auth.authenticate({ cookie })).toBeNull();
+    await expect(auth.renewBrowserCookie({ cookie })).resolves.toBeNull();
+    await expect(auth.renewBrowserCookie({ cookie: 'opentig_session=unknown' })).resolves.toBeNull();
+    await auth.close();
+  });
+
+  it('enforces the browser lifetime on the server across activity and restarts', async () => {
+    let now = Date.parse('2026-09-23T00:00:00.000Z');
+    const issuedAt = now;
+    const directory = await authDirectory();
+    const config = { source: new OneTimeBootstrapAuthSource({ desktopSecret: 'desktop-secret' }), dataDirectory: directory, now: () => now };
+    const auth = await OpenTigSessionAuth.open(config);
+    const desktop = cookieValue((await auth.exchangeDesktopSecret('desktop-secret'))!);
+    const browser = cookieValue((await auth.exchangePairingToken(auth.createPairingToken().token))!);
+    const id = auth.authenticate({ cookie: browser })!;
+    const expiresAt = issuedAt + BROWSER_SESSION_MAX_AGE_SECONDS * 1_000;
+    expect(auth.sessions().find((session) => session.id === id)?.expiresAt).toBe(new Date(expiresAt).toISOString());
+    now = expiresAt - 1;
+    expect(auth.authenticate({ cookie: browser })).toBe(id);
+    await auth.recordConnection(id);
+    await auth.close();
+    const restarted = await OpenTigSessionAuth.open(config);
+    expect(restarted.authenticate({ cookie: browser })).toBe(id);
+    now = expiresAt;
+    expect(restarted.authenticate({ cookie: browser })).toBeNull();
+    expect(restarted.hasSession(id)).toBe(false);
+    expect(restarted.sessions().some((session) => session.id === id)).toBe(false);
+    await expect(restarted.recordConnection(id)).resolves.toBe(false);
+    expect(restarted.authenticate({ cookie: desktop })).toBeTruthy();
+    await restarted.close();
+    const expiredRestart = await OpenTigSessionAuth.open(config);
+    expect(expiredRestart.authenticate({ cookie: browser })).toBeNull();
+    await expiredRestart.close();
+  });
+
+  it.each([2, 3])('migrates v%s sessions with a fixed expiry derived from creation, not restart', async (version) => {
+    let now = Date.parse('2026-09-23T00:00:00.000Z');
+    const directory = await authDirectory();
+    const config = { source: new OneTimeBootstrapAuthSource({ desktopSecret: 'desktop-secret' }), dataDirectory: directory, now: () => now };
+    const auth = await OpenTigSessionAuth.open(config);
+    const cookie = cookieValue((await auth.exchangePairingToken(auth.createPairingToken().token))!);
+    const id = auth.authenticate({ cookie })!;
+    await auth.close();
+    const sessionsPath = path.join(directory, 'sessions.json');
+    const data = JSON.parse(await readFile(sessionsPath, 'utf8'));
+    data.version = version;
+    for (const session of data.sessions) delete session.expiresAt;
+    await writeFile(sessionsPath, JSON.stringify(data));
+    now += 29 * 24 * 60 * 60 * 1_000;
+    const migrated = await OpenTigSessionAuth.open(config);
+    expect(migrated.authenticate({ cookie })).toBe(id);
+    expect(migrated.sessions()[0]?.expiresAt).toBe('2026-10-23T00:00:00.000Z');
+    await migrated.close();
+    expect(JSON.parse(await readFile(sessionsPath, 'utf8')).version).toBe(4);
+    now += 24 * 60 * 60 * 1_000;
+    const expired = await OpenTigSessionAuth.open(config);
+    expect(expired.authenticate({ cookie })).toBeNull();
+    await expired.close();
+  });
+
+  it.each([null, 'invalid-date'])('rejects browser records with invalid persisted expiry %s', async (expiresAt) => {
+    const directory = await authDirectory();
+    const config = { source: new OneTimeBootstrapAuthSource({ desktopSecret: 'desktop-secret' }), dataDirectory: directory };
+    const auth = await OpenTigSessionAuth.open(config);
+    await auth.exchangePairingToken(auth.createPairingToken().token);
+    await auth.close();
+    const sessionsPath = path.join(directory, 'sessions.json');
+    const data = JSON.parse(await readFile(sessionsPath, 'utf8'));
+    data.sessions[0].expiresAt = expiresAt;
+    await writeFile(sessionsPath, JSON.stringify(data));
+    await expect(OpenTigSessionAuth.open(config)).rejects.toThrow('session data is corrupt');
+  });
+
+  it.each(['production', 'dev'] as const)('remembers paired %s browsers without persisting desktop cookies', async (profile) => {
+    const directory = await authDirectory();
+    const config = { source: new OneTimeBootstrapAuthSource({ desktopSecret: 'desktop-secret' }), dataDirectory: directory, profile };
+    const auth = await OpenTigSessionAuth.open(config);
+    const desktop = await auth.exchangeDesktopSecret('desktop-secret');
+    expect(desktop).not.toContain('Max-Age');
+    const paired = await auth.exchangePairingToken(auth.createPairingToken().token, undefined, true);
+    expect(paired).toContain('Max-Age=2592000; Secure');
+    const header = cookieValue(paired!);
+    await auth.close();
+    const restarted = await OpenTigSessionAuth.open(config);
+    expect(restarted.authenticate({ cookie: header })).toBeTruthy();
+    expect(restarted.expiredCookie(true)).toContain('Max-Age=0; Secure');
+    await restarted.revoke({ cookie: header });
+    expect(restarted.authenticate({ cookie: header })).toBeNull();
+    await restarted.close();
+  });
+
   it('mints 32-byte pairing tokens, rotates them, and consumes one exactly once', async () => {
     const directory = await authDirectory();
     const auth = await OpenTigSessionAuth.open({
@@ -29,7 +150,7 @@ describe('persistent owner authentication', () => {
       auth.exchangePairingToken(second.token),
     ]);
     expect(exchanges.filter(Boolean)).toHaveLength(1);
-    expect(exchanges.find(Boolean)).toMatch(/^opentig_session=[A-Za-z0-9_-]{43}; Path=\/; HttpOnly; SameSite=Strict; Secure$/);
+    expect(exchanges.find(Boolean)).toMatch(/^opentig_session=[A-Za-z0-9_-]{43}; Path=\/; HttpOnly; SameSite=Strict; Max-Age=2592000; Secure$/);
     expect(auth.descriptor().pairingAvailable).toBe(false);
     await auth.close();
   });
@@ -116,7 +237,7 @@ describe('persistent owner authentication', () => {
       deviceType: 'unknown',
       lastConnectedAt: null,
     })]);
-    expect(JSON.parse(await readFile(sessionsPath, 'utf8'))).toEqual(expect.objectContaining({ version: 3 }));
+    expect(JSON.parse(await readFile(sessionsPath, 'utf8'))).toEqual(expect.objectContaining({ version: 4 }));
     await migrated.close();
   });
 

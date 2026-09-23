@@ -1,7 +1,23 @@
 import { describe, expect, it, vi } from 'vitest';
-import { consumePairingFragment, defaultDeviceName, exchangePairingToken } from './pairing';
+import { checkPairingSession, consumePairingFragment, defaultDeviceName, exchangePairingToken } from './pairing';
 
 describe('browser pairing', () => {
+  it.each([true, false])('checks the current cookie before offering pairing (authenticated=%s)', async (authenticated) => {
+    const signal = new AbortController().signal;
+    const request = vi.fn(async () => ({ ok: true, json: async () => ({ authenticated }) }));
+    await expect(checkPairingSession(signal, request)).resolves.toBe(authenticated ? 'authenticated' : 'unpaired');
+    expect(request).toHaveBeenCalledWith('/api/auth/descriptor', { credentials: 'include', cache: 'no-store', signal });
+  });
+
+  it('does not ask for pairing when the session check fails or returns an invalid response', async () => {
+    const signal = new AbortController().signal;
+    for (const descriptor of [null, {}, { authenticated: 'false' }]) {
+      await expect(checkPairingSession(signal, async () => ({ ok: true, json: async () => descriptor }))).resolves.toBe('unavailable');
+    }
+    await expect(checkPairingSession(signal, async () => ({ ok: false, json: async () => ({ authenticated: false }) }))).resolves.toBe('unavailable');
+    await expect(checkPairingSession(signal, async () => { throw new Error('offline'); })).resolves.toBe('unavailable');
+  });
+
   it('clears and returns a fragment credential before any exchange', () => {
     const replaceState = vi.fn();
     expect(consumePairingFragment(

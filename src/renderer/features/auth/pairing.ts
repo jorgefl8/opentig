@@ -1,4 +1,22 @@
 export type PairingExchangeResult = 'paired' | 'rejected' | 'unavailable';
+export type PairingSessionResult = 'authenticated' | 'unpaired' | 'unavailable';
+
+/** A failed check must not be mistaken for a missing browser session. */
+export async function checkPairingSession(
+  signal: AbortSignal,
+  request: (input: string, init: RequestInit) => Promise<Pick<Response, 'ok' | 'json'>> = fetch,
+): Promise<PairingSessionResult> {
+  try {
+    const response = await request('/api/auth/descriptor', { credentials: 'include', cache: 'no-store', signal });
+    if (!response.ok) return 'unavailable';
+    const descriptor: unknown = await response.json();
+    if (!descriptor || typeof descriptor !== 'object' || !('authenticated' in descriptor)) return 'unavailable';
+    if (descriptor.authenticated === true) return 'authenticated';
+    return descriptor.authenticated === false ? 'unpaired' : 'unavailable';
+  } catch {
+    return 'unavailable';
+  }
+}
 
 interface PairingLocation {
   pathname: string;

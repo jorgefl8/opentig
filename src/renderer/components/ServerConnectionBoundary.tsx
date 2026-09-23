@@ -1,7 +1,8 @@
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { SplashScreen } from '@/components/SplashScreen';
 import { Button } from '@/components/ui/button';
-import { isDevProfile } from '@/lib/app-identity';
+import { PairingCommand } from '@/features/auth/PairingCommand';
+import { maintainBrowserSession } from '@/features/auth/session-renewal';
 import { serverClient } from '@/lib/opentig-api';
 import type { ServerConnectionState } from '@/lib/websocket-transport';
 
@@ -23,6 +24,10 @@ export function ServerConnectionBoundary({ children }: { children: ReactNode }) 
   const [connectedBefore, setConnectedBefore] = useState(false);
 
   useEffect(() => {
+    if (state === 'connected' && !window.opentigDesktop) return maintainBrowserSession();
+  }, [state]);
+
+  useEffect(() => {
     if (state === 'connected') setConnectedBefore(true);
     document.documentElement.dataset.serverConnection = state;
     return () => { delete document.documentElement.dataset.serverConnection; };
@@ -36,11 +41,14 @@ export function ServerConnectionBoundary({ children }: { children: ReactNode }) 
           <h1 className="text-lg font-semibold">Authentication required</h1>
           <p className="mt-2 text-sm text-muted-foreground">
             {desktop ? 'Restart OpenTig to restore its private desktop session.' : (
-              <>Generate a pairing code with <code>{isDevProfile ? 'npm run pair:web:dev' : 'opentig pair'}</code> on the server, or from Settings → Network access in the desktop app.</>
+              <>Generate a pairing code with the command below on the server, or from Settings → Network access in the desktop app.</>
             )}
           </p>
           {!desktop && (
-            <Button className="mt-5" nativeButton={false} render={<a href="/pair" />}>Pair this browser</Button>
+            <>
+              <PairingCommand />
+              <Button className="mt-5" nativeButton={false} render={<a href="/pair" />}>Pair this browser</Button>
+            </>
           )}
         </section>
       </main>

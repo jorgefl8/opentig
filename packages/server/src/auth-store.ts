@@ -2,7 +2,8 @@ import { createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypt
 import { chmod, mkdir, open, readFile, rename, rm } from 'node:fs/promises';
 import path from 'node:path';
 
-const AUTH_DATA_VERSION = 3;
+const AUTH_DATA_VERSION = 4;
+export const BROWSER_SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
 const SECRET_BYTES = 32;
 const SECRET_FILE = 'server-secret';
 const SESSIONS_FILE = 'sessions.json';
@@ -18,6 +19,7 @@ interface PersistedSession {
   remoteAddress: string | null;
   viaProxy: boolean;
   createdAt: string;
+  expiresAt: string | null;
   lastConnectedAt: string | null;
 }
 
@@ -52,18 +54,19 @@ export class PersistentAuthStore {
     private readonly directory: string,
     private readonly secret: Buffer,
     sessions: PersistedSession[],
+    private readonly now: () => number,
   ) {
     this.sessions = sessions;
   }
 
-  static async open(directory: string): Promise<PersistentAuthStore> {
+  static async open(directory: string, now: () => number = Date.now): Promise<PersistentAuthStore> {
     const resolved = path.resolve(directory);
     await mkdir(resolved, { recursive: true, mode: 0o700 });
     await chmod(resolved, 0o700);
     const secret = await loadOrCreateSecret(path.join(resolved, SECRET_FILE));
     const dataPath = path.join(resolved, SESSIONS_FILE);
     const { sessions, migrated } = await loadSessions(dataPath);
-    const store = new PersistentAuthStore(resolved, secret, sessions);
+    const store = new PersistentAuthStore(resolved, secret, sessions, now);
     if (migrated || !(await exists(dataPath))) await store.writeSessions(sessions);
     return store;
   }
@@ -80,13 +83,14 @@ export class PersistentAuthStore {
     const candidate = this.digestCredential(token);
     let sessionId: string | null = null;
     for (const session of this.sessions) {
-      if (constantTimeEqual(candidate, session.digest)) sessionId ??= session.id;
+      if (constantTimeEqual(candidate, session.digest) && this.isActive(session)) sessionId ??= session.id;
     }
     return sessionId;
   }
 
   issue(metadata: SessionMetadata): Promise<IssuedSession> {
     const token = randomBytes(32).toString('base64url');
+    const createdAt = new Date(this.now()).toISOString();
     const session: PersistedSession = {
       id: randomBytes(18).toString('base64url'),
       digest: this.digestCredential(token),
@@ -97,7 +101,8 @@ export class PersistentAuthStore {
       browser: metadata.browser,
       remoteAddress: metadata.remoteAddress,
       viaProxy: metadata.viaProxy,
-      createdAt: new Date().toISOString(),
+      createdAt,
+      expiresAt: sessionExpiry(metadata.kind, createdAt),
       lastConnectedAt: null,
     };
     return this.mutate((sessions) => ({
@@ -108,7 +113,7 @@ export class PersistentAuthStore {
 
   renameSession(sessionId: string, clientName: string): Promise<boolean> {
     return this.mutate((sessions) => {
-      const index = sessions.findIndex((session) => session.id === sessionId && session.kind !== 'desktop');
+      const index = sessions.findIndex((session) => session.id === sessionId && session.kind !== 'desktop' && this.isActive(session));
       if (index < 0) return { next: sessions, result: false };
       const next = sessions.slice();
       next[index] = { ...next[index]!, clientName };
@@ -116,9 +121,24 @@ export class PersistentAuthStore {
     });
   }
 
+  renewBrowserSession(token: string): Promise<boolean> {
+    const digest = this.digestCredential(token);
+    return this.mutate((sessions) => {
+      const index = sessions.findIndex((session) => session.kind !== 'desktop'
+        && constantTimeEqual(digest, session.digest) && this.isActive(session));
+      if (index < 0) return { next: sessions, result: false };
+      const session = sessions[index]!;
+      const expiresAt = sessionExpiry(session.kind, new Date(this.now()).toISOString());
+      if (expiresAt === session.expiresAt) return { next: sessions, result: true };
+      const next = sessions.slice();
+      next[index] = { ...session, expiresAt };
+      return { next, result: true };
+    });
+  }
+
   recordConnection(sessionId: string, connectedAt = new Date().toISOString()): Promise<boolean> {
     return this.mutate((sessions) => {
-      const index = sessions.findIndex((session) => session.id === sessionId);
+      const index = sessions.findIndex((session) => session.id === sessionId && this.isActive(session));
       if (index < 0) return { next: sessions, result: false };
       const next = sessions.slice();
       next[index] = { ...next[index]!, lastConnectedAt: connectedAt };
@@ -158,7 +178,7 @@ export class PersistentAuthStore {
   }
 
   listSessions(): StoredSession[] {
-    return this.sessions.map((session) => ({
+    return this.sessions.filter((session) => this.isActive(session)).map((session) => ({
       id: session.id,
       kind: session.kind,
       clientName: session.clientName,
@@ -168,12 +188,17 @@ export class PersistentAuthStore {
       remoteAddress: session.remoteAddress,
       viaProxy: session.viaProxy,
       createdAt: session.createdAt,
+      expiresAt: session.expiresAt,
       lastConnectedAt: session.lastConnectedAt,
     }));
   }
 
   hasSession(sessionId: string): boolean {
-    return this.sessions.some((session) => session.id === sessionId);
+    return this.sessions.some((session) => session.id === sessionId && this.isActive(session));
+  }
+
+  private isActive(session: PersistedSession): boolean {
+    return session.expiresAt === null || this.now() < Date.parse(session.expiresAt);
   }
 
   close(): Promise<void> {
@@ -253,6 +278,7 @@ async function loadSessions(filePath: string): Promise<{ sessions: PersistedSess
         sessions: parsed.sessions.map((session) => ({
           ...session,
           kind: 'legacy',
+          expiresAt: sessionExpiry('legacy', session.createdAt),
           clientName: 'Legacy browser session',
           deviceType: 'unknown',
           os: null,
@@ -269,6 +295,7 @@ async function loadSessions(filePath: string): Promise<{ sessions: PersistedSess
       return {
         sessions: parsed.sessions.map((session) => ({
           ...session,
+          expiresAt: sessionExpiry(session.kind, session.createdAt),
           clientName: session.kind === 'legacy' ? 'Legacy browser session' : session.clientName,
           deviceType: session.kind === 'desktop' ? 'desktop' : 'unknown',
           os: null,
@@ -276,6 +303,13 @@ async function loadSessions(filePath: string): Promise<{ sessions: PersistedSess
           viaProxy: false,
           lastConnectedAt: null,
         })),
+        migrated: true,
+      };
+    }
+    if (isVersionThreeAuthData(parsed)) {
+      await chmod(filePath, 0o600);
+      return {
+        sessions: parsed.sessions.map((session) => ({ ...session, expiresAt: sessionExpiry(session.kind, session.createdAt) })),
         migrated: true,
       };
     }
@@ -293,6 +327,23 @@ function isAuthData(value: unknown): value is PersistedAuthData {
   const data = value as Partial<PersistedAuthData> | null;
   return Boolean(data
     && data.version === AUTH_DATA_VERSION
+    && isVersionThreeAuthData({ ...data, version: 3 })
+    && data.sessions?.every((session) => session.kind === 'desktop'
+      ? session.expiresAt === null
+      : typeof session.expiresAt === 'string'
+        && Number.isFinite(Date.parse(session.expiresAt))
+        && Date.parse(session.expiresAt) > Date.parse(session.createdAt)));
+}
+
+interface VersionThreeAuthData {
+  version: 3;
+  sessions: Array<Omit<PersistedSession, 'expiresAt'>>;
+}
+
+function isVersionThreeAuthData(value: unknown): value is VersionThreeAuthData {
+  const data = value as Partial<VersionThreeAuthData> | null;
+  return Boolean(data
+    && data.version === 3
     && Array.isArray(data.sessions)
     && data.sessions.every((session) => (
       session
@@ -378,4 +429,8 @@ async function exists(filePath: string): Promise<boolean> {
 
 function corrupt(name: string): Error {
   return new Error(`OpenTig authentication ${name} is corrupt.`);
+}
+
+function sessionExpiry(kind: PersistedSession['kind'], createdAt: string): string | null {
+  return kind === 'desktop' ? null : new Date(Date.parse(createdAt) + BROWSER_SESSION_MAX_AGE_SECONDS * 1_000).toISOString();
 }

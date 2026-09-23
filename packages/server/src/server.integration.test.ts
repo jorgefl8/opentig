@@ -92,7 +92,7 @@ describe('authoritative HTTP server', () => {
 
     const paired = await postJson(`${fixture.server.origin}/api/auth/pair`, { token: fixture.pairingToken }, fixture.server.origin);
     expect(paired.status).toBe(204);
-    expect(paired.cookie).toMatch(/^opentig_session=[A-Za-z0-9_-]+; Path=\/; HttpOnly; SameSite=Strict$/);
+    expect(paired.cookie).toMatch(/^opentig_session=[A-Za-z0-9_-]+; Path=\/; HttpOnly; SameSite=Strict; Max-Age=2592000$/);
     expect((await (await fetch(`${fixture.server.origin}/api/auth/descriptor`)).json()).pairingAvailable).toBe(false);
     expect((await postJson(`${fixture.server.origin}/api/auth/pair`, { token: fixture.pairingToken }, fixture.server.origin)).status).toBe(401);
 

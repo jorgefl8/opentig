@@ -1,11 +1,12 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import type { IncomingHttpHeaders } from 'node:http';
 import { applicationName, sessionCookieName, type ApplicationProfile } from '../../../src/shared/application-profile';
-import { PersistentAuthStore } from './auth-store';
+import { BROWSER_SESSION_MAX_AGE_SECONDS, PersistentAuthStore } from './auth-store';
 import type { SessionMetadata, StoredSession } from './auth-store';
 
 export { OPEN_TIG_SESSION_COOKIE } from '../../../src/shared/server-protocol';
 export const DEFAULT_PAIRING_TTL_MS = 5 * 60 * 1_000;
+export { BROWSER_SESSION_MAX_AGE_SECONDS } from './auth-store';
 
 export interface OpenTigAuthDescriptor {
   authenticationRequired: true;
@@ -45,7 +46,7 @@ export class OpenTigSessionAuth {
     now?: () => number;
     profile?: ApplicationProfile;
   }): Promise<OpenTigSessionAuth> {
-    const store = await PersistentAuthStore.open(options.dataDirectory);
+    const store = await PersistentAuthStore.open(options.dataDirectory, options.now);
     return new OpenTigSessionAuth(options.source, store, options.secureCookies ?? false, options.now ?? Date.now, options.profile ?? 'production');
   }
 
@@ -99,6 +100,12 @@ export class OpenTigSessionAuth {
   authenticate(headers: Pick<IncomingHttpHeaders, 'cookie'>): string | null {
     const token = readCookie(headers.cookie, sessionCookieName(this.profile));
     return token ? this.store.authenticate(token) : null;
+  }
+
+  async renewBrowserCookie(headers: Pick<IncomingHttpHeaders, 'cookie'>, secure = false): Promise<string | null> {
+    const token = readCookie(headers.cookie, sessionCookieName(this.profile));
+    if (!token || !await this.store.renewBrowserSession(token)) return null;
+    return this.sessionCookie(token, true, secure);
   }
 
   async revoke(headers: Pick<IncomingHttpHeaders, 'cookie'>): Promise<string | null> {
@@ -165,7 +172,12 @@ export class OpenTigSessionAuth {
 
   private async issueCookie(metadata: SessionMetadata, secure = false): Promise<string> {
     const session = await this.store.issue(metadata);
-    return `${sessionCookieName(this.profile)}=${session.token}; Path=/; HttpOnly; SameSite=Strict${this.secureCookies || secure ? '; Secure' : ''}`;
+    return this.sessionCookie(session.token, metadata.kind === 'browser', secure);
+  }
+
+  private sessionCookie(token: string, persistent: boolean, secure: boolean): string {
+    const lifetime = persistent ? `; Max-Age=${BROWSER_SESSION_MAX_AGE_SECONDS}` : '';
+    return `${sessionCookieName(this.profile)}=${token}; Path=/; HttpOnly; SameSite=Strict${lifetime}${this.secureCookies || secure ? '; Secure' : ''}`;
   }
 
   private dropExpiredPairing(): void {
