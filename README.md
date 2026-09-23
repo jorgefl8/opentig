@@ -276,6 +276,32 @@ npm run pair:web:dev
 
 A Cloudflare Tunnel running on the same machine can route `dev.opentig.example.com` to `http://127.0.0.1:6867` and a separate production hostname to `http://127.0.0.1:6767`. Open `/pair` on the chosen HTTPS hostname and paste that instance's code; keep the listener on loopback and restrict the hostnames to your users with Cloudflare Access. This command does not install or configure Cloudflare or a background service. Browser checks cover the shared UI and server; native desktop integration and Windows installers still need separate validation.
 
+For a persistent Linux tunnel endpoint, run the built Dev server as a **systemd user service**, so it stays running independently of a terminal or coding session. Create `~/.config/systemd/user/opentig-dev.service`, adjusting the checkout, Node executable, and CLI search paths for your machine:
+
+```ini
+[Unit]
+Description=OpenTig Dev web server
+StartLimitIntervalSec=60
+StartLimitBurst=10
+
+[Service]
+Type=simple
+WorkingDirectory=%h/jws/opentig
+ExecStart=/usr/bin/node %h/jws/opentig/packages/server/dist/dev.mjs serve
+Environment=PATH=%h/.local/bin:%h/.bun/bin:/usr/local/bin:/usr/bin:/bin
+Restart=always
+RestartSec=3
+TimeoutStopSec=15
+UMask=0077
+StandardOutput=null
+StandardError=journal
+
+[Install]
+WantedBy=default.target
+```
+
+After building with `npm run build:server`, run `systemctl --user daemon-reload` and `systemctl --user enable --now opentig-dev.service`. Enable user lingering with `loginctl enable-linger "$USER"` if the service should start at boot and survive logout. Startup pairing output is discarded; use `npm run pair:web:dev` whenever you need a new code. Inspect the service with `systemctl --user status opentig-dev.service` and `journalctl --user -u opentig-dev.service`. After rebuilding, use `systemctl --user restart opentig-dev.service`; it keeps the same `~/.opentig-dev` data and browser sessions. Do not run `start:web:dev` alongside the service on the same port. A healthy Cloudflare connector still returns a gateway error if this application service is stopped.
+
 Run all quality gates:
 
 ```powershell
