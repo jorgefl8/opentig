@@ -45,7 +45,14 @@ export async function prepareRelease({ api, git, root, repository, dryRun = fals
   const read = (file) => readFileSync(path.join(root, file), 'utf8');
   let { published, draft, tag: proposedTag } = selectDraft(await listReleases(api), JSON.parse(read('package.json')).version);
   let tag = draft?.tag_name || proposedTag;
-  const existingTag = await api('GET', `/git/ref/tags/${tag}`, undefined, true);
+  let existingTag = await api('GET', `/git/ref/tags/${tag}`, undefined, true);
+  if (!existingTag && draft && tag !== proposedTag) {
+    if (draft.assets?.length) throw new Error('Draft has assets but no tag; resolve it before preparing a release.');
+    // A promoted version may have been pushed successfully before its draft
+    // was renamed. Recover that tag instead of creating or moving another one.
+    tag = proposedTag;
+    existingTag = await api('GET', `/git/ref/tags/${tag}`, undefined, true);
+  }
   let commit;
   if (existingTag) {
     if (!draft) throw new Error(`Tag ${tag} exists without a managed draft; refusing to reuse it.`);
@@ -58,9 +65,6 @@ export async function prepareRelease({ api, git, root, repository, dryRun = fals
   } else {
     if (draft?.assets?.length) throw new Error('Draft has assets but no tag; resolve it before preparing a release.');
     tag = proposedTag;
-    if (draft && draft.tag_name !== tag && await api('GET', `/git/ref/tags/${tag}`, undefined, true)) {
-      throw new Error(`Proposed tag ${tag} already exists.`);
-    }
     if ((await api('GET', '/commits/main')).sha !== head) throw new Error('Main advanced; run Prepare release again on main.');
     if (!readCommits(git, published?.tag_name, head).length) throw new Error('No changes since the last published release.');
     const documents = versionDocuments(read, tag.slice(1));

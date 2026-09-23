@@ -215,3 +215,24 @@ it('passes the prepared commit to the builder validator and rejects a substitute
   expect(validate(prepared.commit)).toContain('validated');
   expect(() => validate('f'.repeat(40))).toThrow('Checkout does not match the prepared commit');
 });
+
+it('resumes a promoted draft when its tag was pushed before the draft could be renamed', async () => {
+  const context = fixture();
+  const file = path.join(context.root, 'package.json');
+  const pkg = JSON.parse(readFileSync(file, 'utf8'));
+  pkg.version = '0.2.0';
+  writeFileSync(file, `${JSON.stringify(pkg, null, 2)}\n`);
+  context.git('add', '.');
+  context.git('commit', '-m', 'chore: choose next minor');
+  context.git('push', 'origin', 'main');
+  const api = context.api;
+  await expect(prepareRelease({ ...context, api: async (method, ...args) => {
+    if (method === 'PATCH') throw new Error('Transient GitHub failure');
+    return api(method, ...args);
+  } })).rejects.toThrow('Transient GitHub failure');
+  expect(context.releases[1].tag_name).toBe('v0.1.1');
+  const tagged = context.remote('rev-parse', 'v0.2.0^{commit}').trim();
+  expect(await prepareRelease(context)).toMatchObject({ tag: 'v0.2.0', commit: tagged, resumed: true });
+  expect(context.releases[1]).toMatchObject({ tag_name: 'v0.2.0', draft: true, target_commitish: tagged });
+  expect(() => context.remote('rev-parse', '--verify', 'refs/tags/v0.1.1')).toThrow();
+});
