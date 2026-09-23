@@ -1,5 +1,15 @@
 name: Windows release draft
 on:
+  workflow_call:
+    inputs:
+      tag:
+        description: 'Prepared stable tag'
+        required: true
+        type: string
+      commit:
+        description: 'Exact commit frozen by Prepare release'
+        required: false
+        type: string
   push:
     tags: ['v*']
   workflow_dispatch:
@@ -23,7 +33,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.tag || github.ref_name }}
+          ref: ${{ inputs.commit || inputs.tag || github.ref_name }}
           fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -34,6 +44,7 @@ jobs:
         run: node scripts/validate-release-tag.mjs
         env:
           OPENTIG_RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+          OPENTIG_RELEASE_COMMIT: ${{ inputs.commit }}
       - run: npm ci
       - run: npm run check
   build:
@@ -125,3 +136,6 @@ jobs:
             gh release create "$RELEASE_TAG" --verify-tag --draft --title "OpenTig $RELEASE_TAG" --generate-notes
           fi
           gh release upload "$RELEASE_TAG" release-assets/* --clobber
+          echo "## $RELEASE_TAG is ready to publish" >> "$GITHUB_STEP_SUMMARY"
+          echo "Installer and update metadata validated and attached. Review the draft, then click **Publish release**." >> "$GITHUB_STEP_SUMMARY"
+          gh release view "$RELEASE_TAG" --json url --jq .url >> "$GITHUB_STEP_SUMMARY"

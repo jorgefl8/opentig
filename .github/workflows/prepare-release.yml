@@ -1,0 +1,55 @@
+name: Prepare release
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Preview the version without changing files, tags or releases'
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: opentig-prepare-release
+  cancel-in-progress: false
+  queue: max
+jobs:
+  prepare:
+    if: github.repository == 'jorgefl8/opentig' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: read
+    concurrency:
+      group: opentig-stable-release-draft
+      cancel-in-progress: false
+      queue: max
+    outputs:
+      tag: ${{ steps.prepare.outputs.tag }}
+      commit: ${{ steps.prepare.outputs.commit }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+      - name: Freeze the version, commit, tag and release notes
+        id: prepare
+        run: node scripts/prepare-release.mjs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OPENTIG_PREPARE_DRY_RUN: ${{ inputs.dry_run }}
+  release:
+    needs: prepare
+    if: ${{ !inputs.dry_run }}
+    permissions:
+      contents: write
+    # GITHUB_TOKEN pushes do not trigger another push workflow. Call the
+    # builder explicitly so no PAT or extra secret is required.
+    uses: ./.github/workflows/release.yml
+    with:
+      tag: ${{ needs.prepare.outputs.tag }}
+      commit: ${{ needs.prepare.outputs.commit }}
+    secrets: inherit

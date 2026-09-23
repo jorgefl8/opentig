@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
+import { listReleases, releaseApi } from './release-api.mjs';
 
 export const NOTES_START = '<!-- opentig:release-notes:start -->';
 export const NOTES_END = '<!-- opentig:release-notes:end -->';
@@ -173,12 +174,7 @@ export async function updateDraft({ api, git, repository, packageVersion, dryRun
   const head = git('rev-parse', 'HEAD').trim();
   const main = await api('GET', '/commits/main');
   if (head !== main.sha) return 'Main advanced; a newer run will update the draft.';
-  const releases = [];
-  for (let page = 1; ; page += 1) {
-    const batch = await api('GET', `/releases?per_page=100&page=${page}`);
-    releases.push(...batch);
-    if (batch.length < 100) break;
-  }
+  const releases = await listReleases(api);
   let { published, draft, tag } = selectDraft(releases, packageVersion);
   let target = head;
   // Once a tag exists or binaries are attached, its notes must stay tied to
@@ -186,7 +182,7 @@ export async function updateDraft({ api, git, repository, packageVersion, dryRun
   if (draft?.assets?.length) return `Draft ${draft.tag_name} is frozen for release validation.`;
   const existingTag = await api('GET', `/git/ref/tags/${draft?.tag_name || tag}`, undefined, true);
   if (existingTag) {
-    if (!draft) return `Tag ${tag} already exists; signed release workflow owns it.`;
+    if (!draft) return `Tag ${tag} already exists; release workflow owns it.`;
     // A main push and its tag may arrive together. Reconcile that final commit
     // before freezing; do not accidentally omit the last changes in the build.
     target = (await api('GET', `/commits/${draft.tag_name}`)).sha;
@@ -226,22 +222,7 @@ async function main() {
     throw new Error('Release drafting is restricted to main in the configured upstream repository.');
   }
   if (!process.env.GH_TOKEN) throw new Error('GH_TOKEN is required.');
-  const api = async (method, route, body, allowMissing = false) => {
-    const response = await fetch(`https://api.github.com/repos/${repository}${route}`, {
-      method,
-      headers: {
-        Authorization: `Bearer ${process.env.GH_TOKEN}`,
-        Accept: 'application/vnd.github+json',
-        'X-GitHub-Api-Version': '2022-11-28',
-        'Content-Type': 'application/json',
-      },
-      body: body ? JSON.stringify(body) : undefined,
-      signal: AbortSignal.timeout(30000),
-    });
-    if (allowMissing && response.status === 404) return null;
-    if (!response.ok) throw new Error(`GitHub ${method} ${route}: HTTP ${response.status}`);
-    return response.json();
-  };
+  const api = releaseApi(repository, process.env.GH_TOKEN);
   const git = (...args) => execFileSync('git', args, { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
   console.log(await updateDraft({ api, git, repository,
     packageVersion: JSON.parse(readFileSync('package.json', 'utf8')).version,
