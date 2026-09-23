@@ -346,6 +346,17 @@ describe('FileService', () => {
     await expect(fixture.files.move(fixture.repositoryId, 'folder', 'folder/nested')).rejects.toThrow('into itself');
   });
 
+  it('rejects pasting a folder into itself through a parent filesystem alias', async () => {
+    const fixture = await createFixture();
+    const folder = path.join(fixture.work, 'folder');
+    await mkdir(path.join(folder, 'nested'), { recursive: true });
+    const alias = path.join(path.dirname(fixture.work), 'work-alias');
+    await symlink(fixture.work, alias, process.platform === 'win32' ? 'junction' : 'dir');
+    const source = path.join(alias, 'folder');
+    await expect(fixture.files.pastePaths(fixture.repositoryId, [source], 'folder/nested')).rejects.toThrow('into itself');
+    await expect(fixture.files.movePaths(fixture.repositoryId, [source], 'folder/nested')).rejects.toThrow('into itself');
+  });
+
   it('renames an entry within its folder and reports conflicts', async () => {
     const fixture = await createFixture();
     await writeFile(path.join(fixture.work, 'old.txt'), 'content\n');

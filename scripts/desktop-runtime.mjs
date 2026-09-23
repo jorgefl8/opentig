@@ -5,7 +5,7 @@ export const RUNTIME_DEPENDENCIES = ['uiohook-napi', 'trash', 'electron-updater'
 
 /** Preserve npm's nested dependency layout instead of maintaining a hand-written transitive list. */
 export async function stageRuntimeDependencies(root, destination) {
-  const modules = path.join(root, 'node_modules');
+  const modules = await realpath(path.join(root, 'node_modules'));
   const copied = new Set();
   const resolvePackage = async (name, from) => {
     let directory = from;

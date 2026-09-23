@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdtemp, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, realpath, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -465,6 +465,27 @@ describe('GitRepositoryOperations safe branch deletion', () => {
 });
 
 describe('GitRepositoryOperations safe worktree removal', () => {
+  it.skipIf(process.platform !== 'linux')('distinguishes worktree paths differing only in case on Linux', async () => {
+    const fixture = await managementRepository();
+    const lower = await addWorktree(fixture, 'review', 'lower');
+    const upper = await addWorktree(fixture, 'REVIEW', 'upper');
+    expect(await fixture.operations.worktreeDetails(fixture.repositoryId, lower)).toMatchObject({ branch: 'lower' });
+    expect(await fixture.operations.worktreeDetails(fixture.repositoryId, upper)).toMatchObject({ branch: 'upper' });
+  });
+
+  it('recognizes worktrees through a parent alias, including when the directory becomes prunable', async () => {
+    const fixture = await managementRepository();
+    const review = await addWorktree(fixture, 'review', 'review');
+    const alias = path.join(fixture.root, 'parent-alias');
+    await symlink(fixture.root, alias, process.platform === 'win32' ? 'junction' : 'dir');
+    const aliasedReview = path.join(alias, path.relative(fixture.root, review));
+    expect(await fixture.operations.worktreeDetails(fixture.repositoryId, aliasedReview)).toMatchObject({ branch: 'review', available: true });
+    await rm(review, { recursive: true, force: true });
+    expect(await fixture.operations.worktreeDetails(fixture.repositoryId, aliasedReview)).toMatchObject({ available: false });
+    const oid = await git(fixture.work, ['rev-parse', 'HEAD']);
+    expect(await fixture.operations.removeWorktree(fixture.repositoryId, aliasedReview, oid)).toMatchObject({ status: 'prunable' });
+  });
+
   it('removes a clean linked worktree, keeps its branch, and forgets only its recent entry', async () => {
     const fixture = await managementRepository();
     const review = await addWorktree(fixture, 'review', 'review');

@@ -284,7 +284,7 @@ export class FileService {
       }
       const source = path.resolve(sourcePath);
       const metadata = await lstat(source);
-      if (metadata.isDirectory() && isSameOrInside(source, target)) {
+      if (metadata.isDirectory() && isSameOrInside(await realpath(source), target)) {
         throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'paste-files', message: 'A folder cannot be copied into itself.' });
       }
       const destination = await uniqueDestination(target, path.basename(source), metadata.isDirectory(), reserved);
@@ -320,7 +320,7 @@ export class FileService {
       }
       const source = path.resolve(sourcePath);
       const metadata = await lstat(source);
-      if (metadata.isDirectory() && isSameOrInside(source, target)) {
+      if (metadata.isDirectory() && isSameOrInside(await realpath(source), target)) {
         throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'paste-cut-files', message: 'A folder cannot be moved into itself.' });
       }
       const destination = path.join(target, path.basename(source));
@@ -371,7 +371,7 @@ export class FileService {
     const to = normalizeGitPath(path.relative(repository.path, destination));
 
     if (samePath(source, destination)) return { status: 'noop', path: from };
-    if (metadata.isDirectory() && isSameOrInside(source, target)) {
+    if (metadata.isDirectory() && isSameOrInside(await realpath(source), target)) {
       throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'move-entry', message: 'A folder cannot be moved into itself.' });
     }
     if (await pathExists(destination)) return { status: 'conflict', path: to };
@@ -394,7 +394,7 @@ export class FileService {
       const from = normalizeGitPath(path.relative(repository.path, source));
       const to = normalizeGitPath(path.relative(repository.path, destination));
       if (samePath(source, destination)) continue;
-      if (metadata.isDirectory() && isSameOrInside(source, target)) {
+      if (metadata.isDirectory() && isSameOrInside(await realpath(source), target)) {
         throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'move-entries', message: 'A folder cannot be moved into itself.' });
       }
       const key = process.platform === 'win32' ? destination.toLocaleLowerCase() : destination;

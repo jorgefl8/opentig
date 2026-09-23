@@ -92,7 +92,7 @@ It is intentionally not an IDE, hosting service, or replacement for the Git CLI.
 - Preview and edit Markdown, HTML, and SVG files through compact Preview/Code controls; switching between them restores roughly the same scroll position in the tab you land on, holding it while diagrams, formulas, and syntax highlighting finish laying out, and releasing it the moment you scroll yourself.
 - Render GitHub-flavoured Markdown with syntax-highlighted code, copy buttons, alerts, footnotes, KaTeX, and Mermaid diagrams. Syntax highlighting, KaTeX, and Mermaid load when a Markdown preview actually needs them; opening a source file does not. External links (`http(s)://`, protocol-relative, and `mailto:`) open in your system browser or mail client instead of navigating inside OpenTig; relative links to repository files open that file in a new tab, and `#anchor` links scroll within the preview. Hovering any link shows a tooltip with its destination (truncated when long) and what clicking it will do (open in browser, open in mail app, or open file).
 - Preview raster images with fit, 1:1, keyboard/wheel zoom, dimensions, and file-size information.
-- Select multiple files and folders, then copy, cut, paste, rename, create, or delete them. Desktop paste imports explicit file paths (or a clipboard image) only when you press `Ctrl+V` or choose Paste; runtimes without native file-clipboard support hide that action. Deletion requires an in-app confirmation that lists the affected paths. Drag and drop moves one or many selected entries with a lifted preview, a count badge, and clear folder or repository-root destination feedback.
+- Select multiple files and folders, then copy, cut, paste, rename, create, or delete them. Desktop paste imports explicit file paths (or a clipboard image) only when you press `Ctrl+V` or choose Paste; runtimes without native file-clipboard support hide that action. Copy and move operations reject placing a folder inside itself, including when its parent is reached through a filesystem alias or Windows short path. Deletion requires an in-app confirmation that lists the affected paths. Drag and drop moves one or many selected entries with a lifted preview, a count badge, and clear folder or repository-root destination feedback.
 - Copy file paths or contents and reveal entries in Windows File Explorer.
 - Undo and redo supported file operations. Large or directory deletions fall back to system Trash when an in-app snapshot is not practical.
 - Optionally include Git-ignored files in the tree.
@@ -121,7 +121,7 @@ It is intentionally not an IDE, hosting service, or replacement for the Git CLI.
 - Prevent switching to a branch already checked out in another worktree.
 - Inspect local branch tips, upstreams, ahead/behind state, unique commits, and owning worktrees.
 - Delete local branches only through Git's non-forced, fully merged path.
-- Inspect worktree path, branch, HEAD, lock/prunable state, and local changes.
+- Inspect worktree path, branch, HEAD, lock/prunable state, and local changes. Worktree selection and removal recognize filesystem aliases, including Windows short paths, while preserving case-sensitive path distinctions on Linux.
 - Open or remove eligible linked worktrees. Removing a worktree never deletes its branch, and the main worktree cannot be removed.
 
 ### GitHub pull requests

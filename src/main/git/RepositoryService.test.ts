@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdtemp, rename, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, realpath, rename, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -44,7 +44,7 @@ describe('RepositoryService change stats', () => {
     await expect(fixture.repositories.openRecent(previousId)).rejects.toThrow();
     const relocated = await fixture.repositories.relocateRecent(previousId, moved);
 
-    expect(relocated.path).toBe(path.resolve(moved));
+    expect(relocated.path).toBe(await realpath(moved));
     expect(relocated.id).not.toBe(previousId);
     expect(fixture.repositories.recents()).toEqual([expect.objectContaining({ id: relocated.id, path: relocated.path })]);
     expect(await fixture.repositories.openRecent(relocated.id)).toMatchObject({ id: relocated.id, path: relocated.path });

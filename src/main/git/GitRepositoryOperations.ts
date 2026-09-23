@@ -7,7 +7,7 @@ import { AiOperationError, GitOperationError } from '../../shared/errors';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import type { FileService } from '../files/FileService';
-import { stat, writeFile } from 'node:fs/promises';
+import { realpath, stat, writeFile } from 'node:fs/promises';
 import type { CommitMessageContext, PullRequestDraftContext } from '../ai/types';
 import type { GitProcess } from './GitProcess';
 import { parseCommitFiles } from './CommitFilesParser';
@@ -614,8 +614,16 @@ export class GitRepositoryOperations {
     return parseWorktrees(output.stdout);
   }
 
+  private async findWorktree(repositoryId: string, targetPath: string): Promise<WorktreeInfo | undefined> {
+    const target = await normalizePath(targetPath);
+    for (const worktree of await this.worktrees(repositoryId)) {
+      if (await normalizePath(worktree.path) === target) return worktree;
+    }
+    return undefined;
+  }
+
   async selectWorktree(repositoryId: string, targetPath: string) {
-    const worktree = (await this.worktrees(repositoryId)).find((item) => item.path.toLocaleLowerCase() === targetPath.toLocaleLowerCase());
+    const worktree = await this.findWorktree(repositoryId, targetPath);
     if (!worktree || worktree.locked || worktree.prunable || worktree.bare) {
       throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'select-worktree', message: 'The worktree is unavailable.' });
     }
@@ -632,7 +640,7 @@ export class GitRepositoryOperations {
     const locals = branches.filter((branch) => !branch.remote).sort(compareBranches);
     return {
       branches: locals,
-      worktrees: worktrees.map((worktree) => ({ ...worktree, current: samePath(worktree.path, repository.path) })),
+      worktrees: await Promise.all(worktrees.map(async (worktree) => ({ ...worktree, current: await samePath(worktree.path, repository.path) }))),
     };
   }
 
@@ -670,12 +678,12 @@ export class GitRepositoryOperations {
 
   async worktreeDetails(repositoryId: string, targetPath: string): Promise<WorktreeDetails> {
     const repository = this.repositories.get(repositoryId);
-    const worktree = (await this.worktrees(repositoryId)).find((item) => samePath(item.path, targetPath));
+    const worktree = await this.findWorktree(repositoryId, targetPath);
     if (!worktree) throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'worktree-details', message: 'The worktree no longer exists.' });
 
     const details: WorktreeDetails = {
       path: worktree.path, oid: worktree.oid, branch: worktree.branch, main: worktree.main,
-      current: samePath(worktree.path, repository.path), detached: worktree.detached, bare: worktree.bare,
+      current: await samePath(worktree.path, repository.path), detached: worktree.detached, bare: worktree.bare,
       locked: worktree.locked, prunable: worktree.prunable,
       available: !worktree.bare && !worktree.prunable,
       stagedCount: 0, unstagedCount: 0, untrackedCount: 0, conflictCount: 0,
@@ -722,11 +730,11 @@ export class GitRepositoryOperations {
   async removeWorktree(repositoryId: string, targetPath: string, expectedOid: string, force = false, deleteBranch = false): Promise<WorktreeRemovalResult> {
     const repository = this.repositories.get(repositoryId);
     return this.git.runWriteTask(repository.path, async (run) => {
-      const worktree = (await this.worktrees(repositoryId)).find((item) => samePath(item.path, targetPath));
+      const worktree = await this.findWorktree(repositoryId, targetPath);
       if (!worktree) return { status: 'missing' };
       if (worktree.oid !== expectedOid) return { status: 'stale' };
       if (worktree.main) return { status: 'main' };
-      if (samePath(worktree.path, repository.path)) return { status: 'current' };
+      if (await samePath(worktree.path, repository.path)) return { status: 'current' };
       if (worktree.bare) return { status: 'bare' };
       if (worktree.locked) return { status: 'locked', reason: worktree.locked };
       if (worktree.prunable) return { status: 'prunable', reason: worktree.prunable };
@@ -984,16 +992,30 @@ function compareBranches(left: BranchInfo, right: BranchInfo): number {
 }
 
 /** Worktree paths compare by resolved form, ignoring Windows casing. */
-function samePath(left: string, right: string): boolean {
-  return normalizePath(left) === normalizePath(right);
+async function samePath(left: string, right: string): Promise<boolean> {
+  return await normalizePath(left) === await normalizePath(right);
 }
 
 function sameStrings(left: string[], right: string[]): boolean {
   return left.length === right.length && left.every((value, index) => value === right[index]);
 }
 
-function normalizePath(value: string): string {
-  return path.resolve(value).replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+async function normalizePath(value: string): Promise<string> {
+  let existing = path.resolve(value);
+  const missing: string[] = [];
+  for (;;) {
+    try {
+      const resolved = path.join(await realpath(existing), ...missing);
+      return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+    } catch (error) {
+      if (!['ENOENT', 'ENOTDIR'].includes((error as NodeJS.ErrnoException).code ?? '')) throw error;
+      const parent = path.dirname(existing);
+      if (parent === existing) return process.platform === 'win32' ? path.resolve(value).toLowerCase() : path.resolve(value);
+      // Missing/prunable worktrees still need their existing parent canonicalized.
+      missing.unshift(path.basename(existing));
+      existing = parent;
+    }
+  }
 }
 
 function conflictPaths(status: Awaited<ReturnType<RepositoryService['status']>>): string[] {

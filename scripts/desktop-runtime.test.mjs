@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { stageRuntimeDependencies } from './desktop-runtime.mjs';
@@ -21,6 +21,14 @@ async function fixture() {
 }
 
 describe('runtime dependency staging', () => {
+  it('accepts a checkout reached through a filesystem alias without relaxing containment', async () => {
+    const { root, add, output } = await fixture();
+    for (const name of ['uiohook-napi', 'trash', 'electron-updater']) await add(name);
+    const alias = path.join(root, 'checkout-alias');
+    await symlink(root, alias, process.platform === 'win32' ? 'junction' : 'dir');
+    await stageRuntimeDependencies(alias, output);
+    expect((await readdir(path.join(output, 'node_modules'))).sort()).toEqual(['electron-updater', 'trash', 'uiohook-napi']);
+  });
   it('preserves nested versions, follows transitive dependencies and excludes unrelated build tools', async () => {
     const { root, add, output } = await fixture();
     await add('uiohook-napi', { dependencies: { shared: '1' } });
