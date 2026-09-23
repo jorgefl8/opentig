@@ -75,8 +75,8 @@ jobs:
       - name: Run packed CLI with bunx
         shell: bash
         run: |
-          artifact="$(node -p "require('./dist/headless/opentig-headless.json').filename")"
-          bunx --package "./dist/headless/$artifact" opentig --version
+          artifact="$(node -p "require('node:path').resolve('dist/headless', require('./dist/headless/opentig-headless.json').filename)")"
+          bunx --package "$artifact" opentig --version
 
   dev-artifacts:
     needs: validate
