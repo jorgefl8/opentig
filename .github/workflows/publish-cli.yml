@@ -1,0 +1,43 @@
+name: Publish CLI to npm
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Published stable release to publish/retry on npm, e.g. v0.1.2'
+        type: string
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: opentig-npm-publish
+  cancel-in-progress: false
+  queue: max
+jobs:
+  publish:
+    if: github.repository == 'jorgefl8/opentig' && (github.event_name == 'release' && !github.event.release.prerelease || github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    environment: release
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      # Publication tooling may be newer than the immutable package source.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+      - name: Download the prepared CLI; never rebuild during publication
+        run: |
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'opentig-cli-*.tgz' --pattern 'opentig-headless.json' --dir release-assets
+          node scripts/headless-release.mjs publish release-assets "$RELEASE_TAG"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag || github.event.release.tag_name }}
+      - name: Summary
+        run: echo 'The verified CLI release is available on npm. Install globally with npm install -g @opentig/cli@<version>.' >> "$GITHUB_STEP_SUMMARY"

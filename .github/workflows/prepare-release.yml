@@ -53,3 +53,12 @@ jobs:
       tag: ${{ needs.prepare.outputs.tag }}
       commit: ${{ needs.prepare.outputs.commit }}
     secrets: inherit
+  cli:
+    needs: prepare
+    if: ${{ !inputs.dry_run }}
+    permissions:
+      contents: write
+    uses: ./.github/workflows/headless-release.yml
+    with:
+      tag: ${{ needs.prepare.outputs.tag }}
+      commit: ${{ needs.prepare.outputs.commit }}
