@@ -1,6 +1,6 @@
 {
   "name": "@opentig/cli",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Run the OpenTig local-first Git client in a browser from any Git worktree.",
   "type": "module",
   "main": "dist/server.mjs",
