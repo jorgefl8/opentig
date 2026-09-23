@@ -4,7 +4,7 @@ import { parseClipboardPathText, parseFileClipboardBuffer } from './ClipboardFil
 describe('clipboard file transfer parsing', () => {
   it('parses Windows FileNameW data', () => {
     const buffer = Buffer.from('C:\\work\\image.png\0D:\\notes\\file.txt\0\0', 'utf16le');
-    expect(parseFileClipboardBuffer('FileNameW', buffer)).toEqual([
+    expect(parseFileClipboardBuffer('FileNameW', buffer, 'win32')).toEqual([
       'C:\\work\\image.png',
       'D:\\notes\\file.txt',
     ]);
@@ -16,14 +16,18 @@ describe('clipboard file transfer parsing', () => {
     buffer.writeUInt32LE(20, 0);
     buffer.writeUInt32LE(1, 16);
     paths.copy(buffer, 20);
-    expect(parseFileClipboardBuffer('CF_HDROP', buffer)).toEqual(['C:\\one.txt', 'C:\\two.png']);
+    expect(parseFileClipboardBuffer('CF_HDROP', buffer, 'win32')).toEqual(['C:\\one.txt', 'C:\\two.png']);
   });
 
   it('parses quoted paths and file URIs while ignoring arbitrary text', () => {
-    expect(parseClipboardPathText('"C:\\work\\file.txt"\nfile:///C:/work/image.png\nhello')).toEqual([
+    expect(parseClipboardPathText('"C:\\work\\file.txt"\nfile:///C:/work/image.png\nhello', 'win32')).toEqual([
       'C:\\work\\file.txt',
       'C:\\work\\image.png',
     ]);
+  });
+
+  it('parses Linux file URIs and absolute paths', () => {
+    expect(parseClipboardPathText('/tmp/file.txt\nfile:///tmp/an%20image.png\nhello', 'linux')).toEqual(['/tmp/file.txt', '/tmp/an image.png']);
   });
 
   it('returns no paths for empty or unrelated buffers', () => {

@@ -6,7 +6,7 @@ describe('openCodeCliName', () => {
   it('treats opencode2 shims as OpenCode 2', () => {
     expect(openCodeCliName(path.join('C:\\npm', 'opencode2.cmd'))).toBe('opencode2');
     expect(openCodeCliName('/usr/bin/opencode2')).toBe('opencode2');
-    expect(isOpenCodeV2('C:\\npm\\opencode2.exe')).toBe(true);
+    expect(isOpenCodeV2(path.join('C:\\npm', 'opencode2.exe'))).toBe(true);
   });
 
   it('treats the OpenCode 1 binary as v1', () => {

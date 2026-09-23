@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import type { CliProcessRunner } from '../CliProcessRunner';
 import type { CliResolver } from '../CliResolver';
@@ -18,7 +19,7 @@ function runner(responses: Record<string, { exitCode: number; stdout: string; st
 
 describe('OpenCodeProvider.status', () => {
   it('reports OpenCode 2 as installed with its CLI name and catalog', async () => {
-    const provider = new OpenCodeProvider(resolver('C:\\npm\\opencode2.cmd'), runner({
+    const provider = new OpenCodeProvider(resolver(path.join('C:\\npm', 'opencode2.cmd')), runner({
       '--version': { exitCode: 0, stdout: 'opencode2 v0.0.0-beta-18155\n' },
       'auth list': { exitCode: 0, stdout: 'No authenticated integrations\n' },
       'models --standalone': { exitCode: 0, stdout: 'opencode/big-pickle\nopencode/hy3-free\n' },

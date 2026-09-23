@@ -38,20 +38,21 @@ export async function readClipboardFilePaths(systemClipboard: Clipboard): Promis
   return [...unique.values()];
 }
 
-export function parseFileClipboardBuffer(format: string, buffer: Uint8Array): string[] {
+export function parseFileClipboardBuffer(format: string, buffer: Uint8Array, platform: NodeJS.Platform = process.platform): string[] {
   if (buffer.byteLength === 0) return [];
   const value = Buffer.from(buffer.buffer, buffer.byteOffset, buffer.byteLength);
   if (/cf_hdrop/i.test(format) && value.byteLength >= 20) {
     const offset = value.readUInt32LE(0);
     if (offset >= 20 && offset < value.byteLength) {
       const wide = value.readUInt32LE(16) !== 0;
-      return parseClipboardPathText(value.subarray(offset).toString(wide ? 'utf16le' : 'latin1'));
+      return parseClipboardPathText(value.subarray(offset).toString(wide ? 'utf16le' : 'latin1'), platform);
     }
   }
-  return parseClipboardPathText(value.toString(/filenamew/i.test(format) ? 'utf16le' : 'utf8'));
+  return parseClipboardPathText(value.toString(/filenamew/i.test(format) ? 'utf16le' : 'utf8'), platform);
 }
 
-export function parseClipboardPathText(value: string): string[] {
+export function parseClipboardPathText(value: string, platform: NodeJS.Platform = process.platform): string[] {
+  const pathApi = platform === 'win32' ? path.win32 : path.posix;
   const paths: string[] = [];
   for (const raw of value.split(/\0|\r?\n/)) {
     let candidate = raw.trim();
@@ -61,12 +62,12 @@ export function parseClipboardPathText(value: string): string[] {
     }
     if (/^file:\/\//i.test(candidate)) {
       try {
-        candidate = fileURLToPath(candidate);
+        candidate = fileURLToPath(candidate, { windows: platform === 'win32' });
       } catch {
         continue;
       }
     }
-    if (path.isAbsolute(candidate)) paths.push(candidate);
+    if (pathApi.isAbsolute(candidate)) paths.push(candidate);
   }
   return paths;
 }
