@@ -61,6 +61,11 @@ function describeCommit({ message }) {
   return { subject, pr: merge?.[1] || /\(#(\d+)\)$/.exec(subject)?.[1] || null };
 }
 
+function isReleasePreparation(commit) {
+  const subject = commit.subject ?? describeCommit(commit).subject;
+  return /^chore\(release\): prepare v\d+\.\d+\.\d+$/.test(subject.trim());
+}
+
 function creditedAuthor(user, name) {
   const login = user?.login;
   return {
@@ -71,6 +76,7 @@ function creditedAuthor(user, name) {
 }
 
 export async function attributeChanges({ api, git, commits, previousTag, head }) {
+  commits = commits.filter((commit) => !isReleasePreparation(commit));
   const wanted = new Set(commits.map(({ sha }) => sha));
   const metadata = new Map();
   for (let page = 1; wanted.size; page += 1) {
@@ -129,6 +135,7 @@ export function renderNotes(commits, repository, previousTag, head, newContribut
   const base = `https://github.com/${repository}`;
   const groups = new Map(['Features', 'Fixes', 'Maintenance'].map((name) => [name, []]));
   for (const commit of commits) {
+    if (isReleasePreparation(commit)) continue;
     const entry = { ...describeCommit(commit), ...commit };
     const { subject, author } = entry;
     const type = /^(\w+)(?:\([^)]*\))?!?:/.exec(subject)?.[1];
@@ -138,6 +145,7 @@ export function renderNotes(commits, repository, previousTag, head, newContribut
   }
   const sections = [...groups].filter(([, items]) => items.length)
     .map(([name, items]) => `### ${name}\n\n${items.join('\n')}`);
+  newContributors = newContributors.filter((entry) => !isReleasePreparation(entry));
   if (newContributors.length) sections.push(`## New Contributors\n\n${newContributors.map((entry) =>
     `- @${entry.author.login} made their first contribution in ${changeLink(entry, base)}`).join('\n')}`);
   const compare = previousTag ? `${base}/compare/${previousTag}...${head}` : `${base}/commits/${head}`;
@@ -163,7 +171,8 @@ export function readCommits(git, previousTag, head) {
   for (let i = 0; i + 1 < fields.length; i += 2) {
     const sha = fields[i].trim();
     if (!/^[a-f0-9]{40}$/.test(sha)) throw new Error('Invalid commit in release history.');
-    commits.push({ sha, message: fields[i + 1] });
+    const commit = { sha, message: fields[i + 1] };
+    if (!isReleasePreparation(commit)) commits.push(commit);
   }
   return commits;
 }

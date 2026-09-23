@@ -203,3 +203,26 @@ it('uses real first-parent Git history without duplicating commits within a merg
     expect(() => readCommits(git, 'v0.1.0', 'HEAD')).toThrow();
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
+
+it('omits version-preparation housekeeping while preserving real maintenance and bot changes', () => {
+  const preparation = { sha: head, message: 'chore(release): prepare v0.1.1\n', author: { login: 'github-actions[bot]' } };
+  const maintenance = { sha: 'b'.repeat(40), message: 'chore(release): repair installer metadata', author: { login: 'maintainer' } };
+  const dependency = { sha: 'c'.repeat(40), message: 'chore(deps): update dependencies', author: { login: 'dependabot[bot]' } };
+  const notes = renderNotes([preparation, maintenance, dependency], 'jorgefl8/opentig', 'v0.1.0', head, [preparation]);
+  expect(notes).not.toContain('prepare v0.1.1');
+  expect(notes).not.toContain('github-actions');
+  expect(notes).not.toContain('New Contributors');
+  expect(notes).toContain('### Maintenance');
+  expect(notes).toContain('repair installer metadata');
+  expect(notes).toContain('by @dependabot[bot]');
+  expect(renderNotes([preparation], 'jorgefl8/opentig', 'v0.1.0', head)).not.toContain('### Maintenance');
+  const git = (command) => command === 'log' ? `${head}\0${preparation.message}\0\n${maintenance.sha}\0${maintenance.message}\0\n` : '';
+  expect(readCommits(git, 'v0.1.0', head)).toEqual([{ sha: maintenance.sha, message: maintenance.message }]);
+});
+
+it('does not create a draft for a release-preparation-only push', async () => {
+  const context = fixture([published]);
+  context.git.mockImplementation((command) => command === 'rev-parse' ? head : command === 'log' ? `${head}\0chore(release): prepare v0.1.1\n\0\n` : '');
+  expect(await updateDraft(context)).toContain('No changes');
+  expect(context.api.mock.calls.every(([method]) => method === 'GET')).toBe(true);
+});
