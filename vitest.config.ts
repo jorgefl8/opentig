@@ -10,7 +10,7 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
-    include: ['src/**/*.test.ts', 'packages/**/*.test.ts'],
+    include: ['src/**/*.test.ts', 'packages/**/*.test.ts', 'scripts/**/*.test.mjs'],
     clearMocks: true,
     // Several tests spawn real git subprocesses or do hundreds of real fs
     // writes; under full-suite parallel load on Windows that routinely

@@ -326,6 +326,14 @@ npm run make
 
 The unpacked executable is written to `out/OpenTig-win32-x64/OpenTig.exe`.
 
+## Desktop builds and releases on GitHub
+
+**Next release draft** runs on every push to `main`, including direct commits and merged PRs. It creates one unpublished release draft on the first change after a stable release and refreshes its notes on subsequent pushes. Notes cover first-parent history since the highest published stable version, grouped into features, fixes, and maintenance, with commit links and PR links for GitHub merge/squash messages. Merge commits represent their PR once; rebased changes remain individual commits. Prereleases do not reset the stable changelog. Before the first release, the draft uses the package version and includes the existing history.
+
+The next version defaults to a patch increment (`0.1.0` → `0.1.1`). A higher version in `package.json`, or a higher version chosen on the managed draft, takes precedence without creating another draft. This proposal does not change package files or create a Git tag. You can edit the release title and add prose outside the `opentig:release-notes` comment markers; automatic refreshes preserve those edits and replace only the generated block. Drafting is independent of CI success and does not build installers or notify installed clients. It runs only on upstream `main`, uses the built-in Actions token, and needs no additional secret.
+
+To prepare a release, align the root and server package versions and lockfile with the draft version, merge/push that commit, then create and push the matching `vX.Y.Z` tag. Installer build/signing automation is configured separately and can attach binaries to that same draft while preserving its notes. Once a tag exists or assets are attached, automatic note updates freeze until that release is published, so later commits cannot change the notes for a built installer. Review notes, validate Windows, and publish deliberately; the next push to `main` starts the next draft and includes all changes since the published tag. **Next release draft** can also be rerun manually on `main` to reconcile changes already there. Draft creation alone does not produce an installable release; publish only after the release assets and validation are complete.
+
 ## Local-first and security model
 
 - Repository contents are read from and written to their existing local paths.
