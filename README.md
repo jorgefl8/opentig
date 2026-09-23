@@ -132,6 +132,7 @@ GitHub features use the authenticated GitHub CLI (`gh`):
 - List open pull requests for the current GitHub repository.
 - Inspect pull-request metadata, Markdown description, and full diff.
 - Switch the pull-request **Code** view between all cumulative changes and the diff introduced by an individual commit.
+- The **By commit** diff selector uses the app’s styled, keyboard-accessible menu, with readable commit subjects and scrollable options that fit the viewport.
 - Open a pull request in the browser.
 - Create a pull request or draft pull request from a wider, viewport-fitted dialog that keeps the draft toggle beside the base branch, the editor visible without an outer card scrollbar, and AI generation in the footer with its provider and model.
 - Edit and preview the GitHub Markdown description before publishing.

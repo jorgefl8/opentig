@@ -3,6 +3,8 @@ import { useQuery } from '@tanstack/react-query';
 import { IconLoader4, IconRefresh } from '@tabler/icons-react';
 import type { DiffResult, DiffViewPreference, PullRequestCommit, ThemePreference } from '@shared/contracts';
 import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { DiffWorkspace } from '@/features/viewer/DiffWorkspace';
 import { PierreWorkerPool } from '@/features/viewer/PierreWorkerPool';
@@ -42,9 +44,22 @@ export default function PullRequestDiff({ diff, prNumber, repositoryId, commits,
         <Button type="button" variant={mode === 'commit' ? 'secondary' : 'ghost'} size="xs" aria-pressed={mode === 'commit'} disabled={commits.length === 0} onClick={() => setMode('commit')}>By commit</Button>
       </div>
       {mode === 'commit' && selectedCommit && (
-        <select className="pr-commit-select" aria-label="Commit" value={selectedCommit.oid} onChange={(event) => setSelectedOid(event.target.value)}>
-          {commits.map((commit) => <option key={commit.oid} value={commit.oid}>{commit.oid.slice(0, 7)} · {commit.messageHeadline || '(no commit message)'}</option>)}
-        </select>
+        <Select value={selectedCommit.oid} onValueChange={(value) => { if (value) setSelectedOid(value); }}>
+          <Tooltip>
+            <TooltipTrigger render={<SelectTrigger className="pr-commit-select" size="sm" aria-label="Commit" />}>
+              <SelectValue>{selectedCommit.oid.slice(0, 7)} · {selectedCommit.messageHeadline || '(no commit message)'}</SelectValue>
+            </TooltipTrigger>
+            <TooltipContent>{selectedCommit.oid.slice(0, 7)} · {selectedCommit.messageHeadline || '(no commit message)'}</TooltipContent>
+          </Tooltip>
+          <SelectContent align="start" alignItemWithTrigger={false} className="pr-commit-menu">
+            {commits.map((commit) => (
+              <SelectItem key={commit.oid} value={commit.oid} label={`${commit.oid.slice(0, 7)} ${commit.messageHeadline || '(no commit message)'}`}>
+                <span className="shrink-0 self-start font-mono text-xs text-muted-foreground">{commit.oid.slice(0, 7)}</span>
+                <span className="min-w-0 whitespace-normal break-words">{commit.messageHeadline || '(no commit message)'}</span>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       )}
     </div>
   );

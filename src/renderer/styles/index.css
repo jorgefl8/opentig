@@ -1563,6 +1563,7 @@ section[data-sileo-viewport] [data-sileo-title] { text-transform: none; }
   .pr-code-mode { display: inline-flex; flex: none; gap: 2px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--muted); padding: 2px; }
   .pr-code-mode button { height: 26px; }
   .pr-commit-select { min-width: 120px; max-width: min(420px, 42vw); height: 30px; flex: 1; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--background); padding: 0 8px; color: var(--foreground); font-family: var(--font-mono); font-size: 10.5px; outline: none; }
+  .pr-commit-menu { width: min(40rem, var(--available-width)); }
   .pr-commit-select:focus-visible { border-color: var(--ring); box-shadow: 0 0 0 2px color-mix(in oklch, var(--ring) 30%, transparent); }
   .diff-file-count { flex: none; color: var(--muted-foreground); font-size: 11px; white-space: nowrap; }
   .diff-total-stats, .diff-file-stats { display: inline-flex; flex: none; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: 10.5px; font-weight: 650; }
