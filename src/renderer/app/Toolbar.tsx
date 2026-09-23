@@ -19,6 +19,7 @@ import { RepositoryFaviconImage } from '@/features/repositories/RepositoryFavico
 import { useRepositoryFavicons } from '@/features/repositories/useRepositoryFavicons';
 import { buildRepositoryPickerModel, formatRepositoryCheckout, getRepositoryPickerDisplayOrder, type RepositoryOption } from '@/features/repositories/repository-select-model';
 import { visibleRepositorySyncActions, type ProjectSyncAction, type RepositorySyncCounts } from '@/features/repositories/project-sync';
+import { DesktopUpdateIndicator } from '@/features/settings/UpdateSettings';
 import type { SettingsSection } from '@/features/settings/SettingsDialog';
 import { normalizeRepositoryKey } from '../../shared/repository-projects';
 import { opentig } from '@/lib/opentig-api';
@@ -380,6 +381,7 @@ export function Toolbar(props: ToolbarProps) {
         </Suspense>
       )}
       <Tooltip><TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Refresh" onClick={props.onRefresh} disabled={props.busy === 'refresh'} />}>{props.busy === 'refresh' ? <IconLoader4 className="animate-spin" /> : <IconRefresh />}</TooltipTrigger><TooltipContent>Refresh (Ctrl+R)</TooltipContent></Tooltip>
+      <DesktopUpdateIndicator />
       <Tooltip>
         <TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Settings" onClick={() => props.onSettingsOpen(true)} />}><IconSettings /></TooltipTrigger>
         <TooltipContent>Settings</TooltipContent>

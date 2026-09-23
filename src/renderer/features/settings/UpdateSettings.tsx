@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react';
 import type { DesktopUpdateStatus } from '../../../shared/desktop-updates';
+import { Popover } from '@base-ui/react/popover';
+import { IconCheck, IconExclamationMark, IconRefresh } from '@tabler/icons-react';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Button } from '@/components/ui/button';
 
 function useUpdateStatus(interval: number) {
@@ -35,7 +38,7 @@ export function UpdateSettings() {
   return <div className="settings-field">
     <div className="settings-field-label">
       <strong>OpenTig {status.currentVersion}</strong>
-      <span>{status.phase === 'unavailable' ? 'This build does not check for automatic updates.' : 'Stable releases are checked at startup and every six hours. Download and restart when you are ready.'}</span>
+      <span>{status.phase === 'unavailable' ? 'This build does not check for automatic updates.' : 'Stable releases are checked at startup, every 30 minutes, and when returning to the app if a check is due. Download and restart when you are ready.'}</span>
     </div>
     <p className="text-sm" role="status" aria-live="polite">{error ?? status.message ?? updateCopy(status)}</p>
     {status.phase === 'downloading' && <progress className="w-full" aria-label="Update download" max={100} value={status.progress ?? 0} />}
@@ -48,6 +51,32 @@ export function UpdateSettings() {
     {status.checkedAt && <p className="text-xs text-muted-foreground">Last checked: {new Date(status.checkedAt).toLocaleString()}</p>}
     {status.phase === 'ready' && <p className="text-xs text-muted-foreground">Save your edits and finish Git operations before restarting. Closing normally will not install the update.</p>}
   </div>;
+}
+
+/** Remains reachable even after the floating notice is dismissed. */
+export function DesktopUpdateIndicator() {
+  const { status } = useUpdateStatus(1_000);
+  if (!status || ['idle', 'checking', 'unavailable'].includes(status.phase)) return null;
+  const spinning = status.phase === 'downloading' || status.phase === 'installing';
+  const label = status.message ?? updateCopy(status);
+  return <Popover.Root>
+    <Tooltip>
+      <TooltipTrigger render={<Popover.Trigger render={<Button variant="ghost" size="icon-sm" className="desktop-update-indicator relative" aria-label={`Updates: ${label}`} />} />}>
+        <IconRefresh className={spinning ? 'animate-spin' : undefined} />
+        <span className={`absolute -bottom-0.5 -right-0.5 grid size-3.5 place-items-center rounded-full border-2 border-background ${status.phase === 'error' ? 'bg-destructive text-destructive-foreground' : 'bg-primary text-primary-foreground'}`} aria-hidden="true">
+          {status.phase === 'ready' ? <IconCheck className="size-2.5!" /> : status.phase === 'error' ? <IconExclamationMark className="size-2.5!" /> : <span className="size-1 rounded-full bg-current" />}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
+    <Popover.Portal>
+      <Popover.Positioner side="bottom" align="end" sideOffset={8} className="isolate z-50 outline-none">
+        <Popover.Popup className="w-[min(24rem,calc(100vw-2rem))] max-h-[var(--available-height)] overflow-y-auto rounded-lg border bg-popover p-4 text-popover-foreground shadow-lg" aria-label="Desktop updates">
+          <UpdateSettings />
+        </Popover.Popup>
+      </Popover.Positioner>
+    </Popover.Portal>
+  </Popover.Root>;
 }
 
 export function DesktopUpdateNotice() {

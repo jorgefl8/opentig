@@ -128,6 +128,7 @@ async function createWindow(): Promise<void> {
       backgroundThrottling: false,
     },
   });
+  mainWindow.on('focus', () => desktopUpdater?.checkIfDue());
   mainWindow.on('page-title-updated', (event) => {
     event.preventDefault();
     mainWindow?.setTitle(displayName);

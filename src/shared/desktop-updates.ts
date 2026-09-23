@@ -1,3 +1,5 @@
+export const DESKTOP_UPDATE_CHECK_INTERVAL_MS = 30 * 60 * 1_000;
+
 export type DesktopUpdatePhase = 'unavailable' | 'idle' | 'checking' | 'available' | 'downloading' | 'ready' | 'installing' | 'error';
 
 export interface DesktopUpdateStatus {

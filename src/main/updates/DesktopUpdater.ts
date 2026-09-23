@@ -1,11 +1,12 @@
 import type { AppUpdater } from 'electron-updater';
-import type { DesktopUpdateStatus } from '../../shared/desktop-updates';
+import { DESKTOP_UPDATE_CHECK_INTERVAL_MS, type DesktopUpdateStatus } from '../../shared/desktop-updates';
 
 /** Owns update state independently of windows; nothing installs on ordinary application exit. */
 export class DesktopUpdater {
   private status: DesktopUpdateStatus;
-  private timer: ReturnType<typeof setInterval> | undefined;
-  private startup: ReturnType<typeof setTimeout> | undefined;
+  private timer: ReturnType<typeof setTimeout> | undefined;
+  private started = false;
+  private lastAttemptAt: number | null = null;
   private stopped = false;
   private pendingInstall = false;
 
@@ -39,21 +40,34 @@ export class DesktopUpdater {
   getStatus = (): DesktopUpdateStatus => ({ ...this.status });
 
   start(): void {
-    if (!this.updater || this.timer || this.stopped) return;
-    this.startup = setTimeout(() => { void this.check(); }, 10_000);
-    this.timer = setInterval(() => { void this.check(); }, 6 * 60 * 60 * 1_000);
-    this.startup.unref();
-    this.timer.unref();
+    if (!this.updater || this.started || this.stopped) return;
+    this.started = true;
+    this.scheduleCheck(10_000);
   }
 
   stop(): void {
     this.stopped = true;
-    clearTimeout(this.startup);
-    clearInterval(this.timer);
+    clearTimeout(this.timer);
+  }
+
+  /** Focusing after sleep can precede the delayed timer; never poll on every focus. */
+  checkIfDue(): void {
+    if (this.started && this.lastAttemptAt !== null && Date.now() - this.lastAttemptAt >= DESKTOP_UPDATE_CHECK_INTERVAL_MS) {
+      void this.check();
+    }
+  }
+
+  private scheduleCheck(delay: number): void {
+    clearTimeout(this.timer);
+    if (!this.started || this.stopped) return;
+    this.timer = setTimeout(() => { void this.check(); }, delay);
+    this.timer.unref();
   }
 
   check = async (): Promise<DesktopUpdateStatus> => {
     if (!this.updater || this.stopped || !['idle', 'error'].includes(this.status.phase)) return this.getStatus();
+    clearTimeout(this.timer);
+    this.lastAttemptAt = Date.now();
     this.status = { ...this.status, phase: 'checking', availableVersion: null, progress: null, message: null, releaseUrl: null };
     try {
       const result = await this.updater.checkForUpdates();
@@ -64,6 +78,7 @@ export class DesktopUpdater {
         checkedAt: new Date().toISOString(), message: null,
         releaseUrl: version && this.repository ? `https://github.com/${this.repository}/releases/tag/v${version}` : null };
     } catch { this.fail(); }
+    finally { this.scheduleCheck(DESKTOP_UPDATE_CHECK_INTERVAL_MS); }
     return this.getStatus();
   };
 

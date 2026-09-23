@@ -68,6 +68,32 @@ describe('desktop update lifecycle', () => {
     expect(service.getStatus().phase).toBe('ready');
   });
 
+  it('checks on focus after 30 minutes, throttles repeated focus, and reschedules polling', async () => {
+    vi.useFakeTimers();
+    const { engine, service } = fixture();
+    engine.checkForUpdates.mockResolvedValue({ isUpdateAvailable: false, updateInfo: { version: '0.1.0' } });
+    service.start();
+    service.checkIfDue();
+    expect(engine.checkForUpdates).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(10_000);
+    service.checkIfDue();
+    expect(engine.checkForUpdates).toHaveBeenCalledOnce();
+    // Simulate a suspended machine: wall time advances before overdue timers run.
+    vi.setSystemTime(Date.now() + 31 * 60 * 1_000);
+    service.checkIfDue();
+    service.checkIfDue();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(engine.checkForUpdates).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(29 * 60 * 1_000);
+    expect(engine.checkForUpdates).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(60 * 1_000);
+    expect(engine.checkForUpdates).toHaveBeenCalledTimes(3);
+    service.stop();
+    vi.setSystemTime(Date.now() + 31 * 60 * 1_000);
+    service.checkIfDue();
+    expect(engine.checkForUpdates).toHaveBeenCalledTimes(3);
+  });
+
   it('starts once and checks periodically; stopping and unavailable builds never check', async () => {
     vi.useFakeTimers();
     const { engine, service } = fixture();
@@ -75,10 +101,10 @@ describe('desktop update lifecycle', () => {
     service.start(); service.start();
     await vi.advanceTimersByTimeAsync(10_000);
     expect(engine.checkForUpdates).toHaveBeenCalledOnce();
-    await vi.advanceTimersByTimeAsync(6 * 60 * 60 * 1_000);
+    await vi.advanceTimersByTimeAsync(30 * 60 * 1_000);
     expect(engine.checkForUpdates).toHaveBeenCalledTimes(2);
     service.stop();
-    await vi.advanceTimersByTimeAsync(6 * 60 * 60 * 1_000);
+    await vi.advanceTimersByTimeAsync(30 * 60 * 1_000);
     expect(engine.checkForUpdates).toHaveBeenCalledTimes(2);
     const disabled = new DesktopUpdater(null, '0.1.0', null, vi.fn());
     disabled.start();
