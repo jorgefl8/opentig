@@ -1,3 +1,4 @@
+import { appDisplayName } from '@/lib/app-identity';
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -1841,7 +1842,7 @@ export default function App() {
   }} />;
 
   if (!bootstrap) {
-    return <SplashScreen heading="OpenTig" detail={startupSplashDetail(connectionState)} />;
+    return <SplashScreen heading={appDisplayName} detail={startupSplashDetail(connectionState)} />;
   }
   if (!repository) {
     return (

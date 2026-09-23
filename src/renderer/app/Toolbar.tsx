@@ -1,3 +1,4 @@
+import { appDisplayName } from '@/lib/app-identity';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   IconArrowDown, IconArrowUp, IconHierarchy2, IconLoader4, IconPlus, IconRefresh, IconSettings,
@@ -261,9 +262,9 @@ export function Toolbar(props: ToolbarProps) {
   };
   return (
     <header className="toolbar">
-      <div className="toolbar-brand" aria-label="OpenTig">
+      <div className="toolbar-brand" aria-label={appDisplayName}>
         <OpenTigMark />
-        <span>OpenTig</span>
+        <span>{appDisplayName}</span>
       </div>
       <Select open={repositorySelectOpen} onOpenChange={(open) => {
         setRepositorySelectOpen(open);

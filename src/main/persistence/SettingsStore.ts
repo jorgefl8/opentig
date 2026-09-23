@@ -69,21 +69,25 @@ export class SettingsStore {
   constructor(
     private readonly filePath: string,
     private readonly onRecovery?: (kind: SettingsRecovery) => void,
-  ) {}
+    private readonly defaultDoubleControlShortcutEnabled = true,
+  ) {
+    this.data.preferences.doubleControlShortcutEnabled = defaultDoubleControlShortcutEnabled;
+  }
 
   async load(): Promise<void> {
     if (this.loaded) return;
     const primary = await readJsonDocument(this.filePath);
     let recovery: SettingsRecovery | null = null;
     if (primary.ok) {
-      this.data = validate(primary.value);
+      this.data = validate(primary.value, this.defaultDoubleControlShortcutEnabled);
     } else {
       const backup = await readJsonDocument(backupPathFor(this.filePath));
       if (backup.ok) {
-        this.data = validate(backup.value);
+        this.data = validate(backup.value, this.defaultDoubleControlShortcutEnabled);
         recovery = 'backup';
       } else {
         this.data = structuredClone(defaults);
+        this.data.preferences.doubleControlShortcutEnabled = this.defaultDoubleControlShortcutEnabled;
         if (primary.reason === 'invalid' || backup.reason === 'invalid') recovery = 'defaults';
       }
     }
@@ -237,7 +241,7 @@ export class SettingsStore {
     next.commitMessageHarness = isHarness(next.commitMessageHarness) ? next.commitMessageHarness : 'codex';
     next.commitMessageModels = modelPreferences(next.commitMessageModels);
     next.shortcutOverrides = sanitizeShortcutOverrides(next.shortcutOverrides);
-    next.doubleControlShortcutEnabled = typeof next.doubleControlShortcutEnabled === 'boolean' ? next.doubleControlShortcutEnabled : true;
+    next.doubleControlShortcutEnabled = typeof next.doubleControlShortcutEnabled === 'boolean' ? next.doubleControlShortcutEnabled : this.defaultDoubleControlShortcutEnabled;
     next.remoteFetchIntervalSeconds = normalizeRemoteFetchIntervalSeconds(next.remoteFetchIntervalSeconds);
     this.data.preferences = next;
     await this.save();
@@ -355,9 +359,13 @@ export class SettingsStore {
   }
 }
 
-function validate(value: unknown): SettingsData {
+function validate(value: unknown, defaultDoubleControlShortcutEnabled: boolean): SettingsData {
   const parsed = settingsRecordSchema.safeParse(value);
-  if (!parsed.success) return structuredClone(defaults);
+  if (!parsed.success) {
+    const data = structuredClone(defaults);
+    data.preferences.doubleControlShortcutEnabled = defaultDoubleControlShortcutEnabled;
+    return data;
+  }
   const input = parsed.data;
   const recentRepositories = Array.isArray(input.recentRepositories)
     ? input.recentRepositories.filter(isRecent).map(normalizeRecent).slice(0, 10)
@@ -380,14 +388,14 @@ function validate(value: unknown): SettingsData {
         commitMessageHarness: isHarness(parsedPreferences.data.commitMessageHarness) ? parsedPreferences.data.commitMessageHarness : 'codex',
         commitMessageModels: modelPreferences(parsedPreferences.data.commitMessageModels),
         shortcutOverrides: sanitizeShortcutOverrides(parsedPreferences.data.shortcutOverrides),
-        doubleControlShortcutEnabled: typeof parsedPreferences.data.doubleControlShortcutEnabled === 'boolean' ? parsedPreferences.data.doubleControlShortcutEnabled : true,
+        doubleControlShortcutEnabled: typeof parsedPreferences.data.doubleControlShortcutEnabled === 'boolean' ? parsedPreferences.data.doubleControlShortcutEnabled : defaultDoubleControlShortcutEnabled,
         remoteFetchIntervalSeconds: normalizeRemoteFetchIntervalSeconds(
           parsedPreferences.data.remoteFetchIntervalSeconds === undefined
             ? DEFAULT_REMOTE_FETCH_INTERVAL_SECONDS
             : parsedPreferences.data.remoteFetchIntervalSeconds,
         ),
       } as Preferences
-    : { ...defaults.preferences };
+    : { ...defaults.preferences, doubleControlShortcutEnabled: defaultDoubleControlShortcutEnabled };
   const parsedBounds = windowBoundsRecordSchema.safeParse(input.windowBounds);
   const bounds = parsedBounds.success ? parsedBounds.data : null;
   const windowBounds = bounds && typeof bounds.width === 'number' && Number.isFinite(bounds.width) && typeof bounds.height === 'number' && Number.isFinite(bounds.height)

@@ -29,12 +29,23 @@ import { getWindowTitleBarOptions, readStartupDark, startupBackground } from './
 import { normalizeExternalUrl } from './shared/external-url';
 import type { OpenTigPairingLink, OpenTigWebAccessStatus } from './shared/desktop-api';
 import type { OpenTigServerHost } from './shared/server-process';
-import { OPEN_TIG_SESSION_COOKIE } from './shared/server-protocol';
+import { applicationName, preferredServerPort, sessionCookieName } from './shared/application-profile';
+import { configureDesktopProfile } from './main/profile/DesktopProfile';
 
-if (started) app.quit();
+if (started) app.exit(0);
 
+const applicationProfile = (() => {
+  try { return configureDesktopProfile(app, __OPENTIG_BUILD_PROFILE__, process.platform); }
+  catch (error) {
+    dialog.showErrorBox('OpenTig profile error', error instanceof Error ? error.message : 'Could not initialize the application profile.');
+    app.exit(1);
+    throw error;
+  }
+})();
+const displayName = applicationName(applicationProfile);
+const desktopCookieName = sessionCookieName(applicationProfile);
 const hasLock = app.requestSingleInstanceLock();
-if (!hasLock) app.quit();
+if (!hasLock) app.exit(0);
 
 let mainWindow: BrowserWindow | null = null;
 let serverManager: ServerProcessManager | null = null;
@@ -89,7 +100,7 @@ async function createWindow(): Promise<void> {
   const dark = await readStartupDark(path.join(app.getPath('userData'), 'settings.json'), nativeTheme.shouldUseDarkColors);
   const backgroundColor = startupBackground(dark);
   const errorPageUrl = startupPageUrl(
-    'OpenTig server is offline',
+    `${displayName} server is offline`,
     'See the server log for details, then restart OpenTig.',
     dark,
   );
@@ -100,7 +111,7 @@ async function createWindow(): Promise<void> {
     minHeight: 600,
     show: false,
     backgroundColor,
-    title: 'OpenTig — Starting…',
+    title: `${displayName} — Starting…`,
     icon: getAppIconPath(),
     autoHideMenuBar: true,
     ...getWindowTitleBarOptions(dark, process.platform),
@@ -116,6 +127,10 @@ async function createWindow(): Promise<void> {
       backgroundThrottling: false,
     },
   });
+  mainWindow.on('page-title-updated', (event) => {
+    event.preventDefault();
+    mainWindow?.setTitle(displayName);
+  });
   // Restore maximized while still hidden, and wait until Windows has applied
   // the work-area size, so the first HTML splash layout fills the window.
   // maximize() can also show the window on Windows; hide again if it leaked.
@@ -129,7 +144,7 @@ async function createWindow(): Promise<void> {
     revealed = true;
     clearTimeout(revealTimer);
     mainWindow.webContents.setBackgroundThrottling(true);
-    mainWindow.setTitle('OpenTig');
+    mainWindow.setTitle(displayName);
     mainWindow.show();
     mainWindow.focus();
   };
@@ -191,7 +206,7 @@ async function createWindow(): Promise<void> {
     }
   } catch (error) {
     if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.setTitle('OpenTig — Server error');
+      mainWindow.setTitle(`${displayName} — Server error`);
       allowReveal = true;
       await mainWindow.loadURL(errorPageUrl).catch(() => undefined);
       revealWindow(true);
@@ -220,6 +235,8 @@ function createServerManager(): ServerProcessManager {
       ? { trashModulePath: path.join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', 'trash', 'index.js') }
       : {}),
     appVersion: app.getVersion(),
+    profile: applicationProfile,
+    preferredPort: preferredServerPort(applicationProfile),
     platform: normalizePlatform(process.platform),
     host: webAccessEnabled ? '0.0.0.0' : '127.0.0.1',
     fork: (modulePath, args, options) => utilityProcess.fork(modulePath, args, options),
@@ -232,11 +249,11 @@ function applyServerState(state: ServerProcessState): void {
   serverState = state;
   if (state.status === 'ready') {
     allowedServerOrigin = state.origin;
-    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setTitle('OpenTig');
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setTitle(displayName);
   } else if (state.status === 'restarting') {
-    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setTitle('OpenTig — Reconnecting…');
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setTitle(`${displayName} — Reconnecting…`);
   } else if (state.status === 'failed') {
-    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setTitle('OpenTig — Server offline');
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setTitle(`${displayName} — Server offline`);
   }
 }
 
@@ -314,10 +331,10 @@ function networkEndpoints(port: number): string[] {
 }
 
 async function installDesktopSession(server: ServerProcessAddress, desktopSecret: string): Promise<void> {
-  const cookies = await session.defaultSession.cookies.get({ url: server.origin, name: OPEN_TIG_SESSION_COOKIE });
+  const cookies = await session.defaultSession.cookies.get({ url: server.origin, name: desktopCookieName });
   const currentCookie = cookies[0]?.value;
   const descriptor = await fetch(`${server.origin}/api/auth/descriptor`, {
-    headers: currentCookie ? { Cookie: `${OPEN_TIG_SESSION_COOKIE}=${currentCookie}` } : {},
+    headers: currentCookie ? { Cookie: `${desktopCookieName}=${currentCookie}` } : {},
   });
   if (descriptor.ok) {
     const state = await descriptor.json() as { authenticated?: unknown; currentSessionKind?: unknown };
@@ -335,17 +352,17 @@ async function installDesktopSession(server: ServerProcessAddress, desktopSecret
 }
 
 async function installDesktopSessionCookie(origin: string, cookie: string): Promise<void> {
-  const value = cookie.match(new RegExp(`^${OPEN_TIG_SESSION_COOKIE}=([^;]+)`))?.[1];
+  const value = cookie.match(new RegExp(`^${desktopCookieName}=([^;]+)`))?.[1];
   if (!value) throw new Error('OpenTig server returned an invalid desktop session.');
   await session.defaultSession.cookies.set({
     url: origin,
-    name: OPEN_TIG_SESSION_COOKIE,
+    name: desktopCookieName,
     value,
     path: '/',
     httpOnly: true,
     sameSite: 'strict',
   });
-  const cookies = await session.defaultSession.cookies.get({ url: origin, name: OPEN_TIG_SESSION_COOKIE });
+  const cookies = await session.defaultSession.cookies.get({ url: origin, name: desktopCookieName });
   if (cookies.length === 0) throw new Error('Could not install the OpenTig desktop session.');
 }
 

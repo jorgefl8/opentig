@@ -31,6 +31,8 @@ It is intentionally not an IDE, hosting service, or replacement for the Git CLI.
 
 ### Repositories and projects
 
+- An unpaired browser offers **Pair this browser** with the appropriate CLI command. The authentication notice and pairing form fit narrow screens and scroll when necessary, so a phone can complete pairing without the desktop workspace's minimum width.
+- Run **OpenTig Dev** alongside production with separate preferences, recent repositories, window state, logs, browser sessions, and network-access settings. Desktop source runs and packaged Dev builds share one persistent desktop Dev profile; only one desktop Dev instance runs at a time. The browser-only source runner uses its own Dev data directory. A fresh Dev profile starts with Network access and the global double-Control shortcut off.
 - Open existing local repositories and return to recently used repositories.
 - Use the same authenticated WebSocket backend from the desktop app or a paired browser. On desktop the backend runs in a supervised utility process, so a renderer reload or crash does not stop repository watchers or in-flight server state while the desktop process remains open; an unexpected backend exit is restarted with bounded backoff. Repository switches and filesystem/Git events propagate to every connected tab, and reconnecting clients bootstrap fresh state without replaying interrupted mutations. Browser clients enter paths on the server directly, native folder selection and Explorer reveal remain desktop-only, and their header uses the full browser width instead of reserving space for desktop window controls. The first payload is the workspace shell; Settings, History, PR creation, Files, Search, and the PRs list load the first time you open them.
 - Run that exact server/runtime/client bundle through `npx --yes @opentig/cli@<version>` or plain `bunx @opentig/cli@<version>`. The default/start command opens a five-minute one-use pairing link, while `serve` stays headless and prints its portable code, link, and terminal QR. `opentig pair` safely mints a fresh code for a server already using the same private home directory. The CLI keeps its configured port stable—`6767` by default—and reports a conflict instead of silently moving a tunnel target.
@@ -252,9 +254,27 @@ Use `latest` only for evaluation after a public release. To upgrade or roll back
 ## Run from source
 
 ```powershell
-npm ci
+npx --yes npm@11.6.2 ci
 npm start
 ```
+
+`npm start` always uses **OpenTig Dev**. Its data lives in the OS application-data directory under `OpenTig Dev` (normally `~/.config/OpenTig Dev` on Linux or `%APPDATA%/OpenTig Dev` on Windows), without copying or falling back to production data. The profile is selected before Electron takes its instance lock or opens a session. Development can run on Linux; Windows installers and Windows-specific behavior must still be verified on Windows.
+
+For browser development on a Linux machine without a desktop session, run:
+
+```bash
+npm run start:web:dev
+```
+
+This builds the current server and web client, then starts **OpenTig Dev** without Electron at the fixed address `http://127.0.0.1:6867`. It prints a five-minute pairing code/link. Its persistent data is `~/.opentig-dev`, separate from both production CLI data (`~/.opentig`) and Electron Dev data, so the two runtimes never share writable settings. Production `OPENTIG_HOME`, `OPENTIG_HOST`, and `OPENTIG_PORT` values do not redirect this command; custom launch options are rejected. An occupied port fails instead of selecting another port. Stop it with `Ctrl+C`; after code changes, run the command again to rebuild (there is no live reload).
+
+While it is running, generate a fresh code from another terminal:
+
+```bash
+npm run pair:web:dev
+```
+
+A Cloudflare Tunnel running on the same machine can route `dev.opentig.example.com` to `http://127.0.0.1:6867` and a separate production hostname to `http://127.0.0.1:6767`. Open `/pair` on the chosen HTTPS hostname and paste that instance's code; keep the listener on loopback and restrict the hostnames to your users with Cloudflare Access. This command does not install or configure Cloudflare or a background service. Browser checks cover the shared UI and server; native desktop integration and Windows installers still need separate validation.
 
 Run all quality gates:
 
@@ -262,7 +282,16 @@ Run all quality gates:
 npm run check
 ```
 
-Build the unpacked application or distributable artifacts:
+Build a separate Dev application to evaluate local changes or a checked-out PR:
+
+```bash
+npm run package:dev
+npm run verify:packaged-server -- --dev
+```
+
+On Linux x64 the executable is `out/OpenTig Dev-linux-x64/OpenTig Dev`; on Windows x64 it is `out/OpenTig Dev-win32-x64/OpenTig Dev.exe`. The Dev identity is baked into the build, so moving the executable does not change its profile. All local Dev builds share the same Dev data; use a separate worktree for a PR's source and test repository changes in a disposable clone. Dev isolates application data, not your actual repositories or authenticated Git/GitHub/AI CLIs.
+
+`npm run make:dev` builds a portable Dev ZIP on Windows. Build production with the existing commands:
 
 ```powershell
 npm run package
@@ -279,7 +308,7 @@ The unpacked executable is written to `out/OpenTig-win32-x64/OpenTig.exe`.
 - The private server transport binds to loopback by default, requires an owner session for commands and image bytes, validates exact mutation/WebSocket origins, and blocks static-file traversal and symlink escape. Enabling **Settings → Network access** persists a desktop-only setting and restarts that same backend on `0.0.0.0`; disabling it returns to `127.0.0.1`. OpenTig never starts a second Web Access server.
 - New browsers pair through a five-minute, one-use URL fragment displayed as a link and local QR code; the fragment is cleared before exchange. Steady-state credentials use host-only `HttpOnly`, `SameSite=Strict` cookies, only credential hashes are persisted, and revoking all sessions disconnects paired browsers while replacing the private desktop session. Network access grants owner-level file, Git, GitHub, and AI CLI authority as the OS user: use only a trusted LAN or VPN, an HTTPS reverse proxy, or an SSH tunnel, and never expose the raw port publicly.
 - Headless `pair` authenticates over a same-host-only administrative route using a separate private file under `~/.opentig/server`; `runtime.json` contains PID/address/version identity but no credential. Pairing secrets remain memory-only and appear only in the deliberate one-time terminal output/URL fragment, never in arguments, environment variables, routine logs, query strings, or persisted state.
-- Electron starts the backend after readiness on preferred port `6767`, scanning a bounded range upward only when that implicit port is occupied. Its one-use desktop bootstrap secret crosses the private parent/utility message port exactly once; it is absent from process arguments, environment variables, renderer JavaScript, and redacted rotating logs. Unexpected exits restart one utility process on the same selected port.
+- Electron starts the backend after readiness on preferred port `6767`, scanning a bounded range upward only when that implicit port is occupied. Dev instead scans `6867`–`6876`, while production scans `6767`–`6776`; each keeps its selected port when Network access is toggled. Distinct session-cookie names let both profiles stay paired in the same browser on the same host, and revocation affects only that profile. If its range is full, startup fails rather than switching to the other profile. Its one-use desktop bootstrap secret crosses the private parent/utility message port exactly once; it is absent from process arguments, environment variables, renderer JavaScript, and redacted rotating logs. Unexpected exits restart one utility process on the same selected port.
 - The narrow preload bridge contains only proven desktop capabilities such as folder selection/relocation, file clipboard import, Explorer reveal, title-bar theming, and zoom. Text clipboard access stays in the renderer's browser API.
 - Git commands use argument arrays with `shell: false`, bounded output, timeouts, path validation, and per-repository write serialisation.
 - External links are allowlisted to `http(s)://` and `mailto:` before Electron's window-navigation interception opens them in the system browser.

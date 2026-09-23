@@ -6,6 +6,10 @@ import { FusesPlugin } from '@electron-forge/plugin-fuses';
 import { AutoUnpackNativesPlugin } from '@electron-forge/plugin-auto-unpack-natives';
 import { VitePlugin } from '@electron-forge/plugin-vite';
 import type { ForgeConfig } from '@electron-forge/shared-types';
+import { desktopBuildProfile } from './desktop-build';
+
+const isDevBuild = desktopBuildProfile() === 'dev';
+const productName = isDevBuild ? 'OpenTig Dev' : 'OpenTig';
 
 const appIcon = path.resolve(__dirname, 'assets', 'opentig.ico');
 const serverResource = path.resolve(__dirname, 'packages', 'server', '.resource', 'opentig-server');
@@ -84,9 +88,9 @@ function isTrashRuntimeModule(file: string): boolean {
 const config: ForgeConfig = {
   packagerConfig: {
     asar: { unpackDir: 'node_modules' },
-    name: 'OpenTig',
-    executableName: 'OpenTig',
-    appBundleId: 'com.opentig.app',
+    name: productName,
+    executableName: productName,
+    appBundleId: isDevBuild ? 'com.opentig.app.dev' : 'com.opentig.app',
     icon: appIcon,
     extraResource: [appIcon, serverResource],
     // The Vite plugin bundles JavaScript dependencies and otherwise excludes
@@ -105,7 +109,7 @@ const config: ForgeConfig = {
   // would unnecessarily require a local Visual Studio C++ toolchain.
   rebuildConfig: { onlyModules: [] },
   makers: [
-    new MakerSquirrel({ name: 'OpenTig', setupExe: 'OpenTig-Setup.exe', setupIcon: appIcon }),
+    ...(!isDevBuild ? [new MakerSquirrel({ name: 'OpenTig', setupExe: 'OpenTig-Setup.exe', setupIcon: appIcon })] : []),
     new MakerZIP({}, ['win32']),
   ],
   plugins: [

@@ -14,6 +14,7 @@ import {
 } from '../../shared/server-process';
 import { OPEN_TIG_PROTOCOL_VERSION } from '../../shared/server-protocol';
 import { DEFAULT_SERVER_PORT, DEFAULT_SERVER_PORT_SCAN_COUNT } from '../../shared/server-config';
+import { applicationName, type ApplicationProfile } from '../../shared/application-profile';
 
 export { DEFAULT_SERVER_PORT, DEFAULT_SERVER_PORT_SCAN_COUNT } from '../../shared/server-config';
 
@@ -60,6 +61,9 @@ export type ServerProcessState =
   | { status: 'stopped' };
 
 export interface ServerProcessManagerOptions {
+  profile?: ApplicationProfile;
+  /** Starting point of bounded discovery; unlike port, this allows fallback. */
+  preferredPort?: number;
   modulePath: string;
   cwd: string;
   logPath: string;
@@ -194,7 +198,7 @@ export class ServerProcessManager {
 
   private async startInitial(): Promise<ServerProcessAddress> {
     const explicitPort = this.options.port;
-    const firstPort = explicitPort ?? DEFAULT_SERVER_PORT;
+    const firstPort = explicitPort ?? this.options.preferredPort ?? DEFAULT_SERVER_PORT;
     const attempts = explicitPort === undefined ? DEFAULT_SERVER_PORT_SCAN_COUNT : 1;
     let lastConflict: unknown = null;
 
@@ -258,6 +262,7 @@ export class ServerProcessManager {
   private spawnAndAdopt(port: number): Promise<ServerProcessAddress> {
     const desktopSecret = (this.options.randomSecret ?? defaultSecret)();
     const utilityConfig: OpenTigUtilityConfig = {
+      ...(this.options.profile ? { profile: this.options.profile } : {}),
       appVersion: this.options.appVersion,
       desktopSecret,
       settingsPath: this.options.settingsPath,
@@ -277,7 +282,7 @@ export class ServerProcessManager {
           cwd: this.options.cwd,
           env: { ...(this.options.env ?? process.env) },
           stdio: 'pipe',
-          serviceName: 'OpenTig Server',
+          serviceName: `${applicationName(this.options.profile ?? 'production')} Server`,
         });
       } catch (error) {
         reject(error);
@@ -452,7 +457,7 @@ export class ServerProcessManager {
   }
 
   private currentPort(): number {
-    const state = this.options.port ?? this.activePort ?? DEFAULT_SERVER_PORT;
+    const state = this.options.port ?? this.activePort ?? this.options.preferredPort ?? DEFAULT_SERVER_PORT;
     return state;
   }
 

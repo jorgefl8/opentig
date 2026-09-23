@@ -24,6 +24,27 @@ afterEach(async () => {
 });
 
 describe('ServerProcessManager', () => {
+  it('keeps Dev in its own range, including after enabling network access', async () => {
+    const fixture = await createFixture([portConflictBehavior, readyBehavior, readyBehavior]);
+    const manager = new ServerProcessManager({ ...fixture.options, profile: 'dev', preferredPort: 6867 });
+    try {
+      await expect(manager.start()).resolves.toMatchObject({ port: 6868 });
+      await expect(manager.restart('0.0.0.0')).resolves.toMatchObject({ port: 6868 });
+      expect(fixture.children.map(bootstrapPort)).toEqual([6867, 6868, 6868]);
+      expect(fixture.children[2]!.messages[0]).toMatchObject({ config: { profile: 'dev', host: '0.0.0.0' } });
+      expect(fixture.calls[0]!.options.serviceName).toBe('OpenTig Dev Server');
+    } finally { await manager.stop(); }
+  });
+
+  it('fails when the entire Dev range is occupied without trying production ports', async () => {
+    const fixture = await createFixture(Array.from({ length: 10 }, () => portConflictBehavior));
+    const manager = new ServerProcessManager({ ...fixture.options, profile: 'dev', preferredPort: 6867 });
+    try {
+      await expect(manager.start()).rejects.toThrow('from 6867 to 6876');
+      expect(fixture.children.map(bootstrapPort)).toEqual(Array.from({ length: 10 }, (_, index) => 6867 + index));
+    } finally { await manager.stop(); }
+  });
+
   it('boots port 6767 through one postMessage without putting the secret in args or env', async () => {
     const fixture = await createFixture([readyBehavior]);
     const onReady = vi.fn();

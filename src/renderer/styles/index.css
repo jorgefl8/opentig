@@ -272,6 +272,7 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
 @layer base {
   html, body, #root { height: 100%; overflow: hidden; }
   body { margin: 0; min-width: 0; font-feature-settings: "ss01"; }
+  #root:has(.access-page) { overflow-y: auto; }
   button, [role="button"], [data-slot="select-trigger"], [data-slot="select-item"] { cursor: pointer; }
   button:disabled, [role="button"][aria-disabled="true"], [data-slot="select-trigger"][data-disabled], [data-slot="select-item"][data-disabled] { cursor: not-allowed; }
   ::selection { background: color-mix(in oklch, var(--primary) 30%, transparent); }

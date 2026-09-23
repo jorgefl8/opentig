@@ -1,3 +1,4 @@
+import { appDisplayName, isDevProfile } from '@/lib/app-identity';
 import { useState, type FormEvent } from 'react';
 import { Button } from '@/components/ui/button';
 import {
@@ -29,18 +30,18 @@ export default function PairingPage() {
   };
 
   return (
-    <main className="pairing-page flex min-h-screen items-center justify-center bg-background p-6 text-foreground">
+    <main className="access-page pairing-page flex min-h-dvh items-center justify-center bg-background px-4 py-6 text-foreground">
       <section className="w-full max-w-md rounded-xl border border-border bg-card p-6 shadow-sm">
         <h1 className="text-lg font-semibold">Pair this browser</h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          Enter the one-use code shown by the OpenTig desktop app or <code>opentig pair</code>. It expires after five minutes.
+          Enter the one-use code shown by the {appDisplayName} desktop app or <code>{isDevProfile ? 'npm run pair:web:dev' : 'opentig pair'}</code>. It expires after five minutes.
         </p>
         <form className="mt-5 grid gap-4" onSubmit={(event) => void submit(event)}>
           <label className="grid gap-1.5 text-sm" htmlFor="pairing-code">
             <span className="font-medium">Pairing code</span>
             <input
               id="pairing-code"
-              className="h-9 rounded-md border border-input bg-background px-3 font-mono text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/20"
+              className="h-10 w-full min-w-0 rounded-md border border-input bg-background px-3 font-mono text-base outline-none focus:border-ring focus:ring-2 focus:ring-ring/20"
               value={token}
               onChange={(event) => setToken(event.target.value)}
               autoComplete="off"
@@ -52,7 +53,7 @@ export default function PairingPage() {
             <span className="font-medium">Device name</span>
             <input
               id="device-name"
-              className="h-9 rounded-md border border-input bg-background px-3 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/20"
+              className="h-10 w-full min-w-0 rounded-md border border-input bg-background px-3 text-base outline-none focus:border-ring focus:ring-2 focus:ring-ring/20"
               value={clientName}
               onChange={(event) => setClientName(event.target.value)}
               maxLength={64}

@@ -76,7 +76,8 @@ describe('renderer/server boundary', () => {
     const source = await readFile(path.join(process.cwd(), 'src', 'renderer', 'components', 'ServerConnectionBoundary.tsx'), 'utf8');
 
     expect(source).toContain("if (state === 'auth-required')");
-    expect(source).toContain('Create a fresh pairing link in desktop OpenTig under Settings → Web Access');
+    expect(source).toContain('Generate a pairing code with');
+    expect(source).toContain('href="/pair"');
   });
 
   it('uses the shared endpoint selector and hides healthy connection status', async () => {

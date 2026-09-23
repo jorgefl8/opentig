@@ -21,6 +21,7 @@ import { SystemTrash, type TrashAdapter } from '../platform/SystemTrash';
 import { OpenTigRuntime, type OpenTigRuntimeEventSink } from './OpenTigRuntime';
 
 export interface CreateOpenTigRuntimeOptions {
+  defaultDoubleControlShortcutEnabled?: boolean;
   settingsPath: string;
   aiLogPath: string;
   runtimeMode: OpenTigRuntimeMode;
@@ -43,7 +44,7 @@ export async function createOpenTigRuntime(
         ? 'Settings were restored from the last known-good backup.'
         : 'Settings could not be parsed and were reset to defaults.',
     });
-  });
+  }, options.defaultDoubleControlShortcutEnabled ?? true);
   await settings.load();
   const git = new GitProcess();
   const repositories = new RepositoryService(git, settings);

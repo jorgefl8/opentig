@@ -1,5 +1,7 @@
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { SplashScreen } from '@/components/SplashScreen';
+import { Button } from '@/components/ui/button';
+import { isDevProfile } from '@/lib/app-identity';
 import { serverClient } from '@/lib/opentig-api';
 import type { ServerConnectionState } from '@/lib/websocket-transport';
 
@@ -29,14 +31,17 @@ export function ServerConnectionBoundary({ children }: { children: ReactNode }) 
   if (state === 'auth-required') {
     const desktop = Boolean(window.opentigDesktop);
     return (
-      <main className="flex min-h-screen items-center justify-center bg-background p-6 text-foreground">
+      <main className="access-page flex min-h-dvh items-center justify-center bg-background px-4 py-6 text-foreground">
         <section className="w-full max-w-md rounded-xl border border-border bg-card p-6 shadow-sm" role="status">
           <h1 className="text-lg font-semibold">Authentication required</h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            {desktop
-              ? 'Restart OpenTig to restore its private desktop session.'
-              : 'Create a fresh pairing link in desktop OpenTig under Settings → Web Access, then open that link in this browser.'}
+            {desktop ? 'Restart OpenTig to restore its private desktop session.' : (
+              <>Generate a pairing code with <code>{isDevProfile ? 'npm run pair:web:dev' : 'opentig pair'}</code> on the server, or from Settings → Network access in the desktop app.</>
+            )}
           </p>
+          {!desktop && (
+            <Button className="mt-5" nativeButton={false} render={<a href="/pair" />}>Pair this browser</Button>
+          )}
         </section>
       </main>
     );

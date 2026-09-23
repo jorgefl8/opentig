@@ -187,7 +187,7 @@ async function handleRequest(context: OpenTigHttpContext, request: IncomingMessa
 
   if (rawPath.startsWith('/api/')) return sendJson(response, 404, { error: 'Not found.' });
   if (method !== 'GET') return sendJson(response, 405, { error: 'Method not allowed.' }, { Allow: 'GET' });
-  await serveStatic(context.clientRoot, request.url ?? '/', response);
+  await serveStatic(context.clientRoot, request.url ?? '/', response, context.identity.profile === 'dev');
 }
 
 function browserSessionMetadata(request: IncomingMessage, clientName: string): {

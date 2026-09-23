@@ -42,6 +42,7 @@ async function start(message: Partial<OpenTigUtilityParentMessage> | null): Prom
     const config = validateBootstrap(message);
     server = await runOpenTigServer({
       appVersion: config.appVersion,
+      ...(config.profile ? { profile: config.profile } : {}),
       auth: new OneTimeBootstrapAuthSource({ desktopSecret: config.desktopSecret }),
       settingsPath: config.settingsPath,
       aiLogPath: config.aiLogPath,
@@ -117,6 +118,7 @@ function validateBootstrap(message: Partial<OpenTigUtilityParentMessage> | null)
   }
   const config = message.config as Partial<OpenTigUtilityConfig> | undefined;
   if (!config || typeof config !== 'object') throw codedError('INVALID_BOOTSTRAP', 'Invalid server configuration.');
+  if (config.profile !== undefined && config.profile !== 'production' && config.profile !== 'dev') throw invalid('profile');
   if (typeof config.appVersion !== 'string' || !config.appVersion || config.appVersion.length > 128) throw invalid('app version');
   if (typeof config.desktopSecret !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(config.desktopSecret)) throw invalid('desktop secret');
   for (const [label, value] of [

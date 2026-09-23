@@ -1,11 +1,13 @@
 import type { OpenTigPlatform } from './contracts';
 import type { OpenTigServerIdentity } from './server-protocol';
+import type { ApplicationProfile } from './application-profile';
 
 export const OPEN_TIG_UTILITY_PROTOCOL_VERSION = 1;
 
 export type OpenTigServerHost = '127.0.0.1' | '0.0.0.0';
 
 export interface OpenTigUtilityConfig {
+  profile?: ApplicationProfile;
   appVersion: string;
   desktopSecret: string;
   settingsPath: string;

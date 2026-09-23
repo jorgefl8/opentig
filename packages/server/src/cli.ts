@@ -20,6 +20,7 @@ import {
 import { CliServerLog } from './cli-log';
 import { runOpenTigServer, type OpenTigServerConfig, type RunningOpenTigServer } from './server';
 import { OPEN_TIG_APP_VERSION } from './version';
+import { applicationName, type ApplicationProfile } from '../../../src/shared/application-profile';
 
 const SHUTDOWN_TIMEOUT_MS = 8_000;
 
@@ -33,7 +34,7 @@ const consoleIo: CliIo = {
   error: (value) => process.stderr.write(`${value}\n`),
 };
 
-export async function runCli(args: readonly string[], environment: NodeJS.ProcessEnv = process.env, io: CliIo = consoleIo): Promise<number> {
+export async function runCli(args: readonly string[], environment: NodeJS.ProcessEnv = process.env, io: CliIo = consoleIo, profile: ApplicationProfile = 'production'): Promise<number> {
   try {
     assertNodeVersion();
     const config = parseCliArguments(args, environment);
@@ -46,8 +47,8 @@ export async function runCli(args: readonly string[], environment: NodeJS.Proces
       return 0;
     }
     if (config.command === 'service') return await manageCliService(config, io);
-    if (config.command === 'pair') return await pairRunningServer(config, io);
-    return await startCliServer(config, io);
+    if (config.command === 'pair') return await pairRunningServer(config, io, profile);
+    return await startCliServer(config, io, profile);
   } catch (error) {
     const message = redactSensitiveText(error instanceof Error ? error.message : String(error));
     io.error(`OpenTig: ${message}`);
@@ -56,11 +57,11 @@ export async function runCli(args: readonly string[], environment: NodeJS.Proces
   }
 }
 
-async function startCliServer(config: OpenTigCliConfig, io: CliIo): Promise<number> {
+async function startCliServer(config: OpenTigCliConfig, io: CliIo, profile: ApplicationProfile): Promise<number> {
   await assertGitAvailable();
   const paths = resolveCliPaths(config.home);
   await prepareCliHome(paths);
-  await refuseActiveRuntime(paths.runtimeState);
+  await refuseActiveRuntime(paths.runtimeState, profile);
   const adminToken = await loadOrCreateAdminToken(paths.adminToken);
   const instanceId = newInstanceId();
   const log = new CliServerLog(paths.serverLog);
@@ -68,6 +69,7 @@ async function startCliServer(config: OpenTigCliConfig, io: CliIo): Promise<numb
   try {
     server = await startOnConfiguredPort({
       appVersion: OPEN_TIG_APP_VERSION,
+      profile,
       auth: { consumeDesktopSecret: () => false },
       settingsPath: paths.settings,
       aiLogPath: paths.aiLog,
@@ -91,7 +93,8 @@ async function startCliServer(config: OpenTigCliConfig, io: CliIo): Promise<numb
     log.logger('info', `OpenTig CLI ready on ${publicOrigin(config.host, server.port)}.`);
     const origin = publicOrigin(config.host, server.port);
     const pairing = rewritePairingOrigin(server.createPairingLink(), origin);
-    io.out(`OpenTig ${server.appVersion} is ready.`);
+    io.out(`${applicationName(profile)} ${server.appVersion} is ready.`);
+    if (profile === 'dev') io.out(`Dev data directory: ${paths.home}`);
     io.out(`Connection URL: ${origin}`);
     printPairing(pairing, io, config.command === 'serve');
     if (!isLoopbackHost(config.host)) {
@@ -118,7 +121,7 @@ async function startCliServer(config: OpenTigCliConfig, io: CliIo): Promise<numb
   }
 }
 
-async function pairRunningServer(config: OpenTigCliConfig, io: CliIo): Promise<number> {
+async function pairRunningServer(config: OpenTigCliConfig, io: CliIo, profile: ApplicationProfile): Promise<number> {
   const paths = resolveCliPaths(config.home);
   const state = await readRuntimeState(paths.runtimeState);
   if (!isProcessRunning(state.pid)) throw new Error('OpenTig runtime state is stale; its process is not running.');
@@ -126,10 +129,11 @@ async function pairRunningServer(config: OpenTigCliConfig, io: CliIo): Promise<n
   const adminOrigin = localAdminOrigin(state);
   const ready = await fetch(`${adminOrigin}/readyz`, { signal: AbortSignal.timeout(3_000) });
   if (!ready.ok) throw new Error('The running OpenTig server is not ready.');
-  const identity = await ready.json() as Partial<OpenTigRuntimeState> & { status?: unknown };
+  const identity = await ready.json() as Partial<OpenTigRuntimeState> & { status?: unknown; profile?: unknown };
   if (identity.status !== 'ready'
     || identity.protocolVersion !== state.protocolVersion
-    || identity.appVersion !== state.appVersion) {
+    || identity.appVersion !== state.appVersion
+    || (profile === 'dev' && identity.profile !== 'dev')) {
     throw new Error('OpenTig runtime state does not match the running server.');
   }
   const adminToken = await readAdminToken(paths.adminToken).catch(() => {
@@ -164,10 +168,10 @@ export function publicOrigin(host: string, port: number): string {
   return `http://${displayHost.includes(':') ? `[${displayHost}]` : displayHost}:${port}`;
 }
 
-async function refuseActiveRuntime(runtimeStatePath: string): Promise<void> {
+async function refuseActiveRuntime(runtimeStatePath: string, profile: ApplicationProfile): Promise<void> {
   try {
     const state = await readRuntimeState(runtimeStatePath);
-    if (isProcessRunning(state.pid)) throw new Error(`OpenTig is already running for this home (PID ${state.pid}). Use "opentig pair" to add a device.`);
+    if (isProcessRunning(state.pid)) throw new Error(`OpenTig is already running for this home (PID ${state.pid}). Use "${profile === 'dev' ? 'npm run pair:web:dev' : 'opentig pair'}" to add a device.`);
     await clearRuntimeState(runtimeStatePath, state.instanceId);
   } catch (error) {
     if (error instanceof Error && error.message === 'No running OpenTig server was found for this home.') return;

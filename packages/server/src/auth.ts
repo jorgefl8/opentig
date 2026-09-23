@@ -1,6 +1,6 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import type { IncomingHttpHeaders } from 'node:http';
-import { OPEN_TIG_SESSION_COOKIE } from '../../../src/shared/server-protocol';
+import { applicationName, sessionCookieName, type ApplicationProfile } from '../../../src/shared/application-profile';
 import { PersistentAuthStore } from './auth-store';
 import type { SessionMetadata, StoredSession } from './auth-store';
 
@@ -35,6 +35,7 @@ export class OpenTigSessionAuth {
     private readonly store: PersistentAuthStore,
     private readonly secureCookies: boolean,
     private readonly now: () => number,
+    private readonly profile: ApplicationProfile,
   ) {}
 
   static async open(options: {
@@ -42,9 +43,10 @@ export class OpenTigSessionAuth {
     dataDirectory: string;
     secureCookies?: boolean;
     now?: () => number;
+    profile?: ApplicationProfile;
   }): Promise<OpenTigSessionAuth> {
     const store = await PersistentAuthStore.open(options.dataDirectory);
-    return new OpenTigSessionAuth(options.source, store, options.secureCookies ?? false, options.now ?? Date.now);
+    return new OpenTigSessionAuth(options.source, store, options.secureCookies ?? false, options.now ?? Date.now, options.profile ?? 'production');
   }
 
   descriptor(): OpenTigAuthDescriptor {
@@ -64,7 +66,7 @@ export class OpenTigSessionAuth {
     if (!isCredential(secret) || !await this.source.consumeDesktopSecret(secret)) return null;
     return this.issueCookie({
       kind: 'desktop',
-      clientName: 'OpenTig desktop',
+      clientName: `${applicationName(this.profile)} desktop`,
       deviceType: 'desktop',
       os: null,
       browser: null,
@@ -95,12 +97,12 @@ export class OpenTigSessionAuth {
   }
 
   authenticate(headers: Pick<IncomingHttpHeaders, 'cookie'>): string | null {
-    const token = readCookie(headers.cookie, OPEN_TIG_SESSION_COOKIE);
+    const token = readCookie(headers.cookie, sessionCookieName(this.profile));
     return token ? this.store.authenticate(token) : null;
   }
 
   async revoke(headers: Pick<IncomingHttpHeaders, 'cookie'>): Promise<string | null> {
-    const token = readCookie(headers.cookie, OPEN_TIG_SESSION_COOKIE);
+    const token = readCookie(headers.cookie, sessionCookieName(this.profile));
     return token ? this.store.revoke(token) : null;
   }
 
@@ -138,7 +140,7 @@ export class OpenTigSessionAuth {
       sessionIds,
       cookie: await this.issueCookie({
         kind: 'desktop',
-        clientName: 'OpenTig desktop',
+        clientName: `${applicationName(this.profile)} desktop`,
         deviceType: 'desktop',
         os: null,
         browser: null,
@@ -158,12 +160,12 @@ export class OpenTigSessionAuth {
   }
 
   expiredCookie(secure = false): string {
-    return `${OPEN_TIG_SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0${this.secureCookies || secure ? '; Secure' : ''}`;
+    return `${sessionCookieName(this.profile)}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0${this.secureCookies || secure ? '; Secure' : ''}`;
   }
 
   private async issueCookie(metadata: SessionMetadata, secure = false): Promise<string> {
     const session = await this.store.issue(metadata);
-    return `${OPEN_TIG_SESSION_COOKIE}=${session.token}; Path=/; HttpOnly; SameSite=Strict${this.secureCookies || secure ? '; Secure' : ''}`;
+    return `${sessionCookieName(this.profile)}=${session.token}; Path=/; HttpOnly; SameSite=Strict${this.secureCookies || secure ? '; Secure' : ''}`;
   }
 
   private dropExpiredPairing(): void {

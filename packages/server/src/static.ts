@@ -1,5 +1,5 @@
 import { createReadStream } from 'node:fs';
-import { realpath, stat } from 'node:fs/promises';
+import { readFile, realpath, stat } from 'node:fs/promises';
 import type { ServerResponse } from 'node:http';
 import path from 'node:path';
 
@@ -25,7 +25,7 @@ export const STATIC_SECURITY_HEADERS = {
   'X-Content-Type-Options': 'nosniff',
 } as const;
 
-export async function serveStatic(clientRoot: string, rawUrl: string, response: ServerResponse): Promise<void> {
+export async function serveStatic(clientRoot: string, rawUrl: string, response: ServerResponse, dev = false): Promise<void> {
   const rawPath = rawUrl.split(/[?#]/, 1)[0] ?? '/';
   const decodedPath = decodePath(rawPath);
   if (!decodedPath) return sendText(response, 400, 'Bad request.');
@@ -33,12 +33,24 @@ export async function serveStatic(clientRoot: string, rawUrl: string, response: 
   const root = await realpath(clientRoot);
   const requested = decodedPath === '/' ? '/index.html' : decodedPath;
   const requestedFile = await safeExistingFile(root, requested);
-  if (requestedFile) return streamFile(requestedFile, requested, response);
+  if (requestedFile) return serveFile(requestedFile, requested, response, dev);
 
   if (path.posix.extname(requested)) return sendText(response, 404, 'Not found.');
   const indexFile = await safeExistingFile(root, '/index.html');
   if (!indexFile) return sendText(response, 404, 'Not found.');
-  return streamFile(indexFile, '/index.html', response);
+  return serveFile(indexFile, '/index.html', response, dev);
+}
+
+async function serveFile(filePath: string, urlPath: string, response: ServerResponse, dev: boolean): Promise<void> {
+  if (!dev || urlPath !== '/index.html') return streamFile(filePath, urlPath, response);
+  // The same client assets serve either profile, including unauthenticated pairing.
+  const html = (await readFile(filePath, 'utf8'))
+    .replace(/<html\b/i, '<html data-opentig-profile="dev"')
+    .replace(/<title>[^<]*<\/title>/i, '<title>OpenTig Dev</title>')
+    .replace('<strong>OpenTig</strong>', '<strong>OpenTig Dev</strong>')
+    .replace('id="boot-shell" aria-label="OpenTig"', 'id="boot-shell" aria-label="OpenTig Dev"');
+  response.writeHead(200, { ...STATIC_SECURITY_HEADERS, 'Cache-Control': 'no-cache', 'Content-Type': MIME_TYPES['.html']! });
+  response.end(html);
 }
 
 function decodePath(rawPath: string): string | null {

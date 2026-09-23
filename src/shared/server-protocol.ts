@@ -1,5 +1,6 @@
 import type { IpcResult } from './contracts';
 import type { OpenTigRuntimeEvent } from './runtime-events';
+import type { ApplicationProfile } from './application-profile';
 import protocolMetadata from './protocol-version.json';
 
 export const OPEN_TIG_PROTOCOL_VERSION = protocolMetadata.protocolVersion;
@@ -34,6 +35,7 @@ export type OpenTigServerMessage =
   | { type: 'pong' };
 
 export interface OpenTigServerIdentity {
+  profile?: ApplicationProfile;
   protocolVersion: number;
   appVersion: string;
 }

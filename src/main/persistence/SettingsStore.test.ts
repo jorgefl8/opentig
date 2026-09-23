@@ -12,6 +12,17 @@ afterEach(async () => {
 });
 
 describe('SettingsStore document recovery', () => {
+  it('defaults the Dev global shortcut off but preserves an explicit preference after restart', async () => {
+    const file = await settingsFile({});
+    const store = new SettingsStore(file, undefined, false);
+    await store.load();
+    expect(store.preferences.doubleControlShortcutEnabled).toBe(false);
+    await store.setPreferences({ doubleControlShortcutEnabled: true });
+    const restarted = new SettingsStore(file, undefined, false);
+    await restarted.load();
+    expect(restarted.preferences.doubleControlShortcutEnabled).toBe(true);
+  });
+
   it('restores recents from the backup when settings.json does not parse', async () => {
     const file = await settingsFile({
       recentRepositories: [{ id: 'kept', name: 'kept', path: 'C:\\repos\\kept', lastOpenedAt: '2026-01-01T00:00:00.000Z' }],

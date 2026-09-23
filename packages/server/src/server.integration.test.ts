@@ -19,6 +19,31 @@ afterEach(async () => {
 });
 
 describe('authoritative HTTP server', () => {
+  it('isolates Dev cookies, pairing, settings and revocation alongside production on the same host', async () => {
+    const production = await startFixture();
+    const dev = await startFixture({ profile: 'dev' });
+    const stablePair = await postJson(`${production.server.origin}/api/auth/pair`, { token: production.pairingToken }, production.server.origin);
+    expect((await postJson(`${dev.server.origin}/api/auth/pair`, { token: production.pairingToken }, dev.server.origin)).status).toBe(401);
+    const devPair = await postJson(`${dev.server.origin}/api/auth/pair`, { token: dev.pairingToken }, dev.server.origin);
+    expect(devPair.cookie).toMatch(/^opentig_dev_session=/);
+    expect(stablePair.cookie).toMatch(/^opentig_session=/);
+    const cookie = `${cookieValue(stablePair.cookie)}; ${cookieValue(devPair.cookie)}`;
+    const descriptor = async (origin: string) => (await fetch(`${origin}/api/auth/descriptor`, { headers: { Cookie: cookie } })).json();
+    expect(await descriptor(production.server.origin)).toMatchObject({ authenticated: true });
+    expect(await descriptor(dev.server.origin)).toMatchObject({ authenticated: true, profile: 'dev' });
+    expect(production.server.runtime.services.settings.preferences.doubleControlShortcutEnabled).toBe(true);
+    expect(dev.server.runtime.services.settings.preferences.doubleControlShortcutEnabled).toBe(false);
+    await dev.server.runtime.services.settings.setPreferences({ theme: 'dark' });
+    expect(production.server.runtime.services.settings.preferences.theme).toBe('system');
+    const html = await (await fetch(`${dev.server.origin}/pair`)).text();
+    expect(html).toContain('data-opentig-profile="dev"');
+    expect(html).toContain('<title>OpenTig Dev</title>');
+    expect(await (await fetch(production.server.origin)).text()).not.toContain('data-opentig-profile');
+    expect((await postJson(`${dev.server.origin}/api/auth/revoke-all`, {}, dev.server.origin, cookie)).status).toBe(204);
+    expect(await descriptor(dev.server.origin)).toMatchObject({ authenticated: false });
+    expect(await descriptor(production.server.origin)).toMatchObject({ authenticated: true });
+  });
+
   it('serves fixed health, readiness, descriptor, and secure static responses', async () => {
     const fixture = await startFixture();
 
@@ -244,8 +269,8 @@ describe('authoritative HTTP server', () => {
     })).rejects.toMatchObject({ code: 'EADDRINUSE' });
   });
 
-  it('restores an authenticated browser session after server restart', async () => {
-    const fixture = await startFixture();
+  it.each(['production', 'dev'] as const)('restores an authenticated %s session after server restart', async (profile) => {
+    const fixture = await startFixture(profile === 'dev' ? { profile } : {});
     const authenticated = await postJson(`${fixture.server.origin}/api/auth/desktop`, { secret: fixture.desktopSecret }, fixture.server.origin);
     const cookie = cookieValue(authenticated.cookie);
     await fixture.server.close();
@@ -257,6 +282,7 @@ describe('authoritative HTTP server', () => {
       trash: { available: true, trashItem: async () => undefined },
       clientRoot: fixture.clientRoot,
       appVersion: '0.1-test',
+      profile,
       auth: new OneTimeBootstrapAuthSource({ desktopSecret: 'restart-bootstrap-secret' }),
       port: 0,
     });
@@ -342,7 +368,7 @@ describe('authenticated WebSocket protocol', () => {
   });
 });
 
-async function startFixture(options: { admin?: { token: string; instanceId: string } } = {}): Promise<{
+async function startFixture(options: { admin?: { token: string; instanceId: string }; profile?: 'dev' } = {}): Promise<{
   server: RunningOpenTigServer;
   directory: string;
   clientRoot: string;
@@ -352,7 +378,7 @@ async function startFixture(options: { admin?: { token: string; instanceId: stri
   const directory = await temporaryDirectory();
   const clientRoot = path.join(directory, 'client');
   await mkdir(path.join(clientRoot, 'assets'), { recursive: true });
-  await writeFile(path.join(clientRoot, 'index.html'), '<!doctype html><title>OpenTig test client</title>');
+  await writeFile(path.join(clientRoot, 'index.html'), '<!doctype html><html lang="en"><title>OpenTig test client</title></html>');
   await writeFile(path.join(clientRoot, 'assets', 'app-12345678.js'), 'export const test = true;');
   const desktopSecret = `desktop-${crypto.randomUUID()}`;
   const server = await runOpenTigServer({
@@ -365,6 +391,7 @@ async function startFixture(options: { admin?: { token: string; instanceId: stri
     auth: new OneTimeBootstrapAuthSource({ desktopSecret }),
     port: 0,
     ...(options.admin ? { admin: options.admin } : {}),
+    ...(options.profile ? { profile: options.profile } : {}),
   });
   const pairingLink = server.createPairingLink();
   const pairingToken = new URLSearchParams(new URL(pairingLink.url).hash.slice(1)).get('token');

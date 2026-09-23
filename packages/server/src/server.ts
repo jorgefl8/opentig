@@ -13,8 +13,10 @@ import { OPEN_TIG_PROTOCOL_VERSION } from '../../../src/shared/server-protocol';
 import { OpenTigSessionAuth, type OpenTigBootstrapAuthSource } from './auth';
 import { OpenTigServer, type OpenTigServerAddress } from './OpenTigServer';
 import type { OpenTigServerLogger, OpenTigServerMode } from './http';
+import type { ApplicationProfile } from '../../../src/shared/application-profile';
 
 export interface OpenTigServerConfig extends Omit<CreateOpenTigRuntimeOptions, 'runtimeMode' | 'onEvent'> {
+  profile?: ApplicationProfile;
   appVersion: string;
   auth: OpenTigBootstrapAuthSource;
   serverDataPath?: string;
@@ -48,9 +50,11 @@ export interface RunningOpenTigServer extends OpenTigServerAddress {
  * HTTP/WebSocket and persistent owner authentication live here.
  */
 export async function runOpenTigServer(config: OpenTigServerConfig): Promise<RunningOpenTigServer> {
+  if (config.profile !== undefined && config.profile !== 'production' && config.profile !== 'dev') throw new Error('Invalid application profile.');
   let transport: OpenTigServer | null = null;
   const auth = await OpenTigSessionAuth.open({
     source: config.auth,
+    ...(config.profile ? { profile: config.profile } : {}),
     dataDirectory: config.serverDataPath ?? path.join(path.dirname(config.settingsPath), 'server'),
     ...(config.secureCookies === undefined ? {} : { secureCookies: config.secureCookies }),
   });
@@ -58,6 +62,7 @@ export async function runOpenTigServer(config: OpenTigServerConfig): Promise<Run
   try {
     runtime = await createOpenTigRuntime({
       settingsPath: config.settingsPath,
+      ...(config.profile === 'dev' ? { defaultDoubleControlShortcutEnabled: false } : {}),
       aiLogPath: config.aiLogPath,
       runtimeMode: 'headless',
       platform: config.platform,
@@ -85,7 +90,7 @@ export async function runOpenTigServer(config: OpenTigServerConfig): Promise<Run
       registry,
       clientRoot,
       auth,
-      identity: { protocolVersion: OPEN_TIG_PROTOCOL_VERSION, appVersion: config.appVersion },
+      identity: { protocolVersion: OPEN_TIG_PROTOCOL_VERSION, appVersion: config.appVersion, ...(config.profile === 'dev' ? { profile: config.profile } : {}) },
       ...(config.host === undefined ? {} : { host: config.host }),
       ...(config.port === undefined ? {} : { port: config.port }),
       ...(config.mode === undefined ? {} : { mode: config.mode }),

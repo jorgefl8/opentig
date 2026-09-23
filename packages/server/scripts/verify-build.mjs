@@ -45,7 +45,11 @@ export async function verifyServerBuild(serverDist) {
       if (specifier.endsWith('.node') || FORBIDDEN_PACKAGES.some((name) => specifier === name || specifier.startsWith(name))) {
         throw new Error(`Forbidden server import in ${path.relative(serverDist, modulePath)}: ${specifier}`);
       }
-      if (!isClientModule && !specifier.startsWith('.') && !NODE_BUILTINS.has(specifier) && specifier !== 'trash' && specifier !== 'ws') {
+      // Desktop resources include ws itself. Its optional native accelerators
+      // are guarded requires with JS fallbacks; native artifacts remain forbidden.
+      const optionalWsAddon = (relativeModule === 'node_modules/ws/lib/buffer-util.js' && specifier === 'bufferutil')
+        || (relativeModule === 'node_modules/ws/lib/validation.js' && specifier === 'utf-8-validate');
+      if (!isClientModule && !optionalWsAddon && !specifier.startsWith('.') && !NODE_BUILTINS.has(specifier) && specifier !== 'trash' && specifier !== 'ws') {
         throw new Error(`Undeclared external server import in ${path.relative(serverDist, modulePath)}: ${specifier}`);
       }
     }
