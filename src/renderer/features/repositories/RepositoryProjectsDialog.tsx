@@ -1,5 +1,5 @@
 import { type FormEvent, useEffect, useMemo, useState } from 'react';
-import { IconAlertTriangle, IconFolder, IconFolderPlus, IconLoader4, IconPencil, IconTrash, IconX } from '@tabler/icons-react';
+import { IconAlertTriangle, IconFolder, IconFolderPlus, IconFolderSymlink, IconLoader4, IconPencil, IconTrash, IconX } from '@tabler/icons-react';
 import type { RepositoryOrganization, RepositoryProject } from '../../../shared/contracts';
 import { MAX_PROJECT_NAME_LENGTH } from '../../../shared/repository-projects';
 import { Button } from '@/components/ui/button';
@@ -7,6 +7,7 @@ import { Dialog, DialogClose, DialogDescription, DialogPopup, DialogTitle } from
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { shortenRepositoryPath, type RepositoryOption } from './repository-select-model';
+import { OpenRepositoryDialog } from './OpenRepositoryDialog';
 import { opentig } from '@/lib/opentig-api';
 
 const NO_PROJECT = '__opentig_no_project__';
@@ -16,10 +17,14 @@ interface RepositoryProjectsDialogProps {
   projects: RepositoryProject[];
   repositories: RepositoryOption[];
   onOpenChange(open: boolean): void;
+  onForgetRepository(repository: RepositoryOption): Promise<RepositoryOrganization>;
+  onRelocateRepository(repository: RepositoryOption, path: string): Promise<void>;
   onOrganizationChange(organization: RepositoryOrganization): void;
 }
 
-export function RepositoryProjectsDialog({ open, projects, repositories, onOpenChange, onOrganizationChange }: RepositoryProjectsDialogProps) {
+export function RepositoryProjectsDialog({ open, projects, repositories, onOpenChange, onOrganizationChange, onForgetRepository, onRelocateRepository }: RepositoryProjectsDialogProps) {
+  const [removingRepository, setRemovingRepository] = useState<string | null>(null);
+  const [relocatingRepository, setRelocatingRepository] = useState<RepositoryOption | null>(null);
   const [newName, setNewName] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
@@ -30,6 +35,8 @@ export function RepositoryProjectsDialog({ open, projects, repositories, onOpenC
 
   useEffect(() => {
     if (open) return;
+    setRemovingRepository(null);
+    setRelocatingRepository(null);
     setEditingId(null);
     setDeletingId(null);
     setError(null);
@@ -74,15 +81,30 @@ export function RepositoryProjectsDialog({ open, projects, repositories, onOpenC
     await run(`assign:${repositoryKey}`, () => opentig.projects.assign(repositoryKey, projectId));
   };
 
+  const relocate = async (repository: RepositoryOption) => {
+    if (busy) return;
+    setError(null);
+    if (!window.opentigDesktop) { setRelocatingRepository(repository); return; }
+    setBusy(`relocate:${repository.key}`);
+    try {
+      const path = await opentig.repository.select(`Relocate ${repository.name}`);
+      if (path) await onRelocateRepository(repository, path);
+    } catch (reason) {
+      setError(messageOf(reason));
+    } finally {
+      setBusy(null);
+    }
+  };
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(next) => { if (!busy) onOpenChange(next); }}>
       <DialogPopup className="repository-projects-dialog w-[min(660px,calc(100vw-2.5rem))]">
         <header className="repository-projects-header">
           <div>
             <DialogTitle>Manage projects</DialogTitle>
-            <DialogDescription>Group repositories inside OpenTig. Nothing moves on disk.</DialogDescription>
+            <DialogDescription>Group repositories, update their locations, or remove them from OpenTig. Files stay on disk.</DialogDescription>
           </div>
-          <DialogClose render={<Button variant="ghost" size="icon-sm" aria-label="Close project management" />}><IconX /></DialogClose>
+          <DialogClose render={<Button variant="ghost" size="icon-sm" aria-label="Close project management" disabled={Boolean(busy)} />}><IconX /></DialogClose>
         </header>
 
         <div className="repository-projects-body">
@@ -146,25 +168,46 @@ export function RepositoryProjectsDialog({ open, projects, repositories, onOpenC
               {repositories.length === 0 && <p className="repository-projects-empty">No recent repositories to assign yet.</p>}
               {repositories.map((repository) => {
                 const projectId = assignments.get(repository.key) ?? NO_PROJECT;
-                const rowBusy = busy === `assign:${repository.key}`;
+                const rowBusy = busy?.endsWith(`:${repository.key}`);
                 return (
                   <div className="repository-assignment-row" key={repository.key} aria-busy={rowBusy || undefined}>
-                    <IconFolder aria-hidden="true" />
-                    <span className="repository-assignment-copy">
-                      <strong>{repository.name}</strong>
-                      <Tooltip>
-                        <TooltipTrigger render={<small />}>{shortenRepositoryPath(repository.rootPath, 4)}</TooltipTrigger>
-                        <TooltipContent>{repository.rootPath}</TooltipContent>
-                      </Tooltip>
-                    </span>
-                    {rowBusy && <IconLoader4 className="repository-assignment-busy animate-spin" aria-hidden="true" />}
-                    <Select value={projectId} onValueChange={(value) => void assignProject(repository.key, value === NO_PROJECT ? null : value)} disabled={Boolean(busy)}>
-                      <SelectTrigger size="sm" aria-label={`Project for ${repository.name}`}><SelectValue>{projects.find((project) => project.id === projectId)?.name ?? 'No project'}</SelectValue></SelectTrigger>
-                      <SelectContent align="end" alignItemWithTrigger={false}>
-                        <SelectItem value={NO_PROJECT}>No project</SelectItem>
-                        {projects.map((project) => <SelectItem key={project.id} value={project.id}>{project.name}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
+                    {removingRepository === repository.key ? (
+                      <div className="repository-project-confirm" role="alert">
+                        <IconAlertTriangle aria-hidden="true" />
+                        <span>Remove <strong>{repository.name}</strong> and its worktrees from OpenTig? Their folders and files stay on disk. You can open them again later.</span>
+                        <Button variant="destructive" size="xs" disabled={Boolean(busy)} onClick={() => {
+                          void run(`forget:${repository.key}`, () => onForgetRepository(repository)).then((removed) => { if (removed) setRemovingRepository(null); });
+                        }}>Remove</Button>
+                        <Button variant="ghost" size="xs" disabled={Boolean(busy)} onClick={() => setRemovingRepository(null)}>Cancel</Button>
+                      </div>
+                    ) : (<>
+                      <IconFolder aria-hidden="true" />
+                      <span className="repository-assignment-copy">
+                        <strong>{repository.name}</strong>
+                        <Tooltip>
+                          <TooltipTrigger render={<small />}>{shortenRepositoryPath(repository.rootPath, 4)}</TooltipTrigger>
+                          <TooltipContent>{repository.rootPath}</TooltipContent>
+                        </Tooltip>
+                      </span>
+                      {rowBusy && <IconLoader4 className="repository-assignment-busy animate-spin" aria-hidden="true" />}
+                      <Select value={projectId} onValueChange={(value) => void assignProject(repository.key, value === NO_PROJECT ? null : value)} disabled={Boolean(busy)}>
+                        <SelectTrigger size="sm" aria-label={`Project for ${repository.name}`}><SelectValue>{projects.find((project) => project.id === projectId)?.name ?? 'No project'}</SelectValue></SelectTrigger>
+                        <SelectContent align="end" alignItemWithTrigger={false}>
+                          <SelectItem value={NO_PROJECT}>No project</SelectItem>
+                          {projects.map((project) => <SelectItem key={project.id} value={project.id}>{project.name}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                      <span className="repository-management-actions">
+                        <Tooltip>
+                          <TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label={`Relocate ${repository.name}`} disabled={Boolean(busy)} onClick={() => void relocate(repository)} />}><IconFolderSymlink /></TooltipTrigger>
+                          <TooltipContent>Relocate repository</TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                          <TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label={`Remove ${repository.name} from OpenTig`} disabled={Boolean(busy)} onClick={() => { setRemovingRepository(repository.key); setError(null); }} />}><IconTrash /></TooltipTrigger>
+                          <TooltipContent>Remove from OpenTig</TooltipContent>
+                        </Tooltip>
+                      </span>
+                    </>)}
                   </div>
                 );
               })}
@@ -173,9 +216,20 @@ export function RepositoryProjectsDialog({ open, projects, repositories, onOpenC
         </div>
 
         <footer className="repository-projects-footer">
-          <DialogClose render={<Button variant="outline" size="sm" />}>Done</DialogClose>
+          <DialogClose render={<Button variant="outline" size="sm" disabled={Boolean(busy)} />}>Done</DialogClose>
         </footer>
       </DialogPopup>
+      <OpenRepositoryDialog
+        open={relocatingRepository !== null}
+        onOpenChange={(next) => { if (!next) setRelocatingRepository(null); }}
+        title="Relocate repository"
+        description={`Choose the existing server folder for ${relocatingRepository?.name ?? 'this repository'}. This updates its saved location; it does not move files.`}
+        confirmLabel="Use this folder"
+        onBrowse={opentig.repository.browseDirectories}
+        onOpen={async (path) => {
+          if (relocatingRepository) await onRelocateRepository(relocatingRepository, path);
+        }}
+      />
     </Dialog>
   );
 }

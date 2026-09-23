@@ -763,7 +763,7 @@ export default function App() {
         ...current,
         activeRepository: selected,
         repositoryProjects,
-        recentRepositories: touchRecentRepositories(current.recentRepositories, selected, repositoryProjects),
+        recentRepositories: touchRecentRepositories(current.recentRepositories.filter((item) => item.id !== previousId || item.id === selected.id), selected, repositoryProjects),
         filesTreeStates: previous ? normalizeFilesTreeStates(current.filesTreeStates.map((state) => (
           state.repositoryId === previousId ? { ...state, repositoryId: selected.id } : state
         ))) : current.filesTreeStates,
@@ -1838,6 +1838,44 @@ export default function App() {
     }
   };
 
+  const ensureRepositoryCanBeManaged = (option: RepositoryOption) => {
+    const ids = bootstrap?.recentRepositories.filter((item) => normalizeRepositoryKey(item.commonDir) === option.key).map((item) => item.id) ?? [];
+    if (ids.some((id) => dirtyTabs(fileSessionsRef.current.get(id) ?? emptyFileSession).length > 0)) {
+      throw new Error('Save or close unsaved files in this repository and its worktrees first.');
+    }
+    if (busy || ids.some((id) => repositorySyncOperationsRef.current.has(id))) {
+      throw new Error('Wait for the current repository operation to finish.');
+    }
+    return ids;
+  };
+
+  const forgetRepository = async (option: RepositoryOption) => {
+    const ids = new Set(ensureRepositoryCanBeManaged(option));
+    const organization = await opentig.repository.forget(option.key);
+    const sessions = new Map(fileSessionsRef.current);
+    for (const id of ids) {
+      sessions.delete(id);
+      fileDraftsRef.current.delete(id);
+      persistedSessionsRef.current.delete(id);
+      filesTreeStates.delete(id);
+    }
+    fileSessionsRef.current = sessions;
+    setFileSessions(sessions);
+    if (repositoryRef.current && ids.has(repositoryRef.current.id)) setRepository(null);
+    setBootstrap((current) => current ? {
+      ...current, ...organization,
+      activeRepository: current.activeRepository && ids.has(current.activeRepository.id) ? null : current.activeRepository,
+      filesTreeStates: current.filesTreeStates.filter((state) => !ids.has(state.repositoryId)),
+      openFilesStates: current.openFilesStates.filter((state) => !ids.has(state.repositoryId)),
+    } : current);
+    return organization;
+  };
+
+  const relocateRepository = async (option: RepositoryOption, path: string) => {
+    ensureRepositoryCanBeManaged(option);
+    recordOpenedRepository(await opentig.repository.relocateRecent(option.recent.id, path), option.recent.id);
+  };
+
   const browserRepositoryDialog = <OpenRepositoryDialog open={openRepositoryDialog} onOpenChange={setOpenRepositoryDialog} onBrowse={opentig.repository.browseDirectories} onOpen={async (path) => {
     recordOpenedRepository(await opentig.repository.openPath(path));
   }} />;
@@ -2000,6 +2038,8 @@ export default function App() {
           onPush={() => void pushUpdates()}
           onRepositorySync={syncRepository}
           onPreference={(partial) => void updatePreference(partial)}
+          onForgetRepository={forgetRepository}
+          onRelocateRepository={relocateRepository}
           onOrganizationChange={(organization) => setBootstrap((current) => current ? { ...current, ...organization } : current)}
           onRefsManaged={handleRefsManaged}
           openFiles={fileSessions.get(repository.id) ?? emptyFileSession}

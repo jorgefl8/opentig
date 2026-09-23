@@ -152,9 +152,25 @@ export class SettingsStore {
       { ...repository, lastOpenedAt: new Date().toISOString() },
       ...this.data.recentRepositories.filter((item) => item.id !== previousId && item.id !== repository.id),
     ];
-    if (this.data.activeRepositoryId === previousId) this.data.activeRepositoryId = repository.id;
+    this.data.activeRepositoryId = repository.id;
     this.pruneRecentRepositories();
     await this.save();
+  }
+
+  /** Forget the whole repository group, never its directories or Git data. */
+  async forgetRepository(repositoryKey: string): Promise<RepositoryOrganization> {
+    const key = normalizeRepositoryKey(repositoryKey);
+    const removedIds = new Set(this.data.recentRepositories
+      .filter((item) => normalizeRepositoryKey(item.commonDir) === key).map((item) => item.id));
+    this.data.recentRepositories = this.data.recentRepositories.filter((item) => !removedIds.has(item.id));
+    this.data.repositoryProjects = this.data.repositoryProjects.map((project) => ({
+      ...project, repositoryKeys: project.repositoryKeys.filter((entry) => entry !== key),
+    }));
+    this.data.filesTreeStates = this.data.filesTreeStates.filter((state) => !removedIds.has(state.repositoryId));
+    this.data.openFilesStates = this.data.openFilesStates.filter((state) => !removedIds.has(state.repositoryId));
+    if (this.data.activeRepositoryId && removedIds.has(this.data.activeRepositoryId)) this.data.activeRepositoryId = null;
+    await this.save();
+    return this.organization;
   }
 
   /**

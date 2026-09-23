@@ -30,6 +30,8 @@ export interface ToolbarProps {
   branches: BranchInfo[]; worktrees: WorktreeInfo[]; preferences: Preferences; busy: string | null;
   onOpen(): void; onRecent(id: string | null): void; onBranch(name: string | null): void; onWorktree(path: string | null): void;
   onRefresh(): void; onPreference(partial: Partial<Preferences>): void;
+  onForgetRepository(repository: RepositoryOption): Promise<RepositoryOrganization>;
+  onRelocateRepository(repository: RepositoryOption, path: string): Promise<void>;
   onOrganizationChange(organization: RepositoryOrganization): void;
   onRefsManaged(recentRepositories: RecentRepository[] | null): void;
   openFiles: FileSession;
@@ -301,7 +303,7 @@ export function Toolbar(props: ToolbarProps) {
       </Select>
       {projectsOpen && (
         <Suspense fallback={null}>
-          <RepositoryProjectsDialog open={projectsOpen} onOpenChange={setProjectsOpen} projects={props.repositoryProjects} repositories={picker.repositories} onOrganizationChange={props.onOrganizationChange} />
+          <RepositoryProjectsDialog open={projectsOpen} onOpenChange={setProjectsOpen} projects={props.repositoryProjects} repositories={picker.repositories} onOrganizationChange={props.onOrganizationChange} onForgetRepository={props.onForgetRepository} onRelocateRepository={props.onRelocateRepository} />
         </Suspense>
       )}
       <Tooltip>

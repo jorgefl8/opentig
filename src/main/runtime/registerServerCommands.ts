@@ -97,6 +97,13 @@ export function registerServerCommands(
     services.events.activeRepositoryChanged(repository);
     return repository;
   });
+  handleWithContext(IPC.repositoryForget, 'forget-repository', async (context, repositoryKey) => {
+    const activeId = services.settings.activeRepositoryId;
+    const organization = await services.repositories.forget(repositoryKeyArg(repositoryKey, 'forget-repository'));
+    fileClipboardState(context).pendingCut = null;
+    if (activeId && !services.settings.activeRepositoryId) services.watcher.stop();
+    return organization;
+  });
   handleWithContext(IPC.repositoryRelocateRecent, 'relocate-recent', async (context, id, selectedPath) => {
     const repository = await services.repositories.relocateRecent(
       stringArg(id, 'relocate-recent', 64),

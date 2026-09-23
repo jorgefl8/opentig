@@ -1,8 +1,9 @@
 import { createHash } from 'node:crypto';
 import { access, open, stat } from 'node:fs/promises';
 import path from 'node:path';
-import type { RepositoryInfo, RecentRepository } from '../../shared/contracts';
+import type { RepositoryInfo, RecentRepository, RepositoryOrganization } from '../../shared/contracts';
 import type { RepositoryStatus } from '../../shared/git-types';
+import { normalizeRepositoryKey } from '../../shared/repository-projects';
 import { GitOperationError } from '../../shared/errors';
 import type { SettingsStore } from '../persistence/SettingsStore';
 import type { GitProcess } from './GitProcess';
@@ -38,10 +39,22 @@ export class RepositoryService {
       throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'relocate-repository', message: 'The recent repository no longer exists.' });
     }
     const repository = await this.inspectPath(selectedPath);
+    if (repository.id !== id && this.settings.recentRepositories.some((item) => item.id === repository.id)) {
+      throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'relocate-repository', message: 'That folder is already in OpenTig. Remove the old entry instead, or choose a different location.' });
+    }
     await this.settings.relocateRepository(id, repository);
     this.repositories.delete(id);
     this.repositories.set(repository.id, repository);
     return repository;
+  }
+
+  async forget(repositoryKey: string): Promise<RepositoryOrganization> {
+    const key = normalizeRepositoryKey(repositoryKey);
+    const organization = await this.settings.forgetRepository(key);
+    for (const [id, repository] of this.repositories) {
+      if (normalizeRepositoryKey(repository.commonDir) === key) this.repositories.delete(id);
+    }
+    return organization;
   }
 
   recent(id: string): RecentRepository | null {

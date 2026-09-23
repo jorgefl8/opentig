@@ -675,11 +675,11 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   .spinner, .animate-spin { transform-box: border-box; transform-origin: center; }
   .repository-projects-dialog { display: flex; max-height: min(700px, calc(100vh - 40px)); flex-direction: column; }
   .repository-projects-header { display: flex; flex: none; align-items: flex-start; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--border); padding: 15px 14px 13px 20px; }
-  .repository-projects-header > div { display: grid; gap: 3px; }
-  .repository-projects-body { display: grid; min-height: 0; align-content: start; gap: 20px; overflow-y: auto; padding: 16px 20px 20px; }
+  .repository-projects-header > div { display: grid; min-width: 0; gap: 3px; }
+  .repository-projects-body { display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; min-height: 0; align-content: start; gap: 20px; overflow-y: auto; padding: 16px 20px 20px; }
   .repository-projects-error { display: flex; align-items: center; gap: 8px; border: 1px solid color-mix(in oklch, var(--destructive) 32%, var(--border)); border-radius: var(--radius-lg); background: color-mix(in oklch, var(--destructive) 9%, transparent); padding: 8px 11px; color: var(--destructive); font-size: 11px; line-height: 1.4; }
   .repository-projects-error svg { width: 15px; height: 15px; flex: none; }
-  .repository-projects-section { display: grid; gap: 8px; }
+  .repository-projects-section { display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; gap: 8px; }
   .repository-projects-section-heading { display: flex; min-height: 32px; align-items: center; justify-content: space-between; gap: 14px; }
   .repository-projects-section-heading h3 { display: flex; min-width: 0; align-items: center; gap: 7px; font-size: 12px; font-weight: 700; letter-spacing: -.01em; }
   .repository-projects-section-heading h3 span { display: inline-grid; min-width: 18px; place-items: center; border-radius: var(--radius-sm); background: var(--muted); padding: 1px 5px; color: var(--muted-foreground); font-size: 10px; font-weight: 700; }
@@ -708,6 +708,7 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   .repository-project-confirm > svg { width: 15px; height: 15px; flex: none; }
   .repository-project-confirm > span { min-width: 140px; flex: 1; line-height: 1.4; }
   .repository-projects-empty { border: 1px dashed color-mix(in oklch, var(--border) 90%, var(--foreground)); border-radius: var(--radius-lg); padding: 16px; color: var(--muted-foreground); font-size: 11px; text-align: center; }
+  .repository-management-actions { display: flex; flex: none; gap: 2px; }
   .repository-assignment-busy { width: 15px; height: 15px; flex: none; color: var(--primary); }
   .repository-assignment-row [data-slot="select-trigger"] { flex: none; }
   .repository-projects-footer { display: flex; flex: none; justify-content: flex-end; gap: 7px; border-top: 1px solid var(--border); background: color-mix(in oklch, var(--muted) 40%, transparent); padding: 11px 14px; }
@@ -716,6 +717,8 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
     .repository-projects-section-heading p { display: none; }
     .repository-project-create input { width: auto; flex: 1; }
     .repository-assignment-row { align-items: flex-start; flex-wrap: wrap; }
+    .repository-assignment-row .repository-assignment-copy { flex-basis: calc(100% - 40px); }
+    .repository-management-actions { margin-left: auto; }
     .repository-assignment-row [data-slot="select-trigger"] { width: 100%; margin-left: 26px; }
   }
 

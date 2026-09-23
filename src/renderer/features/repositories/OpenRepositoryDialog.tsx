@@ -5,7 +5,10 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogDescription, DialogPopup, DialogTitle } from '@/components/ui/dialog';
 
 /** Browser paths belong to the server, not the phone's local filesystem. */
-export function OpenRepositoryDialog({ open, onOpenChange, onOpen, onBrowse }: {
+export function OpenRepositoryDialog({ open, onOpenChange, onOpen, onBrowse, title = 'Open repository', description = 'Choose a folder on the OpenTig server.', confirmLabel = 'Open this folder' }: {
+  title?: string;
+  description?: string;
+  confirmLabel?: string;
   open: boolean;
   onOpenChange(open: boolean): void;
   onOpen(path: string): Promise<void>;
@@ -61,8 +64,8 @@ export function OpenRepositoryDialog({ open, onOpenChange, onOpen, onBrowse }: {
       <DialogPopup className="repository-browser" initialFocus={false}>
         <div className="repository-browser-content">
           <div>
-            <DialogTitle>Open repository</DialogTitle>
-            <DialogDescription>Choose a folder on the OpenTig server.</DialogDescription>
+            <DialogTitle>{title}</DialogTitle>
+            <DialogDescription>{description}</DialogDescription>
           </div>
           <form className="repository-browser-location" onSubmit={(event) => {
             event.preventDefault();
@@ -88,7 +91,7 @@ export function OpenRepositoryDialog({ open, onOpenChange, onOpen, onBrowse }: {
           {error && <p role="alert" className="text-sm text-destructive break-words">{error}</p>}
           <div className="name-dialog-actions">
             <Button type="button" variant="ghost" disabled={busy} onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button type="button" disabled={busy || loading || !listing || path.trim() !== listing.path} onClick={() => void openSelected()}>{busy ? 'Opening…' : 'Open this folder'}</Button>
+            <Button type="button" disabled={busy || loading || !listing || path.trim() !== listing.path} onClick={() => void openSelected()}>{busy ? 'Working…' : confirmLabel}</Button>
           </div>
         </div>
       </DialogPopup>
