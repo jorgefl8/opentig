@@ -2,6 +2,8 @@ import { lstat } from 'node:fs/promises';
 import path from 'node:path';
 import { ipcMain } from 'electron';
 import type { IpcResult } from '../../shared/contracts';
+import type { DesktopUpdatesApi, DesktopUpdateStatus } from '../../shared/desktop-updates';
+import type { IpcMainInvokeEvent } from 'electron';
 import {
   OPEN_TIG_DESKTOP_IPC,
   type OpenTigPairingLink,
@@ -19,6 +21,8 @@ export function registerDesktopHandlers(
     setEnabled(enabled: boolean): Promise<OpenTigWebAccessStatus>;
     createPairingLink(endpoint: string): Promise<OpenTigPairingLink>;
   },
+  updates?: Omit<DesktopUpdatesApi, 'getStatus'> & { getStatus(): DesktopUpdateStatus | Promise<DesktopUpdateStatus> },
+  trustedUpdateSender?: (event: IpcMainInvokeEvent) => boolean,
 ): () => void {
   const channels: string[] = [];
   const handle = <T>(
@@ -79,6 +83,20 @@ export function registerDesktopHandlers(
   handle(OPEN_TIG_DESKTOP_IPC.webAccessCreatePairingLink, 'web-access-create-pairing-link', (endpoint) => (
     requireWebAccess(webAccess).createPairingLink(stringArg(endpoint, 'web-access-create-pairing-link', 2_048))
   ));
+  for (const [channel, action] of [
+    [OPEN_TIG_DESKTOP_IPC.updatesStatus, 'getStatus'],
+    [OPEN_TIG_DESKTOP_IPC.updatesCheck, 'check'],
+    [OPEN_TIG_DESKTOP_IPC.updatesDownload, 'download'],
+    [OPEN_TIG_DESKTOP_IPC.updatesInstall, 'install'],
+  ] as const) {
+    channels.push(channel);
+    ipcMain.handle(channel, async (event, ...args): Promise<IpcResult<unknown>> => {
+      try {
+        if (!updates || !trustedUpdateSender?.(event) || args.length !== 0) throw new Error('Update controls are unavailable from this frame.');
+        return { ok: true, value: await updates[action]() };
+      } catch (error) { return { ok: false, error: serializeError(error, action) }; }
+    });
+  }
   return () => { for (const channel of channels) ipcMain.removeHandler(channel); };
 }
 

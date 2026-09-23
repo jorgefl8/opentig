@@ -22,10 +22,12 @@ import { harnessLabel } from '@/features/ai/harness-copy';
 import { opentig } from '@/lib/opentig-api';
 import { ProblemsLogDialog } from './ProblemsLogDialog';
 import { ShortcutsSettings } from './ShortcutsSettings';
+import { UpdateSettings } from './UpdateSettings';
 import { WebAccessSettings } from './WebAccessSettings';
 
 const SETTINGS_SECTIONS = [
   { id: 'general', label: 'General', icon: IconSettings },
+  { id: 'updates', label: 'Updates', icon: IconRefresh },
   { id: 'shortcuts', label: 'Shortcuts', icon: IconKeyboard },
   { id: 'ai', label: 'AI assistance', icon: IconSparkles },
   { id: 'diagnostics', label: 'Diagnostics', icon: IconAlertTriangle },
@@ -33,6 +35,7 @@ const SETTINGS_SECTIONS = [
 ] as const;
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number]['id'];
 const SETTINGS_COPY: Record<Exclude<SettingsSection, 'webAccess'>, { title: string; description: string }> = {
+  updates: { title: 'Updates', description: 'Check, download, and install new desktop releases.' },
   general: { title: 'General', description: 'OpenTig appearance and behavior.' },
   shortcuts: { title: 'Shortcuts', description: 'Rebind commands or review the shortcuts that stay fixed.' },
   ai: { title: 'AI assistance', description: 'Local harness and model used to suggest commit messages and pull-request drafts.' },
@@ -266,7 +269,7 @@ export function SettingsDialog({ preferences, onPreference, open, onOpenChange, 
                 </div>
                 <button type="button" role="switch" aria-label="Show files ignored by Git" aria-checked={preferences.showDotEnvFiles} className="settings-switch" onClick={() => onPreference({ showDotEnvFiles: !preferences.showDotEnvFiles })}><span /></button>
               </div>
-              </> : section === 'shortcuts' ? <ShortcutsSettings preferences={preferences} onPreference={onPreference} /> : section === 'webAccess' ? <WebAccessSettings /> : section === 'diagnostics' ? <>
+              </> : section === 'updates' ? <UpdateSettings /> : section === 'shortcuts' ? <ShortcutsSettings preferences={preferences} onPreference={onPreference} /> : section === 'webAccess' ? <WebAccessSettings /> : section === 'diagnostics' ? <>
                 <div className="settings-field">
                   <div className="settings-field-label">
                     <strong>Problem history</strong>

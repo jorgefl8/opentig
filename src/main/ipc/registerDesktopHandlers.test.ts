@@ -122,4 +122,18 @@ describe('desktop IPC boundary', () => {
     await expect(invoke(OPEN_TIG_DESKTOP_IPC.repositoryRevealEntry, 'relative.txt')).resolves.toEqual(expect.objectContaining({ ok: false }));
     expect(value.host.revealItem).not.toHaveBeenCalled();
   });
+
+  it('rejects update actions from other frames and accepts no caller-controlled arguments', async () => {
+    const value = fixture();
+    const status = { phase: 'idle' as const, currentVersion: '0.1.0', availableVersion: null, progress: null, checkedAt: null, message: null, releaseUrl: null };
+    const updates = { getStatus: vi.fn(async () => status), check: vi.fn(async () => status), download: vi.fn(async () => status), install: vi.fn(async () => status) };
+    registerDesktopHandlers(value.host, undefined, undefined, updates, () => false);
+    expect(await invoke(OPEN_TIG_DESKTOP_IPC.updatesInstall)).toMatchObject({ ok: false });
+    expect(updates.install).not.toHaveBeenCalled();
+    registerDesktopHandlers(value.host, undefined, undefined, updates, () => true);
+    expect(await invoke(OPEN_TIG_DESKTOP_IPC.updatesDownload, 'https://untrusted.example/update.exe')).toMatchObject({ ok: false });
+    expect(updates.download).not.toHaveBeenCalled();
+    expect(await invoke(OPEN_TIG_DESKTOP_IPC.updatesCheck)).toMatchObject({ ok: true, value: status });
+    expect(updates.check).toHaveBeenCalledOnce();
+  });
 });

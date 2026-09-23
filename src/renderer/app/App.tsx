@@ -50,6 +50,7 @@ import { conflictNotificationAction, conflictToastId } from '@/features/changes/
 import { fileCutTransferId, writeClipboardText, writeFileTransfer } from '@/lib/browser-capabilities';
 import { projectPullBlockedCopy, projectPullSuccessCopy, projectPushBlockedCopy, projectPushSuccessCopy, pullSuccessCopy, repositorySyncLoadingToast, type ProjectSyncAction } from '@/features/repositories/project-sync';
 import { aiModelLabel, harnessLabel } from '@/features/ai/harness-copy';
+import { DesktopUpdateNotice } from '@/features/settings/UpdateSettings';
 import type { SettingsSection } from '@/features/settings/SettingsDialog';
 
 const Viewer = lazy(() => import('@/features/viewer/Viewer'));
@@ -1849,6 +1850,7 @@ export default function App() {
       <TooltipProvider>
         <Toaster theme="light" position="bottom-right" />
         {browserRepositoryDialog}
+      <DesktopUpdateNotice />
         <Welcome recent={bootstrap.recentRepositories} onOpen={openRepository} onRecent={(id) => void selectRecent(id)} />
       </TooltipProvider>
     );
@@ -1863,6 +1865,7 @@ export default function App() {
     <ShortcutsProvider shortcuts={shortcuts}>
     <TooltipProvider>
       {browserRepositoryDialog}
+      <DesktopUpdateNotice />
       {/* Sileo names its themes after the page, not the toast: `light` fills the
           toast with #1a1a1a and `dark` with #f2f2f2. Pinning it to `light` keeps
           every toast dark whatever the app theme is, and also sidesteps `system`,

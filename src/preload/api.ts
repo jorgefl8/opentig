@@ -41,5 +41,11 @@ export function createDesktopApi(
       setEnabled: (enabled) => invoke(OPEN_TIG_DESKTOP_IPC.webAccessSetEnabled, enabled),
       createPairingLink: (endpoint) => invoke(OPEN_TIG_DESKTOP_IPC.webAccessCreatePairingLink, endpoint),
     },
+    updates: {
+      getStatus: () => invoke(OPEN_TIG_DESKTOP_IPC.updatesStatus),
+      check: () => invoke(OPEN_TIG_DESKTOP_IPC.updatesCheck),
+      download: () => invoke(OPEN_TIG_DESKTOP_IPC.updatesDownload),
+      install: () => invoke(OPEN_TIG_DESKTOP_IPC.updatesInstall),
+    },
   };
 }

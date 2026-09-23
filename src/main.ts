@@ -30,7 +30,8 @@ import type { OpenTigPairingLink, OpenTigWebAccessStatus } from './shared/deskto
 import type { OpenTigServerHost } from './shared/server-process';
 import { applicationName, preferredServerPort, sessionCookieName } from './shared/application-profile';
 import { configureDesktopProfile } from './main/profile/DesktopProfile';
-
+import { createDesktopUpdater } from './main/updates/createDesktopUpdater';
+import type { DesktopUpdater } from './main/updates/DesktopUpdater';
 
 const applicationProfile = (() => {
   try { return configureDesktopProfile(app, __OPENTIG_BUILD_PROFILE__, process.platform); }
@@ -46,6 +47,7 @@ const hasLock = app.requestSingleInstanceLock();
 if (!hasLock) app.exit(0);
 
 let mainWindow: BrowserWindow | null = null;
+let desktopUpdater: DesktopUpdater | null = null;
 let serverManager: ServerProcessManager | null = null;
 let desktopServerSettings: DesktopServerSettings | null = null;
 let windowState: DesktopWindowState | null = null;
@@ -155,7 +157,12 @@ async function createWindow(): Promise<void> {
     getStatus: getWebAccessStatus,
     setEnabled: setWebAccessEnabled,
     createPairingLink,
-  });
+  }, desktopUpdater ?? undefined, (event) => (
+    event.sender === mainWindow?.webContents
+    && event.senderFrame === mainWindow?.webContents.mainFrame
+    && allowedServerOrigin !== null && safeOrigin(event.senderFrame.url) === allowedServerOrigin
+  ));
+  mainWindow.webContents.on('will-prevent-unload', () => desktopUpdater?.cancelInstall());
 
   const openExternal = (value: string) => {
     const url = normalizeExternalUrl(value);
@@ -409,6 +416,10 @@ app.on('second-instance', () => {
 });
 
 app.whenReady().then(async () => {
+  desktopUpdater = await createDesktopUpdater(applicationProfile, () => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.close();
+    else app.quit();
+  });
   try {
     performanceSampler = await createPerformanceSampler(app);
     performanceSampler?.start();
@@ -432,6 +443,7 @@ app.whenReady().then(async () => {
   session.defaultSession.setPermissionCheckHandler((webContents, permission) => trustedClipboardRequest(webContents, permission));
   session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => callback(trustedClipboardRequest(webContents, permission)));
   await createWindow();
+  desktopUpdater.start();
 });
 
 app.on('before-quit', (event) => {
@@ -439,6 +451,7 @@ app.on('before-quit', (event) => {
   event.preventDefault();
   if (shutdownStarted) return;
   shutdownStarted = true;
+  desktopUpdater?.stop();
   stopGlobalDoubleControlShortcut?.();
   stopGlobalDoubleControlShortcut = null;
   const sampler = performanceSampler;
@@ -460,6 +473,10 @@ app.on('before-quit', (event) => {
     }
   }).finally(() => {
     shutdownReady = true;
+    if (desktopUpdater?.installRequested) {
+      if (desktopUpdater.finishInstall()) return;
+      dialog.showErrorBox('OpenTig update could not start', 'Your current installation has been preserved. Reopen OpenTig to try the update again.');
+    }
     app.quit();
   });
 });

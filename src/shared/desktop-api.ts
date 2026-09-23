@@ -1,4 +1,5 @@
 import type { OpenTigApi, Preferences } from './contracts';
+import type { DesktopUpdatesApi } from './desktop-updates';
 
 export const OPEN_TIG_DESKTOP_IPC = {
   preferencesChanged: 'desktop:preferences-changed',
@@ -11,6 +12,10 @@ export const OPEN_TIG_DESKTOP_IPC = {
   webAccessStatus: 'desktop:web-access-status',
   webAccessSetEnabled: 'desktop:web-access-set-enabled',
   webAccessCreatePairingLink: 'desktop:web-access-create-pairing-link',
+  updatesStatus: 'desktop:updates-status',
+  updatesCheck: 'desktop:updates-check',
+  updatesDownload: 'desktop:updates-download',
+  updatesInstall: 'desktop:updates-install',
 } as const;
 
 export interface OpenTigWebAccessStatus {
@@ -49,4 +54,5 @@ export interface OpenTigDesktopApi {
     revealEntry(target: string): Promise<void>;
   };
   webAccess: OpenTigWebAccessApi;
+  updates: DesktopUpdatesApi;
 }

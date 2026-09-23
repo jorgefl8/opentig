@@ -14,7 +14,7 @@ describe('preload desktop API', () => {
     const setZoom = vi.fn();
     const api = createDesktopApi(ipc.value, setZoom);
 
-    expect(Object.keys(api).sort()).toEqual(['app', 'clipboard', 'repository', 'webAccess']);
+    expect(Object.keys(api).sort()).toEqual(['app', 'clipboard', 'repository', 'updates', 'webAccess']);
     expect(Object.keys(api.repository).sort()).toEqual(['revealEntry', 'select', 'selectRelocation']);
     expect(Object.keys(api.webAccess).sort()).toEqual(['createPairingLink', 'getStatus', 'setEnabled']);
     expect('commits' in api).toBe(false);
