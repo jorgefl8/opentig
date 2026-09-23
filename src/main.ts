@@ -96,6 +96,7 @@ async function createWindow(): Promise<void> {
   const bounds = boundsVisibleOnDisplays(
     browserWindowBounds(placement),
     screen.getAllDisplays().map((display) => display.workArea),
+    screen.getPrimaryDisplay().workArea,
   );
   const dark = await readStartupDark(path.join(app.getPath('userData'), 'settings.json'), nativeTheme.shouldUseDarkColors);
   const backgroundColor = startupBackground(dark);
@@ -107,8 +108,8 @@ async function createWindow(): Promise<void> {
 
   mainWindow = new BrowserWindow({
     ...bounds,
-    minWidth: 900,
-    minHeight: 600,
+    minWidth: Math.min(900, bounds.width),
+    minHeight: Math.min(600, bounds.height),
     show: false,
     backgroundColor,
     title: `${displayName} — Starting…`,

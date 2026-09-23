@@ -64,23 +64,36 @@ export function browserWindowBounds(state: DesktopWindowBounds): {
 }
 
 /**
- * Drop x/y when the restored rectangle does not intersect any display work area
- * (unplugged monitor). Electron then centers on the current display.
+ * Keep restored windows fully inside a display's work area in Electron DIP
+ * coordinates. A small visible sliver is not a usable restored window.
  */
 export function boundsVisibleOnDisplays(
   bounds: { width: number; height: number; x?: number; y?: number },
   workAreas: readonly DisplayWorkArea[],
+  primaryWorkArea: DisplayWorkArea | undefined = workAreas[0],
 ): { width: number; height: number; x?: number; y?: number } {
   const { width, height, x, y } = bounds;
-  if (x == null || y == null || workAreas.length === 0) return { width, height, ...(x != null ? { x } : {}), ...(y != null ? { y } : {}) };
-  const visible = workAreas.some((area) => (
-    x < area.x + area.width
-    && x + width > area.x
-    && y < area.y + area.height
-    && y + height > area.y
-  ));
-  if (visible) return { width, height, x, y };
-  return { width, height };
+  if (!primaryWorkArea || workAreas.length === 0) return { ...bounds };
+  const positioned = x != null && y != null;
+  if (positioned && workAreas.some((area) => x >= area.x && y >= area.y
+    && x + width <= area.x + area.width && y + height <= area.y + area.height)) return { ...bounds };
+  const overlap = (area: DisplayWorkArea) => positioned
+    ? Math.max(0, Math.min(x + width, area.x + area.width) - Math.max(x, area.x))
+      * Math.max(0, Math.min(y + height, area.y + area.height) - Math.max(y, area.y))
+    : 0;
+  const target = workAreas.reduce((best, area) => overlap(area) > overlap(best) ? area : best, primaryWorkArea);
+  const fittedWidth = Math.min(width, target.width);
+  const fittedHeight = Math.min(height, target.height);
+  const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
+  const restorePosition = positioned && overlap(target) > 0;
+  return {
+    width: fittedWidth,
+    height: fittedHeight,
+    x: restorePosition ? clamp(x, target.x, target.x + target.width - fittedWidth)
+      : target.x + Math.round((target.width - fittedWidth) / 2),
+    y: restorePosition ? clamp(y, target.y, target.y + target.height - fittedHeight)
+      : target.y + Math.round((target.height - fittedHeight) / 2),
+  };
 }
 
 async function readBounds(filePath: string, nested: boolean): Promise<DesktopWindowBounds | null> {

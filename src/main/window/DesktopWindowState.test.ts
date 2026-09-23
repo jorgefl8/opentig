@@ -72,10 +72,47 @@ describe('boundsVisibleOnDisplays', () => {
     });
   });
 
-  it('drops x/y when the restored rectangle misses every display', () => {
+  it('centers a disconnected-monitor position on the primary display', () => {
     expect(boundsVisibleOnDisplays({ width: 1280, height: 800, x: 8000, y: 40 }, [primary])).toEqual({
-      width: 1280, height: 800,
+      width: 1280, height: 800, x: 320, y: 140,
     });
+  });
+
+  it('recovers a window with only a sliver visible at the left edge', () => {
+    expect(boundsVisibleOnDisplays({ width: 1280, height: 800, x: -970, y: 30 }, [primary])).toEqual({
+      width: 1280, height: 800, x: 0, y: 30,
+    });
+  });
+
+  it('keeps the title bar and bottom edge inside the available work area', () => {
+    const area = { x: 40, y: 60, width: 1500, height: 900 };
+    expect(boundsVisibleOnDisplays({ width: 1280, height: 800, x: 100, y: -700 }, [area])).toEqual({
+      width: 1280, height: 800, x: 100, y: 60,
+    });
+    expect(boundsVisibleOnDisplays({ width: 1280, height: 800, x: 1200, y: 800 }, [area])).toEqual({
+      width: 1280, height: 800, x: 260, y: 160,
+    });
+  });
+
+  it('preserves valid negative coordinates on a connected left-hand monitor', () => {
+    const left = { x: -1920, y: 0, width: 1920, height: 1080 };
+    const bounds = { width: 1280, height: 800, x: -1600, y: 80 };
+    expect(boundsVisibleOnDisplays(bounds, [primary, left])).toEqual(bounds);
+    expect(boundsVisibleOnDisplays({ ...bounds, x: -2100 }, [primary, left])).toEqual({ ...bounds, x: -1920 });
+  });
+
+  it('fits fresh and oversized restored windows to small or scaled screens', () => {
+    const small = { x: 0, y: 30, width: 800, height: 550 };
+    for (const bounds of [{ width: 1280, height: 800 }, { width: 3200, height: 1800, x: -970, y: -30 }]) {
+      expect(boundsVisibleOnDisplays(bounds, [small])).toEqual({ width: 800, height: 550, x: 0, y: 30 });
+    }
+  });
+
+  it('centers fresh or incomplete positions on the explicit primary display regardless of enumeration order', () => {
+    const left = { x: -1920, y: 0, width: 1920, height: 1080 };
+    for (const bounds of [{ width: 1280, height: 800 }, { width: 1280, height: 800, x: -1500 }]) {
+      expect(boundsVisibleOnDisplays(bounds, [left, primary], primary)).toEqual({ width: 1280, height: 800, x: 320, y: 140 });
+    }
   });
 });
 
