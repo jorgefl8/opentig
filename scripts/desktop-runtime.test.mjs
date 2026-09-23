@@ -71,10 +71,20 @@ describe('distribution boundaries', () => {
     expect(stable.electronFuses.runAsNode).toBe(false);
     expect(dev.electronFuses.runAsNode).toBe(false);
   });
-  it('requires explicit release mode, signing credentials and a stable installer before adding a feed', () => {
-    expect(() => packageOptions(['make', '--release'], {}, 'win32', 'x64')).toThrow('Release signing requires');
+  it('enables an unsigned release feed without accidentally signing or enabling candidates', () => {
+    const options = packageOptions(['make', '--release'], { CSC_LINK: 'unused', OPENTIG_PUBLISHER_NAME: 'unused' }, 'win32', 'x64');
+    const config = desktopPackageConfig({ ...options, root: '/checkout', appDirectory: '/stage', electronVersion: '43.1.1' });
+    expect(config.publish[0].provider).toBe('github');
+    expect(config.forceCodeSigning).toBe(false);
+    expect(config.win.signExecutable).toBe(false);
+    expect(config.win.verifyUpdateCodeSignature).toBe(false);
+    expect(config.win.signtoolOptions).toBeUndefined();
+    expect(() => packageOptions(['make', '--signed'], {}, 'win32', 'x64')).toThrow('--signed requires --release');
+  });
+  it('requires signing credentials only when a signed release is requested', () => {
+    expect(() => packageOptions(['make', '--release', '--signed'], {}, 'win32', 'x64')).toThrow('Release signing requires');
     expect(() => packageOptions(['make', '--release'], { OPENTIG_BUILD_PROFILE: 'dev' }, 'win32', 'x64')).toThrow('production');
-    const options = packageOptions(['make', '--release'], { CSC_LINK: 'fixture-certificate', OPENTIG_PUBLISHER_NAME: 'OpenTig Test' }, 'win32', 'x64');
+    const options = packageOptions(['make', '--release', '--signed'], { CSC_LINK: 'fixture-certificate', OPENTIG_PUBLISHER_NAME: 'OpenTig Test' }, 'win32', 'x64');
     const config = desktopPackageConfig({ ...options, root: '/checkout', appDirectory: '/stage', electronVersion: '43.1.1' });
     expect(config.forceCodeSigning).toBe(true);
     expect(config.publish).toEqual([{ provider: 'github', owner: 'jorgefl8', repo: 'opentig', channel: 'latest', releaseType: 'draft' }]);

@@ -1,4 +1,4 @@
-name: Signed Windows release draft
+name: Windows release draft
 on:
   push:
     tags: ['v*']
@@ -40,6 +40,8 @@ jobs:
     needs: validate
     runs-on: windows-latest
     environment: release
+    env:
+      RELEASE_SIGNING: ${{ vars.WINDOWS_RELEASE_SIGNING || 'unsigned' }}
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -51,8 +53,15 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      - name: Build signed installer and update metadata
+      - name: Validate signing mode
+        run: |
+          if ($env:RELEASE_SIGNING -cnotin @('unsigned', 'signed')) { throw 'WINDOWS_RELEASE_SIGNING must be unsigned or signed.' }
+      - name: Build unsigned installer and update metadata
+        if: env.RELEASE_SIGNING == 'unsigned'
         run: npm run make -- --release
+      - name: Build signed installer and update metadata
+        if: env.RELEASE_SIGNING == 'signed'
+        run: npm run make -- --release --signed
         env:
           CSC_LINK: ${{ secrets.WINDOWS_CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
@@ -63,6 +72,9 @@ jobs:
       - run: npm run verify:packaged-utility
       - run: npm run verify:packaged-trash
       - run: npm run verify:release
+        if: env.RELEASE_SIGNING == 'unsigned'
+      - run: npm run verify:release -- --signed
+        if: env.RELEASE_SIGNING == 'signed'
         env:
           OPENTIG_PUBLISHER_NAME: ${{ vars.WINDOWS_PUBLISHER_NAME }}
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

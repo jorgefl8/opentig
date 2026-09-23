@@ -14,8 +14,10 @@ export function packageOptions(args, environment = process.env, hostPlatform = p
   let platform = hostPlatform;
   let arch = hostArch;
   let release = false;
+  let signed = false;
   for (const flag of flags) {
     if (flag === '--release') release = true;
+    else if (flag === '--signed') signed = true;
     else if (flag.startsWith('--platform=')) platform = flag.slice('--platform='.length);
     else if (flag.startsWith('--arch=')) arch = flag.slice('--arch='.length);
     else throw new Error(`Unsupported packaging option: ${flag}`);
@@ -26,8 +28,9 @@ export function packageOptions(args, environment = process.env, hostPlatform = p
   }
   const publisherName = environment.OPENTIG_PUBLISHER_NAME?.trim();
   if (release && (command !== 'make' || profile !== 'production' || platform !== 'win32' || arch !== 'x64')) throw new Error('Release mode requires a production Windows x64 installer.');
-  if (release && (!publisherName || !(environment.WIN_CSC_LINK || environment.CSC_LINK))) throw new Error('Release signing requires OPENTIG_PUBLISHER_NAME and CSC_LINK (or WIN_CSC_LINK).');
-  return { command, profile, platform, arch, release, publisherName, distribution: command === 'package' ? 'directory' : profile === 'dev' ? 'zip' : 'installer' };
+  if (signed && !release) throw new Error('--signed requires --release.');
+  if (signed && (!publisherName || !(environment.WIN_CSC_LINK || environment.CSC_LINK))) throw new Error('Release signing requires OPENTIG_PUBLISHER_NAME and CSC_LINK (or WIN_CSC_LINK).');
+  return { command, profile, platform, arch, release, signed, publisherName, distribution: command === 'package' ? 'directory' : profile === 'dev' ? 'zip' : 'installer' };
 }
 
 export async function packageDesktop(options) {

@@ -16,7 +16,7 @@ export function installedUpdateRepository(input: UpdateInstallation): string | n
   if (!input.manifest || typeof input.manifest !== 'object') return null;
   const manifest = input.manifest as Record<string, unknown>;
   if (manifest.profile !== 'production' || manifest.distribution !== 'installer' || manifest.platform !== 'win32'
-      || manifest.arch !== 'x64' || manifest.version !== input.version || manifest.signedRelease !== true) return null;
+      || manifest.arch !== 'x64' || manifest.version !== input.version || manifest.release !== true || typeof manifest.signedRelease !== 'boolean') return null;
   const repository = manifest.updateRepository;
   if (typeof repository !== 'string' || !/^[\w-]+\/[\w.-]+$/.test(repository) || !input.registeredDirectory) return null;
   const normalize = (value: string) => path.win32.resolve(value).toLowerCase().replace(/\\+$/, '');

@@ -59,7 +59,8 @@ export async function stageDesktopApp(root, options) {
   await writeFile(path.join(directory, 'opentig-build.json'), `${JSON.stringify({
     version: metadata.version, profile: options.profile, distribution: options.distribution,
     platform: options.platform, arch: options.arch,
-    signedRelease: options.release === true,
+    release: options.release === true,
+    signedRelease: options.signed === true,
     updateRepository: options.release ? `${release.owner}/${release.repo}` : null,
   }, null, 2)}\n`);
   await stageRuntimeDependencies(root, directory);

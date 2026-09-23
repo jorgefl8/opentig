@@ -13,6 +13,7 @@ export interface DesktopPackageOptions {
   arch: 'x64' | 'arm64';
   electronVersion: string;
   release?: boolean;
+  signed?: boolean;
   publisherName?: string;
 }
 
@@ -20,7 +21,8 @@ export interface DesktopPackageOptions {
 export function desktopPackageConfig(options: DesktopPackageOptions): Configuration {
   const dev = options.profile === 'dev';
   const productName = dev ? 'OpenTig Dev' : 'OpenTig';
-  if (options.release && (dev || options.platform !== 'win32' || options.arch !== 'x64' || !options.publisherName)) throw new Error('Signed releases require Windows x64 production and a publisher name.');
+  if (options.release && (dev || options.platform !== 'win32' || options.arch !== 'x64')) throw new Error('Releases require Windows x64 production.');
+  if (options.signed && (!options.release || !options.publisherName)) throw new Error('Signed releases require release mode and a publisher name.');
   return {
     appId: dev ? 'com.opentig.app.dev' : 'com.opentig.app',
     productName,
@@ -52,14 +54,16 @@ export function desktopPackageConfig(options: DesktopPackageOptions): Configurat
     },
     // Local package/make commands must never create a release or use a stable update feed.
     publish: options.release ? [{ provider: 'github', ...release, releaseType: 'draft' }] : null,
-    forceCodeSigning: options.release === true,
+    forceCodeSigning: options.signed === true,
     electronUpdaterCompatibility: '>=2.16',
     artifactName: `${dev ? 'OpenTig-Dev' : 'OpenTig'}-\${version}-${options.platform}-\${arch}.\${ext}`,
     win: {
       target: [{ target: dev ? 'zip' : 'nsis', arch: [options.arch] }],
       executableName: productName,
       icon: path.join(options.root, 'assets', 'opentig.ico'),
-      ...(options.release ? { signtoolOptions: { publisherName: options.publisherName! } } : {}),
+      signExecutable: options.signed === true,
+      verifyUpdateCodeSignature: options.signed === true,
+      ...(options.signed ? { signtoolOptions: { publisherName: options.publisherName! } } : {}),
     },
     nsis: {
       oneClick: true,

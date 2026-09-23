@@ -2,17 +2,17 @@ $ErrorActionPreference = 'Stop'
 if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_OS -ne 'Windows') {
   throw 'Installer smoke runs only on a disposable GitHub Windows runner.'
 }
-$profile = Join-Path $env:APPDATA 'OpenTig'
+$dataDirectory = Join-Path $env:APPDATA 'OpenTig'
 $registration = 'HKCU:\Software\OpenTig'
-if ((Test-Path $profile) -or (Test-Path $registration)) {
+if ((Test-Path $dataDirectory) -or (Test-Path $registration)) {
   throw 'Refusing to test over existing OpenTig data or an existing installation.'
 }
 $testRoot = Join-Path $env:RUNNER_TEMP ('opentig-install-' + [guid]::NewGuid().ToString('N'))
 $installed = Join-Path $testRoot 'app'
 $installer = Get-Item 'out/make/production/win32-x64/*Setup.exe'
 if (@($installer).Count -ne 1) { throw 'Expected exactly one installer.' }
-New-Item -ItemType Directory -Path $testRoot, $profile | Out-Null
-$sentinel = Join-Path $profile 'installer-smoke.txt'
+New-Item -ItemType Directory -Path $testRoot, $dataDirectory | Out-Null
+$sentinel = Join-Path $dataDirectory 'installer-smoke.txt'
 Set-Content -LiteralPath $sentinel -Value 'preserve-user-data' -NoNewline
 function Invoke-Installer([string]$Executable, [string]$Arguments) {
   $process = Start-Process -FilePath $Executable -ArgumentList $Arguments -PassThru
@@ -38,6 +38,6 @@ try {
   Write-Output 'WINDOWS_INSTALL_UNINSTALL_DATA_OK'
 } finally {
   # Both locations were absent before this disposable-runner test.
-  Remove-Item -Recurse -Force $profile -ErrorAction SilentlyContinue
+  Remove-Item -Recurse -Force $dataDirectory -ErrorAction SilentlyContinue
   Remove-Item -Recurse -Force $testRoot -ErrorAction SilentlyContinue
 }

@@ -20,9 +20,9 @@ assert.equal(manifest.platform, platform);
 assert.equal(manifest.arch, arch);
 assert.ok(['directory', 'zip', 'installer'].includes(manifest.distribution));
 assert.ok(profile !== 'dev' || manifest.distribution !== 'installer');
-assert.ok(profile !== 'dev' || (manifest.signedRelease === false && manifest.updateRepository === null));
+assert.ok(profile !== 'dev' || (manifest.release === false && manifest.signedRelease === false && manifest.updateRepository === null));
 const updateConfig = path.join(resources, 'app-update.yml');
-if (manifest.signedRelease) {
+if (manifest.release) {
   assert.equal(profile, 'production');
   assert.equal(platform, 'win32');
   await access(updateConfig);

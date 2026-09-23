@@ -93,17 +93,18 @@ const installed: UpdateInstallation = {
   profile: 'production', packaged: true, platform: 'win32', version: '0.1.0',
   executable: 'C:\\Users\\test\\AppData\\Local\\Programs\\OpenTig\\OpenTig.exe',
   registeredDirectory: 'C:\\Users\\test\\AppData\\Local\\Programs\\OpenTig',
-  manifest: { version: '0.1.0', profile: 'production', platform: 'win32', arch: 'x64', distribution: 'installer', signedRelease: true, updateRepository: 'jorgefl8/opentig' },
+  manifest: { version: '0.1.0', profile: 'production', platform: 'win32', arch: 'x64', distribution: 'installer', release: true, signedRelease: false, updateRepository: 'jorgefl8/opentig' },
 };
 describe('update installation eligibility', () => {
-  it('allows only the actual installed signed Windows stable build', () => {
+  it('allows only the actual installed Windows release, whether unsigned or signed', () => {
     expect(installedUpdateRepository(installed)).toBe('jorgefl8/opentig');
+    expect(installedUpdateRepository({ ...installed, manifest: { ...(installed.manifest as object), signedRelease: true } })).toBe('jorgefl8/opentig');
     expect(installedUpdateRepository({ ...installed, registeredDirectory: installed.registeredDirectory!.toUpperCase() + '\\' })).toBe('jorgefl8/opentig');
     for (const override of [
       { profile: 'dev' }, { packaged: false }, { platform: 'linux' }, { registeredDirectory: null },
       { executable: 'D:\\copied-app\\OpenTig.exe' }, { version: '0.2.0' }, { manifest: null },
     ]) expect(installedUpdateRepository({ ...installed, ...override })).toBeNull();
-    for (const override of [{ distribution: 'zip' }, { signedRelease: false }, { updateRepository: 'https://example.com' }, { profile: 'dev' }, { arch: 'arm64' }]) {
+    for (const override of [{ distribution: 'zip' }, { release: false }, { release: undefined }, { signedRelease: undefined }, { updateRepository: 'https://example.com' }, { profile: 'dev' }, { arch: 'arm64' }]) {
       expect(installedUpdateRepository({ ...installed, manifest: { ...(installed.manifest as object), ...override } })).toBeNull();
     }
   });
