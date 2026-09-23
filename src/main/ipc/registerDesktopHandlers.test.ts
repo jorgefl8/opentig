@@ -125,7 +125,7 @@ describe('desktop IPC boundary', () => {
 
   it('rejects update actions from other frames and accepts no caller-controlled arguments', async () => {
     const value = fixture();
-    const status = { phase: 'idle' as const, currentVersion: '0.1.0', availableVersion: null, progress: null, checkedAt: null, message: null, releaseUrl: null };
+    const status = { phase: 'idle' as const, currentVersion: '0.1.0', availableVersion: null, progress: null, checkedAt: null, message: null, releaseUrl: null, releaseNotes: null };
     const updates = { getStatus: vi.fn(async () => status), check: vi.fn(async () => status), download: vi.fn(async () => status), install: vi.fn(async () => status) };
     registerDesktopHandlers(value.host, undefined, undefined, updates, () => false);
     expect(await invoke(OPEN_TIG_DESKTOP_IPC.updatesInstall)).toMatchObject({ ok: false });

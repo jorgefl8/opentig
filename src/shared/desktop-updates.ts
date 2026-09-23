@@ -10,6 +10,7 @@ export interface DesktopUpdateStatus {
   checkedAt: string | null;
   message: string | null;
   releaseUrl: string | null;
+  releaseNotes: string | null;
 }
 
 export interface DesktopUpdatesApi {

@@ -4,9 +4,11 @@ import type { AppUpdater } from 'electron-updater';
 import { DesktopUpdater } from './DesktopUpdater';
 import { installedUpdateRepository, type UpdateInstallation } from './update-eligibility';
 
+type TestUpdateInfo = { version: string; releaseNotes?: string | { version: string; note: string }[] };
+
 function fixture() {
   const engine = Object.assign(new EventEmitter(), {
-    checkForUpdates: vi.fn(async () => ({ isUpdateAvailable: true, updateInfo: { version: '0.2.0' } })),
+    checkForUpdates: vi.fn(async () => ({ isUpdateAvailable: true, updateInfo: { version: '0.2.0' } as TestUpdateInfo })),
     downloadUpdate: vi.fn(async () => { engine.emit('update-downloaded', { version: '0.2.0' }); return []; }),
     quitAndInstall: vi.fn(), autoDownload: true, autoInstallOnAppQuit: true, allowPrerelease: true, allowDowngrade: true,
   });
@@ -66,6 +68,28 @@ describe('desktop update lifecycle', () => {
     await service.check();
     await service.download();
     expect(service.getStatus().phase).toBe('ready');
+  });
+
+  it('keeps the offered release notes through download and clears them on a new check', async () => {
+    const { engine, service } = fixture();
+    engine.checkForUpdates.mockResolvedValueOnce({ isUpdateAvailable: true, updateInfo: {
+      version: '0.2.0', releaseNotes: '<ul><li>Improve repository management by @author in #42</li></ul>',
+    } as TestUpdateInfo });
+    const available = await service.check();
+    expect(available.releaseNotes).toContain('by @author in #42');
+    await service.download();
+    expect(service.getStatus().releaseNotes).toBe(available.releaseNotes);
+    engine.emit('error', new Error('retry'));
+    engine.checkForUpdates.mockResolvedValueOnce({ isUpdateAvailable: false, updateInfo: { version: '0.2.0' } as TestUpdateInfo });
+    expect((await service.check()).releaseNotes).toBeNull();
+  });
+
+  it('selects notes for the offered version and bounds their size', async () => {
+    const { engine, service } = fixture();
+    engine.checkForUpdates.mockResolvedValueOnce({ isUpdateAvailable: true, updateInfo: {
+      version: '0.2.0', releaseNotes: [{ version: '0.1.0', note: 'Old release' }, { version: '0.2.0', note: 'x'.repeat(70_000) }],
+    } as TestUpdateInfo });
+    expect((await service.check()).releaseNotes).toBe('x'.repeat(64_000));
   });
 
   it('checks on focus after 5 minutes, throttles repeated focus, and reschedules polling', async () => {

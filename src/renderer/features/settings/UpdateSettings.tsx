@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { DesktopUpdateStatus } from '../../../shared/desktop-updates';
 import { Popover } from '@base-ui/react/popover';
-import { IconAlertTriangle, IconCheck, IconDownload, IconLoader2, IconRefresh } from '@tabler/icons-react';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { IconAlertTriangle, IconCheck, IconDownload, IconExternalLink, IconLoader2, IconRefresh } from '@tabler/icons-react';
+import { summarizeUpdateReleaseNotes } from './update-release-notes';
 import { Button } from '@/components/ui/button';
 
 function useUpdateStatus(interval: number) {
@@ -55,24 +55,74 @@ export function UpdateSettings() {
 
 /** Remains reachable even after the floating notice is dismissed. */
 export function DesktopUpdateIndicator() {
-  const { status } = useUpdateStatus(1_000);
+  const { status, setStatus, error, setError } = useUpdateStatus(1_000);
+  const [open, setOpen] = useState(false);
+  const [pending, setPending] = useState(false);
+  const actionPending = useRef(false);
+  const suppressFocus = useRef(false);
+  const triggerId = useId();
+  const releaseLink = useRef<HTMLAnchorElement>(null);
+  const notes = useMemo(() => summarizeUpdateReleaseNotes(status?.releaseNotes), [status?.releaseNotes]);
   if (!status || ['idle', 'checking', 'unavailable'].includes(status.phase)) return null;
-  const spinning = status.phase === 'downloading' || status.phase === 'installing';
-  const label = status.message ?? (status.phase === 'available' ? `Download OpenTig ${status.availableVersion}` : updateCopy(status));
-  return <Popover.Root>
-    <Tooltip>
-      <TooltipTrigger render={<Popover.Trigger render={<Button variant="ghost" size="icon-sm" className="desktop-update-indicator relative" aria-label={`Updates: ${label}`} />} />}>
-        {status.phase === 'available' ? <IconDownload /> : spinning ? <IconLoader2 className="animate-spin" /> : status.phase === 'error' ? <IconAlertTriangle /> : <IconRefresh />}
-        {status.phase === 'ready' && <span className="absolute -bottom-0.5 -right-0.5 grid size-3.5 place-items-center rounded-full border-2 border-background bg-primary text-primary-foreground" aria-hidden="true">
-          <IconCheck className="size-2.5!" />
-        </span>}
-      </TooltipTrigger>
-      <TooltipContent>{label}</TooltipContent>
-    </Tooltip>
+  const unavailable = pending || status.phase === 'downloading' || status.phase === 'installing';
+  const label = status.phase === 'available'
+    ? `Update ${status.availableVersion} is available. Click to download.`
+    : status.phase === 'ready'
+      ? `Update ${status.availableVersion} downloaded. Click to restart and install.`
+      : status.phase === 'error' ? 'Update failed. Click to retry.' : updateCopy(status);
+  const progress = Math.max(0, Math.min(100, status.progress ?? 0));
+  const act = async () => {
+    const api = window.opentigDesktop?.updates;
+    if (!api || unavailable || actionPending.current) return;
+    actionPending.current = true;
+    setPending(true);
+    setError(null);
+    // The icon is the action; the hover card is only release information.
+    const action = status.phase === 'available' ? 'download' : status.phase === 'ready' ? 'install' : 'check';
+    try { setStatus(await api[action]()); }
+    catch { setError('The update action could not be completed. Click the icon to retry.'); }
+    finally { actionPending.current = false; setPending(false); }
+  };
+  return <Popover.Root open={open} triggerId={triggerId} onOpenChange={(next, details) => {
+    if (details.reason === 'trigger-press') { details.cancel(); return; }
+    if (!next && details.reason === 'escape-key') suppressFocus.current = true;
+    setOpen(next);
+  }}>
+    <Popover.Trigger id={triggerId} openOnHover delay={300} closeDelay={150}
+      render={<Button variant="ghost" size="icon-sm" className="desktop-update-indicator relative" aria-label={label} aria-disabled={unavailable || undefined}
+        onClick={() => void act()}
+        onFocus={(event) => {
+          if (suppressFocus.current) { suppressFocus.current = false; return; }
+          if (event.currentTarget.matches(':focus-visible')) setOpen(true);
+        }}
+        onBlur={() => { suppressFocus.current = false; }}
+        onKeyDown={(event) => {
+          if (event.key === 'Tab' && !event.shiftKey && open && releaseLink.current) {
+            event.preventDefault(); releaseLink.current.focus();
+          }
+        }} />}
+    >
+      {status.phase === 'available' || status.phase === 'downloading' ? <IconDownload /> : status.phase === 'installing' ? <IconLoader2 className="animate-spin" /> : status.phase === 'error' ? <IconAlertTriangle /> : <IconRefresh />}
+      {status.phase === 'downloading' && <svg className="pointer-events-none absolute inset-0 size-full! -rotate-90" viewBox="0 0 32 32" aria-hidden="true">
+        <circle cx="16" cy="16" r="14" fill="none" stroke="currentColor" strokeOpacity="0.2" strokeWidth="2" />
+        <circle cx="16" cy="16" r="14" pathLength="100" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeDasharray="100" strokeDashoffset={100 - progress} className="transition-[stroke-dashoffset] motion-reduce:transition-none" />
+      </svg>}
+      {status.phase === 'ready' && <span className="absolute -bottom-0.5 -right-0.5 grid size-3.5 place-items-center rounded-full border-2 border-background bg-primary text-primary-foreground" aria-hidden="true"><IconCheck className="size-2.5!" /></span>}
+    </Popover.Trigger>
     <Popover.Portal>
       <Popover.Positioner side="bottom" align="end" sideOffset={8} className="isolate z-50 outline-none">
-        <Popover.Popup className="w-[min(24rem,calc(100vw-2rem))] max-h-[var(--available-height)] overflow-y-auto rounded-lg border bg-popover p-4 text-popover-foreground shadow-lg" aria-label="Desktop updates">
-          <UpdateSettings />
+        <Popover.Popup initialFocus={false} className="desktop-update-card flex w-[min(25rem,calc(100vw-2rem))] max-h-[var(--available-height)] flex-col gap-4 overflow-y-auto rounded-lg border bg-popover p-4 text-popover-foreground shadow-xl" aria-label="Update details">
+          <p className="text-sm font-medium" aria-live="polite">{label}</p>
+          {(error || status.message) && <p className="text-xs text-muted-foreground" role="status">{error ?? status.message}</p>}
+          <section className="min-h-0 text-xs">
+            <h3 className="mb-2 font-medium">What's changed</h3>
+            {notes.items.length > 0 ? <ul className="list-disc space-y-2 pl-4 leading-relaxed text-muted-foreground">
+              {notes.items.map((item, index) => <li key={index} className="break-words">{item}</li>)}
+            </ul> : <p className="text-muted-foreground">No release notes were provided for this update.</p>}
+          </section>
+          {status.releaseUrl && <a ref={releaseLink} className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground underline decoration-dotted underline-offset-4 hover:text-foreground" href={status.releaseUrl} target="_blank" rel="noreferrer">
+            {notes.omitted ? `${notes.omitted} more ${notes.omitted === 1 ? 'change' : 'changes'} on GitHub` : 'View release on GitHub'}<IconExternalLink className="size-3" />
+          </a>}
         </Popover.Popup>
       </Popover.Positioner>
     </Popover.Portal>

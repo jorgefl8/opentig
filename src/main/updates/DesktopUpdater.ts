@@ -18,7 +18,7 @@ export class DesktopUpdater {
     unavailableReason = 'Updates are available in the installed Windows release of OpenTig.',
   ) {
     this.status = { phase: updater ? 'idle' : 'unavailable', currentVersion: version, availableVersion: null,
-      progress: null, checkedAt: null, message: updater ? null : unavailableReason, releaseUrl: null };
+      progress: null, checkedAt: null, message: updater ? null : unavailableReason, releaseUrl: null, releaseNotes: null };
     if (!updater) return;
     updater.autoDownload = false;
     updater.autoInstallOnAppQuit = false;
@@ -68,7 +68,7 @@ export class DesktopUpdater {
     if (!this.updater || this.stopped || !['idle', 'error'].includes(this.status.phase)) return this.getStatus();
     clearTimeout(this.timer);
     this.lastAttemptAt = Date.now();
-    this.status = { ...this.status, phase: 'checking', availableVersion: null, progress: null, message: null, releaseUrl: null };
+    this.status = { ...this.status, phase: 'checking', availableVersion: null, progress: null, message: null, releaseUrl: null, releaseNotes: null };
     try {
       const result = await this.updater.checkForUpdates();
       if (this.stopped) return this.getStatus();
@@ -76,6 +76,7 @@ export class DesktopUpdater {
       if (version && !/^\d+\.\d+\.\d+$/.test(version)) throw new Error('Unexpected release version.');
       this.status = { ...this.status, phase: version ? 'available' : 'idle', availableVersion: version,
         checkedAt: new Date().toISOString(), message: null,
+        releaseNotes: version ? releaseNotesForVersion(result?.updateInfo.releaseNotes, version) : null,
         releaseUrl: version && this.repository ? `https://github.com/${this.repository}/releases/tag/v${version}` : null };
     } catch { this.fail(); }
     finally { this.scheduleCheck(DESKTOP_UPDATE_CHECK_INTERVAL_MS); }
@@ -120,4 +121,12 @@ export class DesktopUpdater {
     this.status = { ...this.status, phase: 'error', progress: null,
       message: 'The update could not be completed. Check your connection and try again. Your current installation has not been replaced.' };
   }
+}
+
+/** Keep metadata bounded and tied to the exact version offered for download. */
+function releaseNotesForVersion(notes: unknown, version: string): string | null {
+  const value = Array.isArray(notes)
+    ? notes.find((entry) => entry && entry.version === version)?.note
+    : notes;
+  return typeof value === 'string' && value.trim() ? value.slice(0, 64_000) : null;
 }
