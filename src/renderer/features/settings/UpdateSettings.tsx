@@ -55,7 +55,7 @@ export function UpdateSettings() {
   </div>;
 }
 
-/** Remains reachable even after the floating notice is dismissed. */
+/** Update status and actions live in the toolbar, without floating notices. */
 export function DesktopUpdateIndicator() {
   const { status, setStatus, error, setError } = useUpdateStatus(1_000);
   const [open, setOpen] = useState(false);
@@ -109,6 +109,7 @@ export function DesktopUpdateIndicator() {
         <circle cx="16" cy="16" r="14" fill="none" stroke="currentColor" strokeOpacity="0.2" strokeWidth="2" />
         <circle cx="16" cy="16" r="14" pathLength="100" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeDasharray="100" strokeDashoffset={100 - progress} className="transition-[stroke-dashoffset] motion-reduce:transition-none" />
       </svg>}
+      {status.phase === 'available' && <span className="absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full border-2 border-background bg-primary" aria-hidden="true" />}
       {status.phase === 'ready' && <span className="absolute -bottom-0.5 -right-0.5 grid size-3.5 place-items-center rounded-full border-2 border-background bg-primary text-primary-foreground" aria-hidden="true"><IconCheck className="size-2.5!" /></span>}
     </Popover.Trigger>
     <Popover.Portal>
@@ -129,20 +130,6 @@ export function DesktopUpdateIndicator() {
       </Popover.Positioner>
     </Popover.Portal>
   </Popover.Root>;
-}
-
-export function DesktopUpdateNotice() {
-  const { status } = useUpdateStatus(10_000);
-  const [open, setOpen] = useState(false);
-  const [dismissed, setDismissed] = useState<string | null>(null);
-  if (!status || (!open && (!['available', 'ready'].includes(status.phase) || dismissed === `${status.phase}:${status.availableVersion}`))) return null;
-  return <aside className="fixed bottom-4 right-4 z-50 grid w-[min(24rem,calc(100vw-2rem))] gap-3 rounded-lg border bg-popover p-4 text-popover-foreground shadow-lg" aria-label="OpenTig update">
-    {open ? <UpdateSettings /> : <p className="text-sm">{updateCopy(status)}</p>}
-    <div className="flex gap-2">
-      {!open && <Button size="sm" onClick={() => setOpen(true)}>View update</Button>}
-      <Button size="sm" variant="ghost" onClick={() => { setDismissed(`${status.phase}:${status.availableVersion}`); setOpen(false); }}>Later</Button>
-    </div>
-  </aside>;
 }
 
 function updateCopy(status: DesktopUpdateStatus): string {
