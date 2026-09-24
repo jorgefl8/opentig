@@ -22,6 +22,23 @@ function Invoke-Installer([string]$Executable, [string]$Arguments) {
   }
   if ($process.ExitCode -ne 0) { throw "Installer failed with exit code $($process.ExitCode)." }
 }
+function Remove-SmokeDirectory([string]$Path) {
+  # The NSIS uninstaller can still be removing itself when verification finishes.
+  # Cleanup must not replace the outcome of the actual installation assertions.
+  for ($attempt = 0; $attempt -lt 5; $attempt++) {
+    try {
+      if (-not (Test-Path -LiteralPath $Path)) { return }
+      Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction Stop
+      return
+    } catch {
+      if ($attempt -eq 4) {
+        Write-Warning "Temporary installer-test cleanup incomplete at '${Path}': $($_.Exception.Message)"
+      } else {
+        Start-Sleep -Milliseconds 250
+      }
+    }
+  }
+}
 try {
   Invoke-Installer $installer.FullName "/S /D=$installed"
   if (-not (Test-Path (Join-Path $installed 'OpenTig.exe'))) { throw 'Installed application missing.' }
@@ -38,6 +55,6 @@ try {
   Write-Output 'WINDOWS_INSTALL_UNINSTALL_DATA_OK'
 } finally {
   # Both locations were absent before this disposable-runner test.
-  Remove-Item -Recurse -Force $dataDirectory -ErrorAction SilentlyContinue
-  Remove-Item -Recurse -Force $testRoot -ErrorAction SilentlyContinue
+  Remove-SmokeDirectory $dataDirectory
+  Remove-SmokeDirectory $testRoot
 }
