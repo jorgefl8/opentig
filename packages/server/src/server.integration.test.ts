@@ -4,8 +4,9 @@ import { request as httpRequest } from 'node:http';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import WebSocket from 'ws';
+import type { DesktopUpdatesApi } from '../../../src/shared/desktop-updates';
 import { OneTimeBootstrapAuthSource } from './auth';
 import { runOpenTigServer, type RunningOpenTigServer } from './server';
 
@@ -19,6 +20,23 @@ afterEach(async () => {
 });
 
 describe('authoritative HTTP server', () => {
+  it('protects update actions with owner authentication and exact origin, and recovers a failed install', async () => {
+    const status = { phase: 'ready' as const, currentVersion: '0.1.2', availableVersion: '0.1.3', progress: 100,
+      checkedAt: null, message: null, releaseUrl: null, releaseNotes: null };
+    const install = vi.fn(async () => ({ ...status, phase: 'error' as const }));
+    const fixture = await startFixture({ updates: { getStatus: async () => status, check: async () => status, download: async () => status, install } });
+    const url = `${fixture.server.origin}/api/updates/install`;
+    expect((await fetch(`${fixture.server.origin}/api/updates`)).status).toBe(401);
+    expect((await postJson(url, {}, fixture.server.origin)).status).toBe(401);
+    const paired = await postJson(`${fixture.server.origin}/api/auth/pair`, { token: fixture.pairingToken }, fixture.server.origin);
+    const cookie = cookieValue(paired.cookie);
+    expect((await postJson(url, {}, 'https://wrong.invalid', cookie)).status).toBe(403);
+    expect(install).not.toHaveBeenCalled();
+    expect((await postJson(url, {}, fixture.server.origin, cookie)).status).toBe(200);
+    expect((await postJson(url, {}, fixture.server.origin, cookie)).status).toBe(200);
+    expect(install).toHaveBeenCalledTimes(2);
+  });
+
   it('isolates Dev cookies, pairing, settings and revocation alongside production on the same host', async () => {
     const production = await startFixture();
     const dev = await startFixture({ profile: 'dev' });
@@ -368,7 +386,7 @@ describe('authenticated WebSocket protocol', () => {
   });
 });
 
-async function startFixture(options: { admin?: { token: string; instanceId: string }; profile?: 'dev' } = {}): Promise<{
+async function startFixture(options: { updates?: DesktopUpdatesApi; admin?: { token: string; instanceId: string }; profile?: 'dev' } = {}): Promise<{
   server: RunningOpenTigServer;
   directory: string;
   clientRoot: string;
@@ -390,6 +408,7 @@ async function startFixture(options: { admin?: { token: string; instanceId: stri
     appVersion: '0.1-test',
     auth: new OneTimeBootstrapAuthSource({ desktopSecret }),
     port: 0,
+    ...(options.updates ? { updates: options.updates } : {}),
     ...(options.admin ? { admin: options.admin } : {}),
     ...(options.profile ? { profile: options.profile } : {}),
   });

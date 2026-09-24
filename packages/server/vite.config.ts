@@ -19,6 +19,7 @@ export default defineConfig({
       external: [/^node:/, 'trash', 'ws'],
       input: {
         bin: path.join(packageRoot, 'src', 'bin.ts'),
+        'service-update': path.join(packageRoot, 'src', 'service-update-worker.ts'),
         dev: path.join(packageRoot, 'src', 'dev.ts'),
         server: path.join(packageRoot, 'src', 'server.ts'),
         utility: path.join(packageRoot, 'src', 'utility.ts'),

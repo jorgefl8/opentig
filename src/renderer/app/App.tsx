@@ -986,8 +986,16 @@ export default function App() {
       event.preventDefault();
       event.returnValue = '';
     };
+    const beforeUpdate = (event: Event) => {
+      if (busyRef.current || repositorySyncOperationsRef.current.size > 0
+        || [...fileSessionsRef.current.values()].some((session) => session.tabs.some((tab) => tab.dirty))) event.preventDefault();
+    };
+    window.addEventListener('opentig:before-update', beforeUpdate);
     window.addEventListener('beforeunload', onBeforeUnload);
-    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+    return () => {
+      window.removeEventListener('opentig:before-update', beforeUpdate);
+      window.removeEventListener('beforeunload', onBeforeUnload);
+    };
   }, []);
 
   const reconcileViewerPaths = (changes: FileHistoryPathChange[], removedPaths: string[]) => {

@@ -33,7 +33,7 @@ if (sha256 !== metadata.sha256) throw new Error('Headless tarball SHA-256 does n
 
 const required = new Set([
   'LICENSE', 'README.md', 'THIRD_PARTY_NOTICES.md', 'package.json',
-  'dist/bin.mjs', 'dist/server.mjs', 'dist/utility.mjs', 'dist/manifest.json', 'dist/client/index.html',
+  'dist/bin.mjs', 'dist/service-update.mjs', 'dist/server.mjs', 'dist/utility.mjs', 'dist/manifest.json', 'dist/client/index.html',
 ]);
 for (const file of metadata.files) {
   required.delete(file.path);

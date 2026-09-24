@@ -13,6 +13,7 @@ const NODE_BUILTINS = new Set(builtinModules.flatMap((name) => [name, `node:${na
 
 export async function verifyServerBuild(serverDist) {
   await access(path.join(serverDist, 'bin.mjs'));
+  await access(path.join(serverDist, 'service-update.mjs'));
   await access(path.join(serverDist, 'server.mjs'));
   await access(path.join(serverDist, 'utility.mjs'));
   await access(path.join(serverDist, 'client', 'index.html'));

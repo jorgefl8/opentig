@@ -37,6 +37,17 @@ interface RegisteredCommand {
 export class CommandRegistry {
   private readonly commands = new Map<OpenTigServerCommandName, RegisteredCommand>();
   private readonly sessions = new Map<string, Map<string, unknown>>();
+  private activeCommands = 0;
+  private updating = false;
+
+  pauseForUpdate(): boolean {
+    if (this.activeCommands > 0 || this.updating) return false;
+    this.updating = true;
+    return true;
+  }
+
+  resumeAfterUpdate(): void { this.updating = false; }
+
   private problemLog: ProblemLogRecorder | null = null;
 
   setProblemLog(log: ProblemLogRecorder | null): void {
@@ -87,8 +98,11 @@ export class CommandRegistry {
       if (requestBytes(args) > registered.definition.maxRequestBytes) {
         throw invalidCommand(operation, 'Command request exceeded the safety limit.');
       }
+      if (this.updating) throw invalidCommand(operation, 'The server is restarting to install an update. Try again after reconnecting.');
       const context = this.context(sessionId, options.signal);
-      return { ok: true, value: await registered.handler(context, args) };
+      this.activeCommands += 1;
+      try { return { ok: true, value: await registered.handler(context, args) }; }
+      finally { this.activeCommands -= 1; }
     } catch (error) {
       const serialized = serializeError(error, operation);
       if (this.problemLog && shouldRecordCommandProblem({

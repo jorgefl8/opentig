@@ -15,7 +15,10 @@ import { OpenTigServer, type OpenTigServerAddress } from './OpenTigServer';
 import type { OpenTigServerLogger, OpenTigServerMode } from './http';
 import type { ApplicationProfile } from '../../../src/shared/application-profile';
 
+import type { DesktopUpdatesApi } from '../../../src/shared/desktop-updates';
+
 export interface OpenTigServerConfig extends Omit<CreateOpenTigRuntimeOptions, 'runtimeMode' | 'onEvent'> {
+  updates?: DesktopUpdatesApi;
   profile?: ApplicationProfile;
   appVersion: string;
   auth: OpenTigBootstrapAuthSource;
@@ -88,6 +91,7 @@ export async function runOpenTigServer(config: OpenTigServerConfig): Promise<Run
     transport = new OpenTigServer({
       runtime,
       registry,
+      ...(config.updates ? { updates: config.updates } : {}),
       clientRoot,
       auth,
       identity: { protocolVersion: OPEN_TIG_PROTOCOL_VERSION, appVersion: config.appVersion, ...(config.profile === 'dev' ? { profile: config.profile } : {}) },

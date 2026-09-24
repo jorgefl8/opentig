@@ -6,6 +6,7 @@ import { redactSensitiveText } from '../../../src/shared/redaction';
 import { openSystemBrowser } from './browser';
 import { CliUsageError, cliHelp, parseCliArguments, type OpenTigCliConfig } from './cli-config';
 import { manageCliService } from './cli-service';
+import { createServiceUpdater } from './service-updater';
 import {
   clearRuntimeState,
   loadOrCreateAdminToken,
@@ -65,10 +66,12 @@ async function startCliServer(config: OpenTigCliConfig, io: CliIo, profile: Appl
   const adminToken = await loadOrCreateAdminToken(paths.adminToken);
   const instanceId = newInstanceId();
   const log = new CliServerLog(paths.serverLog);
+  const updates = await createServiceUpdater(config.home, OPEN_TIG_APP_VERSION, profile, config);
   let server: RunningOpenTigServer | null = null;
   try {
     server = await startOnConfiguredPort({
       appVersion: OPEN_TIG_APP_VERSION,
+      updates,
       profile,
       auth: { consumeDesktopSecret: () => false },
       settingsPath: paths.settings,
@@ -109,11 +112,14 @@ async function startCliServer(config: OpenTigCliConfig, io: CliIo, profile: Appl
       });
     }
 
+    updates.start();
     return await waitForShutdown(server, async () => {
+      await updates.stop();
       await clearRuntimeState(paths.runtimeState, instanceId);
       await log.close();
     }, io);
   } catch (error) {
+    await updates.stop();
     if (server) await server.close().catch(() => undefined);
     await clearRuntimeState(paths.runtimeState, instanceId).catch(() => undefined);
     await log.close();

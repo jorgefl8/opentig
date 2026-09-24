@@ -8,7 +8,10 @@ import { OpenTigSessionAuth, type PairingToken } from './auth';
 import { createOpenTigHttpHandler, type OpenTigServerLogger, type OpenTigServerMode } from './http';
 import { OpenTigWebSocketTransport } from './websocket';
 
+import type { DesktopUpdatesApi } from '../../../src/shared/desktop-updates';
+
 export interface OpenTigServerOptions {
+  updates?: DesktopUpdatesApi;
   runtime: OpenTigRuntime;
   registry: CommandRegistry;
   clientRoot: string;
@@ -45,6 +48,9 @@ export class OpenTigServer {
     this.logger = options.logger ?? (() => undefined);
     this.httpServer = createServer(createOpenTigHttpHandler({
       runtime: options.runtime,
+      ...(options.updates ? { updates: options.updates } : {}),
+      beginUpdate: () => options.registry.pauseForUpdate(),
+      cancelUpdate: () => options.registry.resumeAfterUpdate(),
       clientRoot: options.clientRoot,
       auth: options.auth,
       identity: options.identity,

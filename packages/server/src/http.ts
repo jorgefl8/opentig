@@ -9,12 +9,17 @@ import { OpenTigSessionAuth } from './auth';
 import { isAllowedOrigin, requestOriginIsSecure } from './origin';
 import { serveStatic, STATIC_SECURITY_HEADERS } from './static';
 
+import type { DesktopUpdatesApi } from '../../../src/shared/desktop-updates';
+
 const AUTH_BODY_LIMIT = 64 * 1024;
 
 export type OpenTigServerMode = 'desktop' | 'web-access';
 export type OpenTigServerLogger = (level: 'info' | 'warn' | 'error', message: string) => void;
 
 export interface OpenTigHttpContext {
+  updates?: DesktopUpdatesApi;
+  beginUpdate?(): boolean;
+  cancelUpdate?(): void;
   runtime: OpenTigRuntime;
   clientRoot: string;
   auth: OpenTigSessionAuth;
@@ -65,6 +70,35 @@ async function handleRequest(context: OpenTigHttpContext, request: IncomingMessa
       mode: context.mode,
       ...context.identity,
     });
+  }
+
+  if (rawPath === '/api/updates' || rawPath.startsWith('/api/updates/')) {
+    if (!context.auth.authenticate(request.headers)) return sendJson(response, 401, { error: 'Authentication required.' });
+    if (method === 'POST' && !isAllowedOrigin(request)) return sendJson(response, 403, { error: 'Forbidden origin.' });
+    if (!context.updates) return sendJson(response, 200, {
+      phase: 'unavailable', currentVersion: context.identity.appVersion, availableVersion: null,
+      progress: null, checkedAt: null, releaseUrl: null, releaseNotes: null,
+      message: 'Updates for this instance are managed from the desktop app or terminal.',
+    });
+    if (method === 'GET' && rawPath === '/api/updates') {
+      const status = await context.updates.getStatus();
+      if (status.phase === 'error') context.cancelUpdate?.();
+      return sendJson(response, 200, status);
+    }
+    if (method === 'POST') {
+      const action = rawPath.slice('/api/updates/'.length);
+      if (action === 'check' || action === 'download') return sendJson(response, 200, await context.updates[action]());
+      if (action === 'install') {
+        if ((await context.updates.getStatus()).phase !== 'ready') return sendJson(response, 409, { error: 'No prepared update is ready.' });
+        if (!context.beginUpdate?.()) return sendJson(response, 409, { error: 'Wait for running operations to finish, then retry the update.' });
+        try {
+          const status = await context.updates.install();
+          if (status.phase !== 'installing') context.cancelUpdate?.();
+          return sendJson(response, 200, status);
+        } catch (error) { context.cancelUpdate?.(); throw error; }
+      }
+    }
+    return sendJson(response, 404, { error: 'Not found.' });
   }
 
   if (method === 'GET' && rawPath === '/api/auth/sessions') {

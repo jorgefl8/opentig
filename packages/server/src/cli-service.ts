@@ -6,6 +6,7 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import type { OpenTigCliConfig } from './cli-config';
 import { OPEN_TIG_APP_VERSION } from './version';
+import { newerVersion, packageDirectory, readInstallation, saveInstallation } from './service-installation';
 
 const UNIT_NAME = 'opentig.service';
 
@@ -26,22 +27,29 @@ export async function manageCliService(config: OpenTigCliConfig, io: ServiceIo):
 }
 
 async function installService(config: OpenTigCliConfig, unitPath: string, io: ServiceIo): Promise<number> {
+  const installed = await readInstallation(config.home);
+  if (installed && newerVersion(installed.version, OPEN_TIG_APP_VERSION)) throw new Error('A newer managed service is installed. Use its CLI to administer it; downgrades are not automatic.');
+  try { await access(path.join(config.home, 'service/update-lock')); throw new Error('An update is already being applied.'); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
   const packageRoot = await findPackageRoot(fileURLToPath(import.meta.url));
   await assertPackageBuild(packageRoot);
   const serviceRoot = path.join(config.home, 'service');
-  const target = path.join(serviceRoot, `app-${OPEN_TIG_APP_VERSION}`);
+  const reuse = installed?.version === OPEN_TIG_APP_VERSION;
+  const target = reuse ? packageDirectory(config.home, installed) : path.join(serviceRoot, `app-${OPEN_TIG_APP_VERSION}`);
   const temporary = path.join(serviceRoot, `.install-${process.pid}-${Date.now()}`);
   await mkdir(serviceRoot, { recursive: true, mode: 0o700 });
   await rm(temporary, { recursive: true, force: true });
   try {
-    await mkdir(temporary, { recursive: true, mode: 0o700 });
-    await cp(path.join(packageRoot, 'dist'), path.join(temporary, 'dist'), { recursive: true, force: true });
-    for (const name of ['package.json', 'README.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md']) {
-      await cp(path.join(packageRoot, name), path.join(temporary, name), { force: true });
+    if (!reuse) {
+      await mkdir(temporary, { recursive: true, mode: 0o700 });
+      await cp(path.join(packageRoot, 'dist'), path.join(temporary, 'dist'), { recursive: true, force: true });
+      for (const name of ['package.json', 'README.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md']) {
+        await cp(path.join(packageRoot, name), path.join(temporary, name), { force: true });
+      }
+      await installProductionDependencies(temporary);
+      await rm(target, { recursive: true, force: true });
+      await rename(temporary, target);
     }
-    await installProductionDependencies(temporary);
-    await rm(target, { recursive: true, force: true });
-    await rename(temporary, target);
   } catch (error) {
     await rm(temporary, { recursive: true, force: true });
     throw error;
@@ -60,8 +68,10 @@ async function installService(config: OpenTigCliConfig, unitPath: string, io: Se
   await rename(temporaryUnit, unitPath);
   await chmod(unitPath, 0o600);
 
+  await saveInstallation(config.home, { schema: 1, version: OPEN_TIG_APP_VERSION, layout: reuse ? installed.layout : 'flat', host: config.host, port: config.port, node: process.execPath });
   await runRequired('systemctl', ['--user', 'daemon-reload']);
-  await runRequired('systemctl', ['--user', 'enable', '--now', UNIT_NAME]);
+  await runRequired('systemctl', ['--user', 'enable', UNIT_NAME]);
+  await runRequired('systemctl', ['--user', 'restart', UNIT_NAME]);
   await runRequired('loginctl', ['enable-linger']);
   io.out(`OpenTig service installed and started on ${config.host}:${config.port}.`);
   io.out(`Unit: ${unitPath}`);

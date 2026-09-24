@@ -4,12 +4,13 @@ import { Popover } from '@base-ui/react/popover';
 import { IconAlertTriangle, IconCheck, IconDownload, IconExternalLink, IconLoader2, IconRefresh } from '@tabler/icons-react';
 import { summarizeUpdateReleaseNotes } from './update-release-notes';
 import { Button } from '@/components/ui/button';
+import { updatesApi } from './update-api';
 
 function useUpdateStatus(interval: number) {
   const [status, setStatus] = useState<DesktopUpdateStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
-    const api = window.opentigDesktop?.updates;
+    const api = updatesApi();
     if (!api) return;
     let active = true;
     const refresh = () => { void api.getStatus().then((next) => {
@@ -25,31 +26,32 @@ function useUpdateStatus(interval: number) {
 export function UpdateSettings() {
   const { status, setStatus, error, setError } = useUpdateStatus(1_000);
   const [pending, setPending] = useState(false);
-  const api = window.opentigDesktop?.updates;
-  if (!api) return <p className="text-sm text-muted-foreground">Open the desktop app to manage its updates. This browser uses the version running on your server.</p>;
+  const api = updatesApi();
   if (!status) return <p role="status">{error ?? 'Checking update settings…'}</p>;
   const action = async (kind: 'check' | 'download' | 'install') => {
     setPending(true); setError(null);
     try { setStatus(await api[kind]()); }
-    catch { setError('The update action could not be completed. Try again.'); }
+    catch (error) { setError(error instanceof Error ? error.message : 'The update action could not be completed. Try again.'); }
     finally { setPending(false); }
   };
   const busy = pending || ['checking', 'downloading', 'installing'].includes(status.phase);
   return <div className="settings-field">
     <div className="settings-field-label">
       <strong>OpenTig {status.currentVersion}</strong>
-      <span>{status.phase === 'unavailable' ? 'This build does not check for automatic updates.' : 'Stable releases are checked at startup, every 5 minutes, and when returning to the app if a check is due. Download and restart when you are ready.'}</span>
+      <span>{status.phase === 'unavailable' ? 'This build does not check for automatic updates.' : window.opentigDesktop
+        ? 'Stable releases are checked at startup, every 5 minutes, and when returning to the app if a check is due. Download and restart when you are ready.'
+        : 'The server checks for stable releases at startup and every 5 minutes. Download and restart when you are ready.'}</span>
     </div>
     <p className="text-sm" role="status" aria-live="polite">{error ?? status.message ?? updateCopy(status)}</p>
     {status.phase === 'downloading' && <progress className="w-full" aria-label="Update download" max={100} value={status.progress ?? 0} />}
     <div className="flex flex-wrap items-center gap-2">
       {['idle', 'error', 'checking'].includes(status.phase) && <Button variant="outline" disabled={busy} onClick={() => void action('check')}>{status.phase === 'checking' ? 'Checking…' : 'Check for updates'}</Button>}
       {status.phase === 'available' && <Button disabled={busy} onClick={() => void action('download')}>Download {status.availableVersion}</Button>}
-      {status.phase === 'ready' && <Button disabled={busy} onClick={() => void action('install')}>Restart and install</Button>}
+      {status.phase === 'ready' && <Button disabled={busy} onClick={() => void action('install')}>{status.reloadRequired ? 'Reload app' : 'Restart and install'}</Button>}
       {status.releaseUrl && <a className="text-sm underline" href={status.releaseUrl} target="_blank" rel="noreferrer">Release notes</a>}
     </div>
     {status.checkedAt && <p className="text-xs text-muted-foreground">Last checked: {new Date(status.checkedAt).toLocaleString()}</p>}
-    {status.phase === 'ready' && <p className="text-xs text-muted-foreground">Save your edits and finish Git operations before restarting. Closing normally will not install the update.</p>}
+    {status.phase === 'ready' && !status.reloadRequired && <p className="text-xs text-muted-foreground">Save your edits and finish Git operations before restarting. Closing normally will not install the update.</p>}
   </div>;
 }
 
@@ -65,14 +67,14 @@ export function DesktopUpdateIndicator() {
   const notes = useMemo(() => summarizeUpdateReleaseNotes(status?.releaseNotes), [status?.releaseNotes]);
   if (!status || ['idle', 'checking', 'unavailable'].includes(status.phase)) return null;
   const unavailable = pending || status.phase === 'downloading' || status.phase === 'installing';
-  const label = status.phase === 'available'
+  const label = status.reloadRequired ? 'Server updated. Save edited files and click to reload.' : status.phase === 'available'
     ? `Update ${status.availableVersion} is available. Click to download.`
     : status.phase === 'ready'
       ? `Update ${status.availableVersion} downloaded. Click to restart and install.`
       : status.phase === 'error' ? 'Update failed. Click to retry.' : updateCopy(status);
   const progress = Math.max(0, Math.min(100, status.progress ?? 0));
   const act = async () => {
-    const api = window.opentigDesktop?.updates;
+    const api = updatesApi();
     if (!api || unavailable || actionPending.current) return;
     actionPending.current = true;
     setPending(true);
@@ -80,7 +82,7 @@ export function DesktopUpdateIndicator() {
     // The icon is the action; the hover card is only release information.
     const action = status.phase === 'available' ? 'download' : status.phase === 'ready' ? 'install' : 'check';
     try { setStatus(await api[action]()); }
-    catch { setError('The update action could not be completed. Click the icon to retry.'); }
+    catch (error) { setError(error instanceof Error ? error.message : 'The update action could not be completed. Click the icon to retry.'); }
     finally { actionPending.current = false; setPending(false); }
   };
   return <Popover.Root open={open} triggerId={triggerId} onOpenChange={(next, details) => {
@@ -149,7 +151,7 @@ function updateCopy(status: DesktopUpdateStatus): string {
     case 'downloading': return `Downloading… ${Math.round(status.progress ?? 0)}%`;
     case 'ready': return `OpenTig ${status.availableVersion} is ready to install.`;
     case 'checking': return 'Checking for a new stable release…';
-    case 'installing': return 'Closing OpenTig to install the update…';
+    case 'installing': return window.opentigDesktop ? 'Closing OpenTig to install the update…' : 'Restarting the server. Reconnecting…';
     case 'idle': return status.checkedAt ? 'You are using the latest stable version.' : 'No update check has completed yet.';
     default: return status.message ?? 'Updates are unavailable.';
   }

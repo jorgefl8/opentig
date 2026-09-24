@@ -14,6 +14,23 @@ const repository = (path: string, sequence: number): RepositoryInfo => ({
 });
 
 describe('CommandRegistry', () => {
+  it('waits for in-flight work and blocks new commands during an update', async () => {
+    const registry = new CommandRegistry();
+    let finish!: () => void;
+    registry.register(OPEN_TIG_SERVER_COMMANDS['repository.openPath'], async (_context, [path]) => {
+      await new Promise<void>((resolve) => { finish = resolve; });
+      return repository(path, 1);
+    });
+    const pending = registry.execute('session', IPC.repositoryOpenPath, ['/repo']);
+    expect(registry.pauseForUpdate()).toBe(false);
+    finish(); await pending;
+    expect(registry.pauseForUpdate()).toBe(true);
+    expect(await registry.execute('session', IPC.repositoryOpenPath, ['/repo'])).toMatchObject({ ok: false });
+    registry.resumeAfterUpdate();
+    const resumed = registry.execute('session', IPC.repositoryOpenPath, ['/repo']);
+    finish(); expect(await resumed).toMatchObject({ ok: true });
+  });
+
   it('executes a typed command and isolates mutable state by session', async () => {
     const registry = new CommandRegistry();
     registry.register(OPEN_TIG_SERVER_COMMANDS['repository.openPath'], (context, [path]) => {
