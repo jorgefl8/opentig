@@ -64,6 +64,8 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - name: Test on Windows before packaging the installer
+        run: npm test
       - name: Validate signing mode
         run: |
           if ($env:RELEASE_SIGNING -cnotin @('unsigned', 'signed')) { throw 'WINDOWS_RELEASE_SIGNING must be unsigned or signed.' }

@@ -87,7 +87,7 @@ export async function readRuntimeState(filePath: string): Promise<OpenTigRuntime
   try {
     value = JSON.parse(await readFile(filePath, 'utf8')) as unknown;
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new Error('No running OpenTig server was found for this home.');
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new Error('No running OpenTig server was found for this home.', { cause: error });
     throw new Error('OpenTig runtime state is unreadable.', { cause: error });
   }
   if (!isRuntimeState(value)) throw new Error('OpenTig runtime state is invalid.');

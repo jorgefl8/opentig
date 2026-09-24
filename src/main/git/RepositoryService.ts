@@ -231,7 +231,7 @@ async function countTextLines(filePath: string): Promise<number> {
   const handle = await open(filePath, 'r');
   const buffer = Buffer.allocUnsafe(64 * 1024);
   let lines = 0;
-  let bytesRead = 0;
+  let bytesRead: number;
   let lastByte = -1;
   try {
     do {

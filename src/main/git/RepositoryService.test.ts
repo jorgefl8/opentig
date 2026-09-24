@@ -39,6 +39,10 @@ describe('RepositoryService change stats', () => {
     const fixture = await repository();
     const linked = path.join(fixture.root, 'linked');
     await execFileAsync('git', ['worktree', 'add', '-b', 'linked', linked], { cwd: fixture.work });
+    // Git may check out CRLF on Windows. Forgetting must preserve the exact
+    // bytes already on disk in each worktree, regardless of autocrlf settings.
+    const mainContents = await readFile(path.join(fixture.work, 'file.txt'));
+    const linkedContents = await readFile(path.join(linked, 'file.txt'));
     const main = fixture.repositories.get(fixture.repositoryId);
     const worktree = await fixture.repositories.openPath(linked);
     const project = (await fixture.settings.createRepositoryProject('Keep group')).repositoryProjects[0]!;
@@ -59,8 +63,8 @@ describe('RepositoryService change stats', () => {
     expect(fixture.settings.filesTreeStates).toEqual([]);
     expect(() => fixture.repositories.get(main.id)).toThrow('Unknown repository');
     expect(() => fixture.repositories.get(worktree.id)).toThrow('Unknown repository');
-    expect(await readFile(path.join(fixture.work, 'file.txt'), 'utf8')).toBe('content\n');
-    expect(await readFile(path.join(linked, 'file.txt'), 'utf8')).toBe('content\n');
+    expect(await readFile(path.join(fixture.work, 'file.txt'))).toEqual(mainContents);
+    expect(await readFile(path.join(linked, 'file.txt'))).toEqual(linkedContents);
     await fixture.settings.flush();
     const restarted = new SettingsStore(path.join(fixture.root, 'settings.json'));
     await restarted.load();

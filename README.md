@@ -312,6 +312,8 @@ Run all quality gates:
 npm run check
 ```
 
+CI runs these quality gates on both Windows and Linux; Windows releases also run the test suite on the Windows builder before packaging. Dependency install scripts are reviewed and pinned in `package.json` (`allowScripts`); review the relevant script again when updating one of those versions.
+
 Build a separate Dev application to evaluate local changes or a checked-out PR:
 
 ```bash

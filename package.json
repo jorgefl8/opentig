@@ -91,7 +91,7 @@
   "devDependencies": {
     "@electron/asar": "4.2.0",
     "@electron/fuses": "1.8.0",
-    "@eslint/js": "10.0.0",
+    "@eslint/js": "10.0.1",
     "@tailwindcss/vite": "4.3.3",
     "@types/node": "24.10.1",
     "@types/react": "19.2.14",
@@ -108,7 +108,13 @@
     "typescript": "6.0.2",
     "typescript-eslint": "8.65.0",
     "vite": "7.3.6",
-    "vitest": "4.1.9",
+    "vitest": "4.1.11",
     "yaml": "2.9.1"
+  },
+  "allowScripts": {
+    "electron-winstaller@5.4.0": true,
+    "esbuild@0.28.1": true,
+    "fsevents@2.3.3": true,
+    "uiohook-napi@1.5.5": true
   }
 }

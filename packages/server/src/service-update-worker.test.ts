@@ -41,7 +41,7 @@ it('switches the unit and launcher metadata together and keeps the address and p
   });
   await applyServiceUpdate(home);
   const unit = await readFile(manager.unit, 'utf8');
-  expect(unit).toContain('app-0.1.3/node_modules/@opentig/cli/dist/bin.mjs');
+  expect(unit.replaceAll('\\\\', '/')).toContain('app-0.1.3/node_modules/@opentig/cli/dist/bin.mjs');
   expect(unit).toContain('"--host" "127.0.0.1" "--port" "16867"');
   expect(await readInstallation(home)).toEqual(next);
   expect(JSON.parse(await readFile(path.join(home, 'service/update-result.json'), 'utf8')).success).toBe(true);

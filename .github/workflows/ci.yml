@@ -10,7 +10,11 @@ permissions:
 
 jobs:
   validate:
-    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 20
 
     steps:
@@ -71,7 +75,7 @@ jobs:
         run: |
           artifact="$(node -p "require('./dist/headless/opentig-headless.json').filename")"
           npx --yes --package "./dist/headless/$artifact" opentig --version
-      - run: npm install --global bun@1.3.0
+      - run: npm install --global --allow-scripts=bun bun@1.3.0
       - name: Run packed CLI with bunx
         shell: bash
         run: |

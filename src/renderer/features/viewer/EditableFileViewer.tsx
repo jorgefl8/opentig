@@ -7,7 +7,7 @@ import type { FileResult, ThemePreference, WriteFileResult } from '@shared/contr
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { OPENTIG_CODE_THEMES } from './diffThemes';
 import { VIEWER_SCROLLBAR_CSS } from './patch-utils';
-import { EditReadyContext } from './PierreEditBoundary';
+import { EditReadyContext } from './edit-ready-context';
 import { PierreWorkerPool } from './PierreWorkerPool';
 import { syncScrollFraction } from './scroll-sync';
 import { buildFileEditorKeymap } from './source-editor-keymap';

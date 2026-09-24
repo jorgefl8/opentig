@@ -19,7 +19,7 @@ export class ClaudeProvider implements AiProvider {
     if (!executable) return { id: this.id, label: 'Claude Code', availability: 'error', installed: false, authStatus: 'unknown', message: 'Install Claude Code to use this harness.', models: MODELS, checkedAt };
     const version = await this.runner.run(executable, ['--version']);
     const auth = await this.runner.run(executable, ['auth', 'status', '--json']);
-    let loggedIn = false;
+    let loggedIn: boolean;
     try { loggedIn = auth.exitCode === 0 && (JSON.parse(auth.stdout) as { loggedIn?: unknown }).loggedIn === true; } catch { loggedIn = false; }
     return {
       id: this.id, label: 'Claude Code', availability: loggedIn ? 'ready' : 'error', installed: true,

@@ -1,12 +1,11 @@
-import { createContext, useCallback, useEffect, useState, type PropsWithChildren } from 'react';
+import { useCallback, useEffect, useState, type PropsWithChildren } from 'react';
 import { EditProvider } from '@pierre/diffs/react';
 import type { EditorOptions } from '@pierre/diffs/edit';
 import { sileo } from 'sileo';
 import { readClipboardText } from '@/lib/browser-capabilities';
+import { EditReadyContext } from './edit-ready-context';
 
 type EditorConstructor = typeof import('@pierre/diffs/edit').Editor;
-
-export const EditReadyContext = createContext(false);
 
 /**
  * Pierre keeps one editor per stable editorOptions object. Mount this provider
