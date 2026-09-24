@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "./mobile.css";
+@import "./copy-button.css";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist-mono";

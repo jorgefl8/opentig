@@ -30,9 +30,9 @@ describe('renderMarkdown', () => {
     expect(html).toContain('class="markdown-code-icon"');
     expect(html).toContain('file_type_typescript.svg');
     expect(html).toContain('data-copy-code=');
-    expect(html).toContain('class="markdown-copy-label tabler-icon tabler-icon-copy"');
+    expect(html).toContain('class="copy-button-icon tabler-icon tabler-icon-copy"');
     expect(html).not.toContain('>Copy</span>');
-    expect(html).toContain('class="markdown-copy-check"');
+    expect(html).toContain('class="copy-button-check"');
     expect(html).toContain('--shiki-light:');
     expect(html).toContain('--shiki-dark:');
   });

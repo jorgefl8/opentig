@@ -209,24 +209,6 @@
   flex: none;
 }
 
-.markdown-code-header button {
-  position: relative;
-  width: 28px;
-  min-width: 28px;
-  overflow: hidden;
-  border-radius: var(--radius-sm);
-  padding: 4px 6px;
-  transition: background-color .15s ease, color .15s ease;
-}
-
-.markdown-code-header button:hover { background: var(--accent); color: var(--accent-foreground); }
-.markdown-copy-label,
-.markdown-copy-check { display: block; transition: opacity .16s ease, transform .2s cubic-bezier(.22, 1, .36, 1); }
-.markdown-copy-label { width: 16px; height: 16px; }
-.markdown-copy-check { position: absolute; inset: 0; display: grid; place-items: center; color: #3fb950; font-family: var(--font-sans); font-size: 14px; font-weight: 800; opacity: 0; transform: translateY(5px) scale(.72); }
-.markdown-code-header button[data-copy-state="copied"] { background: rgb(46 160 67 / 12%); color: #3fb950; }
-.markdown-code-header button[data-copy-state="copied"] .markdown-copy-label { opacity: 0; transform: translateY(-5px) scale(.82); }
-.markdown-code-header button[data-copy-state="copied"] .markdown-copy-check { opacity: 1; transform: translateY(0) scale(1); }
 .markdown-code-content { overflow-x: auto; background: var(--background); }
 .markdown-code-content pre { margin: 0; padding: 14px 16px; background: transparent !important; font-family: var(--font-mono); font-size: 12px; line-height: 1.65; }
 .markdown-code-content .shiki,
