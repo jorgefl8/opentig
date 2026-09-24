@@ -14,6 +14,7 @@ export interface ServiceInstallation {
   host: string;
   port: number;
   node: string;
+  environmentPath?: string | undefined;
 }
 export const stableVersion = (value: unknown): value is string => typeof value === 'string' && /^\d+\.\d+\.\d+$/.test(value);
 export function newerVersion(a: string, b: string): boolean {
@@ -34,6 +35,7 @@ export async function readInstallation(home: string): Promise<ServiceInstallatio
   if (value.schema !== 1 || !stableVersion(value.version) || !['flat', 'npm'].includes(value.layout)
     || typeof value.host !== 'string' || !/^[a-zA-Z0-9.:[\]-]+$/.test(value.host)
     || !Number.isInteger(value.port) || value.port < 1 || value.port > 65535
+    || (value.environmentPath !== undefined && (typeof value.environmentPath !== 'string' || /[\0\r\n]/.test(value.environmentPath)))
     || typeof value.node !== 'string' || !path.isAbsolute(value.node) || /[\0\r\n]/.test(value.node)) throw new Error('Invalid managed service installation.');
   return value;
 }

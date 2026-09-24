@@ -244,7 +244,7 @@ opentig service status
 opentig service uninstall
 ```
 
-Installation stages the exact CLI/client version under the selected OpenTig home, uses that private home as its stable service working directory (including paths containing spaces, quotes, or percent signs), enables a user service and user lingering, and keeps the listener on loopback unless `--host` says otherwise. It never binds the service to a repository. Windows and macOS service installers are not included yet.
+Installation stages the exact CLI/client version under the selected OpenTig home, uses that private home as its stable service working directory (including paths containing spaces, quotes, or percent signs), enables a user service and user lingering, and keeps the listener on loopback unless `--host` says otherwise. The service captures the installing terminal’s `PATH` so locally installed tools such as Codex, Claude Code, OpenCode, and Git remain discoverable. Browser updates preserve the running service’s effective `PATH`, including systemd overrides. Run `opentig service install` again from your terminal after changing your tool locations. It never binds the service to a repository. Windows and macOS service installers are not included yet.
 
 For local tarball testing on Windows:
 

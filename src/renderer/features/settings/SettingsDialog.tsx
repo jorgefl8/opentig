@@ -298,7 +298,7 @@ export function SettingsDialog({ preferences, onPreference, open, onOpenChange, 
                           <AiProviderIcon harness={harness} />
                           <span className="ai-harness-card-copy">
                             <strong>{harnessLabel(harness)}</strong>
-                            <small>{harnessStatus?.version || (loadingStatuses ? 'Checking…' : 'Status not checked')}</small>
+                            <small>{loadingStatuses ? 'Checking…' : harnessStatus?.version || (harnessStatus ? (harnessStatus.installed ? 'Version unavailable' : 'Executable not found') : 'Status not checked')}</small>
                           </span>
                         </span>
                         <Badge variant={availabilityBadgeVariant(harnessStatus)} className={`ai-status-badge ${harnessStatus?.availability ?? 'unknown'}`}>

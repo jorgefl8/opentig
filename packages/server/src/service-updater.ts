@@ -163,7 +163,7 @@ export async function createServiceUpdater(home: string, version: string, profil
       await mkdir(lock, { mode: 0o700 });
       const unit = `opentig-update-${randomUUID()}`;
       try {
-        const next: ServiceInstallation = { ...current, version: release.version, layout: 'npm' };
+        const next: ServiceInstallation = { ...current, version: release.version, layout: 'npm', environmentPath: process.env.PATH ?? current.environmentPath };
         const previousUnit = await readFile(serviceUnitPath(), 'utf8');
         await atomicWrite(path.join(lock, 'plan.json'), JSON.stringify({ home, current, next, previousUnit, integrity: release.integrity }));
         await execute('systemd-run', ['--user', '--collect', '--unit', unit, '--property=Type=exec',

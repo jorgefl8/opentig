@@ -42,7 +42,7 @@ export async function applyServiceUpdate(home: string): Promise<void> {
   try {
     await runUpdateTransaction({
       activate: async () => {
-        await atomicWrite(serviceUnitPath(), renderSystemdUnit({ nodeExecutable: plan.next.node, cliEntrypoint: nextEntry, home, host: plan.next.host, port: plan.next.port }));
+        await atomicWrite(serviceUnitPath(), renderSystemdUnit({ nodeExecutable: plan.next.node, cliEntrypoint: nextEntry, home, host: plan.next.host, port: plan.next.port, environmentPath: plan.next.environmentPath }));
         await saveInstallation(home, plan.next);
       },
       restart: async () => { await systemctl('daemon-reload'); await systemctl('restart', SERVICE_NAME); },

@@ -16,7 +16,7 @@ vi.mock('node:timers/promises', () => ({ setTimeout: async () => undefined }));
 
 let home: string;
 let previousUnit: string;
-const current: ServiceInstallation = { schema: 1, version: '0.1.2', layout: 'flat', host: '127.0.0.1', port: 16867, node: process.execPath };
+const current: ServiceInstallation = { schema: 1, version: '0.1.2', layout: 'flat', host: '127.0.0.1', port: 16867, node: process.execPath, environmentPath: '/home/me/.local/bin:/usr/bin' };
 const next: ServiceInstallation = { ...current, version: '0.1.3', layout: 'npm' };
 beforeEach(async () => {
   home = await mkdtemp(path.join(os.tmpdir(), 'opentig-update-transaction-'));
@@ -24,7 +24,7 @@ beforeEach(async () => {
   manager.systemctl.mockReset();
   await mkdir(path.join(home, 'service/update-lock'), { recursive: true });
   await mkdir(path.join(home, 'service/app-0.1.3'), { recursive: true });
-  previousUnit = renderSystemdUnit({ nodeExecutable: current.node, cliEntrypoint: path.join(home, 'service/app-0.1.2/dist/bin.mjs'), home, host: current.host, port: current.port });
+  previousUnit = renderSystemdUnit({ nodeExecutable: current.node, cliEntrypoint: path.join(home, 'service/app-0.1.2/dist/bin.mjs'), home, host: current.host, port: current.port, environmentPath: current.environmentPath });
   await writeFile(manager.unit, previousUnit);
   await saveInstallation(home, current);
   await writeFile(path.join(home, 'service/app-0.1.3/update-integrity.json'), JSON.stringify({ version: next.version, integrity: 'verified-download' }));
@@ -42,6 +42,7 @@ it('switches the unit and launcher metadata together and keeps the address and p
   await applyServiceUpdate(home);
   const unit = await readFile(manager.unit, 'utf8');
   expect(unit.replaceAll('\\\\', '/')).toContain('app-0.1.3/node_modules/@opentig/cli/dist/bin.mjs');
+  expect(unit).toContain('Environment="PATH=/home/me/.local/bin:/usr/bin"');
   expect(unit).toContain('"--host" "127.0.0.1" "--port" "16867"');
   expect(await readInstallation(home)).toEqual(next);
   expect(JSON.parse(await readFile(path.join(home, 'service/update-result.json'), 'utf8')).success).toBe(true);

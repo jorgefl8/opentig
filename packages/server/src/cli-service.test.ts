@@ -13,9 +13,11 @@ describe('OpenTig systemd service', () => {
       host: '127.0.0.1',
       port: 6767,
       home: '/home/me/.opentig',
+      environmentPath: '/home/me/.local/bin:/usr/bin',
     });
     expect(unit).toContain('ExecStart="/usr/bin/node" "/home/me/.opentig/service/app-0.1.0/dist/bin.mjs" "serve" "--host" "127.0.0.1" "--port" "6767" "--home" "/home/me/.opentig"');
     expect(unit).toContain('WorkingDirectory=/home/me/.opentig/\n');
+    expect(unit).toContain('Environment="PATH=/home/me/.local/bin:/usr/bin"\n');
     expect(unit).toContain('KillSignal=SIGTERM');
     expect(unit).not.toContain('token');
   });
@@ -29,12 +31,22 @@ describe('OpenTig systemd service', () => {
     expect(unit).toContain('/tmp/a\\"b');
   });
 
+
+  it('escapes PATH as one environment assignment and rejects line injection', () => {
+    const input = { nodeExecutable: '/usr/bin/node', cliEntrypoint: '/app/bin.mjs', home: '/home/me', host: '127.0.0.1', port: 6767 };
+    const unit = renderSystemdUnit({ ...input, environmentPath: '/tmp/space path/%tools/"bin":/usr/bin' });
+    expect(unit).toContain('Environment="PATH=/tmp/space path/%%tools/\\"bin\\":/usr/bin"\n');
+    expect(() => renderSystemdUnit({ ...input, environmentPath: '/usr/bin\nExecStart=/tmp/injected' })).toThrow('control characters');
+    expect(renderSystemdUnit(input)).not.toContain('Environment="PATH=');
+  });
+
   it.skipIf(process.platform !== 'linux' || spawnSync('systemd-analyze', ['--version']).status !== 0)('generates a service accepted by the real systemd parser', () => {
     const directory = mkdtempSync(path.join(os.tmpdir(), 'opentig-unit-'));
     try {
       const file = path.join(directory, 'opentig-fixture.service');
       writeFileSync(file, renderSystemdUnit({
         nodeExecutable: process.execPath, cliEntrypoint: '/tmp/opentig/bin.mjs',
+        environmentPath: '/home/me/spaces %tools/"bin":/usr/bin',
         host: '127.0.0.1', port: 6767, home: '/tmp/OpenTig spaces "quotes" %percent backslash\\',
       }));
       const result = spawnSync('systemd-analyze', ['verify', '--man=no', file], { encoding: 'utf8' });

@@ -55,12 +55,14 @@ async function installService(config: OpenTigCliConfig, unitPath: string, io: Se
     throw error;
   }
 
+  const environmentPath = process.env.PATH;
   const unit = renderSystemdUnit({
     nodeExecutable: process.execPath,
     cliEntrypoint: path.join(target, 'dist', 'bin.mjs'),
     host: config.host,
     port: config.port,
     home: config.home,
+    environmentPath,
   });
   await mkdir(path.dirname(unitPath), { recursive: true, mode: 0o700 });
   const temporaryUnit = `${unitPath}.${process.pid}.tmp`;
@@ -68,7 +70,7 @@ async function installService(config: OpenTigCliConfig, unitPath: string, io: Se
   await rename(temporaryUnit, unitPath);
   await chmod(unitPath, 0o600);
 
-  await saveInstallation(config.home, { schema: 1, version: OPEN_TIG_APP_VERSION, layout: reuse ? installed.layout : 'flat', host: config.host, port: config.port, node: process.execPath });
+  await saveInstallation(config.home, { schema: 1, version: OPEN_TIG_APP_VERSION, layout: reuse ? installed.layout : 'flat', host: config.host, port: config.port, node: process.execPath, environmentPath });
   await runRequired('systemctl', ['--user', 'daemon-reload']);
   await runRequired('systemctl', ['--user', 'enable', UNIT_NAME]);
   await runRequired('systemctl', ['--user', 'restart', UNIT_NAME]);
@@ -107,6 +109,7 @@ export function renderSystemdUnit(input: {
   host: string;
   port: number;
   home: string;
+  environmentPath?: string | undefined;
 }): string {
   const args = [
     input.nodeExecutable,
@@ -125,7 +128,7 @@ Type=simple
 WorkingDirectory=${systemdWorkingDirectory(input.home)}
 ExecStart=${args.map(systemdQuote).join(' ')}
 Environment=NODE_ENV=production
-Restart=on-failure
+${input.environmentPath === undefined ? '' : `Environment=${systemdQuote(`PATH=${input.environmentPath}`)}\n`}Restart=on-failure
 RestartSec=3
 KillSignal=SIGTERM
 TimeoutStopSec=10
