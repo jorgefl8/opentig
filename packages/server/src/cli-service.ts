@@ -112,7 +112,7 @@ After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=${systemdQuote(input.home)}
+WorkingDirectory=${systemdWorkingDirectory(input.home)}
 ExecStart=${args.map(systemdQuote).join(' ')}
 Environment=NODE_ENV=production
 Restart=on-failure
@@ -128,6 +128,14 @@ WantedBy=default.target
 function systemdQuote(value: string): string {
   if (value.includes('\0') || value.includes('\r') || value.includes('\n')) throw new Error('Service paths and arguments cannot contain control characters.');
   return `"${value.replaceAll('%', '%%').replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`;
+}
+
+function systemdWorkingDirectory(value: string): string {
+  if (!path.isAbsolute(value) || /[\0\r\n]/.test(value)) throw new Error('Service home must be an absolute single-line path.');
+  // Unlike ExecStart, this setting is a literal path, not a list of quoted
+  // arguments. A final slash also protects trailing spaces/backslashes from
+  // the unit file's whitespace trimming and line continuation handling.
+  return `${value.replaceAll('%', '%%')}/`;
 }
 
 async function assertPackageBuild(packageRoot: string): Promise<void> {
