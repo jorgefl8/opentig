@@ -17,7 +17,7 @@ concurrency:
 jobs:
   publish:
     if: github.repository == 'jorgefl8/opentig' && (github.event_name == 'release' && !github.event.release.prerelease || github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment: release
     timeout-minutes: 10
     permissions:
