@@ -4,7 +4,7 @@
 
 **A focused workspace for reviewing code changes.**
 
-Browse files, inspect diffs, edit, stage, and commit — on your computer or a remote server.
+Browse files, inspect diffs, edit, stage, and commit on your computer or a remote server.
 
 [Download for Windows](https://github.com/jorgefl8/opentig/releases/latest) · [Run in your browser](#run-in-your-browser) · [Documentation](docs/README.md) · [Report a bug](https://github.com/jorgefl8/opentig/issues)
 
