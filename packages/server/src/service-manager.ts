@@ -2,6 +2,7 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { setTimeout as delay } from 'node:timers/promises';
 import { atomicWrite, execute, SERVICE_NAME, serviceUnitPath, systemctl, type ServiceInstallation } from './service-installation';
 import { encodedPowerShell, psQuote, renderLaunchAgent, renderSystemdUnit, renderWindowsTask, windowsServerScript, serviceOwnerMarker, xml, type ServiceDefinitionInput } from './service-definitions';
 
@@ -101,7 +102,24 @@ function macManager(home: string, identity?: string): ServiceManager {
       throw error;
     }
   };
-  const stop = async () => { if (await inspect(job) !== null) await launchctl('bootout', job); };
+  const stop = async () => {
+    const info = await inspect(job);
+    if (info === null) return;
+    const pid = Number(info.match(/\bpid = (\d+)/)?.[1]);
+    await launchctl('bootout', job);
+    // bootout can return before launchd has reaped the process and released the
+    // label. Reusing the label immediately can fail with bootstrap error 5.
+    for (let i = 0; i < 150; i++) {
+      let alive = false;
+      if (pid > 0) {
+        try { process.kill(pid, 0); alive = true; }
+        catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error; }
+      }
+      if (!alive && await inspect(job) === null) return;
+      await delay(100);
+    }
+    throw new Error('The macOS service did not finish stopping.');
+  };
   return {
     kind: 'launchd', location: file, startup: 'Starts at macOS login and stops at logout. Keep the user signed in and the Mac awake for remote access.',
     preflight: async () => {
@@ -145,9 +163,36 @@ async function windowsManager(home: string, identity?: string): Promise<ServiceM
       await ps(`${connection} $xml = [IO.File]::ReadAllText(${psQuote(file)}, [Text.Encoding]::Unicode); $null = $folder.RegisterTask(${psQuote(taskName)}, $xml, 6, ${psQuote(sid)}, $null, 3, $null)`);
     } finally { await rm(file, { force: true }); }
   };
-  const stopTask = async (taskName: string) => { await ps(`${task(taskName)} if ($null -ne $task) { $task.Stop(0); for ($i = 0; $i -lt 100 -and $task.State -eq 4; $i++) { Start-Sleep -Milliseconds 100; $task = $folder.GetTask(${psQuote(taskName)}) }; if ($task.State -eq 4) { throw 'OpenTig task did not stop' } }`); };
+  const stopTask = async (taskName: string) => {
+    await ps(`${task(taskName)}
+if ($null -ne $task) {
+  $task.Enabled = $false
+  $action = $task.Definition.Actions.Item(1)
+  $arguments = [string]$action.Arguments
+  if ($arguments -notmatch '-EncodedCommand ([A-Za-z0-9+/=]+)$') { throw 'Unexpected OpenTig task action' }
+  $encoded = $Matches[1]
+  $pattern = '(?i)(?:^|\\s)-EncodedCommand\\s+"?' + [regex]::Escape($encoded) + '"?\\s*$'
+  # Stop the PowerShell wrapper AND its descendants before Scheduler loses the
+  # parent PID. Stop() alone can leave Node running and holding the data directory.
+  $wrappers = @(Get-CimInstance Win32_Process -Filter "Name = 'powershell.exe'" | Where-Object {
+    $_.ExecutablePath -eq $action.Path -and $_.CommandLine -match $pattern
+  })
+  foreach ($wrapper in $wrappers) {
+    $owner = Invoke-CimMethod -InputObject $wrapper -MethodName GetOwnerSid
+    if ($owner.ReturnValue -ne 0 -or $owner.Sid -ne ${psQuote(sid)}) { throw 'Cannot verify OpenTig task process owner' }
+    & "$env:SystemRoot\\System32\\taskkill.exe" /PID $wrapper.ProcessId /T /F | Out-Null
+    if ($LASTEXITCODE -ne 0 -and (Get-Process -Id $wrapper.ProcessId -ErrorAction SilentlyContinue)) { throw 'OpenTig process tree did not stop' }
+  }
+  $task.Stop(0)
+  for ($i = 0; $i -lt 100 -and $task.State -in @(2, 4); $i++) {
+    Start-Sleep -Milliseconds 100
+    $task = $folder.GetTask(${psQuote(taskName)})
+  }
+  if ($task.State -in @(2, 4)) { throw 'OpenTig task did not stop' }
+}`);
+  };
   const removeTask = async (taskName: string) => { await ps(`${task(taskName)} if ($null -ne $task) { $folder.DeleteTask(${psQuote(taskName)}, 0) }`); };
-  const startTask = async (taskName: string) => { await ps(`${task(taskName)} if ($null -eq $task) { throw 'OpenTig task is missing' }; $null = $task.Run($null)`); };
+  const startTask = async (taskName: string) => { await ps(`${task(taskName)} if ($null -eq $task) { throw 'OpenTig task is missing' }; $task.Enabled = $true; $null = $task.Run($null)`); };
   const state = async (taskName: string): Promise<ServiceState> => JSON.parse(await ps(`${task(taskName)} @{ running = ($null -ne $task -and $task.State -eq 4); enabled = ($null -ne $task -and $task.Enabled); starting = ($null -ne $task -and $task.State -eq 2) } | ConvertTo-Json -Compress`));
   return {
     kind: 'windows-task', location: `Task Scheduler: ${name}`, startup: 'Starts at Windows login and stops at logout. Keep the user signed in and the PC awake for remote access.',
@@ -155,7 +200,8 @@ async function windowsManager(home: string, identity?: string): Promise<ServiceM
     render: input => renderWindowsTask({ name, sid, powershell, home, script: windowsServerScript(input) }),
     read: async () => await ps(`${task(name)} if ($null -ne $task) { $task.Xml }`) || null,
     owns: definition => definition.includes(`<Description>${serviceOwnerMarker(home)}</Description>`),
-    write: definition => register(name, definition),
+    // Stop using the OLD action before overwriting its identifying arguments.
+    write: async definition => { await stopTask(name); await register(name, definition); },
     restart: async () => { await stopTask(name); await startTask(name); },
     stop: () => stopTask(name),
     remove: () => removeTask(name),
@@ -166,7 +212,7 @@ async function windowsManager(home: string, identity?: string): Promise<ServiceM
       const script = `& ${[node, entry, home, id].map(psQuote).join(' ')}; exit $LASTEXITCODE`;
       await register(id, renderWindowsTask({ name: id, sid, powershell, script, home, worker: true }));
       try { await startTask(id); } catch (error) { await removeTask(id); throw error; }
-      return { running: async () => { const current = await state(id); return current.running || current.starting === true; }, cleanup: () => removeTask(id) };
+      return { running: async () => { const current = await state(id); return current.running || current.starting === true; }, cleanup: async () => { await stopTask(id); await removeTask(id); } };
     },
     cleanupWorker: async id => { if (/^OpenTig Update [a-f0-9-]+$/.test(id)) await removeTask(id); },
   };

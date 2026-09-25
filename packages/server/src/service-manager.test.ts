@@ -101,7 +101,21 @@ it('loads a LaunchAgent in the GUI domain and submits updates as a separate laun
   Object.defineProperty(process, 'getuid', { value: () => 501, configurable: true });
   const home = await mkdtemp(path.join(os.tmpdir(), 'opentig-launchd-')); homes.push(home);
   vi.spyOn(os, 'homedir').mockReturnValue(home);
-  command.mockResolvedValue({ stdout: `state = running\npid = ${process.pid}\n` });
+  let loaded = true;
+  let stillExiting = 2;
+  command.mockImplementation(async (_exe, args: string[]) => {
+    if (args[0] === 'bootout') loaded = false;
+    if (args[0] === 'bootstrap') {
+      expect(stillExiting).toBe(0);
+      loaded = true;
+    }
+    if (args[0] === 'print' && !loaded) throw Object.assign(new Error('Not loaded'), { code: 113 });
+    return { stdout: `state = running\npid = ${process.pid}\n` };
+  });
+  vi.spyOn(process, 'kill').mockImplementation(() => {
+    if (stillExiting > 0) { stillExiting--; return true; }
+    throw Object.assign(new Error('Exited'), { code: 'ESRCH' });
+  });
   const manager = await createServiceManager(home);
   await manager.write(manager.render({ ...input, home }));
   expect(manager.owns((await manager.read())!)).toBe(true);
@@ -115,4 +129,27 @@ it('loads a LaunchAgent in the GUI domain and submits updates as a separate laun
   expect(args.slice(0, 2)).toEqual(['submit', '-l']);
   expect(args[2]).toMatch(/^com\.opentig\.update\./);
   expect(args.slice(3, 6)).toEqual(['--', '/usr/bin/node', '/tmp/service-update.mjs']);
+});
+
+it('stops the previous Windows task tree before replacing its action and re-enables it on restart', async () => {
+  Object.defineProperty(process, 'platform', { value: 'win32' });
+  const scripts: string[] = [];
+  command.mockImplementation(async (_exe, args: string[]) => {
+    const script = Buffer.from(args.at(-1)!, 'base64').toString('utf16le');
+    scripts.push(script);
+    return { stdout: script.includes('GetCurrent().User.Value') ? 'S-1-5-21-123' : '' };
+  });
+  const home = await mkdtemp(path.join(os.tmpdir(), 'opentig-task-stop-')); homes.push(home);
+  const manager = await createServiceManager(home);
+  await manager.write(manager.render({ ...input, home }));
+  const stop = scripts.findIndex(script => script.includes('taskkill.exe'));
+  const register = scripts.findIndex(script => script.includes('.RegisterTask('));
+  expect(stop).toBeGreaterThan(-1);
+  expect(register).toBeGreaterThan(stop);
+  expect(scripts[stop]).toContain('$task.Enabled = $false');
+  expect(scripts[stop]).toContain('$_.ExecutablePath -eq $action.Path -and $_.CommandLine -match $pattern');
+  expect(scripts[stop]).toContain("$owner.Sid -ne 'S-1-5-21-123'");
+  expect(scripts[stop]).toContain('/PID $wrapper.ProcessId /T /F');
+  await manager.restart();
+  expect(scripts.at(-1)).toContain('$task.Enabled = $true; $null = $task.Run($null)');
 });

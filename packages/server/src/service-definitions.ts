@@ -81,7 +81,7 @@ ${input.environmentPath === undefined ? '' : `<key>PATH</key><string>${xml(input
 `;
 }
 
-/** The hidden PowerShell process remains attached, so Scheduler owns the whole process tree. */
+/** Keep a recognizable parent attached so service stop can terminate its process tree. */
 export function windowsServerScript(input: ServiceDefinitionInput): string {
   return `$ErrorActionPreference = 'Stop'; $env:NODE_ENV = 'production'; $env:OPENTIG_SERVICE_HOME = ${psQuote(input.home)}; `
     + (input.environmentPath === undefined ? '' : `$env:PATH = ${psQuote(input.environmentPath)}; `)
