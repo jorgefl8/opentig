@@ -9,6 +9,29 @@ The headless `@opentig/cli` package exposes the same backend directly. It binds
 to loopback by default; `--host` is required for another interface and prints
 the same owner-authority warning.
 
+## Headless server over SSH
+
+On the remote machine (Node.js 24+ and Git required):
+
+```bash
+npx --yes @opentig/cli@latest serve
+```
+
+Keep that process running. On your laptop, forward a local port:
+
+```bash
+ssh -N -L 6767:127.0.0.1:6767 user@your-server
+```
+
+Open `http://127.0.0.1:6767/pair` on the laptop and enter the one-use code printed
+by the server. Select a repository using the visual server folder picker.
+Files, Git, and optional CLI integrations run on the remote host. If local port
+6767 is busy, use `-L 7676:127.0.0.1:6767` and browse to local port 7676 instead.
+
+For a persistent Linux service, see [installation and CLI](getting-started.md).
+For access from a phone, use your private VPN or an HTTPS reverse proxy as
+explained below. Never expose the raw HTTP listener to the public internet.
+
 ## Choose how the browser connects
 
 Open **Settings → Web access** in the desktop application, create a pairing

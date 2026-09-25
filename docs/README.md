@@ -1,24 +1,17 @@
 # OpenTig documentation
 
-These documents expand the project overview in the root [README](../README.md)
-without duplicating its feature catalogue.
+[← OpenTig](../README.md)
 
-- [Server architecture](architecture.md) explains the server-first desktop and
-  browser design, process ownership, request flow, recovery, and source layout.
-- [Network access](web-access.md) explains trusted-LAN browser pairing,
-  authentication, session revocation, diagnostics, and the security boundary.
+Start with the overview in the root README, then choose a guide:
 
-## Implementation status
+| Guide | What it covers |
+| --- | --- |
+| [Installation and CLI](getting-started.md) | Requirements, local browser use, Linux services, data directories, and updates |
+| [Feature guide](features.md) | Repositories, projects, diffs, staging, commits, files, editing, search, history, branches, worktrees, GitHub PRs, optional AI, and shortcuts |
+| [Remote access and pairing](web-access.md) | SSH tunnels, LAN access, HTTPS proxies, browser sessions, and revocation |
+| [Security and AI privacy](security-and-privacy.md) | Trust boundaries, local data, permissions, and what optional AI receives |
+| [Development and packaging](development.md) | Running from source, isolated Dev profiles, validation, and local packages |
+| [Release automation](releases.md) | Drafts, tags, Windows installers, npm publication, and signing |
+| [Architecture](architecture.md) | Shared server, Electron shell, browser transport, and source layout |
 
-The Windows desktop application and paired browsers already use one authenticated
-HTTP/WebSocket server. Electron supervises that server in a utility process and
-retains only capabilities that ordinary browsers cannot provide.
-
-The Electron-free workspace is now the public-package candidate `@opentig/cli`.
-Its thin `opentig` executable, deterministic tarball interface, `npx`/`bunx`
-local verification, private home, named-device pairing, graceful lifecycle, and
-explicit Linux systemd installer reuse the desktop server factory. The release
-pipeline prepares Windows installers and the CLI tarball from one frozen tag.
-Publishing the GitHub release triggers npm publication of that verified tarball;
-npm Trusted publishing must be configured first. See the root README for setup,
-manual retries, and completing older draft releases.
+OpenTig is in early development. The published desktop installer targets Windows x64; the npm CLI supports Linux, macOS, and Windows. The browser accesses repositories on the machine running OpenTig. It does not upload repositories from your browsing device.

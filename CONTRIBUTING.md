@@ -9,7 +9,7 @@
 
 ## Local setup
 
-Requirements: Windows, Node.js 24+, npm 11+, and Git on `PATH`.
+Requirements: Node.js 24+, npm 11+, and Git on `PATH`. Development can run on Linux; Windows installer checks require Windows. See [development and packaging](docs/development.md).
 
 ```powershell
 npm ci
@@ -22,7 +22,7 @@ Every change must pass:
 
 ```powershell
 npm run check
-npm run package
+npm run package:dev
 ```
 
 Add focused tests for behavior changes. Keep Electron security boundaries intact: renderer code must not gain direct Node.js, filesystem, process, or unrestricted IPC access.
