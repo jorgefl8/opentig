@@ -200,7 +200,6 @@
   html .welcome .shortcut { display: none; }
   html .pairing-page, html .access-page { height: 100%; min-height: 0; overflow-y: auto; align-items: safe center; padding: 20px; }
   html .pairing-page section, html .access-page section { min-width: 0; padding: 20px; overflow-wrap: anywhere; }
-  html .server-connection-state { right: 8px; bottom: max(8px, env(safe-area-inset-bottom)); max-width: calc(100vw - 16px); flex-wrap: wrap; }
 }
 
 /* Tablets and touch-enabled desktop windows retain the wide layout, while

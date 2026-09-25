@@ -34,7 +34,7 @@ It works with existing repositories using the Git installation on the host. You 
 | **Work with Git** | Stage files, commit, pull and push, inspect history, and switch branches and worktrees. [Details](docs/features.md#safe-pull-and-push) |
 | **Keep repositories together** | Recent repositories, project groups, and manual relocation without moving files. [Details](docs/features.md#repositories-and-projects) |
 | **Review GitHub PRs** | Browse pull requests, inspect their changes, and prepare new PRs through your authenticated `gh` CLI. [Details](docs/features.md#github-pull-requests) |
-| **Use a remote server** | Run without Electron, pair your browser, and work with repositories on the server. [Details](docs/web-access.md) |
+| **Use a remote server** | Run without Electron, pair your browser, and work with repositories on the server. A single persistent notification tracks connection problems and disappears when you reconnect. [Details](docs/web-access.md) |
 
 The interface defaults to **Plus Jakarta Sans**, with **JetBrains Mono** for code. Choose each independently in Settings → General; existing font selections are preserved.
 

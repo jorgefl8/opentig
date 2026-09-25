@@ -1,4 +1,5 @@
-import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { sileo, type SileoOptions } from 'sileo';
 import { SplashScreen } from '@/components/SplashScreen';
 import { Button } from '@/components/ui/button';
 import { PairingCommand } from '@/features/auth/PairingCommand';
@@ -14,6 +15,7 @@ const COPY: Record<ServerConnectionState, string> = {
   'incompatible-version': 'Client and server versions are incompatible',
   offline: 'OpenTig server is offline',
 };
+let nextConnectionToastId = 0;
 
 export function ServerConnectionBoundary({ children }: { children: ReactNode }) {
   const state = useSyncExternalStore(
@@ -22,10 +24,36 @@ export function ServerConnectionBoundary({ children }: { children: ReactNode }) 
     serverClient.transport.getState,
   );
   const [connectedBefore, setConnectedBefore] = useState(false);
+  const toastId = useRef<string | null>(null);
 
   useEffect(() => {
     if (state === 'connected' && !window.opentigDesktop) return maintainBrowserSession();
   }, [state]);
+
+  useEffect(() => {
+    if (connectedBefore && state !== 'connected' && state !== 'auth-required') {
+      // Update one notification throughout an outage, without replacing other
+      // app notifications. A fresh ID after recovery also isolates Sileo's
+      // pending exit animation from a new, immediately following outage.
+      const options: SileoOptions & { id: string } = {
+        id: toastId.current ?? `server-connection:${++nextConnectionToastId}`,
+        title: COPY[state],
+        type: state === 'connecting' || state === 'reconnecting' ? 'warning' : 'error',
+        position: 'bottom-right',
+        duration: null,
+        autopilot: false,
+      };
+      toastId.current = sileo.show(options);
+    } else if (toastId.current) {
+      sileo.dismiss(toastId.current);
+      toastId.current = null;
+    }
+  }, [connectedBefore, state]);
+
+  useEffect(() => () => {
+    if (toastId.current) sileo.dismiss(toastId.current);
+    toastId.current = null;
+  }, []);
 
   useEffect(() => {
     if (state === 'connected') setConnectedBefore(true);
@@ -67,15 +95,5 @@ export function ServerConnectionBoundary({ children }: { children: ReactNode }) 
     );
   }
 
-  return (
-    <>
-      {children}
-      {connectedBefore && state !== 'connected' && (
-        <div className={`server-connection-state ${state}`} role="status" aria-live="polite">
-          <span className="server-connection-dot" aria-hidden="true" />
-          {COPY[state]}
-        </div>
-      )}
-    </>
-  );
+  return children;
 }

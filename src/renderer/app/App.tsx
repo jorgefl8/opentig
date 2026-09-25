@@ -5,7 +5,7 @@ import {
   IconArrowLeft, IconGitCommit, IconFileArrowRight, IconFiles, IconGitCompare, IconGitPullRequest, IconHistory,
   IconLoader4, IconRestore, IconSearch, IconTrash,
 } from '@tabler/icons-react';
-import { Toaster, sileo } from 'sileo';
+import { sileo } from 'sileo';
 import type { BootstrapData, CommitSplitProposal, FileHistoryPathChange, FileHistoryState, GhCliStatus, GitHubRepositoryInfo, OpenTigCapabilities, Preferences, PullRequestState, PullRequestSummary, PullResult, PushResult, RecentRepository, RepositoryInfo, UndoLatestCommitResult } from '../../shared/contracts';
 import { matchesCombo, resolveShortcuts, type ShortcutMap } from '../../shared/shortcuts';
 import { ShortcutsProvider } from './ShortcutsContext';
@@ -1894,7 +1894,6 @@ export default function App() {
   if (!repository) {
     return (
       <TooltipProvider>
-        <Toaster theme="light" position="bottom-right" />
         {browserRepositoryDialog}
         <div className="fixed right-4 top-4 z-40"><DesktopUpdateIndicator /></div>
         <Welcome recent={bootstrap.recentRepositories} onOpen={openRepository} onRecent={(id) => void selectRecent(id)} />
@@ -1911,11 +1910,6 @@ export default function App() {
     <ShortcutsProvider shortcuts={shortcuts}>
     <TooltipProvider>
       {browserRepositoryDialog}
-      {/* Sileo names its themes after the page, not the toast: `light` fills the
-          toast with #1a1a1a and `dark` with #f2f2f2. Pinning it to `light` keeps
-          every toast dark whatever the app theme is, and also sidesteps `system`,
-          which sileo resolves from the OS instead of OpenTig's own preference. */}
-      <Toaster theme="light" position="bottom-right" />
       {quickOpen && (
         <Suspense fallback={null}>
           <QuickOpenDialog

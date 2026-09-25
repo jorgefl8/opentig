@@ -151,8 +151,10 @@ without changing the global npm package or the desktop app.
 
 ## Connection behavior
 
-Healthy connections do not show a persistent status pill. A visible pill means
-the client is reconnecting, offline, or incompatible. Before the first successful
+Healthy connections do not show a connection notification. After a successful
+connection, one persistent notification tracks connecting, reconnecting,
+offline, or incompatible states without accumulating alerts on retries. It
+disappears on reconnection or when pairing is required. Before the first successful
 connection, OpenTig shows a full loading state instead of a partial application.
 
 On a transient disconnect:
