@@ -64,8 +64,8 @@ describe('SettingsStore AI preferences', () => {
     const store = new SettingsStore(file);
     await store.load();
     expect(store.preferences.wrapLines).toBe(false);
-    expect(store.preferences.uiFont).toBe('geist');
-    expect(store.preferences.monoFont).toBe('inconsolata');
+    expect(store.preferences.uiFont).toBe('plus-jakarta-sans');
+    expect(store.preferences.monoFont).toBe('jetbrains-mono');
     expect(store.preferences.commitMessageHarness).toBe('codex');
     expect(store.preferences.commitMessageModels).toMatchObject({ codex: 'default', claude: 'default', opencode: 'default' });
   });
@@ -85,12 +85,16 @@ describe('SettingsStore AI preferences', () => {
     await store.load();
     await store.setPreferences({ uiFont: 'plus-jakarta-sans', monoFont: 'jetbrains-mono' });
     expect(store.preferences).toMatchObject({ uiFont: 'plus-jakarta-sans', monoFont: 'jetbrains-mono' });
+    await store.setPreferences({ uiFont: 'geist', monoFont: 'inconsolata' });
+    const reloaded = new SettingsStore(file);
+    await reloaded.load();
+    expect(reloaded.preferences).toMatchObject({ uiFont: 'geist', monoFont: 'inconsolata' });
     await store.setPreferences({ uiFont: 'space-grotesk', monoFont: 'space-grotesk' });
     expect(store.preferences).toMatchObject({ uiFont: 'space-grotesk', monoFont: 'space-grotesk' });
     await store.setPreferences({ uiFont: 'satoshi' as never });
     expect(store.preferences.uiFont).toBe('plus-jakarta-sans');
     await store.setPreferences({ uiFont: 'inconsolata' as never, monoFont: 'times' as never });
-    expect(store.preferences).toMatchObject({ uiFont: 'geist', monoFont: 'inconsolata' });
+    expect(store.preferences).toMatchObject({ uiFont: 'plus-jakarta-sans', monoFont: 'jetbrains-mono' });
   });
 
   it('persists valid selections and drops invalid model values', async () => {

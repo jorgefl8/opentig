@@ -38,7 +38,7 @@ const defaults: SettingsData = {
   activeRepositoryId: null,
   preferences: {
     theme: 'system', diffView: 'unified', changesLayout: 'tree', wrapLines: false, sidebarWidth: 400, showDotEnvFiles: true, uiZoom: 100,
-    uiFont: 'geist', monoFont: 'inconsolata',
+    uiFont: 'plus-jakarta-sans', monoFont: 'jetbrains-mono',
     commitMessageHarness: 'codex', commitMessageModels: { codex: 'default', claude: 'default', opencode: 'default' },
     shortcutOverrides: {}, doubleControlShortcutEnabled: true,
     remoteFetchIntervalSeconds: DEFAULT_REMOTE_FETCH_INTERVAL_SECONDS,
@@ -253,7 +253,7 @@ export class SettingsStore {
     next.showDotEnvFiles = typeof next.showDotEnvFiles === 'boolean' ? next.showDotEnvFiles : true;
     next.uiZoom = Math.max(80, Math.min(130, Math.round(Number(next.uiZoom) || 100)));
     next.uiFont = normalizeUiFont(next.uiFont);
-    next.monoFont = isMonoFont(next.monoFont) ? next.monoFont : 'inconsolata';
+    next.monoFont = isMonoFont(next.monoFont) ? next.monoFont : 'jetbrains-mono';
     next.commitMessageHarness = isHarness(next.commitMessageHarness) ? next.commitMessageHarness : 'codex';
     next.commitMessageModels = modelPreferences(next.commitMessageModels);
     next.shortcutOverrides = sanitizeShortcutOverrides(next.shortcutOverrides);
@@ -400,7 +400,7 @@ function validate(value: unknown, defaultDoubleControlShortcutEnabled: boolean):
         showDotEnvFiles: typeof parsedPreferences.data.showDotEnvFiles === 'boolean' ? parsedPreferences.data.showDotEnvFiles : true,
         uiZoom: Math.max(80, Math.min(130, Math.round(Number(parsedPreferences.data.uiZoom) || 100))),
         uiFont: normalizeUiFont(parsedPreferences.data.uiFont),
-        monoFont: isMonoFont(parsedPreferences.data.monoFont) ? parsedPreferences.data.monoFont : 'inconsolata',
+        monoFont: isMonoFont(parsedPreferences.data.monoFont) ? parsedPreferences.data.monoFont : 'jetbrains-mono',
         commitMessageHarness: isHarness(parsedPreferences.data.commitMessageHarness) ? parsedPreferences.data.commitMessageHarness : 'codex',
         commitMessageModels: modelPreferences(parsedPreferences.data.commitMessageModels),
         shortcutOverrides: sanitizeShortcutOverrides(parsedPreferences.data.shortcutOverrides),
@@ -494,7 +494,7 @@ function isHarness(value: unknown): value is AiHarnessId {
 function normalizeUiFont(value: unknown): UiFontPreference {
   // Replace preferences saved by versions that exposed the removed Fontshare faces.
   if (value === 'cabinet-grotesk' || value === 'satoshi') return 'plus-jakarta-sans';
-  return value === 'geist' || value === 'plus-jakarta-sans' || value === 'space-grotesk' ? value : 'geist';
+  return value === 'geist' || value === 'plus-jakarta-sans' || value === 'space-grotesk' ? value : 'plus-jakarta-sans';
 }
 
 function isMonoFont(value: unknown): value is MonoFontPreference {

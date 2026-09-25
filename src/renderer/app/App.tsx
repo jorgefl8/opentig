@@ -216,8 +216,8 @@ export default function App() {
   const diffView = mobile ? mobileDiffView : bootstrap?.preferences.diffView ?? 'unified';
   const wrapLines = bootstrap?.preferences.wrapLines ?? false;
   const uiZoom = bootstrap?.preferences.uiZoom ?? 100;
-  const uiFont = bootstrap?.preferences.uiFont ?? 'geist';
-  const monoFont = bootstrap?.preferences.monoFont ?? 'inconsolata';
+  const uiFont = bootstrap?.preferences.uiFont ?? 'plus-jakarta-sans';
+  const monoFont = bootstrap?.preferences.monoFont ?? 'jetbrains-mono';
   const shortcuts = useMemo(() => resolveShortcuts(bootstrap?.preferences.shortcutOverrides), [bootstrap?.preferences.shortcutOverrides]);
 
   useEffect(() => {
