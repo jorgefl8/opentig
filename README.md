@@ -1,6 +1,6 @@
 <div align="center">
 
-# OpenTig
+<h1><img src="public/opentig.svg" alt="" width="36" height="36" align="absmiddle"> OpenTig</h1>
 
 **A focused workspace for reviewing code changes.**
 
@@ -52,7 +52,8 @@ The [full feature guide](docs/features.md) covers these workflows, optional AI a
 
 Download the `OpenTig-…-win32-x64-Setup.exe` installer from the [latest release](https://github.com/jorgefl8/opentig/releases/latest). Git must be available on your machine.
 
-The Windows installer is currently **unsigned**, so Windows may show an unknown-publisher or SmartScreen warning.
+> [!WARNING]
+> The Windows installer is currently **unsigned**, so Windows may show an unknown-publisher or SmartScreen warning.
 
 ### Run in your browser
 
@@ -71,7 +72,9 @@ npm install -g @opentig/cli@latest
 opentig serve
 ```
 
-The server listens on `127.0.0.1:6767` by default. Reach it through an SSH tunnel or an HTTPS reverse proxy, then pair your browser using the code printed on the server. The folder picker selects **folders on that server**, not on your laptop or phone.
+Server mode is designed for personal access through **Cloudflare Tunnel**, a **private network such as Tailscale**, or an SSH tunnel. The server listens on `127.0.0.1:6767` by default. A tunnel or HTTPS reverse proxy on the same machine can reach this address without enabling LAN access. For direct access over a private network, bind to its interface with `--host`; alternatively, keep loopback and use a private HTTPS proxy such as Tailscale Serve. OpenTig does not configure these services for you. See [remote access](docs/web-access.md) for setup details.
+
+Pair your browser using the code printed on the server. The folder picker selects **folders on that server**, not on your laptop or phone.
 
 To keep the CLI running after closing the terminal, use `opentig service install`. Linux starts it at boot with lingering; macOS and Windows start it at login and stop it at logout. This CLI service is independent of the desktop app.
 

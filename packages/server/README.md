@@ -58,7 +58,9 @@ Start without opening a browser:
 npx --yes @opentig/cli@latest serve
 ```
 
-The default listener stays on `127.0.0.1:6767`. Reach it through an SSH tunnel or an HTTPS reverse proxy, then pair your browser with the one-use code printed on the server. The visual folder picker selects **folders on the server**, not on your laptop or phone.
+Server mode is designed for personal access through **Cloudflare Tunnel**, a **private network such as Tailscale**, or an SSH tunnel. The default listener stays on `127.0.0.1:6767`, which a tunnel or HTTPS reverse proxy on the same machine can reach. For direct private-network access, bind to its interface with `--host`; alternatively, keep loopback and use a private HTTPS proxy such as Tailscale Serve. Tunnel and VPN setup are managed separately from OpenTig.
+
+Pair your browser with the one-use code printed on the server. The visual folder picker selects **folders on the server**, not on your laptop or phone.
 
 After a global installation, run `opentig pair` as the same OS user to generate a fresh five-minute pairing code for the running instance. If you use a custom data directory, pass the same `--home` value.
 
