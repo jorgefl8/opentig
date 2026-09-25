@@ -502,7 +502,9 @@ describe('GitRepositoryOperations safe worktree removal', () => {
     const recents = (result as { recentRepositories: { path: string }[] }).recentRepositories;
     expect(recents).toHaveLength(1);
     expect(await realPath(recents[0]!.path)).toBe(await realPath(fixture.work));
-  });
+  // This scenario opens both worktrees and performs multiple real Git scans.
+  // Windows runners can exceed the suite's 20s budget under parallel load.
+  }, process.platform === 'win32' ? 60_000 : 20_000);
 
   it('removes a worktree whose path contains spaces and Unicode', async () => {
     const fixture = await managementRepository();
