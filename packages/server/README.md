@@ -64,18 +64,19 @@ After a global installation, run `opentig pair` as the same OS user to generate 
 
 Paired browsers have the host user's filesystem, Git, and configured CLI authority. Keep access private and do not expose the raw HTTP port publicly. See [remote access and pairing](https://github.com/jorgefl8/opentig/blob/main/docs/web-access.md) for SSH and reverse-proxy examples.
 
-## Keep a Linux server running
+## Keep a background server running
 
-After installing globally, Linux users with systemd can opt into a background service:
+After installing globally, opt into a background service on Linux, macOS, or Windows:
 
 ```bash
 opentig service install --host 127.0.0.1 --port 6767
 opentig service status
+opentig service restart
 ```
 
-The service uses a persistent runtime outside the temporary package cache and starts independently of any repository. Running `npx` or `bunx` alone never installs a background service. Use `opentig service uninstall` to remove it. Service installation for macOS and Windows is not included yet.
+The service uses a persistent runtime outside the temporary package cache and starts independently of any repository. Running `npx` or `bunx` alone never installs a background service. Use `opentig service uninstall` to remove it. Linux uses systemd with lingering and starts at boot. macOS uses a user LaunchAgent and Windows uses a Task Scheduler task for the current user; these start at login and stop at logout. Keep the machine awake for remote access. This service is independent of the desktop app.
 
-Managed Linux services can **download updates and restart from the browser UI**. Those updates replace the service's runtime, without changing the global npm package. For foreground instances, stop the process and start the desired package version. Pin an exact version instead of `latest` for repeatable deployments. See [installation, services, and updates](https://github.com/jorgefl8/opentig/blob/main/docs/getting-started.md).
+Managed services on all three platforms can **download updates and restart from the browser UI**. Those updates replace the service's runtime, without changing the global npm package. For foreground instances, stop the process and start the desired package version. Pin an exact version instead of `latest` for repeatable deployments. See [installation, services, and updates](https://github.com/jorgefl8/opentig/blob/main/docs/getting-started.md).
 
 ## Configuration and scope
 

@@ -6,7 +6,7 @@ Start with the overview in the root README, then choose a guide:
 
 | Guide | What it covers |
 | --- | --- |
-| [Installation and CLI](getting-started.md) | Requirements, local browser use, Linux services, data directories, and updates |
+| [Installation and CLI](getting-started.md) | Requirements, local browser use, cross-platform background services, data directories, and updates |
 | [Feature guide](features.md) | Repositories, projects, diffs, staging, commits, files, editing, search, history, branches, worktrees, GitHub PRs, optional AI, and shortcuts |
 | [Remote access and pairing](web-access.md) | SSH tunnels, LAN access, HTTPS proxies, browser sessions, and revocation |
 | [Security and AI privacy](security-and-privacy.md) | Trust boundaries, local data, permissions, and what optional AI receives |

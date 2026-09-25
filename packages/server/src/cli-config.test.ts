@@ -41,7 +41,8 @@ describe('OpenTig CLI arguments', () => {
     expect(parseCliArguments(['service', 'status', '--home', 'state'], {}, cwd, home)).toMatchObject({
       command: 'service', serviceAction: 'status', home: path.join(cwd, 'state'),
     });
-    expect(() => parseCliArguments(['service'], {}, cwd, home)).toThrow('requires install, status, or uninstall');
+    expect(parseCliArguments(['service', 'restart'], {}, cwd, home).serviceAction).toBe('restart');
+    expect(() => parseCliArguments(['service'], {}, cwd, home)).toThrow('requires install, status, restart, or uninstall');
     expect(() => parseCliArguments(['service', 'install', 'repo'], {}, cwd, home)).toThrow('Add and select repositories from the OpenTig web UI');
   });
 

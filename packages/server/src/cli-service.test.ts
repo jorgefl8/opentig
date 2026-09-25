@@ -24,10 +24,11 @@ describe('OpenTig systemd service', () => {
 
   it('escapes systemd specifiers and quotes', () => {
     const unit = renderSystemdUnit({
-      nodeExecutable: '/opt/node', cliEntrypoint: '/tmp/open%tig/bin.mjs',
-      host: '127.0.0.1', port: 6767, home: '/tmp/a"b',
+      nodeExecutable: '/opt/node', cliEntrypoint: '/tmp/open%tig/$literal/bin.mjs',
+      host: '127.0.0.1', port: 6767, home: '/tmp/a"b', environmentPath: '/usr/$literal/bin',
     });
-    expect(unit).toContain('/tmp/open%%tig/bin.mjs');
+    expect(unit).toContain('/tmp/open%%tig/$$literal/bin.mjs');
+    expect(unit).toContain('Environment="PATH=/usr/$literal/bin"');
     expect(unit).toContain('/tmp/a\\"b');
   });
 

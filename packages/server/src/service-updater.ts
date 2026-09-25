@@ -1,9 +1,12 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, realpath, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { DESKTOP_UPDATE_CHECK_INTERVAL_MS, type DesktopUpdateStatus, type DesktopUpdatesApi } from '../../../src/shared/desktop-updates';
-import { atomicWrite, execute, newerVersion, packageDirectory, readInstallation, SERVICE_NAME, serviceUnitPath, stableVersion, systemctl, type ServiceInstallation } from './service-installation';
+import { atomicWrite, execute, newerVersion, packageDirectory, readInstallation, stableVersion, type ServiceInstallation } from './service-installation';
+
+import { assertManager, createServiceManager, type ServiceManager } from './service-manager';
+import { runServiceNpm } from './service-npm';
 
 const REPOSITORY = 'jorgefl8/opentig';
 const REGISTRY = 'https://registry.npmjs.org';
@@ -23,7 +26,7 @@ export class ServiceUpdater implements DesktopUpdatesApi {
   constructor(version: string, private readonly backend: ServiceUpdateBackend | null, failedUpdate = false) {
     this.status = { phase: backend ? (failedUpdate ? 'error' : 'idle') : 'unavailable', currentVersion: version, availableVersion: null,
       progress: null, checkedAt: null, releaseUrl: null, releaseNotes: null,
-      message: backend ? (failedUpdate ? 'The new server could not start. The previous version was restored. Check for updates to retry.' : null) : 'Browser updates require an OpenTig Linux service. Install with opentig service install; temporary CLI and Dev instances are updated from the terminal.' };
+      message: backend ? (failedUpdate ? 'The new server could not start. The previous version was restored. Check for updates to retry.' : null) : 'Browser updates require a managed OpenTig CLI service. Install with opentig service install; temporary CLI and Dev instances are updated from the terminal.' };
   }
   getStatus = async () => ({ ...this.status });
   start() { if (this.backend && this.status.phase !== 'error') this.schedule(10_000); }
@@ -120,7 +123,7 @@ export async function stageCliRelease(home: string, release: CliRelease, progres
     await writeFile(tarball, bytes, { mode: 0o600 });
     const target = path.join(temporary, 'app');
     await mkdir(target);
-    await execute('npm', ['install', '--prefix', target, '--ignore-scripts', '--omit=dev', '--no-audit', '--no-fund', '--registry', REGISTRY, tarball], { timeout: 180_000, maxBuffer: 2_000_000 });
+    await runServiceNpm(['install', '--prefix', target, '--ignore-scripts', '--omit=dev', '--no-audit', '--no-fund', '--registry', REGISTRY, tarball]);
     const pkgRoot = path.join(target, 'node_modules/@opentig/cli');
     const pkg = JSON.parse(await readFile(path.join(pkgRoot, 'package.json'), 'utf8'));
     if (pkg.name !== '@opentig/cli' || pkg.version !== release.version) throw new Error('Installed CLI identity mismatch.');
@@ -139,16 +142,20 @@ export async function stageCliRelease(home: string, release: CliRelease, progres
 }
 export async function createServiceUpdater(home: string, version: string, profile: string, address: { host: string; port: number }): Promise<ServiceUpdater> {
   let installation: ServiceInstallation | null = null;
+  let manager: ServiceManager | null = null;
   try {
-    if (profile === 'production' && process.platform === 'linux' && process.env.INVOCATION_ID) {
+    if (profile === 'production') {
+      manager = await createServiceManager(home);
       installation = await readInstallation(home);
-      if (!installation || installation.version !== version || installation.host !== address.host || installation.port !== address.port
-        || await systemctl('show', SERVICE_NAME, '--property=FragmentPath', '--value') !== serviceUnitPath()
+      if (installation) assertManager(installation, manager.kind);
+      const definition = await manager.read();
+      if (!installation || !definition || !manager.owns(definition) || installation.version !== version || installation.host !== address.host || installation.port !== address.port
         || await realpath(process.argv[1]!) !== await realpath(path.join(packageDirectory(home, installation), 'dist/bin.mjs'))
-        || await systemctl('show', SERVICE_NAME, '--property=MainPID', '--value') !== String(process.pid)) installation = null;
+        || !await manager.ownsProcess()) installation = null;
     }
   } catch { installation = null; }
-  if (!installation) return new ServiceUpdater(version, null);
+  if (!installation || !manager) return new ServiceUpdater(version, null);
+  const supervisor = manager;
   const current = installation;
   let failedUpdate = false;
   try {
@@ -161,20 +168,20 @@ export async function createServiceUpdater(home: string, version: string, profil
     install: async (release) => {
       const lock = path.join(home, 'service/update-lock');
       await mkdir(lock, { mode: 0o700 });
-      const unit = `opentig-update-${randomUUID()}`;
+      let worker;
       try {
-        const next: ServiceInstallation = { ...current, version: release.version, layout: 'npm', environmentPath: process.env.PATH ?? current.environmentPath };
-        const previousUnit = await readFile(serviceUnitPath(), 'utf8');
+        const next: ServiceInstallation = { ...current, manager: supervisor.kind, version: release.version, layout: 'npm', environmentPath: process.env.PATH ?? current.environmentPath };
+        const previousUnit = await supervisor.read();
+        if (!previousUnit || !supervisor.owns(previousUnit)) throw new Error('Managed service definition changed.');
         await atomicWrite(path.join(lock, 'plan.json'), JSON.stringify({ home, current, next, previousUnit, integrity: release.integrity }));
-        await execute('systemd-run', ['--user', '--collect', '--unit', unit, '--property=Type=exec',
-          process.execPath, path.join(packageDirectory(home, current), 'dist/service-update.mjs'), home], { timeout: 15_000 });
+        worker = await supervisor.launchWorker(process.execPath, path.join(packageDirectory(home, current), 'dist/service-update.mjs'));
       } catch (error) { await rm(lock, { recursive: true, force: true }); throw error; }
       // A successful restart terminates this old server (and this observer).
       // A worker that exits before restarting must not leave the UI locked.
       for (let attempt = 0; attempt < 120; attempt++) {
         await delay(1000);
-        const state = await systemctl('show', unit, '--property=ActiveState', '--value').catch(() => 'inactive');
-        if (!['active', 'activating', 'deactivating'].includes(state)) {
+        if (!await worker.running()) {
+          await worker.cleanup();
           await rm(lock, { recursive: true, force: true });
           throw new Error('Update worker exited without replacing the server.');
         }

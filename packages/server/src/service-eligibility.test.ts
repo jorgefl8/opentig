@@ -1,0 +1,30 @@
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { saveInstallation } from './service-installation';
+import { createServiceUpdater } from './service-updater';
+const manager = vi.hoisted(() => ({ kind: 'systemd', read: vi.fn(async () => 'owned definition'), owns: vi.fn(() => true), ownsProcess: vi.fn(async () => true) }));
+vi.mock('./service-manager', async original => ({ ...await original<typeof import('./service-manager')>(), createServiceManager: async () => manager }));
+let home: string;
+const entry = process.argv[1];
+beforeEach(async () => {
+  home = await mkdtemp(path.join(os.tmpdir(), 'opentig-eligibility-'));
+  await mkdir(path.join(home, 'service/app-0.1.4/dist'), { recursive: true });
+  process.argv[1] = path.join(home, 'service/app-0.1.4/dist/bin.mjs');
+  await writeFile(process.argv[1], 'fixture');
+  manager.ownsProcess.mockResolvedValue(true); manager.owns.mockReturnValue(true);
+});
+afterEach(async () => { process.argv[1] = entry!; await rm(home, { recursive: true, force: true }); });
+it.each(['systemd', 'launchd', 'windows-task'] as const)('enables browser updates only for the actual managed %s instance', async kind => {
+  manager.kind = kind;
+  const address = { host: '127.0.0.1', port: 16767 };
+  await saveInstallation(home, { schema: 1, manager: kind, version: '0.1.4', layout: 'flat', node: process.execPath, ...address });
+  expect((await (await createServiceUpdater(home, '0.1.4', 'production', address)).getStatus()).phase).toBe('idle');
+  expect((await (await createServiceUpdater(home, '0.1.4', 'dev', address)).getStatus()).phase).toBe('unavailable');
+  expect((await (await createServiceUpdater(home, '0.1.4', 'production', { ...address, port: 16867 })).getStatus()).phase).toBe('unavailable');
+  manager.ownsProcess.mockResolvedValue(false);
+  expect((await (await createServiceUpdater(home, '0.1.4', 'production', address)).getStatus()).phase).toBe('unavailable');
+  manager.ownsProcess.mockResolvedValue(true); manager.owns.mockReturnValue(false);
+  expect((await (await createServiceUpdater(home, '0.1.4', 'production', address)).getStatus()).phase).toBe('unavailable');
+});

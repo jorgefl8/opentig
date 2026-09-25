@@ -2,8 +2,8 @@ import { readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
-import { renderSystemdUnit } from './cli-service';
-import { atomicWrite, newerVersion, packageDirectory, readInstallation, saveInstallation, SERVICE_NAME, serviceUnitPath, systemctl, type ServiceInstallation } from './service-installation';
+import { assertManager, createServiceManager } from './service-manager';
+import { atomicWrite, newerVersion, packageDirectory, readInstallation, saveInstallation, type ServiceInstallation } from './service-installation';
 
 export interface UpdateTransaction {
   activate(): Promise<void>;
@@ -11,7 +11,7 @@ export interface UpdateTransaction {
   healthy(): Promise<boolean>;
   restore(): Promise<void>;
 }
-/** The worker runs in a separate systemd unit, outside the server's cgroup. */
+/** The worker is owned by a separate supervisor job, so stopping the server cannot kill it. */
 export async function runUpdateTransaction(transaction: UpdateTransaction): Promise<boolean> {
   try {
     await transaction.activate();
@@ -25,6 +25,7 @@ export async function runUpdateTransaction(transaction: UpdateTransaction): Prom
   }
 }
 export async function applyServiceUpdate(home: string): Promise<void> {
+  const manager = await createServiceManager(home);
   const lock = path.join(home, 'service/update-lock');
   const resultFile = path.join(home, 'service/update-result.json');
   const plan = JSON.parse(await readFile(path.join(lock, 'plan.json'), 'utf8')) as {
@@ -32,7 +33,9 @@ export async function applyServiceUpdate(home: string): Promise<void> {
   };
   if (plan.home !== home || !path.isAbsolute(home) || !newerVersion(plan.next.version, plan.current.version)
     || JSON.stringify(await readInstallation(home)) !== JSON.stringify(plan.current)
-    || await readFile(serviceUnitPath(), 'utf8') !== plan.previousUnit) throw new Error('Service changed since the update was requested.');
+    || await manager.read() !== plan.previousUnit || !manager.owns(plan.previousUnit)) throw new Error('Service changed since the update was requested.');
+  assertManager(plan.current, manager.kind);
+  assertManager(plan.next, manager.kind);
   const marker = JSON.parse(await readFile(path.join(home, 'service', `app-${plan.next.version}`, 'update-integrity.json'), 'utf8'));
   if (marker.version !== plan.next.version || marker.integrity !== plan.integrity) throw new Error('Prepared service identity changed.');
   const nextEntry = path.join(packageDirectory(home, plan.next), 'dist/bin.mjs');
@@ -42,10 +45,10 @@ export async function applyServiceUpdate(home: string): Promise<void> {
   try {
     await runUpdateTransaction({
       activate: async () => {
-        await atomicWrite(serviceUnitPath(), renderSystemdUnit({ nodeExecutable: plan.next.node, cliEntrypoint: nextEntry, home, host: plan.next.host, port: plan.next.port, environmentPath: plan.next.environmentPath }));
+        await manager.write(manager.render({ nodeExecutable: plan.next.node, cliEntrypoint: nextEntry, home, host: plan.next.host, port: plan.next.port, environmentPath: plan.next.environmentPath }));
         await saveInstallation(home, plan.next);
       },
-      restart: async () => { await systemctl('daemon-reload'); await systemctl('restart', SERVICE_NAME); },
+      restart: () => manager.restart(),
       healthy: async () => {
         const host = ['0.0.0.0', '::'].includes(plan.next.host) ? (plan.next.host === '::' ? '[::1]' : '127.0.0.1') : plan.next.host.includes(':') ? `[${plan.next.host}]` : plan.next.host;
         for (let i = 0; i < 30; i++) {
@@ -59,7 +62,7 @@ export async function applyServiceUpdate(home: string): Promise<void> {
         return false;
       },
       restore: async () => {
-        await atomicWrite(serviceUnitPath(), plan.previousUnit);
+        await manager.write(plan.previousUnit);
         await saveInstallation(home, plan.current);
         await result(false);
       },
@@ -70,5 +73,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   await applyServiceUpdate(process.argv[2]!).catch(() => {
     process.stderr.write('OpenTig service update failed. Inspect the managed service before retrying.\n');
     process.exitCode = 1;
+  }).finally(async () => {
+    if (process.argv[3]) await (await createServiceManager(process.argv[2]!)).cleanupWorker(process.argv[3]).catch(() => undefined);
   });
 }

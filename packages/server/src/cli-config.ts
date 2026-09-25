@@ -3,7 +3,7 @@ import path from 'node:path';
 import { DEFAULT_SERVER_HOST, DEFAULT_SERVER_PORT } from '../../../src/shared/server-config';
 
 export type OpenTigCliCommand = 'start' | 'serve' | 'pair' | 'service' | 'help' | 'version';
-export type OpenTigServiceAction = 'install' | 'status' | 'uninstall';
+export type OpenTigServiceAction = 'install' | 'status' | 'restart' | 'uninstall';
 
 export interface OpenTigCliConfig {
   command: OpenTigCliCommand;
@@ -78,7 +78,7 @@ export function parseCliArguments(
   if (command === 'pair' && (hostValue !== undefined || portValue !== undefined || noBrowser)) {
     throw new CliUsageError('The pair command only accepts --home.');
   }
-  if (command === 'service' && serviceAction === null) throw new CliUsageError('The service command requires install, status, or uninstall.');
+  if (command === 'service' && serviceAction === null) throw new CliUsageError('The service command requires install, status, restart, or uninstall.');
   if (command === 'service' && serviceAction !== 'install' && (hostValue !== undefined || portValue !== undefined || noBrowser)) {
     throw new CliUsageError(`The service ${serviceAction} command only accepts --home.`);
   }
@@ -117,7 +117,7 @@ Usage:
   opentig start [options]
   opentig serve [options]
   opentig pair [--home <path>]
-  opentig service <install|status|uninstall> [options]
+  opentig service <install|status|restart|uninstall> [options]
   opentig help
   opentig version
 
@@ -125,7 +125,7 @@ Commands:
   start       Start OpenTig and open the one-use pairing link (default)
   serve       Start OpenTig without opening a browser; ideal for servers
   pair        Print a fresh five-minute code/link for a running server
-  service     Explicitly manage startup at boot (Linux/systemd only)
+  service     Manage a background server (Linux, macOS, Windows)
   help        Show this help
   version     Show the OpenTig version
 
@@ -160,7 +160,8 @@ Runtime behavior:
   The configured port is never changed silently. If it is occupied, OpenTig
   exits and asks you to stop that process or choose another --port. SIGINT and
   SIGTERM shut the server down cleanly. npx and bunx never install a service;
-  service installation is an explicit Linux/systemd action.
+  service installation is explicit. Linux uses systemd with lingering; macOS
+  and Windows start at login and stop at logout.
 
 Requirements: Node.js 24 or later and Git. Plain bunx launches the Node shebang;
 running OpenTig with the Bun runtime itself is not supported.`;
@@ -189,7 +190,7 @@ function isCommand(value: string): value is OpenTigCliCommand {
 }
 
 function isServiceAction(value: string): value is OpenTigServiceAction {
-  return value === 'install' || value === 'status' || value === 'uninstall';
+  return value === 'install' || value === 'status' || value === 'restart' || value === 'uninstall';
 }
 
 function validateHost(value: string): string {

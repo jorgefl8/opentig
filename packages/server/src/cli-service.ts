@@ -1,154 +1,117 @@
-import { execFile } from 'node:child_process';
-import { access, chmod, cp, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
-import os from 'node:os';
+import { access, cp, mkdir, readFile, rename, rm } from 'node:fs/promises';
 import path from 'node:path';
-import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+import { setTimeout as delay } from 'node:timers/promises';
 import type { OpenTigCliConfig } from './cli-config';
 import { OPEN_TIG_APP_VERSION } from './version';
-import { newerVersion, packageDirectory, readInstallation, saveInstallation } from './service-installation';
+import { newerVersion, packageDirectory, readInstallation, saveInstallation, type ServiceInstallation } from './service-installation';
+import { assertManager, createServiceManager, type ServiceManager } from './service-manager';
+import { runServiceNpm } from './service-npm';
+export { renderSystemdUnit } from './service-definitions';
 
-const UNIT_NAME = 'opentig.service';
+export interface ServiceIo { out(value: string): void }
 
-export interface ServiceIo {
-  out(value: string): void;
-}
-
-export async function manageCliService(config: OpenTigCliConfig, io: ServiceIo): Promise<number> {
-  if (process.platform !== 'linux') {
-    throw new Error('Background service management currently supports Linux with systemd. On this platform, start OpenTig with your preferred service manager.');
-  }
+export async function manageCliService(config: OpenTigCliConfig, io: ServiceIo, managerOverride?: ServiceManager): Promise<number> {
+  const manager = managerOverride ?? await createServiceManager(config.home);
   const action = config.serviceAction;
   if (!action) throw new Error('A service action is required.');
-  const unitPath = path.join(os.homedir(), '.config', 'systemd', 'user', UNIT_NAME);
-  if (action === 'status') return serviceStatus(unitPath, io);
-  if (action === 'uninstall') return uninstallService(config.home, unitPath, io);
-  return installService(config, unitPath, io);
+  const installed = await readInstallation(config.home);
+  if (action !== 'status' && installed && newerVersion(installed.version, OPEN_TIG_APP_VERSION)) throw new Error('A newer managed service is installed. Use its CLI to administer it; downgrades are not automatic.');
+  const definition = await manager.read();
+  if (definition && !manager.owns(definition)) throw new Error('Another OpenTig home owns this service. Use its --home before changing or removing it.');
+  if (installed) assertManager(installed, manager.kind);
+  if (action === 'status') {
+    if (!definition) { io.out('OpenTig service is not installed.'); return 1; }
+    const state = await manager.status();
+    io.out(`OpenTig service: ${state.running ? 'running' : 'stopped'} (${state.enabled ? 'enabled' : 'disabled'}).`);
+    io.out(manager.location); io.out(manager.startup);
+    return state.running && state.enabled ? 0 : 1;
+  }
+  if (action === 'uninstall' && !definition && !installed) { io.out('OpenTig service is not installed.'); return 0; }
+  await mkdir(path.join(config.home, 'service'), { recursive: true, mode: 0o700 });
+  const lock = path.join(config.home, 'service/update-lock');
+  try { await mkdir(lock, { mode: 0o700 }); }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new Error('A service installation or update is already in progress.', { cause: error });
+    throw error;
+  }
+  try {
+    if (action === 'restart') {
+      if (!definition || !installed) throw new Error('OpenTig service is not installed.');
+      await manager.restart();
+      await waitServiceReady(config.home, installed, manager);
+      io.out('OpenTig service restarted.');
+      return 0;
+    }
+    if (action === 'uninstall') {
+      if (definition) { await manager.stop(); await manager.remove(); }
+      await rm(path.join(config.home, 'service'), { recursive: true, force: true });
+      io.out('OpenTig service removed. Repository settings and paired sessions were kept.');
+      return 0;
+    }
+    await manager.preflight();
+    return await installService(config, manager, installed, definition, io);
+  } finally { await rm(lock, { recursive: true, force: true }); }
 }
 
-async function installService(config: OpenTigCliConfig, unitPath: string, io: ServiceIo): Promise<number> {
-  const installed = await readInstallation(config.home);
-  if (installed && newerVersion(installed.version, OPEN_TIG_APP_VERSION)) throw new Error('A newer managed service is installed. Use its CLI to administer it; downgrades are not automatic.');
-  try { await access(path.join(config.home, 'service/update-lock')); throw new Error('An update is already being applied.'); }
-  catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+async function installService(config: OpenTigCliConfig, manager: ServiceManager, installed: ServiceInstallation | null, previousDefinition: string | null, io: ServiceIo): Promise<number> {
   const packageRoot = await findPackageRoot(fileURLToPath(import.meta.url));
   await assertPackageBuild(packageRoot);
   const serviceRoot = path.join(config.home, 'service');
   const reuse = installed?.version === OPEN_TIG_APP_VERSION;
   const target = reuse ? packageDirectory(config.home, installed) : path.join(serviceRoot, `app-${OPEN_TIG_APP_VERSION}`);
   const temporary = path.join(serviceRoot, `.install-${process.pid}-${Date.now()}`);
-  await mkdir(serviceRoot, { recursive: true, mode: 0o700 });
-  await rm(temporary, { recursive: true, force: true });
   try {
     if (!reuse) {
       await mkdir(temporary, { recursive: true, mode: 0o700 });
-      await cp(path.join(packageRoot, 'dist'), path.join(temporary, 'dist'), { recursive: true, force: true });
-      for (const name of ['package.json', 'README.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md']) {
-        await cp(path.join(packageRoot, name), path.join(temporary, name), { force: true });
-      }
-      await installProductionDependencies(temporary);
+      await cp(path.join(packageRoot, 'dist'), path.join(temporary, 'dist'), { recursive: true });
+      for (const name of ['package.json', 'README.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md']) await cp(path.join(packageRoot, name), path.join(temporary, name));
+      await runServiceNpm(['install', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund'], temporary);
       await rm(target, { recursive: true, force: true });
       await rename(temporary, target);
     }
+  } finally { await rm(temporary, { recursive: true, force: true }); }
+  await assertPackageBuild(target);
+  const next: ServiceInstallation = { schema: 1, manager: manager.kind, version: OPEN_TIG_APP_VERSION, layout: reuse ? installed.layout : 'flat', host: config.host, port: config.port, node: process.execPath, environmentPath: process.env.PATH };
+  const definition = manager.render({ nodeExecutable: next.node, cliEntrypoint: path.join(target, 'dist/bin.mjs'), home: config.home, host: next.host, port: next.port, environmentPath: next.environmentPath });
+  try {
+    await manager.write(definition);
+    await saveInstallation(config.home, next);
+    await manager.restart();
+    await waitServiceReady(config.home, next, manager);
   } catch (error) {
-    await rm(temporary, { recursive: true, force: true });
+    // Restore both the supervisor definition and launcher metadata before restarting.
+    if (previousDefinition) {
+      await manager.write(previousDefinition);
+      if (installed) await saveInstallation(config.home, installed);
+      else await rm(path.join(serviceRoot, 'installation.json'), { force: true });
+      await manager.restart();
+    } else {
+      await manager.stop();
+      await manager.remove();
+      await rm(path.join(serviceRoot, 'installation.json'), { force: true });
+    }
     throw error;
   }
-
-  const environmentPath = process.env.PATH;
-  const unit = renderSystemdUnit({
-    nodeExecutable: process.execPath,
-    cliEntrypoint: path.join(target, 'dist', 'bin.mjs'),
-    host: config.host,
-    port: config.port,
-    home: config.home,
-    environmentPath,
-  });
-  await mkdir(path.dirname(unitPath), { recursive: true, mode: 0o700 });
-  const temporaryUnit = `${unitPath}.${process.pid}.tmp`;
-  await writeFile(temporaryUnit, unit, { encoding: 'utf8', mode: 0o600 });
-  await rename(temporaryUnit, unitPath);
-  await chmod(unitPath, 0o600);
-
-  await saveInstallation(config.home, { schema: 1, version: OPEN_TIG_APP_VERSION, layout: reuse ? installed.layout : 'flat', host: config.host, port: config.port, node: process.execPath, environmentPath });
-  await runRequired('systemctl', ['--user', 'daemon-reload']);
-  await runRequired('systemctl', ['--user', 'enable', UNIT_NAME]);
-  await runRequired('systemctl', ['--user', 'restart', UNIT_NAME]);
-  await runRequired('loginctl', ['enable-linger']);
   io.out(`OpenTig service installed and started on ${config.host}:${config.port}.`);
-  io.out(`Unit: ${unitPath}`);
-  io.out(`Pair another browser with: opentig pair --home ${config.home}`);
+  io.out(manager.location); io.out(manager.startup);
+  io.out(`Pair another browser with: opentig pair --home ${JSON.stringify(config.home)}`);
   return 0;
 }
 
-async function serviceStatus(unitPath: string, io: ServiceIo): Promise<number> {
-  try { await access(unitPath); }
-  catch {
-    io.out('OpenTig service is not installed.');
-    return 1;
+export async function waitServiceReady(home: string, installation: ServiceInstallation, manager: ServiceManager): Promise<void> {
+  const host = ['0.0.0.0', '::'].includes(installation.host) ? (installation.host === '::' ? '[::1]' : '127.0.0.1') : installation.host.includes(':') ? `[${installation.host}]` : installation.host;
+  for (let i = 0; i < 30; i++) {
+    try {
+      const state = await manager.status();
+      const runtime = JSON.parse(await readFile(path.join(home, 'runtime.json'), 'utf8'));
+      const response = await fetch(`http://${host}:${installation.port}/readyz`, { signal: AbortSignal.timeout(1_000) });
+      const value = await response.json() as { status?: string; appVersion?: string };
+      if (state.running && (!state.pid || state.pid === runtime.pid) && runtime.appVersion === installation.version && response.ok && value.status === 'ready' && value.appVersion === installation.version) return;
+    } catch { /* The service may still be starting. */ }
+    await delay(1_000);
   }
-  const enabled = await run('systemctl', ['--user', 'is-enabled', UNIT_NAME]);
-  const active = await run('systemctl', ['--user', 'is-active', UNIT_NAME]);
-  io.out(`OpenTig service: ${active.stdout.trim() || 'unknown'} (${enabled.stdout.trim() || 'unknown'}).`);
-  io.out(`Unit: ${unitPath}`);
-  return active.code === 0 ? 0 : 1;
-}
-
-async function uninstallService(home: string, unitPath: string, io: ServiceIo): Promise<number> {
-  await run('systemctl', ['--user', 'disable', '--now', UNIT_NAME]);
-  await rm(unitPath, { force: true });
-  await runRequired('systemctl', ['--user', 'daemon-reload']);
-  await rm(path.join(home, 'service'), { recursive: true, force: true });
-  io.out('OpenTig service removed. Repository settings and paired sessions were kept.');
-  return 0;
-}
-
-export function renderSystemdUnit(input: {
-  nodeExecutable: string;
-  cliEntrypoint: string;
-  host: string;
-  port: number;
-  home: string;
-  environmentPath?: string | undefined;
-}): string {
-  const args = [
-    input.nodeExecutable,
-    input.cliEntrypoint,
-    'serve',
-    '--host', input.host,
-    '--port', String(input.port),
-    '--home', input.home,
-  ];
-  return `[Unit]
-Description=OpenTig browser Git client
-After=network.target
-
-[Service]
-Type=simple
-WorkingDirectory=${systemdWorkingDirectory(input.home)}
-ExecStart=${args.map(systemdQuote).join(' ')}
-Environment=NODE_ENV=production
-${input.environmentPath === undefined ? '' : `Environment=${systemdQuote(`PATH=${input.environmentPath}`)}\n`}Restart=on-failure
-RestartSec=3
-KillSignal=SIGTERM
-TimeoutStopSec=10
-
-[Install]
-WantedBy=default.target
-`;
-}
-
-function systemdQuote(value: string): string {
-  if (value.includes('\0') || value.includes('\r') || value.includes('\n')) throw new Error('Service paths and arguments cannot contain control characters.');
-  return `"${value.replaceAll('%', '%%').replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`;
-}
-
-function systemdWorkingDirectory(value: string): string {
-  if (!path.isAbsolute(value) || /[\0\r\n]/.test(value)) throw new Error('Service home must be an absolute single-line path.');
-  // Unlike ExecStart, this setting is a literal path, not a list of quoted
-  // arguments. A final slash also protects trailing spaces/backslashes from
-  // the unit file's whitespace trimming and line continuation handling.
-  return `${value.replaceAll('%', '%%')}/`;
+  throw new Error('The managed service did not become ready. Inspect service status and logs; check Git, Node.js, and the configured port.');
 }
 
 async function assertPackageBuild(packageRoot: string): Promise<void> {
@@ -176,31 +139,4 @@ async function findPackageRoot(modulePath: string): Promise<string> {
     directory = parent;
   }
   throw new Error('Could not locate the installed OpenTig package.');
-}
-
-async function installProductionDependencies(directory: string): Promise<void> {
-  const npmCli = process.env.npm_execpath;
-  if (npmCli) {
-    await runRequired(process.execPath, [npmCli, 'install', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund'], directory);
-    return;
-  }
-  await runRequired('npm', ['install', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund'], directory);
-}
-
-function runRequired(command: string, args: string[], cwd?: string): Promise<void> {
-  return run(command, args, cwd).then((result) => {
-    if (result.code !== 0) throw new Error(`${command} failed: ${result.stderr.trim() || result.stdout.trim() || `exit code ${result.code}`}`);
-  });
-}
-
-function run(command: string, args: string[], cwd?: string): Promise<{ code: number; stdout: string; stderr: string }> {
-  return new Promise((resolve, reject) => {
-    execFile(command, args, { cwd, timeout: 120_000, windowsHide: true }, (error, stdout, stderr) => {
-      const code = typeof (error as NodeJS.ErrnoException | null)?.code === 'number'
-        ? (error as NodeJS.ErrnoException & { code: number }).code
-        : error ? 1 : 0;
-      if (error && (error as NodeJS.ErrnoException).code === 'ENOENT') return reject(new Error(`${command} is required but was not found.`));
-      resolve({ code, stdout, stderr });
-    });
-  });
 }

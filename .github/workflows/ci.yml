@@ -74,8 +74,20 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - name: Prepare isolated runner user service manager
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo loginctl enable-linger "$(id -un)"
+          sudo systemctl start "user@$(id -u).service"
+          echo "XDG_RUNTIME_DIR=/run/user/$(id -u)" >> "$GITHUB_ENV"
+          echo "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus" >> "$GITHUB_ENV"
       - run: npm run release:pack:headless
       - run: npm run release:inspect:headless
+      - name: Verify native CLI service lifecycle
+        run: npx vitest run packages/server/src/service-manager.integration.test.ts packages/server/src/service-manager.test.ts packages/server/src/service-eligibility.test.ts packages/server/src/service-npm.test.ts packages/server/src/service-update-worker.test.ts
+        env:
+          OPENTIG_SERVICE_INTEGRATION: '1'
       - name: Run packed CLI with npx
         shell: bash
         run: |

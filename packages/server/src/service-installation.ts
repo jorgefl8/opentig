@@ -8,6 +8,7 @@ export const execute = promisify(execFile);
 export const SERVICE_NAME = 'opentig.service';
 export const serviceUnitPath = () => path.join(os.homedir(), '.config/systemd/user', SERVICE_NAME);
 export interface ServiceInstallation {
+  manager?: 'systemd' | 'launchd' | 'windows-task';
   schema: 1;
   version: string;
   layout: 'flat' | 'npm';
@@ -32,7 +33,7 @@ export async function readInstallation(home: string): Promise<ServiceInstallatio
   let value: ServiceInstallation;
   try { value = JSON.parse(await readFile(path.join(home, 'service/installation.json'), 'utf8')); }
   catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null; throw error; }
-  if (value.schema !== 1 || !stableVersion(value.version) || !['flat', 'npm'].includes(value.layout)
+  if ((value.manager !== undefined && !['systemd', 'launchd', 'windows-task'].includes(value.manager)) || value.schema !== 1 || !stableVersion(value.version) || !['flat', 'npm'].includes(value.layout)
     || typeof value.host !== 'string' || !/^[a-zA-Z0-9.:[\]-]+$/.test(value.host)
     || !Number.isInteger(value.port) || value.port < 1 || value.port > 65535
     || (value.environmentPath !== undefined && (typeof value.environmentPath !== 'string' || /[\0\r\n]/.test(value.environmentPath)))

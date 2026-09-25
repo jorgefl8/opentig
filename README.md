@@ -46,7 +46,7 @@ The [full feature guide](docs/features.md) covers these workflows, optional AI a
 | --- | --- |
 | **Desktop app** | Windows x64 installer, with in-app updates. Linux and macOS desktop installers are not published yet. |
 | **CLI + browser** | Linux, macOS, and Windows with Node.js 24+ and Git. |
-| **Background server** | Linux with systemd; browser-based updates for managed installations. |
+| **Background server** | Linux (systemd), macOS (launchd), and Windows (Task Scheduler), with browser-based updates. |
 
 ### Windows desktop
 
@@ -73,7 +73,9 @@ opentig serve
 
 The server listens on `127.0.0.1:6767` by default. Reach it through an SSH tunnel or an HTTPS reverse proxy, then pair your browser using the code printed on the server. The folder picker selects **folders on that server**, not on your laptop or phone.
 
-See [installation and CLI](docs/getting-started.md) for pinned versions, Linux service setup, and updates, or [remote access](docs/web-access.md) for connection examples. Paired browsers have the host user's authority: keep access private and do not expose the raw port publicly.
+To keep the CLI running after closing the terminal, use `opentig service install`. Linux starts it at boot with lingering; macOS and Windows start it at login and stop it at logout. This CLI service is independent of the desktop app.
+
+See [installation and CLI](docs/getting-started.md) for pinned versions, background service setup, and updates, or [remote access](docs/web-access.md) for connection examples. Paired browsers have the host user's authority: keep access private and do not expose the raw port publicly.
 
 ## Where things stand
 

@@ -28,7 +28,7 @@ by the server. Select a repository using the visual server folder picker.
 Files, Git, and optional CLI integrations run on the remote host. If local port
 6767 is busy, use `-L 7676:127.0.0.1:6767` and browse to local port 7676 instead.
 
-For a persistent Linux service, see [installation and CLI](getting-started.md).
+For a persistent CLI service, see [installation and CLI](getting-started.md).
 For access from a phone, use your private VPN or an HTTPS reverse proxy as
 explained below. Never expose the raw HTTP listener to the public internet.
 
@@ -131,13 +131,14 @@ code, link, and terminal QR. The credential is stored separately with private fi
 permissions; `runtime.json` never contains it.
 
 Running the package with `npx` or `bunx` never changes startup configuration.
-On Linux/systemd, `opentig service install` explicitly stages the exact package
+On Linux, macOS, and Windows, `opentig service install` explicitly stages the exact package
 version under the selected OpenTig home, installs a project-independent user
-unit, starts it, and enables user lingering for reboot persistence. Repositories
+service and starts it. Linux enables user lingering for boot persistence; macOS
+and Windows start at login and stop at logout. Repositories
 are added, opened, and switched exclusively from the web UI; neither CLI startup
-nor the service is scoped to a repository. Use `opentig service status` or
-`opentig service uninstall`; service management for Windows and macOS is not
-included yet.
+nor the service is scoped to a repository. Use `opentig service status`, `opentig service restart`, or
+`opentig service uninstall`. Browser updates restart this managed CLI service
+without changing the global npm package or the desktop app.
 
 ## Connection behavior
 
