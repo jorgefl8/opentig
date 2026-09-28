@@ -61,11 +61,14 @@ export interface CommitInfo {
   parentCount: number;
   upstreamState: CommitUpstreamState;
   isHead: boolean;
+  /** Reachability from the locally known default branch; no network fetch. */
+  baseState?: 'included' | 'outside' | 'unknown';
 }
 
 export interface CommitPage {
   commits: CommitInfo[];
   nextCursor: string | null;
+  baseRef?: string | null;
 }
 
 export interface CommitFile {

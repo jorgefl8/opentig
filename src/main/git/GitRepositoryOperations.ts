@@ -12,6 +12,7 @@ import type { CommitMessageContext, PullRequestDraftContext } from '../ai/types'
 import type { GitProcess } from './GitProcess';
 import { parseCommitFiles } from './CommitFilesParser';
 import { LOG_FORMAT, parseLog } from './LogParser';
+import { selectHistoryBase } from './HistoryBase';
 import { REF_FORMAT, parseRefs } from './RefParser';
 import type { RepositoryService } from './RepositoryService';
 import { allocatePatchBudget } from './PatchBudget';
@@ -325,14 +326,18 @@ export class GitRepositoryOperations {
       if (cursor && commits[0]?.oid === cursor) commits = commits.slice(1);
       const hasMore = commits.length > 100;
       commits = commits.slice(0, 100);
-      const localOids = await this.localOnlyOids(repository.path, status.upstream, status.detached || status.unborn);
+      const [localOids, base] = await Promise.all([
+        this.localOnlyOids(repository.path, status.upstream, status.detached || status.unborn),
+        this.historyBase(repository.path, revision, status.upstream),
+      ]);
       commits = commits.map((commit) => ({
         ...commit,
         isHead: commit.oid === status.oid,
         upstreamState: localOids === null ? 'unknown' : localOids.has(commit.oid) ? 'local-only' : 'published',
+        baseState: base === null ? 'unknown' : base.outside.has(commit.oid) ? 'outside' : 'included',
       }));
       for (const commit of commits) this.rememberOid(repositoryId, commit.oid);
-      return { commits, nextCursor: hasMore ? commits.at(-1)?.oid ?? null : null };
+      return { commits, nextCursor: hasMore ? commits.at(-1)?.oid ?? null : null, baseRef: base?.ref ?? null };
     } catch (error) {
       if (!cursor && error instanceof GitOperationError && /does not have any commits|unknown revision|bad revision/i.test(error.message)) return { commits: [], nextCursor: null };
       throw error;
@@ -922,6 +927,20 @@ export class GitRepositoryOperations {
   private async ensureWritable(repositoryId: string): Promise<void> {
     const status = await this.repositories.status(repositoryId, false);
     if (status.readOnly) throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'write', message: `The repository is in the middle of ${status.operation}; OpenTig keeps it read-only.` });
+  }
+
+  private async historyBase(repositoryPath: string, revision: string, upstream: string | null): Promise<{ ref: string; outside: Set<string> } | null> {
+    try {
+      const options = { operation: 'history-base', readOnly: true, maxOutputBytes: 8 * 1024 * 1024 };
+      const refs = await this.git.run(repositoryPath, ['for-each-ref', '--format=%(refname)%00%(objectname)%00%(symref)', 'refs/heads/main', 'refs/heads/master', 'refs/remotes'], options);
+      const base = selectHistoryBase(refs.stdout.toString('utf8'), upstream);
+      if (!base) return null;
+      const output = await this.git.run(repositoryPath, ['rev-list', revision, `^${base.oid}`, '--'], options);
+      return { ref: base.ref, outside: new Set(output.stdout.toString('utf8').trim().split('\n').filter(Boolean)) };
+    } catch {
+      // An unavailable/stale default ref must not block history or imply membership.
+      return null;
+    }
   }
 
   private async localOnlyOids(repositoryPath: string, upstream: string | null, unavailable: boolean): Promise<Set<string> | null> {

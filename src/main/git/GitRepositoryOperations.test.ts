@@ -16,6 +16,22 @@ const directories: string[] = [];
 afterEach(async () => Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true, maxRetries: 3 }))));
 
 describe('GitRepositoryOperations local history', () => {
+  it('classifies published feature commits separately from the remote base and local work', async () => {
+    const fixture = await repositoryWithUpstream();
+    await git(fixture.work, ['switch', '-c', 'feature']);
+    await writeFile(path.join(fixture.work, 'feature.txt'), 'published\n');
+    await git(fixture.work, ['add', '.']);
+    await git(fixture.work, ['commit', '-m', 'Published feature']);
+    await git(fixture.work, ['push', '-u', 'origin', 'feature']);
+    await writeFile(path.join(fixture.work, 'feature.txt'), 'local\n');
+    await git(fixture.work, ['commit', '-am', 'Local feature']);
+    const page = await fixture.operations.listCommits(fixture.repositoryId);
+    expect(page.baseRef).toBe('origin/main');
+    expect(page.commits.map((commit) => [commit.subject, commit.upstreamState, commit.baseState])).toEqual([
+      ['Local feature', 'local-only', 'outside'], ['Published feature', 'published', 'outside'], ['Base commit', 'published', 'included'],
+    ]);
+  });
+
   it('marks commits relative to the configured upstream', async () => {
     const fixture = await repositoryWithUpstream();
     const baseOid = await git(fixture.work, ['rev-parse', 'HEAD']);

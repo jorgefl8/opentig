@@ -97,7 +97,11 @@ OpenTig is early-stage software. This guide describes the current interface and 
 ### History
 
 - Browse commit history incrementally instead of loading the entire repository at once; refreshes preserve loaded pages without duplicating commits.
-- Follow current-branch history through a compact Git graph with colored lanes for merges and parent relationships.
+- Follow current-branch history through a compact Git graph: blue for local commits, purple for published work, amber for primary-line commits reachable from the locally known base branch, and separate colors for merge branches. The base uses the upstream remote's symbolic default when available, then conventional main/master refs; missing information stays unknown. No background fetch is needed, and unmerged branches outside HEAD are not added to this view.
+- Switch between compact (42 px) and comfortable (56 px) rows without changing the sidebar width or right-hand diff viewer. Selecting a commit or its expanded files keeps the row highlighted.
+- Search subjects, authors, hashes, and references in loaded history. Matches are highlighted without removing graph rows; Enter or the next-match button scrolls to each result. Load more to search older commits.
+- Group complete, exclusive, linear side branches under their merge commit. Partial pages, shared branches, and nested side merges stay expanded in the graph. The grouped count reveals the commits again; search temporarily reveals all grouped commits.
+- Recognize GitHub-style merge messages and trailing `(#123)` references. These are message hints, not verified PR status or proof of squash/rebase. On GitHub repositories, the reference opens the existing PR viewer on the right; an issue number or unavailable PR is handled by that viewer. Squash/rebase histories remain linear because the graph always follows actual parents.
 - Inspect commit subjects, full descriptions, authors, dates, refs, publication state, and changed files. Expanded history rows show the complete description; long descriptions in the commit viewer can be revealed without hiding the diff.
 - Copy full commit hashes.
 - Open complete commit diffs or the diff for one file, including renamed paths.

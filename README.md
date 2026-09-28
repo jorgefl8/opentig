@@ -31,7 +31,7 @@ It works with existing repositories using the Git installation on the host. You 
 | --- | --- |
 | **Review changes** | Syntax-highlighted split or unified diffs, staged and unstaged files, and merge-conflict resolution. [Details](docs/features.md#changes-diffs-and-commits) |
 | **Browse and edit** | File tree, tabs, quick edits, find and replace, repository search, and Markdown, image, HTML, and SVG previews. [Details](docs/features.md#files-and-editing) |
-| **Work with Git** | Stage files, commit, pull and push, publish branches with or without new commits, inspect history, and switch branches and worktrees. Publishing sets the upstream and lets you choose a remote when needed. [Details](docs/features.md#safe-pull-and-push) |
+| **Work with Git** | Stage files, commit, pull and push, publish branches with or without new commits, inspect compact commit graphs with publication colors and PR references, and switch branches and worktrees. Publishing sets the upstream and lets you choose a remote when needed. [Details](docs/features.md#safe-pull-and-push) |
 | **Keep repositories together** | Recent repositories, project groups, and manual relocation without moving files. [Details](docs/features.md#repositories-and-projects) |
 | **Review GitHub PRs** | Browse pull requests, inspect their changes, and prepare new PRs through your authenticated `gh` CLI. [Details](docs/features.md#github-pull-requests) |
 | **Use a remote server** | Run without Electron, pair your browser, and work with repositories on the server. A single persistent notification tracks connection problems and disappears when you reconnect. [Details](docs/web-access.md) |
@@ -39,6 +39,8 @@ It works with existing repositories using the Git installation on the host. You 
 The interface defaults to **Plus Jakarta Sans**, with **JetBrains Mono** for code. Choose each independently in Settings → General; existing font selections are preserved.
 
 The [full feature guide](docs/features.md) covers these workflows, optional AI assistance, preferences, and keyboard shortcuts.
+
+History keeps the existing sidebar sections and opens commits, files, and GitHub PR references in the right-hand viewer. Switch row density, search loaded commits without losing graph context, or group complete merge branches. Colors distinguish local commits, published work, and the locally known base branch; squash histories stay linear. [History details](docs/features.md#history) · [Interactive design reference](docs/proposals/commit-history.html)
 
 ## Choose how to run it
 
