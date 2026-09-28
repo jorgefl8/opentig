@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { booleanArg, branchDetailsArg, deleteBranchArg, filesTreeStateArg, nullableProjectIdArg, openFilesStateArg, prepareCommitGroupArg, projectIdArg, projectNameArg, pullRequestStatesArg, removeWorktreeArg, repositoryKeyArg, searchOptionsArg, searchReplaceArg, worktreeDetailsArg } from './validators';
+import { booleanArg, branchDetailsArg, deleteBranchArg, filesTreeStateArg, nullableProjectIdArg, openFilesStateArg, prepareCommitGroupArg, projectIdArg, projectNameArg, publishBranchArg, pullRequestStatesArg, removeWorktreeArg, repositoryKeyArg, searchOptionsArg, searchReplaceArg, worktreeDetailsArg } from './validators';
 import { GitOperationError } from '../../shared/errors';
 
 const OID = 'a'.repeat(40);
@@ -219,5 +219,16 @@ describe('open files state validator', () => {
     const result = openFilesStateArg(ID, [{ path: 'a.ts', pinned: false, updatedAt: '2099-01-01T00:00:00.000Z' }], 'a.ts', null, 'test');
     expect(result.tabs[0]).toEqual({ path: 'a.ts', pinned: false });
     expect(result).not.toHaveProperty('updatedAt');
+  });
+});
+
+describe('publish branch argument validator', () => {
+  it('accepts omitted options and validates a selected remote against a branch snapshot', () => {
+    expect(publishBranchArg(undefined)).toBeUndefined();
+    const request = { remote: 'origin', expectedBranch: 'feat/wiki', expectedOid: OID };
+    expect(publishBranchArg(request)).toEqual(request);
+    expect(() => publishBranchArg({ ...request, remote: 'origin\0other' })).toThrow(GitOperationError);
+    expect(() => publishBranchArg({ ...request, expectedOid: 'HEAD' })).toThrow(GitOperationError);
+    expect(() => publishBranchArg({ remote: 'origin' })).toThrow(GitOperationError);
   });
 });

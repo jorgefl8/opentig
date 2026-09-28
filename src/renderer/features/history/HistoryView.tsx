@@ -15,11 +15,12 @@ import { opentig } from '@/lib/opentig-api';
 
 interface HistoryViewProps {
   repositoryId: string; upstream: string | null; readOnly: boolean; operation: string | null;
+  canPublish: boolean; pushBusy: boolean; onPublish(): void;
   commits: CommitInfo[] | null; nextCursor: string | null; loading: boolean; undoing: boolean;
   onSelectCommit(commit: CommitInfo): void; onSelectFile(oid: string, file: CommitFile): void; onUndo(commit: CommitInfo): void; onMore(): void;
 }
 
-export function HistoryView({ repositoryId, upstream, readOnly, operation, commits, nextCursor, loading, undoing, onSelectCommit, onSelectFile, onUndo, onMore }: HistoryViewProps) {
+export function HistoryView({ repositoryId, upstream, readOnly, operation, canPublish, pushBusy, onPublish, commits, nextCursor, loading, undoing, onSelectCommit, onSelectFile, onUndo, onMore }: HistoryViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [expandedCommits, setExpandedCommits] = useState<Set<string>>(new Set());
   const graph = useMemo(() => buildCommitGraph(commits ?? []), [commits]);
@@ -37,7 +38,9 @@ export function HistoryView({ repositoryId, upstream, readOnly, operation, commi
   }
   return (
     <div className="history-list">
-      {!upstream && commits.length > 0 && <div className="history-upstream-notice" role="status">Configure an upstream to distinguish local from published commits.</div>}
+      {!upstream && commits.length > 0 && <div className="history-upstream-notice" role="status"><span>Publish this branch to configure an upstream and distinguish local from published commits.</span>
+        {canPublish && <Button variant="outline" size="xs" disabled={pushBusy || readOnly || Boolean(operation)} onClick={onPublish}>{pushBusy ? 'Publishing…' : 'Publish branch'}</Button>}
+      </div>}
       <div ref={scrollRef} className="history-scroll" role="list" aria-label="Commit history">
         {commits.length === 0 ? <p className="empty-list">This repository has no commits yet.</p> : (
           <div

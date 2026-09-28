@@ -10,6 +10,8 @@ import type { BootstrapData, CommitSplitProposal, FileHistoryPathChange, FileHis
 import { matchesCombo, resolveShortcuts, type ShortcutMap } from '../../shared/shortcuts';
 import { ShortcutsProvider } from './ShortcutsContext';
 import { Toolbar } from './Toolbar';
+import { useBranchPush } from '@/features/refs/useBranchPush';
+import { PublishRemoteDialog } from '@/features/refs/PublishRemoteDialog';
 import { normalizeOpenFilesStates, type OpenFilesState } from '../../shared/open-files-state';
 import { normalizeFilesTreeStates } from '../../shared/files-tree-state';
 import { serializedErrorFromReason, type SerializedAiError } from '../../shared/errors';
@@ -48,7 +50,7 @@ import { opentig, serverClient } from '@/lib/opentig-api';
 import { startupSplashDetail } from '@/lib/startup-splash';
 import { conflictNotificationAction, conflictToastId } from '@/features/changes/conflict-notification';
 import { fileCutTransferId, writeClipboardText, writeFileTransfer } from '@/lib/browser-capabilities';
-import { projectPullBlockedCopy, projectPullSuccessCopy, projectPushBlockedCopy, projectPushSuccessCopy, pullSuccessCopy, repositorySyncLoadingToast, type ProjectSyncAction } from '@/features/repositories/project-sync';
+import { needsBranchPublication, projectPullBlockedCopy, projectPullSuccessCopy, projectPushBlockedCopy, projectPushSuccessCopy, pullSuccessCopy, repositorySyncLoadingToast, type ProjectSyncAction } from '@/features/repositories/project-sync';
 import { aiModelLabel, harnessLabel } from '@/features/ai/harness-copy';
 import { DesktopUpdateIndicator } from '@/features/settings/UpdateSettings';
 import type { SettingsSection } from '@/features/settings/SettingsDialog';
@@ -79,13 +81,14 @@ class PullBlocked extends Error {
 
 /** Carries a non-success, non-rejected push result through `sileo.promise()`'s single error path. */
 class PushBlocked extends Error {
-  constructor(readonly result: Exclude<PushResult, { status: 'success' } | { status: 'up-to-date' }>) {
+  constructor(readonly result: Exclude<PushResult, { status: 'success' } | { status: 'up-to-date' } | { status: 'published' }>) {
     super(result.status);
   }
 }
 
 export default function App() {
   const appQueryClient = useQueryClient();
+  const branchPush = useBranchPush();
   const mobile = useMobileLayout();
   const [openRepositoryDialog, setOpenRepositoryDialog] = useState(false);
   const [mobilePane, setMobilePane] = useState<'list' | 'viewer' | 'commit'>('list');
@@ -1746,7 +1749,7 @@ export default function App() {
   };
 
   const pushUpdates = async () => {
-    if (!status || status.ahead === 0 || busy) return;
+    if (!status || (status.ahead === 0 && !needsBranchPublication(status)) || busy || status.readOnly || repositorySyncOperationsRef.current.has(repository?.id ?? '')) return;
     await performPush();
   };
 
@@ -1756,13 +1759,15 @@ export default function App() {
     setBusy('push');
     try {
       await sileo.promise(async () => {
-        const result = await opentig.refs.push(repositoryId);
+        const result = await branchPush.push(repositoryId, repository.path);
         await refresh({ background: true });
-        if (result.status === 'success' || result.status === 'up-to-date') return result;
+        if (!result || result.status === 'success' || result.status === 'up-to-date' || result.status === 'published') return result;
         throw new PushBlocked(result);
       }, {
-        loading: { title: 'Pushing commits…' },
-        success: (result) => result.status === 'success'
+        loading: { title: status?.upstream ? 'Pushing commits…' : 'Publishing branch…' },
+        success: (result) => !result ? { title: 'Publication canceled' }
+          : result.status === 'published' ? { title: 'Branch published', description: `${result.remote}/${result.branch}` }
+          : result.status === 'success'
           ? { title: `${result.commits} ${result.commits === 1 ? 'commit pushed' : 'commits pushed'}` }
           : { title: 'No commits pending push' },
         error: (err) => {
@@ -1790,6 +1795,7 @@ export default function App() {
                 button: { title: 'Pull', onClick: () => void pullUpdates() },
               };
             }
+            if (result.status === 'remote-required') return { title: 'Choose a remote to publish the branch' };
             return { title: 'Could not push commits', description: result.message, duration: 10_000 };
           }
           const message = messageOf(err);
@@ -1826,13 +1832,13 @@ export default function App() {
         });
       } else {
         await sileo.promise(async () => {
-          const result = await opentig.refs.push(repositoryId);
+          const result = await branchPush.push(repositoryId, label);
           if (repositoryRef.current?.id === repositoryId) await refresh({ background: true });
-          if (result.status === 'success' || result.status === 'up-to-date') return result;
+          if (!result || result.status === 'success' || result.status === 'up-to-date' || result.status === 'published') return result;
           throw new PushBlocked(result);
         }, {
           loading: repositorySyncLoadingToast(repositoryId, action, `Pushing ${label}…`),
-          success: (result) => projectPushSuccessCopy(label, result),
+          success: (result) => result ? projectPushSuccessCopy(label, result) : { title: `${label}: publication canceled` },
           error: (reason) => reason instanceof PushBlocked
             ? projectPushBlockedCopy(label, reason.result)
             : { title: `Could not push ${label}`, description: messageOf(reason), duration: 10_000 },
@@ -2019,6 +2025,7 @@ export default function App() {
           />
         </Suspense>
       )}
+      {branchPush.remoteChoice && <PublishRemoteDialog key={branchPush.remoteChoice.id} choice={branchPush.remoteChoice} onSelect={branchPush.selectRemote} />}
       <div className="app-shell" data-mobile-pane={mobilePane}>
         <Toolbar
           repository={repository}
@@ -2145,6 +2152,9 @@ export default function App() {
                 <HistoryView
                   repositoryId={repository.id}
                   upstream={status?.upstream ?? null}
+                  canPublish={needsBranchPublication(status)}
+                  pushBusy={Boolean(busy) || repositorySyncOperations.has(repository.id)}
+                  onPublish={() => void pushUpdates()}
                   readOnly={Boolean(status?.readOnly)}
                   operation={status?.operation ?? null}
                   commits={commits}
@@ -2255,7 +2265,7 @@ export default function App() {
           )}
           busy={busy}
           readOnly={Boolean(status?.readOnly)}
-          canPush={Boolean(status?.upstream)}
+          canPush={Boolean(status?.branch && !status.detached && !status.readOnly)}
           proposal={commitProposal}
           preparedIndex={preparedCommitIndex}
           completed={completedCommitIndices}

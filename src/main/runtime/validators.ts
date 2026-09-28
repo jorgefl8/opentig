@@ -1,6 +1,6 @@
 import { GitOperationError } from '../../shared/errors';
 import { AiOperationError, GhOperationError } from '../../shared/errors';
-import type { AiHarnessId, BranchDetailsRequest, CreatePullRequestInput, DeleteBranchRequest, GenerateCommitMessageInput, GeneratePullRequestDraftInput, PrepareCommitGroupInput, PullRequestState, RemoveWorktreeRequest, WorktreeDetailsRequest } from '../../shared/contracts';
+import type { AiHarnessId, BranchDetailsRequest, CreatePullRequestInput, DeleteBranchRequest, GenerateCommitMessageInput, GeneratePullRequestDraftInput, PrepareCommitGroupInput, PublishBranchOptions, PullRequestState, RemoveWorktreeRequest, WorktreeDetailsRequest } from '../../shared/contracts';
 import { MAX_PROJECT_NAME_LENGTH, MAX_REPOSITORY_KEY_LENGTH, normalizeRepositoryKey } from '../../shared/repository-projects';
 import { isFilesTreeRepositoryId, MAX_FILES_TREE_PATHS, normalizeExpandedPaths, normalizeFilesTreePath } from '../../shared/files-tree-state';
 import { isOpenFilesRepositoryId, MAX_OPEN_FILE_TABS, normalizeOpenFilePath, type OpenFileTab } from '../../shared/open-files-state';
@@ -152,6 +152,16 @@ export function oidArg(value: unknown, operation: string): string {
 
 const MAX_BRANCH_REF_LENGTH = 512;
 const MAX_WORKTREE_PATH_LENGTH = 4_096;
+
+export function publishBranchArg(value: unknown): PublishBranchOptions | undefined {
+  if (value == null) return undefined;
+  const request = requestObject(value, 'push');
+  return {
+    remote: refsString(request.remote, 'push', MAX_BRANCH_REF_LENGTH),
+    expectedBranch: refsString(request.expectedBranch, 'push', MAX_BRANCH_REF_LENGTH),
+    expectedOid: oidArg(request.expectedOid, 'push'),
+  };
+}
 
 export function branchDetailsArg(value: unknown, operation: string): BranchDetailsRequest {
   const request = requestObject(value, operation);

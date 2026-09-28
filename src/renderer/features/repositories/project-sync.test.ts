@@ -10,6 +10,16 @@ describe('project sync toast copy', () => {
     expect(visibleRepositorySyncActions(undefined)).toEqual([]);
   });
 
+  it('offers publication without an ahead count only for an existing local branch', () => {
+    const status = { branch: 'feature', upstream: null, ahead: 0, behind: 0 };
+    expect(visibleRepositorySyncActions(status)).toEqual(['push']);
+    expect(visibleRepositorySyncActions({ ...status, unborn: true })).toEqual([]);
+    expect(visibleRepositorySyncActions({ ...status, detached: true, branch: null })).toEqual([]);
+    expect(visibleRepositorySyncActions({ ...status, upstream: 'origin/feature' })).toEqual([]);
+    expect(projectPushSuccessCopy('repo', { status: 'published', remote: 'origin', branch: 'feature' }))
+      .toEqual({ title: 'repo: branch published', description: 'origin/feature' });
+  });
+
   it('keeps an in-flight operation visible while counts refresh', () => {
     expect(visibleRepositorySyncActions({ ahead: 0, behind: 0 }, 'push')).toEqual(['push']);
   });

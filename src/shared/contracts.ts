@@ -190,7 +190,15 @@ export type FetchResult =
   | { status: 'success'; ahead: number; behind: number }
   | { status: 'failed'; message: string };
 
+export interface PublishBranchOptions {
+  remote: string;
+  expectedBranch: string;
+  expectedOid: string;
+}
+
 export type PushResult =
+  | { status: 'published'; branch: string; remote: string }
+  | { status: 'remote-required'; branch: string; oid: string; remotes: string[] }
   | { status: 'success'; commits: number }
   | { status: 'up-to-date' }
   | { status: 'blocked-conflicts'; files: string[] }
@@ -534,7 +542,7 @@ export interface OpenTigApi {
     listWorktrees(repositoryId: string): Promise<WorktreeInfo[]>;
     selectWorktree(repositoryId: string, path: string): Promise<RepositoryInfo>;
     pull(repositoryId: string): Promise<PullResult>;
-    push(repositoryId: string): Promise<PushResult>;
+    push(repositoryId: string, publish?: PublishBranchOptions): Promise<PushResult>;
     /** Updates remote-tracking refs without merging or rebasing. */
     fetch(repositoryId: string): Promise<FetchResult>;
     /** Local branches plus every worktree; runs no per-worktree status scan. */

@@ -1,4 +1,4 @@
-import type { BranchSwitchResult, CommitResult, DiffRequest, DiffResult, FetchResult, GitResult, PrepareCommitGroupInput, PullResult, PushResult, UndoLatestCommitResult, WorktreeRemovalResult } from '../../shared/contracts';
+import type { BranchSwitchResult, CommitResult, DiffRequest, DiffResult, FetchResult, GitResult, PrepareCommitGroupInput, PublishBranchOptions, PullResult, PushResult, UndoLatestCommitResult, WorktreeRemovalResult } from '../../shared/contracts';
 import type {
   BranchComparisonKind, BranchDeletionResult, BranchDetails, BranchInfo, CommitFile, CommitPage, CommitSummary,
   FileChange, LocalRefsSnapshot, WorktreeDetails, WorktreeInfo,
@@ -572,13 +572,13 @@ export class GitRepositoryOperations {
     return { status: 'success', commits, restoredLocalChanges: hasLocalChanges, rebased, localCommits: nextStatus.ahead };
   }
 
-  async push(repositoryId: string): Promise<PushResult> {
+  async push(repositoryId: string, publish?: PublishBranchOptions): Promise<PushResult> {
     const repository = this.repositories.get(repositoryId);
     let status = await this.repositories.status(repositoryId, false);
     const existingConflicts = conflictPaths(status);
     if (existingConflicts.length > 0) return { status: 'blocked-conflicts', files: existingConflicts };
     if (status.operation) return { status: 'blocked-operation', operation: status.operation };
-    if (!status.upstream) return { status: 'no-upstream' };
+    if (!status.upstream || publish) return this.publishBranch(repositoryId, status.branch, status.oid, publish);
     if (status.ahead === 0) return { status: 'up-to-date' };
 
     try {
@@ -606,6 +606,49 @@ export class GitRepositoryOperations {
       return pushFailure(error);
     }
     return { status: 'success', commits };
+  }
+
+  private async publishBranch(repositoryId: string, expectedBranch: string | null, expectedOid: string | null, publish?: PublishBranchOptions): Promise<PushResult> {
+    const repository = this.repositories.get(repositoryId);
+    const rejected = (message: string): PushResult => ({ status: 'rejected', reason: 'configuration', message });
+    return this.git.runWriteTask(repository.path, async (run): Promise<PushResult> => {
+      const status = await this.repositories.status(repositoryId, false);
+      if (status.operation || status.readOnly) return { status: 'blocked-operation', operation: status.operation ?? 'another Git operation' };
+      const conflicts = conflictPaths(status);
+      if (conflicts.length > 0) return { status: 'blocked-conflicts', files: conflicts };
+      if (status.detached || !status.branch) return rejected('Check out a branch before publishing.');
+      if (status.unborn || !status.oid) return rejected('Create the first commit before publishing this branch.');
+      if (status.upstream || status.branch !== (publish?.expectedBranch ?? expectedBranch) || status.oid !== (publish?.expectedOid ?? expectedOid)) {
+        return rejected('The branch changed. Refresh and try publishing again.');
+      }
+      try {
+        const remotes = (await run(['remote'], { operation: 'publish-remotes', readOnly: true })).stdout.toString('utf8').trim().split(/\r?\n/).filter(Boolean);
+        if (remotes.length === 0) return rejected('No remote is configured. Add a remote before publishing this branch.');
+        let remote = publish?.remote;
+        if (!remote) {
+          for (const key of [`branch.${status.branch}.pushRemote`, 'remote.pushDefault', `branch.${status.branch}.remote`]) {
+            try {
+              remote = (await run(['config', '--get', key], { operation: 'publish-remote-config', readOnly: true })).stdout.toString('utf8').trim();
+            } catch (error) {
+              if (!(error instanceof GitOperationError) || error.detail.exitCode !== 1) throw error;
+            }
+            if (remote) break;
+          }
+          remote ||= remotes.length === 1 ? remotes[0] : undefined;
+        }
+        if (!remote) return { status: 'remote-required', branch: status.branch, oid: status.oid, remotes };
+        if (!remotes.includes(remote)) return rejected('The selected push remote is not configured. Check the repository remote settings.');
+        const ref = `refs/heads/${status.branch}`;
+        // An explicit refspec publishes only this branch, independent of push.default,
+        // remote push refspecs, mirror mode, or automatic tag following.
+        await run(['-c', `remote.${remote}.mirror=false`, 'push', '--porcelain', '--set-upstream', '--no-follow-tags', '--', remote, `${ref}:${ref}`], {
+          operation: 'publish-branch', timeoutMs: 120_000, maxOutputBytes: 16 * 1024 * 1024,
+        });
+        return { status: 'published', branch: status.branch, remote };
+      } catch (error) {
+        return pushFailure(error);
+      }
+    }, repository.commonDir);
   }
 
   async worktrees(repositoryId: string): Promise<WorktreeInfo[]> {

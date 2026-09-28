@@ -8,11 +8,19 @@ export interface RepositorySyncCounts {
   behind: number;
   branch?: string | null;
   detached?: boolean;
+  upstream?: string | null;
+  unborn?: boolean;
+  readOnly?: boolean;
+  operation?: string | null;
 }
 
 /** Sileo otherwise reuses `sileo-default`, replacing concurrent operations. */
 export function repositorySyncLoadingToast(repositoryId: string, action: ProjectSyncAction, title: string): SileoOptions & { id: string } {
   return { id: `repository-sync:${repositoryId}:${action}`, title };
+}
+
+export function needsBranchPublication(status: RepositorySyncCounts | null | undefined): boolean {
+  return Boolean(status?.branch && status.upstream === null && !status.detached && !status.unborn);
 }
 
 /** Only pending operations are visible; an in-flight operation stays visible. */
@@ -21,7 +29,7 @@ export function visibleRepositorySyncActions(counts: RepositorySyncCounts | unde
   if (!counts) return [];
   return [
     ...(counts.behind > 0 ? ['pull' as const] : []),
-    ...(counts.ahead > 0 ? ['push' as const] : []),
+    ...(counts.ahead > 0 || needsBranchPublication(counts) ? ['push' as const] : []),
   ];
 }
 
@@ -72,13 +80,15 @@ export function projectPullBlockedCopy(repository: string, result: Exclude<PullR
   };
 }
 
-export function projectPushSuccessCopy(repository: string, result: Extract<PushResult, { status: 'success' | 'up-to-date' }>): ProjectSyncToastCopy {
+export function projectPushSuccessCopy(repository: string, result: Extract<PushResult, { status: 'success' | 'up-to-date' | 'published' }>): ProjectSyncToastCopy {
+  if (result.status === 'published') return { title: `${repository}: branch published`, description: `${result.remote}/${result.branch}` };
   return result.status === 'success'
     ? { title: `${repository}: ${result.commits} ${result.commits === 1 ? 'commit pushed' : 'commits pushed'}` }
     : { title: `${repository}: no commits pending push` };
 }
 
-export function projectPushBlockedCopy(repository: string, result: Exclude<PushResult, { status: 'success' | 'up-to-date' }>): ProjectSyncToastCopy {
+export function projectPushBlockedCopy(repository: string, result: Exclude<PushResult, { status: 'success' | 'up-to-date' | 'published' }>): ProjectSyncToastCopy {
+  if (result.status === 'remote-required') return { title: `Choose a remote for ${repository}`, description: 'Select where to publish the branch.' };
   if (result.status === 'blocked-conflicts') return { title: `Could not push ${repository}`, description: `${result.files.length} pending ${result.files.length === 1 ? 'conflict' : 'conflicts'} must be resolved.`, duration: 10_000 };
   if (result.status === 'blocked-operation') return { title: `Could not push ${repository}`, description: `Finish or cancel ${result.operation} first.`, duration: 10_000 };
   if (result.status === 'no-upstream') return { title: `Could not push ${repository}`, description: 'Current branch has no upstream configured.', duration: 10_000 };

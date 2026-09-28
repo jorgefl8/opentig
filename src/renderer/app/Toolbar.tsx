@@ -18,7 +18,7 @@ import { samePath } from '@/features/refs/local-refs-model';
 import { RepositoryFaviconImage } from '@/features/repositories/RepositoryFavicon';
 import { useRepositoryFavicons } from '@/features/repositories/useRepositoryFavicons';
 import { buildRepositoryPickerModel, formatRepositoryCheckout, getRepositoryPickerDisplayOrder, type RepositoryOption } from '@/features/repositories/repository-select-model';
-import { visibleRepositorySyncActions, type ProjectSyncAction, type RepositorySyncCounts } from '@/features/repositories/project-sync';
+import { needsBranchPublication, visibleRepositorySyncActions, type ProjectSyncAction, type RepositorySyncCounts } from '@/features/repositories/project-sync';
 import { DesktopUpdateIndicator } from '@/features/settings/UpdateSettings';
 import type { SettingsSection } from '@/features/settings/SettingsDialog';
 import { normalizeRepositoryKey } from '../../shared/repository-projects';
@@ -55,6 +55,7 @@ const RepositoryProjectsDialog = lazy(() => import('@/features/repositories/Repo
 
 export function Toolbar(props: ToolbarProps) {
   const { onRecent } = props;
+  const publishBranch = needsBranchPublication(props.status);
   const shortcuts = useShortcuts();
   const repoSwitcherKey = shortcuts.repoSwitcher.toLowerCase();
   const [repositorySelectOpen, setRepositorySelectOpen] = useState(false);
@@ -99,6 +100,7 @@ export function Toolbar(props: ToolbarProps) {
             behind: fetched.status === 'success' ? fetched.behind : status.behind,
             branch: status.branch,
             detached: status.detached,
+            upstream: status.upstream, unborn: status.unborn, readOnly: status.readOnly, operation: status.operation,
           });
           return next;
         });
@@ -125,6 +127,7 @@ export function Toolbar(props: ToolbarProps) {
         behind: currentStatus.behind,
         branch: currentStatus.branch,
         detached: currentStatus.detached,
+        upstream: currentStatus.upstream, unborn: currentStatus.unborn, readOnly: currentStatus.readOnly, operation: currentStatus.operation,
       });
       return next;
     });
@@ -230,8 +233,9 @@ export function Toolbar(props: ToolbarProps) {
       <span className="repository-sync-actions">
         {visibleRepositorySyncActions(counts, props.repositorySyncOperations.get(group.recent.id)).map((action) => {
           const running = props.repositorySyncOperations.get(group.recent.id);
-          const disabled = Boolean(running) || (Boolean(props.busy) && group.recent.id === props.repository.id);
-          const label = action === 'pull' ? 'Pull' : 'Push';
+          const disabled = Boolean(running) || Boolean(counts?.readOnly || counts?.operation) || (Boolean(props.busy) && group.recent.id === props.repository.id);
+          const publishing = action === 'push' && needsBranchPublication(counts);
+          const label = action === 'pull' ? 'Pull' : publishing ? 'Publish branch' : 'Push';
           const count = action === 'pull' ? counts?.behind ?? 0 : counts?.ahead ?? 0;
           return (
             <Tooltip key={action}>
@@ -252,9 +256,9 @@ export function Toolbar(props: ToolbarProps) {
                 />
               )}>
                 {running === action ? <IconLoader4 data-icon="inline-start" className="animate-spin" /> : action === 'pull' ? <IconArrowDown data-icon="inline-start" /> : <IconArrowUp data-icon="inline-start" />}
-                <span>{count}</span>
+                <span>{publishing ? 'Publish' : count}</span>
               </TooltipTrigger>
-              <TooltipContent>{label} {count} {count === 1 ? 'commit' : 'commits'} · {checkoutLabel}</TooltipContent>
+              <TooltipContent>{publishing ? 'Publish branch' : `${label} ${count} ${count === 1 ? 'commit' : 'commits'}`} · {checkoutLabel}</TooltipContent>
             </Tooltip>
           );
         })}
@@ -319,7 +323,7 @@ export function Toolbar(props: ToolbarProps) {
         onReorder={props.onReorderFileTab}
       />
       <div className="toolbar-spacer" />
-      {props.status && (props.status.ahead > 0 || props.status.behind > 0 || props.status.insertions > 0 || props.status.deletions > 0 || props.busy === 'push' || props.busy === 'pull') && (
+      {props.status && (publishBranch || props.status.unborn || props.status.ahead > 0 || props.status.behind > 0 || props.status.insertions > 0 || props.status.deletions > 0 || props.busy === 'push' || props.busy === 'pull') && (
         <div className="branch-stats" aria-label="Branch and local changes summary">
           {(props.status.behind > 0 || props.busy === 'pull') && (
             <Tooltip>
@@ -329,12 +333,12 @@ export function Toolbar(props: ToolbarProps) {
               <TooltipContent>{props.busy === 'pull' ? 'Pulling changes…' : `Pull ${props.status.behind} ${props.status.behind === 1 ? 'commit' : 'commits'}`}</TooltipContent>
             </Tooltip>
           )}
-          {(props.status.ahead > 0 || props.busy === 'push') && (
+          {(publishBranch || props.status.unborn || props.status.ahead > 0 || props.busy === 'push') && (
             <Tooltip>
-              <TooltipTrigger render={<button className="branch-push" disabled={Boolean(props.busy) || currentRepositorySyncBusy} onClick={props.onPush} aria-label={`Push ${props.status.ahead} commits`} />}>
-                {props.busy === 'push' ? <IconLoader4 className="animate-spin" /> : <span>↑{props.status.ahead}</span>}
+              <TooltipTrigger render={<button className="branch-push" disabled={Boolean(props.busy) || currentRepositorySyncBusy || props.status.readOnly || props.status.unborn || props.status.detached} onClick={props.onPush} aria-label={publishBranch || props.status.unborn ? 'Publish branch' : `Push ${props.status.ahead} commits`} />}>
+                {props.busy === 'push' ? <IconLoader4 className="animate-spin" /> : <span>{publishBranch || props.status.unborn ? '↑ Publish' : `↑${props.status.ahead}`}</span>}
               </TooltipTrigger>
-              <TooltipContent>{props.busy === 'push' ? 'Pushing commits…' : `Push ${props.status.ahead} ${props.status.ahead === 1 ? 'commit' : 'commits'}`}</TooltipContent>
+              <TooltipContent>{props.status.unborn ? 'Create the first commit before publishing this branch' : props.busy === 'push' ? 'Pushing…' : publishBranch ? 'Publish branch and set upstream' : `Push ${props.status.ahead} ${props.status.ahead === 1 ? 'commit' : 'commits'}`}</TooltipContent>
             </Tooltip>
           )}
           {(props.status.insertions > 0 || props.status.deletions > 0) && (

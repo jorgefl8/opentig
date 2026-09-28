@@ -142,7 +142,10 @@ export function CreatePullRequestDialog(props: CreatePullRequestDialogProps) {
           </DialogDescription>
           {needsPublish && (
             <div className="create-pr-notice">
-              <span>The branch has no upstream. Publish it to origin (for example <code>git push -u origin {currentBranch ?? 'HEAD'}</code>) and refresh.</span>
+              <span>{detachedOrUnborn ? 'Check out a branch with at least one commit before publishing.' : 'Publish this branch before creating a pull request.'}</span>
+              <Button variant="outline" size="xs" disabled={props.pushBusy || detachedOrUnborn || Boolean(props.status?.readOnly)} onClick={props.onPush}>
+                {props.pushBusy ? <IconLoader4 className="animate-spin" /> : <IconUpload />} Publish branch
+              </Button>
             </div>
           )}
           {needsPush && (
