@@ -2150,7 +2150,11 @@ export default function App() {
               {view === 'history' && (
                 <Suspense fallback={sidebarFallback}>
                 <HistoryView
+                  key={repository.id}
                   repositoryId={repository.id}
+                  baseRef={historyQuery.data?.pages[0]?.baseRef}
+                  activeOid={viewerSelection?.type === 'commit' || viewerSelection?.type === 'commit-file' ? viewerSelection.oid : null}
+                  onSelectReference={githubInfo?.isGitHub ? (number) => { selectViewer({ type: 'pull-request', number }); } : undefined}
                   upstream={status?.upstream ?? null}
                   canPublish={needsBranchPublication(status)}
                   pushBusy={Boolean(busy) || repositorySyncOperations.has(repository.id)}

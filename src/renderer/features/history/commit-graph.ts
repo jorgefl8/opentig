@@ -1,6 +1,8 @@
 export interface CommitGraphInput {
   oid: string;
   parentOids: string[];
+  /** Reserved primary-line colors: local (0), published (1), base (2). */
+  color?: number | undefined;
 }
 
 export interface CommitGraphSegment {
@@ -29,10 +31,20 @@ export interface CommitGraphLayout {
  */
 export function buildCommitGraph(commits: readonly CommitGraphInput[]): CommitGraphLayout {
   let lanes: string[] = [];
-  let nextColor = 0;
+  let nextColor = commits.some((commit) => commit.color !== undefined) ? 3 : 0;
   let laneCount = 1;
   const colors = new Map<string, number>();
   const rows: CommitGraphRow[] = [];
+  // Reserve the first-parent line before visiting side branches so a branch
+  // encountered first cannot steal the color of its eventual join point.
+  const byOid = new Map(commits.map((commit) => [commit.oid, commit]));
+  const primary = new Set<string>();
+  let current = commits[0];
+  while (current && !primary.has(current.oid)) {
+    primary.add(current.oid);
+    if (current.color !== undefined) colors.set(current.oid, current.color);
+    current = byOid.get(current.parentOids[0] ?? '');
+  }
 
   for (const commit of commits) {
     let lane = lanes.indexOf(commit.oid);
@@ -42,7 +54,11 @@ export function buildCommitGraph(commits: readonly CommitGraphInput[]): CommitGr
       lanes = [...lanes, commit.oid];
     }
     const incoming = lanes;
-    const commitColor = ensureColor(colors, commit.oid, () => nextColor++);
+    const incomingColor = ensureColor(colors, commit.oid, () => commit.color ?? nextColor++);
+    // Reference states can change on the first-parent line. Side lanes retain
+    // their own color until they rejoin, even when all their commits are on main.
+    const commitColor = incomingColor < 3 ? commit.color ?? incomingColor : incomingColor;
+    colors.set(commit.oid, commitColor);
     const outgoing = incoming.filter((_, index) => index !== lane);
     let insertionLane = Math.min(lane, outgoing.length);
 
@@ -58,7 +74,7 @@ export function buildCommitGraph(commits: readonly CommitGraphInput[]): CommitGr
     const segments: CommitGraphSegment[] = [];
     incoming.forEach((oid, fromLane) => {
       if (fromLane === lane) {
-        if (connectedFromAbove) segments.push({ fromLane, from: 'top', toLane: lane, to: 'node', color: colors.get(oid) ?? commitColor });
+        if (connectedFromAbove) segments.push({ fromLane, from: 'top', toLane: lane, to: 'node', color: incomingColor });
         return;
       }
       const toLane = outgoing.indexOf(oid);
