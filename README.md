@@ -40,7 +40,7 @@ The interface defaults to **Plus Jakarta Sans**, with **JetBrains Mono** for cod
 
 The [full feature guide](docs/features.md) covers these workflows, optional AI assistance, preferences, and keyboard shortcuts.
 
-History keeps the existing sidebar sections and opens commits, files, and GitHub PR references in the right-hand viewer. Switch row density, search loaded commits without losing graph context, or group complete merge branches. Colors distinguish local commits, published work, and the locally known base branch; squash histories stay linear. [History details](docs/features.md#history) · [Interactive design reference](docs/proposals/commit-history.html)
+History keeps the existing sidebar sections and opens commits, files, and GitHub PR references in the right-hand viewer. Switch row density, search loaded commits without losing graph context, or group complete merge branches. Theme colors distinguish local commits (amber), published work and merge branches (OpenTig blue), and the locally known base branch (neutral gray); squash histories stay linear. [History details](docs/features.md#history) · [Interactive design reference](docs/proposals/commit-history.html) · [Palette comparison](docs/proposals/history-colors.html)
 
 ## Choose how to run it
 

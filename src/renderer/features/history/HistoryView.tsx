@@ -89,7 +89,7 @@ export function HistoryView({ repositoryId, upstream, readOnly, operation, canPu
       </div>
       {commits.length > 0 && <div className="history-legend">
         <span><i data-color="local" />Local</span><span><i data-color="published" />Published</span>
-        {baseRef && <Tooltip><TooltipTrigger render={<span className="history-base-label" />}><i data-color="base" />{baseRef}</TooltipTrigger><TooltipContent>Primary-line commits reachable from {baseRef}, using the latest known local refs. Side branches retain their own colors.</TooltipContent></Tooltip>}
+        {baseRef && <Tooltip><TooltipTrigger render={<span className="history-base-label" />}><i data-color="base" />{baseRef}</TooltipTrigger><TooltipContent>Primary-line commits reachable from {baseRef}, using the latest known local refs. Side branches use the published color.</TooltipContent></Tooltip>}
         <span className="history-count" role="status">{search ? `${matches.length} matches in ${commits.length} loaded` : `${commits.length} loaded`}</span>
       </div>}
     </div>
@@ -211,7 +211,7 @@ function CommitRow({ repositoryId, upstream, baseRef, commit, graphRow, graphWid
 }
 
 const GRAPH_LANE_GAP = 14;
-const GRAPH_COLORS = ['var(--history-local)', 'var(--history-published)', 'var(--history-base)', 'var(--history-side-1)', 'var(--history-side-2)', 'var(--history-side-3)'];
+const GRAPH_COLORS = ['var(--history-local)', 'var(--history-published)', 'var(--history-base)'];
 
 function graphWidthForLanes(laneCount: number): number {
   return 14 + Math.max(0, laneCount - 1) * GRAPH_LANE_GAP;
@@ -222,7 +222,8 @@ function graphX(lane: number): number {
 }
 
 function graphColor(index: number): string {
-  return GRAPH_COLORS[index % GRAPH_COLORS.length]!;
+  // Extra merge lanes share the published color; lane position conveys topology.
+  return GRAPH_COLORS[index] ?? 'var(--history-published)';
 }
 
 function CommitGraph({ graph, width, height, merge, head }: { graph: CommitGraphRow; width: number; height: number; merge: boolean; head: boolean }) {
