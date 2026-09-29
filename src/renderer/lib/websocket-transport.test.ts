@@ -143,6 +143,23 @@ describe('OpenTigWebSocketTransport', () => {
     expect(states).toContain('auth-required');
   });
 
+  it('classifies authentication rejection after the socket opens for in-flight bootstrap', async () => {
+    vi.useFakeTimers();
+    const { transport, sockets } = fixture();
+    const pending = transport.request(IPC.bootstrap, []);
+    const rejection = expect(pending).rejects.toBeInstanceOf(ServerAuthenticationError);
+    sockets[0]!.open();
+    await Promise.resolve();
+    expect(sockets[0]!.sent).toHaveLength(1);
+
+    sockets[0]!.serverClose(1008);
+    await rejection;
+    expect(transport.getState()).toBe('auth-required');
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(sockets).toHaveLength(1);
+    transport.close();
+  });
+
   it('heartbeats and reconnects when no pong arrives', async () => {
     vi.useFakeTimers();
     const { transport, sockets } = fixture({ heartbeatMs: 50 });

@@ -225,12 +225,15 @@ export class OpenTigWebSocketTransport {
     if (generation !== this.socketGeneration) return;
     this.socket = null;
     this.clearHeartbeat();
-    this.rejectPending(new ServerDisconnectedError('OpenTig server disconnected before the request completed.'));
+    const error = closeCode === 1008
+      ? new ServerAuthenticationError('Authentication required.')
+      : new ServerDisconnectedError('OpenTig server disconnected before the request completed.');
+    this.rejectPending(error);
     if (this.stopped) return;
     if (closeCode === 1008) {
       this.stopped = true;
       this.setState('auth-required');
-      this.rejectConnectionWaiters(new ServerAuthenticationError('Authentication required.'));
+      this.rejectConnectionWaiters(error);
       return;
     }
     this.reconnectAttempts += 1;

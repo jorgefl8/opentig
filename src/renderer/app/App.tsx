@@ -48,6 +48,7 @@ import { persistTheme } from '@/lib/boot-theme';
 import { useMobileLayout } from '@/lib/use-mobile-layout';
 import { opentig, serverClient } from '@/lib/opentig-api';
 import { startupSplashDetail } from '@/lib/startup-splash';
+import { ServerAuthenticationError } from '@/lib/websocket-transport';
 import { conflictNotificationAction, conflictToastId } from '@/features/changes/conflict-notification';
 import { fileCutTransferId, writeClipboardText, writeFileTransfer } from '@/lib/browser-capabilities';
 import { needsBranchPublication, projectPullBlockedCopy, projectPullSuccessCopy, projectPushBlockedCopy, projectPushSuccessCopy, pullSuccessCopy, repositorySyncLoadingToast, type ProjectSyncAction } from '@/features/repositories/project-sync';
@@ -231,7 +232,12 @@ export default function App() {
       for (const state of data.filesTreeStates) filesTreeStates.set(state.repositoryId, [...state.expandedPaths]);
       setBootstrap(data);
       setRepository(data.activeRepository);
-    }).catch((reason) => reportError('Could not start OpenTig', reason));
+    }).catch((reason) => {
+      // The connection boundary owns the pairing screen, including a session
+      // rejected while bootstrap is already in flight.
+      if (!active || reason instanceof ServerAuthenticationError) return;
+      reportError('Could not start OpenTig', reason);
+    });
     opentig.app.capabilities().then((available) => {
       if (active) setCapabilities(available);
     }).catch(() => undefined);
