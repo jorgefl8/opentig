@@ -1,3 +1,4 @@
+import { PullRequestStackMenu } from './PullRequestStackMenu';
 import { useRef } from 'react';
 import { Popover } from '@base-ui/react/popover';
 import { useVirtualizer } from '@tanstack/react-virtual';
@@ -11,6 +12,7 @@ import { openOnGitHub } from './gh-utils';
 import { GitHubAvatar } from './GitHubAvatar';
 
 interface PullRequestsViewProps {
+  repositoryId: string;
   info: GitHubRepositoryInfo | null;
   ghStatus: GhCliStatus | null;
   pulls: PullRequestSummary[] | null;
@@ -21,7 +23,7 @@ interface PullRequestsViewProps {
   createDisabledReason: string | null;
   onRefresh(): void;
   onStateChange(state: PullRequestState, checked: boolean): void;
-  onSelect(pr: PullRequestSummary): void;
+  onSelect(number: number): void;
   onCreate(): void;
   onCopyCommand(command: string): void;
 }
@@ -147,7 +149,7 @@ function PullsList(props: PullRequestsViewProps & { nameWithOwner: string }) {
                   className="virtual-row"
                   style={{ transform: `translateY(${virtualRow.start}px)` }}
                 >
-                  <PullRow pr={pr} active={props.activeNumber === pr.number} onSelect={props.onSelect} />
+                  <PullRow repositoryId={props.repositoryId} pr={pr} active={props.activeNumber === pr.number} onSelect={props.onSelect} />
                 </div>
               );
             })}
@@ -158,12 +160,12 @@ function PullsList(props: PullRequestsViewProps & { nameWithOwner: string }) {
   );
 }
 
-function PullRow({ pr, active, onSelect }: { pr: PullRequestSummary; active: boolean; onSelect(pr: PullRequestSummary): void }) {
+function PullRow({ repositoryId, pr, active, onSelect }: { repositoryId: string; pr: PullRequestSummary; active: boolean; onSelect(number: number): void }) {
   const stateClass = pr.state.toLowerCase();
   const relativeUpdate = formatRelativeUpdate(pr.updatedAt);
   return (
     <div className={`pull-item ${active ? 'active' : ''}`} role="listitem">
-      <button className="pull-main" onClick={() => onSelect(pr)} aria-label={`View pull request #${pr.number}`}>
+      <button className="pull-main" onClick={() => onSelect(pr.number)} aria-label={`View pull request #${pr.number}`}>
         <span className={`pull-state-icon ${stateClass}${pr.isDraft ? ' draft' : ''}`} aria-label={pr.isDraft ? 'Draft' : stateLabel(pr.state)}><PullStateIcon state={pr.state} /></span>
         <span className="pull-content">
           <span className="pull-title">{pr.title || '(no title)'}</span>
@@ -180,6 +182,7 @@ function PullRow({ pr, active, onSelect }: { pr: PullRequestSummary; active: boo
           <span className="pull-line-stats"><span className="add">+{pr.additions}</span> <span className="del">−{pr.deletions}</span></span>
         </span>
       </button>
+      {pr.stack && <PullRequestStackMenu repositoryId={repositoryId} number={pr.number} membership={pr.stack} onSelect={onSelect} />}
       <Tooltip>
         <TooltipTrigger render={<Button variant="ghost" size="icon-xs" className="change-action-button pull-open-external" onClick={() => openOnGitHub(pr.url)} aria-label={`Open #${pr.number} on GitHub`} />}>
           <IconExternalLink />

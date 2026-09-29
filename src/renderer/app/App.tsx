@@ -654,9 +654,17 @@ export default function App() {
   }, [repository?.id]);
 
   const loadPulls = useCallback(async (_states: PullRequestState[], forceStatus = false) => {
-    if (forceStatus) forceGhStatusRef.current = true;
+    if (forceStatus) {
+      forceGhStatusRef.current = true;
+      if (repository) {
+        await Promise.all([
+          appQueryClient.invalidateQueries({ queryKey: ['repository', repository.id, 'pull-request-stack'] }),
+          appQueryClient.invalidateQueries({ queryKey: ['repository', repository.id, 'pull-request'] }),
+        ]);
+      }
+    }
     await pullsQuery.refetch();
-  }, [pullsQuery]);
+  }, [appQueryClient, pullsQuery, repository]);
 
   useEffect(() => {
     void refresh();
@@ -2187,6 +2195,7 @@ export default function App() {
               {view === 'prs' && (
                 <Suspense fallback={sidebarFallback}>
                 <PullRequestsView
+                  repositoryId={repository.id}
                   info={githubInfo}
                   ghStatus={ghStatus}
                   pulls={pulls}
@@ -2205,7 +2214,7 @@ export default function App() {
                     const nextStates = order.filter((candidate) => candidate === state ? checked : pullRequestStates.includes(candidate));
                     setPullRequestStates(nextStates);
                   }}
-                  onSelect={(pr) => { selectViewer({ type: 'pull-request', number: pr.number }); }}
+                  onSelect={(number) => { selectViewer({ type: 'pull-request', number }); }}
                   onCreate={() => setCreatePrOpen(true)}
                   onCopyCommand={(command) => {
                     void writeClipboardText(command)

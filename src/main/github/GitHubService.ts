@@ -1,7 +1,8 @@
+import { parsePullRequestStack, parseStackMemberships, stackMembershipQuery } from './PullRequestStackParser';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import type { CreatePullRequestInput, CreatePullRequestResult, DiffResult, GhCliStatus, GitHubRepositoryInfo, PullRequestDetails, PullRequestState, PullRequestSummary } from '../../shared/contracts';
+import type { CreatePullRequestInput, CreatePullRequestResult, DiffResult, GhCliStatus, GitHubRepositoryInfo, PullRequestDetails, PullRequestStack, PullRequestState, PullRequestSummary } from '../../shared/contracts';
 import { AiOperationError, GhOperationError } from '../../shared/errors';
 import type { CliProcessRunner, CliRunResult } from '../ai/CliProcessRunner';
 import type { CliResolver } from '../ai/CliResolver';
@@ -57,7 +58,7 @@ export class GitHubService {
       ['pr', 'list', '-R', nameWithOwner, '--state', state.toLowerCase(), '--json', PR_SUMMARY_FIELDS, '--limit', '50'],
       { cwd: repository.path, operation: 'gh-pr-list', timeoutMs: NETWORK_TIMEOUT_MS, maxOutputBytes: 4 * 1024 * 1024 },
     )));
-    return selectPullRequestsNewestFirst(results.flatMap((result) => parsePullRequestList(result.stdout)), states);
+    return this.withStackMembership(repository.path, nameWithOwner, selectPullRequestsNewestFirst(results.flatMap((result) => parsePullRequestList(result.stdout)), states));
   }
 
   async findPullRequestForBranch(repositoryId: string, branchName: string): Promise<PullRequestSummary | null> {
@@ -77,7 +78,51 @@ export class GitHubService {
       ['pr', 'view', String(prNumber), '-R', nameWithOwner, '--json', PR_DETAIL_FIELDS],
       { cwd: repository.path, operation: 'gh-pr-view', timeoutMs: NETWORK_TIMEOUT_MS, maxOutputBytes: 4 * 1024 * 1024 },
     );
-    return parsePullRequestDetails(result.stdout);
+    const details = parsePullRequestDetails(result.stdout);
+    return (await this.withStackMembership(repository.path, nameWithOwner, [details]))[0]!;
+  }
+
+  private async withStackMembership<T extends PullRequestSummary>(cwd: string, nameWithOwner: string, pulls: T[]): Promise<T[]> {
+    const [owner, name] = nameWithOwner.split('/');
+    const enriched: T[] = [];
+    // Bound query size and avoid one request per PR. Metadata is optional: normal PRs
+    // remain readable on older hosts, rate limits, or unavailable stack previews.
+    for (let start = 0; start < pulls.length; start += 25) {
+      const batch = pulls.slice(start, start + 25);
+      try {
+        const numbers = batch.map((pr) => pr.number);
+        const result = await this.runGh(['api', 'graphql', '-f', `owner=${owner}`, '-f', `name=${name}`, '-f', `query=${stackMembershipQuery(numbers)}`], {
+          cwd, operation: 'gh-pr-stack-membership', timeoutMs: 10_000, maxOutputBytes: 1024 * 1024,
+        });
+        const memberships = parseStackMemberships(result.stdout, numbers);
+        enriched.push(...batch.map((pr) => {
+          const stack = memberships.get(pr.number);
+          return stack ? { ...pr, stack } : pr;
+        }));
+      } catch { enriched.push(...batch); }
+    }
+    return enriched;
+  }
+
+  async getPullRequestStack(repositoryId: string, prNumber: number): Promise<PullRequestStack | null> {
+    const operation = 'gh-pr-stack';
+    const { repository, nameWithOwner } = await this.requireGitHub(repositoryId, operation);
+    const options = { cwd: repository.path, operation, timeoutMs: NETWORK_TIMEOUT_MS, maxOutputBytes: 4 * 1024 * 1024 };
+    const read = async (endpoint: string) => this.runGh(['api', endpoint], options);
+    let listing: CliRunResult;
+    try { listing = await read(`repos/${nameWithOwner}/stacks?pull_request=${prNumber}`); }
+    catch (error) {
+      // Only an explicit unsupported/not-found response is absence. Transient and
+      // authentication failures must preserve the renderer's last successful data.
+      if (error instanceof GhOperationError && error.detail.code === 'GH_PROCESS_FAILED' && /HTTP 404/.test(error.message)) return null;
+      throw error;
+    }
+    const stack = parsePullRequestStack(listing.stdout, prNumber, true);
+    if (!stack) return null;
+    const details = await read(`repos/${nameWithOwner}/stacks/${stack.number}`);
+    const complete = parsePullRequestStack(details.stdout, prNumber);
+    if (complete?.number !== stack.number) throw new GhOperationError({ code: 'GH_INVALID_OUTPUT', operation, message: 'The stack changed while loading. Refresh to try again.' });
+    return complete;
   }
 
   async getPullRequestDiff(repositoryId: string, prNumber: number): Promise<DiffResult> {
