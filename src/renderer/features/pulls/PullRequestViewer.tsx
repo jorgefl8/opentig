@@ -1,3 +1,4 @@
+import { PullRequestStackMenu } from './PullRequestStackMenu';
 import { lazy, Suspense, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { IconCircleCheck, IconCircleX, IconClock, IconExternalLink, IconGitBranch, IconGitCommit, IconLoader4, IconRefresh, IconTag } from '@tabler/icons-react';
@@ -25,9 +26,10 @@ interface PullRequestViewerProps {
   onDiffViewChange(value: DiffViewPreference): void;
   onWrapLinesChange(value: boolean): void;
   onClose(): void;
+  onSelectPullRequest(number: number): void;
 }
 
-export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType, wrapLines, onDiffViewChange, onWrapLinesChange, onClose }: PullRequestViewerProps) {
+export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType, wrapLines, onDiffViewChange, onWrapLinesChange, onClose, onSelectPullRequest }: PullRequestViewerProps) {
   const [tab, setTab] = useState<'summary' | 'timeline' | 'diff'>('summary');
   const detailsQuery = useQuery<{ details: PullRequestDetails; bodyHtml: string }>({
     queryKey: queryKeys.pullRequest(repositoryId, prNumber),
@@ -90,6 +92,7 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
           </span>
           <PullRequestChecks state={details.checksState} />
           {review && <Badge variant="outline" className="pr-review-badge">{review}</Badge>}
+          {details.stack && <PullRequestStackMenu repositoryId={repositoryId} number={prNumber} membership={details.stack} onSelect={onSelectPullRequest} />}
           <span className="pr-viewer-actions">
             <Button variant="outline" size="xs" onClick={() => openOnGitHub(details.url)}><IconExternalLink /> Open on GitHub</Button>
           </span>

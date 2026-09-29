@@ -350,7 +350,23 @@ export interface PullRequestCommit {
   authorAvatarUrl: string | null;
 }
 
+export interface PullRequestStackMembership {
+  number: number;
+  size: number;
+  position: number;
+  base: string;
+}
+
+export interface PullRequestStack {
+  number: number;
+  base: string;
+  /** GitHub's native order, from bottom to top. */
+  layers: Array<{ number: number; title: string; headRefName: string; state: PullRequestState; isDraft: boolean }>;
+}
+
 export interface PullRequestSummary {
+  stack?: PullRequestStackMembership;
+
   number: number;
   title: string;
   state: PullRequestState;
@@ -568,6 +584,7 @@ export interface OpenTigApi {
     findPullRequestForBranch(repositoryId: string, branchName: string): Promise<PullRequestSummary | null>;
     listPullRequests(repositoryId: string, states: PullRequestState[]): Promise<PullRequestSummary[]>;
     getPullRequest(repositoryId: string, number: number): Promise<PullRequestDetails>;
+    getPullRequestStack(repositoryId: string, number: number): Promise<PullRequestStack | null>;
     getPullRequestDiff(repositoryId: string, number: number): Promise<DiffResult>;
     getPullRequestCommitDiff(repositoryId: string, oid: string): Promise<DiffResult>;
     createPullRequest(input: CreatePullRequestInput): Promise<CreatePullRequestResult>;
@@ -610,5 +627,5 @@ export const IPC = {
   aiStatuses: 'ai:statuses', aiGenerateCommitMessage: 'ai:generate-commit-message', aiCancelGeneration: 'ai:cancel-generation', aiLog: 'ai:log', aiClearLog: 'ai:clear-log',
   diagnosticsList: 'diagnostics:list', diagnosticsClear: 'diagnostics:clear', diagnosticsRecord: 'diagnostics:record',
   githubStatus: 'github:status', githubRepositoryInfo: 'github:repository-info', githubPrForBranch: 'github:pr-for-branch', githubPrList: 'github:pr-list', githubPrView: 'github:pr-view',
-  githubPrDiff: 'github:pr-diff', githubPrCommitDiff: 'github:pr-commit-diff', githubPrCreate: 'github:pr-create', githubPrDraft: 'github:pr-draft', githubPrDraftCancel: 'github:pr-draft-cancel',
+  githubPrStack: 'github:pr-stack', githubPrDiff: 'github:pr-diff', githubPrCommitDiff: 'github:pr-commit-diff', githubPrCreate: 'github:pr-create', githubPrDraft: 'github:pr-draft', githubPrDraftCancel: 'github:pr-draft-cancel',
 } as const;

@@ -27,6 +27,7 @@ export const queryKeys = {
   githubInfo: (repositoryId: string) => ['repository', repositoryId, 'github-info'] as const,
   pulls: (repositoryId: string, states: readonly PullRequestState[]) => ['repository', repositoryId, 'pulls', ...states] as const,
   pullRequest: (repositoryId: string, number: number) => ['repository', repositoryId, 'pull-request', number] as const,
+  pullRequestStack: (repositoryId: string, number: number) => ['repository', repositoryId, 'pull-request-stack', number] as const,
   pullRequestDiff: (repositoryId: string, number: number) => ['repository', repositoryId, 'pull-request-diff', number] as const,
   pullRequestCommitDiff: (repositoryId: string, oid: string) => ['repository', repositoryId, 'pull-request-commit-diff', oid] as const,
   search: (repositoryId: string, input: object) => ['repository', repositoryId, 'search', input] as const,

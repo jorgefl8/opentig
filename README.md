@@ -40,7 +40,9 @@ The interface defaults to **Plus Jakarta Sans**, with **JetBrains Mono** for cod
 
 The [full feature guide](docs/features.md) covers these workflows, optional AI assistance, preferences, and keyboard shortcuts.
 
-History keeps the existing sidebar sections and opens commits, files, and GitHub PR references in the right-hand viewer. Switch row density, search loaded commits without losing graph context, or group complete merge branches. Theme colors distinguish local commits (amber), published work and merge branches (OpenTig blue), and the locally known base branch (neutral gray); squash histories stay linear. [History details](docs/features.md#history) · [Interactive design reference](docs/proposals/commit-history.html) · [Palette comparison](docs/proposals/history-colors.html)
+History keeps the existing sidebar sections and opens commits, files, and GitHub PR references in the right-hand viewer. Switch row density, search loaded commits without losing graph context, or group complete merge branches. Theme colors distinguish local commits (amber), published work and merge branches (OpenTig blue), and the locally known base branch (neutral gray); squash histories stay linear. [History details](docs/features.md#history)
+
+GitHub PRs show native stack positions such as **2/3**. Open the indicator in the list or right-hand viewer to navigate between layers and see their states and base branch. Stack details load on demand; a failed refresh keeps previously loaded layers available with a notice. Stack navigation is read-only.
 
 ## Choose how to run it
 

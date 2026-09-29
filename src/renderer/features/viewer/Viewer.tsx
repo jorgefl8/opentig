@@ -205,6 +205,7 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
           key={`${repositoryId}:${selection.number}`}
           repositoryId={repositoryId}
           prNumber={selection.number}
+          onSelectPullRequest={(number) => onSelect({ type: 'pull-request', number })}
           diffView={diffView}
           themeType={themeType}
           wrapLines={wrapLines}

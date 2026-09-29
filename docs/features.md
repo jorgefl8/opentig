@@ -121,6 +121,7 @@ OpenTig is early-stage software. This guide describes the current interface and 
 GitHub features use the authenticated GitHub CLI (`gh`):
 
 - List open pull requests for the current GitHub repository.
+- Navigate native GitHub stacks through a layer indicator (for example, **2/3**) in each PR row and the right-hand viewer. The menu lists layers with their state, title, branch, and base, including layers outside the current list filter. Details load only when opened; refresh failures keep previously loaded layers with a notice and retry. Branch relationships are not inferred, and stack navigation does not merge or rebase branches.
 - Inspect pull-request metadata, Markdown description, and full diff.
 - Switch the pull-request **Code** view between all cumulative changes and the diff introduced by an individual commit.
 - The **By commit** diff selector uses the app’s styled, keyboard-accessible menu, with readable commit subjects and scrollable options that fit the viewport.
