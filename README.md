@@ -36,7 +36,7 @@ It works with existing repositories using the Git installation on the host. You 
 | **Review GitHub PRs** | Browse pull requests, inspect their changes, and prepare new PRs through your authenticated `gh` CLI. [Details](docs/features.md#github-pull-requests) |
 | **Use a remote server** | Run without Electron, pair your browser, and work with repositories on the server. Browsers without a valid session see pairing instructions without a startup error notification. A single persistent notification tracks connection problems and disappears when you reconnect. [Details](docs/web-access.md) |
 
-The interface defaults to **Plus Jakarta Sans**, with **JetBrains Mono** for code. Choose each independently in Settings → General; existing font selections are preserved.
+The interface defaults to **Plus Jakarta Sans**, with **JetBrains Mono** for code. Choose each independently in Settings → General; existing font selections are preserved. Repository, worktree, and branch dropdowns follow the active light or dark theme.
 
 The [full feature guide](docs/features.md) covers these workflows, optional AI assistance, preferences, and keyboard shortcuts.
 
