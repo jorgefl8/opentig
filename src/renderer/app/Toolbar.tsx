@@ -7,7 +7,7 @@ import type { BootstrapData, Preferences, RecentRepository, RepositoryInfo, Repo
 import type { BranchInfo, RepositoryStatus, WorktreeInfo } from '../../shared/git-types';
 import { Button } from '@/components/ui/button';
 import { Kbd } from '@/components/ui/kbd';
-import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { ToolbarPicker, type ToolbarPickerItem } from '@/components/ToolbarPicker';
 import { OpenTigMark } from '@/components/OpenTigMark';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { isEditableTarget } from '@/features/files/file-tree';
@@ -47,8 +47,6 @@ export interface ToolbarProps {
   onSettingsOpen(open: boolean): void; onSettingsSection(section: SettingsSection): void;
 }
 
-const MANAGE_PROJECTS_VALUE = '__opentig_manage_projects__';
-const MANAGE_WORKTREES_VALUE = '\0__opentig_manage_worktrees__';
 const SettingsDialog = lazy(() => import('@/features/settings/SettingsDialog').then((module) => ({ default: module.SettingsDialog })));
 const LocalRefsDialog = lazy(() => import('@/features/refs/LocalRefsDialog').then((module) => ({ default: module.LocalRefsDialog })));
 const RepositoryProjectsDialog = lazy(() => import('@/features/repositories/RepositoryProjectsDialog').then((module) => ({ default: module.RepositoryProjectsDialog })));
@@ -212,7 +210,7 @@ export function Toolbar(props: ToolbarProps) {
     };
   }, [clearRepositoryNumberShortcut, projectsOpen, props.settingsOpen, refsOpen, repoSwitcherKey, repositorySelectOpen, selectRepositoryAt, visibleRepositories]);
 
-  const repositoryItem = (group: RepositoryOption, projectName: string | null = null) => {
+  const repositoryItem = (group: RepositoryOption, projectName: string | null = null): ToolbarPickerItem => {
     const counts = repositorySyncCounts.get(group.recent.id);
     const checkout = counts && (counts.branch !== undefined || counts.detached !== undefined)
       ? { branch: counts.branch ?? null, detached: counts.detached === true }
@@ -220,16 +218,14 @@ export function Toolbar(props: ToolbarProps) {
         ? { branch: props.status.branch, detached: props.status.detached }
         : undefined;
     const checkoutLabel = formatRepositoryCheckout(group, checkout);
-    return (
-    <SelectItem key={group.key} value={group.key} className="repo-select-item">
-      <RepositoryFaviconImage src={favicons.get(group.key)} />
-      <Tooltip>
-        <TooltipTrigger render={<span className="repo-select-item-copy" />}>
-          <strong>{group.name}</strong>
-          {checkoutLabel ? <small>{checkoutLabel}</small> : null}
-        </TooltipTrigger>
-        <TooltipContent>{group.recent.path}</TooltipContent>
-      </Tooltip>
+    return {
+      value: group.key,
+      label: group.name,
+      description: checkoutLabel || 'Repository',
+      search: group.recent.path,
+      tooltip: group.recent.path,
+      icon: <RepositoryFaviconImage src={favicons.get(group.key)} />,
+      trailing: <>
       <span className="repository-sync-actions">
         {visibleRepositorySyncActions(counts, props.repositorySyncOperations.get(group.recent.id)).map((action) => {
           const running = props.repositorySyncOperations.get(group.recent.id);
@@ -264,8 +260,8 @@ export function Toolbar(props: ToolbarProps) {
         })}
       </span>
       <Kbd className="repo-select-index">{repositoryIndex.get(group.key)}</Kbd>
-    </SelectItem>
-    );
+      </>,
+    };
   };
   return (
     <header className="toolbar">
@@ -273,39 +269,32 @@ export function Toolbar(props: ToolbarProps) {
         <OpenTigMark />
         <span>{appDisplayName}</span>
       </div>
-      <Select open={repositorySelectOpen} onOpenChange={(open) => {
-        setRepositorySelectOpen(open);
-        if (!open) clearRepositoryNumberShortcut();
-      }} value={currentRepositoryKey} onValueChange={(key) => {
-        if (key === MANAGE_PROJECTS_VALUE) { setProjectsOpen(true); return; }
-        onRecent(picker.repositories.find((group) => group.key === key)?.recent.id ?? null);
-      }}>
-        <SelectTrigger
-          size="sm"
-          className="repo-select max-w-[240px]"
-          aria-label="Select project or repository"
-          aria-keyshortcuts="Q"
-        >
-          <RepositoryFaviconImage src={favicons.get(currentRepositoryKey)} />
-          <SelectValue>{props.repository.repositoryName}</SelectValue>
-          <Kbd className="repo-select-shortcut" aria-hidden="true">Q</Kbd>
-        </SelectTrigger>
-        <SelectContent align="start" alignItemWithTrigger={false} className="w-max max-w-[min(380px,calc(100vw-24px))] p-1">
-          {picker.projectSections.map((section) => (
-            <SelectGroup key={section.id} className="repo-select-group p-0">
-              <SelectLabel className="repo-select-label"><span className="repo-select-label-name">{section.name}</span></SelectLabel>
-              {section.repositories.map((repository) => repositoryItem(repository, section.name))}
-            </SelectGroup>
-          ))}
-          {picker.unassigned.length > 0 && (
-            <SelectGroup className="repo-select-group p-0">
-              <SelectLabel className="repo-select-label plain"><span>Repositories</span></SelectLabel>
-              {picker.unassigned.map((repository) => repositoryItem(repository))}
-            </SelectGroup>
-          )}
-          <SelectItem value={MANAGE_PROJECTS_VALUE} className="repo-select-manage"><IconSettings /><span>Manage projects…</span></SelectItem>
-        </SelectContent>
-      </Select>
+      <ToolbarPicker
+        groups={[
+          ...picker.projectSections.map((section) => ({
+            id: section.id,
+            label: section.name,
+            items: section.repositories.map((repository) => repositoryItem(repository, section.name)),
+          })),
+          { id: 'unassigned', label: 'Repositories', items: picker.unassigned.map((repository) => repositoryItem(repository)) },
+        ]}
+        open={repositorySelectOpen}
+        onOpenChange={(open) => { setRepositorySelectOpen(open); if (!open) clearRepositoryNumberShortcut(); }}
+        onSearchChange={clearRepositoryNumberShortcut}
+        focusSearch={false}
+        value={currentRepositoryKey}
+        onValueChange={(key) => onRecent(picker.repositories.find((group) => group.key === key)?.recent.id ?? null)}
+        label="Select project or repository"
+        triggerLabel={props.repository.repositoryName}
+        icon={<RepositoryFaviconImage src={favicons.get(currentRepositoryKey)} />}
+        triggerHint={<Kbd className="repo-select-shortcut" aria-hidden="true">{repoSwitcherKey.toUpperCase()}</Kbd>}
+        shortcut={repoSwitcherKey.toUpperCase()}
+        triggerClassName="repo-select max-w-[240px]"
+        align="start"
+        placeholder="Search repositories…"
+        manageLabel="Manage projects…"
+        onManage={() => setProjectsOpen(true)}
+      />
       {projectsOpen && (
         <Suspense fallback={null}>
           <RepositoryProjectsDialog open={projectsOpen} onOpenChange={setProjectsOpen} projects={props.repositoryProjects} repositories={picker.repositories} onOrganizationChange={props.onOrganizationChange} onForgetRepository={props.onForgetRepository} onRelocateRepository={props.onRelocateRepository} />
@@ -353,16 +342,27 @@ export function Toolbar(props: ToolbarProps) {
           )}
         </div>
       )}
-      <Select value={currentWorktree?.path ?? props.repository.path} onValueChange={(value) => {
-        if (value === MANAGE_WORKTREES_VALUE) { openRefsManager('worktrees'); return; }
-        props.onWorktree(value);
-      }} disabled={refsBusy}>
-        <SelectTrigger size="sm" className="toolbar-worktree max-w-[190px]" aria-label="Select worktree"><IconHierarchy2 /><SelectValue>{currentWorktree?.path.split(/[\\/]/).pop() ?? props.repository.name}</SelectValue></SelectTrigger>
-        <SelectContent align="end" alignItemWithTrigger={false} className="w-max max-w-[min(280px,calc(100vw-24px))]">
-          {props.worktrees.map((item) => <SelectItem key={item.path} value={item.path} disabled={Boolean(item.locked || item.prunable || item.bare)}><span className="min-w-0 flex-1 truncate">{item.path.split(/[\\/]/).pop()} {item.branch ? `· ${item.branch}` : '· detached'}</span></SelectItem>)}
-          <SelectItem value={MANAGE_WORKTREES_VALUE} className="repo-select-manage"><IconSettings /><span>Manage worktrees…</span></SelectItem>
-        </SelectContent>
-      </Select>
+      <ToolbarPicker
+        groups={[{ id: 'worktrees', label: 'Worktrees', items: props.worktrees.map((item) => ({
+          value: item.path,
+          label: item.path.split(/[\\/]/).pop() ?? item.path,
+          description: `${item.branch ?? 'Detached HEAD'}${item.locked ? ' · Locked' : item.prunable ? ' · Prunable' : item.bare ? ' · Bare' : ''}`,
+          search: item.path,
+          tooltip: item.path,
+          icon: <IconHierarchy2 />,
+          disabled: Boolean(item.locked || item.prunable || item.bare),
+        })) }]}
+        value={currentWorktree?.path ?? props.repository.path}
+        onValueChange={props.onWorktree}
+        label="Select worktree"
+        triggerLabel={currentWorktree?.path.split(/[\\/]/).pop() ?? props.repository.name}
+        icon={<IconHierarchy2 />}
+        triggerClassName="toolbar-worktree max-w-[190px]"
+        placeholder="Search worktrees…"
+        manageLabel="Manage worktrees…"
+        onManage={() => openRefsManager('worktrees')}
+        disabled={refsBusy}
+      />
       <BranchCombobox
         branches={props.branches}
         currentLabel={props.status?.branch ?? 'Detached HEAD'}
