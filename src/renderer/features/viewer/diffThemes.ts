@@ -108,11 +108,15 @@ function createOpenTigTheme(name: string, type: 'light' | 'dark'): ThemeRegistra
       'terminal.ansiRed': deleted,
       'terminal.ansiBlue': modified,
     },
-    // The base palette carries full language-aware highlighting; only the diff
-    // markup scopes are appended so a viewed `.diff`/`.patch` file still tints
-    // its inserted/deleted/changed lines with the app's diff colors.
+    // Shiki normalizes the shared Markdown palettes in place, inserting an
+    // unscoped foreground/background rule that takes precedence over `colors`.
+    // Read only scoped syntax rules at resolution time (either view may load
+    // first), and clone them so our highlighter cannot mutate the source theme.
+    // Diff markup scopes still use the app's inserted/deleted/changed colors.
     tokenColors: [
-      ...BASE_TOKEN_COLORS[type],
+      ...structuredClone(BASE_TOKEN_COLORS[type].filter(({ scope }) =>
+        Array.isArray(scope) ? scope.length > 0 : Boolean(scope?.trim()),
+      )),
       {
         scope: ['markup.inserted', 'punctuation.definition.inserted'],
         settings: { foreground: added },
