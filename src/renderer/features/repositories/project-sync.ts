@@ -14,9 +14,11 @@ export interface RepositorySyncCounts {
   operation?: string | null;
 }
 
-/** Sileo otherwise reuses `sileo-default`, replacing concurrent operations. */
+let nextSyncToastId = 0;
+
+/** Isolate each operation from other notices and pending Sileo exit timers. */
 export function repositorySyncLoadingToast(repositoryId: string, action: ProjectSyncAction, title: string): SileoOptions & { id: string } {
-  return { id: `repository-sync:${repositoryId}:${action}`, title };
+  return { id: `repository-sync:${repositoryId}:${action}:${++nextSyncToastId}`, title };
 }
 
 export function needsBranchPublication(status: RepositorySyncCounts | null | undefined): boolean {

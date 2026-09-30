@@ -25,11 +25,15 @@ describe('project sync toast copy', () => {
   });
 
   it('gives concurrent repository operations distinct Sileo identities', () => {
-    expect(repositorySyncLoadingToast('repo-one', 'push', 'Pushing one…')).toEqual({
-      id: 'repository-sync:repo-one:push',
+    const first = repositorySyncLoadingToast('repo-one', 'push', 'Pushing one…');
+    expect(first).toEqual({
+      id: expect.stringMatching(/^repository-sync:repo-one:push:/),
       title: 'Pushing one…',
     });
-    expect(repositorySyncLoadingToast('repo-two', 'push', 'Pushing two…').id).not.toBe('repository-sync:repo-one:push');
+    const otherRepo = repositorySyncLoadingToast('repo-two', 'push', 'Pushing two…');
+    const nextPush = repositorySyncLoadingToast('repo-one', 'push', 'Pushing again…');
+    const pull = repositorySyncLoadingToast('repo-one', 'pull', 'Pulling…');
+    expect(new Set([first.id, otherRepo.id, nextPush.id, pull.id]).size).toBe(4);
   });
 
   it('identifies each repository in successful pull and push results', () => {

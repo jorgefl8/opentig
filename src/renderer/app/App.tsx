@@ -1778,7 +1778,7 @@ export default function App() {
         if (!result || result.status === 'success' || result.status === 'up-to-date' || result.status === 'published') return result;
         throw new PushBlocked(result);
       }, {
-        loading: { title: status?.upstream ? 'Pushing commits…' : 'Publishing branch…' },
+        loading: repositorySyncLoadingToast(repositoryId, 'push', status?.upstream ? 'Pushing commits…' : 'Publishing branch…'),
         success: (result) => !result ? { title: 'Publication canceled' }
           : result.status === 'published' ? { title: 'Branch published', description: `${result.remote}/${result.branch}` }
           : result.status === 'success'
