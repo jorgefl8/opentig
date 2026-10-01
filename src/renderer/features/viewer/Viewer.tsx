@@ -258,6 +258,7 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
     content = (
       <Suspense fallback={<ViewerLoading />}>
         <MarkdownFileViewer
+          repositoryId={repositoryId}
           key={fileMountKey(file)}
           file={file}
           initialContent={draftContent(file)}

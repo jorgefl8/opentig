@@ -11,11 +11,14 @@ import { syncScrollFraction } from '@/features/viewer/scroll-sync';
 import { useEditableFileDraft } from '@/features/viewer/useEditableFileDraft';
 import { resolveMarkdownRepositoryPath } from './markdown-links';
 import { renderMarkdown } from './render-markdown';
+import { mountMarkdownImages } from './markdown-images';
+import { opentig } from '@/lib/opentig-api';
 import { useMermaid } from './useMermaid';
 import { openExternalUrl, writeClipboardText } from '@/lib/browser-capabilities';
 import './markdown.css';
 
 interface MarkdownFileViewerProps {
+  repositoryId: string;
   file: FileResult;
   /** The draft App is holding for this path, or the file's own content. */
   initialContent: string;
@@ -52,12 +55,14 @@ function getInitialContentWidth(): ContentWidth {
 }
 
 interface MarkdownPreviewContentProps {
+  repositoryId: string;
+  markdownPath: string;
   html: string;
   onClick(event: React.MouseEvent<HTMLDivElement>): void;
   onLinkHover(link: HTMLAnchorElement | null): void;
 }
 
-function MarkdownPreviewContent({ html, onClick, onLinkHover }: MarkdownPreviewContentProps) {
+function MarkdownPreviewContent({ html, repositoryId, markdownPath, onClick, onLinkHover }: MarkdownPreviewContentProps) {
   const previewRef = useRef<HTMLDivElement>(null);
   const hoveredLink = useRef<HTMLAnchorElement | null>(null);
 
@@ -65,10 +70,13 @@ function MarkdownPreviewContent({ html, onClick, onLinkHover }: MarkdownPreviewC
   // Only write the sanitized Markdown when that source HTML actually changes;
   // otherwise a React re-render would restore the raw `graph TD` text.
   useLayoutEffect(() => {
-    if (previewRef.current) previewRef.current.innerHTML = html;
+    const cleanup = previewRef.current
+      ? mountMarkdownImages(previewRef.current, html, repositoryId, markdownPath, opentig.repository)
+      : undefined;
     hoveredLink.current = null;
     onLinkHover(null);
-  }, [html, onLinkHover]);
+    return cleanup;
+  }, [html, repositoryId, markdownPath, onLinkHover]);
   useMermaid(previewRef, true, html);
 
   const handleMouseOver = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
@@ -90,7 +98,7 @@ function MarkdownPreviewContent({ html, onClick, onLinkHover }: MarkdownPreviewC
   return <div ref={previewRef} className="markdown-prose" onClick={onClick} onMouseOver={handleMouseOver} onMouseOut={handleMouseOut} />;
 }
 
-export function MarkdownFileViewer({ file, initialContent, revision, themeType, wrapLines, readOnly, onOpenFile, onDirtyChange, onDraftChange, onSave }: MarkdownFileViewerProps) {
+export function MarkdownFileViewer({ repositoryId, file, initialContent, revision, themeType, wrapLines, readOnly, onOpenFile, onDirtyChange, onDraftChange, onSave }: MarkdownFileViewerProps) {
   const [tab, setTab] = useState<'preview' | 'code'>('preview');
   const [contentWidth, setContentWidth] = useState<ContentWidth>(getInitialContentWidth);
   const [html, setHtml] = useState('');
@@ -316,7 +324,7 @@ export function MarkdownFileViewer({ file, initialContent, revision, themeType, 
           {loading && !html ? (
             <div className="viewer-message"><ShimmeringText text="Rendering Markdown…" /></div>
           ) : (
-            <MarkdownPreviewContent html={html} onClick={(event) => void handlePreviewClick(event)} onLinkHover={handleLinkHover} />
+            <MarkdownPreviewContent key={`${repositoryId}:${file.path}:${revision}`} repositoryId={repositoryId} markdownPath={file.path} html={html} onClick={(event) => void handlePreviewClick(event)} onLinkHover={handleLinkHover} />
           )}
           <span className="sr-only" role="status" aria-live="polite">{copied ? 'Code copied' : ''}</span>
           {linkTooltip ? createPortal(

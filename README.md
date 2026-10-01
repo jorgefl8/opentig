@@ -30,7 +30,7 @@ It works with existing repositories using the Git installation on the host. You 
 | | |
 | --- | --- |
 | **Review changes** | Syntax-highlighted split or unified diffs, staged and unstaged files, and merge-conflict resolution. [Details](docs/features.md#changes-diffs-and-commits) |
-| **Browse and edit** | File tree, tabs, quick edits, find and replace, repository search, and Markdown, image, HTML, and SVG previews. [Details](docs/features.md#files-and-editing) |
+| **Browse and edit** | File tree, tabs, quick edits, find and replace, repository search, and Markdown, image, HTML, and SVG previews. Markdown images load relative to the document within the repository, including PNG and SVG files. [Details](docs/features.md#files-and-editing) |
 | **Work with Git** | Stage files, commit, pull and push, publish branches with or without new commits, inspect compact commit graphs with publication colors and PR references, and switch branches and worktrees. Commit and push shows push progress and its result independently of AI message notifications. Publishing sets the upstream and lets you choose a remote when needed. [Details](docs/features.md#safe-pull-and-push) |
 | **Keep repositories together** | Recent repositories, project groups, and manual relocation without moving files. [Details](docs/features.md#repositories-and-projects) |
 | **Review GitHub PRs** | Browse pull requests, inspect their changes, and prepare new PRs through your authenticated `gh` CLI. [Details](docs/features.md#github-pull-requests) |
