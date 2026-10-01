@@ -4,6 +4,7 @@ import { useWorkerPool, WorkerPoolContextProvider } from '@pierre/diffs/react';
 import DiffWorker from '@pierre/diffs/worker/worker.js?worker';
 import { sileo } from 'sileo';
 import { OPENTIG_CODE_THEMES } from './diffThemes';
+import './pierreLanguages';
 
 export function PierreWorkerPool({ children, theme = OPENTIG_CODE_THEMES }: PropsWithChildren<{ theme?: ThemesType }>) {
   return (
