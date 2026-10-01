@@ -1,4 +1,5 @@
-import { getSingularPatch } from '@pierre/diffs';
+import { getSingularPatch, type FileDiffMetadata } from '@pierre/diffs';
+import { resolvePierreLanguage } from './pierreLanguages';
 
 export const VIEWER_SCROLLBAR_CSS = `
   [data-code] {
@@ -28,8 +29,8 @@ export const VIEWER_SCROLLBAR_CSS = `
 `;
 
 /**
- * Splits a unified patch into one string per file so each can be fed to `PatchDiff`,
- * which only accepts a single-file patch. A single-file patch yields one entry unchanged.
+ * Splits a unified patch into single-file patches for parsing and per-file metadata.
+ * A single-file patch yields one entry unchanged.
  */
 export function splitPatchFiles(patch: string): string[] {
   const headers = [...patch.matchAll(/^diff --git .*$/gm)];
@@ -42,6 +43,7 @@ export interface DiffFileEntry {
   path: string;
   previousPath?: string | undefined;
   patch: string;
+  fileDiff: FileDiffMetadata;
   additions: number;
   deletions: number;
   changeType: 'change' | 'rename-pure' | 'rename-changed' | 'new' | 'deleted';
@@ -56,6 +58,7 @@ export function buildDiffFileEntries(patch: string): DiffFileEntry[] {
       path: parsed.name,
       previousPath: parsed.prevName,
       patch: filePatch,
+      fileDiff: { ...parsed, lang: resolvePierreLanguage(parsed.name) },
       additions: parsed.hunks.reduce((total, hunk) => total + hunk.additionLines, 0),
       deletions: parsed.hunks.reduce((total, hunk) => total + hunk.deletionLines, 0),
       changeType: parsed.type,

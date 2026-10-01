@@ -7,6 +7,7 @@ import { DiffWorkspace } from './DiffWorkspace';
 import { OPENTIG_CODE_THEMES } from './diffThemes';
 import { VIEWER_SCROLLBAR_CSS } from './patch-utils';
 import { PierreWorkerPool } from './PierreWorkerPool';
+import { resolvePierreLanguage } from './pierreLanguages';
 import {
   applyConflictDraft, createConflictDraft, markConflictDraftPersisted, reconcileConflictDraft,
 } from './conflict-draft';
@@ -128,7 +129,7 @@ function ConflictViewer({ file, themeType, overflow, onUpdate, onResolve }: {
         {unresolved > 0 ? (
           <UnresolvedFile
             key={`${file.path}:${draftRevision}`}
-            file={{ name: file.path, contents: draft, cacheKey: `${file.path}:conflict:${draftRevision}` }}
+            file={{ name: file.path, lang: resolvePierreLanguage(file.path), contents: draft, cacheKey: `${file.path}:conflict:${draftRevision}` }}
             disableWorkerPool={draft.length > 500_000}
             options={{ themeType, theme: OPENTIG_CODE_THEMES, diffIndicators: 'classic', overflow, mergeConflictActionsType: 'none', unsafeCSS: VIEWER_SCROLLBAR_CSS }}
             renderMergeConflictUtility={(action) => (
@@ -141,7 +142,7 @@ function ConflictViewer({ file, themeType, overflow, onUpdate, onResolve }: {
           />
         ) : (
           <File
-            file={{ name: file.path, contents: draft, cacheKey: `${file.path}:resolved:${draftRevision}` }}
+            file={{ name: file.path, lang: resolvePierreLanguage(file.path), contents: draft, cacheKey: `${file.path}:resolved:${draftRevision}` }}
             options={{ themeType, theme: OPENTIG_CODE_THEMES, overflow, unsafeCSS: VIEWER_SCROLLBAR_CSS }}
           />
         )}

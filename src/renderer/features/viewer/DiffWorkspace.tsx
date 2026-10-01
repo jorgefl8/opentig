@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { PatchDiff, Virtualizer } from '@pierre/diffs/react';
+import { FileDiff, Virtualizer } from '@pierre/diffs/react';
 import {
   IconArrowsMaximize, IconArrowsMinimize, IconChevronDown, IconChevronRight,
   IconLayoutColumns, IconLayoutRows, IconTextWrap, IconX,
@@ -101,9 +101,9 @@ export function DiffWorkspace({ contentKey, diff, diffView, themeType, wrapLines
                 </Tooltip>
               )}
               {!isCollapsed && (
-                <PatchDiff
+                <FileDiff
                   key={`${contentKey}:${file.key}:${diffView}:${wrapLines}`}
-                  patch={file.patch}
+                  fileDiff={file.fileDiff}
                   disableWorkerPool={diff.lineCount > 10_000}
                   options={{ diffStyle: diffView, diffIndicators: 'classic', themeType, theme: OPENTIG_CODE_THEMES, overflow: wrapLines ? 'wrap' : 'scroll', disableFileHeader: true, hunkSeparators: 'line-info-basic', unsafeCSS: VIEWER_SCROLLBAR_CSS }}
                 />

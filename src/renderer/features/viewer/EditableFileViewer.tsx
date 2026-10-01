@@ -9,6 +9,7 @@ import { OPENTIG_CODE_THEMES } from './diffThemes';
 import { VIEWER_SCROLLBAR_CSS } from './patch-utils';
 import { EditReadyContext } from './edit-ready-context';
 import { PierreWorkerPool } from './PierreWorkerPool';
+import { resolvePierreLanguage } from './pierreLanguages';
 import { syncScrollFraction } from './scroll-sync';
 import { buildFileEditorKeymap } from './source-editor-keymap';
 import { shouldVirtualizeSourceEditor } from './source-editor-virtualization';
@@ -94,7 +95,7 @@ export function SourceCodeEditor({ path, cacheKey, value, themeType, wrapLines, 
   const virtualizerRef = useRef<VirtualizerHandle>(undefined);
   const plainScrollRef = useRef<HTMLDivElement>(null);
 
-  const file = useMemo(() => ({ name: path, contents: value, cacheKey }), [cacheKey, path, value]);
+  const file = useMemo(() => ({ name: path, lang: resolvePierreLanguage(path), contents: value, cacheKey }), [cacheKey, path, value]);
   const options = useMemo(() => ({
     disableFileHeader: true,
     themeType,

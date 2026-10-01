@@ -48,7 +48,22 @@ const ini = () => import('@shikijs/langs/ini');
 const scala = () => import('@shikijs/langs/scala');
 const perl = () => import('@shikijs/langs/perl');
 
+const dotenv = () => import('@shikijs/langs/dotenv');
+const cmd = () => import('@shikijs/langs/cmd');
+const astro = () => import('@shikijs/langs/astro');
+const prisma = () => import('@shikijs/langs/prisma');
+const cmake = () => import('@shikijs/langs/cmake');
+const nginx = () => import('@shikijs/langs/nginx');
+const groovy = () => import('@shikijs/langs/groovy');
+const objectiveCpp = () => import('@shikijs/langs/objective-cpp');
+const xsl = () => import('@shikijs/langs/xsl');
+const gitignore = () => import('./repository-grammars').then(module => ({ default: [module.gitignore] }));
+const gitattributes = () => import('./repository-grammars').then(module => ({ default: [module.gitattributes] }));
+const nsis = () => import('./repository-grammars').then(module => ({ default: [module.nsis] }));
+
 const curated = {
+  dotenv, cmd, astro, prisma, cmake, nginx, groovy, 'objective-cpp': objectiveCpp, xsl,
+  gitignore, gitattributes, nsis,
   javascript, js: javascript, cjs: javascript, mjs: javascript,
   typescript, ts: typescript, cts: typescript, mts: typescript,
   jsx, tsx,
