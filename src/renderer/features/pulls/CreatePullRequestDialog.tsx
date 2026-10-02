@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { IconGitPullRequest, IconLoader4, IconPlayerStop, IconUpload } from '@tabler/icons-react';
+import { IconGitBranch, IconGitPullRequest, IconLoader4, IconPlayerStop, IconUpload } from '@tabler/icons-react';
 import { sileo } from 'sileo';
 import type { AiHarnessId, AiHarnessStatus, Preferences } from '../../../shared/contracts';
 import type { BranchInfo, RepositoryStatus } from '../../../shared/git-types';
@@ -7,7 +7,7 @@ import type { SerializedAiError } from '../../../shared/errors';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogDescription, DialogPopup, DialogTitle } from '@/components/ui/dialog';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { SearchablePicker } from '@/components/SearchablePicker';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { Textarea } from '@/components/ui/textarea';
 import { opentig } from '@/lib/opentig-api';
@@ -165,12 +165,19 @@ export function CreatePullRequestDialog(props: CreatePullRequestDialogProps) {
           <div className="create-pr-base-row">
             <div className="create-pr-field">
               <label htmlFor="create-pr-base">Base branch</label>
-              <Select value={base} onValueChange={(value) => setBase(value ?? '')}>
-                <SelectTrigger id="create-pr-base" className="create-pr-base" disabled={blocked || creating || Boolean(generating)}><SelectValue>{base ? stripOrigin(base) : 'Select a base'}</SelectValue></SelectTrigger>
-                <SelectContent alignItemWithTrigger={false}>
-                  {baseOptions.map((option) => <SelectItem key={option} value={option}>{stripOrigin(option)}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              <SearchablePicker
+                groups={[{ id: 'branches', label: '', items: baseOptions.map((option) => ({ value: option, label: stripOrigin(option), search: option, icon: <IconGitBranch /> })) }]}
+                value={base}
+                onValueChange={setBase}
+                label="Base branch"
+                triggerId="create-pr-base"
+                triggerLabel={base ? stripOrigin(base) : 'Select a base'}
+                triggerClassName="create-pr-base"
+                size="default"
+                align="start"
+                placeholder="Search base branches…"
+                disabled={blocked || creating || Boolean(generating)}
+              />
             </div>
             <label className="create-pr-draft">
               <Checkbox checked={draft} onCheckedChange={(checked) => setDraft(checked === true)} disabled={blocked || creating || Boolean(generating)} />

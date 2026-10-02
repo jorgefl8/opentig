@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogClose, DialogDescription, DialogPopup, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
+import { SearchablePicker, type SearchablePickerGroup } from '@/components/SearchablePicker';
 import { AiLogDialog } from '@/features/ai/AiLogDialog';
 import { AiProviderIcon } from '@/features/ai/AiProviderIcon';
 import { harnessLabel } from '@/features/ai/harness-copy';
@@ -104,6 +105,26 @@ export function SettingsDialog({ preferences, onPreference, open, onOpenChange, 
   const visibleModels = modelOptions.some((model) => model.id === selectedModel)
     ? modelOptions
     : [...modelOptions, { id: selectedModel, label: `${selectedModel} (unavailable)` }];
+  const modelGroups: SearchablePickerGroup[] = [];
+  for (const model of visibleModels) {
+    const providerSeparator = selectedHarness === 'opencode' ? model.id.indexOf('/') : -1;
+    const provider = providerSeparator > 0 ? model.id.slice(0, providerSeparator) : selectedHarness;
+    const groupId = model.id === 'default' ? 'default' : `provider:${provider}`;
+    let group = modelGroups.find((candidate) => candidate.id === groupId);
+    if (!group) {
+      group = { id: groupId, label: model.id === 'default' ? '' : providerSeparator > 0 ? provider : harnessLabel(selectedHarness), items: [] };
+      modelGroups.push(group);
+    }
+    group.items.push({
+      value: model.id,
+      label: providerSeparator > 0 && model.label === model.id ? model.id.slice(providerSeparator + 1) : model.label,
+      search: model.id,
+      tooltip: model.id === 'default' || model.label === model.id ? model.label : `${model.label} · ${model.id}`,
+      pinned: model.id === 'default',
+      icon: <IconSparkles />,
+    });
+  }
+  const selectedModelLabel = visibleModels.find((model) => model.id === selectedModel)?.label ?? selectedModel;
   const { title, description } = section === 'webAccess'
     ? {
         title: 'Web access',
@@ -314,10 +335,19 @@ export function SettingsDialog({ preferences, onPreference, open, onOpenChange, 
                     <strong>{harnessLabel(selectedHarness)} model</strong>
                     <span>Default lets the CLI choose. OpenTig remembers a separate selection for each harness.</span>
                   </div>
-                  <Select value={selectedModel} onValueChange={(model) => onPreference({ commitMessageModels: { ...preferences.commitMessageModels, [selectedHarness]: model } })}>
-                    <SelectTrigger className="ai-model-select"><SelectValue /></SelectTrigger>
-                    <SelectContent>{visibleModels.map((model) => <SelectItem key={model.id} value={model.id}>{model.label}</SelectItem>)}</SelectContent>
-                  </Select>
+                  <SearchablePicker
+                    key={selectedHarness}
+                    groups={modelGroups}
+                    value={selectedModel}
+                    onValueChange={(model) => onPreference({ commitMessageModels: { ...preferences.commitMessageModels, [selectedHarness]: model } })}
+                    label={`${harnessLabel(selectedHarness)} model`}
+                    triggerLabel={selectedModelLabel}
+                    triggerClassName="ai-model-select"
+                    contentClassName="ai-model-picker"
+                    size="default"
+                    align="start"
+                    placeholder="Search models…"
+                  />
                   {selectedStatus?.authStatus === 'unauthenticated' && <p className="ai-login-hint">Sign in from a terminal with <code>{loginCommand(selectedHarness, selectedStatus.cliName)}</code> and check again.</p>}
                   {selectedStatus && !selectedStatus.installed && <p className="ai-login-hint">Install {harnessLabel(selectedHarness)} and check its availability again.</p>}
                 </div>

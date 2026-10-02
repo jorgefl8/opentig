@@ -169,7 +169,7 @@
   html .local-refs-header, html .repository-projects-header { padding: 12px; gap: 8px; }
   html .local-refs-footer, html .local-refs-detail-actions { flex-wrap: wrap; }
   html .repository-projects-body { padding: 12px; }
-  html .repository-assignment-row [data-slot="select-trigger"] { margin-left: 0; }
+  html .repository-assignment-row [data-slot="combobox-trigger"] { margin-left: 0; }
   html .ai-log-dialog { padding: 12px; grid-template-rows: auto auto minmax(0, 1fr); }
   html .ai-log-header { flex-wrap: wrap; }
   html .ai-log-header-actions { margin-left: auto; }

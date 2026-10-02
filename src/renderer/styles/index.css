@@ -704,7 +704,7 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   .repository-projects-empty { border: 1px dashed color-mix(in oklch, var(--border) 90%, var(--foreground)); border-radius: var(--radius-lg); padding: 16px; color: var(--muted-foreground); font-size: 11px; text-align: center; }
   .repository-management-actions { display: flex; flex: none; gap: 2px; }
   .repository-assignment-busy { width: 15px; height: 15px; flex: none; color: var(--primary); }
-  .repository-assignment-row [data-slot="select-trigger"] { flex: none; }
+  .repository-assignment-row [data-slot="combobox-trigger"] { flex: none; }
   .repository-projects-footer { display: flex; flex: none; justify-content: flex-end; gap: 7px; border-top: 1px solid var(--border); background: color-mix(in oklch, var(--muted) 40%, transparent); padding: 11px 14px; }
   @media (max-width: 680px) {
     .repository-projects-section-heading { align-items: stretch; flex-direction: column; gap: 6px; }
@@ -713,7 +713,7 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
     .repository-assignment-row { align-items: flex-start; flex-wrap: wrap; }
     .repository-assignment-row .repository-assignment-copy { flex-basis: calc(100% - 40px); }
     .repository-management-actions { margin-left: auto; }
-    .repository-assignment-row [data-slot="select-trigger"] { width: 100%; margin-left: 26px; }
+    .repository-assignment-row [data-slot="combobox-trigger"] { width: 100%; margin-left: 26px; }
   }
 
   /* Local branches and worktrees manager. Wide enough for a master/detail
@@ -1152,9 +1152,9 @@ section[data-sileo-viewport] [data-sileo-title] { text-transform: none; }
 .repository-row-actions [data-slot="button"] { color: var(--muted-foreground); }
 .repository-row-actions [data-slot="button"]:hover { background: color-mix(in oklch, var(--foreground) 14%, transparent); color: var(--foreground); }
 .repository-row-actions .repository-row-delete:hover { background: color-mix(in oklch, var(--destructive) 16%, transparent); color: var(--destructive); }
-.repository-assignment-row [data-slot="select-trigger"] { width: 155px; }
+.repository-assignment-row [data-slot="combobox-trigger"] { width: 155px; }
 @media (max-width: 680px) {
-  .repository-assignment-row [data-slot="select-trigger"] { width: 100%; }
+  .repository-assignment-row [data-slot="combobox-trigger"] { width: 100%; }
 }
 /* The branch combobox footer sits below its scrolling list, so it needs the
    same unlayered treatment as the repository picker's manage action. */
@@ -1761,23 +1761,38 @@ section[data-sileo-viewport] [data-sileo-title] { text-transform: none; }
   .diff-total-stats { display: none; }
 }
 
-/* Shared toolbar pickers: repositories, worktrees, and branches. */
-.toolbar-picker { width: min(340px, calc(100vw - 24px)); max-width: calc(100vw - 24px); }
-.toolbar-picker [data-slot="combobox-input"], .toolbar-picker-footer { flex-shrink: 0; }
-.toolbar-picker-list { max-height: 292px; padding: 6px; }
-.toolbar-picker-group { padding: 9px 9px 5px; font-size: 10px; font-weight: 650; letter-spacing: .065em; text-transform: uppercase; }
-.toolbar-picker-item { min-height: 54px; padding: 8px 30px 8px 9px; border-radius: 7px; color: var(--popover-foreground); }
-.toolbar-picker-item[data-selected] { background: color-mix(in oklch, var(--primary) 10%, var(--popover)); color: var(--popover-foreground); }
-.toolbar-picker-item[data-highlighted] { background: color-mix(in oklch, var(--foreground) 8%, var(--popover)); }
-.toolbar-picker-icon { display: flex; width: 18px; flex: none; align-items: center; justify-content: center; color: var(--muted-foreground); }
-.toolbar-picker-copy { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 1px; text-align: left; }
-.toolbar-picker-copy strong, .toolbar-picker-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.toolbar-picker-copy strong { font-size: 13px; font-weight: 600; }
-.toolbar-picker-copy small { color: var(--muted-foreground); font-size: 11px; font-weight: 400; }
-.toolbar-picker-trailing { display: flex; flex: none; align-items: center; gap: 6px; }
-.toolbar-picker-empty { padding: 32px 12px; text-align: center; color: var(--muted-foreground); font-size: 13px; }
-.toolbar-picker-footer { border-top: 1px solid var(--border); padding: 6px; }
-.toolbar-picker-footer button { display: flex; width: 100%; align-items: center; gap: 9px; padding: 9px; border-radius: 6px; color: var(--muted-foreground); font-size: 12px; text-align: left; cursor: pointer; }
-.toolbar-picker-footer button:hover { background: color-mix(in oklch, var(--foreground) 8%, var(--popover)); color: var(--popover-foreground); }
-.toolbar-picker-footer button:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
-.toolbar-picker-footer svg { width: 16px; height: 16px; flex: none; }
+/* Shared searchable pickers: compact options, with a second line only when useful. */
+.searchable-picker { width: min(340px, calc(100vw - 24px)); max-width: calc(100vw - 24px); }
+.searchable-picker [data-slot="combobox-input"], .searchable-picker-footer { flex-shrink: 0; }
+.searchable-picker [data-slot="combobox-input"] { gap: 7px; padding-inline: 10px; }
+.searchable-picker [data-slot="combobox-input"] input { height: 32px; font-size: 12px; }
+.searchable-picker [data-slot="combobox-input"] > svg { width: 14px; height: 14px; }
+.searchable-picker-list { max-height: 292px; padding: 4px; }
+.searchable-picker-group { padding: 6px 8px 3px; font-size: 9px; line-height: 14px; font-weight: 650; letter-spacing: .065em; text-transform: uppercase; }
+.searchable-picker-item { min-height: 32px; padding: 5px 28px 5px 8px; gap: 7px; border-radius: 5px; color: var(--popover-foreground); }
+.searchable-picker-item-detailed { min-height: 42px; }
+.searchable-picker-item[data-selected] { background: color-mix(in oklch, var(--primary) 10%, var(--popover)); color: var(--popover-foreground); }
+.searchable-picker-item[data-highlighted] { background: color-mix(in oklch, var(--foreground) 8%, var(--popover)); }
+.searchable-picker-icon { display: flex; width: 18px; flex: none; align-items: center; justify-content: center; color: var(--muted-foreground); }
+.searchable-picker-copy { display: flex; flex: 1; min-width: 0; flex-direction: column; text-align: left; }
+.searchable-picker-copy strong, .searchable-picker-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.searchable-picker-copy strong { font-size: 12px; line-height: 17px; font-weight: 500; }
+.searchable-picker-item-detailed strong { font-weight: 600; }
+.searchable-picker-copy small { color: var(--muted-foreground); font-size: 10px; line-height: 15px; font-weight: 400; }
+.searchable-picker-trailing { display: flex; flex: none; align-items: center; gap: 6px; }
+.searchable-picker-status { color: var(--muted-foreground); font-size: 10px; }
+.searchable-picker-empty { padding: 22px 8px; text-align: center; color: var(--muted-foreground); font-size: 12px; }
+.searchable-picker-footer { border-top: 1px solid var(--border); padding: 4px; }
+.searchable-picker-footer button { display: flex; width: 100%; min-height: 30px; align-items: center; gap: 7px; padding: 5px 8px; border-radius: 6px; color: var(--muted-foreground); font-size: 11px; text-align: left; cursor: pointer; }
+.searchable-picker-footer button:hover { background: color-mix(in oklch, var(--foreground) 8%, var(--popover)); color: var(--popover-foreground); }
+.searchable-picker-footer button:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
+.searchable-picker-footer svg { width: 14px; height: 14px; flex: none; }
+.ai-model-picker { width: min(420px, calc(100vw - 24px)); }
+
+@media (max-width: 767px) {
+  html .searchable-picker [data-slot="combobox-input"] input { height: 40px; font-size: 16px; }
+  html .searchable-picker-item { min-height: 44px; }
+  html .searchable-picker-copy strong { font-size: 13px; }
+  html .searchable-picker-copy small { font-size: 11px; }
+  html .searchable-picker-footer button { min-height: 44px; }
+}

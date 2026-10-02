@@ -4,7 +4,7 @@ import type { RepositoryOrganization, RepositoryProject } from '../../../shared/
 import { MAX_PROJECT_NAME_LENGTH } from '../../../shared/repository-projects';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogClose, DialogDescription, DialogPopup, DialogTitle } from '@/components/ui/dialog';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { SearchablePicker } from '@/components/SearchablePicker';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { shortenRepositoryPath, type RepositoryOption } from './repository-select-model';
 import { OpenRepositoryDialog } from './OpenRepositoryDialog';
@@ -190,13 +190,18 @@ export function RepositoryProjectsDialog({ open, projects, repositories, onOpenC
                         </Tooltip>
                       </span>
                       {rowBusy && <IconLoader4 className="repository-assignment-busy animate-spin" aria-hidden="true" />}
-                      <Select value={projectId} onValueChange={(value) => void assignProject(repository.key, value === NO_PROJECT ? null : value)} disabled={Boolean(busy)}>
-                        <SelectTrigger size="sm" aria-label={`Project for ${repository.name}`}><SelectValue>{projects.find((project) => project.id === projectId)?.name ?? 'No project'}</SelectValue></SelectTrigger>
-                        <SelectContent align="end" alignItemWithTrigger={false}>
-                          <SelectItem value={NO_PROJECT}>No project</SelectItem>
-                          {projects.map((project) => <SelectItem key={project.id} value={project.id}>{project.name}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
+                      <SearchablePicker
+                        groups={[
+                          { id: 'none', label: '', items: [{ value: NO_PROJECT, label: 'No project', pinned: true }] },
+                          { id: 'projects', label: 'Projects', items: projects.map((project) => ({ value: project.id, label: project.name, icon: <IconFolder /> })) },
+                        ]}
+                        value={projectId}
+                        onValueChange={(value) => void assignProject(repository.key, value === NO_PROJECT ? null : value)}
+                        label={`Project for ${repository.name}`}
+                        triggerLabel={projects.find((project) => project.id === projectId)?.name ?? 'No project'}
+                        placeholder="Search projects…"
+                        disabled={Boolean(busy)}
+                      />
                       <span className="repository-management-actions">
                         <Tooltip>
                           <TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label={`Relocate ${repository.name}`} disabled={Boolean(busy)} onClick={() => void relocate(repository)} />}><IconFolderSymlink /></TooltipTrigger>

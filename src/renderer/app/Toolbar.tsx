@@ -7,7 +7,7 @@ import type { BootstrapData, Preferences, RecentRepository, RepositoryInfo, Repo
 import type { BranchInfo, RepositoryStatus, WorktreeInfo } from '../../shared/git-types';
 import { Button } from '@/components/ui/button';
 import { Kbd } from '@/components/ui/kbd';
-import { ToolbarPicker, type ToolbarPickerItem } from '@/components/ToolbarPicker';
+import { SearchablePicker, type SearchablePickerItem } from '@/components/SearchablePicker';
 import { OpenTigMark } from '@/components/OpenTigMark';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { isEditableTarget } from '@/features/files/file-tree';
@@ -210,7 +210,7 @@ export function Toolbar(props: ToolbarProps) {
     };
   }, [clearRepositoryNumberShortcut, projectsOpen, props.settingsOpen, refsOpen, repoSwitcherKey, repositorySelectOpen, selectRepositoryAt, visibleRepositories]);
 
-  const repositoryItem = (group: RepositoryOption, projectName: string | null = null): ToolbarPickerItem => {
+  const repositoryItem = (group: RepositoryOption, projectName: string | null = null): SearchablePickerItem => {
     const counts = repositorySyncCounts.get(group.recent.id);
     const checkout = counts && (counts.branch !== undefined || counts.detached !== undefined)
       ? { branch: counts.branch ?? null, detached: counts.detached === true }
@@ -269,7 +269,7 @@ export function Toolbar(props: ToolbarProps) {
         <OpenTigMark />
         <span>{appDisplayName}</span>
       </div>
-      <ToolbarPicker
+      <SearchablePicker
         groups={[
           ...picker.projectSections.map((section) => ({
             id: section.id,
@@ -292,8 +292,7 @@ export function Toolbar(props: ToolbarProps) {
         triggerClassName="repo-select max-w-[240px]"
         align="start"
         placeholder="Search repositories…"
-        manageLabel="Manage projects…"
-        onManage={() => setProjectsOpen(true)}
+        management={{ label: 'Manage projects…', onClick: () => setProjectsOpen(true) }}
       />
       {projectsOpen && (
         <Suspense fallback={null}>
@@ -342,7 +341,7 @@ export function Toolbar(props: ToolbarProps) {
           )}
         </div>
       )}
-      <ToolbarPicker
+      <SearchablePicker
         groups={[{ id: 'worktrees', label: 'Worktrees', items: props.worktrees.map((item) => ({
           value: item.path,
           label: item.path.split(/[\\/]/).pop() ?? item.path,
@@ -359,8 +358,7 @@ export function Toolbar(props: ToolbarProps) {
         icon={<IconHierarchy2 />}
         triggerClassName="toolbar-worktree max-w-[190px]"
         placeholder="Search worktrees…"
-        manageLabel="Manage worktrees…"
-        onManage={() => openRefsManager('worktrees')}
+        management={{ label: 'Manage worktrees…', onClick: () => openRefsManager('worktrees') }}
         disabled={refsBusy}
       />
       <BranchCombobox

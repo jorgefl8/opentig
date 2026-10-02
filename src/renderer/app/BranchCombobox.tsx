@@ -1,14 +1,14 @@
 import { useMemo } from 'react';
 import { IconGitBranch } from '@tabler/icons-react';
 import type { BranchInfo } from '../../shared/git-types';
-import { ToolbarPicker, type ToolbarPickerItem } from '@/components/ToolbarPicker';
+import { SearchablePicker, type SearchablePickerItem } from '@/components/SearchablePicker';
 
 export function BranchCombobox({ branches, currentLabel, disabled, onBranch, onManage }: {
   branches: BranchInfo[]; currentLabel: string; disabled?: boolean | undefined; onBranch(name: string | null): void; onManage(): void;
 }) {
   const { groups, currentValue } = useMemo(() => {
-    const local: ToolbarPickerItem[] = [];
-    const remote: ToolbarPickerItem[] = [];
+    const local: SearchablePickerItem[] = [];
+    const remote: SearchablePickerItem[] = [];
     let currentValue = '';
     for (const branch of branches) {
       if (branch.remote && branch.fullName.endsWith('/HEAD')) continue;
@@ -17,9 +17,10 @@ export function BranchCombobox({ branches, currentLabel, disabled, onBranch, onM
       (branch.remote ? remote : local).push({
         value: branch.fullName,
         label: branch.name,
-        description: branch.remote ? 'Remote branch' : branch.current ? 'Current branch' : otherWorktree ? 'In another worktree' : 'Local branch',
+        trailing: branch.current ? <span className="searchable-picker-status">Current</span>
+          : otherWorktree ? <span className="searchable-picker-status">In use</span> : undefined,
         search: branch.fullName,
-        tooltip: branch.fullName,
+        tooltip: `${branch.fullName}${otherWorktree ? ' · In another worktree' : ''}`,
         disabled: otherWorktree,
         icon: <IconGitBranch />,
       });
@@ -31,7 +32,7 @@ export function BranchCombobox({ branches, currentLabel, disabled, onBranch, onM
     ] };
   }, [branches]);
 
-  return <ToolbarPicker
+  return <SearchablePicker
     groups={groups}
     value={currentValue}
     onValueChange={onBranch}
@@ -40,8 +41,7 @@ export function BranchCombobox({ branches, currentLabel, disabled, onBranch, onM
     icon={<IconGitBranch />}
     triggerClassName="max-w-[220px]"
     placeholder="Search branches…"
-    manageLabel="Manage local branches…"
-    onManage={onManage}
+    management={{ label: 'Manage local branches…', onClick: onManage }}
     disabled={disabled}
   />;
 }
