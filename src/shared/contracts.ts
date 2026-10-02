@@ -248,7 +248,7 @@ export type WorktreeRemovalResult =
 export type ThemePreference = 'system' | 'light' | 'dark';
 export type DiffViewPreference = 'unified' | 'split';
 export type ChangesLayoutPreference = 'tree' | 'list';
-export type AiHarnessId = 'codex' | 'claude' | 'opencode';
+export type AiHarnessId = 'codex' | 'claude' | 'opencode' | 'grok';
 export type AiAuthStatus = 'authenticated' | 'unauthenticated' | 'unknown';
 export type AiAvailability = 'ready' | 'warning' | 'error';
 

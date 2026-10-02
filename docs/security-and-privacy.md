@@ -26,3 +26,5 @@ Multi-commit proposals are accepted only when they partition every staged path e
 For pull-request drafting, it sends a bounded comparison between the current branch and the selected base branch. If the context is truncated, the interface tells you to review the result carefully.
 
 Generated content remains editable and pending. No commit is created and no pull request is published until you explicitly confirm the corresponding action.
+
+Grok Build runs in a private temporary directory with an isolated profile, using the existing CLI authentication path or API-key environment without reading or copying credentials. Generation disables tools, subagents, web search, and memory; OpenTig checks `grok inspect --json` first and refuses profiles with hooks, plugins, MCP servers, or project instructions. Custom CLI models and user configuration are excluded. Prompt files and temporary sessions are removed after generation, errors, and cancellation. Grok may make an auxiliary session-title request in addition to the requested generation.

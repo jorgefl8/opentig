@@ -2,12 +2,13 @@ import { access } from 'node:fs/promises';
 import path from 'node:path';
 import type { AiHarnessId } from '../../shared/contracts';
 
-const ALLOWED = new Set(['codex', 'claude', 'opencode', 'gh']);
+const ALLOWED = new Set(['codex', 'claude', 'opencode', 'grok', 'gh']);
 const ALIASES: Record<string, readonly string[]> = {
   codex: ['codex'],
   claude: ['claude'],
   // Current v2 uses opencode; older distributions also provide opencode2.
   opencode: ['opencode', 'opencode2'],
+  grok: ['grok'],
   gh: ['gh'],
 };
 

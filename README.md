@@ -23,7 +23,7 @@ Open a repository, understand what changed, make a quick edit, and commit the wo
 
 It works with existing repositories using the Git installation on the host. You can use the Windows desktop app or run the CLI on another machine and reach the same UI from a browser, including on your phone. Repositories and commands stay on the machine running OpenTig.
 
-**AI is optional.** Reviewing, editing, and committing do not require an AI account. If you choose to use it, your installed CLI can draft commit messages and pull-request descriptions for you to review. OpenTig does not run an autonomous coding agent or create commits on its own.
+**AI is optional.** Reviewing, editing, and committing do not require an AI account. If you choose to use it, your installed CLI can draft commit messages and pull-request descriptions for you to review. OpenTig does not run an autonomous coding agent or create commits on its own. The official Grok Build CLI also supports commit messages, split proposals, and pull-request drafts, with model selection, cancellation, and usage history. It requires Grok Build 1.0.46 or later in the 1.x series and `grok login` or `XAI_API_KEY`. Grok uses an isolated temporary profile with its built-in models; custom CLI configuration is excluded. See [AI privacy](docs/security-and-privacy.md#ai-privacy) for execution controls and cleanup.
 
 ## What you can do
 

@@ -60,7 +60,7 @@ export interface AiLogEntry {
 
 const OPERATIONS: AiLogOperation[] = ['commit-message', 'pull-request-draft'];
 const STATUSES: AiLogStatus[] = ['success', 'failed', 'cancelled'];
-const HARNESSES: AiHarnessId[] = ['codex', 'claude', 'opencode'];
+const HARNESSES: AiHarnessId[] = ['codex', 'claude', 'opencode', 'grok'];
 const MAX_TEXT = 200;
 const MAX_ERROR_TEXT = 400;
 const aiUsageRecordSchema = z.looseObject({

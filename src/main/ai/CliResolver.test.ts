@@ -13,6 +13,21 @@ afterEach(async () => {
 });
 
 describe('CliResolver', () => {
+  it('discovers Grok after a forced refresh without exposing mutable cached candidates', async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), 'opentig-resolver-'));
+    temporaryDirectories.push(directory);
+    process.env.PATH = directory;
+    const resolver = new CliResolver();
+    expect(await resolver.resolve('grok')).toBeNull();
+    const executable = path.join(directory, process.platform === 'win32' ? 'grok.exe' : 'grok');
+    await writeFile(executable, '');
+    expect(await resolver.resolve('grok')).toBeNull();
+    const candidates = await resolver.resolveAll('grok', true);
+    expect(candidates).toEqual([executable]);
+    candidates.length = 0;
+    expect(await resolver.resolve('grok')).toBe(executable);
+  });
+
   it('resolves only a fixed CLI name from PATH', async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), 'opentig-resolver-'));
     temporaryDirectories.push(directory);

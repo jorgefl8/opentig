@@ -34,7 +34,7 @@ export function requireSuccess(result: CliRunResult, harness: AiHarnessId, opera
 }
 
 export function label(harness: AiHarnessId): string {
-  return harness === 'codex' ? 'Codex' : harness === 'claude' ? 'Claude Code' : 'OpenCode';
+  return harness === 'codex' ? 'Codex' : harness === 'claude' ? 'Claude Code' : harness === 'grok' ? 'Grok Build' : 'OpenCode';
 }
 
 export function stripAnsi(value: string): string {

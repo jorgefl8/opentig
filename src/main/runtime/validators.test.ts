@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { booleanArg, branchDetailsArg, deleteBranchArg, filesTreeStateArg, nullableProjectIdArg, openFilesStateArg, prepareCommitGroupArg, projectIdArg, projectNameArg, publishBranchArg, pullRequestStatesArg, removeWorktreeArg, repositoryKeyArg, searchOptionsArg, searchReplaceArg, worktreeDetailsArg } from './validators';
+import { generateCommitMessageArg, generatePullRequestDraftArg, booleanArg, branchDetailsArg, deleteBranchArg, filesTreeStateArg, nullableProjectIdArg, openFilesStateArg, prepareCommitGroupArg, projectIdArg, projectNameArg, publishBranchArg, pullRequestStatesArg, removeWorktreeArg, repositoryKeyArg, searchOptionsArg, searchReplaceArg, worktreeDetailsArg } from './validators';
 import { GitOperationError } from '../../shared/errors';
 
 const OID = 'a'.repeat(40);
@@ -230,5 +230,17 @@ describe('publish branch argument validator', () => {
     expect(() => publishBranchArg({ ...request, remote: 'origin\0other' })).toThrow(GitOperationError);
     expect(() => publishBranchArg({ ...request, expectedOid: 'HEAD' })).toThrow(GitOperationError);
     expect(() => publishBranchArg({ remote: 'origin' })).toThrow(GitOperationError);
+  });
+});
+
+describe('Grok generation transport', () => {
+  const request = { repositoryId: 'repo', harness: 'grok', model: 'grok-test', requestId: 'request' };
+  it('accepts Grok through both generation boundaries', () => {
+    expect(generateCommitMessageArg(request)).toMatchObject(request);
+    expect(generatePullRequestDraftArg({ ...request, base: 'main' })).toMatchObject({ ...request, base: 'main' });
+  });
+  it('still rejects unknown harness identifiers', () => {
+    expect(() => generateCommitMessageArg({ ...request, harness: 'unknown' })).toThrow();
+    expect(() => generatePullRequestDraftArg({ ...request, base: 'main', harness: 'unknown' })).toThrow();
   });
 });

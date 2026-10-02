@@ -7,6 +7,17 @@ import { EMPTY_AI_USAGE, type AiUsage } from '../../shared/ai-log';
  * different facts and only one of them is worth showing.
  */
 
+/** Grok reports uncached input and cache buckets separately. */
+export function grokUsage(envelope: unknown): AiUsage {
+  if (!envelope || typeof envelope !== 'object') return { ...EMPTY_AI_USAGE };
+  const record = envelope as { usage?: unknown; total_cost_usd?: unknown };
+  const usage = record.usage && typeof record.usage === 'object' ? record.usage as Record<string, unknown> : {};
+  return {
+    inputTokens: count(usage.input_tokens), outputTokens: count(usage.output_tokens), reasoningTokens: count(usage.reasoning_tokens),
+    cacheReadTokens: count(usage.cache_read_input_tokens), cacheWriteTokens: count(usage.cache_creation_input_tokens), costUsd: count(record.total_cost_usd, true),
+  };
+}
+
 /**
  * Claude Code answers with a single JSON envelope whose `usage` sits beside the
  * structured output the caller wants, plus a real dollar cost.

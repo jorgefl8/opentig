@@ -39,7 +39,7 @@ const defaults: SettingsData = {
   preferences: {
     theme: 'system', diffView: 'unified', changesLayout: 'tree', wrapLines: false, sidebarWidth: 400, showDotEnvFiles: true, uiZoom: 100,
     uiFont: 'plus-jakarta-sans', monoFont: 'jetbrains-mono',
-    commitMessageHarness: 'codex', commitMessageModels: { codex: 'default', claude: 'default', opencode: 'default' },
+    commitMessageHarness: 'codex', commitMessageModels: { codex: 'default', claude: 'default', opencode: 'default', grok: 'default' },
     shortcutOverrides: {}, doubleControlShortcutEnabled: true,
     remoteFetchIntervalSeconds: DEFAULT_REMOTE_FETCH_INTERVAL_SECONDS,
   },
@@ -488,7 +488,7 @@ function projectError(message: string): GitOperationError {
 }
 
 function isHarness(value: unknown): value is AiHarnessId {
-  return value === 'codex' || value === 'claude' || value === 'opencode';
+  return value === 'codex' || value === 'claude' || value === 'opencode' || value === 'grok';
 }
 
 function normalizeUiFont(value: unknown): UiFontPreference {
@@ -508,9 +508,9 @@ function normalizeSidebarWidth(value: unknown): number {
 }
 
 function modelPreferences(value: unknown): Partial<Record<AiHarnessId, string>> {
-  const result: Partial<Record<AiHarnessId, string>> = { codex: 'default', claude: 'default', opencode: 'default' };
+  const result: Partial<Record<AiHarnessId, string>> = { codex: 'default', claude: 'default', opencode: 'default', grok: 'default' };
   if (!value || typeof value !== 'object') return result;
-  for (const harness of ['codex', 'claude', 'opencode'] as const) {
+  for (const harness of ['codex', 'claude', 'opencode', 'grok'] as const) {
     const model = (value as Partial<Record<AiHarnessId, unknown>>)[harness];
     if (typeof model === 'string' && model.length > 0 && model.length <= 200 && !hasControlCharacters(model)) result[harness] = model;
   }

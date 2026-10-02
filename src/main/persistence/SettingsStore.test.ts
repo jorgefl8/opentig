@@ -59,6 +59,17 @@ describe('SettingsStore document recovery', () => {
 });
 
 describe('SettingsStore AI preferences', () => {
+  it('adds a Grok default to legacy settings and persists its independent model after restart', async () => {
+    const file = await settingsFile({ preferences: { commitMessageHarness: 'opencode', commitMessageModels: { opencode: 'provider/model' } } });
+    const store = new SettingsStore(file);
+    await store.load();
+    expect(store.preferences.commitMessageModels).toMatchObject({ opencode: 'provider/model', grok: 'default' });
+    await store.setPreferences({ commitMessageHarness: 'grok', commitMessageModels: { ...store.preferences.commitMessageModels, grok: 'grok-test' } });
+    const restarted = new SettingsStore(file);
+    await restarted.load();
+    expect(restarted.preferences).toMatchObject({ commitMessageHarness: 'grok', commitMessageModels: { opencode: 'provider/model', grok: 'grok-test' } });
+  });
+
   it('migrates settings created before AI preferences existed', async () => {
     const file = await settingsFile({ preferences: { theme: 'dark', diffView: 'split', sidebarWidth: 360, showDotEnvFiles: true, uiZoom: 100 } });
     const store = new SettingsStore(file);

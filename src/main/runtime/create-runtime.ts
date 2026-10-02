@@ -5,6 +5,7 @@ import { CommitMessageService } from '../ai/CommitMessageService';
 import { PullRequestDraftService } from '../ai/PullRequestDraftService';
 import { ClaudeProvider } from '../ai/providers/ClaudeProvider';
 import { CodexProvider } from '../ai/providers/CodexProvider';
+import { GrokProvider } from '../ai/providers/GrokProvider';
 import { OpenCodeProvider } from '../ai/providers/OpenCodeProvider';
 import { FileOperationHistory } from '../files/FileOperationHistory';
 import { FileService } from '../files/FileService';
@@ -59,6 +60,7 @@ export async function createOpenTigRuntime(
     new CodexProvider(cliResolver, cliRunner),
     new ClaudeProvider(cliResolver, cliRunner),
     new OpenCodeProvider(cliResolver, cliRunner),
+    new GrokProvider(cliResolver, cliRunner),
   ];
   const aiLog = new AiLogStore(options.aiLogPath);
   await aiLog.load();

@@ -23,6 +23,8 @@ OpenCode requires version 2.x; install the current CLI following the [OpenCode v
 
 Only install the tools you intend to use. GitHub functionality requires `gh`; AI features require at least one supported AI CLI.
 
+For optional Grok assistance, install the [official Grok Build CLI](https://docs.x.ai/build/cli), run `grok login` (or set `XAI_API_KEY` for the host process), and select **Grok Build** in **Settings → AI assistance**. OpenTig requires Grok Build 1.0.46 or later in the 1.x series, discovers its built-in models, and uses an isolated profile without custom CLI configuration.
+
 ## Run the headless CLI
 
 Try the latest published version (replace `latest` with an exact version for repeatable deployments):
