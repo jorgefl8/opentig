@@ -1,28 +1,33 @@
 import { access } from 'node:fs/promises';
 import path from 'node:path';
+import type { AiHarnessId } from '../../shared/contracts';
 
 const ALLOWED = new Set(['codex', 'claude', 'opencode', 'gh']);
 const ALIASES: Record<string, readonly string[]> = {
   codex: ['codex'],
   claude: ['claude'],
-  // OpenCode 2 installs as opencode2 and does not replace OpenCode 1's opencode binary.
+  // Current v2 uses opencode; older distributions also provide opencode2.
   opencode: ['opencode', 'opencode2'],
   gh: ['gh'],
 };
 
 export class CliResolver {
-  private readonly cache = new Map<string, string | null>();
+  private readonly cache = new Map<string, string[]>();
 
-  async resolve(name: 'codex' | 'claude' | 'opencode' | 'gh', forceRefresh = false): Promise<string | null> {
-    if (!ALLOWED.has(name)) return null;
-    if (!forceRefresh && this.cache.has(name)) return this.cache.get(name) ?? null;
-    let resolved: string | null = null;
+  async resolve(name: AiHarnessId | 'gh', forceRefresh = false): Promise<string | null> {
+    return (await this.resolveAll(name, forceRefresh))[0] ?? null;
+  }
+
+  async resolveAll(name: AiHarnessId | 'gh', forceRefresh = false): Promise<string[]> {
+    if (!ALLOWED.has(name)) return [];
+    if (!forceRefresh && this.cache.has(name)) return [...this.cache.get(name)!];
+    const resolved: string[] = [];
     for (const alias of ALIASES[name] ?? [name]) {
-      resolved = await findOnPath(alias);
-      if (resolved) break;
+      const executable = await findOnPath(alias);
+      if (executable && !resolved.includes(executable)) resolved.push(executable);
     }
     this.cache.set(name, resolved);
-    return resolved;
+    return [...resolved];
   }
 }
 

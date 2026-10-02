@@ -17,8 +17,9 @@ gh auth login
 codex login
 claude auth login
 opencode auth login
-opencode2 auth login
 ```
+
+OpenCode requires version 2.x; install the current CLI following the [OpenCode v2 instructions](https://opencode.ai/v2/docs/cli). If your compatible installation uses `opencode2`, run `opencode2 auth login` instead.
 
 Only install the tools you intend to use. GitHub functionality requires `gh`; AI features require at least one supported AI CLI.
 

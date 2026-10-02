@@ -1,66 +1,76 @@
-import path from 'node:path';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CliProcessRunner } from '../CliProcessRunner';
 import type { CliResolver } from '../CliResolver';
+import { generateOpenCodeV2Text, startOpenCodeV2Server } from '../open-code-server';
 import { OpenCodeProvider } from './OpenCodeProvider';
 
-function resolver(executable: string | null): CliResolver {
-  return { resolve: vi.fn(async () => executable) } as unknown as CliResolver;
+vi.mock('../open-code-server', () => ({ startOpenCodeV2Server: vi.fn(), generateOpenCodeV2Text: vi.fn() }));
+afterEach(() => vi.resetAllMocks());
+
+function fixture(candidates: string[], versions: Record<string, string> = {}) {
+  const resolver = { resolveAll: vi.fn(async () => candidates) } as unknown as CliResolver;
+  const run = vi.fn(async (executable: string, args: string[]) => ({
+    exitCode: 0, stderr: '',
+    stdout: args[0] === '--version' ? versions[executable] ?? '2.0.22'
+      : args[0] === 'auth' ? '[{"id":"anthropic","connections":[{"type":"credential","label":"account"}]}]'
+      : 'anthropic/claude-sonnet-4#high\n',
+  }));
+  return { provider: new OpenCodeProvider(resolver, { run } as unknown as CliProcessRunner), run, resolver };
 }
 
-function runner(responses: Record<string, { exitCode: number; stdout: string; stderr?: string }>): CliProcessRunner {
-  return {
-    run: vi.fn(async (_executable: string, args: string[]) => {
-      const key = args.join(' ');
-      return { exitCode: 0, stdout: '', stderr: '', ...responses[key] };
-    }),
-  } as unknown as CliProcessRunner;
-}
+const input = { repositoryPath: '/sample', prompt: 'Generate a commit message.', schema: { type: 'object' }, model: 'default', signal: new AbortController().signal };
 
-describe('OpenCodeProvider.status', () => {
-  it('reports OpenCode 2 as installed with its CLI name and catalog', async () => {
-    const provider = new OpenCodeProvider(resolver(path.join('C:\\npm', 'opencode2.cmd')), runner({
-      '--version': { exitCode: 0, stdout: 'opencode2 v0.0.0-beta-18155\n' },
-      'auth list': { exitCode: 0, stdout: 'No authenticated integrations\n' },
-      'models --standalone': { exitCode: 0, stdout: 'opencode/big-pickle\nopencode/hy3-free\n' },
-    }));
-    const status = await provider.status();
-    expect(status).toMatchObject({
-      installed: true,
-      cliName: 'opencode2',
-      version: 'opencode2 v0.0.0-beta-18155',
-      authStatus: 'unknown',
-      availability: 'warning',
-    });
-    expect(status.models.map((model) => model.id)).toEqual(['default', 'opencode/big-pickle', 'opencode/hy3-free']);
+describe('OpenCodeProvider', () => {
+  it.each(['/bin/opencode', '/bin/opencode2'])('recognizes v2 at %s and probes standalone metadata', async (executable) => {
+    const { provider, run } = fixture([executable]);
+    expect(await provider.status()).toMatchObject({ installed: true, availability: 'ready', version: '2.0.22', authStatus: 'authenticated' });
+    expect(run).toHaveBeenCalledWith(executable, ['models', '--standalone'], { timeoutMs: 30_000 });
+    expect((await provider.status()).models.map((model) => model.id)).toEqual(['default', 'anthropic/claude-sonnet-4#high']);
   });
 
-  it('asks for opencode2 login when OpenCode 2 has no catalog and no credentials', async () => {
-    const provider = new OpenCodeProvider(resolver('/usr/bin/opencode2'), runner({
-      '--version': { exitCode: 0, stdout: 'opencode2 v0.0.0-beta-18155' },
-      'auth list': { exitCode: 0, stdout: 'No authenticated integrations' },
-      'models --standalone': { exitCode: 0, stdout: '' },
-    }));
-    await expect(provider.status()).resolves.toMatchObject({
-      installed: true,
-      cliName: 'opencode2',
-      authStatus: 'unauthenticated',
-      availability: 'error',
-      message: 'Run opencode2 auth login.',
-    });
+  it('chooses a compatible alternate binary when the main command is v1', async () => {
+    const { provider, run } = fixture(['/bin/opencode', '/bin/opencode2'], { '/bin/opencode': '1.15.13' });
+    expect(await provider.status(true)).toMatchObject({ cliName: 'opencode2', version: '2.0.22', availability: 'ready' });
+    expect(run).not.toHaveBeenCalledWith('/bin/opencode', ['models', '--standalone'], expect.anything());
   });
 
-  it('keeps the OpenCode 1 credential probe', async () => {
-    const provider = new OpenCodeProvider(resolver('/usr/bin/opencode'), runner({
-      '--version': { exitCode: 0, stdout: '1.15.13' },
-      'auth list': { exitCode: 0, stdout: 'Credentials\nanthropic\n' },
-      models: { exitCode: 0, stdout: 'anthropic/claude-sonnet-4\n' },
-    }));
-    await expect(provider.status()).resolves.toMatchObject({
-      installed: true,
-      cliName: 'opencode',
-      authStatus: 'authenticated',
-      availability: 'ready',
-    });
+  it.each(['1.15.13', 'opencode2 v0.0.0-beta-18155', 'unknown', '3.0.0'])('blocks incompatible version %s at status and generation', async (version) => {
+    const { provider, run } = fixture(['/bin/opencode'], { '/bin/opencode': version });
+    expect(await provider.status()).toMatchObject({ installed: true, availability: 'error', authStatus: 'unknown', message: expect.stringContaining('OpenCode 2.x is required') });
+    await expect(provider.generate(input)).rejects.toMatchObject({ detail: { code: 'AI_PROCESS_FAILED', message: expect.stringContaining('OpenCode 2.x is required') } });
+    expect(run.mock.calls.every(([, args]) => args[0] === '--version')).toBe(true);
+    expect(startOpenCodeV2Server).not.toHaveBeenCalled();
+  });
+
+  it('reports an absent CLI and forwards refresh to the resolver', async () => {
+    const { provider, resolver } = fixture([]);
+    expect(await provider.status(true)).toMatchObject({ installed: false, availability: 'error' });
+    expect(resolver.resolveAll).toHaveBeenCalledWith('opencode', true);
+    await expect(provider.generate(input)).rejects.toMatchObject({ detail: { code: 'AI_CLI_NOT_FOUND' } });
+  });
+
+  it('keeps free models usable without claiming confirmed authentication', async () => {
+    const { provider, run } = fixture(['/bin/opencode']);
+    run.mockImplementation(async (_executable, args) => ({ exitCode: 0, stderr: '', stdout: args[0] === '--version' ? '2.0.22' : args[0] === 'auth' ? '[]' : 'opencode/free-model' }));
+    expect(await provider.status()).toMatchObject({ installed: true, availability: 'warning', authStatus: 'unknown' });
+  });
+
+  it('includes the schema and always closes its private server', async () => {
+    const { provider } = fixture(['/bin/opencode']);
+    const close = vi.fn();
+    vi.mocked(startOpenCodeV2Server).mockResolvedValue({ url: 'http://127.0.0.1:1234', password: 'test', close });
+    vi.mocked(generateOpenCodeV2Text).mockResolvedValue('{"subject":"Add feature","body":""}');
+    expect(await provider.generate(input)).toMatchObject({ output: { subject: 'Add feature', body: '' }, usage: { inputTokens: null } });
+    expect(generateOpenCodeV2Text).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ prompt: expect.stringContaining(JSON.stringify(input.schema)) }));
+    expect(close).toHaveBeenCalledOnce();
+  });
+
+  it('closes the server on malformed output', async () => {
+    const { provider } = fixture(['/bin/opencode']);
+    const close = vi.fn();
+    vi.mocked(startOpenCodeV2Server).mockResolvedValue({ url: 'http://127.0.0.1:1234', password: 'test', close });
+    vi.mocked(generateOpenCodeV2Text).mockResolvedValue('not JSON');
+    await expect(provider.generate(input)).rejects.toMatchObject({ detail: { code: 'AI_INVALID_OUTPUT' } });
+    expect(close).toHaveBeenCalledOnce();
   });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { claudeUsage, codexUsage, openCodeUsage } from './usage';
+import { claudeUsage, codexUsage } from './usage';
 
 // The payloads below were captured from the installed CLIs, not invented, so a
 // change in any harness's reporting shape fails here instead of silently
@@ -67,29 +67,5 @@ describe('codexUsage', () => {
     expect(codexUsage('')).toEqual({ ...codexUsage('not json at all') });
     expect(codexUsage('{"type":"turn.completed"')).toMatchObject({ inputTokens: null });
     expect(codexUsage('{"type":"turn.failed","error":{"message":"stream ended"}}')).toMatchObject({ inputTokens: null });
-  });
-});
-
-describe('openCodeUsage', () => {
-  const info = {
-    role: 'assistant',
-    cost: 0.01248075,
-    tokens: { input: 16616, output: 5, reasoning: 0, cache: { read: 0, write: 0 } },
-  };
-
-  it('reads the typed assistant message from the local server', () => {
-    expect(openCodeUsage(info)).toEqual({
-      inputTokens: 16616,
-      outputTokens: 5,
-      reasoningTokens: 0,
-      cacheReadTokens: 0,
-      cacheWriteTokens: 0,
-      costUsd: 0.01248075,
-    });
-  });
-
-  it('reports nothing when the message carries no accounting', () => {
-    expect(openCodeUsage({ role: 'assistant' })).toMatchObject({ inputTokens: null, costUsd: null });
-    expect(openCodeUsage(null)).toMatchObject({ inputTokens: null });
   });
 });

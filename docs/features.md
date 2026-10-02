@@ -133,7 +133,7 @@ GitHub features use the authenticated GitHub CLI (`gh`):
 
 ### Optional AI assistance
 
-OpenTig supports locally installed Codex, Claude Code, and OpenCode CLIs. OpenCode 1 installs as `opencode` (`opencode-ai`); OpenCode 2 installs as `opencode2` (`@opencode-ai/cli`). OpenTig detects either binary and prefers OpenCode 1 when both are on `PATH`. It can:
+OpenTig supports locally installed Codex, Claude Code, and OpenCode CLIs. Only OpenCode 2.x is supported. OpenTig checks the installed version of `opencode` and the alternate `opencode2` binary, preferring a compatible v2 installation. OpenCode 1 and legacy beta builds are shown as incompatible and cannot generate content. Models retain provider/model identifiers and optional `#variant` suffixes. It can:
 
 - generate an editable commit message from staged changes;
 - propose multiple focused commits, including their messages, reasons, and complete-file groups, when a split is clearly beneficial;

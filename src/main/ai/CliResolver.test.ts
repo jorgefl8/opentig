@@ -31,7 +31,7 @@ describe('CliResolver', () => {
     expect(await new CliResolver().resolve('opencode')).toBe(executable);
   });
 
-  it('prefers OpenCode 1 over OpenCode 2 when both are on PATH', async () => {
+  it('returns both aliases so the provider can choose a compatible version', async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), 'opentig-resolver-'));
     temporaryDirectories.push(directory);
     const v1 = path.join(directory, process.platform === 'win32' ? 'opencode.exe' : 'opencode');
@@ -39,6 +39,6 @@ describe('CliResolver', () => {
     await writeFile(v1, '');
     await writeFile(v2, '');
     process.env.PATH = directory;
-    expect(await new CliResolver().resolve('opencode')).toBe(v1);
+    expect(await new CliResolver().resolveAll('opencode')).toEqual([v1, v2]);
   });
 });
