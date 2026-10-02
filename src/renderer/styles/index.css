@@ -1770,6 +1770,7 @@ section[data-sileo-viewport] [data-sileo-title] { text-transform: none; }
 .searchable-picker-list { max-height: 292px; padding: 4px; }
 .searchable-picker-group { padding: 6px 8px 3px; font-size: 9px; line-height: 14px; font-weight: 650; letter-spacing: .065em; text-transform: uppercase; }
 .searchable-picker-item { min-height: 32px; padding: 5px 28px 5px 8px; gap: 7px; border-radius: 5px; color: var(--popover-foreground); }
+.searchable-picker-item + .searchable-picker-item { margin-top: 2px; }
 .searchable-picker-item-detailed { min-height: 42px; }
 .searchable-picker-item[data-selected] { background: color-mix(in oklch, var(--primary) 10%, var(--popover)); color: var(--popover-foreground); }
 .searchable-picker-item[data-highlighted] { background: color-mix(in oklch, var(--foreground) 8%, var(--popover)); }
