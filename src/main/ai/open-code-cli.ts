@@ -10,8 +10,8 @@ export function openCodeCliName(executable: string): OpenCodeCliName {
   return path.parse(executable).name.toLowerCase() === 'opencode2' ? 'opencode2' : 'opencode';
 }
 
-export function isOpenCodeV2(executable: string): boolean {
-  return openCodeCliName(executable) === 'opencode2';
+export function isOpenCodeV2Version(raw: string): boolean {
+  return /^(?:opencode2?\s+)?v?2\.\d+\.\d+(?:[-+][\w.-]+)?$/.test(stripAnsi(raw).trim());
 }
 
 export function openCodeLoginCommand(cliName: OpenCodeCliName): string {
@@ -20,35 +20,26 @@ export function openCodeLoginCommand(cliName: OpenCodeCliName): string {
 
 export function parseOpenCodeAuthList(raw: string, exitCode: number): AiAuthStatus {
   if (exitCode !== 0) return 'unknown';
-  const text = stripAnsi(raw);
-  if (/no authenticated/i.test(text)) return 'unauthenticated';
-  if (/credential/i.test(text)) return 'authenticated';
-  const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-  if (lines.some((line) => /^[A-Za-z0-9._-]+$/.test(line) && !/^(providers?|credentials?|integrations?)$/i.test(line))) {
-    return 'authenticated';
+  try {
+    const integrations: unknown = JSON.parse(stripAnsi(raw).trim());
+    if (!Array.isArray(integrations) || integrations.some((item) => !item || typeof item !== 'object' || !Array.isArray(item.connections))) return 'unknown';
+    return integrations.some((item) => item.connections.length > 0) ? 'authenticated' : 'unauthenticated';
+  } catch {
+    // Unrecognized output never proves authentication.
   }
   return 'unknown';
 }
 
 export function parseOpenCodeModels(raw: string): AiModelOption[] {
   const seen = new Set<string>();
-  const models = stripAnsi(raw).split(/\r?\n/).map((line) => line.trim()).filter((line) => /^[A-Za-z0-9._-]+\/[A-Za-z0-9._:/-]+$/.test(line) && !seen.has(line) && seen.add(line)).map((id) => ({ id, label: id }));
+  const models = stripAnsi(raw).split(/\r?\n/).map((line) => line.trim()).filter((line) => /^[A-Za-z0-9._-]+\/[A-Za-z0-9._:/-]+(?:#[A-Za-z0-9._-]+)?$/.test(line) && !seen.has(line) && seen.add(line)).map((id) => ({ id, label: id }));
   return [DEFAULT_MODEL, ...models];
 }
 
-export function parseOpenCodeV1Model(value: string): { providerID: string; modelID: string } {
-  const slash = value.indexOf('/');
-  if (slash <= 0 || slash === value.length - 1) throw invalidModel();
-  return { providerID: value.slice(0, slash), modelID: value.slice(slash + 1) };
-}
-
 export function parseOpenCodeV2ModelRef(value: string): { id: string; providerID: string; variant?: string } {
-  const parsed = parseOpenCodeV1Model(value);
-  const hash = parsed.modelID.lastIndexOf('#');
-  if (hash > 0 && hash < parsed.modelID.length - 1) {
-    return { providerID: parsed.providerID, id: parsed.modelID.slice(0, hash), variant: parsed.modelID.slice(hash + 1) };
-  }
-  return { providerID: parsed.providerID, id: parsed.modelID };
+  const match = /^([^/#\s]+)\/([^#\s]+)(?:#([^#\s]+))?$/.exec(value);
+  if (!match?.[1] || !match[2]) throw invalidModel();
+  return { providerID: match[1], id: match[2], ...(match[3] ? { variant: match[3] } : {}) };
 }
 
 export function parseOpenCodeV2GenerateText(payload: unknown): string {

@@ -1,7 +1,7 @@
 import { EMPTY_AI_USAGE, type AiUsage } from '../../shared/ai-log';
 
 /**
- * Token accounting reported by each harness. The three shapes are unrelated, so
+ * Token accounting reported by each harness. The provider shapes are unrelated, so
  * each is read where it actually lives and normalized into one record. A missing
  * field stays null rather than becoming zero: "not reported" and "none used" are
  * different facts and only one of them is worth showing.
@@ -50,25 +50,6 @@ export function codexUsage(stdout: string): AiUsage {
     cacheReadTokens: count(usage.cached_input_tokens),
     cacheWriteTokens: count(usage.cache_write_input_tokens),
     costUsd: null,
-  };
-}
-
-/**
- * OpenCode is driven through its local server, so usage arrives already typed on
- * the assistant message rather than as text to parse.
- */
-export function openCodeUsage(info: unknown): AiUsage {
-  if (!info || typeof info !== 'object') return { ...EMPTY_AI_USAGE };
-  const record = info as { tokens?: unknown; cost?: unknown };
-  const tokens = (record.tokens ?? {}) as Record<string, unknown>;
-  const cache = (tokens.cache ?? {}) as Record<string, unknown>;
-  return {
-    inputTokens: count(tokens.input),
-    outputTokens: count(tokens.output),
-    reasoningTokens: count(tokens.reasoning),
-    cacheReadTokens: count(cache.read),
-    cacheWriteTokens: count(cache.write),
-    costUsd: count(record.cost, true),
   };
 }
 

@@ -96,8 +96,9 @@ export async function generateOpenCodeV2Text(server: OpenCodeV2Server, input: {
   const created = await v2Request(server, '/api/session', {
     method: 'POST',
     body: {
-      title: 'OpenTig commit message',
+      title: 'OpenTig text generation',
       location: { directory: input.cwd },
+      permissions: [{ action: '*', resource: '*', effect: 'deny' }],
       ...(model ? { model } : {}),
     },
     signal,
@@ -105,8 +106,7 @@ export async function generateOpenCodeV2Text(server: OpenCodeV2Server, input: {
   throwIfV2Failed(created.status, created.payload, signal);
   const sessionId = parseOpenCodeV2SessionId(created.payload);
   try {
-    // Stateless /api/generate rejects catalog models as unavailable. Session
-    // generate uses the same default/catalog and returns the assistant text.
+    // Transient text generation does not execute an agent tool loop.
     const response = await v2Request(server, `/api/session/${sessionId}/generate`, {
       method: 'POST',
       body: { prompt: input.prompt },
@@ -158,7 +158,7 @@ function throwIfV2Failed(status: number, payload: unknown, signal: AbortSignal):
   if (status === 401 || /not logged|login required|unauth|authentication|sign in/.test(raw)) {
     throw new AiOperationError({ code: 'AI_AUTH_REQUIRED', operation: 'opencode-generate', harness: 'opencode', message: 'Sign in to OpenCode to generate the message.' });
   }
-  if (/rate.?limit|quota|usage limit|too many requests|credit/.test(raw)) {
+  if (status === 429 || /rate.?limit|quota|usage limit|too many requests|credit/.test(raw)) {
     throw new AiOperationError({ code: 'AI_RATE_LIMITED', operation: 'opencode-generate', harness: 'opencode', message: 'OpenCode rejected the request because of a usage limit.', retryable: true });
   }
   if (/model.*(not found|unavailable|invalid|access)|unknown model|no model specified/.test(raw)) {
