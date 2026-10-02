@@ -18,7 +18,6 @@ codex login
 claude auth login
 opencode auth login
 opencode2 auth login
-grok login
 ```
 
 Only install the tools you intend to use. GitHub functionality requires `gh`; AI features require at least one supported AI CLI.
