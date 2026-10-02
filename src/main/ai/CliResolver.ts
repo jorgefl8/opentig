@@ -1,5 +1,6 @@
 import { access } from 'node:fs/promises';
 import path from 'node:path';
+import type { AiHarnessId } from '../../shared/contracts';
 
 const ALLOWED = new Set(['codex', 'claude', 'opencode', 'gh']);
 const ALIASES: Record<string, readonly string[]> = {
@@ -13,11 +14,11 @@ const ALIASES: Record<string, readonly string[]> = {
 export class CliResolver {
   private readonly cache = new Map<string, string[]>();
 
-  async resolve(name: 'codex' | 'claude' | 'opencode' | 'gh', forceRefresh = false): Promise<string | null> {
+  async resolve(name: AiHarnessId | 'gh', forceRefresh = false): Promise<string | null> {
     return (await this.resolveAll(name, forceRefresh))[0] ?? null;
   }
 
-  async resolveAll(name: 'codex' | 'claude' | 'opencode' | 'gh', forceRefresh = false): Promise<string[]> {
+  async resolveAll(name: AiHarnessId | 'gh', forceRefresh = false): Promise<string[]> {
     if (!ALLOWED.has(name)) return [];
     if (!forceRefresh && this.cache.has(name)) return [...this.cache.get(name)!];
     const resolved: string[] = [];
