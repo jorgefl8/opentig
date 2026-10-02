@@ -28,7 +28,7 @@ OpenTig is early-stage software. This guide describes the current interface and 
 - **Remove from OpenTig** forgets a repository and its worktrees, clears their recent entries and project assignment, and returns to the welcome screen if the active repository was removed. A confirmation explains that folders and Git data stay on disk; you can open them again later. Save or close unsaved editor tabs before removing or relocating a repository.
 - Group related repositories into named OpenTig projects without moving anything on disk.
 - Pull or push an individual repository from its row in the repository picker. Each row shows the repository name plus the branch that pull or push will use, and the worktree folder when that checkout is a linked worktree (the filesystem path is on the hover tooltip). When the repository has a favicon or app icon on disk (`favicon.svg`/`favicon.ico` at the root or under `public/`, `app/`, and similar locations, or a `<link rel="icon">` in `index.html`), that icon appears beside the name in the toolbar picker and in each row. Only pending operations are shown, each with its ahead/behind commit count; multiple repositories can sync concurrently, and their separate Sileo progress and outcome cards remain visible together. Opening the picker fetches each listed repository so those counts and checkouts match the remote, not a stale local cache.
-- Fetch remotes in the background so toolbar ahead/behind counts stay current. The default interval is 30 seconds and can be raised, lowered, or turned off in **Settings → General**.
+- Fetch remotes in the background so toolbar ahead/behind counts stay current. The default interval is 30 seconds. **Settings → General** offers common intervals, a custom value from 5 to 300 seconds in steps of 5, and Off to disable periodic fetch while keeping checks on pull and push.
 - Create, rename, delete, and reassign project groups.
 - Switch quickly between repositories, branches, and available worktrees.
 - Display current branch, ahead/behind state, and worktree insertion/deletion totals in the main toolbar.
@@ -150,6 +150,7 @@ AI never creates a commit or pull request automatically. You review and edit the
 
 ### Preferences
 
+- Organize **Settings → General** into compact Appearance, Files & viewer, and Repository sync groups, with controls beside their labels on desktop and stacked on phones. Font menus show their own typefaces; an optional text preview reflects the active interface and code fonts. Changes apply immediately.
 - Move smoothly between Settings sections with a short reduced-motion-aware transition while the navigation and dialog controls stay fixed.
 - System, light, and dark themes.
 - Interface and code fonts from **Settings → General**, each with its own dropdown. Interface: Geist, Plus Jakarta Sans, or Space Grotesk. Code: Geist Mono, JetBrains Mono, Inconsolata, Departure Mono, or Space Grotesk. Defaults are Plus Jakarta Sans for the interface and JetBrains Mono for code. Saved font selections are preserved.

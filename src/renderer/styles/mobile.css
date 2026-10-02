@@ -141,11 +141,26 @@
   html .settings-nav-title { display: none; }
   html .settings-nav-item { flex: none; min-height: 44px; padding: 8px; }
   html .settings-panel-header, html .settings-panel-body { padding: 12px; }
-  html .settings-font-pickers { grid-template-columns: minmax(0, 1fr); }
   html .settings-theme-option { min-height: 44px; }
   html .settings-switch { width: 44px; height: 28px; }
   html .settings-switch span { width: 24px; height: 24px; }
   html .settings-switch[aria-checked="true"] span { transform: translateX(16px); }
+
+  html .settings-dialog-general .settings-shell { height: 100%; }
+  html .settings-panel-body-general { padding: 0; }
+  html .settings-general-content { padding: 12px; }
+  html .settings-general-row { grid-template-columns: minmax(0, 1fr); gap: 9px; padding: 12px 0; }
+  html .settings-general-control { justify-content: flex-start; }
+  html .settings-general-select, html .settings-general .settings-zoom-control { width: 100%; }
+  html .settings-general .settings-theme-options { display: flex; width: 100%; }
+  html .settings-general .settings-theme-option { flex: 1; min-height: 40px; font-size: 12px; }
+  html .settings-general-toggle { grid-template-columns: minmax(0, 1fr) auto; gap: 16px; }
+  html .settings-general-toggle .settings-general-control { justify-content: flex-end; }
+  html .settings-general .settings-switch { width: 44px; height: 44px; }
+  html .settings-general .settings-switch::before { top: 8px; left: 0; width: 44px; height: 28px; }
+  html .settings-general .settings-switch span { top: 10px; left: 2px; }
+  html .settings-general-footer { padding: 8px 12px; font-size: 10px; }
+  html .settings-general-footer button { min-height: 40px; }
   html .web-access-fact { grid-template-columns: minmax(0, 1fr); gap: 5px; }
   html .web-access-fact > div { justify-content: flex-start; text-align: left; }
   html .web-access-endpoints { justify-items: start; }
