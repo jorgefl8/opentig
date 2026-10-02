@@ -72,6 +72,17 @@ export function openCodeUsage(info: unknown): AiUsage {
   };
 }
 
+/** Grok reports uncached input and cache buckets separately. */
+export function grokUsage(envelope: unknown): AiUsage {
+  if (!envelope || typeof envelope !== 'object') return { ...EMPTY_AI_USAGE };
+  const record = envelope as { usage?: unknown; total_cost_usd?: unknown };
+  const usage = record.usage && typeof record.usage === 'object' ? record.usage as Record<string, unknown> : {};
+  return {
+    inputTokens: count(usage.input_tokens), outputTokens: count(usage.output_tokens), reasoningTokens: count(usage.reasoning_tokens),
+    cacheReadTokens: count(usage.cache_read_input_tokens), cacheWriteTokens: count(usage.cache_creation_input_tokens), costUsd: count(record.total_cost_usd, true),
+  };
+}
+
 function count(value: unknown, fractional = false): number | null {
   if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return null;
   return fractional ? value : Math.round(value);

@@ -17,7 +17,7 @@ const searchOptionsSchema = z.object({
   includeIgnored: z.unknown().optional(),
 });
 const openFileTabSchema = z.object({ path: z.unknown(), pinned: z.boolean() });
-const aiHarnessSchema = z.enum(['codex', 'claude', 'opencode']);
+const aiHarnessSchema = z.enum(['codex', 'claude', 'opencode', 'grok']);
 const pullRequestStateSchema = z.enum(['OPEN', 'CLOSED', 'MERGED']);
 
 export function stringArg(value: unknown, operation: string, maxLength = 32_768): string {

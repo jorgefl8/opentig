@@ -139,10 +139,12 @@ OpenTig supports locally installed Codex, Claude Code, and OpenCode CLIs. OpenCo
 - propose multiple focused commits, including their messages, reasons, and complete-file groups, when a split is clearly beneficial;
 - generate an editable pull-request title and description from the current branch diff;
 - detect installed providers, authentication state, and available models;
-- identify Codex, Claude Code, and OpenCode with their provider marks in AI settings and show the selected provider and model together in the commit composer;
+- identify Codex, Claude Code, OpenCode, and Grok Build with their provider marks in AI settings and show the selected provider and model together in the commit composer;
 - keep large commit and pull-request analyses running for up to ten minutes without a generic transport timeout discarding a valid result;
 - normalize harmless trailing periods in generated commit subjects instead of discarding an otherwise valid result;
 - cancel an in-progress generation request, including when its client disconnects or its bounded execution window expires.
+
+The official Grok Build (`grok`) CLI also supports these workflows. It requires version 1.0.46 or later in the 1.x series and the headless JSON and tool-control flags. Authenticate with `grok login`, or supply `XAI_API_KEY` to the host process. Its built-in model catalog is discovered dynamically; custom CLI models and configuration are not loaded. OpenTig keeps its own model selection without changing the CLI default.
 
 AI never creates a commit or pull request automatically. You review and edit the generated text before any Git or GitHub action occurs.
 

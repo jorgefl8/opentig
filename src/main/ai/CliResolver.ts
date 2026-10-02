@@ -1,19 +1,21 @@
 import { access } from 'node:fs/promises';
 import path from 'node:path';
+import type { AiHarnessId } from '../../shared/contracts';
 
-const ALLOWED = new Set(['codex', 'claude', 'opencode', 'gh']);
+const ALLOWED = new Set(['codex', 'claude', 'opencode', 'grok', 'gh']);
 const ALIASES: Record<string, readonly string[]> = {
   codex: ['codex'],
   claude: ['claude'],
   // OpenCode 2 installs as opencode2 and does not replace OpenCode 1's opencode binary.
   opencode: ['opencode', 'opencode2'],
+  grok: ['grok'],
   gh: ['gh'],
 };
 
 export class CliResolver {
   private readonly cache = new Map<string, string | null>();
 
-  async resolve(name: 'codex' | 'claude' | 'opencode' | 'gh', forceRefresh = false): Promise<string | null> {
+  async resolve(name: AiHarnessId | 'gh', forceRefresh = false): Promise<string | null> {
     if (!ALLOWED.has(name)) return null;
     if (!forceRefresh && this.cache.has(name)) return this.cache.get(name) ?? null;
     let resolved: string | null = null;

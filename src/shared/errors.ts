@@ -33,7 +33,7 @@ export interface SerializedAiError {
   code: AiErrorCode;
   operation: string;
   message: string;
-  harness?: 'codex' | 'claude' | 'opencode';
+  harness?: 'codex' | 'claude' | 'opencode' | 'grok';
   exitCode?: number;
   retryable?: boolean;
 }

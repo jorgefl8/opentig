@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { EMPTY_AI_USAGE } from '../../shared/ai-log';
-import type { AiHarnessStatus } from '../../shared/contracts';
+import type { AiHarnessId, AiHarnessStatus } from '../../shared/contracts';
 import { AiOperationError } from '../../shared/errors';
 import type { GitRepositoryOperations } from '../git/GitRepositoryOperations';
 import type { AiLogRecorder } from '../persistence/AiLogStore';
@@ -12,7 +12,7 @@ const context: CommitMessageContext = {
   recentSubjects: [], fingerprint: 'same', truncated: false,
   stagedPaths: ['README.md', 'src/app.ts'], splitBlockedReason: null,
 };
-const ready = (id: 'codex' | 'claude'): AiHarnessStatus => ({
+const ready = (id: AiHarnessId): AiHarnessStatus => ({
   id, label: id, availability: 'ready', installed: true, authStatus: 'authenticated', models: [{ id: 'default', label: 'Default' }], checkedAt: new Date().toISOString(),
 });
 
@@ -43,6 +43,18 @@ const splitProvider = (): AiProvider => ({
 });
 
 describe('CommitMessageService', () => {
+  it('routes Grok model selection, validates its split proposal and records metadata only', async () => {
+    const log = recorder();
+    const generate = vi.fn(splitProvider().generate);
+    const provider: AiProvider = { id: 'grok', status: async () => ready('grok'), generate };
+    const result = await new CommitMessageService(operations(), [provider], log).generate({ repositoryId: 'repo', harness: 'grok', model: 'grok-test', requestId: 'grok-commit' });
+    expect(generate).toHaveBeenCalledWith(expect.objectContaining({ model: 'grok-test', schema: expect.any(Object) }));
+    expect(result).toMatchObject({ harness: 'grok', proposal: { commits: [{ paths: ['README.md'] }, { paths: ['src/app.ts'] }] } });
+    expect(log.entries[0]).toMatchObject({ harness: 'grok', model: 'grok-test', status: 'success', splitOffered: true });
+    expect(log.entries[0]).not.toHaveProperty('prompt');
+    expect(log.entries[0]).not.toHaveProperty('output');
+  });
+
   it('routes to only the selected provider', async () => {
     const codexGenerate = vi.fn(async () => ({ output: { subject: 'Add AI', body: '' }, usage: { ...EMPTY_AI_USAGE } }));
     const claudeGenerate = vi.fn(async () => ({ output: { subject: 'Wrong provider', body: '' }, usage: { ...EMPTY_AI_USAGE } }));

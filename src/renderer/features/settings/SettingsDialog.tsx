@@ -310,7 +310,7 @@ export function SettingsDialog({ preferences, onPreference, open, onOpenChange, 
                   </Button>
                 </div>
                 <div className="ai-harness-list" role="radiogroup" aria-label="Harness for AI assistance">
-                  {(['codex', 'claude', 'opencode'] as const).map((harness) => {
+                  {(['codex', 'claude', 'opencode', 'grok'] as const).map((harness) => {
                     const harnessStatus = statuses.find((status) => status.id === harness);
                     const selected = selectedHarness === harness;
                     return (
@@ -333,7 +333,7 @@ export function SettingsDialog({ preferences, onPreference, open, onOpenChange, 
                 <div className="settings-field settings-field-separated">
                   <div className="settings-field-label">
                     <strong>{harnessLabel(selectedHarness)} model</strong>
-                    <span>Default lets the CLI choose. OpenTig remembers a separate selection for each harness.</span>
+                    <span>{selectedHarness === 'grok' ? 'Default uses Grok’s built-in default. Custom CLI models and configuration are not loaded.' : 'Default lets the CLI choose. OpenTig remembers a separate selection for each harness.'}</span>
                   </div>
                   <SearchablePicker
                     key={selectedHarness}
@@ -388,6 +388,7 @@ function availabilityBadgeVariant(status: AiHarnessStatus | undefined): 'default
 function loginCommand(harness: AiHarnessId, cliName?: string): string {
   if (harness === 'codex') return 'codex login';
   if (harness === 'claude') return 'claude auth login';
+  if (harness === 'grok') return 'grok login';
   return cliName === 'opencode2' ? 'opencode2 auth login' : 'opencode auth login';
 }
 

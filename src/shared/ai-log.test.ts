@@ -25,6 +25,11 @@ function record(overrides: Record<string, unknown> = {}) {
 }
 
 describe('normalizeAiLogEntry', () => {
+  it('retains Grok runs in history with nullable cost and separate cache usage', () => {
+    expect(normalizeAiLogEntry(record({ harness: 'grok', model: 'grok-test', usage: { ...EMPTY_AI_USAGE, inputTokens: 10, outputTokens: 5, cacheReadTokens: 20 } })))
+      .toMatchObject({ harness: 'grok', model: 'grok-test', usage: { inputTokens: 10, outputTokens: 5, cacheReadTokens: 20, costUsd: null } });
+  });
+
   it('keeps a harness error message and flattens control characters', () => {
     const entry = normalizeAiLogEntry(record({
       errorMessage: "Invalid schema\nMissing 'rationale'.",

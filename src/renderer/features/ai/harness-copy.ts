@@ -1,7 +1,7 @@
 import type { AiHarnessId, AiHarnessStatus } from '../../../shared/contracts';
 
 export function harnessLabel(harness: AiHarnessId): string {
-  return harness === 'codex' ? 'Codex' : harness === 'claude' ? 'Claude Code' : 'OpenCode';
+  return harness === 'codex' ? 'Codex' : harness === 'claude' ? 'Claude Code' : harness === 'grok' ? 'Grok Build' : 'OpenCode';
 }
 
 export function aiModelLabel(providers: AiHarnessStatus[] | undefined, harness: AiHarnessId, model: string): string {
