@@ -4,6 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { sileo, Toaster } from 'sileo';
 import { repositorySyncLoadingToast } from './project-sync';
+import { conflictNotificationAction, conflictToastId } from '../changes/conflict-notification';
 
 let root: Root;
 let container: HTMLDivElement;
@@ -82,4 +83,38 @@ it('keeps a second push visible while the previous push notification finishes cl
   await act(async () => { finish(); await push; });
   await settle();
   expect(notices()[0]?.textContent).toContain('1 commit pushed');
+});
+
+it('dismisses resolved conflicts without closing an in-flight pull or losing its result', async () => {
+  let finish!: () => void;
+  const pull = new Promise<void>((resolve) => { finish = resolve; });
+  let notification!: Promise<void>;
+  const conflictId = conflictToastId('repo');
+  const conflictToast = { id: conflictId, title: 'Conflict needs resolution', duration: 10_000 };
+  await act(async () => {
+    sileo.error(conflictToast);
+    notification = sileo.promise(pull, {
+      loading: repositorySyncLoadingToast('repo', 'pull', 'Pulling changes…'),
+      success: { title: '1 commit pulled' },
+      error: { title: 'Could not pull changes' },
+    });
+  });
+  await settle();
+  expect(notices()).toHaveLength(2);
+  expect(notices().some((notice) => notice.textContent?.includes('Conflict needs resolution'))).toBe(true);
+  expect(notices().some((notice) => notice.dataset.state === 'loading')).toBe(true);
+  await act(async () => {
+    if (conflictNotificationAction(['file.ts'], []) === 'dismiss') sileo.dismiss(conflictId);
+  });
+  await settle();
+  expect(notices()).toHaveLength(1);
+  expect(notices()[0]?.dataset.state).toBe('loading');
+  expect(notices()[0]?.textContent).toContain('Pulling changes…');
+  await act(async () => { await vi.advanceTimersByTimeAsync(15_000); });
+  expect(notices()).toHaveLength(1);
+  await act(async () => { finish(); await notification; });
+  await settle();
+  expect(notices()).toHaveLength(1);
+  expect(notices()[0]?.dataset.state).toBe('success');
+  expect(notices()[0]?.textContent).toContain('1 commit pulled');
 });

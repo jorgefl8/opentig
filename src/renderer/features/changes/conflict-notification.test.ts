@@ -16,9 +16,12 @@ describe('conflict notifications', () => {
     expect(conflictNotificationAction([], [])).toBe('none');
   });
 
-  it('shares the repository pull toast id so the conflict lifecycle replaces and dismisses it', () => {
-    expect(conflictToastId('repo-one')).toBe('repository-sync:repo-one:pull');
-    expect(conflictToastId('repo-one')).toBe(repositorySyncLoadingToast('repo-one', 'pull', 'Pulling…').id);
-    expect(conflictToastId('repo-one')).not.toBe(conflictToastId('repo-two'));
+  it('keeps a stable conflict identity separate from every pull operation', () => {
+    const conflictId = conflictToastId('repo-one');
+    expect(conflictId).toBe(conflictToastId('repo-one'));
+    expect(conflictId).not.toBe(conflictToastId('repo-two'));
+    const firstPull = repositorySyncLoadingToast('repo-one', 'pull', 'Pulling…');
+    const nextPull = repositorySyncLoadingToast('repo-one', 'pull', 'Pulling again…');
+    expect(new Set([conflictId, firstPull.id, nextPull.id]).size).toBe(3);
   });
 });
