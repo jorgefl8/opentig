@@ -112,9 +112,9 @@ export function SettingsDialog({ preferences, onPreference, open, onOpenChange, 
     : SETTINGS_COPY[section];
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogPopup className={`settings-dialog${section === 'general' ? ' settings-dialog-general' : ''}`} style={section === 'general' ? {
+      <DialogPopup className={`settings-dialog${section === 'general' ? ' settings-dialog-general' : section === 'ai' ? ' settings-dialog-ai w-[min(1000px,calc((100vw-48px)/var(--settings-ui-scale,1)))]' : ''}`} style={{
         '--settings-ui-scale': window.opentigDesktop || window.matchMedia('(max-width: 767px)').matches ? 1 : preferences.uiZoom / 100,
-      } as CSSProperties : undefined}>
+      } as CSSProperties}>
         <div className="settings-shell">
           <aside className="settings-nav">
             <div className="settings-nav-title">Settings</div>
@@ -190,7 +190,7 @@ export function SettingsDialog({ preferences, onPreference, open, onOpenChange, 
                     );
                   })}
                 </div>
-                <div className="settings-field settings-field-separated">
+                <div className="settings-field settings-field-separated ai-model-field">
                   <div className="settings-field-label">
                     <strong>{harnessLabel(selectedHarness)} model</strong>
                     <span>{selectedHarness === 'grok' ? 'Default uses Grok’s built-in default. Custom CLI models and configuration are not loaded.' : 'Default lets the CLI choose. OpenTig remembers a separate selection for each harness.'}</span>
@@ -212,7 +212,7 @@ export function SettingsDialog({ preferences, onPreference, open, onOpenChange, 
                   {selectedStatus && !selectedStatus.installed && selectedStatus.installationStatus !== 'inspection-failed' && <p className="ai-login-hint">Install {harnessLabel(selectedHarness)} and check its availability again.</p>}
                 </div>
                 <AiExecutableSettings key={selectedHarness} harness={selectedHarness} preferences={preferences} status={selectedStatus} onPreference={onPreference} />
-                <div className="settings-field settings-field-separated">
+                <div className="settings-field settings-field-separated ai-history-field">
                   <div className="settings-field-label">
                     <strong>Generation history</strong>
                     <span>Outcome, duration, tokens, and cost of recent runs, kept locally for diagnostics.</span>
