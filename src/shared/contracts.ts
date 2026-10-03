@@ -439,7 +439,6 @@ export interface Preferences {
   commitMessageHarness: AiHarnessId;
   commitMessageModels: Partial<Record<AiHarnessId, string>>;
   aiExecutablePaths: Partial<Record<AiHarnessId, string>>;
-  aiShellEnvironment: boolean;
   shortcutOverrides: ShortcutOverrides;
   doubleControlShortcutEnabled: boolean;
   /** Seconds between background `git fetch` checks. `0` disables periodic fetch. */

@@ -900,7 +900,6 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   .ai-executable-heading strong { font-size: 12px; font-weight: 600; }
   .ai-executable-heading small { color: var(--muted-foreground); font-size: 11px; font-weight: 400; }
   .ai-executable-editor { display: grid; gap: 10px; }
-  .ai-environment-row { border-top: 1px solid var(--border); padding-top: 16px; }
   .ai-executable-settings .settings-field + .settings-field { margin-top: 16px; }
   .ai-executable-input { width: 100%; min-width: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px 10px; background: var(--background); color: var(--foreground); font-family: var(--font-mono); font-size: 11px; }
   .ai-executable-actions { display: flex; flex-wrap: wrap; gap: 8px; }

@@ -21,16 +21,16 @@ describe('CLI user environment', () => {
     let finish!: (value: Record<string, string>) => void;
     const read = vi.fn().mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; })).mockResolvedValue({ PATH: '/new' });
     const environment = new CliEnvironment({ platform: 'linux', home: '/account', env: { PATH: '/base', HOME: '/account' } }, read);
-    const old = environment.get(true, true), shared = environment.get(true, true);
+    const old = environment.get(true), shared = environment.get(true);
     expect(read).toHaveBeenCalledTimes(1);
-    environment.invalidate(); await environment.get(true, true); finish({ PATH: '/old' });
+    environment.invalidate(); await environment.get(true); finish({ PATH: '/old' });
     await Promise.all([old, shared]);
-    expect((await environment.get(true)).refreshedPath).toEqual(['/new']);
-    expect((await environment.get(true)).env.HOME).toBe('/account');
+    expect((await environment.get()).refreshedPath).toEqual(['/new']);
+    expect((await environment.get()).env.HOME).toBe('/account');
   });
   it('keeps the inherited environment with a safe diagnostic when refresh fails', async () => {
     const environment = new CliEnvironment({ platform: 'linux', home: '/account', env: { PATH: '/base' } }, async () => { throw new Error('private stderr'); });
-    const result = await environment.get(true);
+    const result = await environment.get();
     expect(result.env.PATH).toBe('/base'); expect(result.warning).toContain('Could not refresh'); expect(result.warning).not.toContain('private');
   });
   it.skipIf(process.platform === 'win32')('loads interactive Bash startup with its noninteractive guard and closes stdin', async () => {

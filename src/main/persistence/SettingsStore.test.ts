@@ -448,13 +448,29 @@ async function settingsFile(value: object): Promise<string> {
 }
 
 describe('CLI executable preferences', () => {
+  it.each([false, true])('discards the retired environment preference (%s) when loading and saving', async (aiShellEnvironment) => {
+    const file = await settingsFile({ preferences: { aiShellEnvironment } });
+    const store = new SettingsStore(file);
+    await store.load();
+    expect(store.preferences).not.toHaveProperty('aiShellEnvironment');
+    // An older browser may still send the removed preference.
+    await store.setPreferences({ theme: 'dark', aiShellEnvironment } as Parameters<SettingsStore['setPreferences']>[0]);
+    expect(store.preferences.theme).toBe('dark');
+    expect(store.preferences).not.toHaveProperty('aiShellEnvironment');
+    const persisted = JSON.parse(await readFile(file, 'utf8'));
+    expect(persisted.preferences).not.toHaveProperty('aiShellEnvironment');
+    const restarted = new SettingsStore(file);
+    await restarted.load();
+    expect(restarted.preferences).not.toHaveProperty('aiShellEnvironment');
+  });
+
   it('migrates old settings, saves per-provider overrides and resets them across restarts', async () => {
     const file = await settingsFile({}); const store = new SettingsStore(file); await store.load();
-    expect(store.preferences).toMatchObject({ aiExecutablePaths: {}, aiShellEnvironment: true });
+    expect(store.preferences).toMatchObject({ aiExecutablePaths: {} });
     const executable = path.join(path.dirname(file), 'tools with spaces', 'opencode');
-    await store.setPreferences({ aiExecutablePaths: { opencode: executable }, aiShellEnvironment: false });
+    await store.setPreferences({ aiExecutablePaths: { opencode: executable } });
     const next = new SettingsStore(file); await next.load();
-    expect(next.preferences).toMatchObject({ aiExecutablePaths: { opencode: executable }, aiShellEnvironment: false });
+    expect(next.preferences).toMatchObject({ aiExecutablePaths: { opencode: executable } });
     next.preferences.aiExecutablePaths.opencode = 'changed externally';
     expect(next.preferences.aiExecutablePaths.opencode).toBe(executable);
     await next.setPreferences({ aiExecutablePaths: { opencode: '' } });

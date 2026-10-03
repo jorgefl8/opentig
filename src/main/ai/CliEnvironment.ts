@@ -54,10 +54,9 @@ export class CliEnvironment {
 
   invalidate(): void { this.generation++; this.cached = undefined; this.pending = undefined; }
 
-  async get(expanded: boolean, force = false): Promise<EnvironmentSnapshot> {
+  async get(force = false): Promise<EnvironmentSnapshot> {
     const env = cleanEnvironment(this.host.env, this.host.platform);
     const inheritedPath = pathDirectories(env.PATH, this.host.platform);
-    if (!expanded) return this.cached && Date.now() - this.cached.at < 30_000 ? this.cached.value : { env, inheritedPath, refreshedPath: [] };
     if (this.pending) return this.pending;
     if (!force && this.cached && Date.now() - this.cached.at < 30_000) return this.cached.value;
     const generation = this.generation;
@@ -65,7 +64,7 @@ export class CliEnvironment {
       let locations: Environment = {};
       let warning: string | undefined;
       try { locations = await this.read(this.host); }
-      catch { warning = 'Could not refresh the user environment. Check your shell configuration or set an executable path.'; }
+      catch { warning = 'Could not refresh the user environment. Using the inherited environment and known installation locations. Check your shell configuration or set an executable path.'; }
       const refreshedPath = pathDirectories(locations.PATH, this.host.platform);
       const value = { env: { ...env, ...locations }, inheritedPath, refreshedPath, ...(warning ? { warning } : {}) };
       if (generation === this.generation) this.cached = { at: Date.now(), value };

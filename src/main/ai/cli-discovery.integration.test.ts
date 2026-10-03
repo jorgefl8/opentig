@@ -2,18 +2,19 @@ import { copyFile, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { CliEnvironment, cleanEnvironment } from './CliEnvironment';
+import { CliEnvironment, cleanEnvironment, readUserEnvironment, type EnvironmentReader } from './CliEnvironment';
 import { CliResolver } from './CliResolver';
 import { CliProcessRunner } from './CliProcessRunner';
 import { OpenCodeProvider } from './providers/OpenCodeProvider';
 import { CodexProvider } from './providers/CodexProvider';
 import { runCandidate, selectCli } from './cli-selection';
+import { SettingsStore } from '../persistence/SettingsStore';
 const roots: string[] = [];
 afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true, maxRetries: 3 }))); });
-async function setup() {
+async function setup(read?: EnvironmentReader) {
   const home = await mkdtemp(path.join(os.tmpdir(), 'opentig-cli-integration-')); roots.push(home);
   const env = { ...cleanEnvironment(process.env), HOME: home, PATH: '' };
-  const environment = new CliEnvironment({ platform: process.platform, home, env }, async () => ({ PATH: path.join(home, 'runtime') }));
+  const environment = new CliEnvironment({ platform: process.platform, home, env }, read ?? (async () => ({ PATH: path.join(home, 'runtime') })));
   const resolver = new CliResolver(environment);
   const runner = new CliProcessRunner();
   const install = async (directory: string, name: string, version = '2.0.22', customRuntime = false) => {
@@ -29,6 +30,43 @@ async function setup() {
 }
 
 describe('real CLI discovery and launch', () => {
+  it('automatically discovers a user-PATH installation despite a persisted false preference', async () => {
+    const f = await setup(async (host) => ({ PATH: path.join(host.home, 'custom') }));
+    const settingsPath = path.join(f.home, 'settings.json');
+    await writeFile(settingsPath, JSON.stringify({ preferences: { aiShellEnvironment: false } }));
+    const settings = new SettingsStore(settingsPath);
+    await settings.load();
+    const executable = await f.install('custom', 'opencode');
+    const resolver = new CliResolver(f.resolver.environment, () => settings.preferences);
+    expect(await new OpenCodeProvider(resolver, f.runner).status()).toMatchObject({
+      availability: 'ready', installed: true, executablePath: executable, executableSource: 'user-path',
+    });
+  });
+
+  it.each(['inherited', 'known'] as const)('keeps a %s CLI available when environment refresh fails', async (location) => {
+    const f = await setup(async () => { throw new Error('private shell output'); });
+    const executable = await f.install(location === 'inherited' ? 'bin' : '.opencode/bin', 'opencode');
+    if (location === 'inherited') f.env.PATH = path.dirname(executable);
+    const status = await new OpenCodeProvider(f.resolver, f.runner).status();
+    expect(status).toMatchObject({ availability: 'ready', installed: true, executablePath: executable,
+      executableSource: location === 'inherited' ? 'process-path' : 'known-location' });
+    expect(status.discoveryWarning).toContain('Using the inherited environment and known installation locations');
+    expect(status.discoveryWarning).not.toContain('private shell output');
+  });
+
+  it.skipIf(process.platform === 'win32')('continues detecting an installed CLI after a real shell timeout', async () => {
+    const f = await setup(readUserEnvironment);
+    const shell = path.join(f.home, 'bash');
+    await writeFile(shell, '#!/bin/sh\n/bin/sleep 30\n', { mode: 0o755 });
+    f.resolver.environment.host.shell = shell;
+    const executable = await f.install('.opencode/bin', 'opencode');
+    const started = Date.now();
+    const status = await new OpenCodeProvider(f.resolver, f.runner).status();
+    expect(Date.now() - started).toBeLessThan(7_000);
+    expect(status).toMatchObject({ availability: 'ready', executablePath: executable, executableSource: 'known-location' });
+    expect(status.discoveryWarning).toContain('Could not refresh the user environment');
+  }, 8_000);
+
   it('detects OpenCode installed after startup without changing the service PATH', async () => {
     const f = await setup(); const provider = new OpenCodeProvider(f.resolver, f.runner);
     expect(await provider.status()).toMatchObject({ installed: false });

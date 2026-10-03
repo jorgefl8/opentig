@@ -21,6 +21,20 @@ async function fixture() {
 }
 
 describe('CliResolver', () => {
+  it('refreshes automatically on the first check, caches the result and refreshes on Check again', async () => {
+    const f = await fixture();
+    const inherited = await f.executable();
+    const refreshed = await f.executable('custom');
+    f.read.mockResolvedValue({ PATH: path.dirname(refreshed) });
+    expect(await f.resolver.resolveAll('opencode')).toEqual([inherited, refreshed]);
+    expect(f.read).toHaveBeenCalledTimes(1);
+    await f.resolver.resolveAll('opencode');
+    expect(f.read).toHaveBeenCalledTimes(1);
+    await f.resolver.resolveAll('opencode', true);
+    expect(f.read).toHaveBeenCalledTimes(2);
+    expect(f.host.env.PATH).toBe(path.dirname(inherited));
+  });
+
   it('discovers a post-start installation in the user location on Check again', async () => {
     const f = await fixture();
     expect(await f.resolver.resolve('opencode')).toBeNull();
@@ -62,14 +76,14 @@ describe('CliResolver', () => {
     await symlink(file, path.join(f.home, 'bin', 'opencode2'));
     expect(await f.resolver.resolveAll('opencode')).toEqual([file]);
   });
-  it('does not fall back from a configured missing path and invalidates when settings change', async () => {
+  it('ignores a legacy disabled refresh, preserves configured paths and invalidates when paths change', async () => {
     const f = await fixture(); const file = await f.executable();
     const preferences = { aiExecutablePaths: { opencode: path.join(f.home, 'missing') }, aiShellEnvironment: false };
     const resolver = new CliResolver(new CliEnvironment(f.host, f.read), () => preferences);
     expect(await resolver.discover('opencode')).toMatchObject([{ source: 'configured', problem: 'not-found' }]);
     preferences.aiExecutablePaths.opencode = '';
     expect(await resolver.resolve('opencode')).toBe(file);
-    expect(f.read).not.toHaveBeenCalled();
+    expect(f.read).toHaveBeenCalledTimes(2);
   });
   it('prioritizes refreshed PATH before known locations and shares the environment query', async () => {
     const f = await fixture(); const custom = await f.executable('custom'); const known = await f.executable('.opencode/bin');

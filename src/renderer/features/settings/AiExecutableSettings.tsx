@@ -26,7 +26,7 @@ export function AiExecutableSettings({ harness, preferences, status, onPreferenc
       <AccordionTrigger className="ai-executable-trigger">
         <span className="ai-executable-heading">
           <IconAdjustments aria-hidden="true" />
-          <span><strong>Advanced CLI detection</strong><small>Executable path and environment</small></span>
+          <span><strong>Advanced CLI detection</strong><small>Executable path and diagnostics</small></span>
         </span>
       </AccordionTrigger>
       <AccordionContent className="ai-executable-content">
@@ -44,10 +44,6 @@ export function AiExecutableSettings({ harness, preferences, status, onPreferenc
           </div>
           {status?.executablePath && <div className="ai-executable-diagnostic"><strong>Detected executable</strong><code>{status.executablePath}</code><span>Source: {sourceLabel(status.executableSource)}</span></div>}
           {status?.discoveryWarning && <p className="ai-login-hint">{status.discoveryWarning}</p>}
-        </div>
-        <div className="settings-field settings-toggle-row ai-environment-row">
-          <label className="settings-field-label" htmlFor="ai-shell-environment"><strong>Refresh user environment</strong><span>Reads the saved Windows environment or runs your Bash, Zsh or Fish startup files on Linux and macOS. Disable to use the inherited environment and known installation locations only.</span></label>
-          <button id="ai-shell-environment" type="button" role="switch" aria-checked={preferences.aiShellEnvironment} aria-label="Refresh user environment" className="settings-switch" onClick={() => onPreference({ aiShellEnvironment: !preferences.aiShellEnvironment })}><span /></button>
         </div>
       </AccordionContent>
     </AccordionItem>

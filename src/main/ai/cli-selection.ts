@@ -20,27 +20,22 @@ export async function selectCli(resolver: CliResolver, runner: CliProcessRunner,
   runOptions?: CliRunOptions;
 } = {}): Promise<CliDetection> {
   let first: CliDetection | undefined;
-  for (const expanded of [false, true]) {
-    const candidates = await resolver.discover(name, !expanded && options.forceRefresh, expanded);
-    for (const candidate of candidates) {
-      // A refreshed user PATH takes precedence over fallback installation folders.
-      if (!expanded && !options.forceRefresh && candidate.source === 'known-location') continue;
-      if (options.runOptions?.signal?.aborted) throw new AiOperationError({ code: 'AI_CANCELLED', operation: 'cli-discovery', message: 'Generation canceled.' });
-      if (candidate.problem) { first ??= { candidate, state: candidate.problem }; continue; }
-      try {
-        const result = await runCandidate(runner, candidate, ['--version'], options.runOptions);
-        // Only the bounded first line is exposed; raw stderr is never a diagnostic.
-        const raw = result.stdout.trim() || result.stderr.trim();
-        const version = (raw.split(/\r?\n/)[0] ?? '').slice(0, 200);
-        if (result.exitCode !== 0 || !version) { first ??= { candidate, state: 'not-executable' }; continue; }
-        if (options.compatible && !options.compatible(raw)) { first ??= { candidate, version, state: 'incompatible' }; continue; }
-        return { candidate, version, state: 'available', warning: candidate.warning };
-      } catch (error) {
-        if (options.runOptions?.signal?.aborted) throw error;
-        first ??= { candidate, state: 'not-executable' };
-      }
+  const candidates = await resolver.discover(name, options.forceRefresh);
+  for (const candidate of candidates) {
+    if (options.runOptions?.signal?.aborted) throw new AiOperationError({ code: 'AI_CANCELLED', operation: 'cli-discovery', message: 'Generation canceled.' });
+    if (candidate.problem) { first ??= { candidate, state: candidate.problem }; continue; }
+    try {
+      const result = await runCandidate(runner, candidate, ['--version'], options.runOptions);
+      // Only the bounded first line is exposed; raw stderr is never a diagnostic.
+      const raw = result.stdout.trim() || result.stderr.trim();
+      const version = (raw.split(/\r?\n/)[0] ?? '').slice(0, 200);
+      if (result.exitCode !== 0 || !version) { first ??= { candidate, state: 'not-executable' }; continue; }
+      if (options.compatible && !options.compatible(raw)) { first ??= { candidate, version, state: 'incompatible' }; continue; }
+      return { candidate, version, state: 'available', warning: candidate.warning };
+    } catch (error) {
+      if (options.runOptions?.signal?.aborted) throw error;
+      first ??= { candidate, state: 'not-executable' };
     }
-    if (options.forceRefresh) break; // Already queried the refreshed environment.
   }
   const warning = await resolver.warning();
   return first ? { ...first, warning } : { state: warning ? 'inspection-failed' : 'not-found', warning };

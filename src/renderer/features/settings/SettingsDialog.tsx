@@ -69,7 +69,7 @@ export function SettingsDialog({ preferences, onPreference, open, onOpenChange, 
     if (open && section === 'ai') void loadStatuses();
     const requests = statusRequest;
     return () => { requests.current++; };
-  }, [loadStatuses, open, section, preferences.aiExecutablePaths, preferences.aiShellEnvironment]);
+  }, [loadStatuses, open, section, preferences.aiExecutablePaths]);
 
   useLayoutEffect(() => {
     if (open && settingsBodyRef.current) settingsBodyRef.current.scrollTop = 0;

@@ -45,7 +45,7 @@ describe('OpenCodeProvider', () => {
   it('reports an absent CLI and forwards refresh to the resolver', async () => {
     const { provider, resolver } = fixture([]);
     expect(await provider.status(true)).toMatchObject({ installed: false, availability: 'error' });
-    expect(resolver.discover).toHaveBeenCalledWith('opencode', true, false);
+    expect(resolver.discover).toHaveBeenCalledWith('opencode', true);
     await expect(provider.generate(input)).rejects.toMatchObject({ detail: { code: 'AI_CLI_NOT_FOUND' } });
   });
 

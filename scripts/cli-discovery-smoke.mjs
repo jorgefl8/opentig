@@ -22,7 +22,7 @@ export async function verifyCliDiscovery(socket, directory) {
   const bin = path.join(directory, 'CLI tools with spaces');
   const executable = path.join(bin, process.platform === 'win32' ? 'opencode.cmd' : 'opencode');
   const paths = Object.fromEntries(['codex', 'claude', 'grok'].map((id) => [id, path.join(directory, `missing-${id}`)]));
-  await request('app:preferences', [{ aiExecutablePaths: { ...paths, opencode: executable }, aiShellEnvironment: false }]);
+  await request('app:preferences', [{ aiExecutablePaths: { ...paths, opencode: executable } }]);
   const before = await request('ai:statuses', [true]);
   assert.equal(before.find((status) => status.id === 'opencode').installationStatus, 'not-found');
   await mkdir(bin, { recursive: true });

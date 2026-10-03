@@ -17,13 +17,13 @@ export interface CliCandidate {
 const ALIASES: Record<CliName, readonly string[]> = {
   codex: ['codex'], claude: ['claude'], opencode: ['opencode', 'opencode2'], grok: ['grok'], gh: ['gh'],
 };
-type DiscoveryPreferences = Pick<Preferences, 'aiExecutablePaths' | 'aiShellEnvironment'>;
+type DiscoveryPreferences = Pick<Preferences, 'aiExecutablePaths'>;
 
 export class CliResolver {
   private cache = new Map<string, { at: number; candidates: CliCandidate[] }>();
   private settingsKey = '';
   private generation = 0;
-  constructor(readonly environment = new CliEnvironment(), private readonly preferences: () => DiscoveryPreferences = () => ({ aiExecutablePaths: {}, aiShellEnvironment: true })) {}
+  constructor(readonly environment = new CliEnvironment(), private readonly preferences: () => DiscoveryPreferences = () => ({ aiExecutablePaths: {} })) {}
 
   invalidate(): void { this.generation++; this.cache.clear(); this.environment.invalidate(); }
 
@@ -35,14 +35,13 @@ export class CliResolver {
     return (await this.discover(name, forceRefresh)).filter((item) => !item.problem).map((item) => item.executable);
   }
 
-  async discover(name: CliName, forceRefresh = false, expanded = false): Promise<CliCandidate[]> {
+  async discover(name: CliName, forceRefresh = false): Promise<CliCandidate[]> {
     if (!Object.hasOwn(ALIASES, name)) return [];
     const preferences = this.preferences();
-    const settingsKey = JSON.stringify(preferences);
+    const settingsKey = JSON.stringify(preferences.aiExecutablePaths);
     if (settingsKey !== this.settingsKey) { this.settingsKey = settingsKey; this.invalidate(); }
-    const refreshEnvironment = preferences.aiShellEnvironment && (expanded || forceRefresh);
-    const key = `${name}:${refreshEnvironment}`;
-    if (forceRefresh) { this.generation++; this.cache.delete(`${name}:false`); this.cache.delete(`${name}:true`); }
+    const key = name;
+    if (forceRefresh) { this.generation++; this.cache.delete(key); }
     const generation = this.generation;
     const cached = this.cache.get(key);
     if (!forceRefresh && cached && Date.now() - cached.at < 30_000) {
@@ -50,7 +49,7 @@ export class CliResolver {
         return structuredClone(cached.candidates);
       }
     }
-    const snapshot = await this.environment.get(refreshEnvironment, forceRefresh);
+    const snapshot = await this.environment.get(forceRefresh);
     const host = this.environment.host;
     const p = host.platform === 'win32' ? path.win32 : path.posix;
     const known = knownCliDirectories(name, host.home, host.platform, snapshot.env);
@@ -89,8 +88,7 @@ export class CliResolver {
   }
 
   async warning(): Promise<string | undefined> {
-    if (!this.preferences().aiShellEnvironment) return undefined;
-    return (await this.environment.get(true)).warning;
+    return (await this.environment.get()).warning;
   }
 
   private async problem(executable: string): Promise<CliCandidate['problem']> {

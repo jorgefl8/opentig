@@ -41,7 +41,7 @@ const defaults: SettingsData = {
     theme: 'system', diffView: 'unified', changesLayout: 'tree', wrapLines: false, sidebarWidth: 400, showDotEnvFiles: true, uiZoom: 100,
     uiFont: 'plus-jakarta-sans', monoFont: 'jetbrains-mono',
     commitMessageHarness: 'codex', commitMessageModels: { codex: 'default', claude: 'default', opencode: 'default', grok: 'default' },
-    aiExecutablePaths: {}, aiShellEnvironment: true,
+    aiExecutablePaths: {},
     shortcutOverrides: {}, doubleControlShortcutEnabled: true,
     remoteFetchIntervalSeconds: DEFAULT_REMOTE_FETCH_INTERVAL_SECONDS,
   },
@@ -259,7 +259,8 @@ export class SettingsStore {
     next.commitMessageHarness = isHarness(next.commitMessageHarness) ? next.commitMessageHarness : 'codex';
     next.commitMessageModels = modelPreferences(next.commitMessageModels);
     next.aiExecutablePaths = executablePaths(next.aiExecutablePaths, true);
-    next.aiShellEnvironment = next.aiShellEnvironment !== false;
+    // Ignore the retired switch sent by older clients, including a saved false.
+    delete (next as Preferences & { aiShellEnvironment?: unknown }).aiShellEnvironment;
     next.shortcutOverrides = sanitizeShortcutOverrides(next.shortcutOverrides);
     next.doubleControlShortcutEnabled = typeof next.doubleControlShortcutEnabled === 'boolean' ? next.doubleControlShortcutEnabled : this.defaultDoubleControlShortcutEnabled;
     next.remoteFetchIntervalSeconds = normalizeRemoteFetchIntervalSeconds(next.remoteFetchIntervalSeconds);
@@ -408,7 +409,6 @@ function validate(value: unknown, defaultDoubleControlShortcutEnabled: boolean):
         commitMessageHarness: isHarness(parsedPreferences.data.commitMessageHarness) ? parsedPreferences.data.commitMessageHarness : 'codex',
         commitMessageModels: modelPreferences(parsedPreferences.data.commitMessageModels),
         aiExecutablePaths: executablePaths(parsedPreferences.data.aiExecutablePaths),
-        aiShellEnvironment: parsedPreferences.data.aiShellEnvironment !== false,
         shortcutOverrides: sanitizeShortcutOverrides(parsedPreferences.data.shortcutOverrides),
         doubleControlShortcutEnabled: typeof parsedPreferences.data.doubleControlShortcutEnabled === 'boolean' ? parsedPreferences.data.doubleControlShortcutEnabled : defaultDoubleControlShortcutEnabled,
         remoteFetchIntervalSeconds: normalizeRemoteFetchIntervalSeconds(
