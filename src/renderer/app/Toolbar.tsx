@@ -1,9 +1,9 @@
 import { appDisplayName } from '@/lib/app-identity';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  IconArrowDown, IconArrowUp, IconHierarchy2, IconLoader4, IconPlus, IconRefresh, IconSettings,
+  IconArrowDown, IconArrowUp, IconBrandGithub, IconExternalLink, IconGitPullRequest, IconHierarchy2, IconLoader4, IconPlus, IconRefresh, IconSettings,
 } from '@tabler/icons-react';
-import type { BootstrapData, Preferences, RecentRepository, RepositoryInfo, RepositoryOrganization, RepositoryProject } from '../../shared/contracts';
+import type { BootstrapData, GitHubRepositoryInfo, Preferences, PullRequestSummary, RecentRepository, RepositoryInfo, RepositoryOrganization, RepositoryProject } from '../../shared/contracts';
 import type { BranchInfo, RepositoryStatus, WorktreeInfo } from '../../shared/git-types';
 import { Button } from '@/components/ui/button';
 import { Kbd } from '@/components/ui/kbd';
@@ -25,10 +25,13 @@ import { normalizeRepositoryKey } from '../../shared/repository-projects';
 import { opentig } from '@/lib/opentig-api';
 import { useShortcuts } from './useShortcuts';
 import { BranchCombobox } from './BranchCombobox';
+import { openOnGitHub } from '@/features/pulls/gh-utils';
 
 export interface ToolbarProps {
   repository: RepositoryInfo; recent: BootstrapData['recentRepositories']; repositoryProjects: RepositoryProject[]; status: RepositoryStatus | null;
   branches: BranchInfo[]; worktrees: WorktreeInfo[]; preferences: Preferences; busy: string | null;
+  githubInfo: GitHubRepositoryInfo | null;
+  branchPullRequest: PullRequestSummary | null;
   onOpen(): void; onRecent(id: string | null): void; onBranch(name: string | null): void; onWorktree(path: string | null): void;
   onRefresh(): void; onPreference(partial: Partial<Preferences>): void;
   onForgetRepository(repository: RepositoryOption): Promise<RepositoryOrganization>;
@@ -368,6 +371,20 @@ export function Toolbar(props: ToolbarProps) {
         onBranch={props.onBranch}
         onManage={() => openRefsManager('branches')}
       />
+      {props.branchPullRequest && (
+        <Tooltip>
+          <TooltipTrigger render={<Button variant="ghost" size="sm" className={`toolbar-branch-pr${props.branchPullRequest.isDraft ? ' draft' : ''}`} aria-label={`Open pull request #${props.branchPullRequest.number} on GitHub`} onClick={() => openOnGitHub(props.branchPullRequest!.url)} />}>
+            <IconGitPullRequest aria-hidden="true" />
+            <span>PR #{props.branchPullRequest.number}</span>
+            {props.branchPullRequest.isDraft && <span className="toolbar-pr-draft">Draft</span>}
+            <IconExternalLink aria-hidden="true" />
+          </TooltipTrigger>
+          <TooltipContent>
+            <span className="block">{props.branchPullRequest.title}</span>
+            <span className="block text-muted-foreground">{props.branchPullRequest.isDraft ? 'Draft' : 'Open'} · Open on GitHub</span>
+          </TooltipContent>
+        </Tooltip>
+      )}
       {refsOpen && (
         <Suspense fallback={null}>
           <LocalRefsDialog
@@ -383,6 +400,14 @@ export function Toolbar(props: ToolbarProps) {
         </Suspense>
       )}
       <Tooltip><TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Refresh" onClick={props.onRefresh} disabled={props.busy === 'refresh'} />}>{props.busy === 'refresh' ? <IconLoader4 className="animate-spin" /> : <IconRefresh />}</TooltipTrigger><TooltipContent>Refresh (Ctrl+R)</TooltipContent></Tooltip>
+      {props.githubInfo?.isGitHub && props.githubInfo.nameWithOwner && (
+        <Tooltip>
+          <TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Open repository on GitHub" onClick={() => openOnGitHub(`https://github.com/${props.githubInfo!.nameWithOwner}`)} />}>
+            <IconBrandGithub aria-hidden="true" />
+          </TooltipTrigger>
+          <TooltipContent>Open on GitHub · {props.githubInfo.nameWithOwner}</TooltipContent>
+        </Tooltip>
+      )}
       <DesktopUpdateIndicator />
       <Tooltip>
         <TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Settings" onClick={() => props.onSettingsOpen(true)} />}><IconSettings /></TooltipTrigger>

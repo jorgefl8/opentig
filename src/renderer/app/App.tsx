@@ -209,6 +209,20 @@ export default function App() {
   const files = currentSnapshot ? filesState : null;
   const branches = currentSnapshot ? branchesState : [];
   const worktrees = currentSnapshot ? worktreesState : [];
+  const currentBranch = status && !status.detached && !status.unborn ? status.branch : null;
+  const branchPullRequestQuery = useQuery({
+    queryKey: queryKeys.branchPullRequest(repository?.id ?? '', currentBranch ?? ''),
+    queryFn: async () => {
+      const cli = await opentig.github.status();
+      if (!cli.installed || cli.authStatus === 'unauthenticated') return null;
+      return opentig.github.findPullRequestForBranch(repository!.id, currentBranch!);
+    },
+    enabled: repository !== null && githubInfo?.isGitHub === true && currentBranch !== null,
+    staleTime: 60_000,
+    refetchInterval: 60_000,
+  });
+  const currentBranchPullRequest = currentBranch && githubInfo?.isGitHub && !branchPullRequestQuery.isError
+    && branchPullRequestQuery.data?.state === 'OPEN' ? branchPullRequestQuery.data : null;
 
   const openFilesStates = bootstrap?.openFilesStates ?? NO_OPEN_FILES_STATES;
   const connectionState = useSyncExternalStore(
@@ -575,6 +589,10 @@ export default function App() {
         setRefreshVersion((version) => version + 1);
       }
       if (shouldRefreshSearch(scope)) setSearchRevision((version) => version + 1);
+      if (!background) {
+        void appQueryClient.invalidateQueries({ queryKey: queryKeys.githubInfo(repositoryId) });
+        void appQueryClient.invalidateQueries({ queryKey: ['repository', repositoryId, 'branch-pull-request'] });
+      }
     } catch (reason) {
       if (repositoryRef.current?.id === repositoryId) reportError('Could not refresh', reason);
     } finally {
@@ -660,6 +678,7 @@ export default function App() {
   }, [repository?.id]);
 
   const loadPulls = useCallback(async (_states: PullRequestState[], forceStatus = false) => {
+    if (repository) void appQueryClient.invalidateQueries({ queryKey: ['repository', repository.id, 'branch-pull-request'] });
     if (forceStatus) {
       forceGhStatusRef.current = true;
       if (repository) {
@@ -2046,6 +2065,8 @@ export default function App() {
           recent={bootstrap.recentRepositories}
           repositoryProjects={bootstrap.repositoryProjects}
           status={status}
+          githubInfo={githubInfo}
+          branchPullRequest={currentBranchPullRequest}
           branches={branches}
           worktrees={worktrees}
           preferences={bootstrap.preferences}

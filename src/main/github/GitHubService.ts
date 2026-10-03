@@ -65,6 +65,13 @@ export class GitHubService {
     const operation = 'gh-pr-for-branch';
     const { repository, nameWithOwner } = await this.requireGitHub(repositoryId, operation);
     const branch = validateRef(branchName, operation);
+    // An older open PR must not be hidden by newer closed PRs for a reused branch.
+    const openResult = await this.runGh(
+      ['pr', 'list', '-R', nameWithOwner, '--head', branch, '--state', 'open', '--json', PR_SUMMARY_FIELDS, '--limit', '10'],
+      { cwd: repository.path, operation, timeoutMs: NETWORK_TIMEOUT_MS, maxOutputBytes: 1024 * 1024 },
+    );
+    const openPull = sortPullRequestsNewestFirst(parsePullRequestList(openResult.stdout)).find((pull) => pull.state === 'OPEN');
+    if (openPull) return openPull;
     const result = await this.runGh(
       ['pr', 'list', '-R', nameWithOwner, '--head', branch, '--state', 'all', '--json', PR_SUMMARY_FIELDS, '--limit', '10'],
       { cwd: repository.path, operation, timeoutMs: NETWORK_TIMEOUT_MS, maxOutputBytes: 1024 * 1024 },

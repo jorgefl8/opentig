@@ -18,6 +18,28 @@ function fixture(reply: (args: string[]) => CliRunResult) {
   );
   return { service, run };
 }
+describe('current branch pull requests', () => {
+  it('finds an open draft even when a reused branch has newer closed history', async () => {
+    const { service, run } = fixture((args) => ok(args.includes('open')
+      ? [{ number: 12, state: 'OPEN', isDraft: true, headRefName: 'feature', url: 'https://github.com/example/demo/pull/12' }]
+      : [{ number: 99, state: 'CLOSED', headRefName: 'feature' }]));
+    expect(await service.findPullRequestForBranch('repo', 'feature')).toMatchObject({ number: 12, state: 'OPEN', isDraft: true });
+    expect(run.mock.calls.filter(([, args]) => args[0] === 'pr').map(([, args]) => args)).toEqual([
+      expect.arrayContaining(['--head', 'feature', '--state', 'open']),
+    ]);
+  });
+  it('preserves closed and merged history for the branch details view', async () => {
+    const { service } = fixture((args) => ok(args.includes('open') ? [] : [
+      { number: 12, state: 'CLOSED', updatedAt: '2026-09-01' },
+      { number: 13, state: 'MERGED', updatedAt: '2026-09-02' },
+    ]));
+    expect(await service.findPullRequestForBranch('repo', 'feature')).toMatchObject({ number: 13, state: 'MERGED' });
+  });
+  it('returns null when the branch has no PR and propagates lookup errors', async () => {
+    expect(await fixture(() => ok([])).service.findPullRequestForBranch('repo', 'feature')).toBeNull();
+    await expect(fixture(() => fail('HTTP 403: rate limit')).service.findPullRequestForBranch('repo', 'feature')).rejects.toThrow();
+  });
+});
 describe('GitHub native stacks', () => {
   it('enriches visible PRs in bounded batches and preserves list ordering', async () => {
     const { service, run } = fixture((args) => {
