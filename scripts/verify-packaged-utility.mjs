@@ -1,3 +1,4 @@
+import { verifyCliDiscovery } from './cli-discovery-smoke.mjs';
 import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { createServer } from 'node:net';
@@ -48,6 +49,7 @@ async function verifyPackagedUtilityHost({ utilityProcess }, host) {
   const directory = await mkdtemp(path.join(tmpdir(), 'opentig-packaged-utility-'));
   const port = await reservePort();
   let child;
+  let socket;
 
   try {
     child = utilityProcess.fork(path.join(serverRoot, 'utility.mjs'), [], {
@@ -112,6 +114,15 @@ async function verifyPackagedUtilityHost({ utilityProcess }, host) {
     if (authenticated.status !== 204 || !cookie?.startsWith(profile === 'dev' ? 'opentig_dev_session=' : 'opentig_session=')) {
       throw new Error('Packaged utility desktop bootstrap failed.');
     }
+    const WebSocket = loadModule(path.join(serverRoot, 'node_modules', 'ws'));
+    socket = new WebSocket(`${origin.replace(/^http/, 'ws')}/ws`, { headers: { Cookie: cookie, Origin: origin } });
+    await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('Packaged CLI socket timed out.')), 5_000);
+      socket.once('open', () => { clearTimeout(timeout); resolve(); });
+      socket.once('error', (error) => { clearTimeout(timeout); reject(error); });
+    });
+    await verifyCliDiscovery(socket, directory);
+    socket.close();
     // Session revocation now uses authenticated HTTP, not the old utility control action.
     const revoked = await fetch(`${origin}/api/auth/revoke-all`, {
       method: 'POST',
@@ -124,6 +135,7 @@ async function verifyPackagedUtilityHost({ utilityProcess }, host) {
     child.postMessage({ type: 'shutdown' });
     if (await Promise.race([exited, delay(5_000).then(() => 'timeout')]) === 'timeout') throw new Error('Packaged utility ignored graceful shutdown.');
   } finally {
+    socket?.terminate();
     child?.kill();
     await rm(directory, { recursive: true, force: true });
   }

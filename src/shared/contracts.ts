@@ -264,6 +264,10 @@ export interface AiHarnessStatus {
   availability: AiAvailability;
   installed: boolean;
   authStatus: AiAuthStatus;
+  installationStatus?: 'available' | 'not-found' | 'not-executable' | 'incompatible' | 'inspection-failed';
+  executablePath?: string;
+  executableSource?: 'configured' | 'process-path' | 'user-path' | 'known-location';
+  discoveryWarning?: string;
   version?: string;
   message?: string;
   /** Installed CLI name when it differs from the harness id, e.g. OpenCode 2's `opencode2`. */
@@ -434,6 +438,8 @@ export interface Preferences {
   monoFont: MonoFontPreference;
   commitMessageHarness: AiHarnessId;
   commitMessageModels: Partial<Record<AiHarnessId, string>>;
+  aiExecutablePaths: Partial<Record<AiHarnessId, string>>;
+  aiShellEnvironment: boolean;
   shortcutOverrides: ShortcutOverrides;
   doubleControlShortcutEnabled: boolean;
   /** Seconds between background `git fetch` checks. `0` disables periodic fetch. */

@@ -1,3 +1,5 @@
+import { detectionFailure, detectionFields, requireCandidate, runCandidate, selectCli } from '../cli-selection';
+import type { CliCandidate } from '../CliResolver';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -22,16 +24,15 @@ export class GrokProvider implements AiProvider {
   async status(forceRefresh = false): Promise<AiHarnessStatus> {
     const checkedAt = new Date().toISOString();
     const base = { id: this.id, label: 'Grok Build', checkedAt, models: [DEFAULT_MODEL] };
-    const executable = await this.resolver.resolve('grok', forceRefresh);
-    if (!executable) return { ...base, installed: false, availability: 'error', authStatus: 'unknown', message: 'Install the official Grok Build CLI and run grok login.' };
     return this.withEnvironment(async (options) => {
-      const version = await this.runner.run(executable, ['--version'], options);
-      const versionText = version.stdout.trim();
-      const installed = { ...base, installed: true, version: versionText };
-      if (version.exitCode !== 0 || !isSupportedGrokVersion(versionText)) return { ...installed, availability: 'error', authStatus: 'unknown', message: UNSUPPORTED };
+      const detected = await selectCli(this.resolver, this.runner, this.id, { forceRefresh, compatible: isSupportedGrokVersion, runOptions: options });
+      const failure = detectionFailure(detected, base, UNSUPPORTED);
+      if (failure) return failure;
+      const executable = requireCandidate(detected, this.id);
+      const installed = { ...base, ...detectionFields(detected), installed: true, version: detected.version ?? '' };
       try {
         await this.checkControls(executable, options);
-        const result = await this.runner.run(executable, ['models'], options);
+        const result = await runCandidate(this.runner, executable, ['models'], options);
         if (result.exitCode !== 0) return { ...installed, availability: 'warning', authStatus: 'unknown', message: 'Could not check Grok authentication or models. Check again or run grok models in a terminal.' };
         const { authStatus, models } = parseGrokModels(result.stdout);
         return { ...installed, models, authStatus, availability: authStatus === 'unauthenticated' ? 'error' : authStatus === 'authenticated' && models.length > 1 ? 'ready' : 'warning',
@@ -43,15 +44,12 @@ export class GrokProvider implements AiProvider {
   }
 
   async generate(input: ProviderGenerateInput) {
-    const executable = await this.resolver.resolve('grok');
-    if (!executable) throw failure('AI_CLI_NOT_FOUND', 'Grok Build is not installed.');
     const timeout = AbortSignal.timeout(AI_PROVIDER_TIMEOUT_MS);
     const signal = AbortSignal.any([input.signal, timeout]);
     try {
       return await this.withEnvironment(async (options) => {
         const controlled = { ...options, signal };
-        const version = await this.runner.run(executable, ['--version'], controlled);
-        if (version.exitCode !== 0 || !isSupportedGrokVersion(version.stdout)) throw failure('AI_PROCESS_FAILED', UNSUPPORTED);
+        const executable = requireCandidate(await selectCli(this.resolver, this.runner, this.id, { compatible: isSupportedGrokVersion, runOptions: controlled }), this.id);
         await this.checkControls(executable, controlled);
         const promptFile = path.join(options.cwd!, 'prompt.txt');
         await writeFile(promptFile, input.prompt, { encoding: 'utf8', mode: 0o600 });
@@ -61,7 +59,7 @@ export class GrokProvider implements AiProvider {
           '--tools', 'read_file', '--disallowed-tools', 'read_file,search_tool,use_tool,Agent', '--deny', 'MCPTool',
           '--disable-web-search', '--max-turns', '1', '--permission-mode', 'dontAsk', '--no-memory'];
         if (input.model !== 'default') args.push('--model', input.model);
-        const result = await this.runner.run(executable, args, { ...controlled, timeoutMs: AI_PROVIDER_TIMEOUT_MS });
+        const result = await runCandidate(this.runner, executable, args, { ...controlled, timeoutMs: AI_PROVIDER_TIMEOUT_MS });
         requireGrokSuccess(result);
         const parsed = parseGrokOutput(result.stdout);
         return { output: parsed.output, usage: grokUsage(parsed.envelope) };
@@ -73,10 +71,10 @@ export class GrokProvider implements AiProvider {
     }
   }
 
-  private async checkControls(executable: string, options: CliRunOptions): Promise<void> {
-    const help = await this.runner.run(executable, ['--help'], options);
+  private async checkControls(executable: CliCandidate, options: CliRunOptions): Promise<void> {
+    const help = await runCandidate(this.runner, executable, ['--help'], options);
     if (help.exitCode !== 0 || REQUIRED_FLAGS.some((flag) => !help.stdout.includes(flag))) throw failure('AI_PROCESS_FAILED', UNSUPPORTED);
-    const result = await this.runner.run(executable, ['inspect', '--json'], options);
+    const result = await runCandidate(this.runner, executable, ['inspect', '--json'], options);
     let report: Record<string, unknown>;
     try { report = JSON.parse(result.stdout) as Record<string, unknown>; } catch { throw failure('AI_PROCESS_FAILED', 'Could not verify the isolated Grok configuration.'); }
     const surfaces = ['hooks', 'plugins', 'mcpServers', 'projectInstructions'];

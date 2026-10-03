@@ -1,4 +1,5 @@
-import { access, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import assert from 'node:assert/strict';
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
@@ -19,11 +20,23 @@ async function verifyPackagedTrash() {
     throw new Error(`Unexpected temporary path: ${directory}`);
   }
   const target = path.join(directory, 'literal-[fixture].txt');
+  const sibling = path.join(directory, 'literal-f.txt');
+  const folder = path.join(directory, 'folder {one,two} with spaces');
+  const siblingFolder = path.join(directory, 'folder one with spaces');
   try {
     await writeFile(target, 'fixture');
+    await writeFile(sibling, 'preserve');
+    await mkdir(folder);
+    await writeFile(path.join(folder, 'child.txt'), 'fixture');
+    await mkdir(siblingFolder);
+    await writeFile(path.join(siblingFolder, 'child.txt'), 'preserve');
     const { default: trash } = await import(moduleUrl);
     await trash([target], { glob: false });
     await expectMissing(target);
+    await trash([folder], { glob: false });
+    await expectMissing(folder);
+    assert.equal(await readFile(sibling, 'utf8'), 'preserve');
+    assert.equal(await readFile(path.join(siblingFolder, 'child.txt'), 'utf8'), 'preserve');
     process.stdout.write('PACKAGED_SYSTEM_TRASH_SMOKE_OK\n');
   } finally {
     await rm(directory, { recursive: true, force: true });

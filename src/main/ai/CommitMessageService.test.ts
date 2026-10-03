@@ -203,3 +203,21 @@ describe('CommitMessageService', () => {
     await expect(service.generate({ repositoryId: 'repo', harness: 'codex', model: 'default', requestId: 'request-12' })).resolves.toMatchObject({ harness: 'codex' });
   });
 });
+
+describe('provider status isolation and refresh', () => {
+  it('returns healthy providers when another inspection throws without claiming the failed CLI is absent', async () => {
+    const service = new CommitMessageService(operations(), [splitProvider(), { ...splitProvider(), id: 'claude', status: async () => { throw new Error('private stderr'); } }]);
+    expect(await service.statuses(true)).toMatchObject([{ id: 'codex', availability: 'ready' }, { id: 'claude', installationStatus: 'inspection-failed', message: 'Could not inspect this CLI. Check again or review its executable path.' }]);
+  });
+  it('coalesces forced refreshes and does not publish an older response after settings change', async () => {
+    let finish!: (value: AiHarnessStatus) => void;
+    const status = vi.fn().mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; })).mockResolvedValue({ ...ready('codex'), version: 'new' });
+    const invalidated = vi.fn();
+    const service = new CommitMessageService(operations(), [{ ...splitProvider(), status }], undefined, invalidated);
+    const old = service.statuses(true), shared = service.statuses(true);
+    expect(status).toHaveBeenCalledTimes(1);
+    service.invalidateStatuses(); await service.statuses(true);
+    finish({ ...ready('codex'), version: 'old' }); await Promise.all([old, shared]);
+    expect(await service.statuses()).toMatchObject([{ version: 'new' }]); expect(invalidated).toHaveBeenCalledOnce();
+  });
+});

@@ -1,3 +1,4 @@
+import { cleanEnvironment } from './CliEnvironment';
 import { execa } from 'execa';
 import { AiOperationError } from '../../shared/errors';
 import { resolveProcessCommand } from '../process/resolveProcessCommand';
@@ -26,9 +27,9 @@ export class CliProcessRunner {
   async run(command: string, args: string[], options: CliRunOptions = {}): Promise<CliRunResult> {
     const timeoutMs = options.timeoutMs ?? 15_000;
     const maxOutputBytes = options.maxOutputBytes ?? 2 * 1024 * 1024;
-    const environment = Object.fromEntries(
+    const environment = cleanEnvironment(Object.fromEntries(
       Object.entries({ ...process.env, ...options.env }).filter((entry): entry is [string, string] => entry[1] !== undefined),
-    );
+    ));
     for (const key of options.removeEnv ?? []) delete environment[key];
 
     if (this.closePromise || options.signal?.aborted) throw cancelled();
@@ -37,9 +38,10 @@ export class CliProcessRunner {
     const signal = options.signal
       ? AbortSignal.any([options.signal, lifecycle.signal])
       : lifecycle.signal;
-    const resolvedCommand = resolveProcessCommand(command, options.cwd ?? process.cwd(), environment);
+    let resolvedCommand;
     let result;
     try {
+      resolvedCommand = resolveProcessCommand(command, options.cwd ?? process.cwd(), environment);
       result = await execa(resolvedCommand.file, args, {
         ...(options.cwd ? { cwd: options.cwd } : {}),
         cancelSignal: signal,
@@ -54,9 +56,9 @@ export class CliProcessRunner {
         input: options.stdin ?? '',
         stripFinalNewline: false,
         reject: false,
-      }).catch(() => {
+      }).catch((error: unknown) => {
         if (signal.aborted) throw cancelled();
-        throw processFailed();
+        throw processFailed(error);
       });
     } finally {
       this.active.delete(lifecycle);
@@ -74,7 +76,7 @@ export class CliProcessRunner {
       throw new AiOperationError({ code: 'AI_CONTEXT_TOO_LARGE', operation: 'ai-process', message: 'The AI tool produced too much output.' });
     }
     if (result.exitCode === undefined || !resolvedCommand.found) {
-      throw processFailed();
+      throw processFailed(result);
     }
     return { exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr };
   }
@@ -103,6 +105,13 @@ function cancelled(): AiOperationError {
   return new AiOperationError({ code: 'AI_CANCELLED', operation: 'ai-process', message: 'Generation canceled.' });
 }
 
-function processFailed(): AiOperationError {
-  return new AiOperationError({ code: 'AI_PROCESS_FAILED', operation: 'ai-process', message: 'Could not start the AI tool.' });
+export class CliLaunchError extends AiOperationError {
+  constructor(readonly reason: 'missing' | 'permission' | 'format' | 'unknown') {
+    super({ code: 'AI_PROCESS_FAILED', operation: 'ai-process', message: 'Could not start the AI tool.' });
+  }
+}
+
+function processFailed(error?: unknown): CliLaunchError {
+  const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined;
+  return new CliLaunchError(code === 'ENOENT' ? 'missing' : code === 'EACCES' || code === 'EPERM' ? 'permission' : code === 'ENOEXEC' ? 'format' : 'unknown');
 }
