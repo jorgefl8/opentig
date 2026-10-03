@@ -74,7 +74,7 @@ jobs:
     if: needs.changes.outputs.required == 'true'
     strategy:
       matrix:
-        os: [windows-latest, ubuntu-24.04]
+        os: [windows-latest, ubuntu-24.04, macos-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
 

@@ -52,7 +52,7 @@ const { stdout: packedPackageBytes } = await execute('tar', ['-xOf', tarballPath
   encoding: 'buffer', maxBuffer: 1024 * 1024, windowsHide: true,
 });
 const packedPackage = JSON.parse(Buffer.from(packedPackageBytes).toString('utf8'));
-const expectedDependencies = { trash: '10.1.1', ws: '8.21.3' };
+const expectedDependencies = { trash: '9.0.0', ws: '8.21.3' };
 if (packedPackage.name !== metadata.packageName
   || packedPackage.version !== metadata.version
   || packedPackage.private === true

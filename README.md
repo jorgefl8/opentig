@@ -27,6 +27,8 @@ It works with existing repositories using the Git installation on the host. You 
 
 Settings → AI assistance → **Check again** discovers CLIs installed after OpenTig starts, including native user locations such as `~/.opencode/bin`, `~/.grok/bin` and `~/.local/bin`, common package-manager launchers, and refreshed user PATH entries. Discovery and execution share the same environment; an older or broken installation does not hide a later compatible one. Each harness reports missing, unusable, incompatible and authentication states independently. **Advanced CLI detection** shows the selected path and its source, lets you save an absolute executable path per harness or reset it to Automatic, and can disable user-environment refresh. On Linux and macOS, refresh runs Bash, Zsh or Fish startup files with a timeout; on Windows it reads the saved user and machine environment. Custom paths belong to the backend host, including when using a browser. Existing services do not need reinstalling. Windows does not automatically use CLIs installed inside WSL; run the backend inside WSL to use that environment.
 
+File removal uses system Trash with literal paths. The Trash dependency is temporarily pinned to 9.0.0 to avoid an unpatched transitive vulnerability; when the backend runs inside WSL, it uses Linux Trash. See [third-party notices](THIRD_PARTY_NOTICES.md#trash) for the dependency details.
+
 ## What you can do
 
 | | |
