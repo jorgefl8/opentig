@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -25,9 +26,15 @@ export async function verifyCliDiscovery(socket, directory) {
   const before = await request('ai:statuses', [true]);
   assert.equal(before.find((status) => status.id === 'opencode').installationStatus, 'not-found');
   await mkdir(bin, { recursive: true });
-  await writeFile(executable, process.platform === 'win32'
-    ? '@echo off\r\nif "%~1"=="--version" goto version\r\nif "%~1"=="auth" goto auth\r\necho fixture/model\r\nexit /b 0\r\n:version\r\necho 2.0.22\r\nexit /b 0\r\n:auth\r\necho []\r\n'
-    : '#!/bin/sh\ncase "$1" in --version) echo 2.0.22;; auth) echo "[]";; *) echo fixture/model;; esac\n', { mode: 0o755 });
+  if (process.platform === 'win32') {
+    // Model the npm shim contract: the batch launcher forwards %* to Node.
+    // Execa double-escapes batch arguments for this second shell expansion.
+    const node = execFileSync('node', ['-p', 'process.execPath'], { encoding: 'utf8', windowsHide: true }).trim();
+    await writeFile(path.join(bin, 'fixture.mjs'), "const arg = process.argv[2]; console.log(arg === '--version' ? '2.0.22' : arg === 'auth' ? '[]' : 'fixture/model');\n");
+    await writeFile(executable, `@echo off\r\n"${node}" "%~dp0fixture.mjs" %*\r\n`);
+  } else {
+    await writeFile(executable, '#!/bin/sh\ncase "$1" in --version) echo 2.0.22;; auth) echo "[]";; *) echo fixture/model;; esac\n', { mode: 0o755 });
+  }
   const after = await request('ai:statuses', [true]);
   const detected = after.find((status) => status.id === 'opencode');
   assert.equal(detected.installationStatus, 'available');

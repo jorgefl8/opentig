@@ -44,7 +44,8 @@ describe('real CLI discovery and launch', () => {
   it('recovers a wrapper dependency from the selected manager environment and retains it for later launches', async () => {
     const f = await setup(); await mkdir(path.join(f.home, 'runtime'));
     await copyFile(process.execPath, path.join(f.home, 'runtime', 'opentig-fixture-node' + (process.platform === 'win32' ? '.exe' : '')));
-    await f.install('.opencode/bin', 'opencode', '2.0.22', true);
+    const executable = await f.install('CLI tools & Unicode-ñ', 'opencode', '2.0.22', true);
+    f.env.PATH = path.dirname(executable);
     const detected = await selectCli(f.resolver, f.runner, 'opencode');
     expect(detected.state).toBe('available');
     const result = await runCandidate(f.runner, detected.candidate!, ['echo', 'literal spaces', 'a&b', '$(never-run)', 'Unicode-ñ']);
