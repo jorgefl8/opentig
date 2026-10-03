@@ -89,6 +89,7 @@ export function registerServerCommands(
   ));
   handle(IPC.repositoryBrowseDirectories, 'browse-directories', (path) => browseServerDirectories(
     path === undefined ? undefined : stringArg(path, 'browse-directories', 32_768),
+    services.git,
   ));
   handleWithContext(IPC.repositoryOpenRecent, 'open-recent', async (context, id) => {
     const repositoryId = stringArg(id, 'open-recent', 64);

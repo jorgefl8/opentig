@@ -475,7 +475,9 @@ export interface BootstrapData {
 export interface ServerDirectoryListing {
   path: string;
   parentPath: string | null;
-  directories: { name: string; path: string }[];
+  repository: { branch: string | null } | null;
+  locations: { name: string; path: string; kind: 'home' | 'documents' | 'downloads' }[];
+  directories: { name: string; path: string; repository: { branch: string | null } | null }[];
 }
 
 /**

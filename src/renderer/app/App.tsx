@@ -825,13 +825,8 @@ export default function App() {
   }, [filesTreeStates]);
 
   const openRepository = useCallback(async () => {
-    if (!window.opentigDesktop) { setOpenRepositoryDialog(true); return; }
-    try {
-      const selectedPath = await opentig.repository.select();
-      if (!selectedPath) return;
-      recordOpenedRepository(await opentig.repository.openPath(selectedPath));
-    } catch (reason) { reportError('Could not open repository', reason); }
-  }, [recordOpenedRepository]);
+    setOpenRepositoryDialog(true);
+  }, []);
 
   useEffect(() => opentig.events.onActiveRepositoryChanged((selected) => {
     if (selected.id !== repositoryRef.current?.id) recordOpenedRepository(selected);
@@ -1941,7 +1936,7 @@ export default function App() {
     recordOpenedRepository(await opentig.repository.relocateRecent(option.recent.id, path), option.recent.id);
   };
 
-  const browserRepositoryDialog = <OpenRepositoryDialog open={openRepositoryDialog} onOpenChange={setOpenRepositoryDialog} onBrowse={opentig.repository.browseDirectories} onOpen={async (path) => {
+  const browserRepositoryDialog = <OpenRepositoryDialog open={openRepositoryDialog} recent={bootstrap?.recentRepositories} onPick={window.opentigDesktop ? opentig.repository.select : undefined} onOpenChange={setOpenRepositoryDialog} onBrowse={opentig.repository.browseDirectories} onOpen={async (path) => {
     recordOpenedRepository(await opentig.repository.openPath(path));
   }} />;
 

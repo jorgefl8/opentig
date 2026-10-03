@@ -230,6 +230,8 @@ export function RepositoryProjectsDialog({ open, projects, repositories, onOpenC
         title="Relocate repository"
         description={`Choose the existing server folder for ${relocatingRepository?.name ?? 'this repository'}. This updates its saved location; it does not move files.`}
         confirmLabel="Use this folder"
+        initialPath={relocatingRepository?.recent.path}
+        recent={repositories.map(repository => repository.recent)}
         onBrowse={opentig.repository.browseDirectories}
         onOpen={async (path) => {
           if (relocatingRepository) await onRelocateRepository(relocatingRepository, path);
