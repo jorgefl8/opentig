@@ -1,3 +1,4 @@
+import { formatDateTime } from '@shared/date-format';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   createColumnHelper,
@@ -65,7 +66,7 @@ const columns = columnHelper.columns([
   columnHelper.accessor((entry) => new Date(entry.at).getTime(), {
     id: 'at',
     header: ({ column }) => <SortableHeader column={column} label="Date" />,
-    cell: ({ row }) => <time dateTime={row.original.at}>{new Date(row.original.at).toLocaleString()}</time>,
+    cell: ({ row }) => <time dateTime={row.original.at}>{formatDateTime(row.original.at, { seconds: true })}</time>,
   }),
   columnHelper.accessor('message', {
     header: ({ column }) => <SortableHeader column={column} label="Message" />,

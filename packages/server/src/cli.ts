@@ -1,3 +1,4 @@
+import { formatDateTime } from '../../../src/shared/date-format';
 import { execFile } from 'node:child_process';
 import process from 'node:process';
 import { renderUnicodeCompact } from 'uqr';
@@ -213,7 +214,7 @@ function waitForShutdown(server: RunningOpenTigServer, afterClose: () => Promise
 
 function printPairing(pairing: { url: string; expiresAt: string }, io: CliIo, includeQr: boolean): void {
   const token = new URLSearchParams(new URL(pairing.url).hash.slice(1)).get('token');
-  io.out(`One-time pairing link (expires ${pairing.expiresAt}):`);
+  io.out(`One-time pairing link (expires ${formatDateTime(pairing.expiresAt, { seconds: true })}):`);
   io.out(pairing.url);
   if (token) {
     io.out('Pairing code (paste at /pair on this OpenTig server):');

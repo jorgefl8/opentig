@@ -1,3 +1,4 @@
+import { formatDate } from '@shared/date-format';
 import { PullRequestStackMenu } from './PullRequestStackMenu';
 import { useRef } from 'react';
 import { Popover } from '@base-ui/react/popover';
@@ -162,7 +163,6 @@ function PullsList(props: PullRequestsViewProps & { nameWithOwner: string }) {
 
 function PullRow({ repositoryId, pr, active, onSelect }: { repositoryId: string; pr: PullRequestSummary; active: boolean; onSelect(number: number): void }) {
   const stateClass = pr.state.toLowerCase();
-  const relativeUpdate = formatRelativeUpdate(pr.updatedAt);
   return (
     <div className={`pull-item ${active ? 'active' : ''}`} role="listitem">
       <button className="pull-main" onClick={() => onSelect(pr.number)} aria-label={`View pull request #${pr.number}`}>
@@ -178,7 +178,7 @@ function PullRow({ repositoryId, pr, active, onSelect }: { repositoryId: string;
           </span>
         </span>
         <span className="pull-row-aside">
-          {relativeUpdate && <span>{relativeUpdate}</span>}
+          <time dateTime={pr.updatedAt}>{formatDate(pr.updatedAt)}</time>
           <span className="pull-line-stats"><span className="add">+{pr.additions}</span> <span className="del">−{pr.deletions}</span></span>
         </span>
       </button>
@@ -220,19 +220,4 @@ function PullsNotice({ icon, title, children }: { icon: React.ReactNode; title: 
       <p>{children}</p>
     </div>
   );
-}
-
-const RELATIVE_DATE = new Intl.RelativeTimeFormat('en', { numeric: 'auto' });
-const RELATIVE_UNITS: [Intl.RelativeTimeFormatUnit, number][] = [
-  ['year', 31_536_000], ['month', 2_592_000], ['week', 604_800], ['day', 86_400], ['hour', 3_600], ['minute', 60],
-];
-
-function formatRelativeUpdate(value: string): string | null {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  const seconds = Math.round((date.getTime() - Date.now()) / 1000);
-  for (const [unit, size] of RELATIVE_UNITS) {
-    if (Math.abs(seconds) >= size) return RELATIVE_DATE.format(Math.trunc(seconds / size), unit);
-  }
-  return 'right now';
 }

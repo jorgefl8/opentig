@@ -1,3 +1,4 @@
+import { formatDate, formatDateTime } from '@shared/date-format';
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { IconChevronRight, IconLoader4, IconRestore, IconGitPullRequest, IconSearch, IconArrowDown } from '@tabler/icons-react';
@@ -148,8 +149,8 @@ function CommitRow({ repositoryId, upstream, baseRef, commit, graphRow, graphWid
               <TooltipContent>{reference.source === 'merge' ? 'Pull request reference from the merge message.' : 'Reference from the commit subject; it may identify a pull request or issue.'}{onSelectReference ? ' Open as a pull request in the right-hand viewer.' : ''} No merge method is inferred from the number.</TooltipContent>
             </Tooltip>}
             <Tooltip>
-              <TooltipTrigger render={<span className="commit-date" />}>{formatRelativeDate(commit.date)}</TooltipTrigger>
-              <TooltipContent>{formatDate(commit.date)}</TooltipContent>
+              <TooltipTrigger render={<time className="commit-date" dateTime={commit.date} />}>{formatDate(commit.date)}</TooltipTrigger>
+              <TooltipContent>{formatDateTime(commit.date)}</TooltipContent>
             </Tooltip>
           </span>
           <span className="commit-meta">
@@ -296,26 +297,6 @@ function parseDecorations(decorations: string[]): RefChipInfo[] {
     if (decoration === 'HEAD') return { label: 'HEAD', kind: 'head' as const };
     return { label: decoration, kind: decoration.includes('/') ? 'remote' as const : 'branch' as const };
   });
-}
-
-const RELATIVE_DATE = new Intl.RelativeTimeFormat('en', { numeric: 'auto', style: 'narrow' });
-const RELATIVE_UNITS: [Intl.RelativeTimeFormatUnit, number][] = [
-  ['year', 31_536_000], ['month', 2_592_000], ['week', 604_800], ['day', 86_400], ['hour', 3_600], ['minute', 60],
-];
-
-function formatRelativeDate(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  const seconds = Math.round((date.getTime() - Date.now()) / 1000);
-  for (const [unit, size] of RELATIVE_UNITS) {
-    if (Math.abs(seconds) >= size) return RELATIVE_DATE.format(Math.trunc(seconds / size), unit);
-  }
-  return 'right now';
-}
-
-function formatDate(value: string): string {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat('en', { dateStyle: 'medium', timeStyle: 'short' }).format(date);
 }
 
 function VsCodeTreeIcon({ path }: { path: string; type: 'file' | 'directory'; expanded?: boolean }) {

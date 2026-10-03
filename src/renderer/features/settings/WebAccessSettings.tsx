@@ -1,3 +1,4 @@
+import { formatDateTime } from '@shared/date-format';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   IconAlertTriangle,
@@ -214,7 +215,7 @@ export function WebAccessSettings() {
 
         {pairing && (
           <div className="web-access-pairing" role="status">
-            <div className="web-access-pairing-copy"><IconQrcode aria-hidden="true" /><div><strong>Pairing link ready</strong><span>Expires {new Date(pairing.expiresAt).toLocaleString()}.</span></div></div>
+            <div className="web-access-pairing-copy"><IconQrcode aria-hidden="true" /><div><strong>Pairing link ready</strong><span>Expires {formatDateTime(pairing.expiresAt, { seconds: true })}.</span></div></div>
             {qrSource && <img src={qrSource} alt="QR code for the one-use OpenTig pairing link" />}
             <div className="web-access-link-row">
               <Tooltip><TooltipTrigger render={<code className="web-access-link" />}>{pairing.url}</TooltipTrigger><TooltipContent side="bottom">One-use link; do not share publicly</TooltipContent></Tooltip>
@@ -248,7 +249,7 @@ export function WebAccessSettings() {
               </div>
               <div className="web-access-session-copy">
                 <div><strong>{session.clientName}</strong>{session.current && <Badge variant="secondary">This session</Badge>}{session.kind === 'desktop' && <Badge variant="outline">Desktop</Badge>}</div>
-                <span>{session.connected ? `Connected${session.connectionCount > 1 ? ` (${session.connectionCount} tabs)` : ''}` : session.lastConnectedAt ? `Last connected ${formatDate(session.lastConnectedAt)}` : 'Not yet connected'} · {session.browser && session.os ? `${session.browser} on ${session.os}` : session.browser ?? session.os ?? deviceLabel(session.deviceType)}{session.viaProxy ? ' · Via proxy' : ''}{session.remoteAddress ? ` · ${session.remoteAddress}` : ''}</span>
+                <span>{session.connected ? `Connected${session.connectionCount > 1 ? ` (${session.connectionCount} tabs)` : ''}` : session.lastConnectedAt ? `Last connected ${formatDateTime(session.lastConnectedAt, { seconds: true })}` : 'Not yet connected'} · {session.browser && session.os ? `${session.browser} on ${session.os}` : session.browser ?? session.os ?? deviceLabel(session.deviceType)}{session.viaProxy ? ' · Via proxy' : ''}{session.remoteAddress ? ` · ${session.remoteAddress}` : ''}</span>
               </div>
               {session.kind !== 'desktop' && (
                 <div className="web-access-session-controls">
@@ -323,11 +324,6 @@ function WebAccessFact({ label, children }: { label: string; children: ReactNode
 function Endpoint({ value, muted = false }: { value: string | null; muted?: boolean }) {
   if (!value) return <span>Unavailable</span>;
   return <Tooltip><TooltipTrigger render={<code className={muted ? 'muted' : undefined} />}>{value}</TooltipTrigger><TooltipContent side="bottom">{muted ? 'Enable LAN access to use this endpoint' : value}</TooltipContent></Tooltip>;
-}
-
-function formatDate(value: string): string {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? 'unknown' : date.toLocaleString();
 }
 
 function deviceLabel(type: OpenTigOwnerSession['deviceType']): string {

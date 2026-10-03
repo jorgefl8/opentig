@@ -1,3 +1,4 @@
+import { formatDateTime } from '@shared/date-format';
 import { PullRequestStackMenu } from './PullRequestStackMenu';
 import { lazy, Suspense, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
@@ -82,7 +83,7 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
             <span className="pr-author">{details.author}</span>
           </span>
           <span aria-hidden="true">·</span>
-          <span>updated {formatRelativeDate(details.updatedAt)}</span>
+          <span>updated <time dateTime={details.updatedAt}>{formatDateTime(details.updatedAt)}</time></span>
           <span aria-hidden="true">·</span>
           <span className="pr-branches"><IconGitBranch aria-hidden="true" /> {details.headRefName} → {details.baseRefName}</span>
           <span aria-hidden="true">·</span>
@@ -132,7 +133,7 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
                 <GitHubAvatar src={commit.authorAvatarUrl} className="pr-commit-avatar" />
                 <span className="pr-commit-content">
                   <strong>{commit.messageHeadline || '(no commit message)'}</strong>
-                  <span><b>{commit.author}</b> committed {formatRelativeDate(commit.authoredAt)}</span>
+                  <span><b>{commit.author}</b> committed <time dateTime={commit.authoredAt}>{formatDateTime(commit.authoredAt)}</time></span>
                 </span>
                 <Tooltip>
                   <TooltipTrigger render={<code />}>{commit.oid.slice(0, 7)}</TooltipTrigger>
@@ -162,14 +163,4 @@ function PullRequestChecks({ state }: { state: PullRequestCheckState }) {
   const Icon = state === 'PASSING' ? IconCircleCheck : state === 'FAILING' ? IconCircleX : IconClock;
   const label = state === 'PASSING' ? 'Checks passing' : state === 'FAILING' ? 'Checks failing' : 'Checks pending';
   return <span className={`pr-checks ${state.toLowerCase()}`}><Icon aria-hidden="true" /> {label}</span>;
-}
-
-function formatRelativeDate(value: string): string {
-  const timestamp = Date.parse(value);
-  if (!Number.isFinite(timestamp)) return value;
-  const seconds = Math.round((timestamp - Date.now()) / 1000);
-  const divisions: Array<[Intl.RelativeTimeFormatUnit, number]> = [['year', 31_536_000], ['month', 2_592_000], ['week', 604_800], ['day', 86_400], ['hour', 3_600], ['minute', 60]];
-  const formatter = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
-  for (const [unit, amount] of divisions) if (Math.abs(seconds) >= amount) return formatter.format(Math.round(seconds / amount), unit);
-  return formatter.format(seconds, 'second');
 }

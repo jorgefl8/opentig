@@ -1,3 +1,4 @@
+import { formatDateTime } from '@shared/date-format';
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { IconLoader4 } from '@tabler/icons-react';
 import type { DiffResult, DiffViewPreference, FileResult, ImageFileResult, ThemePreference, WriteFileResult } from '../../../shared/contracts';
@@ -373,7 +374,7 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
 }
 
 function CommitDiffHeader({ commit, fallbackSubject }: { commit: CommitInfo | undefined; fallbackSubject: string }) {
-  const date = commit?.date ? new Date(commit.date) : null;
+  const date = commit?.date;
   const [descriptionExpanded, setDescriptionExpanded] = useState(false);
   const body = commit?.body ?? '';
   const longDescription = body.length > 240 || body.split('\n').length > 3;
@@ -398,10 +399,10 @@ function CommitDiffHeader({ commit, fallbackSubject }: { commit: CommitInfo | un
       <div className="commit-diff-meta">
         <code>{commit?.shortOid ?? 'commit'}</code>
         {commit?.author && <span>{commit.author}{commit.email ? ` <${commit.email}>` : ''}</span>}
-        {date && Number.isFinite(date.getTime()) && (
+        {date && Number.isFinite(new Date(date).getTime()) && (
           <Tooltip>
-            <TooltipTrigger render={<time dateTime={commit?.date} />}>{date.toLocaleString()}</TooltipTrigger>
-            <TooltipContent>{date.toLocaleString()}</TooltipContent>
+            <TooltipTrigger render={<time dateTime={commit?.date} />}>{formatDateTime(date, { seconds: true })}</TooltipTrigger>
+            <TooltipContent>{formatDateTime(date, { seconds: true })}</TooltipContent>
           </Tooltip>
         )}
         {commit?.parentCount && commit.parentCount > 1 ? <span>Merge commit</span> : null}

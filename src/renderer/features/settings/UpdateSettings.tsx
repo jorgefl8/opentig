@@ -1,3 +1,4 @@
+import { formatDateTime } from '@shared/date-format';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { DesktopUpdateStatus } from '../../../shared/desktop-updates';
 import { Popover } from '@base-ui/react/popover';
@@ -53,7 +54,7 @@ export function UpdateSettings() {
       {installedReleaseUrl && <a className="text-sm underline" href={installedReleaseUrl} target="_blank" rel="noreferrer">Release notes · {status.currentVersion} (installed)</a>}
       {status.releaseUrl && <a className="text-sm underline" href={status.releaseUrl} target="_blank" rel="noreferrer">Release notes · {status.availableVersion} (update)</a>}
     </div>
-    {status.checkedAt && <p className="text-xs text-muted-foreground">Last checked: {new Date(status.checkedAt).toLocaleString()}</p>}
+    {status.checkedAt && <p className="text-xs text-muted-foreground">Last checked: {formatDateTime(status.checkedAt, { seconds: true })}</p>}
     {status.phase === 'ready' && !status.reloadRequired && <p className="text-xs text-muted-foreground">Save your edits and finish Git operations before restarting. Closing normally will not install the update.</p>}
   </div>;
 }

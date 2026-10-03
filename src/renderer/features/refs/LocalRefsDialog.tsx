@@ -1,3 +1,4 @@
+import { formatDate, formatDateTime } from '@shared/date-format';
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -345,7 +346,7 @@ function BranchDetailPanel({ details, pullRequest, busy, anyBusy, confirming, ac
         <Fact label="Full ref"><code className="local-refs-selectable">{details.fullName}</code></Fact>
         <Fact label="Tip"><code>{details.shortOid}</code> {details.subject}</Fact>
         <Fact label="Author">{details.author || '—'}</Fact>
-        <Fact label="Last commit">{details.date ? formatDate(details.date, true) : '—'}</Fact>
+        <Fact label="Last commit">{details.date ? formatDateTime(details.date) : '—'}</Fact>
         <Fact label="Upstream">{details.upstream ? `${details.upstream} · ↑${details.ahead} ↓${details.behind}` : 'Not configured'}</Fact>
         <Fact label="Compared with">{details.comparisonBase ?? 'Not compared'}</Fact>
         {pullRequest && (
@@ -401,7 +402,7 @@ function WorktreeDetailPanel({ details, busy, anyBusy, confirming, actionError, 
             ? <><code>{details.lastCommit.shortOid}</code> {details.lastCommit.subject}</>
             : <code>{details.oid ? details.oid.slice(0, 7) : '—'}</code>}
         </Fact>
-        <Fact label="Committed">{details.lastCommit?.date ? formatDate(details.lastCommit.date, true) : '—'}</Fact>
+        <Fact label="Committed">{details.lastCommit?.date ? formatDateTime(details.lastCommit.date) : '—'}</Fact>
         <Fact label="Local changes">{details.available ? (changes ?? 'None') : 'Not readable'}</Fact>
       </dl>
       <div className="local-refs-detail-actions">
@@ -529,10 +530,4 @@ function worktreeFailure(status: string): string {
 
 function messageOf(reason: unknown): string {
   return reason instanceof Error ? reason.message : String(reason);
-}
-
-function formatDate(value: string, withTime = false): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat('en', withTime ? { dateStyle: 'medium', timeStyle: 'short' } : { dateStyle: 'medium' }).format(date);
 }
