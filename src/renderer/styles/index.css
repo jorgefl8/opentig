@@ -1192,9 +1192,7 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
 /* Repository picker --------------------------------------------------------- */
 .repository-browser { width: min(922px, calc(100vw - 2rem)); max-height: calc(100dvh - 2rem); display: flex; flex-direction: column; }
 .repository-browser-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 18px; padding: 24px; flex-shrink: 0; }
-.repository-browser-heading { display: flex; align-items: flex-start; gap: 13px; min-width: 0; }
-.repository-browser-heading-icon { display: grid; place-items: center; width: 39px; height: 39px; margin-top: 2px; border: 1px solid var(--border); border-radius: 10px; background: var(--muted); color: var(--muted-foreground); flex-shrink: 0; }
-.repository-browser-heading-icon svg { width: 21px; height: 21px; }
+.repository-browser-heading { min-width: 0; }
 .repository-browser-header [data-slot="dialog-title"] { font-size: 20px; line-height: 1.4; letter-spacing: -.6px; }
 .repository-browser-header [data-slot="dialog-description"] { margin-top: 5px; line-height: 1.6; }
 .repository-browser-icon-button { display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border-radius: 6px; color: var(--muted-foreground); flex-shrink: 0; }
@@ -1284,7 +1282,6 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
 .repository-browser-actions button { font-size: 12px; height: 36px; padding-inline: 14px; border-radius: 7px; }
 @media (max-width: 700px) {
   .repository-browser-header { padding: 20px 18px 17px; }
-  .repository-browser-heading-icon { display: none; }
   .repository-browser-header [data-slot="dialog-title"] { font-size: 18px; }
   .repository-browser-header [data-slot="dialog-description"] { font-size: 11px; }
   .repository-browser-body { grid-template-columns: 1fr; }

@@ -142,7 +142,7 @@ export function OpenRepositoryDialog({ open, onOpenChange, onOpen, onBrowse, rec
   return <Dialog open={open} onOpenChange={next => { if (!opening.current) onOpenChange(next); }}>
     <DialogPopup className="repository-browser" initialFocus={closeButton} onKeyDown={handleKeys}>
       <header className="repository-browser-header">
-        <div className="repository-browser-heading"><span className="repository-browser-heading-icon"><IconFolder aria-hidden="true" /></span><div><DialogTitle>{title}</DialogTitle><DialogDescription>{description}</DialogDescription></div></div>
+        <div className="repository-browser-heading"><DialogTitle>{title}</DialogTitle><DialogDescription>{description}</DialogDescription></div>
         <FolderIconButton label="Close dialog" buttonRef={closeButton} disabled={busy} onClick={() => onOpenChange(false)}><IconX /></FolderIconButton>
       </header>
       <div className="repository-browser-body">
