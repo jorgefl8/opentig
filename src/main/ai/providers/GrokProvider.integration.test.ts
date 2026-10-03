@@ -53,7 +53,7 @@ describe.skipIf(!executable)('GrokProvider real CLI contract', () => {
       }
       return runner.run(command, args, { ...options, env: { ...options.env, GROK_AUTH_PATH: path.join(options.cwd!, 'absent-auth.json') }, removeEnv: [...(options.removeEnv ?? []), 'GROK_AUTH', 'XAI_API_KEY', 'GROK_CODE_XAI_API_KEY'] });
     } } as unknown as CliProcessRunner;
-    const provider = new GrokProvider({ resolve: async () => executable! } as unknown as CliResolver, isolatedRunner);
+    const provider = new GrokProvider({ discover: async () => [{ executable: executable!, alias: 'grok', source: 'configured', env: {} }], warning: async () => undefined } as unknown as CliResolver, isolatedRunner);
     const input = { repositoryPath: '/sample/repository', prompt: 'Return a subject and body JSON object.', schema: { type: 'object', properties: { subject: { type: 'string' }, body: { type: 'string' } }, required: ['subject', 'body'] }, model: 'default', signal: new AbortController().signal };
     try {
       expect(await provider.generate(input)).toMatchObject({ output: { subject: 'Add validation', body: '' }, usage: { inputTokens: 3, outputTokens: 2, costUsd: null } });

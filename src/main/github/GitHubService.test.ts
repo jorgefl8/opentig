@@ -11,7 +11,7 @@ const stack = { number: 7, base: { ref: 'main' }, pull_requests: [{ number: 101,
 function fixture(reply: (args: string[]) => CliRunResult) {
   const run = vi.fn(async (_exe: string, args: string[]) => args[0] === '--version' || args[0] === 'auth' ? ok('ready') : reply(args));
   const service = new GitHubService(
-    { resolve: async () => 'gh' } as unknown as CliResolver,
+    { discover: async () => [{ executable: 'gh', alias: 'gh', source: 'process-path', env: { PATH: '/fixture/bin' } }], warning: async () => undefined } as unknown as CliResolver,
     { run } as unknown as CliProcessRunner,
     { run: async () => ({ stdout: Buffer.from('https://github.com/example/demo.git') }) } as unknown as GitProcess,
     { get: () => ({ path: '.', id: 'repo' }) } as unknown as RepositoryService,

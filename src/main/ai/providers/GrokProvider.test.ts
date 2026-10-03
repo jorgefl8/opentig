@@ -12,7 +12,7 @@ const originalOverlay = process.env.GROK_CONFIG;
 afterEach(() => { if (originalOverlay === undefined) delete process.env.GROK_CONFIG; else process.env.GROK_CONFIG = originalOverlay; });
 
 function fixture(response: CliRunResult = { exitCode: 0, stderr: '', stdout: JSON.stringify({ stopReason: 'end_turn', structuredOutput: { subject: 'Add feature', body: '' }, usage: { input_tokens: 10, output_tokens: 5, cache_read_input_tokens: 2 } }) }) {
-  const resolver = { resolve: vi.fn(async () => '/bin/grok') } as unknown as CliResolver;
+  const resolver = { discover: vi.fn(async () => [{ executable: '/bin/grok', alias: 'grok', source: 'process-path', env: {} }]), warning: async () => undefined } as unknown as CliResolver;
   const run = vi.fn(async (...call: [string, string[], CliRunOptions?]): Promise<CliRunResult> => {
     const args = call[1];
     const stdout = args[0] === '--version' ? 'grok 1.0.46 (revision) [stable]'

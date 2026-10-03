@@ -32,8 +32,10 @@ The assets are bundled for file-type identification. OpenTig does not claim owne
 
 OpenTig uses the [`trash`](https://github.com/sindresorhus/trash) package to move files and folders to system Trash on Windows, macOS, and Linux.
 
-- Version: 10.1.1
+- Version: 9.0.0
 - License: MIT
+- Pinned to 9.0.0 because 10.x pulls in `braces` affected by [GHSA-vfj7-8cjw-p6xm](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm), which has no patched release. OpenTig disables glob expansion and tests literal file and directory paths against the native Trash. Revisit this pin when the upstream dependency chain is fixed.
+- Under WSL, this version uses Linux Trash rather than the Windows Recycle Bin integration introduced in 10.x.
 - Linux support follows the XDG Trash specification; upstream documents it as weakly maintained, so OpenTig runs an Ubuntu Trash smoke test as a release gate.
 
 ## ws

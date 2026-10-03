@@ -1,3 +1,4 @@
+import os from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -40,6 +41,7 @@ const defaults: SettingsData = {
     theme: 'system', diffView: 'unified', changesLayout: 'tree', wrapLines: false, sidebarWidth: 400, showDotEnvFiles: true, uiZoom: 100,
     uiFont: 'plus-jakarta-sans', monoFont: 'jetbrains-mono',
     commitMessageHarness: 'codex', commitMessageModels: { codex: 'default', claude: 'default', opencode: 'default', grok: 'default' },
+    aiExecutablePaths: {}, aiShellEnvironment: true,
     shortcutOverrides: {}, doubleControlShortcutEnabled: true,
     remoteFetchIntervalSeconds: DEFAULT_REMOTE_FETCH_INTERVAL_SECONDS,
   },
@@ -108,7 +110,7 @@ export class SettingsStore {
   get openFilesStates(): OpenFilesState[] { return this.data.openFilesStates.map(cloneOpenFilesState); }
   get activeRepositoryId(): string | null { return this.data.activeRepositoryId; }
   get preferences(): Preferences {
-    return { ...this.data.preferences, commitMessageModels: { ...this.data.preferences.commitMessageModels }, shortcutOverrides: { ...this.data.preferences.shortcutOverrides } };
+    return { ...this.data.preferences, aiExecutablePaths: { ...this.data.preferences.aiExecutablePaths }, commitMessageModels: { ...this.data.preferences.commitMessageModels }, shortcutOverrides: { ...this.data.preferences.shortcutOverrides } };
   }
   get windowBounds(): WindowBounds { return { ...this.data.windowBounds }; }
 
@@ -256,6 +258,8 @@ export class SettingsStore {
     next.monoFont = isMonoFont(next.monoFont) ? next.monoFont : 'jetbrains-mono';
     next.commitMessageHarness = isHarness(next.commitMessageHarness) ? next.commitMessageHarness : 'codex';
     next.commitMessageModels = modelPreferences(next.commitMessageModels);
+    next.aiExecutablePaths = executablePaths(next.aiExecutablePaths, true);
+    next.aiShellEnvironment = next.aiShellEnvironment !== false;
     next.shortcutOverrides = sanitizeShortcutOverrides(next.shortcutOverrides);
     next.doubleControlShortcutEnabled = typeof next.doubleControlShortcutEnabled === 'boolean' ? next.doubleControlShortcutEnabled : this.defaultDoubleControlShortcutEnabled;
     next.remoteFetchIntervalSeconds = normalizeRemoteFetchIntervalSeconds(next.remoteFetchIntervalSeconds);
@@ -403,6 +407,8 @@ function validate(value: unknown, defaultDoubleControlShortcutEnabled: boolean):
         monoFont: isMonoFont(parsedPreferences.data.monoFont) ? parsedPreferences.data.monoFont : 'jetbrains-mono',
         commitMessageHarness: isHarness(parsedPreferences.data.commitMessageHarness) ? parsedPreferences.data.commitMessageHarness : 'codex',
         commitMessageModels: modelPreferences(parsedPreferences.data.commitMessageModels),
+        aiExecutablePaths: executablePaths(parsedPreferences.data.aiExecutablePaths),
+        aiShellEnvironment: parsedPreferences.data.aiShellEnvironment !== false,
         shortcutOverrides: sanitizeShortcutOverrides(parsedPreferences.data.shortcutOverrides),
         doubleControlShortcutEnabled: typeof parsedPreferences.data.doubleControlShortcutEnabled === 'boolean' ? parsedPreferences.data.doubleControlShortcutEnabled : defaultDoubleControlShortcutEnabled,
         remoteFetchIntervalSeconds: normalizeRemoteFetchIntervalSeconds(
@@ -536,4 +542,19 @@ function normalizeRecent(item: RecentRepository): RecentRepository {
       ? item.repositoryName
       : path.basename(path.dirname(commonDir)),
   };
+}
+
+export function executablePaths(value: unknown, strict = false, platform = process.platform, home = os.homedir()): Partial<Record<AiHarnessId, string>> {
+  const result: Partial<Record<AiHarnessId, string>> = {};
+  const invalid = () => { if (strict) throw projectError('CLI executable paths must be absolute paths on the backend host, without arguments or control characters.'); };
+  if (!value || typeof value !== 'object' || Array.isArray(value)) { invalid(); return result; }
+  const p = platform === 'win32' ? path.win32 : path.posix;
+  for (const [key, raw] of Object.entries(value)) {
+    if (!isHarness(key) || typeof raw !== 'string') { invalid(); continue; }
+    if (!raw.trim()) continue;
+    const expanded = raw.startsWith('~/') ? p.join(home, raw.slice(2)) : raw;
+    if (raw.length > 4096 || hasControlCharacters(raw) || !p.isAbsolute(expanded) || (platform === 'win32' && !/^(?:[a-z]:[\\/]|\\\\)/i.test(expanded))) { invalid(); continue; }
+    result[key] = expanded;
+  }
+  return result;
 }

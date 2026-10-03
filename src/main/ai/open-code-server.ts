@@ -1,3 +1,4 @@
+import { cleanEnvironment } from './CliEnvironment';
 import { spawnSync, type ChildProcess } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { createServer } from 'node:net';
@@ -24,6 +25,7 @@ export interface OpenCodeV2Server {
 
 export async function startOpenCodeV2Server(options: {
   executable: string;
+  env?: Record<string, string>;
   cwd?: string;
   timeoutMs?: number;
   signal?: AbortSignal;
@@ -31,13 +33,14 @@ export async function startOpenCodeV2Server(options: {
   const timeoutMs = options.timeoutMs ?? 15_000;
   const password = randomBytes(24).toString('base64url');
   const port = await freePort();
-  const environment = Object.fromEntries(
+  const environment = cleanEnvironment(Object.fromEntries(
     Object.entries({
       ...process.env,
+      ...options.env,
       OPENCODE_SERVER_USERNAME: SERVER_USERNAME,
       OPENCODE_SERVER_PASSWORD: password,
     }).filter((entry): entry is [string, string] => entry[1] !== undefined),
-  );
+  ));
   const resolved = resolveProcessCommand(options.executable, options.cwd ?? process.cwd(), environment);
   if (!resolved.found) {
     throw new AiOperationError({ code: 'AI_PROCESS_FAILED', operation: 'opencode-server', harness: 'opencode', message: 'Could not start the local OpenCode server.', retryable: true });

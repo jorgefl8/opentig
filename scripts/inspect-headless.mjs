@@ -1,3 +1,4 @@
+import { containsPersonalPath } from '../packages/server/scripts/verify-build.mjs';
 import { execFile } from 'node:child_process';
 import { Buffer } from 'node:buffer';
 import { createHash } from 'node:crypto';
@@ -51,7 +52,7 @@ const { stdout: packedPackageBytes } = await execute('tar', ['-xOf', tarballPath
   encoding: 'buffer', maxBuffer: 1024 * 1024, windowsHide: true,
 });
 const packedPackage = JSON.parse(Buffer.from(packedPackageBytes).toString('utf8'));
-const expectedDependencies = { trash: '10.1.1', ws: '8.21.3' };
+const expectedDependencies = { trash: '9.0.0', ws: '8.21.3' };
 if (packedPackage.name !== metadata.packageName
   || packedPackage.version !== metadata.version
   || packedPackage.private === true
@@ -68,7 +69,7 @@ for (const lifecycle of ['preinstall', 'install', 'postinstall', 'prepare']) {
 for (const entry of ['package/dist/bin.mjs', 'package/dist/server.mjs', 'package/dist/utility.mjs']) {
   const { stdout } = await execute('tar', ['-xOf', tarballPath, entry], { encoding: 'buffer', maxBuffer: 4 * 1024 * 1024, windowsHide: true });
   const source = Buffer.from(stdout).toString('utf8');
-  if (/[A-Za-z]:[\\/]Users[\\/]/i.test(source) || source.includes('/home/') || source.includes('/Users/')) {
+  if (containsPersonalPath(source)) {
     throw new Error(`Absolute checkout path found in ${entry}.`);
   }
   if (/from\s*["'](?:electron|uiohook-napi|@electron-forge\/)/.test(source)) throw new Error(`Desktop import found in ${entry}.`);

@@ -1,3 +1,4 @@
+import { detectionFailure, detectionFields, requireCandidate, runCandidate, selectCli } from '../cli-selection';
 import type { AiHarnessStatus } from '../../../shared/contracts';
 import { AiOperationError } from '../../../shared/errors';
 import { AI_PROVIDER_TIMEOUT_MS } from '../../../shared/ai-timeouts';
@@ -15,25 +16,25 @@ export class ClaudeProvider implements AiProvider {
 
   async status(forceRefresh = false): Promise<AiHarnessStatus> {
     const checkedAt = new Date().toISOString();
-    const executable = await this.resolver.resolve('claude', forceRefresh);
-    if (!executable) return { id: this.id, label: 'Claude Code', availability: 'error', installed: false, authStatus: 'unknown', message: 'Install Claude Code to use this harness.', models: MODELS, checkedAt };
-    const version = await this.runner.run(executable, ['--version']);
-    const auth = await this.runner.run(executable, ['auth', 'status', '--json']);
+    const detected = await selectCli(this.resolver, this.runner, 'claude', { forceRefresh });
+    const failure = detectionFailure(detected, { id: this.id, label: 'Claude Code', models: MODELS, checkedAt });
+    if (failure) return failure;
+    const executable = requireCandidate(detected, this.id);
+    const auth = await runCandidate(this.runner, executable, ['auth', 'status', '--json']);
     let loggedIn: boolean;
     try { loggedIn = auth.exitCode === 0 && (JSON.parse(auth.stdout) as { loggedIn?: unknown }).loggedIn === true; } catch { loggedIn = false; }
     return {
-      id: this.id, label: 'Claude Code', availability: loggedIn ? 'ready' : 'error', installed: true,
-      authStatus: loggedIn ? 'authenticated' : 'unauthenticated', version: version.stdout.trim() || version.stderr.trim(),
+      ...detectionFields(detected), id: this.id, label: 'Claude Code', availability: loggedIn ? 'ready' : 'error', installed: true,
+      authStatus: loggedIn ? 'authenticated' : 'unauthenticated', version: detected.version ?? '',
       ...(!loggedIn ? { message: 'Run claude auth login.' } : {}), models: MODELS, checkedAt,
     };
   }
 
   async generate(input: ProviderGenerateInput) {
-    const executable = await this.resolver.resolve('claude');
-    if (!executable) throw new AiOperationError({ code: 'AI_CLI_NOT_FOUND', operation: 'claude-generate', harness: this.id, message: 'Claude Code is not installed.' });
+    const executable = requireCandidate(await selectCli(this.resolver, this.runner, 'claude', { runOptions: { signal: input.signal } }), this.id);
     const args = ['-p', '--output-format', 'json', '--json-schema', JSON.stringify(input.schema), '--tools', '', '--no-session-persistence', '--safe-mode'];
     if (input.model !== 'default') args.push('--model', input.model);
-    const result = await this.runner.run(executable, args, { cwd: input.repositoryPath, stdin: input.prompt, timeoutMs: AI_PROVIDER_TIMEOUT_MS, signal: input.signal, removeEnv: ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN'] });
+    const result = await runCandidate(this.runner, executable, args, { cwd: input.repositoryPath, stdin: input.prompt, timeoutMs: AI_PROVIDER_TIMEOUT_MS, signal: input.signal, removeEnv: ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN'] });
     requireSuccess(result, this.id, 'claude-generate');
     try {
       const envelope = JSON.parse(result.stdout) as { structured_output?: unknown };

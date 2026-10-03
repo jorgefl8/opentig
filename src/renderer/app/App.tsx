@@ -855,7 +855,8 @@ export default function App() {
     try {
       const preferences = await opentig.app.setPreferences(partial);
       setBootstrap((current) => current ? { ...current, preferences } : current);
-    } catch (reason) { reportError('Could not save settings', reason); }
+      return true;
+    } catch (reason) { reportError('Could not save settings', reason); return false; }
   };
 
   const persistFilesTreeExpandedPaths = useCallback((paths: string[]) => {
@@ -2097,7 +2098,7 @@ export default function App() {
           onPull={() => void pullUpdates()}
           onPush={() => void pushUpdates()}
           onRepositorySync={syncRepository}
-          onPreference={(partial) => void updatePreference(partial)}
+          onPreference={updatePreference}
           onForgetRepository={forgetRepository}
           onRelocateRepository={relocateRepository}
           onOrganizationChange={(organization) => setBootstrap((current) => current ? { ...current, ...organization } : current)}

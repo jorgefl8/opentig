@@ -6,7 +6,7 @@ import type { CliResolver } from '../CliResolver';
 import { CodexProvider } from './CodexProvider';
 
 function resolver(executable: string | null): CliResolver {
-  return { resolve: vi.fn(async () => executable) } as unknown as CliResolver;
+  return { discover: vi.fn(async () => executable ? [{ executable, alias: 'codex', source: 'process-path', env: {} }] : []), warning: async () => undefined } as unknown as CliResolver;
 }
 
 describe('CodexProvider.generate', () => {
@@ -14,6 +14,7 @@ describe('CodexProvider.generate', () => {
     const captured: { schema: Record<string, unknown> | null } = { schema: null };
     const runner = {
       run: vi.fn(async (_executable: string, args: string[]) => {
+        if (args[0] === '--version') return { exitCode: 0, stdout: 'codex 1.0', stderr: '' };
         const schemaPath = args[args.indexOf('--output-schema') + 1];
         if (!schemaPath) throw new Error('missing --output-schema');
         captured.schema = JSON.parse(await readFile(schemaPath, 'utf8')) as Record<string, unknown>;

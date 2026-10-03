@@ -68,6 +68,7 @@ export function registerServerCommands(
   });
   handle(IPC.preferences, 'preferences', async (partial) => {
     const preferences = await services.settings.setPreferences((partial ?? {}) as Partial<Preferences>);
+    if (partial && typeof partial === 'object' && ('aiExecutablePaths' in partial || 'aiShellEnvironment' in partial)) services.ai.invalidateStatuses();
     host.preferencesChanged(preferences);
     return preferences;
   });

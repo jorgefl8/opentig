@@ -169,6 +169,8 @@
   html .web-access-session { grid-template-columns: minmax(0, 1fr) auto; }
   html .web-access-session-icon { display: none; }
   html .web-access-session-copy > div { flex-wrap: wrap; }
+  html .ai-settings-heading { flex-wrap: wrap; gap: 12px; }
+  html .ai-executable-input { min-height: 44px; }
   html .ai-harness-card { grid-template-columns: minmax(0, 1fr); }
   html .ai-harness-card > [data-slot="badge"] { justify-self: start; }
   html .shortcuts-row, html .shortcuts-fixed-row { grid-template-columns: minmax(0, 1fr); gap: 6px; }

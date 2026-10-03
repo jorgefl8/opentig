@@ -4,26 +4,49 @@ import { AiOperationError } from '../../shared/errors';
 import type { GitRepositoryOperations } from '../git/GitRepositoryOperations';
 import { type AiLogRecorder, failureLogFields, recordSafely } from '../persistence/AiLogStore';
 import { buildCommitMessagePrompt, COMMIT_MESSAGE_SCHEMA, type ParsedCommitPlan, parseCommitSplitProposal, parseGeneratedParts } from './CommitMessagePrompt';
-import type { AiProvider } from './types';
+import { DEFAULT_MODEL, type AiProvider } from './types';
 
 export class CommitMessageService {
   private readonly providers = new Map<AiHarnessId, AiProvider>();
   private readonly active = new Map<string, { repositoryId: string; controller: AbortController }>();
   private statusCache: { at: number; value: AiHarnessStatus[] } | null = null;
 
+  private statusGeneration = 0;
+  private pendingStatus: { force: boolean; promise: Promise<AiHarnessStatus[]> } | undefined;
+
   constructor(
     private readonly operations: GitRepositoryOperations,
     providers: AiProvider[],
     private readonly log?: AiLogRecorder,
+    private readonly invalidateDiscovery?: () => void,
   ) {
     for (const provider of providers) this.providers.set(provider.id, provider);
   }
 
+  invalidateStatuses(): void {
+    this.statusGeneration++;
+    this.statusCache = null;
+    this.pendingStatus = undefined;
+    this.invalidateDiscovery?.();
+  }
+
   async statuses(forceRefresh = false): Promise<AiHarnessStatus[]> {
     if (!forceRefresh && this.statusCache && Date.now() - this.statusCache.at < 30_000) return this.statusCache.value;
-    const value = await Promise.all([...this.providers.values()].map((provider) => provider.status(forceRefresh)));
-    this.statusCache = { at: Date.now(), value };
-    return value;
+    if (this.pendingStatus && (!forceRefresh || this.pendingStatus.force)) return this.pendingStatus.promise;
+    const generation = ++this.statusGeneration;
+    const promise = Promise.all([...this.providers.values()].map(async (provider): Promise<AiHarnessStatus> => {
+      try { return await provider.status(forceRefresh); }
+      catch {
+        return { id: provider.id, label: { codex: 'Codex', claude: 'Claude Code', opencode: 'OpenCode', grok: 'Grok Build' }[provider.id], installed: false,
+          availability: 'error', authStatus: 'unknown', installationStatus: 'inspection-failed',
+          message: 'Could not inspect this CLI. Check again or review its executable path.', models: [DEFAULT_MODEL], checkedAt: new Date().toISOString() };
+      }
+    })).then((value) => {
+      if (generation === this.statusGeneration) this.statusCache = { at: Date.now(), value };
+      return value;
+    });
+    this.pendingStatus = { force: forceRefresh, promise };
+    try { return await promise; } finally { if (this.pendingStatus?.promise === promise) this.pendingStatus = undefined; }
   }
 
   async generate(input: GenerateCommitMessageInput, externalSignal?: AbortSignal): Promise<GeneratedCommitMessage> {

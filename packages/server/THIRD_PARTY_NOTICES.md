@@ -10,7 +10,9 @@ Files bundled into the production client originate from the [vscode-icons projec
 
 ## trash
 
-OpenTig uses [`trash`](https://github.com/sindresorhus/trash) 10.1.1 under the MIT License to move files and folders to system Trash on Windows, macOS, and Linux.
+OpenTig uses [`trash`](https://github.com/sindresorhus/trash) 9.0.0 under the MIT License to move files and folders to system Trash on Windows, macOS, and Linux.
+
+The version is pinned to avoid the unpatched `braces` dependency in 10.x ([GHSA-vfj7-8cjw-p6xm](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm)). Globbing is disabled. Under WSL, this version uses Linux Trash rather than the Windows Recycle Bin integration introduced in 10.x.
 
 ## ws
 
