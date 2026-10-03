@@ -205,7 +205,7 @@ export function SettingsDialog({ preferences, onPreference, open, onOpenChange, 
                     triggerClassName="ai-model-select"
                     contentClassName="ai-model-picker"
                     size="default"
-                    align="start"
+                    align="end"
                     placeholder="Search models…"
                   />
                   {selectedStatus?.authStatus === 'unauthenticated' && <p className="ai-login-hint">Sign in from a terminal with <code>{loginCommand(selectedHarness, selectedStatus.cliName)}</code> and check again.</p>}
