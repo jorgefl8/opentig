@@ -35,6 +35,8 @@ export function UpdateSettings() {
     finally { setPending(false); }
   };
   const busy = pending || ['checking', 'downloading', 'installing'].includes(status.phase);
+  const installedReleaseUrl = /^\d+\.\d+\.\d+$/.test(status.currentVersion)
+    ? `https://github.com/jorgefl8/opentig/releases/tag/v${status.currentVersion}` : null;
   return <div className="settings-field">
     <div className="settings-field-label">
       <strong>OpenTig {status.currentVersion}</strong>
@@ -48,7 +50,8 @@ export function UpdateSettings() {
       {['idle', 'error', 'checking'].includes(status.phase) && <Button variant="outline" disabled={busy} onClick={() => void action('check')}>{status.phase === 'checking' ? 'Checking…' : 'Check for updates'}</Button>}
       {status.phase === 'available' && <Button disabled={busy} onClick={() => void action('download')}>Download {status.availableVersion}</Button>}
       {status.phase === 'ready' && <Button disabled={busy} onClick={() => void action('install')}>{status.reloadRequired ? 'Reload app' : 'Restart and install'}</Button>}
-      {status.releaseUrl && <a className="text-sm underline" href={status.releaseUrl} target="_blank" rel="noreferrer">Release notes</a>}
+      {installedReleaseUrl && <a className="text-sm underline" href={installedReleaseUrl} target="_blank" rel="noreferrer">Release notes · {status.currentVersion} (installed)</a>}
+      {status.releaseUrl && <a className="text-sm underline" href={status.releaseUrl} target="_blank" rel="noreferrer">Release notes · {status.availableVersion} (update)</a>}
     </div>
     {status.checkedAt && <p className="text-xs text-muted-foreground">Last checked: {new Date(status.checkedAt).toLocaleString()}</p>}
     {status.phase === 'ready' && !status.reloadRequired && <p className="text-xs text-muted-foreground">Save your edits and finish Git operations before restarting. Closing normally will not install the update.</p>}

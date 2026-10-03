@@ -56,6 +56,8 @@ GitHub PRs show native stack positions such as **2/3**. Open the indicator in th
 
 Download the `OpenTig-…-win32-x64-Setup.exe` installer from the [latest release](https://github.com/jorgefl8/opentig/releases/latest). Git must be available on your machine.
 
+Settings → Updates links to the installed stable version’s release notes on GitHub, even when no update is available. When a new release is offered, its notes have a separate link labeled with the update version.
+
 > [!WARNING]
 > The Windows installer is currently **unsigned**, so Windows may show an unknown-publisher or SmartScreen warning.
 
