@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode, type Ref } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEventHandler, type ReactNode, type Ref } from 'react';
 import { IconAlertCircle, IconArrowRight, IconArrowUp, IconBook2, IconCheck, IconChevronRight, IconClock, IconDeviceDesktop, IconFileText, IconFolder, IconGitBranch, IconHome, IconInbox, IconLoader4, IconPencil, IconSearch, IconServer, IconX } from '@tabler/icons-react';
 import type { RecentRepository, ServerDirectoryListing } from '../../../shared/contracts';
 import { Button } from '@/components/ui/button';
@@ -116,6 +116,17 @@ export function OpenRepositoryDialog({ open, onOpenChange, onOpen, onBrowse, rec
   const currentRepository = listing && sameFolder(location, listing.path) && listing.repository;
   const locations = listing?.locations ?? [{ name: 'Home', path: '', kind: 'home' as const }];
   const editPath = () => { if (!busy) { setDraftPath(location); setEditingPath(true); } };
+  const cancelEditPath = () => {
+    // Move focus before removing the input so the dialog does not restore it elsewhere.
+    editButton.current?.focus();
+    setEditingPath(false);
+    setDraftPath(location);
+  };
+  const clickEditPath: MouseEventHandler<HTMLButtonElement> = event => {
+    // This click must not submit after React turns the pencil into a submit button.
+    event.preventDefault();
+    editPath();
+  };
 
   const handleKeys = (event: KeyboardEvent) => {
     if (busy) return;
@@ -161,11 +172,11 @@ export function OpenRepositoryDialog({ open, onOpenChange, onOpen, onBrowse, rec
           <div className="repository-browser-navigation">
             <FolderIconButton label="Go to parent folder" disabled={busy || !parentPath} onClick={() => { if (parentPath) void browse(parentPath); }}><IconArrowUp /></FolderIconButton>
             <form className="repository-browser-location" onSubmit={event => { event.preventDefault(); if (draftPath.trim() && !busy) void browse(draftPath.trim()); }}>
-              {editingPath ? <input ref={pathInput} id="repository-path" className="repository-browser-path-input" aria-label="Folder path" value={draftPath} onChange={event => setDraftPath(event.target.value)} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setEditingPath(false); setDraftPath(location); requestAnimationFrame(() => editButton.current?.focus()); } }} placeholder="Paste an absolute folder path" autoComplete="off" autoCapitalize="none" autoCorrect="off" spellCheck={false} disabled={busy} /> : <nav className="repository-browser-breadcrumbs" aria-label="Current folder">
+              {editingPath ? <input ref={pathInput} id="repository-path" className="repository-browser-path-input" aria-label="Folder path" value={draftPath} onChange={event => setDraftPath(event.target.value)} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); cancelEditPath(); } }} placeholder="Paste an absolute folder path" autoComplete="off" autoCapitalize="none" autoCorrect="off" spellCheck={false} disabled={busy} /> : <nav className="repository-browser-breadcrumbs" aria-label="Current folder">
                 {location ? folderBreadcrumbs(location).map((crumb, index, crumbs) => <span key={crumb.path} className={index > 0 && index < crumbs.length - 2 ? 'repository-breadcrumb-middle' : undefined}>{index > 0 && <IconChevronRight aria-hidden="true" />}{index === crumbs.length - 2 && crumbs.length > 3 && <button type="button" className="repository-breadcrumb-elision" aria-label="Enter full folder path" disabled={busy} onClick={editPath}>…</button>}{index === crumbs.length - 2 && crumbs.length > 3 && <IconChevronRight className="repository-breadcrumb-elision-icon" aria-hidden="true" />}<Tooltip><TooltipTrigger render={<button type="button" disabled={busy} aria-current={index === crumbs.length - 1 ? 'location' : undefined} onClick={() => void browse(crumb.path)} />}>{index === 0 && crumb.name === '/' ? <IconServer aria-label="Filesystem root" /> : crumb.name}</TooltipTrigger><TooltipContent>{crumb.path}</TooltipContent></Tooltip></span>) : <span className="repository-browser-home-label">Home</span>}
               </nav>}
               {!editingPath && <kbd className="repository-path-shortcut">Ctrl L</kbd>}
-              <FolderIconButton buttonRef={editButton} label={editingPath ? 'Go to folder' : 'Enter a folder path'} type={editingPath ? 'submit' : 'button'} disabled={busy || (editingPath && !draftPath.trim())} onClick={editingPath ? undefined : editPath}>{editingPath ? <IconArrowRight /> : <IconPencil />}</FolderIconButton>
+              <FolderIconButton buttonRef={editButton} label={editingPath ? 'Go to folder' : 'Enter a folder path'} type={editingPath ? 'submit' : 'button'} disabled={busy || (editingPath && !draftPath.trim())} onClick={editingPath ? undefined : clickEditPath}>{editingPath ? <IconArrowRight /> : <IconPencil />}</FolderIconButton>
             </form>
           </div>
           <div className="repository-browser-tools"><strong>Folders <span>{loading ? '' : browseError ? '0' : visibleFolders.length}</span></strong><label className="repository-browser-filter"><IconSearch aria-hidden="true" /><input aria-label="Filter folders" placeholder="Filter folders…" value={filter} onChange={event => { setFilter(event.target.value); setSelected(null); setOpenError(null); }} disabled={busy || loading || Boolean(browseError)} /></label></div>
@@ -191,7 +202,7 @@ export function OpenRepositoryDialog({ open, onOpenChange, onOpen, onBrowse, rec
   </Dialog>;
 }
 
-function FolderIconButton({ label, disabled, onClick, children, type = 'button', buttonRef }: { label: string; disabled?: boolean; onClick?: (() => void) | undefined; children: ReactNode; type?: 'button' | 'submit'; buttonRef?: Ref<HTMLButtonElement> }) {
+function FolderIconButton({ label, disabled, onClick, children, type = 'button', buttonRef }: { label: string; disabled?: boolean; onClick?: MouseEventHandler<HTMLButtonElement> | undefined; children: ReactNode; type?: 'button' | 'submit'; buttonRef?: Ref<HTMLButtonElement> }) {
   return <Tooltip><TooltipTrigger render={<button ref={buttonRef} type={type} className="repository-browser-icon-button" aria-label={label} disabled={disabled} onClick={onClick} />}>{children}</TooltipTrigger><TooltipContent>{label}</TooltipContent></Tooltip>;
 }
 function messageOf(reason: unknown, fallback: string): string { return reason instanceof Error ? reason.message : fallback; }

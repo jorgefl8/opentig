@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
+import { flushSync } from 'react-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ServerDirectoryListing } from '../../../shared/contracts';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -40,6 +41,32 @@ beforeEach(() => {
 afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.resetAllMocks(); vi.unstubAllGlobals(); });
 
 describe('repository selection and asynchronous navigation', () => {
+  it('keeps path editing focused without navigating when the pencil is clicked', async () => {
+    await render();
+    onBrowse.mockClear();
+    // Browsers commit React's click update before the button's default action.
+    // Flush at the end of propagation so jsdom reproduces that ordering too.
+    document.addEventListener('click', () => flushSync(() => {}), { once: true });
+    await click('Enter a folder path');
+    const path = document.querySelector<HTMLInputElement>('#repository-path');
+    expect(path?.value).toBe('/workspace');
+    expect(document.activeElement).toBe(path);
+    expect(path?.selectionStart).toBe(0);
+    expect(path?.selectionEnd).toBe('/workspace'.length);
+    expect(onBrowse).not.toHaveBeenCalled();
+    expect(onOpen).not.toHaveBeenCalled();
+    await act(async () => {
+      path!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+      await new Promise(resolve => requestAnimationFrame(resolve));
+    });
+    expect(document.querySelector('#repository-path')).toBeNull();
+    expect(document.activeElement).toBe(button('Enter a folder path'));
+    await click('Enter a folder path');
+    await input('#repository-path', '/chosen');
+    await click('Go to folder');
+    expect(onBrowse).toHaveBeenCalledExactlyOnceWith('/chosen');
+  });
+
   it('lets desktop users choose a native folder and inspect it before confirming', async () => {
     const onPick = vi.fn(async () => '/chosen');
     await render({ onPick });
