@@ -1,3 +1,4 @@
+import { containsPersonalPath } from '../packages/server/scripts/verify-build.mjs';
 import { execFile } from 'node:child_process';
 import { Buffer } from 'node:buffer';
 import { createHash } from 'node:crypto';
@@ -68,7 +69,7 @@ for (const lifecycle of ['preinstall', 'install', 'postinstall', 'prepare']) {
 for (const entry of ['package/dist/bin.mjs', 'package/dist/server.mjs', 'package/dist/utility.mjs']) {
   const { stdout } = await execute('tar', ['-xOf', tarballPath, entry], { encoding: 'buffer', maxBuffer: 4 * 1024 * 1024, windowsHide: true });
   const source = Buffer.from(stdout).toString('utf8');
-  if (/[A-Za-z]:[\\/]Users[\\/]/i.test(source) || source.includes('/home/') || source.includes('/Users/')) {
+  if (containsPersonalPath(source)) {
     throw new Error(`Absolute checkout path found in ${entry}.`);
   }
   if (/from\s*["'](?:electron|uiohook-napi|@electron-forge\/)/.test(source)) throw new Error(`Desktop import found in ${entry}.`);

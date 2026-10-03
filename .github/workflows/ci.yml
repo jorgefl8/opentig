@@ -112,6 +112,12 @@ jobs:
       - run: npm ci
       - name: Verify CLI discovery on the native platform
         run: npx vitest run src/main/ai src/main/github/GitHubService.test.ts src/main/persistence/SettingsStore.test.ts
+      - name: Build and verify CLI discovery in the Windows packaged utility
+        if: runner.os == 'Windows'
+        run: |
+          npm run package:dev
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run verify:packaged-utility -- --dev
       - name: Prepare isolated runner user service manager
         if: runner.os == 'Linux'
         shell: bash
