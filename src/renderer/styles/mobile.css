@@ -2,7 +2,7 @@
 .pr-viewer-overview { display: contents; }
 .mobile-navigation, .mobile-workspace-actions, .file-touch-actions, .files-mobile-tools, .local-refs-mobile-back { display: none; }
 
-@media (max-width: 767px) {
+@media (max-width: 767px), (pointer: coarse) and (max-width: 1100px) and (max-height: 500px) {
   html { --diffs-font-size: 16px; --diffs-line-height: 26px; }
   html, body, #root { width: 100%; min-width: 0; overscroll-behavior: none; }
   html #root { height: var(--mobile-viewport-height, 100dvh); }
@@ -40,11 +40,15 @@
   html .open-file-tab.dirty .open-file-tab-close-icon { opacity: 1; }
   html .open-file-tab.dirty .open-file-tab-dot { right: 3px; top: 3px; }
 
-  html .mobile-navigation { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); flex: none; border-bottom: 1px solid var(--border); background: var(--sidebar); }
-  html .mobile-navigation button { display: flex; min-width: 0; min-height: 52px; flex-direction: column; align-items: center; justify-content: center; gap: 3px; color: var(--muted-foreground); font-size: 11px; }
+  html .mobile-navigation { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); flex: none; border-top: 1px solid var(--border); background: var(--sidebar); padding: 4px 5px; }
+  html .mobile-navigation button { position: relative; display: flex; min-width: 0; min-height: 52px; flex-direction: column; align-items: center; justify-content: center; gap: 4px; border-radius: var(--radius-md); color: var(--muted-foreground); font-size: 10px; }
   html .mobile-navigation button > svg { width: 19px; height: 19px; }
-  html .mobile-navigation button[aria-current="page"] { color: var(--foreground); background: var(--row-selected); box-shadow: inset 0 -2px var(--primary); }
-  html .mobile-workspace-actions { display: flex; min-height: 44px; flex: none; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px; padding: 2px 8px; border-bottom: 1px solid var(--border); font-size: 12px; }
+  html .mobile-navigation button[aria-current="page"] { color: var(--primary); background: color-mix(in oklch, var(--primary) 9%, transparent); }
+  html .mobile-nav-indicator { position: absolute; width: 5px; height: 5px; border-radius: 50%; background: var(--warning); top: 5px; margin-left: 23px; }
+  html[data-mobile-keyboard="true"] .mobile-navigation { display: none; }
+  html [data-sileo-viewport][data-position^="bottom"] { bottom: calc(60px + env(safe-area-inset-bottom)); }
+  html[data-mobile-keyboard="true"] [data-sileo-viewport][data-position^="bottom"] { bottom: env(safe-area-inset-bottom); }
+  html .mobile-workspace-actions { display: flex; min-height: 56px; flex: none; align-items: center; justify-content: space-between; gap: 4px; padding: 8px 16px 4px; font-size: 12px; }
   html .mobile-workspace-actions > span { color: var(--muted-foreground); }
   html .mobile-workspace-actions button { display: inline-flex; min-height: 40px; align-items: center; gap: 5px; border-radius: var(--radius-md); padding: 0 6px; }
   html .mobile-workspace-actions button[aria-pressed="true"] { background: var(--row-selected); }
@@ -53,6 +57,26 @@
   html .sidebar { width: 100% !important; min-width: 0; max-width: none; flex: 1; border-right: 0; }
   html .sidebar-tabs { display: none; }
   html .viewer-pane { width: 100%; min-width: 0; }
+  html .mobile-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 12px; min-height: 56px; flex: none; border-bottom: 1px solid var(--border); background: var(--sidebar); }
+  html .mobile-repository-context { display: flex; align-items: center; min-width: 0; gap: 9px; min-height: 44px; padding: 4px; border-radius: var(--radius-md); text-align: left; }
+  html .mobile-repository-context > img, html .mobile-repository-context > svg { width: 26px; height: 26px; flex: none; }
+  html .mobile-repository-context > span { display: grid; min-width: 0; gap: 2px; }
+  html .mobile-repository-context strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 650; }
+  html .mobile-repository-context small { display: flex; gap: 4px; align-items: center; min-width: 0; color: var(--muted-foreground); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  html .mobile-repository-context small svg { width: 12px; height: 12px; flex: none; }
+  html .mobile-toolbar-actions { display: flex; gap: 2px; align-items: center; flex: none; }
+  html .mobile-toolbar-actions > [data-slot="button"] { min-height: 44px; }
+  html .mobile-open-files-trigger { position: relative; padding: 0 8px; gap: 6px; color: var(--muted-foreground); font-size: 11px; }
+  html .mobile-unsaved-dot { position: absolute; top: 6px; right: 3px; width: 5px; height: 5px; border-radius: 50%; background: var(--warning); }
+  html .mobile-toolbar-back { display: flex; align-items: center; gap: 6px; min-width: 0; min-height: 44px; border-radius: var(--radius-md); font-size: 12px; }
+  html .mobile-toolbar-back svg { width: 18px; height: 18px; flex: none; }
+  html .mobile-toolbar-back span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  html .mobile-view-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex: none; padding: 8px 16px 4px; min-height: 56px; }
+  html .mobile-view-heading h2 { min-width: 0; font-size: 21px; font-weight: 650; letter-spacing: -.7px; }
+  html .mobile-view-heading h2 small { margin-left: 8px; font-size: 12px; font-weight: 450; color: var(--muted-foreground); }
+  html .mobile-view-heading > div { display: flex; align-items: center; gap: 2px; }
+  html .mobile-view-heading [data-slot="button"], html .mobile-commit-trigger { color: var(--primary); }
+  html .mobile-workspace-actions .mobile-commit-trigger { flex: none; }
   html .app-shell[data-mobile-pane="list"] .viewer-pane,
   html .app-shell[data-mobile-pane="viewer"] .sidebar,
   html .app-shell[data-mobile-pane="commit"] .workspace { display: none; }
@@ -86,6 +110,7 @@
   /* The commit form is a workspace destination on phones, so it cannot cover
      staging controls. Going back leaves the draft and suggested plan intact. */
   html .commit-composer { position: relative; bottom: auto; left: auto; min-height: 0; max-height: none; width: 100%; flex: 1; align-content: start; border: 0; border-radius: 0; padding: 16px; box-shadow: none; animation: none; transform: none; }
+  html .commit-composer { overflow-y: auto; overscroll-behavior: contain; }
   html .commit-composer[data-state="closed"] { display: none; }
   html .commit-composer-hint { display: none; }
   html .commit-composer-input { min-height: 120px; }
@@ -210,6 +235,21 @@
   html .quick-open-result { min-height: 48px; }
   html .quick-open-hints { display: none; }
 
+  html .history-toolbar { padding: 6px 12px; flex-wrap: wrap; gap: 4px; }
+  html .history-search { flex: 1 1 calc(100% - 48px); min-height: 44px; }
+  html .history-option { min-height: 40px; padding: 4px 8px; }
+  html .history-list .commit-header { padding-block: 8px; }
+  html .history-list .commit-subject { font-size: 13px; }
+  html .history-list .commit-meta { font-size: 11px; height: 18px; }
+  html .pull-item { padding: 14px 12px; min-height: 76px; }
+  html .pull-title { white-space: normal; font-size: 13px; line-height: 1.6; }
+  html .pull-meta { font-size: 11px; flex-wrap: wrap; }
+  html .pulls-toolbar { flex-wrap: wrap; gap: 6px; padding: 6px 12px; }
+  html .search-query-row .search-input { flex-wrap: wrap; flex-basis: calc(100% - 44px); height: auto; }
+  html .search-toggles { flex: 1 0 100%; justify-content: flex-end; padding: 3px 0; }
+  html .search-toggles button { min-width: 40px; min-height: 40px; }
+  html [data-slot="dialog-popup"].mobile-sheet { top: auto; bottom: max(0px, calc(100dvh - var(--mobile-viewport-height, 100dvh) - var(--mobile-viewport-top, 0px))); left: 0; width: 100%; max-height: calc(var(--mobile-viewport-height, 100dvh) - env(safe-area-inset-top) - 16px); border-radius: 18px 18px 0 0; border-bottom: 0; padding-bottom: env(safe-area-inset-bottom); overflow: hidden; }
+
   html .welcome { height: 100%; justify-content: flex-start; overflow-y: auto; padding: max(40px, env(safe-area-inset-top)) 20px max(24px, env(safe-area-inset-bottom)); }
   html .welcome::before, html .welcome::after { content: ''; flex: 1 0 0; }
   html .welcome section { width: 100%; margin-top: 28px; }
@@ -217,6 +257,72 @@
   html .welcome .shortcut { display: none; }
   html .pairing-page, html .access-page { height: 100%; min-height: 0; overflow-y: auto; align-items: safe center; padding: 20px; }
   html .pairing-page section, html .access-page section { min-width: 0; padding: 20px; overflow-wrap: anywhere; }
+}
+
+/* Phone views render their own components; these also work in short landscape windows. */
+.mobile-files-view { display: flex; flex: 1; min-height: 0; flex-direction: column; }
+.mobile-file-filter { display: flex; align-items: center; gap: 8px; flex: none; min-width: 0; min-height: 44px; margin: 6px 16px 8px; padding: 0 12px; border: 1px solid var(--border); border-radius: 9px; background: var(--input); color: var(--muted-foreground); }
+.mobile-file-filter svg { width: 17px; height: 17px; flex: none; }
+.mobile-file-filter input { min-width: 0; width: 100%; height: 42px; outline: none; border: 0; background: transparent; color: var(--foreground); }
+.mobile-file-filter:focus-within { border-color: var(--primary); box-shadow: 0 0 0 2px color-mix(in oklch, var(--primary) 15%, transparent); }
+.mobile-file-breadcrumb { display: flex; gap: 2px; align-items: center; flex: none; min-width: 0; overflow-x: auto; padding: 0 12px 6px; scrollbar-width: none; color: var(--muted-foreground); font-size: 11px; }
+.mobile-file-breadcrumb > span { display: flex; align-items: center; flex: none; gap: 2px; }
+.mobile-file-breadcrumb svg { width: 12px; height: 12px; flex: none; }
+.mobile-file-breadcrumb button { display: flex; gap: 5px; align-items: center; min-height: 36px; flex: none; padding: 0 6px; border-radius: var(--radius-md); white-space: nowrap; }
+.mobile-file-breadcrumb button[aria-current] { color: var(--foreground); }
+.mobile-files-scroll { min-height: 0; flex: 1; overflow: auto; overscroll-behavior: contain; touch-action: pan-y; }
+.mobile-file-row { position: absolute; left: 0; top: 0; width: 100%; display: flex; align-items: center; padding: 0 8px; }
+.mobile-file-row.selected { background: color-mix(in oklch, var(--primary) 10%, var(--sidebar)); }
+.mobile-file-open { display: flex; align-items: center; gap: 11px; min-width: 0; flex: 1; height: 100%; padding: 7px 9px; text-align: left; border-radius: var(--radius-md); touch-action: pan-y; }
+.mobile-file-open > img { width: 22px; height: 22px; flex: none; }
+.mobile-file-open > svg { width: 16px; height: 16px; color: var(--muted-foreground); flex: none; }
+.mobile-file-copy { display: grid; gap: 3px; min-width: 0; flex: 1; }
+.mobile-file-copy strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 550; }
+.mobile-file-copy small { font-size: 10px; color: var(--muted-foreground); }
+.mobile-file-menu { flex: none; color: var(--muted-foreground); }
+.mobile-file-check { display: grid; place-items: center; width: 20px; height: 20px; border: 1px solid var(--muted-foreground); border-radius: 5px; flex: none; }
+.mobile-file-check.checked { color: var(--primary-foreground); background: var(--primary); border-color: var(--primary); }
+.mobile-file-check svg { width: 14px; height: 14px; }
+.mobile-file-selection-actions { display: flex; justify-content: space-between; gap: 2px; flex: none; padding: 6px 8px; border-top: 1px solid var(--border); background: var(--muted); }
+.mobile-file-selection-actions > button:first-child { color: var(--primary); }
+.mobile-list-message { display: flex; align-items: center; justify-content: center; gap: 7px; padding: 24px 16px; color: var(--muted-foreground); font-size: 12px; line-height: 1.7; text-align: center; }
+.mobile-sheet { display: flex; flex-direction: column; width: min(440px, 92vw); max-height: 80dvh; }
+.mobile-sheet-handle { width: 32px; height: 4px; border-radius: 3px; background: var(--border); margin: 10px auto 0; flex: none; }
+.mobile-sheet-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 4px 10px 4px 18px; flex: none; }
+.mobile-sheet-heading [data-slot="dialog-title"] { font-size: 16px; min-width: 0; overflow-wrap: anywhere; }
+.mobile-sheet-description { padding: 0 18px 10px; font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; flex: none; }
+.mobile-sheet-body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 10px 12px; }
+.mobile-sheet-action { display: flex; align-items: center; gap: 11px; width: 100%; min-height: 50px; padding: 10px; border-radius: var(--radius-md); text-align: left; font-size: 13px; }
+.mobile-sheet-action > svg { width: 19px; height: 19px; flex: none; color: var(--muted-foreground); }
+.mobile-sheet-action > span { min-width: 0; flex: 1; overflow-wrap: anywhere; }
+.mobile-sheet-action > span strong { display: block; font-weight: 550; }
+.mobile-sheet-action > span small { display: block; margin-top: 4px; font-size: 11px; color: var(--muted-foreground); }
+.mobile-sheet-action:hover { background: var(--row-hover); }
+.mobile-sheet-action:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+.mobile-sheet-action:disabled { opacity: .4; cursor: default; }
+.mobile-sheet-action.destructive { color: var(--destructive); }
+.mobile-sheet-footer { display: flex; justify-content: flex-end; gap: 6px; padding: 12px 6px 0; }
+.mobile-folder-location { display: flex; gap: 7px; align-items: center; min-height: 44px; padding: 0 8px 8px; border-bottom: 1px solid var(--border); }
+.mobile-folder-location span { min-width: 0; overflow-wrap: anywhere; font-size: 12px; }
+.mobile-destination-list { max-height: 35dvh; overflow-y: auto; overscroll-behavior: contain; }
+.mobile-context-selectors { display: grid; gap: 12px; padding: 4px 8px 16px; }
+.mobile-context-selectors label { display: grid; gap: 6px; color: var(--muted-foreground); font-size: 11px; }
+.mobile-context-selectors [data-slot="combobox-trigger"] { width: 100%; max-width: none; min-height: 44px; color: var(--foreground); }
+.mobile-context-sync { display: flex; gap: 6px; padding: 0 8px 14px; border-bottom: 1px solid var(--border); margin-bottom: 6px; }
+.mobile-context-sync button { flex: 1; }
+.mobile-open-file { display: flex; align-items: center; gap: 3px; border-radius: var(--radius-md); }
+.mobile-open-file.active { background: var(--row-selected); }
+.mobile-open-file .mobile-sheet-action { min-width: 0; flex: 1; }
+.mobile-open-file img { width: 20px; height: 20px; flex: none; }
+
+@media (pointer: coarse) and (max-width: 1100px) and (max-height: 500px) {
+  html .mobile-toolbar { min-height: 48px; padding-block: 0; }
+  html .mobile-view-heading { min-height: 44px; padding-block: 0; }
+  html .mobile-view-heading h2 { font-size: 18px; }
+  html .mobile-file-filter { margin-top: 3px; margin-bottom: 4px; }
+  html .mobile-file-breadcrumb { padding-bottom: 2px; }
+  html .mobile-navigation { padding-block: 0; }
+  html .mobile-navigation button { flex-direction: row; gap: 5px; min-height: 44px; }
 }
 
 /* Tablets and touch-enabled desktop windows retain the wide layout, while

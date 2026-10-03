@@ -76,7 +76,7 @@ export class FileService {
   // UI pulls its children through here instead of paying for them at startup.
   async listDirectory(repositoryId: string, relativePath: string): Promise<FileTreeEntry[]> {
     const repository = this.repositories.get(repositoryId);
-    const directory = this.repositories.resolvePath(repositoryId, relativePath);
+    const directory = relativePath === '' ? repository.path : this.repositories.resolvePath(repositoryId, relativePath);
     const parent = normalizeGitPath(relativePath).replace(/\/+$/, '');
     let dirents;
     try {
@@ -86,15 +86,12 @@ export class FileService {
       if (code === 'ENOENT' || code === 'ENOTDIR') return [];
       throw error;
     }
-    // Everything under an ignored folder is ignored too, so the whole level
-    // inherits the parent's state instead of being checked entry by entry.
-    const ignored = (await this.findIgnoredDirectories(repository.path, [parent])).has(parent);
     const entries: FileTreeEntry[] = [];
     for (const dirent of dirents) {
       if (dirent.name === '.git') continue;
       const entryPath = parent ? `${parent}/${dirent.name}` : dirent.name;
       if (dirent.isDirectory() && !dirent.isSymbolicLink()) {
-        entries.push({ path: entryPath, name: dirent.name, type: 'directory', ...(ignored ? { ignored: true } : {}), children: [] });
+        entries.push({ path: entryPath, name: dirent.name, type: 'directory', children: [] });
         continue;
       }
       if (!dirent.isFile() && !dirent.isSymbolicLink()) continue;
@@ -106,14 +103,25 @@ export class FileService {
           type: 'file',
           size: metadata.size,
           mtimeMs: metadata.mtimeMs,
-          ...(ignored ? { ignored: true } : {}),
         });
       } catch (error) {
         const code = (error as NodeJS.ErrnoException).code;
         if (code !== 'ENOENT' && code !== 'ENOTDIR') throw error;
       }
     }
-    return entries.sort((a, b) => a.type === b.type ? a.name.localeCompare(b.name) : a.type === 'directory' ? -1 : 1);
+    // The phone browser also reads ordinary folders and the root one level at
+    // a time. Preserve ignore flags for individual children of those folders.
+    const ignoredChildren = await this.findIgnoredDirectories(repository.path, entries.map((entry) => entry.path));
+    const ignoredFolders = entries.filter((entry) => entry.type === 'directory' && ignoredChildren.has(entry.path));
+    if (ignoredFolders.length > 0) {
+      const tracked = await this.git.run(repository.path, ['ls-files', '-z', '--', ...ignoredFolders.map((entry) => entry.path)], {
+        operation: 'list-tracked-folder-children', readOnly: true, maxOutputBytes: 64 * 1024 * 1024,
+      });
+      const ancestors = directoryAncestors(tracked.stdout.toString('utf8').split('\0').filter(Boolean).map(normalizeGitPath));
+      for (const folder of ignoredFolders) if (ancestors.has(folder.path)) ignoredChildren.delete(folder.path);
+    }
+    return entries.map((entry) => ignoredChildren.has(entry.path) ? { ...entry, ignored: true } : entry)
+      .sort((a, b) => a.type === b.type ? a.name.localeCompare(b.name) : a.type === 'directory' ? -1 : 1);
   }
 
   private async findIgnoredDirectories(repositoryPath: string, directories: string[]): Promise<Set<string>> {

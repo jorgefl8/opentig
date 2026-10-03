@@ -2,7 +2,7 @@ import { appDisplayName } from '@/lib/app-identity';
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  IconArrowLeft, IconGitCommit, IconFileArrowRight, IconFiles, IconGitCompare, IconGitPullRequest, IconHistory,
+  IconGitCommit, IconFileArrowRight, IconFiles, IconGitCompare, IconGitPullRequest, IconHistory,
   IconLoader4, IconRestore, IconSearch, IconTrash,
 } from '@tabler/icons-react';
 import { sileo } from 'sileo';
@@ -96,10 +96,6 @@ export default function App() {
   const [openRepositoryDialog, setOpenRepositoryDialog] = useState(false);
   const [mobilePane, setMobilePane] = useState<'list' | 'viewer' | 'commit'>('list');
   const [mobileDiffView, setMobileDiffView] = useState<Preferences['diffView']>('unified');
-  const mobileBackRef = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    if (mobile && mobilePane !== 'list') mobileBackRef.current?.focus();
-  }, [mobile, mobilePane]);
   const [bootstrap, setBootstrap] = useState<BootstrapData | null>(null);
   const [capabilities, setCapabilities] = useState<OpenTigCapabilities | null>(null);
   const [repository, setRepository] = useState<RepositoryInfo | null>(null);
@@ -2074,6 +2070,8 @@ export default function App() {
       {branchPush.remoteChoice && <PublishRemoteDialog key={branchPush.remoteChoice.id} choice={branchPush.remoteChoice} onSelect={branchPush.selectRemote} />}
       <div className="app-shell" data-mobile-pane={mobilePane}>
         <Toolbar
+          mobileBackLabel={mobilePane !== 'list' ? `Back to ${view === 'prs' ? 'PRs' : view}` : undefined}
+          onMobileBack={() => setMobilePane('list')}
           repository={repository}
           recent={bootstrap.recentRepositories}
           repositoryProjects={bootstrap.repositoryProjects}
@@ -2109,21 +2107,13 @@ export default function App() {
           onSettingsSection={setSettingsSection}
         />
         {status?.readOnly && <div className="operation-banner">Repository is read-only: {status.operation} is in progress.</div>}
-        <nav className="mobile-navigation" aria-label="Repository views">
-          {SIDEBAR_VIEWS.map((item) => (
-            <button key={item} aria-current={view === item ? 'page' : undefined} onClick={() => { setView(item); setMobilePane('list'); }}>
-              {item === 'changes' ? <IconGitCompare /> : item === 'files' ? <IconFiles /> : item === 'history' ? <IconHistory /> : item === 'prs' ? <IconGitPullRequest /> : <IconSearch />}
-              <span>{item === 'changes' ? 'Changes' : item === 'files' ? 'Files' : item === 'history' ? 'History' : item === 'prs' ? 'PRs' : 'Search'}</span>
-            </button>
-          ))}
-        </nav>
-        <div className="mobile-workspace-actions">
-          {mobilePane !== 'list' ? (
-            <button ref={mobileBackRef} onClick={() => setMobilePane('list')}><IconArrowLeft /> Back to {view === 'prs' ? 'PRs' : view}</button>
-          ) : <span>{view === 'changes' ? `${status?.changes.length ?? 0} changes` : view === 'files' ? 'Repository files' : view === 'history' ? 'Commit history' : view === 'prs' ? 'Pull requests' : 'Search files'}</span>}
-          {Boolean(status?.stagedCount || commitProposal) && <button aria-pressed={mobilePane === 'commit'} onClick={() => { setView('changes'); setMobilePane('commit'); }}><IconGitCommit /> Commit{status?.stagedCount ? ` (${status.stagedCount})` : ''}</button>}
-          {mobilePane === 'list' && viewerSelection && <button onClick={() => setMobilePane('viewer')}>View selection</button>}
-        </div>
+
+        {mobile && mobilePane === 'list' && view !== 'files' && (
+          <div className="mobile-workspace-actions mobile-view-heading">
+            <h2>{view === 'changes' ? 'Changes' : view === 'history' ? 'History' : view === 'prs' ? 'Pull requests' : 'Search'}{view === 'changes' && <small>{status?.changes.length ?? 0}</small>}</h2>
+            {view === 'changes' && Boolean(status?.stagedCount || commitProposal) && <button className="mobile-commit-trigger" onClick={() => setMobilePane('commit')}><IconGitCommit /> Commit{status?.stagedCount ? ` (${status.stagedCount})` : ''}</button>}
+          </div>
+        )}
         <main className="workspace">
           <aside className="sidebar" style={{ width: bootstrap.preferences.sidebarWidth }}>
             <nav className="sidebar-tabs" data-shortcuts={ctrlHeld ? 'visible' : undefined} aria-label="Repository views">
@@ -2333,6 +2323,15 @@ export default function App() {
           onPrepare={(index) => void prepareCommitGroup(index)}
           onCommit={(options) => void createCommit(options)}
         />
+        <nav className="mobile-navigation" aria-label="Repository views">
+          {SIDEBAR_VIEWS.map((item) => (
+            <button key={item} aria-current={view === item ? 'page' : undefined} onClick={() => { setView(item); setMobilePane('list'); }}>
+              {item === 'changes' ? <IconGitCompare /> : item === 'files' ? <IconFiles /> : item === 'history' ? <IconHistory /> : item === 'prs' ? <IconGitPullRequest /> : <IconSearch />}
+              <span>{item === 'changes' ? 'Changes' : item === 'files' ? 'Files' : item === 'history' ? 'History' : item === 'prs' ? 'PRs' : 'Search'}</span>
+              {item === 'changes' && Boolean(status?.changes.length) && <i className="mobile-nav-indicator" aria-label={`${status!.changes.length} changes`} />}
+            </button>
+          ))}
+        </nav>
       </div>
     </TooltipProvider>
     </ShortcutsProvider>

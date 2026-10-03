@@ -13,6 +13,7 @@ import { commitReference, historyColor, historyRows, matchesHistory } from './hi
 import { readCommitFilesCache, writeCommitFilesCache } from './commit-files-cache';
 import { writeClipboardText } from '@/lib/browser-capabilities';
 import { getVsCodeFileIconUrl } from '@/lib/vscode-icons';
+import { useMobileLayout } from '@/lib/use-mobile-layout';
 import { opentig } from '@/lib/opentig-api';
 
 interface HistoryViewProps {
@@ -24,13 +25,14 @@ interface HistoryViewProps {
 }
 
 export function HistoryView({ repositoryId, upstream, readOnly, operation, canPublish, pushBusy, onPublish, commits, nextCursor, loading, undoing, baseRef, activeOid, onSelectReference, onSelectCommit, onSelectFile, onUndo, onMore }: HistoryViewProps) {
+  const mobile = useMobileLayout();
   const scrollRef = useRef<HTMLDivElement>(null);
   const [expandedCommits, setExpandedCommits] = useState<Set<string>>(new Set());
   const [compact, setCompact] = useState(true);
   const [grouped, setGrouped] = useState(false);
   const [search, setSearch] = useState('');
   const [matchIndex, setMatchIndex] = useState(-1);
-  const rowHeight = compact ? 42 : 56;
+  const rowHeight = mobile ? 68 : compact ? 42 : 56;
   // Search temporarily reveals grouped commits; it never removes graph context.
   const rows = useMemo(() => historyRows(commits ?? [], grouped && !search.trim()), [commits, grouped, search]);
   const graph = useMemo(() => buildCommitGraph(rows.map(({ commit, parentOids }) => ({ oid: commit.oid, parentOids, color: historyColor(commit) }))), [rows]);
@@ -44,7 +46,7 @@ export function HistoryView({ repositoryId, upstream, readOnly, operation, canPu
     getItemKey: (index) => rows[index]!.commit.oid,
     overscan: 8,
   });
-  useEffect(() => { commitVirtualizer.measure(); }, [commitVirtualizer, compact, grouped, search]);
+  useEffect(() => { commitVirtualizer.measure(); }, [commitVirtualizer, compact, grouped, search, mobile]);
   const nextMatch = () => {
     if (!matches.length) return;
     const next = (matchIndex + 1) % matches.length;
@@ -59,7 +61,7 @@ export function HistoryView({ repositoryId, upstream, readOnly, operation, canPu
         <label className="history-search"><IconSearch aria-hidden="true" /><input type="search" aria-label="Search loaded commits" placeholder="Find commit…" value={search} onChange={(event) => { setSearch(event.target.value); setMatchIndex(-1); }} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); nextMatch(); } }} /></label>
         {search && <Tooltip><TooltipTrigger render={<button className="history-next-match" onClick={nextMatch} disabled={!matches.length} aria-label="Next matching commit" />}><IconArrowDown /></TooltipTrigger><TooltipContent>Next match in loaded history (Enter)</TooltipContent></Tooltip>}
         <Tooltip><TooltipTrigger render={<button className="history-option" aria-pressed={grouped} disabled={!commits.some((commit) => commit.parentCount > 1)} onClick={() => setGrouped(!grouped)} />}>Group merges</TooltipTrigger><TooltipContent>Collapse complete merge branches. Searching reveals their commits.</TooltipContent></Tooltip>
-        <Tooltip><TooltipTrigger render={<button className="history-option" aria-pressed={compact} onClick={() => setCompact(!compact)} />}>{compact ? 'Compact' : 'Comfortable'}</TooltipTrigger><TooltipContent>Change row density without moving the diff viewer</TooltipContent></Tooltip>
+        {!mobile && <Tooltip><TooltipTrigger render={<button className="history-option" aria-pressed={compact} onClick={() => setCompact(!compact)} />}>{compact ? 'Compact' : 'Comfortable'}</TooltipTrigger><TooltipContent>Change row density without moving the diff viewer</TooltipContent></Tooltip>}
       </div>
       {!upstream && commits.length > 0 && <div className="history-upstream-notice" role="status"><span>Publish this branch to configure an upstream and distinguish local from published commits.</span>
         {canPublish && <Button variant="outline" size="xs" disabled={pushBusy || readOnly || Boolean(operation)} onClick={onPublish}>{pushBusy ? 'Publishing…' : 'Publish branch'}</Button>}
