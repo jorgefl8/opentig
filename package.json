@@ -23,6 +23,7 @@
     "release:inspect:headless": "node scripts/inspect-headless.mjs",
     "make": "node scripts/package-desktop.mjs make",
     "test": "vitest run",
+    "test:related": "vitest related --run",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "audit:prod": "npm audit --omit=dev --audit-level=high",

@@ -1,30 +1,13 @@
-import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { sourceFiles } from '../../../scripts/test-support/source-analysis';
 
 describe('runtime dependency boundary', () => {
-  it('contains no Electron or native shortcut imports', async () => {
+  it('contains no Electron or native shortcut dependencies', async () => {
     const root = path.join(process.cwd(), 'src', 'main', 'runtime');
-    const files = await typeScriptFiles(root);
-    const offenders: string[] = [];
-
-    for (const file of files) {
-      const source = await readFile(file, 'utf8');
-      if (/from\s+['"](?:electron|uiohook-napi)['"]|require\(['"](?:electron|uiohook-napi)['"]\)/.test(source)) {
-        offenders.push(path.relative(root, file));
-      }
-    }
-
+    const files = await sourceFiles(root);
+    const offenders = files.filter(({ imports }) => imports.some((name) => name === 'electron' || name === 'uiohook-napi'))
+      .map(({ file }) => path.relative(root, file));
     expect(offenders).toEqual([]);
   });
 });
-
-async function typeScriptFiles(directory: string): Promise<string[]> {
-  const entries = await readdir(directory, { withFileTypes: true });
-  const files = await Promise.all(entries.map(async (entry) => {
-    const target = path.join(directory, entry.name);
-    if (entry.isDirectory()) return typeScriptFiles(target);
-    return entry.isFile() && entry.name.endsWith('.ts') ? [target] : [];
-  }));
-  return files.flat();
-}

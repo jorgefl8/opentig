@@ -10,13 +10,6 @@ import { OPENTIG_CODE_THEMES } from './diffThemes';
 afterEach(() => vi.unstubAllGlobals());
 
 describe('OPENTIG_CODE_THEMES', () => {
-  it('exposes the registered custom theme names', () => {
-    expect(OPENTIG_CODE_THEMES).toEqual({
-      light: 'opentig-light',
-      dark: 'opentig-dark',
-    });
-  });
-
   it('keeps app surfaces after Markdown has normalized the shared One palettes', async () => {
     // Shiki inserts an unscoped foreground/background rule into the imported
     // palette. Reproduce opening Markdown before resolving the lazy diff themes.

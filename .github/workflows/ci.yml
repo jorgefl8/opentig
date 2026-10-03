@@ -11,11 +11,31 @@ on:
         type: boolean
         default: true
 
+# Superseded PR runs can be cancelled; main and manual runs stay independent.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
 
 jobs:
+  changes:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      required: ${{ steps.scope.outputs.required }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: scope
+        run: node scripts/ci-scope.mjs
+
   validate:
+    needs: changes
+    if: always() && !cancelled()
     strategy:
       fail-fast: false
       matrix:
@@ -24,20 +44,34 @@ jobs:
     timeout-minutes: 20
 
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Require a successful scope decision
+        env:
+          SCOPE_RESULT: ${{ needs.changes.result }}
+          SCOPE_REQUIRED: ${{ needs.changes.outputs.required }}
+        run: node -e "if (process.env.SCOPE_RESULT !== 'success' || !['true', 'false'].includes(process.env.SCOPE_REQUIRED)) process.exit(1)"
+      - if: needs.changes.outputs.required == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - if: needs.changes.outputs.required == 'true'
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
           cache: npm
-      - run: npm ci
-      - run: npm run typecheck
-      - run: npm run lint
-      - run: npm test
-      - run: npm run audit:prod
+      - if: needs.changes.outputs.required == 'true'
+        run: npm ci
+      - if: needs.changes.outputs.required == 'true'
+        run: npm run typecheck
+      - if: needs.changes.outputs.required == 'true'
+        run: npm run lint
+      - if: needs.changes.outputs.required == 'true'
+        run: npm test
+      - if: needs.changes.outputs.required == 'true'
+        run: npm run audit:prod
 
   system-trash-smoke:
+    needs: changes
+    if: needs.changes.outputs.required == 'true'
     strategy:
       matrix:
         os: [windows-latest, ubuntu-24.04]
@@ -58,6 +92,8 @@ jobs:
           OPENTIG_SYSTEM_TRASH_INTEGRATION: '1'
 
   headless-tarball-smoke:
+    needs: changes
+    if: needs.changes.outputs.required == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -101,8 +137,8 @@ jobs:
           bunx --package "$artifact" opentig --version
 
   dev-artifacts:
-    if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.build_dev)
-    needs: validate
+    if: needs.changes.outputs.required == 'true' && (github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.build_dev))
+    needs: [changes, validate]
     strategy:
       fail-fast: false
       matrix:

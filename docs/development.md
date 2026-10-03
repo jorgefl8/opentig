@@ -55,13 +55,21 @@ WantedBy=default.target
 
 After building with `npm run build:server`, run `systemctl --user daemon-reload` and `systemctl --user enable --now opentig-dev.service`. Enable user lingering with `loginctl enable-linger "$USER"` if the service should start at boot and survive logout. Startup pairing output is discarded; use `npm run pair:web:dev` whenever you need a new code. Inspect the service with `systemctl --user status opentig-dev.service` and `journalctl --user -u opentig-dev.service`. After rebuilding, use `systemctl --user restart opentig-dev.service`; it keeps the same `~/.opentig-dev` data and browser sessions. Do not run `start:web:dev` alongside the service on the same port. A healthy Cloudflare connector still returns a gateway error if this application service is stopped.
 
-Run all quality gates:
+During local iterations, run the tests that import the changed source files:
+
+```bash
+npm run test:related -- src/main/git/GitRepositoryOperations.ts
+```
+
+For changes to tests, run those files directly with `npm test -- <test-file>`. Related tests follow static imports; configuration, dynamically selected modules, and architecture checks that read source files require explicit tests or the complete suite. Use behavior assertions for regressions and syntax-aware checks for dependency boundaries; avoid checking literal source text or duplicating constants.
+
+Run all quality gates before integrating:
 
 ```powershell
 npm run check
 ```
 
-CI runs these quality gates on both Windows and Linux; Windows releases also run the test suite on the Windows builder before packaging. Dependency install scripts are reviewed and pinned in `package.json` (`allowScripts`); review the relevant script again when updating one of those versions.
+CI runs these quality gates on both Windows and Linux for code, configuration, and asset changes. Prose-only changes to the root README, contribution guide, agent instructions, third-party notices, or Markdown files under `docs/` keep the validation checks but skip dependency installs, tests, smoke checks, and Dev builds. Manual CI runs always validate fully. A new push to a PR cancels its superseded CI run; main and manual runs remain independent. Windows releases also run the test suite on the Windows builder before packaging. Dependency install scripts are reviewed and pinned in `package.json` (`allowScripts`); review the relevant script again when updating one of those versions.
 
 Build a separate Dev application to evaluate local changes or a checked-out PR:
 
