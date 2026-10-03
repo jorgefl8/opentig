@@ -1,3 +1,4 @@
+import { AiExecutableSettings } from './AiExecutableSettings';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import {
   IconAlertTriangle, IconHistory, IconKeyboard,
@@ -39,7 +40,7 @@ const SETTINGS_COPY: Record<Exclude<SettingsSection, 'webAccess'>, { title: stri
 };
 export function SettingsDialog({ preferences, onPreference, open, onOpenChange, section, onSectionChange }: {
   preferences: Preferences;
-  onPreference(partial: Partial<Preferences>): void;
+  onPreference(partial: Partial<Preferences>): void | Promise<boolean>;
   open: boolean;
   onOpenChange(open: boolean): void;
   section: SettingsSection;
@@ -55,16 +56,20 @@ export function SettingsDialog({ preferences, onPreference, open, onOpenChange, 
     ? { duration: 0 }
     : { duration: 0.16, ease: [0.22, 1, 0.36, 1] as const };
 
+  const statusRequest = useRef(0);
   const loadStatuses = useCallback(async (forceRefresh = false) => {
+    const request = ++statusRequest.current;
     setLoadingStatuses(true);
-    try { setStatuses(await opentig.ai.statuses(forceRefresh)); }
+    try { const next = await opentig.ai.statuses(forceRefresh); if (request === statusRequest.current) setStatuses(next); }
     catch (reason) { sileo.error({ title: 'Could not check local AI', description: messageOf(reason) }); }
-    finally { setLoadingStatuses(false); }
+    finally { if (request === statusRequest.current) setLoadingStatuses(false); }
   }, []);
 
   useEffect(() => {
-    if (open && section === 'ai' && statuses.length === 0) void loadStatuses();
-  }, [loadStatuses, open, section, statuses.length]);
+    if (open && section === 'ai') void loadStatuses();
+    const requests = statusRequest;
+    return () => { requests.current++; };
+  }, [loadStatuses, open, section, preferences.aiExecutablePaths, preferences.aiShellEnvironment]);
 
   useLayoutEffect(() => {
     if (open && settingsBodyRef.current) settingsBodyRef.current.scrollTop = 0;
@@ -174,7 +179,7 @@ export function SettingsDialog({ preferences, onPreference, open, onOpenChange, 
                           <AiProviderIcon harness={harness} />
                           <span className="ai-harness-card-copy">
                             <strong>{harnessLabel(harness)}</strong>
-                            <small>{loadingStatuses ? 'Checking…' : harnessStatus?.version || (harnessStatus ? (harnessStatus.installed ? 'Version unavailable' : 'Executable not found') : 'Status not checked')}</small>
+                            <small>{loadingStatuses ? 'Checking…' : harnessStatus?.version || (harnessStatus ? (harnessStatus.installationStatus === 'inspection-failed' ? 'Inspection unavailable' : harnessStatus.installed ? 'Version unavailable' : 'Executable not found') : 'Status not checked')}</small>
                           </span>
                         </span>
                         <Badge variant={availabilityBadgeVariant(harnessStatus)} className={`ai-status-badge ${harnessStatus?.availability ?? 'unknown'}`}>
@@ -204,8 +209,9 @@ export function SettingsDialog({ preferences, onPreference, open, onOpenChange, 
                     placeholder="Search models…"
                   />
                   {selectedStatus?.authStatus === 'unauthenticated' && <p className="ai-login-hint">Sign in from a terminal with <code>{loginCommand(selectedHarness, selectedStatus.cliName)}</code> and check again.</p>}
-                  {selectedStatus && !selectedStatus.installed && <p className="ai-login-hint">Install {harnessLabel(selectedHarness)} and check its availability again.</p>}
+                  {selectedStatus && !selectedStatus.installed && selectedStatus.installationStatus !== 'inspection-failed' && <p className="ai-login-hint">Install {harnessLabel(selectedHarness)} and check its availability again.</p>}
                 </div>
+                <AiExecutableSettings key={selectedHarness} harness={selectedHarness} preferences={preferences} status={selectedStatus} onPreference={onPreference} />
                 <div className="settings-field settings-field-separated">
                   <div className="settings-field-label">
                     <strong>Generation history</strong>
@@ -228,7 +234,10 @@ export function SettingsDialog({ preferences, onPreference, open, onOpenChange, 
 
 function availabilityLabel(status: AiHarnessStatus | undefined): string {
   if (!status) return 'Not checked';
-  if (!status.installed) return 'Not installed';
+  if (status.installationStatus === 'inspection-failed') return 'Check failed';
+  if (status.installationStatus === 'not-executable') return 'Cannot run';
+  if (status.installationStatus === 'incompatible') return 'Incompatible';
+  if (!status.installed) return 'Not found';
   if (status.authStatus === 'unauthenticated') return 'Not authenticated';
   if (status.availability === 'ready') return 'Available';
   return 'Check';

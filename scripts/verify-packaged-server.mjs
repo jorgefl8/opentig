@@ -1,3 +1,4 @@
+import { verifyCliDiscovery } from './cli-discovery-smoke.mjs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -68,6 +69,7 @@ try {
     });
     socket.once('error', reject);
   });
+  await verifyCliDiscovery(socket, smokeDirectory);
 } finally {
   socket?.terminate();
   await server?.close();

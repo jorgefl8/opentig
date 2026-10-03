@@ -1,3 +1,5 @@
+import { selectCli } from '../ai/cli-selection';
+import type { CliCandidate } from '../ai/CliResolver';
 import { parsePullRequestStack, parseStackMemberships, stackMembershipQuery } from './PullRequestStackParser';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
@@ -194,12 +196,13 @@ export class GitHubService {
 
   private async checkStatus(forceRefresh: boolean): Promise<GhCliStatus> {
     const checkedAt = new Date().toISOString();
-    const executable = await this.resolver.resolve('gh', forceRefresh);
+    const detected = await selectCli(this.resolver, this.runner, 'gh', { forceRefresh, runOptions: { cwd: os.tmpdir(), env: { ...GH_ENV } } });
+    const executable = detected.candidate;
     if (!executable) {
       return { installed: false, availability: 'error', authStatus: 'unknown', message: 'Install GitHub CLI (cli.github.com) to work with pull requests.', checkedAt };
     }
-    const version = await this.run(executable, ['--version'], { cwd: os.tmpdir(), operation: 'gh-version' });
-    const versionLabel = (version.stdout.split(/\r?\n/, 1)[0] ?? '').trim() || version.stderr.trim();
+    if (detected.state !== 'available') return { installed: true, availability: 'error', authStatus: 'unknown', message: 'GitHub CLI was found but could not run. Check its installation and dependencies.', checkedAt };
+    const versionLabel = detected.version ?? '';
     const auth = await this.run(executable, ['auth', 'status', '--hostname', 'github.com', '--active'], { cwd: os.tmpdir(), operation: 'gh-auth-status' });
     if (auth.exitCode !== 0) {
       return { installed: true, availability: 'error', authStatus: 'unauthenticated', version: versionLabel, message: 'Run gh auth login.', checkedAt };
@@ -220,18 +223,19 @@ export class GitHubService {
   }
 
   private async runGh(args: string[], options: GhRunOptions): Promise<CliRunResult> {
-    const executable = await this.resolver.resolve('gh');
+    const detected = await selectCli(this.resolver, this.runner, 'gh', { runOptions: { cwd: options.cwd, env: { ...GH_ENV } } });
+    const executable = detected.state === 'available' ? detected.candidate : undefined;
     if (!executable) throw new GhOperationError({ code: 'GH_CLI_NOT_FOUND', operation: options.operation, message: 'GitHub CLI is not installed.' });
     const result = await this.run(executable, args, options);
     if (result.exitCode !== 0) throw classifyFailure(result, options.operation);
     return result;
   }
 
-  private async run(executable: string, args: string[], options: GhRunOptions): Promise<CliRunResult> {
+  private async run(executable: CliCandidate, args: string[], options: GhRunOptions): Promise<CliRunResult> {
     try {
-      return await this.runner.run(executable, args, {
+      return await this.runner.run(executable.executable, args, {
         cwd: options.cwd,
-        env: { ...GH_ENV },
+        env: { ...executable.env, ...GH_ENV },
         ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
         ...(options.maxOutputBytes !== undefined ? { maxOutputBytes: options.maxOutputBytes } : {}),
         ...(options.stdin !== undefined ? { stdin: options.stdin } : {}),

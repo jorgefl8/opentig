@@ -446,3 +446,23 @@ async function settingsFile(value: object): Promise<string> {
   await writeFile(file, JSON.stringify(value));
   return file;
 }
+
+describe('CLI executable preferences', () => {
+  it('migrates old settings, saves per-provider overrides and resets them across restarts', async () => {
+    const file = await settingsFile({}); const store = new SettingsStore(file); await store.load();
+    expect(store.preferences).toMatchObject({ aiExecutablePaths: {}, aiShellEnvironment: true });
+    const executable = path.join(path.dirname(file), 'tools with spaces', 'opencode');
+    await store.setPreferences({ aiExecutablePaths: { opencode: executable }, aiShellEnvironment: false });
+    const next = new SettingsStore(file); await next.load();
+    expect(next.preferences).toMatchObject({ aiExecutablePaths: { opencode: executable }, aiShellEnvironment: false });
+    next.preferences.aiExecutablePaths.opencode = 'changed externally';
+    expect(next.preferences.aiExecutablePaths.opencode).toBe(executable);
+    await next.setPreferences({ aiExecutablePaths: { opencode: '' } });
+    const reset = new SettingsStore(file); await reset.load(); expect(reset.preferences.aiExecutablePaths).toEqual({});
+  });
+  it.each(['relative/bin', 'opencode --flag', '/absolute\ncommand', 'x'.repeat(4097)])('rejects invalid paths on writes without altering saved preferences', async (value) => {
+    const file = await settingsFile({}); const store = new SettingsStore(file); await store.load();
+    await expect(store.setPreferences({ aiExecutablePaths: { opencode: value } })).rejects.toMatchObject({ detail: { code: 'INVALID_ARGUMENT' } });
+    expect(store.preferences.aiExecutablePaths).toEqual({});
+  });
+});

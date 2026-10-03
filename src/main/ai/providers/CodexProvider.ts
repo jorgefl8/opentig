@@ -1,8 +1,8 @@
+import { detectionFailure, detectionFields, requireCandidate, runCandidate, selectCli } from '../cli-selection';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import type { AiHarnessStatus, AiModelOption } from '../../../shared/contracts';
-import { AiOperationError } from '../../../shared/errors';
 import { AI_PROVIDER_TIMEOUT_MS } from '../../../shared/ai-timeouts';
 import type { CliProcessRunner } from '../CliProcessRunner';
 import type { CliResolver } from '../CliResolver';
@@ -17,24 +17,24 @@ export class CodexProvider implements AiProvider {
 
   async status(forceRefresh = false): Promise<AiHarnessStatus> {
     const checkedAt = new Date().toISOString();
-    const executable = await this.resolver.resolve('codex', forceRefresh);
-    if (!executable) return { id: this.id, label: 'Codex', availability: 'error', installed: false, authStatus: 'unknown', message: 'Install Codex CLI to use this harness.', models: [DEFAULT_MODEL], checkedAt };
-    const version = await this.runner.run(executable, ['--version']);
-    const login = await this.runner.run(executable, ['login', 'status']);
+    const detected = await selectCli(this.resolver, this.runner, 'codex', { forceRefresh });
+    const failure = detectionFailure(detected, { id: this.id, label: 'Codex', models: [DEFAULT_MODEL], checkedAt });
+    if (failure) return failure;
+    const executable = requireCandidate(detected, this.id);
+    const login = await runCandidate(this.runner, executable, ['login', 'status']);
     if (login.exitCode !== 0 || !/logged in/i.test(`${login.stdout}\n${login.stderr}`)) {
-      return { id: this.id, label: 'Codex', availability: 'error', installed: true, authStatus: 'unauthenticated', version: version.stdout.trim() || version.stderr.trim(), message: 'Run codex login.', models: [DEFAULT_MODEL], checkedAt };
+      return { ...detectionFields(detected), id: this.id, label: 'Codex', availability: 'error', installed: true, authStatus: 'unauthenticated', version: detected.version ?? '', message: 'Run codex login.', models: [DEFAULT_MODEL], checkedAt };
     }
-    const catalog = await this.runner.run(executable, ['debug', 'models', '--bundled']);
+    const catalog = await runCandidate(this.runner, executable, ['debug', 'models', '--bundled']);
     const models = catalog.exitCode === 0 ? parseCodexModels(catalog.stdout) : [DEFAULT_MODEL];
     return {
-      id: this.id, label: 'Codex', availability: models.length > 1 ? 'ready' : 'warning', installed: true, authStatus: 'authenticated',
-      version: version.stdout.trim() || version.stderr.trim(), ...(models.length > 1 ? {} : { message: 'Available; the model catalog could not be verified.' }), models, checkedAt,
+      ...detectionFields(detected), id: this.id, label: 'Codex', availability: models.length > 1 ? 'ready' : 'warning', installed: true, authStatus: 'authenticated',
+      version: detected.version ?? '', ...(models.length > 1 ? {} : { message: 'Available; the model catalog could not be verified.' }), models, checkedAt,
     };
   }
 
   async generate(input: ProviderGenerateInput) {
-    const executable = await this.resolver.resolve('codex');
-    if (!executable) throw new AiOperationError({ code: 'AI_CLI_NOT_FOUND', operation: 'codex-generate', harness: this.id, message: 'Codex is not installed.' });
+    const executable = requireCandidate(await selectCli(this.resolver, this.runner, 'codex', { runOptions: { signal: input.signal } }), this.id);
     const temporary = await mkdtemp(path.join(os.tmpdir(), 'opentig-codex-'));
     const schemaPath = path.join(temporary, 'schema.json');
     const outputPath = path.join(temporary, 'output.json');
@@ -46,7 +46,7 @@ export class CodexProvider implements AiProvider {
       const args = ['exec', '--json', '--ephemeral', '--skip-git-repo-check', '-s', 'read-only'];
       if (input.model !== 'default') args.push('--model', input.model);
       args.push('--config', 'model_reasoning_effort="low"', '--output-schema', schemaPath, '--output-last-message', outputPath, '-');
-      const result = await this.runner.run(executable, args, { cwd: input.repositoryPath, stdin: input.prompt, timeoutMs: AI_PROVIDER_TIMEOUT_MS, signal: input.signal, removeEnv: ['OPENAI_API_KEY'] });
+      const result = await runCandidate(this.runner, executable, args, { cwd: input.repositoryPath, stdin: input.prompt, timeoutMs: AI_PROVIDER_TIMEOUT_MS, signal: input.signal, removeEnv: ['OPENAI_API_KEY'] });
       requireSuccess(result, this.id, 'codex-generate');
       return { output: parseJsonPayload(await readFile(outputPath, 'utf8')), usage: codexUsage(result.stdout) };
     } finally {

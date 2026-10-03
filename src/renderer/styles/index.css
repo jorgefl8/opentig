@@ -889,6 +889,12 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   .settings-general-preview svg { width: 13px; height: 13px; }
   .settings-general-preview code { overflow: auto; font-family: var(--opentig-font-mono); font-size: 11px; white-space: nowrap; }
   .settings-general-preview code > span { color: var(--primary); }
+  .ai-executable-settings summary { cursor: pointer; font-size: 12px; font-weight: 600; margin-bottom: 16px; }
+  .ai-executable-settings .settings-field + .settings-field { margin-top: 16px; }
+  .ai-executable-input { width: 100%; min-width: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px 10px; background: var(--background); color: var(--foreground); font-family: var(--font-mono); font-size: 11px; }
+  .ai-executable-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+  .ai-executable-diagnostic { display: grid; gap: 5px; font-size: 11px; color: var(--muted-foreground); }
+  .ai-executable-diagnostic code { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--foreground); }
   .ai-settings-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
   .ai-harness-list { display: grid; gap: 8px; margin-top: 14px; }
   .ai-harness-card { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 5px 12px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--background); padding: 12px 13px; text-align: left; transition: border-color .14s ease, background-color .14s ease, box-shadow .14s ease; }

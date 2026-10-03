@@ -54,7 +54,7 @@ export async function createOpenTigRuntime(
   const fileHistory = new FileOperationHistory(files, trash);
   const search = new SearchService(git, repositories, files, fileHistory);
   const operations = new GitRepositoryOperations(git, repositories, files);
-  const cliResolver = new CliResolver();
+  const cliResolver = new CliResolver(undefined, () => settings.preferences);
   const cliRunner = new CliProcessRunner();
   const providers = [
     new CodexProvider(cliResolver, cliRunner),
@@ -64,7 +64,7 @@ export async function createOpenTigRuntime(
   ];
   const aiLog = new AiLogStore(options.aiLogPath);
   await aiLog.load();
-  const ai = new CommitMessageService(operations, providers, aiLog);
+  const ai = new CommitMessageService(operations, providers, aiLog, () => cliResolver.invalidate());
   const prDrafts = new PullRequestDraftService(operations, providers, aiLog);
   const github = new GitHubService(cliResolver, cliRunner, git, repositories);
   let runtime: OpenTigRuntime | null = null;

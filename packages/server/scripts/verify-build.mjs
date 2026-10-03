@@ -39,7 +39,7 @@ export async function verifyServerBuild(serverDist) {
     const source = await readFile(modulePath, 'utf8');
     const relativeModule = path.relative(serverDist, modulePath).replace(/\\/g, '/');
     const isClientModule = relativeModule.startsWith('client/');
-    if (/[A-Za-z]:[\\/]Users[\\/]/i.test(source) || source.includes('/home/') || source.includes('/Users/')) {
+    if (containsPersonalPath(source)) {
       throw new Error(`Absolute checkout path in ${path.relative(serverDist, modulePath)}.`);
     }
     for (const specifier of importedSpecifiers(source)) {
@@ -90,4 +90,10 @@ function importedSpecifiers(source) {
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
   await verifyServerBuild(path.join(packageRoot, 'dist'));
+}
+
+/** Homebrew's documented Linux system prefix is not a developer home. */
+export function containsPersonalPath(source) {
+  const checked = source.replace(/(["'])\/home\/linuxbrew\/\.linuxbrew\/bin\1/g, '""');
+  return /[A-Za-z]:[\\/]Users[\\/]/i.test(checked) || checked.includes('/home/') || checked.includes('/Users/');
 }
