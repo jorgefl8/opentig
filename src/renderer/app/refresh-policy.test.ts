@@ -36,6 +36,12 @@ describe('refreshOperationsForScope', () => {
 });
 
 describe('refresh scheduling', () => {
+  it('preserves a manual remote check when watcher refreshes are coalesced', () => {
+    expect(mergeRefreshRequests(
+      { manual: true, scope: 'unknown', background: false, view: 'changes' },
+      { scope: 'refs', background: true, view: 'history' },
+    )).toEqual({ manual: true, scope: 'unknown', background: false, view: 'history' });
+  });
   it('coalesces scopes without hiding a foreground refresh', () => {
     expect(mergeRefreshRequests(
       { scope: 'worktree', background: true, view: 'changes' },

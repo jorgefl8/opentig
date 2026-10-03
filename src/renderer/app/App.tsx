@@ -54,6 +54,7 @@ import { fileCutTransferId, writeClipboardText, writeFileTransfer } from '@/lib/
 import { needsBranchPublication, projectPullBlockedCopy, projectPullSuccessCopy, projectPushBlockedCopy, projectPushSuccessCopy, pullSuccessCopy, repositorySyncLoadingToast, type ProjectSyncAction } from '@/features/repositories/project-sync';
 import { aiModelLabel, harnessLabel } from '@/features/ai/harness-copy';
 import { DesktopUpdateIndicator } from '@/features/settings/UpdateSettings';
+import { updatesApi } from '@/features/settings/update-api';
 import type { SettingsSection } from '@/features/settings/SettingsDialog';
 
 const Viewer = lazy(() => import('@/features/viewer/Viewer'));
@@ -69,6 +70,7 @@ type DirtyCloseChoice = 'save' | 'discard' | 'cancel';
 const SIDEBAR_VIEWS = ['changes', 'files', 'history', 'prs', 'search'] as const;
 type SidebarView = (typeof SIDEBAR_VIEWS)[number];
 interface AppRefreshOptions {
+  manual?: boolean;
   background?: boolean;
   scope?: RepositoryChangeScope;
 }
@@ -552,11 +554,22 @@ export default function App() {
   }, [refreshFileHistoryState, repository]);
 
   const performRefresh = useCallback(async (repositoryId: string, request: RefreshRequest) => {
-    const { background, scope, view: refreshView } = request;
+    const { background, manual, scope, view: refreshView } = request;
     const operations = refreshOperationsForScope(scope, refreshView);
     const resources = queryResourcesForScope(scope, refreshView);
-    if (!background) setBusy('refresh');
+    if (!background) { busyRef.current = 'refresh'; setBusy('refresh'); }
     try {
+      if (manual) {
+        // Explicit checks bypass the automatic interval; update state stays in
+        // the update icon and Settings even if fetching Git fails.
+        void updatesApi().check().catch(() => undefined);
+        try {
+          const result = await opentig.refs.fetch(repositoryId);
+          if (result.status === 'failed') throw new Error(result.message);
+        } catch (reason) {
+          if (repositoryRef.current?.id === repositoryId) reportError('Could not fetch remote changes', reason);
+        }
+      }
       await Promise.all(resources.map((resource) => appQueryClient.invalidateQueries({
         queryKey: resource === 'status' ? queryKeys.status(repositoryId)
           : resource === 'branches' ? queryKeys.branches(repositoryId)
@@ -596,7 +609,7 @@ export default function App() {
     } catch (reason) {
       if (repositoryRef.current?.id === repositoryId) reportError('Could not refresh', reason);
     } finally {
-      if (!background && repositoryRef.current?.id === repositoryId) setBusy(null);
+      if (!background && repositoryRef.current?.id === repositoryId) { busyRef.current = null; setBusy(null); }
     }
   }, [applyFilesSnapshot, appQueryClient]);
   // One cycle per repository folds watcher bursts and explicit mutation
@@ -605,6 +618,7 @@ export default function App() {
     if (!repository) return Promise.resolve();
     const repositoryId = repository.id;
     const request: RefreshRequest = {
+      ...(options?.manual ? { manual: true } : {}),
       background: options?.background === true,
       scope: options?.scope ?? 'unknown',
       view,
@@ -990,7 +1004,10 @@ export default function App() {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (matchesCombo(event, shortcuts.openRepository)) { event.preventDefault(); void openRepository(); }
-      if (matchesCombo(event, shortcuts.refresh)) { event.preventDefault(); void refresh(); }
+      if (matchesCombo(event, shortcuts.refresh)) {
+        event.preventDefault();
+        if (!event.repeat && !busyRef.current && !repositorySyncOperationsRef.current.has(repository?.id ?? '')) void refresh({ manual: true });
+      }
       if (repository && event.ctrlKey && !event.altKey && !event.metaKey) {
         const section = SIDEBAR_VIEWS[Number(event.key) - 1];
         if (section) { event.preventDefault(); setView(section); }
@@ -2076,7 +2093,7 @@ export default function App() {
           onRecent={selectRecent}
           onBranch={switchBranch}
           onWorktree={switchWorktree}
-          onRefresh={() => void refresh()}
+          onRefresh={() => void refresh({ manual: true })}
           onPull={() => void pullUpdates()}
           onPush={() => void pushUpdates()}
           onRepositorySync={syncRepository}

@@ -12,6 +12,7 @@ export interface RefreshOperations {
 }
 
 export interface RefreshRequest {
+  manual?: boolean;
   scope: RepositoryChangeScope;
   background: boolean;
   view: RefreshView;
@@ -19,6 +20,7 @@ export interface RefreshRequest {
 
 export function mergeRefreshRequests(left: RefreshRequest, right: RefreshRequest): RefreshRequest {
   return {
+    ...(left.manual || right.manual ? { manual: true } : {}),
     scope: mergeRepositoryChangeScopes(left.scope, right.scope),
     background: left.background && right.background,
     view: right.view,
