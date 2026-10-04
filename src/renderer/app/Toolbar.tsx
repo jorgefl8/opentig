@@ -386,15 +386,15 @@ export function Toolbar(props: ToolbarProps) {
       {branchControl}
       {props.branchPullRequest && (
         <Tooltip>
-          <TooltipTrigger render={<Button variant="ghost" size="sm" className={`toolbar-branch-pr${props.branchPullRequest.isDraft ? ' draft' : ''}`} aria-label={`Open pull request #${props.branchPullRequest.number} on GitHub`} onClick={() => openOnGitHub(props.branchPullRequest!.url)} />}>
+          <TooltipTrigger render={<button type="button" className={`toolbar-branch-pr${props.branchPullRequest.isDraft ? ' draft' : ''}`} aria-label={`Open pull request #${props.branchPullRequest.number} on GitHub`} onClick={() => openOnGitHub(props.branchPullRequest!.url)} />}>
             <IconGitPullRequest aria-hidden="true" />
-            <span>PR #{props.branchPullRequest.number}</span>
+            <span className="toolbar-pr-label">PR #{props.branchPullRequest.number}</span>
             {props.branchPullRequest.isDraft && <span className="toolbar-pr-draft">Draft</span>}
             <IconExternalLink aria-hidden="true" />
           </TooltipTrigger>
-          <TooltipContent>
-            <span className="block">{props.branchPullRequest.title}</span>
-            <span className="block text-muted-foreground">{props.branchPullRequest.isDraft ? 'Draft' : 'Open'} · Open on GitHub</span>
+          <TooltipContent side="bottom" align="end" sideOffset={8} className="flex-col items-start gap-1 text-left">
+            <span className="toolbar-pr-tooltip-title">{props.branchPullRequest.title}</span>
+            <span className="toolbar-pr-tooltip-meta">{props.branchPullRequest.isDraft ? 'Draft' : 'Open'} · View on GitHub</span>
           </TooltipContent>
         </Tooltip>
       )}

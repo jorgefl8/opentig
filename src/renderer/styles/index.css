@@ -286,9 +286,15 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   .toolbar-brand { display: flex; flex: none; align-items: center; gap: 7px; color: var(--foreground); font-size: 13px; font-weight: 760; letter-spacing: -.02em; }
   .toolbar-brand svg { width: 18px; height: 20px; flex: none; }
   .toolbar-spacer { flex: 1; }
-  .toolbar-branch-pr { flex: none; color: var(--success); }
+  .toolbar-branch-pr { display: inline-flex; flex: none; min-height: 28px; align-items: center; gap: 4px; padding: 0 3px; background: transparent; color: var(--success); font-size: 11px; font-weight: 500; }
+  .toolbar-branch-pr > svg { width: 14px; height: 14px; flex: none; }
+  .toolbar-branch-pr > svg:last-child { width: 12px; height: 12px; }
+  .toolbar-branch-pr:hover .toolbar-pr-label { text-decoration: underline; text-underline-offset: 3px; }
+  .toolbar-branch-pr:focus-visible { border-radius: 3px; outline: 2px solid var(--primary); outline-offset: 3px; }
   .toolbar-branch-pr.draft { color: var(--muted-foreground); }
   .toolbar-pr-draft { font-size: 10px; }
+  .toolbar-pr-tooltip-title { line-height: 1.5; overflow-wrap: anywhere; }
+  .toolbar-pr-tooltip-meta { font-size: 11px; line-height: 1.4; opacity: .75; }
   /* The toolbar is a window drag region, and a drag region swallows wheel and
      pointer events. The strip opts out for itself, not only for its buttons, and
      stays content-sized so the spacer after it keeps the header draggable. */
