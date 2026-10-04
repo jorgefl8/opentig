@@ -23,6 +23,7 @@ export function MobileToolbar({ props, repositoryControl, worktreeControl, branc
   useEffect(() => { if (props.mobileBackLabel) backRef.current?.focus(); }, [props.mobileBackLabel]);
   const [filesOpen, setFilesOpen] = useState(false);
   const publish = needsBranchPublication(props.status);
+  const syncDisabled = Boolean(props.busy) || syncBusy || !props.status || props.status.readOnly || props.status.unborn || props.status.detached;
   const contextAction = (action: () => void) => { onContextOpen(false); action(); };
   return <>
     <header className="mobile-toolbar">
@@ -44,8 +45,8 @@ export function MobileToolbar({ props, repositoryControl, worktreeControl, branc
       </div>
       <div className="mobile-context-sync">
         <Button variant="outline" size="sm" disabled={Boolean(props.busy) || syncBusy} onClick={() => contextAction(props.onRefresh)}><IconRefresh />Refresh</Button>
-        <Button variant="outline" size="sm" disabled={Boolean(props.busy) || syncBusy || !props.status?.upstream || props.status.readOnly} onClick={() => contextAction(props.onPull)}><IconArrowDown />Pull{props.status?.behind ? ` (${props.status.behind})` : ''}</Button>
-        <Button variant="outline" size="sm" disabled={Boolean(props.busy) || syncBusy || !props.status || props.status.readOnly || props.status.unborn || props.status.detached} onClick={() => contextAction(props.onPush)}><IconArrowUp />{publish ? 'Publish' : 'Push'}{props.status?.ahead ? ` (${props.status.ahead})` : ''}</Button>
+        <Button variant="outline" size="sm" disabled={syncDisabled || !props.status?.upstream || !(props.status.behind > 0)} onClick={() => contextAction(props.onPull)}><IconArrowDown />Pull{props.status?.behind ? ` (${props.status.behind})` : ''}</Button>
+        <Button variant="outline" size="sm" disabled={syncDisabled || (!publish && !(props.status && props.status.ahead > 0))} onClick={() => contextAction(props.onPush)}><IconArrowUp />{publish ? 'Publish' : 'Push'}{props.status?.ahead ? ` (${props.status.ahead})` : ''}</Button>
       </div>
       <button className="mobile-sheet-action" onClick={() => contextAction(props.onOpen)}><IconPlus /><span>Open repository</span></button>
       {props.branchPullRequest && <button className="mobile-sheet-action" onClick={() => contextAction(() => openOnGitHub(props.branchPullRequest!.url))}><IconGitPullRequest /><span>Open PR #{props.branchPullRequest.number}</span></button>}
