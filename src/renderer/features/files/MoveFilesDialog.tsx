@@ -17,11 +17,11 @@ export function MoveFilesDialog({ entries, initialDirectory, revision, readOnly,
 }) {
   const [destination, setDestination] = useState(initialDirectory);
   const [moving, setMoving] = useState(false);
-  const { entries: level, failed } = useDirectoryLevel(destination, revision, onLoadDirectory);
+  const { entries: level, failed, refreshing } = useDirectoryLevel(destination, revision, onLoadDirectory);
   const sourcePaths = entries.map((entry) => entry.path);
   const folders = level?.filter((entry) => entry.type === 'directory'
     && !sourcePaths.some((source) => pathContains(source, entry.path))) ?? [];
-  const canMove = !readOnly && !moving && level !== null && !failed && canMovePathsToDirectory(sourcePaths, destination);
+  const canMove = !readOnly && !moving && !refreshing && level !== null && !failed && canMovePathsToDirectory(sourcePaths, destination);
   const move = async () => {
     if (!canMove) return;
     setMoving(true);

@@ -13,6 +13,7 @@ export function useDirectoryLevel(path: string, revision: number, load: (path: s
     );
     return () => { cancelled = true; };
   }, [path, revision, load, enabled]);
-  const current = enabled && level?.path === path && level.revision === revision;
-  return { entries: current ? level.entries : null, failed: current && level.failed };
+  // A background refresh must not unmount the list or reset its scroll position.
+  const current = enabled && level?.path === path;
+  return { entries: current ? level.entries : null, failed: current && level.failed, refreshing: !current || level.revision !== revision };
 }
