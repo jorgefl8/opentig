@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ComponentPropsWithoutRef } f
 import { createPortal } from 'react-dom';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
-  closestCenter, DndContext, DragOverlay, KeyboardSensor, PointerSensor, pointerWithin,
+  closestCenter, DndContext, DragOverlay, KeyboardSensor, pointerWithin,
   useDraggable, useDroppable, useSensor, useSensors, type CollisionDetection, type DragEndEvent, type DragOverEvent, type DragStartEvent,
 } from '@dnd-kit/core';
 import {
@@ -19,15 +19,23 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from '@/components/ui/context-menu';
-import { Dialog, DialogDescription, DialogPopup, DialogTitle } from '@/components/ui/dialog';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { getVsCodeFileIconUrl, getVsCodeFolderIconUrl } from '@/lib/vscode-icons';
 import { useMobileLayout } from '@/lib/use-mobile-layout';
+import { MouseDragSensor } from '@/lib/mouse-drag-sensor';
 import { useShortcuts } from '@/app/useShortcuts';
 import {
   canMovePathsToDirectory, canOpenPinnedDrop, fileHistoryShortcut, filterIgnoredEntries, findEntry, isEditableTarget, mergeLoadedDirectories,
   OPEN_FILES_DROP_HOST_ID, parentDirectory, pathContains, persistableExpandedPaths, reconcileExpandedPaths, replaceLoadedDirectoryLevels,
 } from './file-tree';
+
+import { NameDialog, type NameDialogState } from './NameDialog';
+import { MobileFilesView } from './MobileFilesView';
+
+export function FilesView(props: FilesViewProps) {
+  const mobile = useMobileLayout();
+  return mobile ? <MobileFilesView {...props} /> : <DesktopFilesView {...props} />;
+}
 
 const FILE_ROW_HEIGHT = 29;
 const TREE_PADDING_START = 6;
@@ -39,7 +47,7 @@ const STICKY_MAX_DEPTH = 6;
 
 type EntryKind = 'file' | 'directory';
 
-interface FilesViewProps {
+export interface FilesViewProps {
   active: boolean;
   initialExpandedPaths: readonly string[];
   files: FileTreeEntry[] | null;
@@ -75,10 +83,7 @@ interface VisibleFileRow {
   depth: number;
 }
 
-interface NameDialogState {
-  mode: 'rename' | 'new-file' | 'new-folder';
-  entry: FileTreeEntry;
-}
+
 
 interface FileDragData {
   sourcePaths: string[];
@@ -124,7 +129,7 @@ function targetDirectoryFor(entry: FileTreeEntry): string {
   return entry.type === 'directory' ? entry.path : parentDirectory(entry.path);
 }
 
-export function FilesView({
+function DesktopFilesView({
   active,
   initialExpandedPaths,
   files,
@@ -171,7 +176,7 @@ export function FilesView({
   const [scrollTop, setScrollTop] = useState(0);
   const [loadedDirectories, setLoadedDirectories] = useState<Map<string, FileTreeEntry[]>>(new Map());
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(MouseDragSensor, { activationConstraint: { distance: 5 } }),
     useSensor(KeyboardSensor),
   );
   const loadedDirectoriesRef = useRef(loadedDirectories);
@@ -982,72 +987,6 @@ function FileRow({
   );
 }
 
-function NameDialog({
-  state,
-  onClose,
-  onRename,
-  onCreate,
-}: {
-  state: NameDialogState | null;
-  onClose(): void;
-  onRename(entry: FileTreeEntry, newName: string): Promise<void>;
-  onCreate(targetDirectory: string, name: string, kind: EntryKind): Promise<void>;
-}) {
-  const [name, setName] = useState('');
-
-  useEffect(() => {
-    if (!state) return;
-    setName(state.mode === 'rename' ? state.entry.name : '');
-  }, [state]);
-
-  if (!state) return null;
-
-  const isRename = state.mode === 'rename';
-  const kind: EntryKind = state.mode === 'new-folder' ? 'directory' : 'file';
-  const destination = targetDirectoryFor(state.entry);
-  const title = isRename ? 'Rename' : kind === 'directory' ? 'New Folder' : 'New File';
-  const trimmed = name.trim();
-  const canSubmit = trimmed.length > 0 && !/[\\/]/.test(trimmed) && !(isRename && trimmed === state.entry.name);
-
-  const submit = () => {
-    if (!canSubmit) return;
-    if (isRename) void onRename(state.entry, trimmed);
-    else void onCreate(destination, trimmed, kind);
-    onClose();
-  };
-
-  return (
-    <Dialog open onOpenChange={(next) => { if (!next) onClose(); }}>
-      <DialogPopup className="name-dialog">
-        <form className="name-dialog-content" onSubmit={(event) => { event.preventDefault(); submit(); }}>
-          <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>
-            {isRename
-              ? <>Enter a new name for <code>{state.entry.name}</code>.</>
-              : <>Create a new {kind === 'directory' ? 'folder' : 'file'} in <code>{destination || 'the repository root'}</code>.</>}
-          </DialogDescription>
-          <input
-            autoFocus
-            className="name-dialog-input"
-            value={name}
-            maxLength={255}
-            placeholder={isRename ? 'New name' : kind === 'directory' ? 'Folder name' : 'File name'}
-            onChange={(event) => setName(event.target.value)}
-            onFocus={(event) => {
-              if (!isRename) return;
-              const dot = state.entry.name.lastIndexOf('.');
-              event.target.setSelectionRange(0, dot > 0 ? dot : state.entry.name.length);
-            }}
-          />
-          <div className="name-dialog-actions">
-            <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
-            <Button type="submit" disabled={!canSubmit}>{isRename ? 'Rename' : 'Create'}</Button>
-          </div>
-        </form>
-      </DialogPopup>
-    </Dialog>
-  );
-}
 
 function VsCodeTreeIcon({ path, type, expanded = false }: { path: string; type: 'file' | 'directory'; expanded?: boolean }) {
   const src = type === 'file' ? getVsCodeFileIconUrl(path) : getVsCodeFolderIconUrl(path, expanded);

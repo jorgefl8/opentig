@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from 'react';
 
 // Keep in sync with the phone breakpoint in styles/mobile.css.
-const query = '(max-width: 767px)';
+const query = '(max-width: 767px), (pointer: coarse) and (max-width: 1100px) and (max-height: 500px)';
 const subscribe = (onChange: () => void) => {
   const media = window.matchMedia(query);
   media.addEventListener('change', onChange);
