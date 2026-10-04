@@ -306,6 +306,7 @@
 .mobile-folder-location { display: flex; gap: 7px; align-items: center; min-height: 44px; padding: 0 8px 8px; border-bottom: 1px solid var(--border); }
 .mobile-folder-location span { min-width: 0; overflow-wrap: anywhere; font-size: 12px; }
 .mobile-destination-list { max-height: 35dvh; overflow-y: auto; overscroll-behavior: contain; }
+.mobile-destination-list .mobile-sheet-action > img { width: 22px; height: 22px; flex: none; }
 .mobile-context-selectors { display: grid; gap: 12px; padding: 4px 8px 16px; }
 .mobile-context-selectors > div { display: grid; gap: 6px; color: var(--muted-foreground); font-size: 11px; }
 .mobile-context-selectors [data-slot="combobox-trigger"] { width: 100%; max-width: none; min-height: 44px; color: var(--foreground); }
