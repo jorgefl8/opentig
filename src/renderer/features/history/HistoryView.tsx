@@ -32,7 +32,7 @@ export function HistoryView({ repositoryId, upstream, readOnly, operation, canPu
   const [grouped, setGrouped] = useState(false);
   const [search, setSearch] = useState('');
   const [matchIndex, setMatchIndex] = useState(-1);
-  const rowHeight = mobile ? 68 : compact ? 42 : 56;
+  const rowHeight = mobile ? 52 : compact ? 42 : 56;
   // Search temporarily reveals grouped commits; it never removes graph context.
   const rows = useMemo(() => historyRows(commits ?? [], grouped && !search.trim()), [commits, grouped, search]);
   const graph = useMemo(() => buildCommitGraph(rows.map(({ commit, parentOids }) => ({ oid: commit.oid, parentOids, color: historyColor(commit) }))), [rows]);

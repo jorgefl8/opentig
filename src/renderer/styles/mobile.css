@@ -238,10 +238,12 @@
   html .quick-open-result { min-height: 48px; }
   html .quick-open-hints { display: none; }
 
-  html .history-toolbar { padding: 6px 12px; flex-wrap: wrap; gap: 4px; }
-  html .history-search { flex: 1 1 calc(100% - 48px); min-height: 44px; }
-  html .history-option { min-height: 40px; padding: 4px 8px; }
-  html .history-list .commit-header { padding-block: 8px; }
+  html .history-toolbar { padding: 4px 8px; flex-wrap: nowrap; gap: 4px; }
+  html .history-search { flex: 1; min-width: 0; min-height: 40px; }
+  html .history-option { min-height: 40px; padding: 4px 6px; }
+  html .history-next-match { width: 32px; height: 40px; }
+  html .history-list .commit-header { padding-block: 4px; }
+  html .history-list .commit-main { padding: 0; }
   html .history-list .commit-subject { font-size: 13px; }
   html .history-list .commit-meta { font-size: 11px; height: 18px; }
   html .pull-item { padding: 14px 12px; min-height: 76px; }
