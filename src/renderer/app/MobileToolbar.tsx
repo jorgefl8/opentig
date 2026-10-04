@@ -38,9 +38,9 @@ export function MobileToolbar({ props, repositoryControl, worktreeControl, branc
     </header>
     <MobileSheet open={contextOpen} onOpenChange={onContextOpen} title="Repository" description="Switch checkout or manage the current repository.">
       <div className="mobile-context-selectors">
-        <label>Repository{repositoryControl}</label>
-        <label>Branch{branchControl}</label>
-        <label>Worktree{worktreeControl}</label>
+        <div><span>Repository</span>{repositoryControl}</div>
+        <div><span>Branch</span>{branchControl}</div>
+        <div><span>Worktree</span>{worktreeControl}</div>
       </div>
       <div className="mobile-context-sync">
         <Button variant="outline" size="sm" disabled={Boolean(props.busy) || syncBusy} onClick={() => contextAction(props.onRefresh)}><IconRefresh />Refresh</Button>

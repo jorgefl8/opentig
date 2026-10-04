@@ -307,7 +307,7 @@
 .mobile-folder-location span { min-width: 0; overflow-wrap: anywhere; font-size: 12px; }
 .mobile-destination-list { max-height: 35dvh; overflow-y: auto; overscroll-behavior: contain; }
 .mobile-context-selectors { display: grid; gap: 12px; padding: 4px 8px 16px; }
-.mobile-context-selectors label { display: grid; gap: 6px; color: var(--muted-foreground); font-size: 11px; }
+.mobile-context-selectors > div { display: grid; gap: 6px; color: var(--muted-foreground); font-size: 11px; }
 .mobile-context-selectors [data-slot="combobox-trigger"] { width: 100%; max-width: none; min-height: 44px; color: var(--foreground); }
 .mobile-context-sync { display: flex; gap: 6px; padding: 0 8px 14px; border-bottom: 1px solid var(--border); margin-bottom: 6px; }
 .mobile-context-sync button { flex: 1; }
