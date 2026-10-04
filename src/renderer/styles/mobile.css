@@ -247,7 +247,9 @@
   html .pull-item { padding: 14px 12px; min-height: 76px; }
   html .pull-title { white-space: normal; font-size: 13px; line-height: 1.6; }
   html .pull-meta { font-size: 11px; flex-wrap: wrap; }
-  html .pulls-toolbar { flex-wrap: wrap; gap: 6px; padding: 6px 12px; }
+  html .pulls-toolbar { height: auto; min-height: 52px; flex-wrap: nowrap; gap: 6px; padding: 5px 12px; }
+  html .pulls-toolbar button { height: 40px; min-height: 40px; }
+  html .pulls-toolbar .change-action-button { width: 40px; min-width: 40px; }
   html [data-slot="dialog-popup"].mobile-sheet { top: auto; bottom: max(0px, calc(100dvh - var(--mobile-viewport-height, 100dvh) - var(--mobile-viewport-top, 0px))); left: 0; width: 100%; max-height: calc(var(--mobile-viewport-height, 100dvh) - env(safe-area-inset-top) - 16px); border-radius: 18px 18px 0 0; border-bottom: 0; padding-bottom: env(safe-area-inset-bottom); overflow: hidden; }
 
   html .welcome { height: 100%; justify-content: flex-start; overflow-y: auto; padding: max(40px, env(safe-area-inset-top)) 20px max(24px, env(safe-area-inset-bottom)); }
