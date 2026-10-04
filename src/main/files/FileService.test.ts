@@ -16,6 +16,38 @@ const directories: string[] = [];
 afterEach(async () => Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true, maxRetries: 3 }))));
 
 describe('FileService', () => {
+  it('reads the repository root and ordinary folders with normalized paths and child ignore flags', async () => {
+    const fixture = await createFixture();
+    await writeFile(path.join(fixture.work, '.gitignore'), '.env*\ncache/\nsrc/*.log\n');
+    await mkdir(path.join(fixture.work, 'cache'));
+    await mkdir(path.join(fixture.work, 'src'));
+    await writeFile(path.join(fixture.work, '.env.local'), 'sample\n');
+    await writeFile(path.join(fixture.work, 'src', 'app.ts'), 'export {};\n');
+    await writeFile(path.join(fixture.work, 'src', 'debug.log'), 'sample\n');
+
+    const root = await fixture.files.listDirectory(fixture.repositoryId, '');
+    expect(root.find((entry) => entry.path === 'cache')).toMatchObject({ type: 'directory', ignored: true });
+    expect(root.find((entry) => entry.path === '.env.local')).toMatchObject({ type: 'file', ignored: true });
+    expect(root.find((entry) => entry.path === 'tracked.txt')).not.toHaveProperty('ignored');
+    expect(root.map((entry) => entry.path)).not.toContain('.git');
+    expect(root.every((entry) => !entry.path.startsWith('./'))).toBe(true);
+
+    const src = await fixture.files.listDirectory(fixture.repositoryId, 'src');
+    expect(src.find((entry) => entry.path === 'src/app.ts')).not.toHaveProperty('ignored');
+    expect(src.find((entry) => entry.path === 'src/debug.log')).toMatchObject({ type: 'file', ignored: true });
+
+    // A force-tracked file inside an ignored folder must remain reachable when
+    // the user hides ignored files, just as it is in the full desktop tree.
+    await writeFile(path.join(fixture.work, 'cache', 'keep.ts'), 'export {};\n');
+    await writeFile(path.join(fixture.work, 'cache', 'ignored.log'), 'sample\n');
+    await git(fixture.work, ['add', '-f', 'cache/keep.ts']);
+    const rootWithTrackedChild = await fixture.files.listDirectory(fixture.repositoryId, '');
+    expect(rootWithTrackedChild.find((entry) => entry.path === 'cache')).not.toHaveProperty('ignored');
+    const cache = await fixture.files.listDirectory(fixture.repositoryId, 'cache');
+    expect(cache.find((entry) => entry.path === 'cache/keep.ts')).not.toHaveProperty('ignored');
+    expect(cache.find((entry) => entry.path === 'cache/ignored.log')).toMatchObject({ ignored: true });
+  });
+
   it('includes physical root and nested empty directories but excludes Git metadata', async () => {
     const fixture = await createFixture();
     await mkdir(path.join(fixture.work, 'empty-root'));

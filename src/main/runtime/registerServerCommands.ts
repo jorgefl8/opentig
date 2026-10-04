@@ -127,7 +127,7 @@ export function registerServerCommands(
   ));
   handle(IPC.repositoryDirectoryEntries, 'directory-entries', (id, directoryPath) => services.files.listDirectory(
     stringArg(id, 'directory-entries', 64),
-    stringArg(directoryPath, 'directory-entries'),
+    directoryPath === '' ? '' : stringArg(directoryPath, 'directory-entries'),
   ));
   handle(IPC.repositoryReadFile, 'read-file', (id, filePath, allowLarge) => services.files.read(stringArg(id, 'read-file', 64), stringArg(filePath, 'read-file'), allowLarge === true));
   handle(IPC.repositoryReadImage, 'read-image', (id, filePath) => services.files.readImage(

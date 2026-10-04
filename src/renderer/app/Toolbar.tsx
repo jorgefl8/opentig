@@ -24,10 +24,14 @@ import type { SettingsSection } from '@/features/settings/SettingsDialog';
 import { normalizeRepositoryKey } from '../../shared/repository-projects';
 import { opentig } from '@/lib/opentig-api';
 import { useShortcuts } from './useShortcuts';
+import { useMobileLayout } from '@/lib/use-mobile-layout';
+import { MobileToolbar } from './MobileToolbar';
 import { BranchCombobox } from './BranchCombobox';
 import { openOnGitHub } from '@/features/pulls/gh-utils';
 
 export interface ToolbarProps {
+  mobileBackLabel?: string | undefined;
+  onMobileBack?(): void;
   repository: RepositoryInfo; recent: BootstrapData['recentRepositories']; repositoryProjects: RepositoryProject[]; status: RepositoryStatus | null;
   branches: BranchInfo[]; worktrees: WorktreeInfo[]; preferences: Preferences; busy: string | null;
   githubInfo: GitHubRepositoryInfo | null;
@@ -56,6 +60,8 @@ const RepositoryProjectsDialog = lazy(() => import('@/features/repositories/Repo
 
 export function Toolbar(props: ToolbarProps) {
   const { onRecent } = props;
+  const mobile = useMobileLayout();
+  const [mobileContextOpen, setMobileContextOpen] = useState(false);
   const publishBranch = needsBranchPublication(props.status);
   const shortcuts = useShortcuts();
   const repoSwitcherKey = shortcuts.repoSwitcher.toLowerCase();
@@ -68,7 +74,7 @@ export function Toolbar(props: ToolbarProps) {
   const repositoryNumberTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const repositoryStatusVersions = useRef<Map<string, number>>(new Map());
   const [refsBusy, setRefsBusy] = useState(false);
-  const openRefsManager = (tab: LocalRefsTab) => { setRefsTab(tab); setRefsOpen(true); };
+  const openRefsManager = (tab: LocalRefsTab) => { setMobileContextOpen(false); setRefsTab(tab); setRefsOpen(true); };
   const currentWorktree = props.worktrees.find((item) => samePath(item.path, props.repository.path));
   const picker = useMemo(() => buildRepositoryPickerModel(props.recent, props.repositoryProjects), [props.recent, props.repositoryProjects]);
   const visibleRepositories = useMemo(() => getRepositoryPickerDisplayOrder(picker), [picker]);
@@ -165,6 +171,7 @@ export function Toolbar(props: ToolbarProps) {
         );
         if (projectsOpen || refsOpen || props.settingsOpen || anotherPopupIsOpen) return;
         event.preventDefault();
+        if (mobile) setMobileContextOpen(true);
         setRepositorySelectOpen(true);
         return;
       }
@@ -211,7 +218,7 @@ export function Toolbar(props: ToolbarProps) {
       window.removeEventListener('keydown', onKeyDown, true);
       clearRepositoryNumberShortcut();
     };
-  }, [clearRepositoryNumberShortcut, projectsOpen, props.settingsOpen, refsOpen, repoSwitcherKey, repositorySelectOpen, selectRepositoryAt, visibleRepositories]);
+  }, [mobile, clearRepositoryNumberShortcut, projectsOpen, props.settingsOpen, refsOpen, repoSwitcherKey, repositorySelectOpen, selectRepositoryAt, visibleRepositories]);
 
   const repositoryItem = (group: RepositoryOption, projectName: string | null = null): SearchablePickerItem => {
     const counts = repositorySyncCounts.get(group.recent.id);
@@ -266,12 +273,7 @@ export function Toolbar(props: ToolbarProps) {
       </>,
     };
   };
-  return (
-    <header className="toolbar">
-      <div className="toolbar-brand" aria-label={appDisplayName}>
-        <OpenTigMark />
-        <span>{appDisplayName}</span>
-      </div>
+  const repositoryControl = (
       <SearchablePicker
         groups={[
           ...picker.projectSections.map((section) => ({
@@ -286,7 +288,7 @@ export function Toolbar(props: ToolbarProps) {
         onSearchChange={clearRepositoryNumberShortcut}
         focusSearch={false}
         value={currentRepositoryKey}
-        onValueChange={(key) => onRecent(picker.repositories.find((group) => group.key === key)?.recent.id ?? null)}
+        onValueChange={(key) => { setMobileContextOpen(false); onRecent(picker.repositories.find((group) => group.key === key)?.recent.id ?? null); }}
         label="Select project or repository"
         triggerLabel={props.repository.repositoryName}
         icon={<RepositoryFaviconImage src={favicons.get(currentRepositoryKey)} />}
@@ -295,13 +297,49 @@ export function Toolbar(props: ToolbarProps) {
         triggerClassName="repo-select max-w-[240px]"
         align="start"
         placeholder="Search repositories…"
-        management={{ label: 'Manage projects…', onClick: () => setProjectsOpen(true) }}
+        management={{ label: 'Manage projects…', onClick: () => { setMobileContextOpen(false); setProjectsOpen(true); } }}
       />
-      {projectsOpen && (
-        <Suspense fallback={null}>
-          <RepositoryProjectsDialog open={projectsOpen} onOpenChange={setProjectsOpen} projects={props.repositoryProjects} repositories={picker.repositories} onOrganizationChange={props.onOrganizationChange} onForgetRepository={props.onForgetRepository} onRelocateRepository={props.onRelocateRepository} />
-        </Suspense>
-      )}
+  );
+  const worktreeControl = (
+      <SearchablePicker
+        groups={[{ id: 'worktrees', label: 'Worktrees', items: props.worktrees.map((item) => ({
+          value: item.path,
+          label: item.path.split(/[\\/]/).pop() ?? item.path,
+          description: `${item.branch ?? 'Detached HEAD'}${item.locked ? ' · Locked' : item.prunable ? ' · Prunable' : item.bare ? ' · Bare' : ''}`,
+          search: item.path,
+          tooltip: item.path,
+          icon: <IconHierarchy2 />,
+          disabled: Boolean(item.locked || item.prunable || item.bare),
+        })) }]}
+        value={currentWorktree?.path ?? props.repository.path}
+        onValueChange={props.onWorktree}
+        label="Select worktree"
+        triggerLabel={currentWorktree?.path.split(/[\\/]/).pop() ?? props.repository.name}
+        icon={<IconHierarchy2 />}
+        triggerClassName="toolbar-worktree max-w-[190px]"
+        placeholder="Search worktrees…"
+        management={{ label: 'Manage worktrees…', onClick: () => openRefsManager('worktrees') }}
+        disabled={refsBusy}
+      />
+  );
+  const branchControl = (
+      <BranchCombobox
+        branches={props.branches}
+        currentLabel={props.status?.branch ?? 'Detached HEAD'}
+        disabled={props.status?.readOnly || refsBusy}
+        onBranch={props.onBranch}
+        onManage={() => openRefsManager('branches')}
+      />
+  );
+  return (
+    <>
+    {mobile ? <MobileToolbar props={props} repositoryControl={repositoryControl} worktreeControl={worktreeControl} branchControl={branchControl} favicon={favicons.get(currentRepositoryKey)} contextOpen={mobileContextOpen} onContextOpen={(open) => { setMobileContextOpen(open); if (!open) setRepositorySelectOpen(false); }} syncBusy={currentRepositorySyncBusy} /> : <header className="toolbar">
+      <div className="toolbar-brand" aria-label={appDisplayName}>
+        <OpenTigMark />
+        <span>{appDisplayName}</span>
+      </div>
+      {repositoryControl}
+
       <Tooltip>
         <TooltipTrigger render={<Button variant="ghost" size="icon-sm" onClick={props.onOpen} aria-label="Open repository" aria-keyshortcuts="Control+O" />}><IconPlus /></TooltipTrigger>
         <TooltipContent>Open repository (Ctrl+O)</TooltipContent>
@@ -344,33 +382,8 @@ export function Toolbar(props: ToolbarProps) {
           )}
         </div>
       )}
-      <SearchablePicker
-        groups={[{ id: 'worktrees', label: 'Worktrees', items: props.worktrees.map((item) => ({
-          value: item.path,
-          label: item.path.split(/[\\/]/).pop() ?? item.path,
-          description: `${item.branch ?? 'Detached HEAD'}${item.locked ? ' · Locked' : item.prunable ? ' · Prunable' : item.bare ? ' · Bare' : ''}`,
-          search: item.path,
-          tooltip: item.path,
-          icon: <IconHierarchy2 />,
-          disabled: Boolean(item.locked || item.prunable || item.bare),
-        })) }]}
-        value={currentWorktree?.path ?? props.repository.path}
-        onValueChange={props.onWorktree}
-        label="Select worktree"
-        triggerLabel={currentWorktree?.path.split(/[\\/]/).pop() ?? props.repository.name}
-        icon={<IconHierarchy2 />}
-        triggerClassName="toolbar-worktree max-w-[190px]"
-        placeholder="Search worktrees…"
-        management={{ label: 'Manage worktrees…', onClick: () => openRefsManager('worktrees') }}
-        disabled={refsBusy}
-      />
-      <BranchCombobox
-        branches={props.branches}
-        currentLabel={props.status?.branch ?? 'Detached HEAD'}
-        disabled={props.status?.readOnly || refsBusy}
-        onBranch={props.onBranch}
-        onManage={() => openRefsManager('branches')}
-      />
+      {worktreeControl}
+      {branchControl}
       {props.branchPullRequest && (
         <Tooltip>
           <TooltipTrigger render={<Button variant="ghost" size="sm" className={`toolbar-branch-pr${props.branchPullRequest.isDraft ? ' draft' : ''}`} aria-label={`Open pull request #${props.branchPullRequest.number} on GitHub`} onClick={() => openOnGitHub(props.branchPullRequest!.url)} />}>
@@ -384,6 +397,28 @@ export function Toolbar(props: ToolbarProps) {
             <span className="block text-muted-foreground">{props.branchPullRequest.isDraft ? 'Draft' : 'Open'} · Open on GitHub</span>
           </TooltipContent>
         </Tooltip>
+      )}
+
+      <Tooltip><TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Refresh" onClick={props.onRefresh} disabled={Boolean(props.busy) || currentRepositorySyncBusy} />}>{props.busy === 'refresh' ? <IconLoader4 className="animate-spin" /> : <IconRefresh />}</TooltipTrigger><TooltipContent>Refresh (Ctrl+R)</TooltipContent></Tooltip>
+      {props.githubInfo?.isGitHub && props.githubInfo.nameWithOwner && (
+        <Tooltip>
+          <TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Open repository on GitHub" onClick={() => openOnGitHub(`https://github.com/${props.githubInfo!.nameWithOwner}`)} />}>
+            <IconBrandGithub aria-hidden="true" />
+          </TooltipTrigger>
+          <TooltipContent>Open on GitHub · {props.githubInfo.nameWithOwner}</TooltipContent>
+        </Tooltip>
+      )}
+      <DesktopUpdateIndicator />
+      <Tooltip>
+        <TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Settings" onClick={() => props.onSettingsOpen(true)} />}><IconSettings /></TooltipTrigger>
+        <TooltipContent>Settings</TooltipContent>
+      </Tooltip>
+
+    </header>}
+      {projectsOpen && (
+        <Suspense fallback={null}>
+          <RepositoryProjectsDialog open={projectsOpen} onOpenChange={setProjectsOpen} projects={props.repositoryProjects} repositories={picker.repositories} onOrganizationChange={props.onOrganizationChange} onForgetRepository={props.onForgetRepository} onRelocateRepository={props.onRelocateRepository} />
+        </Suspense>
       )}
       {refsOpen && (
         <Suspense fallback={null}>
@@ -399,20 +434,6 @@ export function Toolbar(props: ToolbarProps) {
           />
         </Suspense>
       )}
-      <Tooltip><TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Refresh" onClick={props.onRefresh} disabled={Boolean(props.busy) || currentRepositorySyncBusy} />}>{props.busy === 'refresh' ? <IconLoader4 className="animate-spin" /> : <IconRefresh />}</TooltipTrigger><TooltipContent>Refresh (Ctrl+R)</TooltipContent></Tooltip>
-      {props.githubInfo?.isGitHub && props.githubInfo.nameWithOwner && (
-        <Tooltip>
-          <TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Open repository on GitHub" onClick={() => openOnGitHub(`https://github.com/${props.githubInfo!.nameWithOwner}`)} />}>
-            <IconBrandGithub aria-hidden="true" />
-          </TooltipTrigger>
-          <TooltipContent>Open on GitHub · {props.githubInfo.nameWithOwner}</TooltipContent>
-        </Tooltip>
-      )}
-      <DesktopUpdateIndicator />
-      <Tooltip>
-        <TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Settings" onClick={() => props.onSettingsOpen(true)} />}><IconSettings /></TooltipTrigger>
-        <TooltipContent>Settings</TooltipContent>
-      </Tooltip>
       {props.settingsOpen && (
         <Suspense fallback={null}>
           <SettingsDialog
@@ -425,6 +446,6 @@ export function Toolbar(props: ToolbarProps) {
           />
         </Suspense>
       )}
-    </header>
+    </>
   );
 }

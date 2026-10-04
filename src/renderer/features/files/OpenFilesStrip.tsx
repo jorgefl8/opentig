@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { IconX } from '@tabler/icons-react';
-import { closestCenter, DndContext, DragOverlay, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
+import { closestCenter, DndContext, DragOverlay, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { horizontalListSortingStrategy, SortableContext, useSortable } from '@dnd-kit/sortable';
+import { MouseDragSensor } from '@/lib/mouse-drag-sensor';
 import { CSS } from '@dnd-kit/utilities';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { OPEN_FILES_DROP_HOST_ID } from './file-tree';
@@ -29,7 +30,7 @@ export function OpenFilesStrip({ session, onActivate, onPin, onClose, onReorder 
   const [draggingPath, setDraggingPath] = useState<string | null>(null);
   const [reducedMotion, setReducedMotion] = useState(false);
   const labels = useMemo(() => tabLabels(session.tabs), [session.tabs]);
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+  const sensors = useSensors(useSensor(MouseDragSensor, { activationConstraint: { distance: 5 } }));
   const draggingTab = draggingPath ? session.tabs.find((tab) => tab.path === draggingPath) ?? null : null;
 
   const measure = useCallback(() => {
