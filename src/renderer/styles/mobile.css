@@ -48,6 +48,7 @@
   html[data-mobile-keyboard="true"] .mobile-navigation { display: none; }
   html [data-sileo-viewport][data-position^="bottom"] { bottom: calc(60px + env(safe-area-inset-bottom)); }
   html[data-mobile-keyboard="true"] [data-sileo-viewport][data-position^="bottom"] { bottom: env(safe-area-inset-bottom); }
+  html body:has(.mobile-sheet[data-open]) section[data-sileo-viewport] { z-index: 900; }
   html .mobile-workspace-actions { display: flex; min-height: 56px; flex: none; align-items: center; justify-content: space-between; gap: 4px; padding: 8px 16px 4px; font-size: 12px; }
   html .mobile-workspace-actions > span { color: var(--muted-foreground); }
   html .mobile-workspace-actions button { display: inline-flex; min-height: 40px; align-items: center; gap: 5px; border-radius: var(--radius-md); padding: 0 6px; }
