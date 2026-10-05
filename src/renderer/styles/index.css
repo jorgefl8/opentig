@@ -1863,7 +1863,7 @@ section[data-sileo-viewport] [data-sileo-title] { text-transform: none; }
     text-align: left;
     cursor: pointer;
   }
-  .diff-file-header:hover { background: var(--row-hover); }
+  .diff-file-header:hover { background: color-mix(in oklch, var(--foreground) 8%, var(--background)); }
   .diff-file-header:focus-visible { z-index: 4; outline: 2px solid var(--ring); outline-offset: -2px; }
   .diff-file-header-compact { min-height: 48px; cursor: default; padding-right: 8px; }
   .diff-file-header-compact:hover { background: color-mix(in oklch, var(--background) 94%, var(--muted)); }
