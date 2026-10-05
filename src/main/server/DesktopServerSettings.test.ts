@@ -108,7 +108,7 @@ describe('DesktopServerSettings', () => {
     const disabled = await openAuth(fixture.serverDirectory, false);
     expect(disabled.authenticate({ cookie })).toBeNull();
     await disabled.setBrowserAccessEnabled(true);
-    expect(disabled.authenticate({ cookie })).toBeNull();
+    expect(disabled.authenticate({ cookie })).toBeTruthy();
     await disabled.close();
   });
 

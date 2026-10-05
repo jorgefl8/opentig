@@ -103,7 +103,7 @@ export class OpenTigServer {
     if (!this.ready) throw new Error('Server is not ready.');
     const pending = this.options.auth.setBrowserAccessEnabled(enabled);
     if (!enabled) this.disconnectSessions(this.options.auth.sessions().filter((session) => session.kind !== 'desktop').map((session) => session.id));
-    this.disconnectSessions(await pending);
+    await pending;
   }
 
   async revokeAllSessions(): Promise<{ revokedCount: number; desktopCookie: string }> {

@@ -48,6 +48,8 @@ describe('authoritative HTTP server', () => {
     expect(await disconnected).toBe(1008);
     expect(fixture.server.origin).toBe(origin);
     expect(await sendAndReceive(desktopSocket, { type: 'ping' })).toEqual({ type: 'pong' });
+    const pausedSessions = await (await fetch(`${origin}/api/auth/sessions`, { headers: { Cookie: desktop } })).json();
+    expect(pausedSessions.sessions).toEqual(expect.arrayContaining([expect.objectContaining({ kind: 'browser', connected: false })]));
     expect(await (await fetch(`${origin}/api/auth/descriptor`, { headers: { Cookie: browser } })).json()).toMatchObject({ authenticated: false, browserAccessEnabled: false, pairingAvailable: false });
     for (const endpoint of ['/api/auth/sessions', '/api/updates', '/api/image/repository/file.png']) {
       expect((await fetch(`${origin}${endpoint}`, { headers: { Cookie: browser } })).status).toBe(401);
@@ -57,9 +59,12 @@ describe('authoritative HTTP server', () => {
     expect(() => fixture.server.createPairingLink()).toThrow('disabled');
     await expectWebSocketClose(origin, origin, browser, 1008);
     await fixture.server.setBrowserAccessEnabled(true);
-    expect((await fetch(`${origin}/api/auth/sessions`, { headers: { Cookie: browser } })).status).toBe(401);
+    expect((await fetch(`${origin}/api/auth/sessions`, { headers: { Cookie: browser } })).status).toBe(200);
+    const resumedSocket = await openWebSocket(origin, browser);
+    expect(await sendAndReceive(resumedSocket, { type: 'ping' })).toEqual({ type: 'pong' });
     const token = new URLSearchParams(new URL(pending.url).hash.slice(1)).get('token');
     expect((await postJson(`${origin}/api/auth/pair`, { token }, origin)).status).toBe(401);
+    resumedSocket.close();
     desktopSocket.close();
   });
   it('protects update actions with owner authentication and exact origin, and recovers a failed install', async () => {

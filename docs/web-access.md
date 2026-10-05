@@ -50,8 +50,13 @@ minutes.
 
 The **Web access** switch controls browser authorization, including localhost
 and tunnels. It is off by default for the desktop application. Turning it off
-immediately blocks browser access, disconnects and revokes paired browsers, and
-invalidates the pending pairing code. Turning it back on requires fresh pairing.
+immediately blocks browser access, disconnects paired browsers, and invalidates
+the pending pairing code. Paired devices and their session credentials stay saved,
+including across restarts while access is paused. Turning it back on restores
+access for sessions that are still valid; reload the browser or use **Check again**
+on `/pair`. Expired sessions, cleared cookies, and explicit revocation still
+require fresh pairing. Use **Revoke browsers** or revoke an individual device
+when you want to remove its saved access permanently.
 The private desktop session keeps working on the same server and port; changing
 this switch does not restart the server. Static assets and health endpoints may
 still be served while browser backend access is disabled. Standalone CLI servers
@@ -68,7 +73,7 @@ without enabling LAN. This one-time migration preserves their existing sessions
 and saves the new settings before the server starts. Installations without active
 paired browsers remain closed; an explicit Web access OFF setting is respected.
 If existing sessions cannot be read or the migration cannot be saved, startup
-stops rather than risking revocation of existing pairings.
+stops instead of applying a partial migration.
 
 **Pair a browser** and its destination choices appear only when **Web access** is enabled.
 The QR/link/code block has a **Close** button, available during creation too.

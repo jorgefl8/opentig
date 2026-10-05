@@ -84,6 +84,7 @@ describe('Web access settings display', () => {
       expect(view.container.querySelector('#web-access-public-origin')).toBeNull();
       expect(view.container.textContent).toContain('including through tunnels');
       expect(view.container.textContent).toContain('All network interfaces');
+      expect(view.container.textContent).toContain('Paired devices are saved');
       expect(create).not.toHaveBeenCalled();
     } finally { await view.unmount(); }
   });

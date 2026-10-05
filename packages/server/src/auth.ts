@@ -53,9 +53,7 @@ export class OpenTigSessionAuth {
     browserAccessEnabled?: boolean;
   }): Promise<OpenTigSessionAuth> {
     const store = await PersistentAuthStore.open(options.dataDirectory, options.now);
-    const auth = new OpenTigSessionAuth(options.source, store, options.secureCookies ?? false, options.now ?? Date.now, options.profile ?? 'production', options.browserAccessEnabled ?? true);
-    if (!auth.browserAccessEnabled) await store.revokeBrowserSessions();
-    return auth;
+    return new OpenTigSessionAuth(options.source, store, options.secureCookies ?? false, options.now ?? Date.now, options.profile ?? 'production', options.browserAccessEnabled ?? true);
   }
 
   descriptor(): OpenTigAuthDescriptor {
@@ -63,7 +61,7 @@ export class OpenTigSessionAuth {
     return { authenticationRequired: true, pairingAvailable: this.browserAccessEnabled && this.pairing !== null, browserAccessEnabled: this.browserAccessEnabled };
   }
 
-  setBrowserAccessEnabled(enabled: boolean): Promise<string[]> {
+  setBrowserAccessEnabled(enabled: boolean): Promise<void> {
     if (!enabled) {
       this.browserAccessEnabled = false;
       this.browserGeneration++;
@@ -71,10 +69,7 @@ export class OpenTigSessionAuth {
     }
     const generation = this.browserGeneration;
     return this.queueBrowserMutation(async () => {
-      // Retrying enable must also clean up after a failed disable/revocation.
-      const revoked = !this.browserAccessEnabled ? await this.store.revokeBrowserSessions() : [];
       this.browserAccessEnabled = enabled && generation === this.browserGeneration;
-      return revoked;
     });
   }
 

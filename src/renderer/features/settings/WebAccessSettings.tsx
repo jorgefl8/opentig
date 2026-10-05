@@ -146,7 +146,7 @@ export function WebAccessSettings() {
     dismissPairing();
     try {
       setStatus(await desktopApi.setEnabled(enabled));
-      sileo.success({ title: enabled ? 'Web access enabled' : 'Web access disabled; browsers disconnected' });
+      sileo.success({ title: enabled ? 'Web access enabled' : 'Web access paused; paired devices saved' });
     } catch (error) {
       sileo.error({ title: 'Could not change web access', description: messageOf(error) });
       await loadState(false);
@@ -281,7 +281,7 @@ export function WebAccessSettings() {
         <div className="web-access-summary">
           <div className="settings-field-label">
             <strong>Web access</strong>
-            <span>Allow paired browsers to use OpenTig. Turning this off disconnects browsers and invalidates pairing codes; the desktop stays connected.</span>
+            <span>Allow paired browsers to use OpenTig. Turning this off disconnects browsers but keeps paired devices. Enable it again to restore their access; the desktop stays connected.</span>
           </div>
           <button
             type="button"
@@ -318,7 +318,7 @@ export function WebAccessSettings() {
 
         {status.restartError && <div className="web-access-error" role="alert"><IconAlertTriangle /> <span>{status.restartError}</span></div>}
 
-        {!status.webAccessEnabled && <p className="web-access-hint">Browser access is disabled, including through tunnels. The local server continues serving the private desktop session.</p>}
+        {!status.webAccessEnabled && <p className="web-access-hint">Browser access is paused, including through tunnels. Paired devices are saved; the private desktop session stays connected.</p>}
 
         {status.webAccessEnabled && <>
         <div className="web-access-actions settings-field-separated">
