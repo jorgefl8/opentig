@@ -36,15 +36,19 @@ const STATUS_COPY: Record<OpenTigWebAccessStatus['serverState'], string> = {
 };
 
 type Action = 'toggle' | 'lan' | 'origin' | 'revoke-all' | `rename:${string}` | `revoke:${string}`;
+type PairingDestination = 'local' | 'lan' | 'public';
 
 export function WebAccessSettings() {
   const desktopApi = window.opentigDesktop?.webAccess;
   const [status, setStatus] = useState<OpenTigWebAccessStatus | null>(null);
   const [sessions, setSessions] = useState<OpenTigOwnerSession[]>([]);
   const [pairing, setPairing] = useState<OpenTigPairingLink | null>(null);
-  const [selectedEndpoint, setSelectedEndpoint] = useState('');
+  const [destination, setDestination] = useState<PairingDestination>('local');
+  const [lanEndpoint, setLanEndpoint] = useState('');
+  const [editingPublicOrigin, setEditingPublicOrigin] = useState(false);
   const [publicOriginInput, setPublicOriginInput] = useState('');
   const [originError, setOriginError] = useState<string | null>(null);
+  const originInput = useRef<HTMLInputElement>(null);
   const [pairingPending, setPairingPending] = useState(false);
   const [pairingVisible, setPairingVisible] = useState(false);
   const [pairingRequest, setPairingRequest] = useState<number | null>(null);
@@ -56,6 +60,18 @@ export function WebAccessSettings() {
   const [revokeTarget, setRevokeTarget] = useState<OpenTigOwnerSession | 'all' | null>(null);
   const [renameTarget, setRenameTarget] = useState<OpenTigOwnerSession | null>(null);
   const [renameInput, setRenameInput] = useState('');
+  const lanEndpoints = status?.webAccessEnabled && status.listeningOnLan
+    ? status.networkEndpoints.filter((endpoint) => status.pairingEndpoints.includes(endpoint)) : [];
+  const selectedEndpoint = destination === 'public' ? status?.publicOrigin ?? ''
+    : destination === 'lan' ? lanEndpoint : status?.localEndpoint ?? '';
+  const showOriginEditor = destination === 'public' && (!status?.publicOrigin || editingPublicOrigin);
+  const canCreateLink = status?.webAccessEnabled && status.serverState === 'ready'
+    && status.pairingEndpoints.includes(selectedEndpoint) && !showOriginEditor && action === null && !pairingPending;
+  const destinations: { value: PairingDestination; label: string }[] = [
+    { value: 'local', label: 'Local' },
+    ...(lanEndpoints.length ? [{ value: 'lan' as const, label: 'LAN' }] : []),
+    { value: 'public', label: 'My domain' },
+  ];
   const dismissPairing = useCallback(() => {
     requests.current.dismiss();
     setPairing(null);
@@ -69,7 +85,16 @@ export function WebAccessSettings() {
   }, []);
   useEffect(() => { setPublicOriginInput(status?.publicOrigin ?? ''); }, [status?.publicOrigin]);
   const webAccessEnabled = status?.webAccessEnabled;
-  useEffect(() => { if (webAccessEnabled === false) dismissPairing(); }, [webAccessEnabled, dismissPairing]);
+  useEffect(() => {
+    if (webAccessEnabled === false) {
+      dismissPairing();
+      setEditingPublicOrigin(false);
+      setOriginError(null);
+      setPublicOriginInput(status?.publicOrigin ?? '');
+    }
+  }, [webAccessEnabled, status?.publicOrigin, dismissPairing]);
+  useEffect(() => { if (webAccessEnabled && showOriginEditor) originInput.current?.focus(); }, [webAccessEnabled, showOriginEditor]);
+  useEffect(() => { dismissPairing(); }, [selectedEndpoint, dismissPairing]);
   useEffect(() => {
     if (!pairing || pairingRequest === null) return;
     const timer = window.setTimeout(() => {
@@ -99,11 +124,10 @@ export function WebAccessSettings() {
 
   useEffect(() => {
     if (!status) return;
-    if (!status.pairingEndpoints.includes(selectedEndpoint)) {
-      setSelectedEndpoint(status.pairingEndpoints[0] ?? '');
-      if (selectedEndpoint) dismissPairing();
-    }
-  }, [selectedEndpoint, status, dismissPairing]);
+    const endpoints = status.listeningOnLan ? status.networkEndpoints.filter((endpoint) => status.pairingEndpoints.includes(endpoint)) : [];
+    if (!endpoints.includes(lanEndpoint)) setLanEndpoint(endpoints[0] ?? '');
+    if (destination === 'lan' && endpoints.length === 0) setDestination('local');
+  }, [lanEndpoint, destination, status]);
 
   const qrSource = useMemo(() => pairing
     ? `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(renderSVG(pairing.url, { ecc: 'M', border: 2 }))}`
@@ -145,7 +169,10 @@ export function WebAccessSettings() {
     if (!desktopApi) return;
     setOriginError(null);
     let origin: string;
-    try { origin = clear || !publicOriginInput.trim() ? '' : normalizePairingOrigin(publicOriginInput); }
+    try {
+      const input = publicOriginInput.trim();
+      origin = clear ? '' : normalizePairingOrigin(input && !input.includes('://') ? `https://${input}` : input);
+    }
     catch (error) { setOriginError(messageOf(error)); return; }
     setAction('origin');
     dismissPairing();
@@ -153,13 +180,29 @@ export function WebAccessSettings() {
       const updated = await desktopApi.setPublicOrigin(origin);
       setStatus(updated);
       setPublicOriginInput(updated.publicOrigin ?? '');
-      if (updated.publicOrigin && updated.webAccessEnabled) setSelectedEndpoint(updated.publicOrigin);
+      setEditingPublicOrigin(false);
+      setDestination(updated.publicOrigin ? 'public' : 'local');
     } catch (error) { setOriginError(messageOf(error)); }
     finally { setAction(null); }
   };
 
+  const chooseDestination = (next: PairingDestination) => {
+    dismissPairing();
+    setDestination(next);
+    setEditingPublicOrigin(false);
+    setPublicOriginInput(status?.publicOrigin ?? '');
+    setOriginError(null);
+  };
+
+  const cancelOriginEdit = () => {
+    setPublicOriginInput(status?.publicOrigin ?? '');
+    setOriginError(null);
+    setEditingPublicOrigin(false);
+    if (!status?.publicOrigin) setDestination('local');
+  };
+
   const createLink = async () => {
-    if (!desktopApi || !status?.webAccessEnabled) return;
+    if (!desktopApi || !canCreateLink) return;
     const request = requests.current.begin();
     if (request === null) return;
     setPairing(null);
@@ -271,20 +314,6 @@ export function WebAccessSettings() {
                 : status.networkEndpoints.map((endpoint) => <Endpoint key={endpoint} value={endpoint} muted={!status.webAccessEnabled || !status.listeningOnLan} />)}
             </div>
           </WebAccessFact>
-          <div className="web-access-network-settings">
-            <div className="web-access-endpoint-select">
-              <label htmlFor="web-access-public-origin">Public URL (optional)</label>
-              <input id="web-access-public-origin" className="web-access-rename-input" value={publicOriginInput}
-                onChange={(event) => { setPublicOriginInput(event.target.value); setOriginError(null); }} placeholder="https://git.example.com"
-                aria-invalid={originError !== null} aria-describedby="web-access-origin-help" maxLength={2_048} disabled={action !== null} autoComplete="off" spellCheck={false} />
-              <p id="web-access-origin-help" className="web-access-hint">Enter your tunnel address without a path. Save it, then select it below for the link and QR. Point your tunnel at the local endpoint shown above.</p>
-              {originError && <p className="web-access-error" role="alert">{originError}</p>}
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" onClick={() => void savePublicOrigin()} disabled={action !== null || publicOriginInput.trim() === (status.publicOrigin ?? '')}>Save URL</Button>
-                <Button variant="ghost" size="sm" onClick={() => void savePublicOrigin(true)} disabled={action !== null || !status.publicOrigin}>Clear</Button>
-              </div>
-            </div>
-          </div>
         </div>
 
         {status.restartError && <div className="web-access-error" role="alert"><IconAlertTriangle /> <span>{status.restartError}</span></div>}
@@ -295,23 +324,61 @@ export function WebAccessSettings() {
         <div className="web-access-actions settings-field-separated">
           <div className="settings-field-label">
             <strong>Pair a browser</strong>
-            <span>Create a five-minute, one-use link using a local, LAN, or saved public address.</span>
+            <span>Choose where to open your five-minute, one-use link.</span>
           </div>
-          <Button size="sm" onClick={() => void createLink()} disabled={!ready || !selectedEndpoint || action !== null || pairingPending}>
+        </div>
+        <div className="web-access-pairing-options">
+          <fieldset className="web-access-destinations" disabled={action !== null}>
+            <legend className="sr-only">Pairing destination</legend>
+            {destinations.map(({ value, label }) => (
+              <label key={value}>
+                <input type="radio" name="web-access-destination" value={value} checked={destination === value} onChange={() => chooseDestination(value)} />
+                {label}
+              </label>
+            ))}
+          </fieldset>
+          {destination === 'public' ? (
+            <div className="web-access-domain">
+              {showOriginEditor ? <form onSubmit={(event) => { event.preventDefault(); void savePublicOrigin(); }}>
+                <label htmlFor="web-access-public-origin">Your domain</label>
+                <input ref={originInput} id="web-access-public-origin" className="web-access-rename-input" value={publicOriginInput}
+                  onChange={(event) => { setPublicOriginInput(event.target.value); setOriginError(null); }} placeholder="https://git.example.com"
+                  aria-invalid={originError !== null} aria-describedby={`web-access-origin-help${originError ? ' web-access-origin-error' : ''}`}
+                  maxLength={2_048} disabled={action !== null} autoComplete="off" spellCheck={false} inputMode="url" />
+                <p id="web-access-origin-help" className="web-access-hint">Your tunnel address, without a path. It will be used in the link and QR. Point your tunnel at the local endpoint shown above.</p>
+                {originError && <p id="web-access-origin-error" className="web-access-error" role="alert">{originError}</p>}
+                <div className="web-access-domain-actions">
+                  <Button type="submit" size="sm" disabled={action !== null || !publicOriginInput.trim()}>Save and use</Button>
+                  <Button type="button" variant="ghost" size="sm" onClick={cancelOriginEdit} disabled={action !== null}>Cancel</Button>
+                  {status.publicOrigin && <Button type="button" variant="ghost" size="sm" onClick={() => void savePublicOrigin(true)} disabled={action !== null}>Remove</Button>}
+                </div>
+              </form> : <>
+                <div className="web-access-saved-domain">
+                  <code>{status.publicOrigin}</code>
+                  <Button variant="ghost" size="sm" onClick={() => { dismissPairing(); setEditingPublicOrigin(true); }} disabled={action !== null}><IconEdit /> Edit</Button>
+                </div>
+                <p className="web-access-hint">Saved and selected for this link and QR.</p>
+              </>}
+            </div>
+          ) : destination === 'lan' ? (
+            <div className="web-access-endpoint-select">
+              <label htmlFor="web-access-endpoint">Network address</label>
+              <Select value={lanEndpoint} onValueChange={(endpoint) => { if (endpoint) setLanEndpoint(endpoint); }} disabled={action !== null}>
+                <SelectTrigger id="web-access-endpoint" className="w-full"><SelectValue>{lanEndpoint}</SelectValue></SelectTrigger>
+                <SelectContent alignItemWithTrigger={false}>
+                  <SelectGroup>{lanEndpoints.map((endpoint) => <SelectItem key={endpoint} value={endpoint}>{endpoint}</SelectItem>)}</SelectGroup>
+                </SelectContent>
+              </Select>
+            </div>
+          ) : <p className="web-access-hint">For a browser on this computer.</p>}
+          <div className="web-access-link-destination">
+            <span>Address for the link and QR</span>
+            <code>{selectedEndpoint || (destination === 'public' ? 'Add your domain above' : 'Unavailable')}</code>
+          </div>
+          <Button size="sm" onClick={() => void createLink()} disabled={!canCreateLink}>
             {pairingPending ? <IconLoader4 className="animate-spin" /> : <IconLink />} Create pairing link
           </Button>
         </div>
-        {status.pairingEndpoints.length > 0 && (
-          <div className="web-access-endpoint-select">
-            <label htmlFor="web-access-endpoint">Address to place in the pairing link</label>
-            <Select value={selectedEndpoint} onValueChange={(endpoint) => { if (endpoint) { setSelectedEndpoint(endpoint); dismissPairing(); } }} disabled={action !== null}>
-              <SelectTrigger id="web-access-endpoint" className="w-full"><SelectValue>{selectedEndpoint}</SelectValue></SelectTrigger>
-              <SelectContent alignItemWithTrigger={false}>
-                <SelectGroup>{status.pairingEndpoints.map((endpoint) => <SelectItem key={endpoint} value={endpoint}>{endpoint}</SelectItem>)}</SelectGroup>
-              </SelectContent>
-            </Select>
-          </div>
-        )}
 
         {pairingVisible && (
           <div className="web-access-pairing" role="status">

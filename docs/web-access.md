@@ -66,33 +66,38 @@ Previous enabled LAN settings migrate to both switches enabled. Existing
 loopback-only installations, including tunnel users, need to enable Web access
 once after upgrading.
 
-**Pair a browser** and its address selector appear only when **Web access** is enabled.
+**Pair a browser** and its destination choices appear only when **Web access** is enabled.
 The QR/link/code block has a **Close** button, available during creation too.
 Closing only dismisses the display; a copied code remains valid until it is
 used, replaced, expired, or invalidated by disabling Web access. An expired code
 is removed from the display automatically.
 
-For a browser on the same PC, select the always-available loopback endpoint:
+For a browser on the same PC, choose **Local** to use the loopback endpoint:
 
 ```text
 http://127.0.0.1:<actual-port>
 ```
 
 For another device on a trusted LAN or VPN, enable **Web access**, accept the
-owner-authority warning, enable **LAN access**, and select a listed interface address. The same
+owner-authority warning, enable **LAN access**, choose **LAN**, and select a listed interface address. The same
 supervised utility restarts on `0.0.0.0`; it does not start a second server.
 
 For Cloudflare Tunnel or another reverse proxy running on the OpenTig PC:
 
 1. Enable **Web access** and leave **LAN access** disabled so the listener remains on loopback.
 2. Point the tunnel origin service to `http://127.0.0.1:<actual-port>`.
-3. In **Public URL (optional)** beside the endpoint settings, enter `https://your-domain.example` and
-   choose **Save URL**. Use an HTTP/HTTPS root address without credentials,
-   paths, query parameters, or fragments. **Clear** removes the saved address.
-4. Select that public address under **Address to place in the pairing link**
-   and create a link. The QR and copied link both use your domain. Scan the QR
+3. In **Pair a browser**, choose **My domain**, enter `https://your-domain.example`,
+   and choose **Save and use**. A bare domain defaults to HTTPS. Use an HTTP/HTTPS
+   root address without credentials, paths, query parameters, or fragments.
+   Saving selects the domain for the next link and QR automatically.
+4. Choose **Create pairing link**. The QR and copied link both use your domain. Scan the QR
    on your phone and choose a recognizable device name. Alternatively, open
    `https://your-domain.example/pair` and paste the pairing code.
+
+Choose **Edit** beside the saved domain to change it. **Cancel** keeps the saved
+address; **Remove** deletes it and switches back to **Local**. Link creation is
+disabled while editing or until a new domain has been saved. Cancelling a new
+domain returns to **Local** without saving the draft.
 
 The saved public URL is only used to construct links and QR codes; it does not
 configure the tunnel, change the listener, or grant authentication. OpenTig validates the `Origin`

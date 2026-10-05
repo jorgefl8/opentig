@@ -953,7 +953,6 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   .web-access-summary { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 18px; }
   .web-access-facts { display: grid; margin-top: 18px; overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--background); }
   .web-access-network-settings { border-top: 1px solid var(--border); padding: 11px; }
-  .web-access-network-settings .web-access-endpoint-select { margin-top: 0; }
   .web-access-fact { display: grid; min-width: 0; grid-template-columns: minmax(140px, .75fr) minmax(0, 1.25fr); align-items: start; gap: 14px; border-top: 1px solid var(--border); padding: 9px 11px; font-size: 11px; }
   .web-access-fact:first-child { border-top: none; }
   .web-access-fact > span { color: var(--muted-foreground); }
@@ -967,6 +966,25 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   .web-access-actions .settings-field-label { min-width: 0; }
   .web-access-hint { margin: 8px 0 0; color: var(--muted-foreground); font-size: 10px; line-height: 1.45; }
   .web-access-endpoint-select { display: grid; max-width: 380px; gap: 5px; margin-top: 10px; color: var(--muted-foreground); font-size: 10px; }
+  .web-access-pairing-options { display: grid; min-width: 0; gap: 12px; margin-top: 12px; }
+  .web-access-destinations { display: flex; flex-wrap: wrap; gap: 7px; margin: 0; border: 0; padding: 0; }
+  .web-access-destinations label { display: flex; min-width: 0; flex: 1 1 90px; align-items: center; gap: 7px; border: 1px solid var(--border); border-radius: var(--radius-md); padding: 10px; font-size: 11px; cursor: pointer; }
+  .web-access-destinations label:has(input:checked) { border-color: var(--primary); background: color-mix(in oklch, var(--primary) 7%, var(--background)); }
+  .web-access-destinations label:has(input:focus-visible) { outline: 2px solid var(--ring); outline-offset: 2px; }
+  .web-access-destinations:disabled label { opacity: .5; cursor: default; }
+  .web-access-destinations input { margin: 0; accent-color: var(--primary); }
+  .web-access-domain { min-width: 0; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--background); padding: 12px; }
+  .web-access-domain form { display: grid; min-width: 0; gap: 6px; }
+  .web-access-domain form > label { color: var(--muted-foreground); font-size: 10px; }
+  .web-access-domain .web-access-hint { margin-top: 0; }
+  .web-access-domain-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+  .web-access-saved-domain { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
+  .web-access-saved-domain code { min-width: 0; overflow-wrap: anywhere; font-size: 11px; }
+  .web-access-saved-domain button { flex: none; }
+  .web-access-link-destination { display: grid; min-width: 0; gap: 4px; border-radius: var(--radius-md); background: var(--muted); padding: 10px; }
+  .web-access-link-destination span { color: var(--muted-foreground); font-size: 10px; }
+  .web-access-link-destination code { overflow-wrap: anywhere; font-size: 11px; }
+  .web-access-pairing-options > .web-access-hint, .web-access-pairing-options > .web-access-endpoint-select { margin-top: 0; }
   .web-access-pairing { display: grid; grid-template-columns: minmax(0, 1fr) 112px; gap: 12px; margin-top: 14px; border: 1px solid color-mix(in oklch, var(--primary) 35%, var(--border)); border-radius: var(--radius-lg); background: color-mix(in oklch, var(--primary) 6%, var(--background)); padding: 12px; }
   .web-access-pairing-copy { display: flex; min-width: 0; align-items: flex-start; gap: 8px; }
   .web-access-pairing-copy > svg { width: 17px; height: 17px; flex: none; color: var(--primary); }

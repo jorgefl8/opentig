@@ -13,19 +13,34 @@ const status: OpenTigWebAccessStatus = {
   webAccessEnabled: true, lanAccessEnabled: false, listeningOnLan: false,
   publicOrigin: 'https://git.example.com', serverState: 'ready', actualPort: 6767,
   localEndpoint: 'http://127.0.0.1:6767', networkEndpoints: [],
-  pairingEndpoints: ['https://git.example.com'], connectedSessionCount: 1, restartError: null,
+  pairingEndpoints: ['http://127.0.0.1:6767', 'https://git.example.com'], connectedSessionCount: 1, restartError: null,
 };
 const link = { url: 'https://git.example.com/pair#token=one-use-code', expiresAt: new Date(Date.now() + 300_000).toISOString() };
 
-async function mount(value: OpenTigWebAccessStatus, createPairingLink: (endpoint: string) => Promise<OpenTigPairingLink>) {
+async function mount(value: OpenTigWebAccessStatus, createPairingLink: (endpoint: string) => Promise<OpenTigPairingLink>, save?: (origin: string) => Promise<OpenTigWebAccessStatus>) {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
   vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
-  Object.defineProperty(window, 'opentigDesktop', { configurable: true, value: { webAccess: { getStatus: async () => ({ ...value }), createPairingLink } } });
+  const setPublicOrigin = vi.fn(save ?? (async (origin: string) => {
+    value.publicOrigin = origin || null;
+    value.pairingEndpoints = [value.localEndpoint!, ...(value.listeningOnLan ? value.networkEndpoints : []), ...(origin ? [origin] : [])];
+    return { ...value };
+  }));
+  Object.defineProperty(window, 'opentigDesktop', { configurable: true, value: { webAccess: { getStatus: async () => ({ ...value }), createPairingLink, setPublicOrigin } } });
   const container = document.createElement('div');
   document.body.append(container);
   const root = createRoot(container);
   await act(async () => root.render(createElement(WebAccessSettings)));
-  return { container, unmount: async () => { await act(async () => root.unmount()); container.remove(); } };
+  return { container, setPublicOrigin, unmount: async () => { await act(async () => root.unmount()); container.remove(); } };
+}
+async function choose(container: HTMLElement, destination: string) {
+  await act(async () => (container.querySelector(`input[value="${destination}"]`) as HTMLInputElement).click());
+}
+async function typeDomain(container: HTMLElement, value: string) {
+  const input = container.querySelector('#web-access-public-origin') as HTMLInputElement;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
 }
 function button(container: HTMLElement, text: string): HTMLButtonElement {
   const result = [...container.querySelectorAll('button')].find((item) => item.textContent?.includes(text));
@@ -39,6 +54,7 @@ describe('Web access settings display', () => {
     const create = vi.fn().mockImplementationOnce(() => new Promise<OpenTigPairingLink>((resolve) => { release = resolve; })).mockResolvedValue(link);
     const view = await mount(status, create);
     try {
+      await choose(view.container, 'public');
       await act(async () => button(view.container, 'Create pairing link').click());
       expect(view.container.querySelector('.web-access-pairing')).not.toBeNull();
       expect(button(view.container, 'Create pairing link').disabled).toBe(true);
@@ -64,10 +80,112 @@ describe('Web access settings display', () => {
       expect(view.container.querySelector('.web-access-pairing')).toBeNull();
       expect((view.container.querySelector('[aria-label="LAN access"]') as HTMLButtonElement).disabled).toBe(true);
       expect(view.container.querySelector('.web-access-facts [aria-label="LAN access"]')).not.toBeNull();
-      expect(view.container.querySelector('.web-access-facts #web-access-public-origin')).not.toBeNull();
+      expect(view.container.querySelector('.web-access-pairing-options')).toBeNull();
+      expect(view.container.querySelector('#web-access-public-origin')).toBeNull();
       expect(view.container.textContent).toContain('including through tunnels');
       expect(view.container.textContent).toContain('All network interfaces');
       expect(create).not.toHaveBeenCalled();
+    } finally { await view.unmount(); }
+  });
+
+  it('saves a domain and uses it immediately for the next link and QR', async () => {
+    const create = vi.fn(async (origin: string) => ({ ...link, url: `${origin}/pair#token=one-use-code` }));
+    const view = await mount({ ...status, publicOrigin: null, pairingEndpoints: [status.localEndpoint!] }, create);
+    try {
+      await choose(view.container, 'public');
+      expect(document.activeElement?.id).toBe('web-access-public-origin');
+      expect(button(view.container, 'Create pairing link').disabled).toBe(true);
+      await typeDomain(view.container, 'git.example.com/');
+      await act(async () => button(view.container, 'Save and use').click());
+      expect(view.setPublicOrigin).toHaveBeenCalledWith('https://git.example.com');
+      expect(view.container.querySelector('#web-access-public-origin')).toBeNull();
+      expect(view.container.querySelector('.web-access-saved-domain')?.textContent).toContain('https://git.example.com');
+      await act(async () => button(view.container, 'Create pairing link').click());
+      expect(create).toHaveBeenLastCalledWith('https://git.example.com');
+      expect(view.container.querySelector('.web-access-link')?.textContent).toBe(link.url);
+      expect(view.container.querySelector('.web-access-pairing img')).not.toBeNull();
+    } finally { await view.unmount(); }
+  });
+
+  it('cancels domain edits without changing the saved target, then removes it and returns to local', async () => {
+    const create = vi.fn(async () => link);
+    const view = await mount({ ...status }, create);
+    try {
+      await choose(view.container, 'public');
+      await act(async () => button(view.container, 'Create pairing link').click());
+      await act(async () => button(view.container, 'Edit').click());
+      expect(view.container.querySelector('.web-access-pairing')).toBeNull();
+      expect(button(view.container, 'Create pairing link').disabled).toBe(true);
+      await typeDomain(view.container, 'https://other.example.com');
+      await act(async () => button(view.container, 'Cancel').click());
+      expect(view.setPublicOrigin).not.toHaveBeenCalled();
+      expect(view.container.querySelector('.web-access-link-destination')?.textContent).toContain(status.publicOrigin);
+      expect(button(view.container, 'Create pairing link').disabled).toBe(false);
+      await act(async () => button(view.container, 'Edit').click());
+      await act(async () => button(view.container, 'Remove').click());
+      expect(view.setPublicOrigin).toHaveBeenCalledWith('');
+      expect((view.container.querySelector('input[value="local"]') as HTMLInputElement).checked).toBe(true);
+      await act(async () => button(view.container, 'Create pairing link').click());
+      expect(create).toHaveBeenLastCalledWith(status.localEndpoint);
+    } finally { await view.unmount(); }
+  });
+
+  it('cancels a new domain back to local and discards the draft when switching destinations', async () => {
+    const view = await mount({ ...status, publicOrigin: null, pairingEndpoints: [status.localEndpoint!] }, vi.fn());
+    try {
+      await choose(view.container, 'public');
+      await typeDomain(view.container, 'https://draft.example.com');
+      await act(async () => button(view.container, 'Cancel').click());
+      expect((view.container.querySelector('input[value="local"]') as HTMLInputElement).checked).toBe(true);
+      await choose(view.container, 'public');
+      expect((view.container.querySelector('#web-access-public-origin') as HTMLInputElement).value).toBe('');
+      await typeDomain(view.container, 'https://draft.example.com');
+      await choose(view.container, 'local');
+      await choose(view.container, 'public');
+      expect((view.container.querySelector('#web-access-public-origin') as HTMLInputElement).value).toBe('');
+      expect(view.setPublicOrigin).not.toHaveBeenCalled();
+    } finally { await view.unmount(); }
+  });
+
+  it('rejects paths and credentials and keeps failed saves editable without enabling pairing', async () => {
+    const save = vi.fn(async () => { throw new Error('Could not persist address'); });
+    const view = await mount({ ...status }, vi.fn(), save);
+    try {
+      await choose(view.container, 'public');
+      await act(async () => button(view.container, 'Edit').click());
+      for (const invalid of ['https://git.example.com/path', 'https://user:pass@git.example.com', 'ftp://git.example.com']) {
+        await typeDomain(view.container, invalid);
+        await act(async () => button(view.container, 'Save and use').click());
+        expect(view.container.querySelector('[role="alert"]')).not.toBeNull();
+        expect(save).not.toHaveBeenCalled();
+        expect(button(view.container, 'Create pairing link').disabled).toBe(true);
+      }
+      await typeDomain(view.container, 'https://other.example.com');
+      await act(async () => button(view.container, 'Save and use').click());
+      expect(view.container.querySelector('[role="alert"]')?.textContent).toBe('Could not persist address');
+      expect((view.container.querySelector('#web-access-public-origin') as HTMLInputElement).value).toBe('https://other.example.com');
+      expect(button(view.container, 'Create pairing link').disabled).toBe(true);
+    } finally { await view.unmount(); }
+  });
+
+  it('uses LAN endpoints and returns to local when LAN access is no longer available', async () => {
+    vi.useFakeTimers();
+    const lan = 'http://192.0.2.10:6767';
+    const currentStatus = { ...status, listeningOnLan: true, networkEndpoints: [lan], pairingEndpoints: [...status.pairingEndpoints, lan] };
+    const create = vi.fn(async () => link);
+    const view = await mount(currentStatus, create);
+    try {
+      await choose(view.container, 'lan');
+      await act(async () => button(view.container, 'Create pairing link').click());
+      expect(create).toHaveBeenLastCalledWith(lan);
+      currentStatus.listeningOnLan = false;
+      currentStatus.pairingEndpoints = status.pairingEndpoints;
+      await act(async () => vi.advanceTimersByTimeAsync(2_000));
+      expect(view.container.querySelector('input[value="lan"]')).toBeNull();
+      expect(view.container.querySelector('.web-access-pairing')).toBeNull();
+      expect((view.container.querySelector('input[value="local"]') as HTMLInputElement).checked).toBe(true);
+      await act(async () => button(view.container, 'Create pairing link').click());
+      expect(create).toHaveBeenLastCalledWith(status.localEndpoint);
     } finally { await view.unmount(); }
   });
 
