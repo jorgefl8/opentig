@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, type ReactNode } from 'react';
 import { IconArrowDown, IconArrowLeft, IconArrowUp, IconBrandGithub, IconDots, IconFiles, IconGitBranch, IconGitPullRequest, IconPlus, IconRefresh, IconSettings, IconX } from '@tabler/icons-react';
 import { Button } from '@/components/ui/button';
+import { DevIndicator } from '@/components/DevIndicator';
 import { MobileSheet } from '@/components/MobileSheet';
 import { DesktopUpdateIndicator } from '@/features/settings/UpdateSettings';
 import { openOnGitHub } from '@/features/pulls/gh-utils';
@@ -32,6 +33,7 @@ export function MobileToolbar({ props, repositoryControl, worktreeControl, branc
           <RepositoryFaviconImage src={favicon} /><span><strong>{props.repository.repositoryName}</strong><small><IconGitBranch />{props.status?.branch ?? 'Detached HEAD'}</small></span>
         </button>}
       <div className="mobile-toolbar-actions">
+        <DevIndicator />
         {props.openFiles.tabs.length > 0 && <Button variant="ghost" size="sm" className="mobile-open-files-trigger" aria-label={`Open files (${props.openFiles.tabs.length})`} onClick={() => setFilesOpen(true)}><IconFiles /><span>{props.openFiles.tabs.length}</span>{props.openFiles.tabs.some((tab) => tab.dirty) && <span className="mobile-unsaved-dot" aria-label="Unsaved files" />}</Button>}
         <DesktopUpdateIndicator />
         <Button variant="ghost" size="icon" aria-label="Repository context and settings" onClick={() => onContextOpen(true)}><IconDots /></Button>

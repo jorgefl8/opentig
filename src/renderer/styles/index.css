@@ -89,6 +89,8 @@
     --destructive: oklch(0.56 0.21 26);
     --success: oklch(0.55 0.15 152);
     --warning: oklch(0.63 0.14 78);
+    --dev-stripe-yellow: #facc15;
+    --dev-stripe-black: #171717;
     --border: oklch(0.89 0 0);
     --input: oklch(0.87 0 0);
     --ring: var(--primary);
@@ -285,6 +287,7 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   .toolbar button, .toolbar input, .toolbar textarea, .toolbar select, .toolbar a, .toolbar [role="button"] { -webkit-app-region: no-drag; }
   .toolbar-brand { display: flex; flex: none; align-items: center; gap: 7px; color: var(--foreground); font-size: 13px; font-weight: 760; letter-spacing: -.02em; }
   .toolbar-brand svg { width: 18px; height: 20px; flex: none; }
+  .dev-instance-stripe { width: 20px; height: 12px; flex: none; border-radius: 2px; background: repeating-linear-gradient(135deg, var(--dev-stripe-black) 0 4px, var(--dev-stripe-yellow) 4px 8px); }
   .toolbar-spacer { flex: 1; }
   .toolbar-branch-pr { display: inline-flex; flex: none; min-height: 28px; align-items: center; gap: 4px; padding: 0 3px; background: transparent; color: var(--success); font-size: 11px; font-weight: 500; }
   .toolbar-branch-pr > svg { width: 14px; height: 14px; flex: none; }

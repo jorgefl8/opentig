@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Kbd } from '@/components/ui/kbd';
 import { SearchablePicker, type SearchablePickerItem } from '@/components/SearchablePicker';
 import { OpenTigMark } from '@/components/OpenTigMark';
+import { DevIndicator } from '@/components/DevIndicator';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { isEditableTarget } from '@/features/files/file-tree';
 import { OpenFilesStrip } from '@/features/files/OpenFilesStrip';
@@ -337,6 +338,7 @@ export function Toolbar(props: ToolbarProps) {
       <div className="toolbar-brand" aria-label={appDisplayName}>
         <OpenTigMark />
         <span>{appDisplayName}</span>
+        <DevIndicator />
       </div>
       {repositoryControl}
 
