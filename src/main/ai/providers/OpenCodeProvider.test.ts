@@ -26,6 +26,38 @@ describe('OpenCodeProvider', () => {
     expect(await provider.status()).toMatchObject({ installed: true, availability: 'ready', version: '2.0.22', authStatus: 'authenticated' });
     expect(run).toHaveBeenCalledWith(executable, ['models', '--standalone'], { timeoutMs: 30_000, env: { PATH: '/fixture/bin' } });
     expect((await provider.status()).models.map((model) => model.id)).toEqual(['default', 'anthropic/claude-sonnet-4#high']);
+    expect(run).not.toHaveBeenCalledWith(executable, ['models'], expect.anything());
+  });
+
+  it.each(['empty', 'invalid', 'nonzero', 'timeout'])('uses the service catalog when standalone models are %s', async (failure) => {
+    const { provider, run } = fixture(['/bin/opencode']);
+    const original = run.getMockImplementation()!;
+    run.mockImplementation(async (executable, args) => {
+      if (args[0] !== 'models') return original(executable, args);
+      if (!args.includes('--standalone')) return { exitCode: 0, stderr: '', stdout: 'github-copilot/gpt-6-luna\n' };
+      if (failure === 'timeout') throw new Error('Timed out');
+      return { exitCode: failure === 'nonzero' ? 1 : 0, stderr: '', stdout: failure === 'invalid' ? 'Loading models…' : '' };
+    });
+    const status = await provider.status(true);
+    expect(status).toMatchObject({ installed: true, availability: 'ready', authStatus: 'authenticated' });
+    expect(status.models.map((model) => model.id)).toEqual(['default', 'github-copilot/gpt-6-luna']);
+    expect(status.message).toBeUndefined();
+    expect(run).toHaveBeenCalledWith('/bin/opencode', ['models'], { timeoutMs: 30_000, env: { PATH: '/fixture/bin' } });
+  });
+
+  it.each(['empty', 'nonzero', 'timeout'])('explains the missing catalog when both model checks are %s', async (failure) => {
+    const { provider, run } = fixture(['/bin/opencode']);
+    const original = run.getMockImplementation()!;
+    run.mockImplementation(async (executable, args) => {
+      if (args[0] !== 'models') return original(executable, args);
+      if (failure === 'timeout') throw new Error('Timed out');
+      return { exitCode: failure === 'nonzero' ? 1 : 0, stderr: '', stdout: '' };
+    });
+    expect(await provider.status()).toMatchObject({
+      installed: true, availability: 'warning', authStatus: 'authenticated',
+      models: [{ id: 'default', label: 'Default (CLI)' }],
+      message: 'Could not load the OpenCode model catalog. Check again or verify that opencode models lists your models in a terminal.',
+    });
   });
 
   it('chooses a compatible alternate binary when the main command is v1', async () => {
