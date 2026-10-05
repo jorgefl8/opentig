@@ -25,12 +25,13 @@ async function mount(value: OpenTigWebAccessStatus, createPairingLink: (endpoint
     value.pairingEndpoints = [value.localEndpoint!, ...(value.listeningOnLan ? value.networkEndpoints : []), ...(origin ? [origin] : [])];
     return { ...value };
   }));
-  Object.defineProperty(window, 'opentigDesktop', { configurable: true, value: { webAccess: { getStatus: async () => ({ ...value }), createPairingLink, setPublicOrigin } } });
+  const setEnabled = vi.fn(async (enabled: boolean) => { value.webAccessEnabled = enabled; return { ...value }; });
+  Object.defineProperty(window, 'opentigDesktop', { configurable: true, value: { webAccess: { getStatus: async () => ({ ...value }), createPairingLink, setPublicOrigin, setEnabled } } });
   const container = document.createElement('div');
   document.body.append(container);
   const root = createRoot(container);
   await act(async () => root.render(createElement(WebAccessSettings)));
-  return { container, setPublicOrigin, unmount: async () => { await act(async () => root.unmount()); container.remove(); } };
+  return { container, setPublicOrigin, setEnabled, unmount: async () => { await act(async () => root.unmount()); container.remove(); } };
 }
 async function choose(container: HTMLElement, destination: string) {
   await act(async () => (container.querySelector(`input[value="${destination}"]`) as HTMLInputElement).click());
@@ -49,6 +50,33 @@ function button(container: HTMLElement, text: string): HTMLButtonElement {
 }
 
 describe('Web access settings display', () => {
+  it('confirms disabling with a red action, keeps access on cancel, and explains saved pairings', async () => {
+    const view = await mount({ ...status }, vi.fn(async () => link));
+    try {
+      await act(async () => button(view.container, 'Create pairing link').click());
+      const toggle = view.container.querySelector('[aria-label="Web access"]') as HTMLButtonElement;
+      await act(async () => toggle.click());
+      let dialog = document.querySelector('[role="dialog"]') as HTMLElement;
+      expect(dialog.textContent).toContain('Paired devices stay saved');
+      expect(view.setEnabled).not.toHaveBeenCalled();
+      await act(async () => button(dialog, 'Cancel').click());
+      expect(toggle.getAttribute('aria-checked')).toBe('true');
+      expect(view.container.querySelector('.web-access-pairing')).not.toBeNull();
+      await act(async () => toggle.click());
+      dialog = document.querySelector('[role="dialog"]') as HTMLElement;
+      await act(async () => button(dialog, 'Disable Web access').click());
+      expect(view.setEnabled).toHaveBeenCalledExactlyOnceWith(false);
+      expect(toggle.getAttribute('aria-checked')).toBe('false');
+      expect(view.container.querySelector('.web-access-pairing')).toBeNull();
+      await act(async () => toggle.click());
+      dialog = document.querySelector('[role="dialog"]') as HTMLElement;
+      expect(dialog.textContent).toContain('Saved paired devices can reconnect');
+      await act(async () => button(dialog, 'Enable Web access').click());
+      expect(view.setEnabled).toHaveBeenLastCalledWith(true);
+      expect(toggle.getAttribute('aria-checked')).toBe('true');
+    } finally { await view.unmount(); }
+  });
+
   it('closes a pending request immediately and ignores its late result, then creates a public URL and QR', async () => {
     let release!: (value: OpenTigPairingLink) => void;
     const create = vi.fn().mockImplementationOnce(() => new Promise<OpenTigPairingLink>((resolve) => { release = resolve; })).mockResolvedValue(link);

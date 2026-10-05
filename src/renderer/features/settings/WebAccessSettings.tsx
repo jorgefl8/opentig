@@ -56,7 +56,7 @@ export function WebAccessSettings() {
   const mounted = useRef(true);
   const [loading, setLoading] = useState(true);
   const [action, setAction] = useState<Action | null>(null);
-  const [enableWarningOpen, setEnableWarningOpen] = useState(false);
+  const [exposureConfirmation, setExposureConfirmation] = useState<'enable' | 'disable' | null>(null);
   const [revokeTarget, setRevokeTarget] = useState<OpenTigOwnerSession | 'all' | null>(null);
   const [renameTarget, setRenameTarget] = useState<OpenTigOwnerSession | null>(null);
   const [renameInput, setRenameInput] = useState('');
@@ -152,7 +152,7 @@ export function WebAccessSettings() {
       await loadState(false);
     } finally {
       setAction(null);
-      setEnableWarningOpen(false);
+      setExposureConfirmation(null);
     }
   };
 
@@ -290,7 +290,7 @@ export function WebAccessSettings() {
             aria-checked={status.webAccessEnabled}
             className="settings-switch"
             disabled={action !== null || !ready}
-            onClick={() => status.webAccessEnabled ? void changeExposure(false) : setEnableWarningOpen(true)}
+            onClick={() => setExposureConfirmation(status.webAccessEnabled ? 'disable' : 'enable')}
           ><span /></button>
         </div>
 
@@ -444,15 +444,19 @@ export function WebAccessSettings() {
 
       {!desktopApi && <p className="web-access-hint">Listener addresses and new pairing links are controlled by the OpenTig desktop app or CLI running the server.</p>}
 
-      <Dialog open={enableWarningOpen} onOpenChange={setEnableWarningOpen}>
+      <Dialog open={exposureConfirmation !== null} onOpenChange={(open) => { if (!open) setExposureConfirmation(null); }}>
         <DialogPopup className="undo-commit-dialog">
           <div className="undo-commit-content">
-            <DialogTitle>Enable browser access?</DialogTitle>
-            <DialogDescription>Paired browsers can edit or delete files and act with your OS user permissions. Use only devices you trust. LAN exposure is configured separately.</DialogDescription>
+            <DialogTitle>{exposureConfirmation === 'disable' ? 'Disable Web access?' : 'Enable browser access?'}</DialogTitle>
+            <DialogDescription>{exposureConfirmation === 'disable'
+              ? 'Connected browsers will disconnect and cannot access OpenTig until Web access is enabled again. Paired devices stay saved and can reconnect with their valid sessions. The desktop stays connected.'
+              : 'Paired browsers can edit or delete files and act with your OS user permissions. Saved paired devices can reconnect. Use only devices you trust. LAN exposure is configured separately.'}</DialogDescription>
           </div>
           <div className="undo-commit-actions">
             <DialogClose render={<Button variant="ghost" />}>Cancel</DialogClose>
-            <Button onClick={() => void changeExposure(true)} disabled={action !== null}>Enable Web access</Button>
+            <Button variant={exposureConfirmation === 'disable' ? 'destructive' : 'default'} onClick={() => void changeExposure(exposureConfirmation === 'enable')} disabled={action !== null || !ready}>
+              {exposureConfirmation === 'disable' ? 'Disable Web access' : 'Enable Web access'}
+            </Button>
           </div>
         </DialogPopup>
       </Dialog>

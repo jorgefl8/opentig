@@ -50,6 +50,8 @@ minutes.
 
 The **Web access** switch controls browser authorization, including localhost
 and tunnels. It is off by default for the desktop application. Turning it off
+opens a confirmation with a red **Disable Web access** button and explains that
+paired devices stay saved. Cancelling keeps browser access enabled. Confirming
 immediately blocks browser access, disconnects paired browsers, and invalidates
 the pending pairing code. Paired devices and their session credentials stay saved,
 including across restarts while access is paused. Turning it back on restores
