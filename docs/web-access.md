@@ -62,9 +62,13 @@ changes the listener and may restart the server. Its preference is retained when
 Web access is disabled. The displayed endpoints reflect the active listener;
 disabling browser access can leave that listener bound until the next restart.
 At startup, all interfaces are used only when both Web access and LAN are enabled.
-Previous enabled LAN settings migrate to both switches enabled. Existing
-loopback-only installations, including tunnel users, need to enable Web access
-once after upgrading.
+Previous enabled LAN settings migrate to both switches enabled. Older
+loopback-only installations with active paired browsers keep Web access enabled
+without enabling LAN. This one-time migration preserves their existing sessions
+and saves the new settings before the server starts. Installations without active
+paired browsers remain closed; an explicit Web access OFF setting is respected.
+If existing sessions cannot be read or the migration cannot be saved, startup
+stops rather than risking revocation of existing pairings.
 
 **Pair a browser** and its destination choices appear only when **Web access** is enabled.
 The QR/link/code block has a **Close** button, available during creation too.

@@ -59,6 +59,13 @@ export class PersistentAuthStore {
     this.sessions = sessions;
   }
 
+  /** Inspect an existing installation without issuing, revoking, or writing sessions. */
+  static async hasActiveBrowserSessions(directory: string, now: () => number = Date.now): Promise<boolean> {
+    const { sessions } = await loadSessions(path.join(directory, SESSIONS_FILE));
+    return sessions.some((session) => session.kind !== 'desktop'
+      && session.expiresAt !== null && now() < Date.parse(session.expiresAt));
+  }
+
   static async open(directory: string, now: () => number = Date.now): Promise<PersistentAuthStore> {
     const resolved = path.resolve(directory);
     await mkdir(resolved, { recursive: true, mode: 0o700 });

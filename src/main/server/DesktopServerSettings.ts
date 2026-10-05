@@ -17,21 +17,31 @@ export class DesktopServerSettings {
 
   constructor(private readonly filePath: string) {}
 
-  async load(): Promise<DesktopServerConfig> {
+  async load(hasActiveBrowserSessions: () => Promise<boolean> = async () => false): Promise<DesktopServerConfig> {
+    let value: Record<string, unknown> | null;
     try {
-      const value = JSON.parse(await readFile(this.filePath, 'utf8')) as Record<string, unknown> | null;
-      if ((value?.version === 1 || value?.version === 2 || value?.version === 3)
-        && typeof value.webAccessEnabled === 'boolean') {
-        return { webAccessEnabled: value.webAccessEnabled, lanAccessEnabled: value.webAccessEnabled, publicOrigin: null };
-      }
+      value = JSON.parse(await readFile(this.filePath, 'utf8')) as Record<string, unknown> | null;
       if (value?.version === 4 && typeof value.webAccessEnabled === 'boolean' && typeof value.lanAccessEnabled === 'boolean'
         && (value.publicOrigin === null || typeof value.publicOrigin === 'string')) {
         return { webAccessEnabled: value.webAccessEnabled, lanAccessEnabled: value.lanAccessEnabled, publicOrigin: value.publicOrigin === null ? null : normalizePairingOrigin(value.publicOrigin) };
       }
-      return defaults();
-    } catch {
-      return defaults();
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') return defaults();
+      // Older loopback installations may predate desktop network settings.
+      if (!await hasActiveBrowserSessions()) return defaults();
+      const config = { ...defaults(), webAccessEnabled: true };
+      await this.save(config);
+      return config;
     }
+    if ((value?.version === 1 || value?.version === 2 || value?.version === 3)
+      && typeof value.webAccessEnabled === 'boolean') {
+      // The old flag controlled LAN binding, not permission for paired browsers.
+      const config = { webAccessEnabled: value.webAccessEnabled || await hasActiveBrowserSessions(), lanAccessEnabled: value.webAccessEnabled, publicOrigin: null };
+      // Persist before starting auth so retries cannot revoke a migrated pairing.
+      await this.save(config);
+      return config;
+    }
+    return defaults();
   }
 
   save(config: DesktopServerConfig): Promise<void> {
