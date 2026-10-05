@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, rmdirSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -47,7 +47,8 @@ describe('desktop profile isolation', () => {
     symlinkSync(production, dev, 'junction');
     expect(() => configureDesktopProfile(app, 'dev', 'linux')).toThrow('overlaps production');
     expect(app.setPath).not.toHaveBeenCalled();
-    rmSync(dev);
+    if (process.platform === 'win32') rmdirSync(dev);
+    else unlinkSync(dev);
     mkdirSync(dev);
     symlinkSync(path.join(production, 'settings.json'), path.join(dev, 'settings.json'));
     expect(() => configureDesktopProfile(app, 'dev', 'linux')).toThrow('overlaps production');
