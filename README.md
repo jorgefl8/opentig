@@ -86,7 +86,7 @@ npm install -g @opentig/cli@latest
 opentig serve
 ```
 
-Server mode is designed for personal access through **Cloudflare Tunnel**, a **private network such as Tailscale**, or an SSH tunnel. The server listens on `127.0.0.1:6767` by default. A tunnel or HTTPS reverse proxy on the same machine can reach this address without enabling LAN access. For direct access over a private network, bind to its interface with `--host`; alternatively, keep loopback and use a private HTTPS proxy such as Tailscale Serve. OpenTig does not configure these services for you. See [remote access](docs/web-access.md) for setup details.
+Server mode is designed for personal access through **Cloudflare Tunnel**, a **private network such as Tailscale**, or an SSH tunnel. The server listens on `127.0.0.1:6767` by default. Desktop-hosted servers can block browser access independently of the listener: disabling Web access invalidates pending pairing codes and revokes browser sessions while keeping the private desktop session active. The standalone CLI remains available for browsers. A tunnel or HTTPS reverse proxy on the same machine can reach this address without enabling LAN access. For direct access over a private network, bind to its interface with `--host`; alternatively, keep loopback and use a private HTTPS proxy such as Tailscale Serve. OpenTig does not configure these services for you. See [remote access](docs/web-access.md) for setup details.
 
 Pair your browser using the code printed on the server. The folder picker selects **folders on that server**, not on your laptop or phone.
 

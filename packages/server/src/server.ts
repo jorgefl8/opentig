@@ -29,6 +29,7 @@ export interface OpenTigServerConfig extends Omit<CreateOpenTigRuntimeOptions, '
   port?: number;
   mode?: OpenTigServerMode;
   secureCookies?: boolean;
+  browserAccessEnabled?: boolean;
   logger?: OpenTigServerLogger;
   onEvent?: CreateOpenTigRuntimeOptions['onEvent'];
   commandTimeoutMs?: number;
@@ -45,6 +46,7 @@ export interface RunningOpenTigServer extends OpenTigServerAddress {
   createPairingLink(): { url: string; expiresAt: string };
   getStatus(): { connectedSessionCount: number };
   revokeAllSessions(): Promise<{ revokedCount: number; desktopCookie: string }>;
+  setBrowserAccessEnabled(enabled: boolean): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -57,6 +59,7 @@ export async function runOpenTigServer(config: OpenTigServerConfig): Promise<Run
   let transport: OpenTigServer | null = null;
   const auth = await OpenTigSessionAuth.open({
     source: config.auth,
+    browserAccessEnabled: config.browserAccessEnabled ?? config.mode === 'web-access',
     ...(config.profile ? { profile: config.profile } : {}),
     dataDirectory: config.serverDataPath ?? path.join(path.dirname(config.settingsPath), 'server'),
     ...(config.secureCookies === undefined ? {} : { secureCookies: config.secureCookies }),
@@ -114,6 +117,7 @@ export async function runOpenTigServer(config: OpenTigServerConfig): Promise<Run
       createPairingLink: () => pairingLink(address.origin, transport!.createPairingToken()),
       getStatus: () => transport!.getStatus(),
       revokeAllSessions: () => transport!.revokeAllSessions(),
+      setBrowserAccessEnabled: (enabled) => transport!.setBrowserAccessEnabled(enabled),
       close: () => transport!.stop(),
     };
   } catch (error) {

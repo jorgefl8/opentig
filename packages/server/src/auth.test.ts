@@ -1,16 +1,62 @@
 import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { PersistentAuthStore } from './auth-store';
 import { BROWSER_SESSION_MAX_AGE_SECONDS, OneTimeBootstrapAuthSource, OpenTigSessionAuth } from './auth';
 
 const directories: string[] = [];
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })));
 });
 
 describe('persistent owner authentication', () => {
+  it('blocks browsers and rotates their credentials without revoking the desktop', async () => {
+    const auth = await OpenTigSessionAuth.open({ source: new OneTimeBootstrapAuthSource({ desktopSecret: 'desktop-secret' }), dataDirectory: await authDirectory() });
+    const desktop = cookieValue((await auth.exchangeDesktopSecret('desktop-secret'))!);
+    const browser = cookieValue((await auth.exchangePairingToken(auth.createPairingToken().token))!);
+    const pending = auth.createPairingToken();
+    const disabling = auth.setBrowserAccessEnabled(false);
+    expect(auth.authenticate({ cookie: browser })).toBeNull();
+    expect(auth.authenticate({ cookie: desktop })).toBeTruthy();
+    expect(auth.descriptor()).toMatchObject({ browserAccessEnabled: false, pairingAvailable: false });
+    expect(() => auth.createPairingToken()).toThrow('disabled');
+    await disabling;
+    await auth.setBrowserAccessEnabled(true);
+    expect(auth.authenticate({ cookie: browser })).toBeNull();
+    expect(await auth.exchangePairingToken(pending.token)).toBeNull();
+    expect(auth.authenticate({ cookie: desktop })).toBeTruthy();
+    await auth.close();
+  });
+
+  it.each([false, true])('does not restore an in-flight pairing when persistence fails=%s during disable', async (fails) => {
+    const auth = await OpenTigSessionAuth.open({ source: new OneTimeBootstrapAuthSource({ desktopSecret: 'desktop-secret' }), dataDirectory: await authDirectory() });
+    let release!: () => void;
+    let started!: () => void;
+    const wait = new Promise<void>((resolve) => { release = resolve; });
+    const entered = new Promise<void>((resolve) => { started = resolve; });
+    const original = PersistentAuthStore.prototype.issue;
+    vi.spyOn(PersistentAuthStore.prototype, 'issue').mockImplementation(async function (this: PersistentAuthStore, metadata) {
+      started();
+      await wait;
+      if (fails) throw new Error('Persistence failed');
+      return original.call(this, metadata);
+    });
+    const token = auth.createPairingToken().token;
+    const exchange = auth.exchangePairingToken(token).catch(() => null);
+    await entered;
+    const disabling = auth.setBrowserAccessEnabled(false);
+    release();
+    expect(await exchange).toBeNull();
+    await disabling;
+    await auth.setBrowserAccessEnabled(true);
+    expect(auth.sessions()).toEqual([]);
+    expect(await auth.exchangePairingToken(token)).toBeNull();
+    await auth.close();
+  });
+
   it.each(['production', 'dev'] as const)('renews %s browser access across the original expiry and a restart without changing its credential', async (profile) => {
     let now = Date.parse('2026-09-23T00:00:00.000Z');
     const directory = await authDirectory();
