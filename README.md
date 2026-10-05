@@ -64,6 +64,8 @@ Download the `OpenTig-…-win32-x64-Setup.exe` installer from the [latest releas
 
 Settings → Updates links to the installed stable version’s release notes on GitHub, even when no update is available. When a new release is offered, its notes have a separate link labeled with the update version.
 
+If the desktop server cannot start, the offline screen shows the error and offers **Restart OpenTig** to close and reopen the whole application, plus **Open server log**. The rotating log at `%APPDATA%\OpenTig\logs\server.log` records startup stages, version, port, elapsed time, error codes and stack traces with credentials redacted, including failures that happen before the server is ready.
+
 > [!WARNING]
 > The Windows installer is currently **unsigned**, so Windows may show an unknown-publisher or SmartScreen warning.
 

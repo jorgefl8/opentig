@@ -16,7 +16,6 @@ import { registerDesktopHandlers } from './main/ipc/registerDesktopHandlers';
 import { createPerformanceSampler, type PerformanceSampler } from './main/performance/PerformanceSampler';
 import { startPerformanceAutomation } from './main/performance/PerformanceAutomation';
 import {
-  ServerPortConflictError,
   ServerProcessManager,
   type ServerProcessAddress,
   type ServerProcessState,
@@ -25,6 +24,7 @@ import { DesktopServerSettings } from './main/server/DesktopServerSettings';
 import { startGlobalDoubleControlShortcut } from './main/shortcuts/GlobalDoubleControlShortcut';
 import { boundsVisibleOnDisplays, browserWindowBounds, DesktopWindowState } from './main/window/DesktopWindowState';
 import { getWindowTitleBarOptions, readStartupDark, startupBackground } from './main/window/WindowTitleBar';
+import { serverErrorPageUrl, serverRecoveryAction } from './main/window/ServerErrorPage';
 import { normalizeExternalUrl } from './shared/external-url';
 import type { OpenTigPairingLink, OpenTigWebAccessStatus } from './shared/desktop-api';
 import type { OpenTigServerHost } from './shared/server-process';
@@ -92,6 +92,7 @@ function applyDoubleControlShortcutPreference(enabled: boolean): void {
 
 async function createWindow(): Promise<void> {
   if (!serverManager || !windowState) throw new Error('Desktop services are not initialized.');
+  const manager = serverManager;
   const placement = await windowState.load();
   const bounds = boundsVisibleOnDisplays(
     browserWindowBounds(placement),
@@ -100,11 +101,9 @@ async function createWindow(): Promise<void> {
   );
   const dark = await readStartupDark(path.join(app.getPath('userData'), 'settings.json'), nativeTheme.shouldUseDarkColors);
   const backgroundColor = startupBackground(dark);
-  const errorPageUrl = startupPageUrl(
-    `${displayName} server is offline`,
-    'See the server log for details, then restart OpenTig.',
-    dark,
-  );
+  let errorPageUrl: string | null = null;
+  let restartRequested = false;
+  const serverLogPath = path.join(app.getPath('userData'), 'logs', 'server.log');
 
   mainWindow = new BrowserWindow({
     ...bounds,
@@ -177,6 +176,21 @@ async function createWindow(): Promise<void> {
   mainWindow.webContents.on('will-navigate', (event, url) => {
     if (url === errorPageUrl || (allowedServerOrigin && safeOrigin(url) === allowedServerOrigin)) return;
     event.preventDefault();
+    const recovery = serverRecoveryAction(mainWindow?.webContents.getURL() ?? '', errorPageUrl, url);
+    if (recovery === 'restart') {
+      if (!restartRequested && !shutdownStarted) {
+        restartRequested = true;
+        app.relaunch();
+        app.quit();
+      }
+      return;
+    }
+    if (recovery === 'openLog') {
+      void shell.openPath(serverLogPath).then((message) => {
+        if (message) dialog.showErrorBox('Could not open the server log', message);
+      }).catch((error) => dialog.showErrorBox('Could not open the server log', String(error)));
+      return;
+    }
     openExternal(url);
   });
   mainWindow.on('close', () => {
@@ -198,8 +212,8 @@ async function createWindow(): Promise<void> {
   });
 
   try {
-    await serverManager.start();
-    const server = serverManager.current;
+    await manager.start();
+    const server = manager.current;
     if (!server) throw new Error('OpenTig server stopped during startup.');
     allowedServerOrigin = server.origin;
     allowReveal = true;
@@ -212,16 +226,15 @@ async function createWindow(): Promise<void> {
       revealWindow();
     }
   } catch (error) {
+    await manager.recordDesktopFailure(error);
+    allowedServerOrigin = null;
+    errorPageUrl = serverErrorPageUrl({ displayName, dark, logPath: serverLogPath, appVersion: app.getVersion(), error });
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.setTitle(`${displayName} — Server error`);
       allowReveal = true;
       await mainWindow.loadURL(errorPageUrl).catch(() => undefined);
       revealWindow(true);
     }
-    const message = error instanceof ServerPortConflictError
-      ? error.message
-      : 'The OpenTig server could not start. See the desktop server log for details.';
-    dialog.showErrorBox('OpenTig server error', message);
   }
 }
 
@@ -376,17 +389,6 @@ async function installDesktopSessionCookie(origin: string, cookie: string): Prom
 function safeOrigin(value: string): string | null {
   try { return new URL(value).origin; } catch { return null; }
 }
-
-function startupPageUrl(heading: string, detail: string, dark: boolean): string {
-  const background = startupBackground(dark);
-  const foreground = dark ? '#f4f4f4' : '#1a1a1a';
-  const muted = dark ? '#a3a3a3' : '#5c5c5c';
-  const ring = dark ? '#FAFAFA' : '#1a1a1a';
-  const logo = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 117.9 128" aria-hidden="true"><path fill="${ring}" d="m113.9 42.6c-3.7-11.3-10.8-21.2-20.1-28.6-7.4-5.7-16.1-10-25.4-11.5-6.5-0.9-9.4-1.1-15.9-0.3-7.4 0.9-14.3 3.4-20.7 7-15.4 9.1-27.6 26.2-29.8 44.5-0.3 2.9-0.4 5.8-0.2 8.7 0.7 15.5 9.7 33.2 27.2 44.1l3.9 2.2c1.5 1.3 2.9 1.8 5.1 1.3 3.5-0.9 5.1-6.1 0.1-8.6-7.3-3.5-13.7-8.7-18.1-14.6-5-7-9-15.8-9.3-26.9-0.2-10 3.5-21.4 11.6-31.3 4.5-5.2 10.5-9.8 16.4-12.7 10.1-4.9 20.5-6.6 31.2-3.8 13.2 3.5 25.6 13.1 32.3 26.5 2.3 4.9 4.2 10.7 4.9 17.4 0.9 9.9-1.4 19.2-6.9 27.4-4.3 6.5-9.2 11-16.1 15.8l-4.1 2.1c-4.4 2.4-3.2 9.4 2.8 9 1.2 0 2.5-0.8 3.6-1.4 3.9-2 7.5-4.3 10.8-7 9.4-8 17.6-20.3 19.1-36.8 0.6-7.4-0.4-15.6-2.4-22.5z"/><path fill="#2266ea" d="m88.1 42.8c-3.6 0.3-7.4 2.9-9 7.3-5.5 0.8-14.1 3.6-20.3 12-4.3-6.3-11.6-10.7-19.7-12-1.1-3.8-5-7.5-10.2-7.2-4.1 0.4-8.7 3.8-8.7 9.7 0.2 6 5.7 10.3 11.1 9.3 2.8-0.3 5.2-2 6.6-4.3 6.7 1 14.9 4.7 17.3 14.1v36.7c-3.2 1.5-5.5 4.7-5.5 8.4 0 4.8 3.7 9.3 9.4 9.3s9.5-4.5 9.4-9.1c0.1-3.6-2.3-7.3-5.8-8.7v-36.4c1-5.6 5.9-10.9 13.3-13.3l3.9-1c1.8 2.9 4.9 4.6 8.6 4.5 4.6-0.2 9.3-3.6 9.3-9.5 0-5.6-4.9-10-9.7-9.8z"/></svg>`;
-  const html = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><style>html,body{height:100%;margin:0;background:${background};color:${muted};font-family:system-ui,sans-serif}body{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px}.logo{width:48px;height:52px}.logo svg{width:100%;height:100%}.copy{display:grid;gap:8px;text-align:center}h1{font-size:18px;font-weight:650;letter-spacing:-.02em;margin:0;color:${foreground}}p{font-size:13px;margin:0}</style></head><body><div class="logo">${logo}</div><div class="copy"><h1>${heading}</h1><p>${detail}</p></div></body></html>`;
-  return `data:text/html;charset=UTF-8,${encodeURIComponent(html)}`;
-}
-
 function normalizePlatform(platform: NodeJS.Platform): 'win32' | 'darwin' | 'linux' | 'other' {
   return platform === 'win32' || platform === 'darwin' || platform === 'linux' ? platform : 'other';
 }

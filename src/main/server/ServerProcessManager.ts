@@ -99,9 +99,10 @@ export class ServerPortConflictError extends Error {
 }
 
 class UtilityStartError extends Error {
-  constructor(readonly code: string, message: string) {
+  constructor(readonly code: string, message: string, childStack?: string) {
     super(message);
     this.name = 'UtilityStartError';
+    if (childStack) this.stack += `\nUtility process: ${childStack}`;
   }
 }
 
@@ -119,6 +120,7 @@ export class ServerProcessManager {
   private activePort: number | null = null;
   private desiredHost: OpenTigServerHost;
   private consecutiveFailures = 0;
+  private startupSecret: string | null = null;
   private stopping = false;
   private restartQueue: Promise<void> = Promise.resolve();
   private readonly pendingControls = new Map<string, {
@@ -143,6 +145,11 @@ export class ServerProcessManager {
 
   get current(): ServerProcessAddress | null {
     return this.address ? { ...this.address } : null;
+  }
+
+  /** Also captures failures after readiness, such as loading the desktop UI. */
+  recordDesktopFailure(error: unknown): Promise<void> {
+    return this.log.write('desktop', `${errorDetails(error)}\n`, this.startupSecret ? [this.startupSecret] : []);
   }
 
   start(): Promise<ServerProcessAddress> {
@@ -260,7 +267,16 @@ export class ServerProcessManager {
   }
 
   private spawnAndAdopt(port: number): Promise<ServerProcessAddress> {
+    const startedAt = Date.now();
+    let stage = 'fork';
     const desktopSecret = (this.options.randomSecret ?? defaultSecret)();
+    this.startupSecret = desktopSecret;
+    const redactSecret = (value: string) => redactSensitiveText(value).split(desktopSecret).join('[redacted]');
+    const recordFailure = (error: unknown) => this.log.write('manager',
+      `Startup failed: stage=${stage} host=${this.desiredHost} port=${port} elapsedMs=${Date.now() - startedAt} ${errorDetails(error)}\n`,
+      [desktopSecret],
+    );
+    void this.log.write('manager', `Starting server: appVersion=${this.options.appVersion} platform=${this.options.platform} host=${this.desiredHost} port=${port} module=${this.options.modulePath}\n`);
     const utilityConfig: OpenTigUtilityConfig = {
       ...(this.options.profile ? { profile: this.options.profile } : {}),
       appVersion: this.options.appVersion,
@@ -285,7 +301,7 @@ export class ServerProcessManager {
           serviceName: `${applicationName(this.options.profile ?? 'production')} Server`,
         });
       } catch (error) {
-        reject(error);
+        void recordFailure(error).then(() => reject(error));
         return;
       }
 
@@ -307,7 +323,7 @@ export class ServerProcessManager {
         finished = true;
         cleanupAttempt();
         child.kill();
-        reject(error);
+        void recordFailure(error).then(() => reject(error));
       };
       const onExit = (code: number) => {
         if (!finished) {
@@ -320,11 +336,15 @@ export class ServerProcessManager {
       child.on('exit', onExit);
       child.once('spawn', () => {
         if (finished || this.stopping) return fail(new Error('Server startup was cancelled.'));
-        child.postMessage({
-          type: 'bootstrap',
-          protocolVersion: OPEN_TIG_UTILITY_PROTOCOL_VERSION,
-          config: utilityConfig,
-        });
+        stage = 'bootstrap';
+        void this.log.write('manager', `Utility spawned: pid=${child.pid} port=${port}\n`);
+        try {
+          child.postMessage({
+            type: 'bootstrap',
+            protocolVersion: OPEN_TIG_UTILITY_PROTOCOL_VERSION,
+            config: utilityConfig,
+          });
+        } catch (error) { fail(error); }
       });
       child.on('message', (value) => {
         if (!isChildMessage(value)) return;
@@ -334,7 +354,7 @@ export class ServerProcessManager {
         }
         if (finished || processingReady) return;
         if (value.type === 'error') {
-          fail(new UtilityStartError(value.code, value.message));
+          fail(new UtilityStartError(value.code, redactSecret(value.message), value.stack ? redactSecret(value.stack) : undefined));
           return;
         }
         if (value.type !== 'ready') return;
@@ -355,7 +375,9 @@ export class ServerProcessManager {
             ...reportedAddress,
             origin: `http://127.0.0.1:${reportedAddress.port}`,
           };
+          stage = 'readiness-probe';
           await (this.options.probe ?? probeReady)(address);
+          stage = 'desktop-authentication';
           await this.options.onReady?.(address, desktopSecret);
           if (finished || this.stopping) throw new Error('Server startup was cancelled.');
           this.child = child;
@@ -365,6 +387,7 @@ export class ServerProcessManager {
           finished = true;
           cleanupAttempt();
           this.options.onState?.({ status: 'ready', ...address });
+          void this.log.write('manager', `Server ready: pid=${pid} port=${port} elapsedMs=${Date.now() - startedAt}\n`);
           resolve({ ...address });
         })().catch(fail);
       });
@@ -516,6 +539,13 @@ export class ServerProcessManager {
       if (!(await exited)) child.kill();
     }
   }
+}
+
+function errorDetails(error: unknown): string {
+  if (!(error instanceof Error)) return String(error);
+  const code = 'code' in error ? `code=${String(error.code)} ` : '';
+  const cause = error.cause === undefined ? '' : `\nCause: ${error.cause instanceof Error ? error.cause.stack ?? error.cause.message : String(error.cause)}`;
+  return `${code}${error.stack ?? error.message}${cause}`;
 }
 
 async function probeReady(address: ServerProcessAddress): Promise<void> {

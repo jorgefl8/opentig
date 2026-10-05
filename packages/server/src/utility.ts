@@ -64,7 +64,7 @@ async function start(message: Partial<OpenTigUtilityParentMessage> | null): Prom
       appVersion: server.appVersion,
     });
   } catch (error) {
-    failAndExit(errorCode(error), publicError(error));
+    failAndExit(errorCode(error), publicError(error), error instanceof Error ? error.stack : undefined);
   }
 }
 
@@ -106,9 +106,9 @@ async function shutdown(exitCode: number): Promise<void> {
   }
 }
 
-function failAndExit(code: string, message: string): void {
+function failAndExit(code: string, message: string, stack?: string): void {
   if (shutdownStarted) return;
-  parentPort!.postMessage({ type: 'error', code, message: redactSensitiveText(message) });
+  parentPort!.postMessage({ type: 'error', code, message: redactSensitiveText(message), ...(stack ? { stack: redactSensitiveText(stack) } : {}) });
   void shutdown(1);
 }
 

@@ -41,5 +41,5 @@ export type OpenTigUtilityChildMessage =
   | ({ type: 'ready'; host: string; port: number; origin: string } & OpenTigServerIdentity)
   | { type: 'control-result'; requestId: string; ok: true; result: OpenTigUtilityControlResult }
   | { type: 'control-result'; requestId: string; ok: false; message: string }
-  | { type: 'error'; code: string; message: string }
+  | { type: 'error'; code: string; message: string; stack?: string }
   | { type: 'stopped' };

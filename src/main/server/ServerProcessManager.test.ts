@@ -87,7 +87,56 @@ describe('ServerProcessManager', () => {
       message: 'OpenTig server port 7000 is already in use.',
     }));
     expect(fixture.children).toHaveLength(1);
+    await manager.stop();
   });
+
+  it('persists IPC startup errors and their stack before rejecting, with secrets redacted', async () => {
+    const fixture = await createFixture([(child, message) => child.emit('message', {
+      type: 'error',
+      code: 'EACCES',
+      message: `Cannot read sessions: ${message.config.desktopSecret}`,
+      stack: `Error: token=private-token\n    at readSessions (${message.config.desktopSecret})`,
+    })]);
+    const manager = new ServerProcessManager(fixture.options);
+    try {
+      await expect(manager.start()).rejects.toThrow('Cannot read sessions: [redacted]');
+      const secret = (fixture.children[0]!.messages[0] as Extract<OpenTigUtilityParentMessage, { type: 'bootstrap' }>).config.desktopSecret;
+      await manager.recordDesktopFailure(new Error(`Authentication failed with ${secret}`));
+      const log = await readFile(fixture.options.logPath, 'utf8');
+      expect(log).toContain('appVersion=test-version');
+      expect(log).toContain('stage=bootstrap');
+      expect(log).toContain('port=6767');
+      expect(log).toContain('code=EACCES');
+      expect(log).toContain('at readSessions');
+      expect(log).not.toContain('private-token');
+      expect(log).not.toContain(secret);
+    } finally { await manager.stop(); }
+  });
+
+  it.each(['fork', 'bootstrap', 'readiness-probe', 'desktop-authentication', 'timeout', 'early-exit'])(
+    'records a %s failure even when the child writes no output', async (failure) => {
+      const behavior: ChildBehavior = failure === 'timeout' ? () => {} : failure === 'early-exit' ? (child) => child.crash(17) : readyBehavior;
+      const fixture = await createFixture([behavior]);
+      const failureError = Object.assign(new Error('Diagnostic failure'), { code: 'DIAGNOSTIC_TEST' });
+      const options = { ...fixture.options, startupTimeoutMs: 30 };
+      if (failure === 'fork') options.fork = () => { throw failureError; };
+      if (failure === 'bootstrap') options.fork = (...args) => {
+        const child = fixture.options.fork(...args);
+        child.postMessage = () => { throw failureError; };
+        return child;
+      };
+      if (failure === 'readiness-probe') options.probe = vi.fn(async () => { throw failureError; });
+      if (failure === 'desktop-authentication') options.onReady = async () => { throw failureError; };
+      const manager = new ServerProcessManager(options);
+      try {
+        await expect(manager.start()).rejects.toThrow(failure === 'timeout' ? 'did not become ready' : failure === 'early-exit' ? 'code 17' : 'Diagnostic failure');
+        const log = await readFile(options.logPath, 'utf8');
+        expect(log).toContain(`stage=${failure === 'timeout' || failure === 'early-exit' ? 'bootstrap' : failure}`);
+        expect(log).toContain('elapsedMs=');
+        expect(log).toContain(failure === 'timeout' ? 'code=START_TIMEOUT' : failure === 'early-exit' ? 'code=EARLY_EXIT' : 'code=DIAGNOSTIC_TEST');
+      } finally { await manager.stop(); }
+    },
+  );
 
   it('restarts once on the same selected port after an unexpected exit', async () => {
     const states: string[] = [];
