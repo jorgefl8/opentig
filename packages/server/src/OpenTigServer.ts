@@ -95,8 +95,8 @@ export class OpenTigServer {
     return this.options.auth.createPairingToken();
   }
 
-  getStatus(): { connectedSessionCount: number } {
-    return { connectedSessionCount: this.webSockets.connectedSessionCount };
+  getStatus(): { connectedSessionCount: number; browserAccessEnabled: boolean } {
+    return { connectedSessionCount: this.webSockets.connectedSessionCount, browserAccessEnabled: this.options.auth.descriptor().browserAccessEnabled };
   }
 
   async setBrowserAccessEnabled(enabled: boolean): Promise<void> {

@@ -178,7 +178,10 @@ describe('ServerProcessManager', () => {
     const manager = new ServerProcessManager(fixture.options);
     await manager.start();
 
-    await expect(manager.getStatus()).resolves.toEqual({ connectedSessionCount: 3 });
+    await expect(manager.getStatus()).resolves.toEqual({ connectedSessionCount: 3, browserAccessEnabled: false });
+    await manager.setBrowserAccessEnabled(true);
+    await manager.setBrowserAccessEnabled(false);
+    expect(fixture.children).toHaveLength(1);
     await expect(manager.createPairingLink('http://192.168.1.50:6767')).resolves.toEqual({
       url: `http://192.168.1.50:6767/pair#token=${PAIRING_TOKEN}`,
       expiresAt: PAIRING_EXPIRES_AT,
@@ -204,6 +207,42 @@ describe('ServerProcessManager', () => {
     const rotated = await readFile(`${fixture.options.logPath}.1`, 'utf8');
     expect(`${current}${rotated}`).not.toContain(secret);
     expect(`${current}${rotated}`).toContain('[redacted]');
+  });
+
+  it('retains confirmed browser policy after utility crashes', async () => {
+    const fixture = await createFixture([readyBehavior, readyBehavior, readyBehavior]);
+    const manager = new ServerProcessManager({ ...fixture.options, restartDelaysMs: [0, 0] });
+    try {
+      await manager.start();
+      expect(fixture.children[0]!.messages[0]).toMatchObject({ config: { browserAccessEnabled: false } });
+      await manager.setBrowserAccessEnabled(true);
+      fixture.children[0]!.crash(9);
+      await waitFor(() => fixture.children.length === 2 && manager.current?.pid === fixture.children[1]!.pid);
+      expect(fixture.children[1]!.messages[0]).toMatchObject({ config: { browserAccessEnabled: true } });
+      await manager.setBrowserAccessEnabled(false);
+      fixture.children[1]!.crash(9);
+      await waitFor(() => fixture.children.length === 3 && manager.current?.pid === fixture.children[2]!.pid);
+      expect(fixture.children[2]!.messages[0]).toMatchObject({ config: { browserAccessEnabled: false } });
+    } finally { await manager.stop(); }
+  });
+
+  it('kills and recovers browser-disabled when the utility cannot confirm OFF', async () => {
+    const fixture = await createFixture([readyBehavior, readyBehavior]);
+    const manager = new ServerProcessManager({ ...fixture.options, browserAccessEnabled: true, restartDelaysMs: [0] });
+    try {
+      await manager.start();
+      const child = fixture.children[0]!;
+      const post = child.postMessage.bind(child);
+      child.postMessage = (message) => {
+        if (message.type === 'control' && message.action === 'set-browser-access') {
+          queueMicrotask(() => child.emit('message', { type: 'control-result', requestId: message.requestId, ok: true, result: { action: 'set-browser-access', browserAccessEnabled: true } }));
+        } else post(message);
+      };
+      await expect(manager.setBrowserAccessEnabled(false)).rejects.toThrow('did not apply');
+      expect(child.killCalls).toBe(1);
+      await waitFor(() => fixture.children.length === 2 && manager.current?.pid === fixture.children[1]!.pid);
+      expect(fixture.children[1]!.messages[0]).toMatchObject({ config: { browserAccessEnabled: false } });
+    } finally { await manager.stop(); }
   });
 
   it('kills a utility that ignores graceful shutdown', async () => {
@@ -261,7 +300,8 @@ class FakeUtility extends EventEmitter {
 
   private respondToControl(message: Extract<OpenTigUtilityParentMessage, { type: 'control' }>): void {
     const result = message.action === 'status'
-      ? { action: 'status' as const, connectedSessionCount: 3 }
+      ? { action: 'status' as const, connectedSessionCount: 3, browserAccessEnabled: false }
+      : message.action === 'set-browser-access' ? { action: 'set-browser-access' as const, browserAccessEnabled: message.enabled }
       : { action: 'create-pairing-link' as const, url: `http://127.0.0.1:6767/pair#token=${PAIRING_TOKEN}`, expiresAt: PAIRING_EXPIRES_AT };
     queueMicrotask(() => this.emit('message', { type: 'control-result', requestId: message.requestId, ok: true, result }));
   }

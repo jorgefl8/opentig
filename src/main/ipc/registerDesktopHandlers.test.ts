@@ -32,7 +32,7 @@ function fixture() {
   };
   const webAccess = {
     getStatus: vi.fn(async () => ({
-      enabled: false,
+      webAccessEnabled: false, lanAccessEnabled: false, publicOrigin: null, listeningOnLan: false,
       serverState: 'ready' as const,
       actualPort: 6767,
       localEndpoint: 'http://127.0.0.1:6767',
@@ -42,7 +42,7 @@ function fixture() {
       restartError: null,
     })),
     setEnabled: vi.fn(async (enabled: boolean) => ({
-      enabled,
+      webAccessEnabled: enabled, lanAccessEnabled: false, publicOrigin: null, listeningOnLan: false,
       serverState: 'ready' as const,
       actualPort: 6767,
       localEndpoint: 'http://127.0.0.1:6767',
@@ -52,6 +52,8 @@ function fixture() {
       restartError: null,
     })),
     createPairingLink: vi.fn(async () => ({ url: 'http://192.168.1.50:6767/pair#token=secret', expiresAt: '2030-01-01T00:00:00.000Z' })),
+    setLanEnabled: vi.fn(async () => ({ webAccessEnabled: true, lanAccessEnabled: true, publicOrigin: null, listeningOnLan: true, serverState: 'ready' as const, actualPort: 6767, localEndpoint: null, networkEndpoints: [], pairingEndpoints: [], connectedSessionCount: 1, restartError: null })),
+    setPublicOrigin: vi.fn(async () => ({ webAccessEnabled: true, lanAccessEnabled: false, publicOrigin: 'https://git.example.com', listeningOnLan: false, serverState: 'ready' as const, actualPort: 6767, localEndpoint: null, networkEndpoints: [], pairingEndpoints: [], connectedSessionCount: 1, restartError: null })),
   };
   return { host, webAccess };
 }
@@ -103,7 +105,7 @@ describe('desktop IPC boundary', () => {
 
     await expect(invoke(OPEN_TIG_DESKTOP_IPC.webAccessSetEnabled, true)).resolves.toEqual(expect.objectContaining({
       ok: true,
-      value: expect.objectContaining({ enabled: true }),
+      value: expect.objectContaining({ webAccessEnabled: true }),
     }));
     expect(value.webAccess.setEnabled).toHaveBeenCalledWith(true);
     await expect(invoke(OPEN_TIG_DESKTOP_IPC.webAccessSetEnabled, 'yes')).resolves.toEqual(expect.objectContaining({ ok: false }));
@@ -121,6 +123,26 @@ describe('desktop IPC boundary', () => {
 
     await expect(invoke(OPEN_TIG_DESKTOP_IPC.repositoryRevealEntry, 'relative.txt')).resolves.toEqual(expect.objectContaining({ ok: false }));
     expect(value.host.revealItem).not.toHaveBeenCalled();
+  });
+
+  it('rejects all web access controls from untrusted frames', async () => {
+    const value = fixture();
+    registerDesktopHandlers(value.host, undefined, value.webAccess, undefined, () => false);
+    for (const channel of Object.values(OPEN_TIG_DESKTOP_IPC).filter((channel) => channel.startsWith('desktop:web-access-'))) {
+      expect(await invoke(channel, true)).toMatchObject({ ok: false });
+    }
+    for (const method of Object.values(value.webAccess)) expect(method).not.toHaveBeenCalled();
+  });
+
+  it('allows clearing the public origin and validates LAN and URL arguments', async () => {
+    const value = fixture();
+    registerDesktopHandlers(value.host, undefined, value.webAccess, undefined, () => true);
+    expect(await invoke(OPEN_TIG_DESKTOP_IPC.webAccessSetPublicOrigin, '')).toMatchObject({ ok: true });
+    expect(value.webAccess.setPublicOrigin).toHaveBeenCalledWith('');
+    expect(await invoke(OPEN_TIG_DESKTOP_IPC.webAccessSetLanEnabled, true)).toMatchObject({ ok: true });
+    expect(value.webAccess.setLanEnabled).toHaveBeenCalledWith(true);
+    expect(await invoke(OPEN_TIG_DESKTOP_IPC.webAccessSetLanEnabled, 'yes')).toMatchObject({ ok: false });
+    expect(await invoke(OPEN_TIG_DESKTOP_IPC.webAccessSetPublicOrigin, {})).toMatchObject({ ok: false });
   });
 
   it('rejects update actions from other frames and accepts no caller-controlled arguments', async () => {

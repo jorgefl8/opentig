@@ -982,6 +982,9 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   .web-access-empty-session { border: 1px dashed var(--border); border-radius: var(--radius-lg); padding: 14px; color: var(--muted-foreground); font-size: 10.5px; text-align: center; }
   .web-access-rename-input { border: 1px solid var(--input); border-radius: var(--radius-md); background: var(--background); padding: 7px 9px; font-size: 11px; outline: none; }
   .web-access-rename-input:focus { border-color: var(--ring); box-shadow: 0 0 0 2px color-mix(in oklch, var(--ring) 20%, transparent); }
+  .web-access-advanced > summary { cursor: pointer; font-size: 11px; font-weight: 600; }
+  .web-access-advanced[open] > summary { margin-bottom: 14px; }
+  .web-access-pairing-copy > div { flex: 1; }
   .web-access-loading, .web-access-unavailable { display: flex; align-items: center; gap: 7px; margin: 0; color: var(--muted-foreground); font-size: 11px; }
   .web-access-loading svg { width: 15px; height: 15px; }
   .shortcuts-reset-all { margin-top: 14px; }

@@ -13,6 +13,45 @@ afterEach(async () => {
 });
 
 describe('persistent owner authentication', () => {
+  it('stays closed after revocation fails and does not resurrect credentials on retry', async () => {
+    const auth = await OpenTigSessionAuth.open({ source: new OneTimeBootstrapAuthSource({ desktopSecret: 'desktop-secret' }), dataDirectory: await authDirectory() });
+    const desktop = cookieValue((await auth.exchangeDesktopSecret('desktop-secret'))!);
+    const browser = cookieValue((await auth.exchangePairingToken(auth.createPairingToken().token))!);
+    const revoke = vi.spyOn(PersistentAuthStore.prototype, 'revokeBrowserSessions').mockRejectedValueOnce(new Error('Disk failed'));
+    await expect(auth.setBrowserAccessEnabled(false)).rejects.toThrow('Disk failed');
+    expect(auth.authenticate({ cookie: browser })).toBeNull();
+    expect(auth.authenticate({ cookie: desktop })).toBeTruthy();
+    expect(auth.descriptor().browserAccessEnabled).toBe(false);
+    await auth.setBrowserAccessEnabled(true);
+    expect(revoke).toHaveBeenCalledTimes(2);
+    expect(auth.authenticate({ cookie: browser })).toBeNull();
+    await auth.close();
+  });
+
+  it('keeps the latest OFF decision when an earlier enable is still queued', async () => {
+    const auth = await OpenTigSessionAuth.open({ source: new OneTimeBootstrapAuthSource({ desktopSecret: 'desktop-secret' }), dataDirectory: await authDirectory(), browserAccessEnabled: false });
+    const enabling = auth.setBrowserAccessEnabled(true);
+    const disabling = auth.setBrowserAccessEnabled(false);
+    await Promise.all([enabling, disabling]);
+    expect(auth.descriptor().browserAccessEnabled).toBe(false);
+    expect(() => auth.createPairingToken()).toThrow('disabled');
+    await auth.close();
+  });
+
+  it('revokes persisted browsers when starting with Web access OFF', async () => {
+    const dataDirectory = await authDirectory();
+    const auth = await OpenTigSessionAuth.open({ source: new OneTimeBootstrapAuthSource({ desktopSecret: 'desktop-secret' }), dataDirectory });
+    const desktop = cookieValue((await auth.exchangeDesktopSecret('desktop-secret'))!);
+    const browser = cookieValue((await auth.exchangePairingToken(auth.createPairingToken().token))!);
+    await auth.close();
+    const restarted = await OpenTigSessionAuth.open({ source: new OneTimeBootstrapAuthSource({ desktopSecret: 'new-secret' }), dataDirectory, browserAccessEnabled: false });
+    expect(restarted.authenticate({ cookie: desktop })).toBeTruthy();
+    expect(restarted.authenticate({ cookie: browser })).toBeNull();
+    await restarted.setBrowserAccessEnabled(true);
+    expect(restarted.authenticate({ cookie: browser })).toBeNull();
+    await restarted.close();
+  });
+
   it('blocks browsers and rotates their credentials without revoking the desktop', async () => {
     const auth = await OpenTigSessionAuth.open({ source: new OneTimeBootstrapAuthSource({ desktopSecret: 'desktop-secret' }), dataDirectory: await authDirectory() });
     const desktop = cookieValue((await auth.exchangeDesktopSecret('desktop-secret'))!);

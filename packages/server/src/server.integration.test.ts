@@ -20,6 +20,20 @@ afterEach(async () => {
 });
 
 describe('authoritative HTTP server', () => {
+  it.each(['desktop', 'web-access'] as const)('defaults browser policy by server mode: %s', async (mode) => {
+    const fixture = await startFixture({ browserAccessEnabled: 'default', mode });
+    const enabled = mode === 'web-access';
+    expect(fixture.server.getStatus().browserAccessEnabled).toBe(enabled);
+    expect(await (await fetch(`${fixture.server.origin}/api/auth/descriptor`)).json()).toMatchObject({ browserAccessEnabled: enabled });
+    if (!enabled) {
+      expect(() => fixture.server.createPairingLink()).toThrow('disabled');
+      expect((await postJson(`${fixture.server.origin}/api/auth/pair`, { token: 'invalid' }, fixture.server.origin)).status).toBe(403);
+    }
+    const desktop = await postJson(`${fixture.server.origin}/api/auth/desktop`, { secret: fixture.desktopSecret }, fixture.server.origin);
+    expect(desktop.status).toBe(204);
+    expect(desktop.cookie).toContain('HttpOnly');
+  });
+
   it('disables browsers over HTTP and WebSocket while preserving the desktop and listener', async () => {
     const fixture = await startFixture();
     const origin = fixture.server.origin;
@@ -251,7 +265,7 @@ describe('authoritative HTTP server', () => {
     const fixture = await startFixture();
     const authenticated = await postJson(`${fixture.server.origin}/api/auth/desktop`, { secret: fixture.desktopSecret }, fixture.server.origin);
     const socket = await openWebSocket(fixture.server.origin, cookieValue(authenticated.cookie));
-    expect(fixture.server.getStatus()).toEqual({ connectedSessionCount: 1 });
+    expect(fixture.server.getStatus()).toEqual({ connectedSessionCount: 1, browserAccessEnabled: true });
     const socketClosed = closed(socket);
 
     const revoked = await fixture.server.revokeAllSessions();
@@ -260,7 +274,7 @@ describe('authoritative HTTP server', () => {
     expect(revoked.desktopCookie).toMatch(/^opentig_session=[A-Za-z0-9_-]+; Path=\/; HttpOnly; SameSite=Strict$/);
     await expect(socketClosed).resolves.toBe(1008);
     const replacement = await openWebSocket(fixture.server.origin, cookieValue(revoked.desktopCookie));
-    expect(fixture.server.getStatus()).toEqual({ connectedSessionCount: 1 });
+    expect(fixture.server.getStatus()).toEqual({ connectedSessionCount: 1, browserAccessEnabled: true });
     replacement.close();
   });
 
@@ -415,7 +429,7 @@ describe('authenticated WebSocket protocol', () => {
   });
 });
 
-async function startFixture(options: { updates?: DesktopUpdatesApi; admin?: { token: string; instanceId: string }; profile?: 'dev' } = {}): Promise<{
+async function startFixture(options: { updates?: DesktopUpdatesApi; admin?: { token: string; instanceId: string }; profile?: 'dev'; browserAccessEnabled?: boolean | 'default'; mode?: 'desktop' | 'web-access' } = {}): Promise<{
   server: RunningOpenTigServer;
   directory: string;
   clientRoot: string;
@@ -435,17 +449,16 @@ async function startFixture(options: { updates?: DesktopUpdatesApi; admin?: { to
     trash: { available: true, trashItem: async () => undefined },
     clientRoot,
     appVersion: '0.1-test',
-    browserAccessEnabled: true,
+    ...(options.browserAccessEnabled === 'default' ? {} : { browserAccessEnabled: options.browserAccessEnabled ?? true }),
+    ...(options.mode ? { mode: options.mode } : {}),
     auth: new OneTimeBootstrapAuthSource({ desktopSecret }),
     port: 0,
     ...(options.updates ? { updates: options.updates } : {}),
     ...(options.admin ? { admin: options.admin } : {}),
     ...(options.profile ? { profile: options.profile } : {}),
   });
-  const pairingLink = server.createPairingLink();
-  const pairingToken = new URLSearchParams(new URL(pairingLink.url).hash.slice(1)).get('token');
-  if (!pairingToken) throw new Error('Pairing token missing.');
   servers.push(server);
+  const pairingToken = server.getStatus().browserAccessEnabled ? new URLSearchParams(new URL(server.createPairingLink().url).hash.slice(1)).get('token')! : '';
   return { server, directory, clientRoot, desktopSecret, pairingToken };
 }
 

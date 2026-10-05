@@ -19,6 +19,8 @@ export function registerDesktopHandlers(
   webAccess?: {
     getStatus(): Promise<OpenTigWebAccessStatus>;
     setEnabled(enabled: boolean): Promise<OpenTigWebAccessStatus>;
+    setLanEnabled(enabled: boolean): Promise<OpenTigWebAccessStatus>;
+    setPublicOrigin(origin: string): Promise<OpenTigWebAccessStatus>;
     createPairingLink(endpoint: string): Promise<OpenTigPairingLink>;
   },
   updates?: Omit<DesktopUpdatesApi, 'getStatus'> & { getStatus(): DesktopUpdateStatus | Promise<DesktopUpdateStatus> },
@@ -32,6 +34,7 @@ export function registerDesktopHandlers(
   ) => {
     channels.push(channel);
     ipcMain.handle(channel, async (_event, ...args): Promise<IpcResult<T>> => {
+      if (channel.startsWith('desktop:web-access-') && trustedUpdateSender && !trustedUpdateSender(_event)) return { ok: false, error: { code: 'INVALID_ARGUMENT', operation: channel, message: 'Web access controls are unavailable from this frame.' } };
       try { return { ok: true, value: await handler(...args) }; }
       catch (error) { return { ok: false, error: serializeError(error, operation) }; }
     });
@@ -82,6 +85,12 @@ export function registerDesktopHandlers(
   ));
   handle(OPEN_TIG_DESKTOP_IPC.webAccessCreatePairingLink, 'web-access-create-pairing-link', (endpoint) => (
     requireWebAccess(webAccess).createPairingLink(stringArg(endpoint, 'web-access-create-pairing-link', 2_048))
+  ));
+  handle(OPEN_TIG_DESKTOP_IPC.webAccessSetLanEnabled, 'web-access-set-lan-enabled', (enabled) => (
+    requireWebAccess(webAccess).setLanEnabled(booleanArg(enabled, 'web-access-set-lan-enabled'))
+  ));
+  handle(OPEN_TIG_DESKTOP_IPC.webAccessSetPublicOrigin, 'web-access-set-public-origin', (origin) => (
+    requireWebAccess(webAccess).setPublicOrigin(origin === '' ? '' : stringArg(origin, 'web-access-set-public-origin', 2_048))
   ));
   for (const [channel, action] of [
     [OPEN_TIG_DESKTOP_IPC.updatesStatus, 'getStatus'],

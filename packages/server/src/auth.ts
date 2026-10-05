@@ -110,13 +110,13 @@ export class OpenTigSessionAuth {
       if (!this.browserAccessEnabled || generation !== this.browserGeneration) return null;
       try {
         const cookie = await this.issueCookie({
-        kind: 'browser',
-        clientName: metadata?.clientName ?? 'Browser',
-        deviceType: metadata?.deviceType ?? 'unknown',
-        os: metadata?.os ?? null,
-        browser: metadata?.browser ?? null,
-        remoteAddress: metadata?.remoteAddress ?? null,
-        viaProxy: metadata?.viaProxy ?? false,
+          kind: 'browser',
+          clientName: metadata?.clientName ?? 'Browser',
+          deviceType: metadata?.deviceType ?? 'unknown',
+          os: metadata?.os ?? null,
+          browser: metadata?.browser ?? null,
+          remoteAddress: metadata?.remoteAddress ?? null,
+          viaProxy: metadata?.viaProxy ?? false,
         }, secure);
         if (!this.browserAccessEnabled || generation !== this.browserGeneration) {
           await this.revoke({ cookie });

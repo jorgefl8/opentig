@@ -15,6 +15,7 @@ import {
 import { OPEN_TIG_PROTOCOL_VERSION } from '../../shared/server-protocol';
 import { DEFAULT_SERVER_PORT, DEFAULT_SERVER_PORT_SCAN_COUNT } from '../../shared/server-config';
 import { applicationName, type ApplicationProfile } from '../../shared/application-profile';
+import { normalizePairingOrigin } from '../../shared/web-access';
 
 export { DEFAULT_SERVER_PORT, DEFAULT_SERVER_PORT_SCAN_COUNT } from '../../shared/server-config';
 
@@ -75,6 +76,7 @@ export interface ServerProcessManagerOptions {
   appVersion: string;
   platform: OpenTigPlatform;
   host?: OpenTigServerHost;
+  browserAccessEnabled?: boolean;
   port?: number;
   env?: NodeJS.ProcessEnv;
   fork: UtilityFork;
@@ -119,6 +121,7 @@ export class ServerProcessManager {
   private stableTimer: NodeJS.Timeout | null = null;
   private activePort: number | null = null;
   private desiredHost: OpenTigServerHost;
+  private desiredBrowserAccess: boolean;
   private consecutiveFailures = 0;
   private startupSecret: string | null = null;
   private stopping = false;
@@ -132,6 +135,7 @@ export class ServerProcessManager {
 
   constructor(private readonly options: ServerProcessManagerOptions) {
     this.desiredHost = options.host ?? '127.0.0.1';
+    this.desiredBrowserAccess = options.browserAccessEnabled ?? false;
     this.restartDelaysMs = options.restartDelaysMs ?? [250, 500, 1_000, 2_000, 5_000];
     if (this.restartDelaysMs.length === 0 || this.restartDelaysMs.some((delay) => !Number.isFinite(delay) || delay < 0)) {
       throw new Error('At least one valid restart delay is required.');
@@ -170,12 +174,26 @@ export class ServerProcessManager {
     return operation;
   }
 
-  async getStatus(): Promise<{ connectedSessionCount: number }> {
+  async getStatus(): Promise<{ connectedSessionCount: number; browserAccessEnabled: boolean }> {
     const result = await this.requestControl('status');
-    if (result.action !== 'status' || !Number.isSafeInteger(result.connectedSessionCount) || result.connectedSessionCount < 0) {
+    if (result.action !== 'status' || !Number.isSafeInteger(result.connectedSessionCount) || result.connectedSessionCount < 0 || typeof result.browserAccessEnabled !== 'boolean') {
       throw new Error('OpenTig utility returned an invalid server status.');
     }
-    return { connectedSessionCount: result.connectedSessionCount };
+    return { connectedSessionCount: result.connectedSessionCount, browserAccessEnabled: result.browserAccessEnabled };
+  }
+
+  async setBrowserAccessEnabled(enabled: boolean): Promise<void> {
+    if (!enabled) this.desiredBrowserAccess = false;
+    const child = this.child;
+    try {
+      const result = await this.requestControl('set-browser-access', enabled);
+      if (result.action !== 'set-browser-access' || result.browserAccessEnabled !== enabled) throw new Error('OpenTig utility did not apply browser access.');
+      this.desiredBrowserAccess = enabled;
+    } catch (error) {
+      // If OFF cannot be confirmed, recover with a fresh, browser-disabled utility.
+      if (!enabled && child && this.child === child) child.kill();
+      throw error;
+    }
   }
 
   async createPairingLink(publicOrigin: string): Promise<{ url: string; expiresAt: string }> {
@@ -197,7 +215,7 @@ export class ServerProcessManager {
       || expiresAt > Date.now() + 15 * 60 * 1_000) {
       throw new Error('OpenTig utility returned an invalid pairing link.');
     }
-    const endpoint = normalizePublicOrigin(publicOrigin);
+    const endpoint = normalizePairingOrigin(publicOrigin);
     const url = new URL('/pair', endpoint);
     url.hash = privateUrl.hash;
     return { url: url.href, expiresAt: result.expiresAt };
@@ -288,6 +306,7 @@ export class ServerProcessManager {
       ...(this.options.trashModulePath ? { trashModulePath: this.options.trashModulePath } : {}),
       platform: this.options.platform,
       host: this.desiredHost,
+      browserAccessEnabled: this.desiredBrowserAccess,
       port,
     };
 
@@ -394,7 +413,7 @@ export class ServerProcessManager {
     });
   }
 
-  private requestControl(action: OpenTigUtilityControlAction): Promise<OpenTigUtilityControlResult> {
+  private requestControl(action: OpenTigUtilityControlAction, enabled?: boolean): Promise<OpenTigUtilityControlResult> {
     const child = this.child;
     if (!child?.pid || !this.address) return Promise.reject(new Error('OpenTig server is not ready.'));
     const requestId = randomBytes(12).toString('base64url');
@@ -405,7 +424,10 @@ export class ServerProcessManager {
       }, this.options.controlTimeoutMs ?? 5_000);
       timeout.unref();
       this.pendingControls.set(requestId, { action, resolve, reject, timeout });
-      try { child.postMessage({ type: 'control', requestId, action }); }
+      try {
+        if (action === 'set-browser-access') child.postMessage({ type: 'control', requestId, action, enabled: enabled! });
+        else child.postMessage({ type: 'control', requestId, action });
+      }
       catch (error) {
         clearTimeout(timeout);
         this.pendingControls.delete(requestId);
@@ -572,14 +594,6 @@ function isChildMessage(value: unknown): value is OpenTigUtilityChildMessage {
 
 function defaultSecret(): string {
   return randomBytes(32).toString('base64url');
-}
-
-function normalizePublicOrigin(value: string): string {
-  const url = new URL(value);
-  if ((url.protocol !== 'http:' && url.protocol !== 'https:') || url.username || url.password || url.pathname !== '/' || url.search || url.hash) {
-    throw new Error('Invalid OpenTig network endpoint.');
-  }
-  return url.origin;
 }
 
 class RotatingServerLog {

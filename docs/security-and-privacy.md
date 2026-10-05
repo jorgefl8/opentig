@@ -17,6 +17,16 @@
 - HTML previews run in a sandbox; rendered Markdown is sanitised before display.
 - OpenTig does not read or persist GitHub or AI API tokens. Connected CLIs manage their own authentication.
 
+Desktop **Web access** is off by default and is separate from the LAN listener.
+When off, only authenticated desktop sessions can use backend operations;
+browser pairing, renewal, HTTP data access and WebSocket commands/events are
+blocked even through a same-PC tunnel. Turning it off revokes browser credentials
+and invalidates pending pairing codes without restarting the desktop session.
+The standalone CLI remains browser-enabled. The optional saved public URL only
+constructs the pairing link and QR; it is not an authentication allowlist. Closing
+the QR display does not revoke a copied code. Static assets and health endpoints
+may still be served while browser backend access is disabled.
+
 ## AI privacy
 
 For commit-message generation, OpenTig sends the selected local AI CLI only a bounded staged diff, its summary, staged paths, the branch name, and up to ten recent commit subjects. It does not include unstaged content; untracked files are included only after you stage them.

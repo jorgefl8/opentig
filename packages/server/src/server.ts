@@ -44,7 +44,7 @@ export interface RunningOpenTigServer extends OpenTigServerAddress {
   readonly runtime: OpenTigRuntime;
   readonly clientRoot: string;
   createPairingLink(): { url: string; expiresAt: string };
-  getStatus(): { connectedSessionCount: number };
+  getStatus(): { connectedSessionCount: number; browserAccessEnabled: boolean };
   revokeAllSessions(): Promise<{ revokedCount: number; desktopCookie: string }>;
   setBrowserAccessEnabled(enabled: boolean): Promise<void>;
   close(): Promise<void>;

@@ -26,6 +26,34 @@ afterEach(async () => {
 });
 
 describe('WebSocket safety limits', () => {
+  it('aborts only browser commands when Web access is disabled', async () => {
+    const active = new Map<string, { signal: AbortSignal; finish(): void }>();
+    let ready!: () => void;
+    const started = new Promise<void>((resolve) => { ready = resolve; });
+    const fixture = await startFixture((context) => new Promise((resolve) => {
+      const finish = () => resolve(emptyBootstrap());
+      active.set(context.sessionId, { signal: context.signal, finish });
+      context.signal.addEventListener('abort', finish, { once: true });
+      if (active.size === 2) ready();
+    }), { commandTimeoutMs: 10_000 });
+    const cookie = (await fixture.auth.exchangePairingToken(fixture.auth.createPairingToken().token))!.split(';', 1)[0]!;
+    const browserId = fixture.auth.authenticate({ cookie })!;
+    const browser = await openWebSocket(fixture.origin, cookie);
+    const desktop = await fixture.socket();
+    const disconnected = closed(browser);
+    const desktopResult = sendAndReceive(desktop, { type: 'request', id: 'desktop', command: 'app:bootstrap', args: [] });
+    browser.send(JSON.stringify({ type: 'request', id: 'browser', command: 'app:bootstrap', args: [] }));
+    await started;
+    await fixture.server.setBrowserAccessEnabled(false);
+    expect(active.get(browserId)?.signal.aborted).toBe(true);
+    const remaining = [...active.entries()].find(([id]) => id !== browserId)![1];
+    expect(remaining.signal.aborted).toBe(false);
+    remaining.finish();
+    expect(await desktopResult).toMatchObject({ result: { ok: true } });
+    expect(await disconnected).toBe(1008);
+    desktop.close();
+  });
+
   it('renews both the cookie and server lifetime over trusted HTTP without disconnecting the socket', async () => {
     let now = Date.parse('2026-09-23T00:00:00.000Z');
     const fixture = await startFixture(() => emptyBootstrap(), {}, () => now);
