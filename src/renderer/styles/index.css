@@ -287,7 +287,8 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   .toolbar button, .toolbar input, .toolbar textarea, .toolbar select, .toolbar a, .toolbar [role="button"] { -webkit-app-region: no-drag; }
   .toolbar-brand { display: flex; flex: none; align-items: center; gap: 7px; color: var(--foreground); font-size: 13px; font-weight: 760; letter-spacing: -.02em; }
   .toolbar-brand svg { width: 18px; height: 20px; flex: none; }
-  .dev-instance-stripe { width: 20px; height: 12px; flex: none; border-radius: 2px; background: repeating-linear-gradient(135deg, var(--dev-stripe-black) 0 4px, var(--dev-stripe-yellow) 4px 8px); }
+  .app-name { white-space: nowrap; }
+  .app-name-dev { font-weight: 800; color: var(--foreground); background-image: repeating-linear-gradient(135deg, var(--dev-stripe-black) 0 .18em, var(--dev-stripe-yellow) .18em .36em); background-clip: text; -webkit-text-fill-color: transparent; -webkit-text-stroke: .35px color-mix(in oklch, var(--foreground) 65%, transparent); }
   .toolbar-spacer { flex: 1; }
   .toolbar-branch-pr { display: inline-flex; flex: none; min-height: 28px; align-items: center; gap: 4px; padding: 0 3px; background: transparent; color: var(--success); font-size: 11px; font-weight: 500; }
   .toolbar-branch-pr > svg { width: 14px; height: 14px; flex: none; }
@@ -662,7 +663,8 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   @media (prefers-reduced-motion: reduce) {
     .splash-mark { animation: none; }
   }
-  .welcome { display: flex; height: 100%; flex-direction: column; align-items: center; justify-content: center; background: radial-gradient(circle at 50% 38%, color-mix(in oklch, var(--primary) 9%, transparent), transparent 34%), var(--background); padding: 32px; text-align: center; }
+  .welcome { display: flex; height: 100%; flex-direction: column; align-items: center; justify-content: center; background: radial-gradient(circle at 50% 38%, color-mix(in oklch, var(--primary) 9%, transparent), transparent 34%), var(--background); color: var(--foreground); padding: 32px; text-align: center; }
+  .welcome-titlebar { position: fixed; top: 0; left: var(--window-controls-inset-left); right: var(--window-controls-inset); height: var(--toolbar-height); -webkit-app-region: drag; }
   .welcome h1 { margin-top: 18px; font-size: 34px; font-weight: 750; letter-spacing: -0.05em; }
   .welcome > p { margin: 2px 0 24px; color: var(--muted-foreground); font-size: 14px; }
   .welcome section { width: min(540px, 80vw); margin-top: 36px; text-align: left; }

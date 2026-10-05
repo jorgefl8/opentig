@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Kbd } from '@/components/ui/kbd';
 import { SearchablePicker, type SearchablePickerItem } from '@/components/SearchablePicker';
 import { OpenTigMark } from '@/components/OpenTigMark';
-import { DevIndicator } from '@/components/DevIndicator';
+import { AppName } from '@/components/AppName';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { isEditableTarget } from '@/features/files/file-tree';
 import { OpenFilesStrip } from '@/features/files/OpenFilesStrip';
@@ -337,8 +337,7 @@ export function Toolbar(props: ToolbarProps) {
     {mobile ? <MobileToolbar props={props} repositoryControl={repositoryControl} worktreeControl={worktreeControl} branchControl={branchControl} favicon={favicons.get(currentRepositoryKey)} contextOpen={mobileContextOpen} onContextOpen={(open) => { setMobileContextOpen(open); if (!open) setRepositorySelectOpen(false); }} syncBusy={currentRepositorySyncBusy} /> : <header className="toolbar">
       <div className="toolbar-brand" aria-label={appDisplayName}>
         <OpenTigMark />
-        <span>{appDisplayName}</span>
-        <DevIndicator />
+        <AppName />
       </div>
       {repositoryControl}
 
