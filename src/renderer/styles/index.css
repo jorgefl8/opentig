@@ -90,7 +90,7 @@
     --success: oklch(0.55 0.15 152);
     --warning: oklch(0.63 0.14 78);
     --dev-stripe-yellow: #facc15;
-    --dev-stripe-black: #171717;
+    --dev-stripe-foreground: #171717;
     --border: oklch(0.89 0 0);
     --input: oklch(0.87 0 0);
     --ring: var(--primary);
@@ -187,6 +187,7 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
 
 .dark {
     color-scheme: dark;
+    --dev-stripe-foreground: #ffffff;
     --background: oklch(0.13 0 0);
     --foreground: oklch(0.92 0 0);
     --card: oklch(0.165 0 0);
@@ -288,7 +289,7 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   .toolbar-brand { display: flex; flex: none; align-items: center; gap: 7px; color: var(--foreground); font-size: 13px; font-weight: 760; letter-spacing: -.02em; }
   .toolbar-brand svg { width: 18px; height: 20px; flex: none; }
   .app-name { white-space: nowrap; }
-  .app-name-dev { font-weight: 800; color: var(--foreground); background-image: repeating-linear-gradient(135deg, var(--dev-stripe-black) 0 .18em, var(--dev-stripe-yellow) .18em .36em); background-clip: text; -webkit-text-fill-color: transparent; -webkit-text-stroke: .35px color-mix(in oklch, var(--foreground) 65%, transparent); }
+  .app-name-dev { font-weight: 800; color: var(--foreground); background-image: repeating-linear-gradient(135deg, var(--dev-stripe-foreground) 0 .18em, var(--dev-stripe-yellow) .18em .36em); background-clip: text; -webkit-text-fill-color: transparent; -webkit-text-stroke: .35px color-mix(in oklch, var(--foreground) 65%, transparent); }
   .toolbar-spacer { flex: 1; }
   .toolbar-branch-pr { display: inline-flex; flex: none; min-height: 28px; align-items: center; gap: 4px; padding: 0 3px; background: transparent; color: var(--success); font-size: 11px; font-weight: 500; }
   .toolbar-branch-pr > svg { width: 14px; height: 14px; flex: none; }
