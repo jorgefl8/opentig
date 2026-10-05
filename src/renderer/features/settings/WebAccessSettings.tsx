@@ -256,22 +256,7 @@ export function WebAccessSettings() {
           <WebAccessFact label="Actual port"><code>{status.actualPort ?? 'Unavailable'}</code></WebAccessFact>
           <WebAccessFact label="Listening on"><span>{status.listeningOnLan ? 'All network interfaces' : 'This computer (loopback)'}</span></WebAccessFact>
           <WebAccessFact label="Local endpoint"><Endpoint value={status.localEndpoint} /></WebAccessFact>
-          <WebAccessFact label="LAN endpoints">
-            <div className="web-access-endpoints">
-              {status.networkEndpoints.length === 0
-                ? <span>None detected</span>
-                : status.networkEndpoints.map((endpoint) => <Endpoint key={endpoint} value={endpoint} muted={!status.webAccessEnabled || !status.listeningOnLan} />)}
-            </div>
-          </WebAccessFact>
-        </div>
-
-        {status.restartError && <div className="web-access-error" role="alert"><IconAlertTriangle /> <span>{status.restartError}</span></div>}
-
-        {!status.webAccessEnabled && <p className="web-access-hint">Browser access is disabled, including through tunnels. The local server continues serving the private desktop session.</p>}
-
-        <details className="web-access-advanced settings-field-separated">
-          <summary>Network and public URL</summary>
-          <div className="web-access-summary">
+          <div className="web-access-summary web-access-network-settings">
             <div className="settings-field-label">
               <strong>LAN access</strong>
               <span>Allow direct connections from this computer&apos;s network. Cloudflare Tunnel on this PC works with LAN access off. Changing LAN access restarts the listener.</span>
@@ -279,26 +264,40 @@ export function WebAccessSettings() {
             <button type="button" role="switch" aria-label="LAN access" aria-checked={status.listeningOnLan} className="settings-switch"
               disabled={!status.webAccessEnabled || action !== null || !ready} onClick={() => void changeLan(!status.listeningOnLan)}><span /></button>
           </div>
-          <div className="web-access-endpoint-select">
-            <label htmlFor="web-access-public-origin">Public URL (optional)</label>
-            <input id="web-access-public-origin" className="web-access-rename-input" value={publicOriginInput}
-              onChange={(event) => { setPublicOriginInput(event.target.value); setOriginError(null); }} placeholder="https://git.example.com"
-              aria-invalid={originError !== null} aria-describedby="web-access-origin-help" maxLength={2_048} disabled={action !== null} autoComplete="off" spellCheck={false} />
-            <p id="web-access-origin-help" className="web-access-hint">Enter your tunnel address without a path. Save it, then select it below for the link and QR. Point your tunnel at the local endpoint shown above.</p>
-            {originError && <p className="web-access-error" role="alert">{originError}</p>}
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={() => void savePublicOrigin()} disabled={action !== null || publicOriginInput.trim() === (status.publicOrigin ?? '')}>Save URL</Button>
-              <Button variant="ghost" size="sm" onClick={() => void savePublicOrigin(true)} disabled={action !== null || !status.publicOrigin}>Clear</Button>
+          <WebAccessFact label="LAN endpoints">
+            <div className="web-access-endpoints">
+              {status.networkEndpoints.length === 0
+                ? <span>None detected</span>
+                : status.networkEndpoints.map((endpoint) => <Endpoint key={endpoint} value={endpoint} muted={!status.webAccessEnabled || !status.listeningOnLan} />)}
+            </div>
+          </WebAccessFact>
+          <div className="web-access-network-settings">
+            <div className="web-access-endpoint-select">
+              <label htmlFor="web-access-public-origin">Public URL (optional)</label>
+              <input id="web-access-public-origin" className="web-access-rename-input" value={publicOriginInput}
+                onChange={(event) => { setPublicOriginInput(event.target.value); setOriginError(null); }} placeholder="https://git.example.com"
+                aria-invalid={originError !== null} aria-describedby="web-access-origin-help" maxLength={2_048} disabled={action !== null} autoComplete="off" spellCheck={false} />
+              <p id="web-access-origin-help" className="web-access-hint">Enter your tunnel address without a path. Save it, then select it below for the link and QR. Point your tunnel at the local endpoint shown above.</p>
+              {originError && <p className="web-access-error" role="alert">{originError}</p>}
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={() => void savePublicOrigin()} disabled={action !== null || publicOriginInput.trim() === (status.publicOrigin ?? '')}>Save URL</Button>
+                <Button variant="ghost" size="sm" onClick={() => void savePublicOrigin(true)} disabled={action !== null || !status.publicOrigin}>Clear</Button>
+              </div>
             </div>
           </div>
-        </details>
+        </div>
 
+        {status.restartError && <div className="web-access-error" role="alert"><IconAlertTriangle /> <span>{status.restartError}</span></div>}
+
+        {!status.webAccessEnabled && <p className="web-access-hint">Browser access is disabled, including through tunnels. The local server continues serving the private desktop session.</p>}
+
+        {status.webAccessEnabled && <>
         <div className="web-access-actions settings-field-separated">
           <div className="settings-field-label">
             <strong>Pair a browser</strong>
             <span>Create a five-minute, one-use link using a local, LAN, or saved public address.</span>
           </div>
-          <Button size="sm" onClick={() => void createLink()} disabled={!status.webAccessEnabled || !ready || !selectedEndpoint || action !== null || pairingPending}>
+          <Button size="sm" onClick={() => void createLink()} disabled={!ready || !selectedEndpoint || action !== null || pairingPending}>
             {pairingPending ? <IconLoader4 className="animate-spin" /> : <IconLink />} Create pairing link
           </Button>
         </div>
@@ -335,6 +334,7 @@ export function WebAccessSettings() {
             </>}
           </div>
         )}
+        </>}
       </>}
 
       <div className={`web-access-session-heading ${desktopApi ? 'settings-field-separated' : ''}`}>

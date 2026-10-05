@@ -57,7 +57,7 @@ this switch does not restart the server. Static assets and health endpoints may
 still be served while browser backend access is disabled. Standalone CLI servers
 remain web-enabled.
 
-**Network and public URL** contains a separate **LAN access** setting that
+The server status and endpoints are grouped with a separate **LAN access** setting that
 changes the listener and may restart the server. Its preference is retained when
 Web access is disabled. The displayed endpoints reflect the active listener;
 disabling browser access can leave that listener bound until the next restart.
@@ -66,6 +66,7 @@ Previous enabled LAN settings migrate to both switches enabled. Existing
 loopback-only installations, including tunnel users, need to enable Web access
 once after upgrading.
 
+**Pair a browser** and its address selector appear only when **Web access** is enabled.
 The QR/link/code block has a **Close** button, available during creation too.
 Closing only dismisses the display; a copied code remains valid until it is
 used, replaced, expired, or invalidated by disabling Web access. An expired code
@@ -85,7 +86,7 @@ For Cloudflare Tunnel or another reverse proxy running on the OpenTig PC:
 
 1. Enable **Web access** and leave **LAN access** disabled so the listener remains on loopback.
 2. Point the tunnel origin service to `http://127.0.0.1:<actual-port>`.
-3. Under **Network and public URL**, enter `https://your-domain.example` and
+3. In **Public URL (optional)** beside the endpoint settings, enter `https://your-domain.example` and
    choose **Save URL**. Use an HTTP/HTTPS root address without credentials,
    paths, query parameters, or fragments. **Clear** removes the saved address.
 4. Select that public address under **Address to place in the pairing link**
