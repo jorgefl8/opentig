@@ -10,7 +10,7 @@ import type { CliProcessRunner, CliRunResult } from '../ai/CliProcessRunner';
 import type { CliResolver } from '../ai/CliResolver';
 import type { GitProcess } from '../git/GitProcess';
 import type { RepositoryService } from '../git/RepositoryService';
-import { parseGitHubRemote } from './GitHubRemoteParser';
+import { parseGitHubRemote, parseSshRemote } from './GitHubRemoteParser';
 import { parseCreatedPullRequestUrl, parsePullRequestDetails, parsePullRequestList, PR_DETAIL_FIELDS, PR_SUMMARY_FIELDS, selectPullRequestsNewestFirst, sortPullRequestsNewestFirst } from './PullRequestParser';
 
 // gh must never block waiting for input, page output, or emit ANSI noise.
@@ -46,10 +46,22 @@ export class GitHubService {
     const repository = this.repositories.get(repositoryId);
     try {
       const output = await this.git.run(repository.path, ['config', '--get', 'remote.origin.url'], { operation: 'github-remote-url', readOnly: true, maxOutputBytes: 64 * 1024 });
-      const parsed = parseGitHubRemote(output.stdout.toString('utf8'));
+      const url = output.stdout.toString('utf8');
+      let parsed = parseGitHubRemote(url);
+      if (!parsed) {
+        const ssh = parseSshRemote(url);
+        if (ssh) {
+          // -G evaluates the user's SSH configuration without connecting to the remote.
+          const config = await this.runner.run('ssh', ['-G', ...(ssh.port ? ['-p', ssh.port] : []), '--', ssh.destination], {
+            cwd: os.homedir(), timeoutMs: 5_000, maxOutputBytes: 64 * 1024,
+          });
+          const hostname = config.stdout.split(/\r?\n/).find((line) => /^hostname\s/i.test(line))?.trim().split(/\s+/)[1];
+          if (config.exitCode === 0 && hostname?.toLowerCase() === 'github.com') parsed = { nameWithOwner: ssh.nameWithOwner };
+        }
+      }
       return parsed ? { isGitHub: true, nameWithOwner: parsed.nameWithOwner } : { isGitHub: false, nameWithOwner: null };
     } catch {
-      // `git config --get` exits with 1 when origin has no URL configured.
+      // Missing origin, unavailable SSH, and invalid SSH configuration are not GitHub matches.
       return { isGitHub: false, nameWithOwner: null };
     }
   }

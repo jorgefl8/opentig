@@ -27,3 +27,15 @@ export function parseGitHubRemote(url: string): { nameWithOwner: string } | null
   if (!OWNER_PATTERN.test(owner) || !repo || repo === '.' || repo === '..' || !REPO_PATTERN.test(repo)) return null;
   return { nameWithOwner: `${owner}/${repo}` };
 }
+
+/** Parses SSH destinations for a local `ssh -G` lookup, without trusting the alias as a GitHub host. */
+export function parseSshRemote(url: string): { destination: string; port: string | null; nameWithOwner: string } | null {
+  const trimmed = url.trim();
+  const ssh = /^ssh:\/\/(?:(\w[\w.-]*)@)?([A-Za-z0-9][A-Za-z0-9._-]*)(?::(\d+))?\/(.+)$/i.exec(trimmed);
+  const scp = /^(?:(\w[\w.-]*)@)?([A-Za-z0-9][A-Za-z0-9._-]*):(.+)$/.exec(trimmed);
+  const match = ssh ?? scp;
+  if (!match) return null;
+  const parsed = parseGitHubRemote(`https://github.com/${ssh ? match[4] : match[3]}`);
+  if (!parsed) return null;
+  return { destination: `${match[1] ? `${match[1]}@` : ''}${match[2]}`, port: ssh ? match[3] ?? null : null, ...parsed };
+}

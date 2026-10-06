@@ -8,16 +8,57 @@ import type { RepositoryService } from '../git/RepositoryService';
 const ok = (value: unknown): CliRunResult => ({ exitCode: 0, stdout: JSON.stringify(value), stderr: '' });
 const fail = (stderr: string): CliRunResult => ({ exitCode: 1, stdout: '', stderr });
 const stack = { number: 7, base: { ref: 'main' }, pull_requests: [{ number: 101, state: 'open', title: 'Model', head: { ref: 'model' } }] };
-function fixture(reply: (args: string[]) => CliRunResult) {
-  const run = vi.fn(async (_exe: string, args: string[]) => args[0] === '--version' || args[0] === 'auth' ? ok('ready') : reply(args));
+function fixture(reply: (args: string[]) => CliRunResult, remoteUrl = 'https://github.com/example/demo.git', sshResult: CliRunResult | Error = fail('SSH unavailable')) {
+  const run = vi.fn(async (exe: string, args: string[]) => {
+    if (exe === 'ssh') {
+      if (sshResult instanceof Error) throw sshResult;
+      return sshResult;
+    }
+    return args[0] === '--version' || args[0] === 'auth' ? ok('ready') : reply(args);
+  });
   const service = new GitHubService(
     { discover: async () => [{ executable: 'gh', alias: 'gh', source: 'process-path', env: { PATH: '/fixture/bin' } }], warning: async () => undefined } as unknown as CliResolver,
     { run } as unknown as CliProcessRunner,
-    { run: async () => ({ stdout: Buffer.from('https://github.com/example/demo.git') }) } as unknown as GitProcess,
+    { run: async () => ({ stdout: Buffer.from(remoteUrl) }) } as unknown as GitProcess,
     { get: () => ({ path: '.', id: 'repo' }) } as unknown as RepositoryService,
   );
   return { service, run };
 }
+describe('GitHub SSH remote detection', () => {
+  it.each([
+    ['git@work-github:example/demo.git', ['-G', '--', 'git@work-github']],
+    ['ssh://git@work-github:2222/example/demo.git', ['-G', '-p', '2222', '--', 'git@work-github']],
+    ['ssh://work-github/example/demo.git', ['-G', '--', 'work-github']],
+    ['work-github:example/demo.git', ['-G', '--', 'work-github']],
+  ])('enables PR listing for %s when SSH resolves to GitHub', async (remoteUrl, sshArgs) => {
+    const { service, run } = fixture((args) => ok(args[0] === 'pr' ? [{ number: 12, state: 'OPEN' }] : {}), remoteUrl,
+      { exitCode: 0, stdout: 'user git\r\nhostname github.com\r\nport 22\r\n', stderr: '' });
+    expect(await service.repositoryInfo('repo')).toEqual({ isGitHub: true, nameWithOwner: 'example/demo' });
+    expect(run).toHaveBeenCalledWith('ssh', sshArgs, expect.objectContaining({ timeoutMs: 5_000 }));
+    expect(run.mock.calls.every(([exe]) => exe === 'ssh')).toBe(true);
+    expect(await service.listPullRequests('repo', ['OPEN'])).toEqual([expect.objectContaining({ number: 12 })]);
+    expect(run.mock.calls.find(([, args]) => args[0] === 'pr')?.[1]).toEqual(expect.arrayContaining(['-R', 'example/demo']));
+  });
+  it.each(['gitlab.com', 'github.com.evil.com', 'work-github', ''])('rejects aliases whose resolved hostname is %s', async (hostname) => {
+    const { service } = fixture(() => ok([]), 'git@work-github:example/demo.git',
+      { exitCode: 0, stdout: `hostname ${hostname}\n`, stderr: '' });
+    expect(await service.repositoryInfo('repo')).toEqual({ isGitHub: false, nameWithOwner: null });
+  });
+  it.each([fail('bad config'), new Error('SSH unavailable'), new Error('SSH timed out')])('handles failed SSH configuration lookup', async (result) => {
+    expect(await fixture(() => ok([]), 'git@work-github:example/demo.git', result).service.repositoryInfo('repo'))
+      .toEqual({ isGitHub: false, nameWithOwner: null });
+  });
+  it.each(['https://github.com/example/demo.git', 'git@github.com:example/demo.git'])('keeps direct GitHub URLs independent of SSH availability: %s', async (remoteUrl) => {
+    const { service, run } = fixture(() => ok([]), remoteUrl);
+    expect(await service.repositoryInfo('repo')).toEqual({ isGitHub: true, nameWithOwner: 'example/demo' });
+    expect(run).not.toHaveBeenCalled();
+  });
+  it.each(['https://work-github/example/demo.git', 'git@work-github:example/demo/extra', 'git@work-github:example/..', '-oProxyCommand=bad:example/demo.git'])('does not resolve non-SSH or malformed remotes: %s', async (remoteUrl) => {
+    const { service, run } = fixture(() => ok([]), remoteUrl);
+    expect(await service.repositoryInfo('repo')).toEqual({ isGitHub: false, nameWithOwner: null });
+    expect(run).not.toHaveBeenCalled();
+  });
+});
 describe('current branch pull requests', () => {
   it('finds an open draft even when a reused branch has newer closed history', async () => {
     const { service, run } = fixture((args) => ok(args.includes('open')
