@@ -15,7 +15,7 @@
 - Git commands use argument arrays with `shell: false`, bounded output, timeouts, path validation, and per-repository write serialisation.
 - External links are allowlisted to `http(s)://` and `mailto:` before Electron's window-navigation interception opens them in the system browser.
 - HTML previews run in a sandbox; rendered Markdown is sanitised before display.
-- OpenTig does not read or persist GitHub or AI API tokens. Connected CLIs manage their own authentication.
+- Connected CLIs manage their own authentication. To create a PR with an identified SSH account, OpenTig asks `gh` for that account’s saved token and supplies it only through the child command’s environment. The token stays in memory, is redacted from command errors, and is never written to files, logs, or settings; the global `gh` account is unchanged. OpenTig does not read or persist AI API tokens.
 
 Desktop **Web access** is off by default and is separate from the LAN listener.
 When off, only authenticated desktop sessions can use backend operations;

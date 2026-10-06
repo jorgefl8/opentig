@@ -11,10 +11,11 @@ import type { CliResolver } from '../ai/CliResolver';
 import type { GitProcess } from '../git/GitProcess';
 import type { RepositoryService } from '../git/RepositoryService';
 import { parseGitHubRemote, parseSshRemote } from './GitHubRemoteParser';
+import { pullRequestAuthentication, redactCommandToken, type GitHubCommandAuth } from './GitHubAccountAuth';
 import { parseCreatedPullRequestUrl, parsePullRequestDetails, parsePullRequestList, PR_DETAIL_FIELDS, PR_SUMMARY_FIELDS, selectPullRequestsNewestFirst, sortPullRequestsNewestFirst } from './PullRequestParser';
 
 // gh must never block waiting for input, page output, or emit ANSI noise.
-const GH_ENV = { GH_PROMPT_DISABLED: '1', GH_NO_UPDATE_NOTIFIER: '1', GH_PAGER: 'cat', NO_COLOR: '1' } as const;
+const GH_ENV = { GH_HOST: 'github.com', GH_PROMPT_DISABLED: '1', GH_NO_UPDATE_NOTIFIER: '1', GH_PAGER: 'cat', NO_COLOR: '1' } as const;
 const NETWORK_TIMEOUT_MS = 60_000;
 
 interface GhRunOptions {
@@ -23,6 +24,8 @@ interface GhRunOptions {
   timeoutMs?: number;
   maxOutputBytes?: number;
   stdin?: string;
+  authenticationRemote?: string;
+  auth?: GitHubCommandAuth;
 }
 
 export class GitHubService {
@@ -188,6 +191,7 @@ export class GitHubService {
     const base = validateRef(input.base.replace(/^origin\//, ''), operation);
     const head = validateRef(status.branch, operation);
     if (base === head) throw new GhOperationError({ code: 'GH_PROCESS_FAILED', operation, message: 'The base branch must be different from the current branch.' });
+    const remote = await this.git.run(repository.path, ['config', '--get', 'remote.origin.url'], { operation: 'github-remote-url', readOnly: true, maxOutputBytes: 64 * 1024 });
 
     // The body travels through a private temporary file: it avoids argument
     // length limits and any shell/flag interpretation of its content.
@@ -197,7 +201,7 @@ export class GitHubService {
       await writeFile(bodyPath, input.body, { encoding: 'utf8', mode: 0o600 });
       const args = ['pr', 'create', '-R', nameWithOwner, '--title', input.title, '--body-file', bodyPath, '--base', base, '--head', head];
       if (input.draft) args.push('--draft');
-      const result = await this.runGh(args, { cwd: repository.path, operation, timeoutMs: 120_000, maxOutputBytes: 1024 * 1024 });
+      const result = await this.runGh(args, { cwd: repository.path, operation, timeoutMs: 120_000, maxOutputBytes: 1024 * 1024, authenticationRemote: remote.stdout.toString('utf8') });
       const created = parseCreatedPullRequestUrl(result.stdout);
       if (!created) throw new GhOperationError({ code: 'GH_INVALID_OUTPUT', operation, message: 'GitHub CLI did not return the URL of the new pull request.' });
       return created;
@@ -230,7 +234,7 @@ export class GitHubService {
     }
     const status = await this.status();
     if (!status.installed) throw new GhOperationError({ code: 'GH_CLI_NOT_FOUND', operation, message: 'GitHub CLI is not installed.' });
-    if (status.authStatus === 'unauthenticated') throw new GhOperationError({ code: 'GH_AUTH_REQUIRED', operation, message: 'Sign in with gh auth login to continue.' });
+    if (status.authStatus === 'unauthenticated' && operation !== 'gh-pr-create') throw new GhOperationError({ code: 'GH_AUTH_REQUIRED', operation, message: 'Sign in with gh auth login to continue.' });
     return { repository, nameWithOwner: info.nameWithOwner };
   }
 
@@ -238,8 +242,10 @@ export class GitHubService {
     const detected = await selectCli(this.resolver, this.runner, 'gh', { runOptions: { cwd: options.cwd, env: { ...GH_ENV } } });
     const executable = detected.state === 'available' ? detected.candidate : undefined;
     if (!executable) throw new GhOperationError({ code: 'GH_CLI_NOT_FOUND', operation: options.operation, message: 'GitHub CLI is not installed.' });
-    const result = await this.run(executable, args, options);
-    if (result.exitCode !== 0) throw classifyFailure(result, options.operation);
+    const auth = options.authenticationRemote !== undefined
+      ? await pullRequestAuthentication(options.authenticationRemote, executable, this.runner) : {};
+    const result = await this.run(executable, args, { ...options, auth });
+    if (result.exitCode !== 0) throw classifyFailure({ ...result, stdout: redactCommandToken(result.stdout, auth), stderr: redactCommandToken(result.stderr, auth) }, options.operation);
     return result;
   }
 
@@ -247,13 +253,15 @@ export class GitHubService {
     try {
       return await this.runner.run(executable.executable, args, {
         cwd: options.cwd,
-        env: { ...executable.env, ...GH_ENV },
+        env: { ...executable.env, ...GH_ENV, ...options.auth?.env },
+        ...(options.auth?.removeEnv ? { removeEnv: options.auth.removeEnv } : {}),
         ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
         ...(options.maxOutputBytes !== undefined ? { maxOutputBytes: options.maxOutputBytes } : {}),
         ...(options.stdin !== undefined ? { stdin: options.stdin } : {}),
       });
     } catch (error) {
-      throw mapRunnerError(error, options.operation);
+      const mapped = mapRunnerError(error, options.operation);
+      throw new GhOperationError({ ...mapped.detail, message: redactCommandToken(mapped.message, options.auth ?? {}) });
     }
   }
 }
