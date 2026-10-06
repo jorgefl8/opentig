@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DesktopServerSettings } from './DesktopServerSettings';
-import { PersistentAuthStore } from '../../../packages/server/src/auth-store';
+import { hasActiveBrowserSessions } from '../persistence/BrowserSessionFile';
 import { OneTimeBootstrapAuthSource, OpenTigSessionAuth } from '../../../packages/server/src/auth';
 
 const directories: string[] = [];
@@ -17,7 +17,7 @@ afterEach(async () => {
 describe('DesktopServerSettings', () => {
   it('defaults to loopback without creating state', async () => {
     const fixture = await createFixture();
-    await expect(fixture.store.load(() => PersistentAuthStore.hasActiveBrowserSessions(fixture.serverDirectory))).resolves.toEqual(defaults);
+    await expect(fixture.store.load(() => hasActiveBrowserSessions(fixture.serverDirectory))).resolves.toEqual(defaults);
     await expect(readFile(fixture.filePath)).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
@@ -45,7 +45,7 @@ describe('DesktopServerSettings', () => {
     const cookie = (await auth.exchangePairingToken(auth.createPairingToken().token))!.split(';')[0]!;
     await auth.close();
     if (version !== undefined) await writeFile(fixture.filePath, JSON.stringify({ version, webAccessEnabled: false }));
-    const readSessions = vi.fn(() => PersistentAuthStore.hasActiveBrowserSessions(fixture.serverDirectory));
+    const readSessions = vi.fn(() => hasActiveBrowserSessions(fixture.serverDirectory));
     const config = await fixture.store.load(readSessions);
     expect(config).toEqual({ ...defaults, webAccessEnabled: true });
     expect(JSON.parse(await readFile(fixture.filePath, 'utf8'))).toEqual({ version: 4, ...config });
@@ -74,7 +74,7 @@ describe('DesktopServerSettings', () => {
     }) });
     await writeFile(sessionsFile, oldData);
     await writeFile(fixture.filePath, JSON.stringify({ version: 3, webAccessEnabled: false }));
-    const config = await fixture.store.load(() => PersistentAuthStore.hasActiveBrowserSessions(fixture.serverDirectory));
+    const config = await fixture.store.load(() => hasActiveBrowserSessions(fixture.serverDirectory));
     expect(config).toEqual({ ...defaults, webAccessEnabled: true });
     expect(await readFile(sessionsFile, 'utf8')).toBe(oldData);
     const upgraded = await openAuth(fixture.serverDirectory, config.webAccessEnabled);
@@ -90,7 +90,7 @@ describe('DesktopServerSettings', () => {
     await oldAuth.exchangeDesktopSecret('test-desktop');
     await oldAuth.close();
     await writeFile(fixture.filePath, JSON.stringify({ version: 3, webAccessEnabled: false }));
-    await expect(fixture.store.load(() => PersistentAuthStore.hasActiveBrowserSessions(fixture.serverDirectory))).resolves.toEqual(defaults);
+    await expect(fixture.store.load(() => hasActiveBrowserSessions(fixture.serverDirectory))).resolves.toEqual(defaults);
     const auth = await openAuth(fixture.serverDirectory, false);
     expect(auth.sessions().every((session) => session.kind === 'desktop')).toBe(true);
     await auth.close();
@@ -102,7 +102,7 @@ describe('DesktopServerSettings', () => {
     const cookie = (await auth.exchangePairingToken(auth.createPairingToken().token))!.split(';')[0]!;
     await auth.close();
     await fixture.store.save(defaults);
-    const readSessions = vi.fn(() => PersistentAuthStore.hasActiveBrowserSessions(fixture.serverDirectory));
+    const readSessions = vi.fn(() => hasActiveBrowserSessions(fixture.serverDirectory));
     await expect(fixture.store.load(readSessions)).resolves.toEqual(defaults);
     expect(readSessions).not.toHaveBeenCalled();
     const disabled = await openAuth(fixture.serverDirectory, false);
@@ -128,7 +128,7 @@ describe('DesktopServerSettings', () => {
     await writeFile(fixture.filePath, original);
     await mkdir(fixture.serverDirectory);
     await writeFile(path.join(fixture.serverDirectory, 'sessions.json'), '{corrupt');
-    await expect(fixture.store.load(() => PersistentAuthStore.hasActiveBrowserSessions(fixture.serverDirectory))).rejects.toThrow('corrupt');
+    await expect(fixture.store.load(() => hasActiveBrowserSessions(fixture.serverDirectory))).rejects.toThrow('corrupt');
     expect(await readFile(fixture.filePath, 'utf8')).toBe(original);
   });
 

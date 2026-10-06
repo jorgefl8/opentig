@@ -20,8 +20,10 @@
 Desktop **Web access** is off by default and is separate from the LAN listener.
 When off, only authenticated desktop sessions can use backend operations;
 browser pairing, renewal, HTTP data access and WebSocket commands/events are
-blocked even through a same-PC tunnel. Turning it off revokes browser credentials
-and invalidates pending pairing codes without restarting the desktop session.
+blocked even through a same-PC tunnel. Turning it off pauses browser access,
+disconnects browsers and invalidates pending pairing codes without restarting the
+desktop session. Saved browser credentials remain valid until expiry or explicit
+revocation; enabling Web access again lets those browsers reconnect.
 The standalone CLI remains browser-enabled. The optional saved public URL only
 constructs the pairing link and QR; it is not an authentication allowlist. Closing
 the QR display does not revoke a copied code. Static assets and health endpoints

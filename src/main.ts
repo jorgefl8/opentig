@@ -21,7 +21,7 @@ import {
   type ServerProcessState,
 } from './main/server/ServerProcessManager';
 import { DesktopServerSettings } from './main/server/DesktopServerSettings';
-import { PersistentAuthStore } from '../packages/server/src/auth-store';
+import { hasActiveBrowserSessions } from './main/persistence/BrowserSessionFile';
 import { setBrowserAccess } from './main/server/setBrowserAccess';
 import { normalizePairingOrigin } from './shared/web-access';
 import { startGlobalDoubleControlShortcut } from './main/shortcuts/GlobalDoubleControlShortcut';
@@ -486,7 +486,7 @@ app.whenReady().then(async () => {
     path.join(userData, 'settings.json'),
   );
   desktopServerSettings = new DesktopServerSettings(path.join(userData, 'desktop-server.json'));
-  const serverSettings = await desktopServerSettings.load(() => PersistentAuthStore.hasActiveBrowserSessions(path.join(userData, 'server')));
+  const serverSettings = await desktopServerSettings.load(() => hasActiveBrowserSessions(path.join(userData, 'server')));
   webAccessEnabled = serverSettings.webAccessEnabled;
   lanAccessEnabled = serverSettings.lanAccessEnabled;
   publicOrigin = serverSettings.publicOrigin;

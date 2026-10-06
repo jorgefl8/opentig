@@ -78,5 +78,6 @@ it('clears the outage notification when authentication replaces the workspace', 
   await state('auth-required'); await settle();
   expect(notices()).toHaveLength(0);
   expect(container.querySelector('#workspace')).toBeNull();
-  expect(container.querySelector('a[href="/pair"]')?.textContent).toBe('Pair this browser');
+  expect(container.querySelector('a[href="/pair"]')?.textContent).toBe('Check browser access');
+  expect(container.textContent).toContain('reload to resume your saved session');
 });
