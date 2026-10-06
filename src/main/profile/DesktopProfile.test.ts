@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, rmdirSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -47,7 +47,8 @@ describe('desktop profile isolation', () => {
     symlinkSync(production, dev, 'junction');
     expect(() => configureDesktopProfile(app, 'dev', 'linux')).toThrow('overlaps production');
     expect(app.setPath).not.toHaveBeenCalled();
-    rmSync(dev);
+    if (process.platform === 'win32') rmdirSync(dev);
+    else unlinkSync(dev);
     mkdirSync(dev);
     symlinkSync(path.join(production, 'settings.json'), path.join(dev, 'settings.json'));
     expect(() => configureDesktopProfile(app, 'dev', 'linux')).toThrow('overlaps production');
@@ -60,10 +61,10 @@ describe('desktop profile isolation', () => {
     expect(() => prepareDevDirectory(path.join(production, 'dev'), production)).toThrow('overlaps production');
   });
 
-  it('refuses dangling links into production before any future log write', () => {
+  it.each(['ai-log.jsonl', 'ai-statuses.json'])('refuses dangling links into production before any future write to %s', (file) => {
     const { app, dev, production } = fixture();
     mkdirSync(dev);
-    symlinkSync(path.join(production, 'ai-log.jsonl'), path.join(dev, 'ai-log.jsonl'));
+    symlinkSync(path.join(production, file), path.join(dev, file));
     expect(() => configureDesktopProfile(app, 'dev', 'linux')).toThrow('overlaps production');
     expect(app.setPath).not.toHaveBeenCalled();
   });

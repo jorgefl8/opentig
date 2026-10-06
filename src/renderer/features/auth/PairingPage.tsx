@@ -14,6 +14,7 @@ import {
 const messages: Record<Exclude<PairingExchangeResult, 'paired'>, string> = {
   rejected: 'This code is invalid, expired, or already used. Create a new one from OpenTig.',
   unavailable: 'OpenTig could not complete pairing. Check the server and try again.',
+  disabled: 'Web access is paused. Enable it in Settings → Web access in the desktop app, then reload. Previously paired browsers keep their access while their session is valid; new devices need a pairing link.',
 };
 
 export default function PairingPage() {
@@ -45,6 +46,16 @@ export default function PairingPage() {
     if (result === 'paired') window.location.replace('/');
     else setStatus(result);
   };
+
+  if (session === 'disabled' || status === 'disabled') {
+    return <main className="access-page pairing-page flex min-h-dvh items-center justify-center bg-background px-4 py-6 text-foreground">
+      <section className="w-full max-w-md rounded-xl border border-border bg-card p-6 shadow-sm">
+        <h1 className="text-lg font-semibold">Web access is paused</h1>
+        <p className="mt-2 text-sm text-muted-foreground" role="status">{messages.disabled}</p>
+        <Button className="mt-5" onClick={() => { setStatus('idle'); setSession('checking'); setCheckAttempt((value) => value + 1); }}>Check again</Button>
+      </section>
+    </main>;
+  }
 
   if (session !== 'unpaired') {
     return (

@@ -2,6 +2,13 @@ import { describe, expect, it, vi } from 'vitest';
 import { checkPairingSession, consumePairingFragment, defaultDeviceName, exchangePairingToken } from './pairing';
 
 describe('browser pairing', () => {
+  it('explains disabled browser access while preserving a private desktop session', async () => {
+    const signal = new AbortController().signal;
+    await expect(checkPairingSession(signal, async () => ({ ok: true, json: async () => ({ authenticated: false, browserAccessEnabled: false }) }))).resolves.toBe('disabled');
+    await expect(checkPairingSession(signal, async () => ({ ok: true, json: async () => ({ authenticated: true, currentSessionKind: 'desktop', browserAccessEnabled: false }) }))).resolves.toBe('authenticated');
+    await expect(exchangePairingToken('secret', 'Browser', async () => ({ ok: false, status: 403, json: async () => ({ code: 'WEB_ACCESS_DISABLED' }) }))).resolves.toBe('disabled');
+    await expect(exchangePairingToken('secret', 'Browser', async () => ({ ok: false, status: 403, json: async () => ({ error: 'Forbidden origin' }) }))).resolves.toBe('rejected');
+  });
   it.each([true, false])('checks the current cookie before offering pairing (authenticated=%s)', async (authenticated) => {
     const signal = new AbortController().signal;
     const request = vi.fn(async () => ({ ok: true, json: async () => ({ authenticated }) }));

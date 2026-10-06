@@ -1,4 +1,6 @@
 import type { OpenTigPlatform, OpenTigRuntimeMode } from '../../shared/contracts';
+import path from 'node:path';
+import { aiExecutablePathsKey } from '../../shared/ai-status';
 import { CliProcessRunner } from '../ai/CliProcessRunner';
 import { CliResolver } from '../ai/CliResolver';
 import { CommitMessageService } from '../ai/CommitMessageService';
@@ -16,6 +18,7 @@ import { RepositoryService } from '../git/RepositoryService';
 import { SearchService } from '../git/SearchService';
 import { GitHubService } from '../github/GitHubService';
 import { AiLogStore } from '../persistence/AiLogStore';
+import { AiStatusStore } from '../persistence/AiStatusStore';
 import { ProblemsLogStore, problemsLogPathFromSettings, recordProblemSafely } from '../persistence/ProblemsLogStore';
 import { SettingsStore } from '../persistence/SettingsStore';
 import { SystemTrash, type TrashAdapter } from '../platform/SystemTrash';
@@ -64,7 +67,10 @@ export async function createOpenTigRuntime(
   ];
   const aiLog = new AiLogStore(options.aiLogPath);
   await aiLog.load();
-  const ai = new CommitMessageService(operations, providers, aiLog, () => cliResolver.invalidate());
+  const ai = new CommitMessageService(operations, providers, aiLog, () => cliResolver.invalidate(), {
+    store: new AiStatusStore(path.join(path.dirname(options.settingsPath), 'ai-statuses.json')),
+    key: () => aiExecutablePathsKey(settings.preferences.aiExecutablePaths),
+  });
   const prDrafts = new PullRequestDraftService(operations, providers, aiLog);
   const github = new GitHubService(cliResolver, cliRunner, git, repositories);
   let runtime: OpenTigRuntime | null = null;

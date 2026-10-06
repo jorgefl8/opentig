@@ -87,7 +87,10 @@ export class OpenTigWebSocketTransport {
   revokeSessions(sessionIds: readonly string[]): void {
     const revoked = new Set(sessionIds);
     for (const [socket, state] of this.clients) {
-      if (revoked.has(state.sessionId)) socket.close(1008, 'Session revoked');
+      if (revoked.has(state.sessionId)) {
+        for (const controller of state.requests.values()) controller.abort();
+        socket.close(1008, 'Session revoked');
+      }
     }
   }
 
@@ -130,6 +133,7 @@ export class OpenTigWebSocketTransport {
   }
 
   private async message(socket: WebSocket, state: ClientState, data: WebSocket.RawData, isBinary: boolean): Promise<void> {
+    if (!this.options.auth.hasSession(state.sessionId)) return socket.close(1008, 'Session expired or revoked');
     if (isBinary) return socket.close(1003, 'Text messages only');
     const bytes = rawBytes(data);
     if (bytes.byteLength > FILE_WRITE_FRAME_LIMIT) return socket.close(1009, 'Message too large');

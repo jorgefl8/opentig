@@ -66,7 +66,7 @@ export function prepareDevDirectory(directory: string, productionDirectory: stri
   };
   check(directory);
   // Protect app-owned persistence from existing redirected files/directories too.
-  for (const entry of ['settings.json', 'settings.json.bak', 'desktop-window.json', 'desktop-window.json.bak', 'desktop-server.json', 'desktop-server.json.bak', 'ai-log.jsonl', 'problems.jsonl', 'runtime.json', 'server', 'server/admin-token', 'server/server-secret', 'server/sessions.json', 'logs', 'logs/server.log', 'Network', 'Local Storage', 'Session Storage', 'Cache', 'Code Cache']) {
+  for (const entry of ['settings.json', 'settings.json.bak', 'desktop-window.json', 'desktop-window.json.bak', 'desktop-server.json', 'desktop-server.json.bak', 'ai-log.jsonl', 'ai-statuses.json', 'problems.jsonl', 'runtime.json', 'server', 'server/admin-token', 'server/server-secret', 'server/sessions.json', 'logs', 'logs/server.log', 'Network', 'Local Storage', 'Session Storage', 'Cache', 'Code Cache']) {
     check(path.join(directory, entry));
   }
   mkdirSync(directory, { recursive: true });

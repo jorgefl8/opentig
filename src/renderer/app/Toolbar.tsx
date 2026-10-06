@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Kbd } from '@/components/ui/kbd';
 import { SearchablePicker, type SearchablePickerItem } from '@/components/SearchablePicker';
 import { OpenTigMark } from '@/components/OpenTigMark';
+import { AppName } from '@/components/AppName';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { isEditableTarget } from '@/features/files/file-tree';
 import { OpenFilesStrip } from '@/features/files/OpenFilesStrip';
@@ -336,7 +337,7 @@ export function Toolbar(props: ToolbarProps) {
     {mobile ? <MobileToolbar props={props} repositoryControl={repositoryControl} worktreeControl={worktreeControl} branchControl={branchControl} favicon={favicons.get(currentRepositoryKey)} contextOpen={mobileContextOpen} onContextOpen={(open) => { setMobileContextOpen(open); if (!open) setRepositorySelectOpen(false); }} syncBusy={currentRepositorySyncBusy} /> : <header className="toolbar">
       <div className="toolbar-brand" aria-label={appDisplayName}>
         <OpenTigMark />
-        <span>{appDisplayName}</span>
+        <AppName />
       </div>
       {repositoryControl}
 
@@ -399,7 +400,7 @@ export function Toolbar(props: ToolbarProps) {
         </Tooltip>
       )}
 
-      <Tooltip><TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Refresh" onClick={props.onRefresh} disabled={Boolean(props.busy) || currentRepositorySyncBusy} />}>{props.busy === 'refresh' ? <IconLoader4 className="animate-spin" /> : <IconRefresh />}</TooltipTrigger><TooltipContent>Refresh (Ctrl+R)</TooltipContent></Tooltip>
+      <Tooltip><TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Refresh" onClick={props.onRefresh} disabled={Boolean(props.busy) || currentRepositorySyncBusy} />}><IconRefresh className={props.busy === 'refresh' ? 'animate-spin' : undefined} /></TooltipTrigger><TooltipContent>Refresh (Ctrl+R)</TooltipContent></Tooltip>
       {props.githubInfo?.isGitHub && props.githubInfo.nameWithOwner && (
         <Tooltip>
           <TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Open repository on GitHub" onClick={() => openOnGitHub(`https://github.com/${props.githubInfo!.nameWithOwner}`)} />}>

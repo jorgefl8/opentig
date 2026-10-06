@@ -130,6 +130,7 @@ async function handleRequest(context: OpenTigHttpContext, request: IncomingMessa
     }
 
     if (rawPath === '/api/auth/pair' || rawPath === '/api/auth/desktop') {
+      if (rawPath === '/api/auth/pair' && !context.auth.descriptor().browserAccessEnabled) return sendJson(response, 403, { error: 'Web access is disabled.', code: 'WEB_ACCESS_DISABLED' });
       const body = await readJsonObject(request, response);
       if (!body) return;
       const secure = requestOriginIsSecure(request);
@@ -141,6 +142,7 @@ async function handleRequest(context: OpenTigHttpContext, request: IncomingMessa
       } else {
         cookie = await context.auth.exchangeDesktopSecret(body.secret);
       }
+      if (!cookie && rawPath === '/api/auth/pair' && !context.auth.descriptor().browserAccessEnabled) return sendJson(response, 403, { error: 'Web access is disabled.', code: 'WEB_ACCESS_DISABLED' });
       if (!cookie) return sendJson(response, 401, { error: 'Authentication failed.' });
       return sendJson(response, 204, null, { 'Set-Cookie': cookie });
     }
@@ -337,6 +339,7 @@ async function handleLocalAdminPair(
   }
   const origin = normalizePublicOrigin(body.publicOrigin);
   if (!origin) return sendJson(response, 400, { error: 'Invalid public origin.' });
+  if (!context.auth.descriptor().browserAccessEnabled) return sendJson(response, 403, { error: 'Web access is disabled.', code: 'WEB_ACCESS_DISABLED' });
   const pairing = admin.createPairingToken();
   const url = new URL('/pair', origin);
   url.hash = new URLSearchParams({ token: pairing.token }).toString();

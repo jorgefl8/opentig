@@ -205,6 +205,30 @@ describe('CommitMessageService', () => {
 });
 
 describe('provider status isolation and refresh', () => {
+  it('validates current authentication before generation even when the saved status is ready', async () => {
+    const status = vi.fn().mockResolvedValueOnce(ready('codex')).mockResolvedValue({ ...ready('codex'), authStatus: 'unauthenticated' });
+    const generate = vi.fn(splitProvider().generate);
+    const service = new CommitMessageService(operations(), [{ ...splitProvider(), status, generate }]);
+    await service.statuses();
+    await expect(service.generate({ repositoryId: 'repo', harness: 'codex', model: 'default', requestId: 'cached-auth' }))
+      .rejects.toMatchObject({ detail: { code: 'AI_AUTH_REQUIRED' } });
+    expect(status).toHaveBeenCalledTimes(2);
+    expect(generate).not.toHaveBeenCalled();
+  });
+  it('reuses the last check until explicitly refreshed, even after the former cache timeout', async () => {
+    const status = vi.fn(async () => ready('codex'));
+    const service = new CommitMessageService(operations(), [{ ...splitProvider(), status }]);
+    const clock = vi.spyOn(Date, 'now');
+    try {
+      clock.mockReturnValue(1_000);
+      const first = await service.statuses();
+      clock.mockReturnValue(3_601_000);
+      expect(await service.statuses()).toEqual(first);
+      expect(status).toHaveBeenCalledTimes(1);
+      await service.statuses(true);
+      expect(status).toHaveBeenCalledTimes(2);
+    } finally { clock.mockRestore(); }
+  });
   it('returns healthy providers when another inspection throws without claiming the failed CLI is absent', async () => {
     const service = new CommitMessageService(operations(), [splitProvider(), { ...splitProvider(), id: 'claude', status: async () => { throw new Error('private stderr'); } }]);
     expect(await service.statuses(true)).toMatchObject([{ id: 'codex', availability: 'ready' }, { id: 'claude', installationStatus: 'inspection-failed', message: 'Could not inspect this CLI. Check again or review its executable path.' }]);

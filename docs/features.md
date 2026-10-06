@@ -129,6 +129,7 @@ GitHub features use the authenticated GitHub CLI (`gh`):
 - Create a pull request or draft pull request from a wider, viewport-fitted dialog that keeps the draft toggle beside the base branch, the editor visible without an outer card scrollbar, and AI generation in the footer with its provider and model.
 - Edit and preview the GitHub Markdown description before publishing.
 - Require the current branch to be published and up to date before PR creation.
+- For SSH remotes, identify the account through a noninteractive GitHub SSH handshake and use its saved `gh` token for PR creation, without switching the global account. Repository owners and SSH alias names do not determine the login. If that account is missing from `gh`, the error names the required login and command. HTTPS remotes and SSH connections that cannot identify a user retain the current CLI authentication.
 - Optionally generate an editable title and description from the branch diff with the selected local AI CLI. PR generation uses the same generous, fairly distributed diff budget as commit generation so large branches keep coverage across all changed files.
 
 ### Optional AI assistance

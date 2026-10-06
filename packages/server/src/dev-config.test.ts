@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, rmdirSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -48,7 +48,8 @@ describe('web Dev launch configuration', () => {
     const dev = path.join(home, '.opentig-dev');
     symlinkSync(desktop, dev, 'junction');
     expect(() => devCliArguments(['serve'], {}, home, 'linux')).toThrow('overlaps production');
-    rmSync(dev);
+    if (process.platform === 'win32') rmdirSync(dev);
+    else unlinkSync(dev);
     mkdirSync(path.join(dev, 'server'), { recursive: true });
     symlinkSync(path.join(home, '.opentig', 'server', 'admin-token'), path.join(dev, 'server', 'admin-token'));
     expect(() => devCliArguments(['pair'], {}, home, 'linux')).toThrow('overlaps production');

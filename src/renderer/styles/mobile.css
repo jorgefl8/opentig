@@ -66,6 +66,7 @@
   html .mobile-repository-context small { display: flex; gap: 4px; align-items: center; min-width: 0; color: var(--muted-foreground); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   html .mobile-repository-context small svg { width: 12px; height: 12px; flex: none; }
   html .mobile-toolbar-actions { display: flex; gap: 2px; align-items: center; flex: none; }
+  html .mobile-toolbar-actions .app-name { font-size: 11px; }
   html .mobile-toolbar-actions > [data-slot="button"] { min-height: 44px; }
   html .mobile-open-files-trigger { position: relative; padding: 0 8px; gap: 6px; color: var(--muted-foreground); font-size: 11px; }
   html .mobile-unsaved-dot { position: absolute; top: 6px; right: 3px; width: 5px; height: 5px; border-radius: 50%; background: var(--warning); }

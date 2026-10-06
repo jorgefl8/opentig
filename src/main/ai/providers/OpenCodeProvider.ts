@@ -27,11 +27,10 @@ export class OpenCodeProvider implements AiProvider {
     const executable = requireCandidate(detected, this.id);
     const version = detected.version ?? '';
     const cliName = openCodeCliName(executable.executable);
-    const [auth, catalog] = await Promise.all([
+    const [auth, models] = await Promise.all([
       runCandidate(this.runner, executable, ['auth', 'list', '--format', 'json', '--standalone']),
-      runCandidate(this.runner, executable, ['models', '--standalone'], { timeoutMs: 30_000 }),
+      this.loadModels(executable),
     ]);
-    const models = catalog.exitCode === 0 ? parseOpenCodeModels(catalog.stdout) : [DEFAULT_MODEL];
     let authStatus = parseOpenCodeAuthList(auth.stdout, auth.exitCode);
     // Free catalog models can work without a stored credential; do not block generation.
     if (authStatus === 'unauthenticated' && models.length > 1) authStatus = 'unknown';
@@ -39,8 +38,24 @@ export class OpenCodeProvider implements AiProvider {
     return {
       id: this.id, label: 'OpenCode', availability: models.length > 1 ? (confirmed ? 'ready' : 'warning') : (authStatus === 'unauthenticated' ? 'error' : 'warning'),
       ...detectionFields(detected), installed: true, authStatus, cliName, version, models, checkedAt,
-      ...(authStatus === 'unauthenticated' ? { message: `Run ${openCodeLoginCommand(cliName)}.` } : !confirmed ? { message: 'Could not confirm authentication for the selected provider.' } : {}),
+      ...(authStatus === 'unauthenticated' ? { message: `Run ${openCodeLoginCommand(cliName)}.` }
+        : models.length === 1 ? { message: `Could not load the OpenCode model catalog. Check again or verify that ${cliName} models lists your models in a terminal.` }
+          : !confirmed ? { message: 'Could not confirm authentication for the selected provider.' } : {}),
     };
+  }
+
+  private async loadModels(executable: CliCandidate) {
+    // Some v2 private servers return an empty catalog even when the service has models.
+    for (const args of [['models', '--standalone'], ['models']]) {
+      try {
+        const catalog = await runCandidate(this.runner, executable, args, { timeoutMs: 30_000 });
+        const models = catalog.exitCode === 0 ? parseOpenCodeModels(catalog.stdout) : [DEFAULT_MODEL];
+        if (models.length > 1) return models;
+      } catch {
+        // Try the service catalog; metadata failures do not prove a missing CLI.
+      }
+    }
+    return [DEFAULT_MODEL];
   }
 
   async generate(input: ProviderGenerateInput) {

@@ -1,5 +1,6 @@
 import { formatDateTime } from '@shared/date-format';
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { normalizePairingOrigin } from '@shared/web-access';
 import {
   IconAlertTriangle,
   IconBrowser,
@@ -11,6 +12,7 @@ import {
   IconQrcode,
   IconShieldLock,
   IconTrash,
+  IconX,
 } from '@tabler/icons-react';
 import { renderSVG } from 'uqr';
 import { sileo } from 'sileo';
@@ -23,6 +25,7 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectVa
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { writeClipboardText } from '@/lib/browser-capabilities';
 import { loadOwnerSessions, renameOwnerSession, revokeAllBrowserSessions, revokeOwnerSession } from './owner-sessions';
+import { PairingRequests } from './web-access-pairing';
 
 const STATUS_COPY: Record<OpenTigWebAccessStatus['serverState'], string> = {
   starting: 'Starting',
@@ -32,26 +35,80 @@ const STATUS_COPY: Record<OpenTigWebAccessStatus['serverState'], string> = {
   stopped: 'Stopped',
 };
 
-type Action = 'toggle' | 'pair' | 'revoke-all' | `rename:${string}` | `revoke:${string}`;
+type Action = 'toggle' | 'lan' | 'origin' | 'revoke-all' | `rename:${string}` | `revoke:${string}`;
+type PairingDestination = 'local' | 'lan' | 'public';
 
 export function WebAccessSettings() {
   const desktopApi = window.opentigDesktop?.webAccess;
   const [status, setStatus] = useState<OpenTigWebAccessStatus | null>(null);
   const [sessions, setSessions] = useState<OpenTigOwnerSession[]>([]);
   const [pairing, setPairing] = useState<OpenTigPairingLink | null>(null);
-  const [selectedEndpoint, setSelectedEndpoint] = useState('');
+  const [destination, setDestination] = useState<PairingDestination>('local');
+  const [lanEndpoint, setLanEndpoint] = useState('');
+  const [editingPublicOrigin, setEditingPublicOrigin] = useState(false);
+  const [publicOriginInput, setPublicOriginInput] = useState('');
+  const [originError, setOriginError] = useState<string | null>(null);
+  const originInput = useRef<HTMLInputElement>(null);
+  const [pairingPending, setPairingPending] = useState(false);
+  const [pairingVisible, setPairingVisible] = useState(false);
+  const [pairingRequest, setPairingRequest] = useState<number | null>(null);
+  const requests = useRef(new PairingRequests());
+  const mounted = useRef(true);
   const [loading, setLoading] = useState(true);
   const [action, setAction] = useState<Action | null>(null);
-  const [enableWarningOpen, setEnableWarningOpen] = useState(false);
+  const [exposureConfirmation, setExposureConfirmation] = useState<'enable' | 'disable' | null>(null);
   const [revokeTarget, setRevokeTarget] = useState<OpenTigOwnerSession | 'all' | null>(null);
   const [renameTarget, setRenameTarget] = useState<OpenTigOwnerSession | null>(null);
   const [renameInput, setRenameInput] = useState('');
+  const lanEndpoints = status?.webAccessEnabled && status.listeningOnLan
+    ? status.networkEndpoints.filter((endpoint) => status.pairingEndpoints.includes(endpoint)) : [];
+  const selectedEndpoint = destination === 'public' ? status?.publicOrigin ?? ''
+    : destination === 'lan' ? lanEndpoint : status?.localEndpoint ?? '';
+  const showOriginEditor = destination === 'public' && (!status?.publicOrigin || editingPublicOrigin);
+  const canCreateLink = status?.webAccessEnabled && status.serverState === 'ready'
+    && status.pairingEndpoints.includes(selectedEndpoint) && !showOriginEditor && action === null && !pairingPending;
+  const destinations: { value: PairingDestination; label: string }[] = [
+    { value: 'local', label: 'Local' },
+    ...(lanEndpoints.length ? [{ value: 'lan' as const, label: 'LAN' }] : []),
+    { value: 'public', label: 'My domain' },
+  ];
+  const dismissPairing = useCallback(() => {
+    requests.current.dismiss();
+    setPairing(null);
+    setPairingVisible(false);
+  }, []);
+
+  useEffect(() => {
+    const currentRequests = requests.current;
+    mounted.current = true;
+    return () => { mounted.current = false; currentRequests.dismiss(); };
+  }, []);
+  useEffect(() => { setPublicOriginInput(status?.publicOrigin ?? ''); }, [status?.publicOrigin]);
+  const webAccessEnabled = status?.webAccessEnabled;
+  useEffect(() => {
+    if (webAccessEnabled === false) {
+      dismissPairing();
+      setEditingPublicOrigin(false);
+      setOriginError(null);
+      setPublicOriginInput(status?.publicOrigin ?? '');
+    }
+  }, [webAccessEnabled, status?.publicOrigin, dismissPairing]);
+  useEffect(() => { if (webAccessEnabled && showOriginEditor) originInput.current?.focus(); }, [webAccessEnabled, showOriginEditor]);
+  useEffect(() => { dismissPairing(); }, [selectedEndpoint, dismissPairing]);
+  useEffect(() => {
+    if (!pairing || pairingRequest === null) return;
+    const timer = window.setTimeout(() => {
+      if (requests.current.isCurrent(pairingRequest)) dismissPairing();
+    }, Math.max(0, Date.parse(pairing.expiresAt) - Date.now()));
+    return () => window.clearTimeout(timer);
+  }, [pairing, pairingRequest, dismissPairing]);
 
   const loadState = useCallback(async (showErrors = true) => {
     const results = await Promise.allSettled([
       desktopApi?.getStatus() ?? Promise.resolve(null),
       loadOwnerSessions(),
     ]);
+    if (!mounted.current) return;
     if (results[0].status === 'fulfilled') setStatus(results[0].value);
     else if (showErrors) sileo.error({ title: 'Could not read web access status', description: messageOf(results[0].reason) });
     if (results[1].status === 'fulfilled') setSessions(results[1].value);
@@ -67,9 +124,10 @@ export function WebAccessSettings() {
 
   useEffect(() => {
     if (!status) return;
-    if (!status.pairingEndpoints.length) setSelectedEndpoint('');
-    else if (!status.pairingEndpoints.includes(selectedEndpoint)) setSelectedEndpoint(status.pairingEndpoints[0]!);
-  }, [selectedEndpoint, status]);
+    const endpoints = status.listeningOnLan ? status.networkEndpoints.filter((endpoint) => status.pairingEndpoints.includes(endpoint)) : [];
+    if (!endpoints.includes(lanEndpoint)) setLanEndpoint(endpoints[0] ?? '');
+    if (destination === 'lan' && endpoints.length === 0) setDestination('local');
+  }, [lanEndpoint, destination, status]);
 
   const qrSource = useMemo(() => pairing
     ? `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(renderSVG(pairing.url, { ecc: 'M', border: 2 }))}`
@@ -85,25 +143,84 @@ export function WebAccessSettings() {
   const changeExposure = async (enabled: boolean) => {
     if (!desktopApi) return;
     setAction('toggle');
-    setPairing(null);
+    dismissPairing();
     try {
       setStatus(await desktopApi.setEnabled(enabled));
-      sileo.success({ title: enabled ? 'LAN access enabled' : 'LAN access disabled' });
+      sileo.success({ title: enabled ? 'Web access enabled' : 'Web access paused; paired devices saved' });
     } catch (error) {
-      sileo.error({ title: 'Could not restart web access', description: messageOf(error) });
+      sileo.error({ title: 'Could not change web access', description: messageOf(error) });
       await loadState(false);
     } finally {
       setAction(null);
-      setEnableWarningOpen(false);
+      setExposureConfirmation(null);
     }
   };
 
-  const createLink = async () => {
+  const changeLan = async (enabled: boolean) => {
     if (!desktopApi) return;
-    setAction('pair');
-    try { setPairing(await desktopApi.createPairingLink(selectedEndpoint)); }
-    catch (error) { sileo.error({ title: 'Could not create pairing link', description: messageOf(error) }); }
+    setAction('lan');
+    dismissPairing();
+    try { setStatus(await desktopApi.setLanEnabled(enabled)); }
+    catch (error) { sileo.error({ title: 'Could not change LAN access', description: messageOf(error) }); await loadState(false); }
     finally { setAction(null); }
+  };
+
+  const savePublicOrigin = async (clear = false) => {
+    if (!desktopApi) return;
+    setOriginError(null);
+    let origin: string;
+    try {
+      const input = publicOriginInput.trim();
+      origin = clear ? '' : normalizePairingOrigin(input && !input.includes('://') ? `https://${input}` : input);
+    }
+    catch (error) { setOriginError(messageOf(error)); return; }
+    setAction('origin');
+    dismissPairing();
+    try {
+      const updated = await desktopApi.setPublicOrigin(origin);
+      setStatus(updated);
+      setPublicOriginInput(updated.publicOrigin ?? '');
+      setEditingPublicOrigin(false);
+      setDestination(updated.publicOrigin ? 'public' : 'local');
+    } catch (error) { setOriginError(messageOf(error)); }
+    finally { setAction(null); }
+  };
+
+  const chooseDestination = (next: PairingDestination) => {
+    dismissPairing();
+    setDestination(next);
+    setEditingPublicOrigin(false);
+    setPublicOriginInput(status?.publicOrigin ?? '');
+    setOriginError(null);
+  };
+
+  const cancelOriginEdit = () => {
+    setPublicOriginInput(status?.publicOrigin ?? '');
+    setOriginError(null);
+    setEditingPublicOrigin(false);
+    if (!status?.publicOrigin) setDestination('local');
+  };
+
+  const createLink = async () => {
+    if (!desktopApi || !canCreateLink) return;
+    const request = requests.current.begin();
+    if (request === null) return;
+    setPairing(null);
+    setPairingRequest(request);
+    setPairingVisible(true);
+    setPairingPending(true);
+    try {
+      const result = await desktopApi.createPairingLink(selectedEndpoint);
+      if (mounted.current && requests.current.isCurrent(request)) setPairing(result);
+    } catch (error) {
+      if (mounted.current && requests.current.isCurrent(request)) {
+        setPairingVisible(false);
+        sileo.error({ title: 'Could not create pairing link', description: messageOf(error) });
+      }
+    } finally {
+      requests.current.finish(request);
+      if (mounted.current) setPairingPending(false);
+    }
   };
 
   const copyLink = async () => {
@@ -163,59 +280,114 @@ export function WebAccessSettings() {
       {desktopApi && status && <>
         <div className="web-access-summary">
           <div className="settings-field-label">
-            <strong>LAN access</strong>
-            <span>Listen on this computer&apos;s network interfaces for trusted local devices.</span>
+            <strong>Web access</strong>
+            <span>Allow paired browsers to use OpenTig. Turning this off disconnects browsers but keeps paired devices. Enable it again to restore their access; the desktop stays connected.</span>
           </div>
           <button
             type="button"
             role="switch"
-            aria-label="LAN access"
-            aria-checked={status.enabled}
+            aria-label="Web access"
+            aria-checked={status.webAccessEnabled}
             className="settings-switch"
-            disabled={action === 'toggle' || !ready}
-            onClick={() => status.enabled ? void changeExposure(false) : setEnableWarningOpen(true)}
+            disabled={action !== null || !ready}
+            onClick={() => setExposureConfirmation(status.webAccessEnabled ? 'disable' : 'enable')}
           ><span /></button>
         </div>
 
         <div className="web-access-facts" aria-live="polite">
           <WebAccessFact label="Server status"><Badge variant={ready ? 'secondary' : 'outline'}>{STATUS_COPY[status.serverState]}</Badge></WebAccessFact>
           <WebAccessFact label="Actual port"><code>{status.actualPort ?? 'Unavailable'}</code></WebAccessFact>
+          <WebAccessFact label="Listening on"><span>{status.listeningOnLan ? 'All network interfaces' : 'This computer (loopback)'}</span></WebAccessFact>
           <WebAccessFact label="Local endpoint"><Endpoint value={status.localEndpoint} /></WebAccessFact>
+          <div className="web-access-summary web-access-network-settings">
+            <div className="settings-field-label">
+              <strong>LAN access</strong>
+              <span>Allow direct connections from this computer&apos;s network. Cloudflare Tunnel on this PC works with LAN access off. Changing LAN access restarts the listener.</span>
+            </div>
+            <button type="button" role="switch" aria-label="LAN access" aria-checked={status.listeningOnLan} className="settings-switch"
+              disabled={!status.webAccessEnabled || action !== null || !ready} onClick={() => void changeLan(!status.listeningOnLan)}><span /></button>
+          </div>
           <WebAccessFact label="LAN endpoints">
             <div className="web-access-endpoints">
               {status.networkEndpoints.length === 0
                 ? <span>None detected</span>
-                : status.networkEndpoints.map((endpoint) => <Endpoint key={endpoint} value={endpoint} muted={!status.enabled} />)}
+                : status.networkEndpoints.map((endpoint) => <Endpoint key={endpoint} value={endpoint} muted={!status.webAccessEnabled || !status.listeningOnLan} />)}
             </div>
           </WebAccessFact>
         </div>
 
         {status.restartError && <div className="web-access-error" role="alert"><IconAlertTriangle /> <span>{status.restartError}</span></div>}
 
+        {!status.webAccessEnabled && <p className="web-access-hint">Browser access is paused, including through tunnels. Paired devices are saved; the private desktop session stays connected.</p>}
+
+        {status.webAccessEnabled && <>
         <div className="web-access-actions settings-field-separated">
           <div className="settings-field-label">
             <strong>Pair a browser</strong>
-            <span>Create a five-minute, one-use link for this computer or a LAN device. The pairing code also works through a same-machine HTTPS tunnel.</span>
+            <span>Choose where to open your five-minute, one-use link.</span>
           </div>
-          <Button size="sm" onClick={() => void createLink()} disabled={!ready || !selectedEndpoint || action !== null}>
-            {action === 'pair' ? <IconLoader4 className="animate-spin" /> : <IconLink />} Create pairing link
+        </div>
+        <div className="web-access-pairing-options">
+          <fieldset className="web-access-destinations" disabled={action !== null}>
+            <legend className="sr-only">Pairing destination</legend>
+            {destinations.map(({ value, label }) => (
+              <label key={value}>
+                <input type="radio" name="web-access-destination" value={value} checked={destination === value} onChange={() => chooseDestination(value)} />
+                {label}
+              </label>
+            ))}
+          </fieldset>
+          {destination === 'public' ? (
+            <div className="web-access-domain">
+              {showOriginEditor ? <form onSubmit={(event) => { event.preventDefault(); void savePublicOrigin(); }}>
+                <label htmlFor="web-access-public-origin">Your domain</label>
+                <input ref={originInput} id="web-access-public-origin" className="web-access-rename-input" value={publicOriginInput}
+                  onChange={(event) => { setPublicOriginInput(event.target.value); setOriginError(null); }} placeholder="https://git.example.com"
+                  aria-invalid={originError !== null} aria-describedby={`web-access-origin-help${originError ? ' web-access-origin-error' : ''}`}
+                  maxLength={2_048} disabled={action !== null} autoComplete="off" spellCheck={false} inputMode="url" />
+                <p id="web-access-origin-help" className="web-access-hint">Your tunnel address, without a path. It will be used in the link and QR. Point your tunnel at the local endpoint shown above.</p>
+                {originError && <p id="web-access-origin-error" className="web-access-error" role="alert">{originError}</p>}
+                <div className="web-access-domain-actions">
+                  <Button type="submit" size="sm" disabled={action !== null || !publicOriginInput.trim()}>Save and use</Button>
+                  <Button type="button" variant="ghost" size="sm" onClick={cancelOriginEdit} disabled={action !== null}>Cancel</Button>
+                  {status.publicOrigin && <Button type="button" variant="ghost" size="sm" onClick={() => void savePublicOrigin(true)} disabled={action !== null}>Remove</Button>}
+                </div>
+              </form> : <>
+                <div className="web-access-saved-domain">
+                  <code>{status.publicOrigin}</code>
+                  <Button variant="ghost" size="sm" onClick={() => { dismissPairing(); setEditingPublicOrigin(true); }} disabled={action !== null}><IconEdit /> Edit</Button>
+                </div>
+                <p className="web-access-hint">Saved and selected for this link and QR.</p>
+              </>}
+            </div>
+          ) : destination === 'lan' ? (
+            <div className="web-access-endpoint-select">
+              <label htmlFor="web-access-endpoint">Network address</label>
+              <Select value={lanEndpoint} onValueChange={(endpoint) => { if (endpoint) setLanEndpoint(endpoint); }} disabled={action !== null}>
+                <SelectTrigger id="web-access-endpoint" className="w-full"><SelectValue>{lanEndpoint}</SelectValue></SelectTrigger>
+                <SelectContent alignItemWithTrigger={false}>
+                  <SelectGroup>{lanEndpoints.map((endpoint) => <SelectItem key={endpoint} value={endpoint}>{endpoint}</SelectItem>)}</SelectGroup>
+                </SelectContent>
+              </Select>
+            </div>
+          ) : <p className="web-access-hint">For a browser on this computer.</p>}
+          <div className="web-access-link-destination">
+            <span>Address for the link and QR</span>
+            <code>{selectedEndpoint || (destination === 'public' ? 'Add your domain above' : 'Unavailable')}</code>
+          </div>
+          <Button size="sm" onClick={() => void createLink()} disabled={!canCreateLink}>
+            {pairingPending ? <IconLoader4 className="animate-spin" /> : <IconLink />} Create pairing link
           </Button>
         </div>
-        {status.pairingEndpoints.length > 0 && (
-          <div className="web-access-endpoint-select">
-            <label htmlFor="web-access-endpoint">Address to place in the pairing link</label>
-            <Select value={selectedEndpoint} onValueChange={(endpoint) => { if (endpoint) { setSelectedEndpoint(endpoint); setPairing(null); } }} disabled={action !== null}>
-              <SelectTrigger id="web-access-endpoint" className="w-full"><SelectValue>{selectedEndpoint}</SelectValue></SelectTrigger>
-              <SelectContent alignItemWithTrigger={false}>
-                <SelectGroup>{status.pairingEndpoints.map((endpoint) => <SelectItem key={endpoint} value={endpoint}>{endpoint}</SelectItem>)}</SelectGroup>
-              </SelectContent>
-            </Select>
-          </div>
-        )}
 
-        {pairing && (
+        {pairingVisible && (
           <div className="web-access-pairing" role="status">
-            <div className="web-access-pairing-copy"><IconQrcode aria-hidden="true" /><div><strong>Pairing link ready</strong><span>Expires {formatDateTime(pairing.expiresAt, { seconds: true })}.</span></div></div>
+            <div className="web-access-pairing-copy">
+              {pairing ? <IconQrcode aria-hidden="true" /> : <IconLoader4 className="animate-spin" aria-hidden="true" />}
+              <div><strong>{pairing ? 'Pairing link ready' : 'Creating pairing link…'}</strong><span>{pairing ? `Expires ${formatDateTime(pairing.expiresAt, { seconds: true })}.` : 'You can close this while the link is being created.'}</span></div>
+              <Tooltip><TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Close pairing link" onClick={dismissPairing} />}><IconX /></TooltipTrigger><TooltipContent>Close pairing link</TooltipContent></Tooltip>
+            </div>
+            {pairing && <>
             {qrSource && <img src={qrSource} alt="QR code for the one-use OpenTig pairing link" />}
             <div className="web-access-link-row">
               <Tooltip><TooltipTrigger render={<code className="web-access-link" />}>{pairing.url}</TooltipTrigger><TooltipContent side="bottom">One-use link; do not share publicly</TooltipContent></Tooltip>
@@ -225,8 +397,11 @@ export function WebAccessSettings() {
               <Tooltip><TooltipTrigger render={<code className="web-access-link" />}>{pairingCode}</TooltipTrigger><TooltipContent side="bottom">Paste this code on any /pair page served by this OpenTig instance</TooltipContent></Tooltip>
               <Tooltip><TooltipTrigger render={<Button variant="outline" size="icon-sm" aria-label="Copy pairing code" onClick={() => void copyCode()} />}><IconCopy /></TooltipTrigger><TooltipContent>Copy pairing code</TooltipContent></Tooltip>
             </div>
+            <p className="web-access-hint">Closing hides this code. A copied code remains valid until used, replaced, or expired. Turning off Web access invalidates it.</p>
+            </>}
           </div>
         )}
+        </>}
       </>}
 
       <div className={`web-access-session-heading ${desktopApi ? 'settings-field-separated' : ''}`}>
@@ -269,15 +444,19 @@ export function WebAccessSettings() {
 
       {!desktopApi && <p className="web-access-hint">Listener addresses and new pairing links are controlled by the OpenTig desktop app or CLI running the server.</p>}
 
-      <Dialog open={enableWarningOpen} onOpenChange={setEnableWarningOpen}>
+      <Dialog open={exposureConfirmation !== null} onOpenChange={(open) => { if (!open) setExposureConfirmation(null); }}>
         <DialogPopup className="undo-commit-dialog">
           <div className="undo-commit-content">
-            <DialogTitle>Enable owner-level LAN access?</DialogTitle>
-            <DialogDescription>Any paired browser can edit or delete files and act with your OS user permissions. Use only a trusted LAN or VPN.</DialogDescription>
+            <DialogTitle>{exposureConfirmation === 'disable' ? 'Disable Web access?' : 'Enable browser access?'}</DialogTitle>
+            <DialogDescription>{exposureConfirmation === 'disable'
+              ? 'Connected browsers will disconnect and cannot access OpenTig until Web access is enabled again. Paired devices stay saved and can reconnect with their valid sessions. The desktop stays connected.'
+              : 'Paired browsers can edit or delete files and act with your OS user permissions. Saved paired devices can reconnect. Use only devices you trust. LAN exposure is configured separately.'}</DialogDescription>
           </div>
           <div className="undo-commit-actions">
             <DialogClose render={<Button variant="ghost" />}>Cancel</DialogClose>
-            <Button onClick={() => void changeExposure(true)} disabled={action !== null}>Enable LAN access</Button>
+            <Button variant={exposureConfirmation === 'disable' ? 'destructive' : 'default'} onClick={() => void changeExposure(exposureConfirmation === 'enable')} disabled={action !== null || !ready}>
+              {exposureConfirmation === 'disable' ? 'Disable Web access' : 'Enable Web access'}
+            </Button>
           </div>
         </DialogPopup>
       </Dialog>
@@ -323,7 +502,7 @@ function WebAccessFact({ label, children }: { label: string; children: ReactNode
 
 function Endpoint({ value, muted = false }: { value: string | null; muted?: boolean }) {
   if (!value) return <span>Unavailable</span>;
-  return <Tooltip><TooltipTrigger render={<code className={muted ? 'muted' : undefined} />}>{value}</TooltipTrigger><TooltipContent side="bottom">{muted ? 'Enable LAN access to use this endpoint' : value}</TooltipContent></Tooltip>;
+  return <Tooltip><TooltipTrigger render={<code className={muted ? 'muted' : undefined} />}>{value}</TooltipTrigger><TooltipContent side="bottom">{muted ? 'Enable Web access and LAN access to use this endpoint' : value}</TooltipContent></Tooltip>;
 }
 
 function deviceLabel(type: OpenTigOwnerSession['deviceType']): string {

@@ -64,7 +64,7 @@ async function verifyPackagedUtilityHost({ utilityProcess }, host) {
       const timeout = setTimeout(() => reject(new Error(`Packaged utility timed out. ${stderr.join('').slice(-500)}`)), 15_000);
       child.once('spawn', () => child.postMessage({
         type: 'bootstrap',
-        protocolVersion: 1,
+        protocolVersion: 2,
         config: {
           appVersion: 'packaged-utility-smoke',
           desktopSecret: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
@@ -76,6 +76,7 @@ async function verifyPackagedUtilityHost({ utilityProcess }, host) {
           platform: process.platform,
           profile,
           host,
+          browserAccessEnabled: false,
           port,
         },
       }));
@@ -97,7 +98,9 @@ async function verifyPackagedUtilityHost({ utilityProcess }, host) {
     const response = await fetch(`http://127.0.0.1:${ready.port}/readyz`, { signal: AbortSignal.timeout(5_000) });
     if (!response.ok || (await response.json()).status !== 'ready') throw new Error('Packaged utility readiness check failed.');
     const status = await control(child, 'status');
-    if (status.action !== 'status' || status.connectedSessionCount !== 0) throw new Error('Packaged utility status control failed.');
+    if (status.action !== 'status' || status.connectedSessionCount !== 0 || status.browserAccessEnabled !== false) throw new Error('Packaged utility status control failed.');
+    await control(child, 'set-browser-access', true);
+    if ((await control(child, 'status')).browserAccessEnabled !== true) throw new Error('Packaged utility did not enable Web access.');
     const pairing = await control(child, 'create-pairing-link');
     const pairingToken = new URLSearchParams(new URL(pairing.url).hash.slice(1)).get('token');
     if (pairing.action !== 'create-pairing-link' || !pairingToken || !/^[A-Za-z0-9_-]{43}$/.test(pairingToken)) {
@@ -122,6 +125,11 @@ async function verifyPackagedUtilityHost({ utilityProcess }, host) {
       socket.once('error', (error) => { clearTimeout(timeout); reject(error); });
     });
     await verifyCliDiscovery(socket, directory);
+    await control(child, 'set-browser-access', false);
+    const disabled = await fetch(`${origin}/api/auth/descriptor`, { signal: AbortSignal.timeout(5_000) });
+    if ((await disabled.json()).browserAccessEnabled !== false) throw new Error('Packaged utility did not disable Web access.');
+    const desktop = await fetch(`${origin}/api/auth/sessions`, { headers: { Cookie: cookie }, signal: AbortSignal.timeout(5_000) });
+    if (!desktop.ok) throw new Error('Disabling Web access interrupted the packaged desktop session.');
     socket.close();
     // Session revocation now uses authenticated HTTP, not the old utility control action.
     const revoked = await fetch(`${origin}/api/auth/revoke-all`, {
@@ -141,7 +149,7 @@ async function verifyPackagedUtilityHost({ utilityProcess }, host) {
   }
 }
 
-function control(child, action) {
+function control(child, action, enabled) {
   const requestId = `smoke-${action}`;
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => reject(new Error(`Packaged utility ${action} control timed out.`)), 5_000);
@@ -153,7 +161,7 @@ function control(child, action) {
       else resolve(message.result);
     };
     child.on('message', onMessage);
-    child.postMessage({ type: 'control', requestId, action });
+    child.postMessage({ type: 'control', requestId, action, ...(action === 'set-browser-access' ? { enabled } : {}) });
   });
 }
 
