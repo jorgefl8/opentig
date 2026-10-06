@@ -83,6 +83,10 @@ export class OpenTigRuntime {
     this.onEvent({ type: 'repository.changed', repositoryId, scope });
   }
 
+  publishGitHubAccountsChange(): void {
+    if (!this.closePromise) this.onEvent({ type: 'github.accounts-changed' });
+  }
+
   publishActiveRepositoryChange(repository: RepositoryInfo): void {
     if (!this.closePromise) this.onEvent({ type: 'repository.active-changed', repository });
   }

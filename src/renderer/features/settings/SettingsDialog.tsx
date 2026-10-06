@@ -1,15 +1,16 @@
+import { GitHubSettings } from './GitHubSettings';
 import { AiExecutableSettings } from './AiExecutableSettings';
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import { aiExecutablePathsKey } from '@shared/ai-status';
 import { formatDateTime } from '@shared/date-format';
 import {
-  IconAlertTriangle, IconHistory, IconKeyboard,
+  IconAlertTriangle, IconBrandGithub, IconHistory, IconKeyboard,
   IconLoader4, IconNetwork, IconRefresh, IconSettings, IconSparkles, IconX,
 } from '@tabler/icons-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { sileo } from 'sileo';
-import type { AiHarnessId, AiHarnessStatus, Preferences } from '../../../shared/contracts';
+import type { AiHarnessId, AiHarnessStatus, Preferences, RepositoryInfo } from '../../../shared/contracts';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogClose, DialogDescription, DialogPopup, DialogTitle } from '@/components/ui/dialog';
@@ -30,19 +31,22 @@ const SETTINGS_SECTIONS = [
   { id: 'general', label: 'General', icon: IconSettings },
   { id: 'updates', label: 'Updates', icon: IconRefresh },
   { id: 'shortcuts', label: 'Shortcuts', icon: IconKeyboard },
+  { id: 'github', label: 'GitHub', icon: IconBrandGithub },
   { id: 'ai', label: 'AI assistance', icon: IconSparkles },
   { id: 'diagnostics', label: 'Diagnostics', icon: IconAlertTriangle },
   { id: 'webAccess', label: 'Web access', icon: IconNetwork },
 ] as const;
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number]['id'];
 const SETTINGS_COPY: Record<Exclude<SettingsSection, 'webAccess'>, { title: string; description: string }> = {
+  github: { title: 'GitHub', description: 'GitHub CLI accounts and the identity used for each repository.' },
   updates: { title: 'Updates', description: 'Check, download, and install new OpenTig releases.' },
   general: { title: 'General', description: 'Appearance, files and repository behavior.' },
   shortcuts: { title: 'Shortcuts', description: 'Rebind commands or review the shortcuts that stay fixed.' },
   ai: { title: 'AI assistance', description: 'Local harness and model used to suggest commit messages and pull-request drafts.' },
   diagnostics: { title: 'Diagnostics', description: 'Recent local failures on this machine. Prompts and file contents are never recorded.' },
 };
-export function SettingsDialog({ preferences, onPreference, open, onOpenChange, section, onSectionChange }: {
+export function SettingsDialog({ preferences, onPreference, open, onOpenChange, section, onSectionChange, repository = null }: {
+  repository?: RepositoryInfo | null;
   preferences: Preferences;
   onPreference(partial: Partial<Preferences>): void | Promise<boolean>;
   open: boolean;
@@ -128,7 +132,7 @@ export function SettingsDialog({ preferences, onPreference, open, onOpenChange, 
     : SETTINGS_COPY[section];
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogPopup className={`settings-dialog${section === 'general' ? ' settings-dialog-general' : section === 'ai' ? ' settings-dialog-ai w-[min(1000px,calc((100vw-48px)/var(--settings-ui-scale,1)))]' : ''}`} style={{
+      <DialogPopup className={`settings-dialog${section === 'github' ? ' settings-dialog-github' : section === 'general' ? ' settings-dialog-general' : section === 'ai' ? ' settings-dialog-ai w-[min(1000px,calc((100vw-48px)/var(--settings-ui-scale,1)))]' : ''}`} style={{
         '--settings-ui-scale': window.opentigDesktop || window.matchMedia('(max-width: 767px)').matches ? 1 : preferences.uiZoom / 100,
       } as CSSProperties}>
         <div className="settings-shell">
@@ -166,7 +170,7 @@ export function SettingsDialog({ preferences, onPreference, open, onOpenChange, 
                   exit={reduceMotion ? { opacity: 1 } : { opacity: 0, y: -5 }}
                   transition={settingsTransition}
                 >
-              {section === 'general' ? <GeneralSettings preferences={preferences} onPreference={onPreference} /> : section === 'updates' ? <UpdateSettings /> : section === 'shortcuts' ? <ShortcutsSettings preferences={preferences} onPreference={onPreference} /> : section === 'webAccess' ? <WebAccessSettings /> : section === 'diagnostics' ? <>
+              {section === 'github' ? <GitHubSettings repository={repository} /> : section === 'general' ? <GeneralSettings preferences={preferences} onPreference={onPreference} /> : section === 'updates' ? <UpdateSettings /> : section === 'shortcuts' ? <ShortcutsSettings preferences={preferences} onPreference={onPreference} /> : section === 'webAccess' ? <WebAccessSettings /> : section === 'diagnostics' ? <>
                 <div className="settings-field">
                   <div className="settings-field-label">
                     <strong>Problem history</strong>

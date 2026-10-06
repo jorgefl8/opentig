@@ -11,6 +11,10 @@ export function ghDetail(reason: unknown): SerializedGhError | null {
 export function ghErrorTitle(detail: SerializedGhError | null): string {
   if (!detail) return 'GitHub operation failed';
   if (detail.code === 'GH_CLI_NOT_FOUND') return 'GitHub CLI is not installed';
+  if (detail.code === 'GH_ACCOUNT_MISSING') return 'GitHub account is missing';
+  if (detail.code === 'GH_ACCOUNT_UNRESOLVED') return 'Choose a GitHub account';
+  if (detail.code === 'GH_ACCESS_DENIED') return 'GitHub access denied';
+  if (detail.code === 'GH_CLI_INCOMPATIBLE') return 'Update GitHub CLI';
   if (detail.code === 'GH_AUTH_REQUIRED') return 'Sign in to GitHub CLI';
   if (detail.code === 'GH_NOT_GITHUB_REPO') return 'Not a GitHub repository';
   if (detail.code === 'GH_NO_UPSTREAM') return 'Publish the branch first';

@@ -109,6 +109,9 @@ export const OPEN_TIG_SERVER_COMMANDS = {
   'ai.clearLog': command(IPC.aiClearLog, 'ai-clear-log', true),
   'ai.cancelGeneration': command(IPC.aiCancelGeneration, 'ai-cancel-generation', true),
 
+  'github.accountsStatus': command(IPC.githubAccountsStatus, 'gh-accounts-status', false, { timeoutMs: 90_000 }),
+  'github.repositoryAccount': command(IPC.githubRepositoryAccount, 'gh-repository-account', false, { timeoutMs: 60_000 }),
+  'github.setRepositoryAccount': command(IPC.githubSetRepositoryAccount, 'gh-set-repository-account', true),
   'github.status': command(IPC.githubStatus, 'gh-status', false),
   'github.repositoryInfo': command(IPC.githubRepositoryInfo, 'gh-repository-info', false),
   'github.findPullRequestForBranch': command(IPC.githubPrForBranch, 'gh-pr-for-branch', false),

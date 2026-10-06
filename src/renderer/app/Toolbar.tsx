@@ -438,6 +438,7 @@ export function Toolbar(props: ToolbarProps) {
       {props.settingsOpen && (
         <Suspense fallback={null}>
           <SettingsDialog
+            repository={props.repository}
             preferences={props.preferences}
             onPreference={props.onPreference}
             open={props.settingsOpen}

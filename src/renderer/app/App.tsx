@@ -1,3 +1,4 @@
+import { useGitHubAccount } from '@/features/pulls/useGitHubAccount';
 import { appDisplayName } from '@/lib/app-identity';
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -43,7 +44,7 @@ import {
   mergeRefreshRequests, refreshOperationsForScope, shouldRefreshSearch, shouldRefreshViewer, type RefreshRequest,
 } from './refresh-policy';
 import { resolveWindowControlsInset } from './window-controls';
-import { queryKeys, queryResourcesForScope } from '@/lib/query-client';
+import { queryKeys, queryResourcesForScope, resetGitHubQueries } from '@/lib/query-client';
 import { persistTheme } from '@/lib/boot-theme';
 import { useMobileLayout } from '@/lib/use-mobile-layout';
 import { opentig, serverClient } from '@/lib/opentig-api';
@@ -185,14 +186,22 @@ export default function App() {
     enabled: repository !== null,
   });
   const githubInfo = githubInfoQuery.data ?? null;
+  const githubAccountQuery = useGitHubAccount(repository && githubInfo?.isGitHub ? repository.id : null);
+  const githubAccount = githubAccountQuery.data ?? null;
+  useEffect(() => opentig.events.onGitHubAccountsChanged(() => { void resetGitHubQueries(appQueryClient); }), [appQueryClient]);
   const pullsQuery = useQuery<{ ghStatus: GhCliStatus; pulls: PullRequestSummary[] | null }>({
     queryKey: queryKeys.pulls(repository?.id ?? '', pullRequestStates),
     queryFn: async () => {
       const forceStatus = forceGhStatusRef.current;
       forceGhStatusRef.current = false;
       const nextGhStatus = await opentig.github.status(forceStatus);
-      if (!nextGhStatus.installed || nextGhStatus.authStatus === 'unauthenticated') return { ghStatus: nextGhStatus, pulls: null };
-      const nextPulls = pullRequestStates.length ? await opentig.github.listPullRequests(repository!.id, pullRequestStates) : [];
+      if (!nextGhStatus.installed) return { ghStatus: nextGhStatus, pulls: null };
+      let nextPulls: PullRequestSummary[];
+      try { nextPulls = pullRequestStates.length ? await opentig.github.listPullRequests(repository!.id, pullRequestStates) : []; }
+      finally {
+        const context = await opentig.github.repositoryAccount(repository!.id, false);
+        appQueryClient.setQueryData(queryKeys.githubAccount(repository!.id), context);
+      }
       return { ghStatus: nextGhStatus, pulls: nextPulls };
     },
     enabled: view === 'prs' && repository !== null && githubInfo?.isGitHub === true,
@@ -212,7 +221,7 @@ export default function App() {
     queryKey: queryKeys.branchPullRequest(repository?.id ?? '', currentBranch ?? ''),
     queryFn: async () => {
       const cli = await opentig.github.status();
-      if (!cli.installed || cli.authStatus === 'unauthenticated') return null;
+      if (!cli.installed) return null;
       return opentig.github.findPullRequestForBranch(repository!.id, currentBranch!);
     },
     enabled: repository !== null && githubInfo?.isGitHub === true && currentBranch !== null,
@@ -2053,6 +2062,7 @@ export default function App() {
             open={createPrOpen}
             onOpenChange={setCreatePrOpen}
             repositoryId={repository.id}
+            onOpenGitHubSettings={() => { setCreatePrOpen(false); setSettingsSection('github'); setSettingsOpen(true); }}
             branches={branches}
             status={status}
             preferences={bootstrap.preferences}
@@ -2228,6 +2238,8 @@ export default function App() {
                   repositoryId={repository.id}
                   info={githubInfo}
                   ghStatus={ghStatus}
+                  account={githubAccount}
+                  onOpenGitHubSettings={() => { setSettingsSection('github'); setSettingsOpen(true); }}
                   pulls={pulls}
                   loading={pullsLoading}
                   error={pullsError}

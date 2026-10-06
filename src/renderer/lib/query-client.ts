@@ -17,6 +17,8 @@ export const queryClient = new QueryClient({
 });
 
 export const queryKeys = {
+  githubAccounts: ['github', 'accounts'] as const,
+  githubAccount: (repositoryId: string) => ['repository', repositoryId, 'github-account'] as const,
   aiStatuses: (executablePathsKey: string) => ['ai', 'statuses', executablePathsKey] as const,
   repository: (repositoryId: string) => ['repository', repositoryId] as const,
   status: (repositoryId: string) => ['repository', repositoryId, 'status'] as const,
@@ -41,4 +43,13 @@ export const queryKeys = {
 export function queryResourcesForScope(scope: RepositoryChangeScope, view: RefreshView): string[] {
   const operations = refreshOperationsForScope(scope, view);
   return (['status', 'branches', 'worktrees', 'files', 'history'] as const).filter((resource) => operations[resource]);
+}
+
+/** Reset only GitHub reads, cancelling old results before another identity loads. */
+export async function resetGitHubQueries(client: QueryClient): Promise<void> {
+  const resources = new Set(['github-account', 'pulls', 'pull-request', 'pull-request-stack', 'pull-request-diff', 'pull-request-commit-diff', 'branch-pull-request']);
+  const predicate = (query: { queryKey: readonly unknown[] }) => query.queryKey[0] === 'github'
+    || (query.queryKey[0] === 'repository' && resources.has(String(query.queryKey[2])));
+  await client.cancelQueries({ predicate });
+  await client.resetQueries({ predicate });
 }

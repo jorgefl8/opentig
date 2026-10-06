@@ -12,14 +12,17 @@ function fixture(reply: (args: string[]) => CliRunResult, remoteUrl = 'https://g
   const run = vi.fn(async (exe: string, args: string[]) => {
     if (exe === 'ssh') {
       if (sshResult instanceof Error) throw sshResult;
+      if (args[0] === '-T' && sshResult.exitCode === 0) return { exitCode: 1, stdout: '', stderr: "Hi tester! You've successfully authenticated, but GitHub does not provide shell access.\n" };
       return sshResult;
     }
+    if (args[0] === 'auth' && args[1] === 'token') return { exitCode: 0, stdout: 'gho_test_0000000000000000000000000', stderr: '' };
+    if (args[0] === 'api' && args[1] === 'user') return { exitCode: 0, stdout: 'tester', stderr: '' };
     return args[0] === '--version' || args[0] === 'auth' ? ok('ready') : reply(args);
   });
   const service = new GitHubService(
     { discover: async () => [{ executable: 'gh', alias: 'gh', source: 'process-path', env: { PATH: '/fixture/bin' } }], warning: async () => undefined } as unknown as CliResolver,
     { run } as unknown as CliProcessRunner,
-    { run: async () => ({ stdout: Buffer.from(remoteUrl) }) } as unknown as GitProcess,
+    { run: async (_cwd: string, args: string[]) => ({ stdout: Buffer.from(args.includes('core.sshCommand') ? '' : remoteUrl) }) } as unknown as GitProcess,
     { get: () => ({ path: '.', id: 'repo' }) } as unknown as RepositoryService,
   );
   return { service, run };
@@ -91,7 +94,7 @@ describe('GitHub native stacks', () => {
     const list = await service.listPullRequests('repo', ['OPEN']);
     expect(list.map((p) => p.number)).toEqual(Array.from({ length: 27 }, (_, i) => 27 - i));
     expect(list[0]?.stack?.position).toBe(27);
-    expect(run.mock.calls.filter(([, args]) => args[0] === 'api')).toHaveLength(2);
+    expect(run.mock.calls.filter(([, args]) => args[0] === 'api' && args[1] !== 'user')).toHaveLength(2);
   });
   it('keeps normal PRs and details usable when optional metadata fails', async () => {
     const { service } = fixture((args) => args[0] === 'pr' ? ok(args[1] === 'list' ? [{ number: 101, state: 'OPEN' }] : { number: 101, state: 'OPEN', body: 'Description' }) : fail('HTTP 403: rate limit'));
@@ -103,7 +106,7 @@ describe('GitHub native stacks', () => {
   it('fetches full layers only through the explicit stack read', async () => {
     const { service, run } = fixture((args) => ok(args[1]?.includes('?') ? [stack] : stack));
     expect(await service.getPullRequestStack('repo', 101)).toMatchObject({ number: 7, layers: [{ title: 'Model' }] });
-    expect(run.mock.calls.filter(([, args]) => args[0] === 'api').map(([, args]) => args[1])).toEqual(['repos/example/demo/stacks?pull_request=101', 'repos/example/demo/stacks/7']);
+    expect(run.mock.calls.filter(([, args]) => args[0] === 'api' && args[1] !== 'user').map(([, args]) => args[1])).toEqual(['repos/example/demo/stacks?pull_request=101', 'repos/example/demo/stacks/7']);
   });
   it('distinguishes confirmed absence and unsupported preview from transient or auth failures', async () => {
     for (const response of [ok([]), fail('gh: Not Found (HTTP 404)')]) {

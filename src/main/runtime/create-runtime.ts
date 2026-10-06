@@ -16,6 +16,8 @@ import { GitProcess } from '../git/GitProcess';
 import { GitRepositoryOperations } from '../git/GitRepositoryOperations';
 import { RepositoryService } from '../git/RepositoryService';
 import { SearchService } from '../git/SearchService';
+import { GitHubAccountsService } from '../github/GitHubAccountsService';
+import { GitHubStatusStore } from '../persistence/GitHubStatusStore';
 import { GitHubService } from '../github/GitHubService';
 import { AiLogStore } from '../persistence/AiLogStore';
 import { AiStatusStore } from '../persistence/AiStatusStore';
@@ -72,8 +74,11 @@ export async function createOpenTigRuntime(
     key: () => aiExecutablePathsKey(settings.preferences.aiExecutablePaths),
   });
   const prDrafts = new PullRequestDraftService(operations, providers, aiLog);
-  const github = new GitHubService(cliResolver, cliRunner, git, repositories);
   let runtime: OpenTigRuntime | null = null;
+  const githubAccounts = new GitHubAccountsService(cliResolver, cliRunner, git, settings,
+    new GitHubStatusStore(path.join(path.dirname(options.settingsPath), 'github-status.json')),
+    () => runtime?.publishGitHubAccountsChange());
+  const github = new GitHubService(cliResolver, cliRunner, git, repositories, githubAccounts);
   const events = {
     repositoryChanged: (repositoryId: string, scope: Parameters<OpenTigRuntime['publishRepositoryChange']>[1]) => {
       runtime?.publishRepositoryChange(repositoryId, scope);

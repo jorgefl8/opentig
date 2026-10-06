@@ -1,3 +1,4 @@
+import { OPEN_TIG_PROTOCOL_VERSION } from '../../../src/shared/server-protocol';
 import { execFile } from 'node:child_process';
 import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { request as httpRequest } from 'node:http';
@@ -114,7 +115,7 @@ describe('authoritative HTTP server', () => {
 
     await expectJson(`${fixture.server.origin}/healthz`, 200, { status: 'ok' });
     await expectJson(`${fixture.server.origin}/readyz`, 200, {
-      status: 'ready', protocolVersion: 1, appVersion: '0.1-test',
+      status: 'ready', protocolVersion: OPEN_TIG_PROTOCOL_VERSION, appVersion: '0.1-test',
     });
     const descriptor = await fetch(`${fixture.server.origin}/api/auth/descriptor`);
     expect(await descriptor.json()).toEqual({
@@ -124,7 +125,7 @@ describe('authoritative HTTP server', () => {
       authenticated: false,
       currentSessionKind: null,
       mode: 'desktop',
-      protocolVersion: 1,
+      protocolVersion: OPEN_TIG_PROTOCOL_VERSION,
       appVersion: '0.1-test',
     });
     expect(JSON.stringify(await (await fetch(`${fixture.server.origin}/api/auth/descriptor`)).json())).not.toContain(fixture.desktopSecret);
@@ -371,7 +372,7 @@ describe('authenticated WebSocket protocol', () => {
     expect(bootstrap).toMatchObject({
       type: 'result',
       id: 'bootstrap',
-      result: { ok: true, value: { server: { protocolVersion: 1, appVersion: '0.1-test' } } },
+      result: { ok: true, value: { server: { protocolVersion: OPEN_TIG_PROTOCOL_VERSION, appVersion: '0.1-test' } } },
     });
 
     const unknown = await sendAndReceive(socket, { type: 'request', id: 'unknown', command: 'missing:command', args: [] });

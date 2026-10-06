@@ -1,7 +1,29 @@
 import { describe, expect, it } from 'vitest';
-import { queryClient, queryKeys, queryResourcesForScope } from './query-client';
+import { QueryClient } from '@tanstack/react-query';
+import { queryClient, queryKeys, queryResourcesForScope, resetGitHubQueries } from './query-client';
 
 describe('renderer query policy', () => {
+  it('discards old-account results in every repository while preserving Git data', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    let release!: (value: string) => void;
+    const key = queryKeys.pulls('repo-a', ['OPEN']);
+    const pending = client.fetchQuery({ queryKey: key, queryFn: () => new Promise<string>((resolve) => { release = resolve; }) });
+    const ignored = pending.catch(() => undefined);
+    client.setQueryData(queryKeys.pullRequestDiff('repo-b', 1), 'old diff');
+    client.setQueryData(queryKeys.githubAccount('repo-a'), 'old account');
+    client.setQueryData(queryKeys.githubAccounts, 'old inventory');
+    client.setQueryData(queryKeys.status('repo-a'), 'git status');
+    await resetGitHubQueries(client);
+    await client.fetchQuery({ queryKey: key, queryFn: async () => 'new account' });
+    release('late old account');
+    await ignored;
+    expect(client.getQueryData(key)).toBe('new account');
+    expect(client.getQueryData(queryKeys.pullRequestDiff('repo-b', 1))).toBeUndefined();
+    expect(client.getQueryData(queryKeys.githubAccount('repo-a'))).toBeUndefined();
+    expect(client.getQueryData(queryKeys.githubAccounts)).toBeUndefined();
+    expect(client.getQueryData(queryKeys.status('repo-a'))).toBe('git status');
+    client.clear();
+  });
   it('uses explicit local server defaults', () => {
     expect(queryClient.getDefaultOptions().queries).toMatchObject({
       networkMode: 'always', retry: false, refetchOnWindowFocus: false, refetchOnReconnect: false,

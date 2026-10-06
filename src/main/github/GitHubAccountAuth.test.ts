@@ -6,7 +6,7 @@ import type { CliResolver } from '../ai/CliResolver';
 import type { GitProcess } from '../git/GitProcess';
 import type { RepositoryService } from '../git/RepositoryService';
 
-const tokenFor = (login: string) => `gho_fixture_${login}_00000000000000000000`;
+const tokenFor = (login: string) => `gho_fixture_${login.replaceAll('-', '_')}_00000000000000000000`;
 const response = (stdout = '', exitCode = 0, stderr = ''): CliRunResult => ({ stdout, exitCode, stderr });
 const input = { repositoryId: 'alice', base: 'origin/main', title: 'Change', body: 'Reviewed body', draft: true };
 
@@ -29,8 +29,9 @@ function fixture(options: {
     if (args[0] === 'auth' && args[1] === 'status') return response('', options.activeAuthenticated === false ? 1 : 0);
     if (args[0] === 'auth' && args[1] === 'token') {
       if (options.credential instanceof Error) throw options.credential;
-      return options.credential ?? response(`${tokenFor(args.at(-1)!)}\n`);
+      return options.credential ?? response(`${tokenFor(args.includes('--user') ? args.at(-1)! : 'global-user')}\n`);
     }
+    if (args[0] === 'api' && args[1] === 'user') return response(['alice', 'bob', 'global-user'].find((login) => runOptions.env?.GH_TOKEN === tokenFor(login)) ?? 'global-user');
     if (args[0] === 'pr' && args[1] === 'create') {
       bodies.push(await readFile(args[args.indexOf('--body-file') + 1]!, 'utf8'));
       if (options.creation instanceof Error) throw options.creation;
@@ -42,7 +43,7 @@ function fixture(options: {
   const service = new GitHubService(
     { discover: async () => [{ executable: 'gh', alias: 'gh', source: 'process-path', env: candidateEnv }], warning: async () => undefined } as unknown as CliResolver,
     { run } as unknown as CliProcessRunner,
-    { run: async (cwd: string) => ({ stdout: Buffer.from(options.remote ?? `git@team-${cwd}:example/demo.git`) }) } as unknown as GitProcess,
+    { run: async (cwd: string, args: string[]) => ({ stdout: Buffer.from(args.includes('core.sshCommand') ? '' : options.remote ?? `git@team-${cwd}:example/demo.git`) }) } as unknown as GitProcess,
     { get: (id: string) => ({ path: id, id }), status: async () => ({ branch: 'feature', upstream: 'origin/feature', ahead: 0, detached: false, unborn: false }) } as unknown as RepositoryService,
   );
   return { service, run, bodies, candidateEnv };
@@ -54,10 +55,10 @@ describe('repository account authentication for PR creation', () => {
     expect(await service.createPullRequest(input)).toMatchObject({ number: 42 });
     const credential = run.mock.calls.find(([, args]) => args[1] === 'token')!;
     expect(credential[1]).toEqual(['auth', 'token', '--hostname', 'github.com', '--user', 'alice']);
-    expect(credential[2]).toMatchObject({ removeEnv: ['GH_TOKEN', 'GITHUB_TOKEN'] });
+    expect(credential[2]).toMatchObject({ removeEnv: expect.arrayContaining(['GH_TOKEN', 'GITHUB_TOKEN', 'GH_DEBUG']) });
     const creation = run.mock.calls.find(([, args]) => args[1] === 'create')!;
     expect(creation[1]).toEqual(expect.arrayContaining(['-R', 'example/demo', '--base', 'main', '--head', 'feature', '--draft']));
-    expect(creation[2]).toMatchObject({ env: { GH_TOKEN: tokenFor('alice'), GH_HOST: 'github.com' }, removeEnv: ['GITHUB_TOKEN'] });
+    expect(creation[2]).toMatchObject({ env: { GH_TOKEN: tokenFor('alice'), GH_HOST: 'github.com' }, removeEnv: expect.arrayContaining(['GITHUB_TOKEN', 'GH_DEBUG']) });
     expect(JSON.stringify(creation[1])).not.toContain(tokenFor('alice'));
     expect(bodies).toEqual([input.body]);
     await expect(access(creation[1][creation[1].indexOf('--body-file') + 1]!)).rejects.toThrow();
@@ -87,7 +88,7 @@ describe('repository account authentication for PR creation', () => {
   ])('reports the missing SSH account without leaking credential output', async (credential) => {
     const { service, run } = fixture({ credential });
     await expect(service.createPullRequest(input)).rejects.toMatchObject({ detail: {
-      code: 'GH_AUTH_REQUIRED', operation: 'gh-pr-create', message: expect.stringContaining('sign in as alice'),
+      code: 'GH_ACCOUNT_MISSING', operation: 'gh-pr-create', message: expect.stringContaining('Sign in as alice'),
     } });
     try { await service.createPullRequest(input); } catch (error) {
       expect(JSON.stringify(error)).not.toMatch(/must_stay_private|multiple_lines/);
@@ -115,11 +116,10 @@ describe('repository account authentication for PR creation', () => {
     new Error('SSH unavailable'),
     response('', 1, "Hi example/demo! You've successfully authenticated, but GitHub does not provide shell access.\n"),
     response('', 255, "Hi alice! You've successfully authenticated, but GitHub does not provide shell access.\n"),
-  ])('preserves existing CLI authentication when SSH cannot identify a user', async (ssh) => {
+  ])('requires an explicit account when SSH cannot identify a user', async (ssh) => {
     const { service, run } = fixture({ ssh });
-    expect(await service.createPullRequest(input)).toMatchObject({ number: 42 });
-    expect(run.mock.calls.some(([, args]) => args[1] === 'token')).toBe(false);
-    expect(run.mock.calls.find(([, args]) => args[1] === 'create')?.[2]?.env?.GH_TOKEN).toBe('unrelated_environment_token');
+    await expect(service.createPullRequest(input)).rejects.toMatchObject({ detail: { code: 'GH_ACCOUNT_UNRESOLVED' } });
+    expect(run.mock.calls.some(([, args]) => args[1] === 'create' || args[1] === 'token')).toBe(false);
   });
 
   it('uses configured SSH ports and never prompts or accepts new host keys', async () => {
@@ -127,17 +127,17 @@ describe('repository account authentication for PR creation', () => {
     await service.createPullRequest(input);
     expect(run.mock.calls.find(([exe, args]) => exe === 'ssh' && args[0] === '-T')?.[1]).toEqual([
       '-T', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes', '-o', 'ConnectTimeout=5',
-      '-o', 'ConnectionAttempts=1', '-o', 'RemoteCommand=none', '-p', '2222', '--', 'git@team-alice',
+      '-o', 'ConnectionAttempts=1', '-o', 'RemoteCommand=none', '-o', 'UpdateHostKeys=no', '-p', '2222', '--', 'git@team-alice',
     ]);
   });
 
-  it('keeps HTTPS creation and read-only listing independent of SSH account selection', async () => {
+  it('uses the same account for HTTPS creation and SSH read-only listing', async () => {
     const https = fixture({ remote: 'https://github.com/example/demo.git' });
     await https.service.createPullRequest(input);
     expect(https.run.mock.calls.some(([exe]) => exe === 'ssh')).toBe(false);
-    expect(https.run.mock.calls.some(([, args]) => args[1] === 'token')).toBe(false);
+    expect(https.run.mock.calls.find(([, args]) => args[1] === 'token')?.[1]).not.toContain('--user');
     const ssh = fixture();
     await ssh.service.listPullRequests('alice', ['OPEN']);
-    expect(ssh.run.mock.calls.some(([, args]) => args[0] === '-T' || args[1] === 'token')).toBe(false);
+    expect(ssh.run.mock.calls.find(([, args]) => args[1] === 'list')?.[2]?.env?.GH_TOKEN).toBe(tokenFor('alice'));
   });
 });

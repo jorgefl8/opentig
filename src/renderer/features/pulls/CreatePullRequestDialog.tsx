@@ -1,3 +1,4 @@
+import { useGitHubAccount } from './useGitHubAccount';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { IconGitBranch, IconGitPullRequest, IconLoader4, IconPlayerStop, IconUpload } from '@tabler/icons-react';
 import { sileo } from 'sileo';
@@ -28,9 +29,12 @@ interface CreatePullRequestDialogProps {
   pushBusy: boolean;
   onPush(): void;
   onCreated(prNumber: number | null): void;
+  onOpenGitHubSettings(): void;
 }
 
 export function CreatePullRequestDialog(props: CreatePullRequestDialogProps) {
+  const accountQuery = useGitHubAccount(props.open ? props.repositoryId : null);
+  const account = accountQuery.data;
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
   const [base, setBase] = useState('');
@@ -111,10 +115,10 @@ export function CreatePullRequestDialog(props: CreatePullRequestDialogProps) {
   };
 
   const create = async () => {
-    if (blocked || creating || generating || !title.trim() || !base) return;
+    if (blocked || creating || generating || !title.trim() || !base || account?.state !== 'ready' || !account.login) return;
     setCreating(true);
     try {
-      const result = await opentig.github.createPullRequest({ repositoryId: props.repositoryId, title: title.trim(), body, base, draft });
+      const result = await opentig.github.createPullRequest({ repositoryId: props.repositoryId, title: title.trim(), body, base, draft, expectedAccount: { login: account.login, revision: account.revision } });
       setTitle('');
       setBody('');
       setDraft(false);
@@ -126,6 +130,7 @@ export function CreatePullRequestDialog(props: CreatePullRequestDialogProps) {
       props.onCreated(result.number);
     } catch (reason) {
       const detail = ghDetail(reason);
+      if (detail?.code === 'GH_ACCOUNT_UNRESOLVED') void accountQuery.refetch();
       sileo.error({ title: ghErrorTitle(detail), description: detail?.message ?? messageOf(reason), duration: 10_000 });
     } finally {
       setCreating(false);
@@ -140,6 +145,7 @@ export function CreatePullRequestDialog(props: CreatePullRequestDialogProps) {
           <DialogDescription>
             {currentBranch ? <>From <code>{currentBranch}</code> into the selected base branch on GitHub.</> : 'Check out a branch to create a pull request.'}
           </DialogDescription>
+          <div className="github-operation-account"><div><strong>{account?.state === 'ready' ? `Publish as @${account.login}` : accountQuery.isFetching ? 'Checking GitHub identity…' : 'GitHub account needs attention'}</strong><small>{account?.message ?? (account?.source === 'ssh' ? 'Automatic · identity verified through SSH' : account?.source === 'environment' ? 'Credentials from the backend environment' : account?.source === 'explicit' ? 'Chosen for this repository' : 'Active GitHub CLI credentials')}{accountQuery.error ? ' · Could not check the account.' : ''}</small></div><Button variant="ghost" size="sm" onClick={props.onOpenGitHubSettings} disabled={creating}>Change</Button></div>
           {needsPublish && (
             <div className="create-pr-notice">
               <span>{detachedOrUnborn ? 'Check out a branch with at least one commit before publishing.' : 'Publish this branch before creating a pull request.'}</span>
@@ -233,7 +239,7 @@ export function CreatePullRequestDialog(props: CreatePullRequestDialogProps) {
           </Button>
           <div className="create-pr-submit-actions">
             <Button variant="ghost" onClick={() => props.onOpenChange(false)} disabled={creating}>Cancel</Button>
-            <Button onClick={() => void create()} disabled={blocked || creating || Boolean(generating) || !title.trim() || !base}>
+            <Button onClick={() => void create()} disabled={blocked || creating || Boolean(generating) || !title.trim() || !base || account?.state !== 'ready' || accountQuery.isFetching}>
               {creating ? <IconLoader4 className="animate-spin" /> : <IconGitPullRequest />} {creating ? 'Creating…' : 'Create pull request'}
             </Button>
           </div>
