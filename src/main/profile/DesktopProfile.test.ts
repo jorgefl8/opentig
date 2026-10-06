@@ -61,10 +61,10 @@ describe('desktop profile isolation', () => {
     expect(() => prepareDevDirectory(path.join(production, 'dev'), production)).toThrow('overlaps production');
   });
 
-  it('refuses dangling links into production before any future log write', () => {
+  it.each(['ai-log.jsonl', 'ai-statuses.json'])('refuses dangling links into production before any future write to %s', (file) => {
     const { app, dev, production } = fixture();
     mkdirSync(dev);
-    symlinkSync(path.join(production, 'ai-log.jsonl'), path.join(dev, 'ai-log.jsonl'));
+    symlinkSync(path.join(production, file), path.join(dev, file));
     expect(() => configureDesktopProfile(app, 'dev', 'linux')).toThrow('overlaps production');
     expect(app.setPath).not.toHaveBeenCalled();
   });

@@ -1,5 +1,8 @@
 import { AiExecutableSettings } from './AiExecutableSettings';
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
+import { aiExecutablePathsKey } from '@shared/ai-status';
+import { formatDateTime } from '@shared/date-format';
 import {
   IconAlertTriangle, IconHistory, IconKeyboard,
   IconLoader4, IconNetwork, IconRefresh, IconSettings, IconSparkles, IconX,
@@ -16,6 +19,7 @@ import { AiLogDialog } from '@/features/ai/AiLogDialog';
 import { AiProviderIcon } from '@/features/ai/AiProviderIcon';
 import { harnessLabel } from '@/features/ai/harness-copy';
 import { opentig } from '@/lib/opentig-api';
+import { queryKeys } from '@/lib/query-client';
 import { GeneralSettings } from './GeneralSettings';
 import { ProblemsLogDialog } from './ProblemsLogDialog';
 import { ShortcutsSettings } from './ShortcutsSettings';
@@ -46,8 +50,19 @@ export function SettingsDialog({ preferences, onPreference, open, onOpenChange, 
   section: SettingsSection;
   onSectionChange(section: SettingsSection): void;
 }) {
-  const [statuses, setStatuses] = useState<AiHarnessStatus[]>([]);
-  const [loadingStatuses, setLoadingStatuses] = useState(false);
+  const queryClient = useQueryClient();
+  const executablePathsKey = aiExecutablePathsKey(preferences.aiExecutablePaths);
+  const statusQueryKey = queryKeys.aiStatuses(executablePathsKey);
+  const statusQuery = useQuery({
+    queryKey: statusQueryKey,
+    queryFn: () => opentig.ai.statuses(false),
+    enabled: open && section === 'ai',
+    staleTime: Infinity,
+    gcTime: Infinity,
+    placeholderData: keepPreviousData,
+  });
+  const statuses = statusQuery.data ?? [];
+  const loadingStatuses = statusQuery.isFetching;
   const [aiLogOpen, setAiLogOpen] = useState(false);
   const [problemsOpen, setProblemsOpen] = useState(false);
   const settingsBodyRef = useRef<HTMLDivElement>(null);
@@ -56,20 +71,21 @@ export function SettingsDialog({ preferences, onPreference, open, onOpenChange, 
     ? { duration: 0 }
     : { duration: 0.16, ease: [0.22, 1, 0.36, 1] as const };
 
-  const statusRequest = useRef(0);
-  const loadStatuses = useCallback(async (forceRefresh = false) => {
-    const request = ++statusRequest.current;
-    setLoadingStatuses(true);
-    try { const next = await opentig.ai.statuses(forceRefresh); if (request === statusRequest.current) setStatuses(next); }
-    catch (reason) { sileo.error({ title: 'Could not check local AI', description: messageOf(reason) }); }
-    finally { if (request === statusRequest.current) setLoadingStatuses(false); }
-  }, []);
-
+  const previousPathsKey = useRef(executablePathsKey);
   useEffect(() => {
-    if (open && section === 'ai') void loadStatuses();
-    const requests = statusRequest;
-    return () => { requests.current++; };
-  }, [loadStatuses, open, section, preferences.aiExecutablePaths]);
+    if (previousPathsKey.current !== executablePathsKey) {
+      // Returning to a previous path must check it again rather than revive its old UI cache.
+      queryClient.removeQueries({ queryKey: queryKeys.aiStatuses(previousPathsKey.current), exact: true });
+      previousPathsKey.current = executablePathsKey;
+    }
+  }, [executablePathsKey, queryClient]);
+  useEffect(() => {
+    if (statusQuery.error) sileo.error({ title: 'Could not check local AI', description: messageOf(statusQuery.error) });
+  }, [statusQuery.error]);
+
+  const checkStatuses = () => queryClient.fetchQuery({
+    queryKey: statusQueryKey, queryFn: () => opentig.ai.statuses(true), staleTime: 0,
+  }).catch(() => undefined);
 
   useLayoutEffect(() => {
     if (open && settingsBodyRef.current) settingsBodyRef.current.scrollTop = 0;
@@ -164,9 +180,10 @@ export function SettingsDialog({ preferences, onPreference, open, onOpenChange, 
                   <div className="settings-field-label">
                     <strong>Local harness</strong>
                     <span>OpenTig uses the selected CLI session. It does not copy or store credentials.</span>
+                    {selectedStatus && <span>Last checked: {formatDateTime(selectedStatus.checkedAt, { seconds: true })}</span>}
                   </div>
-                  <Button variant="outline" size="sm" onClick={() => void loadStatuses(true)} disabled={loadingStatuses}>
-                    {loadingStatuses ? <IconLoader4 className="animate-spin" /> : <IconRefresh />} {loadingStatuses ? <ShimmeringText text="Checking…" /> : 'Check again'}
+                  <Button variant="outline" size="sm" onClick={() => void checkStatuses()} disabled={loadingStatuses}>
+                    {loadingStatuses ? <IconLoader4 className="animate-spin" /> : <IconRefresh />} {loadingStatuses ? <ShimmeringText text={statuses.length ? 'Checking…' : 'Loading…'} /> : 'Check again'}
                   </Button>
                 </div>
                 <div className="ai-harness-list" role="radiogroup" aria-label="Harness for AI assistance">
@@ -179,7 +196,7 @@ export function SettingsDialog({ preferences, onPreference, open, onOpenChange, 
                           <AiProviderIcon harness={harness} />
                           <span className="ai-harness-card-copy">
                             <strong>{harnessLabel(harness)}</strong>
-                            <small>{loadingStatuses ? 'Checking…' : harnessStatus?.version || (harnessStatus ? (harnessStatus.installationStatus === 'inspection-failed' ? 'Inspection unavailable' : harnessStatus.installed ? 'Version unavailable' : 'Executable not found') : 'Status not checked')}</small>
+                            <small>{harnessStatus?.version || (harnessStatus ? (harnessStatus.installationStatus === 'inspection-failed' ? 'Inspection unavailable' : harnessStatus.installed ? 'Version unavailable' : 'Executable not found') : loadingStatuses ? 'Loading…' : 'Status not checked')}</small>
                           </span>
                         </span>
                         <Badge variant={availabilityBadgeVariant(harnessStatus)} className={`ai-status-badge ${harnessStatus?.availability ?? 'unknown'}`}>

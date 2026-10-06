@@ -17,6 +17,7 @@ export const queryClient = new QueryClient({
 });
 
 export const queryKeys = {
+  aiStatuses: (executablePathsKey: string) => ['ai', 'statuses', executablePathsKey] as const,
   repository: (repositoryId: string) => ['repository', repositoryId] as const,
   status: (repositoryId: string) => ['repository', repositoryId, 'status'] as const,
   branches: (repositoryId: string) => ['repository', repositoryId, 'branches'] as const,

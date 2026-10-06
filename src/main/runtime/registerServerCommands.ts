@@ -2,6 +2,7 @@ import { lstat } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import type { DiffRequest, Preferences } from '../../shared/contracts';
 import { IPC } from '../../shared/contracts';
+import { aiExecutablePathsKey } from '../../shared/ai-status';
 import { GitOperationError } from '../../shared/errors';
 import { OPEN_TIG_SERVER_COMMANDS, type OpenTigServerCommandDefinition } from '../../shared/protocol';
 import { repositoryRootFromCommonDir } from '../../shared/repository-favicon';
@@ -67,8 +68,9 @@ export function registerServerCommands(
     } as const;
   });
   handle(IPC.preferences, 'preferences', async (partial) => {
+    const previousPaths = aiExecutablePathsKey(services.settings.preferences.aiExecutablePaths);
     const preferences = await services.settings.setPreferences((partial ?? {}) as Partial<Preferences>);
-    if (partial && typeof partial === 'object' && 'aiExecutablePaths' in partial) services.ai.invalidateStatuses();
+    if (previousPaths !== aiExecutablePathsKey(preferences.aiExecutablePaths)) services.ai.invalidateStatuses();
     host.preferencesChanged(preferences);
     return preferences;
   });
