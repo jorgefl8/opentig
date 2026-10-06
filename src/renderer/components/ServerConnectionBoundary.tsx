@@ -42,6 +42,9 @@ export function ServerConnectionBoundary({ children }: { children: ReactNode }) 
         position: 'bottom-right',
         duration: null,
         autopilot: false,
+        ...(state === 'incompatible-version'
+          ? { button: { title: 'Reload', onClick: () => window.location.reload() } }
+          : {}),
       };
       toastId.current = sileo.show(options);
     } else if (toastId.current) {

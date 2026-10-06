@@ -92,6 +92,8 @@ Server mode is designed for personal access through **Cloudflare Tunnel**, a **p
 
 Pair your browser using the code printed on the server. The folder picker selects **folders on that server**, not on your laptop or phone.
 
+If a server upgrade makes an open client's version incompatible, its connection notification offers **Reload** to load the current interface from the server. The browser still warns about unsaved editor changes before reloading.
+
 To keep the CLI running after closing the terminal, use `opentig service install`. Linux starts it at boot with lingering; macOS and Windows start it at login and stop it at logout. This CLI service is independent of the desktop app.
 
 See [installation and CLI](docs/getting-started.md) for pinned versions, background service setup, and updates, or [remote access](docs/web-access.md) for connection examples. Paired browsers have the host user's authority: keep access private and do not expose the raw port publicly.
