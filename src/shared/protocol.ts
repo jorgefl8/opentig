@@ -86,6 +86,8 @@ export const OPEN_TIG_SERVER_COMMANDS = {
   'index.resolveConflict': command(IPC.indexResolveConflict, 'resolve-conflict', true, { maxRequestBytes: CONTENT_MAX_REQUEST_BYTES }),
 
   'commits.create': command(IPC.commitCreate, 'commit', true),
+  'commits.authorship': command(IPC.commitAuthorship, 'commit-authorship-read', false),
+  'commits.setAuthorship': command(IPC.commitSetAuthorship, 'commit-authorship-set', true),
   'commits.undoLatest': command(IPC.commitUndoLatest, 'undo-latest-commit', true),
   'commits.list': command(IPC.commitsList, 'history', false),
   'commits.files': command(IPC.commitsFiles, 'commit-files', false),
@@ -109,6 +111,9 @@ export const OPEN_TIG_SERVER_COMMANDS = {
   'ai.clearLog': command(IPC.aiClearLog, 'ai-clear-log', true),
   'ai.cancelGeneration': command(IPC.aiCancelGeneration, 'ai-cancel-generation', true),
 
+  'github.accountsStatus': command(IPC.githubAccountsStatus, 'gh-accounts-status', false, { timeoutMs: 90_000 }),
+  'github.repositoryAccount': command(IPC.githubRepositoryAccount, 'gh-repository-account', false, { timeoutMs: 60_000 }),
+  'github.setRepositoryAccount': command(IPC.githubSetRepositoryAccount, 'gh-set-repository-account', true),
   'github.status': command(IPC.githubStatus, 'gh-status', false),
   'github.repositoryInfo': command(IPC.githubRepositoryInfo, 'gh-repository-info', false),
   'github.findPullRequestForBranch': command(IPC.githubPrForBranch, 'gh-pr-for-branch', false),

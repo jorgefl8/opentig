@@ -12,6 +12,24 @@ afterEach(async () => {
 });
 
 describe('SettingsStore document recovery', () => {
+  it('retains valid account choices, repairs invalid entries and carries choices on relocation and forget', async () => {
+    const file = await settingsFile({ githubAccounts: {
+      '/fixture/demo/.git': { mode: 'account', host: 'github.com', login: 'alice', token: 'discarded' },
+      '/fixture/bad/.git': { mode: 'account', host: 'enterprise.example', login: 'bob' },
+      relative: { mode: 'account', host: 'github.com', login: 'bob' },
+    } });
+    const store = new SettingsStore(file); await store.load();
+    expect(store.githubAccount('/fixture/demo/.git')).toEqual({ mode: 'account', host: 'github.com', login: 'alice' });
+    expect(store.githubAccount('/fixture/bad/.git')).toEqual({ mode: 'auto' });
+    const previous = { id: 'repo', name: 'demo', repositoryName: 'demo', path: '/fixture/demo', commonDir: '/fixture/demo/.git' };
+    await store.touchRepository(previous);
+    await store.relocateRepository('repo', { ...previous, id: 'moved', path: '/fixture/moved', commonDir: '/fixture/moved/.git' });
+    expect(store.githubAccount('/fixture/demo/.git')).toEqual({ mode: 'auto' });
+    expect(store.githubAccount('/fixture/moved/.git')).toMatchObject({ login: 'alice' });
+    await store.forgetRepository('/fixture/moved/.git');
+    expect(store.githubAccount('/fixture/moved/.git')).toEqual({ mode: 'auto' });
+    expect(await readFile(file, 'utf8')).not.toContain('discarded');
+  });
   it('defaults the Dev global shortcut off but preserves an explicit preference after restart', async () => {
     const file = await settingsFile({});
     const store = new SettingsStore(file, undefined, false);

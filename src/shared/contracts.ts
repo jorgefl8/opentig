@@ -1,3 +1,5 @@
+import type { GitHubAccountSelection, GitHubAccountsStatus, GitHubRepositoryAccount } from './github-accounts';
+import type { CommitAuthorship, SetCommitAuthorshipInput } from './commit-authorship';
 import type { SerializedOperationError } from './errors';
 import type { BranchDeletionResult, BranchDetails, BranchInfo, CommitFile, CommitPage, FileTreeEntry, LocalRefsSnapshot, RepositoryStatus, WorktreeDetails, WorktreeInfo, WorktreeRemovalBlocked } from './git-types';
 import type { RasterImageMime } from './image-types';
@@ -395,6 +397,7 @@ export interface PullRequestDetails extends PullRequestSummary {
 }
 
 export interface CreatePullRequestInput {
+  expectedAccount?: { login: string; revision: number };
   repositoryId: string;
   title: string;
   body: string;
@@ -554,6 +557,8 @@ export interface OpenTigApi {
     resolveConflict(repositoryId: string, path: string, content: string): Promise<GitResult>;
   };
   commits: {
+    authorship(repositoryId: string): Promise<CommitAuthorship>;
+    setAuthorship(repositoryId: string, input: SetCommitAuthorshipInput): Promise<CommitAuthorship>;
     create(repositoryId: string, message: string): Promise<CommitResult>;
     undoLatest(repositoryId: string, expectedOid: string): Promise<UndoLatestCommitResult>;
     list(repositoryId: string, cursor?: string): Promise<CommitPage>;
@@ -586,6 +591,9 @@ export interface OpenTigApi {
     cancelGeneration(requestId: string): Promise<void>;
   };
   github: {
+    accountsStatus(forceRefresh?: boolean): Promise<GitHubAccountsStatus>;
+    repositoryAccount(repositoryId: string, forceRefresh?: boolean): Promise<GitHubRepositoryAccount>;
+    setRepositoryAccount(repositoryId: string, selection: GitHubAccountSelection): Promise<GitHubRepositoryAccount>;
     status(forceRefresh?: boolean): Promise<GhCliStatus>;
     repositoryInfo(repositoryId: string): Promise<GitHubRepositoryInfo>;
     findPullRequestForBranch(repositoryId: string, branchName: string): Promise<PullRequestSummary | null>;
@@ -604,6 +612,7 @@ export interface OpenTigApi {
     record(entry: Pick<ProblemLogRecordInput, 'operation' | 'message'> & Partial<Pick<ProblemLogRecordInput, 'level' | 'code' | 'repositoryId'>>): Promise<void>;
   };
   events: {
+    onGitHubAccountsChanged(callback: () => void): () => void;
     onRepositoryChanged(callback: (repositoryId: string, scope: RepositoryChangeScope) => void): () => void;
     onActiveRepositoryChanged(callback: (repository: RepositoryInfo) => void): () => void;
   };
@@ -627,12 +636,13 @@ export const IPC = {
   repositorySearch: 'repository:search', repositoryReplaceSearch: 'repository:replace-search',
   diffGet: 'diff:get', diffCommit: 'diff:commit', diffCommitFile: 'diff:commit-file', indexStage: 'index:stage',
   indexUnstage: 'index:unstage', indexDiscard: 'index:discard', indexStageAll: 'index:stage-all', indexUnstageAll: 'index:unstage-all', indexPrepareCommitGroup: 'index:prepare-commit-group', indexUpdateConflict: 'index:update-conflict', indexResolveConflict: 'index:resolve-conflict', commitCreate: 'commit:create', commitUndoLatest: 'commit:undo-latest',
-  commitsList: 'commits:list', commitsFiles: 'commits:files', branchesList: 'refs:branches', branchSwitch: 'refs:switch', worktreesList: 'refs:worktrees',
+  commitsList: 'commits:list', commitsFiles: 'commits:files', commitAuthorship: 'commits:authorship', commitSetAuthorship: 'commits:set-authorship', branchesList: 'refs:branches', branchSwitch: 'refs:switch', worktreesList: 'refs:worktrees',
   worktreeSelect: 'refs:select-worktree', refsPull: 'refs:pull', refsPush: 'refs:push', refsFetch: 'refs:fetch',
   localRefsSnapshot: 'refs:local-snapshot', branchDetails: 'refs:branch-details', worktreeDetails: 'refs:worktree-details',
   branchDelete: 'refs:delete-branch', worktreeRemove: 'refs:remove-worktree',
   aiStatuses: 'ai:statuses', aiGenerateCommitMessage: 'ai:generate-commit-message', aiCancelGeneration: 'ai:cancel-generation', aiLog: 'ai:log', aiClearLog: 'ai:clear-log',
   diagnosticsList: 'diagnostics:list', diagnosticsClear: 'diagnostics:clear', diagnosticsRecord: 'diagnostics:record',
+  githubAccountsStatus: 'github:accounts-status', githubRepositoryAccount: 'github:repository-account', githubSetRepositoryAccount: 'github:set-repository-account',
   githubStatus: 'github:status', githubRepositoryInfo: 'github:repository-info', githubPrForBranch: 'github:pr-for-branch', githubPrList: 'github:pr-list', githubPrView: 'github:pr-view',
   githubPrStack: 'github:pr-stack', githubPrDiff: 'github:pr-diff', githubPrCommitDiff: 'github:pr-commit-diff', githubPrCreate: 'github:pr-create', githubPrDraft: 'github:pr-draft', githubPrDraftCancel: 'github:pr-draft-cancel',
 } as const;

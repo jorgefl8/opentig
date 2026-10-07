@@ -1,3 +1,4 @@
+import type { GitHubRepositoryAccount } from '@shared/github-accounts';
 import { formatDate } from '@shared/date-format';
 import { PullRequestStackMenu } from './PullRequestStackMenu';
 import { useRef } from 'react';
@@ -14,6 +15,8 @@ import { GitHubAvatar } from './GitHubAvatar';
 
 interface PullRequestsViewProps {
   repositoryId: string;
+  account: GitHubRepositoryAccount | null;
+  onOpenGitHubSettings(): void;
   info: GitHubRepositoryInfo | null;
   ghStatus: GhCliStatus | null;
   pulls: PullRequestSummary[] | null;
@@ -39,6 +42,12 @@ export function PullRequestsView(props: PullRequestsViewProps) {
         The <code>origin</code> remote does not point to github.com, so pull requests are unavailable here.
       </PullsNotice>
     );
+  }
+  if (props.account?.state === 'error' || (props.error && props.ghStatus === null)) {
+    return <PullsNotice icon={<IconBrandGithub />} title="GitHub account unavailable">
+      {props.account?.message ?? props.error}
+      <span className="pulls-notice-actions"><Button variant="outline" size="sm" onClick={props.onOpenGitHubSettings}>Open GitHub settings</Button><Button variant="ghost" size="sm" onClick={props.onRefresh}><IconRefresh /> Check again</Button></span>
+    </PullsNotice>;
   }
   if (props.ghStatus === null) {
     return <div className="view-loading" role="status"><IconLoader4 className="spinner" /> <ShimmeringText text="Checking GitHub CLI…" /></div>;
@@ -93,6 +102,7 @@ function PullsList(props: PullRequestsViewProps & { nameWithOwner: string }) {
           </TooltipTrigger>
           <TooltipContent>Refresh pull requests</TooltipContent>
         </Tooltip>
+        {props.account?.login && <Tooltip><TooltipTrigger render={<Button variant="ghost" size="xs" className="github-pulls-account" onClick={props.onOpenGitHubSettings} />}><IconBrandGithub /> @{props.account.login}</TooltipTrigger><TooltipContent>Account used for this repository · open GitHub settings</TooltipContent></Tooltip>}
         <Popover.Root>
           <Popover.Trigger
             render={<Button variant={isDefaultStateFilter(props.states) ? 'ghost' : 'secondary'} size="icon-xs" className="change-action-button" aria-label="Filter pull requests" aria-pressed={!isDefaultStateFilter(props.states)} />}

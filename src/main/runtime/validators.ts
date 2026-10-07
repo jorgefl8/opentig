@@ -300,7 +300,12 @@ export function createPullRequestArg(value: unknown): CreatePullRequestInput {
   if (typeof input.base !== 'string' || !input.base || input.base.length > 300 || input.base.includes('\0')) throw invalidGh(operation);
   if (typeof input.draft !== 'boolean') throw invalidGh(operation);
   if (typeof input.repositoryId !== 'string' || !input.repositoryId || input.repositoryId.length > 64) throw invalidGh(operation);
-  return { repositoryId: input.repositoryId, title: input.title.trim(), body: input.body, base: input.base, draft: input.draft };
+  const expected = input.expectedAccount;
+  if (expected !== undefined && (!expected || typeof expected.login !== 'string' || !/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/.test(expected.login)
+    || !Number.isSafeInteger(expected.revision) || expected.revision < 0)) throw invalidGh(operation);
+  return { repositoryId: input.repositoryId, title: input.title.trim(), body: input.body, base: input.base, draft: input.draft,
+    ...(expected ? { expectedAccount: { login: expected.login, revision: expected.revision } } : {}) };
+
 }
 
 export function generatePullRequestDraftArg(value: unknown): GeneratePullRequestDraftInput {

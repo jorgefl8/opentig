@@ -18,6 +18,8 @@ import type { RepositoryService } from './RepositoryService';
 import { allocatePatchBudget } from './PatchBudget';
 import { parseStatus } from './StatusParser';
 import { parseWorktrees } from './WorktreeParser';
+import { GitCommitAuthorship } from './GitCommitAuthorship';
+import type { SetCommitAuthorshipInput } from '../../shared/commit-authorship';
 
 /**
  * Characters of staged diff and staged summary sent to the model. Generous on
@@ -33,12 +35,17 @@ type GitTaskRunner = (
 
 export class GitRepositoryOperations {
   private readonly knownOids = new Map<string, Set<string>>();
+  private readonly authorship: GitCommitAuthorship;
 
   constructor(
     private readonly git: GitProcess,
     private readonly repositories: RepositoryService,
     private readonly files: FileService,
-  ) {}
+  ) { this.authorship = new GitCommitAuthorship(git, repositories); }
+
+  getCommitAuthorship(repositoryId: string) { return this.authorship.get(repositoryId); }
+
+  setCommitAuthorship(repositoryId: string, input: SetCommitAuthorshipInput) { return this.authorship.set(repositoryId, input); }
 
   async diff(request: DiffRequest): Promise<DiffResult> {
     const repository = this.repositories.get(request.repositoryId);

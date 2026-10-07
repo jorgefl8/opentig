@@ -10,6 +10,7 @@ import { FILES_TREE_SAVE_DEBOUNCE_MS, normalizeFilesTreeStates, type FilesTreeSt
 import { cloneOpenFilesState, normalizeOpenFilesStates, OPEN_FILES_SAVE_DEBOUNCE_MS, type OpenFilesState, upsertOpenFilesState } from '../../shared/open-files-state';
 import { MAX_PROJECT_NAME_LENGTH, MAX_REPOSITORIES_PER_PROJECT, MAX_REPOSITORY_KEY_LENGTH, MAX_REPOSITORY_PROJECTS, normalizeRepositoryKey, UNASSIGNED_RECENT_LIMIT } from '../../shared/repository-projects';
 import { DEFAULT_REMOTE_FETCH_INTERVAL_SECONDS, normalizeRemoteFetchIntervalSeconds } from '../../shared/remote-fetch';
+import { AUTOMATIC_GITHUB_ACCOUNT, githubAccountSelectionSchema, githubRepositoryKey, type GitHubAccountSelection } from '../../shared/github-accounts';
 import { backupPathFor, writeFileAtomically } from './atomicWrite';
 
 export const SETTINGS_SCHEMA_VERSION = 1;
@@ -18,6 +19,7 @@ export type SettingsRecovery = 'backup' | 'defaults';
 interface WindowBounds { width: number; height: number; x?: number; y?: number }
 interface SettingsData {
   version: number;
+  githubAccounts: Record<string, GitHubAccountSelection>;
   recentRepositories: RecentRepository[];
   repositoryProjects: RepositoryProject[];
   filesTreeStates: FilesTreeState[];
@@ -32,6 +34,7 @@ type BackgroundChannel = 'filesTree' | 'openFiles';
 
 const defaults: SettingsData = {
   version: SETTINGS_SCHEMA_VERSION,
+  githubAccounts: {},
   recentRepositories: [],
   repositoryProjects: [],
   filesTreeStates: [],
@@ -51,7 +54,7 @@ const defaults: SettingsData = {
 // Disk input is intentionally permissive. Each field is repaired independently
 // so one legacy or corrupt preference never resets valid sibling settings.
 const settingsRecordSchema = z.looseObject({
-  version: z.unknown().optional(),
+  version: z.unknown().optional(), githubAccounts: z.unknown().optional(),
   recentRepositories: z.unknown().optional(), repositoryProjects: z.unknown().optional(), filesTreeStates: z.unknown().optional(),
   openFilesStates: z.unknown().optional(), activeRepositoryId: z.unknown().optional(), preferences: z.unknown().optional(), windowBounds: z.unknown().optional(),
 });
@@ -114,6 +117,26 @@ export class SettingsStore {
   }
   get windowBounds(): WindowBounds { return { ...this.data.windowBounds }; }
 
+  githubAccount(commonDir: string): GitHubAccountSelection {
+    return { ...(this.data.githubAccounts[githubRepositoryKey(commonDir)] ?? AUTOMATIC_GITHUB_ACCOUNT) };
+  }
+
+  async setGitHubAccount(commonDir: string, selection: GitHubAccountSelection): Promise<void> {
+    const parsed = githubAccountSelectionSchema.parse(selection);
+    const key = githubRepositoryKey(commonDir);
+    const previous = this.data.githubAccounts[key];
+    if (parsed.mode === 'auto') delete this.data.githubAccounts[key];
+    else this.data.githubAccounts[key] = parsed;
+    try { await this.save(); }
+    catch (error) {
+      if (this.data.githubAccounts[key] === (parsed.mode === 'auto' ? undefined : parsed)) {
+        if (previous) this.data.githubAccounts[key] = previous;
+        else delete this.data.githubAccounts[key];
+      }
+      throw error;
+    }
+  }
+
   async touchRepository(repository: Omit<RecentRepository, 'lastOpenedAt'>): Promise<void> {
     const recent = { ...repository, lastOpenedAt: new Date().toISOString() };
     this.data.recentRepositories = [recent, ...this.data.recentRepositories.filter((item) => item.id !== repository.id)];
@@ -131,6 +154,12 @@ export class SettingsStore {
     const previous = this.data.recentRepositories.find((item) => item.id === previousId);
     if (!previous) throw projectError('Unknown repository.');
 
+    const previousAccountKey = githubRepositoryKey(previous.commonDir);
+    const nextAccountKey = githubRepositoryKey(repository.commonDir);
+    if (previousAccountKey !== nextAccountKey && this.data.githubAccounts[previousAccountKey]) {
+      this.data.githubAccounts[nextAccountKey] ??= this.data.githubAccounts[previousAccountKey];
+      delete this.data.githubAccounts[previousAccountKey];
+    }
     const previousKey = normalizeRepositoryKey(previous.commonDir);
     const nextKey = normalizeRepositoryKey(repository.commonDir);
     const destinationAlreadyAssigned = this.data.repositoryProjects.some((project) => (
@@ -164,6 +193,9 @@ export class SettingsStore {
     const key = normalizeRepositoryKey(repositoryKey);
     const removedIds = new Set(this.data.recentRepositories
       .filter((item) => normalizeRepositoryKey(item.commonDir) === key).map((item) => item.id));
+    for (const item of this.data.recentRepositories) {
+      if (removedIds.has(item.id)) delete this.data.githubAccounts[githubRepositoryKey(item.commonDir)];
+    }
     this.data.recentRepositories = this.data.recentRepositories.filter((item) => !removedIds.has(item.id));
     this.data.repositoryProjects = this.data.repositoryProjects.map((project) => ({
       ...project, repositoryKeys: project.repositoryKeys.filter((entry) => entry !== key),
@@ -425,6 +457,7 @@ function validate(value: unknown, defaultDoubleControlShortcutEnabled: boolean):
     : { ...defaults.windowBounds };
   return {
     version: SETTINGS_SCHEMA_VERSION,
+    githubAccounts: normalizeGitHubAccounts(input.githubAccounts),
     recentRepositories,
     repositoryProjects,
     filesTreeStates,
@@ -555,6 +588,17 @@ export function executablePaths(value: unknown, strict = false, platform = proce
     const expanded = raw.startsWith('~/') ? p.join(home, raw.slice(2)) : raw;
     if (raw.length > 4096 || hasControlCharacters(raw) || !p.isAbsolute(expanded) || (platform === 'win32' && !/^(?:[a-z]:[\\/]|\\\\)/i.test(expanded))) { invalid(); continue; }
     result[key] = expanded;
+  }
+  return result;
+}
+
+function normalizeGitHubAccounts(value: unknown): Record<string, GitHubAccountSelection> {
+  const result: Record<string, GitHubAccountSelection> = Object.create(null);
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return result;
+  for (const [key, selection] of Object.entries(value).slice(0, 1000)) {
+    if (!key || key.length > MAX_REPOSITORY_KEY_LENGTH || hasControlCharacters(key) || !path.isAbsolute(key)) continue;
+    const parsed = githubAccountSelectionSchema.safeParse(selection);
+    if (parsed.success && parsed.data.mode === 'account') result[githubRepositoryKey(key)] = parsed.data;
   }
   return result;
 }

@@ -42,6 +42,22 @@ function transportFixture() {
 }
 
 describe('OpenTig server client', () => {
+  it('routes account commands and events separately from repository switches', async () => {
+    const fixture = transportFixture();
+    const { api } = createOpenTigServerClient({ transport: fixture.transport });
+    const changed = vi.fn(); const switched = vi.fn();
+    api.events.onGitHubAccountsChanged(changed);
+    api.events.onActiveRepositoryChanged(switched);
+    fixture.event({ type: 'github.accounts-changed' });
+    expect(changed).toHaveBeenCalledOnce();
+    expect(switched).not.toHaveBeenCalled();
+    await api.github.accountsStatus(false);
+    await api.github.repositoryAccount('repo-id', true);
+    await api.github.setRepositoryAccount('repo-id', { mode: 'account', host: 'github.com', login: 'alice' });
+    expect(fixture.request).toHaveBeenCalledWith(IPC.githubAccountsStatus, [false], { timeoutMs: 90_000 });
+    expect(fixture.request).toHaveBeenCalledWith(IPC.githubRepositoryAccount, ['repo-id', true], { timeoutMs: 60_000 });
+    expect(fixture.request).toHaveBeenCalledWith(IPC.githubSetRepositoryAccount, ['repo-id', { mode: 'account', host: 'github.com', login: 'alice' }]);
+  });
   it('omits an absent directory path instead of serializing it as null', async () => {
     const fixture = transportFixture();
     const { api } = createOpenTigServerClient({ transport: fixture.transport });

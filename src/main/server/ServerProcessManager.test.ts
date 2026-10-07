@@ -1,3 +1,4 @@
+import { OPEN_TIG_PROTOCOL_VERSION } from '../../shared/server-protocol';
 import { EventEmitter } from 'node:events';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -361,7 +362,7 @@ const readyBehavior: ChildBehavior = (child, message) => {
     host: message.config.host,
     port: message.config.port,
     origin: `http://${message.config.host}:${message.config.port}`,
-    protocolVersion: 1,
+    protocolVersion: OPEN_TIG_PROTOCOL_VERSION,
     appVersion: message.config.appVersion,
   }));
 };

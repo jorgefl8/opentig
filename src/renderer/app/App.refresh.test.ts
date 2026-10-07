@@ -17,7 +17,7 @@ vi.mock('@/lib/opentig-api', () => ({
     refs: { fetch: calls.fetch, listBranches: async () => [], listWorktrees: async () => [] },
     github: { repositoryInfo: async () => ({ isGitHub: false, nameWithOwner: null }) },
     diagnostics: { record: async () => {} },
-    events: { onRepositoryChanged: () => () => {}, onActiveRepositoryChanged: () => () => {} },
+    events: { onGitHubAccountsChanged: () => () => {}, onRepositoryChanged: () => () => {}, onActiveRepositoryChanged: () => () => {} },
   },
   serverClient: { transport: { subscribeState: () => () => {}, getState: () => 'connected' } },
 }));
