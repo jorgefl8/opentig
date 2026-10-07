@@ -6,15 +6,17 @@ import { IconArrowDown, IconArrowUp, IconGripVertical } from '@tabler/icons-reac
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
-export function RepositoryOrderList({ items, onMove, children }: {
+export function RepositoryOrderList({ items, onMove, draggable = true, children }: {
   items: { id: string; label: string }[];
   onMove(id: string, toIndex: number): void;
+  draggable?: boolean;
   children: ReactNode;
 }) {
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
+  if (!draggable) return children;
   const label = (id: string | number) => items.find((item) => item.id === id)?.label ?? 'Item';
   return <DndContext sensors={sensors} collisionDetection={closestCenter}
     accessibility={{ announcements: {
@@ -32,11 +34,18 @@ export function RepositoryOrderList({ items, onMove, children }: {
   </DndContext>;
 }
 
-export function RepositoryOrderRow({ id, label, className, disabled, busy, children }: {
-  id: string; label: string; className: string; disabled: boolean; busy?: boolean | undefined; children: ReactNode;
-}) {
+interface RepositoryOrderRowProps {
+  id: string; label: string; className: string; disabled: boolean; busy?: boolean | undefined; draggable?: boolean; children: ReactNode;
+}
+
+export function RepositoryOrderRow(props: RepositoryOrderRowProps) {
+  if (props.draggable === false) return <div className={props.className} data-order-row="" aria-busy={props.busy || undefined}>{props.children}</div>;
+  return <SortableRepositoryOrderRow {...props} />;
+}
+
+function SortableRepositoryOrderRow({ id, label, className, disabled, busy, children }: RepositoryOrderRowProps) {
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id, disabled });
-  return <div ref={setNodeRef} className={className} aria-busy={busy || undefined} data-dragging={isDragging || undefined}
+  return <div ref={setNodeRef} className={className} data-order-row="" aria-busy={busy || undefined} data-dragging={isDragging || undefined}
     style={{ transform: CSS.Transform.toString(transform), transition }}>
     <Tooltip>
       <TooltipTrigger render={<Button variant="ghost" size="icon-sm" className="repository-order-handle" ref={setActivatorNodeRef}
@@ -48,10 +57,10 @@ export function RepositoryOrderRow({ id, label, className, disabled, busy, child
 }
 
 export function RepositoryOrderButtons({ label, index, count, disabled, onMove }: {
-  label: string; index: number; count: number; disabled: boolean; onMove(toIndex: number): void;
+  label: string; index: number; count: number; disabled: boolean; onMove(toIndex: number, trigger: HTMLButtonElement): void;
 }) {
   return <span className="repository-order-buttons">
-    <Tooltip><TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label={`Move ${label} up`} disabled={disabled || index === 0} onClick={() => onMove(index - 1)} />}><IconArrowUp /></TooltipTrigger><TooltipContent>Move up</TooltipContent></Tooltip>
-    <Tooltip><TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label={`Move ${label} down`} disabled={disabled || index === count - 1} onClick={() => onMove(index + 1)} />}><IconArrowDown /></TooltipTrigger><TooltipContent>Move down</TooltipContent></Tooltip>
+    <Tooltip><TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label={`Move ${label} up`} disabled={disabled || index === 0} onClick={(event) => onMove(index - 1, event.currentTarget)} />}><IconArrowUp /></TooltipTrigger><TooltipContent>Move up</TooltipContent></Tooltip>
+    <Tooltip><TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label={`Move ${label} down`} disabled={disabled || index === count - 1} onClick={(event) => onMove(index + 1, event.currentTarget)} />}><IconArrowDown /></TooltipTrigger><TooltipContent>Move down</TooltipContent></Tooltip>
   </span>;
 }

@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useMemo, useState } from 'react';
+import { type FormEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { IconAlertTriangle, IconFolder, IconFolderPlus, IconFolderSymlink, IconLoader4, IconPencil, IconTrash, IconX } from '@tabler/icons-react';
 import type { RepositoryOrganization, RepositoryProject } from '../../../shared/contracts';
 import { MAX_PROJECT_NAME_LENGTH } from '../../../shared/repository-projects';
@@ -11,6 +11,7 @@ import { buildRepositoryPickerModel, getRepositoryPickerDisplayOrder, shortenRep
 import { RepositoryOrderButtons, RepositoryOrderList, RepositoryOrderRow } from './RepositoryOrderControls';
 import { OpenRepositoryDialog } from './OpenRepositoryDialog';
 import { opentig } from '@/lib/opentig-api';
+import { useMobileLayout } from '@/lib/use-mobile-layout';
 
 const NO_PROJECT = '__opentig_no_project__';
 
@@ -25,6 +26,9 @@ interface RepositoryProjectsDialogProps {
 }
 
 export function RepositoryProjectsDialog({ open, projects, repositories, onOpenChange, onOrganizationChange, onForgetRepository, onRelocateRepository }: RepositoryProjectsDialogProps) {
+  const mobile = useMobileLayout();
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const pendingOrder = useRef<{ scrollTop: number; focused: HTMLElement | null; row: HTMLElement | null; saved: boolean } | null>(null);
   const [removingRepository, setRemovingRepository] = useState<string | null>(null);
   const [relocatingRepository, setRelocatingRepository] = useState<RepositoryOption | null>(null);
   const [newName, setNewName] = useState('');
@@ -38,6 +42,21 @@ export function RepositoryProjectsDialog({ open, projects, repositories, onOpenC
   const groups = [...picker.projectSections, { id: NO_PROJECT, name: 'No project', repositories: picker.unassigned }].filter((group) => group.repositories.length > 0);
   const numbers = new Map(getRepositoryPickerDisplayOrder(picker).map((item, index) => [item.key, index + 1]));
   const orderingDisabled = Boolean(busy || editingId || deletingId || removingRepository);
+
+  useLayoutEffect(() => {
+    if (busy || !pendingOrder.current) return;
+    const snapshot = pendingOrder.current;
+    pendingOrder.current = null;
+    const body = bodyRef.current;
+    if (!open || !body) return;
+    body.scrollTop = snapshot.scrollTop;
+    const target = snapshot.focused?.isConnected && !snapshot.focused.matches(':disabled')
+      ? snapshot.focused : snapshot.row?.querySelector<HTMLButtonElement>('.repository-order-buttons button:not(:disabled)');
+    target?.focus({ preventScroll: true });
+    if (snapshot.saved && snapshot.row?.isConnected && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      snapshot.row.animate?.([{ boxShadow: 'inset 0 0 0 2px var(--ring)' }, { boxShadow: 'inset 0 0 0 2px transparent' }], { duration: 350 });
+    }
+  }, [busy, projects, repositories, open]);
 
   useEffect(() => {
     if (open) return;
@@ -87,14 +106,26 @@ export function RepositoryProjectsDialog({ open, projects, repositories, onOpenC
     await run(`assign:${repositoryKey}`, () => opentig.projects.assign(repositoryKey, projectId));
   };
 
-  const moveProject = async (projectId: string, toIndex: number) => {
+  const moveOrder = async (operation: string, action: () => Promise<RepositoryOrganization>, trigger?: HTMLButtonElement) => {
     if (orderingDisabled) return;
-    await run(`move-project:${projectId}`, () => opentig.projects.moveProject(projectId, toIndex));
+    const focused = trigger ?? (document.activeElement instanceof HTMLElement && bodyRef.current?.contains(document.activeElement) ? document.activeElement : null);
+    const snapshot = mobile && bodyRef.current ? {
+      scrollTop: bodyRef.current.scrollTop, focused, row: focused?.closest<HTMLElement>('[data-order-row]') ?? null, saved: false,
+    } : null;
+    pendingOrder.current = snapshot;
+    await run(operation, async () => {
+      try {
+        const organization = await action();
+        if (snapshot) snapshot.saved = true;
+        return organization;
+      } finally {
+        // Preserve any scrolling done while the save was in flight too.
+        if (snapshot && bodyRef.current) snapshot.scrollTop = bodyRef.current.scrollTop;
+      }
+    });
   };
-  const moveRepository = async (repositoryKey: string, toIndex: number) => {
-    if (orderingDisabled) return;
-    await run(`move-repository:${repositoryKey}`, () => opentig.projects.moveRepository(repositoryKey, toIndex));
-  };
+  const moveProject = (projectId: string, toIndex: number, trigger?: HTMLButtonElement) => moveOrder(`move-project:${projectId}`, () => opentig.projects.moveProject(projectId, toIndex), trigger);
+  const moveRepository = (repositoryKey: string, toIndex: number, trigger?: HTMLButtonElement) => moveOrder(`move-repository:${repositoryKey}`, () => opentig.projects.moveRepository(repositoryKey, toIndex), trigger);
 
   const relocate = async (repository: RepositoryOption) => {
     if (busy) return;
@@ -113,7 +144,7 @@ export function RepositoryProjectsDialog({ open, projects, repositories, onOpenC
 
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!busy) onOpenChange(next); }}>
-      <DialogPopup className="repository-projects-dialog w-[min(660px,calc(100vw-2.5rem))]" onKeyDown={(event) => {
+      <DialogPopup className="repository-projects-dialog w-[min(660px,calc(100vw-2.5rem))]" data-mobile={mobile || undefined} onKeyDown={(event) => {
         // Dialog normally contains arrow keys; sortable handles need them to
         // reach dnd-kit's document listener for keyboard reordering.
         if (event.key.startsWith('Arrow') && event.target instanceof Element && event.target.closest('.repository-order-handle')) event.preventBaseUIHandler();
@@ -121,12 +152,12 @@ export function RepositoryProjectsDialog({ open, projects, repositories, onOpenC
         <header className="repository-projects-header">
           <div>
             <DialogTitle>Manage projects</DialogTitle>
-            <DialogDescription>Drag projects and repositories or use the arrows to set their order. The selector and number shortcuts follow this saved order. Files stay on disk.</DialogDescription>
+            <DialogDescription>{mobile ? 'Use the up and down arrows to reorder projects and repositories.' : 'Drag projects and repositories or use the arrows to set their order.'} The selector and number shortcuts follow this saved order. Files stay on disk.</DialogDescription>
           </div>
           <DialogClose render={<Button variant="ghost" size="icon-sm" aria-label="Close project management" disabled={Boolean(busy)} />}><IconX /></DialogClose>
         </header>
 
-        <div className="repository-projects-body">
+        <div className="repository-projects-body" ref={bodyRef}>
           {error && <div className="repository-projects-error" role="alert"><IconAlertTriangle aria-hidden="true" /><span>{error}</span></div>}
 
           <section className="repository-projects-section" aria-labelledby="projects-heading">
@@ -141,14 +172,14 @@ export function RepositoryProjectsDialog({ open, projects, repositories, onOpenC
               </form>
             </div>
 
-            <RepositoryOrderList items={projects.map((project) => ({ id: project.id, label: project.name }))} onMove={(id, index) => void moveProject(id, index)}>
+            <RepositoryOrderList draggable={!mobile} items={projects.map((project) => ({ id: project.id, label: project.name }))} onMove={(id, index) => void moveProject(id, index)}>
               <div className="repository-project-list">
                 {projects.length === 0 && <p className="repository-projects-empty">No projects yet. Create one to group related repositories.</p>}
                 {projects.map((project, projectIndex) => {
                   const count = project.repositoryKeys.length;
                   const rowBusy = busy === `rename:${project.id}` || busy === `remove:${project.id}` || busy === `move-project:${project.id}`;
                   return (
-                    <RepositoryOrderRow className="repository-project-row" key={project.id} id={project.id} label={`project ${project.name}`} disabled={orderingDisabled} busy={rowBusy}>
+                    <RepositoryOrderRow draggable={!mobile} className="repository-project-row" key={project.id} id={project.id} label={`project ${project.name}`} disabled={orderingDisabled} busy={rowBusy}>
                       {editingId === project.id ? (
                         <form className="repository-inline-form" onSubmit={(event) => void saveRename(event)} onKeyDown={(event) => { if (event.key === 'Escape') setEditingId(null); }}>
                           <label className="sr-only" htmlFor={`rename-project-${project.id}`}>Rename {project.name}</label>
@@ -168,7 +199,7 @@ export function RepositoryProjectsDialog({ open, projects, repositories, onOpenC
                           <span className="repository-project-icon" aria-hidden="true"><IconFolder /></span>
                           <span className="repository-project-copy"><strong>{project.name}</strong><small>{count} {count === 1 ? 'repository' : 'repositories'}</small></span>
                           <span className="repository-row-actions">
-                            <RepositoryOrderButtons label={`project ${project.name}`} index={projectIndex} count={projects.length} disabled={orderingDisabled} onMove={(index) => void moveProject(project.id, index)} />
+                            <RepositoryOrderButtons label={`project ${project.name}`} index={projectIndex} count={projects.length} disabled={orderingDisabled} onMove={(index, trigger) => void moveProject(project.id, index, trigger)} />
                             <Button variant="ghost" size="icon-sm" aria-label={`Rename ${project.name}`} disabled={Boolean(busy)} onClick={() => { setEditingId(project.id); setEditingName(project.name); setDeletingId(null); }}><IconPencil /></Button>
                             <Button variant="ghost" size="icon-sm" className="repository-row-delete" aria-label={`Delete ${project.name}`} disabled={Boolean(busy)} onClick={() => { setDeletingId(project.id); setEditingId(null); }}><IconTrash /></Button>
                           </span>
@@ -189,13 +220,13 @@ export function RepositoryProjectsDialog({ open, projects, repositories, onOpenC
             {repositories.length === 0 && <p className="repository-projects-empty">No repositories added yet.</p>}
             {groups.map((group) => <div className="repository-assignment-group" key={group.id}>
               <h4>{group.name}</h4>
-              <RepositoryOrderList items={group.repositories.map((item) => ({ id: item.key, label: item.name }))} onMove={(id, index) => void moveRepository(id, index)}>
+              <RepositoryOrderList draggable={!mobile} items={group.repositories.map((item) => ({ id: item.key, label: item.name }))} onMove={(id, index) => void moveRepository(id, index)}>
                 <div className="repository-assignment-list">
                   {group.repositories.map((repository, repositoryIndex) => {
                     const projectId = assignments.get(repository.key) ?? NO_PROJECT;
                     const rowBusy = busy?.endsWith(`:${repository.key}`);
                     return (
-                      <RepositoryOrderRow className="repository-assignment-row" key={repository.key} id={repository.key} label={`repository ${repository.name}`} disabled={orderingDisabled} busy={rowBusy}>
+                      <RepositoryOrderRow draggable={!mobile} className="repository-assignment-row" key={repository.key} id={repository.key} label={`repository ${repository.name}`} disabled={orderingDisabled} busy={rowBusy}>
                         {removingRepository === repository.key ? (
                           <div className="repository-project-confirm" role="alert">
                             <IconAlertTriangle aria-hidden="true" />
@@ -228,7 +259,7 @@ export function RepositoryProjectsDialog({ open, projects, repositories, onOpenC
                             disabled={Boolean(busy)}
                           />
                           <span className="repository-management-actions">
-                            <RepositoryOrderButtons label={`repository ${repository.name}`} index={repositoryIndex} count={group.repositories.length} disabled={orderingDisabled} onMove={(index) => void moveRepository(repository.key, index)} />
+                            <RepositoryOrderButtons label={`repository ${repository.name}`} index={repositoryIndex} count={group.repositories.length} disabled={orderingDisabled} onMove={(index, trigger) => void moveRepository(repository.key, index, trigger)} />
                             <Tooltip>
                               <TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label={`Relocate ${repository.name}`} disabled={Boolean(busy)} onClick={() => void relocate(repository)} />}><IconFolderSymlink /></TooltipTrigger>
                               <TooltipContent>Relocate repository</TooltipContent>
