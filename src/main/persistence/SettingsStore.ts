@@ -8,12 +8,12 @@ import { GitOperationError } from '../../shared/errors';
 import { sanitizeShortcutOverrides } from '../../shared/shortcuts';
 import { FILES_TREE_SAVE_DEBOUNCE_MS, normalizeFilesTreeStates, type FilesTreeState, upsertFilesTreeState } from '../../shared/files-tree-state';
 import { cloneOpenFilesState, normalizeOpenFilesStates, OPEN_FILES_SAVE_DEBOUNCE_MS, type OpenFilesState, upsertOpenFilesState } from '../../shared/open-files-state';
-import { MAX_PROJECT_NAME_LENGTH, MAX_REPOSITORIES_PER_PROJECT, MAX_REPOSITORY_KEY_LENGTH, MAX_REPOSITORY_PROJECTS, normalizeRepositoryKey, UNASSIGNED_RECENT_LIMIT } from '../../shared/repository-projects';
+import { MAX_PROJECT_NAME_LENGTH, MAX_REPOSITORIES_PER_PROJECT, MAX_REPOSITORY_KEY_LENGTH, MAX_REPOSITORY_PROJECTS, normalizeRepositoryKey } from '../../shared/repository-projects';
 import { DEFAULT_REMOTE_FETCH_INTERVAL_SECONDS, normalizeRemoteFetchIntervalSeconds } from '../../shared/remote-fetch';
 import { AUTOMATIC_GITHUB_ACCOUNT, githubAccountSelectionSchema, githubRepositoryKey, type GitHubAccountSelection } from '../../shared/github-accounts';
 import { backupPathFor, writeFileAtomically } from './atomicWrite';
 
-export const SETTINGS_SCHEMA_VERSION = 1;
+export const SETTINGS_SCHEMA_VERSION = 2;
 export type SettingsRecovery = 'backup' | 'defaults';
 
 interface WindowBounds { width: number; height: number; x?: number; y?: number }
@@ -139,9 +139,11 @@ export class SettingsStore {
 
   async touchRepository(repository: Omit<RecentRepository, 'lastOpenedAt'>): Promise<void> {
     const recent = { ...repository, lastOpenedAt: new Date().toISOString() };
-    this.data.recentRepositories = [recent, ...this.data.recentRepositories.filter((item) => item.id !== repository.id)];
+    const existing = this.data.recentRepositories.some((item) => item.id === repository.id);
+    this.data.recentRepositories = existing
+      ? this.data.recentRepositories.map((item) => item.id === repository.id ? recent : item)
+      : [...this.data.recentRepositories, recent];
     this.data.activeRepositoryId = repository.id;
-    this.pruneRecentRepositories();
     await this.save();
   }
 
@@ -179,12 +181,10 @@ export class SettingsStore {
     this.data.openFilesStates = normalizeOpenFilesStates(this.data.openFilesStates.map((state) => (
       state.repositoryId === previousId ? { ...state, repositoryId: repository.id } : state
     )));
-    this.data.recentRepositories = [
-      { ...repository, lastOpenedAt: new Date().toISOString() },
-      ...this.data.recentRepositories.filter((item) => item.id !== previousId && item.id !== repository.id),
-    ];
+    this.data.recentRepositories = this.data.recentRepositories.flatMap((item) => item.id === previousId
+      ? [{ ...repository, lastOpenedAt: new Date().toISOString() }]
+      : item.id === repository.id ? [] : [item]);
     this.data.activeRepositoryId = repository.id;
-    this.pruneRecentRepositories();
     await this.save();
   }
 
@@ -251,7 +251,6 @@ export class SettingsStore {
   async removeRepositoryProject(projectId: string): Promise<RepositoryOrganization> {
     this.getProject(projectId);
     this.data.repositoryProjects = this.data.repositoryProjects.filter((project) => project.id !== projectId);
-    this.pruneRecentRepositories();
     await this.save();
     return this.organization;
   }
@@ -260,19 +259,46 @@ export class SettingsStore {
     const key = normalizeRepositoryKey(repositoryKey);
     if (!key || key.length > MAX_REPOSITORY_KEY_LENGTH || hasControlCharacters(key)) throw projectError('Invalid repository.');
     const target = projectId === null ? null : this.getProject(projectId);
-    if (target && !this.data.recentRepositories.some((repository) => normalizeRepositoryKey(repository.commonDir) === key)) {
+    if (!this.data.recentRepositories.some((repository) => normalizeRepositoryKey(repository.commonDir) === key)) {
       throw projectError('Unknown repository.');
     }
+    if (target?.repositoryKeys.includes(key)) return this.organization;
+    if (target && target.repositoryKeys.length >= MAX_REPOSITORIES_PER_PROJECT) throw projectError('This project is full.');
     this.data.repositoryProjects = this.data.repositoryProjects.map((project) => ({
       ...project,
       repositoryKeys: project.repositoryKeys.filter((item) => item !== key),
     }));
     if (target) {
       const refreshed = this.getProject(target.id);
-      if (refreshed.repositoryKeys.length >= MAX_REPOSITORIES_PER_PROJECT) throw projectError('This project is full.');
       refreshed.repositoryKeys.push(key);
     }
-    this.pruneRecentRepositories();
+    await this.save();
+    return this.organization;
+  }
+
+  async moveRepositoryProject(projectId: string, toIndex: number): Promise<RepositoryOrganization> {
+    this.data.repositoryProjects = moveToIndex(this.data.repositoryProjects, projectId, toIndex, (project) => project.id);
+    await this.save();
+    return this.organization;
+  }
+
+  /** Move within the assigned project, or within the unassigned repositories. */
+  async moveRepository(repositoryKey: string, toIndex: number): Promise<RepositoryOrganization> {
+    const key = normalizeRepositoryKey(repositoryKey);
+    const keys = [...new Set(this.data.recentRepositories.map((item) => normalizeRepositoryKey(item.commonDir)))];
+    const known = new Set(keys);
+    const project = this.data.repositoryProjects.find((item) => item.repositoryKeys.includes(key));
+    if (project) {
+      const visible = project.repositoryKeys.filter((item) => known.has(item));
+      project.repositoryKeys = [...moveToIndex(visible, key, toIndex, (item) => item), ...project.repositoryKeys.filter((item) => !known.has(item))];
+    } else {
+      const assigned = new Set(this.data.repositoryProjects.flatMap((item) => item.repositoryKeys));
+      const unassigned = moveToIndex(keys.filter((item) => !assigned.has(item)), key, toIndex, (item) => item);
+      let index = 0;
+      const ordered = keys.map((item) => assigned.has(item) ? item : unassigned[index++]!);
+      const positions = new Map(ordered.map((item, position) => [item, position]));
+      this.data.recentRepositories = [...this.data.recentRepositories].sort((a, b) => positions.get(normalizeRepositoryKey(a.commonDir))! - positions.get(normalizeRepositoryKey(b.commonDir))!);
+    }
     await this.save();
     return this.organization;
   }
@@ -401,15 +427,6 @@ export class SettingsStore {
     }
   }
 
-  private pruneRecentRepositories(): void {
-    const assigned = new Set(this.data.repositoryProjects.flatMap((project) => project.repositoryKeys));
-    let unassigned = 0;
-    this.data.recentRepositories = this.data.recentRepositories.filter((repository) => {
-      if (repository.id === this.data.activeRepositoryId || assigned.has(normalizeRepositoryKey(repository.commonDir))) return true;
-      unassigned += 1;
-      return unassigned <= UNASSIGNED_RECENT_LIMIT;
-    });
-  }
 }
 
 function validate(value: unknown, defaultDoubleControlShortcutEnabled: boolean): SettingsData {
@@ -421,9 +438,18 @@ function validate(value: unknown, defaultDoubleControlShortcutEnabled: boolean):
   }
   const input = parsed.data;
   const recentRepositories = Array.isArray(input.recentRepositories)
-    ? input.recentRepositories.filter(isRecent).map(normalizeRecent).slice(0, 10)
+    ? input.recentRepositories.filter(isRecent).map(normalizeRecent)
     : [];
   const repositoryProjects = normalizeProjects(input.repositoryProjects);
+  // Preserve the picker order from installations that ordered projects by recent use.
+  if (input.version !== SETTINGS_SCHEMA_VERSION) {
+    const keys = [...new Set(recentRepositories.map((item) => normalizeRepositoryKey(item.commonDir)))];
+    const known = new Set(keys);
+    for (const project of repositoryProjects) {
+      const assigned = new Set(project.repositoryKeys);
+      project.repositoryKeys = [...keys.filter((key) => assigned.has(key)), ...project.repositoryKeys.filter((key) => !known.has(key))];
+    }
+  }
   const filesTreeStates = normalizeFilesTreeStates(input.filesTreeStates);
   const openFilesStates = normalizeOpenFilesStates(input.openFilesStates);
   const parsedPreferences = preferencesRecordSchema.safeParse(input.preferences);
@@ -516,6 +542,16 @@ function normalizeWorktreePath(value: string): string {
 
 function cloneProject(project: RepositoryProject): RepositoryProject {
   return { ...project, repositoryKeys: [...project.repositoryKeys] };
+}
+
+function moveToIndex<T>(items: T[], key: string, toIndex: number, keyOf: (item: T) => string): T[] {
+  const fromIndex = items.findIndex((item) => keyOf(item) === key);
+  if (fromIndex < 0) throw projectError('Unknown project or repository.');
+  if (!Number.isSafeInteger(toIndex) || toIndex < 0 || toIndex >= items.length) throw projectError('Invalid ordering position.');
+  const next = [...items];
+  const [item] = next.splice(fromIndex, 1);
+  next.splice(toIndex, 0, item!);
+  return next;
 }
 
 function cloneFilesTreeState(state: FilesTreeState): FilesTreeState {

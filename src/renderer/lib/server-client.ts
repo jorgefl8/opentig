@@ -52,6 +52,8 @@ export function createOpenTigServerClient(options: ServerClientOptions = {}): Op
       rename: (projectId, name) => invoke(IPC.projectRename, projectId, name),
       remove: (projectId) => invoke(IPC.projectRemove, projectId),
       assign: (repositoryKey, projectId) => invoke(IPC.projectAssign, repositoryKey, projectId),
+      moveProject: (projectId, toIndex) => invoke(IPC.projectMove, projectId, toIndex),
+      moveRepository: (repositoryKey, toIndex) => invoke(IPC.projectMoveRepository, repositoryKey, toIndex),
     },
     repository: {
       openPath: (path) => invoke(IPC.repositoryOpenPath, path),

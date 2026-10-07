@@ -296,6 +296,7 @@ export function Toolbar(props: ToolbarProps) {
         triggerHint={<Kbd className="repo-select-shortcut" aria-hidden="true">{repoSwitcherKey.toUpperCase()}</Kbd>}
         shortcut={repoSwitcherKey.toUpperCase()}
         triggerClassName="repo-select max-w-[240px]"
+        contentClassName="repository-picker"
         align="start"
         placeholder="Search repositories…"
         management={{ label: 'Manage projects…', onClick: () => { setMobileContextOpen(false); setProjectsOpen(true); } }}

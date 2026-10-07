@@ -3,10 +3,12 @@ import { IconAlertTriangle, IconFolder, IconFolderPlus, IconFolderSymlink, IconL
 import type { RepositoryOrganization, RepositoryProject } from '../../../shared/contracts';
 import { MAX_PROJECT_NAME_LENGTH } from '../../../shared/repository-projects';
 import { Button } from '@/components/ui/button';
+import { Kbd } from '@/components/ui/kbd';
 import { Dialog, DialogClose, DialogDescription, DialogPopup, DialogTitle } from '@/components/ui/dialog';
 import { SearchablePicker } from '@/components/SearchablePicker';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { shortenRepositoryPath, type RepositoryOption } from './repository-select-model';
+import { buildRepositoryPickerModel, getRepositoryPickerDisplayOrder, shortenRepositoryPath, type RepositoryOption } from './repository-select-model';
+import { RepositoryOrderButtons, RepositoryOrderList, RepositoryOrderRow } from './RepositoryOrderControls';
 import { OpenRepositoryDialog } from './OpenRepositoryDialog';
 import { opentig } from '@/lib/opentig-api';
 
@@ -32,6 +34,10 @@ export function RepositoryProjectsDialog({ open, projects, repositories, onOpenC
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const assignments = useMemo(() => new Map(projects.flatMap((project) => project.repositoryKeys.map((key) => [key, project.id] as const))), [projects]);
+  const picker = useMemo(() => buildRepositoryPickerModel(repositories.map((item) => item.recent), projects), [repositories, projects]);
+  const groups = [...picker.projectSections, { id: NO_PROJECT, name: 'No project', repositories: picker.unassigned }].filter((group) => group.repositories.length > 0);
+  const numbers = new Map(getRepositoryPickerDisplayOrder(picker).map((item, index) => [item.key, index + 1]));
+  const orderingDisabled = Boolean(busy || editingId || deletingId || removingRepository);
 
   useEffect(() => {
     if (open) return;
@@ -81,6 +87,15 @@ export function RepositoryProjectsDialog({ open, projects, repositories, onOpenC
     await run(`assign:${repositoryKey}`, () => opentig.projects.assign(repositoryKey, projectId));
   };
 
+  const moveProject = async (projectId: string, toIndex: number) => {
+    if (orderingDisabled) return;
+    await run(`move-project:${projectId}`, () => opentig.projects.moveProject(projectId, toIndex));
+  };
+  const moveRepository = async (repositoryKey: string, toIndex: number) => {
+    if (orderingDisabled) return;
+    await run(`move-repository:${repositoryKey}`, () => opentig.projects.moveRepository(repositoryKey, toIndex));
+  };
+
   const relocate = async (repository: RepositoryOption) => {
     if (busy) return;
     setError(null);
@@ -98,11 +113,15 @@ export function RepositoryProjectsDialog({ open, projects, repositories, onOpenC
 
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!busy) onOpenChange(next); }}>
-      <DialogPopup className="repository-projects-dialog w-[min(660px,calc(100vw-2.5rem))]">
+      <DialogPopup className="repository-projects-dialog w-[min(660px,calc(100vw-2.5rem))]" onKeyDown={(event) => {
+        // Dialog normally contains arrow keys; sortable handles need them to
+        // reach dnd-kit's document listener for keyboard reordering.
+        if (event.key.startsWith('Arrow') && event.target instanceof Element && event.target.closest('.repository-order-handle')) event.preventBaseUIHandler();
+      }}>
         <header className="repository-projects-header">
           <div>
             <DialogTitle>Manage projects</DialogTitle>
-            <DialogDescription>Group repositories, update their locations, or remove them from OpenTig. Files stay on disk.</DialogDescription>
+            <DialogDescription>Drag projects and repositories or use the arrows to set their order. The selector and number shortcuts follow this saved order. Files stay on disk.</DialogDescription>
           </div>
           <DialogClose render={<Button variant="ghost" size="icon-sm" aria-label="Close project management" disabled={Boolean(busy)} />}><IconX /></DialogClose>
         </header>
@@ -122,101 +141,110 @@ export function RepositoryProjectsDialog({ open, projects, repositories, onOpenC
               </form>
             </div>
 
-            <div className="repository-project-list">
-              {projects.length === 0 && <p className="repository-projects-empty">No projects yet. Create one to group related repositories.</p>}
-              {projects.map((project) => {
-                const count = project.repositoryKeys.length;
-                const rowBusy = busy === `rename:${project.id}` || busy === `remove:${project.id}`;
-                return (
-                  <div className="repository-project-row" key={project.id} aria-busy={rowBusy || undefined}>
-                    {editingId === project.id ? (
-                      <form className="repository-inline-form" onSubmit={(event) => void saveRename(event)} onKeyDown={(event) => { if (event.key === 'Escape') setEditingId(null); }}>
-                        <label className="sr-only" htmlFor={`rename-project-${project.id}`}>Rename {project.name}</label>
-                        <input id={`rename-project-${project.id}`} autoFocus value={editingName} maxLength={MAX_PROJECT_NAME_LENGTH} onChange={(event) => setEditingName(event.target.value)} disabled={Boolean(busy)} />
-                        <Button type="submit" size="xs" disabled={!editingName.trim() || Boolean(busy)}>Save</Button>
-                        <Button type="button" variant="ghost" size="xs" onClick={() => setEditingId(null)} disabled={Boolean(busy)}>Cancel</Button>
-                      </form>
-                    ) : deletingId === project.id ? (
-                      <div className="repository-project-confirm" role="alert">
-                        <IconAlertTriangle aria-hidden="true" />
-                        <span>Delete <strong>{project.name}</strong>? Its repositories stay available, just ungrouped.</span>
-                        <Button variant="destructive" size="xs" disabled={Boolean(busy)} onClick={() => void removeProject(project.id)}>Delete</Button>
-                        <Button variant="ghost" size="xs" disabled={Boolean(busy)} onClick={() => setDeletingId(null)}>Cancel</Button>
-                      </div>
-                    ) : (
-                      <>
-                        <span className="repository-project-icon" aria-hidden="true"><IconFolder /></span>
-                        <span className="repository-project-copy"><strong>{project.name}</strong><small>{count} {count === 1 ? 'repository' : 'repositories'}</small></span>
-                        <span className="repository-row-actions">
-                          <Button variant="ghost" size="icon-sm" aria-label={`Rename ${project.name}`} disabled={Boolean(busy)} onClick={() => { setEditingId(project.id); setEditingName(project.name); setDeletingId(null); }}><IconPencil /></Button>
-                          <Button variant="ghost" size="icon-sm" className="repository-row-delete" aria-label={`Delete ${project.name}`} disabled={Boolean(busy)} onClick={() => { setDeletingId(project.id); setEditingId(null); }}><IconTrash /></Button>
-                        </span>
-                      </>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
+            <RepositoryOrderList items={projects.map((project) => ({ id: project.id, label: project.name }))} onMove={(id, index) => void moveProject(id, index)}>
+              <div className="repository-project-list">
+                {projects.length === 0 && <p className="repository-projects-empty">No projects yet. Create one to group related repositories.</p>}
+                {projects.map((project, projectIndex) => {
+                  const count = project.repositoryKeys.length;
+                  const rowBusy = busy === `rename:${project.id}` || busy === `remove:${project.id}` || busy === `move-project:${project.id}`;
+                  return (
+                    <RepositoryOrderRow className="repository-project-row" key={project.id} id={project.id} label={`project ${project.name}`} disabled={orderingDisabled} busy={rowBusy}>
+                      {editingId === project.id ? (
+                        <form className="repository-inline-form" onSubmit={(event) => void saveRename(event)} onKeyDown={(event) => { if (event.key === 'Escape') setEditingId(null); }}>
+                          <label className="sr-only" htmlFor={`rename-project-${project.id}`}>Rename {project.name}</label>
+                          <input id={`rename-project-${project.id}`} autoFocus value={editingName} maxLength={MAX_PROJECT_NAME_LENGTH} onChange={(event) => setEditingName(event.target.value)} disabled={Boolean(busy)} />
+                          <Button type="submit" size="xs" disabled={!editingName.trim() || Boolean(busy)}>Save</Button>
+                          <Button type="button" variant="ghost" size="xs" onClick={() => setEditingId(null)} disabled={Boolean(busy)}>Cancel</Button>
+                        </form>
+                      ) : deletingId === project.id ? (
+                        <div className="repository-project-confirm" role="alert">
+                          <IconAlertTriangle aria-hidden="true" />
+                          <span>Delete <strong>{project.name}</strong>? Its repositories stay available, just ungrouped.</span>
+                          <Button variant="destructive" size="xs" disabled={Boolean(busy)} onClick={() => void removeProject(project.id)}>Delete</Button>
+                          <Button variant="ghost" size="xs" disabled={Boolean(busy)} onClick={() => setDeletingId(null)}>Cancel</Button>
+                        </div>
+                      ) : (
+                        <>
+                          <span className="repository-project-icon" aria-hidden="true"><IconFolder /></span>
+                          <span className="repository-project-copy"><strong>{project.name}</strong><small>{count} {count === 1 ? 'repository' : 'repositories'}</small></span>
+                          <span className="repository-row-actions">
+                            <RepositoryOrderButtons label={`project ${project.name}`} index={projectIndex} count={projects.length} disabled={orderingDisabled} onMove={(index) => void moveProject(project.id, index)} />
+                            <Button variant="ghost" size="icon-sm" aria-label={`Rename ${project.name}`} disabled={Boolean(busy)} onClick={() => { setEditingId(project.id); setEditingName(project.name); setDeletingId(null); }}><IconPencil /></Button>
+                            <Button variant="ghost" size="icon-sm" className="repository-row-delete" aria-label={`Delete ${project.name}`} disabled={Boolean(busy)} onClick={() => { setDeletingId(project.id); setEditingId(null); }}><IconTrash /></Button>
+                          </span>
+                        </>
+                      )}
+                    </RepositoryOrderRow>
+                  );
+                })}
+              </div>
+            </RepositoryOrderList>
           </section>
 
           <section className="repository-projects-section" aria-labelledby="repository-assignments-heading">
             <div className="repository-projects-section-heading">
               <h3 id="repository-assignments-heading">Repositories <span>{repositories.length}</span></h3>
-              <p>One project per repository</p>
+              <p>Reorder within each group</p>
             </div>
-            <div className="repository-assignment-list">
-              {repositories.length === 0 && <p className="repository-projects-empty">No recent repositories to assign yet.</p>}
-              {repositories.map((repository) => {
-                const projectId = assignments.get(repository.key) ?? NO_PROJECT;
-                const rowBusy = busy?.endsWith(`:${repository.key}`);
-                return (
-                  <div className="repository-assignment-row" key={repository.key} aria-busy={rowBusy || undefined}>
-                    {removingRepository === repository.key ? (
-                      <div className="repository-project-confirm" role="alert">
-                        <IconAlertTriangle aria-hidden="true" />
-                        <span>Remove <strong>{repository.name}</strong> and its worktrees from OpenTig? Their folders and files stay on disk. You can open them again later.</span>
-                        <Button variant="destructive" size="xs" disabled={Boolean(busy)} onClick={() => {
-                          void run(`forget:${repository.key}`, () => onForgetRepository(repository)).then((removed) => { if (removed) setRemovingRepository(null); });
-                        }}>Remove</Button>
-                        <Button variant="ghost" size="xs" disabled={Boolean(busy)} onClick={() => setRemovingRepository(null)}>Cancel</Button>
-                      </div>
-                    ) : (<>
-                      <IconFolder aria-hidden="true" />
-                      <span className="repository-assignment-copy">
-                        <strong>{repository.name}</strong>
-                        <Tooltip>
-                          <TooltipTrigger render={<small />}>{shortenRepositoryPath(repository.rootPath, 4)}</TooltipTrigger>
-                          <TooltipContent>{repository.rootPath}</TooltipContent>
-                        </Tooltip>
-                      </span>
-                      {rowBusy && <IconLoader4 className="repository-assignment-busy animate-spin" aria-hidden="true" />}
-                      <SearchablePicker
-                        groups={[
-                          { id: 'none', label: '', items: [{ value: NO_PROJECT, label: 'No project', pinned: true }] },
-                          { id: 'projects', label: 'Projects', items: projects.map((project) => ({ value: project.id, label: project.name, icon: <IconFolder /> })) },
-                        ]}
-                        value={projectId}
-                        onValueChange={(value) => void assignProject(repository.key, value === NO_PROJECT ? null : value)}
-                        label={`Project for ${repository.name}`}
-                        triggerLabel={projects.find((project) => project.id === projectId)?.name ?? 'No project'}
-                        placeholder="Search projects…"
-                        disabled={Boolean(busy)}
-                      />
-                      <span className="repository-management-actions">
-                        <Tooltip>
-                          <TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label={`Relocate ${repository.name}`} disabled={Boolean(busy)} onClick={() => void relocate(repository)} />}><IconFolderSymlink /></TooltipTrigger>
-                          <TooltipContent>Relocate repository</TooltipContent>
-                        </Tooltip>
-                        <Tooltip>
-                          <TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label={`Remove ${repository.name} from OpenTig`} disabled={Boolean(busy)} onClick={() => { setRemovingRepository(repository.key); setError(null); }} />}><IconTrash /></TooltipTrigger>
-                          <TooltipContent>Remove from OpenTig</TooltipContent>
-                        </Tooltip>
-                      </span>
-                    </>)}
-                  </div>
-                );
-              })}
-            </div>
+            {repositories.length === 0 && <p className="repository-projects-empty">No repositories added yet.</p>}
+            {groups.map((group) => <div className="repository-assignment-group" key={group.id}>
+              <h4>{group.name}</h4>
+              <RepositoryOrderList items={group.repositories.map((item) => ({ id: item.key, label: item.name }))} onMove={(id, index) => void moveRepository(id, index)}>
+                <div className="repository-assignment-list">
+                  {group.repositories.map((repository, repositoryIndex) => {
+                    const projectId = assignments.get(repository.key) ?? NO_PROJECT;
+                    const rowBusy = busy?.endsWith(`:${repository.key}`);
+                    return (
+                      <RepositoryOrderRow className="repository-assignment-row" key={repository.key} id={repository.key} label={`repository ${repository.name}`} disabled={orderingDisabled} busy={rowBusy}>
+                        {removingRepository === repository.key ? (
+                          <div className="repository-project-confirm" role="alert">
+                            <IconAlertTriangle aria-hidden="true" />
+                            <span>Remove <strong>{repository.name}</strong> and its worktrees from OpenTig? Their folders and files stay on disk. You can open them again later.</span>
+                            <Button variant="destructive" size="xs" disabled={Boolean(busy)} onClick={() => {
+                              void run(`forget:${repository.key}`, () => onForgetRepository(repository)).then((removed) => { if (removed) setRemovingRepository(null); });
+                            }}>Remove</Button>
+                            <Button variant="ghost" size="xs" disabled={Boolean(busy)} onClick={() => setRemovingRepository(null)}>Cancel</Button>
+                          </div>
+                        ) : (<>
+                          <Kbd className="repository-order-number" aria-label={`Repository shortcut ${numbers.get(repository.key)}`}>{numbers.get(repository.key)}</Kbd>
+                          <span className="repository-assignment-copy">
+                            <strong>{repository.name}</strong>
+                            <Tooltip>
+                              <TooltipTrigger render={<small />}>{shortenRepositoryPath(repository.rootPath, 4)}</TooltipTrigger>
+                              <TooltipContent>{repository.rootPath}</TooltipContent>
+                            </Tooltip>
+                          </span>
+                          {rowBusy && <IconLoader4 className="repository-assignment-busy animate-spin" aria-hidden="true" />}
+                          <SearchablePicker
+                            groups={[
+                              { id: 'none', label: '', items: [{ value: NO_PROJECT, label: 'No project', pinned: true }] },
+                              { id: 'projects', label: 'Projects', items: projects.map((project) => ({ value: project.id, label: project.name, icon: <IconFolder /> })) },
+                            ]}
+                            value={projectId}
+                            onValueChange={(value) => void assignProject(repository.key, value === NO_PROJECT ? null : value)}
+                            label={`Project for ${repository.name}`}
+                            triggerLabel={projects.find((project) => project.id === projectId)?.name ?? 'No project'}
+                            placeholder="Search projects…"
+                            disabled={Boolean(busy)}
+                          />
+                          <span className="repository-management-actions">
+                            <RepositoryOrderButtons label={`repository ${repository.name}`} index={repositoryIndex} count={group.repositories.length} disabled={orderingDisabled} onMove={(index) => void moveRepository(repository.key, index)} />
+                            <Tooltip>
+                              <TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label={`Relocate ${repository.name}`} disabled={Boolean(busy)} onClick={() => void relocate(repository)} />}><IconFolderSymlink /></TooltipTrigger>
+                              <TooltipContent>Relocate repository</TooltipContent>
+                            </Tooltip>
+                            <Tooltip>
+                              <TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label={`Remove ${repository.name} from OpenTig`} disabled={Boolean(busy)} onClick={() => { setRemovingRepository(repository.key); setError(null); }} />}><IconTrash /></TooltipTrigger>
+                              <TooltipContent>Remove from OpenTig</TooltipContent>
+                            </Tooltip>
+                          </span>
+                        </>)}
+                      </RepositoryOrderRow>
+                    );
+                  })}
+                </div>
+              </RepositoryOrderList>
+            </div>)}
           </section>
         </div>
 

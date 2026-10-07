@@ -700,6 +700,13 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   .repository-project-create input::placeholder { color: var(--muted-foreground); }
   .repository-project-create input:focus, .repository-inline-form input:focus { border-color: var(--ring); box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 26%, transparent); }
   .repository-project-list, .repository-assignment-list { display: grid; gap: 4px; }
+  .repository-assignment-group { display: grid; min-width: 0; gap: 6px; }
+  .repository-assignment-group h4 { color: var(--muted-foreground); font-size: 10px; font-weight: 650; }
+  .repository-order-handle { flex: none; touch-action: none; cursor: grab; color: var(--muted-foreground); }
+  .repository-order-handle:active { cursor: grabbing; }
+  .repository-order-buttons { display: flex; flex: none; gap: 2px; }
+  .repository-order-number { width: 24px; flex: none; justify-content: center; }
+  .repository-project-row[data-dragging], .repository-assignment-row[data-dragging] { position: relative; z-index: 1; box-shadow: 0 4px 16px color-mix(in oklch, var(--foreground) 15%, transparent); }
   .repository-project-row, .repository-assignment-row { display: flex; min-width: 0; min-height: 46px; align-items: center; gap: 10px; border: 1px solid color-mix(in oklch, var(--border) 80%, transparent); border-radius: var(--radius-lg); background: color-mix(in oklch, var(--muted) 40%, transparent); padding: 6px 8px 6px 9px; transition: border-color .12s ease, background-color .12s ease, opacity .12s ease; }
   .repository-project-row:hover, .repository-project-row:focus-within, .repository-assignment-row:hover, .repository-assignment-row:focus-within { border-color: var(--border); background: color-mix(in oklch, var(--muted) 70%, transparent); }
   .repository-project-row[aria-busy="true"], .repository-assignment-row[aria-busy="true"] { opacity: .65; }
@@ -727,7 +734,7 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
     .repository-projects-section-heading p { display: none; }
     .repository-project-create input { width: auto; flex: 1; }
     .repository-assignment-row { align-items: flex-start; flex-wrap: wrap; }
-    .repository-assignment-row .repository-assignment-copy { flex-basis: calc(100% - 40px); }
+    .repository-assignment-row .repository-assignment-copy { flex-basis: calc(100% - 80px); }
     .repository-management-actions { margin-left: auto; }
     .repository-assignment-row [data-slot="combobox-trigger"] { width: 100%; margin-left: 26px; }
   }
@@ -2013,6 +2020,8 @@ section[data-sileo-viewport] [data-sileo-title] { text-transform: none; }
 .searchable-picker [data-slot="combobox-input"] input { height: 32px; font-size: 12px; }
 .searchable-picker [data-slot="combobox-input"] > svg { width: 14px; height: 14px; }
 .searchable-picker-list { max-height: 292px; padding: 4px; }
+.repository-picker[data-slot="combobox-content"] { max-height: min(80dvh, var(--available-height)); }
+.repository-picker .searchable-picker-list { max-height: none; }
 .searchable-picker-group { padding: 6px 8px 3px; font-size: 9px; line-height: 14px; font-weight: 650; letter-spacing: .065em; text-transform: uppercase; }
 .searchable-picker-item { min-height: 32px; padding: 5px 28px 5px 8px; gap: 7px; border-radius: 5px; color: var(--popover-foreground); }
 .searchable-picker-item + .searchable-picker-item { margin-top: 2px; }

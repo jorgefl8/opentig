@@ -12,7 +12,7 @@ export function Welcome({ recent, onOpen, onRecent }: { recent: BootstrapData['r
       <h1><AppName /></h1>
       <p>Open a repository to review changes, explore files, and create commits.</p>
       <Button size="lg" onClick={onOpen}><IconFolderOpen /> Open repository</Button>
-      {repositories.length > 0 && <section><h2>Recent</h2>{repositories.map((item) => <button key={item.key} onClick={() => onRecent(item.recent.id)}><IconFolder /><span><strong>{item.name}</strong><small>{item.rootPath}</small></span></button>)}</section>}
+      {repositories.length > 0 && <section><h2>Repositories</h2>{repositories.map((item) => <button key={item.key} onClick={() => onRecent(item.recent.id)}><IconFolder /><span><strong>{item.name}</strong><small>{item.rootPath}</small></span></button>)}</section>}
       <small className="shortcut">Ctrl+O to open · Ctrl+R to refresh</small>
     </div>
   );

@@ -67,6 +67,15 @@ describe('OpenTig server client', () => {
     expect(fixture.request).toHaveBeenNthCalledWith(2, IPC.repositoryBrowseDirectories, ['/home/projects']);
   });
 
+  it('routes saved project and repository order through the server transport', async () => {
+    const fixture = transportFixture();
+    const { api } = createOpenTigServerClient({ transport: fixture.transport });
+    await api.projects.moveProject('apps', 2);
+    await api.projects.moveRepository('/sample/atlas/.git', 1);
+    expect(fixture.request).toHaveBeenNthCalledWith(1, IPC.projectMove, ['apps', 2]);
+    expect(fixture.request).toHaveBeenNthCalledWith(2, IPC.projectMoveRepository, ['/sample/atlas/.git', 1]);
+  });
+
   it('maps typed domain methods to their wire commands', async () => {
     const fixture = transportFixture();
     const { api } = createOpenTigServerClient({ transport: fixture.transport });

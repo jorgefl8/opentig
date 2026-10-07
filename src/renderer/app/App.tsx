@@ -822,7 +822,8 @@ export default function App() {
         ...current,
         activeRepository: selected,
         repositoryProjects,
-        recentRepositories: touchRecentRepositories(current.recentRepositories.filter((item) => item.id !== previousId || item.id === selected.id), selected, repositoryProjects),
+        recentRepositories: touchRecentRepositories(current.recentRepositories.flatMap((item) => item.id === previousId
+          ? [{ ...selected, lastOpenedAt: item.lastOpenedAt }] : previous && item.id === selected.id ? [] : [item]), selected),
         filesTreeStates: previous ? normalizeFilesTreeStates(current.filesTreeStates.map((state) => (
           state.repositoryId === previousId ? { ...state, repositoryId: selected.id } : state
         ))) : current.filesTreeStates,

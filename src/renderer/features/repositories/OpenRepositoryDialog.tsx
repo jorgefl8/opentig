@@ -41,7 +41,10 @@ export function OpenRepositoryDialog({ open, onOpenChange, onOpen, onBrowse, rec
   const editButton = useRef<HTMLButtonElement>(null);
   const confirmButton = useRef<HTMLButtonElement>(null);
   const restoreFocus = useRef<'path' | 'folders' | null>(null);
-  const recentFolders = useMemo(() => recent.filter((item, index) => recent.findIndex(other => sameFolder(other.path, item.path)) === index).slice(0, 4), [recent]);
+  const recentFolders = useMemo(() => {
+    const byLastUse = [...recent].sort((a, b) => b.lastOpenedAt.localeCompare(a.lastOpenedAt));
+    return byLastUse.filter((item, index) => byLastUse.findIndex(other => sameFolder(other.path, item.path)) === index).slice(0, 4);
+  }, [recent]);
   const workspacePath = recentFolders[0] ? parentFolderPath(recentFolders[0].path) : null;
   const startPath = initialPath ?? workspacePath ?? undefined;
   const browse = useCallback(async (nextPath?: string) => {

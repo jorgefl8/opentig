@@ -14,7 +14,7 @@ import { CommandRegistry, type CommandExecutionContext } from './CommandRegistry
 import type { OpenTigHost } from './OpenTigHost';
 import type { OpenTigRuntimeServices } from './OpenTigRuntime';
 import { aiString, booleanArg, branchDetailsArg, createPullRequestArg, deleteBranchArg, filesTreeStateArg, generateCommitMessageArg, generatePullRequestDraftArg, nullableProjectIdArg, oidArg, openFilesStateArg, pathsArg, prepareCommitGroupArg, prNumberArg, publishBranchArg, projectIdArg, projectNameArg, pullRequestStatesArg, removeWorktreeArg, repositoryKeyArg, searchOptionsArg, searchReplaceArg, stringArg, textArg, worktreeDetailsArg } from './validators';
-import { createTrackingBranchArg, deleteRemoteBranchArg } from './validators';
+import { createTrackingBranchArg, deleteRemoteBranchArg, orderingIndexArg } from './validators';
 
 export function registerServerCommands(
   registry: CommandRegistry,
@@ -89,6 +89,8 @@ export function registerServerCommands(
   handle(IPC.projectRename, 'project-rename', (projectId, name) => services.settings.renameRepositoryProject(projectIdArg(projectId, 'project-rename'), projectNameArg(name, 'project-rename')));
   handle(IPC.projectRemove, 'project-remove', (projectId) => services.settings.removeRepositoryProject(projectIdArg(projectId, 'project-remove')));
   handle(IPC.projectAssign, 'project-assign', (repositoryKey, projectId) => services.settings.assignRepositoryProject(repositoryKeyArg(repositoryKey, 'project-assign'), nullableProjectIdArg(projectId, 'project-assign')));
+  handle(IPC.projectMove, 'project-move', (projectId, toIndex) => services.settings.moveRepositoryProject(projectIdArg(projectId, 'project-move'), orderingIndexArg(toIndex, 'project-move')));
+  handle(IPC.projectMoveRepository, 'project-move-repository', (repositoryKey, toIndex) => services.settings.moveRepository(repositoryKeyArg(repositoryKey, 'project-move-repository'), orderingIndexArg(toIndex, 'project-move-repository')));
   handleWithContext(IPC.repositoryOpenPath, 'open-path', (context, selectedPath) => openRepositoryPath(
     stringArg(selectedPath, 'open-path', 32_768), context,
   ));

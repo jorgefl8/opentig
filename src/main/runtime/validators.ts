@@ -370,3 +370,8 @@ function invalidAi(operation: string): AiOperationError {
 function invalidProject(operation: string): GitOperationError {
   return new GitOperationError({ code: 'INVALID_ARGUMENT', operation, message: 'Invalid project data.' });
 }
+
+export function orderingIndexArg(value: unknown, operation: string): number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) throw invalidProject(operation);
+  return value;
+}

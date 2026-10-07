@@ -637,13 +637,15 @@ export interface OpenTigApi {
     rename(projectId: string, name: string): Promise<RepositoryOrganization>;
     remove(projectId: string): Promise<RepositoryOrganization>;
     assign(repositoryKey: string, projectId: string | null): Promise<RepositoryOrganization>;
+    moveProject(projectId: string, toIndex: number): Promise<RepositoryOrganization>;
+    moveRepository(repositoryKey: string, toIndex: number): Promise<RepositoryOrganization>;
   };
 }
 
 export type IpcResult<T> = { ok: true; value: T } | { ok: false; error: SerializedOperationError };
 
 export const IPC = {
-  bootstrap: 'app:bootstrap', capabilities: 'app:capabilities', preferences: 'app:preferences', filesTreeStateUpdate: 'app:files-tree-state', openFilesStateUpdate: 'app:open-files-state', projectCreate: 'projects:create', projectRename: 'projects:rename', projectRemove: 'projects:remove', projectAssign: 'projects:assign',
+  bootstrap: 'app:bootstrap', capabilities: 'app:capabilities', preferences: 'app:preferences', filesTreeStateUpdate: 'app:files-tree-state', openFilesStateUpdate: 'app:open-files-state', projectCreate: 'projects:create', projectRename: 'projects:rename', projectRemove: 'projects:remove', projectAssign: 'projects:assign', projectMove: 'projects:move', projectMoveRepository: 'projects:move-repository',
   repositoryOpenPath: 'repository:open-path', repositoryBrowseDirectories: 'repository:browse-directories', repositoryOpenRecent: 'repository:open-recent', repositoryRelocateRecent: 'repository:relocate-recent', repositoryForget: 'repository:forget', repositoryStatus: 'repository:status', repositoryFiles: 'repository:files', repositoryDirectoryEntries: 'repository:directory-entries',
   repositoryReadFile: 'repository:read-file', repositoryReadImage: 'repository:read-image', repositoryGetFavicon: 'repository:favicon', repositoryWriteFile: 'repository:write-file', repositoryAbsolutePath: 'repository:absolute-path',
   repositoryCopyEntries: 'repository:copy-entries', repositoryCutEntries: 'repository:cut-entries', repositoryPasteEntries: 'repository:paste-entries', repositoryMoveEntry: 'repository:move-entry', repositoryDeleteEntry: 'repository:delete-entry',

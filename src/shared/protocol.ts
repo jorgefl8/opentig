@@ -43,6 +43,8 @@ export const OPEN_TIG_SERVER_COMMANDS = {
   'projects.rename': command(IPC.projectRename, 'project-rename', true),
   'projects.remove': command(IPC.projectRemove, 'project-remove', true),
   'projects.assign': command(IPC.projectAssign, 'project-assign', true),
+  'projects.moveProject': command(IPC.projectMove, 'project-move', true),
+  'projects.moveRepository': command(IPC.projectMoveRepository, 'project-move-repository', true),
 
   'repository.openPath': command(IPC.repositoryOpenPath, 'open-path', true),
   'repository.browseDirectories': command(IPC.repositoryBrowseDirectories, 'browse-directories', false),
