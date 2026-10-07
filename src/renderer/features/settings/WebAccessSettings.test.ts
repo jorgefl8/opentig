@@ -3,6 +3,7 @@ import { act, createElement } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { OpenTigPairingLink, OpenTigWebAccessStatus } from '@shared/desktop-api';
+import type { OpenTigBrowserWebAccessStatus } from '@shared/web-access';
 import { WebAccessSettings } from './WebAccessSettings';
 
 vi.mock('./owner-sessions', () => ({ loadOwnerSessions: async () => [], renameOwnerSession: vi.fn(), revokeAllBrowserSessions: vi.fn(), revokeOwnerSession: vi.fn() }));
@@ -33,6 +34,21 @@ async function mount(value: OpenTigWebAccessStatus, createPairingLink: (endpoint
   await act(async () => root.render(createElement(WebAccessSettings)));
   return { container, setPublicOrigin, setEnabled, unmount: async () => { await act(async () => root.unmount()); container.remove(); } };
 }
+
+async function mountBrowser(value: OpenTigBrowserWebAccessStatus, create: () => Promise<OpenTigPairingLink>) {
+  vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+  vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
+  delete window.opentigDesktop;
+  const fetch = vi.fn(async (url: string) => ({
+    ok: true, json: async () => url === '/api/auth/web-access' ? { ...value } : await create(),
+  }));
+  vi.stubGlobal('fetch', fetch);
+  const container = document.createElement('div');
+  document.body.append(container);
+  const root = createRoot(container);
+  await act(async () => root.render(createElement(WebAccessSettings)));
+  return { container, fetch, unmount: async () => { await act(async () => root.unmount()); container.remove(); } };
+}
 async function choose(container: HTMLElement, destination: string) {
   await act(async () => (container.querySelector(`input[value="${destination}"]`) as HTMLInputElement).click());
 }
@@ -50,6 +66,80 @@ function button(container: HTMLElement, text: string): HTMLButtonElement {
 }
 
 describe('Web access settings display', () => {
+  it.each([false, true])('pairs browsers while showing LAN access=%s as server-managed information', async (listeningOnLan) => {
+    const browserStatus = { webAccessEnabled: true, pairingAvailable: true, listeningOnLan, listenerHost: listeningOnLan ? '0.0.0.0' : '127.0.0.1', actualPort: 6767, ready: true };
+    const browserLink = { ...link, url: `${window.location.origin}/pair#token=one-use-code` };
+    const view = await mountBrowser(browserStatus, async () => browserLink);
+    try {
+      expect(view.container.textContent).toContain('Web access');
+      expect(view.container.textContent).toContain('LAN access');
+      expect(view.container.textContent).toContain('LAN access is configured on the server');
+      expect(view.container.querySelector('[role="switch"]')).toBeNull();
+      expect(view.container.querySelector('.web-access-destinations')).toBeNull();
+      expect(view.container.querySelector('.web-access-link-destination')?.textContent).toContain(window.location.origin);
+      expect(view.container.querySelector('.web-access-server-network .web-access-hint')?.textContent).toContain(listeningOnLan ? 'Direct LAN connections are allowed' : 'Direct LAN access is off');
+      await act(async () => button(view.container, 'Create pairing link').click());
+      expect(view.fetch).toHaveBeenCalledWith('/api/auth/pairing-link', { method: 'POST', credentials: 'include' });
+      expect(view.container.querySelector('.web-access-link')?.textContent).toBe(browserLink.url);
+      expect(view.container.querySelector('.web-access-pairing img')?.getAttribute('src')).toMatch(/^data:image\/svg\+xml/);
+    } finally { await view.unmount(); }
+  });
+
+  it('dismisses pending browser links, ignores late responses, and hides expired codes', async () => {
+    vi.useFakeTimers();
+    let release!: (value: OpenTigPairingLink) => void;
+    const create = vi.fn().mockImplementationOnce(() => new Promise<OpenTigPairingLink>((resolve) => { release = resolve; }))
+      .mockImplementation(async () => ({ ...link, expiresAt: new Date(Date.now() + 1_000).toISOString() }));
+    const view = await mountBrowser({ webAccessEnabled: true, pairingAvailable: true, listeningOnLan: false, listenerHost: '127.0.0.1', actualPort: 6767, ready: true }, create);
+    try {
+      await act(async () => button(view.container, 'Create pairing link').click());
+      expect(button(view.container, 'Create pairing link').disabled).toBe(true);
+      await act(async () => (view.container.querySelector('[aria-label="Close pairing link"]') as HTMLButtonElement).click());
+      await act(async () => release(link));
+      expect(view.container.querySelector('.web-access-pairing')).toBeNull();
+      await act(async () => button(view.container, 'Create pairing link').click());
+      expect(view.container.querySelector('.web-access-pairing img')).not.toBeNull();
+      await act(async () => vi.advanceTimersByTimeAsync(1_001));
+      expect(view.container.querySelector('.web-access-pairing')).toBeNull();
+    } finally { await view.unmount(); }
+  });
+
+  it('keeps browser pairing unavailable while the server is not ready', async () => {
+    const view = await mountBrowser({ webAccessEnabled: true, pairingAvailable: true, listeningOnLan: false, listenerHost: '127.0.0.1', actualPort: 6767, ready: false }, vi.fn());
+    try {
+      expect(button(view.container, 'Create pairing link').disabled).toBe(true);
+      expect(view.fetch).not.toHaveBeenCalledWith('/api/auth/pairing-link', expect.anything());
+    } finally { await view.unmount(); }
+  });
+
+  it('hides the browser QR after its one-use code has been consumed', async () => {
+    vi.useFakeTimers();
+    const value = { webAccessEnabled: true, pairingAvailable: true, listeningOnLan: false, listenerHost: '127.0.0.1', actualPort: 6767, ready: true };
+    const view = await mountBrowser(value, async () => link);
+    try {
+      await act(async () => button(view.container, 'Create pairing link').click());
+      expect(view.container.querySelector('.web-access-pairing img')).not.toBeNull();
+      value.pairingAvailable = false;
+      await act(async () => vi.advanceTimersByTimeAsync(2_000));
+      expect(view.container.querySelector('.web-access-pairing')).toBeNull();
+      expect(button(view.container, 'Create pairing link').disabled).toBe(false);
+    } finally { await view.unmount(); }
+  });
+
+  it('keeps a newly created browser link visible when an older status response arrives late', async () => {
+    vi.useFakeTimers();
+    const value = { webAccessEnabled: true, pairingAvailable: false, listeningOnLan: false, listenerHost: '127.0.0.1', actualPort: 6767, ready: true };
+    const view = await mountBrowser(value, async () => link);
+    let release!: (value: OpenTigBrowserWebAccessStatus) => void;
+    try {
+      view.fetch.mockImplementationOnce(async () => ({ ok: true, json: () => new Promise<OpenTigBrowserWebAccessStatus>((resolve) => { release = resolve; }) }));
+      await act(async () => vi.advanceTimersByTimeAsync(2_000));
+      await act(async () => button(view.container, 'Create pairing link').click());
+      await act(async () => release(value));
+      expect(view.container.querySelector('.web-access-pairing img')).not.toBeNull();
+    } finally { await view.unmount(); }
+  });
+
   it('confirms disabling with a red action, keeps access on cancel, and explains saved pairings', async () => {
     const view = await mount({ ...status }, vi.fn(async () => link));
     try {

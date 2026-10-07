@@ -56,6 +56,10 @@ export class OpenTigServer {
       identity: options.identity,
       mode: options.mode ?? 'desktop',
       isReady: () => this.ready,
+      listenerAddress: () => {
+        const address = this.httpServer.address() as AddressInfo;
+        return { host: address.address, port: address.port };
+      },
       sessionConnectionCount: (sessionId) => this.webSockets.connectionCount(sessionId),
       onSessionsRevoked: (sessionIds) => this.disconnectSessions(sessionIds),
       logger: this.logger,

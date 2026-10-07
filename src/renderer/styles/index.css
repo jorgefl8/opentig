@@ -973,6 +973,11 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   .web-access-summary { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 18px; }
   .web-access-facts { display: grid; margin-top: 18px; overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--background); }
   .web-access-network-settings { border-top: 1px solid var(--border); padding: 11px; }
+  .web-access-connection-details { margin-top: 12px; font-size: 11px; }
+  .web-access-connection-details summary { cursor: pointer; }
+  .web-access-connection-details summary span { margin-left: 8px; color: var(--muted-foreground); font-size: 10px; }
+  .web-access-connection-details summary:focus-visible { border-radius: var(--radius-sm); outline: 2px solid var(--ring); outline-offset: 4px; }
+  .web-access-connection-details .web-access-facts { margin-top: 10px; }
   .web-access-fact { display: grid; min-width: 0; grid-template-columns: minmax(140px, .75fr) minmax(0, 1.25fr); align-items: start; gap: 14px; border-top: 1px solid var(--border); padding: 9px 11px; font-size: 11px; }
   .web-access-fact:first-child { border-top: none; }
   .web-access-fact > span { color: var(--muted-foreground); }

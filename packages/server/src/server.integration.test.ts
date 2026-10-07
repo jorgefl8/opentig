@@ -22,6 +22,58 @@ afterEach(async () => {
 });
 
 describe('authoritative HTTP server', () => {
+  it.each(['127.0.0.1', '0.0.0.0'])('reports the actual listener separately from browser access on %s', async (host) => {
+    const fixture = await startFixture({ host, mode: 'web-access' });
+    const origin = fixture.server.origin;
+    expect((await fetch(`${origin}/api/auth/web-access`)).status).toBe(401);
+    const cookie = cookieValue((await postJson(`${origin}/api/auth/pair`, { token: fixture.pairingToken }, origin)).cookie);
+    const response = await fetch(`${origin}/api/auth/web-access`, { headers: { Cookie: cookie } });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ webAccessEnabled: true, pairingAvailable: false, listeningOnLan: host === '0.0.0.0', listenerHost: host, actualPort: fixture.server.port, ready: true });
+  });
+
+  it('lets a paired browser issue a one-use HTTPS tunnel link and pair another browser', async () => {
+    const fixture = await startFixture({ mode: 'web-access' });
+    const origin = fixture.server.origin;
+    const cookie = cookieValue((await postJson(`${origin}/api/auth/pair`, { token: fixture.pairingToken }, origin)).cookie);
+    const pending = new URLSearchParams(new URL(fixture.server.createPairingLink().url).hash.slice(1)).get('token');
+    const publicOrigin = 'https://git.example.com';
+    const response = await fetch(`${origin}/api/auth/pairing-link`, {
+      method: 'POST', headers: { Cookie: cookie, Origin: publicOrigin, 'X-Forwarded-Host': 'git.example.com' },
+    });
+    expect(response.status).toBe(200);
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    const link = await response.json();
+    const url = new URL(link.url);
+    expect(url.origin).toBe(publicOrigin);
+    expect(url.pathname).toBe('/pair');
+    expect(Date.parse(link.expiresAt) - Date.now()).toBeGreaterThan(290_000);
+    expect(Date.parse(link.expiresAt) - Date.now()).toBeLessThanOrEqual(300_000);
+    expect(await (await fetch(`${origin}/api/auth/web-access`, { headers: { Cookie: cookie } })).json()).toMatchObject({ pairingAvailable: true });
+    expect((await postJson(`${origin}/api/auth/pair`, { token: pending }, origin)).status).toBe(401);
+    const token = new URLSearchParams(url.hash.slice(1)).get('token');
+    const second = await postJson(`${origin}/api/auth/pair`, { token }, origin);
+    expect(second.status).toBe(204);
+    expect((await postJson(`${origin}/api/auth/pair`, { token }, origin)).status).toBe(401);
+    expect(await (await fetch(`${origin}/api/auth/web-access`, { headers: { Cookie: cookie } })).json()).toMatchObject({ pairingAvailable: false });
+    expect((await fetch(`${origin}/api/auth/sessions`, { headers: { Cookie: cookieValue(second.cookie) } })).status).toBe(200);
+    expect((await fetch(`${origin}/api/auth/sessions`, { headers: { Cookie: cookie } })).status).toBe(200);
+  });
+
+  it('rejects unauthenticated and foreign-origin link creation without rotating the pending code', async () => {
+    const fixture = await startFixture();
+    const origin = fixture.server.origin;
+    const cookie = cookieValue((await postJson(`${origin}/api/auth/desktop`, { secret: fixture.desktopSecret }, origin)).cookie);
+    const endpoint = `${origin}/api/auth/pairing-link`;
+    expect((await fetch(endpoint, { method: 'POST', headers: { Origin: origin } })).status).toBe(401);
+    expect((await fetch(endpoint, { method: 'POST', headers: { Cookie: cookie } })).status).toBe(403);
+    expect((await fetch(endpoint, { method: 'POST', headers: { Cookie: cookie, Origin: 'https://evil.example.com' } })).status).toBe(403);
+    expect((await postJson(`${origin}/api/auth/pair`, { token: fixture.pairingToken }, origin)).status).toBe(204);
+    await fixture.server.setBrowserAccessEnabled(false);
+    expect((await fetch(endpoint, { method: 'POST', headers: { Cookie: cookie, Origin: origin } })).status).toBe(403);
+    expect(await (await fetch(`${origin}/api/auth/web-access`, { headers: { Cookie: cookie } })).json()).toMatchObject({ webAccessEnabled: false, listeningOnLan: false });
+  });
+
   it.each(['desktop', 'web-access'] as const)('defaults browser policy by server mode: %s', async (mode) => {
     const fixture = await startFixture({ browserAccessEnabled: 'default', mode });
     const enabled = mode === 'web-access';
@@ -477,7 +529,7 @@ describe('authenticated WebSocket protocol', () => {
   });
 });
 
-async function startFixture(options: { updates?: DesktopUpdatesApi; admin?: { token: string; instanceId: string }; profile?: 'dev'; browserAccessEnabled?: boolean | 'default'; mode?: 'desktop' | 'web-access' } = {}): Promise<{
+async function startFixture(options: { host?: string; updates?: DesktopUpdatesApi; admin?: { token: string; instanceId: string }; profile?: 'dev'; browserAccessEnabled?: boolean | 'default'; mode?: 'desktop' | 'web-access' } = {}): Promise<{
   server: RunningOpenTigServer;
   directory: string;
   clientRoot: string;
@@ -501,6 +553,7 @@ async function startFixture(options: { updates?: DesktopUpdatesApi; admin?: { to
     ...(options.mode ? { mode: options.mode } : {}),
     auth: new OneTimeBootstrapAuthSource({ desktopSecret }),
     port: 0,
+    ...(options.host ? { host: options.host } : {}),
     ...(options.updates ? { updates: options.updates } : {}),
     ...(options.admin ? { admin: options.admin } : {}),
     ...(options.profile ? { profile: options.profile } : {}),

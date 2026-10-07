@@ -1,3 +1,13 @@
+/** Read-only listener information available to authenticated browsers. */
+export interface OpenTigBrowserWebAccessStatus {
+  webAccessEnabled: boolean;
+  pairingAvailable: boolean;
+  listeningOnLan: boolean;
+  listenerHost: string;
+  actualPort: number;
+  ready: boolean;
+}
+
 /** An address for link construction only, never an authentication allowlist. */
 export function normalizePairingOrigin(value: string): string {
   const input = value.trim();
