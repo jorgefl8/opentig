@@ -111,7 +111,11 @@ OpenTig is early-stage software. This guide describes the current interface and 
 
 - Search and switch between local and remote branches; selecting a remote branch creates or uses its local tracking branch. If local changes would be overwritten, OpenTig offers to move all tracked and untracked changes to the destination branch and leaves them unstaged. Conflicts open in the Changes view and retain a safety stash for recovery.
 - Prevent switching to a branch already checked out in another worktree.
-- Inspect local branch tips, upstreams, ahead/behind state, unique commits, and owning worktrees.
+- **Manage branches** offers All, Local and Remote filters, grouping and filtering by configured remote, and branch search. Remote references reflect the last fetch; **Fetch** updates branches from all configured remotes and prunes obsolete remote references without removing local branches, worktrees or tags.
+- Inspect local branch tips, upstreams, ahead/behind state, unique commits, and owning worktrees. Remote details show the fetched tip, local tracking branches, and associated GitHub PRs for `origin`, including merged status.
+- Branch and worktree rows use the details panel instead of hover tooltips. References whose branches were already deleted on the server are marked as cached and offer **Fetch and clean up**; they do not offer creation or remote deletion.
+- Create a local tracking branch from the remote’s Local branches details at a fetched tip with an editable name, without switching the current checkout or touching uncommitted changes.
+- Delete an individual remote branch with a separate confirmation naming the remote and branch. OpenTig rechecks the remote tip and destination, uses an expected-commit lease, and refuses deletion of the remote’s default branch. Unknown default branches, ambiguous fetch mappings, and differing or multiple fetch/push destinations also block deletion. Git permissions and server branch protection still apply. Local branches and worktrees are retained; there is no bulk remote deletion.
 - Delete local branches only through Git's non-forced, fully merged path.
 - Inspect worktree path, branch, HEAD, lock/prunable state, and local changes. Worktree selection and removal recognize filesystem aliases, including Windows short paths, while preserving case-sensitive path distinctions on Linux.
 - Open or remove eligible linked worktrees. Removing a worktree never deletes its branch, and the main worktree cannot be removed.

@@ -1,7 +1,7 @@
 import type { GitHubAccountSelection, GitHubAccountsStatus, GitHubRepositoryAccount } from './github-accounts';
 import type { CommitAuthorship, SetCommitAuthorshipInput } from './commit-authorship';
 import type { SerializedOperationError } from './errors';
-import type { BranchDeletionResult, BranchDetails, BranchInfo, CommitFile, CommitPage, FileTreeEntry, LocalRefsSnapshot, RepositoryStatus, WorktreeDetails, WorktreeInfo, WorktreeRemovalBlocked } from './git-types';
+import type { BranchDeletionResult, BranchDetails, BranchInfo, CommitFile, CommitPage, FileTreeEntry, LocalRefsSnapshot, RemoteBranchDetails, RemoteBranchDeletionResult, TrackingBranchCreationResult, RepositoryStatus, WorktreeDetails, WorktreeInfo, WorktreeRemovalBlocked } from './git-types';
 import type { RasterImageMime } from './image-types';
 import type { OpenTigServerIdentity } from './server-protocol';
 import type { RepositoryChangeScope } from './repository-change';
@@ -226,6 +226,18 @@ export interface DeleteBranchRequest {
   expectedOid: string;
   /** Explicitly permits deleting a branch whose merge state is unsafe or unknown. */
   force: boolean;
+}
+
+export interface RemoteBranchMutationRequest extends BranchDetailsRequest {
+  expectedOid: string;
+}
+
+export interface DeleteRemoteBranchRequest extends RemoteBranchMutationRequest {
+  destinationId: string;
+}
+
+export interface CreateTrackingBranchRequest extends RemoteBranchMutationRequest {
+  localName: string;
 }
 
 export interface RemoveWorktreeRequest {
@@ -573,9 +585,13 @@ export interface OpenTigApi {
     push(repositoryId: string, publish?: PublishBranchOptions): Promise<PushResult>;
     /** Updates remote-tracking refs without merging or rebasing. */
     fetch(repositoryId: string): Promise<FetchResult>;
-    /** Local branches plus every worktree; runs no per-worktree status scan. */
+    /** Local and remote branches plus every worktree; runs no per-worktree status scan. */
     localRefsSnapshot(repositoryId: string): Promise<LocalRefsSnapshot>;
     branchDetails(request: BranchDetailsRequest): Promise<BranchDetails>;
+    remoteBranchDetails(request: BranchDetailsRequest): Promise<RemoteBranchDetails>;
+    createTrackingBranch(request: CreateTrackingBranchRequest): Promise<TrackingBranchCreationResult>;
+    deleteRemoteBranch(request: DeleteRemoteBranchRequest): Promise<RemoteBranchDeletionResult>;
+    fetchBranches(repositoryId: string): Promise<FetchResult>;
     worktreeDetails(request: WorktreeDetailsRequest): Promise<WorktreeDetails>;
     /** Deletes a branch safely unless the user explicitly confirmed force. */
     deleteBranch(request: DeleteBranchRequest): Promise<BranchDeletionResult>;
@@ -640,6 +656,7 @@ export const IPC = {
   worktreeSelect: 'refs:select-worktree', refsPull: 'refs:pull', refsPush: 'refs:push', refsFetch: 'refs:fetch',
   localRefsSnapshot: 'refs:local-snapshot', branchDetails: 'refs:branch-details', worktreeDetails: 'refs:worktree-details',
   branchDelete: 'refs:delete-branch', worktreeRemove: 'refs:remove-worktree',
+  remoteBranchDetails: 'refs:remote-branch-details', trackingBranchCreate: 'refs:create-tracking-branch', remoteBranchDelete: 'refs:delete-remote-branch', branchesFetch: 'refs:fetch-branches',
   aiStatuses: 'ai:statuses', aiGenerateCommitMessage: 'ai:generate-commit-message', aiCancelGeneration: 'ai:cancel-generation', aiLog: 'ai:log', aiClearLog: 'ai:clear-log',
   diagnosticsList: 'diagnostics:list', diagnosticsClear: 'diagnostics:clear', diagnosticsRecord: 'diagnostics:record',
   githubAccountsStatus: 'github:accounts-status', githubRepositoryAccount: 'github:repository-account', githubSetRepositoryAccount: 'github:set-repository-account',

@@ -10,6 +10,7 @@ import WebSocket from 'ws';
 import type { DesktopUpdatesApi } from '../../../src/shared/desktop-updates';
 import { OneTimeBootstrapAuthSource } from './auth';
 import { runOpenTigServer, type RunningOpenTigServer } from './server';
+import { git, repositoryWithUpstream } from '../../../src/main/git/test-support/repository-fixtures';
 
 const execFileAsync = promisify(execFile);
 const servers: RunningOpenTigServer[] = [];
@@ -361,6 +362,47 @@ describe('authoritative HTTP server', () => {
 });
 
 describe('authenticated WebSocket protocol', () => {
+  it('manages remote branches through validated server commands without removing local branches', async () => {
+    const repository = await repositoryWithUpstream();
+    await git(repository.work, ['branch', 'feature']);
+    await git(repository.work, ['push', 'origin', 'feature']);
+    const fixture = await startFixture();
+    const opened = await fixture.server.runtime.services.repositories.openPath(repository.work);
+    const authenticated = await postJson(`${fixture.server.origin}/api/auth/desktop`, { secret: fixture.desktopSecret }, fixture.server.origin);
+    const socket = await openWebSocket(fixture.server.origin, cookieValue(authenticated.cookie));
+    const request = async (command: string, args: unknown[]) => {
+      const id = crypto.randomUUID();
+      const response = new Promise<{ result: { ok: boolean; value: Record<string, unknown>; error?: { code: string } } }>((resolve, reject) => {
+        const timer = setTimeout(() => { socket.off('message', listener); reject(new Error('Command timed out')); }, 10_000);
+        const listener = (data: WebSocket.RawData) => {
+          const message = JSON.parse(data.toString());
+          if (message.type === 'result' && message.id === id) { clearTimeout(timer); socket.off('message', listener); resolve(message); }
+        };
+        socket.on('message', listener);
+      });
+      socket.send(JSON.stringify({ type: 'request', id, command, args }));
+      return (await response).result;
+    };
+    try {
+      const fullName = 'refs/remotes/origin/feature';
+      const snapshot = await request('refs:local-snapshot', [opened.id]);
+      expect(snapshot).toMatchObject({ ok: true, value: { remotes: ['origin'] } });
+      const details = await request('refs:remote-branch-details', [{ repositoryId: opened.id, fullName }]);
+      expect(details).toMatchObject({ ok: true, value: { remote: 'origin', branchName: 'feature', deletionBlockedReason: null } });
+      const target = { repositoryId: opened.id, fullName, expectedOid: details.value.oid, destinationId: details.value.destinationId };
+      expect(await request('refs:delete-remote-branch', [{ ...target, destinationId: undefined }]))
+        .toMatchObject({ ok: false, error: { code: 'INVALID_ARGUMENT' } });
+      expect(await request('refs:create-tracking-branch', [{ ...target, localName: 'review' }]))
+        .toMatchObject({ ok: true, value: { status: 'created', fullName: 'refs/heads/review' } });
+      expect(await request('refs:delete-remote-branch', [target])).toMatchObject({ ok: true, value: { status: 'deleted' } });
+      expect(await request('refs:fetch-branches', [opened.id])).toMatchObject({ ok: true, value: { status: 'success' } });
+      expect(await git(repository.remote, ['for-each-ref', '--format=%(refname)', 'refs/heads/feature'])).toBe('');
+      expect(await git(repository.work, ['rev-parse', 'feature'])).toBe(details.value.oid);
+      expect(await git(repository.work, ['rev-parse', 'review'])).toBe(details.value.oid);
+      expect(await git(repository.work, ['branch', '--show-current'])).toBe('main');
+    } finally { socket.close(); }
+  });
+
   it('rejects missing/wrong auth and carries command, error, ping, and runtime event messages', async () => {
     const fixture = await startFixture();
     await expectWebSocketClose(fixture.server.origin, fixture.server.origin, undefined, 1008);

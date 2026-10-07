@@ -205,6 +205,10 @@
   html .shortcuts-row, html .shortcuts-fixed-row { grid-template-columns: minmax(0, 1fr); gap: 6px; }
   html .shortcuts-row-actions { justify-content: flex-start; }
   html .local-refs-toolbar { flex-wrap: wrap; padding: 8px; }
+  html .local-refs-branch-filters { padding: 8px; gap: 8px; }
+  html .local-refs-branch-filters > small { flex-basis: 100%; margin-left: 0; }
+  html .local-refs-local-link { min-height: 40px; }
+  html .local-refs-create-branch > input { min-height: 44px; font-size: 16px; }
   html .local-refs-search { flex-basis: 100%; }
   html .local-refs-tabs { flex: 1; }
   html .local-refs-tab { min-height: 40px; flex: 1; }

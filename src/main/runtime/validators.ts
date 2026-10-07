@@ -6,6 +6,7 @@ import { isFilesTreeRepositoryId, MAX_FILES_TREE_PATHS, normalizeExpandedPaths, 
 import { isOpenFilesRepositoryId, MAX_OPEN_FILE_TABS, normalizeOpenFilePath, type OpenFileTab } from '../../shared/open-files-state';
 import { SEARCH_MAX_QUERY_LENGTH, SEARCH_MAX_REPLACEMENT_LENGTH, SEARCH_REPLACE_MAX_FILES, type SearchOptions, type SearchReplaceRequest } from '../../shared/search';
 import { z } from 'zod';
+import type { CreateTrackingBranchRequest, DeleteRemoteBranchRequest } from '../../shared/contracts';
 import { booleanWithDefaultSchema, boundedStringSchema, parseRecord } from '../schemas/runtime';
 
 const plainStringArraySchema = z.array(z.string());
@@ -181,6 +182,21 @@ export function deleteBranchArg(value: unknown, operation: string): DeleteBranch
     expectedOid: oidArg(request.expectedOid, operation),
     force: booleanArg(request.force, operation),
   };
+}
+
+export function createTrackingBranchArg(value: unknown): CreateTrackingBranchRequest {
+  const operation = 'create-tracking-branch';
+  const request = requestObject(value, operation);
+  return { ...branchDetailsArg(request, operation), expectedOid: oidArg(request.expectedOid, operation),
+    localName: refsString(request.localName, operation, MAX_BRANCH_REF_LENGTH) };
+}
+
+export function deleteRemoteBranchArg(value: unknown): DeleteRemoteBranchRequest {
+  const operation = 'delete-remote-branch';
+  const request = requestObject(value, operation);
+  const destinationId = refsString(request.destinationId, operation, 64);
+  if (!/^[0-9a-f]{64}$/.test(destinationId)) throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation, message: 'Invalid remote destination.' });
+  return { ...branchDetailsArg(request, operation), expectedOid: oidArg(request.expectedOid, operation), destinationId };
 }
 
 export function removeWorktreeArg(value: unknown, operation: string): RemoveWorktreeRequest {

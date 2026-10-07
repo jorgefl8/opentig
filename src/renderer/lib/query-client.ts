@@ -38,6 +38,7 @@ export const queryKeys = {
   search: (repositoryId: string, input: object) => ['repository', repositoryId, 'search', input] as const,
   localRefs: (repositoryId: string) => ['repository', repositoryId, 'local-refs'] as const,
   branchDetails: (repositoryId: string, fullName: string) => ['repository', repositoryId, 'branch-details', fullName] as const,
+  remoteBranchDetails: (repositoryId: string, fullName: string) => ['repository', repositoryId, 'remote-branch-details', fullName] as const,
   branchPullRequest: (repositoryId: string, name: string) => ['repository', repositoryId, 'branch-pull-request', name] as const,
   worktreeDetails: (repositoryId: string, path: string) => ['repository', repositoryId, 'worktree-details', path] as const,
 };

@@ -14,6 +14,7 @@ import { CommandRegistry, type CommandExecutionContext } from './CommandRegistry
 import type { OpenTigHost } from './OpenTigHost';
 import type { OpenTigRuntimeServices } from './OpenTigRuntime';
 import { aiString, booleanArg, branchDetailsArg, createPullRequestArg, deleteBranchArg, filesTreeStateArg, generateCommitMessageArg, generatePullRequestDraftArg, nullableProjectIdArg, oidArg, openFilesStateArg, pathsArg, prepareCommitGroupArg, prNumberArg, publishBranchArg, projectIdArg, projectNameArg, pullRequestStatesArg, removeWorktreeArg, repositoryKeyArg, searchOptionsArg, searchReplaceArg, stringArg, textArg, worktreeDetailsArg } from './validators';
+import { createTrackingBranchArg, deleteRemoteBranchArg } from './validators';
 
 export function registerServerCommands(
   registry: CommandRegistry,
@@ -363,6 +364,13 @@ export function registerServerCommands(
     const { repositoryId, fullName } = branchDetailsArg(request, 'branch-details');
     return services.operations.branchDetails(repositoryId, fullName);
   });
+  handle(IPC.remoteBranchDetails, 'remote-branch-details', (request) => {
+    const { repositoryId, fullName } = branchDetailsArg(request, 'remote-branch-details');
+    return services.operations.remoteBranchDetails(repositoryId, fullName);
+  });
+  handle(IPC.trackingBranchCreate, 'create-tracking-branch', (request) => services.operations.createTrackingBranch(createTrackingBranchArg(request)));
+  handle(IPC.remoteBranchDelete, 'delete-remote-branch', (request) => services.operations.deleteRemoteBranch(deleteRemoteBranchArg(request)));
+  handle(IPC.branchesFetch, 'fetch-branches', (id) => services.operations.fetchBranches(stringArg(id, 'fetch-branches', 64)));
   handle(IPC.worktreeDetails, 'worktree-details', (request) => {
     const { repositoryId, path } = worktreeDetailsArg(request, 'worktree-details');
     return services.operations.worktreeDetails(repositoryId, path);

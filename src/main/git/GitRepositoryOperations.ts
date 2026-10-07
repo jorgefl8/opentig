@@ -20,6 +20,8 @@ import { parseStatus } from './StatusParser';
 import { parseWorktrees } from './WorktreeParser';
 import { GitCommitAuthorship } from './GitCommitAuthorship';
 import type { SetCommitAuthorshipInput } from '../../shared/commit-authorship';
+import { GitRemoteBranches } from './GitRemoteBranches';
+import type { CreateTrackingBranchRequest, DeleteRemoteBranchRequest } from '../../shared/contracts';
 
 /**
  * Characters of staged diff and staged summary sent to the model. Generous on
@@ -36,12 +38,18 @@ type GitTaskRunner = (
 export class GitRepositoryOperations {
   private readonly knownOids = new Map<string, Set<string>>();
   private readonly authorship: GitCommitAuthorship;
+  private readonly remoteBranches: GitRemoteBranches;
 
   constructor(
     private readonly git: GitProcess,
     private readonly repositories: RepositoryService,
     private readonly files: FileService,
-  ) { this.authorship = new GitCommitAuthorship(git, repositories); }
+  ) { this.authorship = new GitCommitAuthorship(git, repositories); this.remoteBranches = new GitRemoteBranches(git, repositories); }
+
+  remoteBranchDetails(repositoryId: string, fullName: string) { return this.remoteBranches.details(repositoryId, fullName); }
+  createTrackingBranch(request: CreateTrackingBranchRequest) { return this.remoteBranches.create(request); }
+  deleteRemoteBranch(request: DeleteRemoteBranchRequest) { return this.remoteBranches.delete(request); }
+  fetchBranches(repositoryId: string) { return this.remoteBranches.fetch(repositoryId); }
 
   getCommitAuthorship(repositoryId: string) { return this.authorship.get(repositoryId); }
 
@@ -686,15 +694,16 @@ export class GitRepositoryOperations {
   }
 
   /**
-   * Cheap enumeration for the local refs manager. Deliberately runs no status
+   * Cheap enumeration for the refs manager. Deliberately runs no status
    * scan per worktree so ordinary refreshes stay as fast as the selectors.
    */
   async localRefsSnapshot(repositoryId: string): Promise<LocalRefsSnapshot> {
     const repository = this.repositories.get(repositoryId);
     const [branches, worktrees] = await Promise.all([this.branches(repositoryId), this.worktrees(repositoryId)]);
-    const locals = branches.filter((branch) => !branch.remote).sort(compareBranches);
+    const managed = await this.remoteBranches.snapshotBranches(repositoryId, branches);
     return {
-      branches: locals,
+      branches: managed.branches.sort(compareBranches),
+      remotes: managed.remotes,
       worktrees: await Promise.all(worktrees.map(async (worktree) => ({ ...worktree, current: await samePath(worktree.path, repository.path) }))),
     };
   }

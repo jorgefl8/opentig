@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { managementRepository, addRemote, addWorktree, commitOnBranch, realPath, standaloneRepository, git, gitRaw } from './test-support/repository-fixtures';
 
 describe('GitRepositoryOperations local refs snapshot', () => {
-  it('returns only local branches, current first, with tip metadata', async () => {
+  it('returns local and remote branches, current first, with tip metadata', async () => {
     const fixture = await managementRepository();
     await git(fixture.work, ['branch', 'zeta']);
     await git(fixture.work, ['branch', 'alpha']);
@@ -13,8 +13,8 @@ describe('GitRepositoryOperations local refs snapshot', () => {
     const headOid = await git(fixture.work, ['rev-parse', 'HEAD']);
 
     const snapshot = await fixture.operations.localRefsSnapshot(fixture.repositoryId);
-    expect(snapshot.branches.map((branch) => branch.name)).toEqual(['main', 'alpha', 'zeta']);
-    expect(snapshot.branches.every((branch) => !branch.remote)).toBe(true);
+    expect(snapshot.branches.map((branch) => branch.name)).toEqual(['main', 'alpha', 'origin/main', 'zeta']);
+    expect(snapshot.branches.filter((branch) => branch.remote)).toHaveLength(1);
     expect(snapshot.branches[0]).toMatchObject({ current: true, oid: headOid, subject: 'Base commit', author: 'OpenTig Test' });
     expect(snapshot.branches[0]?.date).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
