@@ -163,7 +163,6 @@ export default function App() {
   // The last message OpenTig itself put in the composer, so an edited one is
   // never replaced without asking.
   const lastAppliedMessageRef = useRef('');
-  const forceGhStatusRef = useRef(false);
   const knownConflictPathsRef = useRef<Map<string, string[]>>(new Map());
   const refreshCyclesRef = useRef<Map<string, { queued: RefreshRequest | null; promise: Promise<void> }>>(new Map());
 
@@ -186,30 +185,37 @@ export default function App() {
     enabled: repository !== null,
   });
   const githubInfo = githubInfoQuery.data ?? null;
+  // CLI availability belongs to the backend session, not a repository or PR filter.
+  const ghStatusQuery = useQuery<GhCliStatus>({
+    queryKey: queryKeys.githubCliStatus,
+    queryFn: () => opentig.github.status(true),
+    enabled: bootstrap !== null,
+    staleTime: Infinity,
+  });
+  const ghStatus = ghStatusQuery.data ?? null;
   const githubAccountQuery = useGitHubAccount(repository && githubInfo?.isGitHub ? repository.id : null);
   const githubAccount = githubAccountQuery.data ?? null;
   useEffect(() => opentig.events.onGitHubAccountsChanged(() => { void resetGitHubQueries(appQueryClient); }), [appQueryClient]);
-  const pullsQuery = useQuery<{ ghStatus: GhCliStatus; pulls: PullRequestSummary[] | null }>({
+  const pullsQuery = useQuery<PullRequestSummary[]>({
     queryKey: queryKeys.pulls(repository?.id ?? '', pullRequestStates),
     queryFn: async () => {
-      const forceStatus = forceGhStatusRef.current;
-      forceGhStatusRef.current = false;
-      const nextGhStatus = await opentig.github.status(forceStatus);
-      if (!nextGhStatus.installed) return { ghStatus: nextGhStatus, pulls: null };
-      let nextPulls: PullRequestSummary[];
-      try { nextPulls = pullRequestStates.length ? await opentig.github.listPullRequests(repository!.id, pullRequestStates) : []; }
+      try { return pullRequestStates.length ? await opentig.github.listPullRequests(repository!.id, pullRequestStates) : []; }
+      catch (error) {
+        if (serializedErrorFromReason(error)?.code === 'GH_CLI_NOT_FOUND') {
+          void appQueryClient.invalidateQueries({ queryKey: queryKeys.githubCliStatus });
+        }
+        throw error;
+      }
       finally {
         const context = await opentig.github.repositoryAccount(repository!.id, false);
         appQueryClient.setQueryData(queryKeys.githubAccount(repository!.id), context);
       }
-      return { ghStatus: nextGhStatus, pulls: nextPulls };
     },
-    enabled: view === 'prs' && repository !== null && githubInfo?.isGitHub === true,
+    enabled: view === 'prs' && repository !== null && githubInfo?.isGitHub === true && ghStatus?.installed === true,
   });
-  const ghStatus = pullsQuery.data?.ghStatus ?? null;
-  const pulls = pullsQuery.data?.pulls ?? null;
-  const pullsLoading = pullsQuery.isFetching;
-  const pullsError = pullsQuery.error ? messageOf(pullsQuery.error) : null;
+  const pulls = pullsQuery.data ?? null;
+  const pullsLoading = pullsQuery.isFetching || ghStatusQuery.isFetching;
+  const pullsError = ghStatusQuery.error ? messageOf(ghStatusQuery.error) : pullsQuery.error ? messageOf(pullsQuery.error) : null;
   useEffect(() => { setMobilePane('list'); }, [repository?.id]);
   const currentSnapshot = snapshotRepositoryId === repository?.id;
   const status = currentSnapshot ? statusState : null;
@@ -219,12 +225,8 @@ export default function App() {
   const currentBranch = status && !status.detached && !status.unborn ? status.branch : null;
   const branchPullRequestQuery = useQuery({
     queryKey: queryKeys.branchPullRequest(repository?.id ?? '', currentBranch ?? ''),
-    queryFn: async () => {
-      const cli = await opentig.github.status();
-      if (!cli.installed) return null;
-      return opentig.github.findPullRequestForBranch(repository!.id, currentBranch!);
-    },
-    enabled: repository !== null && githubInfo?.isGitHub === true && currentBranch !== null,
+    queryFn: () => opentig.github.findPullRequestForBranch(repository!.id, currentBranch!),
+    enabled: repository !== null && githubInfo?.isGitHub === true && currentBranch !== null && ghStatus?.installed === true,
     staleTime: 60_000,
     refetchInterval: 60_000,
   });
@@ -697,9 +699,9 @@ export default function App() {
   }, [repository?.id]);
 
   const loadPulls = useCallback(async (_states: PullRequestState[], forceStatus = false) => {
-    if (repository) void appQueryClient.invalidateQueries({ queryKey: ['repository', repository.id, 'branch-pull-request'] });
     if (forceStatus) {
-      forceGhStatusRef.current = true;
+      const result = await ghStatusQuery.refetch();
+      if (result.isError || !result.data?.installed) return;
       if (repository) {
         await Promise.all([
           appQueryClient.invalidateQueries({ queryKey: ['repository', repository.id, 'pull-request-stack'] }),
@@ -707,8 +709,9 @@ export default function App() {
         ]);
       }
     }
+    if (repository) void appQueryClient.invalidateQueries({ queryKey: ['repository', repository.id, 'branch-pull-request'] });
     await pullsQuery.refetch();
-  }, [appQueryClient, pullsQuery, repository]);
+  }, [appQueryClient, ghStatusQuery, pullsQuery, repository]);
 
   useEffect(() => {
     void refresh();

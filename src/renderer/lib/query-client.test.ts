@@ -12,6 +12,7 @@ describe('renderer query policy', () => {
     client.setQueryData(queryKeys.pullRequestDiff('repo-b', 1), 'old diff');
     client.setQueryData(queryKeys.githubAccount('repo-a'), 'old account');
     client.setQueryData(queryKeys.githubAccounts, 'old inventory');
+    client.setQueryData(queryKeys.githubCliStatus, 'old CLI status');
     client.setQueryData(queryKeys.status('repo-a'), 'git status');
     await resetGitHubQueries(client);
     await client.fetchQuery({ queryKey: key, queryFn: async () => 'new account' });
@@ -21,6 +22,7 @@ describe('renderer query policy', () => {
     expect(client.getQueryData(queryKeys.pullRequestDiff('repo-b', 1))).toBeUndefined();
     expect(client.getQueryData(queryKeys.githubAccount('repo-a'))).toBeUndefined();
     expect(client.getQueryData(queryKeys.githubAccounts)).toBeUndefined();
+    expect(client.getQueryData(queryKeys.githubCliStatus)).toBeUndefined();
     expect(client.getQueryData(queryKeys.status('repo-a'))).toBe('git status');
     client.clear();
   });
