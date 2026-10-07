@@ -299,6 +299,7 @@
 .mobile-sheet-body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 10px 12px; }
 .mobile-sheet-action { display: flex; align-items: center; gap: 11px; width: 100%; min-height: 50px; padding: 10px; border-radius: var(--radius-md); text-align: left; font-size: 13px; }
 .mobile-sheet-action > svg { width: 19px; height: 19px; flex: none; color: var(--muted-foreground); }
+.mobile-branch-pr.merged, .mobile-branch-pr.merged > svg { color: var(--pr-merged); }
 .mobile-sheet-action > span { min-width: 0; flex: 1; overflow-wrap: anywhere; }
 .mobile-sheet-action > span strong { display: block; font-weight: 550; }
 .mobile-sheet-action > span small { display: block; margin-top: 4px; font-size: 11px; color: var(--muted-foreground); }

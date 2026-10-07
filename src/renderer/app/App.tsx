@@ -231,7 +231,8 @@ export default function App() {
     refetchInterval: 60_000,
   });
   const currentBranchPullRequest = currentBranch && githubInfo?.isGitHub && !branchPullRequestQuery.isError
-    && branchPullRequestQuery.data?.state === 'OPEN' ? branchPullRequestQuery.data : null;
+    && (branchPullRequestQuery.data?.state === 'OPEN' || branchPullRequestQuery.data?.state === 'MERGED')
+    ? branchPullRequestQuery.data : null;
 
   const openFilesStates = bootstrap?.openFilesStates ?? NO_OPEN_FILES_STATES;
   const connectionState = useSyncExternalStore(

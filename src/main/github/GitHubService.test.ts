@@ -63,6 +63,14 @@ describe('GitHub SSH remote detection', () => {
   });
 });
 describe('current branch pull requests', () => {
+  it('selects the most recently updated open PR when several PRs share a branch', async () => {
+    const { service } = fixture(() => ok([
+      { number: 11, state: 'OPEN', updatedAt: '2026-09-01' },
+      { number: 12, state: 'OPEN', updatedAt: '2026-09-03' },
+      { number: 13, state: 'OPEN', updatedAt: '2026-09-02' },
+    ]));
+    expect(await service.findPullRequestForBranch('repo', 'feature')).toMatchObject({ number: 12, state: 'OPEN' });
+  });
   it('finds an open draft even when a reused branch has newer closed history', async () => {
     const { service, run } = fixture((args) => ok(args.includes('open')
       ? [{ number: 12, state: 'OPEN', isDraft: true, headRefName: 'feature', url: 'https://github.com/example/demo/pull/12' }]

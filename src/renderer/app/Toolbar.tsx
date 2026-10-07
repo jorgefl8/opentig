@@ -1,7 +1,7 @@
 import { appDisplayName } from '@/lib/app-identity';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  IconArrowDown, IconArrowUp, IconBrandGithub, IconExternalLink, IconGitPullRequest, IconHierarchy2, IconLoader4, IconPlus, IconRefresh, IconSettings,
+  IconArrowDown, IconArrowUp, IconBrandGithub, IconExternalLink, IconGitMerge, IconGitPullRequest, IconHierarchy2, IconLoader4, IconPlus, IconRefresh, IconSettings,
 } from '@tabler/icons-react';
 import type { BootstrapData, GitHubRepositoryInfo, Preferences, PullRequestSummary, RecentRepository, RepositoryInfo, RepositoryOrganization, RepositoryProject } from '../../shared/contracts';
 import type { BranchInfo, RepositoryStatus, WorktreeInfo } from '../../shared/git-types';
@@ -28,7 +28,7 @@ import { useShortcuts } from './useShortcuts';
 import { useMobileLayout } from '@/lib/use-mobile-layout';
 import { MobileToolbar } from './MobileToolbar';
 import { BranchCombobox } from './BranchCombobox';
-import { openOnGitHub } from '@/features/pulls/gh-utils';
+import { openOnGitHub, prStateLabel } from '@/features/pulls/gh-utils';
 
 export interface ToolbarProps {
   mobileBackLabel?: string | undefined;
@@ -387,15 +387,15 @@ export function Toolbar(props: ToolbarProps) {
       {branchControl}
       {props.branchPullRequest && (
         <Tooltip>
-          <TooltipTrigger render={<button type="button" className={`toolbar-branch-pr${props.branchPullRequest.isDraft ? ' draft' : ''}`} aria-label={`Open pull request #${props.branchPullRequest.number} on GitHub`} onClick={() => openOnGitHub(props.branchPullRequest!.url)} />}>
-            <IconGitPullRequest aria-hidden="true" />
+          <TooltipTrigger render={<button type="button" className={`toolbar-branch-pr ${props.branchPullRequest.state.toLowerCase()}${props.branchPullRequest.state === 'OPEN' && props.branchPullRequest.isDraft ? ' draft' : ''}`} aria-label={`View ${prStateLabel(props.branchPullRequest).toLowerCase()} pull request #${props.branchPullRequest.number} on GitHub`} onClick={() => openOnGitHub(props.branchPullRequest!.url)} />}>
+            {props.branchPullRequest.state === 'MERGED' ? <IconGitMerge aria-hidden="true" /> : <IconGitPullRequest aria-hidden="true" />}
             <span className="toolbar-pr-label">PR #{props.branchPullRequest.number}</span>
-            {props.branchPullRequest.isDraft && <span className="toolbar-pr-draft">Draft</span>}
+            {props.branchPullRequest.state === 'OPEN' && props.branchPullRequest.isDraft && <span className="toolbar-pr-draft">Draft</span>}
             <IconExternalLink aria-hidden="true" />
           </TooltipTrigger>
           <TooltipContent side="bottom" align="end" sideOffset={8} className="flex-col items-start gap-1 text-left">
             <span className="toolbar-pr-tooltip-title">{props.branchPullRequest.title}</span>
-            <span className="toolbar-pr-tooltip-meta">{props.branchPullRequest.isDraft ? 'Draft' : 'Open'} · View on GitHub</span>
+            <span className="toolbar-pr-tooltip-meta">{props.branchPullRequest.state === 'MERGED' ? `Merged into ${props.branchPullRequest.baseRefName}` : prStateLabel(props.branchPullRequest)} · View on GitHub</span>
           </TooltipContent>
         </Tooltip>
       )}

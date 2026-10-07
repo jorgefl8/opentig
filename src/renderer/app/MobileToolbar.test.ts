@@ -3,6 +3,7 @@ import { act, createElement, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { RepositoryStatus } from '@shared/git-types';
+import type { PullRequestSummary } from '@shared/contracts';
 import type { ToolbarProps } from './Toolbar';
 import { MobileToolbar } from './MobileToolbar';
 
@@ -16,8 +17,8 @@ const initialStatus: RepositoryStatus = {
 let root: Root;
 let container: HTMLDivElement;
 const pull = vi.fn(); const push = vi.fn();
-async function render(status: RepositoryStatus | null, syncBusy = false) {
-  const props = { repository: { repositoryName: 'sample' }, status, openFiles: { tabs: [] }, onPull: pull, onPush: push } as unknown as ToolbarProps;
+async function render(status: RepositoryStatus | null, syncBusy = false, branchPullRequest: PullRequestSummary | null = null) {
+  const props = { repository: { repositoryName: 'sample' }, status, branchPullRequest, openFiles: { tabs: [] }, onPull: pull, onPush: push } as unknown as ToolbarProps;
   await act(async () => root.render(createElement(MobileToolbar, { props, repositoryControl: null, branchControl: null, worktreeControl: null, favicon: undefined, contextOpen: true, onContextOpen: () => {}, syncBusy })));
 }
 const syncButtons = () => [...container.querySelectorAll<HTMLButtonElement>('.mobile-context-sync button')];
@@ -52,4 +53,13 @@ it('keeps publication available without pending commits and blocks unsafe or bus
   expect(syncButtons().every((button) => button.disabled)).toBe(true);
   await render(null);
   expect(syncButtons().slice(1).every((button) => button.disabled)).toBe(true);
+});
+
+it('labels merged PRs in the repository menu with the merge icon', async () => {
+  await render(initialStatus, false, { number: 12, state: 'MERGED' } as PullRequestSummary);
+  const action = container.querySelector<HTMLButtonElement>('.mobile-branch-pr')!;
+  expect(action.textContent).toBe('View merged PR #12');
+  expect(action.querySelector('.tabler-icon-git-merge')).not.toBeNull();
+  await render(initialStatus, false, { number: 13, state: 'OPEN' } as PullRequestSummary);
+  expect(container.querySelector('.mobile-branch-pr')?.textContent).toBe('Open PR #13');
 });

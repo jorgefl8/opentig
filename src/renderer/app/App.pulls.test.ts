@@ -35,9 +35,11 @@ vi.mock('@/lib/opentig-api', () => ({
   serverClient: { transport: { subscribeState: () => () => {}, getState: () => 'connected' } },
 }));
 vi.mock('@/lib/boot-theme', () => ({ persistTheme: () => {} }));
-vi.mock('./Toolbar', () => ({ Toolbar: (props: ToolbarProps) => createElement('button', {
-  onClick: () => props.onRecent('repo-b'), 'aria-label': 'Switch repository',
-}, 'Switch repository') }));
+vi.mock('./Toolbar', () => ({ Toolbar: (props: ToolbarProps) => createElement('header', null,
+  createElement('button', { onClick: () => props.onRecent('repo-b'), 'aria-label': 'Switch repository' }, 'Switch repository'),
+  createElement('output', { 'aria-label': 'Branch PR' }, props.branchPullRequest
+    ? `#${props.branchPullRequest.number} ${props.branchPullRequest.state}` : 'No PR'),
+) }));
 vi.mock('@/features/changes/ChangesView', () => ({ ChangesView: () => null }));
 vi.mock('@/features/commit/CommitComposer', () => ({ CommitComposer: () => null }));
 vi.mock('@/features/viewer/Viewer', () => ({ default: () => null }));
@@ -194,4 +196,20 @@ it('refreshes detection and PR results after GitHub settings change', async () =
   expect(calls.cliStatus).toHaveBeenCalledTimes(2);
   expect(calls.listPulls).toHaveBeenCalledTimes(2);
   expect(container.textContent).toContain('No open pull requests');
+});
+
+it.each(['OPEN', 'MERGED'] as const)('passes the current branch’s %s PR to the toolbar, including after switching worktrees', async (state) => {
+  calls.branchPull.mockImplementation(async (id: string) => ({ number: id === 'repo' ? 12 : 13, state }));
+  calls.openRecent.mockResolvedValue({ ...repository, id: 'repo-b', path: '/sample-worktree' });
+  await mount();
+  expect(container.querySelector('[aria-label="Branch PR"]')?.textContent).toBe(`#12 ${state}`);
+  await click('[aria-label="Switch repository"]');
+  expect(calls.branchPull).toHaveBeenLastCalledWith('repo-b', 'main');
+  expect(container.querySelector('[aria-label="Branch PR"]')?.textContent).toBe(`#13 ${state}`);
+});
+
+it('keeps closed, unmerged PRs out of the current branch toolbar', async () => {
+  calls.branchPull.mockResolvedValue({ number: 12, state: 'CLOSED' });
+  await mount();
+  expect(container.querySelector('[aria-label="Branch PR"]')?.textContent).toBe('No PR');
 });

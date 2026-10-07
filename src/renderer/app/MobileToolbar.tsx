@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, type ReactNode } from 'react';
-import { IconArrowDown, IconArrowLeft, IconArrowUp, IconBrandGithub, IconDots, IconFiles, IconGitBranch, IconGitPullRequest, IconPlus, IconRefresh, IconSettings, IconX } from '@tabler/icons-react';
+import { IconArrowDown, IconArrowLeft, IconArrowUp, IconBrandGithub, IconDots, IconFiles, IconGitBranch, IconGitMerge, IconGitPullRequest, IconPlus, IconRefresh, IconSettings, IconX } from '@tabler/icons-react';
 import { Button } from '@/components/ui/button';
 import { isDevProfile } from '@/lib/app-identity';
 import { AppName } from '@/components/AppName';
@@ -52,7 +52,10 @@ export function MobileToolbar({ props, repositoryControl, worktreeControl, branc
         <Button variant="outline" size="sm" disabled={syncDisabled || (!publish && !(props.status && props.status.ahead > 0))} onClick={() => contextAction(props.onPush)}><IconArrowUp />{publish ? 'Publish' : 'Push'}{props.status?.ahead ? ` (${props.status.ahead})` : ''}</Button>
       </div>
       <button className="mobile-sheet-action" onClick={() => contextAction(props.onOpen)}><IconPlus /><span>Open repository</span></button>
-      {props.branchPullRequest && <button className="mobile-sheet-action" onClick={() => contextAction(() => openOnGitHub(props.branchPullRequest!.url))}><IconGitPullRequest /><span>Open PR #{props.branchPullRequest.number}</span></button>}
+      {props.branchPullRequest && <button className={`mobile-sheet-action mobile-branch-pr ${props.branchPullRequest.state.toLowerCase()}`} onClick={() => contextAction(() => openOnGitHub(props.branchPullRequest!.url))}>
+        {props.branchPullRequest.state === 'MERGED' ? <IconGitMerge aria-hidden="true" /> : <IconGitPullRequest aria-hidden="true" />}
+        <span>{props.branchPullRequest.state === 'MERGED' ? 'View merged' : 'Open'} PR #{props.branchPullRequest.number}</span>
+      </button>}
       {props.githubInfo?.isGitHub && props.githubInfo.nameWithOwner && <button className="mobile-sheet-action" onClick={() => contextAction(() => openOnGitHub(`https://github.com/${props.githubInfo!.nameWithOwner}`))}><IconBrandGithub /><span>Open on GitHub</span></button>}
       <button className="mobile-sheet-action" onClick={() => contextAction(() => props.onSettingsOpen(true))}><IconSettings /><span>Settings</span></button>
     </MobileSheet>
