@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { IconSettings } from '@tabler/icons-react';
 import { Combobox, ComboboxContent, ComboboxGroup, ComboboxGroupLabel, ComboboxInput, ComboboxItem, ComboboxList, ComboboxTrigger } from '@/components/ui/combobox';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -52,6 +52,14 @@ export function SearchablePicker({ groups, value, onValueChange, label, triggerL
 }: SearchablePickerProps) {
   const [internalOpen, setInternalOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const [scrolling, setScrolling] = useState(false);
+  const scrollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (scrollTimer.current !== null) clearTimeout(scrollTimer.current); }, []);
+  const dismissScrollingTooltips = () => {
+    setScrolling(true);
+    if (scrollTimer.current !== null) clearTimeout(scrollTimer.current);
+    scrollTimer.current = setTimeout(() => { scrollTimer.current = null; setScrolling(false); }, 150);
+  };
   const items = useMemo(() => groups.flatMap((group) => group.items), [groups]);
   const selected = items.find((item) => item.value === value) ?? null;
   const needle = query.trim().toLocaleLowerCase();
@@ -60,7 +68,12 @@ export function SearchablePicker({ groups, value, onValueChange, label, triggerL
   ) })).filter((group) => group.items.length > 0);
   const changeOpen = (next: boolean) => {
     setInternalOpen(next);
-    if (!next) setQuery('');
+    if (!next) {
+      setQuery('');
+      setScrolling(false);
+      if (scrollTimer.current !== null) clearTimeout(scrollTimer.current);
+      scrollTimer.current = null;
+    }
     onOpenChange?.(next);
   };
 
@@ -91,7 +104,7 @@ export function SearchablePicker({ groups, value, onValueChange, label, triggerL
       </ComboboxTrigger>
       <ComboboxContent align={align} className={cn('searchable-picker', contentClassName)} initialFocus={focusSearch}>
         <ComboboxInput placeholder={placeholder} aria-label={placeholder} />
-        <ComboboxList className="searchable-picker-list" aria-label={label}>
+        <ComboboxList className="searchable-picker-list" aria-label={label} onScroll={dismissScrollingTooltips} onWheelCapture={dismissScrollingTooltips}>
           {filtered.length === 0 && <div className="searchable-picker-empty" role="status">No matches</div>}
           {filtered.map((group) => (
             <ComboboxGroup key={group.id}>
@@ -103,7 +116,7 @@ export function SearchablePicker({ groups, value, onValueChange, label, triggerL
                   {item.trailing && <span className="searchable-picker-trailing">{item.trailing}</span>}
                 </>;
                 return (
-                  <Tooltip key={item.value}>
+                  <Tooltip key={item.value} disabled={scrolling}>
                     <TooltipTrigger render={<ComboboxItem value={item} disabled={item.disabled} className={cn('searchable-picker-item', item.description && 'searchable-picker-item-detailed')} />}>
                       {content}
                     </TooltipTrigger>
