@@ -98,6 +98,8 @@ export function createOpenTigServerClient(options: ServerClientOptions = {}): Op
       resolveConflict: (repositoryId, path, content) => invoke(IPC.indexResolveConflict, repositoryId, path, content),
     },
     commits: {
+      authorship: (repositoryId) => invoke(IPC.commitAuthorship, repositoryId),
+      setAuthorship: (repositoryId, input) => invoke(IPC.commitSetAuthorship, repositoryId, input),
       create: (repositoryId, message) => invoke(IPC.commitCreate, repositoryId, message),
       undoLatest: (repositoryId, expectedOid) => invoke(IPC.commitUndoLatest, repositoryId, expectedOid),
       list: (repositoryId, cursor) => invoke(IPC.commitsList, repositoryId, cursor),

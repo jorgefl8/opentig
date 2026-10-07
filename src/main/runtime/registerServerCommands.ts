@@ -1,4 +1,5 @@
 import { githubAccountSelectionSchema } from '../../shared/github-accounts';
+import { commitAuthorshipInputSchema } from '../../shared/commit-authorship';
 import { lstat } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import type { DiffRequest, Preferences } from '../../shared/contracts';
@@ -327,6 +328,17 @@ export function registerServerCommands(
     textArg(content, 'update-conflict', 8 * 1024 * 1024),
   ));
   handle(IPC.commitCreate, 'commit', (id, message) => services.operations.createCommit(stringArg(id, 'commit', 64), stringArg(message, 'commit', 100_000)));
+  handle(IPC.commitAuthorship, 'commit-authorship-read', (id) => services.operations.getCommitAuthorship(stringArg(id, 'commit-authorship-read', 64)));
+  handle(IPC.commitSetAuthorship, 'commit-authorship-set', async (id, input) => {
+    const repositoryId = stringArg(id, 'commit-authorship-set', 64);
+    const parsed = commitAuthorshipInputSchema.safeParse(input);
+    if (!parsed.success) throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'commit-authorship-set', message: 'Enter a valid name, email and reviewed identity.' });
+    const result = await services.operations.setCommitAuthorship(repositoryId, parsed.data);
+    const repository = services.repositories.get(repositoryId);
+    const ids = new Set([repositoryId, ...services.repositories.recents().filter((item) => item.commonDir === repository.commonDir).map((item) => item.id)]);
+    for (const siblingId of ids) services.events.repositoryChanged(siblingId, 'unknown');
+    return result;
+  });
   handle(IPC.commitUndoLatest, 'undo-latest-commit', (id, expectedOid) => services.operations.undoLatestCommit(
     stringArg(id, 'undo-latest-commit', 64),
     oidArg(expectedOid, 'undo-latest-commit'),

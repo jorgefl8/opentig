@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { IconBrandGithub, IconCheck, IconCopy, IconGitBranch, IconLoader4, IconPlus, IconRefresh, IconShieldCheck } from '@tabler/icons-react';
+import { IconBrandGithub, IconCheck, IconCopy, IconGitBranch, IconLoader4, IconPlus, IconRefresh, IconUser } from '@tabler/icons-react';
 import { sileo } from 'sileo';
 import type { RepositoryInfo } from '@shared/contracts';
 import type { GitHubAccountSelection, GitHubAccountsStatus, GitHubRepositoryAccount } from '@shared/github-accounts';
@@ -13,14 +13,16 @@ import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { opentig } from '@/lib/opentig-api';
 import { queryKeys } from '@/lib/query-client';
 import { writeClipboardText } from '@/lib/browser-capabilities';
+import { CommitAuthorshipDialog } from './CommitAuthorshipDialog';
+import { authorshipSourceLabel } from './commit-authorship-copy';
 
 function githubAccountReason(account: GitHubRepositoryAccount): string {
   if (account.message) return account.message;
   if (account.source === 'explicit') return 'Explicit choice for this repository';
-  if (account.source === 'ssh') return 'Automatic · identity verified through SSH';
-  if (account.source === 'environment') return 'Automatic · credentials from the backend environment';
+  if (account.source === 'ssh') return 'Automatic · verified SSH identity';
+  if (account.source === 'environment') return 'Automatic · backend environment credentials';
   if (account.source === 'global') return 'Automatic · active GitHub CLI account';
-  return 'The account will be verified when you use GitHub or check its status.';
+  return 'Check status to verify the repository account.';
 }
 
 export function GitHubSettings({ repository }: { repository: RepositoryInfo | null }) {
@@ -28,11 +30,19 @@ export function GitHubSettings({ repository }: { repository: RepositoryInfo | nu
   const inventory = useQuery({ queryKey: queryKeys.githubAccounts, queryFn: () => opentig.github.accountsStatus(false), staleTime: Infinity });
   const context = useQuery({ queryKey: queryKeys.githubAccount(repository?.id ?? ''),
     queryFn: () => opentig.github.repositoryAccount(repository!.id, false), enabled: repository !== null, staleTime: Infinity });
+  const authorship = useQuery({ queryKey: queryKeys.commitAuthorship(repository?.id ?? ''),
+    queryFn: () => opentig.commits.authorship(repository!.id), enabled: repository !== null });
   const [checking, setChecking] = useState(false);
   const [saving, setSaving] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
+  const [authorOpen, setAuthorOpen] = useState(false);
+  useEffect(() => { setAuthorOpen(false); }, [repository?.id]);
+  useEffect(() => opentig.events.onRepositoryChanged((id, scope) => {
+    if (id === repository?.id && scope === 'unknown') void client.invalidateQueries({ queryKey: queryKeys.commitAuthorship(id) });
+  }), [client, repository?.id]);
   const status = inventory.data;
   const account = context.data;
+  const author = authorship.data;
   const selection = account?.selection.mode === 'account' ? account.selection.login : 'auto';
   const accounts = status?.accounts ?? [];
   const selectable = accounts.map((item) => ({ value: item.login, label: `@${item.login}`,
@@ -49,6 +59,7 @@ export function GitHubSettings({ repository }: { repository: RepositoryInfo | nu
       if (repository) {
         const value = await opentig.github.repositoryAccount(repository.id, true);
         client.setQueryData(queryKeys.githubAccount(repository.id), value);
+        await client.invalidateQueries({ queryKey: queryKeys.commitAuthorship(repository.id) });
       }
     } catch (error) { sileo.error({ title: 'Could not check GitHub', description: messageOf(error) }); }
     finally { setChecking(false); }
@@ -64,52 +75,76 @@ export function GitHubSettings({ repository }: { repository: RepositoryInfo | nu
     } catch (error) { sileo.error({ title: 'Could not save GitHub account', description: messageOf(error) }); }
     finally { setSaving(false); }
   };
+  const accountLabel = account?.state === 'ready' && account.login ? `@${account.login}`
+    : account?.state === 'error' ? account.login ? `@${account.login} unavailable` : 'Choose or verify an account'
+      : account?.nameWithOwner ? 'Not verified yet' : repository ? 'No GitHub remote' : 'No repository open';
   return <div className="github-settings">
-    <section className="github-settings-section">
-      <div className="github-settings-row">
-        <div className="settings-field-label"><span className="github-settings-eyebrow">GitHub CLI</span>
-          <strong className="github-cli-version"><IconBrandGithub /> {status?.version || (status?.installationStatus === 'not-found' ? 'gh not found' : 'GitHub CLI')}
-            <Badge variant={status?.installationStatus === 'available' ? 'secondary' : 'outline'}>{installationLabel(status)}</Badge></strong>
-          <span>{status?.checkedAt ? `Last checked: ${formatDateTime(status.checkedAt, { seconds: true })}` : 'Status has not been checked yet.'}</span>
+    {repository && <section className="github-repository-summary" aria-label="Current repository identities">
+      <span className="github-settings-eyebrow">Current repository</span>
+      <h2><IconGitBranch />{account?.nameWithOwner || repository.name}</h2>
+      <div className="github-identity-summary">
+        <div className={`github-effective-account ${account?.state ?? 'unchecked'}`}>
+          <span>GitHub account</span><strong>{accountLabel}</strong>
+          <p>{account ? githubAccountReason(account) : 'Reading saved repository selection…'}</p>
         </div>
-        <Button variant="outline" size="sm" onClick={() => void check()} disabled={checking || inventory.isFetching}>
-          {checking ? <IconLoader4 className="animate-spin" /> : <IconRefresh />}{checking ? <ShimmeringText text="Checking…" /> : 'Check status'}
-        </Button>
+        <div className="github-author-summary"><span>Author of the next commit</span>
+          <strong>{author?.author?.name || (authorship.isPending ? 'Reading Git identity…' : author ? 'Not configured' : 'Could not read Git identity')}</strong>
+          {author?.author?.email && <p>{author.author.email}</p>}
+          {author && <small>{authorshipSourceLabel(author.source)}</small>}
+        </div>
       </div>
-      <p className="github-settings-note">Saved results are reused when Settings reopens. Checks run only when requested or when GitHub operations need them.</p>
+    </section>}
+    <section className="github-settings-section">
+      <div className="github-settings-row"><h3>Account for this repository</h3></div>
+      {repository ? <>
+        <div className="github-account-picker"><label className="sr-only" htmlFor="github-account-choice">Account for GitHub operations</label>
+          <SearchablePicker groups={[{ id: 'automatic', label: '', items: [{ value: 'auto', label: 'Automatic', description: 'Verified SSH identity, or active gh credentials for HTTPS', pinned: true, icon: <IconBrandGithub /> }] }, { id: 'accounts', label: 'Saved accounts', items: selectable }]}
+            value={selection} onValueChange={(value) => void choose(value)} label="GitHub account for this repository" triggerId="github-account-choice"
+            triggerLabel={selection === 'auto' ? 'Automatic' : `@${selection}`} placeholder="Search accounts…" size="default" align="start"
+            disabled={saving || !account?.nameWithOwner} />
+        </div>
+        {account?.nameWithOwner ? <><p className="github-settings-note">The same account reads and creates PRs. Your Git/SSH authentication and commit author stay independent.</p>
+          <p className="github-selection-saved"><IconCheck />{saving ? 'Saving and verifying…' : 'Selection saved · shared across worktrees'}</p></>
+          : <p className="github-settings-note">The origin remote must point to github.com to select a GitHub account. You can still edit the Git commit identity below.</p>}
+        {account?.state === 'error' && <p className="github-settings-notice" role="status">{account.message || 'The selected account is unavailable. Check status or choose another saved account.'}</p>}
+      </> : <p className="github-settings-note">Open a repository to choose its GitHub account and review its commit authorship.</p>}
+      <p className="github-global-account">Active globally in gh: <strong>{status?.activeLogin ? `@${status.activeLogin}` : 'Not verified'}</strong></p>
+      {status?.environment.present && <p className="github-settings-notice">Backend environment credentials: {status.environment.login ? `@${status.environment.login}` : 'identity not verified'}. They override the global gh account in Automatic mode for HTTPS; explicit and verified SSH accounts keep their saved credentials.</p>}
+      {context.error && <p className="github-settings-notice" role="alert">{messageOf(context.error)}</p>}
+    </section>
+    {repository && <section className="github-settings-section">
+      <div className="github-settings-row"><h3>Commit authorship</h3><Button variant="outline" size="sm" onClick={() => setAuthorOpen(true)} disabled={authorship.isPending || !author}>Edit authorship</Button></div>
+      <div className="github-authorship-card">
+        <IconUser /><div><strong>{author?.author?.name || 'Not configured'}</strong>
+          <p>{author?.author?.email || 'Set a name and email before creating commits.'}</p>
+          {author && <small>{authorshipSourceLabel(author.source)} · independent of gh</small>}
+          {author?.committer && (author.committer.name !== author.author?.name || author.committer.email !== author.author?.email) && <p className="github-authorship-committer">Committer: {author.committer.name} &lt;{author.committer.email}&gt;</p>}
+        </div>
+      </div>
+      {author?.blockers.map((blocker) => <p className="github-settings-notice" key={blocker}>{blocker}</p>)}
+      {authorship.error && <p className="github-settings-notice" role="alert">{messageOf(authorship.error)}</p>}
+      <p className="github-settings-note">Edit the effective Git name and email explicitly. Changing the GitHub account never changes authorship automatically.</p>
+    </section>}
+    <section className="github-settings-section github-accounts-section">
+      <div className="github-settings-row"><h3>Available accounts</h3><Button variant="outline" size="sm" onClick={() => setAddOpen(true)}><IconPlus />Add account</Button></div>
+      <div className="github-accounts-list">{accounts.map((item) => <div className="github-account-row" key={item.login}>
+        <span className="github-account-avatar" aria-hidden="true">{item.login.slice(0, 2).toUpperCase()}</span>
+        <div className="github-account-copy"><strong>@{item.login}</strong><small>{item.active ? 'Active in gh · global' : 'Saved in GitHub CLI'}</small></div>
+        <div className="github-account-badges">{account?.state === 'ready' && account.login?.toLowerCase() === item.login.toLowerCase() && <Badge variant="secondary">This repository</Badge>}
+          <span className={`github-auth-state ${item.state}`}>{item.state === 'authenticated' ? 'Authenticated' : item.state === 'invalid' ? 'Credentials rejected' : 'Not verified'}</span></div>
+      </div>)}</div>
+      {!accounts.length && <p className="github-settings-note">{status?.checkedAt ? 'No saved accounts were available in the last check. Add an account on the backend host and check again.' : 'Check status to list the accounts saved in GitHub CLI.'}</p>}
+    </section>
+    <section className="github-cli-section">
+      <div className="github-settings-row"><div><strong className="github-cli-version"><IconBrandGithub />{status?.version || 'GitHub CLI'}<Badge variant="outline">{installationLabel(status)}</Badge></strong>
+        <p className="github-settings-note">{status?.checkedAt ? `Last checked: ${formatDateTime(status.checkedAt, { seconds: true })}` : 'Status has not been checked yet.'}</p></div>
+        <Button variant="outline" size="sm" onClick={() => void check()} disabled={checking || inventory.isFetching}>{checking ? <IconLoader4 className="animate-spin" /> : <IconRefresh />}{checking ? <ShimmeringText text="Checking…" /> : 'Check status'}</Button>
+      </div>
+      <p className="github-settings-note">Saved results are reused. Opening Settings does not check GitHub.</p>
       {status?.message && <p className="github-settings-notice" role="status">{status.message}</p>}
       {inventory.error && <p className="github-settings-notice" role="alert">{messageOf(inventory.error)}</p>}
     </section>
-    <section className="github-settings-section">
-      <div className="github-settings-row"><div className="settings-field-label"><strong>Accounts on github.com</strong><span>The active account in gh is separate from the repository selection.</span></div>
-        <Button variant="outline" size="sm" onClick={() => setAddOpen(true)}><IconPlus /> Add account</Button></div>
-      <div className="github-accounts-list">{accounts.map((item) => <div className="github-account-row" key={item.login}>
-        <span className="github-account-avatar" aria-hidden="true">{item.login.slice(0, 2).toUpperCase()}</span>
-        <div className="github-account-copy"><strong>@{item.login}</strong><small>{item.storage === 'file' ? 'Credentials stored by gh in a file' : item.storage === 'keyring' ? 'System credential store' : 'GitHub CLI credentials'}</small></div>
-        <div className="github-account-badges">{item.active && <Badge variant="outline">Active in gh</Badge>}
-          {account?.state === 'ready' && account.login?.toLowerCase() === item.login.toLowerCase() && <Badge variant="secondary">This repository</Badge>}
-          <span className={`github-auth-state ${item.state}`}>{item.state === 'authenticated' ? 'Authenticated' : item.state === 'invalid' ? 'Credentials rejected' : 'Not verified'}</span></div>
-      </div>)}</div>
-      {!accounts.length && <p className="github-settings-note">{status?.checkedAt ? 'No saved accounts are available in the last check. Add an account on the backend host and check again.' : 'Check status to list the accounts saved in GitHub CLI.'}</p>}
-      {status?.environment.present && <p className="github-settings-notice">Backend environment credentials: {status.environment.login ? `@${status.environment.login}` : 'identity not verified'}. They override the active saved gh account in Automatic mode for HTTPS. Explicit and verified SSH accounts use their own saved credentials.</p>}
-    </section>
-    <section className="github-settings-section">
-      <div className="settings-field-label"><span className="github-settings-eyebrow">Current repository</span><strong className="github-cli-version"><IconGitBranch /> {account?.nameWithOwner || repository?.name || 'No repository open'}</strong></div>
-      <div className="github-account-picker"><label htmlFor="github-account-choice">Account for GitHub operations</label>
-        <SearchablePicker groups={[{ id: 'automatic', label: '', items: [{ value: 'auto', label: 'Automatic', description: 'Verified SSH account, or active gh credentials for HTTPS', pinned: true, icon: <IconBrandGithub /> }] }, { id: 'accounts', label: 'Saved accounts', items: selectable }]}
-          value={selection} onValueChange={(value) => void choose(value)} label="GitHub account for this repository" triggerId="github-account-choice"
-          triggerLabel={selection === 'auto' ? 'Automatic' : `@${selection}`} placeholder="Search accounts…" size="default" align="start"
-          disabled={saving || !repository || !account?.nameWithOwner} />
-      </div>
-      {repository && account?.nameWithOwner && <><p className="github-selection-saved"><IconCheck /> {saving ? 'Saving and verifying…' : 'Saved for this repository · shared across worktrees'}</p>
-        <div className={`github-effective-account ${account.state}`} role="status"><span><IconBrandGithub /> {account.state === 'error' ? 'GitHub needs your attention' : 'Account used by OpenTig'}</span>
-          <strong>{account.state === 'ready' && account.login ? `@${account.login}` : account.state === 'error' ? account.login ? `@${account.login} unavailable` : 'Choose or verify an account' : 'Not verified yet'}</strong>
-          <p>{githubAccountReason(account)}</p><small>The same account is used for PR lists, details, diffs, stacks and creation. Choosing it does not switch the global gh account.</small>
-        </div></>}
-      {!account?.nameWithOwner && <p className="github-settings-note">{repository ? 'The origin remote must point to github.com to select a repository account.' : 'Open a repository to choose its GitHub account.'}</p>}
-      {context.error && <p className="github-settings-notice" role="alert">{messageOf(context.error)}</p>}
-    </section>
-    <div className="github-git-note"><IconShieldCheck /><div><strong>Commit authorship is configured in Git.</strong><p>This selection controls GitHub operations in OpenTig. Fetch, pull, push and SSH keep their existing authentication.</p></div></div>
+    {repository && <CommitAuthorshipDialog key={repository.id} repository={repository} open={authorOpen} onOpenChange={setAuthorOpen} />}
     <AddGitHubAccountDialog open={addOpen} onOpenChange={setAddOpen} status={status} onCheck={check} checking={checking} />
   </div>;
 }

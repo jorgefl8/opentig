@@ -86,6 +86,8 @@ export const OPEN_TIG_SERVER_COMMANDS = {
   'index.resolveConflict': command(IPC.indexResolveConflict, 'resolve-conflict', true, { maxRequestBytes: CONTENT_MAX_REQUEST_BYTES }),
 
   'commits.create': command(IPC.commitCreate, 'commit', true),
+  'commits.authorship': command(IPC.commitAuthorship, 'commit-authorship-read', false),
+  'commits.setAuthorship': command(IPC.commitSetAuthorship, 'commit-authorship-set', true),
   'commits.undoLatest': command(IPC.commitUndoLatest, 'undo-latest-commit', true),
   'commits.list': command(IPC.commitsList, 'history', false),
   'commits.files': command(IPC.commitsFiles, 'commit-files', false),

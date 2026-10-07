@@ -17,6 +17,7 @@ export const queryClient = new QueryClient({
 });
 
 export const queryKeys = {
+  commitAuthorship: (repositoryId: string) => ['repository', repositoryId, 'commit-authorship'] as const,
   githubAccounts: ['github', 'accounts'] as const,
   githubAccount: (repositoryId: string) => ['repository', repositoryId, 'github-account'] as const,
   aiStatuses: (executablePathsKey: string) => ['ai', 'statuses', executablePathsKey] as const,
