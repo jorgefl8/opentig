@@ -4,6 +4,7 @@ import { IconLoader4 } from '@tabler/icons-react';
 import type { RepositoryInfo } from '@shared/contracts';
 import type { GitHubAccountSelection, GitHubAccountsStatus, GitHubRepositoryAccount } from '@shared/github-accounts';
 import { Button } from '@/components/ui/button';
+import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { Dialog, DialogDescription, DialogPopup, DialogTitle } from '@/components/ui/dialog';
 import { SearchablePicker } from '@/components/SearchablePicker';
 import { opentig } from '@/lib/opentig-api';
@@ -31,7 +32,7 @@ export function RepositoryAccountSetup({ repository, isNew, onClose, onAdded }: 
     <DialogPopup className="github-add-dialog github-setup-dialog">
       <DialogTitle>Choose access for {repository.name}</DialogTitle>
       <DialogDescription>Review access to finish adding this repository. Cancel leaves your repositories unchanged.</DialogDescription>
-      {setup.isPending ? <><p className="github-setup-loading"><IconLoader4 className="animate-spin" />Reading accounts and destination…</p><Button variant="ghost" onClick={onClose}>Cancel</Button></>
+      {setup.isPending ? <><p className="github-setup-loading" role="status"><IconLoader4 className="animate-spin" aria-hidden="true" /><ShimmeringText text="Reading accounts and destination…" /></p><Button variant="ghost" onClick={onClose}>Cancel</Button></>
         : setup.data ? <SetupForm key={attempt} repository={repository} isNew={isNew} {...setup.data} saving={saving} setSaving={setSaving} onClose={onClose} onAdded={onAdded} onSettings={() => setSettingsOpen(true)} onReload={() => setAttempt(value => value + 1)} />
           : <><p className="github-settings-notice" role="alert">Could not load repository access. Retry to finish adding this repository.</p>
             <div className="github-add-actions"><Button variant="ghost" onClick={onClose}>Cancel</Button><Button onClick={() => void setup.refetch()}>Retry</Button></div></>}

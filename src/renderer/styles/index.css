@@ -2186,4 +2186,4 @@ section[data-sileo-viewport] [data-sileo-title] { text-transform: none; }
 .github-setup-summary p + p { margin-top: 4px; }
 .github-setup-summary + .github-settings-note { margin-top: 12px; }
 .github-setup-loading { display: flex; align-items: center; gap: 8px; margin: 22px 0; }
-.github-setup-loading svg { width: 16px; height: 16px; }
+.github-setup-loading svg { width: 16px; height: 16px; flex: none; color: var(--primary); }
