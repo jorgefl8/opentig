@@ -673,6 +673,7 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   .welcome section h2 { margin-bottom: 8px; padding: 0 10px; color: var(--muted-foreground); font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
   .welcome section button { display: flex; width: 100%; align-items: center; gap: 12px; border-radius: var(--radius-lg); padding: 10px 12px; }
   .welcome section button:hover { background: var(--muted); }
+  .welcome section .repo-select-favicon { width: 24px; height: 24px; }
   .welcome section button span { display: grid; min-width: 0; flex: 1; gap: 2px; }
   .welcome section strong { font-size: 13px; }
   .welcome section small { overflow: hidden; color: var(--muted-foreground); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
