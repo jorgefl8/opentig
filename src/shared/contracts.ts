@@ -431,6 +431,7 @@ export interface GeneratePullRequestDraftInput {
 }
 
 export interface GeneratedPullRequestDraft {
+  coverage?: import('./pull-request-context').PullRequestContextCoverage;
   title: string;
   body: string;
   harness: AiHarnessId;

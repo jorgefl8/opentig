@@ -42,13 +42,13 @@ export class PullRequestDraftService {
       const generated = await provider.generate({ repositoryPath: context.repositoryPath, prompt: buildPullRequestPrompt(context), schema: PR_DRAFT_SCHEMA, model: input.model, signal });
       usage = generated.usage;
       const parts = parsePullRequestDraft(generated.output);
-      const current = await this.operations.getPullRequestDraftContext(input.repositoryId, input.base);
+      const current = await this.operations.getPullRequestDraftSnapshot(input.repositoryId, input.base);
       throwIfCancelled(signal, input.harness);
       if (current.fingerprint !== context.fingerprint) {
         throw new AiOperationError({ code: 'AI_STAGED_CHANGES_CHANGED', operation: 'ai-pr-draft', harness: input.harness, message: 'The branch changed during generation.' });
       }
       this.record(input, 'success', null, null, usage, contextTruncated, Date.now() - startedAt);
-      return { ...parts, harness: input.harness, model: input.model, contextWasTruncated: context.truncated };
+      return { ...parts, harness: input.harness, model: input.model, contextWasTruncated: context.truncated, coverage: context.coverage };
     } catch (error) {
       const failure = failureLogFields(error);
       this.record(input, failure.status, failure.errorCode, failure.errorMessage, usage, contextTruncated, Date.now() - startedAt);

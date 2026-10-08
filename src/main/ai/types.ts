@@ -21,6 +21,7 @@ export interface GeneratedParts {
 }
 
 export interface PullRequestDraftContext {
+  coverage: import('../../shared/pull-request-context').PullRequestContextCoverage;
   repositoryId: string;
   repositoryPath: string;
   branch: string;

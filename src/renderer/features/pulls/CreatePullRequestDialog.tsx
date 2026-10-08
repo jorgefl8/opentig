@@ -1,3 +1,5 @@
+import type { PullRequestContextCoverage } from '@shared/pull-request-context';
+import { PullRequestCoverage } from './PullRequestCoverage';
 import { useGitHubAccount } from './useGitHubAccount';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { IconGitBranch, IconGitPullRequest, IconLoader4, IconPlayerStop, IconUpload } from '@tabler/icons-react';
@@ -36,6 +38,7 @@ export function CreatePullRequestDialog(props: CreatePullRequestDialogProps) {
   const accountQuery = useGitHubAccount(props.open ? props.repositoryId : null);
   const account = accountQuery.data;
   const [title, setTitle] = useState('');
+  const [coverage, setCoverage] = useState<PullRequestContextCoverage | null>(null);
   const [body, setBody] = useState('');
   const [base, setBase] = useState('');
   const [draft, setDraft] = useState(false);
@@ -72,12 +75,15 @@ export function CreatePullRequestDialog(props: CreatePullRequestDialogProps) {
       });
   }, [body, bodyTab, props.open]);
 
-  // Closing the dialog aborts any generation still in flight.
-  useEffect(() => {
-    if (props.open) return;
+  const baseOid = props.branches.find(branch => branch.name === base)?.oid;
+  // A response for an old selection must not overwrite the user's current draft.
+  // Cleanup also cancels generation when the dialog unmounts.
+  useEffect(() => () => {
     const active = generationRequest.current;
+    generationRequest.current = null;
+    setGenerating(null);
     if (active) void opentig.github.cancelDraft(active).catch(() => undefined);
-  }, [props.open]);
+  }, [props.repositoryId, props.open, currentBranch, props.status?.oid, base, baseOid]);
 
   const needsPublish = props.status !== null && !props.status.upstream;
   const needsPush = props.status !== null && Boolean(props.status.upstream) && props.status.ahead > 0;
@@ -99,12 +105,14 @@ export function CreatePullRequestDialog(props: CreatePullRequestDialogProps) {
       if (generationRequest.current !== requestId) return;
       setTitle(result.title);
       setBody(result.body);
+      setCoverage(result.coverage ?? null);
       setBodyTab('edit');
       sileo.success({
         title: `Draft generated with ${harnessLabel(result.harness)}`,
-        description: result.contextWasTruncated ? 'A truncated version of the branch diff was used. Review before publishing.' : 'Review and edit before publishing.',
+        description: result.contextWasTruncated ? 'Some context was omitted. Review the coverage details before publishing.' : 'Review and edit before publishing.',
       });
     } catch (reason) {
+      if (generationRequest.current !== requestId) return;
       const detail = aiDetail(reason);
       if (detail?.code === 'AI_CANCELLED') sileo.info({ title: 'Generation canceled' });
       else sileo.error({ title: 'Could not generate the draft', description: detail?.message ?? messageOf(reason), duration: 10_000 });
@@ -122,6 +130,7 @@ export function CreatePullRequestDialog(props: CreatePullRequestDialogProps) {
       setTitle('');
       setBody('');
       setDraft(false);
+      setCoverage(null);
       sileo.success({
         title: draft ? 'Draft pull request created' : 'Pull request created',
         description: result.url,
@@ -202,6 +211,7 @@ export function CreatePullRequestDialog(props: CreatePullRequestDialogProps) {
               onChange={(event) => setTitle(event.target.value)}
             />
           </div>
+          {coverage && <PullRequestCoverage coverage={coverage} stale={!isCoverageCurrent(coverage, props.repositoryId, base, props.status, props.branches)} />}
           <ViewerTabs value={bodyTab} onValueChange={(value) => setBodyTab(value as typeof bodyTab)} className="create-pr-field create-pr-body-field">
             <div className="create-pr-body-header">
               <label htmlFor="create-pr-body">Description</label>
@@ -277,4 +287,10 @@ function aiDetail(reason: unknown): SerializedAiError | null {
 
 function messageOf(reason: unknown): string {
   return reason instanceof Error ? reason.message : 'An unexpected error occurred.';
+}
+
+function isCoverageCurrent(coverage: PullRequestContextCoverage, repositoryId: string, base: string, status: RepositoryStatus | null, branches: BranchInfo[]): boolean {
+  const baseOid = branches.find(branch => branch.name === base)?.oid;
+  return coverage.repositoryId === repositoryId && coverage.base === base && coverage.branch === status?.branch
+    && coverage.headOid === status?.oid && coverage.baseOid === baseOid;
 }
