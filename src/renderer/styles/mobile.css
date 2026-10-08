@@ -175,7 +175,6 @@
   html .settings-switch span { width: 24px; height: 24px; }
   html .settings-switch[aria-checked="true"] span { transform: translateX(16px); }
 
-  html .settings-dialog-general .settings-shell { height: 100%; }
   html .settings-panel-body-general { padding: 0; }
   html .settings-general-content, html .github-settings-content { padding: 12px; }
   html .github-scope-tabs { width: 100%; }
