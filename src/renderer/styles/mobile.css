@@ -354,7 +354,7 @@
 }
 
 @media (min-width: 768px) and (max-width: 1100px) {
-  html .toolbar { height: auto; min-height: var(--toolbar-height); flex-wrap: wrap; padding-block: 5px; }
+  html .toolbar { height: auto; min-height: var(--toolbar-height); flex-wrap: wrap; justify-content: flex-end; padding-block: 5px; }
   html .open-files-strip { order: 2; flex: 1 0 100%; min-width: 0; }
 }
 
