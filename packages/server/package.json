@@ -22,7 +22,7 @@
   },
   "dependencies": {
     "trash": "9.0.0",
-    "ws": "8.21.3"
+    "ws": "8.22.0"
   },
   "engines": {
     "node": ">=24"
@@ -55,7 +55,7 @@
     "provenance": true
   },
   "devDependencies": {
-    "@types/ws": "8.18.1",
+    "@types/ws": "8.18.2",
     "uqr": "0.1.3"
   }
 }
