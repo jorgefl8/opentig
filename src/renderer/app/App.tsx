@@ -837,10 +837,6 @@ export default function App() {
     });
   }, [filesTreeStates]);
 
-  useEffect(() => {
-    if (accountSetup && accountSetup.repository.id !== repository?.id) setAccountSetup(null);
-  }, [accountSetup, repository?.id]);
-
   const openRepository = useCallback(async () => {
     setOpenRepositoryDialog(true);
   }, []);
@@ -1953,15 +1949,18 @@ export default function App() {
     recordOpenedRepository(await opentig.repository.relocateRecent(option.recent.id, path), option.recent.id);
   };
 
-  const browserRepositoryDialog = <OpenRepositoryDialog open={openRepositoryDialog} recent={bootstrap?.recentRepositories} onPick={window.opentigDesktop ? opentig.repository.select : undefined} onOpenChange={setOpenRepositoryDialog} onBrowse={opentig.repository.browseDirectories} onOpen={async (path) => {
+  const browserRepositoryDialog = <OpenRepositoryDialog confirmLabel="Continue"
+    description={window.opentigDesktop ? 'Choose a Git repository, then review its GitHub and Git accounts.' : 'Choose a Git repository on your server, then review its GitHub and Git accounts.'} open={openRepositoryDialog} recent={bootstrap?.recentRepositories} onPick={window.opentigDesktop ? opentig.repository.select : undefined} onOpenChange={setOpenRepositoryDialog} onBrowse={opentig.repository.browseDirectories} onOpen={async (path) => {
     addingRepository.current = true;
     try {
-      const selected = await opentig.repository.openPath(path);
+      const selected = await opentig.repository.preparePath(path);
       const isNew = !bootstrap?.recentRepositories.some(item => normalizeRepositoryKey(item.commonDir) === normalizeRepositoryKey(selected.commonDir));
-      recordOpenedRepository(selected);
       setAccountSetup({ repository: selected, isNew });
     } finally { addingRepository.current = false; }
   }} />;
+
+  const repositoryAccountDialog = accountSetup && !openRepositoryDialog && <RepositoryAccountSetup key={accountSetup.repository.id} {...accountSetup}
+    onClose={() => setAccountSetup(null)} onAdded={selected => { recordOpenedRepository(selected); setAccountSetup(null); }} />;
 
   if (!bootstrap) {
     return <SplashScreen heading={appDisplayName} detail={startupSplashDetail(connectionState)} />;
@@ -1970,6 +1969,7 @@ export default function App() {
     return (
       <TooltipProvider>
         {browserRepositoryDialog}
+        {repositoryAccountDialog}
         <div className="fixed right-4 top-4 z-40"><DesktopUpdateIndicator /></div>
         <Welcome recent={bootstrap.recentRepositories} onOpen={openRepository} onRecent={(id) => void selectRecent(id)} />
       </TooltipProvider>
@@ -1985,8 +1985,7 @@ export default function App() {
     <ShortcutsProvider shortcuts={shortcuts}>
     <TooltipProvider>
       {browserRepositoryDialog}
-      {accountSetup && accountSetup.repository.id === repository.id && !openRepositoryDialog && !settingsOpen && <RepositoryAccountSetup key={accountSetup.repository.id} {...accountSetup}
-        onClose={() => setAccountSetup(null)} onSettings={() => { setSettingsSection('github'); setSettingsOpen(true); }} />}
+      {repositoryAccountDialog}
       {quickOpen && (
         <Suspense fallback={null}>
           <QuickOpenDialog

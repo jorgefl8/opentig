@@ -22,6 +22,55 @@ afterEach(async () => {
 });
 
 describe('authoritative HTTP server', () => {
+  it('does not add or broadcast a prepared repository until its reviewed account setup completes', async () => {
+    const fixture = await startFixture();
+    const services = fixture.server.runtime.services;
+    const activePath = path.join(fixture.directory, 'active');
+    const candidatePath = path.join(fixture.directory, 'candidate');
+    await execFileAsync('git', ['init', activePath]);
+    await execFileAsync('git', ['init', candidatePath]);
+    const active = await services.repositories.openPath(activePath);
+    const authenticated = await postJson(`${fixture.server.origin}/api/auth/desktop`, { secret: fixture.desktopSecret }, fixture.server.origin);
+    const socket = await openWebSocket(fixture.server.origin, cookieValue(authenticated.cookie));
+    const observer = await openWebSocket(fixture.server.origin, cookieValue(authenticated.cookie));
+    const changes: unknown[] = [];
+    observer.on('message', raw => {
+      const message = JSON.parse(raw.toString());
+      if (message.type === 'event' && message.event?.type === 'repository.active-changed') changes.push(message.event);
+    });
+    let sequence = 0;
+    const request = (command: string, args: unknown[]) => new Promise<{ ok: boolean; value?: { id: string }; error?: { message: string } }>(resolve => {
+      const id = String(++sequence);
+      const receive = (raw: WebSocket.RawData) => {
+        const message = JSON.parse(raw.toString());
+        if (message.type === 'result' && message.id === id) { socket.off('message', receive); resolve(message.result); }
+      };
+      socket.on('message', receive);
+      socket.send(JSON.stringify({ type: 'request', id, command, args }));
+    });
+    try {
+      const prepared = await request('repository:prepare-path', [candidatePath]);
+      expect(prepared.ok).toBe(true);
+      const candidate = services.repositories.get(prepared.value!.id);
+      expect(services.repositories.recents().map(item => item.id)).toEqual([active.id]);
+      expect(services.settings.activeRepositoryId).toBe(active.id);
+      expect(changes).toEqual([]);
+      const revision = services.github.accounts.revisionFor(candidate);
+      await services.github.accounts.setSelection(candidate, { mode: 'auto' });
+      const stale = await request('repository:complete-setup', [candidate.id, revision]);
+      expect(stale.ok).toBe(false);
+      expect(stale.error?.message).toContain('account changed');
+      expect(services.repositories.recents().map(item => item.id)).toEqual([active.id]);
+      expect(services.settings.activeRepositoryId).toBe(active.id);
+      expect(changes).toEqual([]);
+      const added = await request('repository:complete-setup', [candidate.id, services.github.accounts.revisionFor(candidate)]);
+      expect(added).toMatchObject({ ok: true, value: { id: candidate.id } });
+      expect(services.settings.activeRepositoryId).toBe(candidate.id);
+      expect(services.repositories.recents()).toHaveLength(2);
+      await vi.waitFor(() => expect(changes).toHaveLength(1));
+    } finally { socket.close(); observer.close(); }
+  });
+
   it.each(['127.0.0.1', '0.0.0.0'])('reports the actual listener separately from browser access on %s', async (host) => {
     const fixture = await startFixture({ host, mode: 'web-access' });
     const origin = fixture.server.origin;

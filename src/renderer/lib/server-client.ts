@@ -56,6 +56,8 @@ export function createOpenTigServerClient(options: ServerClientOptions = {}): Op
       moveRepository: (repositoryKey, toIndex) => invoke(IPC.projectMoveRepository, repositoryKey, toIndex),
     },
     repository: {
+      preparePath: (path) => invoke(IPC.repositoryPreparePath, path),
+      completeSetup: (id, revision) => invoke(IPC.repositoryCompleteSetup, id, revision),
       openPath: (path) => invoke(IPC.repositoryOpenPath, path),
       browseDirectories: (path) => path === undefined ? invoke(IPC.repositoryBrowseDirectories) : invoke(IPC.repositoryBrowseDirectories, path),
       openRecent: (id) => invoke(IPC.repositoryOpenRecent, id),

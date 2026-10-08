@@ -91,6 +91,20 @@ export function registerServerCommands(
   handle(IPC.projectAssign, 'project-assign', (repositoryKey, projectId) => services.settings.assignRepositoryProject(repositoryKeyArg(repositoryKey, 'project-assign'), nullableProjectIdArg(projectId, 'project-assign')));
   handle(IPC.projectMove, 'project-move', (projectId, toIndex) => services.settings.moveRepositoryProject(projectIdArg(projectId, 'project-move'), orderingIndexArg(toIndex, 'project-move')));
   handle(IPC.projectMoveRepository, 'project-move-repository', (repositoryKey, toIndex) => services.settings.moveRepository(repositoryKeyArg(repositoryKey, 'project-move-repository'), orderingIndexArg(toIndex, 'project-move-repository')));
+  handle(IPC.repositoryPreparePath, 'prepare-path', path => services.repositories.preparePath(stringArg(path, 'prepare-path', 32_768)));
+  handleWithContext(IPC.repositoryCompleteSetup, 'complete-setup', async (context, id, revision) => {
+    const repositoryId = stringArg(id, 'complete-setup', 64);
+    if (typeof revision !== 'number' || !Number.isSafeInteger(revision) || revision < 0) throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'complete-setup', message: 'Invalid account revision.' });
+    const repository = await services.repositories.completeSetup(repositoryId, () => {
+      if (revision !== services.github.accounts.revisionFor(services.repositories.get(repositoryId))) {
+        throw new Error('The repository account changed. Reload setup and review it again.');
+      }
+    });
+    fileClipboardState(context).pendingCut = null;
+    services.watcher.start(repository);
+    services.events.activeRepositoryChanged(repository);
+    return repository;
+  });
   handleWithContext(IPC.repositoryOpenPath, 'open-path', (context, selectedPath) => openRepositoryPath(
     stringArg(selectedPath, 'open-path', 32_768), context,
   ));
