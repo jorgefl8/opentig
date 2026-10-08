@@ -30,7 +30,7 @@ export function RepositoryAiSettings({ repository }: { repository: RepositoryInf
     <div className="settings-general-row settings-general-toggle">
       <div className="settings-field-label">
         <strong id="repository-ai-instructions-label">Use repository instructions</strong>
-        <span id="repository-ai-instructions-description">Apply writing conventions to commit messages and PR drafts. Off by default.</span>
+        <span id="repository-ai-instructions-description">Apply repository terminology and structure to commit messages and PR drafts. English and Conventional Commits stay required. Off by default.</span>
       </div>
       <div className="settings-general-control">
         <span className="settings-general-switch-state" aria-hidden="true">{query.data?.enabled ? 'On' : 'Off'}</span>

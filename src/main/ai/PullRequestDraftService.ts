@@ -38,9 +38,9 @@ export class PullRequestDraftService {
     let usage: AiUsage = { ...EMPTY_AI_USAGE };
     let contextTruncated: boolean | null = null;
     try {
-      const context = await this.operations.getPullRequestDraftContext(input.repositoryId, input.base);
-      contextTruncated = context.truncated;
       const instructions = await this.instructions?.snapshot(input.repositoryId);
+      const context = await this.operations.getPullRequestDraftContext(input.repositoryId, input.base, instructions?.files);
+      contextTruncated = context.truncated;
       throwIfCancelled(signal, input.harness);
       const generated = await provider.generate({ repositoryPath: context.repositoryPath, prompt: buildPullRequestPrompt(context, instructions?.files), schema: PR_DRAFT_SCHEMA, model: input.model, signal });
       usage = generated.usage;

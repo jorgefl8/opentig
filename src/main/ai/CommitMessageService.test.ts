@@ -32,10 +32,10 @@ function recorder(): AiLogRecorder & { entries: Parameters<AiLogRecorder['append
 const splitProvider = (): AiProvider => ({
   id: 'codex', status: async () => ready('codex'), generate: async () => ({
     output: {
-      subject: 'Update docs and app', body: '', rationale: 'The changes have independent responsibilities.',
+      subject: 'feat: update docs and app', body: '', rationale: 'The changes have independent responsibilities.',
       commits: [
-        { subject: 'Update documentation', body: '', reason: 'Documentation is self-contained.', paths: ['README.md'] },
-        { subject: 'Update application', body: '', reason: 'Runtime behavior is separate.', paths: ['src/app.ts'] },
+        { subject: 'docs: update documentation', body: '', reason: 'Documentation is self-contained.', paths: ['README.md'] },
+        { subject: 'feat: update application', body: '', reason: 'Runtime behavior is separate.', paths: ['src/app.ts'] },
       ],
     },
     usage: { ...EMPTY_AI_USAGE, inputTokens: 120, outputTokens: 40, costUsd: 0.02 },
@@ -56,21 +56,21 @@ describe('CommitMessageService', () => {
   });
 
   it('routes to only the selected provider', async () => {
-    const codexGenerate = vi.fn(async () => ({ output: { subject: 'Add AI', body: '' }, usage: { ...EMPTY_AI_USAGE } }));
-    const claudeGenerate = vi.fn(async () => ({ output: { subject: 'Wrong provider', body: '' }, usage: { ...EMPTY_AI_USAGE } }));
+    const codexGenerate = vi.fn(async () => ({ output: { subject: 'feat(ai): add assistance', body: '' }, usage: { ...EMPTY_AI_USAGE } }));
+    const claudeGenerate = vi.fn(async () => ({ output: { subject: 'feat: wrong provider', body: '' }, usage: { ...EMPTY_AI_USAGE } }));
     const providers: AiProvider[] = [
       { id: 'codex', status: async () => ready('codex'), generate: codexGenerate },
       { id: 'claude', status: async () => ready('claude'), generate: claudeGenerate },
     ];
     const service = new CommitMessageService(operations(), providers);
     const result = await service.generate({ repositoryId: 'repo', harness: 'codex', model: 'default', requestId: 'request-1' });
-    expect(result.message).toBe('Add AI');
+    expect(result.message).toBe('feat(ai): add assistance');
     expect(codexGenerate).toHaveBeenCalledOnce();
     expect(claudeGenerate).not.toHaveBeenCalled();
   });
 
   it('does not fall back when the selected provider fails', async () => {
-    const fallback = vi.fn(async () => ({ output: { subject: 'Fallback', body: '' }, usage: { ...EMPTY_AI_USAGE } }));
+    const fallback = vi.fn(async () => ({ output: { subject: 'feat: fallback', body: '' }, usage: { ...EMPTY_AI_USAGE } }));
     const providers: AiProvider[] = [
       { id: 'codex', status: async () => ready('codex'), generate: async () => { throw new AiOperationError({ code: 'AI_RATE_LIMITED', operation: 'test', harness: 'codex', message: 'limited' }); } },
       { id: 'claude', status: async () => ready('claude'), generate: fallback },
@@ -80,8 +80,19 @@ describe('CommitMessageService', () => {
     expect(fallback).not.toHaveBeenCalled();
   });
 
+  it('rejects a non-conventional subject without rewriting it or retrying generation', async () => {
+    const log = recorder();
+    const generate = vi.fn(async () => ({ output: { subject: 'Add a harness', body: '' }, usage: { ...EMPTY_AI_USAGE } }));
+    const service = new CommitMessageService(operations(), [{ id: 'codex', status: async () => ready('codex'), generate }], log);
+    await expect(service.generate({ repositoryId: 'repo', harness: 'codex', model: 'default', requestId: 'invalid-subject' }))
+      .rejects.toMatchObject({ detail: { code: 'AI_INVALID_OUTPUT', retryable: true } });
+    expect(generate).toHaveBeenCalledOnce();
+    expect(log.entries[0]).toMatchObject({ status: 'failed', errorCode: 'AI_INVALID_OUTPUT' });
+    expect(log.entries[0]).not.toHaveProperty('output');
+  });
+
   it('rejects a result when staged context changes', async () => {
-    const provider: AiProvider = { id: 'codex', status: async () => ready('codex'), generate: async () => ({ output: { subject: 'Add AI', body: '' }, usage: { ...EMPTY_AI_USAGE } }) };
+    const provider: AiProvider = { id: 'codex', status: async () => ready('codex'), generate: async () => ({ output: { subject: 'feat(ai): add assistance', body: '' }, usage: { ...EMPTY_AI_USAGE } }) };
     const service = new CommitMessageService(operations(['before', 'after']), [provider]);
     await expect(service.generate({ repositoryId: 'repo', harness: 'codex', model: 'default', requestId: 'request-3' })).rejects.toMatchObject({ detail: { code: 'AI_STAGED_CHANGES_CHANGED' } });
   });
@@ -135,11 +146,11 @@ describe('CommitMessageService', () => {
     const provider: AiProvider = {
       id: 'codex', status: async () => ready('codex'), generate: async () => ({
         output: {
-          subject: 'Update things', body: '', rationale: 'Two concerns.',
+          subject: 'chore: update files', body: '', rationale: 'Two concerns.',
           // Leaves src/app.ts uncovered, which the parser must refuse.
           commits: [
-            { subject: 'One', body: '', reason: 'a', paths: ['README.md'] },
-            { subject: 'Two', body: '', reason: 'b', paths: ['README.md'] },
+            { subject: 'docs: update one', body: '', reason: 'a', paths: ['README.md'] },
+            { subject: 'docs: update two', body: '', reason: 'b', paths: ['README.md'] },
           ],
         },
         usage: { ...EMPTY_AI_USAGE },

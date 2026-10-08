@@ -154,6 +154,23 @@ describe('pull-request context coverage', () => {
     expect(context.patch.length).toBeLessThanOrEqual(400000);
     expect(buildPullRequestPrompt(context).length).toBeLessThanOrEqual(PR_PROMPT_CHARACTER_LIMIT);
   });
+
+  it('includes serialized repository conventions in the prompt budget and reported size', async () => {
+    const fixture = await standaloneRepository();
+    await git(fixture.work, ['switch', '-c', 'feature']);
+    await writeFile(path.join(fixture.work, 'large.txt'), 'large line\n'.repeat(60000));
+    await git(fixture.work, ['add', '.']);
+    await git(fixture.work, ['commit', '-m', 'Large change']);
+    // Valid UTF-8 within the 32 KiB instruction limit, larger after JSON quoting.
+    const instructions = [{ name: 'AGENTS.md', text: 'Repository conventions\n' + '\n'.repeat(32000) }];
+    const context = await fixture.operations.getPullRequestDraftContext(fixture.repositoryId, 'main', instructions);
+    const prompt = buildPullRequestPrompt(context, instructions);
+    expect(prompt).toContain('Repository conventions');
+    expect(prompt.length).toBeLessThanOrEqual(PR_PROMPT_CHARACTER_LIMIT);
+    expect(context.coverage.promptCharacters).toBe(prompt.length);
+    expect(context.coverage.files[0]).toMatchObject({ path: 'large.txt', detail: 'partial' });
+    expect(context.coverage.files[0]!.omittedChangedLines).toBeGreaterThan(0);
+  });
 });
 
 describe('GitRepositoryOperations commit groups', () => {

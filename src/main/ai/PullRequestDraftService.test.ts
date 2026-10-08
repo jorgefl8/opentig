@@ -11,7 +11,7 @@ const context = draftContext();
 const request = { repositoryId: 'repo', harness: 'grok' as const, model: 'grok-test', base: 'main', requestId: 'grok-pr' };
 function fixture(changed = false) {
   const operations = { getPullRequestDraftContext: vi.fn().mockResolvedValue(context), getPullRequestDraftSnapshot: vi.fn().mockResolvedValue({ fingerprint: changed ? 'changed' : 'same' }) } as unknown as GitRepositoryOperations;
-  const generate = vi.fn(async () => ({ output: { title: 'Add feature', body: 'Describe the feature.' }, usage: { ...EMPTY_AI_USAGE, inputTokens: 10, outputTokens: 5 } }));
+  const generate = vi.fn(async () => ({ output: { title: 'feat: add feature', body: 'Describe the feature.' }, usage: { ...EMPTY_AI_USAGE, inputTokens: 10, outputTokens: 5 } }));
   const provider: AiProvider = { id: 'grok', status: async () => ({ id: 'grok', label: 'Grok Build', installed: true, availability: 'ready', authStatus: 'authenticated', checkedAt: '', models: [] }), generate };
   const entries: Parameters<AiLogRecorder['append']>[0][] = [];
   const service = new PullRequestDraftService(operations, [provider], { append: (entry) => { entries.push(entry); } });
@@ -20,7 +20,7 @@ function fixture(changed = false) {
 describe('Grok pull-request drafts', () => {
   it('routes the selected model and validates the draft while logging only metadata', async () => {
     const { service, generate, entries } = fixture();
-    expect(await service.generate(request)).toMatchObject({ title: 'Add feature', body: 'Describe the feature.', harness: 'grok', model: 'grok-test', coverage: context.coverage });
+    expect(await service.generate(request)).toMatchObject({ title: 'feat: add feature', body: 'Describe the feature.', harness: 'grok', model: 'grok-test', coverage: context.coverage });
     expect(generate).toHaveBeenCalledWith(expect.objectContaining({ schema: PR_DRAFT_SCHEMA, model: 'grok-test', prompt: expect.stringContaining('+feature') }));
     expect(entries[0]).toMatchObject({ operation: 'pull-request-draft', harness: 'grok', status: 'success', usage: { inputTokens: 10, outputTokens: 5, costUsd: null } });
     expect(entries[0]).not.toHaveProperty('prompt');
@@ -30,5 +30,13 @@ describe('Grok pull-request drafts', () => {
     const { service, entries } = fixture(true);
     await expect(service.generate(request)).rejects.toMatchObject({ detail: { code: 'AI_STAGED_CHANGES_CHANGED', harness: 'grok' } });
     expect(entries[0]).toMatchObject({ status: 'failed', harness: 'grok' });
+  });
+  it('rejects a non-conventional title without adding a prefix or making another provider call', async () => {
+    const { service, generate, entries } = fixture();
+    generate.mockResolvedValueOnce({ output: { title: 'Add a harness', body: 'Adds CLI support.' }, usage: { ...EMPTY_AI_USAGE, inputTokens: 10, outputTokens: 5 } });
+    await expect(service.generate(request)).rejects.toMatchObject({ detail: { code: 'AI_INVALID_OUTPUT', retryable: true } });
+    expect(generate).toHaveBeenCalledOnce();
+    expect(entries[0]).toMatchObject({ status: 'failed', errorCode: 'AI_INVALID_OUTPUT' });
+    expect(entries[0]).not.toHaveProperty('output');
   });
 });
