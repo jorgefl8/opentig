@@ -68,10 +68,10 @@ export class GitRemoteBranches {
     return { branch, ...mappings[0]!, branchName: mappings[0]!.sourceRef.slice('refs/heads/'.length) };
   }
 
-  private async destination(target: Target, run: Run) {
+  private async destination(target: Target, run: Run, root: string) {
     const fetchUrls = (await run(['remote', 'get-url', '--all', '--', target.remote], read)).stdout.toString('utf8').trim().split(/\r?\n/);
     const pushUrls = (await run(['remote', 'get-url', '--push', '--all', '--', target.remote], read)).stdout.toString('utf8').trim().split(/\r?\n/);
-    const id = createHash('sha256').update(JSON.stringify([target.remote, target.sourceRef, fetchUrls, pushUrls])).digest('hex');
+    const id = createHash('sha256').update(JSON.stringify([target.remote, target.sourceRef, fetchUrls, pushUrls, this.git.authenticationKey?.(root)])).digest('hex');
     const blocked = fetchUrls.length !== 1 || pushUrls.length !== 1 || fetchUrls[0] !== pushUrls[0]
       ? 'Fetch and push destinations differ or have multiple URLs. Manage remote deletion outside OpenTig.' : null;
     return { id, blocked, url: fetchUrls[0]! };
@@ -88,7 +88,7 @@ export class GitRemoteBranches {
     const run = this.reader(this.repositories.get(repositoryId).path);
     const target = await this.target(fullName, run);
     if (!target) throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'remote-branch-details', message: 'The remote reference no longer exists. Fetch branches again.' });
-    const destination = await this.destination(target, run);
+    const destination = await this.destination(target, run, this.repositories.get(repositoryId).path);
     let blocked = destination.blocked;
     let defaultRef: string | null = null;
     let remoteState: RemoteBranchDetails['remoteState'] = 'unchecked';
@@ -132,7 +132,7 @@ export class GitRemoteBranches {
       const target = await this.target(request.fullName, run);
       if (!target) return { status: 'missing' };
       if (target.branch.oid !== request.expectedOid) return { status: 'stale' };
-      const destination = await this.destination(target, run);
+      const destination = await this.destination(target, run, repository.path);
       if (destination.id !== request.destinationId) return { status: 'destination-changed' };
       if (destination.blocked) return { status: 'rejected', message: destination.blocked };
       try {

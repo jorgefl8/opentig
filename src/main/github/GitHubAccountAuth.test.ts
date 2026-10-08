@@ -44,7 +44,7 @@ function fixture(options: {
     { discover: async () => [{ executable: 'gh', alias: 'gh', source: 'process-path', env: candidateEnv }], warning: async () => undefined } as unknown as CliResolver,
     { run } as unknown as CliProcessRunner,
     { run: async (cwd: string, args: string[]) => ({ stdout: Buffer.from(args.includes('core.sshCommand') ? '' : options.remote ?? `git@team-${cwd}:example/demo.git`) }) } as unknown as GitProcess,
-    { get: (id: string) => ({ path: id, id }), status: async () => ({ branch: 'feature', upstream: 'origin/feature', ahead: 0, detached: false, unborn: false }) } as unknown as RepositoryService,
+    { get: (id: string) => ({ path: id, commonDir: `${id}/.git`, id }), status: async () => ({ branch: 'feature', upstream: 'origin/feature', ahead: 0, detached: false, unborn: false }) } as unknown as RepositoryService,
   );
   return { service, run, bodies, candidateEnv };
 }

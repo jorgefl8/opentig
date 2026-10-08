@@ -12,6 +12,7 @@ import { OpenCodeProvider } from '../ai/providers/OpenCodeProvider';
 import { FileOperationHistory } from '../files/FileOperationHistory';
 import { FileService } from '../files/FileService';
 import { RepositoryWatcher } from '../files/RepositoryWatcher';
+import { RepositoryGitAccess } from '../git/RepositoryGitAccess';
 import { GitProcess } from '../git/GitProcess';
 import { GitRepositoryOperations } from '../git/GitRepositoryOperations';
 import { RepositoryService } from '../git/RepositoryService';
@@ -77,8 +78,12 @@ export async function createOpenTigRuntime(
   let runtime: OpenTigRuntime | null = null;
   const githubAccounts = new GitHubAccountsService(cliResolver, cliRunner, git, settings,
     new GitHubStatusStore(path.join(path.dirname(options.settingsPath), 'github-status.json')),
-    () => runtime?.publishGitHubAccountsChange());
+    (repository, defaultOnly) => runtime?.publishGitHubAccountsChange(repository?.commonDir, defaultOnly));
+  const gitAccess = new RepositoryGitAccess(git, repositories, githubAccounts, cliRunner);
+  gitAccess.install();
+  operations.access = gitAccess;
   const github = new GitHubService(cliResolver, cliRunner, git, repositories, githubAccounts);
+  github.gitAccess = gitAccess;
   const events = {
     repositoryChanged: (repositoryId: string, scope: Parameters<OpenTigRuntime['publishRepositoryChange']>[1]) => {
       runtime?.publishRepositoryChange(repositoryId, scope);

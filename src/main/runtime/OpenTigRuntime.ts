@@ -1,3 +1,4 @@
+import { githubRepositoryKey } from '../../shared/github-accounts';
 import type { OpenTigPlatform, OpenTigRuntimeMode, RepositoryInfo } from '../../shared/contracts';
 import type { RepositoryChangeScope } from '../../shared/repository-change';
 import { mergeRepositoryChangeScopes } from '../../shared/repository-change';
@@ -83,8 +84,14 @@ export class OpenTigRuntime {
     this.onEvent({ type: 'repository.changed', repositoryId, scope });
   }
 
-  publishGitHubAccountsChange(): void {
-    if (!this.closePromise) this.onEvent({ type: 'github.accounts-changed' });
+  publishGitHubAccountsChange(commonDir?: string, defaultOnly = false): void {
+    if (this.closePromise) return;
+    const repositories = this.services.repositories.recents();
+    const repositoryIds = defaultOnly ? repositories.filter(repo => {
+      const selection = this.settings.githubAccount(repo.commonDir);
+      return selection.mode === 'account' && selection.useGlobalDefault;
+    }).map(repo => repo.id) : commonDir ? repositories.filter(repo => githubRepositoryKey(repo.commonDir) === githubRepositoryKey(commonDir)).map(repo => repo.id) : undefined;
+    this.onEvent({ type: 'github.accounts-changed', ...(repositoryIds ? { repositoryIds } : {}), ...(defaultOnly ? { inventoryChanged: true } : {}) });
   }
 
   publishActiveRepositoryChange(repository: RepositoryInfo): void {

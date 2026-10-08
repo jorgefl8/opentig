@@ -14,7 +14,7 @@ import { CommandRegistry, type CommandExecutionContext } from './CommandRegistry
 import type { OpenTigHost } from './OpenTigHost';
 import type { OpenTigRuntimeServices } from './OpenTigRuntime';
 import { aiString, booleanArg, branchDetailsArg, createPullRequestArg, deleteBranchArg, filesTreeStateArg, generateCommitMessageArg, generatePullRequestDraftArg, nullableProjectIdArg, oidArg, openFilesStateArg, pathsArg, prepareCommitGroupArg, prNumberArg, publishBranchArg, projectIdArg, projectNameArg, pullRequestStatesArg, removeWorktreeArg, repositoryKeyArg, searchOptionsArg, searchReplaceArg, stringArg, textArg, worktreeDetailsArg } from './validators';
-import { createTrackingBranchArg, deleteRemoteBranchArg } from './validators';
+import { createTrackingBranchArg, deleteRemoteBranchArg, orderingIndexArg } from './validators';
 
 export function registerServerCommands(
   registry: CommandRegistry,
@@ -89,6 +89,22 @@ export function registerServerCommands(
   handle(IPC.projectRename, 'project-rename', (projectId, name) => services.settings.renameRepositoryProject(projectIdArg(projectId, 'project-rename'), projectNameArg(name, 'project-rename')));
   handle(IPC.projectRemove, 'project-remove', (projectId) => services.settings.removeRepositoryProject(projectIdArg(projectId, 'project-remove')));
   handle(IPC.projectAssign, 'project-assign', (repositoryKey, projectId) => services.settings.assignRepositoryProject(repositoryKeyArg(repositoryKey, 'project-assign'), nullableProjectIdArg(projectId, 'project-assign')));
+  handle(IPC.projectMove, 'project-move', (projectId, toIndex) => services.settings.moveRepositoryProject(projectIdArg(projectId, 'project-move'), orderingIndexArg(toIndex, 'project-move')));
+  handle(IPC.projectMoveRepository, 'project-move-repository', (repositoryKey, toIndex) => services.settings.moveRepository(repositoryKeyArg(repositoryKey, 'project-move-repository'), orderingIndexArg(toIndex, 'project-move-repository')));
+  handle(IPC.repositoryPreparePath, 'prepare-path', path => services.repositories.preparePath(stringArg(path, 'prepare-path', 32_768)));
+  handleWithContext(IPC.repositoryCompleteSetup, 'complete-setup', async (context, id, revision) => {
+    const repositoryId = stringArg(id, 'complete-setup', 64);
+    if (typeof revision !== 'number' || !Number.isSafeInteger(revision) || revision < 0) throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'complete-setup', message: 'Invalid account revision.' });
+    const repository = await services.repositories.completeSetup(repositoryId, () => {
+      if (revision !== services.github.accounts.revisionFor(services.repositories.get(repositoryId))) {
+        throw new Error('The repository account changed. Reload setup and review it again.');
+      }
+    });
+    fileClipboardState(context).pendingCut = null;
+    services.watcher.start(repository);
+    services.events.activeRepositoryChanged(repository);
+    return repository;
+  });
   handleWithContext(IPC.repositoryOpenPath, 'open-path', (context, selectedPath) => openRepositoryPath(
     stringArg(selectedPath, 'open-path', 32_768), context,
   ));
@@ -384,7 +400,8 @@ export function registerServerCommands(
     return services.operations.removeWorktree(repositoryId, path, expectedOid, force, deleteBranch);
   });
   handle(IPC.refsPull, 'pull', (id) => services.operations.pull(stringArg(id, 'pull', 64)));
-  handle(IPC.refsPush, 'push', (id, publish) => services.operations.push(stringArg(id, 'push', 64), publishBranchArg(publish)));
+  handle(IPC.refsPushContext, 'push-context', (id, remote) => services.operations.publicationContext(stringArg(id, 'push-context', 64), remote == null ? undefined : stringArg(remote, 'push-context', 512)));
+  handle(IPC.refsPush, 'push', (id, publish, expected) => services.operations.push(stringArg(id, 'push', 64), publishBranchArg(publish), expected == null ? undefined : stringArg(expected, 'push', 64)));
   handle(IPC.refsFetch, 'fetch', (id) => services.operations.fetch(stringArg(id, 'fetch', 64)));
   handle(IPC.aiStatuses, 'ai-statuses', (forceRefresh) => services.ai.statuses(booleanArg(forceRefresh, 'ai-statuses')));
   handleWithContext(IPC.aiGenerateCommitMessage, 'ai-generate-commit-message', (context, input) => (
@@ -411,11 +428,13 @@ export function registerServerCommands(
     services.ai.cancel(aiString(requestId, 'ai-cancel-generation', 100, true));
   });
   handle(IPC.githubAccountsStatus, 'gh-accounts-status', (forceRefresh) => services.github.accounts.status(booleanArg(forceRefresh, 'gh-accounts-status')));
+  handle(IPC.githubSetDefaultAccount, 'gh-set-default-account', (login) => services.github.accounts.setDefaultAccount(stringArg(login, 'gh-set-default-account', 39)));
   handle(IPC.githubRepositoryAccount, 'gh-repository-account', (id, forceRefresh) => services.github.repositoryAccount(stringArg(id, 'gh-repository-account', 64), booleanArg(forceRefresh, 'gh-repository-account')));
-  handle(IPC.githubSetRepositoryAccount, 'gh-set-repository-account', (id, selection) => {
+  handle(IPC.githubSetRepositoryAccount, 'gh-set-repository-account', (id, selection, expectedRevision) => {
     const parsed = githubAccountSelectionSchema.safeParse(selection);
+    if (expectedRevision !== undefined && (typeof expectedRevision !== 'number' || !Number.isSafeInteger(expectedRevision) || expectedRevision < 0)) throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'gh-set-repository-account', message: 'Invalid account revision.' });
     if (!parsed.success) throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'gh-set-repository-account', message: 'Invalid GitHub account selection.' });
-    return services.github.setRepositoryAccount(stringArg(id, 'gh-set-repository-account', 64), parsed.data);
+    return services.github.setRepositoryAccount(stringArg(id, 'gh-set-repository-account', 64), parsed.data, typeof expectedRevision === 'number' ? expectedRevision : undefined);
   });
   handle(IPC.githubStatus, 'gh-status', (forceRefresh) => services.github.status(booleanArg(forceRefresh, 'gh-status')));
   handle(IPC.githubRepositoryInfo, 'gh-repository-info', (id) => services.github.repositoryInfo(stringArg(id, 'gh-repository-info', 64)));

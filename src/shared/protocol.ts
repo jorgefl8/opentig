@@ -43,7 +43,11 @@ export const OPEN_TIG_SERVER_COMMANDS = {
   'projects.rename': command(IPC.projectRename, 'project-rename', true),
   'projects.remove': command(IPC.projectRemove, 'project-remove', true),
   'projects.assign': command(IPC.projectAssign, 'project-assign', true),
+  'projects.moveProject': command(IPC.projectMove, 'project-move', true),
+  'projects.moveRepository': command(IPC.projectMoveRepository, 'project-move-repository', true),
 
+  'repository.preparePath': command(IPC.repositoryPreparePath, 'prepare-path', false),
+  'repository.completeSetup': command(IPC.repositoryCompleteSetup, 'complete-setup', true),
   'repository.openPath': command(IPC.repositoryOpenPath, 'open-path', true),
   'repository.browseDirectories': command(IPC.repositoryBrowseDirectories, 'browse-directories', false),
   'repository.openRecent': command(IPC.repositoryOpenRecent, 'open-recent', true),
@@ -97,6 +101,7 @@ export const OPEN_TIG_SERVER_COMMANDS = {
   'refs.listWorktrees': command(IPC.worktreesList, 'worktrees', false),
   'refs.selectWorktree': command(IPC.worktreeSelect, 'select-worktree', true),
   'refs.pull': command(IPC.refsPull, 'pull', true),
+  'refs.pushContext': command(IPC.refsPushContext, 'push-context', false),
   'refs.push': command(IPC.refsPush, 'push', true),
   'refs.fetch': command(IPC.refsFetch, 'fetch', true),
   'refs.localRefsSnapshot': command(IPC.localRefsSnapshot, 'local-refs-snapshot', false),
@@ -117,6 +122,7 @@ export const OPEN_TIG_SERVER_COMMANDS = {
 
   'github.accountsStatus': command(IPC.githubAccountsStatus, 'gh-accounts-status', false, { timeoutMs: 90_000 }),
   'github.repositoryAccount': command(IPC.githubRepositoryAccount, 'gh-repository-account', false, { timeoutMs: 60_000 }),
+  'github.setDefaultAccount': command(IPC.githubSetDefaultAccount, 'gh-set-default-account', true),
   'github.setRepositoryAccount': command(IPC.githubSetRepositoryAccount, 'gh-set-repository-account', true),
   'github.status': command(IPC.githubStatus, 'gh-status', false),
   'github.repositoryInfo': command(IPC.githubRepositoryInfo, 'gh-repository-info', false),

@@ -11,7 +11,7 @@ import type { GitProcess } from '../git/GitProcess';
 import type { RepositoryService } from '../git/RepositoryService';
 import { parseGitHubRemote, parseSshRemote } from './GitHubRemoteParser';
 import { GH_ENV, redactCommandToken, type GitHubCommandAuth } from './GitHubAccountAuth';
-import { parseCreatedPullRequestUrl, parsePullRequestDetails, parsePullRequestList, PR_DETAIL_FIELDS, PR_SUMMARY_FIELDS, selectPullRequestsNewestFirst, sortPullRequestsNewestFirst } from './PullRequestParser';
+import { parseBranchPullRequestList, parseCreatedPullRequestUrl, parsePullRequestDetails, parsePullRequestList, PR_DETAIL_FIELDS, PR_SUMMARY_FIELDS, selectPullRequestsNewestFirst, sortPullRequestsNewestFirst } from './PullRequestParser';
 
 import { GitHubAccountsService } from './GitHubAccountsService';
 import type { GitHubAccountSelection } from '../../shared/github-accounts';
@@ -28,6 +28,7 @@ interface GhRunOptions {
 }
 
 export class GitHubService {
+  gitAccess?: import('../git/RepositoryGitAccess').RepositoryGitAccess;
   readonly accounts: GitHubAccountsService;
 
   constructor(
@@ -49,15 +50,17 @@ export class GitHubService {
     const repository = this.repositories.get(repositoryId);
     const info = await this.repositoryInfo(repositoryId);
     const remote = await this.remote(repositoryId);
-    if (forceRefresh && info.nameWithOwner) {
+    if (forceRefresh && info.nameWithOwner && !this.gitAccess) {
       this.accounts.refreshAuthentication();
       try { await this.accounts.authenticate(repository, remote, info.nameWithOwner, 'gh-repository-account'); }
       catch { /* The context carries the safe, actionable diagnostic. */ }
     }
-    return this.accounts.context(repository, remote, info.nameWithOwner);
+    const access = await this.gitAccess?.status(repositoryId, forceRefresh, { remote, nameWithOwner: info.nameWithOwner });
+    return { ...this.accounts.context(repository, remote, info.nameWithOwner), ...(access ? { access } : {}) };
   }
 
-  async setRepositoryAccount(repositoryId: string, selection: GitHubAccountSelection) {
+  async setRepositoryAccount(repositoryId: string, selection: GitHubAccountSelection, expectedRevision?: number) {
+    if (expectedRevision !== undefined && expectedRevision !== this.accounts.revisionFor(this.repositories.get(repositoryId))) throw new Error('The repository account changed in another session. Reopen the account setup and review it.');
     await this.accounts.setSelection(this.repositories.get(repositoryId), selection);
     return this.repositoryAccount(repositoryId);
   }
@@ -65,16 +68,14 @@ export class GitHubService {
   private async remote(repositoryId: string): Promise<string> {
     const repository = this.repositories.get(repositoryId);
     try {
-      const output = await this.git.run(repository.path, ['config', '--get', 'remote.origin.url'], { operation: 'github-remote-url', readOnly: true, maxOutputBytes: 64 * 1024 });
+      const output = await this.git.run(repository.path, ['remote', 'get-url', '--', 'origin'], { operation: 'github-remote-url', readOnly: true, maxOutputBytes: 64 * 1024 });
       return output.stdout.toString('utf8').trim();
     } catch { return ''; }
   }
 
   async repositoryInfo(repositoryId: string): Promise<GitHubRepositoryInfo> {
-    const repository = this.repositories.get(repositoryId);
     try {
-      const output = await this.git.run(repository.path, ['config', '--get', 'remote.origin.url'], { operation: 'github-remote-url', readOnly: true, maxOutputBytes: 64 * 1024 });
-      const url = output.stdout.toString('utf8');
+      const url = await this.remote(repositoryId);
       let parsed = parseGitHubRemote(url);
       if (!parsed) {
         const ssh = parseSshRemote(url);
@@ -109,16 +110,16 @@ export class GitHubService {
     const branch = validateRef(branchName, operation);
     // An older open PR must not be hidden by newer closed PRs for a reused branch.
     const openResult = await this.runGh(
-      ['pr', 'list', '-R', nameWithOwner, '--head', branch, '--state', 'open', '--json', PR_SUMMARY_FIELDS, '--limit', '10'],
+      ['pr', 'list', '-R', nameWithOwner, '--head', branch, '--state', 'open', '--json', `${PR_SUMMARY_FIELDS},headRepository`, '--limit', '10'],
       { auth, executable, cwd: repository.path, operation, timeoutMs: NETWORK_TIMEOUT_MS, maxOutputBytes: 1024 * 1024 },
     );
-    const openPull = sortPullRequestsNewestFirst(parsePullRequestList(openResult.stdout)).find((pull) => pull.state === 'OPEN');
+    const openPull = sortPullRequestsNewestFirst(parseBranchPullRequestList(openResult.stdout, nameWithOwner, branch)).find((pull) => pull.state === 'OPEN');
     if (openPull) return openPull;
     const result = await this.runGh(
-      ['pr', 'list', '-R', nameWithOwner, '--head', branch, '--state', 'all', '--json', PR_SUMMARY_FIELDS, '--limit', '10'],
+      ['pr', 'list', '-R', nameWithOwner, '--head', branch, '--state', 'all', '--json', `${PR_SUMMARY_FIELDS},headRepository`, '--limit', '10'],
       { auth, executable, cwd: repository.path, operation, timeoutMs: NETWORK_TIMEOUT_MS, maxOutputBytes: 1024 * 1024 },
     );
-    return sortPullRequestsNewestFirst(parsePullRequestList(result.stdout))[0] ?? null;
+    return sortPullRequestsNewestFirst(parseBranchPullRequestList(result.stdout, nameWithOwner, branch))[0] ?? null;
   }
 
   async getPullRequest(repositoryId: string, prNumber: number): Promise<PullRequestDetails> {
@@ -204,7 +205,7 @@ export class GitHubService {
     const operation = 'gh-pr-create';
     const { repository, nameWithOwner, auth, executable, context } = await this.requireGitHub(input.repositoryId, operation);
     const verifyAccount = () => {
-      if (input.expectedAccount && (input.expectedAccount.revision !== this.accounts.authRevision || input.expectedAccount.revision !== context.revision || input.expectedAccount.login.toLowerCase() !== context.login?.toLowerCase())) {
+      if (input.expectedAccount && (input.expectedAccount.revision !== this.accounts.revisionFor(repository) || input.expectedAccount.revision !== context.revision || input.expectedAccount.login.toLowerCase() !== context.login?.toLowerCase())) {
         throw new GhOperationError({ code: 'GH_ACCOUNT_UNRESOLVED', operation, message: 'The GitHub account changed. Review the current identity before creating the pull request.' });
       }
     };

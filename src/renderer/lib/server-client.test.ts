@@ -67,6 +67,15 @@ describe('OpenTig server client', () => {
     expect(fixture.request).toHaveBeenNthCalledWith(2, IPC.repositoryBrowseDirectories, ['/home/projects']);
   });
 
+  it('routes saved project and repository order through the server transport', async () => {
+    const fixture = transportFixture();
+    const { api } = createOpenTigServerClient({ transport: fixture.transport });
+    await api.projects.moveProject('apps', 2);
+    await api.projects.moveRepository('/sample/atlas/.git', 1);
+    expect(fixture.request).toHaveBeenNthCalledWith(1, IPC.projectMove, ['apps', 2]);
+    expect(fixture.request).toHaveBeenNthCalledWith(2, IPC.projectMoveRepository, ['/sample/atlas/.git', 1]);
+  });
+
   it('maps typed domain methods to their wire commands', async () => {
     const fixture = transportFixture();
     const { api } = createOpenTigServerClient({ transport: fixture.transport });
@@ -142,4 +151,16 @@ describe('OpenTig server client', () => {
       { credentials: 'include' },
     );
   });
+});
+
+it('transports global defaults and the reviewed setup revision without exposing credentials', async () => {
+  const f = transportFixture(); const { api } = createOpenTigServerClient({ transport: f.transport });
+  const changed = vi.fn(); api.events.onGitHubAccountsChanged(changed);
+  await api.github.setDefaultAccount('alice');
+  const selection = { mode: 'account' as const, host: 'github.com' as const, login: 'alice', useGlobalDefault: true, gitMode: 'managed' as const };
+  await api.github.setRepositoryAccount('repo', selection, 5);
+  expect(f.request).toHaveBeenCalledWith(IPC.githubSetDefaultAccount, ['alice']);
+  expect(f.request).toHaveBeenCalledWith(IPC.githubSetRepositoryAccount, ['repo', selection, 5]);
+  f.event({ type: 'github.accounts-changed', repositoryIds: ['repo'], inventoryChanged: true });
+  expect(changed).toHaveBeenCalledWith(['repo'], true);
 });

@@ -23,7 +23,7 @@ export function createOpenTigServerClient(options: ServerClientOptions = {}): Op
   const httpOrigin = options.httpOrigin ?? globalThis.location?.origin ?? 'http://127.0.0.1';
   const fetchRequest = options.fetch ?? fetch;
   const repositoryChanged = new Set<Parameters<OpenTigServerApi['events']['onRepositoryChanged']>[0]>();
-  const githubAccountsChanged = new Set<() => void>();
+  const githubAccountsChanged = new Set<(repositoryIds?: string[], inventoryChanged?: boolean) => void>();
   const activeRepositoryChanged = new Set<Parameters<OpenTigServerApi['events']['onActiveRepositoryChanged']>[0]>();
   const invoke = <Command extends Parameters<OpenTigWebSocketTransport['request']>[0]>(
     command: Command,
@@ -52,8 +52,12 @@ export function createOpenTigServerClient(options: ServerClientOptions = {}): Op
       rename: (projectId, name) => invoke(IPC.projectRename, projectId, name),
       remove: (projectId) => invoke(IPC.projectRemove, projectId),
       assign: (repositoryKey, projectId) => invoke(IPC.projectAssign, repositoryKey, projectId),
+      moveProject: (projectId, toIndex) => invoke(IPC.projectMove, projectId, toIndex),
+      moveRepository: (repositoryKey, toIndex) => invoke(IPC.projectMoveRepository, repositoryKey, toIndex),
     },
     repository: {
+      preparePath: (path) => invoke(IPC.repositoryPreparePath, path),
+      completeSetup: (id, revision) => invoke(IPC.repositoryCompleteSetup, id, revision),
       openPath: (path) => invoke(IPC.repositoryOpenPath, path),
       browseDirectories: (path) => path === undefined ? invoke(IPC.repositoryBrowseDirectories) : invoke(IPC.repositoryBrowseDirectories, path),
       openRecent: (id) => invoke(IPC.repositoryOpenRecent, id),
@@ -111,7 +115,8 @@ export function createOpenTigServerClient(options: ServerClientOptions = {}): Op
       listWorktrees: (repositoryId) => invoke(IPC.worktreesList, repositoryId),
       selectWorktree: (repositoryId, path) => invoke(IPC.worktreeSelect, repositoryId, path),
       pull: (repositoryId) => invoke(IPC.refsPull, repositoryId),
-      push: (repositoryId, publish) => invoke(IPC.refsPush, repositoryId, publish),
+      pushContext: (repositoryId, remote) => invoke(IPC.refsPushContext, repositoryId, remote),
+      push: (repositoryId, publish, expectedContext) => invoke(IPC.refsPush, repositoryId, publish, expectedContext),
       fetch: (repositoryId) => invoke(IPC.refsFetch, repositoryId),
       localRefsSnapshot: (repositoryId) => invoke(IPC.localRefsSnapshot, repositoryId),
       branchDetails: (request) => invoke(IPC.branchDetails, request),
@@ -131,9 +136,10 @@ export function createOpenTigServerClient(options: ServerClientOptions = {}): Op
       clearLog: () => invoke(IPC.aiClearLog),
     },
     github: {
+      setDefaultAccount: (login) => invoke(IPC.githubSetDefaultAccount, login),
       accountsStatus: (forceRefresh) => transport.request(IPC.githubAccountsStatus, [forceRefresh], { timeoutMs: 90_000 }),
       repositoryAccount: (repositoryId, forceRefresh) => transport.request(IPC.githubRepositoryAccount, [repositoryId, forceRefresh], { timeoutMs: 60_000 }),
-      setRepositoryAccount: (repositoryId, selection) => invoke(IPC.githubSetRepositoryAccount, repositoryId, selection),
+      setRepositoryAccount: (repositoryId, selection, expectedRevision) => expectedRevision === undefined ? invoke(IPC.githubSetRepositoryAccount, repositoryId, selection) : invoke(IPC.githubSetRepositoryAccount, repositoryId, selection, expectedRevision),
       status: (forceRefresh) => invoke(IPC.githubStatus, forceRefresh),
       repositoryInfo: (repositoryId) => invoke(IPC.githubRepositoryInfo, repositoryId),
       findPullRequestForBranch: (repositoryId, branchName) => invoke(IPC.githubPrForBranch, repositoryId, branchName),
@@ -183,14 +189,14 @@ function publishRuntimeEvent(
   event: OpenTigRuntimeEvent,
   repositoryChanged: ReadonlySet<Parameters<OpenTigServerApi['events']['onRepositoryChanged']>[0]>,
   activeRepositoryChanged: ReadonlySet<Parameters<OpenTigServerApi['events']['onActiveRepositoryChanged']>[0]>,
-  githubAccountsChanged: ReadonlySet<() => void>,
+  githubAccountsChanged: ReadonlySet<(repositoryIds?: string[], inventoryChanged?: boolean) => void>,
 ): void {
   if (event.type === 'repository.changed') {
     for (const listener of repositoryChanged) listener(event.repositoryId, event.scope);
   } else if (event.type === 'repository.active-changed') {
     for (const listener of activeRepositoryChanged) listener(event.repository);
   } else {
-    for (const listener of githubAccountsChanged) listener();
+    for (const listener of githubAccountsChanged) listener(event.repositoryIds, event.inventoryChanged);
   }
 }
 

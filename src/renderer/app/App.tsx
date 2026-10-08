@@ -1,3 +1,4 @@
+import { RepositoryAccountSetup } from '@/features/settings/RepositoryAccountSetup';
 import { useGitHubAccount } from '@/features/pulls/useGitHubAccount';
 import { appDisplayName } from '@/lib/app-identity';
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
@@ -95,6 +96,8 @@ export default function App() {
   const branchPush = useBranchPush();
   const mobile = useMobileLayout();
   const [openRepositoryDialog, setOpenRepositoryDialog] = useState(false);
+  const addingRepository = useRef(false);
+  const [accountSetup, setAccountSetup] = useState<{ repository: RepositoryInfo; isNew: boolean } | null>(null);
   const [mobilePane, setMobilePane] = useState<'list' | 'viewer' | 'commit'>('list');
   const [mobileDiffView, setMobileDiffView] = useState<Preferences['diffView']>('unified');
   const [bootstrap, setBootstrap] = useState<BootstrapData | null>(null);
@@ -195,7 +198,7 @@ export default function App() {
   const ghStatus = ghStatusQuery.data ?? null;
   const githubAccountQuery = useGitHubAccount(repository && githubInfo?.isGitHub ? repository.id : null);
   const githubAccount = githubAccountQuery.data ?? null;
-  useEffect(() => opentig.events.onGitHubAccountsChanged(() => { void resetGitHubQueries(appQueryClient); }), [appQueryClient]);
+  useEffect(() => opentig.events.onGitHubAccountsChanged((ids, inventoryChanged) => { void resetGitHubQueries(appQueryClient, ids, inventoryChanged); }), [appQueryClient]);
   const pullsQuery = useQuery<PullRequestSummary[]>({
     queryKey: queryKeys.pulls(repository?.id ?? '', pullRequestStates),
     queryFn: async () => {
@@ -659,13 +662,13 @@ export default function App() {
 
   const remoteFetchIntervalSeconds = bootstrap?.preferences.remoteFetchIntervalSeconds ?? DEFAULT_REMOTE_FETCH_INTERVAL_SECONDS;
   useEffect(() => {
-    if (!repository || remoteFetchIntervalSeconds <= 0) return;
+    if (!repository || accountSetup || remoteFetchIntervalSeconds <= 0) return;
     const repositoryId = repository.id;
     let cancelled = false;
     let inFlight = false;
 
     const run = async () => {
-      if (cancelled || inFlight || document.visibilityState === 'hidden') return;
+      if (cancelled || inFlight || addingRepository.current || document.visibilityState === 'hidden') return;
       if (busyRef.current || repositorySyncOperationsRef.current.has(repositoryId)) return;
       inFlight = true;
       try {
@@ -688,7 +691,7 @@ export default function App() {
       window.clearInterval(timer);
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [refresh, remoteFetchIntervalSeconds, repository]);
+  }, [refresh, remoteFetchIntervalSeconds, repository, accountSetup]);
 
   useEffect(() => {
     setSnapshotRepositoryId(null);
@@ -822,7 +825,8 @@ export default function App() {
         ...current,
         activeRepository: selected,
         repositoryProjects,
-        recentRepositories: touchRecentRepositories(current.recentRepositories.filter((item) => item.id !== previousId || item.id === selected.id), selected, repositoryProjects),
+        recentRepositories: touchRecentRepositories(current.recentRepositories.flatMap((item) => item.id === previousId
+          ? [{ ...selected, lastOpenedAt: item.lastOpenedAt }] : previous && item.id === selected.id ? [] : [item]), selected),
         filesTreeStates: previous ? normalizeFilesTreeStates(current.filesTreeStates.map((state) => (
           state.repositoryId === previousId ? { ...state, repositoryId: selected.id } : state
         ))) : current.filesTreeStates,
@@ -1820,41 +1824,41 @@ export default function App() {
         throw new PushBlocked(result);
       }, {
         loading: repositorySyncLoadingToast(repositoryId, 'push', status?.upstream ? 'Pushing commits…' : 'Publishing branch…'),
-        success: (result) => !result ? { title: 'Publication canceled' }
-          : result.status === 'published' ? { title: 'Branch published', description: `${result.remote}/${result.branch}` }
+        success: (result) => !result ? { title: `${repository.name}: publication canceled` }
+          : result.status === 'published' ? { title: `${repository.name}: branch published`, description: `${result.remote}/${result.branch}` }
           : result.status === 'success'
-          ? { title: `${result.commits} ${result.commits === 1 ? 'commit pushed' : 'commits pushed'}` }
-          : { title: 'No commits pending push' },
+          ? { title: `${repository.name}: ${result.commits} ${result.commits === 1 ? 'commit pushed' : 'commits pushed'}` }
+          : { title: `${repository.name}: no commits pending push` },
         error: (err) => {
           if (err instanceof PushBlocked) {
             const result = err.result;
             if (result.status === 'blocked-conflicts') {
               return {
-                title: 'Could not push commits',
+                title: `${repository.name}: could not push commits`,
                 description: `Resolve ${result.files.length === 1 ? 'the pending conflict' : `${result.files.length} pending conflicts`} before continuing.`,
                 duration: 10_000,
                 button: { title: 'View conflicts', onClick: () => showConflicts(result.files) },
               };
             }
             if (result.status === 'blocked-operation') {
-              return { title: 'A Git operation is in progress', description: `Finish or cancel ${result.operation} before pushing.`, duration: 10_000 };
+              return { title: `${repository.name}: a Git operation is in progress`, description: `Finish or cancel ${result.operation} before pushing.`, duration: 10_000 };
             }
             if (result.status === 'no-upstream') {
-              return { title: 'Branch has no upstream configured', description: 'Configure a remote branch before pushing.', duration: 10_000 };
+              return { title: `${repository.name}: branch has no upstream configured`, description: 'Configure a remote branch before pushing.', duration: 10_000 };
             }
             if (result.status === 'diverged') {
               return {
-                title: 'The remote contains new changes',
+                title: `${repository.name}: the remote contains new changes`,
                 description: `${result.ahead} ahead and ${result.behind} behind. Pull rebases your local commits on top when there are no conflicts.`,
                 duration: 10_000,
                 button: { title: 'Pull', onClick: () => void pullUpdates() },
               };
             }
             if (result.status === 'remote-required') return { title: 'Choose a remote to publish the branch' };
-            return { title: 'Could not push commits', description: result.message, duration: 10_000 };
+            return { title: `${repository.name}: could not push commits`, description: result.message, duration: 10_000 };
           }
           const message = messageOf(err);
-          return { title: 'Could not push commits', description: message, duration: 10_000 };
+          return { title: `${repository.name}: could not push commits`, description: message, duration: 10_000 };
         },
       });
     } catch {
@@ -1945,9 +1949,18 @@ export default function App() {
     recordOpenedRepository(await opentig.repository.relocateRecent(option.recent.id, path), option.recent.id);
   };
 
-  const browserRepositoryDialog = <OpenRepositoryDialog open={openRepositoryDialog} recent={bootstrap?.recentRepositories} onPick={window.opentigDesktop ? opentig.repository.select : undefined} onOpenChange={setOpenRepositoryDialog} onBrowse={opentig.repository.browseDirectories} onOpen={async (path) => {
-    recordOpenedRepository(await opentig.repository.openPath(path));
+  const browserRepositoryDialog = <OpenRepositoryDialog confirmLabel="Continue"
+    description={window.opentigDesktop ? 'Choose a Git repository, then review its GitHub and Git accounts.' : 'Choose a Git repository on your server, then review its GitHub and Git accounts.'} open={openRepositoryDialog} recent={bootstrap?.recentRepositories} onPick={window.opentigDesktop ? opentig.repository.select : undefined} onOpenChange={setOpenRepositoryDialog} onBrowse={opentig.repository.browseDirectories} onOpen={async (path) => {
+    addingRepository.current = true;
+    try {
+      const selected = await opentig.repository.preparePath(path);
+      const isNew = !bootstrap?.recentRepositories.some(item => normalizeRepositoryKey(item.commonDir) === normalizeRepositoryKey(selected.commonDir));
+      setAccountSetup({ repository: selected, isNew });
+    } finally { addingRepository.current = false; }
   }} />;
+
+  const repositoryAccountDialog = accountSetup && !openRepositoryDialog && <RepositoryAccountSetup key={accountSetup.repository.id} {...accountSetup}
+    onClose={() => setAccountSetup(null)} onAdded={selected => { recordOpenedRepository(selected); setAccountSetup(null); }} />;
 
   if (!bootstrap) {
     return <SplashScreen heading={appDisplayName} detail={startupSplashDetail(connectionState)} />;
@@ -1956,6 +1969,7 @@ export default function App() {
     return (
       <TooltipProvider>
         {browserRepositoryDialog}
+        {repositoryAccountDialog}
         <div className="fixed right-4 top-4 z-40"><DesktopUpdateIndicator /></div>
         <Welcome recent={bootstrap.recentRepositories} onOpen={openRepository} onRecent={(id) => void selectRecent(id)} />
       </TooltipProvider>
@@ -1971,6 +1985,7 @@ export default function App() {
     <ShortcutsProvider shortcuts={shortcuts}>
     <TooltipProvider>
       {browserRepositoryDialog}
+      {repositoryAccountDialog}
       {quickOpen && (
         <Suspense fallback={null}>
           <QuickOpenDialog

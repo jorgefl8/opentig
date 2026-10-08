@@ -28,8 +28,25 @@ export class RepositoryService {
   }
 
   async openPath(selectedPath: string): Promise<RepositoryInfo> {
+    const repository = await this.preparePath(selectedPath);
+    await this.settings.touchRepository(repository);
+    return repository;
+  }
+
+  /** Inspect/cache only: no recent entry, active repository, or persistence. */
+  async preparePath(selectedPath: string): Promise<RepositoryInfo> {
     const repository = await this.inspectPath(selectedPath);
     this.repositories.set(repository.id, repository);
+    return repository;
+  }
+
+  async completeSetup(id: string, validate: () => void = () => undefined): Promise<RepositoryInfo> {
+    const prepared = this.get(id);
+    const repository = await this.inspectPath(prepared.path);
+    if (repository.id !== prepared.id || repository.commonDir !== prepared.commonDir) {
+      throw new Error('The repository location changed. Select the folder again.');
+    }
+    validate();
     await this.settings.touchRepository(repository);
     return repository;
   }

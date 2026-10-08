@@ -38,7 +38,7 @@ const SETTINGS_SECTIONS = [
 ] as const;
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number]['id'];
 const SETTINGS_COPY: Record<Exclude<SettingsSection, 'webAccess'>, { title: string; description: string }> = {
-  github: { title: 'GitHub', description: 'Repository access and commit authorship in one place.' },
+  github: { title: 'GitHub', description: 'Separate settings for this repository and the OpenTig instance.' },
   updates: { title: 'Updates', description: 'Check, download, and install new OpenTig releases.' },
   general: { title: 'General', description: 'Appearance, files and repository behavior.' },
   shortcuts: { title: 'Shortcuts', description: 'Rebind commands or review the shortcuts that stay fixed.' },
@@ -132,7 +132,7 @@ export function SettingsDialog({ preferences, onPreference, open, onOpenChange, 
     : SETTINGS_COPY[section];
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogPopup className={`settings-dialog${section === 'github' ? ' settings-dialog-github' : section === 'general' ? ' settings-dialog-general' : section === 'ai' ? ' settings-dialog-ai w-[min(1000px,calc((100vw-48px)/var(--settings-ui-scale,1)))]' : ''}`} style={{
+      <DialogPopup className={`settings-dialog${section === 'github' || section === 'general' ? ' settings-dialog-general' : ''}${section === 'github' ? ' settings-dialog-github' : ''}${section === 'ai' ? ' settings-dialog-ai w-[min(1000px,calc((100vw-48px)/var(--settings-ui-scale,1)))]' : ''}`} style={{
         '--settings-ui-scale': window.opentigDesktop || window.matchMedia('(max-width: 767px)').matches ? 1 : preferences.uiZoom / 100,
       } as CSSProperties}>
         <div className="settings-shell">
@@ -160,17 +160,17 @@ export function SettingsDialog({ preferences, onPreference, open, onOpenChange, 
               </AnimatePresence>
               <DialogClose render={<Button variant="ghost" size="icon-sm" aria-label="Close settings" />}><IconX /></DialogClose>
             </header>
-            <div ref={settingsBodyRef} className={`settings-panel-body${section === 'general' ? ' settings-panel-body-general' : ''}`}>
+            <div ref={settingsBodyRef} className={`settings-panel-body${section === 'general' || section === 'github' ? ' settings-panel-body-general' : ''}`}>
               <AnimatePresence initial={false} mode="wait">
                 <motion.div
                   key={section}
-                  className={`settings-panel-section${section === 'general' ? ' settings-panel-section-general' : ''}`}
+                  className={`settings-panel-section${section === 'general' || section === 'github' ? ' settings-panel-section-general' : ''}`}
                   initial={reduceMotion ? false : { opacity: 0, y: 7 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={reduceMotion ? { opacity: 1 } : { opacity: 0, y: -5 }}
                   transition={settingsTransition}
                 >
-              {section === 'github' ? <GitHubSettings repository={repository} /> : section === 'general' ? <GeneralSettings preferences={preferences} onPreference={onPreference} /> : section === 'updates' ? <UpdateSettings /> : section === 'shortcuts' ? <ShortcutsSettings preferences={preferences} onPreference={onPreference} /> : section === 'webAccess' ? <WebAccessSettings /> : section === 'diagnostics' ? <>
+              {section === 'github' ? <GitHubSettings key={repository?.id} repository={repository} /> : section === 'general' ? <GeneralSettings preferences={preferences} onPreference={onPreference} /> : section === 'updates' ? <UpdateSettings /> : section === 'shortcuts' ? <ShortcutsSettings preferences={preferences} onPreference={onPreference} /> : section === 'webAccess' ? <WebAccessSettings /> : section === 'diagnostics' ? <>
                 <div className="settings-field">
                   <div className="settings-field-label">
                     <strong>Problem history</strong>

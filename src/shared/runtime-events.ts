@@ -2,7 +2,7 @@ import type { RepositoryInfo } from './contracts';
 import type { RepositoryChangeScope } from './repository-change';
 
 export type OpenTigRuntimeEvent =
-  | { type: 'github.accounts-changed' }
+  | { type: 'github.accounts-changed'; repositoryIds?: string[]; inventoryChanged?: boolean }
   | {
       type: 'repository.changed';
       repositoryId: string;

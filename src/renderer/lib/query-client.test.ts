@@ -67,3 +67,28 @@ describe('renderer query policy', () => {
     await expect(Promise.all([first, second])).resolves.toEqual(['status', 'status']);
   });
 });
+
+
+it('invalidates only the repository and worktrees affected by an account selection', async () => {
+  const client = new QueryClient();
+  for (const id of ['a', 'a-worktree', 'b']) client.setQueryData(queryKeys.githubAccount(id), id);
+  client.setQueryData(queryKeys.githubAccounts, 'inventory');
+  await resetGitHubQueries(client, ['a', 'a-worktree']);
+  expect(client.getQueryData(queryKeys.githubAccount('a'))).toBeUndefined();
+  expect(client.getQueryData(queryKeys.githubAccount('a-worktree'))).toBeUndefined();
+  expect(client.getQueryData(queryKeys.githubAccount('b'))).toBe('b');
+  expect(client.getQueryData(queryKeys.githubAccounts)).toBe('inventory');
+  client.clear();
+});
+
+it('refreshes global default metadata and followers without resetting explicitly pinned repositories', async () => {
+  const client = new QueryClient();
+  client.setQueryData(queryKeys.githubAccounts, 'old default');
+  client.setQueryData(queryKeys.githubAccount('follower'), 'alice');
+  client.setQueryData(queryKeys.githubAccount('fixed'), 'alice');
+  await resetGitHubQueries(client, ['follower'], true);
+  expect(client.getQueryData(queryKeys.githubAccounts)).toBeUndefined();
+  expect(client.getQueryData(queryKeys.githubAccount('follower'))).toBeUndefined();
+  expect(client.getQueryData(queryKeys.githubAccount('fixed'))).toBe('alice');
+  client.clear();
+});

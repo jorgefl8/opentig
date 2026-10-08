@@ -207,7 +207,7 @@ export type PushResult =
   | { status: 'blocked-operation'; operation: string }
   | { status: 'no-upstream' }
   | { status: 'diverged'; ahead: number; behind: number }
-  | { status: 'rejected'; reason: 'authentication' | 'remote-changed' | 'hook' | 'network' | 'configuration' | 'unknown'; message: string };
+  | { status: 'rejected'; reason: 'authentication' | 'inaccessible' | 'permission' | 'remote-changed' | 'hook' | 'network' | 'configuration' | 'unknown'; message: string };
 
 export interface BranchDetailsRequest {
   repositoryId: string;
@@ -521,6 +521,10 @@ export interface OpenTigApi {
     /** Native moved-repository confirmation and directory picker. */
     selectRelocation(repositoryName: string, previousPath: string): Promise<string | null>;
     openPath(path: string): Promise<RepositoryInfo>;
+    /** Inspect a candidate without adding it or changing the active repository. */
+    preparePath(path: string): Promise<RepositoryInfo>;
+    /** Add/activate the candidate after reviewing its account configuration. */
+    completeSetup(id: string, accountRevision: number): Promise<RepositoryInfo>;
     /** Browse folders on the server before opening a repository. Defaults to the server home. */
     browseDirectories(path?: string): Promise<ServerDirectoryListing>;
     openRecent(id: string): Promise<RepositoryInfo>;
@@ -582,7 +586,8 @@ export interface OpenTigApi {
     listWorktrees(repositoryId: string): Promise<WorktreeInfo[]>;
     selectWorktree(repositoryId: string, path: string): Promise<RepositoryInfo>;
     pull(repositoryId: string): Promise<PullResult>;
-    push(repositoryId: string, publish?: PublishBranchOptions): Promise<PushResult>;
+    pushContext(repositoryId: string, remote?: string): Promise<import('./repository-access').PublicationContext>;
+    push(repositoryId: string, publish?: PublishBranchOptions, expectedContext?: string): Promise<PushResult>;
     /** Updates remote-tracking refs without merging or rebasing. */
     fetch(repositoryId: string): Promise<FetchResult>;
     /** Local and remote branches plus every worktree; runs no per-worktree status scan. */
@@ -608,8 +613,9 @@ export interface OpenTigApi {
   };
   github: {
     accountsStatus(forceRefresh?: boolean): Promise<GitHubAccountsStatus>;
+    setDefaultAccount(login: string): Promise<GitHubAccountsStatus>;
     repositoryAccount(repositoryId: string, forceRefresh?: boolean): Promise<GitHubRepositoryAccount>;
-    setRepositoryAccount(repositoryId: string, selection: GitHubAccountSelection): Promise<GitHubRepositoryAccount>;
+    setRepositoryAccount(repositoryId: string, selection: GitHubAccountSelection, expectedRevision?: number): Promise<GitHubRepositoryAccount>;
     status(forceRefresh?: boolean): Promise<GhCliStatus>;
     repositoryInfo(repositoryId: string): Promise<GitHubRepositoryInfo>;
     findPullRequestForBranch(repositoryId: string, branchName: string): Promise<PullRequestSummary | null>;
@@ -628,7 +634,7 @@ export interface OpenTigApi {
     record(entry: Pick<ProblemLogRecordInput, 'operation' | 'message'> & Partial<Pick<ProblemLogRecordInput, 'level' | 'code' | 'repositoryId'>>): Promise<void>;
   };
   events: {
-    onGitHubAccountsChanged(callback: () => void): () => void;
+    onGitHubAccountsChanged(callback: (repositoryIds?: string[], inventoryChanged?: boolean) => void): () => void;
     onRepositoryChanged(callback: (repositoryId: string, scope: RepositoryChangeScope) => void): () => void;
     onActiveRepositoryChanged(callback: (repository: RepositoryInfo) => void): () => void;
   };
@@ -637,14 +643,16 @@ export interface OpenTigApi {
     rename(projectId: string, name: string): Promise<RepositoryOrganization>;
     remove(projectId: string): Promise<RepositoryOrganization>;
     assign(repositoryKey: string, projectId: string | null): Promise<RepositoryOrganization>;
+    moveProject(projectId: string, toIndex: number): Promise<RepositoryOrganization>;
+    moveRepository(repositoryKey: string, toIndex: number): Promise<RepositoryOrganization>;
   };
 }
 
 export type IpcResult<T> = { ok: true; value: T } | { ok: false; error: SerializedOperationError };
 
 export const IPC = {
-  bootstrap: 'app:bootstrap', capabilities: 'app:capabilities', preferences: 'app:preferences', filesTreeStateUpdate: 'app:files-tree-state', openFilesStateUpdate: 'app:open-files-state', projectCreate: 'projects:create', projectRename: 'projects:rename', projectRemove: 'projects:remove', projectAssign: 'projects:assign',
-  repositoryOpenPath: 'repository:open-path', repositoryBrowseDirectories: 'repository:browse-directories', repositoryOpenRecent: 'repository:open-recent', repositoryRelocateRecent: 'repository:relocate-recent', repositoryForget: 'repository:forget', repositoryStatus: 'repository:status', repositoryFiles: 'repository:files', repositoryDirectoryEntries: 'repository:directory-entries',
+  bootstrap: 'app:bootstrap', capabilities: 'app:capabilities', preferences: 'app:preferences', filesTreeStateUpdate: 'app:files-tree-state', openFilesStateUpdate: 'app:open-files-state', projectCreate: 'projects:create', projectRename: 'projects:rename', projectRemove: 'projects:remove', projectAssign: 'projects:assign', projectMove: 'projects:move', projectMoveRepository: 'projects:move-repository',
+  repositoryPreparePath: 'repository:prepare-path', repositoryCompleteSetup: 'repository:complete-setup', repositoryOpenPath: 'repository:open-path', repositoryBrowseDirectories: 'repository:browse-directories', repositoryOpenRecent: 'repository:open-recent', repositoryRelocateRecent: 'repository:relocate-recent', repositoryForget: 'repository:forget', repositoryStatus: 'repository:status', repositoryFiles: 'repository:files', repositoryDirectoryEntries: 'repository:directory-entries',
   repositoryReadFile: 'repository:read-file', repositoryReadImage: 'repository:read-image', repositoryGetFavicon: 'repository:favicon', repositoryWriteFile: 'repository:write-file', repositoryAbsolutePath: 'repository:absolute-path',
   repositoryCopyEntries: 'repository:copy-entries', repositoryCutEntries: 'repository:cut-entries', repositoryPasteEntries: 'repository:paste-entries', repositoryMoveEntry: 'repository:move-entry', repositoryDeleteEntry: 'repository:delete-entry',
   repositoryMoveEntries: 'repository:move-entries', repositoryDeleteEntries: 'repository:delete-entries', repositoryRenameEntry: 'repository:rename-entry', repositoryCreateEntry: 'repository:create-entry',
@@ -653,13 +661,13 @@ export const IPC = {
   diffGet: 'diff:get', diffCommit: 'diff:commit', diffCommitFile: 'diff:commit-file', indexStage: 'index:stage',
   indexUnstage: 'index:unstage', indexDiscard: 'index:discard', indexStageAll: 'index:stage-all', indexUnstageAll: 'index:unstage-all', indexPrepareCommitGroup: 'index:prepare-commit-group', indexUpdateConflict: 'index:update-conflict', indexResolveConflict: 'index:resolve-conflict', commitCreate: 'commit:create', commitUndoLatest: 'commit:undo-latest',
   commitsList: 'commits:list', commitsFiles: 'commits:files', commitAuthorship: 'commits:authorship', commitSetAuthorship: 'commits:set-authorship', branchesList: 'refs:branches', branchSwitch: 'refs:switch', worktreesList: 'refs:worktrees',
-  worktreeSelect: 'refs:select-worktree', refsPull: 'refs:pull', refsPush: 'refs:push', refsFetch: 'refs:fetch',
+  worktreeSelect: 'refs:select-worktree', refsPull: 'refs:pull', refsPush: 'refs:push', refsPushContext: 'refs:push-context', refsFetch: 'refs:fetch',
   localRefsSnapshot: 'refs:local-snapshot', branchDetails: 'refs:branch-details', worktreeDetails: 'refs:worktree-details',
   branchDelete: 'refs:delete-branch', worktreeRemove: 'refs:remove-worktree',
   remoteBranchDetails: 'refs:remote-branch-details', trackingBranchCreate: 'refs:create-tracking-branch', remoteBranchDelete: 'refs:delete-remote-branch', branchesFetch: 'refs:fetch-branches',
   aiStatuses: 'ai:statuses', aiGenerateCommitMessage: 'ai:generate-commit-message', aiCancelGeneration: 'ai:cancel-generation', aiLog: 'ai:log', aiClearLog: 'ai:clear-log',
   diagnosticsList: 'diagnostics:list', diagnosticsClear: 'diagnostics:clear', diagnosticsRecord: 'diagnostics:record',
-  githubAccountsStatus: 'github:accounts-status', githubRepositoryAccount: 'github:repository-account', githubSetRepositoryAccount: 'github:set-repository-account',
+  githubAccountsStatus: 'github:accounts-status', githubSetDefaultAccount: 'github:set-default-account', githubRepositoryAccount: 'github:repository-account', githubSetRepositoryAccount: 'github:set-repository-account',
   githubStatus: 'github:status', githubRepositoryInfo: 'github:repository-info', githubPrForBranch: 'github:pr-for-branch', githubPrList: 'github:pr-list', githubPrView: 'github:pr-view',
   githubPrStack: 'github:pr-stack', githubPrDiff: 'github:pr-diff', githubPrCommitDiff: 'github:pr-commit-diff', githubPrCreate: 'github:pr-create', githubPrDraft: 'github:pr-draft', githubPrDraftCancel: 'github:pr-draft-cancel',
 } as const;

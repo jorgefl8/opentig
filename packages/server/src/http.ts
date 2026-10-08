@@ -5,6 +5,7 @@ import { networkInterfaces } from 'node:os';
 import type { OpenTigRuntime } from '../../../src/main/runtime/OpenTigRuntime';
 import type { OpenTigServerIdentity } from '../../../src/shared/server-protocol';
 import type { OpenTigOwnerSession } from '../../../src/shared/server-protocol';
+import type { OpenTigBrowserWebAccessStatus } from '../../../src/shared/web-access';
 import { OpenTigSessionAuth } from './auth';
 import { isAllowedOrigin, requestOriginIsSecure } from './origin';
 import { serveStatic, STATIC_SECURITY_HEADERS } from './static';
@@ -26,6 +27,7 @@ export interface OpenTigHttpContext {
   identity: OpenTigServerIdentity;
   mode: OpenTigServerMode;
   isReady(): boolean;
+  listenerAddress(): { host: string; port: number };
   sessionConnectionCount(sessionId: string): number;
   onSessionsRevoked(sessionIds: readonly string[]): void;
   logger: OpenTigServerLogger;
@@ -101,6 +103,20 @@ async function handleRequest(context: OpenTigHttpContext, request: IncomingMessa
     return sendJson(response, 404, { error: 'Not found.' });
   }
 
+  if (method === 'GET' && rawPath === '/api/auth/web-access') {
+    if (!context.auth.authenticate(request.headers)) return sendJson(response, 401, { error: 'Authentication required.' });
+    const listener = context.listenerAddress();
+    const status: OpenTigBrowserWebAccessStatus = {
+      webAccessEnabled: context.auth.descriptor().browserAccessEnabled,
+      pairingAvailable: context.auth.descriptor().pairingAvailable,
+      listeningOnLan: !isLoopbackAddress(listener.host),
+      listenerHost: listener.host,
+      actualPort: listener.port,
+      ready: context.isReady(),
+    };
+    return sendJson(response, 200, status);
+  }
+
   if (method === 'GET' && rawPath === '/api/auth/sessions') {
     const currentSessionId = context.auth.authenticate(request.headers);
     if (!currentSessionId) return sendJson(response, 401, { error: 'Authentication required.' });
@@ -122,6 +138,17 @@ async function handleRequest(context: OpenTigHttpContext, request: IncomingMessa
 
   if (method === 'POST' && rawPath.startsWith('/api/')) {
     if (!isAllowedOrigin(request)) return sendJson(response, 403, { error: 'Forbidden origin.' });
+
+    if (rawPath === '/api/auth/pairing-link') {
+      if (!context.auth.authenticate(request.headers)) return sendJson(response, 401, { error: 'Authentication required.' });
+      if (!context.auth.descriptor().browserAccessEnabled) return sendJson(response, 403, { error: 'Web access is disabled.', code: 'WEB_ACCESS_DISABLED' });
+      if (!context.isReady()) return sendJson(response, 503, { error: 'Server is not ready.' });
+      // Origin has passed the same-authority check, including trusted loopback proxies.
+      const url = new URL('/pair', request.headers.origin!);
+      const pairing = context.auth.createPairingToken();
+      url.hash = new URLSearchParams({ token: pairing.token }).toString();
+      return sendJson(response, 200, { url: url.href, expiresAt: pairing.expiresAt });
+    }
 
     if (rawPath === '/api/auth/renew') {
       const cookie = await context.auth.renewBrowserCookie(request.headers, requestOriginIsSecure(request));
