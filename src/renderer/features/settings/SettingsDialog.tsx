@@ -38,7 +38,7 @@ const SETTINGS_SECTIONS = [
 ] as const;
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number]['id'];
 const SETTINGS_COPY: Record<Exclude<SettingsSection, 'webAccess'>, { title: string; description: string }> = {
-  github: { title: 'GitHub', description: 'Repository access and commit authorship in one place.' },
+  github: { title: 'GitHub', description: 'Separate settings for this repository and the OpenTig instance.' },
   updates: { title: 'Updates', description: 'Check, download, and install new OpenTig releases.' },
   general: { title: 'General', description: 'Appearance, files and repository behavior.' },
   shortcuts: { title: 'Shortcuts', description: 'Rebind commands or review the shortcuts that stay fixed.' },

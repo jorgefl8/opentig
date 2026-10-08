@@ -46,12 +46,19 @@ async function click(text: string) {
   await act(async () => { button!.click(); await settle(); }); await act(settle);
 }
 
+async function scopeTab(name: 'This repository' | 'OpenTig') {
+  const tab = [...document.querySelectorAll<HTMLButtonElement>('[role=tab]')].find(item => item.textContent === name);
+  expect(tab).toBeDefined();
+  await act(async () => { tab!.click(); await settle(); });
+}
+
 it('opens and reopens saved accounts without authentication checks and distinguishes both identities', async () => {
   calls.accountsStatus.mockResolvedValue(saved); calls.repositoryAccount.mockResolvedValue(context);
   const view = await mount();
   try {
-    expect(view.container.textContent).toContain('Active in gh');
     expect(view.container.querySelector('.github-access-card')?.textContent).toContain('@bob');
+    await scopeTab('OpenTig');
+    expect(view.container.textContent).toContain('Active in gh');
     expect(view.container.textContent).toContain('06/10/2026');
     await view.reopen();
     expect(calls.accountsStatus).toHaveBeenCalledExactlyOnceWith(false);
@@ -67,12 +74,14 @@ it('refreshes explicitly, retaining saved state during the check and updating th
   try {
     await click('Check access');
     expect(view.container.textContent).toContain('Checking…');
+    await scopeTab('OpenTig');
     expect(view.container.textContent).toContain(saved.version);
     await act(async () => { release({ ...saved, checkedAt: '2026-10-07T10:00:00.000Z' }); await settle(); }); await act(settle);
     expect(calls.accountsStatus).toHaveBeenLastCalledWith(true);
     expect(calls.repositoryAccount).toHaveBeenLastCalledWith('repo', true);
-    expect(view.container.querySelector('.github-access-card')?.textContent).toContain('@alice');
     expect(view.container.textContent).toContain('07/10/2026');
+    await scopeTab('This repository');
+    expect(view.container.querySelector('.github-access-card')?.textContent).toContain('@alice');
   } finally { await view.close(); }
 });
 
@@ -82,7 +91,7 @@ it('guides external login without running it and offers a voluntary global resto
   calls.repositoryAccount.mockResolvedValue(context);
   const view = await mount();
   try {
-    await click('Add account');
+    await scopeTab('OpenTig'); await click('Add account');
     expect(document.body.textContent).toContain('GitHub CLI activates the account you add');
     await click('View instructions');
     const command = document.querySelector<HTMLButtonElement>('[aria-label="Copy GitHub login command"]');
@@ -102,6 +111,7 @@ it('keeps the previous inventory when a manual request fails', async () => {
   const view = await mount();
   try {
     await click('Check access');
+    await scopeTab('OpenTig');
     expect(view.container.textContent).toContain(saved.version);
     expect(calls.error).toHaveBeenCalledWith(expect.objectContaining({ description: 'Disconnected' }));
   } finally { await view.close(); }
@@ -123,7 +133,7 @@ it('places repository and Git identities first and requires review before applyi
   try {
     expect(view.container.querySelector('.github-repository-heading')?.textContent).toContain('organisation/demo');
     expect(view.container.querySelector('.github-authorship-card')?.textContent).toContain('Alice Sample');
-    expect(view.container.querySelector('.github-repository-heading')).toBe(view.container.querySelector('.github-settings')?.firstElementChild);
+    expect(view.container.querySelector('.github-repository-heading')).toBe(view.container.querySelector('[role=tabpanel]')?.firstElementChild);
     await click('Edit authorship');
     expect(document.getElementById('commit-author-name')).toHaveProperty('value', 'Alice Sample');
     expect(calls.setAuthorship).not.toHaveBeenCalled();
@@ -186,6 +196,7 @@ it('keeps unavailable explicit accounts visible instead of displaying another id
   try {
     expect(view.container.querySelector('.github-access-card')?.textContent).toContain('@missing');
     expect(view.container.textContent).toContain('The selected account is not saved in gh.');
+    await scopeTab('OpenTig');
     expect(view.container.querySelector('.github-global-account')?.textContent).toContain('@alice');
   } finally { await view.close(); }
 });
@@ -194,7 +205,7 @@ it('requires an open repository for identity editing and keeps global accounts a
   calls.accountsStatus.mockResolvedValue(saved);
   const view = await mount(null);
   try {
-    expect(view.container.textContent).toContain('Open a repository');
+    expect(view.container.querySelector('[role=tab][data-disabled]')?.textContent).toBe('This repository');
     expect(view.container.querySelector('.github-repository-heading')).toBeNull();
     expect(view.container.textContent).not.toContain('Edit authorship');
     expect(calls.authorship).not.toHaveBeenCalled();
@@ -209,7 +220,7 @@ it('keeps the login instructions open when adding an account fails', async () =>
   calls.repositoryAccount.mockResolvedValue(context);
   const view = await mount();
   try {
-    await click('Add account'); await click('View instructions'); await click('I have finished');
+    await scopeTab('OpenTig'); await click('Add account'); await click('View instructions'); await click('I have finished');
     expect(document.body.textContent).toContain('I have finished');
     expect(document.body.textContent).not.toContain('Newly detected accounts');
     expect(calls.setRepositoryAccount).not.toHaveBeenCalled();
@@ -278,12 +289,13 @@ it('keeps technical details collapsed while showing the destination and external
     expect(view.container.querySelector('.github-push-destination')?.textContent).toContain('Git account: Existing credentials');
     expect(view.container.querySelector('.github-push-destination')?.textContent).not.toContain('@bob');
     expect(view.container.querySelector('.github-access-details')).toHaveProperty('open', false);
-    expect(view.container.querySelector('.github-saved-accounts')).toHaveProperty('open', false);
     expect(view.client.getQueryData(['repository', 'repo', 'push-context'])).toEqual(publication);
     expect(view.container.querySelector('input[value=managed]')).toHaveProperty('disabled', true);
     await act(async () => { view.container.querySelector<HTMLElement>('.github-access-details summary')!.click(); });
     expect(view.container.querySelector('.github-access-details')).toHaveProperty('open', true);
     expect(view.container.querySelector('.github-access-details')?.textContent).toContain(publication.urls[0]);
+    await scopeTab('OpenTig');
+    expect(view.container.querySelector('.github-saved-accounts')).toHaveProperty('open', false);
   } finally { await view.close(); }
 });
 
@@ -313,11 +325,55 @@ it('sets the OpenTig default separately and lets a repository explicitly follow 
   calls.setRepositoryAccount.mockResolvedValue({ ...context, selection: { mode: 'account', host: 'github.com', login: 'bob', useGlobalDefault: true } });
   const view = await mount();
   try {
+    await scopeTab('OpenTig');
     await choosePicker('Global default account', '@bob');
     expect(calls.setDefaultAccount).toHaveBeenCalledWith('bob');
     expect(calls.setRepositoryAccount).not.toHaveBeenCalled();
     expect(calls.setAuthorship).not.toHaveBeenCalled();
+    await scopeTab('This repository');
     await choosePicker('GitHub account for this repository', 'Global default');
     expect(calls.setRepositoryAccount).toHaveBeenCalledWith('repo', { mode: 'account', host: 'github.com', login: 'bob', gitMode: 'external', useGlobalDefault: true });
+  } finally { await view.close(); }
+});
+
+it('separates repository controls from instance-wide controls and labels their scope', async () => {
+  calls.accountsStatus.mockResolvedValue(saved); calls.repositoryAccount.mockResolvedValue(context);
+  const view = await mount();
+  try {
+    expect(view.container.querySelector('[role=tab][data-active]')?.textContent).toBe('This repository');
+    expect(view.container.textContent).toContain('Shared with its worktrees and connected clients.');
+    expect(view.container.querySelector('button[aria-label="Global default account"]')).toBeNull();
+    expect(view.container.textContent).not.toContain('Add account');
+    await click('Manage accounts in OpenTig');
+    expect(view.container.querySelector('[role=tab][data-active]')?.textContent).toBe('OpenTig');
+    expect(view.container.textContent).toContain('Shared by all clients connected to this instance.');
+    expect(view.container.querySelector('button[aria-label="GitHub account for this repository"]')).toBeNull();
+    expect(view.container.textContent).not.toContain('Edit authorship');
+    expect(view.container.textContent).toContain('Add account');
+    expect(calls.setRepositoryAccount).not.toHaveBeenCalled();
+  } finally { await view.close(); }
+});
+it('refreshes global accounts without checking the active repository or its author', async () => {
+  calls.accountsStatus.mockResolvedValue(saved); calls.repositoryAccount.mockResolvedValue(context);
+  const view = await mount();
+  try {
+    await scopeTab('OpenTig'); await click('Refresh accounts');
+    expect(calls.accountsStatus).toHaveBeenLastCalledWith(true);
+    expect(calls.repositoryAccount).toHaveBeenCalledExactlyOnceWith(repository.id, false);
+    expect(calls.authorship).toHaveBeenCalledOnce();
+    expect(calls.setRepositoryAccount).not.toHaveBeenCalled();
+    expect(calls.setAuthorship).not.toHaveBeenCalled();
+  } finally { await view.close(); }
+});
+it('opens instance-wide settings directly without a repository', async () => {
+  calls.accountsStatus.mockResolvedValue(saved);
+  const view = await mount(null);
+  try {
+    expect(view.container.querySelector('[role=tab][data-active]')?.textContent).toBe('OpenTig');
+    expect(view.container.querySelector('[role=tab][data-disabled]')?.textContent).toBe('This repository');
+    await click('Refresh accounts');
+    expect(calls.repositoryAccount).not.toHaveBeenCalled();
+    expect(calls.authorship).not.toHaveBeenCalled();
+    expect(view.container.textContent).not.toContain('Open a repository to choose');
   } finally { await view.close(); }
 });

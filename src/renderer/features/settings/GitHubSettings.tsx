@@ -1,6 +1,7 @@
+import { Tabs } from '@base-ui/react/tabs';
 import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { IconBrandGithub, IconCopy, IconGitBranch, IconLoader4, IconPlus, IconRefresh, IconUser } from '@tabler/icons-react';
+import { IconBrandGithub, IconCopy, IconGitBranch, IconLoader4, IconPlus, IconRefresh, IconSettings, IconUser } from '@tabler/icons-react';
 import { sileo } from 'sileo';
 import type { RepositoryInfo } from '@shared/contracts';
 import type { GitHubAccountSelection, GitHubAccountsStatus, GitHubRepositoryAccount } from '@shared/github-accounts';
@@ -25,6 +26,7 @@ export function GitHubSettings({ repository }: { repository: RepositoryInfo | nu
   const authorship = useQuery({ queryKey: queryKeys.commitAuthorship(repository?.id ?? ''),
     queryFn: () => opentig.commits.authorship(repository!.id), enabled: repository !== null });
   const generations = useRef(new Map<string, number>());
+  const [scope, setScope] = useState<'repository' | 'global'>(repository ? 'repository' : 'global');
   const [checking, setChecking] = useState(false);
   const [saving, setSaving] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
@@ -46,18 +48,19 @@ export function GitHubSettings({ repository }: { repository: RepositoryInfo | nu
   }
   if (status?.defaultLogin && !selectable.some(item => item.value === status.defaultLogin)) selectable.push({ value: status.defaultLogin, label: `@${status.defaultLogin}`, description: 'Default account · not in the last checked accounts', icon: <IconBrandGithub /> });
   const storeContext = (id: string, value: GitHubRepositoryAccount) => client.setQueryData<GitHubRepositoryAccount>(queryKeys.githubAccount(id), previous => previous && previous.revision > value.revision ? previous : value);
-  const check = async (): Promise<GitHubAccountsStatus | null> => {
-    const id = repository?.id ?? '';
+  const check = async (includeRepository = false): Promise<GitHubAccountsStatus | null> => {
+    const target = includeRepository ? repository : null;
+    const id = target?.id ?? '';
     const generation = (generations.current.get(id) ?? 0) + 1; generations.current.set(id, generation);
     setChecking(true);
     try {
       const next = await opentig.github.accountsStatus(true);
       client.setQueryData(queryKeys.githubAccounts, next);
       if (next.message || next.installationStatus !== 'available') throw new Error(next.message || 'GitHub CLI is unavailable.');
-      if (repository) {
-        const value = await opentig.github.repositoryAccount(repository.id, true);
-        if (generations.current.get(id) === generation) storeContext(repository.id, value);
-        await client.invalidateQueries({ queryKey: queryKeys.commitAuthorship(repository.id) });
+      if (target) {
+        const value = await opentig.github.repositoryAccount(target.id, true);
+        if (generations.current.get(id) === generation) storeContext(target.id, value);
+        await client.invalidateQueries({ queryKey: queryKeys.commitAuthorship(target.id) });
       }
       return next;
     } catch (error) { sileo.error({ title: 'Could not check GitHub', description: messageOf(error) }); return null; }
@@ -77,24 +80,31 @@ export function GitHubSettings({ repository }: { repository: RepositoryInfo | nu
     finally { setSaving(false); }
   };
   const managed = account?.selection.mode === 'account' && account.selection.gitMode === 'managed';
-  const checkButton = <Button variant="outline" size="sm" onClick={() => void check()} disabled={checking || saving || inventory.isFetching}>
+  const checkButton = <Button variant="outline" size="sm" onClick={() => void check(true)} disabled={checking || saving || inventory.isFetching}>
     {checking || saving ? <IconLoader4 className="animate-spin" /> : <IconRefresh />}
-    {checking || saving ? <ShimmeringText text="Checking…" /> : repository ? 'Check access' : 'Check status'}
+    {checking || saving ? <ShimmeringText text="Checking…" /> : 'Check access'}
   </Button>;
-  return <div className="github-settings">
-    {repository && <header className="github-repository-heading">
-      <IconGitBranch /><div><span className="github-settings-eyebrow">Repository access</span><h2>{account?.nameWithOwner || repository.name}</h2></div>
-    </header>}
+  return <Tabs.Root className="github-settings" value={repository ? scope : 'global'} onValueChange={value => { if (value === 'repository' || value === 'global') setScope(value); }}>
+    <Tabs.List className="github-scope-tabs" aria-label="GitHub settings scope">
+      <Tabs.Tab value="repository" disabled={!repository}><IconGitBranch />This repository</Tabs.Tab>
+      <Tabs.Tab value="global"><IconSettings />OpenTig</Tabs.Tab>
+    </Tabs.List>
+    <Tabs.Panel value="repository" className="github-scope-panel">
+    {repository && <>
+    <header className="github-repository-heading github-scope-heading">
+      <IconGitBranch /><div><span className="github-settings-eyebrow">This repository</span><h2>{account?.nameWithOwner || repository.name}</h2>
+        <p>Shared with its worktrees and connected clients.</p></div>
+    </header>
     <section className="github-settings-section github-access-card" aria-label="Repository account and authentication">
-      <div className="github-settings-row"><h3>GitHub account</h3><Button variant="ghost" size="sm" onClick={() => setAddOpen(true)}><IconPlus />Add account</Button></div>
-      {repository ? <>
+      <div className="github-settings-row"><h3>Account for this repository</h3></div>
         <div className="github-account-picker"><label className="sr-only" htmlFor="github-account-choice">Account for GitHub operations</label>
-          <SearchablePicker groups={[{ id: 'default', label: 'OpenTig default', items: [{ value: '__global_default__', label: status?.defaultLogin ? `Global default · @${status.defaultLogin}` : 'Global default · not set', description: 'Follow the default account configured below.', disabled: !status?.defaultLogin }] }, { id: 'accounts', label: 'Saved accounts', items: selectable }]}
+          <SearchablePicker groups={[{ id: 'default', label: 'OpenTig default', items: [{ value: '__global_default__', label: status?.defaultLogin ? `Global default · @${status.defaultLogin}` : 'Global default · not set', description: 'Follow the default account in the OpenTig tab.', disabled: !status?.defaultLogin }] }, { id: 'accounts', label: 'Saved accounts', items: selectable }]}
             value={selection} onValueChange={(value) => void choose(value)} label="GitHub account for this repository" triggerId="github-account-choice"
             triggerLabel={selection === 'auto' ? 'Choose an account' : selection === '__global_default__' ? `Global default · @${account?.login ?? status?.defaultLogin}` : `@${selection}`} placeholder="Search accounts…" size="default" align="start"
             disabled={saving} />
         </div>
-        <p className="github-settings-note">For GitHub and pull requests. Shared across this repository’s worktrees and connected clients.</p>
+        <p className="github-settings-note">Used for GitHub and pull requests.</p>
+        <Button variant="link" size="sm" className="github-manage-accounts" onClick={() => setScope('global')}>Manage accounts in OpenTig</Button>
         {selection === 'auto' && account?.login && <p className="github-settings-note">Currently @{account.login}. Choose an account to keep it pinned.</p>}
         {account?.state === 'error' && <p className="github-settings-notice" role="status">{account.message || 'This account is unavailable. Check access or choose another account.'}</p>}
         <fieldset className="github-git-mode" disabled={saving}>
@@ -114,13 +124,11 @@ export function GitHubSettings({ repository }: { repository: RepositoryInfo | nu
           {account?.access ? <RepositoryAccessStatus access={account.access} checking={checking || saving} />
             : <p className="github-settings-note">Check access to verify the account and repository permissions.</p>}
         </div>
-      </> : <><p className="github-settings-note">Open a repository to choose its account.</p>{checkButton}</>}
       {context.error && <p className="github-settings-notice" role="alert">{messageOf(context.error)}</p>}
-      {status?.message && <p className="github-settings-notice" role="status">{status.message}</p>}
-      {inventory.error && <p className="github-settings-notice" role="alert">{messageOf(inventory.error)}</p>}
     </section>
-    {repository && <section className="github-settings-section github-authorship-section">
+    <section className="github-settings-section github-authorship-section">
       <div className="github-settings-row"><h3>Commit author</h3><Button variant="outline" size="sm" onClick={() => setAuthorOpen(true)} disabled={authorship.isPending || !author}>Edit authorship</Button></div>
+      <p className="github-settings-note">Read from Git. Edits here apply only to this repository.</p>
       <div className="github-authorship-card">
         <IconUser /><div><strong>{author?.author?.name || (authorship.isPending ? 'Reading Git identity…' : 'Not configured')}</strong>
           <p>{author?.author?.email || 'Set a name and email before creating commits.'}</p>
@@ -130,7 +138,14 @@ export function GitHubSettings({ repository }: { repository: RepositoryInfo | nu
       </div>
       {author?.blockers.map((blocker) => <p className="github-settings-notice" key={blocker}>{blocker}</p>)}
       {authorship.error && <p className="github-settings-notice" role="alert">{messageOf(authorship.error)}</p>}
-    </section>}
+    </section>
+    </>}
+    </Tabs.Panel>
+    <Tabs.Panel value="global" className="github-scope-panel">
+    <header className="github-scope-heading">
+      <IconSettings /><div><span className="github-settings-eyebrow">Instance-wide settings</span><h2>OpenTig</h2>
+        <p>Shared by all clients connected to this instance.</p></div>
+    </header>
     <section className="github-settings-section" aria-label="Global default account">
       <h3>Default account for OpenTig</h3>
       <div className="github-account-picker"><SearchablePicker
@@ -145,28 +160,38 @@ export function GitHubSettings({ repository }: { repository: RepositoryInfo | nu
           }).catch(error => sileo.error({ title: 'Could not save default account', description: messageOf(error) })).finally(() => setSaving(false));
         }} />
       </div>
-      <p className="github-settings-note">Shared by this instance. Repositories using Global default follow this account; specific choices stay unchanged. The active gh account is not changed.</p>
+      <p className="github-settings-note">Repositories set to Global default follow this account. Pinned accounts and the active gh account stay unchanged.</p>
     </section>
+    <section className="github-settings-section github-global-accounts" aria-label="Accounts available to OpenTig">
+      <div className="github-settings-row"><h3>Available accounts</h3><Button variant="outline" size="sm" onClick={() => setAddOpen(true)}><IconPlus />Add account</Button></div>
+      <p className="github-settings-note">Accounts saved on the machine running OpenTig. Adding one makes it available to all repositories.</p>
+      <Button variant="ghost" size="sm" className="github-refresh-accounts" onClick={() => void check()} disabled={checking || saving || inventory.isFetching}>
+        {checking ? <IconLoader4 className="animate-spin" /> : <IconRefresh />}{checking ? <ShimmeringText text="Checking…" /> : 'Refresh accounts'}
+      </Button>
+      {status?.message && <p className="github-settings-notice" role="status">{status.message}</p>}
+      {inventory.error && <p className="github-settings-notice" role="alert">{messageOf(inventory.error)}</p>}
     <details className="github-saved-accounts">
       <summary>Saved accounts & GitHub CLI <span>{accounts.length} {accounts.length === 1 ? 'account' : 'accounts'}</span></summary>
       <div className="github-accounts-list">{accounts.map((item) => <div className="github-account-row" key={item.login}>
         <span className="github-account-avatar" aria-hidden="true">{item.login.slice(0, 2).toUpperCase()}</span>
         <div className="github-account-copy"><strong>@{item.login}</strong><small>{item.active ? 'Active in gh · global' : 'Saved in GitHub CLI'}</small></div>
-        <div className="github-account-badges">{selection === item.login && <Badge variant="secondary">This repository</Badge>}
+        <div className="github-account-badges">{status?.defaultLogin === item.login && <Badge variant="secondary">OpenTig default</Badge>}
           <span className={`github-auth-state ${item.state}`}>{item.state === 'authenticated' ? 'Authenticated' : item.state === 'invalid' ? 'Credentials rejected' : 'Not verified'}</span></div>
       </div>)}</div>
-      {!accounts.length && <p className="github-settings-note">{status?.checkedAt ? 'No saved accounts found. Add an account and check again.' : 'Check access to list saved accounts.'}</p>}
+      {!accounts.length && <p className="github-settings-note">{status?.checkedAt ? 'No saved accounts found. Add an account and check again.' : 'Refresh accounts to list saved accounts.'}</p>}
       <div className="github-cli-section">
         <strong className="github-cli-version"><IconBrandGithub />{status?.version || 'GitHub CLI'}<Badge variant="outline">{installationLabel(status)}</Badge></strong>
         <p className="github-settings-note">{status?.checkedAt ? `Last checked: ${formatDateTime(status.checkedAt, { seconds: true })}` : 'Not checked yet.'}</p>
         <p className="github-global-account">Active globally in gh: <strong>{status?.activeLogin ? `@${status.activeLogin}` : 'Not verified'}</strong></p>
         {status?.environment.present && <p className="github-settings-notice">Backend environment credentials: {status.environment.login ? `@${status.environment.login}` : 'identity not verified'}. Unpinned HTTPS accounts may use these credentials.</p>}
-        <p className="github-settings-note">Opening Settings uses saved results. Use Check access to refresh them.</p>
+        <p className="github-settings-note">Opening Settings uses saved results. Use Refresh accounts to update them.</p>
       </div>
     </details>
+    </section>
+    </Tabs.Panel>
     {repository && <CommitAuthorshipDialog key={repository.id} repository={repository} open={authorOpen} onOpenChange={setAuthorOpen} />}
-    <AddGitHubAccountDialog open={addOpen} onOpenChange={setAddOpen} status={status} onCheck={check} checking={checking} />
-  </div>;
+    <AddGitHubAccountDialog open={addOpen} onOpenChange={setAddOpen} status={status} onCheck={() => check()} checking={checking} />
+  </Tabs.Root>;
 }
 
 function AddGitHubAccountDialog({ open, onOpenChange, status, onCheck, checking }: {

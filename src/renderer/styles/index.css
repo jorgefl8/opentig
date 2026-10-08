@@ -2059,8 +2059,22 @@ section[data-sileo-viewport] [data-sileo-title] { text-transform: none; }
 /* GitHub accounts reuse the Settings shell and shared pickers. */
 .settings-dialog-github { width: min(880px, calc((100vw - 48px) / var(--settings-ui-scale, 1))); }
 .settings-dialog-github .settings-panel-body { padding-block: 14px; }
-/* Keep repository access and commit authorship separate, with diagnostics on demand. */
+/* Separate repository choices from instance-wide account management. */
 .github-settings { display: grid; gap: 20px; }
+.github-scope-tabs { display: flex; gap: 4px; padding: 4px; background: var(--muted); border: 1px solid var(--border); border-radius: var(--radius-lg); }
+.github-scope-tabs button { display: flex; flex: 1; align-items: center; justify-content: center; gap: 8px; min-height: 38px; padding: 8px 12px; border-radius: var(--radius-md); color: var(--muted-foreground); font-size: 13px; font-weight: 550; }
+.github-scope-tabs button[data-active] { background: var(--background); color: var(--foreground); box-shadow: 0 1px 3px rgb(0 0 0 / .1); }
+.github-scope-tabs button:disabled { opacity: .45; }
+.github-scope-tabs button:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.github-scope-tabs svg { width: 16px; height: 16px; flex: none; }
+.github-scope-panel:not([hidden]) { display: grid; gap: 18px; }
+.github-scope-heading { display: flex; align-items: flex-start; gap: 12px; padding: 2px 0; }
+.github-scope-heading > svg { width: 20px; height: 20px; flex: none; margin-top: 3px; color: var(--primary); }
+.github-scope-heading h2 { font-size: 17px; font-weight: 650; overflow-wrap: anywhere; }
+.github-scope-heading p { margin-top: 4px; font-size: 12px; line-height: 1.6; color: var(--muted-foreground); }
+.github-manage-accounts, .github-refresh-accounts { margin-top: 8px; }
+.github-global-accounts .github-saved-accounts { border-top: 1px solid var(--border); padding-top: 14px; margin-top: 14px; }
+.github-settings .animate-spin { color: var(--primary); }
 .github-settings-section { padding: 18px; border: 1px solid var(--border); border-radius: var(--radius-lg); }
 .github-settings-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
 .github-settings-row > button { flex: none; }
