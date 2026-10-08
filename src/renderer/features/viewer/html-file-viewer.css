@@ -44,6 +44,13 @@
   overflow: hidden;
 }
 
+.html-preview-panel {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
 .html-preview-frame {
   width: 100%;
   min-height: 0;
@@ -51,6 +58,10 @@
   border: 0;
   background: var(--background);
   color-scheme: light dark;
+}
+
+.html-preview-form {
+  display: none;
 }
 
 .html-preview-frame:focus-visible {
