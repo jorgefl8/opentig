@@ -5,12 +5,12 @@ import { sileo } from 'sileo';
 import type { RepositoryAccess, AccessCheck } from '@shared/repository-access';
 import { formatDateTime } from '@shared/date-format';
 import { Button } from '@/components/ui/button';
+import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { publicationDestination, publicationKey } from '@/features/refs/publication-context';
 import { writeClipboardText } from '@/lib/browser-capabilities';
 import { accessStateLabels, gitHttpsModeLabel, lastGitOperationLabel, repositoryAccessDebugText } from './github-access-copy';
 
-function checkLabel(label: string, check: AccessCheck, checking: boolean): string {
-  if (checking) return 'Checking…';
+function checkLabel(label: string, check: AccessCheck): string {
   if (check.state === 'ok' && label === 'Write permission') return 'Declared by GitHub';
   return accessStateLabels[check.state];
 }
@@ -34,7 +34,7 @@ export function RepositoryAccessStatus({ access, checking, accountLogin }: { acc
     <dl className="github-access-grid">{checks.map(([label, check]) => <div key={label}>
       <dt>{label}{label === 'Write permission' && accountLogin ? ` · @${accountLogin}` : ''}</dt><dd data-state={checking ? 'checking' : check.state}>
         <span className="github-access-dot" aria-hidden="true" />
-        {checkLabel(label, check, checking)}
+        {checking ? <ShimmeringText text="Checking…" /> : checkLabel(label, check)}
       </dd>
     </div>)}</dl>
     {publication.mode === 'external' && <p className="github-settings-note" role="status">These GitHub checks do not verify access with Git's own credentials. The account used for fetch and push is unverified.</p>}

@@ -162,7 +162,7 @@ export function GitHubSettings({ repository }: { repository: RepositoryInfo | nu
       <div className="settings-general-row">
         <div className="github-authorship-card">
           <IconUser aria-hidden="true" /><div>
-            <strong>{author?.author?.name || (authorship.isPending ? 'Reading Git identity…' : 'Not configured')}</strong>
+            <strong>{author?.author?.name || (authorship.isPending ? <ShimmeringText text="Reading Git identity…" /> : 'Not configured')}</strong>
             <p>{author?.author?.email || 'Set a name and email before creating commits.'}</p>
             {author && <small>{authorshipSourceLabel(author.source)} · separate from your access account</small>}
             {author?.committer && (author.committer.name !== author.author?.name || author.committer.email !== author.author?.email) && <p className="github-authorship-committer">Committer: {author.committer.name} &lt;{author.committer.email}&gt;</p>}
@@ -282,7 +282,7 @@ function AddGitHubAccountDialog({ open, onOpenChange, status, onCheck, checking 
     </>}
     <div className="github-add-actions"><Button variant="ghost" onClick={() => close(false)}>{step === 2 ? 'Done' : 'Cancel'}</Button>
       {step === 0 ? <Button onClick={() => { setPrevious(status?.activeLogin ?? null); setKnown(status?.accounts.map((account) => account.login) ?? []); setStep(1); }}>View instructions</Button>
-        : <Button onClick={() => void onCheck().then((next) => { if (next?.accounts.some(item => item.state === 'authenticated' && !known.includes(item.login))) setStep(2); else if (next) sileo.error({ title: 'No new authenticated account detected', description: 'Finish the login or reconnect the account, then check again. Your repository choice is unchanged.' }); })} disabled={checking}>{checking && <IconLoader4 className="animate-spin" />}{step === 1 ? 'I have finished · check accounts' : 'Check again'}</Button>}
+        : <Button onClick={() => void onCheck().then((next) => { if (next?.accounts.some(item => item.state === 'authenticated' && !known.includes(item.login))) setStep(2); else if (next) sileo.error({ title: 'No new authenticated account detected', description: 'Finish the login or reconnect the account, then check again. Your repository choice is unchanged.' }); })} disabled={checking}>{checking && <IconLoader4 className="animate-spin" />}{checking ? <ShimmeringText text={step === 1 ? 'I have finished · check accounts' : 'Check again'} /> : step === 1 ? 'I have finished · check accounts' : 'Check again'}</Button>}
     </div>
   </DialogPopup></Dialog>;
 }

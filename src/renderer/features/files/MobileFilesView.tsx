@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { IconArrowBackUp, IconArrowForwardUp, IconCheck, IconChevronRight, IconClipboard, IconCopy, IconCut, IconDots, IconEdit, IconExternalLink, IconFilePlus, IconFolder, IconFolderPlus, IconFolderSymlink, IconSearch, IconTrash } from '@tabler/icons-react';
+import { IconArrowBackUp, IconArrowForwardUp, IconCheck, IconChevronRight, IconClipboard, IconCopy, IconCut, IconDots, IconEdit, IconExternalLink, IconFilePlus, IconFolder, IconFolderPlus, IconFolderSymlink, IconLoader4, IconSearch, IconTrash } from '@tabler/icons-react';
 import type { FileTreeEntry } from '@shared/git-types';
 import { Button } from '@/components/ui/button';
+import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { MobileSheet } from '@/components/MobileSheet';
 import { getVsCodeFileIconUrl, getVsCodeFolderIconUrl } from '@/lib/vscode-icons';
 import { MoveFilesDialog } from './MoveFilesDialog';
@@ -93,7 +94,7 @@ export function MobileFilesView(props: FilesViewProps) {
         })}
       </nav>
       <div className="mobile-files-scroll" ref={scrollRef} onScroll={(event) => scrollPositions.current.set(directory, event.currentTarget.scrollTop)}>
-        {level === null ? <p className="mobile-list-message" role="status">Loading files…</p> : failed ? <p className="mobile-list-message" role="alert">Could not read this folder.</p>
+        {level === null ? <p className="mobile-list-message" role="status"><IconLoader4 className="animate-spin" aria-hidden="true" /><ShimmeringText text="Loading files…" /></p> : failed ? <p className="mobile-list-message" role="alert">Could not read this folder.</p>
           : entries.length === 0 ? <p className="mobile-list-message">{query ? 'No matching files in this folder.' : 'This folder is empty.'}</p>
           : <div className="virtual-list" role="list" aria-label="Files in this folder" style={{ height: virtualizer.getTotalSize() }}>
             {virtualizer.getVirtualItems().map((row) => {

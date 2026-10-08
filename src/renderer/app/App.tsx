@@ -2070,7 +2070,7 @@ export default function App() {
           <div className="undo-commit-actions">
             <Button variant="ghost" onClick={() => setUndoCommit(null)} disabled={undoingCommit}>Cancel</Button>
             <Button variant="destructive" onClick={() => void undoLatestCommit()} disabled={undoingCommit}>
-              <IconRestore /> {undoingCommit ? 'Undoing…' : 'Undo and stage changes'}
+              <IconRestore /> {undoingCommit ? <ShimmeringText text="Undoing…" /> : 'Undo and stage changes'}
             </Button>
           </div>
         </DialogPopup>

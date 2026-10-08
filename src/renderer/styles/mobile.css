@@ -302,6 +302,7 @@
 .mobile-file-selection-actions { display: flex; justify-content: space-between; gap: 2px; flex: none; padding: 6px 8px; border-top: 1px solid var(--border); background: var(--muted); }
 .mobile-file-selection-actions > button:first-child { color: var(--primary); }
 .mobile-list-message { display: flex; align-items: center; justify-content: center; gap: 7px; padding: 24px 16px; color: var(--muted-foreground); font-size: 12px; line-height: 1.7; text-align: center; }
+.mobile-list-message svg { width: 15px; height: 15px; flex: none; color: var(--primary); }
 .mobile-sheet { display: flex; flex-direction: column; width: min(440px, 92vw); max-height: 80dvh; }
 .mobile-sheet-handle { width: 32px; height: 4px; border-radius: 3px; background: var(--border); margin: 10px auto 0; flex: none; }
 .mobile-sheet-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 4px 10px 4px 18px; flex: none; }

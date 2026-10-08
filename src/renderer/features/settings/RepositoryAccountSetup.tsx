@@ -105,7 +105,7 @@ function SetupForm({ repository, isNew, inventory, account, saving, setSaving, o
     <div className="github-add-actions">
       <Button variant="ghost" disabled={saving} onClick={onClose}>Cancel</Button>
       {error && <Button variant="outline" disabled={saving} onClick={onReload}>Reload setup</Button>}
-      <Button disabled={saving || (!login && !external)} onClick={() => void save()}>{saving && <IconLoader4 className="animate-spin" />}{saving ? 'Checking access…' : 'Add repository'}</Button>
+      <Button disabled={saving || (!login && !external)} onClick={() => void save()}>{saving && <IconLoader4 className="animate-spin" />}{saving ? <ShimmeringText text="Checking access…" /> : 'Add repository'}</Button>
     </div>
   </>;
 }

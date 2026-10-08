@@ -836,7 +836,7 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   .local-refs-confirm p strong { font-weight: 700; }
   .local-refs-confirm-actions { display: flex; flex-wrap: wrap; gap: 6px; grid-column: 2; }
   .local-refs-placeholder { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 26px 16px; color: var(--muted-foreground); font-size: 11px; text-align: center; }
-  .local-refs-placeholder svg { width: 15px; height: 15px; flex: none; }
+  .local-refs-placeholder svg { width: 15px; height: 15px; flex: none; color: var(--primary); }
   .local-refs-footer { display: flex; flex: none; align-items: center; justify-content: space-between; gap: 14px; border-top: 1px solid var(--border); background: color-mix(in oklch, var(--muted) 40%, transparent); padding: 10px 14px; }
   .local-refs-footer small { min-width: 0; color: var(--muted-foreground); font-size: 10px; line-height: 1.4; }
   /* Narrow or heavily zoomed windows stack the master list above the detail so
@@ -1043,7 +1043,7 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   .web-access-rename-input:focus { border-color: var(--ring); box-shadow: 0 0 0 2px color-mix(in oklch, var(--ring) 20%, transparent); }
   .web-access-pairing-copy > div { flex: 1; }
   .web-access-loading, .web-access-unavailable { display: flex; align-items: center; gap: 7px; margin: 0; color: var(--muted-foreground); font-size: 11px; }
-  .web-access-loading svg { width: 15px; height: 15px; }
+  .web-access-loading svg { width: 15px; height: 15px; color: var(--primary); }
   .shortcuts-reset-all { margin-top: 14px; }
   .shortcuts-group { display: grid; gap: 10px; margin-top: 18px; }
   .shortcuts-group:first-of-type { margin-top: 14px; }
@@ -1117,6 +1117,8 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   .pr-stack-state.draft { color: var(--muted-foreground); }
   .pr-stack-base { border-top: 1px solid var(--border); padding: 7px; overflow-wrap: anywhere; }
   .pr-stack-notice { padding: 6px 7px; }
+  .pr-stack-notice:has(.animate-spin) { display: flex; align-items: center; gap: 6px; }
+  .pr-stack-notice svg { width: 13px; height: 13px; flex: none; color: var(--primary); }
   .pull-open-external { flex: none; opacity: 0; transition: opacity .12s ease; }
   .pull-item:hover .pull-open-external, .pull-item:focus-within .pull-open-external { opacity: 1; }
   .pulls-filter-popup { min-width: 176px; transform-origin: var(--transform-origin); border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--popover); padding: 6px; color: var(--popover-foreground); box-shadow: 0 10px 25px rgb(0 0 0 / 18%); outline: none; }
@@ -2116,7 +2118,7 @@ section[data-sileo-viewport] [data-sileo-title] { text-transform: none; }
 .github-authorship-dialog [data-slot="dialog-title"] { font-size: 18px; }
 .github-authorship-dialog [data-slot="dialog-description"] { margin-top: 5px; font-size: 12px; line-height: 1.6; }
 .github-authorship-loading { display: flex; align-items: center; gap: 8px; margin: 20px 0; font-size: 13px; }
-.github-authorship-loading svg { width: 16px; height: 16px; }
+.github-authorship-loading svg { width: 16px; height: 16px; color: var(--primary); }
 .github-authorship-review { display: grid; gap: 4px; margin-top: 18px; border: 1px solid var(--border); border-radius: var(--radius-md); padding: 13px; }
 .github-authorship-review span, .github-authorship-review small { font-size: 12px; color: var(--muted-foreground); }
 .github-authorship-review strong { font-size: 14px; overflow-wrap: anywhere; }
@@ -2157,6 +2159,7 @@ section[data-sileo-viewport] [data-sileo-title] { text-transform: none; }
 .github-access-grid dt { color: var(--foreground); }
 .github-access-grid dd { display: flex; align-items: center; gap: 6px; margin: 0; }
 .github-access-dot { width: 6px; height: 6px; flex: none; border-radius: 50%; background: currentColor; }
+.github-access-grid dd[data-state="checking"] { color: var(--primary); }
 .github-access-grid dd[data-state="ok"] { color: var(--success); }
 .github-access-grid dd:is([data-state="expired"], [data-state="inaccessible"], [data-state="offline"]) { color: var(--destructive); }
 .github-push-destination { display: grid; gap: 1px; padding: 8px 10px; border-radius: var(--radius-md); background: var(--muted); }

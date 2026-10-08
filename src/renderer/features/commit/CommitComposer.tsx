@@ -175,7 +175,7 @@ export function CommitComposer({
         {actions.mounted && (
           <div className="commit-composer-commit" data-state={actions.state}>
             <Button className="commit-composer-primary" disabled={commitDisabled} onClick={() => onCommit({ push: false })}>
-              <IconGitCommit /> {committing ? 'Committing…' : 'Commit'}
+              <IconGitCommit /> {committing ? <ShimmeringText text="Committing…" /> : 'Commit'}
             </Button>
             <Button
               variant="outline"
@@ -183,7 +183,7 @@ export function CommitComposer({
               disabled={commitDisabled || !canPush}
               onClick={() => onCommit({ push: true })}
             >
-              <IconArrowUp /> {pushing ? 'Pushing…' : 'Commit and push'}
+              <IconArrowUp /> {pushing ? <ShimmeringText text="Pushing…" /> : 'Commit and push'}
             </Button>
           </div>
         )}
