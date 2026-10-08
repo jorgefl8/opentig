@@ -20,7 +20,7 @@ export function PublishRemoteDialog({ choice, onSelect }: { choice: RemoteChoice
             <SelectTrigger aria-label="Publish to remote"><SelectValue /></SelectTrigger>
             <SelectContent>{choice.result.remotes.map((name) => <SelectItem key={name} value={name}>{name}</SelectItem>)}</SelectContent>
           </Select>
-          {context.data && <div className="repository-access-status"><p><strong>{context.data.login ? `@${context.data.login}` : 'External Git authentication'}</strong></p><p>{context.data.urls.join(', ')}</p><p>{context.data.targetRef}</p>{context.data.blocked && <p role="alert">{context.data.blocked}</p>}</div>}
+          {context.data && <div className="repository-access-status"><p><strong>{context.data.login ? `@${context.data.login}` : 'Existing Git credentials'}</strong></p><p>{context.data.urls.join(', ')}</p><p>{context.data.targetRef}</p>{context.data.blocked && <p role="alert">{context.data.blocked}</p>}</div>}
           {context.error && <p role="alert">Could not resolve the destination. Close and try again.</p>}
         </div>
         <div className="undo-commit-actions">

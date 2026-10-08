@@ -6,7 +6,7 @@ import { publicationDestination, publicationKey } from '@/features/refs/publicat
 
 const labels: Record<AccessCheck['state'], string> = {
   unchecked: 'Not checked', ok: 'Verified', expired: 'Reconnect account', inaccessible: 'No access',
-  offline: 'Offline', external: 'External', stale: 'Check again',
+  offline: 'Offline', external: 'Existing credentials', stale: 'Check again',
 };
 export function RepositoryAccessStatus({ access, checking }: { access: RepositoryAccess; checking: boolean }) {
   const client = useQueryClient();
@@ -25,7 +25,7 @@ export function RepositoryAccessStatus({ access, checking }: { access: Repositor
       <span className="github-settings-eyebrow">Push destination</span>
       <strong>{publicationDestination(publication)}</strong>
       <p>{publication.branch ?? 'No branch'} → {publication.remote ?? 'Choose a remote'}{publication.targetRef && ` / ${publication.targetRef.replace(/^refs\/heads\//, '')}`}</p>
-      <p>Git account: {publication.mode === 'managed' && publication.login ? `@${publication.login}` : 'External · provided by Git'}</p>
+      <p>Git account: {publication.mode === 'managed' && publication.login ? `@${publication.login}` : 'Existing credentials · identity not verified'}</p>
     </div>
     {publication.blocked && <p className="github-settings-notice" role="status">{publication.blocked}</p>}
     {!checking && checks.filter(([, check]) => ['expired', 'inaccessible', 'offline'].includes(check.state) && check.message)
@@ -39,7 +39,7 @@ export function RepositoryAccessStatus({ access, checking }: { access: Repositor
       {publication.mode === 'external' && <p>Git uses existing helpers, SSH keys or agents. The GitHub account does not verify its identity.</p>}
       {access.lastOperation && <div className="github-last-operation">
         <strong>Last Git operation · {access.lastOperation.ok ? 'Succeeded' : 'Failed'}</strong>
-        <p>{access.lastOperation.operation} · {access.lastOperation.login ? `@${access.lastOperation.login}` : 'External authentication'} · {formatDateTime(access.lastOperation.at, { seconds: true })}</p>
+        <p>{access.lastOperation.operation} · {access.lastOperation.login ? `@${access.lastOperation.login}` : 'Existing credentials'} · {formatDateTime(access.lastOperation.at, { seconds: true })}</p>
         <p>{access.lastOperation.url}</p><p>{access.lastOperation.message ?? 'Operation completed.'}</p>
         <p>Previous result; a new operation may differ.</p>
       </div>}

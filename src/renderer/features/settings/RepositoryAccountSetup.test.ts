@@ -71,7 +71,7 @@ it('keeps SSH external without attributing its identity to the GitHub account', 
   try {
     expect(document.querySelector('input[type=checkbox]')).toHaveProperty('disabled', true);
     expect(document.querySelector('input[type=checkbox]')).toHaveProperty('checked', false);
-    expect(document.querySelector('.github-setup-summary')?.textContent).toContain('Git: External authentication');
+    expect(document.querySelector('.github-setup-summary')?.textContent).toContain('Git: Existing credentials');
     await click('Add repository'); expect(calls.setRepositoryAccount.mock.calls[0]?.[1].gitMode).toBe('external');
   } finally { await view.dispose(); }
 });
@@ -93,7 +93,7 @@ it('requires explicit completion with external authentication when no accounts a
   const view = await mount();
   try {
     expect([...document.querySelectorAll('button')].find(node => node.textContent === 'Add repository')).toHaveProperty('disabled', false);
-    expect(document.querySelector('.github-setup-summary')?.textContent).toContain('External authentication');
+    expect(document.querySelector('.github-setup-summary')?.textContent).toContain('Existing credentials');
     await click('Add an account'); expect(document.body.textContent).toContain('Manage accounts');
     await click('Back to repository setup');
     await click('Cancel'); expect(view.close).toHaveBeenCalledOnce(); expect(calls.completeSetup).not.toHaveBeenCalled();

@@ -50,3 +50,39 @@ it('suppresses tooltips during scrolling and allows them again after scrolling s
   await hover('Beacon');
   expect(document.querySelector('[data-slot="tooltip-content"]')?.textContent).toContain('/sample/beacon');
 });
+
+async function showAccountOption(tooltip?: string) {
+  await act(async () => root.render(createElement(TooltipProvider, { delay: 0 }, createElement(SearchablePicker, {
+    groups: [{ id: 'accounts', label: 'Access', items: [{ value: 'existing', label: 'Use existing credentials', description: 'Keep the accounts already set up on this machine.', ...(tooltip ? { tooltip } : {}) }] }],
+    value: 'existing', onValueChange, label: 'Account', triggerLabel: 'Use existing credentials', placeholder: 'Search accounts…', open: true,
+  }))));
+}
+
+it.each([undefined, 'Use existing credentials · Keep the accounts already set up on this machine.'])('does not repeat fully visible account text in a tooltip (%s)', async tooltip => {
+  await showAccountOption(tooltip);
+  await hover('Use existing credentials');
+  expect(document.querySelector('[data-slot="tooltip-content"][data-open]')).toBeNull();
+  await act(async () => option('Use existing credentials').click());
+  expect(document.querySelector('[role="combobox"]')).not.toBeNull();
+});
+
+it('shows truncated descriptions and dismisses the tooltip when a resize makes them fit', async () => {
+  let truncated = true;
+  const observers: Array<() => void> = [];
+  vi.stubGlobal('ResizeObserver', class {
+    constructor(private callback: () => void) {}
+    observe(element: Element) { if (element.classList.contains('searchable-picker-copy')) observers.push(this.callback); }
+    unobserve() {} disconnect() {}
+  });
+  const width = vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockImplementation(function(this: HTMLElement) {
+    return this.tagName === 'SMALL' && truncated ? 200 : 100;
+  });
+  const available = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(100);
+  try {
+    await showAccountOption();
+    await hover('Use existing credentials');
+    expect(document.querySelector('[data-slot="tooltip-content"]')?.textContent).toContain('Keep the accounts already set up on this machine.');
+    await act(async () => { truncated = false; observers.forEach(callback => callback()); });
+    expect(document.querySelector('[data-slot="tooltip-content"][data-open]')).toBeNull();
+  } finally { width.mockRestore(); available.mockRestore(); }
+});

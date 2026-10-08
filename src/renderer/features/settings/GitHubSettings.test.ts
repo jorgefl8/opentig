@@ -275,7 +275,7 @@ it('keeps technical details collapsed while showing the destination and external
   const view = await mount();
   try {
     expect(view.container.querySelector('.github-push-destination')?.textContent).toContain('alice/demo · HTTPS');
-    expect(view.container.querySelector('.github-push-destination')?.textContent).toContain('Git account: External');
+    expect(view.container.querySelector('.github-push-destination')?.textContent).toContain('Git account: Existing credentials');
     expect(view.container.querySelector('.github-push-destination')?.textContent).not.toContain('@bob');
     expect(view.container.querySelector('.github-access-details')).toHaveProperty('open', false);
     expect(view.container.querySelector('.github-saved-accounts')).toHaveProperty('open', false);

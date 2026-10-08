@@ -101,13 +101,13 @@ export function GitHubSettings({ repository }: { repository: RepositoryInfo | nu
           <legend>Git authentication</legend>
           <div className="github-git-mode-options">
             <label><input type="radio" name="git-authentication" value="external" checked={!managed} onChange={() => void choose(selection, 'external')} />
-              <span><strong>External</strong><small>Use this machine’s Git credentials.</small></span>
+              <span><strong>Existing credentials</strong><small>Use saved Git credentials or SSH keys on the machine running OpenTig.</small></span>
             </label>
             <label><input type="radio" name="git-authentication" value="managed" checked={managed} disabled={selection === 'auto'} onChange={() => void choose(selection, 'managed')} />
               <span><strong>OpenTig</strong><small>Use the selected account for GitHub HTTPS.</small></span>
             </label>
           </div>
-          <p className="github-settings-note">{managed ? 'SSH and other providers still use external authentication.' : selection === 'auto' ? 'Git may use a different account. Choose an account above to enable OpenTig authentication.' : 'Git may use a different account. Choose OpenTig to use this account for GitHub HTTPS.'}</p>
+          <p className="github-settings-note">{managed ? 'SSH and other providers keep using the machine’s existing credentials.' : selection === 'auto' ? 'Git may use a different account. Choose an account above to enable OpenTig authentication.' : 'Git may use a different account. Choose OpenTig to use this account for GitHub HTTPS.'}</p>
         </fieldset>
         <div className="github-access-checks">
           <div className="github-settings-row"><h3>Access checks</h3>{checkButton}</div>
