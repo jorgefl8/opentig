@@ -30,12 +30,13 @@ export function useBranchPush() {
     if (!context.remote || !cached || publicationIdentity(cached) !== publicationIdentity(context)) {
       const reviewed = await new Promise<PublicationContext | null>((resolve) => {
         const request: RemoteChoice = { id: crypto.randomUUID(), repositoryId, label,
-          result: { status: 'remote-required', branch: context.branch!, oid: context.oid!, remotes: context.remotes }, resolve };
+          result: { status: 'remote-required', branch: context.branch!, oid: context.oid!, remotes: context.remote ? [context.remote, ...context.remotes.filter(remote => remote !== context.remote)] : context.remotes }, resolve };
         pending.current.add(request); setChoices(current => [...current, request]);
       });
       if (!reviewed) return null;
       context = reviewed;
     }
+    client.setQueryData(publicationKey(repositoryId), context);
     return opentig.refs.push(repositoryId, { remote: context.remote!, expectedBranch: context.branch!, expectedOid: context.oid! }, context.id);
   }, [client]);
   const choice = choices[0];

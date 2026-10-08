@@ -1,4 +1,3 @@
-import { PublicationContext } from '@/features/refs/PublicationContext';
 import { useGitHubAccount } from '@/features/pulls/useGitHubAccount';
 import { appDisplayName } from '@/lib/app-identity';
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
@@ -2122,7 +2121,6 @@ export default function App() {
           onSettingsOpen={setSettingsOpen}
           onSettingsSection={setSettingsSection}
         />
-        <PublicationContext onPush={() => void performPush()} disabled={Boolean(busy || status?.readOnly || status?.detached || repositorySyncOperations.has(repository.id))} repositoryId={repository.id} revision={`${status?.branch}:${status?.oid}:${githubAccount?.revision}`} onSettings={() => { setSettingsSection('github'); setSettingsOpen(true); }} />
         {status?.readOnly && <div className="operation-banner">Repository is read-only: {status.operation} is in progress.</div>}
 
         {mobile && mobilePane === 'list' && view !== 'files' && (
