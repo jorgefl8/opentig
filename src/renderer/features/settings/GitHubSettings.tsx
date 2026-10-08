@@ -20,7 +20,8 @@ import { writeClipboardText } from '@/lib/browser-capabilities';
 import { RepositoryAccessStatus } from './RepositoryAccessStatus';
 import { CommitAuthorshipDialog } from './CommitAuthorshipDialog';
 import { authorshipSourceLabel } from './commit-authorship-copy';
-import { gitHttpsAccountLabel, gitHttpsOutcome } from './github-access-copy';
+import { gitCredentialsLocation, gitHttpsAccountLabel, gitHttpsModeLabel, gitHttpsOutcome } from './github-access-copy';
+import { supportsManagedSetup } from '@/features/refs/publication-context';
 
 export function GitHubSettings({ repository }: { repository: RepositoryInfo | null }) {
   const client = useQueryClient();
@@ -71,7 +72,8 @@ export function GitHubSettings({ repository }: { repository: RepositoryInfo | nu
     } catch (error) { sileo.error({ title: 'Could not check GitHub', description: messageOf(error) }); return null; }
     finally { setChecking(false); }
   };
-  const choose = async (value: string, gitMode: 'external' | 'managed' = account?.selection.mode === 'account' ? account.selection.gitMode ?? 'external' : 'external') => {
+  const compatible = supportsManagedSetup(account?.access?.publication.urls ?? []);
+  const choose = async (value: string, gitMode: 'external' | 'managed' = account?.selection.mode === 'account' ? account.selection.gitMode ?? 'external' : compatible ? 'managed' : 'external') => {
     if (!repository || saving) return;
     const generation = (generations.current.get(repository.id) ?? 0) + 1; generations.current.set(repository.id, generation);
     setSaving(true);
@@ -84,7 +86,7 @@ export function GitHubSettings({ repository }: { repository: RepositoryInfo | nu
     } catch (error) { sileo.error({ title: 'Could not save GitHub account', description: messageOf(error) }); }
     finally { setSaving(false); }
   };
-  const managed = account?.selection.mode === 'account' && account.selection.gitMode === 'managed';
+  const managed = account?.selection.mode === 'account' && account.selection.gitMode === 'managed' && (account.access ? account.access.publication.mode === 'managed' : true);
   const pinnedLogin = account?.selection.mode !== 'account' ? null
     : account.selection.useGlobalDefault ? account.login || status?.defaultLogin || account.selection.login || null
       : account.selection.login || account.login || null;
@@ -130,22 +132,27 @@ export function GitHubSettings({ repository }: { repository: RepositoryInfo | nu
       <h3 id={`${id}-git`}><IconKey aria-hidden="true" />Git HTTPS</h3>
       <fieldset className="github-git-mode" disabled={saving}>
         <legend className="sr-only">Git HTTPS credentials</legend>
-        <SettingRow label="Fetch and push" description={gitHttpsOutcome({ auto: selection === 'auto', managed, login: pinnedLogin })}>
+        <SettingRow label="Fetch and push" description="Choose which credentials Git uses for this repository.">
           <div className="github-git-mode-options">
+            <label className={managed ? 'active' : ''}><input type="radio" name="git-authentication" value="managed" checked={managed} disabled={selection === 'auto' || (Boolean(account?.access) && !compatible)} onChange={() => void choose(selection, 'managed')} />
+              <span>Use {gitHttpsAccountLabel(pinnedLogin)}</span></label>
             <label className={!managed ? 'active' : ''}><input type="radio" name="git-authentication" value="external" checked={!managed} onChange={() => void choose(selection, 'external')} />
-              <span>This machine</span></label>
-            <label className={managed ? 'active' : ''}><input type="radio" name="git-authentication" value="managed" checked={managed} disabled={selection === 'auto'} onChange={() => void choose(selection, 'managed')} />
-              <span>{gitHttpsAccountLabel(pinnedLogin)}</span></label>
+              <span>Git credentials</span></label>
           </div>
         </SettingRow>
       </fieldset>
+      <div className="github-git-summary">
+        <p>GitHub / PRs: <strong>{account?.login ? `@${account.login}` : pinnedLogin ? `@${pinnedLogin}` : 'No account verified'}</strong></p>
+        <p>Fetch / push: <strong>{gitHttpsModeLabel(managed ? 'managed' : 'external', pinnedLogin)}</strong></p>
+      </div>
+      <p className="github-settings-note">{gitHttpsOutcome({ managed, login: pinnedLogin, compatible: account?.access ? compatible : true })}{!managed && selection === 'auto' && compatible ? ' Choose an account above to use it for Git HTTPS too.' : ''}</p>
     </section>
     <section className="settings-general-group github-access-checks" aria-labelledby={`${id}-access`}>
       <h3 id={`${id}-access`}><IconShieldCheck aria-hidden="true" />Access</h3>
-      <SettingRow label="Access checks" description={account?.access ? 'Account, pull requests, and permission to push.' : 'Verify the account and permission to push.'}>
+      <SettingRow label="Access checks" description="Check the GitHub account and its repository permissions.">
         {checkButton}
       </SettingRow>
-      {account?.access ? <RepositoryAccessStatus access={account.access} checking={checking || saving} />
+      {account?.access ? <RepositoryAccessStatus access={account.access} accountLogin={account.login ?? pinnedLogin} checking={checking || saving} />
         : <p className="github-settings-note">Check access to verify the account and repository permissions.</p>}
       {context.error && <p className="github-settings-notice" role="alert">{messageOf(context.error)}</p>}
     </section>
@@ -196,7 +203,7 @@ export function GitHubSettings({ repository }: { repository: RepositoryInfo | nu
     </section>
     <section className="settings-general-group github-global-accounts" aria-label="Accounts available to OpenTig">
       <h3><IconUsers aria-hidden="true" />Available accounts</h3>
-      <SettingRow label="Saved accounts" description="Saved on the machine running OpenTig. Available to every repository.">
+      <SettingRow label="Saved accounts" description={`Saved in GitHub CLI on ${gitCredentialsLocation()}. Git's own credentials are managed separately.`}>
         <div className="github-accounts-actions">
           <Button variant="outline" size="sm" className="github-refresh-accounts" onClick={() => void check()} disabled={busy}>
             {checking ? <IconLoader4 className="animate-spin" /> : <IconRefresh />}{checking ? <ShimmeringText text="Checking…" /> : 'Refresh accounts'}

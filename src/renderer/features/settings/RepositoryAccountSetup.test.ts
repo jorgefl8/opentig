@@ -71,7 +71,7 @@ it('keeps SSH external without attributing its identity to the GitHub account', 
   try {
     expect(document.querySelector('input[type=checkbox]')).toHaveProperty('disabled', true);
     expect(document.querySelector('input[type=checkbox]')).toHaveProperty('checked', false);
-    expect(document.querySelector('.github-setup-summary')?.textContent).toContain('Git: Existing credentials');
+    expect(document.querySelector('.github-setup-summary')?.textContent).toContain('Fetch / push: Existing credentials');
     await click('Add repository'); expect(calls.setRepositoryAccount.mock.calls[0]?.[1].gitMode).toBe('external');
   } finally { await view.dispose(); }
 });

@@ -2078,12 +2078,14 @@ section[data-sileo-viewport] [data-sileo-title] { text-transform: none; }
 .github-repository-heading { display: flex; align-items: flex-start; gap: 8px; }
 .github-git-mode { min-width: 0; margin: 0; padding: 0; border: 0; }
 .github-git-mode-options { display: inline-flex; max-width: 100%; gap: 2px; padding: 3px; border: 1px solid var(--border); border-radius: 7px; background: var(--muted); }
-.github-git-mode-options label { display: flex; align-items: center; height: 28px; padding: 0 9px; border-radius: 5px; color: var(--muted-foreground); font-size: 11px; font-weight: 520; cursor: pointer; }
+.github-git-mode-options label { display: flex; align-items: center; min-height: 28px; padding: 4px 9px; border-radius: 5px; color: var(--muted-foreground); font-size: 11px; font-weight: 520; cursor: pointer; overflow-wrap: anywhere; }
 .github-git-mode-options label.active, .github-git-mode-options label:has(input:checked) { background: var(--card); color: var(--foreground); box-shadow: 0 1px 2px rgb(0 0 0 / 12%); }
 .github-git-mode-options label:has(input:disabled) { opacity: .45; cursor: default; }
 .github-git-mode-options input { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
 .github-git-mode-options input:focus-visible { outline: none; }
 .github-git-mode-options label:has(input:focus-visible) { outline: 2px solid var(--ring); outline-offset: 2px; }
+.github-git-summary { display: grid; gap: 3px; margin-top: 6px; font-size: 11px; color: var(--muted-foreground); overflow-wrap: anywhere; }
+.github-git-summary strong { color: var(--foreground); font-weight: 550; }
 .github-cli-version { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 12px; overflow-wrap: anywhere; }
 .github-cli-version svg { width: 15px; height: 15px; flex: none; }
 .github-settings-note { margin: 4px 0 0; color: var(--muted-foreground); font-size: 11px; line-height: 1.5; }

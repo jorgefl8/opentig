@@ -11,6 +11,7 @@ import { opentig } from '@/lib/opentig-api';
 import { queryKeys } from '@/lib/query-client';
 import { GitHubSettings } from './GitHubSettings';
 import { publicationDestination, supportsManagedSetup } from '@/features/refs/publication-context';
+import { gitCredentialsLocation } from './github-access-copy';
 
 const GLOBAL = '__global_default__';
 const EXTERNAL = '__external__';
@@ -86,16 +87,16 @@ function SetupForm({ repository, isNew, inventory, account, saving, setSaving, o
   };
   return <>
     <div className="github-setup-account"><label className="github-setup-label" htmlFor="setup-github-account">GitHub account</label>
-      <SearchablePicker groups={[{ id: 'default', label: 'OpenTig default', items: [{ value: GLOBAL, label: inventory.defaultLogin ? `Global default · @${inventory.defaultLogin}` : 'Global default · not set', disabled: !inventory.defaultLogin }] }, { id: 'accounts', label: 'Saved accounts', items }, { id: 'external', label: 'Other access', items: [{ value: EXTERNAL, label: 'Use existing credentials', description: 'Keep the accounts already set up on this machine.' }] }]}
+      <SearchablePicker groups={[{ id: 'default', label: 'OpenTig default', items: [{ value: GLOBAL, label: inventory.defaultLogin ? `Global default · @${inventory.defaultLogin}` : 'Global default · not set', disabled: !inventory.defaultLogin }] }, { id: 'accounts', label: 'Saved accounts', items }, { id: 'external', label: 'Other access', items: [{ value: EXTERNAL, label: 'Use existing credentials', description: `Use Git's own credentials on ${gitCredentialsLocation()}; the Git account is unverified.` }] }]}
         value={choice} triggerId="setup-github-account" label="Account for this repository" triggerLabel={external ? 'Use existing credentials' : choice === GLOBAL ? `Global default · @${login}` : login ? `@${login}` : 'Choose an account'}
         placeholder="Search accounts…" size="default" align="start" disabled={saving} onValueChange={setChoice} />
     </div>
     <label className="github-setup-both"><input type="checkbox" checked={!external && both && compatible} disabled={saving || external || !compatible} onChange={event => setBoth(event.target.checked)} />
-      <span><strong>Use this account for Git too</strong><small>{external ? 'Git uses saved credentials or SSH keys on the machine running OpenTig.' : compatible ? 'Authenticate GitHub HTTPS reads and pushes with the same account.' : 'This destination uses the machine’s existing Git credentials or SSH keys.'}</small></span>
+      <span><strong>Use this account for fetch and push too</strong><small>{external ? `Git uses credentials or SSH keys on ${gitCredentialsLocation()}. They may belong to a different account.` : compatible ? 'Authenticate GitHub HTTPS reads and pushes with the same account.' : `This destination uses Git credentials or SSH keys on ${gitCredentialsLocation()}.`}</small></span>
     </label>
     <div className="github-push-destination github-setup-summary">
       <p>GitHub / PRs: <strong>{external ? 'Account from GitHub CLI (gh)' : login ? `@${login}` : 'No account selected'}</strong></p>
-      <p>Git: <strong>{!external && both && compatible ? login ? `@${login} · OpenTig` : 'No account selected' : 'Existing credentials'}</strong></p>
+      <p>Fetch / push: <strong>{!external && both && compatible ? login ? `@${login} · OpenTig` : 'No account selected' : 'Existing credentials · account unverified'}</strong></p>
       {account.access && <p>{publicationDestination(account.access.publication)}</p>}
     </div>
     <p className="github-settings-note">{choice === GLOBAL ? 'Follows the OpenTig default account. ' : ''}Shared across worktrees and connected clients. Commit authorship stays separate.</p>
