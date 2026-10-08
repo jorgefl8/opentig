@@ -83,6 +83,7 @@ export class RepositoryGitAccess {
       : target.remote && !target.urls.length ? 'The configured push remote is unavailable.'
         : managed && target.urls.some(isGitHubHttp) && !compatible ? 'Managed Git requires a plain github.com HTTPS destination. Review the URL or use external authentication.' : undefined;
     return { ...target, urls: target.urls.map(redactSensitiveText), repositoryId, oid, targetRef,
+      hasUpstream: Boolean(upstreamRemote && merge),
       id: digest([repository.commonDir, selection, revision, target, oid, configuration]),
       mode: managed && compatible ? 'managed' : 'external', login: managed && compatible && selection.mode === 'account' ? selection.login : null,
       ...(blocked ? { blocked } : {}) };

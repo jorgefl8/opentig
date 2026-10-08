@@ -3,12 +3,13 @@ import { useQueryClient } from '@tanstack/react-query';
 import type { PushResult } from '../../../shared/contracts';
 import type { PublicationContext } from '@shared/repository-access';
 import { opentig } from '@/lib/opentig-api';
-import { publicationIdentity, publicationKey } from './publication-context';
+import { hasReviewedPublication, publicationIdentity, publicationKey, rememberPublication } from './publication-context';
 
 export interface RemoteChoice {
   id: string;
   repositoryId: string;
   label: string;
+  hasUpstream: boolean;
   result: Extract<PushResult, { status: 'remote-required' }>;
   resolve(context: PublicationContext | null): void;
 }
@@ -27,9 +28,10 @@ export function useBranchPush() {
     let context = await opentig.refs.pushContext(repositoryId);
     if (context.blocked) return { status: 'rejected', reason: 'configuration', message: context.blocked };
     if (!context.branch || !context.oid || !context.remotes.length) return { status: 'rejected', reason: 'configuration', message: 'Choose a branch with commits and configure a remote before publishing.' };
-    if (!context.remote || !cached || publicationIdentity(cached) !== publicationIdentity(context)) {
+    const reviewedBefore = cached ? publicationIdentity(cached) === publicationIdentity(context) : hasReviewedPublication(context);
+    if (!context.remote || !reviewedBefore) {
       const reviewed = await new Promise<PublicationContext | null>((resolve) => {
-        const request: RemoteChoice = { id: crypto.randomUUID(), repositoryId, label,
+        const request: RemoteChoice = { id: crypto.randomUUID(), repositoryId, label, hasUpstream: context.hasUpstream ?? false,
           result: { status: 'remote-required', branch: context.branch!, oid: context.oid!, remotes: context.remote ? [context.remote, ...context.remotes.filter(remote => remote !== context.remote)] : context.remotes }, resolve };
         pending.current.add(request); setChoices(current => [...current, request]);
       });
@@ -37,6 +39,7 @@ export function useBranchPush() {
       context = reviewed;
     }
     client.setQueryData(publicationKey(repositoryId), context);
+    rememberPublication(context);
     return opentig.refs.push(repositoryId, { remote: context.remote!, expectedBranch: context.branch!, expectedOid: context.oid! }, context.id);
   }, [client]);
   const choice = choices[0];
