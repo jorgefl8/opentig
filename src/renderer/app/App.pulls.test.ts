@@ -213,3 +213,13 @@ it('keeps closed, unmerged PRs out of the current branch toolbar', async () => {
   await mount();
   expect(container.querySelector('[aria-label="Branch PR"]')?.textContent).toBe('No PR');
 });
+
+it('clears the toolbar PR when switching to a clone whose branch has no matching PR', async () => {
+  calls.branchPull.mockImplementation(async (id: string) => id === 'repo' ? { number: 12, state: 'OPEN' } : null);
+  calls.openRecent.mockResolvedValue({ ...repository, id: 'repo-b', path: '/sample-clone' });
+  await mount();
+  expect(container.querySelector('[aria-label="Branch PR"]')?.textContent).toBe('#12 OPEN');
+  await click('[aria-label="Switch repository"]');
+  expect(calls.branchPull).toHaveBeenLastCalledWith('repo-b', 'main');
+  expect(container.querySelector('[aria-label="Branch PR"]')?.textContent).toBe('No PR');
+});

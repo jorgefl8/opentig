@@ -11,7 +11,7 @@ import type { GitProcess } from '../git/GitProcess';
 import type { RepositoryService } from '../git/RepositoryService';
 import { parseGitHubRemote, parseSshRemote } from './GitHubRemoteParser';
 import { GH_ENV, redactCommandToken, type GitHubCommandAuth } from './GitHubAccountAuth';
-import { parseCreatedPullRequestUrl, parsePullRequestDetails, parsePullRequestList, PR_DETAIL_FIELDS, PR_SUMMARY_FIELDS, selectPullRequestsNewestFirst, sortPullRequestsNewestFirst } from './PullRequestParser';
+import { parseBranchPullRequestList, parseCreatedPullRequestUrl, parsePullRequestDetails, parsePullRequestList, PR_DETAIL_FIELDS, PR_SUMMARY_FIELDS, selectPullRequestsNewestFirst, sortPullRequestsNewestFirst } from './PullRequestParser';
 
 import { GitHubAccountsService } from './GitHubAccountsService';
 import type { GitHubAccountSelection } from '../../shared/github-accounts';
@@ -110,16 +110,16 @@ export class GitHubService {
     const branch = validateRef(branchName, operation);
     // An older open PR must not be hidden by newer closed PRs for a reused branch.
     const openResult = await this.runGh(
-      ['pr', 'list', '-R', nameWithOwner, '--head', branch, '--state', 'open', '--json', PR_SUMMARY_FIELDS, '--limit', '10'],
+      ['pr', 'list', '-R', nameWithOwner, '--head', branch, '--state', 'open', '--json', `${PR_SUMMARY_FIELDS},headRepository`, '--limit', '10'],
       { auth, executable, cwd: repository.path, operation, timeoutMs: NETWORK_TIMEOUT_MS, maxOutputBytes: 1024 * 1024 },
     );
-    const openPull = sortPullRequestsNewestFirst(parsePullRequestList(openResult.stdout)).find((pull) => pull.state === 'OPEN');
+    const openPull = sortPullRequestsNewestFirst(parseBranchPullRequestList(openResult.stdout, nameWithOwner, branch)).find((pull) => pull.state === 'OPEN');
     if (openPull) return openPull;
     const result = await this.runGh(
-      ['pr', 'list', '-R', nameWithOwner, '--head', branch, '--state', 'all', '--json', PR_SUMMARY_FIELDS, '--limit', '10'],
+      ['pr', 'list', '-R', nameWithOwner, '--head', branch, '--state', 'all', '--json', `${PR_SUMMARY_FIELDS},headRepository`, '--limit', '10'],
       { auth, executable, cwd: repository.path, operation, timeoutMs: NETWORK_TIMEOUT_MS, maxOutputBytes: 1024 * 1024 },
     );
-    return sortPullRequestsNewestFirst(parsePullRequestList(result.stdout))[0] ?? null;
+    return sortPullRequestsNewestFirst(parseBranchPullRequestList(result.stdout, nameWithOwner, branch))[0] ?? null;
   }
 
   async getPullRequest(repositoryId: string, prNumber: number): Promise<PullRequestDetails> {

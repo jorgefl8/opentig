@@ -65,16 +65,16 @@ describe('GitHub SSH remote detection', () => {
 describe('current branch pull requests', () => {
   it('selects the most recently updated open PR when several PRs share a branch', async () => {
     const { service } = fixture(() => ok([
-      { number: 11, state: 'OPEN', updatedAt: '2026-09-01' },
-      { number: 12, state: 'OPEN', updatedAt: '2026-09-03' },
-      { number: 13, state: 'OPEN', updatedAt: '2026-09-02' },
+      { headRepository: { nameWithOwner: 'example/demo' }, headRefName: 'feature', number: 11, state: 'OPEN', updatedAt: '2026-09-01' },
+      { headRepository: { nameWithOwner: 'example/demo' }, headRefName: 'feature', number: 12, state: 'OPEN', updatedAt: '2026-09-03' },
+      { headRepository: { nameWithOwner: 'example/demo' }, headRefName: 'feature', number: 13, state: 'OPEN', updatedAt: '2026-09-02' },
     ]));
     expect(await service.findPullRequestForBranch('repo', 'feature')).toMatchObject({ number: 12, state: 'OPEN' });
   });
   it('finds an open draft even when a reused branch has newer closed history', async () => {
     const { service, run } = fixture((args) => ok(args.includes('open')
-      ? [{ number: 12, state: 'OPEN', isDraft: true, headRefName: 'feature', url: 'https://github.com/example/demo/pull/12' }]
-      : [{ number: 99, state: 'CLOSED', headRefName: 'feature' }]));
+      ? [{ headRepository: { nameWithOwner: 'example/demo' }, headRefName: 'feature', number: 12, state: 'OPEN', isDraft: true, url: 'https://github.com/example/demo/pull/12' }]
+      : [{ headRepository: { nameWithOwner: 'example/demo' }, headRefName: 'feature', number: 99, state: 'CLOSED' }]));
     expect(await service.findPullRequestForBranch('repo', 'feature')).toMatchObject({ number: 12, state: 'OPEN', isDraft: true });
     expect(run.mock.calls.filter(([, args]) => args[0] === 'pr').map(([, args]) => args)).toEqual([
       expect.arrayContaining(['--head', 'feature', '--state', 'open']),
@@ -82,10 +82,43 @@ describe('current branch pull requests', () => {
   });
   it('preserves closed and merged history for the branch details view', async () => {
     const { service } = fixture((args) => ok(args.includes('open') ? [] : [
-      { number: 12, state: 'CLOSED', updatedAt: '2026-09-01' },
-      { number: 13, state: 'MERGED', updatedAt: '2026-09-02' },
+      { headRepository: { nameWithOwner: 'example/demo' }, headRefName: 'feature', number: 12, state: 'CLOSED', updatedAt: '2026-09-01' },
+      { headRepository: { nameWithOwner: 'example/demo' }, headRefName: 'feature', number: 13, state: 'MERGED', updatedAt: '2026-09-02' },
     ]));
     expect(await service.findPullRequestForBranch('repo', 'feature')).toMatchObject({ number: 13, state: 'MERGED' });
+  });
+  it.each(['OPEN', 'MERGED', 'CLOSED'])('does not associate another fork’s main PR (%s) with a clone of upstream', async (state) => {
+    const { service } = fixture(() => ok([
+      { number: 10662, state, headRefName: 'main', headRepository: { nameWithOwner: 'someone/demo' } },
+    ]));
+    expect(await service.findPullRequestForBranch('repo', 'main')).toBeNull();
+  });
+  it('keeps a matching main PR regardless of its author or the authenticated account', async () => {
+    const { service, run } = fixture(() => ok([
+      { number: 12, state: 'OPEN', author: { login: 'another-contributor' }, headRefName: 'main', headRepository: { nameWithOwner: 'Example/Demo' } },
+    ]));
+    expect(await service.findPullRequestForBranch('repo', 'main')).toMatchObject({ number: 12, author: 'another-contributor' });
+    expect(run.mock.calls.find(([, args]) => args[0] === 'pr')?.[1].join(',')).toContain('headRepository');
+  });
+  it('does not let an unrelated open PR hide merged history from this repository', async () => {
+    const { service } = fixture((args) => ok(args.includes('open')
+      ? [{ number: 99, state: 'OPEN', headRefName: 'main', headRepository: { nameWithOwner: 'someone/demo' } }]
+      : [{ number: 12, state: 'MERGED', headRefName: 'main', headRepository: { nameWithOwner: 'example/demo' } }]));
+    expect(await service.findPullRequestForBranch('repo', 'main')).toMatchObject({ number: 12, state: 'MERGED' });
+  });
+  it('ignores missing head repositories and branches that only differ in case', async () => {
+    const { service } = fixture(() => ok([
+      { number: 10, state: 'OPEN', headRefName: 'main', headRepository: null },
+      { number: 11, state: 'OPEN', headRefName: 'main' },
+      { number: 12, state: 'OPEN', headRefName: 'Main', headRepository: { nameWithOwner: 'example/demo' } },
+    ]));
+    expect(await service.findPullRequestForBranch('repo', 'main')).toBeNull();
+  });
+  it('matches the cloned fork itself when origin is a fork', async () => {
+    const { service } = fixture(() => ok([
+      { number: 12, state: 'OPEN', headRefName: 'feature', headRepository: { nameWithOwner: 'someone/demo' } },
+    ]), 'https://github.com/someone/demo.git');
+    expect(await service.findPullRequestForBranch('repo', 'feature')).toMatchObject({ number: 12 });
   });
   it('returns null when the branch has no PR and propagates lookup errors', async () => {
     expect(await fixture(() => ok([])).service.findPullRequestForBranch('repo', 'feature')).toBeNull();
