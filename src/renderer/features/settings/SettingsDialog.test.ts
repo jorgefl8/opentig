@@ -8,7 +8,7 @@ import { SettingsStore } from '../../../main/persistence/SettingsStore';
 import { SettingsDialog } from './SettingsDialog';
 
 const { statuses, toastError } = vi.hoisted(() => ({ statuses: vi.fn(), toastError: vi.fn() }));
-vi.mock('@/lib/opentig-api', () => ({ opentig: { ai: { statuses } } }));
+vi.mock('@/lib/opentig-api', () => ({ opentig: { ai: { statuses }, events: { onAiInstructionsChanged: () => () => {}, onRepositoryChanged: () => () => {} } } }));
 vi.mock('sileo', () => ({ sileo: { error: toastError } }));
 vi.mock('motion/react', async (original) => ({ ...await original<typeof import('motion/react')>(), useReducedMotion: () => true }));
 

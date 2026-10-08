@@ -1,3 +1,4 @@
+import type { RepositoryAiInstructions } from './RepositoryAiInstructions';
 import { EMPTY_AI_USAGE, type AiUsage } from '../../shared/ai-log';
 import type { AiHarnessId, GeneratePullRequestDraftInput, GeneratedPullRequestDraft } from '../../shared/contracts';
 import { AiOperationError } from '../../shared/errors';
@@ -14,6 +15,7 @@ export class PullRequestDraftService {
     private readonly operations: GitRepositoryOperations,
     providers: AiProvider[],
     private readonly log?: AiLogRecorder,
+    private readonly instructions?: Pick<RepositoryAiInstructions, 'snapshot'>,
   ) {
     for (const provider of providers) this.providers.set(provider.id, provider);
   }
@@ -38,12 +40,15 @@ export class PullRequestDraftService {
     try {
       const context = await this.operations.getPullRequestDraftContext(input.repositoryId, input.base);
       contextTruncated = context.truncated;
+      const instructions = await this.instructions?.snapshot(input.repositoryId);
       throwIfCancelled(signal, input.harness);
-      const generated = await provider.generate({ repositoryPath: context.repositoryPath, prompt: buildPullRequestPrompt(context), schema: PR_DRAFT_SCHEMA, model: input.model, signal });
+      const generated = await provider.generate({ repositoryPath: context.repositoryPath, prompt: buildPullRequestPrompt(context, instructions?.files), schema: PR_DRAFT_SCHEMA, model: input.model, signal });
       usage = generated.usage;
       const parts = parsePullRequestDraft(generated.output);
       const current = await this.operations.getPullRequestDraftSnapshot(input.repositoryId, input.base);
       throwIfCancelled(signal, input.harness);
+      const currentInstructions = await this.instructions?.snapshot(input.repositoryId);
+      if (currentInstructions?.fingerprint !== instructions?.fingerprint) throw new AiOperationError({ code: 'AI_STAGED_CHANGES_CHANGED', operation: 'ai-repository-instructions', harness: input.harness, message: 'Repository instructions changed during generation. Generate again.' });
       if (current.fingerprint !== context.fingerprint) {
         throw new AiOperationError({ code: 'AI_STAGED_CHANGES_CHANGED', operation: 'ai-pr-draft', harness: input.harness, message: 'The branch changed during generation.' });
       }

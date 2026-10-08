@@ -1,3 +1,4 @@
+import { RepositoryAiSettings } from './RepositoryAiSettings';
 import { GitHubSettings } from './GitHubSettings';
 import { AiExecutableSettings } from './AiExecutableSettings';
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
@@ -214,7 +215,7 @@ export function SettingsDialog({ preferences, onPreference, open, onOpenChange, 
                 <div className="settings-field settings-field-separated ai-model-field">
                   <div className="settings-field-label">
                     <strong>{harnessLabel(selectedHarness)} model</strong>
-                    <span>{selectedHarness === 'grok' ? 'Default uses Grok’s built-in default. Custom CLI models and configuration are not loaded.' : 'Default lets the CLI choose. OpenTig remembers a separate selection for each harness.'}</span>
+                    <span>{'Default uses the harness’s built-in default. OpenTig remembers a separate selection for each harness; custom CLI configuration is excluded during generation.'}</span>
                   </div>
                   <SearchablePicker
                     key={selectedHarness}
@@ -233,6 +234,7 @@ export function SettingsDialog({ preferences, onPreference, open, onOpenChange, 
                   {selectedStatus && !selectedStatus.installed && selectedStatus.installationStatus !== 'inspection-failed' && <p className="ai-login-hint">Install {harnessLabel(selectedHarness)} and check its availability again.</p>}
                 </div>
                 <AiExecutableSettings key={selectedHarness} harness={selectedHarness} preferences={preferences} status={selectedStatus} onPreference={onPreference} />
+                <RepositoryAiSettings key={repository?.id} repository={repository} />
                 <div className="settings-field settings-field-separated ai-history-field">
                   <div className="settings-field-label">
                     <strong>Generation history</strong>
@@ -240,7 +242,7 @@ export function SettingsDialog({ preferences, onPreference, open, onOpenChange, 
                   </div>
                   <Button variant="outline" size="sm" onClick={() => setAiLogOpen(true)}><IconHistory /> View history</Button>
                 </div>
-                <p className="ai-privacy-note">Only the staged diff, its summary, the branch, and recent subjects are sent to the selected harness. The generated message always remains pending your review, and the history records metadata only.</p>
+                <p className="ai-privacy-note">OpenTig sends the relevant diff, summary and commit subjects to the selected harness, plus supported repository instruction text when enabled. Generated content remains pending your review; history records metadata only.</p>
                 <AiLogDialog open={aiLogOpen} onOpenChange={setAiLogOpen} />
               </>}
                 </motion.div>

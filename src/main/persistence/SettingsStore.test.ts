@@ -569,3 +569,19 @@ describe('CLI executable preferences', () => {
     expect(store.preferences.aiExecutablePaths).toEqual({});
   });
 });
+
+it('repairs repository AI opt-ins and carries their scope through relocation and forget', async () => {
+  const file = await settingsFile({ repositoryAiInstructions: { '/fixture/Sample/.git': true, '/fixture/other/.git': 'true', relative: true } });
+  const store = new SettingsStore(file); await store.load();
+  expect(store.repositoryAiInstructionsEnabled('/fixture/Sample/.git')).toBe(true);
+  expect(store.repositoryAiInstructionsEnabled('/fixture/other/.git')).toBe(false);
+  expect(store.repositoryAiInstructionsEnabled('relative')).toBe(false);
+  if (process.platform !== 'win32') expect(store.repositoryAiInstructionsEnabled('/fixture/sample/.git')).toBe(false);
+  const previous = { id: 'repo', name: 'Sample', repositoryName: 'Sample', path: '/fixture/Sample', commonDir: '/fixture/Sample/.git' };
+  await store.touchRepository(previous);
+  await store.relocateRepository('repo', { ...previous, id: 'moved', path: '/fixture/moved', commonDir: '/fixture/moved/.git' });
+  expect(store.repositoryAiInstructionsEnabled(previous.commonDir)).toBe(false);
+  expect(store.repositoryAiInstructionsEnabled('/fixture/moved/.git')).toBe(true);
+  await store.forgetRepository('/fixture/moved/.git');
+  expect(store.repositoryAiInstructionsEnabled('/fixture/moved/.git')).toBe(false);
+});
