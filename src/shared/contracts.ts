@@ -609,8 +609,9 @@ export interface OpenTigApi {
   };
   github: {
     accountsStatus(forceRefresh?: boolean): Promise<GitHubAccountsStatus>;
+    setDefaultAccount(login: string): Promise<GitHubAccountsStatus>;
     repositoryAccount(repositoryId: string, forceRefresh?: boolean): Promise<GitHubRepositoryAccount>;
-    setRepositoryAccount(repositoryId: string, selection: GitHubAccountSelection): Promise<GitHubRepositoryAccount>;
+    setRepositoryAccount(repositoryId: string, selection: GitHubAccountSelection, expectedRevision?: number): Promise<GitHubRepositoryAccount>;
     status(forceRefresh?: boolean): Promise<GhCliStatus>;
     repositoryInfo(repositoryId: string): Promise<GitHubRepositoryInfo>;
     findPullRequestForBranch(repositoryId: string, branchName: string): Promise<PullRequestSummary | null>;
@@ -629,7 +630,7 @@ export interface OpenTigApi {
     record(entry: Pick<ProblemLogRecordInput, 'operation' | 'message'> & Partial<Pick<ProblemLogRecordInput, 'level' | 'code' | 'repositoryId'>>): Promise<void>;
   };
   events: {
-    onGitHubAccountsChanged(callback: (repositoryIds?: string[]) => void): () => void;
+    onGitHubAccountsChanged(callback: (repositoryIds?: string[], inventoryChanged?: boolean) => void): () => void;
     onRepositoryChanged(callback: (repositoryId: string, scope: RepositoryChangeScope) => void): () => void;
     onActiveRepositoryChanged(callback: (repository: RepositoryInfo) => void): () => void;
   };
@@ -662,7 +663,7 @@ export const IPC = {
   remoteBranchDetails: 'refs:remote-branch-details', trackingBranchCreate: 'refs:create-tracking-branch', remoteBranchDelete: 'refs:delete-remote-branch', branchesFetch: 'refs:fetch-branches',
   aiStatuses: 'ai:statuses', aiGenerateCommitMessage: 'ai:generate-commit-message', aiCancelGeneration: 'ai:cancel-generation', aiLog: 'ai:log', aiClearLog: 'ai:clear-log',
   diagnosticsList: 'diagnostics:list', diagnosticsClear: 'diagnostics:clear', diagnosticsRecord: 'diagnostics:record',
-  githubAccountsStatus: 'github:accounts-status', githubRepositoryAccount: 'github:repository-account', githubSetRepositoryAccount: 'github:set-repository-account',
+  githubAccountsStatus: 'github:accounts-status', githubSetDefaultAccount: 'github:set-default-account', githubRepositoryAccount: 'github:repository-account', githubSetRepositoryAccount: 'github:set-repository-account',
   githubStatus: 'github:status', githubRepositoryInfo: 'github:repository-info', githubPrForBranch: 'github:pr-for-branch', githubPrList: 'github:pr-list', githubPrView: 'github:pr-view',
   githubPrStack: 'github:pr-stack', githubPrDiff: 'github:pr-diff', githubPrCommitDiff: 'github:pr-commit-diff', githubPrCreate: 'github:pr-create', githubPrDraft: 'github:pr-draft', githubPrDraftCancel: 'github:pr-draft-cancel',
 } as const;

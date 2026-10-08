@@ -309,3 +309,25 @@ it('uses Git’s origin fetch default with multiple remotes and pins the managed
   expect(network.mock.calls[0]?.[0].slice(-3)).toEqual(['fetch', '--', 'origin']);
   expect((await f.service.publication(f.repositoryId)).remote).toBeNull();
 });
+
+it('uses the global OpenTig default for Git credentials and rejects publications prepared before a default change', async () => {
+  const f = await fixture();
+  await f.accounts.setDefaultAccount('alice');
+  await f.accounts.setSelection(f.repository, { mode: 'account', host: 'github.com', login: 'alice', useGlobalDefault: true, gitMode: 'managed' });
+  const before = await f.service.publication(f.repositoryId);
+  await f.accounts.setDefaultAccount('bob');
+  const usernames: string[] = [];
+  fakeNetwork(f, async (args) => {
+    let index = 0; while (args[index] === '-c') index += 2;
+    const result = await execa('git', [...args.slice(0, index), 'credential', 'fill'], { cwd: f.work,
+      input: 'protocol=https\nhost=github.com\npath=team/demo.git\n\n', env: { GIT_TERMINAL_PROMPT: '0' } });
+    expect(result.stdout).toContain(`password=${token('bob')}`);
+    usernames.push(result.stdout.split('\n').find(line => line.startsWith('username='))!);
+    return { stdout: Buffer.from(''), stderr: Buffer.from(''), exitCode: 0 };
+  });
+  expect(await f.operations.push(f.repositoryId, undefined, before.id)).toMatchObject({ status: 'rejected', reason: 'configuration' });
+  expect(usernames).toEqual([]);
+  await f.operations.fetch(f.repositoryId);
+  expect(usernames).toEqual(['username=bob']);
+  expect((await f.service.publication(f.repositoryId)).login).toBe('bob');
+});

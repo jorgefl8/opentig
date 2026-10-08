@@ -59,7 +59,8 @@ export class GitHubService {
     return { ...this.accounts.context(repository, remote, info.nameWithOwner), ...(access ? { access } : {}) };
   }
 
-  async setRepositoryAccount(repositoryId: string, selection: GitHubAccountSelection) {
+  async setRepositoryAccount(repositoryId: string, selection: GitHubAccountSelection, expectedRevision?: number) {
+    if (expectedRevision !== undefined && expectedRevision !== this.accounts.revisionFor(this.repositories.get(repositoryId))) throw new Error('The repository account changed in another session. Reopen the account setup and review it.');
     await this.accounts.setSelection(this.repositories.get(repositoryId), selection);
     return this.repositoryAccount(repositoryId);
   }

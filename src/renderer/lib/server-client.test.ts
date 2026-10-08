@@ -152,3 +152,15 @@ describe('OpenTig server client', () => {
     );
   });
 });
+
+it('transports global defaults and the reviewed setup revision without exposing credentials', async () => {
+  const f = transportFixture(); const { api } = createOpenTigServerClient({ transport: f.transport });
+  const changed = vi.fn(); api.events.onGitHubAccountsChanged(changed);
+  await api.github.setDefaultAccount('alice');
+  const selection = { mode: 'account' as const, host: 'github.com' as const, login: 'alice', useGlobalDefault: true, gitMode: 'managed' as const };
+  await api.github.setRepositoryAccount('repo', selection, 5);
+  expect(f.request).toHaveBeenCalledWith(IPC.githubSetDefaultAccount, ['alice']);
+  expect(f.request).toHaveBeenCalledWith(IPC.githubSetRepositoryAccount, ['repo', selection, 5]);
+  f.event({ type: 'github.accounts-changed', repositoryIds: ['repo'], inventoryChanged: true });
+  expect(changed).toHaveBeenCalledWith(['repo'], true);
+});

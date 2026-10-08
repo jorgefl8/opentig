@@ -80,3 +80,15 @@ it('invalidates only the repository and worktrees affected by an account selecti
   expect(client.getQueryData(queryKeys.githubAccounts)).toBe('inventory');
   client.clear();
 });
+
+it('refreshes global default metadata and followers without resetting explicitly pinned repositories', async () => {
+  const client = new QueryClient();
+  client.setQueryData(queryKeys.githubAccounts, 'old default');
+  client.setQueryData(queryKeys.githubAccount('follower'), 'alice');
+  client.setQueryData(queryKeys.githubAccount('fixed'), 'alice');
+  await resetGitHubQueries(client, ['follower'], true);
+  expect(client.getQueryData(queryKeys.githubAccounts)).toBeUndefined();
+  expect(client.getQueryData(queryKeys.githubAccount('follower'))).toBeUndefined();
+  expect(client.getQueryData(queryKeys.githubAccount('fixed'))).toBe('alice');
+  client.clear();
+});

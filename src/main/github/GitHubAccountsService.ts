@@ -25,22 +25,27 @@ export class GitHubAccountsService {
   private revision = 0;
   get authRevision(): number { return this.revision; }
   private readonly revisions = new Map<string, number>();
-  revisionFor(repository: RepositoryInfo): number { return this.revisions.get(githubRepositoryKey(repository.commonDir)) ?? 0; }
+  private defaultRevision = 0;
+  revisionFor(repository: RepositoryInfo): number {
+    const selection = this.selection(repository);
+    return Math.max(this.revisions.get(githubRepositoryKey(repository.commonDir)) ?? 0,
+      selection.mode === 'account' && selection.useGlobalDefault ? this.defaultRevision : 0);
+  }
   private contexts = new Map<string, { remote: string; value: GitHubRepositoryAccount }>();
   private ssh = new Map<string, { at: number; promise: Promise<string | null> }>();
   private identities = new Map<string, { at: number; promise: Promise<string> }>();
 
   constructor(private readonly resolver: CliResolver, private readonly runner: CliProcessRunner,
     private readonly git: GitProcess, private readonly settings?: SettingsStore, private readonly store?: GitHubStatusStore,
-    private readonly changed: (repository?: RepositoryInfo) => void = () => undefined) {}
+    private readonly changed: (repository?: RepositoryInfo, defaultOnly?: boolean) => void = () => undefined) {}
 
   status(force = false): Promise<GitHubAccountsStatus> {
     if (force) {
       this.checking ??= this.check().finally(() => { this.checking = null; });
-      return this.checking.then((value) => structuredClone(value));
+      return this.checking.then((value) => ({ ...structuredClone(value), defaultLogin: this.settings?.githubDefaultLogin ?? null }));
     }
     this.loading ??= (async () => { this.inventory ??= await this.store?.load() ?? emptyStatus(); return this.inventory; })();
-    return this.loading.then(() => structuredClone(this.inventory ?? emptyStatus()));
+    return this.loading.then(() => ({ ...structuredClone(this.inventory ?? emptyStatus()), defaultLogin: this.settings?.githubDefaultLogin ?? null }));
   }
 
   selection(repository: RepositoryInfo): GitHubAccountSelection {
@@ -57,8 +62,21 @@ export class GitHubAccountsService {
 
   async setSelection(repository: RepositoryInfo, selection: GitHubAccountSelection): Promise<void> {
     if (!this.settings) throw new Error('GitHub account settings are unavailable.');
-    await this.settings.setGitHubAccount(repository.commonDir, selection);
+    const saving = this.settings.setGitHubAccount(repository.commonDir, selection);
+    // Settings updates its in-memory choice before persisting it. Reserve the
+    // revision now so another client's prepared save cannot overwrite that choice.
     this.invalidate(repository);
+    try { await saving; }
+    catch (error) { this.invalidate(repository); throw error; }
+  }
+
+  async setDefaultAccount(login: string): Promise<GitHubAccountsStatus> {
+    if (!this.settings) throw new Error('GitHub account settings are unavailable.');
+    // Invalidate prepared operations only for repositories following this default.
+    this.defaultRevision = ++this.revision;
+    try { await this.settings.setGitHubDefaultLogin(login); }
+    finally { this.changed(undefined, true); }
+    return this.status();
   }
 
   private invalidate(repository?: RepositoryInfo): void {
@@ -125,7 +143,7 @@ export class GitHubAccountsService {
       const context: GitHubRepositoryAccount = { selection, nameWithOwner, login, source, state: 'ready', checkedAt: new Date().toISOString(), revision };
       if (revision === this.revisionFor(repository)) {
         const previous = this.contexts.get(repository.id)?.value;
-        if (previous?.state === 'ready' && (previous.login?.toLowerCase() !== login.toLowerCase() || previous.source !== source)) {
+        if (previous?.state === 'ready' && previous.revision === revision && (previous.login?.toLowerCase() !== login.toLowerCase() || previous.source !== source)) {
           // External gh/SSH changes discovered by any operation invalidate old-account reads.
           this.invalidate(repository);
           context.revision = this.revisionFor(repository);

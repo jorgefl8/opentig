@@ -36,14 +36,15 @@ export function GitHubSettings({ repository }: { repository: RepositoryInfo | nu
   const status = inventory.data;
   const account = context.data;
   const author = authorship.data;
-  const selection = account?.selection.mode === 'account' ? account.selection.login : 'auto';
+  const selection = account?.selection.mode === 'account' ? account.selection.useGlobalDefault ? '__global_default__' : account.selection.login : 'auto';
   const accounts = status?.accounts ?? [];
   const selectable = accounts.map((item) => ({ value: item.login, label: `@${item.login}`,
     description: `${item.state === 'authenticated' ? 'Authenticated' : item.state === 'invalid' ? 'Credentials rejected' : 'Not verified'}${item.active ? ' · active in gh' : ''}`,
     icon: <IconBrandGithub /> }));
-  if (selection !== 'auto' && !selectable.some((item) => item.value === selection)) {
+  if (selection !== 'auto' && selection !== '__global_default__' && !selectable.some((item) => item.value === selection)) {
     selectable.push({ value: selection, label: `@${selection}`, description: 'Not in the last checked accounts', icon: <IconBrandGithub /> });
   }
+  if (status?.defaultLogin && !selectable.some(item => item.value === status.defaultLogin)) selectable.push({ value: status.defaultLogin, label: `@${status.defaultLogin}`, description: 'Default account · not in the last checked accounts', icon: <IconBrandGithub /> });
   const storeContext = (id: string, value: GitHubRepositoryAccount) => client.setQueryData<GitHubRepositoryAccount>(queryKeys.githubAccount(id), previous => previous && previous.revision > value.revision ? previous : value);
   const check = async (): Promise<GitHubAccountsStatus | null> => {
     const id = repository?.id ?? '';
@@ -66,7 +67,7 @@ export function GitHubSettings({ repository }: { repository: RepositoryInfo | nu
     if (!repository || saving) return;
     const generation = (generations.current.get(repository.id) ?? 0) + 1; generations.current.set(repository.id, generation);
     setSaving(true);
-    const next: GitHubAccountSelection = value === 'auto' ? { mode: 'auto' } : { mode: 'account', host: 'github.com', login: value, gitMode };
+    const next: GitHubAccountSelection = value === 'auto' ? { mode: 'auto' } : { mode: 'account', host: 'github.com', login: value === '__global_default__' ? status?.defaultLogin ?? '' : value, gitMode, ...(value === '__global_default__' ? { useGlobalDefault: true } : {}) };
     try {
       const saved = await opentig.github.setRepositoryAccount(repository.id, next);
       if (generations.current.get(repository.id) === generation) storeContext(repository.id, saved);
@@ -88,9 +89,9 @@ export function GitHubSettings({ repository }: { repository: RepositoryInfo | nu
       <div className="github-settings-row"><h3>GitHub account</h3><Button variant="ghost" size="sm" onClick={() => setAddOpen(true)}><IconPlus />Add account</Button></div>
       {repository ? <>
         <div className="github-account-picker"><label className="sr-only" htmlFor="github-account-choice">Account for GitHub operations</label>
-          <SearchablePicker groups={[{ id: 'accounts', label: 'Saved accounts', items: selectable }]}
+          <SearchablePicker groups={[{ id: 'default', label: 'OpenTig default', items: [{ value: '__global_default__', label: status?.defaultLogin ? `Global default · @${status.defaultLogin}` : 'Global default · not set', description: 'Follow the default account configured below.', disabled: !status?.defaultLogin }] }, { id: 'accounts', label: 'Saved accounts', items: selectable }]}
             value={selection} onValueChange={(value) => void choose(value)} label="GitHub account for this repository" triggerId="github-account-choice"
-            triggerLabel={selection === 'auto' ? 'Choose an account' : `@${selection}`} placeholder="Search accounts…" size="default" align="start"
+            triggerLabel={selection === 'auto' ? 'Choose an account' : selection === '__global_default__' ? `Global default · @${account?.login ?? status?.defaultLogin}` : `@${selection}`} placeholder="Search accounts…" size="default" align="start"
             disabled={saving} />
         </div>
         <p className="github-settings-note">For GitHub and pull requests. Shared across this repository’s worktrees and connected clients.</p>
@@ -130,6 +131,22 @@ export function GitHubSettings({ repository }: { repository: RepositoryInfo | nu
       {author?.blockers.map((blocker) => <p className="github-settings-notice" key={blocker}>{blocker}</p>)}
       {authorship.error && <p className="github-settings-notice" role="alert">{messageOf(authorship.error)}</p>}
     </section>}
+    <section className="github-settings-section" aria-label="Global default account">
+      <h3>Default account for OpenTig</h3>
+      <div className="github-account-picker"><SearchablePicker
+        groups={[{ id: 'accounts', label: 'Saved accounts', items: selectable.filter(item => item.value !== 'auto') }]}
+        value={status?.defaultLogin ?? ''} triggerLabel={status?.defaultLogin ? `@${status.defaultLogin}` : 'Choose a default account'}
+        label="Global default account" placeholder="Search accounts…" size="default" align="start" disabled={saving}
+        onValueChange={(login) => {
+          setSaving(true);
+          void opentig.github.setDefaultAccount(login).then(async next => {
+            client.setQueryData(queryKeys.githubAccounts, next);
+            if (repository && account?.selection.mode === 'account' && account.selection.useGlobalDefault) await client.invalidateQueries({ queryKey: queryKeys.githubAccount(repository.id) });
+          }).catch(error => sileo.error({ title: 'Could not save default account', description: messageOf(error) })).finally(() => setSaving(false));
+        }} />
+      </div>
+      <p className="github-settings-note">Shared by this instance. Repositories using Global default follow this account; specific choices stay unchanged. The active gh account is not changed.</p>
+    </section>
     <details className="github-saved-accounts">
       <summary>Saved accounts & GitHub CLI <span>{accounts.length} {accounts.length === 1 ? 'account' : 'accounts'}</span></summary>
       <div className="github-accounts-list">{accounts.map((item) => <div className="github-account-row" key={item.login}>

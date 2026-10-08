@@ -84,8 +84,14 @@ export class OpenTigRuntime {
     this.onEvent({ type: 'repository.changed', repositoryId, scope });
   }
 
-  publishGitHubAccountsChange(commonDir?: string): void {
-    if (!this.closePromise) this.onEvent({ type: 'github.accounts-changed', ...(commonDir ? { repositoryIds: this.services.repositories.recents().filter(repo => githubRepositoryKey(repo.commonDir) === githubRepositoryKey(commonDir)).map(repo => repo.id) } : {}) });
+  publishGitHubAccountsChange(commonDir?: string, defaultOnly = false): void {
+    if (this.closePromise) return;
+    const repositories = this.services.repositories.recents();
+    const repositoryIds = defaultOnly ? repositories.filter(repo => {
+      const selection = this.settings.githubAccount(repo.commonDir);
+      return selection.mode === 'account' && selection.useGlobalDefault;
+    }).map(repo => repo.id) : commonDir ? repositories.filter(repo => githubRepositoryKey(repo.commonDir) === githubRepositoryKey(commonDir)).map(repo => repo.id) : undefined;
+    this.onEvent({ type: 'github.accounts-changed', ...(repositoryIds ? { repositoryIds } : {}), ...(defaultOnly ? { inventoryChanged: true } : {}) });
   }
 
   publishActiveRepositoryChange(repository: RepositoryInfo): void {

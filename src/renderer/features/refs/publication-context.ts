@@ -14,3 +14,8 @@ export function publicationDestination(context: Context): string {
     } catch { return value; }
   }).join(', ') || 'No destination';
 }
+
+/** UI hint only: the backend remains responsible for credential destination validation. */
+export function supportsManagedSetup(urls: string[]): boolean {
+  return urls.length === 1 && /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/i.test(urls[0] ?? '');
+}

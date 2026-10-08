@@ -1,3 +1,4 @@
+import { RepositoryAccountSetup } from '@/features/settings/RepositoryAccountSetup';
 import { useGitHubAccount } from '@/features/pulls/useGitHubAccount';
 import { appDisplayName } from '@/lib/app-identity';
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
@@ -95,6 +96,8 @@ export default function App() {
   const branchPush = useBranchPush();
   const mobile = useMobileLayout();
   const [openRepositoryDialog, setOpenRepositoryDialog] = useState(false);
+  const addingRepository = useRef(false);
+  const [accountSetup, setAccountSetup] = useState<{ repository: RepositoryInfo; isNew: boolean } | null>(null);
   const [mobilePane, setMobilePane] = useState<'list' | 'viewer' | 'commit'>('list');
   const [mobileDiffView, setMobileDiffView] = useState<Preferences['diffView']>('unified');
   const [bootstrap, setBootstrap] = useState<BootstrapData | null>(null);
@@ -195,7 +198,7 @@ export default function App() {
   const ghStatus = ghStatusQuery.data ?? null;
   const githubAccountQuery = useGitHubAccount(repository && githubInfo?.isGitHub ? repository.id : null);
   const githubAccount = githubAccountQuery.data ?? null;
-  useEffect(() => opentig.events.onGitHubAccountsChanged((ids) => { void resetGitHubQueries(appQueryClient, ids); }), [appQueryClient]);
+  useEffect(() => opentig.events.onGitHubAccountsChanged((ids, inventoryChanged) => { void resetGitHubQueries(appQueryClient, ids, inventoryChanged); }), [appQueryClient]);
   const pullsQuery = useQuery<PullRequestSummary[]>({
     queryKey: queryKeys.pulls(repository?.id ?? '', pullRequestStates),
     queryFn: async () => {
@@ -659,13 +662,13 @@ export default function App() {
 
   const remoteFetchIntervalSeconds = bootstrap?.preferences.remoteFetchIntervalSeconds ?? DEFAULT_REMOTE_FETCH_INTERVAL_SECONDS;
   useEffect(() => {
-    if (!repository || remoteFetchIntervalSeconds <= 0) return;
+    if (!repository || accountSetup || remoteFetchIntervalSeconds <= 0) return;
     const repositoryId = repository.id;
     let cancelled = false;
     let inFlight = false;
 
     const run = async () => {
-      if (cancelled || inFlight || document.visibilityState === 'hidden') return;
+      if (cancelled || inFlight || addingRepository.current || document.visibilityState === 'hidden') return;
       if (busyRef.current || repositorySyncOperationsRef.current.has(repositoryId)) return;
       inFlight = true;
       try {
@@ -688,7 +691,7 @@ export default function App() {
       window.clearInterval(timer);
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [refresh, remoteFetchIntervalSeconds, repository]);
+  }, [refresh, remoteFetchIntervalSeconds, repository, accountSetup]);
 
   useEffect(() => {
     setSnapshotRepositoryId(null);
@@ -833,6 +836,10 @@ export default function App() {
       };
     });
   }, [filesTreeStates]);
+
+  useEffect(() => {
+    if (accountSetup && accountSetup.repository.id !== repository?.id) setAccountSetup(null);
+  }, [accountSetup, repository?.id]);
 
   const openRepository = useCallback(async () => {
     setOpenRepositoryDialog(true);
@@ -1947,7 +1954,13 @@ export default function App() {
   };
 
   const browserRepositoryDialog = <OpenRepositoryDialog open={openRepositoryDialog} recent={bootstrap?.recentRepositories} onPick={window.opentigDesktop ? opentig.repository.select : undefined} onOpenChange={setOpenRepositoryDialog} onBrowse={opentig.repository.browseDirectories} onOpen={async (path) => {
-    recordOpenedRepository(await opentig.repository.openPath(path));
+    addingRepository.current = true;
+    try {
+      const selected = await opentig.repository.openPath(path);
+      const isNew = !bootstrap?.recentRepositories.some(item => normalizeRepositoryKey(item.commonDir) === normalizeRepositoryKey(selected.commonDir));
+      recordOpenedRepository(selected);
+      setAccountSetup({ repository: selected, isNew });
+    } finally { addingRepository.current = false; }
   }} />;
 
   if (!bootstrap) {
@@ -1972,6 +1985,8 @@ export default function App() {
     <ShortcutsProvider shortcuts={shortcuts}>
     <TooltipProvider>
       {browserRepositoryDialog}
+      {accountSetup && accountSetup.repository.id === repository.id && !openRepositoryDialog && !settingsOpen && <RepositoryAccountSetup key={accountSetup.repository.id} {...accountSetup}
+        onClose={() => setAccountSetup(null)} onSettings={() => { setSettingsSection('github'); setSettingsOpen(true); }} />}
       {quickOpen && (
         <Suspense fallback={null}>
           <QuickOpenDialog

@@ -8,7 +8,7 @@ import type { RepositoryInfo } from '@shared/contracts';
 import type { GitHubAccountsStatus, GitHubRepositoryAccount } from '@shared/github-accounts';
 import { GitHubSettings } from './GitHubSettings';
 
-const calls = vi.hoisted(() => ({ accountsStatus: vi.fn(), repositoryAccount: vi.fn(), setRepositoryAccount: vi.fn(), authorship: vi.fn(), setAuthorship: vi.fn(), error: vi.fn(), copy: vi.fn() }));
+const calls = vi.hoisted(() => ({ accountsStatus: vi.fn(), repositoryAccount: vi.fn(), setRepositoryAccount: vi.fn(), setDefaultAccount: vi.fn(), authorship: vi.fn(), setAuthorship: vi.fn(), error: vi.fn(), copy: vi.fn() }));
 vi.mock('@/lib/opentig-api', () => ({ opentig: { github: calls, commits: calls, events: { onRepositoryChanged: () => () => undefined } } }));
 vi.mock('sileo', () => ({ sileo: { error: calls.error, success: vi.fn() } }));
 vi.mock('@/lib/browser-capabilities', () => ({ writeClipboardText: calls.copy }));
@@ -298,5 +298,26 @@ it('exposes actionable failures without requiring users to open diagnostics', as
     expect(view.container.querySelector('.github-access-grid')?.textContent).toContain('Reconnect account');
     expect([...view.container.querySelectorAll('[role=status]')].some(node => !node.closest('details') && node.textContent?.includes('Reconnect @bob'))).toBe(true);
     expect([...view.container.querySelectorAll('button')].find(node => node.textContent === 'Check access')).toHaveProperty('disabled', false);
+  } finally { await view.close(); }
+});
+
+async function choosePicker(label: string, option: string) {
+  await act(async () => { document.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!.click(); await settle(); });
+  const node = [...document.querySelectorAll<HTMLElement>('[role=option]')].find(item => item.textContent?.includes(option));
+  expect(node).toBeDefined();
+  await act(async () => { node!.click(); await settle(); }); await act(settle);
+}
+it('sets the OpenTig default separately and lets a repository explicitly follow it', async () => {
+  calls.accountsStatus.mockResolvedValue({ ...saved, defaultLogin: 'alice' }); calls.repositoryAccount.mockResolvedValue(context);
+  calls.setDefaultAccount.mockResolvedValue({ ...saved, defaultLogin: 'bob' });
+  calls.setRepositoryAccount.mockResolvedValue({ ...context, selection: { mode: 'account', host: 'github.com', login: 'bob', useGlobalDefault: true } });
+  const view = await mount();
+  try {
+    await choosePicker('Global default account', '@bob');
+    expect(calls.setDefaultAccount).toHaveBeenCalledWith('bob');
+    expect(calls.setRepositoryAccount).not.toHaveBeenCalled();
+    expect(calls.setAuthorship).not.toHaveBeenCalled();
+    await choosePicker('GitHub account for this repository', 'Global default');
+    expect(calls.setRepositoryAccount).toHaveBeenCalledWith('repo', { mode: 'account', host: 'github.com', login: 'bob', gitMode: 'external', useGlobalDefault: true });
   } finally { await view.close(); }
 });

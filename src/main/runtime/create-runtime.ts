@@ -78,7 +78,7 @@ export async function createOpenTigRuntime(
   let runtime: OpenTigRuntime | null = null;
   const githubAccounts = new GitHubAccountsService(cliResolver, cliRunner, git, settings,
     new GitHubStatusStore(path.join(path.dirname(options.settingsPath), 'github-status.json')),
-    (repository) => runtime?.publishGitHubAccountsChange(repository?.commonDir));
+    (repository, defaultOnly) => runtime?.publishGitHubAccountsChange(repository?.commonDir, defaultOnly));
   const gitAccess = new RepositoryGitAccess(git, repositories, githubAccounts, cliRunner);
   gitAccess.install();
   operations.access = gitAccess;

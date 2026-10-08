@@ -414,11 +414,13 @@ export function registerServerCommands(
     services.ai.cancel(aiString(requestId, 'ai-cancel-generation', 100, true));
   });
   handle(IPC.githubAccountsStatus, 'gh-accounts-status', (forceRefresh) => services.github.accounts.status(booleanArg(forceRefresh, 'gh-accounts-status')));
+  handle(IPC.githubSetDefaultAccount, 'gh-set-default-account', (login) => services.github.accounts.setDefaultAccount(stringArg(login, 'gh-set-default-account', 39)));
   handle(IPC.githubRepositoryAccount, 'gh-repository-account', (id, forceRefresh) => services.github.repositoryAccount(stringArg(id, 'gh-repository-account', 64), booleanArg(forceRefresh, 'gh-repository-account')));
-  handle(IPC.githubSetRepositoryAccount, 'gh-set-repository-account', (id, selection) => {
+  handle(IPC.githubSetRepositoryAccount, 'gh-set-repository-account', (id, selection, expectedRevision) => {
     const parsed = githubAccountSelectionSchema.safeParse(selection);
+    if (expectedRevision !== undefined && (typeof expectedRevision !== 'number' || !Number.isSafeInteger(expectedRevision) || expectedRevision < 0)) throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'gh-set-repository-account', message: 'Invalid account revision.' });
     if (!parsed.success) throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'gh-set-repository-account', message: 'Invalid GitHub account selection.' });
-    return services.github.setRepositoryAccount(stringArg(id, 'gh-set-repository-account', 64), parsed.data);
+    return services.github.setRepositoryAccount(stringArg(id, 'gh-set-repository-account', 64), parsed.data, typeof expectedRevision === 'number' ? expectedRevision : undefined);
   });
   handle(IPC.githubStatus, 'gh-status', (forceRefresh) => services.github.status(booleanArg(forceRefresh, 'gh-status')));
   handle(IPC.githubRepositoryInfo, 'gh-repository-info', (id) => services.github.repositoryInfo(stringArg(id, 'gh-repository-info', 64)));

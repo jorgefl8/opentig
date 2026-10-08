@@ -2172,3 +2172,17 @@ section[data-sileo-viewport] [data-sileo-title] { text-transform: none; }
   .github-access-grid { grid-template-columns: minmax(0, 1fr); gap: 10px; }
   .github-git-mode-options label { min-height: 60px; }
 }
+
+.github-setup-account { display: grid; gap: 8px; margin-top: 22px; }
+.github-setup-label { font-size: 13px; font-weight: 600; }
+.github-setup-account > button { width: 100%; justify-content: space-between; }
+.github-setup-both { display: flex; align-items: flex-start; gap: 10px; margin: 20px 0; cursor: pointer; }
+.github-setup-both input { margin-top: 4px; accent-color: var(--primary); flex: none; }
+.github-setup-both input:focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }
+.github-setup-both strong { display: block; font-size: 13px; }
+.github-setup-both small { display: block; margin-top: 4px; font-size: 12px; line-height: 1.6; color: var(--muted-foreground); }
+.github-setup-summary p { font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
+.github-setup-summary p + p { margin-top: 4px; }
+.github-setup-summary + .github-settings-note { margin-top: 12px; }
+.github-setup-loading { display: flex; align-items: center; gap: 8px; margin: 22px 0; }
+.github-setup-loading svg { width: 16px; height: 16px; }

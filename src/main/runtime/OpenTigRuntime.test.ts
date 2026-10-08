@@ -104,3 +104,16 @@ describe('OpenTigRuntime', () => {
     expect(state.settings.flush).toHaveBeenCalledOnce();
   });
 });
+
+it('broadcasts a default change to followers and their worktrees without affecting fixed clones', () => {
+  const f = fixture(); const sink = vi.fn();
+  f.services.repositories = { recents: () => [
+    { id: 'follower', commonDir: '/fixture/shared/.git' },
+    { id: 'worktree', commonDir: '/fixture/shared/.git' },
+    { id: 'fixed', commonDir: '/fixture/clone/.git' },
+  ] } as unknown as OpenTigRuntimeServices['repositories'];
+  f.services.settings.githubAccount = commonDir => ({ mode: 'account', host: 'github.com', login: 'alice', useGlobalDefault: commonDir.includes('shared') });
+  const runtime = new OpenTigRuntime(f.services, sink);
+  runtime.publishGitHubAccountsChange(undefined, true);
+  expect(sink).toHaveBeenCalledExactlyOnceWith({ type: 'github.accounts-changed', repositoryIds: ['follower', 'worktree'], inventoryChanged: true });
+});

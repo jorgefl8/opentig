@@ -20,6 +20,7 @@ interface WindowBounds { width: number; height: number; x?: number; y?: number }
 interface SettingsData {
   version: number;
   githubAccounts: Record<string, GitHubAccountSelection>;
+  githubDefaultLogin: string | null;
   recentRepositories: RecentRepository[];
   repositoryProjects: RepositoryProject[];
   filesTreeStates: FilesTreeState[];
@@ -35,6 +36,7 @@ type BackgroundChannel = 'filesTree' | 'openFiles';
 const defaults: SettingsData = {
   version: SETTINGS_SCHEMA_VERSION,
   githubAccounts: {},
+  githubDefaultLogin: null,
   recentRepositories: [],
   repositoryProjects: [],
   filesTreeStates: [],
@@ -118,11 +120,30 @@ export class SettingsStore {
   get windowBounds(): WindowBounds { return { ...this.data.windowBounds }; }
 
   githubAccount(commonDir: string): GitHubAccountSelection {
-    return { ...(this.data.githubAccounts[githubRepositoryKey(commonDir)] ?? AUTOMATIC_GITHUB_ACCOUNT) };
+    const selection = this.data.githubAccounts[githubRepositoryKey(commonDir)] ?? AUTOMATIC_GITHUB_ACCOUNT;
+    if (selection.mode === 'account' && selection.useGlobalDefault) {
+      if (!this.data.githubDefaultLogin) throw new Error('Choose an OpenTig default account in Settings → GitHub.');
+      return { ...selection, login: this.data.githubDefaultLogin };
+    }
+    return { ...selection };
+  }
+
+  get githubDefaultLogin(): string | null { return this.data.githubDefaultLogin; }
+
+  async setGitHubDefaultLogin(login: string): Promise<void> {
+    const parsed = githubAccountSelectionSchema.parse({ mode: 'account', host: 'github.com', login });
+    if (parsed.mode !== 'account') throw new Error('Invalid default account.');
+    const previous = this.data.githubDefaultLogin;
+    this.data.githubDefaultLogin = parsed.login;
+    try { await this.save(); }
+    catch (error) { if (this.data.githubDefaultLogin === parsed.login) this.data.githubDefaultLogin = previous; throw error; }
   }
 
   async setGitHubAccount(commonDir: string, selection: GitHubAccountSelection): Promise<void> {
     const parsed = githubAccountSelectionSchema.parse(selection);
+    if (parsed.mode === 'account' && parsed.useGlobalDefault && parsed.login.toLowerCase() !== this.data.githubDefaultLogin?.toLowerCase()) {
+      throw new Error('The OpenTig default account changed. Review the current account and try again.');
+    }
     const key = githubRepositoryKey(commonDir);
     const previous = this.data.githubAccounts[key];
     if (parsed.mode === 'auto') delete this.data.githubAccounts[key];
@@ -484,6 +505,7 @@ function validate(value: unknown, defaultDoubleControlShortcutEnabled: boolean):
   return {
     version: SETTINGS_SCHEMA_VERSION,
     githubAccounts: normalizeGitHubAccounts(input.githubAccounts),
+    githubDefaultLogin: typeof input.githubDefaultLogin === 'string' && githubAccountSelectionSchema.safeParse({ mode: 'account', host: 'github.com', login: input.githubDefaultLogin }).success ? input.githubDefaultLogin : null,
     recentRepositories,
     repositoryProjects,
     filesTreeStates,
