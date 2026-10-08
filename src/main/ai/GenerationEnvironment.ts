@@ -1,4 +1,4 @@
-import { link, mkdir, mkdtemp, rm, stat, readdir, realpath } from 'node:fs/promises';
+import { link, mkdtemp, rm, stat, readdir, realpath } from 'node:fs/promises';
 import os from 'node:os';
 import { DatabaseSync } from 'node:sqlite';
 import path from 'node:path';
@@ -17,11 +17,13 @@ export async function withGenerationEnvironment<T>(harness: 'codex' | 'claude' |
   };
   const prefix = { codex: 'CODEX_', claude: 'CLAUDE_', opencode: 'OPENCODE_' }[harness];
   const removeEnv = Object.keys(source).filter(key => key.startsWith(prefix));
+  let codexProfile: string | undefined;
   try {
     if (harness === 'codex') {
-      env.CODEX_HOME = path.join(temporary, '.codex');
-      await mkdir(env.CODEX_HOME, { mode: 0o700 });
-      await linkAuthentication(path.join(source.CODEX_HOME || path.join(userHome, '.codex'), 'auth.json'), path.join(env.CODEX_HOME, 'auth.json'), harness);
+      // Keep the working directory outside the repository. The separate profile
+      // lives on the credential file's volume, where a hard link is possible.
+      codexProfile = await createCodexProfile(path.join(source.CODEX_HOME || path.join(userHome, '.codex'), 'auth.json'));
+      env.CODEX_HOME = codexProfile;
     } else if (harness === 'claude') {
       // safe-mode excludes user customizations while keeping native keychain authentication.
       env.HOME = source.HOME || os.homedir();
@@ -42,19 +44,24 @@ export async function withGenerationEnvironment<T>(harness: 'codex' | 'claude' |
     }
     return await run({ cwd: temporary, env, removeEnv: removeEnv.filter(key => !(key in env)) });
   } finally {
-    await rm(temporary, { recursive: true, force: true, maxRetries: 3 });
+    await Promise.all([temporary, ...(codexProfile ? [codexProfile] : [])].map(directory => rm(directory, { recursive: true, force: true, maxRetries: 3 })));
   }
 }
 
-async function linkAuthentication(source: string, destination: string, harness: 'codex'): Promise<void> {
+async function createCodexProfile(source: string): Promise<string> {
+  let profile: string | undefined;
   try {
-    if (!(await stat(source)).isFile()) throw new Error('not a file');
+    const authentication = await realpath(source);
+    if (!(await stat(authentication)).isFile()) throw new Error('not a file');
+    profile = await mkdtemp(path.join(path.dirname(authentication), '.opentig-generation-'));
     // A hard link grants the CLI access without reading/copying credentials and
-    // keeps in-place CLI token refreshes in the original authentication file.
-    await link(await realpath(source), destination);
+    // allows in-place CLI token refreshes to update the original file.
+    await link(authentication, path.join(profile, 'auth.json'));
+    return profile;
   } catch {
-    throw new AiOperationError({ code: 'AI_AUTH_REQUIRED', operation: 'ai-isolation', harness,
-      message: 'Could not access Codex file authentication in an isolated profile. Run codex login with file credential storage on the same filesystem as the temporary directory.' });
+    if (profile) await rm(profile, { recursive: true, force: true, maxRetries: 3 });
+    throw new AiOperationError({ code: 'AI_AUTH_REQUIRED', operation: 'ai-isolation', harness: 'codex',
+      message: 'Could not access Codex file authentication in an isolated profile. Check Codex file credential storage and permission to create a private profile in its authentication directory.' });
   }
 }
 

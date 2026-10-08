@@ -1,4 +1,4 @@
-import { access, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, realpath, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { DatabaseSync } from 'node:sqlite';
 import os from 'node:os';
 import path from 'node:path';
@@ -7,7 +7,7 @@ import { withGenerationEnvironment } from './GenerationEnvironment';
 
 const directories: string[] = [];
 afterEach(async () => { await Promise.all(directories.splice(0).map(dir => rm(dir, { recursive: true, force: true }))); });
-async function directory() { const dir = await mkdtemp(path.join(os.tmpdir(), 'opentig-profile-test-')); directories.push(dir); return dir; }
+async function directory() { const dir = await realpath(await mkdtemp(path.join(os.tmpdir(), 'opentig-profile-test-'))); directories.push(dir); return dir; }
 
 describe('generation profiles', () => {
   it('keeps Codex credentials linked but excludes global rules and configuration, and cleans up on failure', async () => {
@@ -16,9 +16,15 @@ describe('generation profiles', () => {
     await writeFile(path.join(home, 'AGENTS.md'), 'GLOBAL_MARKER');
     await writeFile(path.join(home, 'config.toml'), 'UNTRUSTED_CONFIG');
     let temporary = '';
+    let profile = '';
     await expect(withGenerationEnvironment('codex', { CODEX_HOME: home, CODEX_CONFIG_PATH: '/untrusted', CODEX_PROFILE: 'unsafe' }, async options => {
       temporary = options.cwd!;
+      profile = options.env!.CODEX_HOME!;
       expect(options.env?.CODEX_HOME).not.toBe(home);
+      expect(path.dirname(profile)).toBe(home);
+      expect(path.dirname(temporary)).toBe(os.tmpdir());
+      expect(options.env?.HOME).toBe(temporary);
+      expect(profile.startsWith(temporary + path.sep)).toBe(false);
       expect(options.removeEnv).toEqual(expect.arrayContaining(['CODEX_CONFIG_PATH', 'CODEX_PROFILE']));
       await expect(access(path.join(options.env!.CODEX_HOME!, 'AGENTS.md'))).rejects.toThrow();
       await expect(access(path.join(options.env!.CODEX_HOME!, 'config.toml'))).rejects.toThrow();
@@ -27,8 +33,38 @@ describe('generation profiles', () => {
       throw new Error('cancelled');
     })).rejects.toThrow('cancelled');
     await expect(access(temporary)).rejects.toThrow();
+    await expect(access(profile)).rejects.toThrow();
     expect(await readFile(path.join(home, 'auth.json'), 'utf8')).toBe('refreshed-fake-authentication');
     expect(await readFile(path.join(home, 'AGENTS.md'), 'utf8')).toBe('GLOBAL_MARKER');
+  });
+  it('places the private profile beside resolved credentials and cleans both directories on success', async () => {
+    const home = await directory();
+    const credentialDirectory = await directory();
+    const authentication = path.join(credentialDirectory, 'auth.json');
+    await writeFile(authentication, 'fake-authentication', { mode: 0o600 });
+    const linkedHome = path.join(home, 'credentials');
+    await symlink(credentialDirectory, linkedHome, process.platform === 'win32' ? 'junction' : 'dir');
+    let temporary = '', profile = '';
+    await expect(withGenerationEnvironment('codex', { CODEX_HOME: linkedHome }, async options => {
+      temporary = options.cwd!; profile = options.env!.CODEX_HOME!;
+      expect(path.dirname(profile)).toBe(credentialDirectory);
+      const original = await stat(authentication);
+      const linked = await stat(path.join(profile, 'auth.json'));
+      expect(linked.dev).toBe(original.dev);
+      expect(linked.ino).toBe(original.ino);
+      if (process.platform !== 'win32') expect((await stat(profile)).mode & 0o777).toBe(0o700);
+      return 'generated';
+    })).resolves.toBe('generated');
+    await expect(access(temporary)).rejects.toThrow();
+    await expect(access(profile)).rejects.toThrow();
+    expect(await readFile(authentication, 'utf8')).toBe('fake-authentication');
+  });
+  it('reports unavailable file authentication before running the provider', async () => {
+    const home = await directory();
+    let ran = false;
+    await expect(withGenerationEnvironment('codex', { CODEX_HOME: home }, async () => { ran = true; }))
+      .rejects.toMatchObject({ detail: { code: 'AI_AUTH_REQUIRED', operation: 'ai-isolation', message: expect.stringContaining('permission to create a private profile') } });
+    expect(ran).toBe(false);
   });
   it('isolates OpenCode configuration and environment overrides while preserving only the authentication data root', async () => {
     const data = await directory();

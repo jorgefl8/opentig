@@ -28,10 +28,11 @@ describe.skipIf(!executable)('Codex isolated generation real CLI contract', () =
     });
     server.listen(0, '127.0.0.1'); await once(server, 'listening');
     const address = server.address(); if (!address || typeof address === 'string') throw new Error('missing address');
-    const runner = new CliProcessRunner(); let temporary = '';
+    const runner = new CliProcessRunner(); let temporary = '', profile = '';
     const isolatedRunner = { run: async (command: string, args: string[], options: CliRunOptions) => {
       if (args[0] !== 'exec') return runner.run(command, args, options);
       temporary = options.cwd!;
+      profile = options.env!.CODEX_HOME!;
       const configs = ['model_provider="opentig_validation"', 'model_providers.opentig_validation.name="Local validation"',
         `model_providers.opentig_validation.base_url="http://127.0.0.1:${address.port}"`, 'model_providers.opentig_validation.wire_api="responses"',
         'model_providers.opentig_validation.requires_openai_auth=false', 'model_providers.opentig_validation.request_max_retries=0'];
@@ -45,6 +46,7 @@ describe.skipIf(!executable)('Codex isolated generation real CLI contract', () =
       expect(JSON.stringify(requests)).not.toMatch(/GLOBAL_INSTRUCTIONS_MARKER|REPO_INSTRUCTIONS_MARKER/);
       expect(requests[0]?.tools ?? []).toEqual([]);
       await expect(access(temporary)).rejects.toThrow();
+      await expect(access(profile)).rejects.toThrow();
     } finally {
       await runner.close(); server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve()));
       await rm(root, { recursive: true, force: true });
