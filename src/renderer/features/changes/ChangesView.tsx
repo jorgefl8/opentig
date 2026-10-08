@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useMobileLayout } from '@/lib/use-mobile-layout';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { IconChevronRight, IconFileArrowRight, IconGitCompare, IconMinus, IconPlus, IconRestore } from '@tabler/icons-react';
@@ -37,9 +37,8 @@ export function ChangesView(props: ChangesViewProps) {
 
 function ConflictSection({ scrollRef, changes, onSelect, onOpenFile }: { scrollRef: React.RefObject<HTMLDivElement | null>; changes: FileChange[]; onSelect(path: string): void; onOpenFile(path: string): void }) {
   const mobile = useMobileLayout();
-  const listRef = useRef<HTMLDivElement>(null);
   const sortedChanges = useMemo(() => [...changes].sort((a, b) => a.path.localeCompare(b.path)), [changes]);
-  const scrollMargin = useVirtualScrollMargin(listRef, scrollRef);
+  const { listRef, scrollMargin } = useVirtualScrollMargin(scrollRef);
   // eslint-disable-next-line react-hooks/incompatible-library -- TanStack Virtual is intentionally imperative.
   const virtualizer = useVirtualizer({
     count: sortedChanges.length,
@@ -105,8 +104,7 @@ function ChangeSection({ scrollRef, displayMode, title, changes, disabled, actio
     ? sortedChanges.map((change) => ({ kind: 'file', change, depth: 0 }))
     : treeRows;
   const mobile = useMobileLayout();
-  const listRef = useRef<HTMLDivElement>(null);
-  const scrollMargin = useVirtualScrollMargin(listRef, scrollRef);
+  const { listRef, scrollMargin } = useVirtualScrollMargin(scrollRef);
   const rowHeight = mobile ? 48 : displayMode === 'list' ? 38 : 30;
   // eslint-disable-next-line react-hooks/incompatible-library -- TanStack Virtual is intentionally imperative.
   const virtualizer = useVirtualizer({
@@ -169,26 +167,37 @@ function ChangeSection({ scrollRef, displayMode, title, changes, disabled, actio
   );
 }
 
-function useVirtualScrollMargin(listRef: React.RefObject<HTMLDivElement | null>, scrollRef: React.RefObject<HTMLDivElement | null>): number {
+function useVirtualScrollMargin(scrollRef: React.RefObject<HTMLDivElement | null>) {
+  // A callback ref restarts measurement when an initially empty section gains
+  // its list, or when that list is removed and replaced after a refresh.
+  const [list, listRef] = useState<HTMLDivElement | null>(null);
   const [margin, setMargin] = useState(0);
-  useEffect(() => {
-    const list = listRef.current;
+  useLayoutEffect(() => {
     const scroll = scrollRef.current;
     if (!list || !scroll) return;
     const measure = () => {
       const next = list.getBoundingClientRect().top - scroll.getBoundingClientRect().top + scroll.scrollTop;
       setMargin((current) => current === next ? current : next);
     };
-    const frame = requestAnimationFrame(measure);
     const observer = new ResizeObserver(measure);
-    observer.observe(list);
-    for (const section of scroll.children) observer.observe(section);
-    return () => {
-      cancelAnimationFrame(frame);
+    const observeSections = () => {
       observer.disconnect();
+      observer.observe(scroll);
+      observer.observe(list);
+      for (const section of scroll.children) observer.observe(section);
+      measure();
     };
-  }, [listRef, scrollRef]);
-  return margin;
+    // Inserting/removing a conflict section moves the lists without resizing
+    // them. Observe the new section too, so subsequent conflict changes count.
+    const sectionsObserver = new MutationObserver(observeSections);
+    sectionsObserver.observe(scroll, { childList: true });
+    observeSections();
+    return () => {
+      observer.disconnect();
+      sectionsObserver.disconnect();
+    };
+  }, [list, scrollRef]);
+  return { listRef, scrollMargin: margin };
 }
 
 function ChangeTreeFolderRow({ node, depth, expanded, disabled, action, onToggle, onDiscard, onAction }: {
