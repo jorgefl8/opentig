@@ -250,10 +250,14 @@ it('migrates only on opt-in and can return to external Git authentication', asyn
   const view = await mount();
   try {
     expect(view.container.querySelector('input[value=external]')).toHaveProperty('checked', true);
+    expect(view.container.querySelector('input[value=external]')?.closest('label')?.textContent).toContain('This machine');
+    expect(view.container.querySelector('input[value=managed]')?.closest('label')?.textContent).toContain('@alice');
+    expect(view.container.textContent).toContain('PRs as @alice. Git HTTPS uses this machine.');
     expect(calls.setRepositoryAccount).not.toHaveBeenCalled();
     await act(async () => { view.container.querySelector<HTMLInputElement>('input[value=managed]')!.click(); await settle(); }); await act(settle);
     expect(calls.setRepositoryAccount).toHaveBeenLastCalledWith('repo', { mode: 'account', host: 'github.com', login: 'alice', gitMode: 'managed' });
     expect(view.container.querySelector('input[value=managed]')).toHaveProperty('checked', true);
+    expect(view.container.textContent).toContain('PRs and Git HTTPS both use @alice.');
     await act(async () => { view.container.querySelector<HTMLInputElement>('input[value=external]')!.click(); await settle(); }); await act(settle);
     expect(calls.setRepositoryAccount).toHaveBeenLastCalledWith('repo', { mode: 'account', host: 'github.com', login: 'alice', gitMode: 'external' });
     expect(calls.setAuthorship).not.toHaveBeenCalled();
@@ -286,14 +290,23 @@ it('keeps technical details collapsed while showing the destination and external
   const view = await mount();
   try {
     expect(view.container.querySelector('.github-push-destination')?.textContent).toContain('alice/demo · HTTPS');
-    expect(view.container.querySelector('.github-push-destination')?.textContent).toContain('Git account: Existing credentials');
+    expect(view.container.querySelector('.github-push-destination')?.textContent).not.toContain('Git account');
     expect(view.container.querySelector('.github-push-destination')?.textContent).not.toContain('@bob');
+    expect(view.container.querySelector('input[value=external]')?.closest('label')?.textContent).toContain('This machine');
+    expect(view.container.querySelector('input[value=managed]')?.closest('label')?.textContent).toContain('This account');
+    expect(view.container.textContent).toContain('Choose an account above to use it for GitHub HTTPS fetch and push.');
+    expect(view.container.querySelector('.github-access-grid')?.textContent).toContain('This machine');
     expect(view.container.querySelector('.github-access-details')).toHaveProperty('open', false);
+    expect(view.container.querySelector('.github-access-details summary')?.textContent).toBe('Technical details');
     expect(view.client.getQueryData(['repository', 'repo', 'push-context'])).toEqual(publication);
     expect(view.container.querySelector('input[value=managed]')).toHaveProperty('disabled', true);
     await act(async () => { view.container.querySelector<HTMLElement>('.github-access-details summary')!.click(); });
     expect(view.container.querySelector('.github-access-details')).toHaveProperty('open', true);
     expect(view.container.querySelector('.github-access-details')?.textContent).toContain(publication.urls[0]);
+    expect(view.container.querySelector('.github-access-details')?.textContent).toContain('This machine');
+    expect(view.container.querySelector('.github-access-details')?.textContent).not.toContain('Git uses existing helpers');
+    await act(async () => { view.container.querySelector<HTMLButtonElement>('[aria-label="Copy technical details"]')!.click(); await settle(); });
+    expect(calls.copy).toHaveBeenCalledWith(expect.stringContaining('https://github.com/alice/demo.git'));
     await scopeTab('OpenTig');
     expect(view.container.querySelector('.github-saved-accounts')).toHaveProperty('open', false);
   } finally { await view.close(); }
@@ -304,11 +317,16 @@ it('exposes actionable failures without requiring users to open diagnostics', as
   calls.repositoryAccount.mockResolvedValue({ ...context, access: {
     publication: { id: 'review', repositoryId: 'repo', branch: 'main', oid: 'a'.repeat(40), targetRef: 'refs/heads/main', remote: 'origin', urls: ['https://github.com/org/demo.git'], remotes: ['origin'], mode: 'managed', login: 'bob' },
     identity: { state: 'expired', message: 'Reconnect @bob or choose another account.' }, api: { state: 'unchecked' }, read: { state: 'unchecked' }, write: { state: 'unchecked' }, checkedAt: saved.checkedAt,
+    lastOperation: { operation: 'fetch', url: 'https://github.com/org/demo.git', login: 'bob', at: saved.checkedAt, ok: false, message: 'Authentication failed for that destination.' },
   } });
   const view = await mount();
   try {
     expect(view.container.querySelector('.github-access-grid')?.textContent).toContain('Reconnect account');
     expect([...view.container.querySelectorAll('[role=status]')].some(node => !node.closest('details') && node.textContent?.includes('Reconnect @bob'))).toBe(true);
+    expect([...view.container.querySelectorAll('[role=status]')].some(node => !node.closest('details') && node.textContent?.includes('Last fetch failed'))).toBe(true);
+    expect([...view.container.querySelectorAll('[role=status]')].some(node => !node.closest('details') && node.textContent?.includes('Authentication failed'))).toBe(true);
+    expect(view.container.querySelector('.github-access-details')).toHaveProperty('open', false);
+    expect(view.container.querySelector('.github-access-details summary')?.textContent).toContain('Last Git operation failed');
     expect([...view.container.querySelectorAll('button')].find(node => node.textContent === 'Check access')).toHaveProperty('disabled', false);
   } finally { await view.close(); }
 });

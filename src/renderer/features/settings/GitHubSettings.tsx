@@ -20,6 +20,7 @@ import { writeClipboardText } from '@/lib/browser-capabilities';
 import { RepositoryAccessStatus } from './RepositoryAccessStatus';
 import { CommitAuthorshipDialog } from './CommitAuthorshipDialog';
 import { authorshipSourceLabel } from './commit-authorship-copy';
+import { gitHttpsAccountLabel, gitHttpsOutcome } from './github-access-copy';
 
 export function GitHubSettings({ repository }: { repository: RepositoryInfo | null }) {
   const client = useQueryClient();
@@ -84,6 +85,9 @@ export function GitHubSettings({ repository }: { repository: RepositoryInfo | nu
     finally { setSaving(false); }
   };
   const managed = account?.selection.mode === 'account' && account.selection.gitMode === 'managed';
+  const pinnedLogin = account?.selection.mode !== 'account' ? null
+    : account.selection.useGlobalDefault ? account.login || status?.defaultLogin || account.selection.login || null
+      : account.selection.login || account.login || null;
   const busy = checking || saving || inventory.isFetching;
   const checkButton = <Button variant="outline" size="sm" onClick={() => void check(true)} disabled={busy}>
     {checking || saving ? <IconLoader4 className="animate-spin" /> : <IconRefresh />}
@@ -123,22 +127,22 @@ export function GitHubSettings({ repository }: { repository: RepositoryInfo | nu
       {account?.state === 'error' && <p className="github-settings-notice" role="status">{account.message || 'This account is unavailable. Check access or choose another account.'}</p>}
     </section>
     <section className="settings-general-group" aria-labelledby={`${id}-git`}>
-      <h3 id={`${id}-git`}><IconKey aria-hidden="true" />Git authentication</h3>
+      <h3 id={`${id}-git`}><IconKey aria-hidden="true" />Git HTTPS</h3>
       <fieldset className="github-git-mode" disabled={saving}>
-        <legend className="sr-only">Git authentication</legend>
-        <SettingRow label="HTTPS Git" description={managed ? 'SSH and other providers keep using the machine’s existing credentials.' : selection === 'auto' ? 'Git may use a different account. Choose an account above to enable OpenTig authentication.' : 'Git may use a different account. Choose OpenTig to use this account for GitHub HTTPS.'}>
+        <legend className="sr-only">Git HTTPS credentials</legend>
+        <SettingRow label="Fetch and push" description={gitHttpsOutcome({ auto: selection === 'auto', managed, login: pinnedLogin })}>
           <div className="github-git-mode-options">
             <label className={!managed ? 'active' : ''}><input type="radio" name="git-authentication" value="external" checked={!managed} onChange={() => void choose(selection, 'external')} />
-              <span>Existing credentials</span></label>
+              <span>This machine</span></label>
             <label className={managed ? 'active' : ''}><input type="radio" name="git-authentication" value="managed" checked={managed} disabled={selection === 'auto'} onChange={() => void choose(selection, 'managed')} />
-              <span>OpenTig</span></label>
+              <span>{gitHttpsAccountLabel(pinnedLogin)}</span></label>
           </div>
         </SettingRow>
       </fieldset>
     </section>
     <section className="settings-general-group github-access-checks" aria-labelledby={`${id}-access`}>
       <h3 id={`${id}-access`}><IconShieldCheck aria-hidden="true" />Access</h3>
-      <SettingRow label="Access checks" description={account?.access ? 'Account, API, read and write for this destination.' : 'Verify the account and repository permissions.'}>
+      <SettingRow label="Access checks" description={account?.access ? 'Account, pull requests, and permission to push.' : 'Verify the account and permission to push.'}>
         {checkButton}
       </SettingRow>
       {account?.access ? <RepositoryAccessStatus access={account.access} checking={checking || saving} />

@@ -2166,8 +2166,13 @@ section[data-sileo-viewport] [data-sileo-title] { text-transform: none; }
 .github-access-details summary, .github-saved-accounts summary { cursor: pointer; font-size: 11px; color: var(--muted-foreground); }
 .github-access-details summary:focus-visible, .github-saved-accounts summary:focus-visible { outline: 2px solid var(--ring); outline-offset: 4px; border-radius: 2px; }
 .github-access-details summary span { margin-left: 10px; color: var(--destructive); }
-.github-access-details p { margin-top: 8px; }
-.github-last-operation { border-top: 1px solid var(--border); padding-top: 8px; margin-top: 8px; }
+.github-access-debug { display: grid; gap: 8px; margin-top: 8px; padding: 8px 10px; border-radius: var(--radius-md); background: var(--muted); }
+.github-access-debug dl { display: grid; gap: 8px; margin: 0; }
+.github-access-debug dl > div { display: grid; gap: 1px; }
+.github-access-debug dt { color: var(--muted-foreground); font-size: 10px; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; }
+.github-access-debug dd { margin: 0; color: var(--foreground); overflow-wrap: anywhere; }
+.github-access-debug .github-settings-note { margin: 0; }
+.github-access-debug-actions { display: flex; justify-content: flex-end; }
 .github-saved-accounts { margin-top: 8px; padding: 0; }
 .github-saved-accounts summary span { margin-left: 8px; font-size: 10px; }
 .github-saved-accounts[open] summary { margin-bottom: 8px; }
