@@ -104,7 +104,7 @@ OpenTig is a young Git client with a built-in editor, not a VS Code fork or a fu
 
 Normal Git work needs no OpenTig account or hosted backend. If you request AI assistance, the selected CLI may send the supplied context to its provider. Read the [security and privacy guide](docs/security-and-privacy.md) for the details.
 
-Feedback, bug reports, and contributions are welcome. Development supports running tests related to changed source files; CI skips heavy jobs for prose-only documentation changes and cancels superseded PR runs. See [CONTRIBUTING.md](CONTRIBUTING.md), [development setup](docs/development.md), and the [documentation index](docs/README.md).
+Feedback, bug reports, and contributions are welcome. Development supports running tests related to changed source files. PRs and pushes to `main` run the same automatic CI: tests on Windows and Linux, typecheck/lint/dependency audit on Linux, and native Trash and packed CLI checks on Windows, Linux, and macOS. CI skips heavy jobs for prose-only documentation changes and cancels superseded PR runs. Portable desktop Dev ZIPs and their full package checks run on demand through **Actions → Desktop Dev builds → Run workflow**; select the branch to evaluate. See [CONTRIBUTING.md](CONTRIBUTING.md), [development setup](docs/development.md), and the [documentation index](docs/README.md).
 
 ## License
 
