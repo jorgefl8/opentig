@@ -132,7 +132,7 @@ export function SettingsDialog({ preferences, onPreference, open, onOpenChange, 
     : SETTINGS_COPY[section];
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogPopup className={`settings-dialog${section === 'github' ? ' settings-dialog-github' : section === 'general' ? ' settings-dialog-general' : section === 'ai' ? ' settings-dialog-ai w-[min(1000px,calc((100vw-48px)/var(--settings-ui-scale,1)))]' : ''}`} style={{
+      <DialogPopup className={`settings-dialog${section === 'github' || section === 'general' ? ' settings-dialog-general' : ''}${section === 'github' ? ' settings-dialog-github' : ''}${section === 'ai' ? ' settings-dialog-ai w-[min(1000px,calc((100vw-48px)/var(--settings-ui-scale,1)))]' : ''}`} style={{
         '--settings-ui-scale': window.opentigDesktop || window.matchMedia('(max-width: 767px)').matches ? 1 : preferences.uiZoom / 100,
       } as CSSProperties}>
         <div className="settings-shell">
@@ -160,11 +160,11 @@ export function SettingsDialog({ preferences, onPreference, open, onOpenChange, 
               </AnimatePresence>
               <DialogClose render={<Button variant="ghost" size="icon-sm" aria-label="Close settings" />}><IconX /></DialogClose>
             </header>
-            <div ref={settingsBodyRef} className={`settings-panel-body${section === 'general' ? ' settings-panel-body-general' : ''}`}>
+            <div ref={settingsBodyRef} className={`settings-panel-body${section === 'general' || section === 'github' ? ' settings-panel-body-general' : ''}`}>
               <AnimatePresence initial={false} mode="wait">
                 <motion.div
                   key={section}
-                  className={`settings-panel-section${section === 'general' ? ' settings-panel-section-general' : ''}`}
+                  className={`settings-panel-section${section === 'general' || section === 'github' ? ' settings-panel-section-general' : ''}`}
                   initial={reduceMotion ? false : { opacity: 0, y: 7 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={reduceMotion ? { opacity: 1 } : { opacity: 0, y: -5 }}

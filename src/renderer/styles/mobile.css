@@ -177,7 +177,15 @@
 
   html .settings-dialog-general .settings-shell { height: 100%; }
   html .settings-panel-body-general { padding: 0; }
-  html .settings-general-content { padding: 12px; }
+  html .settings-general-content, html .github-settings-content { padding: 12px; }
+  html .github-scope-tabs { width: 100%; }
+  html .github-scope-tabs button { min-height: 40px; height: 40px; font-size: 12px; }
+  html .github-git-mode-options { width: 100%; }
+  html .github-git-mode-options label { flex: 1; min-height: 40px; height: 40px; justify-content: center; }
+  html .github-account-select { width: 100%; }
+  html .github-account-picker { justify-content: flex-start; width: 100%; }
+  html .github-accounts-actions { justify-content: flex-start; }
+  html .github-settings .settings-general-footer { padding: 8px 12px; }
   html .settings-general-row { grid-template-columns: minmax(0, 1fr); gap: 9px; padding: 12px 0; }
   html .settings-general-control { justify-content: flex-start; }
   html .settings-general-select, html .settings-general .settings-zoom-control { width: 100%; }
