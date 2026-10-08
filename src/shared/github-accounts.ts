@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 export const githubAccountSelectionSchema = z.discriminatedUnion('mode', [
   z.object({ mode: z.literal('auto') }),
-  z.object({ mode: z.literal('account'), host: z.literal('github.com'), login: z.string().regex(/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/) }),
+  z.object({ mode: z.literal('account'), host: z.literal('github.com'), login: z.string().regex(/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/), gitMode: z.enum(['external', 'managed']).optional() }),
 ]);
 export type GitHubAccountSelection = z.infer<typeof githubAccountSelectionSchema>;
 export const AUTOMATIC_GITHUB_ACCOUNT: GitHubAccountSelection = { mode: 'auto' };
@@ -42,4 +42,5 @@ export interface GitHubRepositoryAccount {
   message?: string;
   /** Changes invalidate pending reads in all clients of this backend. */
   revision: number;
+  access?: import('./repository-access').RepositoryAccess;
 }

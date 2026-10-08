@@ -23,7 +23,7 @@ export function createOpenTigServerClient(options: ServerClientOptions = {}): Op
   const httpOrigin = options.httpOrigin ?? globalThis.location?.origin ?? 'http://127.0.0.1';
   const fetchRequest = options.fetch ?? fetch;
   const repositoryChanged = new Set<Parameters<OpenTigServerApi['events']['onRepositoryChanged']>[0]>();
-  const githubAccountsChanged = new Set<() => void>();
+  const githubAccountsChanged = new Set<(repositoryIds?: string[]) => void>();
   const activeRepositoryChanged = new Set<Parameters<OpenTigServerApi['events']['onActiveRepositoryChanged']>[0]>();
   const invoke = <Command extends Parameters<OpenTigWebSocketTransport['request']>[0]>(
     command: Command,
@@ -113,7 +113,8 @@ export function createOpenTigServerClient(options: ServerClientOptions = {}): Op
       listWorktrees: (repositoryId) => invoke(IPC.worktreesList, repositoryId),
       selectWorktree: (repositoryId, path) => invoke(IPC.worktreeSelect, repositoryId, path),
       pull: (repositoryId) => invoke(IPC.refsPull, repositoryId),
-      push: (repositoryId, publish) => invoke(IPC.refsPush, repositoryId, publish),
+      pushContext: (repositoryId, remote) => invoke(IPC.refsPushContext, repositoryId, remote),
+      push: (repositoryId, publish, expectedContext) => invoke(IPC.refsPush, repositoryId, publish, expectedContext),
       fetch: (repositoryId) => invoke(IPC.refsFetch, repositoryId),
       localRefsSnapshot: (repositoryId) => invoke(IPC.localRefsSnapshot, repositoryId),
       branchDetails: (request) => invoke(IPC.branchDetails, request),
@@ -185,14 +186,14 @@ function publishRuntimeEvent(
   event: OpenTigRuntimeEvent,
   repositoryChanged: ReadonlySet<Parameters<OpenTigServerApi['events']['onRepositoryChanged']>[0]>,
   activeRepositoryChanged: ReadonlySet<Parameters<OpenTigServerApi['events']['onActiveRepositoryChanged']>[0]>,
-  githubAccountsChanged: ReadonlySet<() => void>,
+  githubAccountsChanged: ReadonlySet<(repositoryIds?: string[]) => void>,
 ): void {
   if (event.type === 'repository.changed') {
     for (const listener of repositoryChanged) listener(event.repositoryId, event.scope);
   } else if (event.type === 'repository.active-changed') {
     for (const listener of activeRepositoryChanged) listener(event.repository);
   } else {
-    for (const listener of githubAccountsChanged) listener();
+    for (const listener of githubAccountsChanged) listener(event.repositoryIds);
   }
 }
 

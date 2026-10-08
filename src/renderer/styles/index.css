@@ -2146,3 +2146,14 @@ section[data-sileo-viewport] [data-sileo-title] { text-transform: none; }
   .github-authorship-dialog { padding: 18px; }
   .github-pulls-account { max-width: 100px; overflow: hidden; text-overflow: ellipsis; }
 }
+
+.repository-access-status { margin-top: 12px; color: var(--muted-foreground); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.repository-access-status dl { display: grid; gap: 8px; margin: 12px 0; }
+.repository-access-status dl > div { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; }
+.repository-access-status dt { color: var(--foreground); }
+.repository-access-status dd { margin: 0; }
+.repository-access-status small { flex-basis: 100%; }
+.publication-context { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 3px 12px; border-bottom: 1px solid var(--border); font-size: 11px; color: var(--muted-foreground); }
+.publication-context > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.publication-context > button { flex: none; }
+@media (max-width: 600px) { .github-settings-row { flex-wrap: wrap; } .publication-context { font-size: 11px; } }

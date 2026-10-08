@@ -207,7 +207,7 @@ export type PushResult =
   | { status: 'blocked-operation'; operation: string }
   | { status: 'no-upstream' }
   | { status: 'diverged'; ahead: number; behind: number }
-  | { status: 'rejected'; reason: 'authentication' | 'remote-changed' | 'hook' | 'network' | 'configuration' | 'unknown'; message: string };
+  | { status: 'rejected'; reason: 'authentication' | 'inaccessible' | 'permission' | 'remote-changed' | 'hook' | 'network' | 'configuration' | 'unknown'; message: string };
 
 export interface BranchDetailsRequest {
   repositoryId: string;
@@ -582,7 +582,8 @@ export interface OpenTigApi {
     listWorktrees(repositoryId: string): Promise<WorktreeInfo[]>;
     selectWorktree(repositoryId: string, path: string): Promise<RepositoryInfo>;
     pull(repositoryId: string): Promise<PullResult>;
-    push(repositoryId: string, publish?: PublishBranchOptions): Promise<PushResult>;
+    pushContext(repositoryId: string, remote?: string): Promise<import('./repository-access').PublicationContext>;
+    push(repositoryId: string, publish?: PublishBranchOptions, expectedContext?: string): Promise<PushResult>;
     /** Updates remote-tracking refs without merging or rebasing. */
     fetch(repositoryId: string): Promise<FetchResult>;
     /** Local and remote branches plus every worktree; runs no per-worktree status scan. */
@@ -628,7 +629,7 @@ export interface OpenTigApi {
     record(entry: Pick<ProblemLogRecordInput, 'operation' | 'message'> & Partial<Pick<ProblemLogRecordInput, 'level' | 'code' | 'repositoryId'>>): Promise<void>;
   };
   events: {
-    onGitHubAccountsChanged(callback: () => void): () => void;
+    onGitHubAccountsChanged(callback: (repositoryIds?: string[]) => void): () => void;
     onRepositoryChanged(callback: (repositoryId: string, scope: RepositoryChangeScope) => void): () => void;
     onActiveRepositoryChanged(callback: (repository: RepositoryInfo) => void): () => void;
   };
@@ -655,7 +656,7 @@ export const IPC = {
   diffGet: 'diff:get', diffCommit: 'diff:commit', diffCommitFile: 'diff:commit-file', indexStage: 'index:stage',
   indexUnstage: 'index:unstage', indexDiscard: 'index:discard', indexStageAll: 'index:stage-all', indexUnstageAll: 'index:unstage-all', indexPrepareCommitGroup: 'index:prepare-commit-group', indexUpdateConflict: 'index:update-conflict', indexResolveConflict: 'index:resolve-conflict', commitCreate: 'commit:create', commitUndoLatest: 'commit:undo-latest',
   commitsList: 'commits:list', commitsFiles: 'commits:files', commitAuthorship: 'commits:authorship', commitSetAuthorship: 'commits:set-authorship', branchesList: 'refs:branches', branchSwitch: 'refs:switch', worktreesList: 'refs:worktrees',
-  worktreeSelect: 'refs:select-worktree', refsPull: 'refs:pull', refsPush: 'refs:push', refsFetch: 'refs:fetch',
+  worktreeSelect: 'refs:select-worktree', refsPull: 'refs:pull', refsPush: 'refs:push', refsPushContext: 'refs:push-context', refsFetch: 'refs:fetch',
   localRefsSnapshot: 'refs:local-snapshot', branchDetails: 'refs:branch-details', worktreeDetails: 'refs:worktree-details',
   branchDelete: 'refs:delete-branch', worktreeRemove: 'refs:remove-worktree',
   remoteBranchDetails: 'refs:remote-branch-details', trackingBranchCreate: 'refs:create-tracking-branch', remoteBranchDelete: 'refs:delete-remote-branch', branchesFetch: 'refs:fetch-branches',

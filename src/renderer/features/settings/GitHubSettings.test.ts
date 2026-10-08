@@ -34,7 +34,8 @@ async function mount(repo: RepositoryInfo | null = repository) {
   let root = createRoot(container);
   const render = () => root.render(createElement(QueryClientProvider, { client }, createElement(GitHubSettings, { repository: repo })));
   await act(async () => { render(); await settle(); }); await act(settle);
-  return { container,
+  return { container, client,
+    switchRepository: async (next: RepositoryInfo) => { repo = next; await act(async () => { render(); await settle(); }); await act(settle); },
     reopen: async () => { await act(async () => root.unmount()); root = createRoot(container); await act(async () => { render(); await settle(); }); await act(settle); },
     close: async () => { await act(async () => root.unmount()); client.clear(); container.remove(); },
   };
@@ -199,5 +200,67 @@ it('requires an open repository for identity editing and keeps global accounts a
     expect(calls.authorship).not.toHaveBeenCalled();
     expect(calls.repositoryAccount).not.toHaveBeenCalled();
     expect(view.container.textContent).toContain('@alice');
+  } finally { await view.close(); }
+});
+
+
+it('keeps the login instructions open when adding an account fails', async () => {
+  calls.accountsStatus.mockResolvedValueOnce(saved).mockRejectedValueOnce(new Error('offline'));
+  calls.repositoryAccount.mockResolvedValue(context);
+  const view = await mount();
+  try {
+    await click('Add account'); await click('View instructions'); await click('I have finished');
+    expect(document.body.textContent).toContain('I have finished');
+    expect(document.body.textContent).not.toContain('Newly detected accounts');
+    expect(calls.setRepositoryAccount).not.toHaveBeenCalled();
+    expect(calls.error).toHaveBeenCalled();
+  } finally { await view.close(); }
+});
+
+it('never puts a late check from repository A into repository B', async () => {
+  calls.accountsStatus.mockResolvedValue(saved);
+  let resolve!: (value: GitHubRepositoryAccount) => void;
+  calls.repositoryAccount.mockImplementation((id: string, force: boolean) => force
+    ? new Promise(done => { resolve = done; }) : Promise.resolve({ ...context, login: id === 'repo' ? 'alice' : 'bob' }));
+  const view = await mount();
+  try {
+    await click('Check status');
+    await view.switchRepository({ ...repository, id: 'second', name: 'second' });
+    await act(async () => { resolve({ ...context, login: 'alice' }); await settle(); }); await act(settle);
+    expect(view.container.querySelector('.github-effective-account')?.textContent).toContain('@bob');
+  } finally { await view.close(); }
+});
+
+it('migrates only on opt-in and can return to external Git authentication', async () => {
+  calls.accountsStatus.mockResolvedValue(saved);
+  let selected: GitHubRepositoryAccount = { ...context, source: 'explicit', selection: { mode: 'account', host: 'github.com', login: 'alice' } };
+  calls.repositoryAccount.mockImplementation(() => Promise.resolve(selected));
+  calls.setRepositoryAccount.mockImplementation((_id, choice) => { selected = { ...selected, selection: choice }; return Promise.resolve(selected); });
+  const view = await mount();
+  try {
+    expect(view.container.textContent).toContain('External authentication');
+    expect(calls.setRepositoryAccount).not.toHaveBeenCalled();
+    await click('Use this account for Git HTTPS');
+    expect(calls.setRepositoryAccount).toHaveBeenLastCalledWith('repo', { mode: 'account', host: 'github.com', login: 'alice', gitMode: 'managed' });
+    expect(view.container.textContent).toContain('Managed by OpenTig');
+    await click('Use external authentication');
+    expect(calls.setRepositoryAccount).toHaveBeenLastCalledWith('repo', { mode: 'account', host: 'github.com', login: 'alice', gitMode: 'external' });
+    expect(calls.setAuthorship).not.toHaveBeenCalled();
+  } finally { await view.close(); }
+});
+
+
+it('preserves the authorship draft when account inventory and authorship queries refresh', async () => {
+  calls.accountsStatus.mockResolvedValue(saved); calls.repositoryAccount.mockResolvedValue(context);
+  const view = await mount();
+  try {
+    await click('Edit authorship'); await input('commit-author-name', 'Unsaved local draft');
+    await act(async () => {
+      view.client.setQueryData(['repository', 'repo', 'commit-authorship'], { ...identity, author: { name: 'Refreshed name', email: 'refresh@example.com' } });
+      await view.client.invalidateQueries({ queryKey: ['github', 'accounts'] });
+    });
+    expect(document.querySelector<HTMLInputElement>('#commit-author-name')?.value).toBe('Unsaved local draft');
+    expect(calls.setAuthorship).not.toHaveBeenCalled();
+    await click('Cancel');
   } finally { await view.close(); }
 });

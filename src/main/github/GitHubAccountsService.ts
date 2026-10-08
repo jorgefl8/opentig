@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import os from 'node:os';
-import { AUTOMATIC_GITHUB_ACCOUNT, type GitHubAccountsStatus, type GitHubAccountSelection, type GitHubRepositoryAccount } from '../../shared/github-accounts';
+import { AUTOMATIC_GITHUB_ACCOUNT, githubRepositoryKey, type GitHubAccountsStatus, type GitHubAccountSelection, type GitHubRepositoryAccount } from '../../shared/github-accounts';
 import { GhOperationError } from '../../shared/errors';
 import type { RepositoryInfo } from '../../shared/contracts';
 import type { CliCandidate, CliResolver } from '../ai/CliResolver';
@@ -24,13 +24,15 @@ export class GitHubAccountsService {
   private detection: { at: number; promise: Promise<CliDetection> } | null = null;
   private revision = 0;
   get authRevision(): number { return this.revision; }
+  private readonly revisions = new Map<string, number>();
+  revisionFor(repository: RepositoryInfo): number { return this.revisions.get(githubRepositoryKey(repository.commonDir)) ?? 0; }
   private contexts = new Map<string, { remote: string; value: GitHubRepositoryAccount }>();
   private ssh = new Map<string, { at: number; promise: Promise<string | null> }>();
   private identities = new Map<string, { at: number; promise: Promise<string> }>();
 
   constructor(private readonly resolver: CliResolver, private readonly runner: CliProcessRunner,
     private readonly git: GitProcess, private readonly settings?: SettingsStore, private readonly store?: GitHubStatusStore,
-    private readonly changed: () => void = () => undefined) {}
+    private readonly changed: (repository?: RepositoryInfo) => void = () => undefined) {}
 
   status(force = false): Promise<GitHubAccountsStatus> {
     if (force) {
@@ -47,24 +49,30 @@ export class GitHubAccountsService {
 
   context(repository: RepositoryInfo, remote: string, nameWithOwner: string | null): GitHubRepositoryAccount {
     const cached = this.contexts.get(repository.id);
-    if (cached?.remote === remote && cached.value.revision === this.revision) return structuredClone(cached.value);
+    if (cached?.remote === remote && cached.value.revision === this.revisionFor(repository)) return structuredClone(cached.value);
     const selection = this.selection(repository);
     return { selection, nameWithOwner, login: selection.mode === 'account' ? selection.login : null,
-      source: selection.mode === 'account' ? 'explicit' : null, state: 'unchecked', checkedAt: null, revision: this.revision };
+      source: selection.mode === 'account' ? 'explicit' : null, state: 'unchecked', checkedAt: null, revision: this.revisionFor(repository) };
   }
 
   async setSelection(repository: RepositoryInfo, selection: GitHubAccountSelection): Promise<void> {
     if (!this.settings) throw new Error('GitHub account settings are unavailable.');
     await this.settings.setGitHubAccount(repository.commonDir, selection);
-    this.invalidate();
+    this.invalidate(repository);
   }
 
-  private invalidate(): void {
+  private invalidate(repository?: RepositoryInfo): void {
     this.revision++;
-    this.contexts.clear();
+    if (repository) {
+      const key = githubRepositoryKey(repository.commonDir);
+      this.revisions.set(key, this.revision);
+    } else {
+      // Inventory refresh invalidates checks, not saved operation identities.
+      this.contexts.clear();
+    }
     this.ssh.clear();
     this.identities.clear();
-    this.changed();
+    this.changed(repository);
   }
 
   refreshAuthentication(): void {
@@ -81,7 +89,7 @@ export class GitHubAccountsService {
   }
 
   async authenticate(repository: RepositoryInfo, remote: string, nameWithOwner: string, operation: string) {
-    const revision = this.revision;
+    const revision = this.revisionFor(repository);
     const selection = this.selection(repository);
     let login: string | null = selection.mode === 'account' ? selection.login : null;
     let source: GitHubRepositoryAccount['source'] = selection.mode === 'account' ? 'explicit' : null;
@@ -115,19 +123,19 @@ export class GitHubAccountsService {
         message: `The saved credentials for @${login} authenticate a different account. Authenticate @${login} again and check Settings → GitHub.` });
       login = verified;
       const context: GitHubRepositoryAccount = { selection, nameWithOwner, login, source, state: 'ready', checkedAt: new Date().toISOString(), revision };
-      if (revision === this.revision) {
+      if (revision === this.revisionFor(repository)) {
         const previous = this.contexts.get(repository.id)?.value;
         if (previous?.state === 'ready' && (previous.login?.toLowerCase() !== login.toLowerCase() || previous.source !== source)) {
           // External gh/SSH changes discovered by any operation invalidate old-account reads.
-          this.invalidate();
-          context.revision = this.revision;
+          this.invalidate(repository);
+          context.revision = this.revisionFor(repository);
         }
         this.contexts.set(repository.id, { remote, value: context });
       }
       return { auth, executable, context };
     } catch (error) {
       const message = error instanceof GhOperationError ? error.message : 'Could not inspect GitHub authentication. Check Settings → GitHub again.';
-      if (revision === this.revision) this.contexts.set(repository.id, { remote, value: { selection, nameWithOwner, login, source,
+      if (revision === this.revisionFor(repository)) this.contexts.set(repository.id, { remote, value: { selection, nameWithOwner, login, source,
         state: 'error', checkedAt: new Date().toISOString(), message, revision } });
       if (error instanceof GhOperationError) throw error;
       throw new GhOperationError({ code: 'GH_PROCESS_FAILED', operation, message, retryable: true });

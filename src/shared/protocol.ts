@@ -99,6 +99,7 @@ export const OPEN_TIG_SERVER_COMMANDS = {
   'refs.listWorktrees': command(IPC.worktreesList, 'worktrees', false),
   'refs.selectWorktree': command(IPC.worktreeSelect, 'select-worktree', true),
   'refs.pull': command(IPC.refsPull, 'pull', true),
+  'refs.pushContext': command(IPC.refsPushContext, 'push-context', false),
   'refs.push': command(IPC.refsPush, 'push', true),
   'refs.fetch': command(IPC.refsFetch, 'fetch', true),
   'refs.localRefsSnapshot': command(IPC.localRefsSnapshot, 'local-refs-snapshot', false),

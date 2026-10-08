@@ -67,3 +67,16 @@ describe('renderer query policy', () => {
     await expect(Promise.all([first, second])).resolves.toEqual(['status', 'status']);
   });
 });
+
+
+it('invalidates only the repository and worktrees affected by an account selection', async () => {
+  const client = new QueryClient();
+  for (const id of ['a', 'a-worktree', 'b']) client.setQueryData(queryKeys.githubAccount(id), id);
+  client.setQueryData(queryKeys.githubAccounts, 'inventory');
+  await resetGitHubQueries(client, ['a', 'a-worktree']);
+  expect(client.getQueryData(queryKeys.githubAccount('a'))).toBeUndefined();
+  expect(client.getQueryData(queryKeys.githubAccount('a-worktree'))).toBeUndefined();
+  expect(client.getQueryData(queryKeys.githubAccount('b'))).toBe('b');
+  expect(client.getQueryData(queryKeys.githubAccounts)).toBe('inventory');
+  client.clear();
+});

@@ -4,6 +4,7 @@ import type {
   FileChange, LocalRefsSnapshot, WorktreeDetails, WorktreeInfo,
 } from '../../shared/git-types';
 import { AiOperationError, GitOperationError } from '../../shared/errors';
+import { redactSensitiveText } from '../../shared/redaction';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import type { FileService } from '../files/FileService';
@@ -36,6 +37,11 @@ type GitTaskRunner = (
 ) => Promise<{ stdout: Buffer }>;
 
 export class GitRepositoryOperations {
+  access?: import('./RepositoryGitAccess').RepositoryGitAccess;
+  publicationContext(repositoryId: string, remote?: string) {
+    if (!this.access) throw new Error('Repository access is unavailable.');
+    return this.access.publication(repositoryId, remote);
+  }
   private readonly knownOids = new Map<string, Set<string>>();
   private readonly authorship: GitCommitAuthorship;
   private readonly remoteBranches: GitRemoteBranches;
@@ -48,8 +54,8 @@ export class GitRepositoryOperations {
 
   remoteBranchDetails(repositoryId: string, fullName: string) { return this.remoteBranches.details(repositoryId, fullName); }
   createTrackingBranch(request: CreateTrackingBranchRequest) { return this.remoteBranches.create(request); }
-  deleteRemoteBranch(request: DeleteRemoteBranchRequest) { return this.remoteBranches.delete(request); }
-  fetchBranches(repositoryId: string) { return this.remoteBranches.fetch(repositoryId); }
+  deleteRemoteBranch(request: DeleteRemoteBranchRequest) { return this.git.withNetworkContext(this.repositories.get(request.repositoryId).path, () => this.remoteBranches.delete(request)); }
+  fetchBranches(repositoryId: string) { return this.git.withNetworkContext(this.repositories.get(repositoryId).path, () => this.remoteBranches.fetch(repositoryId)); }
 
   getCommitAuthorship(repositoryId: string) { return this.authorship.get(repositoryId); }
 
@@ -499,6 +505,10 @@ export class GitRepositoryOperations {
   }
 
   async fetch(repositoryId: string): Promise<FetchResult> {
+    return this.git.withNetworkContext(this.repositories.get(repositoryId).path, () => this.fetchInContext(repositoryId));
+  }
+
+  private async fetchInContext(repositoryId: string): Promise<FetchResult> {
     const repository = this.repositories.get(repositoryId);
     try {
       await this.runFetch(repository.path, 'fetch');
@@ -513,6 +523,10 @@ export class GitRepositoryOperations {
   }
 
   async pull(repositoryId: string): Promise<PullResult> {
+    return this.git.withNetworkContext(this.repositories.get(repositoryId).path, () => this.pullInContext(repositoryId));
+  }
+
+  private async pullInContext(repositoryId: string): Promise<PullResult> {
     const repository = this.repositories.get(repositoryId);
     let status = await this.repositories.status(repositoryId, false);
     const existingConflicts = conflictPaths(status);
@@ -592,7 +606,37 @@ export class GitRepositoryOperations {
     return { status: 'success', commits, restoredLocalChanges: hasLocalChanges, rebased, localCommits: nextStatus.ahead };
   }
 
-  async push(repositoryId: string, publish?: PublishBranchOptions): Promise<PushResult> {
+  async push(repositoryId: string, publish?: PublishBranchOptions, expectedContext?: string): Promise<PushResult> {
+    if (this.access) return this.pushWithContext(repositoryId, publish, expectedContext);
+    return this.legacyPush(repositoryId, publish);
+  }
+
+  private async pushWithContext(repositoryId: string, publish?: PublishBranchOptions, expectedContext?: string): Promise<PushResult> {
+    const repository = this.repositories.get(repositoryId);
+    try {
+      const reviewed = await this.access!.assertPublication(repositoryId, expectedContext, publish?.remote);
+      return await this.git.withNetworkContext(repository.path, () => this.git.runWriteTask(repository.path, async run => {
+        const context = await this.access!.assertPublication(repositoryId, reviewed.id, publish?.remote);
+        const status = await this.repositories.status(repositoryId, false);
+        const conflicts = conflictPaths(status);
+        if (conflicts.length) return { status: 'blocked-conflicts', files: conflicts };
+        if (status.operation) return { status: 'blocked-operation', operation: status.operation };
+        if (!context.branch || !context.oid || !context.targetRef) return { status: 'rejected', reason: 'configuration', message: 'Check out a branch with a commit before publishing.' };
+        if (publish && (publish.expectedBranch !== context.branch || publish.expectedOid !== context.oid)) return { status: 'rejected', reason: 'configuration', message: 'The branch changed. Review and try again.' };
+        if (!context.remote) return context.remotes.length ? { status: 'remote-required', branch: context.branch, oid: context.oid, remotes: context.remotes }
+          : { status: 'rejected', reason: 'configuration', message: 'No remote is configured.' };
+        const result = await run(['-c', `remote.${context.remote}.mirror=false`, 'push', '--porcelain', '--no-follow-tags',
+          ...(!status.upstream ? ['--set-upstream'] : []), '--', context.remote, `refs/heads/${context.branch}:${context.targetRef}`], {
+          operation: 'push', timeoutMs: 120_000, maxOutputBytes: 4 * 1024 * 1024,
+          publication: { repositoryId, id: context.id, ...(publish?.remote ? { remote: publish.remote } : {}) },
+        });
+        if (!status.upstream) return { status: 'published', branch: context.branch, remote: context.remote };
+        return result.stdout.toString('utf8').includes('[up to date]') ? { status: 'up-to-date' } : { status: 'success', commits: status.ahead };
+      }, repository.commonDir));
+    } catch (error) { return pushFailure(error); }
+  }
+
+  private async legacyPush(repositoryId: string, publish?: PublishBranchOptions): Promise<PushResult> {
     const repository = this.repositories.get(repositoryId);
     let status = await this.repositories.status(repositoryId, false);
     const existingConflicts = conflictPaths(status);
@@ -1121,25 +1165,20 @@ function bounded(value: string, limit: number): { value: string; truncated: bool
   return { value: `${value.slice(0, limit)}\n[content truncated by OpenTig]`, truncated: true };
 }
 
-function pushFailure(error: unknown): Extract<PushResult, { status: 'rejected' }> {
+export function pushFailure(error: unknown): Extract<PushResult, { status: 'rejected' }> {
   const detail = error instanceof GitOperationError ? error.detail : null;
-  const raw = `${detail?.stderr ?? ''}\n${detail?.message ?? (error instanceof Error ? error.message : '')}`.toLowerCase();
-  if (/authentication failed|permission denied|could not read username|access denied|publickey/.test(raw)) {
-    return { status: 'rejected', reason: 'authentication', message: 'The remote rejected the credentials or you do not have permission to push.' };
-  }
-  if (/non-fast-forward|fetch first|stale info|failed to push some refs/.test(raw)) {
-    return { status: 'rejected', reason: 'remote-changed', message: 'The remote contains new changes. Update the branch and try again.' };
-  }
-  if (/hook declined|pre-receive hook|protected branch|remote rejected/.test(raw)) {
-    return { status: 'rejected', reason: 'hook', message: 'The server rejected the push because of a rule or branch protection.' };
-  }
-  if (/could not resolve host|unable to access|connection timed out|connection reset|network is unreachable/.test(raw)) {
-    return { status: 'rejected', reason: 'network', message: 'Could not connect to the remote. Check your network and try again.' };
-  }
-  if (/upstream branch .* does not match|no upstream branch|push\.default/.test(raw)) {
-    return { status: 'rejected', reason: 'configuration', message: 'The local branch and its upstream do not allow a safe push with the current configuration.' };
-  }
-  return { status: 'rejected', reason: 'unknown', message: 'Git rejected the push. No force push was performed.' };
+  const message = redactSensitiveText(detail?.stderr || detail?.message || (error instanceof Error ? error.message : 'Git rejected the push.')).trim().slice(0, 3000);
+  const raw = message.toLowerCase();
+  let reason: Extract<PushResult, { status: 'rejected' }>['reason'] = 'unknown';
+  let explanation = '';
+  if (/repository not found|repository .* not found|(?:http|error:)\s*404/.test(raw)) { reason = 'inaccessible'; explanation = 'The repository is missing or inaccessible to this account. '; }
+  else if (/authentication failed|could not read username|bad credentials|expired|revoked|no usable saved credentials|publickey|(?:http|error:)\s*401/.test(raw)) reason = 'authentication';
+  else if (/protected branch|hook declined|pre-receive hook|remote rejected|gh006|gh013|repository rule/.test(raw)) reason = 'hook';
+  else if (/permission.*denied|write access.*not granted|access denied|(?:http|error:)\s*403/.test(raw)) reason = 'permission';
+  else if (/non-fast-forward|fetch first|stale info/.test(raw)) reason = 'remote-changed';
+  else if (/could not resolve host|unable to access|connection.*(timed out|reset|refused)|network is unreachable|(?:http|error:)\s*50[0-4]/.test(raw)) reason = 'network';
+  else if (detail?.code === 'INVALID_ARGUMENT' || /upstream branch .* does not match|no upstream branch|push\.default|context|account changed/.test(raw)) reason = 'configuration';
+  return { status: 'rejected', reason, message: explanation + message };
 }
 
 function makeDiffResult(path: string, buffer: Buffer): DiffResult {

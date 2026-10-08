@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { IconBrandGithub, IconCheck, IconCopy, IconGitBranch, IconLoader4, IconPlus, IconRefresh, IconUser } from '@tabler/icons-react';
 import { sileo } from 'sileo';
@@ -13,6 +13,7 @@ import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { opentig } from '@/lib/opentig-api';
 import { queryKeys } from '@/lib/query-client';
 import { writeClipboardText } from '@/lib/browser-capabilities';
+import { RepositoryAccessStatus } from './RepositoryAccessStatus';
 import { CommitAuthorshipDialog } from './CommitAuthorshipDialog';
 import { authorshipSourceLabel } from './commit-authorship-copy';
 
@@ -32,6 +33,7 @@ export function GitHubSettings({ repository }: { repository: RepositoryInfo | nu
     queryFn: () => opentig.github.repositoryAccount(repository!.id, false), enabled: repository !== null, staleTime: Infinity });
   const authorship = useQuery({ queryKey: queryKeys.commitAuthorship(repository?.id ?? ''),
     queryFn: () => opentig.commits.authorship(repository!.id), enabled: repository !== null });
+  const generations = useRef(new Map<string, number>());
   const [checking, setChecking] = useState(false);
   const [saving, setSaving] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
@@ -51,27 +53,34 @@ export function GitHubSettings({ repository }: { repository: RepositoryInfo | nu
   if (selection !== 'auto' && !selectable.some((item) => item.value === selection)) {
     selectable.push({ value: selection, label: `@${selection}`, description: 'Not in the last checked accounts', icon: <IconBrandGithub /> });
   }
-  const check = async () => {
+  const storeContext = (id: string, value: GitHubRepositoryAccount) => client.setQueryData<GitHubRepositoryAccount>(queryKeys.githubAccount(id), previous => previous && previous.revision > value.revision ? previous : value);
+  const check = async (): Promise<GitHubAccountsStatus | null> => {
+    const id = repository?.id ?? '';
+    const generation = (generations.current.get(id) ?? 0) + 1; generations.current.set(id, generation);
     setChecking(true);
     try {
       const next = await opentig.github.accountsStatus(true);
       client.setQueryData(queryKeys.githubAccounts, next);
+      if (next.message || next.installationStatus !== 'available') throw new Error(next.message || 'GitHub CLI is unavailable.');
       if (repository) {
         const value = await opentig.github.repositoryAccount(repository.id, true);
-        client.setQueryData(queryKeys.githubAccount(repository.id), value);
+        if (generations.current.get(id) === generation) storeContext(repository.id, value);
         await client.invalidateQueries({ queryKey: queryKeys.commitAuthorship(repository.id) });
       }
-    } catch (error) { sileo.error({ title: 'Could not check GitHub', description: messageOf(error) }); }
+      return next;
+    } catch (error) { sileo.error({ title: 'Could not check GitHub', description: messageOf(error) }); return null; }
     finally { setChecking(false); }
   };
-  const choose = async (value: string) => {
+  const choose = async (value: string, gitMode: 'external' | 'managed' = account?.selection.mode === 'account' ? account.selection.gitMode ?? 'external' : 'external') => {
     if (!repository || saving) return;
+    const generation = (generations.current.get(repository.id) ?? 0) + 1; generations.current.set(repository.id, generation);
     setSaving(true);
-    const next: GitHubAccountSelection = value === 'auto' ? { mode: 'auto' } : { mode: 'account', host: 'github.com', login: value };
+    const next: GitHubAccountSelection = value === 'auto' ? { mode: 'auto' } : { mode: 'account', host: 'github.com', login: value, gitMode };
     try {
-      await opentig.github.setRepositoryAccount(repository.id, next);
+      const saved = await opentig.github.setRepositoryAccount(repository.id, next);
+      if (generations.current.get(repository.id) === generation) storeContext(repository.id, saved);
       const checked = await opentig.github.repositoryAccount(repository.id, true);
-      client.setQueryData(queryKeys.githubAccount(repository.id), checked);
+      if (generations.current.get(repository.id) === generation) storeContext(repository.id, checked);
     } catch (error) { sileo.error({ title: 'Could not save GitHub account', description: messageOf(error) }); }
     finally { setSaving(false); }
   };
@@ -98,14 +107,23 @@ export function GitHubSettings({ repository }: { repository: RepositoryInfo | nu
       <div className="github-settings-row"><h3>Account for this repository</h3></div>
       {repository ? <>
         <div className="github-account-picker"><label className="sr-only" htmlFor="github-account-choice">Account for GitHub operations</label>
-          <SearchablePicker groups={[{ id: 'automatic', label: '', items: [{ value: 'auto', label: 'Automatic', description: 'Verified SSH identity, or active gh credentials for HTTPS', pinned: true, icon: <IconBrandGithub /> }] }, { id: 'accounts', label: 'Saved accounts', items: selectable }]}
+          <SearchablePicker groups={[{ id: 'accounts', label: 'Saved accounts', items: selectable }]}
             value={selection} onValueChange={(value) => void choose(value)} label="GitHub account for this repository" triggerId="github-account-choice"
-            triggerLabel={selection === 'auto' ? 'Automatic' : `@${selection}`} placeholder="Search accounts…" size="default" align="start"
-            disabled={saving || !account?.nameWithOwner} />
+            triggerLabel={selection === 'auto' ? 'Choose an account' : `@${selection}`} placeholder="Search accounts…" size="default" align="start"
+            disabled={saving} />
         </div>
-        {account?.nameWithOwner ? <><p className="github-settings-note">The same account reads and creates PRs. Your Git/SSH authentication and commit author stay independent.</p>
-          <p className="github-selection-saved"><IconCheck />{saving ? 'Saving and verifying…' : 'Selection saved · shared across worktrees'}</p></>
-          : <p className="github-settings-note">The origin remote must point to github.com to select a GitHub account. You can still edit the Git commit identity below.</p>}
+        {account?.nameWithOwner ? <><p className="github-settings-note">The selected account reads and creates PRs. Choose whether it also authenticates GitHub HTTPS operations.</p>
+          <p className={selection === 'auto' ? 'github-settings-note' : 'github-selection-saved'}>{selection !== 'auto' && <IconCheck />}{saving ? 'Saving and verifying…' : selection === 'auto' ? 'Choose an account to save a choice shared by connected clients and worktrees.' : 'Selection shared by connected clients and worktrees'}</p></>
+          : <p className="github-settings-note">No supported GitHub PR destination was detected. The Git mode still applies to compatible HTTPS remotes. Commit authorship remains independent.</p>}
+        <div className="github-settings-row"><strong>Git authentication</strong>
+          <Button variant="outline" size="sm" disabled={saving || selection === 'auto'} onClick={() => void choose(selection, account?.selection.mode === 'account' && account.selection.gitMode === 'managed' ? 'external' : 'managed')}>
+            {account?.selection.mode === 'account' && account.selection.gitMode === 'managed' ? 'Use external authentication' : 'Use this account for Git HTTPS'}
+          </Button>
+        </div>
+        <p className="github-settings-note">{account?.selection.mode === 'account' && account.selection.gitMode === 'managed'
+          ? 'Managed by OpenTig for github.com HTTPS. SSH keys and other transports remain external.'
+          : 'External authentication. GitHub and Git may use different credentials. Existing repositories keep this mode until you opt in.'}</p>
+        {account?.access && <RepositoryAccessStatus access={account.access} checking={checking || saving} />}
         {account?.state === 'error' && <p className="github-settings-notice" role="status">{account.message || 'The selected account is unavailable. Check status or choose another saved account.'}</p>}
       </> : <p className="github-settings-note">Open a repository to choose its GitHub account and review its commit authorship.</p>}
       <p className="github-global-account">Active globally in gh: <strong>{status?.activeLogin ? `@${status.activeLogin}` : 'Not verified'}</strong></p>
@@ -150,7 +168,7 @@ export function GitHubSettings({ repository }: { repository: RepositoryInfo | nu
 }
 
 function AddGitHubAccountDialog({ open, onOpenChange, status, onCheck, checking }: {
-  open: boolean; onOpenChange(open: boolean): void; status: GitHubAccountsStatus | undefined; onCheck(): Promise<void>; checking: boolean;
+  open: boolean; onOpenChange(open: boolean): void; status: GitHubAccountsStatus | undefined; onCheck(): Promise<GitHubAccountsStatus | null>; checking: boolean;
 }) {
   const [step, setStep] = useState(0);
   const [previous, setPrevious] = useState<string | null>(null);
@@ -182,7 +200,7 @@ function AddGitHubAccountDialog({ open, onOpenChange, status, onCheck, checking 
     </>}
     <div className="github-add-actions"><Button variant="ghost" onClick={() => close(false)}>{step === 2 ? 'Done' : 'Cancel'}</Button>
       {step === 0 ? <Button onClick={() => { setPrevious(status?.activeLogin ?? null); setKnown(status?.accounts.map((account) => account.login) ?? []); setStep(1); }}>View instructions</Button>
-        : <Button onClick={() => void onCheck().then(() => setStep(2))} disabled={checking}>{checking && <IconLoader4 className="animate-spin" />}{step === 1 ? 'I have finished · check accounts' : 'Check again'}</Button>}
+        : <Button onClick={() => void onCheck().then((next) => { if (next?.accounts.some(item => item.state === 'authenticated' && !known.includes(item.login))) setStep(2); else if (next) sileo.error({ title: 'No new authenticated account detected', description: 'Finish the login or reconnect the account, then check again. Your repository choice is unchanged.' }); })} disabled={checking}>{checking && <IconLoader4 className="animate-spin" />}{step === 1 ? 'I have finished · check accounts' : 'Check again'}</Button>}
     </div>
   </DialogPopup></Dialog>;
 }

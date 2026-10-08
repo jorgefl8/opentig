@@ -386,7 +386,8 @@ export function registerServerCommands(
     return services.operations.removeWorktree(repositoryId, path, expectedOid, force, deleteBranch);
   });
   handle(IPC.refsPull, 'pull', (id) => services.operations.pull(stringArg(id, 'pull', 64)));
-  handle(IPC.refsPush, 'push', (id, publish) => services.operations.push(stringArg(id, 'push', 64), publishBranchArg(publish)));
+  handle(IPC.refsPushContext, 'push-context', (id, remote) => services.operations.publicationContext(stringArg(id, 'push-context', 64), remote == null ? undefined : stringArg(remote, 'push-context', 512)));
+  handle(IPC.refsPush, 'push', (id, publish, expected) => services.operations.push(stringArg(id, 'push', 64), publishBranchArg(publish), expected == null ? undefined : stringArg(expected, 'push', 64)));
   handle(IPC.refsFetch, 'fetch', (id) => services.operations.fetch(stringArg(id, 'fetch', 64)));
   handle(IPC.aiStatuses, 'ai-statuses', (forceRefresh) => services.ai.statuses(booleanArg(forceRefresh, 'ai-statuses')));
   handleWithContext(IPC.aiGenerateCommitMessage, 'ai-generate-commit-message', (context, input) => (

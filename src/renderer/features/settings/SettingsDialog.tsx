@@ -170,7 +170,7 @@ export function SettingsDialog({ preferences, onPreference, open, onOpenChange, 
                   exit={reduceMotion ? { opacity: 1 } : { opacity: 0, y: -5 }}
                   transition={settingsTransition}
                 >
-              {section === 'github' ? <GitHubSettings repository={repository} /> : section === 'general' ? <GeneralSettings preferences={preferences} onPreference={onPreference} /> : section === 'updates' ? <UpdateSettings /> : section === 'shortcuts' ? <ShortcutsSettings preferences={preferences} onPreference={onPreference} /> : section === 'webAccess' ? <WebAccessSettings /> : section === 'diagnostics' ? <>
+              {section === 'github' ? <GitHubSettings key={repository?.id} repository={repository} /> : section === 'general' ? <GeneralSettings preferences={preferences} onPreference={onPreference} /> : section === 'updates' ? <UpdateSettings /> : section === 'shortcuts' ? <ShortcutsSettings preferences={preferences} onPreference={onPreference} /> : section === 'webAccess' ? <WebAccessSettings /> : section === 'diagnostics' ? <>
                 <div className="settings-field">
                   <div className="settings-field-label">
                     <strong>Problem history</strong>
