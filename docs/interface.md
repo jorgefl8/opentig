@@ -18,6 +18,8 @@ All Settings sections share a desktop frame that keeps its size as sections chan
 
 ### Viewer and saved preferences
 
+OpenTig starts in **Files** on first use, then reopens the last active section: Changes, Files, History, PRs, or Search. This choice is stored in the client, applies across repositories, and is independent for each browser profile or desktop client. Clearing site data resets it to Files; if local storage is unavailable, the client starts in Files. Restoring a section does not restore a selected PR or search query.
+
 Choose tree or list layout for Changes, line wrapping for viewers, and whether Git-ignored files are visible. OpenTig remembers sidebar width, viewer preferences, fonts, shortcut customizations, repositories, projects, expanded file-tree paths, and open file tabs for each worktree. AI model selection is saved per provider. Tab paths are remembered between sessions; unsaved text is not written to disk.
 
 ### Remote checks and refresh

@@ -70,6 +70,7 @@ const sidebarFallback = <div className="view-loading" role="status"><IconLoader4
 const NO_OPEN_FILES_STATES: OpenFilesState[] = [];
 type DirtyCloseChoice = 'save' | 'discard' | 'cancel';
 const SIDEBAR_VIEWS = ['changes', 'files', 'history', 'prs', 'search'] as const;
+const VIEW_STORAGE_KEY = 'opentig.lastView';
 type SidebarView = (typeof SIDEBAR_VIEWS)[number];
 interface AppRefreshOptions {
   manual?: boolean;
@@ -113,7 +114,17 @@ export default function App() {
   const [branchesState, setBranches] = useState<BranchInfo[]>([]);
   const [worktreesState, setWorktrees] = useState<WorktreeInfo[]>([]);
   const [snapshotRepositoryId, setSnapshotRepositoryId] = useState<string | null>(null);
-  const [view, setView] = useState<SidebarView>('changes');
+  const [view, setView] = useState<SidebarView>(() => {
+    try {
+      const stored = window.localStorage.getItem(VIEW_STORAGE_KEY);
+      return SIDEBAR_VIEWS.find((item) => item === stored) ?? 'files';
+    } catch {
+      return 'files';
+    }
+  });
+  useEffect(() => {
+    try { window.localStorage.setItem(VIEW_STORAGE_KEY, view); } catch { /* storage unavailable */ }
+  }, [view]);
   const [viewerSelection, setViewerSelection] = useState<ViewerSelection>(null);
   const [commitMessage, setCommitMessage] = useState('');
   const [commitProposal, setCommitProposal] = useState<CommitSplitProposal | null>(null);

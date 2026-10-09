@@ -43,6 +43,7 @@ vi.mock('./Toolbar', () => ({ Toolbar: (props: ToolbarProps) => createElement('h
   props.branchPullRequest && createElement('button', { 'aria-label': 'Open branch PR in OpenTig', onClick: () => props.onOpenPullRequest(props.branchPullRequest!.number) }, 'Open in OpenTig'),
 ) }));
 vi.mock('@/features/changes/ChangesView', () => ({ ChangesView: () => null }));
+vi.mock('@/features/files/FilesView', () => ({ FilesView: () => createElement('div', null, 'Repository files') }));
 vi.mock('@/features/commit/CommitComposer', () => ({ CommitComposer: () => null }));
 vi.mock('@/features/viewer/Viewer', () => ({ default: ({ selection }: { selection: ViewerSelection }) => createElement('output', { 'aria-label': 'Viewer selection' }, selection?.type === 'pull-request' ? `PR #${selection.number}` : '') }));
 vi.mock('@/features/repositories/OpenRepositoryDialog', () => ({ OpenRepositoryDialog: () => null }));
@@ -56,6 +57,7 @@ const available: GhCliStatus = { installed: true, availability: 'ready', authSta
 const repository = { id: 'repo', path: '/sample', commonDir: '/sample/.git', name: 'sample', repositoryName: 'sample' };
 
 beforeEach(() => {
+  localStorage.clear();
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
   vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
   calls.bootstrap.mockResolvedValue({
@@ -76,6 +78,7 @@ afterEach(async () => {
   client.clear();
   container.remove();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
   vi.resetAllMocks();
 });
 
@@ -95,6 +98,41 @@ async function openPulls() {
     expect(container.textContent).toMatch(/Loading pull requests|No open pull requests|GitHub CLI is required|GitHub account unavailable/);
   });
 }
+
+it.each([null, 'invalid'])('starts in Files when the stored view is %s', async (stored) => {
+  if (stored !== null) localStorage.setItem('opentig.lastView', stored);
+  await mount();
+  expect(container.querySelector('[aria-current="page"]')?.textContent).toBe('Files');
+  expect(localStorage.getItem('opentig.lastView')).toBe('files');
+});
+
+it('remembers PR navigation and restores the PR list after reopening the app', async () => {
+  await mount();
+  await openPulls();
+  expect(localStorage.getItem('opentig.lastView')).toBe('prs');
+  await act(async () => root.unmount());
+  root = createRoot(container);
+  await mount();
+  expect(container.querySelector('[aria-current="page"]')?.textContent).toBe('PRs');
+  expect(container.textContent).toContain('No open pull requests');
+});
+
+it('remembers navigation through keyboard shortcuts', async () => {
+  await mount();
+  await act(async () => window.dispatchEvent(new KeyboardEvent('keydown', { key: '1', ctrlKey: true })));
+  expect(container.querySelector('[aria-keyshortcuts="Control+1"]')?.getAttribute('aria-current')).toBe('page');
+  expect(localStorage.getItem('opentig.lastView')).toBe('changes');
+});
+
+it('keeps navigation working when client storage is unavailable', async () => {
+  vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('Storage unavailable'); });
+  vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('Storage unavailable'); });
+  await mount();
+  expect(container.querySelector('[aria-current="page"]')?.textContent).toBe('Files');
+  await openPulls();
+  expect(container.querySelector('[aria-current="page"]')?.textContent).toBe('PRs');
+  expect(container.textContent).toContain('No open pull requests');
+});
 
 it('detects the CLI before opening PRs and shows PR loading while the network request is pending', async () => {
   calls.listPulls.mockReturnValue(new Promise(() => {}));
