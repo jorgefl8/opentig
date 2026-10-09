@@ -18,8 +18,8 @@ describe('CommitMessagePrompt', () => {
   });
 
   it('accepts a valid structured response', () => {
-    expect(parseJsonObject('{"subject":"Add AI commit message","body":"Uses the selected local CLI."}')).toEqual({
-      subject: 'Add AI commit message', body: 'Uses the selected local CLI.',
+    expect(parseJsonObject('{"subject":"feat(ai): add commit messages","body":"Uses the selected local CLI."}')).toEqual({
+      subject: 'feat(ai): add commit messages', body: 'Uses the selected local CLI.',
     });
   });
 
@@ -32,27 +32,58 @@ describe('CommitMessagePrompt', () => {
   });
 
   it('normalizes trailing subject punctuation instead of rejecting the response', () => {
-    expect(parseGeneratedParts({ subject: 'Add the feature.', body: '' })).toEqual({
-      subject: 'Add the feature', body: '',
+    expect(parseGeneratedParts({ subject: '  feat: add the feature.  ', body: '' })).toEqual({
+      subject: 'feat: add the feature', body: '',
     });
+  });
+
+  it.each(['fix(files): preserve scrolling', 'feat!: change the API', 'refactor(ai)!: remove legacy options', 'docs: update examples'])('accepts Conventional Commit subject %s', (subject) => {
+    expect(parseGeneratedParts({ subject, body: '' }).subject).toBe(subject);
+  });
+
+  it.each(['Add a feature', 'feature: add a feature', 'fix(): preserve scrolling', 'fix: ', 'fix : preserve scrolling', 'fix: add\u0000a feature'])('rejects non-conventional subject %s', (subject) => {
+    expect(() => parseGeneratedParts({ subject, body: '' })).toThrow(/invalid format/);
+  });
+
+  it('keeps the prefix within the total subject limit', () => {
+    expect(parseGeneratedParts({ subject: `fix: ${'x'.repeat(67)}`, body: '' }).subject).toHaveLength(72);
+    expect(() => parseGeneratedParts({ subject: `fix: ${'x'.repeat(68)}`, body: '' })).toThrow(/invalid format/);
+  });
+
+  it('requires English and evidence despite non-conventional repository history', () => {
+    const prompt = buildCommitMessagePrompt({ ...context, recentSubjects: ['Añade pruebas; tests pass'] });
+    expect(prompt).toContain('Write subjects, titles, bodies and split explanations in English');
+    expect(prompt).toContain('Keep English and Conventional Commits even when history uses another language or format');
+    expect(prompt).toContain('Omit verification claims and sections');
+    expect(prompt).toContain('Verification results were not provided to the draft generator.');
+    expect(prompt).toContain('Never assert that checks were not run');
+  });
+
+  it('rejects a split with a non-conventional group without changing its subject', () => {
+    expect(parseCommitSplitProposal({
+      rationale: 'Two independent changes.', commits: [
+        { subject: 'docs: update examples', body: '', reason: 'Documentation.', paths: ['README.md'] },
+        { subject: 'Add application behavior', body: '', reason: 'Runtime.', paths: ['src/app.ts'] },
+      ],
+    }, context.stagedPaths)).toEqual({ status: 'rejected', reason: 'a group had an invalid subject or body' });
   });
 
   it('accepts a complete, non-overlapping commit split', () => {
     const proposal = parseCommitSplitProposal({
       rationale: 'Documentation and application code are independent.',
       commits: [
-        { subject: 'Document the feature', body: '', reason: 'Keeps docs focused.', paths: ['README.md'] },
-        { subject: 'Add the feature', body: 'Implements the application behavior.', reason: 'Contains runtime code.', paths: ['src/app.ts'] },
+        { subject: 'docs: document the feature', body: '', reason: 'Keeps docs focused.', paths: ['README.md'] },
+        { subject: 'feat: add the feature', body: 'Implements the application behavior.', reason: 'Contains runtime code.', paths: ['src/app.ts'] },
       ],
     }, context.stagedPaths);
     expect(proposal.status).toBe('accepted');
     const plan = proposal.status === 'accepted' ? proposal.plan : null;
-    expect(plan?.commits.map((commit) => commit.message)).toEqual(['Document the feature', 'Add the feature\n\nImplements the application behavior.']);
+    expect(plan?.commits.map((commit) => commit.message)).toEqual(['docs: document the feature', 'feat: add the feature\n\nImplements the application behavior.']);
     expect(plan?.rationale).toBe('Documentation and application code are independent.');
   });
 
   it('rejects unsafe splits and says which rule they broke', () => {
-    const base = { subject: 'First group', body: '', reason: 'Independent.', paths: ['README.md'] };
+    const base = { subject: 'docs: update documentation', body: '', reason: 'Independent.', paths: ['README.md'] };
     const reject = (value: unknown, stagedPaths = context.stagedPaths) => {
       const result = parseCommitSplitProposal(value, stagedPaths);
       expect(result.status).toBe('rejected');
@@ -60,14 +91,14 @@ describe('CommitMessagePrompt', () => {
     };
 
     expect(reject({ rationale: 'Split.', commits: [base, { ...base }] })).toContain('duplicated path "README.md"');
-    expect(reject({ rationale: 'Split.', commits: [base, { ...base, subject: 'Other', paths: ['unknown.ts'] }] })).toContain('unknown path "unknown.ts"');
-    expect(reject({ rationale: 'Split.', commits: [base, { ...base, subject: 'Other', paths: [] }] })).toContain('listed no files');
-    expect(reject({ commits: [base, { ...base, subject: 'Other', paths: ['src/app.ts'] }] })).toContain('rationale');
+    expect(reject({ rationale: 'Split.', commits: [base, { ...base, subject: 'fix: update application', paths: ['unknown.ts'] }] })).toContain('unknown path "unknown.ts"');
+    expect(reject({ rationale: 'Split.', commits: [base, { ...base, subject: 'fix: update application', paths: [] }] })).toContain('listed no files');
+    expect(reject({ commits: [base, { ...base, subject: 'fix: update application', paths: ['src/app.ts'] }] })).toContain('rationale');
     expect(reject({ rationale: 'Split.', commits: Array.from({ length: 9 }, () => base) })).toContain('too many groups (9)');
     // Covering only part of the staged set would silently leave files behind.
     expect(reject({
       rationale: 'Split.',
-      commits: [base, { ...base, subject: 'Other', paths: ['src/app.ts'] }],
+      commits: [base, { ...base, subject: 'fix: update application', paths: ['src/app.ts'] }],
     }, ['README.md', 'src/app.ts', 'extra.ts'])).toContain('extra.ts');
   });
 
@@ -83,9 +114,12 @@ describe('CommitMessagePrompt', () => {
   it('generates a closed provider schema with the split limits', () => {
     expect(COMMIT_MESSAGE_SCHEMA).toMatchObject({ type: 'object', additionalProperties: false, required: ['subject', 'body'] });
     const properties = COMMIT_MESSAGE_SCHEMA.properties as Record<string, Record<string, unknown>>;
-    expect(properties.subject).toMatchObject({ type: 'string', maxLength: 72 });
+    expect(properties.subject).toMatchObject({ type: 'string', maxLength: 72, pattern: expect.any(String) });
     expect(properties.commits).toMatchObject({ type: 'array', maxItems: 8 });
     expect((properties.commits!.items as Record<string, unknown>).additionalProperties).toBe(false);
+    const item = properties.commits!.items as { properties: { subject: { pattern: string } } };
+    expect(new RegExp(item.properties.subject.pattern).test('docs: update examples')).toBe(true);
+    expect(new RegExp(item.properties.subject.pattern).test('Update examples')).toBe(false);
   });
 
   it('asks the model to order the groups so each commit stands alone', () => {

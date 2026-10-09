@@ -5,6 +5,7 @@ import { sileo } from 'sileo';
 import type { RepositoryInfo } from '@shared/contracts';
 import { commitAuthorshipInputSchema, type CommitAuthorship } from '@shared/commit-authorship';
 import { Button } from '@/components/ui/button';
+import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { Dialog, DialogDescription, DialogPopup, DialogTitle } from '@/components/ui/dialog';
 import { opentig } from '@/lib/opentig-api';
 import { queryKeys } from '@/lib/query-client';
@@ -52,7 +53,7 @@ export function CommitAuthorshipDialog({ repository, open, onOpenChange }: {
     <DialogPopup className="github-authorship-dialog">
       <DialogTitle>{review ? 'Apply authorship to this repository' : 'Commit authorship'}</DialogTitle>
       <DialogDescription>{repository.name} · name and email used by Git for future commits.</DialogDescription>
-      {loading ? <p className="github-authorship-loading" role="status"><IconLoader4 className="animate-spin" />Reading the current Git identity…</p> : snapshot && <>
+      {loading ? <p className="github-authorship-loading" role="status"><IconLoader4 className="animate-spin" aria-hidden="true" /><ShimmeringText text="Reading the current Git identity…" /></p> : snapshot && <>
         <div className="github-authorship-review">
           <span>{review ? 'Current' : 'Current Git identity'}</span><strong>{snapshot.author?.name || 'Not configured'}</strong>
           <p>{snapshot.author?.email || 'No commit email configured'}</p><small>{authorshipSourceLabel(snapshot.source)}</small>

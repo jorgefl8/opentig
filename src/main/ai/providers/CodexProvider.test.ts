@@ -1,16 +1,23 @@
-import { readFile } from 'node:fs/promises';
-import { describe, expect, it, vi } from 'vitest';
+import os from 'node:os';
+import path from 'node:path';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AiOperationError } from '../../../shared/errors';
 import type { CliProcessRunner } from '../CliProcessRunner';
 import type { CliResolver } from '../CliResolver';
 import { CodexProvider } from './CodexProvider';
 
-function resolver(executable: string | null): CliResolver {
-  return { discover: vi.fn(async () => executable ? [{ executable, alias: 'codex', source: 'process-path', env: {} }] : []), warning: async () => undefined } as unknown as CliResolver;
+const temporaryDirectories: string[] = [];
+afterEach(async () => { await Promise.all(temporaryDirectories.splice(0).map(dir => rm(dir, { recursive: true, force: true }))); });
+
+function resolver(executable: string | null, codexHome: string): CliResolver {
+  return { discover: vi.fn(async () => executable ? [{ executable, alias: 'codex', source: 'process-path', env: { CODEX_HOME: codexHome } }] : []), warning: async () => undefined } as unknown as CliResolver;
 }
 
 describe('CodexProvider.generate', () => {
   it('writes a structured-output schema with every property required', async () => {
+    const home = await mkdtemp(path.join(os.tmpdir(), 'opentig-codex-test-')); temporaryDirectories.push(home);
+    await writeFile(path.join(home, 'auth.json'), '{}');
     const captured: { schema: Record<string, unknown> | null } = { schema: null };
     const runner = {
       run: vi.fn(async (_executable: string, args: string[]) => {
@@ -21,7 +28,7 @@ describe('CodexProvider.generate', () => {
         return { exitCode: 1, stdout: '{"type":"error","message":"boom"}', stderr: '' };
       }),
     } as unknown as CliProcessRunner;
-    const provider = new CodexProvider(resolver('C:\\codex.exe'), runner);
+    const provider = new CodexProvider(resolver('C:\\codex.exe', home), runner);
 
     await expect(provider.generate({
       repositoryPath: 'C:\\repo',

@@ -1,3 +1,4 @@
+import { RepositoryAiSettings } from './RepositoryAiSettings';
 import { GitHubSettings } from './GitHubSettings';
 import { AiExecutableSettings } from './AiExecutableSettings';
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
@@ -132,7 +133,7 @@ export function SettingsDialog({ preferences, onPreference, open, onOpenChange, 
     : SETTINGS_COPY[section];
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogPopup className={`settings-dialog${section === 'github' || section === 'general' ? ' settings-dialog-general' : ''}${section === 'github' ? ' settings-dialog-github' : ''}${section === 'ai' ? ' settings-dialog-ai w-[min(1000px,calc((100vw-48px)/var(--settings-ui-scale,1)))]' : ''}`} style={{
+      <DialogPopup className="settings-dialog w-[min(860px,calc((100vw-48px)/var(--settings-ui-scale,1)))]" style={{
         '--settings-ui-scale': window.opentigDesktop || window.matchMedia('(max-width: 767px)').matches ? 1 : preferences.uiZoom / 100,
       } as CSSProperties}>
         <div className="settings-shell">
@@ -164,7 +165,7 @@ export function SettingsDialog({ preferences, onPreference, open, onOpenChange, 
               <AnimatePresence initial={false} mode="wait">
                 <motion.div
                   key={section}
-                  className={`settings-panel-section${section === 'general' || section === 'github' ? ' settings-panel-section-general' : ''}`}
+                  className={`settings-panel-section${section === 'general' || section === 'github' ? ' settings-panel-section-general' : ''}${section === 'ai' ? ' settings-panel-section-ai' : ''}`}
                   initial={reduceMotion ? false : { opacity: 0, y: 7 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={reduceMotion ? { opacity: 1 } : { opacity: 0, y: -5 }}
@@ -200,7 +201,7 @@ export function SettingsDialog({ preferences, onPreference, open, onOpenChange, 
                           <AiProviderIcon harness={harness} />
                           <span className="ai-harness-card-copy">
                             <strong>{harnessLabel(harness)}</strong>
-                            <small>{harnessStatus?.version || (harnessStatus ? (harnessStatus.installationStatus === 'inspection-failed' ? 'Inspection unavailable' : harnessStatus.installed ? 'Version unavailable' : 'Executable not found') : loadingStatuses ? 'Loading…' : 'Status not checked')}</small>
+                            <small>{harnessStatus?.version || (harnessStatus ? (harnessStatus.installationStatus === 'inspection-failed' ? 'Inspection unavailable' : harnessStatus.installed ? 'Version unavailable' : 'Executable not found') : loadingStatuses ? <ShimmeringText text="Loading…" /> : 'Status not checked')}</small>
                           </span>
                         </span>
                         <Badge variant={availabilityBadgeVariant(harnessStatus)} className={`ai-status-badge ${harnessStatus?.availability ?? 'unknown'}`}>
@@ -214,7 +215,7 @@ export function SettingsDialog({ preferences, onPreference, open, onOpenChange, 
                 <div className="settings-field settings-field-separated ai-model-field">
                   <div className="settings-field-label">
                     <strong>{harnessLabel(selectedHarness)} model</strong>
-                    <span>{selectedHarness === 'grok' ? 'Default uses Grok’s built-in default. Custom CLI models and configuration are not loaded.' : 'Default lets the CLI choose. OpenTig remembers a separate selection for each harness.'}</span>
+                    <span>{'Default uses the harness’s built-in default. OpenTig remembers a separate selection for each harness; custom CLI configuration is excluded during generation.'}</span>
                   </div>
                   <SearchablePicker
                     key={selectedHarness}
@@ -233,6 +234,7 @@ export function SettingsDialog({ preferences, onPreference, open, onOpenChange, 
                   {selectedStatus && !selectedStatus.installed && selectedStatus.installationStatus !== 'inspection-failed' && <p className="ai-login-hint">Install {harnessLabel(selectedHarness)} and check its availability again.</p>}
                 </div>
                 <AiExecutableSettings key={selectedHarness} harness={selectedHarness} preferences={preferences} status={selectedStatus} onPreference={onPreference} />
+                <RepositoryAiSettings key={repository?.id} repository={repository} />
                 <div className="settings-field settings-field-separated ai-history-field">
                   <div className="settings-field-label">
                     <strong>Generation history</strong>
@@ -240,7 +242,7 @@ export function SettingsDialog({ preferences, onPreference, open, onOpenChange, 
                   </div>
                   <Button variant="outline" size="sm" onClick={() => setAiLogOpen(true)}><IconHistory /> View history</Button>
                 </div>
-                <p className="ai-privacy-note">Only the staged diff, its summary, the branch, and recent subjects are sent to the selected harness. The generated message always remains pending your review, and the history records metadata only.</p>
+                <p className="ai-privacy-note">OpenTig sends the relevant diff, summary and commit subjects to the selected harness, plus supported repository instruction text when enabled. Generated content remains pending your review; history records metadata only.</p>
                 <AiLogDialog open={aiLogOpen} onOpenChange={setAiLogOpen} />
               </>}
                 </motion.div>

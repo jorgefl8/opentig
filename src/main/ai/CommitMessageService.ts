@@ -1,3 +1,4 @@
+import type { RepositoryAiInstructions } from './RepositoryAiInstructions';
 import { EMPTY_AI_USAGE, type AiUsage } from '../../shared/ai-log';
 import type { AiHarnessId, AiHarnessStatus, CommitSplitProposal, GenerateCommitMessageInput, GeneratedCommitMessage } from '../../shared/contracts';
 import { AiOperationError } from '../../shared/errors';
@@ -22,6 +23,7 @@ export class CommitMessageService {
     private readonly log?: AiLogRecorder,
     private readonly invalidateDiscovery?: () => void,
     private readonly statusPersistence?: { store: Pick<AiStatusStore, 'load' | 'save'>; key(): string },
+    private readonly instructions?: Pick<RepositoryAiInstructions, 'snapshot'>,
   ) {
     for (const provider of providers) this.providers.set(provider.id, provider);
   }
@@ -89,12 +91,15 @@ export class CommitMessageService {
       const context = await this.operations.getCommitMessageContext(input.repositoryId);
       stagedFileCount = context.stagedPaths.length;
       contextTruncated = context.truncated;
+      const instructions = await this.instructions?.snapshot(input.repositoryId);
       throwIfCancelled(signal, input.harness);
-      const generated = await provider.generate({ repositoryPath: context.repositoryPath, prompt: buildCommitMessagePrompt(context), schema: COMMIT_MESSAGE_SCHEMA, model: input.model, signal });
+      const generated = await provider.generate({ repositoryPath: context.repositoryPath, prompt: buildCommitMessagePrompt(context, instructions?.files), schema: COMMIT_MESSAGE_SCHEMA, model: input.model, signal });
       usage = generated.usage;
       const parts = parseGeneratedParts(generated.output);
       const current = await this.operations.getCommitMessageContext(input.repositoryId);
       throwIfCancelled(signal, input.harness);
+      const currentInstructions = await this.instructions?.snapshot(input.repositoryId);
+      if (currentInstructions?.fingerprint !== instructions?.fingerprint) throw new AiOperationError({ code: 'AI_STAGED_CHANGES_CHANGED', operation: 'ai-repository-instructions', harness: input.harness, message: 'Repository instructions changed during generation. Generate again.' });
       if (current.fingerprint !== context.fingerprint) throw new AiOperationError({ code: 'AI_STAGED_CHANGES_CHANGED', operation: 'ai-generate', harness: input.harness, message: 'Staged changes changed during generation.' });
       // A truncated patch no longer blocks the split: grouping needs the file
       // list, which `splitBlockedReason` already guarantees is complete.

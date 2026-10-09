@@ -9,6 +9,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import WebSocket from 'ws';
 import type { DesktopUpdatesApi } from '../../../src/shared/desktop-updates';
 import { OneTimeBootstrapAuthSource } from './auth';
+import { HTML_PREVIEW_BODY_LIMIT } from './html-preview';
 import { runOpenTigServer, type RunningOpenTigServer } from './server';
 import { git, repositoryWithUpstream } from '../../../src/main/git/test-support/repository-fixtures';
 
@@ -239,6 +240,8 @@ describe('authoritative HTTP server', () => {
     expect(index.headers.get('content-security-policy')).toContain("frame-ancestors 'none'");
     expect(index.headers.get('content-security-policy')).toMatch(/img-src [^;]*blob:/);
     expect(index.headers.get('x-content-type-options')).toBe('nosniff');
+    // Keep native preview form submissions compatible with the origin check.
+    expect(index.headers.get('referrer-policy')).toBe('same-origin');
 
     const asset = await fetch(`${fixture.server.origin}/assets/app-12345678.js`);
     expect(await asset.text()).toBe('export const test = true;');
@@ -575,6 +578,77 @@ describe('authenticated WebSocket protocol', () => {
     expect(revoked.status).toBe(204);
     await expect(Promise.all([firstClosed, secondClosed])).resolves.toEqual([1008, 1008]);
     await expectWebSocketClose(fixture.server.origin, fixture.server.origin, secondCookie, 1008);
+  });
+
+  it('serves an HTML preview with its own sandbox policy', async () => {
+    const fixture = await startFixture();
+    const origin = fixture.server.origin;
+    const cookie = cookieValue((await postJson(`${origin}/api/auth/desktop`, { secret: fixture.desktopSecret }, origin)).cookie);
+    const document = '<!doctype html><title>Preview</title><script>document.body.dataset.ran="1"</script>';
+    const response = await fetch(`${origin}/api/html-preview`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', Origin: origin, Cookie: cookie },
+      body: new URLSearchParams({ document }),
+    });
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-type')).toContain('text/html');
+    const policy = response.headers.get('content-security-policy') ?? '';
+    expect(policy).toContain('sandbox allow-scripts');
+    expect(policy).not.toContain('allow-same-origin');
+    expect(policy).not.toContain("script-src 'self'");
+    expect(policy).toContain("frame-ancestors 'self'");
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(response.headers.get('referrer-policy')).toBe('no-referrer');
+    expect(await response.text()).toBe(document);
+
+    const anonymous = await fetch(`${origin}/api/html-preview`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', Origin: origin },
+      body: new URLSearchParams({ document }),
+    });
+    expect(anonymous.status).toBe(401);
+    expect(anonymous.headers.get('content-security-policy')).toContain('sandbox allow-scripts');
+
+    const foreign = await fetch(`${origin}/api/html-preview`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', Origin: 'https://evil.example', Cookie: cookie },
+      body: new URLSearchParams({ document }),
+    });
+    expect(foreign.status).toBe(403);
+
+    for (const rejectedOrigin of ['null', undefined]) {
+      const rejected = await fetch(`${origin}/api/html-preview`, {
+        method: 'POST',
+        headers: { Cookie: cookie, ...(rejectedOrigin ? { Origin: rejectedOrigin } : {}) },
+        body: new URLSearchParams({ document }),
+      });
+      expect(rejected.status).toBe(403);
+    }
+  });
+
+  it('rejects incomplete, unsupported and oversized HTML preview requests', async () => {
+    const fixture = await startFixture();
+    const origin = fixture.server.origin;
+    const cookie = cookieValue((await postJson(`${origin}/api/auth/desktop`, { secret: fixture.desktopSecret }, origin)).cookie);
+    const post = (body: string | URLSearchParams) => fetch(`${origin}/api/html-preview`, {
+      method: 'POST', headers: { Origin: origin, Cookie: cookie }, body,
+    });
+    expect((await post('document=plain-text')).status).toBe(415);
+    expect((await post(new URLSearchParams({ other: 'missing document' }))).status).toBe(400);
+    const oversized = await post(new URLSearchParams({ document: 'x'.repeat(HTML_PREVIEW_BODY_LIMIT) }));
+    expect(oversized.status).toBe(413);
+    expect(await oversized.text()).toContain('too large');
+
+    // A chunked upload has no Content-Length: enforce the limit while reading too.
+    const chunkedStatus = await new Promise<number | undefined>((resolve, reject) => {
+      const request = httpRequest(`${origin}/api/html-preview`, {
+        method: 'POST', headers: { Origin: origin, Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded' },
+      }, response => { response.resume(); response.on('end', () => resolve(response.statusCode)); });
+      request.on('error', reject);
+      request.write('document=');
+      request.end('x'.repeat(HTML_PREVIEW_BODY_LIMIT));
+    });
+    expect(chunkedStatus).toBe(413);
   });
 });
 

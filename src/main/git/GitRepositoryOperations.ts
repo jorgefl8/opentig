@@ -10,6 +10,7 @@ import path from 'node:path';
 import type { FileService } from '../files/FileService';
 import { realpath, stat, writeFile } from 'node:fs/promises';
 import type { CommitMessageContext, PullRequestDraftContext } from '../ai/types';
+import type { RepositoryInstructionFile } from '../ai/RepositoryAiInstructions';
 import type { GitProcess } from './GitProcess';
 import { parseCommitFiles } from './CommitFilesParser';
 import { LOG_FORMAT, parseLog } from './LogParser';
@@ -17,6 +18,8 @@ import { selectHistoryBase } from './HistoryBase';
 import { REF_FORMAT, parseRefs } from './RefParser';
 import type { RepositoryService } from './RepositoryService';
 import { allocatePatchBudget } from './PatchBudget';
+import { allocatePullRequestPatch } from './PullRequestPatch';
+import { buildPullRequestPrompt, PR_PROMPT_CHARACTER_LIMIT } from '../ai/PullRequestPrompt';
 import { parseStatus } from './StatusParser';
 import { parseWorktrees } from './WorktreeParser';
 import { GitCommitAuthorship } from './GitCommitAuthorship';
@@ -289,49 +292,99 @@ export class GitRepositoryOperations {
     };
   }
 
-  async getPullRequestDraftContext(repositoryId: string, base: string): Promise<PullRequestDraftContext> {
+  async getPullRequestDraftSnapshot(repositoryId: string, base: string) {
     const repository = this.repositories.get(repositoryId);
     const status = await this.repositories.status(repositoryId, false);
-    if (status.detached || status.unborn || !status.branch) {
+    if (status.detached || status.unborn || !status.branch || !status.oid) {
       throw new AiOperationError({ code: 'AI_PROCESS_FAILED', operation: 'ai-pr-context', message: 'Check out a branch before generating a pull request draft.' });
     }
-    const baseHasControl = [...base].some((character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127);
+    const baseHasControl = [...base].some(character => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127);
     if (!base || base.startsWith('-') || baseHasControl || /[\s~^:?*[\\]/.test(base) || base.includes('..')) {
       throw new AiOperationError({ code: 'AI_PROCESS_FAILED', operation: 'ai-pr-context', message: 'The base branch is not valid.' });
     }
+    let baseOid: string;
     try {
-      await this.git.run(repository.path, ['rev-parse', '--verify', '--quiet', `${base}^{commit}`], { operation: 'ai-pr-base-check', readOnly: true });
+      baseOid = (await this.git.run(repository.path, ['rev-parse', '--verify', '--quiet', `${base}^{commit}`], { operation: 'ai-pr-base-check', readOnly: true })).stdout.toString('utf8').trim();
     } catch {
       throw new AiOperationError({ code: 'AI_PROCESS_FAILED', operation: 'ai-pr-context', message: 'The base branch is not available locally. Fetch the remote and try again.' });
     }
-    const [headOutput, subjectsOutput, summaryOutput, patchOutput] = await Promise.all([
-      this.git.run(repository.path, ['rev-parse', 'HEAD'], { operation: 'ai-pr-head', readOnly: true }),
-      this.git.run(repository.path, ['log', '--max-count=30', '--format=%s', `${base}..HEAD`, '--'], { operation: 'ai-pr-subjects', readOnly: true, maxOutputBytes: 256 * 1024 }),
-      this.git.run(repository.path, ['diff', '--stat', '--no-color', '--no-ext-diff', '--no-textconv', `${base}...HEAD`, '--'], { operation: 'ai-pr-summary', readOnly: true, maxOutputBytes: 8 * 1024 * 1024 }),
-      this.git.run(repository.path, ['diff', '--no-color', '--no-ext-diff', '--no-textconv', '--unified=3', `${base}...HEAD`, '--'], { operation: 'ai-pr-patch', readOnly: true, maxOutputBytes: 64 * 1024 * 1024 }),
+    const headOid = status.oid;
+    const mergeBaseOid = (await this.git.run(repository.path, ['merge-base', baseOid, headOid], { operation: 'ai-pr-merge-base', readOnly: true })).stdout.toString('utf8').trim();
+    const fingerprint = createHash('sha256').update(JSON.stringify([repositoryId, status.branch, base, headOid, baseOid, mergeBaseOid])).digest('hex');
+    return { repositoryId, repositoryPath: repository.path, branch: status.branch, base, headOid, baseOid, mergeBaseOid, fingerprint };
+  }
+
+  async getPullRequestDraftContext(repositoryId: string, base: string, instructions: RepositoryInstructionFile[] = []): Promise<PullRequestDraftContext> {
+    const snapshot = await this.getPullRequestDraftSnapshot(repositoryId, base);
+    const { repositoryPath, headOid, baseOid, mergeBaseOid } = snapshot;
+    // Every command reads immutable commits, even if HEAD or the base moves meanwhile.
+    const diff = ['diff', '--no-color', '--no-ext-diff', '--no-textconv', '--find-renames'];
+    const run = (args: string[], operation: string, maxOutputBytes: number) => this.git.run(repositoryPath, args, { operation, readOnly: true, maxOutputBytes });
+    const [subjectsOutput, countOutput, summaryOutput, namesOutput, statsOutput, patchOutput] = await Promise.all([
+      run(['log', '-z', '--max-count=30', '--format=%s', `${baseOid}..${headOid}`, '--'], 'ai-pr-subjects', 256 * 1024),
+      run(['rev-list', '--count', `${baseOid}..${headOid}`, '--'], 'ai-pr-commit-count', 1024),
+      run([...diff, '--stat', mergeBaseOid, headOid, '--'], 'ai-pr-summary', 8 * 1024 * 1024),
+      run([...diff, '--name-status', '-z', mergeBaseOid, headOid, '--'], 'ai-pr-inventory', 8 * 1024 * 1024),
+      run([...diff, '--numstat', '-z', mergeBaseOid, headOid, '--'], 'ai-pr-inventory-stats', 8 * 1024 * 1024),
+      run([...diff, '--unified=3', mergeBaseOid, headOid, '--'], 'ai-pr-patch', 64 * 1024 * 1024),
     ]);
-    const fullSummary = summaryOutput.stdout.toString('utf8');
-    const fullPatch = patchOutput.stdout.toString('utf8');
-    const subjects = subjectsOutput.stdout.toString('utf8').split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
-    if (subjects.length === 0 && !fullPatch.trim()) {
+    const inventory = parseCommitFiles(namesOutput.stdout.toString('utf8'), statsOutput.stdout.toString('utf8'));
+    const commitsTotal = Number(countOutput.stdout.toString('utf8').trim());
+    if (!Number.isSafeInteger(commitsTotal) || commitsTotal < 0) throw new Error('Invalid commit count.');
+    if (commitsTotal === 0 && inventory.length === 0) {
       throw new AiOperationError({ code: 'AI_PROCESS_FAILED', operation: 'ai-pr-context', message: 'There are no changes against the base branch to describe.' });
     }
-    // Pull-request drafts need the same breadth as commit planning. The former
-    // 40k prefix cut routinely dropped later files from a branch-sized diff.
-    // Keep the full summary budget and share patch space fairly across files.
-    const summary = bounded(fullSummary, AI_SUMMARY_BUDGET);
-    const patch = allocatePatchBudget(fullPatch, AI_PATCH_BUDGET);
-    return {
-      repositoryId,
-      repositoryPath: repository.path,
-      branch: status.branch,
-      base,
-      subjects,
-      summary: summary.value,
-      patch: patch.value,
-      fingerprint: createHash('sha256').update(`${headOutput.stdout.toString('utf8').trim()}\n${base}\n`).update(fullPatch).digest('hex'),
-      truncated: summary.truncated || patch.truncated,
+    const subjects: string[] = [];
+    let subjectsSize = 0;
+    for (const subject of subjectsOutput.stdout.toString('utf8').split('\0').filter(Boolean)) {
+      const size = JSON.stringify(subject).length + 3;
+      if (subjectsSize + size > 12_000) break;
+      subjects.push(subject);
+      subjectsSize += size;
+    }
+    const fullSummary = summaryOutput.stdout.toString('utf8');
+    const marker = '\n[summary truncated by OpenTig]';
+    const summaryTruncated = fullSummary.length > AI_SUMMARY_BUDGET;
+    let summary = fullSummary;
+    if (summaryTruncated) {
+      const prefix = fullSummary.slice(0, AI_SUMMARY_BUDGET - marker.length);
+      summary = prefix.slice(0, Math.max(0, prefix.lastIndexOf('\n'))) + marker;
+    }
+    let fullPatch = patchOutput.stdout.toString('utf8');
+    const context: PullRequestDraftContext = {
+      ...snapshot, subjects, summary, patch: '', truncated: false,
+      coverage: {
+        repositoryId, branch: snapshot.branch, base, headOid, baseOid, mergeBaseOid, contextLines: 3,
+        files: inventory.map(file => ({ ...file, detail: 'inventory-only', omittedChangedLines: file.additions + file.deletions, omittedHunks: 0 })),
+        commitsIncluded: subjects.length, commitsTotal, summaryTruncated,
+        originalPatchCharacters: fullPatch.length, suppliedPatchCharacters: 0,
+        promptCharacters: 0, promptCharacterLimit: PR_PROMPT_CHARACTER_LIMIT,
+      },
     };
+    // Bound metadata independently as well as the complete serialized prompt.
+    // Paths stay intact: no successful draft may silently lose an inventory entry.
+    if (JSON.stringify(context.coverage.files).length > 96_000) {
+      throw new AiOperationError({ code: 'AI_PROCESS_FAILED', operation: 'ai-pr-context', message: 'The complete file inventory is too large for a draft. Narrow the comparison or write the description manually.' });
+    }
+    let patchBudget = Math.min(AI_PATCH_BUDGET, PR_PROMPT_CHARACTER_LIMIT - buildPullRequestPrompt(context, instructions).length - 256);
+    if (patchBudget < 0) throw new AiOperationError({ code: 'AI_PROCESS_FAILED', operation: 'ai-pr-context', message: 'The complete file inventory does not fit in the draft context. Write the description manually.' });
+    if (fullPatch.length > patchBudget) {
+      fullPatch = (await run([...diff, '--unified=1', mergeBaseOid, headOid, '--'], 'ai-pr-compact-patch', 64 * 1024 * 1024)).stdout.toString('utf8');
+      context.coverage.contextLines = 1;
+    }
+    for (;;) {
+      const allocation = allocatePullRequestPatch(fullPatch, inventory, patchBudget);
+      context.patch = allocation.value;
+      context.coverage.files = allocation.files;
+      context.coverage.suppliedPatchCharacters = context.patch.length;
+      context.coverage.promptCharacters = buildPullRequestPrompt(context, instructions).length;
+      const excess = context.coverage.promptCharacters - PR_PROMPT_CHARACTER_LIMIT;
+      if (excess <= 0) break;
+      patchBudget -= excess + 256;
+      if (patchBudget < 0) throw new AiOperationError({ code: 'AI_PROCESS_FAILED', operation: 'ai-pr-context', message: 'The complete coverage report does not fit in the draft context. Write the description manually.' });
+    }
+    context.truncated = summaryTruncated || subjects.length < commitsTotal || context.coverage.files.some(file => file.detail !== 'complete');
+    return context;
   }
 
   async listCommits(repositoryId: string, cursor?: string): Promise<CommitPage> {

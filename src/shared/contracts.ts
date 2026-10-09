@@ -12,6 +12,12 @@ import type { OpenFileTab, OpenFilesState } from './open-files-state';
 import type { SearchOptions, SearchReplaceRequest, SearchReplaceResult, SearchResult } from './search';
 import type { ShortcutOverrides } from './shortcuts';
 
+export interface RepositoryAiInstructionsStatus {
+  enabled: boolean;
+  /** Supported regular instruction files at the current worktree root. */
+  files: string[];
+}
+
 export interface RepositoryInfo {
   id: string;
   name: string;
@@ -431,6 +437,7 @@ export interface GeneratePullRequestDraftInput {
 }
 
 export interface GeneratedPullRequestDraft {
+  coverage?: import('./pull-request-context').PullRequestContextCoverage;
   title: string;
   body: string;
   harness: AiHarnessId;
@@ -604,6 +611,8 @@ export interface OpenTigApi {
     removeWorktree(request: RemoveWorktreeRequest): Promise<WorktreeRemovalResult>;
   };
   ai: {
+    repositoryInstructions(repositoryId: string): Promise<RepositoryAiInstructionsStatus>;
+    setRepositoryInstructions(repositoryId: string, enabled: boolean): Promise<RepositoryAiInstructionsStatus>;
     statuses(forceRefresh?: boolean): Promise<AiHarnessStatus[]>;
     generateCommitMessage(input: GenerateCommitMessageInput): Promise<GeneratedCommitMessage>;
     /** Local diagnostic history of AI runs. Metadata only; never prompts. */
@@ -634,6 +643,7 @@ export interface OpenTigApi {
     record(entry: Pick<ProblemLogRecordInput, 'operation' | 'message'> & Partial<Pick<ProblemLogRecordInput, 'level' | 'code' | 'repositoryId'>>): Promise<void>;
   };
   events: {
+    onAiInstructionsChanged(callback: (repositoryIds: string[]) => void): () => void;
     onGitHubAccountsChanged(callback: (repositoryIds?: string[], inventoryChanged?: boolean) => void): () => void;
     onRepositoryChanged(callback: (repositoryId: string, scope: RepositoryChangeScope) => void): () => void;
     onActiveRepositoryChanged(callback: (repository: RepositoryInfo) => void): () => void;
@@ -665,6 +675,7 @@ export const IPC = {
   localRefsSnapshot: 'refs:local-snapshot', branchDetails: 'refs:branch-details', worktreeDetails: 'refs:worktree-details',
   branchDelete: 'refs:delete-branch', worktreeRemove: 'refs:remove-worktree',
   remoteBranchDetails: 'refs:remote-branch-details', trackingBranchCreate: 'refs:create-tracking-branch', remoteBranchDelete: 'refs:delete-remote-branch', branchesFetch: 'refs:fetch-branches',
+  aiRepositoryInstructions: 'ai:repository-instructions', aiSetRepositoryInstructions: 'ai:set-repository-instructions',
   aiStatuses: 'ai:statuses', aiGenerateCommitMessage: 'ai:generate-commit-message', aiCancelGeneration: 'ai:cancel-generation', aiLog: 'ai:log', aiClearLog: 'ai:clear-log',
   diagnosticsList: 'diagnostics:list', diagnosticsClear: 'diagnostics:clear', diagnosticsRecord: 'diagnostics:record',
   githubAccountsStatus: 'github:accounts-status', githubSetDefaultAccount: 'github:set-default-account', githubRepositoryAccount: 'github:repository-account', githubSetRepositoryAccount: 'github:set-repository-account',

@@ -32,7 +32,7 @@ export class GrokProvider implements AiProvider {
       const installed = { ...base, ...detectionFields(detected), installed: true, version: detected.version ?? '' };
       try {
         await this.checkControls(executable, options);
-        const result = await runCandidate(this.runner, executable, ['models'], options);
+        const result = await runCandidate(this.runner, executable, ['models'], this.candidateOptions(executable, options));
         if (result.exitCode !== 0) return { ...installed, availability: 'warning', authStatus: 'unknown', message: 'Could not check Grok authentication or models. Check again or run grok models in a terminal.' };
         const { authStatus, models } = parseGrokModels(result.stdout);
         return { ...installed, models, authStatus, availability: authStatus === 'unauthenticated' ? 'error' : authStatus === 'authenticated' && models.length > 1 ? 'ready' : 'warning',
@@ -59,7 +59,7 @@ export class GrokProvider implements AiProvider {
           '--tools', 'read_file', '--disallowed-tools', 'read_file,search_tool,use_tool,Agent', '--deny', 'MCPTool',
           '--disable-web-search', '--max-turns', '1', '--permission-mode', 'dontAsk', '--no-memory'];
         if (input.model !== 'default') args.push('--model', input.model);
-        const result = await runCandidate(this.runner, executable, args, { ...controlled, timeoutMs: AI_PROVIDER_TIMEOUT_MS });
+        const result = await runCandidate(this.runner, executable, args, { ...this.candidateOptions(executable, controlled), timeoutMs: AI_PROVIDER_TIMEOUT_MS });
         requireGrokSuccess(result);
         const parsed = parseGrokOutput(result.stdout);
         return { output: parsed.output, usage: grokUsage(parsed.envelope) };
@@ -71,7 +71,13 @@ export class GrokProvider implements AiProvider {
     }
   }
 
+  private candidateOptions(executable: CliCandidate, options: CliRunOptions): CliRunOptions {
+    const preserved = new Set([...Object.keys(options.env ?? {}), 'GROK_AUTH', 'GROK_CODE_XAI_API_KEY']);
+    return { ...options, removeEnv: [...(options.removeEnv ?? []), ...Object.keys(executable.env).filter(key => key.startsWith('GROK_') && !preserved.has(key))] };
+  }
+
   private async checkControls(executable: CliCandidate, options: CliRunOptions): Promise<void> {
+    options = this.candidateOptions(executable, options);
     const help = await runCandidate(this.runner, executable, ['--help'], options);
     if (help.exitCode !== 0 || REQUIRED_FLAGS.some((flag) => !help.stdout.includes(flag))) throw failure('AI_PROCESS_FAILED', UNSUPPORTED);
     const result = await runCandidate(this.runner, executable, ['inspect', '--json'], options);

@@ -1,6 +1,7 @@
 import { rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { buildPullRequestPrompt, PR_PROMPT_CHARACTER_LIMIT } from '../ai/PullRequestPrompt';
 import { standaloneRepository, git } from './test-support/repository-fixtures';
 
 describe('GitRepositoryOperations diff', () => {
@@ -61,6 +62,151 @@ describe('GitRepositoryOperations AI context', () => {
     expect(context.patch.length).toBeGreaterThan(40_000);
     expect(context.patch).toContain('+branch change 7999');
     expect(context.truncated).toBe(false);
+  });
+});
+
+describe('pull-request context coverage', () => {
+  it('supplies the complete branch behavior despite recent editorial commits and uncommitted edits', async () => {
+    const fixture = await standaloneRepository();
+    await git(fixture.work, ['switch', '-c', 'feature']);
+    await writeFile(path.join(fixture.work, 'generation.ts'), 'export const isolateGeneration = true;\n');
+    await git(fixture.work, ['add', '.']);
+    await git(fixture.work, ['commit', '-m', 'Isolate generation']);
+    await writeFile(path.join(fixture.work, 'settings.ts'), 'export const repositoryInstructions = false;\n');
+    await git(fixture.work, ['add', '.']);
+    await git(fixture.work, ['commit', '-m', 'Make repository conventions optional']);
+    await writeFile(path.join(fixture.work, 'writing.md'), 'Use descriptive PR prose.\n');
+    await git(fixture.work, ['add', '.']);
+    await git(fixture.work, ['commit', '-m', 'Refine writing policy']);
+    // A base-only change and staged work must not become part of the PR draft.
+    await git(fixture.work, ['switch', 'main']);
+    await writeFile(path.join(fixture.work, 'base-only.txt'), 'unrelated base change\n');
+    await git(fixture.work, ['add', '.']);
+    await git(fixture.work, ['commit', '-m', 'Unrelated base change']);
+    await git(fixture.work, ['switch', 'feature']);
+    await writeFile(path.join(fixture.work, 'generation.ts'), 'uncommitted replacement\n');
+    await git(fixture.work, ['add', '.']);
+
+    const context = await fixture.operations.getPullRequestDraftContext(fixture.repositoryId, 'main');
+    const prompt = buildPullRequestPrompt(context);
+    expect(context.subjects).toEqual(['Refine writing policy', 'Make repository conventions optional', 'Isolate generation']);
+    expect(context.coverage).toMatchObject({ commitsIncluded: 3, commitsTotal: 3 });
+    expect(context.coverage.files.map(file => [file.path, file.detail])).toEqual([
+      ['generation.ts', 'complete'], ['settings.ts', 'complete'], ['writing.md', 'complete'],
+    ]);
+    expect(prompt).toContain('+export const isolateGeneration = true;');
+    expect(prompt).toContain('+export const repositoryInstructions = false;');
+    expect(prompt).toContain('+Use descriptive PR prose.');
+    expect(prompt).not.toContain('uncommitted replacement');
+    expect(prompt).not.toContain('base-only.txt');
+    expect(context.truncated).toBe(false);
+    expect(context.coverage.promptCharacters).toBe(prompt.length);
+  });
+
+  it('rejects an oversized complete inventory instead of silently dropping files', async () => {
+    const fixture = await standaloneRepository();
+    await git(fixture.work, ['switch', '-c', 'feature']);
+    await Promise.all(Array.from({ length: 650 }, (_, index) => writeFile(path.join(fixture.work, `file-${index}-${'x'.repeat(60)}.txt`), 'content\n')));
+    await git(fixture.work, ['add', '.']);
+    await git(fixture.work, ['commit', '-m', 'Add many files']);
+    await expect(fixture.operations.getPullRequestDraftContext(fixture.repositoryId, 'main')).rejects.toThrow(/complete file inventory is too large/);
+  });
+
+  it('compacts U3 to U1 while retaining every changed line', async () => {
+    const fixture = await standaloneRepository();
+    const lines = Array.from({ length: 6000 }, (_, i) => `${i} ${'context '.repeat(15)}`);
+    await writeFile(path.join(fixture.work, 'context.txt'), lines.join('\n') + '\n');
+    await git(fixture.work, ['add', '.']);
+    await git(fixture.work, ['commit', '-m', 'Baseline']);
+    await git(fixture.work, ['switch', '-c', 'feature']);
+    await writeFile(path.join(fixture.work, 'context.txt'), lines.map((line, i) => i % 10 === 5 ? `changed ${line}` : line).join('\n') + '\n');
+    await git(fixture.work, ['add', '.']);
+    await git(fixture.work, ['commit', '-m', 'Change scattered lines']);
+    const context = await fixture.operations.getPullRequestDraftContext(fixture.repositoryId, 'main');
+    expect(context.coverage.originalPatchCharacters).toBeGreaterThan(400000);
+    expect(context.coverage.contextLines).toBe(1);
+    expect(context.truncated).toBe(false);
+    expect(context.coverage.files[0]).toMatchObject({ detail: 'complete', omittedChangedLines: 0 });
+    expect(context.patch.match(/^\+changed /gm)).toHaveLength(600);
+    expect(context.coverage.promptCharacters).toBe(buildPullRequestPrompt(context).length);
+    expect(context.coverage.promptCharacters).toBeLessThanOrEqual(PR_PROMPT_CHARACTER_LIMIT);
+  });
+
+  it('reports omitted commit subjects independently of a complete final diff', async () => {
+    const fixture = await standaloneRepository();
+    await git(fixture.work, ['switch', '-c', 'feature']);
+    await writeFile(path.join(fixture.work, 'history.txt'), 'change\n');
+    await git(fixture.work, ['add', '.']);
+    await git(fixture.work, ['commit', '-m', 'Initial change']);
+    for (let i = 0; i < 31; i++) await git(fixture.work, ['commit', '--allow-empty', '-m', `Follow-up ${i}`]);
+    const context = await fixture.operations.getPullRequestDraftContext(fixture.repositoryId, 'main');
+    expect(context.coverage).toMatchObject({ commitsIncluded: 30, commitsTotal: 32, summaryTruncated: false });
+    expect(context.coverage.files.every(file => file.detail === 'complete')).toBe(true);
+    expect(context.truncated).toBe(true);
+  });
+
+  it('retains rename paths, Unicode and binary metadata in the complete inventory', async () => {
+    const fixture = await standaloneRepository();
+    await git(fixture.work, ['switch', '-c', 'feature']);
+    await git(fixture.work, ['mv', 'file.txt', 'renamed ü.txt']);
+    await writeFile(path.join(fixture.work, 'image.bin'), Buffer.from([0, 1, 0, 2]));
+    await git(fixture.work, ['add', '.']);
+    await git(fixture.work, ['commit', '-m', 'Rename and add binary']);
+    const context = await fixture.operations.getPullRequestDraftContext(fixture.repositoryId, 'main');
+    expect(context.coverage.files).toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: 'renamed ü.txt', oldPath: 'file.txt', kind: 'renamed', detail: 'complete' }),
+      expect.objectContaining({ path: 'image.bin', binary: true, detail: 'complete' }),
+    ]));
+  });
+
+  it('keeps reading the captured commits when the base moves during capture', async () => {
+    const fixture = await standaloneRepository();
+    await git(fixture.work, ['switch', '-c', 'feature']);
+    await writeFile(path.join(fixture.work, 'fixed.txt'), 'captured change\n');
+    await git(fixture.work, ['add', '.']);
+    await git(fixture.work, ['commit', '-m', 'Captured change']);
+    const snapshot = fixture.operations.getPullRequestDraftSnapshot.bind(fixture.operations);
+    vi.spyOn(fixture.operations, 'getPullRequestDraftSnapshot').mockImplementationOnce(async (id, base) => {
+      const fixed = await snapshot(id, base);
+      await git(fixture.work, ['update-ref', 'refs/heads/main', fixed.headOid]);
+      return fixed;
+    });
+    const context = await fixture.operations.getPullRequestDraftContext(fixture.repositoryId, 'main');
+    expect(context.patch).toContain('+captured change');
+    expect(context.coverage.baseOid).not.toBe(context.coverage.headOid);
+    expect((await snapshot(fixture.repositoryId, 'main')).fingerprint).not.toBe(context.fingerprint);
+  });
+
+  it('reports partial files and enforces the whole-prompt cap for a huge change', async () => {
+    const fixture = await standaloneRepository();
+    await git(fixture.work, ['switch', '-c', 'feature']);
+    await writeFile(path.join(fixture.work, 'large.txt'), 'large line\n'.repeat(60000));
+    await git(fixture.work, ['add', '.']);
+    await git(fixture.work, ['commit', '-m', 'Large change']);
+    const context = await fixture.operations.getPullRequestDraftContext(fixture.repositoryId, 'main');
+    expect(context.coverage.contextLines).toBe(1);
+    expect(context.truncated).toBe(true);
+    expect(context.coverage.files[0]).toMatchObject({ path: 'large.txt', detail: 'partial', omittedHunks: 1 });
+    expect(context.coverage.files[0]!.omittedChangedLines).toBeGreaterThan(0);
+    expect(context.patch.length).toBeLessThanOrEqual(400000);
+    expect(buildPullRequestPrompt(context).length).toBeLessThanOrEqual(PR_PROMPT_CHARACTER_LIMIT);
+  });
+
+  it('includes serialized repository conventions in the prompt budget and reported size', async () => {
+    const fixture = await standaloneRepository();
+    await git(fixture.work, ['switch', '-c', 'feature']);
+    await writeFile(path.join(fixture.work, 'large.txt'), 'large line\n'.repeat(60000));
+    await git(fixture.work, ['add', '.']);
+    await git(fixture.work, ['commit', '-m', 'Large change']);
+    // Valid UTF-8 within the 32 KiB instruction limit, larger after JSON quoting.
+    const instructions = [{ name: 'AGENTS.md', text: 'Repository conventions\n' + '\n'.repeat(32000) }];
+    const context = await fixture.operations.getPullRequestDraftContext(fixture.repositoryId, 'main', instructions);
+    const prompt = buildPullRequestPrompt(context, instructions);
+    expect(prompt).toContain('Repository conventions');
+    expect(prompt.length).toBeLessThanOrEqual(PR_PROMPT_CHARACTER_LIMIT);
+    expect(context.coverage.promptCharacters).toBe(prompt.length);
+    expect(context.coverage.files[0]).toMatchObject({ path: 'large.txt', detail: 'partial' });
+    expect(context.coverage.files[0]!.omittedChangedLines).toBeGreaterThan(0);
   });
 });
 

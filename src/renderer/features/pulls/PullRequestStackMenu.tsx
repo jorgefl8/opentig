@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Popover } from '@base-ui/react/popover';
-import { IconCheck, IconGitMerge, IconGitPullRequest, IconStack2 } from '@tabler/icons-react';
+import { IconCheck, IconGitMerge, IconGitPullRequest, IconLoader4, IconStack2 } from '@tabler/icons-react';
 import type { PullRequestStackMembership } from '../../../shared/contracts';
 import { Button } from '@/components/ui/button';
+import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { opentig } from '@/lib/opentig-api';
 import { queryKeys } from '@/lib/query-client';
@@ -39,7 +40,7 @@ export function PullRequestStackMenu({ repositoryId, number, membership, onSelec
         <Popover.Positioner side="bottom" align="start" sideOffset={6} className="isolate z-50 outline-none">
           <Popover.Popup className="pr-stack-popup" aria-label={`Stack #${stackNumber}`}>
             <div className="pr-stack-heading"><strong>Stack #{stackNumber}</strong><Button variant="ghost" size="xs" disabled={query.isFetching} onClick={() => void query.refetch()}>Refresh</Button></div>
-            {query.isFetching && <p className="pr-stack-notice" role="status">{stack ? 'Refreshing stack…' : 'Loading stack…'}</p>}
+            {query.isFetching && <p className="pr-stack-notice" role="status"><IconLoader4 className="animate-spin" aria-hidden="true" /><ShimmeringText text={stack ? 'Refreshing stack…' : 'Loading stack…'} /></p>}
             {query.isError && <div className="pr-stack-notice" role="status"><p>{stack ? 'Could not refresh. Showing saved layers.' : 'Could not load the stack.'}</p><Button variant="outline" size="xs" onClick={() => void query.refetch()}>Retry</Button></div>}
             {stack === null && !query.isFetching && !query.isError && <p className="pr-stack-notice">This PR is no longer in a stack, or stack data is unavailable.</p>}
             {stack && <>

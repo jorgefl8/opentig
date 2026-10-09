@@ -1,4 +1,5 @@
 import { containsPersonalPath } from '../packages/server/scripts/verify-build.mjs';
+import { isDeepStrictEqual } from 'node:util';
 import { execFile } from 'node:child_process';
 import { Buffer } from 'node:buffer';
 import { createHash } from 'node:crypto';
@@ -52,14 +53,15 @@ const { stdout: packedPackageBytes } = await execute('tar', ['-xOf', tarballPath
   encoding: 'buffer', maxBuffer: 1024 * 1024, windowsHide: true,
 });
 const packedPackage = JSON.parse(Buffer.from(packedPackageBytes).toString('utf8'));
-const expectedDependencies = { trash: '9.0.0', ws: '8.21.3' };
+const expectedDependencies = cliPackage.dependencies;
 if (packedPackage.name !== metadata.packageName
   || packedPackage.version !== metadata.version
   || packedPackage.private === true
   || packedPackage.type !== 'module'
   || packedPackage.bin?.opentig !== 'dist/bin.mjs'
   || packedPackage.engines?.node !== '>=24'
-  || JSON.stringify(packedPackage.dependencies) !== JSON.stringify(expectedDependencies)) {
+  || !isDeepStrictEqual(Object.keys(expectedDependencies).sort(), ['trash', 'ws'])
+  || !isDeepStrictEqual(packedPackage.dependencies, expectedDependencies)) {
   throw new Error('Packed CLI metadata or runtime dependencies are invalid.');
 }
 for (const lifecycle of ['preinstall', 'install', 'postinstall', 'prepare']) {

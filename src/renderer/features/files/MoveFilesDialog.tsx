@@ -4,6 +4,7 @@ import type { FileTreeEntry } from '@shared/git-types';
 import { MobileSheet } from '@/components/MobileSheet';
 import { getVsCodeFolderIconUrl } from '@/lib/vscode-icons';
 import { Button } from '@/components/ui/button';
+import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { canMovePathsToDirectory, parentDirectory, pathContains } from './file-tree';
 import { useDirectoryLevel } from './use-directory-level';
 
@@ -36,7 +37,7 @@ export function MoveFilesDialog({ entries, initialDirectory, revision, readOnly,
         <span>{destination || 'Repository root'}</span>
       </div>
       <div className="mobile-destination-list">
-        {level === null ? <p className="mobile-list-message" role="status"><IconLoader4 className="animate-spin" /> Loading folders…</p>
+        {level === null ? <p className="mobile-list-message" role="status"><IconLoader4 className="animate-spin" aria-hidden="true" /><ShimmeringText text="Loading folders…" /></p>
           : failed ? <p className="mobile-list-message" role="alert">Could not read this folder.</p>
           : folders.length === 0 ? <p className="mobile-list-message">No subfolders. You can choose this folder below.</p>
           : folders.map((folder) => <button key={folder.path} className="mobile-sheet-action" disabled={moving} onClick={() => setDestination(folder.path)}><img src={getVsCodeFolderIconUrl(folder.path, false)} alt="" aria-hidden="true" draggable={false} /><span>{folder.name}</span><IconChevronRight /></button>)}
