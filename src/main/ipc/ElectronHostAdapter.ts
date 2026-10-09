@@ -1,4 +1,4 @@
-import { clipboard, dialog, shell } from 'electron';
+import { clipboard, dialog, nativeImage, shell } from 'electron';
 import type { BrowserWindow } from 'electron';
 import type { Preferences } from '../../shared/contracts';
 import { readClipboardFilePaths } from '../files/ClipboardFileTransfer';
@@ -18,9 +18,17 @@ export function createElectronHostAdapter(
     preferencesChanged: (preferences) => onPreferencesChanged?.(preferences),
     setTitleBarTheme: (dark) => applyWindowTitleBarTheme(window, dark),
     readClipboardFilePaths: () => readClipboardFilePaths(clipboard),
-    readClipboardImagePng: () => {
-      const image = clipboard.readImage();
-      return image.isEmpty() ? null : image.toPNG();
+    readClipboardImagePng: async () => {
+      const items = await clipboard.read();
+      for (const type of ['image/png', 'image/jpeg'] as const) {
+        for (const item of items) {
+          if (!item.types.includes(type)) continue;
+          const payload = await item.getType(type);
+          const image = nativeImage.createFromBuffer(Buffer.from(await payload.arrayBuffer()));
+          if (!image.isEmpty()) return image.toPNG();
+        }
+      }
+      return null;
     },
     selectDirectory: async (title) => {
       const selection = await dialog.showOpenDialog(window, { properties: ['openDirectory'], title });

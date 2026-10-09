@@ -3,24 +3,19 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Clipboard } from 'electron';
 
-const FILE_FORMAT_PATTERN = /filenamew|filename|cf_hdrop|text\/uri-list/i;
-
-export async function readClipboardFilePaths(systemClipboard: Clipboard): Promise<string[]> {
+export async function readClipboardFilePaths(systemClipboard: Pick<Clipboard, 'read' | 'readText'>): Promise<string[]> {
   const candidates: string[] = [];
-  for (const format of systemClipboard.availableFormats()) {
-    if (!FILE_FORMAT_PATTERN.test(format)) continue;
+  for (const item of await systemClipboard.read()) {
+    if (!item.types.includes('text/uri-list')) continue;
     try {
-      candidates.push(...parseFileClipboardBuffer(format, systemClipboard.readBuffer(format)));
+      const payload = await item.getType('text/uri-list');
+      candidates.push(...parseClipboardPathText(await payload.text()));
     } catch {
-      // Some native formats can only be exposed as strings by Chromium.
-    }
-    try {
-      candidates.push(...parseClipboardPathText(systemClipboard.read(format)));
-    } catch {
-      // Ignore a representation that cannot be decoded.
+      // A clipboard owner can stop providing a format after it is advertised.
+      // Keep examining other items and the plain-text fallback.
     }
   }
-  candidates.push(...parseClipboardPathText(systemClipboard.readText()));
+  candidates.push(...parseClipboardPathText(await systemClipboard.readText()));
 
   const unique = new Map<string, string>();
   for (const candidate of candidates) {
@@ -36,19 +31,6 @@ export async function readClipboardFilePaths(systemClipboard: Clipboard): Promis
     }
   }
   return [...unique.values()];
-}
-
-export function parseFileClipboardBuffer(format: string, buffer: Uint8Array, platform: NodeJS.Platform = process.platform): string[] {
-  if (buffer.byteLength === 0) return [];
-  const value = Buffer.from(buffer.buffer, buffer.byteOffset, buffer.byteLength);
-  if (/cf_hdrop/i.test(format) && value.byteLength >= 20) {
-    const offset = value.readUInt32LE(0);
-    if (offset >= 20 && offset < value.byteLength) {
-      const wide = value.readUInt32LE(16) !== 0;
-      return parseClipboardPathText(value.subarray(offset).toString(wide ? 'utf16le' : 'latin1'), platform);
-    }
-  }
-  return parseClipboardPathText(value.toString(/filenamew/i.test(format) ? 'utf16le' : 'utf8'), platform);
 }
 
 export function parseClipboardPathText(value: string, platform: NodeJS.Platform = process.platform): string[] {
