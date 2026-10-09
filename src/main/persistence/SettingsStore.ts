@@ -21,6 +21,7 @@ interface SettingsData {
   version: number;
   githubAccounts: Record<string, GitHubAccountSelection>;
   githubDefaultLogin: string | null;
+  repositoryAiInstructions: Record<string, boolean>;
   recentRepositories: RecentRepository[];
   repositoryProjects: RepositoryProject[];
   filesTreeStates: FilesTreeState[];
@@ -37,6 +38,7 @@ const defaults: SettingsData = {
   version: SETTINGS_SCHEMA_VERSION,
   githubAccounts: {},
   githubDefaultLogin: null,
+  repositoryAiInstructions: {},
   recentRepositories: [],
   repositoryProjects: [],
   filesTreeStates: [],
@@ -68,6 +70,7 @@ const recentRepositorySchema = z.looseObject({ id: z.string(), name: z.string(),
 export class SettingsStore {
   private data: SettingsData = structuredClone(defaults);
   private loaded = false;
+  private readonly repositoryAiWriteVersions = new Map<string, number>();
   private pendingWrite: Promise<void> = Promise.resolve();
   private readonly backgroundTimers = new Map<BackgroundChannel, ReturnType<typeof setTimeout>>();
   private readonly backgroundDirty = new Set<BackgroundChannel>();
@@ -118,6 +121,28 @@ export class SettingsStore {
     return { ...this.data.preferences, aiExecutablePaths: { ...this.data.preferences.aiExecutablePaths }, commitMessageModels: { ...this.data.preferences.commitMessageModels }, shortcutOverrides: { ...this.data.preferences.shortcutOverrides } };
   }
   get windowBounds(): WindowBounds { return { ...this.data.windowBounds }; }
+
+  repositoryAiInstructionsEnabled(commonDir: string): boolean {
+    return this.data.repositoryAiInstructions[githubRepositoryKey(commonDir)] === true;
+  }
+
+  async setRepositoryAiInstructions(commonDir: string, enabled: boolean): Promise<void> {
+    const key = githubRepositoryKey(commonDir);
+    if (!key || typeof enabled !== 'boolean') throw projectError('Invalid repository instructions setting.');
+    const previous = this.data.repositoryAiInstructions[key];
+    const writeVersion = (this.repositoryAiWriteVersions.get(key) ?? 0) + 1;
+    this.repositoryAiWriteVersions.set(key, writeVersion);
+    if (enabled) this.data.repositoryAiInstructions[key] = true;
+    else delete this.data.repositoryAiInstructions[key];
+    try { await this.save(); }
+    catch (error) {
+      if (this.repositoryAiWriteVersions.get(key) === writeVersion) {
+        if (previous) this.data.repositoryAiInstructions[key] = previous;
+        else delete this.data.repositoryAiInstructions[key];
+      }
+      throw error;
+    }
+  }
 
   githubAccount(commonDir: string): GitHubAccountSelection {
     const selection = this.data.githubAccounts[githubRepositoryKey(commonDir)] ?? AUTOMATIC_GITHUB_ACCOUNT;
@@ -177,6 +202,12 @@ export class SettingsStore {
     const previous = this.data.recentRepositories.find((item) => item.id === previousId);
     if (!previous) throw projectError('Unknown repository.');
 
+    const previousAiKey = githubRepositoryKey(previous.commonDir);
+    const nextAiKey = githubRepositoryKey(repository.commonDir);
+    if (previousAiKey !== nextAiKey && this.data.repositoryAiInstructions[previousAiKey]) {
+      this.data.repositoryAiInstructions[nextAiKey] ??= true;
+      delete this.data.repositoryAiInstructions[previousAiKey];
+    }
     const previousAccountKey = githubRepositoryKey(previous.commonDir);
     const nextAccountKey = githubRepositoryKey(repository.commonDir);
     if (previousAccountKey !== nextAccountKey && this.data.githubAccounts[previousAccountKey]) {
@@ -215,7 +246,10 @@ export class SettingsStore {
     const removedIds = new Set(this.data.recentRepositories
       .filter((item) => normalizeRepositoryKey(item.commonDir) === key).map((item) => item.id));
     for (const item of this.data.recentRepositories) {
-      if (removedIds.has(item.id)) delete this.data.githubAccounts[githubRepositoryKey(item.commonDir)];
+      if (removedIds.has(item.id)) {
+        delete this.data.githubAccounts[githubRepositoryKey(item.commonDir)];
+        delete this.data.repositoryAiInstructions[githubRepositoryKey(item.commonDir)];
+      }
     }
     this.data.recentRepositories = this.data.recentRepositories.filter((item) => !removedIds.has(item.id));
     this.data.repositoryProjects = this.data.repositoryProjects.map((project) => ({
@@ -505,6 +539,9 @@ function validate(value: unknown, defaultDoubleControlShortcutEnabled: boolean):
   return {
     version: SETTINGS_SCHEMA_VERSION,
     githubAccounts: normalizeGitHubAccounts(input.githubAccounts),
+    repositoryAiInstructions: Object.fromEntries(Object.entries(
+      input.repositoryAiInstructions && typeof input.repositoryAiInstructions === 'object' && !Array.isArray(input.repositoryAiInstructions) ? input.repositoryAiInstructions : {},
+    ).slice(0, 1000).filter(([key, value]) => value === true && key.length <= MAX_REPOSITORY_KEY_LENGTH && !hasControlCharacters(key) && path.isAbsolute(key)).map(([key]) => [githubRepositoryKey(key), true])),
     githubDefaultLogin: typeof input.githubDefaultLogin === 'string' && githubAccountSelectionSchema.safeParse({ mode: 'account', host: 'github.com', login: input.githubDefaultLogin }).success ? input.githubDefaultLogin : null,
     recentRepositories,
     repositoryProjects,

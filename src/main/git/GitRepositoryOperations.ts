@@ -10,6 +10,7 @@ import path from 'node:path';
 import type { FileService } from '../files/FileService';
 import { realpath, stat, writeFile } from 'node:fs/promises';
 import type { CommitMessageContext, PullRequestDraftContext } from '../ai/types';
+import type { RepositoryInstructionFile } from '../ai/RepositoryAiInstructions';
 import type { GitProcess } from './GitProcess';
 import { parseCommitFiles } from './CommitFilesParser';
 import { LOG_FORMAT, parseLog } from './LogParser';
@@ -313,7 +314,7 @@ export class GitRepositoryOperations {
     return { repositoryId, repositoryPath: repository.path, branch: status.branch, base, headOid, baseOid, mergeBaseOid, fingerprint };
   }
 
-  async getPullRequestDraftContext(repositoryId: string, base: string): Promise<PullRequestDraftContext> {
+  async getPullRequestDraftContext(repositoryId: string, base: string, instructions: RepositoryInstructionFile[] = []): Promise<PullRequestDraftContext> {
     const snapshot = await this.getPullRequestDraftSnapshot(repositoryId, base);
     const { repositoryPath, headOid, baseOid, mergeBaseOid } = snapshot;
     // Every command reads immutable commits, even if HEAD or the base moves meanwhile.
@@ -365,7 +366,7 @@ export class GitRepositoryOperations {
     if (JSON.stringify(context.coverage.files).length > 96_000) {
       throw new AiOperationError({ code: 'AI_PROCESS_FAILED', operation: 'ai-pr-context', message: 'The complete file inventory is too large for a draft. Narrow the comparison or write the description manually.' });
     }
-    let patchBudget = Math.min(AI_PATCH_BUDGET, PR_PROMPT_CHARACTER_LIMIT - buildPullRequestPrompt(context).length - 256);
+    let patchBudget = Math.min(AI_PATCH_BUDGET, PR_PROMPT_CHARACTER_LIMIT - buildPullRequestPrompt(context, instructions).length - 256);
     if (patchBudget < 0) throw new AiOperationError({ code: 'AI_PROCESS_FAILED', operation: 'ai-pr-context', message: 'The complete file inventory does not fit in the draft context. Write the description manually.' });
     if (fullPatch.length > patchBudget) {
       fullPatch = (await run([...diff, '--unified=1', mergeBaseOid, headOid, '--'], 'ai-pr-compact-patch', 64 * 1024 * 1024)).stdout.toString('utf8');
@@ -376,7 +377,7 @@ export class GitRepositoryOperations {
       context.patch = allocation.value;
       context.coverage.files = allocation.files;
       context.coverage.suppliedPatchCharacters = context.patch.length;
-      context.coverage.promptCharacters = buildPullRequestPrompt(context).length;
+      context.coverage.promptCharacters = buildPullRequestPrompt(context, instructions).length;
       const excess = context.coverage.promptCharacters - PR_PROMPT_CHARACTER_LIMIT;
       if (excess <= 0) break;
       patchBudget -= excess + 256;

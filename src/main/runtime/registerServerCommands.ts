@@ -403,6 +403,14 @@ export function registerServerCommands(
   handle(IPC.refsPushContext, 'push-context', (id, remote) => services.operations.publicationContext(stringArg(id, 'push-context', 64), remote == null ? undefined : stringArg(remote, 'push-context', 512)));
   handle(IPC.refsPush, 'push', (id, publish, expected) => services.operations.push(stringArg(id, 'push', 64), publishBranchArg(publish), expected == null ? undefined : stringArg(expected, 'push', 64)));
   handle(IPC.refsFetch, 'fetch', (id) => services.operations.fetch(stringArg(id, 'fetch', 64)));
+  handle(IPC.aiRepositoryInstructions, 'ai-repository-instructions', (id) => services.aiInstructions.status(stringArg(id, 'ai-repository-instructions', 64)));
+  handle(IPC.aiSetRepositoryInstructions, 'ai-set-repository-instructions', async (id, enabled) => {
+    const repositoryId = stringArg(id, 'ai-set-repository-instructions', 64);
+    if (typeof enabled !== 'boolean') throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'ai-set-repository-instructions', message: 'Invalid instructions setting.' });
+    const result = await services.aiInstructions.setEnabled(repositoryId, enabled);
+    services.events.aiInstructionsChanged(services.repositories.get(repositoryId).commonDir);
+    return result;
+  });
   handle(IPC.aiStatuses, 'ai-statuses', (forceRefresh) => services.ai.statuses(booleanArg(forceRefresh, 'ai-statuses')));
   handleWithContext(IPC.aiGenerateCommitMessage, 'ai-generate-commit-message', (context, input) => (
     services.ai.generate(generateCommitMessageArg(input), context.signal)

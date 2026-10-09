@@ -23,6 +23,7 @@ export function createOpenTigServerClient(options: ServerClientOptions = {}): Op
   const httpOrigin = options.httpOrigin ?? globalThis.location?.origin ?? 'http://127.0.0.1';
   const fetchRequest = options.fetch ?? fetch;
   const repositoryChanged = new Set<Parameters<OpenTigServerApi['events']['onRepositoryChanged']>[0]>();
+  const aiInstructionsChanged = new Set<(repositoryIds: string[]) => void>();
   const githubAccountsChanged = new Set<(repositoryIds?: string[], inventoryChanged?: boolean) => void>();
   const activeRepositoryChanged = new Set<Parameters<OpenTigServerApi['events']['onActiveRepositoryChanged']>[0]>();
   const invoke = <Command extends Parameters<OpenTigWebSocketTransport['request']>[0]>(
@@ -129,6 +130,8 @@ export function createOpenTigServerClient(options: ServerClientOptions = {}): Op
       removeWorktree: (request) => invoke(IPC.worktreeRemove, request),
     },
     ai: {
+      repositoryInstructions: (id) => invoke(IPC.aiRepositoryInstructions, id),
+      setRepositoryInstructions: (id, enabled) => invoke(IPC.aiSetRepositoryInstructions, id, enabled),
       statuses: (forceRefresh) => invoke(IPC.aiStatuses, forceRefresh),
       generateCommitMessage: (input) => transport.request(IPC.aiGenerateCommitMessage, [input], { timeoutMs: AI_CLIENT_TIMEOUT_MS }),
       cancelGeneration: (requestId) => invoke(IPC.aiCancelGeneration, requestId),
@@ -158,15 +161,17 @@ export function createOpenTigServerClient(options: ServerClientOptions = {}): Op
       record: (entry) => invoke(IPC.diagnosticsRecord, entry),
     },
     events: {
+      onAiInstructionsChanged: (callback) => subscribe(aiInstructionsChanged, callback),
       onGitHubAccountsChanged: (callback) => subscribe(githubAccountsChanged, callback),
       onRepositoryChanged: (callback) => subscribe(repositoryChanged, callback),
       onActiveRepositoryChanged: (callback) => subscribe(activeRepositoryChanged, callback),
     },
   };
 
-  transport.onEvent((event) => publishRuntimeEvent(event, repositoryChanged, activeRepositoryChanged, githubAccountsChanged));
+  transport.onEvent((event) => publishRuntimeEvent(event, repositoryChanged, activeRepositoryChanged, githubAccountsChanged, aiInstructionsChanged));
   transport.onReconnect(async () => {
     const data = await api.app.bootstrap();
+    for (const listener of aiInstructionsChanged) listener([]);
     for (const listener of githubAccountsChanged) listener();
     if (!data.activeRepository) return;
     for (const listener of activeRepositoryChanged) listener(data.activeRepository);
@@ -190,11 +195,14 @@ function publishRuntimeEvent(
   repositoryChanged: ReadonlySet<Parameters<OpenTigServerApi['events']['onRepositoryChanged']>[0]>,
   activeRepositoryChanged: ReadonlySet<Parameters<OpenTigServerApi['events']['onActiveRepositoryChanged']>[0]>,
   githubAccountsChanged: ReadonlySet<(repositoryIds?: string[], inventoryChanged?: boolean) => void>,
+  aiInstructionsChanged: ReadonlySet<(repositoryIds: string[]) => void>,
 ): void {
   if (event.type === 'repository.changed') {
     for (const listener of repositoryChanged) listener(event.repositoryId, event.scope);
   } else if (event.type === 'repository.active-changed') {
     for (const listener of activeRepositoryChanged) listener(event.repository);
+  } else if (event.type === 'ai.instructions-changed') {
+    for (const listener of aiInstructionsChanged) listener(event.repositoryIds);
   } else {
     for (const listener of githubAccountsChanged) listener(event.repositoryIds, event.inventoryChanged);
   }

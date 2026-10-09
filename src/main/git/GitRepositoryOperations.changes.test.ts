@@ -66,6 +66,43 @@ describe('GitRepositoryOperations AI context', () => {
 });
 
 describe('pull-request context coverage', () => {
+  it('supplies the complete branch behavior despite recent editorial commits and uncommitted edits', async () => {
+    const fixture = await standaloneRepository();
+    await git(fixture.work, ['switch', '-c', 'feature']);
+    await writeFile(path.join(fixture.work, 'generation.ts'), 'export const isolateGeneration = true;\n');
+    await git(fixture.work, ['add', '.']);
+    await git(fixture.work, ['commit', '-m', 'Isolate generation']);
+    await writeFile(path.join(fixture.work, 'settings.ts'), 'export const repositoryInstructions = false;\n');
+    await git(fixture.work, ['add', '.']);
+    await git(fixture.work, ['commit', '-m', 'Make repository conventions optional']);
+    await writeFile(path.join(fixture.work, 'writing.md'), 'Use descriptive PR prose.\n');
+    await git(fixture.work, ['add', '.']);
+    await git(fixture.work, ['commit', '-m', 'Refine writing policy']);
+    // A base-only change and staged work must not become part of the PR draft.
+    await git(fixture.work, ['switch', 'main']);
+    await writeFile(path.join(fixture.work, 'base-only.txt'), 'unrelated base change\n');
+    await git(fixture.work, ['add', '.']);
+    await git(fixture.work, ['commit', '-m', 'Unrelated base change']);
+    await git(fixture.work, ['switch', 'feature']);
+    await writeFile(path.join(fixture.work, 'generation.ts'), 'uncommitted replacement\n');
+    await git(fixture.work, ['add', '.']);
+
+    const context = await fixture.operations.getPullRequestDraftContext(fixture.repositoryId, 'main');
+    const prompt = buildPullRequestPrompt(context);
+    expect(context.subjects).toEqual(['Refine writing policy', 'Make repository conventions optional', 'Isolate generation']);
+    expect(context.coverage).toMatchObject({ commitsIncluded: 3, commitsTotal: 3 });
+    expect(context.coverage.files.map(file => [file.path, file.detail])).toEqual([
+      ['generation.ts', 'complete'], ['settings.ts', 'complete'], ['writing.md', 'complete'],
+    ]);
+    expect(prompt).toContain('+export const isolateGeneration = true;');
+    expect(prompt).toContain('+export const repositoryInstructions = false;');
+    expect(prompt).toContain('+Use descriptive PR prose.');
+    expect(prompt).not.toContain('uncommitted replacement');
+    expect(prompt).not.toContain('base-only.txt');
+    expect(context.truncated).toBe(false);
+    expect(context.coverage.promptCharacters).toBe(prompt.length);
+  });
+
   it('rejects an oversized complete inventory instead of silently dropping files', async () => {
     const fixture = await standaloneRepository();
     await git(fixture.work, ['switch', '-c', 'feature']);
@@ -153,6 +190,23 @@ describe('pull-request context coverage', () => {
     expect(context.coverage.files[0]!.omittedChangedLines).toBeGreaterThan(0);
     expect(context.patch.length).toBeLessThanOrEqual(400000);
     expect(buildPullRequestPrompt(context).length).toBeLessThanOrEqual(PR_PROMPT_CHARACTER_LIMIT);
+  });
+
+  it('includes serialized repository conventions in the prompt budget and reported size', async () => {
+    const fixture = await standaloneRepository();
+    await git(fixture.work, ['switch', '-c', 'feature']);
+    await writeFile(path.join(fixture.work, 'large.txt'), 'large line\n'.repeat(60000));
+    await git(fixture.work, ['add', '.']);
+    await git(fixture.work, ['commit', '-m', 'Large change']);
+    // Valid UTF-8 within the 32 KiB instruction limit, larger after JSON quoting.
+    const instructions = [{ name: 'AGENTS.md', text: 'Repository conventions\n' + '\n'.repeat(32000) }];
+    const context = await fixture.operations.getPullRequestDraftContext(fixture.repositoryId, 'main', instructions);
+    const prompt = buildPullRequestPrompt(context, instructions);
+    expect(prompt).toContain('Repository conventions');
+    expect(prompt.length).toBeLessThanOrEqual(PR_PROMPT_CHARACTER_LIMIT);
+    expect(context.coverage.promptCharacters).toBe(prompt.length);
+    expect(context.coverage.files[0]).toMatchObject({ path: 'large.txt', detail: 'partial' });
+    expect(context.coverage.files[0]!.omittedChangedLines).toBeGreaterThan(0);
   });
 });
 
