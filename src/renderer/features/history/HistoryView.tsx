@@ -134,7 +134,7 @@ function CommitRow({ repositoryId, upstream, baseRef, commit, graphRow, graphWid
   };
 
   return (
-    <div className={`commit-item${active ? ' active' : ''}${match ? ' search-match' : ''}`} role="listitem">
+    <div className={`commit-item${active ? ' active' : ''}${match ? ' commit-search-match' : ''}`} role="listitem">
       <div className="commit-header">
         <CommitGraph graph={graphRow} width={graphWidth} height={rowHeight} merge={commit.parentCount > 1} head={commit.isHead} />
         <button className="commit-expand" aria-expanded={expanded} aria-label={expanded ? 'Collapse commit' : 'Expand commit'} onClick={() => onExpandedChange(!expanded)}>
