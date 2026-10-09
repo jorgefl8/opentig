@@ -109,7 +109,7 @@ export function SearchablePicker({ groups, value, onValueChange, label, triggerL
       }}
     >
       <Tooltip disabled={!triggerTruncated || (controlledOpen ?? internalOpen) || disabled}>
-        <TooltipTrigger render={<ComboboxTrigger id={triggerId} size={size} className={triggerClassName} aria-label={label} aria-keyshortcuts={shortcut} />}>
+        <TooltipTrigger id={triggerId} render={<ComboboxTrigger size={size} className={triggerClassName} aria-label={label} aria-keyshortcuts={shortcut} />}>
           {icon}
           <span ref={triggerCopy} className="min-w-0 flex-1 truncate text-left">{triggerLabel}</span>
           {triggerHint}
