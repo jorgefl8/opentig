@@ -42,6 +42,9 @@ export function ServerConnectionBoundary({ children }: { children: ReactNode }) 
         position: 'bottom-right',
         duration: null,
         autopilot: false,
+        ...(state === 'incompatible-version'
+          ? { button: { title: 'Reload', onClick: () => window.location.reload() } }
+          : {}),
       };
       toastId.current = sileo.show(options);
     } else if (toastId.current) {
@@ -69,13 +72,13 @@ export function ServerConnectionBoundary({ children }: { children: ReactNode }) 
           <h1 className="text-lg font-semibold">Authentication required</h1>
           <p className="mt-2 text-sm text-muted-foreground">
             {desktop ? 'Restart OpenTig to restore its private desktop session.' : (
-              <>Generate a pairing code with the command below on the server, or from Settings → Network access in the desktop app.</>
+              <>If Web access is paused, enable it in Settings → Web access and reload to resume your saved session. New browsers and expired or revoked sessions need a pairing code from the desktop app or the command below.</>
             )}
           </p>
           {!desktop && (
             <>
               <PairingCommand />
-              <Button className="mt-5" nativeButton={false} render={<a href="/pair" />}>Pair this browser</Button>
+              <Button className="mt-5" nativeButton={false} render={<a href="/pair" />}>Check browser access</Button>
             </>
           )}
         </section>

@@ -41,7 +41,7 @@ export function BranchCombobox({ branches, currentLabel, disabled, onBranch, onM
     icon={<IconGitBranch />}
     triggerClassName="max-w-[220px]"
     placeholder="Search branches…"
-    management={{ label: 'Manage local branches…', onClick: onManage }}
+    management={{ label: 'Manage branches…', onClick: onManage }}
     disabled={disabled}
   />;
 }

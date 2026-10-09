@@ -66,6 +66,7 @@
   html .mobile-repository-context small { display: flex; gap: 4px; align-items: center; min-width: 0; color: var(--muted-foreground); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   html .mobile-repository-context small svg { width: 12px; height: 12px; flex: none; }
   html .mobile-toolbar-actions { display: flex; gap: 2px; align-items: center; flex: none; }
+  html .mobile-toolbar-actions .app-name { font-size: 11px; }
   html .mobile-toolbar-actions > [data-slot="button"] { min-height: 44px; }
   html .mobile-open-files-trigger { position: relative; padding: 0 8px; gap: 6px; color: var(--muted-foreground); font-size: 11px; }
   html .mobile-unsaved-dot { position: absolute; top: 6px; right: 3px; width: 5px; height: 5px; border-radius: 50%; background: var(--warning); }
@@ -174,9 +175,16 @@
   html .settings-switch span { width: 24px; height: 24px; }
   html .settings-switch[aria-checked="true"] span { transform: translateX(16px); }
 
-  html .settings-dialog-general .settings-shell { height: 100%; }
   html .settings-panel-body-general { padding: 0; }
-  html .settings-general-content { padding: 12px; }
+  html .settings-general-content, html .github-settings-content { padding: 12px; }
+  html .github-scope-tabs { width: 100%; }
+  html .github-scope-tabs button { min-height: 40px; height: 40px; font-size: 12px; }
+  html .github-git-mode-options { width: 100%; }
+  html .github-git-mode-options label { flex: 1; min-height: 40px; height: 40px; justify-content: center; }
+  html .github-account-select { width: 100%; }
+  html .github-account-picker { justify-content: flex-start; width: 100%; }
+  html .github-accounts-actions { justify-content: flex-start; }
+  html .github-settings .settings-general-footer { padding: 8px 12px; }
   html .settings-general-row { grid-template-columns: minmax(0, 1fr); gap: 9px; padding: 12px 0; }
   html .settings-general-control { justify-content: flex-start; }
   html .settings-general-select, html .settings-general .settings-zoom-control { width: 100%; }
@@ -204,6 +212,10 @@
   html .shortcuts-row, html .shortcuts-fixed-row { grid-template-columns: minmax(0, 1fr); gap: 6px; }
   html .shortcuts-row-actions { justify-content: flex-start; }
   html .local-refs-toolbar { flex-wrap: wrap; padding: 8px; }
+  html .local-refs-branch-filters { padding: 8px; gap: 8px; }
+  html .local-refs-branch-filters > small { flex-basis: 100%; margin-left: 0; }
+  html .local-refs-local-link { min-height: 40px; }
+  html .local-refs-create-branch > input { min-height: 44px; font-size: 16px; }
   html .local-refs-search { flex-basis: 100%; }
   html .local-refs-tabs { flex: 1; }
   html .local-refs-tab { min-height: 40px; flex: 1; }
@@ -290,6 +302,7 @@
 .mobile-file-selection-actions { display: flex; justify-content: space-between; gap: 2px; flex: none; padding: 6px 8px; border-top: 1px solid var(--border); background: var(--muted); }
 .mobile-file-selection-actions > button:first-child { color: var(--primary); }
 .mobile-list-message { display: flex; align-items: center; justify-content: center; gap: 7px; padding: 24px 16px; color: var(--muted-foreground); font-size: 12px; line-height: 1.7; text-align: center; }
+.mobile-list-message svg { width: 15px; height: 15px; flex: none; color: var(--primary); }
 .mobile-sheet { display: flex; flex-direction: column; width: min(440px, 92vw); max-height: 80dvh; }
 .mobile-sheet-handle { width: 32px; height: 4px; border-radius: 3px; background: var(--border); margin: 10px auto 0; flex: none; }
 .mobile-sheet-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 4px 10px 4px 18px; flex: none; }
@@ -298,6 +311,7 @@
 .mobile-sheet-body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 10px 12px; }
 .mobile-sheet-action { display: flex; align-items: center; gap: 11px; width: 100%; min-height: 50px; padding: 10px; border-radius: var(--radius-md); text-align: left; font-size: 13px; }
 .mobile-sheet-action > svg { width: 19px; height: 19px; flex: none; color: var(--muted-foreground); }
+.mobile-branch-pr.merged, .mobile-branch-pr.merged > svg { color: var(--pr-merged); }
 .mobile-sheet-action > span { min-width: 0; flex: 1; overflow-wrap: anywhere; }
 .mobile-sheet-action > span strong { display: block; font-weight: 550; }
 .mobile-sheet-action > span small { display: block; margin-top: 4px; font-size: 11px; color: var(--muted-foreground); }
@@ -340,7 +354,7 @@
 }
 
 @media (min-width: 768px) and (max-width: 1100px) {
-  html .toolbar { height: auto; min-height: var(--toolbar-height); flex-wrap: wrap; padding-block: 5px; }
+  html .toolbar { height: auto; min-height: var(--toolbar-height); flex-wrap: wrap; justify-content: flex-end; padding-block: 5px; }
   html .open-files-strip { order: 2; flex: 1 0 100%; min-width: 0; }
 }
 

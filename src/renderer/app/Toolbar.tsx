@@ -1,7 +1,7 @@
 import { appDisplayName } from '@/lib/app-identity';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  IconArrowDown, IconArrowUp, IconBrandGithub, IconExternalLink, IconGitPullRequest, IconHierarchy2, IconLoader4, IconPlus, IconRefresh, IconSettings,
+  IconArrowDown, IconArrowUp, IconBrandGithub, IconHierarchy2, IconLoader4, IconPlus, IconRefresh, IconSettings,
 } from '@tabler/icons-react';
 import type { BootstrapData, GitHubRepositoryInfo, Preferences, PullRequestSummary, RecentRepository, RepositoryInfo, RepositoryOrganization, RepositoryProject } from '../../shared/contracts';
 import type { BranchInfo, RepositoryStatus, WorktreeInfo } from '../../shared/git-types';
@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Kbd } from '@/components/ui/kbd';
 import { SearchablePicker, type SearchablePickerItem } from '@/components/SearchablePicker';
 import { OpenTigMark } from '@/components/OpenTigMark';
+import { AppName } from '@/components/AppName';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { isEditableTarget } from '@/features/files/file-tree';
 import { OpenFilesStrip } from '@/features/files/OpenFilesStrip';
@@ -28,6 +29,7 @@ import { useMobileLayout } from '@/lib/use-mobile-layout';
 import { MobileToolbar } from './MobileToolbar';
 import { BranchCombobox } from './BranchCombobox';
 import { openOnGitHub } from '@/features/pulls/gh-utils';
+import { BranchPullRequestMenu } from './BranchPullRequestMenu';
 
 export interface ToolbarProps {
   mobileBackLabel?: string | undefined;
@@ -36,6 +38,7 @@ export interface ToolbarProps {
   branches: BranchInfo[]; worktrees: WorktreeInfo[]; preferences: Preferences; busy: string | null;
   githubInfo: GitHubRepositoryInfo | null;
   branchPullRequest: PullRequestSummary | null;
+  onOpenPullRequest(number: number): void;
   onOpen(): void; onRecent(id: string | null): void; onBranch(name: string | null): void; onWorktree(path: string | null): void;
   onRefresh(): void; onPreference(partial: Partial<Preferences>): void;
   onForgetRepository(repository: RepositoryOption): Promise<RepositoryOrganization>;
@@ -167,7 +170,7 @@ export function Toolbar(props: ToolbarProps) {
 
       if (!repositorySelectOpen && event.key.toLowerCase() === repoSwitcherKey) {
         const anotherPopupIsOpen = document.querySelector(
-          '[data-slot="dialog-popup"][data-open], [data-slot="select-content"][data-open], [data-slot="combobox-content"][data-open]',
+          '[data-slot="dialog-popup"][data-open], [data-slot="select-content"][data-open], [data-slot="combobox-content"][data-open], [data-slot="dropdown-menu-content"][data-open]',
         );
         if (projectsOpen || refsOpen || props.settingsOpen || anotherPopupIsOpen) return;
         event.preventDefault();
@@ -295,6 +298,7 @@ export function Toolbar(props: ToolbarProps) {
         triggerHint={<Kbd className="repo-select-shortcut" aria-hidden="true">{repoSwitcherKey.toUpperCase()}</Kbd>}
         shortcut={repoSwitcherKey.toUpperCase()}
         triggerClassName="repo-select max-w-[240px]"
+        contentClassName="repository-picker"
         align="start"
         placeholder="Search repositories…"
         management={{ label: 'Manage projects…', onClick: () => { setMobileContextOpen(false); setProjectsOpen(true); } }}
@@ -336,7 +340,7 @@ export function Toolbar(props: ToolbarProps) {
     {mobile ? <MobileToolbar props={props} repositoryControl={repositoryControl} worktreeControl={worktreeControl} branchControl={branchControl} favicon={favicons.get(currentRepositoryKey)} contextOpen={mobileContextOpen} onContextOpen={(open) => { setMobileContextOpen(open); if (!open) setRepositorySelectOpen(false); }} syncBusy={currentRepositorySyncBusy} /> : <header className="toolbar">
       <div className="toolbar-brand" aria-label={appDisplayName}>
         <OpenTigMark />
-        <span>{appDisplayName}</span>
+        <AppName />
       </div>
       {repositoryControl}
 
@@ -385,21 +389,10 @@ export function Toolbar(props: ToolbarProps) {
       {worktreeControl}
       {branchControl}
       {props.branchPullRequest && (
-        <Tooltip>
-          <TooltipTrigger render={<button type="button" className={`toolbar-branch-pr${props.branchPullRequest.isDraft ? ' draft' : ''}`} aria-label={`Open pull request #${props.branchPullRequest.number} on GitHub`} onClick={() => openOnGitHub(props.branchPullRequest!.url)} />}>
-            <IconGitPullRequest aria-hidden="true" />
-            <span className="toolbar-pr-label">PR #{props.branchPullRequest.number}</span>
-            {props.branchPullRequest.isDraft && <span className="toolbar-pr-draft">Draft</span>}
-            <IconExternalLink aria-hidden="true" />
-          </TooltipTrigger>
-          <TooltipContent side="bottom" align="end" sideOffset={8} className="flex-col items-start gap-1 text-left">
-            <span className="toolbar-pr-tooltip-title">{props.branchPullRequest.title}</span>
-            <span className="toolbar-pr-tooltip-meta">{props.branchPullRequest.isDraft ? 'Draft' : 'Open'} · View on GitHub</span>
-          </TooltipContent>
-        </Tooltip>
+        <BranchPullRequestMenu key={props.branchPullRequest.url} pullRequest={props.branchPullRequest} onOpenPullRequest={props.onOpenPullRequest} />
       )}
 
-      <Tooltip><TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Refresh" onClick={props.onRefresh} disabled={Boolean(props.busy) || currentRepositorySyncBusy} />}>{props.busy === 'refresh' ? <IconLoader4 className="animate-spin" /> : <IconRefresh />}</TooltipTrigger><TooltipContent>Refresh (Ctrl+R)</TooltipContent></Tooltip>
+      <Tooltip><TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Refresh" onClick={props.onRefresh} disabled={Boolean(props.busy) || currentRepositorySyncBusy} />}><IconRefresh className={props.busy === 'refresh' ? 'animate-spin' : undefined} /></TooltipTrigger><TooltipContent>Refresh (Ctrl+R)</TooltipContent></Tooltip>
       {props.githubInfo?.isGitHub && props.githubInfo.nameWithOwner && (
         <Tooltip>
           <TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Open repository on GitHub" onClick={() => openOnGitHub(`https://github.com/${props.githubInfo!.nameWithOwner}`)} />}>
@@ -437,6 +430,7 @@ export function Toolbar(props: ToolbarProps) {
       {props.settingsOpen && (
         <Suspense fallback={null}>
           <SettingsDialog
+            repository={props.repository}
             preferences={props.preferences}
             onPreference={props.onPreference}
             open={props.settingsOpen}

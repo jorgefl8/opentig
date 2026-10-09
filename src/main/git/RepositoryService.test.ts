@@ -14,6 +14,37 @@ const directories: string[] = [];
 afterEach(async () => Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true, maxRetries: 3 }))));
 
 describe('RepositoryService change stats', () => {
+  it('prepares candidates without changing saved repositories, including across restart', async () => {
+    const fixture = await repository();
+    const candidatePath = path.join(fixture.root, 'candidate');
+    await execFileAsync('git', ['init', candidatePath]);
+    const before = fixture.repositories.recents();
+    const prepared = await fixture.repositories.preparePath(candidatePath);
+    expect(fixture.repositories.get(prepared.id)).toEqual(prepared);
+    expect(fixture.repositories.recents()).toEqual(before);
+    expect(fixture.settings.activeRepositoryId).toBe(fixture.repositoryId);
+    const restarted = new SettingsStore(path.join(fixture.root, 'settings.json'));
+    await restarted.load();
+    expect(restarted.recentRepositories).toEqual(before);
+    expect(restarted.activeRepositoryId).toBe(fixture.repositoryId);
+    await expect(fixture.repositories.completeSetup(prepared.id, () => { throw new Error('Stale account'); })).rejects.toThrow('Stale account');
+    expect(fixture.repositories.recents()).toEqual(before);
+    expect(fixture.settings.activeRepositoryId).toBe(fixture.repositoryId);
+    await fixture.repositories.completeSetup(prepared.id);
+    expect(fixture.settings.activeRepositoryId).toBe(prepared.id);
+    expect(fixture.repositories.recents()).toHaveLength(2);
+  });
+
+  it('does not activate a candidate whose folder disappeared during setup', async () => {
+    const fixture = await repository();
+    const candidatePath = path.join(fixture.root, 'candidate');
+    await execFileAsync('git', ['init', candidatePath]);
+    const prepared = await fixture.repositories.preparePath(candidatePath);
+    await rename(candidatePath, path.join(fixture.root, 'moved'));
+    await expect(fixture.repositories.completeSetup(prepared.id)).rejects.toThrow();
+    expect(fixture.repositories.recents()).toHaveLength(1);
+    expect(fixture.settings.activeRepositoryId).toBe(fixture.repositoryId);
+  });
   it('counts untracked lines and keeps the total stable across refreshes', async () => {
     const fixture = await repository();
     await writeFile(path.join(fixture.work, 'untracked.txt'), 'uno\ndos\ntres\n');

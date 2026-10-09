@@ -1,6 +1,8 @@
 import { appDisplayName } from '@/lib/app-identity';
 import { useEffect, useState, type FormEvent } from 'react';
+import { IconLoader4 } from '@tabler/icons-react';
 import { Button } from '@/components/ui/button';
+import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { PairingCommand } from './PairingCommand';
 import {
   checkPairingSession,
@@ -14,6 +16,7 @@ import {
 const messages: Record<Exclude<PairingExchangeResult, 'paired'>, string> = {
   rejected: 'This code is invalid, expired, or already used. Create a new one from OpenTig.',
   unavailable: 'OpenTig could not complete pairing. Check the server and try again.',
+  disabled: 'Web access is paused. Enable it in Settings → Web access in the desktop app, then reload. Previously paired browsers keep their access while their session is valid; new devices need a pairing link.',
 };
 
 export default function PairingPage() {
@@ -46,13 +49,23 @@ export default function PairingPage() {
     else setStatus(result);
   };
 
+  if (session === 'disabled' || status === 'disabled') {
+    return <main className="access-page pairing-page flex min-h-dvh items-center justify-center bg-background px-4 py-6 text-foreground">
+      <section className="w-full max-w-md rounded-xl border border-border bg-card p-6 shadow-sm">
+        <h1 className="text-lg font-semibold">Web access is paused</h1>
+        <p className="mt-2 text-sm text-muted-foreground" role="status">{messages.disabled}</p>
+        <Button className="mt-5" onClick={() => { setStatus('idle'); setSession('checking'); setCheckAttempt((value) => value + 1); }}>Check again</Button>
+      </section>
+    </main>;
+  }
+
   if (session !== 'unpaired') {
     return (
       <main className="access-page pairing-page flex min-h-dvh items-center justify-center bg-background px-4 py-6 text-foreground">
         <section className="w-full max-w-md rounded-xl border border-border bg-card p-6 shadow-sm">
-          <h1 className="text-lg font-semibold">{session === 'unavailable' ? 'Could not check this browser' : 'Checking this browser…'}</h1>
+          <h1 className="flex items-center gap-2 text-lg font-semibold">{session === 'unavailable' ? 'Could not check this browser' : <><IconLoader4 className="size-5 animate-spin text-primary" aria-hidden="true" /><ShimmeringText text="Checking this browser…" /></>}</h1>
           <p className="mt-2 text-sm text-muted-foreground" role="status">
-            {session === 'unavailable' ? 'Could not verify your saved session. Check your connection and try again.' : 'Checking your saved session before asking you to pair again.'}
+            {session === 'unavailable' ? 'Could not verify your saved session. Check your connection and try again.' : <ShimmeringText text="Checking your saved session before asking you to pair again." />}
           </p>
           {session === 'unavailable' && <Button className="mt-5" onClick={() => { setSession('checking'); setCheckAttempt((value) => value + 1); }}>Try again</Button>}
         </section>
@@ -94,7 +107,7 @@ export default function PairingPage() {
             />
           </label>
           <Button type="submit" disabled={status === 'pairing' || !token.trim() || !clientName.trim()}>
-            {status === 'pairing' ? 'Pairing…' : 'Pair browser'}
+            {status === 'pairing' ? <ShimmeringText text="Pairing…" /> : 'Pair browser'}
           </Button>
         </form>
         {(status === 'rejected' || status === 'unavailable') && (

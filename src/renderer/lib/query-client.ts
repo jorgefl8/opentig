@@ -17,6 +17,12 @@ export const queryClient = new QueryClient({
 });
 
 export const queryKeys = {
+  commitAuthorship: (repositoryId: string) => ['repository', repositoryId, 'commit-authorship'] as const,
+  githubAccounts: ['github', 'accounts'] as const,
+  githubCliStatus: ['github', 'cli-status'] as const,
+  githubAccount: (repositoryId: string) => ['repository', repositoryId, 'github-account'] as const,
+  aiRepositoryInstructions: (repositoryId: string) => ['repository', repositoryId, 'ai-instructions'] as const,
+  aiStatuses: (executablePathsKey: string) => ['ai', 'statuses', executablePathsKey] as const,
   repository: (repositoryId: string) => ['repository', repositoryId] as const,
   status: (repositoryId: string) => ['repository', repositoryId, 'status'] as const,
   branches: (repositoryId: string) => ['repository', repositoryId, 'branches'] as const,
@@ -33,6 +39,7 @@ export const queryKeys = {
   search: (repositoryId: string, input: object) => ['repository', repositoryId, 'search', input] as const,
   localRefs: (repositoryId: string) => ['repository', repositoryId, 'local-refs'] as const,
   branchDetails: (repositoryId: string, fullName: string) => ['repository', repositoryId, 'branch-details', fullName] as const,
+  remoteBranchDetails: (repositoryId: string, fullName: string) => ['repository', repositoryId, 'remote-branch-details', fullName] as const,
   branchPullRequest: (repositoryId: string, name: string) => ['repository', repositoryId, 'branch-pull-request', name] as const,
   worktreeDetails: (repositoryId: string, path: string) => ['repository', repositoryId, 'worktree-details', path] as const,
 };
@@ -40,4 +47,13 @@ export const queryKeys = {
 export function queryResourcesForScope(scope: RepositoryChangeScope, view: RefreshView): string[] {
   const operations = refreshOperationsForScope(scope, view);
   return (['status', 'branches', 'worktrees', 'files', 'history'] as const).filter((resource) => operations[resource]);
+}
+
+/** Reset only GitHub reads, cancelling old results before another identity loads. */
+export async function resetGitHubQueries(client: QueryClient, repositoryIds?: string[], inventoryChanged = false): Promise<void> {
+  const resources = new Set(['push-context', 'github-account', 'pulls', 'pull-request', 'pull-request-stack', 'pull-request-diff', 'pull-request-commit-diff', 'branch-pull-request']);
+  const predicate = (query: { queryKey: readonly unknown[] }) => ((!repositoryIds || inventoryChanged && query.queryKey[1] === 'accounts') && query.queryKey[0] === 'github')
+    || (query.queryKey[0] === 'repository' && (!repositoryIds || repositoryIds.includes(String(query.queryKey[1]))) && resources.has(String(query.queryKey[2])));
+  await client.cancelQueries({ predicate });
+  await client.resetQueries({ predicate });
 }

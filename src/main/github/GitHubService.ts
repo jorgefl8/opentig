@@ -1,4 +1,3 @@
-import { selectCli } from '../ai/cli-selection';
 import type { CliCandidate } from '../ai/CliResolver';
 import { parsePullRequestStack, parseStackMemberships, stackMembershipQuery } from './PullRequestStackParser';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
@@ -10,11 +9,12 @@ import type { CliProcessRunner, CliRunResult } from '../ai/CliProcessRunner';
 import type { CliResolver } from '../ai/CliResolver';
 import type { GitProcess } from '../git/GitProcess';
 import type { RepositoryService } from '../git/RepositoryService';
-import { parseGitHubRemote } from './GitHubRemoteParser';
-import { parseCreatedPullRequestUrl, parsePullRequestDetails, parsePullRequestList, PR_DETAIL_FIELDS, PR_SUMMARY_FIELDS, selectPullRequestsNewestFirst, sortPullRequestsNewestFirst } from './PullRequestParser';
+import { parseGitHubRemote, parseSshRemote } from './GitHubRemoteParser';
+import { GH_ENV, redactCommandToken, type GitHubCommandAuth } from './GitHubAccountAuth';
+import { parseBranchPullRequestList, parseCreatedPullRequestUrl, parsePullRequestDetails, parsePullRequestList, PR_DETAIL_FIELDS, PR_SUMMARY_FIELDS, selectPullRequestsNewestFirst, sortPullRequestsNewestFirst } from './PullRequestParser';
 
-// gh must never block waiting for input, page output, or emit ANSI noise.
-const GH_ENV = { GH_PROMPT_DISABLED: '1', GH_NO_UPDATE_NOTIFIER: '1', GH_PAGER: 'cat', NO_COLOR: '1' } as const;
+import { GitHubAccountsService } from './GitHubAccountsService';
+import type { GitHubAccountSelection } from '../../shared/github-accounts';
 const NETWORK_TIMEOUT_MS = 60_000;
 
 interface GhRunOptions {
@@ -23,75 +23,116 @@ interface GhRunOptions {
   timeoutMs?: number;
   maxOutputBytes?: number;
   stdin?: string;
+  auth: GitHubCommandAuth;
+  executable: CliCandidate;
 }
 
 export class GitHubService {
-  private statusCache: { at: number; value: GhCliStatus } | null = null;
+  gitAccess?: import('../git/RepositoryGitAccess').RepositoryGitAccess;
+  readonly accounts: GitHubAccountsService;
 
   constructor(
-    private readonly resolver: CliResolver,
+    resolver: CliResolver,
     private readonly runner: CliProcessRunner,
     private readonly git: GitProcess,
     private readonly repositories: RepositoryService,
-  ) {}
+    accounts?: GitHubAccountsService,
+  ) { this.accounts = accounts ?? new GitHubAccountsService(resolver, runner, git); }
 
   async status(forceRefresh = false): Promise<GhCliStatus> {
-    if (!forceRefresh && this.statusCache && Date.now() - this.statusCache.at < 30_000) return this.statusCache.value;
-    const value = await this.checkStatus(forceRefresh);
-    this.statusCache = { at: Date.now(), value };
-    return value;
+    if (forceRefresh) this.accounts.refreshAuthentication();
+    const detected = await this.accounts.detect(forceRefresh);
+    return { installed: !!detected.candidate, availability: detected.state === 'available' ? 'ready' : 'error',
+      authStatus: 'unknown', ...(detected.version ? { version: detected.version } : {}), checkedAt: new Date().toISOString() };
+  }
+
+  async repositoryAccount(repositoryId: string, forceRefresh = false) {
+    const repository = this.repositories.get(repositoryId);
+    const info = await this.repositoryInfo(repositoryId);
+    const remote = await this.remote(repositoryId);
+    if (forceRefresh && info.nameWithOwner && !this.gitAccess) {
+      this.accounts.refreshAuthentication();
+      try { await this.accounts.authenticate(repository, remote, info.nameWithOwner, 'gh-repository-account'); }
+      catch { /* The context carries the safe, actionable diagnostic. */ }
+    }
+    const access = await this.gitAccess?.status(repositoryId, forceRefresh, { remote, nameWithOwner: info.nameWithOwner });
+    return { ...this.accounts.context(repository, remote, info.nameWithOwner), ...(access ? { access } : {}) };
+  }
+
+  async setRepositoryAccount(repositoryId: string, selection: GitHubAccountSelection, expectedRevision?: number) {
+    if (expectedRevision !== undefined && expectedRevision !== this.accounts.revisionFor(this.repositories.get(repositoryId))) throw new Error('The repository account changed in another session. Reopen the account setup and review it.');
+    await this.accounts.setSelection(this.repositories.get(repositoryId), selection);
+    return this.repositoryAccount(repositoryId);
+  }
+
+  private async remote(repositoryId: string): Promise<string> {
+    const repository = this.repositories.get(repositoryId);
+    try {
+      const output = await this.git.run(repository.path, ['remote', 'get-url', '--', 'origin'], { operation: 'github-remote-url', readOnly: true, maxOutputBytes: 64 * 1024 });
+      return output.stdout.toString('utf8').trim();
+    } catch { return ''; }
   }
 
   async repositoryInfo(repositoryId: string): Promise<GitHubRepositoryInfo> {
-    const repository = this.repositories.get(repositoryId);
     try {
-      const output = await this.git.run(repository.path, ['config', '--get', 'remote.origin.url'], { operation: 'github-remote-url', readOnly: true, maxOutputBytes: 64 * 1024 });
-      const parsed = parseGitHubRemote(output.stdout.toString('utf8'));
+      const url = await this.remote(repositoryId);
+      let parsed = parseGitHubRemote(url);
+      if (!parsed) {
+        const ssh = parseSshRemote(url);
+        if (ssh) {
+          // -G evaluates the user's SSH configuration without connecting to the remote.
+          const config = await this.runner.run('ssh', ['-G', ...(ssh.port ? ['-p', ssh.port] : []), '--', ssh.destination], {
+            cwd: os.homedir(), timeoutMs: 5_000, maxOutputBytes: 64 * 1024,
+          });
+          const hostname = config.stdout.split(/\r?\n/).find((line) => /^hostname\s/i.test(line))?.trim().split(/\s+/)[1];
+          if (config.exitCode === 0 && hostname?.toLowerCase() === 'github.com') parsed = { nameWithOwner: ssh.nameWithOwner };
+        }
+      }
       return parsed ? { isGitHub: true, nameWithOwner: parsed.nameWithOwner } : { isGitHub: false, nameWithOwner: null };
     } catch {
-      // `git config --get` exits with 1 when origin has no URL configured.
+      // Missing origin, unavailable SSH, and invalid SSH configuration are not GitHub matches.
       return { isGitHub: false, nameWithOwner: null };
     }
   }
 
   async listPullRequests(repositoryId: string, states: PullRequestState[]): Promise<PullRequestSummary[]> {
-    const { repository, nameWithOwner } = await this.requireGitHub(repositoryId, 'gh-pr-list');
+    const { repository, nameWithOwner, auth, executable } = await this.requireGitHub(repositoryId, 'gh-pr-list');
     const results = await Promise.all(states.map((state) => this.runGh(
       ['pr', 'list', '-R', nameWithOwner, '--state', state.toLowerCase(), '--json', PR_SUMMARY_FIELDS, '--limit', '50'],
-      { cwd: repository.path, operation: 'gh-pr-list', timeoutMs: NETWORK_TIMEOUT_MS, maxOutputBytes: 4 * 1024 * 1024 },
+      { auth, executable, cwd: repository.path, operation: 'gh-pr-list', timeoutMs: NETWORK_TIMEOUT_MS, maxOutputBytes: 4 * 1024 * 1024 },
     )));
-    return this.withStackMembership(repository.path, nameWithOwner, selectPullRequestsNewestFirst(results.flatMap((result) => parsePullRequestList(result.stdout)), states));
+    return this.withStackMembership(repository.path, nameWithOwner, auth, executable, selectPullRequestsNewestFirst(results.flatMap((result) => parsePullRequestList(result.stdout)), states));
   }
 
   async findPullRequestForBranch(repositoryId: string, branchName: string): Promise<PullRequestSummary | null> {
     const operation = 'gh-pr-for-branch';
-    const { repository, nameWithOwner } = await this.requireGitHub(repositoryId, operation);
+    const { repository, nameWithOwner, auth, executable } = await this.requireGitHub(repositoryId, operation);
     const branch = validateRef(branchName, operation);
     // An older open PR must not be hidden by newer closed PRs for a reused branch.
     const openResult = await this.runGh(
-      ['pr', 'list', '-R', nameWithOwner, '--head', branch, '--state', 'open', '--json', PR_SUMMARY_FIELDS, '--limit', '10'],
-      { cwd: repository.path, operation, timeoutMs: NETWORK_TIMEOUT_MS, maxOutputBytes: 1024 * 1024 },
+      ['pr', 'list', '-R', nameWithOwner, '--head', branch, '--state', 'open', '--json', `${PR_SUMMARY_FIELDS},headRepository`, '--limit', '10'],
+      { auth, executable, cwd: repository.path, operation, timeoutMs: NETWORK_TIMEOUT_MS, maxOutputBytes: 1024 * 1024 },
     );
-    const openPull = sortPullRequestsNewestFirst(parsePullRequestList(openResult.stdout)).find((pull) => pull.state === 'OPEN');
+    const openPull = sortPullRequestsNewestFirst(parseBranchPullRequestList(openResult.stdout, nameWithOwner, branch)).find((pull) => pull.state === 'OPEN');
     if (openPull) return openPull;
     const result = await this.runGh(
-      ['pr', 'list', '-R', nameWithOwner, '--head', branch, '--state', 'all', '--json', PR_SUMMARY_FIELDS, '--limit', '10'],
-      { cwd: repository.path, operation, timeoutMs: NETWORK_TIMEOUT_MS, maxOutputBytes: 1024 * 1024 },
+      ['pr', 'list', '-R', nameWithOwner, '--head', branch, '--state', 'all', '--json', `${PR_SUMMARY_FIELDS},headRepository`, '--limit', '10'],
+      { auth, executable, cwd: repository.path, operation, timeoutMs: NETWORK_TIMEOUT_MS, maxOutputBytes: 1024 * 1024 },
     );
-    return sortPullRequestsNewestFirst(parsePullRequestList(result.stdout))[0] ?? null;
+    return sortPullRequestsNewestFirst(parseBranchPullRequestList(result.stdout, nameWithOwner, branch))[0] ?? null;
   }
 
   async getPullRequest(repositoryId: string, prNumber: number): Promise<PullRequestDetails> {
-    const { repository, nameWithOwner } = await this.requireGitHub(repositoryId, 'gh-pr-view');
+    const { repository, nameWithOwner, auth, executable } = await this.requireGitHub(repositoryId, 'gh-pr-view');
     const result = await this.runGh(
       ['pr', 'view', String(prNumber), '-R', nameWithOwner, '--json', PR_DETAIL_FIELDS],
-      { cwd: repository.path, operation: 'gh-pr-view', timeoutMs: NETWORK_TIMEOUT_MS, maxOutputBytes: 4 * 1024 * 1024 },
+      { auth, executable, cwd: repository.path, operation: 'gh-pr-view', timeoutMs: NETWORK_TIMEOUT_MS, maxOutputBytes: 4 * 1024 * 1024 },
     );
     const details = parsePullRequestDetails(result.stdout);
-    return (await this.withStackMembership(repository.path, nameWithOwner, [details]))[0]!;
+    return (await this.withStackMembership(repository.path, nameWithOwner, auth, executable, [details]))[0]!;
   }
 
-  private async withStackMembership<T extends PullRequestSummary>(cwd: string, nameWithOwner: string, pulls: T[]): Promise<T[]> {
+  private async withStackMembership<T extends PullRequestSummary>(cwd: string, nameWithOwner: string, auth: GitHubCommandAuth, executable: CliCandidate, pulls: T[]): Promise<T[]> {
     const [owner, name] = nameWithOwner.split('/');
     const enriched: T[] = [];
     // Bound query size and avoid one request per PR. Metadata is optional: normal PRs
@@ -101,7 +142,7 @@ export class GitHubService {
       try {
         const numbers = batch.map((pr) => pr.number);
         const result = await this.runGh(['api', 'graphql', '-f', `owner=${owner}`, '-f', `name=${name}`, '-f', `query=${stackMembershipQuery(numbers)}`], {
-          cwd, operation: 'gh-pr-stack-membership', timeoutMs: 10_000, maxOutputBytes: 1024 * 1024,
+          auth, executable, cwd, operation: 'gh-pr-stack-membership', timeoutMs: 10_000, maxOutputBytes: 1024 * 1024,
         });
         const memberships = parseStackMemberships(result.stdout, numbers);
         enriched.push(...batch.map((pr) => {
@@ -115,8 +156,8 @@ export class GitHubService {
 
   async getPullRequestStack(repositoryId: string, prNumber: number): Promise<PullRequestStack | null> {
     const operation = 'gh-pr-stack';
-    const { repository, nameWithOwner } = await this.requireGitHub(repositoryId, operation);
-    const options = { cwd: repository.path, operation, timeoutMs: NETWORK_TIMEOUT_MS, maxOutputBytes: 4 * 1024 * 1024 };
+    const { repository, nameWithOwner, auth, executable } = await this.requireGitHub(repositoryId, operation);
+    const options = { auth, executable, cwd: repository.path, operation, timeoutMs: NETWORK_TIMEOUT_MS, maxOutputBytes: 4 * 1024 * 1024 };
     const read = async (endpoint: string) => this.runGh(['api', endpoint], options);
     let listing: CliRunResult;
     try { listing = await read(`repos/${nameWithOwner}/stacks?pull_request=${prNumber}`); }
@@ -135,10 +176,10 @@ export class GitHubService {
   }
 
   async getPullRequestDiff(repositoryId: string, prNumber: number): Promise<DiffResult> {
-    const { repository, nameWithOwner } = await this.requireGitHub(repositoryId, 'gh-pr-diff');
+    const { repository, nameWithOwner, auth, executable } = await this.requireGitHub(repositoryId, 'gh-pr-diff');
     const result = await this.runGh(
       ['pr', 'diff', String(prNumber), '-R', nameWithOwner],
-      { cwd: repository.path, operation: 'gh-pr-diff', timeoutMs: NETWORK_TIMEOUT_MS, maxOutputBytes: 32 * 1024 * 1024 },
+      { auth, executable, cwd: repository.path, operation: 'gh-pr-diff', timeoutMs: NETWORK_TIMEOUT_MS, maxOutputBytes: 32 * 1024 * 1024 },
     );
     const patch = result.stdout;
     const binary = /Binary files .* differ|GIT binary patch/.test(patch);
@@ -147,13 +188,13 @@ export class GitHubService {
 
   async getPullRequestCommitDiff(repositoryId: string, oid: string): Promise<DiffResult> {
     const operation = 'gh-pr-commit-diff';
-    const { repository, nameWithOwner } = await this.requireGitHub(repositoryId, operation);
+    const { repository, nameWithOwner, auth, executable } = await this.requireGitHub(repositoryId, operation);
     if (!/^[0-9a-f]{40,64}$/i.test(oid)) {
       throw new GhOperationError({ code: 'GH_PROCESS_FAILED', operation, message: 'The commit is not valid.' });
     }
     const result = await this.runGh(
       ['api', `repos/${nameWithOwner}/commits/${oid}`, '--header', 'Accept: application/vnd.github.diff'],
-      { cwd: repository.path, operation, timeoutMs: NETWORK_TIMEOUT_MS, maxOutputBytes: 32 * 1024 * 1024 },
+      { auth, executable, cwd: repository.path, operation, timeoutMs: NETWORK_TIMEOUT_MS, maxOutputBytes: 32 * 1024 * 1024 },
     );
     const patch = result.stdout;
     const binary = /Binary files .* differ|GIT binary patch/.test(patch);
@@ -162,7 +203,13 @@ export class GitHubService {
 
   async createPullRequest(input: CreatePullRequestInput): Promise<CreatePullRequestResult> {
     const operation = 'gh-pr-create';
-    const { repository, nameWithOwner } = await this.requireGitHub(input.repositoryId, operation);
+    const { repository, nameWithOwner, auth, executable, context } = await this.requireGitHub(input.repositoryId, operation);
+    const verifyAccount = () => {
+      if (input.expectedAccount && (input.expectedAccount.revision !== this.accounts.revisionFor(repository) || input.expectedAccount.revision !== context.revision || input.expectedAccount.login.toLowerCase() !== context.login?.toLowerCase())) {
+        throw new GhOperationError({ code: 'GH_ACCOUNT_UNRESOLVED', operation, message: 'The GitHub account changed. Review the current identity before creating the pull request.' });
+      }
+    };
+    verifyAccount();
     const status = await this.repositories.status(input.repositoryId, false);
     if (status.detached || status.unborn || !status.branch) {
       throw new GhOperationError({ code: 'GH_PROCESS_FAILED', operation, message: 'Check out a branch before creating a pull request.' });
@@ -185,7 +232,8 @@ export class GitHubService {
       await writeFile(bodyPath, input.body, { encoding: 'utf8', mode: 0o600 });
       const args = ['pr', 'create', '-R', nameWithOwner, '--title', input.title, '--body-file', bodyPath, '--base', base, '--head', head];
       if (input.draft) args.push('--draft');
-      const result = await this.runGh(args, { cwd: repository.path, operation, timeoutMs: 120_000, maxOutputBytes: 1024 * 1024 });
+      verifyAccount();
+      const result = await this.runGh(args, { auth, executable, cwd: repository.path, operation, timeoutMs: 120_000, maxOutputBytes: 1024 * 1024 });
       const created = parseCreatedPullRequestUrl(result.stdout);
       if (!created) throw new GhOperationError({ code: 'GH_INVALID_OUTPUT', operation, message: 'GitHub CLI did not return the URL of the new pull request.' });
       return created;
@@ -194,40 +242,18 @@ export class GitHubService {
     }
   }
 
-  private async checkStatus(forceRefresh: boolean): Promise<GhCliStatus> {
-    const checkedAt = new Date().toISOString();
-    const detected = await selectCli(this.resolver, this.runner, 'gh', { forceRefresh, runOptions: { cwd: os.tmpdir(), env: { ...GH_ENV } } });
-    const executable = detected.candidate;
-    if (!executable) {
-      return { installed: false, availability: 'error', authStatus: 'unknown', message: 'Install GitHub CLI (cli.github.com) to work with pull requests.', checkedAt };
-    }
-    if (detected.state !== 'available') return { installed: true, availability: 'error', authStatus: 'unknown', message: 'GitHub CLI was found but could not run. Check its installation and dependencies.', checkedAt };
-    const versionLabel = detected.version ?? '';
-    const auth = await this.run(executable, ['auth', 'status', '--hostname', 'github.com', '--active'], { cwd: os.tmpdir(), operation: 'gh-auth-status' });
-    if (auth.exitCode !== 0) {
-      return { installed: true, availability: 'error', authStatus: 'unauthenticated', version: versionLabel, message: 'Run gh auth login.', checkedAt };
-    }
-    return { installed: true, availability: 'ready', authStatus: 'authenticated', version: versionLabel, checkedAt };
-  }
-
   private async requireGitHub(repositoryId: string, operation: string) {
     const repository = this.repositories.get(repositoryId);
     const info = await this.repositoryInfo(repositoryId);
-    if (!info.isGitHub || !info.nameWithOwner) {
-      throw new GhOperationError({ code: 'GH_NOT_GITHUB_REPO', operation, message: 'The origin remote does not point to a GitHub repository.' });
-    }
-    const status = await this.status();
-    if (!status.installed) throw new GhOperationError({ code: 'GH_CLI_NOT_FOUND', operation, message: 'GitHub CLI is not installed.' });
-    if (status.authStatus === 'unauthenticated') throw new GhOperationError({ code: 'GH_AUTH_REQUIRED', operation, message: 'Sign in with gh auth login to continue.' });
-    return { repository, nameWithOwner: info.nameWithOwner };
+    if (!info.isGitHub || !info.nameWithOwner) throw new GhOperationError({ code: 'GH_NOT_GITHUB_REPO', operation, message: 'The origin remote does not point to a GitHub repository.' });
+    const remote = await this.remote(repositoryId);
+    const authenticated = await this.accounts.authenticate(repository, remote, info.nameWithOwner, operation);
+    return { repository, nameWithOwner: info.nameWithOwner, ...authenticated };
   }
 
   private async runGh(args: string[], options: GhRunOptions): Promise<CliRunResult> {
-    const detected = await selectCli(this.resolver, this.runner, 'gh', { runOptions: { cwd: options.cwd, env: { ...GH_ENV } } });
-    const executable = detected.state === 'available' ? detected.candidate : undefined;
-    if (!executable) throw new GhOperationError({ code: 'GH_CLI_NOT_FOUND', operation: options.operation, message: 'GitHub CLI is not installed.' });
-    const result = await this.run(executable, args, options);
-    if (result.exitCode !== 0) throw classifyFailure(result, options.operation);
+    const result = await this.run(options.executable, args, options);
+    if (result.exitCode !== 0) throw classifyFailure({ ...result, stdout: redactCommandToken(result.stdout, options.auth), stderr: redactCommandToken(result.stderr, options.auth) }, options.operation);
     return result;
   }
 
@@ -235,13 +261,15 @@ export class GitHubService {
     try {
       return await this.runner.run(executable.executable, args, {
         cwd: options.cwd,
-        env: { ...executable.env, ...GH_ENV },
+        env: { ...executable.env, ...GH_ENV, ...options.auth?.env },
+        ...(options.auth?.removeEnv ? { removeEnv: options.auth.removeEnv } : {}),
         ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
         ...(options.maxOutputBytes !== undefined ? { maxOutputBytes: options.maxOutputBytes } : {}),
         ...(options.stdin !== undefined ? { stdin: options.stdin } : {}),
       });
     } catch (error) {
-      throw mapRunnerError(error, options.operation);
+      const mapped = mapRunnerError(error, options.operation);
+      throw new GhOperationError({ ...mapped.detail, message: redactCommandToken(mapped.message, options.auth ?? {}) });
     }
   }
 }
@@ -268,6 +296,8 @@ function classifyFailure(result: CliRunResult, operation: string): GhOperationEr
   if (/could not resolve|no such host|connection refused|connection reset|network|dial tcp|tls handshake/.test(raw)) {
     return new GhOperationError({ code: 'GH_PROCESS_FAILED', operation, message: 'Could not connect to GitHub. Check your network and try again.', exitCode: result.exitCode, retryable: true });
   }
+  if (/403|resource not accessible|insufficient.*scope|saml|sso/.test(raw)) return new GhOperationError({ code: 'GH_ACCESS_DENIED', operation, message: 'This GitHub account cannot perform the operation. Check repository permissions, token permissions and organisation SSO policies.', exitCode: result.exitCode });
+  if (/404|could not resolve to a repository/.test(raw) && operation !== 'gh-pr-stack') return new GhOperationError({ code: 'GH_ACCESS_DENIED', operation, message: 'The repository was not found or is not accessible with this GitHub account.', exitCode: result.exitCode });
   const detail = firstLine(result.stderr) || firstLine(result.stdout);
   return new GhOperationError({ code: 'GH_PROCESS_FAILED', operation, message: detail || 'GitHub CLI could not complete the operation.', exitCode: result.exitCode });
 }

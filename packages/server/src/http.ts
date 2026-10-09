@@ -5,8 +5,10 @@ import { networkInterfaces } from 'node:os';
 import type { OpenTigRuntime } from '../../../src/main/runtime/OpenTigRuntime';
 import type { OpenTigServerIdentity } from '../../../src/shared/server-protocol';
 import type { OpenTigOwnerSession } from '../../../src/shared/server-protocol';
+import type { OpenTigBrowserWebAccessStatus } from '../../../src/shared/web-access';
 import { OpenTigSessionAuth } from './auth';
 import { isAllowedOrigin, requestOriginIsSecure } from './origin';
+import { HTML_PREVIEW_BODY_LIMIT, HTML_PREVIEW_CSP, htmlPreviewDocumentFromFormBody } from './html-preview';
 import { serveStatic, STATIC_SECURITY_HEADERS } from './static';
 
 import type { DesktopUpdatesApi } from '../../../src/shared/desktop-updates';
@@ -26,6 +28,7 @@ export interface OpenTigHttpContext {
   identity: OpenTigServerIdentity;
   mode: OpenTigServerMode;
   isReady(): boolean;
+  listenerAddress(): { host: string; port: number };
   sessionConnectionCount(sessionId: string): number;
   onSessionsRevoked(sessionIds: readonly string[]): void;
   logger: OpenTigServerLogger;
@@ -101,6 +104,20 @@ async function handleRequest(context: OpenTigHttpContext, request: IncomingMessa
     return sendJson(response, 404, { error: 'Not found.' });
   }
 
+  if (method === 'GET' && rawPath === '/api/auth/web-access') {
+    if (!context.auth.authenticate(request.headers)) return sendJson(response, 401, { error: 'Authentication required.' });
+    const listener = context.listenerAddress();
+    const status: OpenTigBrowserWebAccessStatus = {
+      webAccessEnabled: context.auth.descriptor().browserAccessEnabled,
+      pairingAvailable: context.auth.descriptor().pairingAvailable,
+      listeningOnLan: !isLoopbackAddress(listener.host),
+      listenerHost: listener.host,
+      actualPort: listener.port,
+      ready: context.isReady(),
+    };
+    return sendJson(response, 200, status);
+  }
+
   if (method === 'GET' && rawPath === '/api/auth/sessions') {
     const currentSessionId = context.auth.authenticate(request.headers);
     if (!currentSessionId) return sendJson(response, 401, { error: 'Authentication required.' });
@@ -123,6 +140,19 @@ async function handleRequest(context: OpenTigHttpContext, request: IncomingMessa
   if (method === 'POST' && rawPath.startsWith('/api/')) {
     if (!isAllowedOrigin(request)) return sendJson(response, 403, { error: 'Forbidden origin.' });
 
+    if (rawPath === '/api/html-preview') return handleHtmlPreview(context, request, response);
+
+    if (rawPath === '/api/auth/pairing-link') {
+      if (!context.auth.authenticate(request.headers)) return sendJson(response, 401, { error: 'Authentication required.' });
+      if (!context.auth.descriptor().browserAccessEnabled) return sendJson(response, 403, { error: 'Web access is disabled.', code: 'WEB_ACCESS_DISABLED' });
+      if (!context.isReady()) return sendJson(response, 503, { error: 'Server is not ready.' });
+      // Origin has passed the same-authority check, including trusted loopback proxies.
+      const url = new URL('/pair', request.headers.origin!);
+      const pairing = context.auth.createPairingToken();
+      url.hash = new URLSearchParams({ token: pairing.token }).toString();
+      return sendJson(response, 200, { url: url.href, expiresAt: pairing.expiresAt });
+    }
+
     if (rawPath === '/api/auth/renew') {
       const cookie = await context.auth.renewBrowserCookie(request.headers, requestOriginIsSecure(request));
       if (!cookie) return sendJson(response, 401, { error: 'Authentication required.' });
@@ -130,6 +160,7 @@ async function handleRequest(context: OpenTigHttpContext, request: IncomingMessa
     }
 
     if (rawPath === '/api/auth/pair' || rawPath === '/api/auth/desktop') {
+      if (rawPath === '/api/auth/pair' && !context.auth.descriptor().browserAccessEnabled) return sendJson(response, 403, { error: 'Web access is disabled.', code: 'WEB_ACCESS_DISABLED' });
       const body = await readJsonObject(request, response);
       if (!body) return;
       const secure = requestOriginIsSecure(request);
@@ -141,6 +172,7 @@ async function handleRequest(context: OpenTigHttpContext, request: IncomingMessa
       } else {
         cookie = await context.auth.exchangeDesktopSecret(body.secret);
       }
+      if (!cookie && rawPath === '/api/auth/pair' && !context.auth.descriptor().browserAccessEnabled) return sendJson(response, 403, { error: 'Web access is disabled.', code: 'WEB_ACCESS_DISABLED' });
       if (!cookie) return sendJson(response, 401, { error: 'Authentication failed.' });
       return sendJson(response, 204, null, { 'Set-Cookie': cookie });
     }
@@ -337,6 +369,7 @@ async function handleLocalAdminPair(
   }
   const origin = normalizePublicOrigin(body.publicOrigin);
   if (!origin) return sendJson(response, 400, { error: 'Invalid public origin.' });
+  if (!context.auth.descriptor().browserAccessEnabled) return sendJson(response, 403, { error: 'Web access is disabled.', code: 'WEB_ACCESS_DISABLED' });
   const pairing = admin.createPairingToken();
   const url = new URL('/pair', origin);
   url.hash = new URLSearchParams({ token: pairing.token }).toString();
@@ -377,6 +410,67 @@ function normalizePublicOrigin(value: string): string | null {
   } catch {
     return null;
   }
+}
+
+async function handleHtmlPreview(context: OpenTigHttpContext, request: IncomingMessage, response: ServerResponse): Promise<void> {
+  if (!context.auth.authenticate(request.headers)) {
+    sendHtmlPreview(response, 401, '<!doctype html><meta charset="utf-8"><title>Preview</title><p>Sign in to preview HTML.</p>');
+    request.resume();
+    return;
+  }
+  if (request.headers['content-type']?.split(';', 1)[0]?.trim().toLowerCase() !== 'application/x-www-form-urlencoded') {
+    sendHtmlPreview(response, 415, '<!doctype html><meta charset="utf-8"><title>Preview</title><p>The preview request format is not supported.</p>');
+    request.resume();
+    return;
+  }
+  const body = await readLimitedText(request, response, HTML_PREVIEW_BODY_LIMIT);
+  if (body === null) return;
+  const document = htmlPreviewDocumentFromFormBody(body);
+  if (document === null) {
+    return sendHtmlPreview(response, 400, '<!doctype html><meta charset="utf-8"><title>Preview</title><p>The preview request was incomplete.</p>');
+  }
+  sendHtmlPreview(response, 200, document);
+}
+
+function sendHtmlPreview(response: ServerResponse, status: number, html: string): void {
+  const body = Buffer.from(html, 'utf8');
+  response.writeHead(status, {
+    'Cache-Control': 'no-store',
+    'Content-Length': String(body.byteLength),
+    'Content-Security-Policy': HTML_PREVIEW_CSP,
+    'Content-Type': 'text/html; charset=utf-8',
+    'Permissions-Policy': STATIC_SECURITY_HEADERS['Permissions-Policy'],
+    'Referrer-Policy': 'no-referrer',
+    'X-Content-Type-Options': 'nosniff',
+  });
+  response.end(body);
+}
+
+async function readLimitedText(request: IncomingMessage, response: ServerResponse, limit: number): Promise<string | null> {
+  const declared = request.headers['content-length'];
+  if (Array.isArray(declared) || (declared !== undefined && !/^\d+$/.test(declared))) {
+    sendHtmlPreview(response, 400, '<!doctype html><meta charset="utf-8"><title>Preview</title><p>The preview request was incomplete.</p>');
+    request.resume();
+    return null;
+  }
+  if (declared !== undefined && Number(declared) > limit) {
+    sendHtmlPreview(response, 413, '<!doctype html><meta charset="utf-8"><title>Preview</title><p>This HTML file is too large to preview.</p>');
+    request.resume();
+    return null;
+  }
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of request) {
+    const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    size += bytes.byteLength;
+    if (size > limit) {
+      sendHtmlPreview(response, 413, '<!doctype html><meta charset="utf-8"><title>Preview</title><p>This HTML file is too large to preview.</p>');
+      request.resume();
+      return null;
+    }
+    chunks.push(bytes);
+  }
+  return Buffer.concat(chunks).toString('utf8');
 }
 
 async function readJsonObject(request: IncomingMessage, response: ServerResponse): Promise<Record<string, unknown> | null> {

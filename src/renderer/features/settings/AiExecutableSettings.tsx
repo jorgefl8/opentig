@@ -23,7 +23,7 @@ export function AiExecutableSettings({ harness, preferences, status, onPreferenc
   };
   return <Accordion className="ai-executable-settings">
     <AccordionItem value="cli-detection">
-      <AccordionTrigger className="ai-executable-trigger">
+      <AccordionTrigger className="ai-executable-trigger p-3">
         <span className="ai-executable-heading">
           <IconAdjustments aria-hidden="true" />
           <span><strong>Advanced CLI detection</strong><small>Executable path and diagnostics</small></span>

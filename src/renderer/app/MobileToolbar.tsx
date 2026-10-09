@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef, type ReactNode } from 'react';
-import { IconArrowDown, IconArrowLeft, IconArrowUp, IconBrandGithub, IconDots, IconFiles, IconGitBranch, IconGitPullRequest, IconPlus, IconRefresh, IconSettings, IconX } from '@tabler/icons-react';
+import { IconArrowDown, IconArrowLeft, IconArrowUp, IconBrandGithub, IconDots, IconFiles, IconGitBranch, IconPlus, IconRefresh, IconSettings, IconX } from '@tabler/icons-react';
 import { Button } from '@/components/ui/button';
+import { isDevProfile } from '@/lib/app-identity';
+import { AppName } from '@/components/AppName';
 import { MobileSheet } from '@/components/MobileSheet';
 import { DesktopUpdateIndicator } from '@/features/settings/UpdateSettings';
 import { openOnGitHub } from '@/features/pulls/gh-utils';
@@ -8,6 +10,7 @@ import { needsBranchPublication } from '@/features/repositories/project-sync';
 import { getVsCodeFileIconUrl } from '@/lib/vscode-icons';
 import { RepositoryFaviconImage } from '@/features/repositories/RepositoryFavicon';
 import type { ToolbarProps } from './Toolbar';
+import { BranchPullRequestMenu } from './BranchPullRequestMenu';
 
 export function MobileToolbar({ props, repositoryControl, worktreeControl, branchControl, favicon, contextOpen, onContextOpen, syncBusy }: {
   props: ToolbarProps;
@@ -32,6 +35,7 @@ export function MobileToolbar({ props, repositoryControl, worktreeControl, branc
           <RepositoryFaviconImage src={favicon} /><span><strong>{props.repository.repositoryName}</strong><small><IconGitBranch />{props.status?.branch ?? 'Detached HEAD'}</small></span>
         </button>}
       <div className="mobile-toolbar-actions">
+        {isDevProfile && <AppName />}
         {props.openFiles.tabs.length > 0 && <Button variant="ghost" size="sm" className="mobile-open-files-trigger" aria-label={`Open files (${props.openFiles.tabs.length})`} onClick={() => setFilesOpen(true)}><IconFiles /><span>{props.openFiles.tabs.length}</span>{props.openFiles.tabs.some((tab) => tab.dirty) && <span className="mobile-unsaved-dot" aria-label="Unsaved files" />}</Button>}
         <DesktopUpdateIndicator />
         <Button variant="ghost" size="icon" aria-label="Repository context and settings" onClick={() => onContextOpen(true)}><IconDots /></Button>
@@ -49,7 +53,7 @@ export function MobileToolbar({ props, repositoryControl, worktreeControl, branc
         <Button variant="outline" size="sm" disabled={syncDisabled || (!publish && !(props.status && props.status.ahead > 0))} onClick={() => contextAction(props.onPush)}><IconArrowUp />{publish ? 'Publish' : 'Push'}{props.status?.ahead ? ` (${props.status.ahead})` : ''}</Button>
       </div>
       <button className="mobile-sheet-action" onClick={() => contextAction(props.onOpen)}><IconPlus /><span>Open repository</span></button>
-      {props.branchPullRequest && <button className="mobile-sheet-action" onClick={() => contextAction(() => openOnGitHub(props.branchPullRequest!.url))}><IconGitPullRequest /><span>Open PR #{props.branchPullRequest.number}</span></button>}
+      {props.branchPullRequest && <BranchPullRequestMenu key={props.branchPullRequest.url} pullRequest={props.branchPullRequest} onOpenPullRequest={props.onOpenPullRequest} mobile onNavigate={() => onContextOpen(false)} />}
       {props.githubInfo?.isGitHub && props.githubInfo.nameWithOwner && <button className="mobile-sheet-action" onClick={() => contextAction(() => openOnGitHub(`https://github.com/${props.githubInfo!.nameWithOwner}`))}><IconBrandGithub /><span>Open on GitHub</span></button>}
       <button className="mobile-sheet-action" onClick={() => contextAction(() => props.onSettingsOpen(true))}><IconSettings /><span>Settings</span></button>
     </MobileSheet>

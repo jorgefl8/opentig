@@ -1,3 +1,4 @@
+import { withGenerationEnvironment } from '../GenerationEnvironment';
 import { detectionFailure, detectionFields, requireCandidate, runCandidate, selectCli } from '../cli-selection';
 import type { CliCandidate } from '../CliResolver';
 import { EMPTY_AI_USAGE } from '../../../shared/ai-log';
@@ -27,11 +28,10 @@ export class OpenCodeProvider implements AiProvider {
     const executable = requireCandidate(detected, this.id);
     const version = detected.version ?? '';
     const cliName = openCodeCliName(executable.executable);
-    const [auth, catalog] = await Promise.all([
+    const [auth, models] = await Promise.all([
       runCandidate(this.runner, executable, ['auth', 'list', '--format', 'json', '--standalone']),
-      runCandidate(this.runner, executable, ['models', '--standalone'], { timeoutMs: 30_000 }),
+      this.loadModels(executable),
     ]);
-    const models = catalog.exitCode === 0 ? parseOpenCodeModels(catalog.stdout) : [DEFAULT_MODEL];
     let authStatus = parseOpenCodeAuthList(auth.stdout, auth.exitCode);
     // Free catalog models can work without a stored credential; do not block generation.
     if (authStatus === 'unauthenticated' && models.length > 1) authStatus = 'unknown';
@@ -39,8 +39,24 @@ export class OpenCodeProvider implements AiProvider {
     return {
       id: this.id, label: 'OpenCode', availability: models.length > 1 ? (confirmed ? 'ready' : 'warning') : (authStatus === 'unauthenticated' ? 'error' : 'warning'),
       ...detectionFields(detected), installed: true, authStatus, cliName, version, models, checkedAt,
-      ...(authStatus === 'unauthenticated' ? { message: `Run ${openCodeLoginCommand(cliName)}.` } : !confirmed ? { message: 'Could not confirm authentication for the selected provider.' } : {}),
+      ...(authStatus === 'unauthenticated' ? { message: `Run ${openCodeLoginCommand(cliName)}.` }
+        : models.length === 1 ? { message: `Could not load the OpenCode model catalog. Check again or verify that ${cliName} models lists your models in a terminal.` }
+          : !confirmed ? { message: 'Could not confirm authentication for the selected provider.' } : {}),
     };
+  }
+
+  private async loadModels(executable: CliCandidate) {
+    // Some v2 private servers return an empty catalog even when the service has models.
+    for (const args of [['models', '--standalone'], ['models']]) {
+      try {
+        const catalog = await runCandidate(this.runner, executable, args, { timeoutMs: 30_000 });
+        const models = catalog.exitCode === 0 ? parseOpenCodeModels(catalog.stdout) : [DEFAULT_MODEL];
+        if (models.length > 1) return models;
+      } catch {
+        // Try the service catalog; metadata failures do not prove a missing CLI.
+      }
+    }
+    return [DEFAULT_MODEL];
   }
 
   async generate(input: ProviderGenerateInput) {
@@ -59,24 +75,26 @@ export class OpenCodeProvider implements AiProvider {
   }
 
   private async generateV2(executable: CliCandidate, input: ProviderGenerateInput) {
-    const server = await startOpenCodeV2Server({ executable: executable.executable, env: executable.env, cwd: input.repositoryPath, timeoutMs: 15_000, signal: input.signal }).catch((error) => {
-      if (error instanceof AiOperationError) throw error;
-      throw new AiOperationError({ code: 'AI_PROCESS_FAILED', operation: 'opencode-server', harness: this.id, message: 'Could not start the local OpenCode server.', retryable: true });
+    return withGenerationEnvironment('opencode', executable.env, async (options) => {
+      const server = await startOpenCodeV2Server({ executable: executable.executable, env: { ...executable.env, ...options.env }, removeEnv: options.removeEnv ?? [], cwd: options.cwd!, timeoutMs: 15_000, signal: input.signal }).catch((error) => {
+        if (error instanceof AiOperationError) throw error;
+        throw new AiOperationError({ code: 'AI_PROCESS_FAILED', operation: 'opencode-server', harness: this.id, message: 'Could not start the local OpenCode server.', retryable: true });
+      });
+      this.servers.add(server);
+      try {
+        const text = await generateOpenCodeV2Text(server, { prompt: `Reply with a single JSON object satisfying this JSON Schema:\n${JSON.stringify(input.schema)}\n\n${input.prompt}`, model: input.model, cwd: options.cwd!, signal: input.signal });
+        return { output: parseJsonPayload(text), usage: { ...EMPTY_AI_USAGE } };
+      } catch (error) {
+        if (input.signal.aborted) throw new AiOperationError({ code: 'AI_CANCELLED', operation: 'opencode-generate', harness: this.id, message: 'Generation canceled.' });
+        if (error instanceof AiOperationError) throw error;
+        const synthetic = { exitCode: 1, stdout: '', stderr: error instanceof Error ? error.message : '' };
+        requireSuccess(synthetic, this.id, 'opencode-generate');
+        throw error;
+      } finally {
+        server.close();
+        this.servers.delete(server);
+      }
     });
-    this.servers.add(server);
-    try {
-      const text = await generateOpenCodeV2Text(server, { prompt: `Reply with a single JSON object satisfying this JSON Schema:\n${JSON.stringify(input.schema)}\n\n${input.prompt}`, model: input.model, cwd: input.repositoryPath, signal: input.signal });
-      return { output: parseJsonPayload(text), usage: { ...EMPTY_AI_USAGE } };
-    } catch (error) {
-      if (input.signal.aborted) throw new AiOperationError({ code: 'AI_CANCELLED', operation: 'opencode-generate', harness: this.id, message: 'Generation canceled.' });
-      if (error instanceof AiOperationError) throw error;
-      const synthetic = { exitCode: 1, stdout: '', stderr: error instanceof Error ? error.message : '' };
-      requireSuccess(synthetic, this.id, 'opencode-generate');
-      throw error;
-    } finally {
-      server.close();
-      this.servers.delete(server);
-    }
   }
 
   private async detect(forceRefresh = false, signal?: AbortSignal) {

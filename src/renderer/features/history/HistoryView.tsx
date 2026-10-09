@@ -64,7 +64,7 @@ export function HistoryView({ repositoryId, upstream, readOnly, operation, canPu
         {!mobile && <Tooltip><TooltipTrigger render={<button className="history-option" aria-pressed={compact} onClick={() => setCompact(!compact)} />}>{compact ? 'Compact' : 'Comfortable'}</TooltipTrigger><TooltipContent>Change row density without moving the diff viewer</TooltipContent></Tooltip>}
       </div>
       {!upstream && commits.length > 0 && <div className="history-upstream-notice" role="status"><span>Publish this branch to configure an upstream and distinguish local from published commits.</span>
-        {canPublish && <Button variant="outline" size="xs" disabled={pushBusy || readOnly || Boolean(operation)} onClick={onPublish}>{pushBusy ? 'Publishing…' : 'Publish branch'}</Button>}
+        {canPublish && <Button variant="outline" size="xs" disabled={pushBusy || readOnly || Boolean(operation)} onClick={onPublish}>{pushBusy ? <ShimmeringText text="Publishing…" /> : 'Publish branch'}</Button>}
       </div>}
       {upstream && localCount > 0 && <div className="history-local-summary">↑ {localCount} {localCount === 1 ? 'local commit' : 'local commits'} in loaded history</div>}
       <div ref={scrollRef} className="history-scroll" role="list" aria-label="Commit history">
@@ -86,7 +86,7 @@ export function HistoryView({ repositoryId, upstream, readOnly, operation, canPu
                 </div>
               );
             })}
-            {nextCursor && <Button variant="ghost" className="history-more" style={{ top: commitVirtualizer.getTotalSize() }} disabled={loading} onClick={onMore}>{loading ? 'Loading…' : 'Load more'}</Button>}
+            {nextCursor && <Button variant="ghost" className="history-more" style={{ top: commitVirtualizer.getTotalSize() }} disabled={loading} onClick={onMore}>{loading ? <ShimmeringText text="Loading…" /> : 'Load more'}</Button>}
           </div>
         )}
       </div>

@@ -97,6 +97,15 @@ authoritative state.
 
 ## Data and persistence
 
+`GitHubAccountsService` resolves a repository's account once per GitHub operation
+and supplies the same child-process authentication to its REST, GraphQL and `gh`
+commands. Explicit choices live in `settings.json`, keyed by the canonical Git
+common directory. Only allowlisted account metadata is cached on disk. A
+`github.accounts-changed` runtime event cancels and resets GitHub queries across
+connected clients; Git queries remain intact. PR creation includes the reviewed
+login and authentication revision so a changed identity cannot silently publish.
+Protocol version 2 adds this event and the account-management commands.
+
 Desktop paths are derived from Electron's user-data directory:
 
 | Path | Purpose |
@@ -104,6 +113,7 @@ Desktop paths are derived from Electron's user-data directory:
 | `settings.json` | repositories, preferences, and application state |
 | `settings.json.bak` | last known-good settings document, used if the primary file cannot be parsed |
 | `ai-log.jsonl` | local AI-operation log |
+| `github-status.json` | last checked GitHub CLI/account metadata; no tokens or credential paths |
 | `problems.jsonl` | local Git, file, and network failure log |
 | `desktop-server.json` | persisted loopback/LAN exposure |
 | `server/` | hash-only owner-session authentication state |

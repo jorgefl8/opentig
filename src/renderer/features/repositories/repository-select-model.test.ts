@@ -23,7 +23,7 @@ describe('repository select model', () => {
     ];
     const model = buildRepositoryPickerModel(repositories, projects);
     expect(model.projectSections.map((section) => section.name)).toEqual(['Client']);
-    expect(model.projectSections[0]?.repositories.map((item) => item.recent.id)).toEqual(['one', 'two']);
+    expect(model.projectSections[0]?.repositories.map((item) => item.recent.id)).toEqual(['two', 'one']);
     expect(model.unassigned.map((item) => item.recent.id)).toEqual(['three']);
   });
 
@@ -68,13 +68,21 @@ describe('repository select model', () => {
     expect(getRepositoryPickerDisplayOrder(model).map((item) => item.recent.id)).toEqual(['two', 'four', 'one', 'three']);
   });
 
-  it('retains assigned repositories beyond the unassigned recent limit', () => {
+  it('appends added repositories without dropping or moving existing entries', () => {
     const repositories = Array.from({ length: 12 }, (_, index) => recent(`repo-${index}`));
-    const projects: RepositoryProject[] = [{ id: 'saved', name: 'Saved', repositoryKeys: [repositories[11]!.commonDir] }];
     const selected = recent('new');
-    const next = touchRecentRepositories(repositories, selected, projects, '2026-08-03T00:00:00.000Z');
-    expect(next[0]?.id).toBe('new');
-    expect(next.some((item) => item.id === 'repo-11')).toBe(true);
-    expect(next.some((item) => item.id === 'repo-10')).toBe(false);
+    const next = touchRecentRepositories(repositories, selected, '2026-08-03T00:00:00.000Z');
+    expect(next.map((item) => item.id)).toEqual([...repositories.map((item) => item.id), 'new']);
+  });
+
+  it('keeps repository numbers unchanged after switching repositories or opening a worktree', () => {
+    const repositories = [recent('one'), recent('two'), recent('three')];
+    const projects = [{ id: 'saved', name: 'Saved', repositoryKeys: [repositories[1]!.commonDir, repositories[0]!.commonDir] }];
+    const initial = getRepositoryPickerDisplayOrder(buildRepositoryPickerModel(repositories, projects)).map((item) => item.key);
+    const switched = touchRecentRepositories(repositories, repositories[1]!, '2026-08-03T00:00:00.000Z');
+    expect(switched[1]?.lastOpenedAt).toBe('2026-08-03T00:00:00.000Z');
+    const linked = recent('linked', repositories[0]!.commonDir, 'C:\\worktrees\\linked');
+    const withWorktree = touchRecentRepositories(switched, linked);
+    expect(getRepositoryPickerDisplayOrder(buildRepositoryPickerModel(withWorktree, projects)).map((item) => item.key)).toEqual(initial);
   });
 });

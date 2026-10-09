@@ -1,5 +1,5 @@
-export type PairingExchangeResult = 'paired' | 'rejected' | 'unavailable';
-export type PairingSessionResult = 'authenticated' | 'unpaired' | 'unavailable';
+export type PairingExchangeResult = 'paired' | 'rejected' | 'unavailable' | 'disabled';
+export type PairingSessionResult = 'authenticated' | 'unpaired' | 'unavailable' | 'disabled';
 
 /** A failed check must not be mistaken for a missing browser session. */
 export async function checkPairingSession(
@@ -12,6 +12,7 @@ export async function checkPairingSession(
     const descriptor: unknown = await response.json();
     if (!descriptor || typeof descriptor !== 'object' || !('authenticated' in descriptor)) return 'unavailable';
     if (descriptor.authenticated === true) return 'authenticated';
+    if ('browserAccessEnabled' in descriptor && descriptor.browserAccessEnabled === false) return 'disabled';
     return descriptor.authenticated === false ? 'unpaired' : 'unavailable';
   } catch {
     return 'unavailable';
@@ -28,7 +29,7 @@ interface PairingHistory {
   replaceState(data: unknown, unused: string, url?: string | URL | null): void;
 }
 
-type PairingRequest = (input: string, init: RequestInit) => Promise<Pick<Response, 'ok'>>;
+type PairingRequest = (input: string, init: RequestInit) => Promise<Pick<Response, 'ok'> & Partial<Pick<Response, 'status' | 'json'>>>;
 
 /** Reads and immediately removes a fragment credential without persisting it. */
 export function consumePairingFragment(location: PairingLocation, history: PairingHistory): string {
@@ -49,7 +50,12 @@ export async function exchangePairingToken(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ token, clientName }),
     });
-    return response.ok ? 'paired' : 'rejected';
+    if (response.ok) return 'paired';
+    if (response.status === 403 && response.json) {
+      const body: unknown = await response.json();
+      if (body && typeof body === 'object' && 'code' in body && body.code === 'WEB_ACCESS_DISABLED') return 'disabled';
+    }
+    return 'rejected';
   } catch {
     return 'unavailable';
   }

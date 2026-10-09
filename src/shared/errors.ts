@@ -41,6 +41,10 @@ export interface SerializedAiError {
 export type GhErrorCode =
   | 'GH_CLI_NOT_FOUND'
   | 'GH_AUTH_REQUIRED'
+  | 'GH_ACCOUNT_MISSING'
+  | 'GH_ACCOUNT_UNRESOLVED'
+  | 'GH_ACCESS_DENIED'
+  | 'GH_CLI_INCOMPATIBLE'
   | 'GH_NOT_GITHUB_REPO'
   | 'GH_NO_UPSTREAM'
   | 'GH_RATE_LIMITED'

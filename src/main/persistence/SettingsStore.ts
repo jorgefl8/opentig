@@ -8,16 +8,20 @@ import { GitOperationError } from '../../shared/errors';
 import { sanitizeShortcutOverrides } from '../../shared/shortcuts';
 import { FILES_TREE_SAVE_DEBOUNCE_MS, normalizeFilesTreeStates, type FilesTreeState, upsertFilesTreeState } from '../../shared/files-tree-state';
 import { cloneOpenFilesState, normalizeOpenFilesStates, OPEN_FILES_SAVE_DEBOUNCE_MS, type OpenFilesState, upsertOpenFilesState } from '../../shared/open-files-state';
-import { MAX_PROJECT_NAME_LENGTH, MAX_REPOSITORIES_PER_PROJECT, MAX_REPOSITORY_KEY_LENGTH, MAX_REPOSITORY_PROJECTS, normalizeRepositoryKey, UNASSIGNED_RECENT_LIMIT } from '../../shared/repository-projects';
+import { MAX_PROJECT_NAME_LENGTH, MAX_REPOSITORIES_PER_PROJECT, MAX_REPOSITORY_KEY_LENGTH, MAX_REPOSITORY_PROJECTS, normalizeRepositoryKey } from '../../shared/repository-projects';
 import { DEFAULT_REMOTE_FETCH_INTERVAL_SECONDS, normalizeRemoteFetchIntervalSeconds } from '../../shared/remote-fetch';
+import { AUTOMATIC_GITHUB_ACCOUNT, githubAccountSelectionSchema, githubRepositoryKey, type GitHubAccountSelection } from '../../shared/github-accounts';
 import { backupPathFor, writeFileAtomically } from './atomicWrite';
 
-export const SETTINGS_SCHEMA_VERSION = 1;
+export const SETTINGS_SCHEMA_VERSION = 2;
 export type SettingsRecovery = 'backup' | 'defaults';
 
 interface WindowBounds { width: number; height: number; x?: number; y?: number }
 interface SettingsData {
   version: number;
+  githubAccounts: Record<string, GitHubAccountSelection>;
+  githubDefaultLogin: string | null;
+  repositoryAiInstructions: Record<string, boolean>;
   recentRepositories: RecentRepository[];
   repositoryProjects: RepositoryProject[];
   filesTreeStates: FilesTreeState[];
@@ -32,6 +36,9 @@ type BackgroundChannel = 'filesTree' | 'openFiles';
 
 const defaults: SettingsData = {
   version: SETTINGS_SCHEMA_VERSION,
+  githubAccounts: {},
+  githubDefaultLogin: null,
+  repositoryAiInstructions: {},
   recentRepositories: [],
   repositoryProjects: [],
   filesTreeStates: [],
@@ -51,7 +58,7 @@ const defaults: SettingsData = {
 // Disk input is intentionally permissive. Each field is repaired independently
 // so one legacy or corrupt preference never resets valid sibling settings.
 const settingsRecordSchema = z.looseObject({
-  version: z.unknown().optional(),
+  version: z.unknown().optional(), githubAccounts: z.unknown().optional(),
   recentRepositories: z.unknown().optional(), repositoryProjects: z.unknown().optional(), filesTreeStates: z.unknown().optional(),
   openFilesStates: z.unknown().optional(), activeRepositoryId: z.unknown().optional(), preferences: z.unknown().optional(), windowBounds: z.unknown().optional(),
 });
@@ -63,6 +70,7 @@ const recentRepositorySchema = z.looseObject({ id: z.string(), name: z.string(),
 export class SettingsStore {
   private data: SettingsData = structuredClone(defaults);
   private loaded = false;
+  private readonly repositoryAiWriteVersions = new Map<string, number>();
   private pendingWrite: Promise<void> = Promise.resolve();
   private readonly backgroundTimers = new Map<BackgroundChannel, ReturnType<typeof setTimeout>>();
   private readonly backgroundDirty = new Set<BackgroundChannel>();
@@ -114,11 +122,74 @@ export class SettingsStore {
   }
   get windowBounds(): WindowBounds { return { ...this.data.windowBounds }; }
 
+  repositoryAiInstructionsEnabled(commonDir: string): boolean {
+    return this.data.repositoryAiInstructions[githubRepositoryKey(commonDir)] === true;
+  }
+
+  async setRepositoryAiInstructions(commonDir: string, enabled: boolean): Promise<void> {
+    const key = githubRepositoryKey(commonDir);
+    if (!key || typeof enabled !== 'boolean') throw projectError('Invalid repository instructions setting.');
+    const previous = this.data.repositoryAiInstructions[key];
+    const writeVersion = (this.repositoryAiWriteVersions.get(key) ?? 0) + 1;
+    this.repositoryAiWriteVersions.set(key, writeVersion);
+    if (enabled) this.data.repositoryAiInstructions[key] = true;
+    else delete this.data.repositoryAiInstructions[key];
+    try { await this.save(); }
+    catch (error) {
+      if (this.repositoryAiWriteVersions.get(key) === writeVersion) {
+        if (previous) this.data.repositoryAiInstructions[key] = previous;
+        else delete this.data.repositoryAiInstructions[key];
+      }
+      throw error;
+    }
+  }
+
+  githubAccount(commonDir: string): GitHubAccountSelection {
+    const selection = this.data.githubAccounts[githubRepositoryKey(commonDir)] ?? AUTOMATIC_GITHUB_ACCOUNT;
+    if (selection.mode === 'account' && selection.useGlobalDefault) {
+      if (!this.data.githubDefaultLogin) throw new Error('Choose an OpenTig default account in Settings → GitHub.');
+      return { ...selection, login: this.data.githubDefaultLogin };
+    }
+    return { ...selection };
+  }
+
+  get githubDefaultLogin(): string | null { return this.data.githubDefaultLogin; }
+
+  async setGitHubDefaultLogin(login: string): Promise<void> {
+    const parsed = githubAccountSelectionSchema.parse({ mode: 'account', host: 'github.com', login });
+    if (parsed.mode !== 'account') throw new Error('Invalid default account.');
+    const previous = this.data.githubDefaultLogin;
+    this.data.githubDefaultLogin = parsed.login;
+    try { await this.save(); }
+    catch (error) { if (this.data.githubDefaultLogin === parsed.login) this.data.githubDefaultLogin = previous; throw error; }
+  }
+
+  async setGitHubAccount(commonDir: string, selection: GitHubAccountSelection): Promise<void> {
+    const parsed = githubAccountSelectionSchema.parse(selection);
+    if (parsed.mode === 'account' && parsed.useGlobalDefault && parsed.login.toLowerCase() !== this.data.githubDefaultLogin?.toLowerCase()) {
+      throw new Error('The OpenTig default account changed. Review the current account and try again.');
+    }
+    const key = githubRepositoryKey(commonDir);
+    const previous = this.data.githubAccounts[key];
+    if (parsed.mode === 'auto') delete this.data.githubAccounts[key];
+    else this.data.githubAccounts[key] = parsed;
+    try { await this.save(); }
+    catch (error) {
+      if (this.data.githubAccounts[key] === (parsed.mode === 'auto' ? undefined : parsed)) {
+        if (previous) this.data.githubAccounts[key] = previous;
+        else delete this.data.githubAccounts[key];
+      }
+      throw error;
+    }
+  }
+
   async touchRepository(repository: Omit<RecentRepository, 'lastOpenedAt'>): Promise<void> {
     const recent = { ...repository, lastOpenedAt: new Date().toISOString() };
-    this.data.recentRepositories = [recent, ...this.data.recentRepositories.filter((item) => item.id !== repository.id)];
+    const existing = this.data.recentRepositories.some((item) => item.id === repository.id);
+    this.data.recentRepositories = existing
+      ? this.data.recentRepositories.map((item) => item.id === repository.id ? recent : item)
+      : [...this.data.recentRepositories, recent];
     this.data.activeRepositoryId = repository.id;
-    this.pruneRecentRepositories();
     await this.save();
   }
 
@@ -131,6 +202,18 @@ export class SettingsStore {
     const previous = this.data.recentRepositories.find((item) => item.id === previousId);
     if (!previous) throw projectError('Unknown repository.');
 
+    const previousAiKey = githubRepositoryKey(previous.commonDir);
+    const nextAiKey = githubRepositoryKey(repository.commonDir);
+    if (previousAiKey !== nextAiKey && this.data.repositoryAiInstructions[previousAiKey]) {
+      this.data.repositoryAiInstructions[nextAiKey] ??= true;
+      delete this.data.repositoryAiInstructions[previousAiKey];
+    }
+    const previousAccountKey = githubRepositoryKey(previous.commonDir);
+    const nextAccountKey = githubRepositoryKey(repository.commonDir);
+    if (previousAccountKey !== nextAccountKey && this.data.githubAccounts[previousAccountKey]) {
+      this.data.githubAccounts[nextAccountKey] ??= this.data.githubAccounts[previousAccountKey];
+      delete this.data.githubAccounts[previousAccountKey];
+    }
     const previousKey = normalizeRepositoryKey(previous.commonDir);
     const nextKey = normalizeRepositoryKey(repository.commonDir);
     const destinationAlreadyAssigned = this.data.repositoryProjects.some((project) => (
@@ -150,12 +233,10 @@ export class SettingsStore {
     this.data.openFilesStates = normalizeOpenFilesStates(this.data.openFilesStates.map((state) => (
       state.repositoryId === previousId ? { ...state, repositoryId: repository.id } : state
     )));
-    this.data.recentRepositories = [
-      { ...repository, lastOpenedAt: new Date().toISOString() },
-      ...this.data.recentRepositories.filter((item) => item.id !== previousId && item.id !== repository.id),
-    ];
+    this.data.recentRepositories = this.data.recentRepositories.flatMap((item) => item.id === previousId
+      ? [{ ...repository, lastOpenedAt: new Date().toISOString() }]
+      : item.id === repository.id ? [] : [item]);
     this.data.activeRepositoryId = repository.id;
-    this.pruneRecentRepositories();
     await this.save();
   }
 
@@ -164,6 +245,12 @@ export class SettingsStore {
     const key = normalizeRepositoryKey(repositoryKey);
     const removedIds = new Set(this.data.recentRepositories
       .filter((item) => normalizeRepositoryKey(item.commonDir) === key).map((item) => item.id));
+    for (const item of this.data.recentRepositories) {
+      if (removedIds.has(item.id)) {
+        delete this.data.githubAccounts[githubRepositoryKey(item.commonDir)];
+        delete this.data.repositoryAiInstructions[githubRepositoryKey(item.commonDir)];
+      }
+    }
     this.data.recentRepositories = this.data.recentRepositories.filter((item) => !removedIds.has(item.id));
     this.data.repositoryProjects = this.data.repositoryProjects.map((project) => ({
       ...project, repositoryKeys: project.repositoryKeys.filter((entry) => entry !== key),
@@ -219,7 +306,6 @@ export class SettingsStore {
   async removeRepositoryProject(projectId: string): Promise<RepositoryOrganization> {
     this.getProject(projectId);
     this.data.repositoryProjects = this.data.repositoryProjects.filter((project) => project.id !== projectId);
-    this.pruneRecentRepositories();
     await this.save();
     return this.organization;
   }
@@ -228,19 +314,46 @@ export class SettingsStore {
     const key = normalizeRepositoryKey(repositoryKey);
     if (!key || key.length > MAX_REPOSITORY_KEY_LENGTH || hasControlCharacters(key)) throw projectError('Invalid repository.');
     const target = projectId === null ? null : this.getProject(projectId);
-    if (target && !this.data.recentRepositories.some((repository) => normalizeRepositoryKey(repository.commonDir) === key)) {
+    if (!this.data.recentRepositories.some((repository) => normalizeRepositoryKey(repository.commonDir) === key)) {
       throw projectError('Unknown repository.');
     }
+    if (target?.repositoryKeys.includes(key)) return this.organization;
+    if (target && target.repositoryKeys.length >= MAX_REPOSITORIES_PER_PROJECT) throw projectError('This project is full.');
     this.data.repositoryProjects = this.data.repositoryProjects.map((project) => ({
       ...project,
       repositoryKeys: project.repositoryKeys.filter((item) => item !== key),
     }));
     if (target) {
       const refreshed = this.getProject(target.id);
-      if (refreshed.repositoryKeys.length >= MAX_REPOSITORIES_PER_PROJECT) throw projectError('This project is full.');
       refreshed.repositoryKeys.push(key);
     }
-    this.pruneRecentRepositories();
+    await this.save();
+    return this.organization;
+  }
+
+  async moveRepositoryProject(projectId: string, toIndex: number): Promise<RepositoryOrganization> {
+    this.data.repositoryProjects = moveToIndex(this.data.repositoryProjects, projectId, toIndex, (project) => project.id);
+    await this.save();
+    return this.organization;
+  }
+
+  /** Move within the assigned project, or within the unassigned repositories. */
+  async moveRepository(repositoryKey: string, toIndex: number): Promise<RepositoryOrganization> {
+    const key = normalizeRepositoryKey(repositoryKey);
+    const keys = [...new Set(this.data.recentRepositories.map((item) => normalizeRepositoryKey(item.commonDir)))];
+    const known = new Set(keys);
+    const project = this.data.repositoryProjects.find((item) => item.repositoryKeys.includes(key));
+    if (project) {
+      const visible = project.repositoryKeys.filter((item) => known.has(item));
+      project.repositoryKeys = [...moveToIndex(visible, key, toIndex, (item) => item), ...project.repositoryKeys.filter((item) => !known.has(item))];
+    } else {
+      const assigned = new Set(this.data.repositoryProjects.flatMap((item) => item.repositoryKeys));
+      const unassigned = moveToIndex(keys.filter((item) => !assigned.has(item)), key, toIndex, (item) => item);
+      let index = 0;
+      const ordered = keys.map((item) => assigned.has(item) ? item : unassigned[index++]!);
+      const positions = new Map(ordered.map((item, position) => [item, position]));
+      this.data.recentRepositories = [...this.data.recentRepositories].sort((a, b) => positions.get(normalizeRepositoryKey(a.commonDir))! - positions.get(normalizeRepositoryKey(b.commonDir))!);
+    }
     await this.save();
     return this.organization;
   }
@@ -369,15 +482,6 @@ export class SettingsStore {
     }
   }
 
-  private pruneRecentRepositories(): void {
-    const assigned = new Set(this.data.repositoryProjects.flatMap((project) => project.repositoryKeys));
-    let unassigned = 0;
-    this.data.recentRepositories = this.data.recentRepositories.filter((repository) => {
-      if (repository.id === this.data.activeRepositoryId || assigned.has(normalizeRepositoryKey(repository.commonDir))) return true;
-      unassigned += 1;
-      return unassigned <= UNASSIGNED_RECENT_LIMIT;
-    });
-  }
 }
 
 function validate(value: unknown, defaultDoubleControlShortcutEnabled: boolean): SettingsData {
@@ -389,9 +493,18 @@ function validate(value: unknown, defaultDoubleControlShortcutEnabled: boolean):
   }
   const input = parsed.data;
   const recentRepositories = Array.isArray(input.recentRepositories)
-    ? input.recentRepositories.filter(isRecent).map(normalizeRecent).slice(0, 10)
+    ? input.recentRepositories.filter(isRecent).map(normalizeRecent)
     : [];
   const repositoryProjects = normalizeProjects(input.repositoryProjects);
+  // Preserve the picker order from installations that ordered projects by recent use.
+  if (input.version !== SETTINGS_SCHEMA_VERSION) {
+    const keys = [...new Set(recentRepositories.map((item) => normalizeRepositoryKey(item.commonDir)))];
+    const known = new Set(keys);
+    for (const project of repositoryProjects) {
+      const assigned = new Set(project.repositoryKeys);
+      project.repositoryKeys = [...keys.filter((key) => assigned.has(key)), ...project.repositoryKeys.filter((key) => !known.has(key))];
+    }
+  }
   const filesTreeStates = normalizeFilesTreeStates(input.filesTreeStates);
   const openFilesStates = normalizeOpenFilesStates(input.openFilesStates);
   const parsedPreferences = preferencesRecordSchema.safeParse(input.preferences);
@@ -425,6 +538,11 @@ function validate(value: unknown, defaultDoubleControlShortcutEnabled: boolean):
     : { ...defaults.windowBounds };
   return {
     version: SETTINGS_SCHEMA_VERSION,
+    githubAccounts: normalizeGitHubAccounts(input.githubAccounts),
+    repositoryAiInstructions: Object.fromEntries(Object.entries(
+      input.repositoryAiInstructions && typeof input.repositoryAiInstructions === 'object' && !Array.isArray(input.repositoryAiInstructions) ? input.repositoryAiInstructions : {},
+    ).slice(0, 1000).filter(([key, value]) => value === true && key.length <= MAX_REPOSITORY_KEY_LENGTH && !hasControlCharacters(key) && path.isAbsolute(key)).map(([key]) => [githubRepositoryKey(key), true])),
+    githubDefaultLogin: typeof input.githubDefaultLogin === 'string' && githubAccountSelectionSchema.safeParse({ mode: 'account', host: 'github.com', login: input.githubDefaultLogin }).success ? input.githubDefaultLogin : null,
     recentRepositories,
     repositoryProjects,
     filesTreeStates,
@@ -483,6 +601,16 @@ function normalizeWorktreePath(value: string): string {
 
 function cloneProject(project: RepositoryProject): RepositoryProject {
   return { ...project, repositoryKeys: [...project.repositoryKeys] };
+}
+
+function moveToIndex<T>(items: T[], key: string, toIndex: number, keyOf: (item: T) => string): T[] {
+  const fromIndex = items.findIndex((item) => keyOf(item) === key);
+  if (fromIndex < 0) throw projectError('Unknown project or repository.');
+  if (!Number.isSafeInteger(toIndex) || toIndex < 0 || toIndex >= items.length) throw projectError('Invalid ordering position.');
+  const next = [...items];
+  const [item] = next.splice(fromIndex, 1);
+  next.splice(toIndex, 0, item!);
+  return next;
 }
 
 function cloneFilesTreeState(state: FilesTreeState): FilesTreeState {
@@ -555,6 +683,17 @@ export function executablePaths(value: unknown, strict = false, platform = proce
     const expanded = raw.startsWith('~/') ? p.join(home, raw.slice(2)) : raw;
     if (raw.length > 4096 || hasControlCharacters(raw) || !p.isAbsolute(expanded) || (platform === 'win32' && !/^(?:[a-z]:[\\/]|\\\\)/i.test(expanded))) { invalid(); continue; }
     result[key] = expanded;
+  }
+  return result;
+}
+
+function normalizeGitHubAccounts(value: unknown): Record<string, GitHubAccountSelection> {
+  const result: Record<string, GitHubAccountSelection> = Object.create(null);
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return result;
+  for (const [key, selection] of Object.entries(value).slice(0, 1000)) {
+    if (!key || key.length > MAX_REPOSITORY_KEY_LENGTH || hasControlCharacters(key) || !path.isAbsolute(key)) continue;
+    const parsed = githubAccountSelectionSchema.safeParse(selection);
+    if (parsed.success && parsed.data.mode === 'account') result[githubRepositoryKey(key)] = parsed.data;
   }
   return result;
 }

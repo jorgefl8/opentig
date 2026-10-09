@@ -8,7 +8,7 @@ vi.mock('../open-code-server', () => ({ startOpenCodeV2Server: vi.fn(), generate
 afterEach(() => vi.resetAllMocks());
 
 function fixture(candidates: string[], versions: Record<string, string> = {}) {
-  const resolver = { discover: vi.fn(async () => candidates.map((executable) => ({ executable, alias: 'opencode', source: 'process-path', env: { PATH: '/fixture/bin' } }))), warning: async () => undefined } as unknown as CliResolver;
+  const resolver = { discover: vi.fn(async () => candidates.map((executable) => ({ executable, alias: 'opencode', source: 'process-path', env: { PATH: '/fixture/bin', XDG_DATA_HOME: '/nonexistent-opentig-unit-fixture' } }))), warning: async () => undefined } as unknown as CliResolver;
   const run = vi.fn(async (executable: string, args: string[]) => ({
     exitCode: 0, stderr: '',
     stdout: args[0] === '--version' ? versions[executable] ?? '2.0.22'
@@ -24,8 +24,40 @@ describe('OpenCodeProvider', () => {
   it.each(['/bin/opencode', '/bin/opencode2'])('recognizes v2 at %s and probes standalone metadata', async (executable) => {
     const { provider, run } = fixture([executable]);
     expect(await provider.status()).toMatchObject({ installed: true, availability: 'ready', version: '2.0.22', authStatus: 'authenticated' });
-    expect(run).toHaveBeenCalledWith(executable, ['models', '--standalone'], { timeoutMs: 30_000, env: { PATH: '/fixture/bin' } });
+    expect(run).toHaveBeenCalledWith(executable, ['models', '--standalone'], { timeoutMs: 30_000, env: { PATH: '/fixture/bin', XDG_DATA_HOME: '/nonexistent-opentig-unit-fixture' } });
     expect((await provider.status()).models.map((model) => model.id)).toEqual(['default', 'anthropic/claude-sonnet-4#high']);
+    expect(run).not.toHaveBeenCalledWith(executable, ['models'], expect.anything());
+  });
+
+  it.each(['empty', 'invalid', 'nonzero', 'timeout'])('uses the service catalog when standalone models are %s', async (failure) => {
+    const { provider, run } = fixture(['/bin/opencode']);
+    const original = run.getMockImplementation()!;
+    run.mockImplementation(async (executable, args) => {
+      if (args[0] !== 'models') return original(executable, args);
+      if (!args.includes('--standalone')) return { exitCode: 0, stderr: '', stdout: 'github-copilot/gpt-6-luna\n' };
+      if (failure === 'timeout') throw new Error('Timed out');
+      return { exitCode: failure === 'nonzero' ? 1 : 0, stderr: '', stdout: failure === 'invalid' ? 'Loading models…' : '' };
+    });
+    const status = await provider.status(true);
+    expect(status).toMatchObject({ installed: true, availability: 'ready', authStatus: 'authenticated' });
+    expect(status.models.map((model) => model.id)).toEqual(['default', 'github-copilot/gpt-6-luna']);
+    expect(status.message).toBeUndefined();
+    expect(run).toHaveBeenCalledWith('/bin/opencode', ['models'], { timeoutMs: 30_000, env: { PATH: '/fixture/bin', XDG_DATA_HOME: '/nonexistent-opentig-unit-fixture' } });
+  });
+
+  it.each(['empty', 'nonzero', 'timeout'])('explains the missing catalog when both model checks are %s', async (failure) => {
+    const { provider, run } = fixture(['/bin/opencode']);
+    const original = run.getMockImplementation()!;
+    run.mockImplementation(async (executable, args) => {
+      if (args[0] !== 'models') return original(executable, args);
+      if (failure === 'timeout') throw new Error('Timed out');
+      return { exitCode: failure === 'nonzero' ? 1 : 0, stderr: '', stdout: '' };
+    });
+    expect(await provider.status()).toMatchObject({
+      installed: true, availability: 'warning', authStatus: 'authenticated',
+      models: [{ id: 'default', label: 'Default (CLI)' }],
+      message: 'Could not load the OpenCode model catalog. Check again or verify that opencode models lists your models in a terminal.',
+    });
   });
 
   it('chooses a compatible alternate binary when the main command is v1', async () => {
@@ -61,7 +93,7 @@ describe('OpenCodeProvider', () => {
     vi.mocked(startOpenCodeV2Server).mockResolvedValue({ url: 'http://127.0.0.1:1234', password: 'test', close });
     vi.mocked(generateOpenCodeV2Text).mockResolvedValue('{"subject":"Add feature","body":""}');
     expect(await provider.generate(input)).toMatchObject({ output: { subject: 'Add feature', body: '' }, usage: { inputTokens: null } });
-    expect(startOpenCodeV2Server).toHaveBeenCalledWith(expect.objectContaining({ env: { PATH: '/fixture/bin' } }));
+    expect(startOpenCodeV2Server).toHaveBeenCalledWith(expect.objectContaining({ env: expect.objectContaining({ PATH: '/fixture/bin', OPENCODE_CONFIG_PROJECT_DISABLE: '1' }), cwd: expect.not.stringMatching(/^\/sample$/) }));
     expect(generateOpenCodeV2Text).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ prompt: expect.stringContaining(JSON.stringify(input.schema)) }));
     expect(close).toHaveBeenCalledOnce();
   });

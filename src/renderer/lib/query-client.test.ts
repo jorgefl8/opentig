@@ -1,7 +1,31 @@
 import { describe, expect, it } from 'vitest';
-import { queryClient, queryKeys, queryResourcesForScope } from './query-client';
+import { QueryClient } from '@tanstack/react-query';
+import { queryClient, queryKeys, queryResourcesForScope, resetGitHubQueries } from './query-client';
 
 describe('renderer query policy', () => {
+  it('discards old-account results in every repository while preserving Git data', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    let release!: (value: string) => void;
+    const key = queryKeys.pulls('repo-a', ['OPEN']);
+    const pending = client.fetchQuery({ queryKey: key, queryFn: () => new Promise<string>((resolve) => { release = resolve; }) });
+    const ignored = pending.catch(() => undefined);
+    client.setQueryData(queryKeys.pullRequestDiff('repo-b', 1), 'old diff');
+    client.setQueryData(queryKeys.githubAccount('repo-a'), 'old account');
+    client.setQueryData(queryKeys.githubAccounts, 'old inventory');
+    client.setQueryData(queryKeys.githubCliStatus, 'old CLI status');
+    client.setQueryData(queryKeys.status('repo-a'), 'git status');
+    await resetGitHubQueries(client);
+    await client.fetchQuery({ queryKey: key, queryFn: async () => 'new account' });
+    release('late old account');
+    await ignored;
+    expect(client.getQueryData(key)).toBe('new account');
+    expect(client.getQueryData(queryKeys.pullRequestDiff('repo-b', 1))).toBeUndefined();
+    expect(client.getQueryData(queryKeys.githubAccount('repo-a'))).toBeUndefined();
+    expect(client.getQueryData(queryKeys.githubAccounts)).toBeUndefined();
+    expect(client.getQueryData(queryKeys.githubCliStatus)).toBeUndefined();
+    expect(client.getQueryData(queryKeys.status('repo-a'))).toBe('git status');
+    client.clear();
+  });
   it('uses explicit local server defaults', () => {
     expect(queryClient.getDefaultOptions().queries).toMatchObject({
       networkMode: 'always', retry: false, refetchOnWindowFocus: false, refetchOnReconnect: false,
@@ -42,4 +66,29 @@ describe('renderer query policy', () => {
     release?.();
     await expect(Promise.all([first, second])).resolves.toEqual(['status', 'status']);
   });
+});
+
+
+it('invalidates only the repository and worktrees affected by an account selection', async () => {
+  const client = new QueryClient();
+  for (const id of ['a', 'a-worktree', 'b']) client.setQueryData(queryKeys.githubAccount(id), id);
+  client.setQueryData(queryKeys.githubAccounts, 'inventory');
+  await resetGitHubQueries(client, ['a', 'a-worktree']);
+  expect(client.getQueryData(queryKeys.githubAccount('a'))).toBeUndefined();
+  expect(client.getQueryData(queryKeys.githubAccount('a-worktree'))).toBeUndefined();
+  expect(client.getQueryData(queryKeys.githubAccount('b'))).toBe('b');
+  expect(client.getQueryData(queryKeys.githubAccounts)).toBe('inventory');
+  client.clear();
+});
+
+it('refreshes global default metadata and followers without resetting explicitly pinned repositories', async () => {
+  const client = new QueryClient();
+  client.setQueryData(queryKeys.githubAccounts, 'old default');
+  client.setQueryData(queryKeys.githubAccount('follower'), 'alice');
+  client.setQueryData(queryKeys.githubAccount('fixed'), 'alice');
+  await resetGitHubQueries(client, ['follower'], true);
+  expect(client.getQueryData(queryKeys.githubAccounts)).toBeUndefined();
+  expect(client.getQueryData(queryKeys.githubAccount('follower'))).toBeUndefined();
+  expect(client.getQueryData(queryKeys.githubAccount('fixed'))).toBe('alice');
+  client.clear();
 });

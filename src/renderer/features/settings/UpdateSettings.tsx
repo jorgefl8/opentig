@@ -2,9 +2,11 @@ import { formatDateTime } from '@shared/date-format';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { DesktopUpdateStatus } from '../../../shared/desktop-updates';
 import { Popover } from '@base-ui/react/popover';
-import { IconAlertTriangle, IconCheck, IconDownload, IconExternalLink, IconLoader2, IconRefresh } from '@tabler/icons-react';
+import { IconAlertTriangle, IconCheck, IconDownload, IconExternalLink, IconLoader2, IconLoader4, IconRefresh } from '@tabler/icons-react';
 import { summarizeUpdateReleaseNotes } from './update-release-notes';
 import { Button } from '@/components/ui/button';
+import { ShimmeringText } from '@/components/ui/shimmering-text';
+import { appDisplayName, isDevProfile } from '@/lib/app-identity';
 import { updatesApi } from './update-api';
 
 function useUpdateStatus(interval: number) {
@@ -28,7 +30,7 @@ export function UpdateSettings() {
   const { status, setStatus, error, setError } = useUpdateStatus(1_000);
   const [pending, setPending] = useState(false);
   const api = updatesApi();
-  if (!status) return <p role="status">{error ?? 'Checking update settings…'}</p>;
+  if (!status) return error ? <p role="status">{error}</p> : <p className="web-access-loading" role="status"><IconLoader4 className="animate-spin" aria-hidden="true" /><ShimmeringText text="Checking update settings…" /></p>;
   const action = async (kind: 'check' | 'download' | 'install') => {
     setPending(true); setError(null);
     try { setStatus(await api[kind]()); }
@@ -36,19 +38,23 @@ export function UpdateSettings() {
     finally { setPending(false); }
   };
   const busy = pending || ['checking', 'downloading', 'installing'].includes(status.phase);
-  const installedReleaseUrl = /^\d+\.\d+\.\d+$/.test(status.currentVersion)
+  const installedReleaseUrl = !isDevProfile && /^\d+\.\d+\.\d+$/.test(status.currentVersion)
     ? `https://github.com/jorgefl8/opentig/releases/tag/v${status.currentVersion}` : null;
+  const devUpdateCopy = window.opentigDesktop
+    ? 'When developing from source, rebuild and relaunch OpenTig Dev. For a downloaded build, replace it with a new Dev ZIP.'
+    : 'Rebuild and restart the Dev server to apply source changes.';
+  const liveCopy = error ?? (isDevProfile ? devUpdateCopy : status.message ?? updateCopy(status));
   return <div className="settings-field">
     <div className="settings-field-label">
-      <strong>OpenTig {status.currentVersion}</strong>
-      <span>{status.phase === 'unavailable' ? 'This build does not check for automatic updates.' : window.opentigDesktop
+      <strong>{appDisplayName}{isDevProfile ? ' · Base version ' : ' '}{status.currentVersion}</strong>
+      <span>{isDevProfile ? 'Development build. Automatic updates to stable releases are disabled.' : status.phase === 'unavailable' ? 'This build does not check for automatic updates.' : window.opentigDesktop
         ? 'Stable releases are checked at startup, every 5 minutes, and when returning to the app if a check is due. Download and restart when you are ready.'
         : 'The server checks for stable releases at startup and every 5 minutes. Download and restart when you are ready.'}</span>
     </div>
-    <p className="text-sm" role="status" aria-live="polite">{error ?? status.message ?? updateCopy(status)}</p>
+    <p className="text-sm" role="status" aria-live="polite">{!error && busy ? <ShimmeringText text={liveCopy} /> : liveCopy}</p>
     {status.phase === 'downloading' && <progress className="w-full" aria-label="Update download" max={100} value={status.progress ?? 0} />}
     <div className="flex flex-wrap items-center gap-2">
-      {['idle', 'error', 'checking'].includes(status.phase) && <Button variant="outline" disabled={busy} onClick={() => void action('check')}>{status.phase === 'checking' ? 'Checking…' : 'Check for updates'}</Button>}
+      {['idle', 'error', 'checking'].includes(status.phase) && <Button variant="outline" disabled={busy} onClick={() => void action('check')}>{status.phase === 'checking' ? <ShimmeringText text="Checking…" /> : 'Check for updates'}</Button>}
       {status.phase === 'available' && <Button disabled={busy} onClick={() => void action('download')}>Download {status.availableVersion}</Button>}
       {status.phase === 'ready' && <Button disabled={busy} onClick={() => void action('install')}>{status.reloadRequired ? 'Reload app' : 'Restart and install'}</Button>}
       {installedReleaseUrl && <a className="text-sm underline" href={installedReleaseUrl} target="_blank" rel="noreferrer">Release notes · {status.currentVersion} (installed)</a>}

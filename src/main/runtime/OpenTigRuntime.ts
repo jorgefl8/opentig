@@ -1,3 +1,5 @@
+import type { RepositoryAiInstructions } from '../ai/RepositoryAiInstructions';
+import { githubRepositoryKey } from '../../shared/github-accounts';
 import type { OpenTigPlatform, OpenTigRuntimeMode, RepositoryInfo } from '../../shared/contracts';
 import type { RepositoryChangeScope } from '../../shared/repository-change';
 import { mergeRepositoryChangeScopes } from '../../shared/repository-change';
@@ -31,6 +33,7 @@ export interface OpenTigRuntimeServices {
   operations: GitRepositoryOperations;
   watcher: RepositoryWatcher;
   ai: CommitMessageService;
+  aiInstructions: RepositoryAiInstructions;
   cliRunner: CliProcessRunner;
   aiLog: AiLogStore;
   problems: ProblemsLogStore;
@@ -40,6 +43,7 @@ export interface OpenTigRuntimeServices {
 }
 
 export interface OpenTigRuntimeEventPublisher {
+  aiInstructionsChanged(commonDir: string): void;
   repositoryChanged(repositoryId: string, scope: RepositoryChangeScope): void;
   activeRepositoryChanged(repository: RepositoryInfo): void;
 }
@@ -81,6 +85,22 @@ export class OpenTigRuntime {
     }
     this.lastNotifiedAt = Date.now();
     this.onEvent({ type: 'repository.changed', repositoryId, scope });
+  }
+
+  publishGitHubAccountsChange(commonDir?: string, defaultOnly = false): void {
+    if (this.closePromise) return;
+    const repositories = this.services.repositories.recents();
+    const repositoryIds = defaultOnly ? repositories.filter(repo => {
+      const selection = this.settings.githubAccount(repo.commonDir);
+      return selection.mode === 'account' && selection.useGlobalDefault;
+    }).map(repo => repo.id) : commonDir ? repositories.filter(repo => githubRepositoryKey(repo.commonDir) === githubRepositoryKey(commonDir)).map(repo => repo.id) : undefined;
+    this.onEvent({ type: 'github.accounts-changed', ...(repositoryIds ? { repositoryIds } : {}), ...(defaultOnly ? { inventoryChanged: true } : {}) });
+  }
+
+  publishAiInstructionsChange(commonDir: string): void {
+    if (this.closePromise) return;
+    const repositoryIds = this.services.repositories.recents().filter(repository => githubRepositoryKey(repository.commonDir) === githubRepositoryKey(commonDir)).map(repository => repository.id);
+    this.onEvent({ type: 'ai.instructions-changed', repositoryIds });
   }
 
   publishActiveRepositoryChange(repository: RepositoryInfo): void {

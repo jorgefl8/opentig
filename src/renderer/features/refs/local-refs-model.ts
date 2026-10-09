@@ -49,14 +49,14 @@ export interface RefBadge {
 }
 
 /** Takes the smallest shape it needs so list rows and detail panels can share it. */
-export function branchBadges(branch: Pick<BranchInfo, 'current' | 'worktreePath' | 'upstream' | 'ahead' | 'behind'>): RefBadge[] {
+export function branchBadges(branch: Pick<BranchInfo, 'current' | 'worktreePath' | 'upstream' | 'ahead' | 'behind'> & { remote?: boolean }): RefBadge[] {
   const badges: RefBadge[] = [];
   if (branch.current) badges.push({ label: 'Current', tone: 'current' });
   else if (branch.worktreePath) badges.push({ label: 'In a worktree', tone: 'warning' });
   if (branch.upstream) {
     if (branch.ahead > 0) badges.push({ label: `↑${branch.ahead}`, tone: 'neutral' });
     if (branch.behind > 0) badges.push({ label: `↓${branch.behind}`, tone: 'neutral' });
-  } else {
+  } else if (!branch.remote) {
     badges.push({ label: 'No upstream', tone: 'neutral' });
   }
   return badges;

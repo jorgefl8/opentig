@@ -1,3 +1,5 @@
+import { RepositoryAccountSetup } from '@/features/settings/RepositoryAccountSetup';
+import { useGitHubAccount } from '@/features/pulls/useGitHubAccount';
 import { appDisplayName } from '@/lib/app-identity';
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -43,7 +45,7 @@ import {
   mergeRefreshRequests, refreshOperationsForScope, shouldRefreshSearch, shouldRefreshViewer, type RefreshRequest,
 } from './refresh-policy';
 import { resolveWindowControlsInset } from './window-controls';
-import { queryKeys, queryResourcesForScope } from '@/lib/query-client';
+import { queryKeys, queryResourcesForScope, resetGitHubQueries } from '@/lib/query-client';
 import { persistTheme } from '@/lib/boot-theme';
 import { useMobileLayout } from '@/lib/use-mobile-layout';
 import { opentig, serverClient } from '@/lib/opentig-api';
@@ -94,6 +96,8 @@ export default function App() {
   const branchPush = useBranchPush();
   const mobile = useMobileLayout();
   const [openRepositoryDialog, setOpenRepositoryDialog] = useState(false);
+  const addingRepository = useRef(false);
+  const [accountSetup, setAccountSetup] = useState<{ repository: RepositoryInfo; isNew: boolean } | null>(null);
   const [mobilePane, setMobilePane] = useState<'list' | 'viewer' | 'commit'>('list');
   const [mobileDiffView, setMobileDiffView] = useState<Preferences['diffView']>('unified');
   const [bootstrap, setBootstrap] = useState<BootstrapData | null>(null);
@@ -162,7 +166,6 @@ export default function App() {
   // The last message OpenTig itself put in the composer, so an edited one is
   // never replaced without asking.
   const lastAppliedMessageRef = useRef('');
-  const forceGhStatusRef = useRef(false);
   const knownConflictPathsRef = useRef<Map<string, string[]>>(new Map());
   const refreshCyclesRef = useRef<Map<string, { queued: RefreshRequest | null; promise: Promise<void> }>>(new Map());
 
@@ -185,22 +188,37 @@ export default function App() {
     enabled: repository !== null,
   });
   const githubInfo = githubInfoQuery.data ?? null;
-  const pullsQuery = useQuery<{ ghStatus: GhCliStatus; pulls: PullRequestSummary[] | null }>({
+  // CLI availability belongs to the backend session, not a repository or PR filter.
+  const ghStatusQuery = useQuery<GhCliStatus>({
+    queryKey: queryKeys.githubCliStatus,
+    queryFn: () => opentig.github.status(true),
+    enabled: bootstrap !== null,
+    staleTime: Infinity,
+  });
+  const ghStatus = ghStatusQuery.data ?? null;
+  const githubAccountQuery = useGitHubAccount(repository && githubInfo?.isGitHub ? repository.id : null);
+  const githubAccount = githubAccountQuery.data ?? null;
+  useEffect(() => opentig.events.onGitHubAccountsChanged((ids, inventoryChanged) => { void resetGitHubQueries(appQueryClient, ids, inventoryChanged); }), [appQueryClient]);
+  const pullsQuery = useQuery<PullRequestSummary[]>({
     queryKey: queryKeys.pulls(repository?.id ?? '', pullRequestStates),
     queryFn: async () => {
-      const forceStatus = forceGhStatusRef.current;
-      forceGhStatusRef.current = false;
-      const nextGhStatus = await opentig.github.status(forceStatus);
-      if (!nextGhStatus.installed || nextGhStatus.authStatus === 'unauthenticated') return { ghStatus: nextGhStatus, pulls: null };
-      const nextPulls = pullRequestStates.length ? await opentig.github.listPullRequests(repository!.id, pullRequestStates) : [];
-      return { ghStatus: nextGhStatus, pulls: nextPulls };
+      try { return pullRequestStates.length ? await opentig.github.listPullRequests(repository!.id, pullRequestStates) : []; }
+      catch (error) {
+        if (serializedErrorFromReason(error)?.code === 'GH_CLI_NOT_FOUND') {
+          void appQueryClient.invalidateQueries({ queryKey: queryKeys.githubCliStatus });
+        }
+        throw error;
+      }
+      finally {
+        const context = await opentig.github.repositoryAccount(repository!.id, false);
+        appQueryClient.setQueryData(queryKeys.githubAccount(repository!.id), context);
+      }
     },
-    enabled: view === 'prs' && repository !== null && githubInfo?.isGitHub === true,
+    enabled: view === 'prs' && repository !== null && githubInfo?.isGitHub === true && ghStatus?.installed === true,
   });
-  const ghStatus = pullsQuery.data?.ghStatus ?? null;
-  const pulls = pullsQuery.data?.pulls ?? null;
-  const pullsLoading = pullsQuery.isFetching;
-  const pullsError = pullsQuery.error ? messageOf(pullsQuery.error) : null;
+  const pulls = pullsQuery.data ?? null;
+  const pullsLoading = pullsQuery.isFetching || ghStatusQuery.isFetching;
+  const pullsError = ghStatusQuery.error ? messageOf(ghStatusQuery.error) : pullsQuery.error ? messageOf(pullsQuery.error) : null;
   useEffect(() => { setMobilePane('list'); }, [repository?.id]);
   const currentSnapshot = snapshotRepositoryId === repository?.id;
   const status = currentSnapshot ? statusState : null;
@@ -210,17 +228,14 @@ export default function App() {
   const currentBranch = status && !status.detached && !status.unborn ? status.branch : null;
   const branchPullRequestQuery = useQuery({
     queryKey: queryKeys.branchPullRequest(repository?.id ?? '', currentBranch ?? ''),
-    queryFn: async () => {
-      const cli = await opentig.github.status();
-      if (!cli.installed || cli.authStatus === 'unauthenticated') return null;
-      return opentig.github.findPullRequestForBranch(repository!.id, currentBranch!);
-    },
-    enabled: repository !== null && githubInfo?.isGitHub === true && currentBranch !== null,
+    queryFn: () => opentig.github.findPullRequestForBranch(repository!.id, currentBranch!),
+    enabled: repository !== null && githubInfo?.isGitHub === true && currentBranch !== null && ghStatus?.installed === true,
     staleTime: 60_000,
     refetchInterval: 60_000,
   });
   const currentBranchPullRequest = currentBranch && githubInfo?.isGitHub && !branchPullRequestQuery.isError
-    && branchPullRequestQuery.data?.state === 'OPEN' ? branchPullRequestQuery.data : null;
+    && (branchPullRequestQuery.data?.state === 'OPEN' || branchPullRequestQuery.data?.state === 'MERGED')
+    ? branchPullRequestQuery.data : null;
 
   const openFilesStates = bootstrap?.openFilesStates ?? NO_OPEN_FILES_STATES;
   const connectionState = useSyncExternalStore(
@@ -647,13 +662,13 @@ export default function App() {
 
   const remoteFetchIntervalSeconds = bootstrap?.preferences.remoteFetchIntervalSeconds ?? DEFAULT_REMOTE_FETCH_INTERVAL_SECONDS;
   useEffect(() => {
-    if (!repository || remoteFetchIntervalSeconds <= 0) return;
+    if (!repository || accountSetup || remoteFetchIntervalSeconds <= 0) return;
     const repositoryId = repository.id;
     let cancelled = false;
     let inFlight = false;
 
     const run = async () => {
-      if (cancelled || inFlight || document.visibilityState === 'hidden') return;
+      if (cancelled || inFlight || addingRepository.current || document.visibilityState === 'hidden') return;
       if (busyRef.current || repositorySyncOperationsRef.current.has(repositoryId)) return;
       inFlight = true;
       try {
@@ -676,7 +691,7 @@ export default function App() {
       window.clearInterval(timer);
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [refresh, remoteFetchIntervalSeconds, repository]);
+  }, [refresh, remoteFetchIntervalSeconds, repository, accountSetup]);
 
   useEffect(() => {
     setSnapshotRepositoryId(null);
@@ -688,9 +703,9 @@ export default function App() {
   }, [repository?.id]);
 
   const loadPulls = useCallback(async (_states: PullRequestState[], forceStatus = false) => {
-    if (repository) void appQueryClient.invalidateQueries({ queryKey: ['repository', repository.id, 'branch-pull-request'] });
     if (forceStatus) {
-      forceGhStatusRef.current = true;
+      const result = await ghStatusQuery.refetch();
+      if (result.isError || !result.data?.installed) return;
       if (repository) {
         await Promise.all([
           appQueryClient.invalidateQueries({ queryKey: ['repository', repository.id, 'pull-request-stack'] }),
@@ -698,8 +713,9 @@ export default function App() {
         ]);
       }
     }
+    if (repository) void appQueryClient.invalidateQueries({ queryKey: ['repository', repository.id, 'branch-pull-request'] });
     await pullsQuery.refetch();
-  }, [appQueryClient, pullsQuery, repository]);
+  }, [appQueryClient, ghStatusQuery, pullsQuery, repository]);
 
   useEffect(() => {
     void refresh();
@@ -809,7 +825,8 @@ export default function App() {
         ...current,
         activeRepository: selected,
         repositoryProjects,
-        recentRepositories: touchRecentRepositories(current.recentRepositories.filter((item) => item.id !== previousId || item.id === selected.id), selected, repositoryProjects),
+        recentRepositories: touchRecentRepositories(current.recentRepositories.flatMap((item) => item.id === previousId
+          ? [{ ...selected, lastOpenedAt: item.lastOpenedAt }] : previous && item.id === selected.id ? [] : [item]), selected),
         filesTreeStates: previous ? normalizeFilesTreeStates(current.filesTreeStates.map((state) => (
           state.repositoryId === previousId ? { ...state, repositoryId: selected.id } : state
         ))) : current.filesTreeStates,
@@ -1807,41 +1824,41 @@ export default function App() {
         throw new PushBlocked(result);
       }, {
         loading: repositorySyncLoadingToast(repositoryId, 'push', status?.upstream ? 'Pushing commits…' : 'Publishing branch…'),
-        success: (result) => !result ? { title: 'Publication canceled' }
-          : result.status === 'published' ? { title: 'Branch published', description: `${result.remote}/${result.branch}` }
+        success: (result) => !result ? { title: `${repository.name}: publication canceled` }
+          : result.status === 'published' ? { title: `${repository.name}: branch published`, description: `${result.remote}/${result.branch}` }
           : result.status === 'success'
-          ? { title: `${result.commits} ${result.commits === 1 ? 'commit pushed' : 'commits pushed'}` }
-          : { title: 'No commits pending push' },
+          ? { title: `${repository.name}: ${result.commits} ${result.commits === 1 ? 'commit pushed' : 'commits pushed'}` }
+          : { title: `${repository.name}: no commits pending push` },
         error: (err) => {
           if (err instanceof PushBlocked) {
             const result = err.result;
             if (result.status === 'blocked-conflicts') {
               return {
-                title: 'Could not push commits',
+                title: `${repository.name}: could not push commits`,
                 description: `Resolve ${result.files.length === 1 ? 'the pending conflict' : `${result.files.length} pending conflicts`} before continuing.`,
                 duration: 10_000,
                 button: { title: 'View conflicts', onClick: () => showConflicts(result.files) },
               };
             }
             if (result.status === 'blocked-operation') {
-              return { title: 'A Git operation is in progress', description: `Finish or cancel ${result.operation} before pushing.`, duration: 10_000 };
+              return { title: `${repository.name}: a Git operation is in progress`, description: `Finish or cancel ${result.operation} before pushing.`, duration: 10_000 };
             }
             if (result.status === 'no-upstream') {
-              return { title: 'Branch has no upstream configured', description: 'Configure a remote branch before pushing.', duration: 10_000 };
+              return { title: `${repository.name}: branch has no upstream configured`, description: 'Configure a remote branch before pushing.', duration: 10_000 };
             }
             if (result.status === 'diverged') {
               return {
-                title: 'The remote contains new changes',
+                title: `${repository.name}: the remote contains new changes`,
                 description: `${result.ahead} ahead and ${result.behind} behind. Pull rebases your local commits on top when there are no conflicts.`,
                 duration: 10_000,
                 button: { title: 'Pull', onClick: () => void pullUpdates() },
               };
             }
             if (result.status === 'remote-required') return { title: 'Choose a remote to publish the branch' };
-            return { title: 'Could not push commits', description: result.message, duration: 10_000 };
+            return { title: `${repository.name}: could not push commits`, description: result.message, duration: 10_000 };
           }
           const message = messageOf(err);
-          return { title: 'Could not push commits', description: message, duration: 10_000 };
+          return { title: `${repository.name}: could not push commits`, description: message, duration: 10_000 };
         },
       });
     } catch {
@@ -1932,9 +1949,18 @@ export default function App() {
     recordOpenedRepository(await opentig.repository.relocateRecent(option.recent.id, path), option.recent.id);
   };
 
-  const browserRepositoryDialog = <OpenRepositoryDialog open={openRepositoryDialog} recent={bootstrap?.recentRepositories} onPick={window.opentigDesktop ? opentig.repository.select : undefined} onOpenChange={setOpenRepositoryDialog} onBrowse={opentig.repository.browseDirectories} onOpen={async (path) => {
-    recordOpenedRepository(await opentig.repository.openPath(path));
+  const browserRepositoryDialog = <OpenRepositoryDialog confirmLabel="Continue"
+    description={window.opentigDesktop ? 'Choose a Git repository, then review its GitHub and Git accounts.' : 'Choose a Git repository on your server, then review its GitHub and Git accounts.'} open={openRepositoryDialog} recent={bootstrap?.recentRepositories} onPick={window.opentigDesktop ? opentig.repository.select : undefined} onOpenChange={setOpenRepositoryDialog} onBrowse={opentig.repository.browseDirectories} onOpen={async (path) => {
+    addingRepository.current = true;
+    try {
+      const selected = await opentig.repository.preparePath(path);
+      const isNew = !bootstrap?.recentRepositories.some(item => normalizeRepositoryKey(item.commonDir) === normalizeRepositoryKey(selected.commonDir));
+      setAccountSetup({ repository: selected, isNew });
+    } finally { addingRepository.current = false; }
   }} />;
+
+  const repositoryAccountDialog = accountSetup && !openRepositoryDialog && <RepositoryAccountSetup key={accountSetup.repository.id} {...accountSetup}
+    onClose={() => setAccountSetup(null)} onAdded={selected => { recordOpenedRepository(selected); setAccountSetup(null); }} />;
 
   if (!bootstrap) {
     return <SplashScreen heading={appDisplayName} detail={startupSplashDetail(connectionState)} />;
@@ -1943,6 +1969,7 @@ export default function App() {
     return (
       <TooltipProvider>
         {browserRepositoryDialog}
+        {repositoryAccountDialog}
         <div className="fixed right-4 top-4 z-40"><DesktopUpdateIndicator /></div>
         <Welcome recent={bootstrap.recentRepositories} onOpen={openRepository} onRecent={(id) => void selectRecent(id)} />
       </TooltipProvider>
@@ -1958,6 +1985,7 @@ export default function App() {
     <ShortcutsProvider shortcuts={shortcuts}>
     <TooltipProvider>
       {browserRepositoryDialog}
+      {repositoryAccountDialog}
       {quickOpen && (
         <Suspense fallback={null}>
           <QuickOpenDialog
@@ -2042,7 +2070,7 @@ export default function App() {
           <div className="undo-commit-actions">
             <Button variant="ghost" onClick={() => setUndoCommit(null)} disabled={undoingCommit}>Cancel</Button>
             <Button variant="destructive" onClick={() => void undoLatestCommit()} disabled={undoingCommit}>
-              <IconRestore /> {undoingCommit ? 'Undoing…' : 'Undo and stage changes'}
+              <IconRestore /> {undoingCommit ? <ShimmeringText text="Undoing…" /> : 'Undo and stage changes'}
             </Button>
           </div>
         </DialogPopup>
@@ -2053,6 +2081,7 @@ export default function App() {
             open={createPrOpen}
             onOpenChange={setCreatePrOpen}
             repositoryId={repository.id}
+            onOpenGitHubSettings={() => { setCreatePrOpen(false); setSettingsSection('github'); setSettingsOpen(true); }}
             branches={branches}
             status={status}
             preferences={bootstrap.preferences}
@@ -2078,6 +2107,7 @@ export default function App() {
           status={status}
           githubInfo={githubInfo}
           branchPullRequest={currentBranchPullRequest}
+          onOpenPullRequest={(number) => { selectViewer({ type: 'pull-request', number }); }}
           branches={branches}
           worktrees={worktrees}
           preferences={bootstrap.preferences}
@@ -2228,6 +2258,8 @@ export default function App() {
                   repositoryId={repository.id}
                   info={githubInfo}
                   ghStatus={ghStatus}
+                  account={githubAccount}
+                  onOpenGitHubSettings={() => { setSettingsSection('github'); setSettingsOpen(true); }}
                   pulls={pulls}
                   loading={pullsLoading}
                   error={pullsError}

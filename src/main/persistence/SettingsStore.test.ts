@@ -2,7 +2,8 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { SettingsStore } from './SettingsStore';
+import { SETTINGS_SCHEMA_VERSION, SettingsStore } from './SettingsStore';
+import { normalizeRepositoryKey } from '../../shared/repository-projects';
 
 const directories: string[] = [];
 
@@ -12,6 +13,24 @@ afterEach(async () => {
 });
 
 describe('SettingsStore document recovery', () => {
+  it('retains valid account choices, repairs invalid entries and carries choices on relocation and forget', async () => {
+    const file = await settingsFile({ githubAccounts: {
+      '/fixture/demo/.git': { mode: 'account', host: 'github.com', login: 'alice', token: 'discarded' },
+      '/fixture/bad/.git': { mode: 'account', host: 'enterprise.example', login: 'bob' },
+      relative: { mode: 'account', host: 'github.com', login: 'bob' },
+    } });
+    const store = new SettingsStore(file); await store.load();
+    expect(store.githubAccount('/fixture/demo/.git')).toEqual({ mode: 'account', host: 'github.com', login: 'alice' });
+    expect(store.githubAccount('/fixture/bad/.git')).toEqual({ mode: 'auto' });
+    const previous = { id: 'repo', name: 'demo', repositoryName: 'demo', path: '/fixture/demo', commonDir: '/fixture/demo/.git' };
+    await store.touchRepository(previous);
+    await store.relocateRepository('repo', { ...previous, id: 'moved', path: '/fixture/moved', commonDir: '/fixture/moved/.git' });
+    expect(store.githubAccount('/fixture/demo/.git')).toEqual({ mode: 'auto' });
+    expect(store.githubAccount('/fixture/moved/.git')).toMatchObject({ login: 'alice' });
+    await store.forgetRepository('/fixture/moved/.git');
+    expect(store.githubAccount('/fixture/moved/.git')).toEqual({ mode: 'auto' });
+    expect(await readFile(file, 'utf8')).not.toContain('discarded');
+  });
   it('defaults the Dev global shortcut off but preserves an explicit preference after restart', async () => {
     const file = await settingsFile({});
     const store = new SettingsStore(file, undefined, false);
@@ -33,7 +52,7 @@ describe('SettingsStore document recovery', () => {
     const recovered = new SettingsStore(file);
     await recovered.load();
     expect(recovered.recentRepositories.map((item) => item.id)).toEqual(['kept']);
-    expect(JSON.parse(await readFile(file, 'utf8')).version).toBe(1);
+    expect(JSON.parse(await readFile(file, 'utf8')).version).toBe(SETTINGS_SCHEMA_VERSION);
   });
 
   it('falls back to defaults when both the document and backup are unreadable', async () => {
@@ -52,9 +71,9 @@ describe('SettingsStore document recovery', () => {
     const store = new SettingsStore(file);
     await store.load();
     const persisted = JSON.parse(await readFile(file, 'utf8'));
-    expect(persisted.version).toBe(1);
+    expect(persisted.version).toBe(SETTINGS_SCHEMA_VERSION);
     expect(persisted.preferences.theme).toBe('dark');
-    expect(JSON.parse(await readFile(`${file}.bak`, 'utf8')).version).toBe(1);
+    expect(JSON.parse(await readFile(`${file}.bak`, 'utf8')).version).toBe(SETTINGS_SCHEMA_VERSION);
   });
 });
 
@@ -207,7 +226,7 @@ describe('SettingsStore repository projects', () => {
     expect(organization.repositoryProjects[1]?.repositoryKeys).toEqual(['c:/repos/repo/.git']);
   });
 
-  it('retains assigned and active repositories beyond ten unassigned recents', async () => {
+  it('retains every added repository beyond ten unassigned entries', async () => {
     const store = new SettingsStore(await settingsFile({}));
     await store.load();
     const projectId = (await store.createRepositoryProject('Saved')).repositoryProjects[0]!.id;
@@ -215,8 +234,76 @@ describe('SettingsStore repository projects', () => {
     await store.assignRepositoryProject('c:/repos/saved/.git', projectId);
     for (let index = 0; index < 12; index += 1) await store.touchRepository(repository(`repo-${index}`));
     expect(store.recentRepositories.some((item) => item.id === 'saved')).toBe(true);
-    expect(store.recentRepositories.some((item) => item.id === 'repo-0')).toBe(false);
+    expect(store.recentRepositories.some((item) => item.id === 'repo-0')).toBe(true);
     expect(store.recentRepositories.some((item) => item.id === 'repo-11')).toBe(true);
+  });
+
+  it('migrates the existing picker order without trimming saved repositories and keeps it after reopening', async () => {
+    const file = await settingsFile({});
+    const entries = Array.from({ length: 14 }, (_, index) => ({
+      id: `repo-${index}`, name: `repo-${index}`, repositoryName: `repo-${index}`,
+      path: path.join(path.dirname(file), `repo-${index}`), commonDir: path.join(path.dirname(file), `repo-${index}`, '.git'), lastOpenedAt: '2026-01-01T00:00:00.000Z',
+    }));
+    const keys = entries.map((item) => normalizeRepositoryKey(item.commonDir));
+    await writeFile(file, JSON.stringify({ version: 1, recentRepositories: entries, repositoryProjects: [{ id: 'project', name: 'Project', repositoryKeys: [keys[1], keys[0]] }] }));
+    const store = new SettingsStore(file);
+    await store.load();
+    expect(store.repositoryProjects[0]?.repositoryKeys).toEqual([keys[0], keys[1]]);
+    await store.touchRepository(entries[5]!);
+    expect(store.recentRepositories.map((item) => item.id)).toEqual(entries.map((item) => item.id));
+    const restarted = new SettingsStore(file);
+    await restarted.load();
+    expect(restarted.recentRepositories.map((item) => item.id)).toEqual(entries.map((item) => item.id));
+    expect(restarted.repositoryProjects).toEqual(store.repositoryProjects);
+  });
+
+  it('persists project, assigned repository and unassigned repository order across opening and restart', async () => {
+    const file = await settingsFile({});
+    const store = new SettingsStore(file);
+    await store.load();
+    const entries = ['a', 'b', 'c', 'd', 'e'].map((id) => ({ id, name: id, repositoryName: id, path: path.join(path.dirname(file), id), commonDir: path.join(path.dirname(file), id, '.git') }));
+    for (const entry of entries) await store.touchRepository(entry);
+    const first = (await store.createRepositoryProject('First')).repositoryProjects[0]!.id;
+    const second = (await store.createRepositoryProject('Second')).repositoryProjects[1]!.id;
+    await store.assignRepositoryProject(entries[0]!.commonDir, first);
+    await store.assignRepositoryProject(entries[1]!.commonDir, first);
+    await store.assignRepositoryProject(entries[2]!.commonDir, second);
+    await store.moveRepositoryProject(second, 0);
+    await store.moveRepository(entries[1]!.commonDir, 0);
+    await store.moveRepository(entries[4]!.commonDir, 0);
+    await store.touchRepository(entries[0]!);
+    await store.touchRepository({ ...entries[0]!, id: 'linked', path: path.join(path.dirname(file), 'linked') });
+    const restarted = new SettingsStore(file);
+    await restarted.load();
+    expect(restarted.repositoryProjects.map((item) => item.id)).toEqual([second, first]);
+    expect(restarted.repositoryProjects[1]?.repositoryKeys).toEqual([entries[1]!, entries[0]!].map((item) => normalizeRepositoryKey(item.commonDir)));
+    expect(restarted.recentRepositories.filter((item) => item.id === 'd' || item.id === 'e').map((item) => item.id)).toEqual(['e', 'd']);
+    expect(restarted.recentRepositories).toHaveLength(6);
+    await restarted.removeRepositoryProject(second);
+    expect(restarted.recentRepositories.some((item) => item.id === 'c')).toBe(true);
+  });
+
+  it('rejects invalid ordering requests without changing the saved organization', async () => {
+    const file = await settingsFile({});
+    const store = new SettingsStore(file);
+    await store.load();
+    await store.touchRepository(repository('repo'));
+    const project = (await store.createRepositoryProject('Project')).repositoryProjects[0]!;
+    const before = await readFile(file, 'utf8');
+    await expect(store.moveRepositoryProject('unknown', 0)).rejects.toThrow();
+    await expect(store.moveRepositoryProject(project.id, -1)).rejects.toThrow();
+    await expect(store.moveRepositoryProject(project.id, 1)).rejects.toThrow();
+    for (const index of [-1, 1, 0.5, NaN]) await expect(store.moveRepository('c:/repos/repo/.git', index)).rejects.toThrow();
+    await expect(store.moveRepository('unknown', 0)).rejects.toThrow();
+    expect(await readFile(file, 'utf8')).toBe(before);
+  });
+
+  it('keeps a relocated repository in its saved position', async () => {
+    const store = new SettingsStore(await settingsFile({}));
+    await store.load();
+    for (const id of ['a', 'b', 'c']) await store.touchRepository(repository(id));
+    await store.relocateRepository('b', { ...repository('moved'), path: 'D:\\repos\\moved' });
+    expect(store.recentRepositories.map((item) => item.id)).toEqual(['a', 'moved', 'c']);
   });
 
   it('relocates repository references in one persisted update', async () => {
@@ -481,4 +568,20 @@ describe('CLI executable preferences', () => {
     await expect(store.setPreferences({ aiExecutablePaths: { opencode: value } })).rejects.toMatchObject({ detail: { code: 'INVALID_ARGUMENT' } });
     expect(store.preferences.aiExecutablePaths).toEqual({});
   });
+});
+
+it('repairs repository AI opt-ins and carries their scope through relocation and forget', async () => {
+  const file = await settingsFile({ repositoryAiInstructions: { '/fixture/Sample/.git': true, '/fixture/other/.git': 'true', relative: true } });
+  const store = new SettingsStore(file); await store.load();
+  expect(store.repositoryAiInstructionsEnabled('/fixture/Sample/.git')).toBe(true);
+  expect(store.repositoryAiInstructionsEnabled('/fixture/other/.git')).toBe(false);
+  expect(store.repositoryAiInstructionsEnabled('relative')).toBe(false);
+  if (process.platform !== 'win32') expect(store.repositoryAiInstructionsEnabled('/fixture/sample/.git')).toBe(false);
+  const previous = { id: 'repo', name: 'Sample', repositoryName: 'Sample', path: '/fixture/Sample', commonDir: '/fixture/Sample/.git' };
+  await store.touchRepository(previous);
+  await store.relocateRepository('repo', { ...previous, id: 'moved', path: '/fixture/moved', commonDir: '/fixture/moved/.git' });
+  expect(store.repositoryAiInstructionsEnabled(previous.commonDir)).toBe(false);
+  expect(store.repositoryAiInstructionsEnabled('/fixture/moved/.git')).toBe(true);
+  await store.forgetRepository('/fixture/moved/.git');
+  expect(store.repositoryAiInstructionsEnabled('/fixture/moved/.git')).toBe(false);
 });

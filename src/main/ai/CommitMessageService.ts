@@ -1,3 +1,4 @@
+import type { RepositoryAiInstructions } from './RepositoryAiInstructions';
 import { EMPTY_AI_USAGE, type AiUsage } from '../../shared/ai-log';
 import type { AiHarnessId, AiHarnessStatus, CommitSplitProposal, GenerateCommitMessageInput, GeneratedCommitMessage } from '../../shared/contracts';
 import { AiOperationError } from '../../shared/errors';
@@ -5,20 +6,24 @@ import type { GitRepositoryOperations } from '../git/GitRepositoryOperations';
 import { type AiLogRecorder, failureLogFields, recordSafely } from '../persistence/AiLogStore';
 import { buildCommitMessagePrompt, COMMIT_MESSAGE_SCHEMA, type ParsedCommitPlan, parseCommitSplitProposal, parseGeneratedParts } from './CommitMessagePrompt';
 import { DEFAULT_MODEL, type AiProvider } from './types';
+import type { AiStatusStore } from '../persistence/AiStatusStore';
 
 export class CommitMessageService {
   private readonly providers = new Map<AiHarnessId, AiProvider>();
   private readonly active = new Map<string, { repositoryId: string; controller: AbortController }>();
-  private statusCache: { at: number; value: AiHarnessStatus[] } | null = null;
+  private statusCache: { key: string; value: AiHarnessStatus[] } | null = null;
+  private statusInvalidated = false;
 
   private statusGeneration = 0;
-  private pendingStatus: { force: boolean; promise: Promise<AiHarnessStatus[]> } | undefined;
+  private pendingStatus: { force: boolean; key: string; promise: Promise<AiHarnessStatus[]> } | undefined;
 
   constructor(
     private readonly operations: GitRepositoryOperations,
     providers: AiProvider[],
     private readonly log?: AiLogRecorder,
     private readonly invalidateDiscovery?: () => void,
+    private readonly statusPersistence?: { store: Pick<AiStatusStore, 'load' | 'save'>; key(): string },
+    private readonly instructions?: Pick<RepositoryAiInstructions, 'snapshot'>,
   ) {
     for (const provider of providers) this.providers.set(provider.id, provider);
   }
@@ -26,26 +31,41 @@ export class CommitMessageService {
   invalidateStatuses(): void {
     this.statusGeneration++;
     this.statusCache = null;
+    this.statusInvalidated = true;
     this.pendingStatus = undefined;
     this.invalidateDiscovery?.();
   }
 
   async statuses(forceRefresh = false): Promise<AiHarnessStatus[]> {
-    if (!forceRefresh && this.statusCache && Date.now() - this.statusCache.at < 30_000) return this.statusCache.value;
-    if (this.pendingStatus && (!forceRefresh || this.pendingStatus.force)) return this.pendingStatus.promise;
+    const key = this.statusPersistence?.key() ?? '';
+    if (!forceRefresh && this.statusCache?.key === key) return this.statusCache.value;
+    if (this.pendingStatus?.key === key && (!forceRefresh || this.pendingStatus.force)) return this.pendingStatus.promise;
     const generation = ++this.statusGeneration;
-    const promise = Promise.all([...this.providers.values()].map(async (provider): Promise<AiHarnessStatus> => {
-      try { return await provider.status(forceRefresh); }
-      catch {
-        return { id: provider.id, label: { codex: 'Codex', claude: 'Claude Code', opencode: 'OpenCode', grok: 'Grok Build' }[provider.id], installed: false,
-          availability: 'error', authStatus: 'unknown', installationStatus: 'inspection-failed',
-          message: 'Could not inspect this CLI. Check again or review its executable path.', models: [DEFAULT_MODEL], checkedAt: new Date().toISOString() };
+    const promise = (async () => {
+      if (!forceRefresh && !this.statusInvalidated && this.statusPersistence) {
+        const saved = await this.statusPersistence.store.load(key).catch(() => null);
+        if (saved?.length === this.providers.size && saved.every((status) => this.providers.has(status.id))) {
+          if (generation === this.statusGeneration) this.statusCache = { key, value: saved };
+          return saved;
+        }
       }
-    })).then((value) => {
-      if (generation === this.statusGeneration) this.statusCache = { at: Date.now(), value };
+      const value = await Promise.all([...this.providers.values()].map(async (provider): Promise<AiHarnessStatus> => {
+        try { return { ...await provider.status(forceRefresh), checkedAt: new Date().toISOString() }; }
+        catch {
+          return { id: provider.id, label: { codex: 'Codex', claude: 'Claude Code', opencode: 'OpenCode', grok: 'Grok Build' }[provider.id], installed: false,
+            availability: 'error', authStatus: 'unknown', installationStatus: 'inspection-failed',
+            message: 'Could not inspect this CLI. Check again or review its executable path.', models: [DEFAULT_MODEL], checkedAt: new Date().toISOString() };
+        }
+      }));
+      if (generation === this.statusGeneration) {
+        this.statusCache = { key, value };
+        this.statusInvalidated = false;
+        // A cache write failure must not turn a successful CLI inspection into an error.
+        try { await this.statusPersistence?.store.save(key, value); } catch { /* keep the in-memory result */ }
+      }
       return value;
-    });
-    this.pendingStatus = { force: forceRefresh, promise };
+    })();
+    this.pendingStatus = { force: forceRefresh, key, promise };
     try { return await promise; } finally { if (this.pendingStatus?.promise === promise) this.pendingStatus = undefined; }
   }
 
@@ -71,12 +91,15 @@ export class CommitMessageService {
       const context = await this.operations.getCommitMessageContext(input.repositoryId);
       stagedFileCount = context.stagedPaths.length;
       contextTruncated = context.truncated;
+      const instructions = await this.instructions?.snapshot(input.repositoryId);
       throwIfCancelled(signal, input.harness);
-      const generated = await provider.generate({ repositoryPath: context.repositoryPath, prompt: buildCommitMessagePrompt(context), schema: COMMIT_MESSAGE_SCHEMA, model: input.model, signal });
+      const generated = await provider.generate({ repositoryPath: context.repositoryPath, prompt: buildCommitMessagePrompt(context, instructions?.files), schema: COMMIT_MESSAGE_SCHEMA, model: input.model, signal });
       usage = generated.usage;
       const parts = parseGeneratedParts(generated.output);
       const current = await this.operations.getCommitMessageContext(input.repositoryId);
       throwIfCancelled(signal, input.harness);
+      const currentInstructions = await this.instructions?.snapshot(input.repositoryId);
+      if (currentInstructions?.fingerprint !== instructions?.fingerprint) throw new AiOperationError({ code: 'AI_STAGED_CHANGES_CHANGED', operation: 'ai-repository-instructions', harness: input.harness, message: 'Repository instructions changed during generation. Generate again.' });
       if (current.fingerprint !== context.fingerprint) throw new AiOperationError({ code: 'AI_STAGED_CHANGES_CHANGED', operation: 'ai-generate', harness: input.harness, message: 'Staged changes changed during generation.' });
       // A truncated patch no longer blocks the split: grouping needs the file
       // list, which `splitBlockedReason` already guarantees is complete.

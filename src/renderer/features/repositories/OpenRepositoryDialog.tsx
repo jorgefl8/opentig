@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, 
 import { IconAlertCircle, IconArrowRight, IconArrowUp, IconBook2, IconCheck, IconChevronRight, IconClock, IconDeviceDesktop, IconFileText, IconFolder, IconGitBranch, IconHome, IconInbox, IconLoader4, IconPencil, IconSearch, IconServer, IconX } from '@tabler/icons-react';
 import type { RecentRepository, ServerDirectoryListing } from '../../../shared/contracts';
 import { Button } from '@/components/ui/button';
+import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { Dialog, DialogDescription, DialogPopup, DialogTitle } from '@/components/ui/dialog';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { folderBreadcrumbs, folderName, parentFolderPath, sameFolder } from './directory-navigation';
@@ -41,7 +42,10 @@ export function OpenRepositoryDialog({ open, onOpenChange, onOpen, onBrowse, rec
   const editButton = useRef<HTMLButtonElement>(null);
   const confirmButton = useRef<HTMLButtonElement>(null);
   const restoreFocus = useRef<'path' | 'folders' | null>(null);
-  const recentFolders = useMemo(() => recent.filter((item, index) => recent.findIndex(other => sameFolder(other.path, item.path)) === index).slice(0, 4), [recent]);
+  const recentFolders = useMemo(() => {
+    const byLastUse = [...recent].sort((a, b) => b.lastOpenedAt.localeCompare(a.lastOpenedAt));
+    return byLastUse.filter((item, index) => byLastUse.findIndex(other => sameFolder(other.path, item.path)) === index).slice(0, 4);
+  }, [recent]);
   const workspacePath = recentFolders[0] ? parentFolderPath(recentFolders[0].path) : null;
   const startPath = initialPath ?? workspacePath ?? undefined;
   const browse = useCallback(async (nextPath?: string) => {
@@ -195,8 +199,8 @@ export function OpenRepositoryDialog({ open, onOpenChange, onOpen, onBrowse, rec
       </div>
       {openError && <p role="alert" className="repository-browser-open-error"><IconAlertCircle aria-hidden="true" />{openError}</p>}
       <footer className="repository-browser-footer">
-        <div className="repository-browser-selection" aria-live="polite"><span className={`repository-selection-icon${selected?.repository ? ' ready' : ''}`}>{selected?.repository ? <IconCheck aria-hidden="true" /> : <IconFolder aria-hidden="true" />}</span><div><strong>{selected?.name ?? (loading ? 'Loading folders…' : 'Choose a repository')}{selected?.repository && <span>Git repository</span>}</strong><Tooltip><TooltipTrigger render={<span className="repository-selection-path" tabIndex={selected ? 0 : undefined} />}>{editingPath ? 'Press Enter to browse the path before opening.' : selected?.path ?? 'Select a Git repository from the list.'}</TooltipTrigger><TooltipContent>{selected?.path ?? 'Select a Git repository from the list.'}</TooltipContent></Tooltip></div></div>
-        <div className="repository-browser-actions"><Button type="button" variant="ghost" disabled={busy} onClick={() => onOpenChange(false)}>Cancel</Button><Button ref={confirmButton} type="button" disabled={!canOpen} onClick={() => void openSelected()}>{busy ? <><IconLoader4 className="animate-spin" />Working…</> : <>{confirmLabel}<IconArrowRight aria-hidden="true" /></>}</Button></div>
+        <div className="repository-browser-selection" aria-live="polite"><span className={`repository-selection-icon${selected?.repository ? ' ready' : ''}`}>{selected?.repository ? <IconCheck aria-hidden="true" /> : <IconFolder aria-hidden="true" />}</span><div><strong>{selected?.name ?? (loading ? <ShimmeringText text="Loading folders…" /> : 'Choose a repository')}{selected?.repository && <span>Git repository</span>}</strong><Tooltip><TooltipTrigger render={<span className="repository-selection-path" tabIndex={selected ? 0 : undefined} />}>{editingPath ? 'Press Enter to browse the path before opening.' : selected?.path ?? 'Select a Git repository from the list.'}</TooltipTrigger><TooltipContent>{selected?.path ?? 'Select a Git repository from the list.'}</TooltipContent></Tooltip></div></div>
+        <div className="repository-browser-actions"><Button type="button" variant="ghost" disabled={busy} onClick={() => onOpenChange(false)}>Cancel</Button><Button ref={confirmButton} type="button" disabled={!canOpen} onClick={() => void openSelected()}>{busy ? <><IconLoader4 className="animate-spin" /><ShimmeringText text="Working…" /></> : <>{confirmLabel}<IconArrowRight aria-hidden="true" /></>}</Button></div>
       </footer>
     </DialogPopup>
   </Dialog>;

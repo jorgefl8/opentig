@@ -76,7 +76,9 @@ export class CliEnvironment {
 }
 
 export async function readUserEnvironment(host: CliHost): Promise<Environment> {
-  const options = { cwd: host.home, env: host.env, extendEnv: false, input: '', timeout: 5_000, maxBuffer: 128 * 1024,
+  // Cold Windows PowerShell startup can exceed five seconds under load. Keep
+  // the query bounded while giving its runtime time to initialize.
+  const options = { cwd: host.home, env: host.env, extendEnv: false, input: '', timeout: host.platform === 'win32' ? 15_000 : 5_000, maxBuffer: 128 * 1024,
     cleanup: true, killDescendants: true, windowsHide: true, reject: false, stripFinalNewline: false } as const;
   if (host.platform === 'win32') {
     const root = host.env.SystemRoot || host.env.SYSTEMROOT;
@@ -84,7 +86,8 @@ export async function readUserEnvironment(host: CliHost): Promise<Environment> {
     const shell = path.win32.join(root, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
     const script = '$ErrorActionPreference="Stop"; $r=@{}; foreach($scope in @("Machine","User")){ $r[$scope]=[Environment]::GetEnvironmentVariables($scope) }; ConvertTo-Json -InputObject $r -Compress';
     const result = await execa(shell, ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script], options);
-    if (result.exitCode !== 0 || result.timedOut || result.isMaxBuffer) throw new Error('Environment query failed');
+    if (result.timedOut) throw new Error('Environment query timed out');
+    if (result.exitCode !== 0 || result.isMaxBuffer) throw new Error('Environment query failed');
     return windowsLocations(JSON.parse(result.stdout), host.env);
   }
   const shell = host.shell;

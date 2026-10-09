@@ -3,6 +3,7 @@ import { File, UnresolvedFile, Virtualizer } from '@pierre/diffs/react';
 import type { MergeConflictRegion, MergeConflictResolution } from '@pierre/diffs/react';
 import type { DiffResult, DiffViewPreference, FileResult, ThemePreference } from '@shared/contracts';
 import { Button } from '@/components/ui/button';
+import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { DiffWorkspace } from './DiffWorkspace';
 import { OPENTIG_CODE_THEMES } from './diffThemes';
 import { VIEWER_SCROLLBAR_CSS } from './patch-utils';
@@ -123,7 +124,7 @@ function ConflictViewer({ file, themeType, overflow, onUpdate, onResolve }: {
     <div className="conflict-viewer">
       <div className="conflict-viewer-toolbar">
         <div><strong>Conflict resolution</strong><span>{unresolved > 0 ? `${unresolved} ${unresolved === 1 ? 'pending block' : 'pending blocks'}` : 'All blocks are resolved'}</span></div>
-        <Button size="sm" disabled={unresolved > 0 || saving} onClick={() => void save()}>{saving ? 'Saving…' : 'Mark as resolved'}</Button>
+        <Button size="sm" disabled={unresolved > 0 || saving} onClick={() => void save()}>{saving ? <ShimmeringText text="Saving…" /> : 'Mark as resolved'}</Button>
       </div>
       <Virtualizer className="viewer-scroll" contentClassName="viewer-content">
         {unresolved > 0 ? (

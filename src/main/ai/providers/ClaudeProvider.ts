@@ -1,3 +1,4 @@
+import { withGenerationEnvironment } from '../GenerationEnvironment';
 import { detectionFailure, detectionFields, requireCandidate, runCandidate, selectCli } from '../cli-selection';
 import type { AiHarnessStatus } from '../../../shared/contracts';
 import { AiOperationError } from '../../../shared/errors';
@@ -32,19 +33,21 @@ export class ClaudeProvider implements AiProvider {
 
   async generate(input: ProviderGenerateInput) {
     const executable = requireCandidate(await selectCli(this.resolver, this.runner, 'claude', { runOptions: { signal: input.signal } }), this.id);
-    const args = ['-p', '--output-format', 'json', '--json-schema', JSON.stringify(input.schema), '--tools', '', '--no-session-persistence', '--safe-mode'];
-    if (input.model !== 'default') args.push('--model', input.model);
-    const result = await runCandidate(this.runner, executable, args, { cwd: input.repositoryPath, stdin: input.prompt, timeoutMs: AI_PROVIDER_TIMEOUT_MS, signal: input.signal, removeEnv: ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN'] });
-    requireSuccess(result, this.id, 'claude-generate');
-    try {
-      const envelope = JSON.parse(result.stdout) as { structured_output?: unknown };
-      const output = envelope.structured_output;
-      if (!output || typeof output !== 'object' || Array.isArray(output)) throw new Error('missing structured output');
-      // The same envelope carries the token accounting and the dollar cost.
-      return { output: output as Record<string, unknown>, usage: claudeUsage(envelope) };
-    } catch (error) {
-      if (error instanceof AiOperationError) throw error;
-      throw new AiOperationError({ code: 'AI_INVALID_OUTPUT', operation: 'claude-generate', harness: this.id, message: 'Claude Code returned an invalid response.', retryable: true });
-    }
+    return withGenerationEnvironment('claude', executable.env, async (options) => {
+      const args = ['-p', '--output-format', 'json', '--json-schema', JSON.stringify(input.schema), '--tools', '', '--no-session-persistence', '--safe-mode', '--setting-sources', '', '--settings', '{"disableAllHooks":true}', '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}', '--disallowedTools', 'mcp__*'];
+      if (input.model !== 'default') args.push('--model', input.model);
+      const result = await runCandidate(this.runner, executable, args, { ...options, stdin: input.prompt, timeoutMs: AI_PROVIDER_TIMEOUT_MS, signal: input.signal, removeEnv: [...(options.removeEnv ?? []), 'ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN'] });
+      requireSuccess(result, this.id, 'claude-generate');
+      try {
+        const envelope = JSON.parse(result.stdout) as { structured_output?: unknown };
+        const output = envelope.structured_output;
+        if (!output || typeof output !== 'object' || Array.isArray(output)) throw new Error('missing structured output');
+        // The same envelope carries the token accounting and the dollar cost.
+        return { output: output as Record<string, unknown>, usage: claudeUsage(envelope) };
+      } catch (error) {
+        if (error instanceof AiOperationError) throw error;
+        throw new AiOperationError({ code: 'AI_INVALID_OUTPUT', operation: 'claude-generate', harness: this.id, message: 'Claude Code returned an invalid response.', retryable: true });
+      }
+    });
   }
 }

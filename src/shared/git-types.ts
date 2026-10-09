@@ -85,6 +85,9 @@ export interface BranchInfo {
   fullName: string;
   current: boolean;
   remote: boolean;
+  /** Configured remote and source branch, present in the manager snapshot. */
+  remoteName?: string;
+  remoteBranchName?: string;
   upstream: string | null;
   ahead: number;
   behind: number;
@@ -115,13 +118,36 @@ export interface ManagedWorktree extends WorktreeInfo {
 }
 
 /**
- * Cheap enumeration for the local refs manager: local branches plus every
+ * Cheap enumeration for the refs manager: local and remote branches plus every
  * worktree of the repository. Deliberately runs no per-worktree status scan.
  */
 export interface LocalRefsSnapshot {
   branches: BranchInfo[];
   worktrees: ManagedWorktree[];
+  remotes: string[];
 }
+
+export interface RemoteBranchDetails extends CommitSummary {
+  fullName: string;
+  name: string;
+  remote: string;
+  branchName: string;
+  localBranches: Array<{ name: string; fullName: string; worktreePath: string | null }>;
+  defaultBranch: string | null;
+  remoteState: 'current' | 'changed' | 'missing' | 'unchecked';
+  /** Hash of the resolved destination and source ref; never exposes remote URLs. */
+  destinationId: string;
+  deletionBlockedReason: string | null;
+}
+
+export type RemoteBranchDeletionResult =
+  | { status: 'deleted' }
+  | { status: 'stale' | 'missing' | 'default' | 'destination-changed' }
+  | { status: 'rejected'; message: string };
+
+export type TrackingBranchCreationResult =
+  | { status: 'created'; fullName: string }
+  | { status: 'stale' | 'missing' | 'exists' };
 
 /**
  * Why a local branch can or cannot be deleted with Git's non-forced path.

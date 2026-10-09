@@ -4,11 +4,13 @@ import type {
   FileChange, LocalRefsSnapshot, WorktreeDetails, WorktreeInfo,
 } from '../../shared/git-types';
 import { AiOperationError, GitOperationError } from '../../shared/errors';
+import { redactSensitiveText } from '../../shared/redaction';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import type { FileService } from '../files/FileService';
 import { realpath, stat, writeFile } from 'node:fs/promises';
 import type { CommitMessageContext, PullRequestDraftContext } from '../ai/types';
+import type { RepositoryInstructionFile } from '../ai/RepositoryAiInstructions';
 import type { GitProcess } from './GitProcess';
 import { parseCommitFiles } from './CommitFilesParser';
 import { LOG_FORMAT, parseLog } from './LogParser';
@@ -16,8 +18,14 @@ import { selectHistoryBase } from './HistoryBase';
 import { REF_FORMAT, parseRefs } from './RefParser';
 import type { RepositoryService } from './RepositoryService';
 import { allocatePatchBudget } from './PatchBudget';
+import { allocatePullRequestPatch } from './PullRequestPatch';
+import { buildPullRequestPrompt, PR_PROMPT_CHARACTER_LIMIT } from '../ai/PullRequestPrompt';
 import { parseStatus } from './StatusParser';
 import { parseWorktrees } from './WorktreeParser';
+import { GitCommitAuthorship } from './GitCommitAuthorship';
+import type { SetCommitAuthorshipInput } from '../../shared/commit-authorship';
+import { GitRemoteBranches } from './GitRemoteBranches';
+import type { CreateTrackingBranchRequest, DeleteRemoteBranchRequest } from '../../shared/contracts';
 
 /**
  * Characters of staged diff and staged summary sent to the model. Generous on
@@ -32,13 +40,29 @@ type GitTaskRunner = (
 ) => Promise<{ stdout: Buffer }>;
 
 export class GitRepositoryOperations {
+  access?: import('./RepositoryGitAccess').RepositoryGitAccess;
+  publicationContext(repositoryId: string, remote?: string) {
+    if (!this.access) throw new Error('Repository access is unavailable.');
+    return this.access.publication(repositoryId, remote);
+  }
   private readonly knownOids = new Map<string, Set<string>>();
+  private readonly authorship: GitCommitAuthorship;
+  private readonly remoteBranches: GitRemoteBranches;
 
   constructor(
     private readonly git: GitProcess,
     private readonly repositories: RepositoryService,
     private readonly files: FileService,
-  ) {}
+  ) { this.authorship = new GitCommitAuthorship(git, repositories); this.remoteBranches = new GitRemoteBranches(git, repositories); }
+
+  remoteBranchDetails(repositoryId: string, fullName: string) { return this.remoteBranches.details(repositoryId, fullName); }
+  createTrackingBranch(request: CreateTrackingBranchRequest) { return this.remoteBranches.create(request); }
+  deleteRemoteBranch(request: DeleteRemoteBranchRequest) { return this.git.withNetworkContext(this.repositories.get(request.repositoryId).path, () => this.remoteBranches.delete(request)); }
+  fetchBranches(repositoryId: string) { return this.git.withNetworkContext(this.repositories.get(repositoryId).path, () => this.remoteBranches.fetch(repositoryId)); }
+
+  getCommitAuthorship(repositoryId: string) { return this.authorship.get(repositoryId); }
+
+  setCommitAuthorship(repositoryId: string, input: SetCommitAuthorshipInput) { return this.authorship.set(repositoryId, input); }
 
   async diff(request: DiffRequest): Promise<DiffResult> {
     const repository = this.repositories.get(request.repositoryId);
@@ -268,49 +292,99 @@ export class GitRepositoryOperations {
     };
   }
 
-  async getPullRequestDraftContext(repositoryId: string, base: string): Promise<PullRequestDraftContext> {
+  async getPullRequestDraftSnapshot(repositoryId: string, base: string) {
     const repository = this.repositories.get(repositoryId);
     const status = await this.repositories.status(repositoryId, false);
-    if (status.detached || status.unborn || !status.branch) {
+    if (status.detached || status.unborn || !status.branch || !status.oid) {
       throw new AiOperationError({ code: 'AI_PROCESS_FAILED', operation: 'ai-pr-context', message: 'Check out a branch before generating a pull request draft.' });
     }
-    const baseHasControl = [...base].some((character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127);
+    const baseHasControl = [...base].some(character => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127);
     if (!base || base.startsWith('-') || baseHasControl || /[\s~^:?*[\\]/.test(base) || base.includes('..')) {
       throw new AiOperationError({ code: 'AI_PROCESS_FAILED', operation: 'ai-pr-context', message: 'The base branch is not valid.' });
     }
+    let baseOid: string;
     try {
-      await this.git.run(repository.path, ['rev-parse', '--verify', '--quiet', `${base}^{commit}`], { operation: 'ai-pr-base-check', readOnly: true });
+      baseOid = (await this.git.run(repository.path, ['rev-parse', '--verify', '--quiet', `${base}^{commit}`], { operation: 'ai-pr-base-check', readOnly: true })).stdout.toString('utf8').trim();
     } catch {
       throw new AiOperationError({ code: 'AI_PROCESS_FAILED', operation: 'ai-pr-context', message: 'The base branch is not available locally. Fetch the remote and try again.' });
     }
-    const [headOutput, subjectsOutput, summaryOutput, patchOutput] = await Promise.all([
-      this.git.run(repository.path, ['rev-parse', 'HEAD'], { operation: 'ai-pr-head', readOnly: true }),
-      this.git.run(repository.path, ['log', '--max-count=30', '--format=%s', `${base}..HEAD`, '--'], { operation: 'ai-pr-subjects', readOnly: true, maxOutputBytes: 256 * 1024 }),
-      this.git.run(repository.path, ['diff', '--stat', '--no-color', '--no-ext-diff', '--no-textconv', `${base}...HEAD`, '--'], { operation: 'ai-pr-summary', readOnly: true, maxOutputBytes: 8 * 1024 * 1024 }),
-      this.git.run(repository.path, ['diff', '--no-color', '--no-ext-diff', '--no-textconv', '--unified=3', `${base}...HEAD`, '--'], { operation: 'ai-pr-patch', readOnly: true, maxOutputBytes: 64 * 1024 * 1024 }),
+    const headOid = status.oid;
+    const mergeBaseOid = (await this.git.run(repository.path, ['merge-base', baseOid, headOid], { operation: 'ai-pr-merge-base', readOnly: true })).stdout.toString('utf8').trim();
+    const fingerprint = createHash('sha256').update(JSON.stringify([repositoryId, status.branch, base, headOid, baseOid, mergeBaseOid])).digest('hex');
+    return { repositoryId, repositoryPath: repository.path, branch: status.branch, base, headOid, baseOid, mergeBaseOid, fingerprint };
+  }
+
+  async getPullRequestDraftContext(repositoryId: string, base: string, instructions: RepositoryInstructionFile[] = []): Promise<PullRequestDraftContext> {
+    const snapshot = await this.getPullRequestDraftSnapshot(repositoryId, base);
+    const { repositoryPath, headOid, baseOid, mergeBaseOid } = snapshot;
+    // Every command reads immutable commits, even if HEAD or the base moves meanwhile.
+    const diff = ['diff', '--no-color', '--no-ext-diff', '--no-textconv', '--find-renames'];
+    const run = (args: string[], operation: string, maxOutputBytes: number) => this.git.run(repositoryPath, args, { operation, readOnly: true, maxOutputBytes });
+    const [subjectsOutput, countOutput, summaryOutput, namesOutput, statsOutput, patchOutput] = await Promise.all([
+      run(['log', '-z', '--max-count=30', '--format=%s', `${baseOid}..${headOid}`, '--'], 'ai-pr-subjects', 256 * 1024),
+      run(['rev-list', '--count', `${baseOid}..${headOid}`, '--'], 'ai-pr-commit-count', 1024),
+      run([...diff, '--stat', mergeBaseOid, headOid, '--'], 'ai-pr-summary', 8 * 1024 * 1024),
+      run([...diff, '--name-status', '-z', mergeBaseOid, headOid, '--'], 'ai-pr-inventory', 8 * 1024 * 1024),
+      run([...diff, '--numstat', '-z', mergeBaseOid, headOid, '--'], 'ai-pr-inventory-stats', 8 * 1024 * 1024),
+      run([...diff, '--unified=3', mergeBaseOid, headOid, '--'], 'ai-pr-patch', 64 * 1024 * 1024),
     ]);
-    const fullSummary = summaryOutput.stdout.toString('utf8');
-    const fullPatch = patchOutput.stdout.toString('utf8');
-    const subjects = subjectsOutput.stdout.toString('utf8').split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
-    if (subjects.length === 0 && !fullPatch.trim()) {
+    const inventory = parseCommitFiles(namesOutput.stdout.toString('utf8'), statsOutput.stdout.toString('utf8'));
+    const commitsTotal = Number(countOutput.stdout.toString('utf8').trim());
+    if (!Number.isSafeInteger(commitsTotal) || commitsTotal < 0) throw new Error('Invalid commit count.');
+    if (commitsTotal === 0 && inventory.length === 0) {
       throw new AiOperationError({ code: 'AI_PROCESS_FAILED', operation: 'ai-pr-context', message: 'There are no changes against the base branch to describe.' });
     }
-    // Pull-request drafts need the same breadth as commit planning. The former
-    // 40k prefix cut routinely dropped later files from a branch-sized diff.
-    // Keep the full summary budget and share patch space fairly across files.
-    const summary = bounded(fullSummary, AI_SUMMARY_BUDGET);
-    const patch = allocatePatchBudget(fullPatch, AI_PATCH_BUDGET);
-    return {
-      repositoryId,
-      repositoryPath: repository.path,
-      branch: status.branch,
-      base,
-      subjects,
-      summary: summary.value,
-      patch: patch.value,
-      fingerprint: createHash('sha256').update(`${headOutput.stdout.toString('utf8').trim()}\n${base}\n`).update(fullPatch).digest('hex'),
-      truncated: summary.truncated || patch.truncated,
+    const subjects: string[] = [];
+    let subjectsSize = 0;
+    for (const subject of subjectsOutput.stdout.toString('utf8').split('\0').filter(Boolean)) {
+      const size = JSON.stringify(subject).length + 3;
+      if (subjectsSize + size > 12_000) break;
+      subjects.push(subject);
+      subjectsSize += size;
+    }
+    const fullSummary = summaryOutput.stdout.toString('utf8');
+    const marker = '\n[summary truncated by OpenTig]';
+    const summaryTruncated = fullSummary.length > AI_SUMMARY_BUDGET;
+    let summary = fullSummary;
+    if (summaryTruncated) {
+      const prefix = fullSummary.slice(0, AI_SUMMARY_BUDGET - marker.length);
+      summary = prefix.slice(0, Math.max(0, prefix.lastIndexOf('\n'))) + marker;
+    }
+    let fullPatch = patchOutput.stdout.toString('utf8');
+    const context: PullRequestDraftContext = {
+      ...snapshot, subjects, summary, patch: '', truncated: false,
+      coverage: {
+        repositoryId, branch: snapshot.branch, base, headOid, baseOid, mergeBaseOid, contextLines: 3,
+        files: inventory.map(file => ({ ...file, detail: 'inventory-only', omittedChangedLines: file.additions + file.deletions, omittedHunks: 0 })),
+        commitsIncluded: subjects.length, commitsTotal, summaryTruncated,
+        originalPatchCharacters: fullPatch.length, suppliedPatchCharacters: 0,
+        promptCharacters: 0, promptCharacterLimit: PR_PROMPT_CHARACTER_LIMIT,
+      },
     };
+    // Bound metadata independently as well as the complete serialized prompt.
+    // Paths stay intact: no successful draft may silently lose an inventory entry.
+    if (JSON.stringify(context.coverage.files).length > 96_000) {
+      throw new AiOperationError({ code: 'AI_PROCESS_FAILED', operation: 'ai-pr-context', message: 'The complete file inventory is too large for a draft. Narrow the comparison or write the description manually.' });
+    }
+    let patchBudget = Math.min(AI_PATCH_BUDGET, PR_PROMPT_CHARACTER_LIMIT - buildPullRequestPrompt(context, instructions).length - 256);
+    if (patchBudget < 0) throw new AiOperationError({ code: 'AI_PROCESS_FAILED', operation: 'ai-pr-context', message: 'The complete file inventory does not fit in the draft context. Write the description manually.' });
+    if (fullPatch.length > patchBudget) {
+      fullPatch = (await run([...diff, '--unified=1', mergeBaseOid, headOid, '--'], 'ai-pr-compact-patch', 64 * 1024 * 1024)).stdout.toString('utf8');
+      context.coverage.contextLines = 1;
+    }
+    for (;;) {
+      const allocation = allocatePullRequestPatch(fullPatch, inventory, patchBudget);
+      context.patch = allocation.value;
+      context.coverage.files = allocation.files;
+      context.coverage.suppliedPatchCharacters = context.patch.length;
+      context.coverage.promptCharacters = buildPullRequestPrompt(context, instructions).length;
+      const excess = context.coverage.promptCharacters - PR_PROMPT_CHARACTER_LIMIT;
+      if (excess <= 0) break;
+      patchBudget -= excess + 256;
+      if (patchBudget < 0) throw new AiOperationError({ code: 'AI_PROCESS_FAILED', operation: 'ai-pr-context', message: 'The complete coverage report does not fit in the draft context. Write the description manually.' });
+    }
+    context.truncated = summaryTruncated || subjects.length < commitsTotal || context.coverage.files.some(file => file.detail !== 'complete');
+    return context;
   }
 
   async listCommits(repositoryId: string, cursor?: string): Promise<CommitPage> {
@@ -484,6 +558,10 @@ export class GitRepositoryOperations {
   }
 
   async fetch(repositoryId: string): Promise<FetchResult> {
+    return this.git.withNetworkContext(this.repositories.get(repositoryId).path, () => this.fetchInContext(repositoryId));
+  }
+
+  private async fetchInContext(repositoryId: string): Promise<FetchResult> {
     const repository = this.repositories.get(repositoryId);
     try {
       await this.runFetch(repository.path, 'fetch');
@@ -498,6 +576,10 @@ export class GitRepositoryOperations {
   }
 
   async pull(repositoryId: string): Promise<PullResult> {
+    return this.git.withNetworkContext(this.repositories.get(repositoryId).path, () => this.pullInContext(repositoryId));
+  }
+
+  private async pullInContext(repositoryId: string): Promise<PullResult> {
     const repository = this.repositories.get(repositoryId);
     let status = await this.repositories.status(repositoryId, false);
     const existingConflicts = conflictPaths(status);
@@ -577,7 +659,37 @@ export class GitRepositoryOperations {
     return { status: 'success', commits, restoredLocalChanges: hasLocalChanges, rebased, localCommits: nextStatus.ahead };
   }
 
-  async push(repositoryId: string, publish?: PublishBranchOptions): Promise<PushResult> {
+  async push(repositoryId: string, publish?: PublishBranchOptions, expectedContext?: string): Promise<PushResult> {
+    if (this.access) return this.pushWithContext(repositoryId, publish, expectedContext);
+    return this.legacyPush(repositoryId, publish);
+  }
+
+  private async pushWithContext(repositoryId: string, publish?: PublishBranchOptions, expectedContext?: string): Promise<PushResult> {
+    const repository = this.repositories.get(repositoryId);
+    try {
+      const reviewed = await this.access!.assertPublication(repositoryId, expectedContext, publish?.remote);
+      return await this.git.withNetworkContext(repository.path, () => this.git.runWriteTask(repository.path, async run => {
+        const context = await this.access!.assertPublication(repositoryId, reviewed.id, publish?.remote);
+        const status = await this.repositories.status(repositoryId, false);
+        const conflicts = conflictPaths(status);
+        if (conflicts.length) return { status: 'blocked-conflicts', files: conflicts };
+        if (status.operation) return { status: 'blocked-operation', operation: status.operation };
+        if (!context.branch || !context.oid || !context.targetRef) return { status: 'rejected', reason: 'configuration', message: 'Check out a branch with a commit before publishing.' };
+        if (publish && (publish.expectedBranch !== context.branch || publish.expectedOid !== context.oid)) return { status: 'rejected', reason: 'configuration', message: 'The branch changed. Review and try again.' };
+        if (!context.remote) return context.remotes.length ? { status: 'remote-required', branch: context.branch, oid: context.oid, remotes: context.remotes }
+          : { status: 'rejected', reason: 'configuration', message: 'No remote is configured.' };
+        const result = await run(['-c', `remote.${context.remote}.mirror=false`, 'push', '--porcelain', '--no-follow-tags',
+          ...(!status.upstream ? ['--set-upstream'] : []), '--', context.remote, `refs/heads/${context.branch}:${context.targetRef}`], {
+          operation: 'push', timeoutMs: 120_000, maxOutputBytes: 4 * 1024 * 1024,
+          publication: { repositoryId, id: context.id, ...(publish?.remote ? { remote: publish.remote } : {}) },
+        });
+        if (!status.upstream) return { status: 'published', branch: context.branch, remote: context.remote };
+        return result.stdout.toString('utf8').includes('[up to date]') ? { status: 'up-to-date' } : { status: 'success', commits: status.ahead };
+      }, repository.commonDir));
+    } catch (error) { return pushFailure(error); }
+  }
+
+  private async legacyPush(repositoryId: string, publish?: PublishBranchOptions): Promise<PushResult> {
     const repository = this.repositories.get(repositoryId);
     let status = await this.repositories.status(repositoryId, false);
     const existingConflicts = conflictPaths(status);
@@ -679,15 +791,16 @@ export class GitRepositoryOperations {
   }
 
   /**
-   * Cheap enumeration for the local refs manager. Deliberately runs no status
+   * Cheap enumeration for the refs manager. Deliberately runs no status
    * scan per worktree so ordinary refreshes stay as fast as the selectors.
    */
   async localRefsSnapshot(repositoryId: string): Promise<LocalRefsSnapshot> {
     const repository = this.repositories.get(repositoryId);
     const [branches, worktrees] = await Promise.all([this.branches(repositoryId), this.worktrees(repositoryId)]);
-    const locals = branches.filter((branch) => !branch.remote).sort(compareBranches);
+    const managed = await this.remoteBranches.snapshotBranches(repositoryId, branches);
     return {
-      branches: locals,
+      branches: managed.branches.sort(compareBranches),
+      remotes: managed.remotes,
       worktrees: await Promise.all(worktrees.map(async (worktree) => ({ ...worktree, current: await samePath(worktree.path, repository.path) }))),
     };
   }
@@ -1105,25 +1218,20 @@ function bounded(value: string, limit: number): { value: string; truncated: bool
   return { value: `${value.slice(0, limit)}\n[content truncated by OpenTig]`, truncated: true };
 }
 
-function pushFailure(error: unknown): Extract<PushResult, { status: 'rejected' }> {
+export function pushFailure(error: unknown): Extract<PushResult, { status: 'rejected' }> {
   const detail = error instanceof GitOperationError ? error.detail : null;
-  const raw = `${detail?.stderr ?? ''}\n${detail?.message ?? (error instanceof Error ? error.message : '')}`.toLowerCase();
-  if (/authentication failed|permission denied|could not read username|access denied|publickey/.test(raw)) {
-    return { status: 'rejected', reason: 'authentication', message: 'The remote rejected the credentials or you do not have permission to push.' };
-  }
-  if (/non-fast-forward|fetch first|stale info|failed to push some refs/.test(raw)) {
-    return { status: 'rejected', reason: 'remote-changed', message: 'The remote contains new changes. Update the branch and try again.' };
-  }
-  if (/hook declined|pre-receive hook|protected branch|remote rejected/.test(raw)) {
-    return { status: 'rejected', reason: 'hook', message: 'The server rejected the push because of a rule or branch protection.' };
-  }
-  if (/could not resolve host|unable to access|connection timed out|connection reset|network is unreachable/.test(raw)) {
-    return { status: 'rejected', reason: 'network', message: 'Could not connect to the remote. Check your network and try again.' };
-  }
-  if (/upstream branch .* does not match|no upstream branch|push\.default/.test(raw)) {
-    return { status: 'rejected', reason: 'configuration', message: 'The local branch and its upstream do not allow a safe push with the current configuration.' };
-  }
-  return { status: 'rejected', reason: 'unknown', message: 'Git rejected the push. No force push was performed.' };
+  const message = redactSensitiveText(detail?.stderr || detail?.message || (error instanceof Error ? error.message : 'Git rejected the push.')).trim().slice(0, 3000);
+  const raw = message.toLowerCase();
+  let reason: Extract<PushResult, { status: 'rejected' }>['reason'] = 'unknown';
+  let explanation = '';
+  if (/repository not found|repository .* not found|(?:http|error:)\s*404/.test(raw)) { reason = 'inaccessible'; explanation = 'The repository is missing or inaccessible to this account. '; }
+  else if (/authentication failed|could not read username|bad credentials|expired|revoked|no usable saved credentials|publickey|(?:http|error:)\s*401/.test(raw)) reason = 'authentication';
+  else if (/protected branch|hook declined|pre-receive hook|remote rejected|gh006|gh013|repository rule/.test(raw)) reason = 'hook';
+  else if (/permission.*denied|write access.*not granted|access denied|(?:http|error:)\s*403/.test(raw)) reason = 'permission';
+  else if (/non-fast-forward|fetch first|stale info/.test(raw)) reason = 'remote-changed';
+  else if (/could not resolve host|unable to access|connection.*(timed out|reset|refused)|network is unreachable|(?:http|error:)\s*50[0-4]/.test(raw)) reason = 'network';
+  else if (detail?.code === 'INVALID_ARGUMENT' || /upstream branch .* does not match|no upstream branch|push\.default|context|account changed/.test(raw)) reason = 'configuration';
+  return { status: 'rejected', reason, message: explanation + message };
 }
 
 function makeDiffResult(path: string, buffer: Buffer): DiffResult {

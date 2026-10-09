@@ -39,6 +39,8 @@ export function createDesktopApi(
     webAccess: {
       getStatus: () => invoke(OPEN_TIG_DESKTOP_IPC.webAccessStatus),
       setEnabled: (enabled) => invoke(OPEN_TIG_DESKTOP_IPC.webAccessSetEnabled, enabled),
+      setLanEnabled: (enabled) => invoke(OPEN_TIG_DESKTOP_IPC.webAccessSetLanEnabled, enabled),
+      setPublicOrigin: (origin) => invoke(OPEN_TIG_DESKTOP_IPC.webAccessSetPublicOrigin, origin),
       createPairingLink: (endpoint) => invoke(OPEN_TIG_DESKTOP_IPC.webAccessCreatePairingLink, endpoint),
     },
     updates: {

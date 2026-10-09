@@ -21,7 +21,9 @@ const MIME_TYPES: Readonly<Record<string, string>> = {
 export const STATIC_SECURITY_HEADERS = {
   'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' ws: wss:; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
   'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), payment=(), usb=()',
-  'Referrer-Policy': 'no-referrer',
+  // Native same-origin form POSTs need a non-null Origin for CSRF checks.
+  // External destinations still receive no referrer.
+  'Referrer-Policy': 'same-origin',
   'X-Content-Type-Options': 'nosniff',
 } as const;
 

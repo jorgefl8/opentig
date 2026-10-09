@@ -1,4 +1,7 @@
+import { RepositoryAiInstructions } from '../ai/RepositoryAiInstructions';
 import type { OpenTigPlatform, OpenTigRuntimeMode } from '../../shared/contracts';
+import path from 'node:path';
+import { aiExecutablePathsKey } from '../../shared/ai-status';
 import { CliProcessRunner } from '../ai/CliProcessRunner';
 import { CliResolver } from '../ai/CliResolver';
 import { CommitMessageService } from '../ai/CommitMessageService';
@@ -10,12 +13,16 @@ import { OpenCodeProvider } from '../ai/providers/OpenCodeProvider';
 import { FileOperationHistory } from '../files/FileOperationHistory';
 import { FileService } from '../files/FileService';
 import { RepositoryWatcher } from '../files/RepositoryWatcher';
+import { RepositoryGitAccess } from '../git/RepositoryGitAccess';
 import { GitProcess } from '../git/GitProcess';
 import { GitRepositoryOperations } from '../git/GitRepositoryOperations';
 import { RepositoryService } from '../git/RepositoryService';
 import { SearchService } from '../git/SearchService';
+import { GitHubAccountsService } from '../github/GitHubAccountsService';
+import { GitHubStatusStore } from '../persistence/GitHubStatusStore';
 import { GitHubService } from '../github/GitHubService';
 import { AiLogStore } from '../persistence/AiLogStore';
+import { AiStatusStore } from '../persistence/AiStatusStore';
 import { ProblemsLogStore, problemsLogPathFromSettings, recordProblemSafely } from '../persistence/ProblemsLogStore';
 import { SettingsStore } from '../persistence/SettingsStore';
 import { SystemTrash, type TrashAdapter } from '../platform/SystemTrash';
@@ -64,11 +71,23 @@ export async function createOpenTigRuntime(
   ];
   const aiLog = new AiLogStore(options.aiLogPath);
   await aiLog.load();
-  const ai = new CommitMessageService(operations, providers, aiLog, () => cliResolver.invalidate());
-  const prDrafts = new PullRequestDraftService(operations, providers, aiLog);
-  const github = new GitHubService(cliResolver, cliRunner, git, repositories);
+  const aiInstructions = new RepositoryAiInstructions(repositories, settings);
+  const ai = new CommitMessageService(operations, providers, aiLog, () => cliResolver.invalidate(), {
+    store: new AiStatusStore(path.join(path.dirname(options.settingsPath), 'ai-statuses.json')),
+    key: () => aiExecutablePathsKey(settings.preferences.aiExecutablePaths),
+  }, aiInstructions);
+  const prDrafts = new PullRequestDraftService(operations, providers, aiLog, aiInstructions);
   let runtime: OpenTigRuntime | null = null;
+  const githubAccounts = new GitHubAccountsService(cliResolver, cliRunner, git, settings,
+    new GitHubStatusStore(path.join(path.dirname(options.settingsPath), 'github-status.json')),
+    (repository, defaultOnly) => runtime?.publishGitHubAccountsChange(repository?.commonDir, defaultOnly));
+  const gitAccess = new RepositoryGitAccess(git, repositories, githubAccounts, cliRunner);
+  gitAccess.install();
+  operations.access = gitAccess;
+  const github = new GitHubService(cliResolver, cliRunner, git, repositories, githubAccounts);
+  github.gitAccess = gitAccess;
   const events = {
+    aiInstructionsChanged: (commonDir: string) => runtime?.publishAiInstructionsChange(commonDir),
     repositoryChanged: (repositoryId: string, scope: Parameters<OpenTigRuntime['publishRepositoryChange']>[1]) => {
       runtime?.publishRepositoryChange(repositoryId, scope);
     },
@@ -93,6 +112,7 @@ export async function createOpenTigRuntime(
     operations,
     watcher,
     ai,
+    aiInstructions,
     cliRunner,
     aiLog,
     problems,

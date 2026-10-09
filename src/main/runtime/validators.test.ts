@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { generateCommitMessageArg, generatePullRequestDraftArg, booleanArg, branchDetailsArg, deleteBranchArg, filesTreeStateArg, nullableProjectIdArg, openFilesStateArg, prepareCommitGroupArg, projectIdArg, projectNameArg, publishBranchArg, pullRequestStatesArg, removeWorktreeArg, repositoryKeyArg, searchOptionsArg, searchReplaceArg, worktreeDetailsArg } from './validators';
 import { GitOperationError } from '../../shared/errors';
+import { createTrackingBranchArg, deleteRemoteBranchArg } from './validators';
 
 const OID = 'a'.repeat(40);
 const REVISION = 'b'.repeat(64);
@@ -101,6 +102,24 @@ describe('repository project validators', () => {
 });
 
 describe('local refs management validators', () => {
+  it('requires an expected tip and a destination identity for remote deletion', () => {
+    const request = { repositoryId: 'repo', fullName: 'refs/remotes/origin/feature', expectedOid: OID, destinationId: REVISION };
+    expect(deleteRemoteBranchArg({ ...request, force: true })).toEqual(request);
+    for (const destinationId of [undefined, '', 'origin', 'x'.repeat(64), 123]) {
+      expect(() => deleteRemoteBranchArg({ ...request, destinationId })).toThrow();
+    }
+    expect(() => deleteRemoteBranchArg({ ...request, expectedOid: undefined })).toThrow();
+  });
+
+  it('requires a valid typed local name and expected tip for tracking branch creation', () => {
+    const request = { repositoryId: 'repo', fullName: 'refs/remotes/origin/feature', expectedOid: OID, localName: 'review/feature' };
+    expect(createTrackingBranchArg(request)).toEqual(request);
+    for (const localName of [undefined, '', 'bad\nname', ['feature']]) {
+      expect(() => createTrackingBranchArg({ ...request, localName })).toThrow();
+    }
+    expect(() => createTrackingBranchArg({ ...request, expectedOid: 'not-an-oid' })).toThrow();
+  });
+
   it('returns newly allocated typed objects with only the expected fields', () => {
     const source = { repositoryId: '0123456789abcdef', fullName: 'refs/heads/función/ñandú', expectedOid: OID, force: true };
     const request = deleteBranchArg(source, 'test');

@@ -72,11 +72,42 @@ it('does not let an earlier exit animation dismiss a new outage', async () => {
   expect(notices()[0]?.textContent).toContain('OpenTig server is offline');
 });
 
+it('offers Reload inside the incompatible-version notification and reloads only when clicked', async () => {
+  const reload = vi.fn();
+  const browserWindow = window;
+  vi.stubGlobal('window', new Proxy(browserWindow, {
+    get: (target, property) => property === 'location' ? { reload } : Reflect.get(target, property),
+  }));
+  await state('connected');
+  await state('reconnecting'); await settle();
+  expect(notices()[0]?.querySelector('[data-sileo-button]')).toBeNull();
+  await state('incompatible-version'); await settle();
+  await act(async () => { notices()[0]?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })); });
+  await settle();
+  expect(notices()[0]?.querySelector('[data-sileo-content]')?.getAttribute('data-visible')).toBe('true');
+  const button = notices()[0]?.querySelector<HTMLElement>('[data-sileo-button]');
+  expect(button?.textContent).toBe('Reload');
+  expect(container.querySelector('#workspace')).not.toBeNull();
+  expect(reload).not.toHaveBeenCalled();
+  await act(async () => { button?.click(); });
+  expect(reload).toHaveBeenCalledTimes(1);
+});
+
+it('removes the Reload action if the connection notification changes to another error', async () => {
+  await state('connected');
+  await state('incompatible-version'); await settle();
+  expect(notices()[0]?.querySelector('[data-sileo-button]')?.textContent).toBe('Reload');
+  await state('offline'); await settle();
+  expect(notices()).toHaveLength(1);
+  expect(notices()[0]?.querySelector('[data-sileo-button]')).toBeNull();
+});
+
 it('clears the outage notification when authentication replaces the workspace', async () => {
   await state('connected');
   await state('reconnecting'); await settle();
   await state('auth-required'); await settle();
   expect(notices()).toHaveLength(0);
   expect(container.querySelector('#workspace')).toBeNull();
-  expect(container.querySelector('a[href="/pair"]')?.textContent).toBe('Pair this browser');
+  expect(container.querySelector('a[href="/pair"]')?.textContent).toBe('Check browser access');
+  expect(container.textContent).toContain('reload to resume your saved session');
 });

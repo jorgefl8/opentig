@@ -6,6 +6,7 @@ import { isFilesTreeRepositoryId, MAX_FILES_TREE_PATHS, normalizeExpandedPaths, 
 import { isOpenFilesRepositoryId, MAX_OPEN_FILE_TABS, normalizeOpenFilePath, type OpenFileTab } from '../../shared/open-files-state';
 import { SEARCH_MAX_QUERY_LENGTH, SEARCH_MAX_REPLACEMENT_LENGTH, SEARCH_REPLACE_MAX_FILES, type SearchOptions, type SearchReplaceRequest } from '../../shared/search';
 import { z } from 'zod';
+import type { CreateTrackingBranchRequest, DeleteRemoteBranchRequest } from '../../shared/contracts';
 import { booleanWithDefaultSchema, boundedStringSchema, parseRecord } from '../schemas/runtime';
 
 const plainStringArraySchema = z.array(z.string());
@@ -183,6 +184,21 @@ export function deleteBranchArg(value: unknown, operation: string): DeleteBranch
   };
 }
 
+export function createTrackingBranchArg(value: unknown): CreateTrackingBranchRequest {
+  const operation = 'create-tracking-branch';
+  const request = requestObject(value, operation);
+  return { ...branchDetailsArg(request, operation), expectedOid: oidArg(request.expectedOid, operation),
+    localName: refsString(request.localName, operation, MAX_BRANCH_REF_LENGTH) };
+}
+
+export function deleteRemoteBranchArg(value: unknown): DeleteRemoteBranchRequest {
+  const operation = 'delete-remote-branch';
+  const request = requestObject(value, operation);
+  const destinationId = refsString(request.destinationId, operation, 64);
+  if (!/^[0-9a-f]{64}$/.test(destinationId)) throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation, message: 'Invalid remote destination.' });
+  return { ...branchDetailsArg(request, operation), expectedOid: oidArg(request.expectedOid, operation), destinationId };
+}
+
 export function removeWorktreeArg(value: unknown, operation: string): RemoveWorktreeRequest {
   const request = requestObject(value, operation);
   return {
@@ -300,7 +316,12 @@ export function createPullRequestArg(value: unknown): CreatePullRequestInput {
   if (typeof input.base !== 'string' || !input.base || input.base.length > 300 || input.base.includes('\0')) throw invalidGh(operation);
   if (typeof input.draft !== 'boolean') throw invalidGh(operation);
   if (typeof input.repositoryId !== 'string' || !input.repositoryId || input.repositoryId.length > 64) throw invalidGh(operation);
-  return { repositoryId: input.repositoryId, title: input.title.trim(), body: input.body, base: input.base, draft: input.draft };
+  const expected = input.expectedAccount;
+  if (expected !== undefined && (!expected || typeof expected.login !== 'string' || !/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/.test(expected.login)
+    || !Number.isSafeInteger(expected.revision) || expected.revision < 0)) throw invalidGh(operation);
+  return { repositoryId: input.repositoryId, title: input.title.trim(), body: input.body, base: input.base, draft: input.draft,
+    ...(expected ? { expectedAccount: { login: expected.login, revision: expected.revision } } : {}) };
+
 }
 
 export function generatePullRequestDraftArg(value: unknown): GeneratePullRequestDraftInput {
@@ -348,4 +369,9 @@ function invalidAi(operation: string): AiOperationError {
 
 function invalidProject(operation: string): GitOperationError {
   return new GitOperationError({ code: 'INVALID_ARGUMENT', operation, message: 'Invalid project data.' });
+}
+
+export function orderingIndexArg(value: unknown, operation: string): number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) throw invalidProject(operation);
+  return value;
 }

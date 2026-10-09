@@ -1,16 +1,17 @@
 import { formatDate, formatDateTime } from '@shared/date-format';
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  IconAlertTriangle, IconCheck, IconCopy, IconExternalLink, IconGitBranch, IconGitCommit, IconHierarchy2,
+  IconAlertTriangle, IconCheck, IconCloud, IconCopy, IconExternalLink, IconGitBranch, IconGitCommit, IconHierarchy2,
   IconLoader4, IconRefresh, IconSearch, IconTrash, IconX,
 } from '@tabler/icons-react';
 import type { PullRequestSummary, RecentRepository } from '../../../shared/contracts';
-import type { BranchDetails, LocalRefsSnapshot, WorktreeDetails } from '../../../shared/git-types';
+import type { BranchDetails, LocalRefsSnapshot, RemoteBranchDetails, WorktreeDetails } from '../../../shared/git-types';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogClose, DialogDescription, DialogPopup, DialogTitle } from '@/components/ui/dialog';
+import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { opentig } from '@/lib/opentig-api';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
@@ -21,6 +22,8 @@ import {
 import { openOnGitHub } from '@/features/pulls/gh-utils';
 import { queryKeys } from '@/lib/query-client';
 import { writeClipboardText } from '@/lib/browser-capabilities';
+import { SearchablePicker } from '@/components/SearchablePicker';
+import { RemoteBranchDetailPanel } from './RemoteBranchDetailPanel';
 
 interface LocalRefsDialogProps {
   open: boolean;
@@ -38,7 +41,10 @@ interface LocalRefsDialogProps {
 
 export function LocalRefsDialog(props: LocalRefsDialogProps) {
   const { open, tab, repositoryId, onMutated, onBusyChange } = props;
+  const queryClient = useQueryClient();
   const [query, setQuery] = useState('');
+  const [branchScope, setBranchScope] = useState<'all' | 'local' | 'remote'>('all');
+  const [remoteFilter, setRemoteFilter] = useState('');
   const [mobileDetail, setMobileDetail] = useState(false);
   const [selectedBranch, setSelectedBranch] = useState<string | null>(null);
   const [selectedWorktree, setSelectedWorktree] = useState<string | null>(null);
@@ -60,45 +66,72 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
   const loading = snapshotQuery.isFetching;
   const error = snapshotQuery.error ? messageOf(snapshotQuery.error) : null;
 
-  const branches = useMemo(() => filterBranches(snapshot?.branches ?? [], query), [snapshot, query]);
+  const branches = useMemo(() => filterBranches(snapshot?.branches ?? [], query).filter(item =>
+    (branchScope === 'all' || item.remote === (branchScope === 'remote'))
+    && (!item.remote || !remoteFilter || item.remoteName === remoteFilter)), [snapshot, query, branchScope, remoteFilter]);
+  const branchGroups = useMemo(() => {
+    const names = [...new Set(branches.filter(item => item.remote).map(item => item.remoteName ?? 'Unmapped references'))];
+    return [{ label: 'Local', branches: branches.filter(item => !item.remote) },
+      ...names.map(name => ({ label: name, branches: branches.filter(item => item.remote && (item.remoteName ?? 'Unmapped references') === name) }))]
+      .filter(group => group.branches.length > 0);
+  }, [branches]);
   const worktrees = useMemo(() => filterWorktrees(snapshot?.worktrees ?? [], query), [snapshot, query]);
   const branch = branches.find((item) => branchKey(item) === selectedBranch) ?? null;
   const worktree = worktrees.find((item) => worktreeKey(item) === selectedWorktree) ?? null;
   const branchDetailsQuery = useQuery({
     queryKey: queryKeys.branchDetails(repositoryId, branch?.fullName ?? ''),
     queryFn: () => opentig.refs.branchDetails({ repositoryId, fullName: branch!.fullName }),
-    enabled: open && tab === 'branches' && branch !== null,
+    enabled: open && tab === 'branches' && branch !== null && !branch.remote,
   });
   const branchDetails = branchDetailsQuery.data ?? null;
-  const branchPullRequestQuery = useQuery({
-    queryKey: queryKeys.branchPullRequest(repositoryId, branchDetails?.name ?? ''),
-    queryFn: () => opentig.github.findPullRequestForBranch(repositoryId, branchDetails!.name),
-    enabled: open && tab === 'branches' && branchDetails !== null && (branchDetails.deletion === 'unknown' || branchDetails.deletion === 'unmerged'),
+  const remoteDetailsQuery = useQuery({
+    queryKey: queryKeys.remoteBranchDetails(repositoryId, branch?.fullName ?? ''),
+    queryFn: () => opentig.refs.remoteBranchDetails({ repositoryId, fullName: branch!.fullName }),
+    enabled: open && tab === 'branches' && branch?.remote === true,
+    staleTime: 30_000,
   });
-  const branchPullRequest = branchPullRequestQuery.data ?? null;
+  const remoteDetails = remoteDetailsQuery.data ?? null;
+  const pullBranchName = branch?.remote ? remoteDetails?.branchName : branchDetails?.name;
+  const branchPullRequestQuery = useQuery({
+    queryKey: queryKeys.branchPullRequest(repositoryId, pullBranchName ?? ''),
+    queryFn: () => opentig.github.findPullRequestForBranch(repositoryId, pullBranchName!),
+    enabled: open && tab === 'branches' && Boolean(pullBranchName) && (branch?.remote
+      ? remoteDetails?.remote === 'origin' : branchDetails !== null && (branchDetails.deletion === 'unknown' || branchDetails.deletion === 'unmerged')),
+  });
+  const branchPullRequest = branch?.remote && remoteDetails?.remote !== 'origin' ? null : branchPullRequestQuery.data ?? null;
   const worktreeDetailsQuery = useQuery({
     queryKey: queryKeys.worktreeDetails(repositoryId, worktree?.path ?? ''),
     queryFn: () => opentig.refs.worktreeDetails({ repositoryId, path: worktree!.path }),
     enabled: open && tab === 'worktrees' && worktree !== null,
   });
   const worktreeDetails = worktreeDetailsQuery.data ?? null;
-  const activeDetailsQuery = tab === 'branches' ? branchDetailsQuery : worktreeDetailsQuery;
+  const activeDetailsQuery = tab === 'branches' ? branch?.remote ? remoteDetailsQuery : branchDetailsQuery : worktreeDetailsQuery;
   const detailsLoading = activeDetailsQuery.isFetching;
   const detailsError = activeDetailsQuery.error ? messageOf(activeDetailsQuery.error) : null;
 
-  const load = useCallback(async () => { await snapshotQuery.refetch(); }, [snapshotQuery]);
+  const load = useCallback(async () => {
+    await snapshotQuery.refetch();
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['repository', repositoryId, 'branch-details'] }),
+      queryClient.invalidateQueries({ queryKey: ['repository', repositoryId, 'remote-branch-details'] }),
+      queryClient.invalidateQueries({ queryKey: ['repository', repositoryId, 'worktree-details'] }),
+      queryClient.invalidateQueries({ queryKey: ['repository', repositoryId, 'branch-pull-request'] }),
+    ]);
+  }, [queryClient, repositoryId, snapshotQuery]);
 
   useEffect(() => {
     if (!snapshot) return;
     const previous = snapshotRef.current;
     snapshotRef.current = snapshot;
-    setSelectedBranch((selected) => nextSelectionKey(snapshot.branches.map(branchKey), (previous?.branches ?? []).map(branchKey), selected));
+    setSelectedBranch((selected) => nextSelectionKey(branches.map(branchKey), (previous?.branches ?? []).map(branchKey), selected));
     setSelectedWorktree((selected) => nextSelectionKey(snapshot.worktrees.map(worktreeKey), (previous?.worktrees ?? []).map(worktreeKey), selected));
-  }, [snapshot]);
+  }, [snapshot, branches]);
 
   useEffect(() => {
     if (open) return;
     setQuery('');
+    setBranchScope('all');
+    setRemoteFilter('');
     setConfirming(null);
     setActionError(null);
     setCopied(false);
@@ -136,6 +169,41 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
     return true;
   });
 
+  const deleteRemoteBranch = (target: RemoteBranchDetails) => run('delete-remote-branch', async () => {
+    const result = await opentig.refs.deleteRemoteBranch({ repositoryId, fullName: target.fullName, expectedOid: target.oid, destinationId: target.destinationId });
+    if (result.status !== 'deleted') {
+      setActionError(result.status === 'rejected' ? result.message : remoteBranchFailure(result.status));
+      await load();
+      return false;
+    }
+    const fetched = await opentig.refs.fetchBranches(repositoryId);
+    onMutated(null);
+    await load();
+    if (fetched.status === 'failed') setActionError('The remote branch was deleted, but fetching failed. Fetch again to update the list.');
+    return true;
+  });
+
+  const createTrackingBranch = (target: RemoteBranchDetails, localName: string) => run('create-tracking-branch', async () => {
+    const result = await opentig.refs.createTrackingBranch({ repositoryId, fullName: target.fullName, expectedOid: target.oid, localName });
+    if (result.status !== 'created') {
+      setActionError(result.status === 'exists' ? 'That local branch already exists. Choose another name.' : remoteBranchFailure(result.status));
+      await load();
+      return false;
+    }
+    onMutated(null);
+    await load();
+    setQuery(''); setBranchScope('local'); setRemoteFilter(''); setSelectedBranch(result.fullName);
+    return true;
+  });
+
+  const fetchBranches = () => run('fetch-branches', async () => {
+    const result = await opentig.refs.fetchBranches(repositoryId);
+    onMutated(null);
+    await load();
+    if (result.status === 'failed') setActionError(result.message);
+    return result.status === 'success';
+  });
+
   const removeWorktree = (target: WorktreeDetails, force: boolean, deleteBranch: boolean) => run('remove-worktree', async () => {
     const result = await opentig.refs.removeWorktree({ repositoryId, path: target.path, expectedOid: target.oid, force, deleteBranch });
     if (result.status !== 'removed') {
@@ -162,18 +230,18 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
   const listEmpty = tab === 'branches' ? branches.length === 0 : worktrees.length === 0;
 
   return (
-    <Dialog open={open} onOpenChange={props.onOpenChange}>
+    <Dialog open={open} onOpenChange={(next) => { if (!busy) props.onOpenChange(next); }}>
       <DialogPopup className="local-refs-dialog">
         <header className="local-refs-header">
           <div>
-            <DialogTitle>Local branches and worktrees</DialogTitle>
-            <DialogDescription>Inspect what this repository holds locally, and retire what Git can safely remove.</DialogDescription>
+            <DialogTitle>Branches and worktrees</DialogTitle>
+            <DialogDescription>Inspect local and remote branches, and manage this repository’s worktrees.</DialogDescription>
           </div>
-          <DialogClose render={<Button variant="ghost" size="icon-sm" aria-label="Close the local refs manager" />}><IconX /></DialogClose>
+          <DialogClose render={<Button variant="ghost" size="icon-sm" aria-label="Close the refs manager" disabled={Boolean(busy)} />}><IconX /></DialogClose>
         </header>
 
         <div className="local-refs-toolbar">
-          <div className="local-refs-tabs" role="tablist" aria-label="Local refs">
+          <div className="local-refs-tabs" role="tablist" aria-label="Branches and worktrees">
             {(['branches', 'worktrees'] as const).map((value) => (
               <button
                 key={value}
@@ -183,6 +251,7 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
                 aria-selected={tab === value}
                 aria-controls={`local-refs-panel-${value}`}
                 className="local-refs-tab"
+                disabled={Boolean(busy)}
                 onClick={() => { props.onTabChange(value); setMobileDetail(false); }}
               >
                 {value === 'branches' ? <IconGitBranch aria-hidden="true" /> : <IconHierarchy2 aria-hidden="true" />}
@@ -197,21 +266,31 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
             <input
               id="local-refs-search-input"
               value={query}
+              disabled={Boolean(busy)}
               onChange={(event) => setQuery(event.target.value)}
               placeholder={tab === 'branches' ? 'Search branches…' : 'Search worktrees…'}
               autoComplete="off"
               spellCheck={false}
             />
             {query && (
-              <Button variant="ghost" size="icon-xs" aria-label="Clear search" onClick={() => setQuery('')}><IconX /></Button>
+              <Button variant="ghost" size="icon-xs" aria-label="Clear search" disabled={Boolean(busy)} onClick={() => setQuery('')}><IconX /></Button>
             )}
           </div>
-          <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading || Boolean(busy)}>
-            {loading ? <IconLoader4 className="animate-spin" /> : <IconRefresh />} Refresh
-          </Button>
+          <Tooltip><TooltipTrigger render={<Button variant="outline" size="sm" onClick={() => tab === 'branches' ? void fetchBranches() : void load()} disabled={loading || Boolean(busy)} />}>
+            {loading || busy === 'fetch-branches' ? <IconLoader4 className="animate-spin" /> : <IconRefresh />} {tab === 'branches' ? 'Fetch' : 'Refresh'}
+          </TooltipTrigger><TooltipContent>{tab === 'branches' ? 'Fetch branches from all remotes and remove obsolete remote references' : 'Refresh local worktrees'}</TooltipContent></Tooltip>
         </div>
 
-        {error && <div className="local-refs-error" role="alert"><IconAlertTriangle aria-hidden="true" /><span>{error}</span></div>}
+        {tab === 'branches' && <div className="local-refs-branch-filters">
+          <div className="local-refs-tabs" role="group" aria-label="Branch scope">
+            {(['all', 'local', 'remote'] as const).map(scope => <button key={scope} type="button" className="local-refs-tab" aria-pressed={branchScope === scope} disabled={Boolean(busy)} onClick={() => { setBranchScope(scope); setMobileDetail(false); }}>{scope === 'all' ? 'All' : scope === 'local' ? 'Local' : 'Remote'}</button>)}
+          </div>
+          {branchScope !== 'local' && <SearchablePicker label="Filter by remote" placeholder="Search remotes…" value={remoteFilter} triggerLabel={remoteFilter || 'All remotes'} onValueChange={(value) => { setRemoteFilter(value); setMobileDetail(false); }} disabled={Boolean(busy)}
+            groups={[{ id: 'remotes', label: 'Remotes', items: [{ value: '', label: 'All remotes', pinned: true }, ...(snapshot?.remotes ?? []).map(name => ({ value: name, label: name }))] }]} />}
+          <small>Remote refs reflect the last fetch.</small>
+        </div>}
+
+        {(error || actionError) && <div className="local-refs-error" role="alert"><IconAlertTriangle aria-hidden="true" /><span>{error ?? actionError}</span></div>}
 
         {mobileDetail && <button type="button" className="local-refs-mobile-back" onClick={() => setMobileDetail(false)}>← Back to {tab}</button>}
         <div
@@ -222,25 +301,26 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
           id={`local-refs-panel-${tab}`}
           aria-labelledby={`local-refs-tab-${tab}`}
         >
-          <div className="local-refs-list" role="listbox" aria-label={tab === 'branches' ? 'Local branches' : 'Worktrees'} tabIndex={-1}>
-            {loading && !snapshot && <p className="local-refs-placeholder"><IconLoader4 className="animate-spin" aria-hidden="true" /> Reading the repository…</p>}
+          <div className="local-refs-list" role="listbox" aria-label={tab === 'branches' ? 'Branches' : 'Worktrees'} tabIndex={-1}>
+            {loading && !snapshot && <p className="local-refs-placeholder"><IconLoader4 className="animate-spin" aria-hidden="true" /><ShimmeringText text="Reading the repository…" /></p>}
             {!loading && listEmpty && (
-              <p className="local-refs-placeholder">{query ? 'No matches for this search.' : `This repository has no ${tab === 'branches' ? 'local branches' : 'worktrees'}.`}</p>
+              <p className="local-refs-placeholder">{query || remoteFilter ? 'No matches for these filters.' : `This repository has no ${tab === 'branches' ? `${branchScope === 'all' ? '' : `${branchScope} `}branches` : 'worktrees'}.`}</p>
             )}
-            {tab === 'branches' && branches.map((item) => (
-              <Tooltip key={branchKey(item)}>
-                <TooltipTrigger render={
-                  <button
-                    type="button"
-                    role="option"
-                    aria-selected={branchKey(item) === selectedBranch}
-                    className="local-refs-row"
-                    onClick={() => { setSelectedBranch(branchKey(item)); setMobileDetail(true); }}
-                  />
-                }>
+            {tab === 'branches' && branchGroups.map(group => <div className="local-refs-branch-group" role="group" aria-label={group.label} key={group.label}>
+              <div className="local-refs-group-heading"><span>{group.label}</span><small>{group.branches.length}</small></div>
+              {group.branches.map((item) => (
+                <button
+                  key={branchKey(item)}
+                  type="button"
+                  role="option"
+                  aria-selected={branchKey(item) === selectedBranch}
+                  className="local-refs-row"
+                  disabled={Boolean(busy)}
+                  onClick={() => { setSelectedBranch(branchKey(item)); setMobileDetail(true); }}
+                >
                   <span className="local-refs-row-head">
-                    <IconGitBranch aria-hidden="true" />
-                    <strong>{item.name}</strong>
+                    {item.remote ? <IconCloud aria-hidden="true" /> : <IconGitBranch aria-hidden="true" />}
+                    <strong>{item.remoteBranchName ?? item.name}</strong>
                     <BadgeRow badges={branchBadges(item)} />
                   </span>
                   <small className="local-refs-row-meta">
@@ -248,21 +328,18 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
                     {item.subject && <span>{item.subject}</span>}
                     {item.date && <time dateTime={item.date}>{formatDate(item.date)}</time>}
                   </small>
-                </TooltipTrigger>
-                <TooltipContent>{item.name}{item.subject ? ` — ${item.subject}` : ''}</TooltipContent>
-              </Tooltip>
-            ))}
+                </button>
+            ))}</div>)}
             {tab === 'worktrees' && worktrees.map((item) => (
-              <Tooltip key={worktreeKey(item)}>
-                <TooltipTrigger render={
-                  <button
-                    type="button"
-                    role="option"
-                    aria-selected={worktreeKey(item) === selectedWorktree}
-                    className="local-refs-row"
-                    onClick={() => { setSelectedWorktree(worktreeKey(item)); setMobileDetail(true); }}
-                  />
-                }>
+                <button
+                  key={worktreeKey(item)}
+                  type="button"
+                  role="option"
+                  aria-selected={worktreeKey(item) === selectedWorktree}
+                  className="local-refs-row"
+                  disabled={Boolean(busy)}
+                  onClick={() => { setSelectedWorktree(worktreeKey(item)); setMobileDetail(true); }}
+                >
                   <span className="local-refs-row-head">
                     <IconHierarchy2 aria-hidden="true" />
                     <strong>{worktreeName(item.path)}</strong>
@@ -272,16 +349,20 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
                     <span className="local-refs-row-branch">{item.branch ? `${item.branch}` : 'Detached HEAD'}</span>
                     <span>{item.path}</span>
                   </small>
-                </TooltipTrigger>
-                <TooltipContent>{worktreeName(item.path)} — {item.path}</TooltipContent>
-              </Tooltip>
+                </button>
             ))}
           </div>
 
           <div className="local-refs-detail">
             {detailsError && <div className="local-refs-error" role="alert"><IconAlertTriangle aria-hidden="true" /><span>{detailsError}</span></div>}
-            {detailsLoading && <p className="local-refs-placeholder"><IconLoader4 className="animate-spin" aria-hidden="true" /> Loading details…</p>}
-            {!detailsLoading && !detailsError && tab === 'branches' && branchDetails && branch && (
+            {detailsLoading && <p className="local-refs-placeholder"><IconLoader4 className="animate-spin" aria-hidden="true" /><ShimmeringText text="Loading details…" /></p>}
+            {!detailsLoading && !detailsError && tab === 'branches' && remoteDetails && branch?.remote && <RemoteBranchDetailPanel
+              details={remoteDetails} pullRequest={branchPullRequest} anyBusy={Boolean(busy)} deleting={busy === 'delete-remote-branch'} creating={busy === 'create-tracking-branch'}
+              confirming={confirming === 'delete-remote-branch'} onConfirm={() => setConfirming('delete-remote-branch')} onCancel={() => setConfirming(null)}
+              onDelete={() => void deleteRemoteBranch(remoteDetails)} onCreate={(name) => void createTrackingBranch(remoteDetails, name)}
+              onFetch={() => void fetchBranches()} fetching={busy === 'fetch-branches'}
+              onShowLocal={(fullName) => { setQuery(''); setBranchScope('local'); setRemoteFilter(''); setSelectedBranch(fullName); }} />}
+            {!detailsLoading && !detailsError && tab === 'branches' && branchDetails && branch && !branch.remote && (
               <BranchDetailPanel
                 details={branchDetails}
                 pullRequest={branchPullRequest}
@@ -310,6 +391,7 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
                 onShowBranch={() => {
                   if (!worktreeDetails.branch) return;
                   setSelectedBranch(`refs/heads/${worktreeDetails.branch}`);
+                  setQuery(''); setBranchScope('local'); setRemoteFilter('');
                   props.onTabChange('branches');
                 }}
               />
@@ -321,7 +403,7 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
         </div>
 
         <footer className="local-refs-footer">
-          <small>Deleting a branch and removing a worktree are separate actions. A worktree removes its branch only when explicitly selected.</small>
+          <small>Deleting a remote branch keeps local branches and worktrees. Removing a worktree deletes its branch only when explicitly selected.</small>
           <DialogClose render={<Button variant="outline" size="sm" disabled={Boolean(busy)} />}>Done</DialogClose>
         </footer>
       </DialogPopup>
@@ -466,7 +548,7 @@ function DestructiveSection({ tone, reason, actionError, confirming, busy, anyBu
           <p>{confirmation}</p>
           <span className="local-refs-confirm-actions">
             <Button variant="destructive" size="sm" onClick={onAct} disabled={busy}>
-              {busy ? <IconLoader4 className="animate-spin" /> : <IconTrash />} {confirmLabel}
+              {busy ? <IconLoader4 className="animate-spin" /> : <IconTrash />} {busy ? <ShimmeringText text={confirmLabel} /> : confirmLabel}
             </Button>
             <Button variant="ghost" size="sm" onClick={onCancel} disabled={busy}>Cancel</Button>
           </span>
@@ -512,6 +594,15 @@ function branchFailure(status: string): string {
     case 'unmerged': return 'Git found commits that are not in the comparison base, so the branch was kept.';
     case 'unknown': return 'The comparison base is not available locally, so the branch was kept.';
     default: return 'The branch no longer exists.';
+  }
+}
+
+function remoteBranchFailure(status: string): string {
+  switch (status) {
+    case 'stale': return 'The branch changed since this view loaded. Fetch and review its new tip before trying again.';
+    case 'default': return 'This is now the remote’s default branch. It was kept.';
+    case 'destination-changed': return 'The remote destination changed. Review the refreshed details before trying again.';
+    default: return 'The remote branch no longer exists. Fetch to update the list.';
   }
 }
 

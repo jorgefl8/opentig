@@ -11,6 +11,7 @@ export { BROWSER_SESSION_MAX_AGE_SECONDS } from './auth-store';
 export interface OpenTigAuthDescriptor {
   authenticationRequired: true;
   pairingAvailable: boolean;
+  browserAccessEnabled: boolean;
 }
 
 export interface OpenTigBootstrapAuthSource {
@@ -30,6 +31,9 @@ interface PendingPairing {
 /** Owner sessions plus one memory-only pairing credential. */
 export class OpenTigSessionAuth {
   private pairing: PendingPairing | null = null;
+  private browserAccessEnabled: boolean;
+  private browserGeneration = 0;
+  private browserQueue: Promise<void> = Promise.resolve();
 
   private constructor(
     readonly source: OpenTigBootstrapAuthSource,
@@ -37,7 +41,8 @@ export class OpenTigSessionAuth {
     private readonly secureCookies: boolean,
     private readonly now: () => number,
     private readonly profile: ApplicationProfile,
-  ) {}
+    browserAccessEnabled: boolean,
+  ) { this.browserAccessEnabled = browserAccessEnabled; }
 
   static async open(options: {
     source: OpenTigBootstrapAuthSource;
@@ -45,17 +50,31 @@ export class OpenTigSessionAuth {
     secureCookies?: boolean;
     now?: () => number;
     profile?: ApplicationProfile;
+    browserAccessEnabled?: boolean;
   }): Promise<OpenTigSessionAuth> {
     const store = await PersistentAuthStore.open(options.dataDirectory, options.now);
-    return new OpenTigSessionAuth(options.source, store, options.secureCookies ?? false, options.now ?? Date.now, options.profile ?? 'production');
+    return new OpenTigSessionAuth(options.source, store, options.secureCookies ?? false, options.now ?? Date.now, options.profile ?? 'production', options.browserAccessEnabled ?? true);
   }
 
   descriptor(): OpenTigAuthDescriptor {
     this.dropExpiredPairing();
-    return { authenticationRequired: true, pairingAvailable: this.pairing !== null };
+    return { authenticationRequired: true, pairingAvailable: this.browserAccessEnabled && this.pairing !== null, browserAccessEnabled: this.browserAccessEnabled };
+  }
+
+  setBrowserAccessEnabled(enabled: boolean): Promise<void> {
+    if (!enabled) {
+      this.browserAccessEnabled = false;
+      this.browserGeneration++;
+      this.pairing = null;
+    }
+    const generation = this.browserGeneration;
+    return this.queueBrowserMutation(async () => {
+      this.browserAccessEnabled = enabled && generation === this.browserGeneration;
+    });
   }
 
   createPairingToken(ttlMs = DEFAULT_PAIRING_TTL_MS): PairingToken {
+    if (!this.browserAccessEnabled) throw new Error('Web access is disabled.');
     if (!Number.isSafeInteger(ttlMs) || ttlMs < 1_000 || ttlMs > 15 * 60 * 1_000) throw new Error('Invalid pairing token lifetime.');
     const token = randomBytes(32).toString('base64url');
     const expiresAt = this.now() + ttlMs;
@@ -79,32 +98,45 @@ export class OpenTigSessionAuth {
   async exchangePairingToken(token: unknown, metadata?: Omit<SessionMetadata, 'kind'>, secure = false): Promise<string | null> {
     this.dropExpiredPairing();
     const pairing = this.pairing;
-    if (!pairing || !isCredential(token) || !this.store.matchesDigest(token, pairing.digest)) return null;
+    if (!this.browserAccessEnabled || !pairing || !isCredential(token) || !this.store.matchesDigest(token, pairing.digest)) return null;
     this.pairing = null;
-    try {
-      return await this.issueCookie({
-        kind: 'browser',
-        clientName: metadata?.clientName ?? 'Browser',
-        deviceType: metadata?.deviceType ?? 'unknown',
-        os: metadata?.os ?? null,
-        browser: metadata?.browser ?? null,
-        remoteAddress: metadata?.remoteAddress ?? null,
-        viaProxy: metadata?.viaProxy ?? false,
-      }, secure);
-    } catch (error) {
-      if (this.now() < pairing.expiresAt && !this.pairing) this.pairing = pairing;
-      throw error;
-    }
+    const generation = this.browserGeneration;
+    return this.queueBrowserMutation(async () => {
+      if (!this.browserAccessEnabled || generation !== this.browserGeneration) return null;
+      try {
+        const cookie = await this.issueCookie({
+          kind: 'browser',
+          clientName: metadata?.clientName ?? 'Browser',
+          deviceType: metadata?.deviceType ?? 'unknown',
+          os: metadata?.os ?? null,
+          browser: metadata?.browser ?? null,
+          remoteAddress: metadata?.remoteAddress ?? null,
+          viaProxy: metadata?.viaProxy ?? false,
+        }, secure);
+        if (!this.browserAccessEnabled || generation !== this.browserGeneration) {
+          await this.revoke({ cookie });
+          return null;
+        }
+        return cookie;
+      } catch (error) {
+        if (this.browserAccessEnabled && generation === this.browserGeneration && this.now() < pairing.expiresAt && !this.pairing) this.pairing = pairing;
+        throw error;
+      }
+    });
   }
 
   authenticate(headers: Pick<IncomingHttpHeaders, 'cookie'>): string | null {
     const token = readCookie(headers.cookie, sessionCookieName(this.profile));
-    return token ? this.store.authenticate(token) : null;
+    const sessionId = token ? this.store.authenticate(token) : null;
+    return sessionId && this.hasSession(sessionId) ? sessionId : null;
   }
 
   async renewBrowserCookie(headers: Pick<IncomingHttpHeaders, 'cookie'>, secure = false): Promise<string | null> {
+    if (!this.browserAccessEnabled) return null;
+    const generation = this.browserGeneration;
     const token = readCookie(headers.cookie, sessionCookieName(this.profile));
     if (!token || !await this.store.renewBrowserSession(token)) return null;
+    if (!this.browserAccessEnabled || generation !== this.browserGeneration) return null;
     return this.sessionCookie(token, true, secure);
   }
 
@@ -158,12 +190,20 @@ export class OpenTigSessionAuth {
   }
 
   hasSession(sessionId: string): boolean {
-    return this.store.hasSession(sessionId);
+    return this.store.hasSession(sessionId) && (this.browserAccessEnabled || this.sessions().some((session) => session.id === sessionId && session.kind === 'desktop'));
   }
 
   close(): Promise<void> {
+    this.browserAccessEnabled = false;
+    this.browserGeneration++;
     this.pairing = null;
-    return this.store.close();
+    return this.browserQueue.then(() => this.store.close());
+  }
+
+  private queueBrowserMutation<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.browserQueue.then(operation);
+    this.browserQueue = result.then(() => undefined, () => undefined);
+    return result;
   }
 
   expiredCookie(secure = false): string {

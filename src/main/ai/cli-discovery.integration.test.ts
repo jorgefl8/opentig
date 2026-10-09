@@ -2,7 +2,7 @@ import { copyFile, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { CliEnvironment, cleanEnvironment, readUserEnvironment, type EnvironmentReader } from './CliEnvironment';
+import { CliEnvironment, cleanEnvironment, LOCATION_KEYS, readUserEnvironment, type EnvironmentReader } from './CliEnvironment';
 import { CliResolver } from './CliResolver';
 import { CliProcessRunner } from './CliProcessRunner';
 import { OpenCodeProvider } from './providers/OpenCodeProvider';
@@ -13,7 +13,9 @@ const roots: string[] = [];
 afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true, maxRetries: 3 }))); });
 async function setup(read?: EnvironmentReader) {
   const home = await mkdtemp(path.join(os.tmpdir(), 'opentig-cli-integration-')); roots.push(home);
-  const env = { ...cleanEnvironment(process.env), HOME: home, PATH: '' };
+  const env: Record<string, string> = { ...cleanEnvironment(process.env), HOME: home, PATH: '' };
+  // Installed launchers on the developer machine must not leak into the fixture.
+  for (const key of LOCATION_KEYS) if (key !== 'PATH') delete env[key];
   const environment = new CliEnvironment({ platform: process.platform, home, env }, read ?? (async () => ({ PATH: path.join(home, 'runtime') })));
   const resolver = new CliResolver(environment);
   const runner = new CliProcessRunner();

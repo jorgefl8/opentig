@@ -42,6 +42,22 @@ function transportFixture() {
 }
 
 describe('OpenTig server client', () => {
+  it('routes account commands and events separately from repository switches', async () => {
+    const fixture = transportFixture();
+    const { api } = createOpenTigServerClient({ transport: fixture.transport });
+    const changed = vi.fn(); const switched = vi.fn();
+    api.events.onGitHubAccountsChanged(changed);
+    api.events.onActiveRepositoryChanged(switched);
+    fixture.event({ type: 'github.accounts-changed' });
+    expect(changed).toHaveBeenCalledOnce();
+    expect(switched).not.toHaveBeenCalled();
+    await api.github.accountsStatus(false);
+    await api.github.repositoryAccount('repo-id', true);
+    await api.github.setRepositoryAccount('repo-id', { mode: 'account', host: 'github.com', login: 'alice' });
+    expect(fixture.request).toHaveBeenCalledWith(IPC.githubAccountsStatus, [false], { timeoutMs: 90_000 });
+    expect(fixture.request).toHaveBeenCalledWith(IPC.githubRepositoryAccount, ['repo-id', true], { timeoutMs: 60_000 });
+    expect(fixture.request).toHaveBeenCalledWith(IPC.githubSetRepositoryAccount, ['repo-id', { mode: 'account', host: 'github.com', login: 'alice' }]);
+  });
   it('omits an absent directory path instead of serializing it as null', async () => {
     const fixture = transportFixture();
     const { api } = createOpenTigServerClient({ transport: fixture.transport });
@@ -49,6 +65,15 @@ describe('OpenTig server client', () => {
     await api.repository.browseDirectories('/home/projects');
     expect(fixture.request).toHaveBeenNthCalledWith(1, IPC.repositoryBrowseDirectories, []);
     expect(fixture.request).toHaveBeenNthCalledWith(2, IPC.repositoryBrowseDirectories, ['/home/projects']);
+  });
+
+  it('routes saved project and repository order through the server transport', async () => {
+    const fixture = transportFixture();
+    const { api } = createOpenTigServerClient({ transport: fixture.transport });
+    await api.projects.moveProject('apps', 2);
+    await api.projects.moveRepository('/sample/atlas/.git', 1);
+    expect(fixture.request).toHaveBeenNthCalledWith(1, IPC.projectMove, ['apps', 2]);
+    expect(fixture.request).toHaveBeenNthCalledWith(2, IPC.projectMoveRepository, ['/sample/atlas/.git', 1]);
   });
 
   it('maps typed domain methods to their wire commands', async () => {
@@ -126,4 +151,34 @@ describe('OpenTig server client', () => {
       { credentials: 'include' },
     );
   });
+});
+
+it('transports global defaults and the reviewed setup revision without exposing credentials', async () => {
+  const f = transportFixture(); const { api } = createOpenTigServerClient({ transport: f.transport });
+  const changed = vi.fn(); api.events.onGitHubAccountsChanged(changed);
+  await api.github.setDefaultAccount('alice');
+  const selection = { mode: 'account' as const, host: 'github.com' as const, login: 'alice', useGlobalDefault: true, gitMode: 'managed' as const };
+  await api.github.setRepositoryAccount('repo', selection, 5);
+  expect(f.request).toHaveBeenCalledWith(IPC.githubSetDefaultAccount, ['alice']);
+  expect(f.request).toHaveBeenCalledWith(IPC.githubSetRepositoryAccount, ['repo', selection, 5]);
+  f.event({ type: 'github.accounts-changed', repositoryIds: ['repo'], inventoryChanged: true });
+  expect(changed).toHaveBeenCalledWith(['repo'], true);
+});
+
+it('routes repository AI instructions and notifies only instruction listeners, without notifying account listeners', async () => {
+  const f = transportFixture();
+  const client = createOpenTigServerClient({ transport: f.transport });
+  const changed = vi.fn(); const accountsChanged = vi.fn();
+  const unsubscribe = client.api.events.onAiInstructionsChanged(changed);
+  client.api.events.onGitHubAccountsChanged(accountsChanged);
+  await client.api.ai.repositoryInstructions('repo');
+  expect(f.request).toHaveBeenCalledWith(IPC.aiRepositoryInstructions, ['repo']);
+  await client.api.ai.setRepositoryInstructions('repo', true);
+  expect(f.request).toHaveBeenCalledWith(IPC.aiSetRepositoryInstructions, ['repo', true]);
+  f.event({ type: 'ai.instructions-changed', repositoryIds: ['repo', 'worktree'] });
+  expect(changed).toHaveBeenCalledWith(['repo', 'worktree']);
+  expect(accountsChanged).not.toHaveBeenCalled();
+  unsubscribe();
+  f.event({ type: 'ai.instructions-changed', repositoryIds: ['repo'] });
+  expect(changed).toHaveBeenCalledOnce();
 });

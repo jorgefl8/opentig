@@ -23,6 +23,8 @@ export function createOpenTigServerClient(options: ServerClientOptions = {}): Op
   const httpOrigin = options.httpOrigin ?? globalThis.location?.origin ?? 'http://127.0.0.1';
   const fetchRequest = options.fetch ?? fetch;
   const repositoryChanged = new Set<Parameters<OpenTigServerApi['events']['onRepositoryChanged']>[0]>();
+  const aiInstructionsChanged = new Set<(repositoryIds: string[]) => void>();
+  const githubAccountsChanged = new Set<(repositoryIds?: string[], inventoryChanged?: boolean) => void>();
   const activeRepositoryChanged = new Set<Parameters<OpenTigServerApi['events']['onActiveRepositoryChanged']>[0]>();
   const invoke = <Command extends Parameters<OpenTigWebSocketTransport['request']>[0]>(
     command: Command,
@@ -51,8 +53,12 @@ export function createOpenTigServerClient(options: ServerClientOptions = {}): Op
       rename: (projectId, name) => invoke(IPC.projectRename, projectId, name),
       remove: (projectId) => invoke(IPC.projectRemove, projectId),
       assign: (repositoryKey, projectId) => invoke(IPC.projectAssign, repositoryKey, projectId),
+      moveProject: (projectId, toIndex) => invoke(IPC.projectMove, projectId, toIndex),
+      moveRepository: (repositoryKey, toIndex) => invoke(IPC.projectMoveRepository, repositoryKey, toIndex),
     },
     repository: {
+      preparePath: (path) => invoke(IPC.repositoryPreparePath, path),
+      completeSetup: (id, revision) => invoke(IPC.repositoryCompleteSetup, id, revision),
       openPath: (path) => invoke(IPC.repositoryOpenPath, path),
       browseDirectories: (path) => path === undefined ? invoke(IPC.repositoryBrowseDirectories) : invoke(IPC.repositoryBrowseDirectories, path),
       openRecent: (id) => invoke(IPC.repositoryOpenRecent, id),
@@ -97,6 +103,8 @@ export function createOpenTigServerClient(options: ServerClientOptions = {}): Op
       resolveConflict: (repositoryId, path, content) => invoke(IPC.indexResolveConflict, repositoryId, path, content),
     },
     commits: {
+      authorship: (repositoryId) => invoke(IPC.commitAuthorship, repositoryId),
+      setAuthorship: (repositoryId, input) => invoke(IPC.commitSetAuthorship, repositoryId, input),
       create: (repositoryId, message) => invoke(IPC.commitCreate, repositoryId, message),
       undoLatest: (repositoryId, expectedOid) => invoke(IPC.commitUndoLatest, repositoryId, expectedOid),
       list: (repositoryId, cursor) => invoke(IPC.commitsList, repositoryId, cursor),
@@ -108,15 +116,22 @@ export function createOpenTigServerClient(options: ServerClientOptions = {}): Op
       listWorktrees: (repositoryId) => invoke(IPC.worktreesList, repositoryId),
       selectWorktree: (repositoryId, path) => invoke(IPC.worktreeSelect, repositoryId, path),
       pull: (repositoryId) => invoke(IPC.refsPull, repositoryId),
-      push: (repositoryId, publish) => invoke(IPC.refsPush, repositoryId, publish),
+      pushContext: (repositoryId, remote) => invoke(IPC.refsPushContext, repositoryId, remote),
+      push: (repositoryId, publish, expectedContext) => invoke(IPC.refsPush, repositoryId, publish, expectedContext),
       fetch: (repositoryId) => invoke(IPC.refsFetch, repositoryId),
       localRefsSnapshot: (repositoryId) => invoke(IPC.localRefsSnapshot, repositoryId),
       branchDetails: (request) => invoke(IPC.branchDetails, request),
+      remoteBranchDetails: (request) => invoke(IPC.remoteBranchDetails, request),
+      createTrackingBranch: (request) => invoke(IPC.trackingBranchCreate, request),
+      deleteRemoteBranch: (request) => invoke(IPC.remoteBranchDelete, request),
+      fetchBranches: (repositoryId) => invoke(IPC.branchesFetch, repositoryId),
       worktreeDetails: (request) => invoke(IPC.worktreeDetails, request),
       deleteBranch: (request) => invoke(IPC.branchDelete, request),
       removeWorktree: (request) => invoke(IPC.worktreeRemove, request),
     },
     ai: {
+      repositoryInstructions: (id) => invoke(IPC.aiRepositoryInstructions, id),
+      setRepositoryInstructions: (id, enabled) => invoke(IPC.aiSetRepositoryInstructions, id, enabled),
       statuses: (forceRefresh) => invoke(IPC.aiStatuses, forceRefresh),
       generateCommitMessage: (input) => transport.request(IPC.aiGenerateCommitMessage, [input], { timeoutMs: AI_CLIENT_TIMEOUT_MS }),
       cancelGeneration: (requestId) => invoke(IPC.aiCancelGeneration, requestId),
@@ -124,6 +139,10 @@ export function createOpenTigServerClient(options: ServerClientOptions = {}): Op
       clearLog: () => invoke(IPC.aiClearLog),
     },
     github: {
+      setDefaultAccount: (login) => invoke(IPC.githubSetDefaultAccount, login),
+      accountsStatus: (forceRefresh) => transport.request(IPC.githubAccountsStatus, [forceRefresh], { timeoutMs: 90_000 }),
+      repositoryAccount: (repositoryId, forceRefresh) => transport.request(IPC.githubRepositoryAccount, [repositoryId, forceRefresh], { timeoutMs: 60_000 }),
+      setRepositoryAccount: (repositoryId, selection, expectedRevision) => expectedRevision === undefined ? invoke(IPC.githubSetRepositoryAccount, repositoryId, selection) : invoke(IPC.githubSetRepositoryAccount, repositoryId, selection, expectedRevision),
       status: (forceRefresh) => invoke(IPC.githubStatus, forceRefresh),
       repositoryInfo: (repositoryId) => invoke(IPC.githubRepositoryInfo, repositoryId),
       findPullRequestForBranch: (repositoryId, branchName) => invoke(IPC.githubPrForBranch, repositoryId, branchName),
@@ -142,14 +161,18 @@ export function createOpenTigServerClient(options: ServerClientOptions = {}): Op
       record: (entry) => invoke(IPC.diagnosticsRecord, entry),
     },
     events: {
+      onAiInstructionsChanged: (callback) => subscribe(aiInstructionsChanged, callback),
+      onGitHubAccountsChanged: (callback) => subscribe(githubAccountsChanged, callback),
       onRepositoryChanged: (callback) => subscribe(repositoryChanged, callback),
       onActiveRepositoryChanged: (callback) => subscribe(activeRepositoryChanged, callback),
     },
   };
 
-  transport.onEvent((event) => publishRuntimeEvent(event, repositoryChanged, activeRepositoryChanged));
+  transport.onEvent((event) => publishRuntimeEvent(event, repositoryChanged, activeRepositoryChanged, githubAccountsChanged, aiInstructionsChanged));
   transport.onReconnect(async () => {
     const data = await api.app.bootstrap();
+    for (const listener of aiInstructionsChanged) listener([]);
+    for (const listener of githubAccountsChanged) listener();
     if (!data.activeRepository) return;
     for (const listener of activeRepositoryChanged) listener(data.activeRepository);
     for (const listener of repositoryChanged) listener(data.activeRepository.id, 'unknown');
@@ -171,11 +194,17 @@ function publishRuntimeEvent(
   event: OpenTigRuntimeEvent,
   repositoryChanged: ReadonlySet<Parameters<OpenTigServerApi['events']['onRepositoryChanged']>[0]>,
   activeRepositoryChanged: ReadonlySet<Parameters<OpenTigServerApi['events']['onActiveRepositoryChanged']>[0]>,
+  githubAccountsChanged: ReadonlySet<(repositoryIds?: string[], inventoryChanged?: boolean) => void>,
+  aiInstructionsChanged: ReadonlySet<(repositoryIds: string[]) => void>,
 ): void {
   if (event.type === 'repository.changed') {
     for (const listener of repositoryChanged) listener(event.repositoryId, event.scope);
-  } else {
+  } else if (event.type === 'repository.active-changed') {
     for (const listener of activeRepositoryChanged) listener(event.repository);
+  } else if (event.type === 'ai.instructions-changed') {
+    for (const listener of aiInstructionsChanged) listener(event.repositoryIds);
+  } else {
+    for (const listener of githubAccountsChanged) listener(event.repositoryIds, event.inventoryChanged);
   }
 }
 

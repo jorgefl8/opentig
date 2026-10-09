@@ -1,3 +1,4 @@
+import { redactSensitiveText } from '../../shared/redaction';
 import { execa } from 'execa';
 import { GitOperationError } from '../../shared/errors';
 import { resolveProcessCommand } from '../process/resolveProcessCommand';
@@ -10,7 +11,10 @@ export interface GitOutput {
   truncated?: boolean;
 }
 
-interface RunOptions {
+export interface RunOptions {
+  publication?: { repositoryId: string; id: string; remote?: string };
+  managedSecrets?: string[];
+  managed?: boolean;
   operation: string;
   readOnly?: boolean;
   timeoutMs?: number;
@@ -40,7 +44,21 @@ export class GitProcess {
   private readonly idleWaiters = new Set<() => void>();
   private closePromise: Promise<void> | null = null;
 
+  authenticationKey?: (cwd: string) => string;
+  network?: (cwd: string, args: string[], options: RunOptions, execute: (args: string[], options: RunOptions) => Promise<GitOutput>) => Promise<GitOutput>;
+  networkScope?: <T>(cwd: string, task: () => Promise<T>) => Promise<T>;
+  withNetworkContext<T>(cwd: string, task: () => Promise<T>): Promise<T> { return this.networkScope ? this.networkScope(cwd, task) : task(); }
+
   run(cwd: string, args: string[], options: RunOptions): Promise<GitOutput> {
+    let index = 0;
+    while (args[index] === '-c') index += 2;
+    if (this.network && ['fetch', 'push', 'ls-remote'].includes(args[index] ?? '')) {
+      return this.network(cwd, args, options, (next, settings) => this.runDirect(cwd, next, settings));
+    }
+    return this.runDirect(cwd, args, options);
+  }
+
+  private runDirect(cwd: string, args: string[], options: RunOptions): Promise<GitOutput> {
     const globalArgs = ['--no-pager'];
     if (options.readOnly) globalArgs.push('--no-optional-locks');
     return this.spawnGit(cwd, [...globalArgs, ...args], options);
@@ -100,6 +118,10 @@ export class GitProcess {
         LC_ALL: 'C',
       }).filter((entry): entry is [string, string] => entry[1] !== undefined),
     );
+    if (options.managed) for (const key of Object.keys(environment)) {
+      if (/^(GH_TOKEN|GITHUB_TOKEN|GH_DEBUG|SSLKEYLOGFILE|GIT_SSL_NO_VERIFY|GIT_ASKPASS|SSH_ASKPASS|GIT_CONFIG.*|GIT_TRACE.*|GIT_CURL_VERBOSE)$/i.test(key)) delete environment[key];
+    }
+    const sanitize = (value: string) => redactSensitiveText((options.managedSecrets ?? []).reduce((text, secret) => text.split(secret).join('[redacted]'), value));
     const resolvedCommand = resolveProcessCommand('git', cwd, environment);
     const outputLimit = new AbortController();
     const lifecycle = new AbortController();
@@ -140,8 +162,8 @@ export class GitProcess {
       childPid = subprocess.pid;
       if (childPid) this.activeChildren.add(childPid);
       const result = await subprocess;
-      const stdout = Buffer.from(result.stdout);
-      const stderr = Buffer.from(result.stderr);
+      const stdout = options.managed ? Buffer.from(sanitize(Buffer.from(result.stdout).toString('utf8'))) : Buffer.from(result.stdout);
+      const stderr = Buffer.from(sanitize(Buffer.from(result.stderr).toString('utf8')));
 
       if (overLimit || result.isMaxBuffer) {
         if (options.truncateOverflow) return { stdout, stderr, exitCode: 0, truncated: true };
@@ -153,11 +175,11 @@ export class GitProcess {
       if (result.exitCode === undefined || !resolvedCommand.found) {
         throw this.mapError(options.operation, Object.assign(new Error('Git was not found in PATH.'), { code: 'ENOENT' }));
       }
-      if (result.exitCode !== 0) throw this.fromExit(options.operation, result.exitCode, stderr.toString('utf8'));
+      if (result.exitCode !== 0) throw this.fromExit(options.operation, result.exitCode, sanitize(`${stderr.toString('utf8')}${options.operation.includes('push') || options.operation === 'publish-branch' ? '\n' + stdout.toString('utf8') : ''}`));
       return { stdout, stderr, exitCode: result.exitCode };
     } catch (error) {
       if (error instanceof GitOperationError) throw error;
-      throw this.mapError(options.operation, error);
+      throw this.mapError(options.operation, Object.assign(new Error(sanitize(error instanceof Error ? error.message : 'Could not start Git.')), { code: (error as NodeJS.ErrnoException)?.code }));
     } finally {
       if (childPid) this.activeChildren.delete(childPid);
       this.activeControllers.delete(lifecycle);

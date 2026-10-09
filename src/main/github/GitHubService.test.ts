@@ -8,21 +8,73 @@ import type { RepositoryService } from '../git/RepositoryService';
 const ok = (value: unknown): CliRunResult => ({ exitCode: 0, stdout: JSON.stringify(value), stderr: '' });
 const fail = (stderr: string): CliRunResult => ({ exitCode: 1, stdout: '', stderr });
 const stack = { number: 7, base: { ref: 'main' }, pull_requests: [{ number: 101, state: 'open', title: 'Model', head: { ref: 'model' } }] };
-function fixture(reply: (args: string[]) => CliRunResult) {
-  const run = vi.fn(async (_exe: string, args: string[]) => args[0] === '--version' || args[0] === 'auth' ? ok('ready') : reply(args));
+function fixture(reply: (args: string[]) => CliRunResult, remoteUrl = 'https://github.com/example/demo.git', sshResult: CliRunResult | Error = fail('SSH unavailable')) {
+  const run = vi.fn(async (exe: string, args: string[]) => {
+    if (exe === 'ssh') {
+      if (sshResult instanceof Error) throw sshResult;
+      if (args[0] === '-T' && sshResult.exitCode === 0) return { exitCode: 1, stdout: '', stderr: "Hi tester! You've successfully authenticated, but GitHub does not provide shell access.\n" };
+      return sshResult;
+    }
+    if (args[0] === 'auth' && args[1] === 'token') return { exitCode: 0, stdout: 'gho_test_0000000000000000000000000', stderr: '' };
+    if (args[0] === 'api' && args[1] === 'user') return { exitCode: 0, stdout: 'tester', stderr: '' };
+    return args[0] === '--version' || args[0] === 'auth' ? ok('ready') : reply(args);
+  });
   const service = new GitHubService(
     { discover: async () => [{ executable: 'gh', alias: 'gh', source: 'process-path', env: { PATH: '/fixture/bin' } }], warning: async () => undefined } as unknown as CliResolver,
     { run } as unknown as CliProcessRunner,
-    { run: async () => ({ stdout: Buffer.from('https://github.com/example/demo.git') }) } as unknown as GitProcess,
-    { get: () => ({ path: '.', id: 'repo' }) } as unknown as RepositoryService,
+    { run: async (_cwd: string, args: string[]) => ({ stdout: Buffer.from(args.includes('core.sshCommand') ? '' : remoteUrl) }) } as unknown as GitProcess,
+    { get: () => ({ path: '.', commonDir: '.git', id: 'repo' }) } as unknown as RepositoryService,
   );
   return { service, run };
 }
+describe('GitHub SSH remote detection', () => {
+  it.each([
+    ['git@work-github:example/demo.git', ['-G', '--', 'git@work-github']],
+    ['ssh://git@work-github:2222/example/demo.git', ['-G', '-p', '2222', '--', 'git@work-github']],
+    ['ssh://work-github/example/demo.git', ['-G', '--', 'work-github']],
+    ['work-github:example/demo.git', ['-G', '--', 'work-github']],
+  ])('enables PR listing for %s when SSH resolves to GitHub', async (remoteUrl, sshArgs) => {
+    const { service, run } = fixture((args) => ok(args[0] === 'pr' ? [{ number: 12, state: 'OPEN' }] : {}), remoteUrl,
+      { exitCode: 0, stdout: 'user git\r\nhostname github.com\r\nport 22\r\n', stderr: '' });
+    expect(await service.repositoryInfo('repo')).toEqual({ isGitHub: true, nameWithOwner: 'example/demo' });
+    expect(run).toHaveBeenCalledWith('ssh', sshArgs, expect.objectContaining({ timeoutMs: 5_000 }));
+    expect(run.mock.calls.every(([exe]) => exe === 'ssh')).toBe(true);
+    expect(await service.listPullRequests('repo', ['OPEN'])).toEqual([expect.objectContaining({ number: 12 })]);
+    expect(run.mock.calls.find(([, args]) => args[0] === 'pr')?.[1]).toEqual(expect.arrayContaining(['-R', 'example/demo']));
+  });
+  it.each(['gitlab.com', 'github.com.evil.com', 'work-github', ''])('rejects aliases whose resolved hostname is %s', async (hostname) => {
+    const { service } = fixture(() => ok([]), 'git@work-github:example/demo.git',
+      { exitCode: 0, stdout: `hostname ${hostname}\n`, stderr: '' });
+    expect(await service.repositoryInfo('repo')).toEqual({ isGitHub: false, nameWithOwner: null });
+  });
+  it.each([fail('bad config'), new Error('SSH unavailable'), new Error('SSH timed out')])('handles failed SSH configuration lookup', async (result) => {
+    expect(await fixture(() => ok([]), 'git@work-github:example/demo.git', result).service.repositoryInfo('repo'))
+      .toEqual({ isGitHub: false, nameWithOwner: null });
+  });
+  it.each(['https://github.com/example/demo.git', 'git@github.com:example/demo.git'])('keeps direct GitHub URLs independent of SSH availability: %s', async (remoteUrl) => {
+    const { service, run } = fixture(() => ok([]), remoteUrl);
+    expect(await service.repositoryInfo('repo')).toEqual({ isGitHub: true, nameWithOwner: 'example/demo' });
+    expect(run).not.toHaveBeenCalled();
+  });
+  it.each(['https://work-github/example/demo.git', 'git@work-github:example/demo/extra', 'git@work-github:example/..', '-oProxyCommand=bad:example/demo.git'])('does not resolve non-SSH or malformed remotes: %s', async (remoteUrl) => {
+    const { service, run } = fixture(() => ok([]), remoteUrl);
+    expect(await service.repositoryInfo('repo')).toEqual({ isGitHub: false, nameWithOwner: null });
+    expect(run).not.toHaveBeenCalled();
+  });
+});
 describe('current branch pull requests', () => {
+  it('selects the most recently updated open PR when several PRs share a branch', async () => {
+    const { service } = fixture(() => ok([
+      { headRepository: { nameWithOwner: 'example/demo' }, headRefName: 'feature', number: 11, state: 'OPEN', updatedAt: '2026-09-01' },
+      { headRepository: { nameWithOwner: 'example/demo' }, headRefName: 'feature', number: 12, state: 'OPEN', updatedAt: '2026-09-03' },
+      { headRepository: { nameWithOwner: 'example/demo' }, headRefName: 'feature', number: 13, state: 'OPEN', updatedAt: '2026-09-02' },
+    ]));
+    expect(await service.findPullRequestForBranch('repo', 'feature')).toMatchObject({ number: 12, state: 'OPEN' });
+  });
   it('finds an open draft even when a reused branch has newer closed history', async () => {
     const { service, run } = fixture((args) => ok(args.includes('open')
-      ? [{ number: 12, state: 'OPEN', isDraft: true, headRefName: 'feature', url: 'https://github.com/example/demo/pull/12' }]
-      : [{ number: 99, state: 'CLOSED', headRefName: 'feature' }]));
+      ? [{ headRepository: { nameWithOwner: 'example/demo' }, headRefName: 'feature', number: 12, state: 'OPEN', isDraft: true, url: 'https://github.com/example/demo/pull/12' }]
+      : [{ headRepository: { nameWithOwner: 'example/demo' }, headRefName: 'feature', number: 99, state: 'CLOSED' }]));
     expect(await service.findPullRequestForBranch('repo', 'feature')).toMatchObject({ number: 12, state: 'OPEN', isDraft: true });
     expect(run.mock.calls.filter(([, args]) => args[0] === 'pr').map(([, args]) => args)).toEqual([
       expect.arrayContaining(['--head', 'feature', '--state', 'open']),
@@ -30,10 +82,43 @@ describe('current branch pull requests', () => {
   });
   it('preserves closed and merged history for the branch details view', async () => {
     const { service } = fixture((args) => ok(args.includes('open') ? [] : [
-      { number: 12, state: 'CLOSED', updatedAt: '2026-09-01' },
-      { number: 13, state: 'MERGED', updatedAt: '2026-09-02' },
+      { headRepository: { nameWithOwner: 'example/demo' }, headRefName: 'feature', number: 12, state: 'CLOSED', updatedAt: '2026-09-01' },
+      { headRepository: { nameWithOwner: 'example/demo' }, headRefName: 'feature', number: 13, state: 'MERGED', updatedAt: '2026-09-02' },
     ]));
     expect(await service.findPullRequestForBranch('repo', 'feature')).toMatchObject({ number: 13, state: 'MERGED' });
+  });
+  it.each(['OPEN', 'MERGED', 'CLOSED'])('does not associate another fork’s main PR (%s) with a clone of upstream', async (state) => {
+    const { service } = fixture(() => ok([
+      { number: 10662, state, headRefName: 'main', headRepository: { nameWithOwner: 'someone/demo' } },
+    ]));
+    expect(await service.findPullRequestForBranch('repo', 'main')).toBeNull();
+  });
+  it('keeps a matching main PR regardless of its author or the authenticated account', async () => {
+    const { service, run } = fixture(() => ok([
+      { number: 12, state: 'OPEN', author: { login: 'another-contributor' }, headRefName: 'main', headRepository: { nameWithOwner: 'Example/Demo' } },
+    ]));
+    expect(await service.findPullRequestForBranch('repo', 'main')).toMatchObject({ number: 12, author: 'another-contributor' });
+    expect(run.mock.calls.find(([, args]) => args[0] === 'pr')?.[1].join(',')).toContain('headRepository');
+  });
+  it('does not let an unrelated open PR hide merged history from this repository', async () => {
+    const { service } = fixture((args) => ok(args.includes('open')
+      ? [{ number: 99, state: 'OPEN', headRefName: 'main', headRepository: { nameWithOwner: 'someone/demo' } }]
+      : [{ number: 12, state: 'MERGED', headRefName: 'main', headRepository: { nameWithOwner: 'example/demo' } }]));
+    expect(await service.findPullRequestForBranch('repo', 'main')).toMatchObject({ number: 12, state: 'MERGED' });
+  });
+  it('ignores missing head repositories and branches that only differ in case', async () => {
+    const { service } = fixture(() => ok([
+      { number: 10, state: 'OPEN', headRefName: 'main', headRepository: null },
+      { number: 11, state: 'OPEN', headRefName: 'main' },
+      { number: 12, state: 'OPEN', headRefName: 'Main', headRepository: { nameWithOwner: 'example/demo' } },
+    ]));
+    expect(await service.findPullRequestForBranch('repo', 'main')).toBeNull();
+  });
+  it('matches the cloned fork itself when origin is a fork', async () => {
+    const { service } = fixture(() => ok([
+      { number: 12, state: 'OPEN', headRefName: 'feature', headRepository: { nameWithOwner: 'someone/demo' } },
+    ]), 'https://github.com/someone/demo.git');
+    expect(await service.findPullRequestForBranch('repo', 'feature')).toMatchObject({ number: 12 });
   });
   it('returns null when the branch has no PR and propagates lookup errors', async () => {
     expect(await fixture(() => ok([])).service.findPullRequestForBranch('repo', 'feature')).toBeNull();
@@ -50,7 +135,7 @@ describe('GitHub native stacks', () => {
     const list = await service.listPullRequests('repo', ['OPEN']);
     expect(list.map((p) => p.number)).toEqual(Array.from({ length: 27 }, (_, i) => 27 - i));
     expect(list[0]?.stack?.position).toBe(27);
-    expect(run.mock.calls.filter(([, args]) => args[0] === 'api')).toHaveLength(2);
+    expect(run.mock.calls.filter(([, args]) => args[0] === 'api' && args[1] !== 'user')).toHaveLength(2);
   });
   it('keeps normal PRs and details usable when optional metadata fails', async () => {
     const { service } = fixture((args) => args[0] === 'pr' ? ok(args[1] === 'list' ? [{ number: 101, state: 'OPEN' }] : { number: 101, state: 'OPEN', body: 'Description' }) : fail('HTTP 403: rate limit'));
@@ -62,7 +147,7 @@ describe('GitHub native stacks', () => {
   it('fetches full layers only through the explicit stack read', async () => {
     const { service, run } = fixture((args) => ok(args[1]?.includes('?') ? [stack] : stack));
     expect(await service.getPullRequestStack('repo', 101)).toMatchObject({ number: 7, layers: [{ title: 'Model' }] });
-    expect(run.mock.calls.filter(([, args]) => args[0] === 'api').map(([, args]) => args[1])).toEqual(['repos/example/demo/stacks?pull_request=101', 'repos/example/demo/stacks/7']);
+    expect(run.mock.calls.filter(([, args]) => args[0] === 'api' && args[1] !== 'user').map(([, args]) => args[1])).toEqual(['repos/example/demo/stacks?pull_request=101', 'repos/example/demo/stacks/7']);
   });
   it('distinguishes confirmed absence and unsupported preview from transient or auth failures', async () => {
     for (const response of [ok([]), fail('gh: Not Found (HTTP 404)')]) {
