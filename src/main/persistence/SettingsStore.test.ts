@@ -589,17 +589,19 @@ it('repairs repository AI opt-ins and carries their scope through relocation and
 it('persists suggestions independently of explicit accounts and existing shared-default links', async () => {
   const file = await settingsFile({ githubDefaultLogin: 'alice' });
   const store = new SettingsStore(file); await store.load();
-  const repo = { id: 'repo', name: 'demo', repositoryName: 'demo', path: '/fixture/demo', commonDir: '/fixture/demo/.git' };
+  const repositoryPath = path.join(path.dirname(file), 'demo');
+  const cloneCommonDir = path.join(path.dirname(file), 'clone', '.git');
+  const repo = { id: 'repo', name: 'demo', repositoryName: 'demo', path: repositoryPath, commonDir: path.join(repositoryPath, '.git') };
   await store.touchRepository(repo);
-  await store.touchRepository({ ...repo, id: 'worktree', path: '/fixture/worktree' });
+  await store.touchRepository({ ...repo, id: 'worktree', path: path.join(path.dirname(file), 'worktree') });
   await store.setGitHubAccount(repo.commonDir, { mode: 'account', host: 'github.com', login: 'alice', gitMode: 'managed', useGlobalDefault: true });
-  await store.setGitHubAccount('/fixture/clone/.git', { mode: 'account', host: 'github.com', login: 'carol', gitMode: 'external' });
+  await store.setGitHubAccount(cloneCommonDir, { mode: 'account', host: 'github.com', login: 'carol', gitMode: 'external' });
   await store.setGitHubSuggestedLogin('bob');
   const restarted = new SettingsStore(file); await restarted.load();
   expect(restarted.githubSuggestedLogin).toBe('bob');
   expect(restarted.githubDefaultLogin).toBe('alice');
   expect(restarted.githubAccount(repo.commonDir)).toMatchObject({ login: 'alice', useGlobalDefault: true });
-  expect(restarted.githubAccount('/fixture/clone/.git')).toMatchObject({ login: 'carol', gitMode: 'external' });
+  expect(restarted.githubAccount(cloneCommonDir)).toMatchObject({ login: 'carol', gitMode: 'external' });
   expect(restarted.githubRepositoryAccounts).toHaveLength(1);
   expect(restarted.githubRepositoryAccounts[0]).toMatchObject({ name: 'demo', login: 'alice', followsDefault: true });
 });
