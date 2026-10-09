@@ -3,7 +3,6 @@ import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { PullRequestSummary } from '../../shared/contracts';
-import { TooltipProvider } from '@/components/ui/tooltip';
 import { BranchPullRequestMenu } from './BranchPullRequestMenu';
 
 let root: Root;
@@ -31,9 +30,9 @@ afterEach(async () => {
 });
 
 async function render(pr = pullRequest, mobile = false) {
-  await act(async () => root.render(createElement(TooltipProvider, { delay: 0 }, createElement(BranchPullRequestMenu, {
+  await act(async () => root.render(createElement(BranchPullRequestMenu, {
     pullRequest: pr, onOpenPullRequest, mobile, onNavigate,
-  }))));
+  })));
 }
 async function click(element: HTMLElement) { await act(async () => element.click()); }
 const trigger = () => container.querySelector<HTMLButtonElement>('button')!;
@@ -47,6 +46,9 @@ it.each([
   expect(trigger().querySelector('button')).toBeNull();
   expect(trigger().querySelector(state.state === 'MERGED' ? '.tabler-icon-git-merge' : '.tabler-icon-git-pull-request')).not.toBeNull();
   await click(trigger());
+  const menu = document.querySelector('[role="menu"]')!;
+  expect(menu.textContent).toContain(pullRequest.title);
+  expect(menu.textContent).toContain(state.state === 'MERGED' ? 'PR #12 · Merged into main' : state.isDraft ? 'PR #12 · Draft' : 'PR #12 · Open');
   expect(external).not.toHaveBeenCalled();
   expect(onOpenPullRequest).not.toHaveBeenCalled();
   await click(choice('Open in OpenTig'));
@@ -60,14 +62,14 @@ it.each([
   expect(onNavigate).toHaveBeenCalledTimes(2);
 });
 
-it('keeps the PR title tooltip visible on hover and hides it while choosing a destination', async () => {
+it('keeps PR information in the click menu without a separate hover tooltip', async () => {
   await render();
   await act(async () => {
     trigger().dispatchEvent(new MouseEvent('mouseenter', { bubbles: false }));
     trigger().dispatchEvent(new MouseEvent('mousemove', { bubbles: true }));
-    await new Promise(resolve => setTimeout(resolve, 100));
   });
-  expect(document.querySelector('[data-slot="tooltip-content"][data-open]')?.textContent).toContain(pullRequest.title);
+  expect(document.querySelector('[data-slot="tooltip-content"]')).toBeNull();
+  expect(document.querySelector('[role="menu"]')).toBeNull();
   await click(trigger());
   expect(document.querySelector('[data-slot="tooltip-content"][data-open]')).toBeNull();
   expect(choice('Open in OpenTig')).toBeDefined();

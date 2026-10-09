@@ -298,8 +298,6 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   .toolbar-branch-pr.draft { color: var(--muted-foreground); }
   .toolbar-branch-pr.merged { color: var(--pr-merged); }
   .toolbar-pr-draft { font-size: 10px; }
-  .toolbar-pr-tooltip-title { line-height: 1.5; overflow-wrap: anywhere; }
-  .toolbar-pr-tooltip-meta { font-size: 11px; line-height: 1.4; opacity: .75; }
   /* The toolbar is a window drag region, and a drag region swallows wheel and
      pointer events. The strip opts out for itself, not only for its buttons, and
      stays content-sized so the spacer after it keeps the header draggable. */
