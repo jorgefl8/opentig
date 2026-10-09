@@ -131,6 +131,10 @@ by default) and fails on conflict so a tunnel target never moves silently.
 
 ## Pairing and sessions
 
+An unpaired browser offers **Pair this browser** and shows the relevant CLI command (`npm run pair:web:dev` for Dev, `opentig pair` for production) beside a copy button in both the authentication notice and pairing form. These views fit narrow screens and scroll when needed. Opening `/pair` first checks the existing session, returns authenticated browsers to the app, and offers retry on connection failure instead of requiring another code.
+
+A paired browser can create another five-minute, one-use link or QR from Settings using its current address, including through a tunnel. Browsers manage paired sessions, while listener configuration stays on the host.
+
 The pairing URL has this form:
 
 ```text
@@ -210,7 +214,12 @@ On a transient disconnect:
 - server events resume for every connected tab.
 
 Authentication failure stops automatic retries and asks the browser to pair
-again.
+again. Browsers without a valid session see pairing instructions without a startup
+error notification.
+
+If a server upgrade makes an open client's version incompatible, the connection
+notification offers **Reload** to fetch the current interface. The browser still
+warns about unsaved editor changes before reloading.
 
 ## Diagnostics
 

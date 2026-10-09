@@ -18,14 +18,23 @@ npm start
 
 ## Quality gates
 
-Every change must pass:
+Application changes must pass:
 
 ```powershell
 npm run check
-npm run package:dev
 ```
 
+Validate the affected runtime using the [development guide](docs/development.md): build and restart web Dev for server/browser changes, or package and launch desktop Dev for desktop changes. Documentation-only changes require checking links, anchors, examples, and documented commands; they do not require rebuilding or restarting the application.
+
 Add focused tests for behavior changes. Keep Electron security boundaries intact: renderer code must not gain direct Node.js, filesystem, process, or unrestricted IPC access.
+
+## Documentation
+
+Keep the root `README.md` concise: it is the project overview and entry point for installation and documentation. Update it when the overview, basic setup, headline capabilities, or guide navigation changes.
+
+Whenever a feature is added or its user-visible behavior changes, update the relevant guide under `docs/` in the same change. Prefer the existing section that covers the workflow; add a focused guide and link it from [the documentation index](docs/README.md) when the topic needs its own page. Describe current behavior, defaults, requirements, and important limits without appending a changelog-style entry or duplicating details across guides. Keep feature information in durable product documentation rather than only in code or review notes.
+
+Check relative links, heading anchors, and commands against the repository. Keep local development configuration, private endpoints, screenshots for review, mockups, logs, and validation reports outside tracked documentation.
 
 ## Commits and pull requests
 

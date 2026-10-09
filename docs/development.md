@@ -15,7 +15,7 @@ npx --yes npm@11.6.2 ci
 npm start
 ```
 
-`npm start` builds the shared server/client and Electron main/preload with Vite, then launches **OpenTig Dev**. Restart the command after source changes; this launcher does not provide live reload. Its data lives in the OS application-data directory under `OpenTig Dev` (normally `~/.config/OpenTig Dev` on Linux or `%APPDATA%/OpenTig Dev` on Windows), without copying or falling back to production data. The profile is selected before Electron takes its instance lock or opens a session. Development can run on Linux; Windows installers and Windows-specific behavior must still be verified on Windows.
+`npm start` builds the shared server/client and Electron main/preload with Vite, then launches **OpenTig Dev**. Restart the command after source changes; this launcher does not provide live reload. Its data lives in the OS application-data directory under `OpenTig Dev` (normally `~/.config/OpenTig Dev` on Linux or `%APPDATA%/OpenTig Dev` on Windows), without copying or falling back to production data. The profile is selected before Electron takes its instance lock or opens a session. Only one desktop Dev instance runs at a time. A fresh Dev profile starts with Network access and the global double-Control shortcut disabled. Development can run on Linux; Windows installers and Windows-specific behavior must still be verified on Windows.
 
 For browser development on a Linux machine without a desktop session, run:
 
@@ -43,8 +43,8 @@ StartLimitBurst=10
 
 [Service]
 Type=simple
-WorkingDirectory=%h/jws/opentig
-ExecStart=/usr/bin/node %h/jws/opentig/packages/server/dist/dev.mjs serve
+WorkingDirectory=%h/src/opentig
+ExecStart=/usr/bin/node %h/src/opentig/packages/server/dist/dev.mjs serve
 Environment=PATH=%h/.local/bin:%h/.bun/bin:/usr/local/bin:/usr/bin:/bin
 Restart=always
 RestartSec=3
