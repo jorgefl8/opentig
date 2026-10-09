@@ -106,7 +106,8 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Verify CLI discovery on the native platform
-        run: npx vitest run src/main/ai src/main/github/GitHubService.test.ts src/main/persistence/SettingsStore.test.ts
+        # Bound native process contention, including cold Windows PowerShell startup.
+        run: npx vitest run src/main/ai src/main/github/GitHubService.test.ts src/main/persistence/SettingsStore.test.ts --maxWorkers=2
       - name: Prepare isolated runner user service manager
         if: runner.os == 'Linux'
         shell: bash
