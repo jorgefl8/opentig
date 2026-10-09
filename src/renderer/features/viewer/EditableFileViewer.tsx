@@ -106,10 +106,10 @@ export function SourceCodeEditor({ path, cacheKey, value, themeType, wrapLines, 
   // This object must stay stable: EditProvider uses its identity to retain the
   // editor instance and its undo/redo history while the surface rerenders. It is
   // only rebuilt when the find-and-replace binding itself is rebound in Settings.
-  const editorOptions = useMemo<EditorOptions<undefined>>(() => ({
+  const editorOptions = useMemo<EditorOptions<'file', undefined, undefined>>(() => ({
     historyMaxEntries: 500,
     keymap: buildFileEditorKeymap(shortcuts.editorSearch),
-    onChange(nextFile) { onChangeRef.current(nextFile.contents); },
+    onChange(event) { onChangeRef.current(event.file.contents); },
   }), [shortcuts.editorSearch]);
 
   const cancelScrollSync = useRef<(() => void) | null>(null);
