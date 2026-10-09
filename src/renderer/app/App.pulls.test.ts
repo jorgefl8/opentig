@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { GhCliStatus, PullRequestSummary } from '../../shared/contracts';
 import type { ToolbarProps } from './Toolbar';
+import type { ViewerSelection } from '@/features/viewer/Viewer';
 import { SettingsStore } from '../../main/persistence/SettingsStore';
 import { GhOperationError } from '../../shared/errors';
 
@@ -39,10 +40,11 @@ vi.mock('./Toolbar', () => ({ Toolbar: (props: ToolbarProps) => createElement('h
   createElement('button', { onClick: () => props.onRecent('repo-b'), 'aria-label': 'Switch repository' }, 'Switch repository'),
   createElement('output', { 'aria-label': 'Branch PR' }, props.branchPullRequest
     ? `#${props.branchPullRequest.number} ${props.branchPullRequest.state}` : 'No PR'),
+  props.branchPullRequest && createElement('button', { 'aria-label': 'Open branch PR in OpenTig', onClick: () => props.onOpenPullRequest(props.branchPullRequest!.number) }, 'Open in OpenTig'),
 ) }));
 vi.mock('@/features/changes/ChangesView', () => ({ ChangesView: () => null }));
 vi.mock('@/features/commit/CommitComposer', () => ({ CommitComposer: () => null }));
-vi.mock('@/features/viewer/Viewer', () => ({ default: () => null }));
+vi.mock('@/features/viewer/Viewer', () => ({ default: ({ selection }: { selection: ViewerSelection }) => createElement('output', { 'aria-label': 'Viewer selection' }, selection?.type === 'pull-request' ? `PR #${selection.number}` : '') }));
 vi.mock('@/features/repositories/OpenRepositoryDialog', () => ({ OpenRepositoryDialog: () => null }));
 
 import App from './App';
@@ -203,9 +205,14 @@ it.each(['OPEN', 'MERGED'] as const)('passes the current branch’s %s PR to the
   calls.openRecent.mockResolvedValue({ ...repository, id: 'repo-b', path: '/sample-worktree' });
   await mount();
   expect(container.querySelector('[aria-label="Branch PR"]')?.textContent).toBe(`#12 ${state}`);
+  await click('[aria-label="Open branch PR in OpenTig"]');
+  expect(container.querySelector('[aria-label="Viewer selection"]')?.textContent).toBe('PR #12');
+  expect(calls.listPulls).not.toHaveBeenCalled();
   await click('[aria-label="Switch repository"]');
   expect(calls.branchPull).toHaveBeenLastCalledWith('repo-b', 'main');
   expect(container.querySelector('[aria-label="Branch PR"]')?.textContent).toBe(`#13 ${state}`);
+  await click('[aria-label="Open branch PR in OpenTig"]');
+  expect(container.querySelector('[aria-label="Viewer selection"]')?.textContent).toBe('PR #13');
 });
 
 it('keeps closed, unmerged PRs out of the current branch toolbar', async () => {

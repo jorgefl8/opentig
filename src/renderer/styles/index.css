@@ -293,7 +293,6 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   .toolbar-spacer { flex: 1; }
   .toolbar-branch-pr { display: inline-flex; flex: none; min-height: 28px; align-items: center; gap: 4px; padding: 0 3px; background: transparent; color: var(--success); font-size: 11px; font-weight: 500; }
   .toolbar-branch-pr > svg { width: 14px; height: 14px; flex: none; }
-  .toolbar-branch-pr > svg:last-child { width: 12px; height: 12px; }
   .toolbar-branch-pr:hover .toolbar-pr-label { text-decoration: underline; text-underline-offset: 3px; }
   .toolbar-branch-pr:focus-visible { border-radius: 3px; outline: 2px solid var(--primary); outline-offset: 3px; }
   .toolbar-branch-pr.draft { color: var(--muted-foreground); }

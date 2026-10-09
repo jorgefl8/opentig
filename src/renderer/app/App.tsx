@@ -2107,6 +2107,7 @@ export default function App() {
           status={status}
           githubInfo={githubInfo}
           branchPullRequest={currentBranchPullRequest}
+          onOpenPullRequest={(number) => { selectViewer({ type: 'pull-request', number }); }}
           branches={branches}
           worktrees={worktrees}
           preferences={bootstrap.preferences}

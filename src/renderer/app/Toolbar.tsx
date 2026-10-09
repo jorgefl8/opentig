@@ -1,7 +1,7 @@
 import { appDisplayName } from '@/lib/app-identity';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  IconArrowDown, IconArrowUp, IconBrandGithub, IconExternalLink, IconGitMerge, IconGitPullRequest, IconHierarchy2, IconLoader4, IconPlus, IconRefresh, IconSettings,
+  IconArrowDown, IconArrowUp, IconBrandGithub, IconHierarchy2, IconLoader4, IconPlus, IconRefresh, IconSettings,
 } from '@tabler/icons-react';
 import type { BootstrapData, GitHubRepositoryInfo, Preferences, PullRequestSummary, RecentRepository, RepositoryInfo, RepositoryOrganization, RepositoryProject } from '../../shared/contracts';
 import type { BranchInfo, RepositoryStatus, WorktreeInfo } from '../../shared/git-types';
@@ -28,7 +28,8 @@ import { useShortcuts } from './useShortcuts';
 import { useMobileLayout } from '@/lib/use-mobile-layout';
 import { MobileToolbar } from './MobileToolbar';
 import { BranchCombobox } from './BranchCombobox';
-import { openOnGitHub, prStateLabel } from '@/features/pulls/gh-utils';
+import { openOnGitHub } from '@/features/pulls/gh-utils';
+import { BranchPullRequestMenu } from './BranchPullRequestMenu';
 
 export interface ToolbarProps {
   mobileBackLabel?: string | undefined;
@@ -37,6 +38,7 @@ export interface ToolbarProps {
   branches: BranchInfo[]; worktrees: WorktreeInfo[]; preferences: Preferences; busy: string | null;
   githubInfo: GitHubRepositoryInfo | null;
   branchPullRequest: PullRequestSummary | null;
+  onOpenPullRequest(number: number): void;
   onOpen(): void; onRecent(id: string | null): void; onBranch(name: string | null): void; onWorktree(path: string | null): void;
   onRefresh(): void; onPreference(partial: Partial<Preferences>): void;
   onForgetRepository(repository: RepositoryOption): Promise<RepositoryOrganization>;
@@ -168,7 +170,7 @@ export function Toolbar(props: ToolbarProps) {
 
       if (!repositorySelectOpen && event.key.toLowerCase() === repoSwitcherKey) {
         const anotherPopupIsOpen = document.querySelector(
-          '[data-slot="dialog-popup"][data-open], [data-slot="select-content"][data-open], [data-slot="combobox-content"][data-open]',
+          '[data-slot="dialog-popup"][data-open], [data-slot="select-content"][data-open], [data-slot="combobox-content"][data-open], [data-slot="dropdown-menu-content"][data-open]',
         );
         if (projectsOpen || refsOpen || props.settingsOpen || anotherPopupIsOpen) return;
         event.preventDefault();
@@ -387,18 +389,7 @@ export function Toolbar(props: ToolbarProps) {
       {worktreeControl}
       {branchControl}
       {props.branchPullRequest && (
-        <Tooltip>
-          <TooltipTrigger render={<button type="button" className={`toolbar-branch-pr ${props.branchPullRequest.state.toLowerCase()}${props.branchPullRequest.state === 'OPEN' && props.branchPullRequest.isDraft ? ' draft' : ''}`} aria-label={`View ${prStateLabel(props.branchPullRequest).toLowerCase()} pull request #${props.branchPullRequest.number} on GitHub`} onClick={() => openOnGitHub(props.branchPullRequest!.url)} />}>
-            {props.branchPullRequest.state === 'MERGED' ? <IconGitMerge aria-hidden="true" /> : <IconGitPullRequest aria-hidden="true" />}
-            <span className="toolbar-pr-label">PR #{props.branchPullRequest.number}</span>
-            {props.branchPullRequest.state === 'OPEN' && props.branchPullRequest.isDraft && <span className="toolbar-pr-draft">Draft</span>}
-            <IconExternalLink aria-hidden="true" />
-          </TooltipTrigger>
-          <TooltipContent side="bottom" align="end" sideOffset={8} className="flex-col items-start gap-1 text-left">
-            <span className="toolbar-pr-tooltip-title">{props.branchPullRequest.title}</span>
-            <span className="toolbar-pr-tooltip-meta">{props.branchPullRequest.state === 'MERGED' ? `Merged into ${props.branchPullRequest.baseRefName}` : prStateLabel(props.branchPullRequest)} · View on GitHub</span>
-          </TooltipContent>
-        </Tooltip>
+        <BranchPullRequestMenu key={props.branchPullRequest.url} pullRequest={props.branchPullRequest} onOpenPullRequest={props.onOpenPullRequest} />
       )}
 
       <Tooltip><TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Refresh" onClick={props.onRefresh} disabled={Boolean(props.busy) || currentRepositorySyncBusy} />}><IconRefresh className={props.busy === 'refresh' ? 'animate-spin' : undefined} /></TooltipTrigger><TooltipContent>Refresh (Ctrl+R)</TooltipContent></Tooltip>
