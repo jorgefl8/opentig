@@ -2,6 +2,7 @@ import { readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
+import { NetworkSettings, isLoopbackHost } from './network-settings';
 import { assertManager, createServiceManager } from './service-manager';
 import { atomicWrite, newerVersion, packageDirectory, readInstallation, saveInstallation, type ServiceInstallation } from './service-installation';
 
@@ -50,10 +51,11 @@ export async function applyServiceUpdate(home: string): Promise<void> {
       },
       restart: () => manager.restart(),
       healthy: async () => {
-        const host = ['0.0.0.0', '::'].includes(plan.next.host) ? (plan.next.host === '::' ? '[::1]' : '127.0.0.1') : plan.next.host.includes(':') ? `[${plan.next.host}]` : plan.next.host;
+        const network = await new NetworkSettings(path.join(home, 'server/web-access.json')).load({ webAccessEnabled: true, lanAccessEnabled: !isLoopbackHost(plan.next.host), publicOrigin: null, listenerHost: plan.next.host, listenerPort: plan.next.port });
+        const host = ['0.0.0.0', '::'].includes(network.listenerHost) ? (network.listenerHost === '::' ? '[::1]' : '127.0.0.1') : network.listenerHost.includes(':') ? `[${network.listenerHost}]` : network.listenerHost;
         for (let i = 0; i < 30; i++) {
           try {
-            const response = await fetch(`http://${host}:${plan.next.port}/readyz`, { signal: AbortSignal.timeout(1000) });
+            const response = await fetch(`http://${host}:${network.listenerPort}/readyz`, { signal: AbortSignal.timeout(1000) });
             const identity = await response.json() as { appVersion?: string; status?: string };
             if (response.ok && identity.appVersion === plan.next.version && identity.status === 'ready') { await result(true); return true; }
           } catch { /* Server may still be starting. */ }

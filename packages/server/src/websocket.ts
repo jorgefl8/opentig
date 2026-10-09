@@ -99,6 +99,11 @@ export class OpenTigWebSocketTransport {
     return this.closePromise;
   }
 
+  /** Keep authentication and runtime alive while clients reconnect to a new bind. */
+  reconnectClients(): void {
+    for (const socket of this.clients.keys()) socket.terminate();
+  }
+
   private upgrade(request: IncomingMessage, socket: Duplex, head: Buffer): void {
     const rawPath = (request.url ?? '').split(/[?#]/, 1)[0];
     if (rawPath !== '/ws') return rejectUpgrade(socket, 404, 'Not Found');

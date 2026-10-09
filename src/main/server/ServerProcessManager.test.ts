@@ -79,6 +79,21 @@ describe('ServerProcessManager', () => {
     await manager.stop();
   });
 
+  it('adopts web listener changes and respawns the same saved address after a utility crash', async () => {
+    const fixture = await createFixture([readyBehavior, readyBehavior]);
+    const manager = new ServerProcessManager({ ...fixture.options, port: 7000, restartDelaysMs: [1] });
+    await manager.start();
+    fixture.children[0]!.emit('message', { type: 'network-changed', host: '0.0.0.0', port: 7100, browserAccessEnabled: true });
+    expect(manager.current).toMatchObject({ host: '0.0.0.0', port: 7100, origin: 'http://127.0.0.1:7100' });
+    expect(await manager.start()).toMatchObject({ port: 7100 });
+    fixture.children[0]!.crash(1);
+    await vi.waitFor(() => expect(fixture.children).toHaveLength(2));
+    await vi.waitFor(() => expect(manager.current?.port).toBe(7100));
+    const bootstrap = fixture.children[1]!.messages[0] as Extract<OpenTigUtilityParentMessage, { type: 'bootstrap' }>;
+    expect(bootstrap.config).toMatchObject({ host: '0.0.0.0', port: 7100, browserAccessEnabled: true });
+    await manager.stop();
+  });
+
   it('fails an explicit occupied port without scanning', async () => {
     const fixture = await createFixture([portConflictBehavior]);
     const manager = new ServerProcessManager({ ...fixture.options, port: 7000 });

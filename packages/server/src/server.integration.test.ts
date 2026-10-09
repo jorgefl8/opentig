@@ -79,7 +79,7 @@ describe('authoritative HTTP server', () => {
     const cookie = cookieValue((await postJson(`${origin}/api/auth/pair`, { token: fixture.pairingToken }, origin)).cookie);
     const response = await fetch(`${origin}/api/auth/web-access`, { headers: { Cookie: cookie } });
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ webAccessEnabled: true, pairingAvailable: false, listeningOnLan: host === '0.0.0.0', listenerHost: host, actualPort: fixture.server.port, ready: true });
+    expect(await response.json()).toMatchObject({ webAccessEnabled: true, pairingAvailable: false, listeningOnLan: host === '0.0.0.0', listenerHost: host, actualPort: fixture.server.port, ready: true });
   });
 
   it('lets a paired browser issue a one-use HTTPS tunnel link and pair another browser', async () => {

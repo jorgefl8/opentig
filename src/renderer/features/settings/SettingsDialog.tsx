@@ -128,7 +128,7 @@ export function SettingsDialog({ preferences, onPreference, open, onOpenChange, 
         title: 'Web access',
         description: window.opentigDesktop
           ? 'Connect trusted browsers locally, over your LAN, or through an HTTPS tunnel.'
-          : 'Review and disconnect browsers authorised to use this OpenTig server.',
+          : 'Configure server access, create pairing links, and manage connected browsers.',
       }
     : SETTINGS_COPY[section];
   return (

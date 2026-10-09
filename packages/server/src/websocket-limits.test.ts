@@ -8,6 +8,7 @@ import type { OpenTigRuntime } from '../../../src/main/runtime/OpenTigRuntime';
 import { OPEN_TIG_SERVER_COMMANDS } from '../../../src/shared/protocol';
 import { BROWSER_SESSION_MAX_AGE_SECONDS, OneTimeBootstrapAuthSource, OpenTigSessionAuth } from './auth';
 import { OpenTigServer } from './OpenTigServer';
+import { NetworkSettings } from './network-settings';
 
 interface Fixture {
   auth: OpenTigSessionAuth;
@@ -225,6 +226,8 @@ async function startFixture(
   const closeRuntime = vi.fn(async () => undefined);
   const runtime = { close: closeRuntime, services: { files: {} } } as unknown as OpenTigRuntime;
   const server = new OpenTigServer({
+    network: { webAccessEnabled: true, lanAccessEnabled: false, publicOrigin: null, listenerHost: '127.0.0.1', listenerPort: 0 },
+    networkSettings: new NetworkSettings(path.join(directory, 'web-access.json')),
     runtime,
     registry,
     clientRoot,

@@ -9,8 +9,15 @@ import { createOpenTigHttpHandler, type OpenTigServerLogger, type OpenTigServerM
 import { OpenTigWebSocketTransport } from './websocket';
 
 import type { DesktopUpdatesApi } from '../../../src/shared/desktop-updates';
+import { networkInterfaces } from 'node:os';
+import type { OpenTigWebAccessStatus } from '../../../src/shared/desktop-api';
+import { applyNetworkPatch, isLoopbackHost, type NetworkConfig, type NetworkSettings } from './network-settings';
 
 export interface OpenTigServerOptions {
+  network: NetworkConfig;
+  networkSettings: NetworkSettings;
+  recoveryCommand?: string;
+  onNetworkChanged?(config: NetworkConfig): Promise<void> | void;
   updates?: DesktopUpdatesApi;
   runtime: OpenTigRuntime;
   registry: CommandRegistry;
@@ -43,8 +50,11 @@ export class OpenTigServer {
   private ready = false;
   private startPromise: Promise<OpenTigServerAddress> | null = null;
   private stopPromise: Promise<void> | null = null;
+  private networkMutation: Promise<unknown> = Promise.resolve();
+  private network: NetworkConfig;
 
   constructor(private readonly options: OpenTigServerOptions) {
+    this.network = options.network;
     this.logger = options.logger ?? (() => undefined);
     this.httpServer = createServer(createOpenTigHttpHandler({
       runtime: options.runtime,
@@ -53,6 +63,10 @@ export class OpenTigServer {
       cancelUpdate: () => options.registry.resumeAfterUpdate(),
       clientRoot: options.clientRoot,
       auth: options.auth,
+      webAccess: {
+        getStatus: () => this.getWebAccessStatus(),
+        update: (patch) => this.updateWebAccess(patch),
+      },
       identity: options.identity,
       mode: options.mode ?? 'desktop',
       isReady: () => this.ready,
@@ -103,6 +117,74 @@ export class OpenTigServer {
     return { connectedSessionCount: this.webSockets.connectedSessionCount, browserAccessEnabled: this.options.auth.descriptor().browserAccessEnabled };
   }
 
+  getWebAccessStatus(): OpenTigWebAccessStatus {
+    const address = this.httpServer.address() as AddressInfo | null;
+    const port = address?.port ?? this.network.listenerPort;
+    const host = address?.address ?? this.network.listenerHost;
+    const localHost = host === '0.0.0.0' ? '127.0.0.1' : host === '::' ? '::1' : host;
+    const localEndpoint = `http://${formatHost(localHost)}:${port}`;
+    const endpoints = Object.values(networkInterfaces()).flat().filter(entry => entry && !entry.internal && !entry.address.startsWith('169.254.') && !entry.address.startsWith('fe80:') && (host.includes(':') || entry.family === 'IPv4'))
+      .map(entry => `http://${formatHost(entry!.address)}:${port}`);
+    const networkEndpoints = [...new Set(endpoints)].sort();
+    const listeningOnLan = !isLoopbackHost(host);
+    return {
+      webAccessEnabled: this.options.auth.descriptor().browserAccessEnabled,
+      lanAccessEnabled: this.network.lanAccessEnabled,
+      publicOrigin: this.network.publicOrigin,
+      listeningOnLan,
+      listenerHost: host,
+      actualPort: port,
+      serverState: this.ready ? 'ready' : 'restarting',
+      localEndpoint,
+      networkEndpoints,
+      pairingEndpoints: this.network.webAccessEnabled ? [...new Set([localEndpoint, ...(listeningOnLan ? networkEndpoints.filter(endpoint => host === '0.0.0.0' || host === '::' || new URL(endpoint).hostname.replace(/[[\]]/g, '') === host) : []), ...(this.network.publicOrigin ? [this.network.publicOrigin] : [])])] : [],
+      connectedSessionCount: this.webSockets.connectedSessionCount,
+      restartError: null,
+      ...(this.options.recoveryCommand ? { recoveryCommand: this.options.recoveryCommand } : {}),
+    };
+  }
+
+  updateWebAccess(patch: unknown): Promise<OpenTigWebAccessStatus> {
+    const operation = this.networkMutation.then(async () => {
+      if (!this.ready || this.stopPromise) throw new Error('Server is not ready.');
+      const previous = this.network;
+      const next = applyNetworkPatch(previous, patch);
+      const rebind = next.listenerHost !== previous.listenerHost || next.listenerPort !== previous.listenerPort;
+      if (rebind && !this.options.registry.pauseForUpdate()) throw new Error('Wait for running operations to finish before changing the listener.');
+      try {
+        if (rebind) await this.rebind(next);
+        try {
+          await this.options.networkSettings.save(next);
+          await this.options.onNetworkChanged?.(next);
+        } catch (error) {
+          if (rebind) await this.rebind(previous);
+          await this.options.networkSettings.save(previous);
+          await this.options.onNetworkChanged?.(previous);
+          throw error;
+        }
+        this.network = next;
+        await this.setBrowserAccessEnabled(next.webAccessEnabled);
+        if (rebind) this.webSockets.reconnectClients();
+        return this.getWebAccessStatus();
+      } finally {
+        if (rebind) this.options.registry.resumeAfterUpdate();
+      }
+    });
+    this.networkMutation = operation.catch(() => undefined);
+    return operation;
+  }
+
+  private async rebind(config: NetworkConfig): Promise<void> {
+    const previous = this.network;
+    this.httpServer.close();
+    this.httpServer.closeIdleConnections();
+    try { await this.bind(config.listenerHost, config.listenerPort); }
+    catch (error) {
+      await this.bind(previous.listenerHost, previous.listenerPort);
+      throw new Error('Could not use that listening address or port. The previous listener has been restored.', { cause: error });
+    }
+  }
+
   async setBrowserAccessEnabled(enabled: boolean): Promise<void> {
     if (!this.ready) throw new Error('Server is not ready.');
     const pending = this.options.auth.setBrowserAccessEnabled(enabled);
@@ -123,8 +205,15 @@ export class OpenTigServer {
   }
 
   private listen(): Promise<OpenTigServerAddress> {
-    const host = this.options.host ?? '127.0.0.1';
-    const port = this.options.port ?? 6767;
+    return this.bind(this.network.listenerHost, this.network.listenerPort).then(address => {
+      this.network = { ...this.network, listenerHost: address.host, listenerPort: address.port,
+        lanAccessEnabled: this.network.listenerHost === address.host ? this.network.lanAccessEnabled : !isLoopbackHost(address.host),
+      };
+      return address;
+    });
+  }
+
+  private bind(host: string, port: number): Promise<OpenTigServerAddress> {
     return new Promise((resolve, reject) => {
       const onError = (error: Error) => reject(error);
       this.httpServer.once('error', onError);
@@ -144,6 +233,7 @@ export class OpenTigServer {
   }
 
   private async stopServer(): Promise<void> {
+    await this.networkMutation;
     this.ready = false;
     await this.webSockets.close();
     if (this.httpServer.listening) {

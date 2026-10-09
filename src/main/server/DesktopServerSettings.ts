@@ -7,11 +7,13 @@ interface PersistedDesktopServerSettings {
   webAccessEnabled: boolean;
   lanAccessEnabled: boolean;
   publicOrigin: string | null;
+  listenerHost?: string;
+  listenerPort?: number;
 }
 
 export type DesktopServerConfig = Omit<PersistedDesktopServerSettings, 'version'>;
 
-/** Desktop-only network exposure state. Server domain settings never own it. */
+/** Desktop startup migration; subsequent network edits are owned by the shared server. */
 export class DesktopServerSettings {
   private pendingWrite: Promise<void> = Promise.resolve();
 
@@ -23,7 +25,10 @@ export class DesktopServerSettings {
       value = JSON.parse(await readFile(this.filePath, 'utf8')) as Record<string, unknown> | null;
       if (value?.version === 4 && typeof value.webAccessEnabled === 'boolean' && typeof value.lanAccessEnabled === 'boolean'
         && (value.publicOrigin === null || typeof value.publicOrigin === 'string')) {
-        return { webAccessEnabled: value.webAccessEnabled, lanAccessEnabled: value.lanAccessEnabled, publicOrigin: value.publicOrigin === null ? null : normalizePairingOrigin(value.publicOrigin) };
+        return { webAccessEnabled: value.webAccessEnabled, lanAccessEnabled: value.lanAccessEnabled, publicOrigin: value.publicOrigin === null ? null : normalizePairingOrigin(value.publicOrigin),
+          ...(typeof value.listenerHost === 'string' ? { listenerHost: value.listenerHost } : {}),
+          ...(typeof value.listenerPort === 'number' ? { listenerPort: value.listenerPort } : {}),
+        };
       }
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') return defaults();

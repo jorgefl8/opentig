@@ -32,6 +32,8 @@ export interface OpenTigWebAccessStatus {
   pairingEndpoints: string[];
   connectedSessionCount: number;
   restartError: string | null;
+  listenerHost?: string;
+  recoveryCommand?: string;
 }
 
 export interface OpenTigPairingLink {

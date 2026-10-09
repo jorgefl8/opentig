@@ -7,7 +7,7 @@ import { CliUsageError } from './cli-config';
 /** Fixed source-development identity. Production CLI flags/env cannot redirect it. */
 export function devCliArguments(args: readonly string[], environment: NodeJS.ProcessEnv = process.env, home = os.homedir(), platform: NodeJS.Platform = process.platform): string[] {
   const command = args[0] ?? 'serve';
-  if (args.length > 1 || (command !== 'serve' && command !== 'pair')) {
+  if (args.length > 1 || (command !== 'serve' && command !== 'pair' && command !== 'reset-access')) {
     throw new CliUsageError('Use npm run start:web:dev or npm run pair:web:dev without additional options.');
   }
   const directory = path.join(home, '.opentig-dev');
@@ -23,7 +23,7 @@ export function devCliArguments(args: readonly string[], environment: NodeJS.Pro
     ...(environment.OPENTIG_HOME ? [path.resolve(environment.OPENTIG_HOME)] : []),
   ];
   prepareDevDirectory(directory, protectedDirectories);
-  return command === 'pair'
-    ? ['pair', '--home', directory]
+  return command === 'pair' || command === 'reset-access'
+    ? [command, '--home', directory]
     : ['serve', '--home', directory, '--host', '127.0.0.1', '--port', String(preferredServerPort('dev'))];
 }

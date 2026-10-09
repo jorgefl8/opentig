@@ -17,7 +17,7 @@ Paired browser ──────────────────┤
                          ├─ settings and repository state
                          ├─ GitHub and optional AI CLI adapters
                          ├─ repository watcher and runtime events
-                         ├─ owner-session authentication
+                         ├─ owner-session authentication and persistent access/listener configuration
                          └─ production React client
                                  │
                                  ▼
@@ -26,7 +26,7 @@ Paired browser ──────────────────┤
 Electron main
 ├─ starts, probes, restarts, and stops the utility server
 ├─ installs the private desktop owner session
-├─ changes loopback/LAN exposure
+├─ delegates access configuration to the shared server
 └─ provides narrow native-only capabilities through preload
 
 Node CLI
@@ -115,7 +115,7 @@ Desktop paths are derived from Electron's user-data directory:
 | `ai-log.jsonl` | local AI-operation log |
 | `github-status.json` | last checked GitHub CLI/account metadata; no tokens or credential paths |
 | `problems.jsonl` | local Git, file, and network failure log |
-| `desktop-server.json` | persisted loopback/LAN exposure |
+| `desktop-server.json` | shared persisted desktop web access, domain, address and port |
 | `server/` | hash-only owner-session authentication state |
 | `logs/server.log` | redacted rotating utility-server log |
 
@@ -127,6 +127,7 @@ The headless CLI derives equivalent paths from `~/.opentig` or `--home`:
 | `settings.json.bak` | last known-good settings document, used if the primary file cannot be parsed |
 | `ai-log.jsonl` | local AI-operation history |
 | `problems.jsonl` | local Git, file, and network failure log |
+| `server/web-access.json` | saved CLI web access, domain, address and port |
 | `server/` | hash-only sessions plus a private same-host admin credential |
 | `runtime.json` | PID, bind address, version/protocol, and instance identity; no credential |
 | `logs/server.log` | redacted rotating CLI server log |

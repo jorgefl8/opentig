@@ -1,6 +1,8 @@
 import { formatDateTime } from '../../../src/shared/date-format';
 import { execFile } from 'node:child_process';
 import process from 'node:process';
+import { rm } from 'node:fs/promises';
+import path from 'node:path';
 import { renderUnicodeCompact } from 'uqr';
 import { normalizeRuntimePlatform } from '../../../src/main/runtime/create-runtime';
 import { redactSensitiveText } from '../../../src/shared/redaction';
@@ -49,6 +51,11 @@ export async function runCli(args: readonly string[], environment: NodeJS.Proces
       return 0;
     }
     if (config.command === 'service') return await manageCliService(config, io);
+    if (config.command === 'reset-access') {
+      await rm(path.join(resolveCliPaths(config.home).serverData, 'web-access.json'), { force: true });
+      io.out('Web access settings reset. Restart this OpenTig instance to enable browser access on its startup address and port. Paired devices are preserved.');
+      return 0;
+    }
     if (config.command === 'pair') return await pairRunningServer(config, io, profile);
     return await startCliServer(config, io, profile);
   } catch (error) {
@@ -83,31 +90,37 @@ async function startCliServer(config: OpenTigCliConfig, io: CliIo, profile: Appl
       mode: 'web-access',
       logger: log.logger,
       admin: { token: adminToken, instanceId },
+      recoveryCommand: profile === 'dev' ? 'node packages/server/dist/dev.mjs reset-access' : 'opentig reset-access',
+      onNetworkChanged: async (network) => {
+        const state = await readRuntimeState(paths.runtimeState);
+        await writeRuntimeState(paths.runtimeState, { ...state, host: network.listenerHost, port: network.listenerPort });
+      },
     }, config.port);
 
     await writeRuntimeState(paths.runtimeState, {
       pid: process.pid,
-      host: config.host,
+      host: server.host,
       port: server.port,
       protocolVersion: server.protocolVersion,
       appVersion: server.appVersion,
       instanceId,
       startedAt: new Date().toISOString(),
     });
-    log.logger('info', `OpenTig CLI ready on ${publicOrigin(config.host, server.port)}.`);
-    const origin = publicOrigin(config.host, server.port);
-    const pairing = rewritePairingOrigin(server.createPairingLink(), origin);
+    log.logger('info', `OpenTig CLI ready on ${publicOrigin(server.host, server.port)}.`);
+    const origin = publicOrigin(server.host, server.port);
+    const pairing = server.getStatus().browserAccessEnabled ? rewritePairingOrigin(server.createPairingLink(), origin) : null;
     io.out(`${applicationName(profile)} ${server.appVersion} is ready.`);
     if (profile === 'dev') io.out(`Dev data directory: ${paths.home}`);
     io.out(`Connection URL: ${origin}`);
-    printPairing(pairing, io, config.command === 'serve');
-    if (!isLoopbackHost(config.host)) {
+    if (pairing) printPairing(pairing, io, config.command === 'serve');
+    else io.out('Web access is paused. Use reset-access locally and restart to restore it.');
+    if (!isLoopbackHost(server.host)) {
       io.error('WARNING: This listener grants owner-level access as your OS user. Use only a trusted LAN/VPN or an HTTPS/SSH tunnel; never expose it directly to the public Internet.');
-      if (config.host === '0.0.0.0' || config.host === '::') {
+      if (server.host === '0.0.0.0' || server.host === '::') {
         io.error('Replace the loopback host in the printed link with a trusted address of this machine for another device.');
       }
     }
-    if (config.openBrowser) {
+    if (config.openBrowser && pairing) {
       await openSystemBrowser(pairing.url).catch(() => {
         io.error('Could not open the system browser. Open the one-time pairing link shown above manually.');
       });
@@ -165,7 +178,10 @@ export async function startOnConfiguredPort(
   try {
     return await runOpenTigServer({ ...baseConfig, port });
   } catch (error) {
-    if (isAddressInUse(error)) throw new Error(`Port ${port} is already in use. Stop that process or select another port with --port.`, { cause: error });
+    if (isAddressInUse(error)) {
+      const actualPort = error instanceof Error && 'port' in error && typeof error.port === 'number' ? error.port : port;
+      throw new Error(`Port ${actualPort} is already in use. Stop that process, or reset saved access settings locally with reset-access before selecting another startup port with --port.`, { cause: error });
+    }
     throw error;
   }
 }

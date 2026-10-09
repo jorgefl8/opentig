@@ -16,8 +16,13 @@ import type { OpenTigServerLogger, OpenTigServerMode } from './http';
 import type { ApplicationProfile } from '../../../src/shared/application-profile';
 
 import type { DesktopUpdatesApi } from '../../../src/shared/desktop-updates';
+import type { OpenTigWebAccessStatus } from '../../../src/shared/desktop-api';
+import { NetworkSettings, isLoopbackHost, type NetworkConfig } from './network-settings';
 
 export interface OpenTigServerConfig extends Omit<CreateOpenTigRuntimeOptions, 'runtimeMode' | 'onEvent'> {
+  networkSettingsPath?: string;
+  recoveryCommand?: string;
+  onNetworkChanged?(config: NetworkConfig): Promise<void> | void;
   updates?: DesktopUpdatesApi;
   profile?: ApplicationProfile;
   appVersion: string;
@@ -41,6 +46,8 @@ export interface OpenTigServerConfig extends Omit<CreateOpenTigRuntimeOptions, '
 }
 
 export interface RunningOpenTigServer extends OpenTigServerAddress {
+  getWebAccessStatus(): OpenTigWebAccessStatus;
+  updateWebAccess(patch: unknown): Promise<OpenTigWebAccessStatus>;
   readonly runtime: OpenTigRuntime;
   readonly clientRoot: string;
   createPairingLink(): { url: string; expiresAt: string };
@@ -56,10 +63,19 @@ export interface RunningOpenTigServer extends OpenTigServerAddress {
  */
 export async function runOpenTigServer(config: OpenTigServerConfig): Promise<RunningOpenTigServer> {
   if (config.profile !== undefined && config.profile !== 'production' && config.profile !== 'dev') throw new Error('Invalid application profile.');
+  const desktop = config.mode !== 'web-access';
+  const networkSettings = new NetworkSettings(config.networkSettingsPath ?? (desktop
+    ? path.join(path.dirname(config.settingsPath), 'desktop-server.json')
+    : path.join(config.serverDataPath ?? path.dirname(config.settingsPath), 'web-access.json')), desktop);
+  const network = await networkSettings.load({
+    webAccessEnabled: config.browserAccessEnabled ?? config.mode === 'web-access',
+    lanAccessEnabled: !isLoopbackHost(config.host ?? '127.0.0.1'),
+    publicOrigin: null, listenerHost: config.host ?? '127.0.0.1', listenerPort: config.port ?? 6767,
+  });
   let transport: OpenTigServer | null = null;
   const auth = await OpenTigSessionAuth.open({
     source: config.auth,
-    browserAccessEnabled: config.browserAccessEnabled ?? config.mode === 'web-access',
+    browserAccessEnabled: network.webAccessEnabled,
     ...(config.profile ? { profile: config.profile } : {}),
     dataDirectory: config.serverDataPath ?? path.join(path.dirname(config.settingsPath), 'server'),
     ...(config.secureCookies === undefined ? {} : { secureCookies: config.secureCookies }),
@@ -92,6 +108,10 @@ export async function runOpenTigServer(config: OpenTigServerConfig): Promise<Run
     registerServerCommands(registry, runtime.services, headlessHost);
     registry.setProblemLog(runtime.services.problems);
     transport = new OpenTigServer({
+      network,
+      networkSettings,
+      ...(config.recoveryCommand ? { recoveryCommand: config.recoveryCommand } : {}),
+      ...(config.onNetworkChanged ? { onNetworkChanged: config.onNetworkChanged } : {}),
       runtime,
       registry,
       ...(config.updates ? { updates: config.updates } : {}),
@@ -114,7 +134,12 @@ export async function runOpenTigServer(config: OpenTigServerConfig): Promise<Run
       runtime,
       clientRoot,
       ...address,
-      createPairingLink: () => pairingLink(address.origin, transport!.createPairingToken()),
+      get host() { return transport!.getWebAccessStatus().listenerHost!; },
+      get port() { return transport!.getWebAccessStatus().actualPort!; },
+      get origin() { const status = transport!.getWebAccessStatus(); return `http://${status.listenerHost!.includes(':') ? `[${status.listenerHost}]` : status.listenerHost}:${status.actualPort}`; },
+      getWebAccessStatus: () => transport!.getWebAccessStatus(),
+      updateWebAccess: (patch) => transport!.updateWebAccess(patch),
+      createPairingLink: () => pairingLink(transport!.getWebAccessStatus().localEndpoint!, transport!.createPairingToken()),
       getStatus: () => transport!.getStatus(),
       revokeAllSessions: () => transport!.revokeAllSessions(),
       setBrowserAccessEnabled: (enabled) => transport!.setBrowserAccessEnabled(enabled),

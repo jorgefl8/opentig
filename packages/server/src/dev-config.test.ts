@@ -25,6 +25,7 @@ describe('web Dev launch configuration', () => {
     expect(readFileSync(path.join(production, 'settings.json'), 'utf8')).toBe('production sentinel');
     expect(existsSync(path.join(home, '.opentig-dev', 'settings.json'))).toBe(false);
     expect(devCliArguments(['pair'], environment, home)).toEqual(['pair', '--home', config.home]);
+    expect(devCliArguments(['reset-access'], environment, home)).toEqual(['reset-access', '--home', config.home]);
   });
 
   it.each([['serve', '--home', 'prod'], ['serve', '--port', '6767'], ['service'], ['start']])('rejects redirects or unsupported commands: %j', (...args) => {

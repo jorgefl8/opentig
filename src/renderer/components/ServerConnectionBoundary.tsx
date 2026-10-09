@@ -72,12 +72,17 @@ export function ServerConnectionBoundary({ children }: { children: ReactNode }) 
           <h1 className="text-lg font-semibold">Authentication required</h1>
           <p className="mt-2 text-sm text-muted-foreground">
             {desktop ? 'Restart OpenTig to restore its private desktop session.' : (
-              <>If Web access is paused, enable it in Settings → Web access and reload to resume your saved session. New browsers and expired or revoked sessions need a pairing code from the desktop app or the command below.</>
+              <>If Web access is paused, restore it from the desktop app or with local recovery below, then reload to resume your saved session. New browsers and expired or revoked sessions need a pairing code from the desktop app or the command below.</>
             )}
           </p>
           {!desktop && (
             <>
               <PairingCommand />
+              <details className="mt-4 text-sm text-muted-foreground">
+                <summary className="cursor-pointer">Restore paused access</summary>
+                <p className="mt-2">Run on the server, then restart this instance. For a custom CLI home, add --home. Paired devices stay saved.</p>
+                <PairingCommand recovery />
+              </details>
               <Button className="mt-5" nativeButton={false} render={<a href="/pair" />}>Check browser access</Button>
             </>
           )}

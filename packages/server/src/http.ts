@@ -5,13 +5,14 @@ import { networkInterfaces } from 'node:os';
 import type { OpenTigRuntime } from '../../../src/main/runtime/OpenTigRuntime';
 import type { OpenTigServerIdentity } from '../../../src/shared/server-protocol';
 import type { OpenTigOwnerSession } from '../../../src/shared/server-protocol';
-import type { OpenTigBrowserWebAccessStatus } from '../../../src/shared/web-access';
+import { normalizePairingOrigin, type OpenTigBrowserWebAccessStatus } from '../../../src/shared/web-access';
 import { OpenTigSessionAuth } from './auth';
 import { isAllowedOrigin, requestOriginIsSecure } from './origin';
 import { HTML_PREVIEW_BODY_LIMIT, HTML_PREVIEW_CSP, htmlPreviewDocumentFromFormBody } from './html-preview';
 import { serveStatic, STATIC_SECURITY_HEADERS } from './static';
 
 import type { DesktopUpdatesApi } from '../../../src/shared/desktop-updates';
+import type { OpenTigWebAccessStatus } from '../../../src/shared/desktop-api';
 
 const AUTH_BODY_LIMIT = 64 * 1024;
 
@@ -19,6 +20,10 @@ export type OpenTigServerMode = 'desktop' | 'web-access';
 export type OpenTigServerLogger = (level: 'info' | 'warn' | 'error', message: string) => void;
 
 export interface OpenTigHttpContext {
+  webAccess?: {
+    getStatus(): OpenTigWebAccessStatus;
+    update(patch: unknown): Promise<OpenTigWebAccessStatus>;
+  };
   updates?: DesktopUpdatesApi;
   beginUpdate?(): boolean;
   cancelUpdate?(): void;
@@ -114,6 +119,7 @@ async function handleRequest(context: OpenTigHttpContext, request: IncomingMessa
       listenerHost: listener.host,
       actualPort: listener.port,
       ready: context.isReady(),
+      ...(context.webAccess ? { configuration: context.webAccess.getStatus(), recoveryCommand: context.webAccess.getStatus().recoveryCommand } : {}),
     };
     return sendJson(response, 200, status);
   }
@@ -140,6 +146,18 @@ async function handleRequest(context: OpenTigHttpContext, request: IncomingMessa
   if (method === 'POST' && rawPath.startsWith('/api/')) {
     if (!isAllowedOrigin(request)) return sendJson(response, 403, { error: 'Forbidden origin.' });
 
+    if (rawPath === '/api/auth/web-access') {
+      if (!context.auth.authenticate(request.headers)) return sendJson(response, 401, { error: 'Authentication required.' });
+      if (!context.webAccess) return sendJson(response, 503, { error: 'Web access settings are unavailable.' });
+      const body = await readJsonObject(request, response);
+      if (!body) return;
+      try {
+        return sendJson(response, 200, await context.webAccess.update(body), { Connection: 'close' });
+      } catch (error) {
+        return sendJson(response, 400, { error: error instanceof Error ? error.message : 'Could not change web access.' }, { Connection: 'close' });
+      }
+    }
+
     if (rawPath === '/api/html-preview') return handleHtmlPreview(context, request, response);
 
     if (rawPath === '/api/auth/pairing-link') {
@@ -147,7 +165,14 @@ async function handleRequest(context: OpenTigHttpContext, request: IncomingMessa
       if (!context.auth.descriptor().browserAccessEnabled) return sendJson(response, 403, { error: 'Web access is disabled.', code: 'WEB_ACCESS_DISABLED' });
       if (!context.isReady()) return sendJson(response, 503, { error: 'Server is not ready.' });
       // Origin has passed the same-authority check, including trusted loopback proxies.
-      const url = new URL('/pair', request.headers.origin!);
+      const body = request.headers['content-length'] && request.headers['content-length'] !== '0' || request.headers['transfer-encoding'] ? await readJsonObject(request, response) : {};
+      if (!body) return;
+      let endpoint: string;
+      try { endpoint = body.endpoint === undefined ? request.headers.origin! : normalizePairingOrigin(typeof body.endpoint === 'string' ? body.endpoint : ''); }
+      catch { return sendJson(response, 400, { error: 'Enter a valid pairing endpoint.' }); }
+      const status = context.webAccess?.getStatus();
+      if (!endpoint || (endpoint !== request.headers.origin && !status?.pairingEndpoints.includes(endpoint))) return sendJson(response, 400, { error: 'Select an active pairing endpoint or save its domain.' });
+      const url = new URL('/pair', endpoint);
       const pairing = context.auth.createPairingToken();
       url.hash = new URLSearchParams({ token: pairing.token }).toString();
       return sendJson(response, 200, { url: url.href, expiresAt: pairing.expiresAt });

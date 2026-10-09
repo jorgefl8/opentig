@@ -1,5 +1,4 @@
 import path from 'node:path';
-import { networkInterfaces } from 'node:os';
 import {
   app,
   BrowserWindow,
@@ -22,7 +21,6 @@ import {
 } from './main/server/ServerProcessManager';
 import { DesktopServerSettings } from './main/server/DesktopServerSettings';
 import { hasActiveBrowserSessions } from './main/persistence/BrowserSessionFile';
-import { setBrowserAccess } from './main/server/setBrowserAccess';
 import { normalizePairingOrigin } from './shared/web-access';
 import { startGlobalDoubleControlShortcut } from './main/shortcuts/GlobalDoubleControlShortcut';
 import { boundsVisibleOnDisplays, browserWindowBounds, DesktopWindowState } from './main/window/DesktopWindowState';
@@ -30,7 +28,6 @@ import { getWindowTitleBarOptions, readStartupDark, startupBackground } from './
 import { serverErrorPageUrl, serverRecoveryAction } from './main/window/ServerErrorPage';
 import { normalizeExternalUrl } from './shared/external-url';
 import type { OpenTigPairingLink, OpenTigWebAccessStatus } from './shared/desktop-api';
-import type { OpenTigServerHost } from './shared/server-process';
 import { applicationName, preferredServerPort, sessionCookieName } from './shared/application-profile';
 import { configureDesktopProfile } from './main/profile/DesktopProfile';
 import { createDesktopUpdater } from './main/updates/createDesktopUpdater';
@@ -62,8 +59,9 @@ let shutdownReady = false;
 let webAccessEnabled = false;
 let lanAccessEnabled = false;
 let publicOrigin: string | null = null;
+let listenerHost: string | null = null;
+let listenerPort: number | undefined;
 let serverState: ServerProcessState = { status: 'stopped' };
-let webAccessRestartError: string | null = null;
 let webAccessMutation: Promise<void> = Promise.resolve();
 
 const SHOW_WINDOW_FALLBACK_MS = 8_000;
@@ -265,7 +263,8 @@ function createServerManager(): ServerProcessManager {
     profile: applicationProfile,
     preferredPort: preferredServerPort(applicationProfile),
     platform: normalizePlatform(process.platform),
-    host: webAccessEnabled && lanAccessEnabled ? '0.0.0.0' : '127.0.0.1',
+    host: listenerHost ?? (webAccessEnabled && lanAccessEnabled ? '0.0.0.0' : '127.0.0.1'),
+    ...(listenerPort ? { port: listenerPort } : {}),
     browserAccessEnabled: webAccessEnabled,
     fork: (modulePath, args, options) => utilityProcess.fork(modulePath, args, options),
     onReady: installDesktopSession,
@@ -276,6 +275,25 @@ function createServerManager(): ServerProcessManager {
 function applyServerState(state: ServerProcessState): void {
   serverState = state;
   if (state.status === 'ready') {
+    if (allowedServerOrigin && allowedServerOrigin !== state.origin && mainWindow && !mainWindow.isDestroyed()) {
+      const previousOrigin = allowedServerOrigin;
+      const reconnect = async (): Promise<void> => {
+        if (!mainWindow || mainWindow.isDestroyed() || allowedServerOrigin !== state.origin || shutdownStarted) return;
+        const canReload = await mainWindow.webContents.executeJavaScript("window.dispatchEvent(new Event('opentig:before-update', { cancelable: true }))");
+        if (!canReload) {
+          setTimeout(() => void reconnect().catch(error => void serverManager?.recordDesktopFailure(error)), 1000).unref();
+          return;
+        }
+        if (allowedServerOrigin !== state.origin) return;
+        const cookieOrigin = safeOrigin(mainWindow.webContents.getURL()) ?? previousOrigin;
+        const cookies = await session.defaultSession.cookies.get({ url: cookieOrigin, name: desktopCookieName });
+        const value = cookies[0]?.value;
+        if (value) await installDesktopSessionCookie(state.origin, `${desktopCookieName}=${value}`);
+        if (mainWindow && !mainWindow.isDestroyed()) await mainWindow.loadURL(state.origin);
+      };
+      // Begin after adopting the new trusted origin; retain dirty renderer state.
+      queueMicrotask(() => void reconnect().catch(error => void serverManager?.recordDesktopFailure(error)));
+    }
     allowedServerOrigin = state.origin;
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setTitle(displayName);
   } else if (state.status === 'restarting') {
@@ -286,31 +304,11 @@ function applyServerState(state: ServerProcessState): void {
 }
 
 function setWebAccessEnabled(enabled: boolean): Promise<OpenTigWebAccessStatus> {
-  return mutateWebAccess(async () => {
-    const manager = serverManager;
-    const settings = desktopServerSettings;
-    if (!manager || !settings) throw new Error('OpenTig desktop server is not initialized.');
-    webAccessRestartError = null;
-    try {
-      await setBrowserAccess(enabled, { webAccessEnabled, lanAccessEnabled, publicOrigin }, (config) => settings.save(config), (value) => manager.setBrowserAccessEnabled(value));
-      webAccessEnabled = enabled;
-      return getWebAccessStatus();
-    } catch (error) {
-      webAccessEnabled = false;
-      webAccessRestartError = error instanceof Error ? error.message : 'Could not change web access.';
-      throw error;
-    }
-  });
+  return mutateWebAccess(() => serverManager!.updateWebAccess({ webAccessEnabled: enabled }));
 }
 
 function setPublicOrigin(value: string): Promise<OpenTigWebAccessStatus> {
-  return mutateWebAccess(async () => {
-    if (!desktopServerSettings) throw new Error('OpenTig desktop server is not initialized.');
-    const next = value.trim() ? normalizePairingOrigin(value) : null;
-    await desktopServerSettings.save({ webAccessEnabled, lanAccessEnabled, publicOrigin: next });
-    publicOrigin = next;
-    return getWebAccessStatus();
-  });
+  return mutateWebAccess(() => serverManager!.updateWebAccess({ publicOrigin: value.trim() || null }));
 }
 
 function mutateWebAccess(operation: () => Promise<OpenTigWebAccessStatus>): Promise<OpenTigWebAccessStatus> {
@@ -320,84 +318,27 @@ function mutateWebAccess(operation: () => Promise<OpenTigWebAccessStatus>): Prom
 }
 
 function setLanAccessEnabled(enabled: boolean): Promise<OpenTigWebAccessStatus> {
-  const operation = webAccessMutation.then(async () => {
-    const manager = serverManager;
-    const settings = desktopServerSettings;
-    if (!manager || !settings) throw new Error('OpenTig desktop server is not initialized.');
-    if (!webAccessEnabled) throw new Error('Enable Web access before changing LAN access.');
-    if (enabled === lanAccessEnabled && (manager.current?.host === '0.0.0.0') === enabled) return getWebAccessStatus();
-    webAccessRestartError = null;
-    const previousHost: OpenTigServerHost = manager.current?.host === '0.0.0.0' ? '0.0.0.0' : '127.0.0.1';
-    const nextHost: OpenTigServerHost = enabled ? '0.0.0.0' : '127.0.0.1';
-    try {
-      await manager.restart(nextHost);
-      try {
-        await settings.save({ webAccessEnabled, lanAccessEnabled: enabled, publicOrigin });
-      } catch (error) {
-        await manager.restart(previousHost);
-        throw error;
-      }
-      lanAccessEnabled = enabled;
-      return getWebAccessStatus();
-    } catch (error) {
-      webAccessRestartError = error instanceof Error ? error.message : 'OpenTig could not restart network access.';
-      throw error;
-    }
-  });
-  webAccessMutation = operation.then(() => undefined, () => undefined);
-  return operation;
+  return mutateWebAccess(() => serverManager!.updateWebAccess({ lanAccessEnabled: enabled }));
 }
 
 async function getWebAccessStatus(): Promise<OpenTigWebAccessStatus> {
-  const manager = serverManager;
-  const current = manager?.current ?? null;
-  let connectedSessionCount = 0;
-  if (current) {
-    try { connectedSessionCount = (await manager!.getStatus()).connectedSessionCount; }
-    catch { /* restarting or offline */ }
-  }
-  const actualPort = current?.port ?? ('port' in serverState ? serverState.port : null);
+  if (serverManager?.current) return serverManager.getWebAccessStatus();
   return {
-    webAccessEnabled,
-    lanAccessEnabled,
-    publicOrigin,
-    listeningOnLan: current?.host === '0.0.0.0',
-    serverState: serverState.status,
-    actualPort,
-    localEndpoint: actualPort === null ? null : `http://127.0.0.1:${actualPort}`,
-    networkEndpoints: actualPort === null ? [] : networkEndpoints(actualPort),
-    pairingEndpoints: actualPort === null ? [] : pairingEndpoints(actualPort),
-    connectedSessionCount,
-    restartError: webAccessRestartError,
+    webAccessEnabled, lanAccessEnabled, publicOrigin,
+    listeningOnLan: false, serverState: serverState.status,
+    actualPort: null, localEndpoint: null, networkEndpoints: [], pairingEndpoints: [],
+    connectedSessionCount: 0, restartError: null,
   };
 }
 
 async function createPairingLink(endpoint: string): Promise<OpenTigPairingLink> {
   const manager = serverManager;
   if (!manager?.current) throw new Error('OpenTig server is not ready.');
-  if (!webAccessEnabled) throw new Error('Web access is disabled.');
+  const status = await getWebAccessStatus();
+  if (!status.webAccessEnabled) throw new Error('Web access is disabled.');
   const origin = normalizePairingOrigin(endpoint);
-  if (!pairingEndpoints(manager.current.port).includes(origin)) throw new Error('Select an active OpenTig pairing endpoint or save its public URL.');
+  if (!status.pairingEndpoints.includes(origin)) throw new Error('Select an active OpenTig pairing endpoint or save its public URL.');
   return manager.createPairingLink(origin);
-}
-
-function pairingEndpoints(port: number): string[] {
-  if (!webAccessEnabled) return [];
-  const endpoints = [`http://127.0.0.1:${port}`];
-  if (serverManager?.current?.host === '0.0.0.0') endpoints.push(...networkEndpoints(port));
-  if (publicOrigin) endpoints.push(publicOrigin);
-  return [...new Set(endpoints)];
-}
-
-function networkEndpoints(port: number): string[] {
-  const endpoints = new Set<string>();
-  for (const entries of Object.values(networkInterfaces())) {
-    for (const entry of entries ?? []) {
-      if (entry.internal || entry.family !== 'IPv4' || entry.address.startsWith('169.254.')) continue;
-      endpoints.add(`http://${entry.address}:${port}`);
-    }
-  }
-  return [...endpoints].sort();
 }
 
 async function installDesktopSession(server: ServerProcessAddress, desktopSecret: string): Promise<void> {
@@ -490,6 +431,8 @@ app.whenReady().then(async () => {
   webAccessEnabled = serverSettings.webAccessEnabled;
   lanAccessEnabled = serverSettings.lanAccessEnabled;
   publicOrigin = serverSettings.publicOrigin;
+  listenerHost = serverSettings.listenerHost ?? null;
+  listenerPort = serverSettings.listenerPort;
   serverManager = createServerManager();
 
   const clipboardPermissions = new Set(['clipboard-read', 'clipboard-sanitized-write']);

@@ -16,6 +16,9 @@ import { OPEN_TIG_PROTOCOL_VERSION } from '../../shared/server-protocol';
 import { DEFAULT_SERVER_PORT, DEFAULT_SERVER_PORT_SCAN_COUNT } from '../../shared/server-config';
 import { applicationName, type ApplicationProfile } from '../../shared/application-profile';
 import { normalizePairingOrigin } from '../../shared/web-access';
+import type { OpenTigWebAccessPatch } from '../../shared/web-access';
+import type { OpenTigWebAccessStatus } from '../../shared/desktop-api';
+import { isIP } from 'node:net';
 
 export { DEFAULT_SERVER_PORT, DEFAULT_SERVER_PORT_SCAN_COUNT } from '../../shared/server-config';
 
@@ -180,6 +183,18 @@ export class ServerProcessManager {
       throw new Error('OpenTig utility returned an invalid server status.');
     }
     return { connectedSessionCount: result.connectedSessionCount, browserAccessEnabled: result.browserAccessEnabled };
+  }
+
+  async getWebAccessStatus(): Promise<OpenTigWebAccessStatus> {
+    const result = await this.requestControl('web-access-status');
+    if (result.action !== 'web-access-status') throw new Error('Invalid web access response.');
+    return result.status;
+  }
+
+  async updateWebAccess(patch: OpenTigWebAccessPatch): Promise<OpenTigWebAccessStatus> {
+    const result = await this.requestControl('update-web-access', undefined, patch);
+    if (result.action !== 'update-web-access') throw new Error('Invalid web access response.');
+    return result.status;
   }
 
   async setBrowserAccessEnabled(enabled: boolean): Promise<void> {
@@ -367,6 +382,16 @@ export class ServerProcessManager {
       });
       child.on('message', (value) => {
         if (!isChildMessage(value)) return;
+        if (value.type === 'network-changed') {
+          if (this.child !== child || !this.address || !isIP(value.host) || !Number.isInteger(value.port) || value.port < 1 || value.port > 65535 || typeof value.browserAccessEnabled !== 'boolean') return;
+          this.desiredHost = value.host as OpenTigServerHost;
+          this.desiredBrowserAccess = value.browserAccessEnabled;
+          this.activePort = value.port;
+          this.address = { ...this.address, host: value.host, port: value.port, origin: serverOrigin(value.host, value.port) };
+          this.startPromise = Promise.resolve({ ...this.address });
+          this.options.onState?.({ status: 'ready', ...this.address });
+          return;
+        }
         if (value.type === 'control-result') {
           this.handleControlResult(child, value);
           return;
@@ -392,7 +417,7 @@ export class ServerProcessManager {
           validateReadyAddress(reportedAddress, utilityConfig);
           const address: ServerProcessAddress = {
             ...reportedAddress,
-            origin: `http://127.0.0.1:${reportedAddress.port}`,
+            origin: serverOrigin(reportedAddress.host, reportedAddress.port),
           };
           stage = 'readiness-probe';
           await (this.options.probe ?? probeReady)(address);
@@ -413,7 +438,7 @@ export class ServerProcessManager {
     });
   }
 
-  private requestControl(action: OpenTigUtilityControlAction, enabled?: boolean): Promise<OpenTigUtilityControlResult> {
+  private requestControl(action: OpenTigUtilityControlAction, enabled?: boolean, patch?: OpenTigWebAccessPatch): Promise<OpenTigUtilityControlResult> {
     const child = this.child;
     if (!child?.pid || !this.address) return Promise.reject(new Error('OpenTig server is not ready.'));
     const requestId = randomBytes(12).toString('base64url');
@@ -425,7 +450,8 @@ export class ServerProcessManager {
       timeout.unref();
       this.pendingControls.set(requestId, { action, resolve, reject, timeout });
       try {
-        if (action === 'set-browser-access') child.postMessage({ type: 'control', requestId, action, enabled: enabled! });
+        if (action === 'update-web-access') child.postMessage({ type: 'control', requestId, action, patch: patch! });
+        else if (action === 'set-browser-access') child.postMessage({ type: 'control', requestId, action, enabled: enabled! });
         else child.postMessage({ type: 'control', requestId, action });
       }
       catch (error) {
@@ -484,7 +510,7 @@ export class ServerProcessManager {
       void this.log.write('manager', `${message}\n`);
       return;
     }
-    const port = this.options.port ?? this.currentPort();
+    const port = this.currentPort();
     const delayMs = this.restartDelaysMs[Math.min(this.consecutiveFailures - 1, this.restartDelaysMs.length - 1)]!;
     this.options.onState?.({ status: 'restarting', port, attempt: this.consecutiveFailures, delayMs });
     this.restartTimer = setTimeout(() => {
@@ -502,7 +528,7 @@ export class ServerProcessManager {
   }
 
   private currentPort(): number {
-    const state = this.options.port ?? this.activePort ?? this.options.preferredPort ?? DEFAULT_SERVER_PORT;
+    const state = this.activePort ?? this.options.port ?? this.options.preferredPort ?? DEFAULT_SERVER_PORT;
     return state;
   }
 
@@ -580,7 +606,7 @@ async function probeReady(address: ServerProcessAddress): Promise<void> {
 }
 
 function validateReadyAddress(address: ServerProcessAddress, config: OpenTigUtilityConfig): void {
-  if (address.host !== config.host || address.port !== config.port || address.origin !== `http://${config.host}:${config.port}`) {
+  if (address.host !== config.host || address.port !== config.port || address.origin !== `http://${config.host.includes(':') ? `[${config.host}]` : config.host}:${config.port}`) {
     throw new UtilityStartError('INVALID_READY', 'OpenTig utility returned an unexpected address.');
   }
   if (address.protocolVersion !== OPEN_TIG_PROTOCOL_VERSION || address.appVersion !== config.appVersion) {
@@ -590,6 +616,11 @@ function validateReadyAddress(address: ServerProcessAddress, config: OpenTigUtil
 
 function isChildMessage(value: unknown): value is OpenTigUtilityChildMessage {
   return Boolean(value && typeof value === 'object' && 'type' in value && typeof value.type === 'string');
+}
+
+function serverOrigin(host: string, port: number): string {
+  const local = host === '0.0.0.0' ? '127.0.0.1' : host === '::' ? '::1' : host;
+  return `http://${local.includes(':') ? `[${local}]` : local}:${port}`;
 }
 
 function defaultSecret(): string {

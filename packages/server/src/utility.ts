@@ -1,5 +1,6 @@
 import path from 'node:path';
 import process from 'node:process';
+import { isIP } from 'node:net';
 import {
   OPEN_TIG_UTILITY_PROTOCOL_VERSION,
   type OpenTigUtilityChildMessage,
@@ -54,6 +55,9 @@ async function start(message: Partial<OpenTigUtilityParentMessage> | null): Prom
       port: config.port,
       mode: 'desktop',
       browserAccessEnabled: config.browserAccessEnabled,
+      onNetworkChanged: (network) => {
+        parentPort!.postMessage({ type: 'network-changed', host: network.listenerHost, port: network.listenerPort, browserAccessEnabled: network.webAccessEnabled });
+      },
       logger: (level, value) => console[level](`[server] ${redactSensitiveText(value)}`),
     });
     parentPort!.postMessage({
@@ -69,7 +73,7 @@ async function start(message: Partial<OpenTigUtilityParentMessage> | null): Prom
   }
 }
 
-async function handleControl(message: { type?: unknown; requestId?: unknown; action?: unknown; enabled?: unknown }): Promise<void> {
+async function handleControl(message: { type?: unknown; requestId?: unknown; action?: unknown; enabled?: unknown; patch?: unknown }): Promise<void> {
   const requestId = typeof message.requestId === 'string' && message.requestId.length > 0 && message.requestId.length <= 128
     ? message.requestId
     : null;
@@ -78,9 +82,12 @@ async function handleControl(message: { type?: unknown; requestId?: unknown; act
     if (!server) throw new Error('OpenTig server is not ready.');
     if (message.action === 'status') {
       parentPort!.postMessage({ type: 'control-result', requestId, ok: true, result: { action: 'status', ...server.getStatus() } });
+    } else if (message.action === 'web-access-status' || message.action === 'update-web-access') {
+      const status = message.action === 'web-access-status' ? server.getWebAccessStatus() : await server.updateWebAccess(message.patch);
+      parentPort!.postMessage({ type: 'control-result', requestId, ok: true, result: { action: message.action, status } });
     } else if (message.action === 'set-browser-access') {
       if (typeof message.enabled !== 'boolean') throw new Error('Invalid browser access setting.');
-      await server.setBrowserAccessEnabled(message.enabled);
+      await server.updateWebAccess({ webAccessEnabled: message.enabled });
       parentPort!.postMessage({ type: 'control-result', requestId, ok: true, result: { action: 'set-browser-access', browserAccessEnabled: server.getStatus().browserAccessEnabled } });
     } else if (message.action === 'create-pairing-link') {
       parentPort!.postMessage({ type: 'control-result', requestId, ok: true, result: { action: 'create-pairing-link', ...server.createPairingLink() } });
@@ -138,7 +145,7 @@ function validateBootstrap(message: Partial<OpenTigUtilityParentMessage> | null)
     throw invalid('Trash module path');
   }
   if (!['win32', 'darwin', 'linux', 'other'].includes(String(config.platform))) throw invalid('platform');
-  if (config.host !== '127.0.0.1' && config.host !== '0.0.0.0') throw invalid('host');
+  if (typeof config.host !== 'string' || !isIP(config.host)) throw invalid('host');
   if (typeof config.browserAccessEnabled !== 'boolean') throw invalid('browser access');
   if (!Number.isInteger(config.port) || Number(config.port) < 1 || Number(config.port) > 65_535) throw invalid('port');
   return config as OpenTigUtilityConfig;

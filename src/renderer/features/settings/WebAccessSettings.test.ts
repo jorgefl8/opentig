@@ -39,9 +39,20 @@ async function mountBrowser(value: OpenTigBrowserWebAccessStatus, create: () => 
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
   vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
   delete window.opentigDesktop;
-  const fetch = vi.fn(async (url: string) => ({
-    ok: true, json: async () => url === '/api/auth/web-access' ? { ...value } : await create(),
-  }));
+  const fetch = vi.fn(async (url: string, options?: RequestInit) => {
+    if (url === '/api/auth/web-access' && options?.method === 'POST') {
+      const patch = JSON.parse(options.body as string);
+      const next = { ...status, ...value.configuration, listenerHost: value.listenerHost, actualPort: value.actualPort, ...patch };
+      if ('lanAccessEnabled' in patch) next.listenerHost = patch.lanAccessEnabled ? '0.0.0.0' : '127.0.0.1';
+      next.listeningOnLan = next.listenerHost !== '127.0.0.1';
+      next.actualPort = patch.listenerPort ?? next.actualPort;
+      next.networkEndpoints = next.listeningOnLan ? ['http://192.168.1.50:6767'] : [];
+      next.pairingEndpoints = [window.location.origin, next.localEndpoint, ...next.networkEndpoints, ...(next.publicOrigin ? [next.publicOrigin] : [])];
+      value.configuration = next;
+      return { ok: true, json: async () => next };
+    }
+    return { ok: true, json: async () => url === '/api/auth/web-access' ? { ...value } : await create() };
+  });
   vi.stubGlobal('fetch', fetch);
   const container = document.createElement('div');
   document.body.append(container);
@@ -66,22 +77,74 @@ function button(container: HTMLElement, text: string): HTMLButtonElement {
 }
 
 describe('Web access settings display', () => {
-  it.each([false, true])('pairs browsers while showing LAN access=%s as server-managed information', async (listeningOnLan) => {
+  it.each([false, true])('pairs browsers and exposes editable LAN access=%s', async (listeningOnLan) => {
     const browserStatus = { webAccessEnabled: true, pairingAvailable: true, listeningOnLan, listenerHost: listeningOnLan ? '0.0.0.0' : '127.0.0.1', actualPort: 6767, ready: true };
     const browserLink = { ...link, url: `${window.location.origin}/pair#token=one-use-code` };
     const view = await mountBrowser(browserStatus, async () => browserLink);
     try {
       expect(view.container.textContent).toContain('Web access');
       expect(view.container.textContent).toContain('LAN access');
-      expect(view.container.textContent).toContain('LAN access is configured on the server');
-      expect(view.container.querySelector('[role="switch"]')).toBeNull();
-      expect(view.container.querySelector('.web-access-destinations')).toBeNull();
+      expect(view.container.textContent).not.toContain('Managed on the server');
+      expect(view.container.querySelector('[aria-label="LAN access"]')?.getAttribute('aria-checked')).toBe(String(listeningOnLan));
+      expect(view.container.querySelector('input[value="current"]')).not.toBeNull();
       expect(view.container.querySelector('.web-access-link-destination')?.textContent).toContain(window.location.origin);
-      expect(view.container.querySelector('.web-access-server-network .web-access-hint')?.textContent).toContain(listeningOnLan ? 'Direct LAN connections are allowed' : 'Direct LAN access is off');
+      expect(view.container.querySelector('#web-access-listener-host')).not.toBeNull();
       await act(async () => button(view.container, 'Create pairing link').click());
       expect(view.fetch).toHaveBeenCalledWith('/api/auth/pairing-link', { method: 'POST', credentials: 'include' });
       expect(view.container.querySelector('.web-access-link')?.textContent).toBe(browserLink.url);
       expect(view.container.querySelector('.web-access-pairing img')?.getAttribute('src')).toMatch(/^data:image\/svg\+xml/);
+    } finally { await view.unmount(); }
+  });
+
+  it('confirms browser LAN changes, persists domains, and sends the selected pairing destination', async () => {
+    const value = { webAccessEnabled: true, pairingAvailable: true, listeningOnLan: false, listenerHost: '127.0.0.1', actualPort: 6767, ready: true, configuration: { ...status, publicOrigin: null } };
+    const view = await mountBrowser(value, async () => link);
+    try {
+      const toggle = view.container.querySelector('[aria-label="LAN access"]') as HTMLButtonElement;
+      await act(async () => toggle.click());
+      expect(view.fetch.mock.calls.filter(([, options]) => options?.method === 'POST')).toHaveLength(0);
+      await act(async () => button(document.querySelector('[role="dialog"]') as HTMLElement, 'Cancel').click());
+      expect(toggle.getAttribute('aria-checked')).toBe('false');
+      await act(async () => toggle.click());
+      await act(async () => button(document.querySelector('[role="dialog"]') as HTMLElement, 'Enable LAN access').click());
+      expect(toggle.getAttribute('aria-checked')).toBe('true');
+      expect(view.fetch).toHaveBeenCalledWith('/api/auth/web-access', expect.objectContaining({ body: JSON.stringify({ lanAccessEnabled: true }) }));
+      await choose(view.container, 'public');
+      await typeDomain(view.container, 'git.example.com');
+      await act(async () => button(view.container, 'Save and use').click());
+      expect(view.fetch).toHaveBeenCalledWith('/api/auth/web-access', expect.objectContaining({ body: JSON.stringify({ publicOrigin: 'https://git.example.com' }) }));
+      await act(async () => button(view.container, 'Create pairing link').click());
+      expect(view.fetch).toHaveBeenCalledWith('/api/auth/pairing-link', expect.objectContaining({ body: JSON.stringify({ endpoint: 'https://git.example.com' }) }));
+    } finally { await view.unmount(); }
+  });
+
+  it('warns before browser access is paused and shows the recovery command', async () => {
+    const view = await mountBrowser({ webAccessEnabled: true, pairingAvailable: true, listeningOnLan: false, listenerHost: '127.0.0.1', actualPort: 6767, ready: true, recoveryCommand: 'opentig reset-access' }, async () => link);
+    try {
+      expect(view.container.textContent).toContain('opentig reset-access');
+      await act(async () => (view.container.querySelector('[aria-label="Web access"]') as HTMLButtonElement).click());
+      const dialog = document.querySelector('[role="dialog"]') as HTMLElement;
+      expect(dialog.textContent).toContain('You will lose access from this browser');
+      await act(async () => button(dialog, 'Disable Web access').click());
+      expect(view.fetch).toHaveBeenCalledWith('/api/auth/web-access', expect.objectContaining({ body: JSON.stringify({ webAccessEnabled: false }) }));
+    } finally { await view.unmount(); }
+  });
+
+  it('confirms listener edits and keeps the previous port visible after a rejected change', async () => {
+    const view = await mountBrowser({ webAccessEnabled: true, pairingAvailable: true, listeningOnLan: false, listenerHost: '127.0.0.1', actualPort: 6767, ready: true }, async () => link);
+    try {
+      const input = view.container.querySelector('#web-access-listener-port') as HTMLInputElement;
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, '7000');
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+      await act(async () => button(view.container, 'Apply listener').click());
+      const dialog = document.querySelector('[role="dialog"]') as HTMLElement;
+      expect(dialog.textContent).toContain('may need its origin updated');
+      view.fetch.mockImplementationOnce(async () => ({ ok: false, json: async () => ({ error: 'Previous listener restored.' }) }));
+      await act(async () => button(dialog, 'Change listener').click());
+      expect(view.container.querySelector('[role="alert"]')?.textContent).toBe('Previous listener restored.');
+      expect(view.container.querySelector('.web-access-facts')?.textContent).toContain('6767');
     } finally { await view.unmount(); }
   });
 
@@ -138,6 +201,26 @@ describe('Web access settings display', () => {
       await act(async () => release(value));
       expect(view.container.querySelector('.web-access-pairing img')).not.toBeNull();
     } finally { await view.unmount(); }
+  });
+
+  it('keeps access and listener settings unchanged while the workspace has unsaved edits', async () => {
+    const prevent = (event: Event) => event.preventDefault();
+    window.addEventListener('opentig:before-update', prevent);
+    const view = await mountBrowser({ webAccessEnabled: true, pairingAvailable: true, listeningOnLan: false, listenerHost: '127.0.0.1', actualPort: 6767, ready: true }, async () => link);
+    try {
+      const input = view.container.querySelector('#web-access-listener-port') as HTMLInputElement;
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, '7000');
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+      await act(async () => button(view.container, 'Apply listener').click());
+      await act(async () => button(document.querySelector('[role="dialog"]') as HTMLElement, 'Change listener').click());
+      expect(view.container.querySelector('[role="alert"]')?.textContent).toContain('Save your edited files');
+      await act(async () => (view.container.querySelector('[aria-label="Web access"]') as HTMLButtonElement).click());
+      await act(async () => button(document.querySelector('[role="dialog"]') as HTMLElement, 'Disable Web access').click());
+      expect(view.fetch.mock.calls.filter(([, options]) => options?.method === 'POST')).toHaveLength(0);
+      expect(view.container.querySelector('[aria-label="Web access"]')?.getAttribute('aria-checked')).toBe('true');
+    } finally { window.removeEventListener('opentig:before-update', prevent); await view.unmount(); }
   });
 
   it('confirms disabling with a red action, keeps access on cancel, and explains saved pairings', async () => {

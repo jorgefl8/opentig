@@ -997,6 +997,8 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   .web-access-hint { margin: 8px 0 0; color: var(--muted-foreground); font-size: 10px; line-height: 1.45; }
   .web-access-endpoint-select { display: grid; max-width: 380px; gap: 5px; margin-top: 10px; color: var(--muted-foreground); font-size: 10px; }
   .web-access-pairing-options { display: grid; min-width: 0; gap: 12px; margin-top: 12px; }
+  .web-access-listener-form { display: grid; min-width: 0; gap: 6px; margin-top: 12px; }
+  .web-access-listener-form > label { color: var(--muted-foreground); font-size: 10px; }
   .web-access-destinations { display: flex; flex-wrap: wrap; gap: 7px; margin: 0; border: 0; padding: 0; }
   .web-access-destinations label { display: flex; min-width: 0; flex: 1 1 90px; align-items: center; gap: 7px; border: 1px solid var(--border); border-radius: var(--radius-md); padding: 10px; font-size: 11px; cursor: pointer; }
   .web-access-destinations label:has(input:checked) { border-color: var(--primary); background: color-mix(in oklch, var(--primary) 7%, var(--background)); }

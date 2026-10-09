@@ -1,4 +1,14 @@
-/** Read-only listener information available to authenticated browsers. */
+import type { OpenTigWebAccessStatus } from './desktop-api';
+
+export interface OpenTigWebAccessPatch {
+  webAccessEnabled?: boolean;
+  lanAccessEnabled?: boolean;
+  publicOrigin?: string | null;
+  listenerHost?: string;
+  listenerPort?: number;
+}
+
+/** Listener configuration shared by every authenticated owner. */
 export interface OpenTigBrowserWebAccessStatus {
   webAccessEnabled: boolean;
   pairingAvailable: boolean;
@@ -6,6 +16,8 @@ export interface OpenTigBrowserWebAccessStatus {
   listenerHost: string;
   actualPort: number;
   ready: boolean;
+  configuration?: OpenTigWebAccessStatus;
+  recoveryCommand?: string;
 }
 
 /** An address for link construction only, never an authentication allowlist. */

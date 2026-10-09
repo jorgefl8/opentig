@@ -2,7 +2,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { DEFAULT_SERVER_HOST, DEFAULT_SERVER_PORT } from '../../../src/shared/server-config';
 
-export type OpenTigCliCommand = 'start' | 'serve' | 'pair' | 'service' | 'help' | 'version';
+export type OpenTigCliCommand = 'start' | 'serve' | 'pair' | 'reset-access' | 'service' | 'help' | 'version';
 export type OpenTigServiceAction = 'install' | 'status' | 'restart' | 'uninstall';
 
 export interface OpenTigCliConfig {
@@ -75,15 +75,15 @@ export function parseCliArguments(
     throw new CliUsageError(`Unexpected argument: ${argument}. Add and select repositories from the OpenTig web UI.`);
   }
 
-  if (command === 'pair' && (hostValue !== undefined || portValue !== undefined || noBrowser)) {
-    throw new CliUsageError('The pair command only accepts --home.');
+  if ((command === 'pair' || command === 'reset-access') && (hostValue !== undefined || portValue !== undefined || noBrowser)) {
+    throw new CliUsageError(`The ${command} command only accepts --home.`);
   }
   if (command === 'service' && serviceAction === null) throw new CliUsageError('The service command requires install, status, restart, or uninstall.');
   if (command === 'service' && serviceAction !== 'install' && (hostValue !== undefined || portValue !== undefined || noBrowser)) {
     throw new CliUsageError(`The service ${serviceAction} command only accepts --home.`);
   }
 
-  if (command === 'pair') {
+  if (command === 'pair' || command === 'reset-access') {
     return {
       command,
       serviceAction: null,
@@ -117,6 +117,7 @@ Usage:
   opentig start [options]
   opentig serve [options]
   opentig pair [--home <path>]
+  opentig reset-access [--home <path>]
   opentig service <install|status|restart|uninstall> [options]
   opentig help
   opentig version
@@ -125,6 +126,7 @@ Commands:
   start       Start OpenTig and open the one-use pairing link (default)
   serve       Start OpenTig without opening a browser; ideal for servers
   pair        Print a fresh five-minute code/link for a running server
+  reset-access Restore browser access and startup listener settings on next restart
   service     Manage a background server (Linux, macOS, Windows)
   help        Show this help
   version     Show the OpenTig version
@@ -186,7 +188,7 @@ function splitOption(argument: string): [string, string | undefined] {
 }
 
 function isCommand(value: string): value is OpenTigCliCommand {
-  return value === 'start' || value === 'serve' || value === 'pair' || value === 'service' || value === 'help' || value === 'version';
+  return value === 'start' || value === 'serve' || value === 'pair' || value === 'reset-access' || value === 'service' || value === 'help' || value === 'version';
 }
 
 function isServiceAction(value: string): value is OpenTigServiceAction {
