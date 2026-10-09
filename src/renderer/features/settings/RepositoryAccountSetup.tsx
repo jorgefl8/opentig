@@ -42,7 +42,7 @@ export function RepositoryAccountSetup({ repository, isNew, onClose, onAdded }: 
     <Dialog open={settingsOpen} onOpenChange={open => { setSettingsOpen(open); if (!open) void setup.refetch(); }}>
       <DialogPopup className="github-add-dialog github-setup-dialog">
         <DialogTitle>GitHub accounts</DialogTitle>
-        <DialogDescription>Manage saved accounts and the default for OpenTig.</DialogDescription>
+        <DialogDescription>Manage connected accounts and the suggestion for new repositories.</DialogDescription>
         {settingsOpen && <GitHubSettings repository={null} />}
         <Button onClick={() => { setSettingsOpen(false); void setup.refetch(); }}>Back to repository setup</Button>
       </DialogPopup>
@@ -57,13 +57,13 @@ function SetupForm({ repository, isNew, inventory, account, saving, setSaving, o
   const client = useQueryClient();
   const compatible = supportsManagedSetup(account.access?.publication.urls ?? []);
   const existing = account.selection.mode === 'account' ? account.selection : null;
-  const [choice, setChoice] = useState(() => existing?.useGlobalDefault ? GLOBAL : existing?.login ?? (inventory.defaultLogin ? GLOBAL : inventory.accounts.find(item => item.login === inventory.activeLogin && item.state === 'authenticated')?.login ?? inventory.accounts.find(item => item.state === 'authenticated')?.login ?? inventory.activeLogin ?? EXTERNAL));
+  const [choice, setChoice] = useState(() => existing?.useGlobalDefault ? GLOBAL : existing?.login ?? (inventory.accounts.find(item => item.login === inventory.suggestedLogin && item.state === 'authenticated')?.login ?? inventory.accounts.find(item => item.login === inventory.activeLogin && item.state === 'authenticated')?.login ?? inventory.accounts.find(item => item.state === 'authenticated')?.login ?? inventory.activeLogin ?? EXTERNAL));
   const [both, setBoth] = useState(() => existing ? existing.gitMode === 'managed' : isNew && compatible);
   const [error, setError] = useState<string | null>(null);
   const [reviewedRevision, setReviewedRevision] = useState(account.revision);
   const external = choice === EXTERNAL;
   const login = external ? null : choice === GLOBAL ? inventory.defaultLogin : choice;
-  const items = inventory.accounts.map(item => ({ value: item.login, label: `@${item.login}`, description: item.state === 'authenticated' ? 'Available account' : 'Reconnect this account in GitHub CLI' }));
+  const items = inventory.accounts.map(item => ({ value: item.login, label: `@${item.login}`, description: item.state === 'authenticated' ? item.login === inventory.suggestedLogin ? 'Suggested for new repositories' : 'Connected account' : 'Reconnect this account in GitHub CLI' }));
   if (existing && !items.some(item => item.value === existing.login)) items.push({ value: existing.login, label: `@${existing.login}`, description: 'Saved account · reconnect to use it' });
   const save = async () => {
     if ((!login && !external) || saving) return;
@@ -87,7 +87,7 @@ function SetupForm({ repository, isNew, inventory, account, saving, setSaving, o
   };
   return <>
     <div className="github-setup-account"><label className="github-setup-label" htmlFor="setup-github-account">GitHub account</label>
-      <SearchablePicker groups={[{ id: 'default', label: 'OpenTig default', items: [{ value: GLOBAL, label: inventory.defaultLogin ? `Global default · @${inventory.defaultLogin}` : 'Global default · not set', disabled: !inventory.defaultLogin }] }, { id: 'accounts', label: 'Saved accounts', items }, { id: 'external', label: 'Other access', items: [{ value: EXTERNAL, label: 'Use existing credentials', description: `Use Git's own credentials on ${gitCredentialsLocation()}; the Git account is unverified.` }] }]}
+      <SearchablePicker groups={[{ id: 'accounts', label: 'Connected accounts', items }, ...(existing?.useGlobalDefault ? [{ id: 'default', label: 'Existing shared default', items: [{ value: GLOBAL, label: `Following default · @${inventory.defaultLogin}` }] }] : []), { id: 'external', label: 'Other access', items: [{ value: EXTERNAL, label: 'Use existing credentials', description: `Use Git's own credentials on ${gitCredentialsLocation()}; the Git account is unverified.` }] }]}
         value={choice} triggerId="setup-github-account" label="Account for this repository" triggerLabel={external ? 'Use existing credentials' : choice === GLOBAL ? `Global default · @${login}` : login ? `@${login}` : 'Choose an account'}
         placeholder="Search accounts…" size="default" align="start" disabled={saving} onValueChange={setChoice} />
     </div>
@@ -99,9 +99,9 @@ function SetupForm({ repository, isNew, inventory, account, saving, setSaving, o
       <p>Fetch / push: <strong>{!external && both && compatible ? login ? `@${login} · OpenTig` : 'No account selected' : 'Existing credentials · account unverified'}</strong></p>
       {account.access && <p>{publicationDestination(account.access.publication)}</p>}
     </div>
-    <p className="github-settings-note">{choice === GLOBAL ? 'Follows the OpenTig default account. ' : ''}Shared across worktrees and connected clients. Commit authorship stays separate.</p>
+    <p className="github-settings-note">{choice === GLOBAL ? 'Follows the OpenTig default account. ' : ''}Saved on the server for this repository and its worktrees. All clients use this choice; push will not ask again. Commit authorship stays separate.</p>
     {(inventory.message || error) && <p className="github-settings-notice" role="alert">{error ?? inventory.message}</p>}
-    <Button variant="link" size="sm" disabled={saving} onClick={onSettings}>Add an account or change the global default</Button>
+    <Button variant="link" size="sm" disabled={saving} onClick={onSettings}>Manage connected accounts</Button>
     <div className="github-add-actions">
       <Button variant="ghost" disabled={saving} onClick={onClose}>Cancel</Button>
       {error && <Button variant="outline" disabled={saving} onClick={onReload}>Reload setup</Button>}

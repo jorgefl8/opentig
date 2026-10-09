@@ -21,6 +21,7 @@ interface SettingsData {
   version: number;
   githubAccounts: Record<string, GitHubAccountSelection>;
   githubDefaultLogin: string | null;
+  githubSuggestedLogin: string | null;
   repositoryAiInstructions: Record<string, boolean>;
   recentRepositories: RecentRepository[];
   repositoryProjects: RepositoryProject[];
@@ -38,6 +39,7 @@ const defaults: SettingsData = {
   version: SETTINGS_SCHEMA_VERSION,
   githubAccounts: {},
   githubDefaultLogin: null,
+  githubSuggestedLogin: null,
   repositoryAiInstructions: {},
   recentRepositories: [],
   repositoryProjects: [],
@@ -154,6 +156,32 @@ export class SettingsStore {
   }
 
   get githubDefaultLogin(): string | null { return this.data.githubDefaultLogin; }
+
+  get githubSuggestedLogin(): string | null { return this.data.githubSuggestedLogin; }
+
+  get githubRepositoryAccounts() {
+    const seen = new Set<string>();
+    return this.data.recentRepositories.filter(repo => {
+      const key = githubRepositoryKey(repo.commonDir);
+      if (seen.has(key)) return false;
+      seen.add(key); return true;
+    }).map(repo => {
+      const selection = this.data.githubAccounts[githubRepositoryKey(repo.commonDir)] ?? AUTOMATIC_GITHUB_ACCOUNT;
+      return { repositoryId: repo.id, name: repo.repositoryName || repo.name,
+        login: selection.mode === 'account' ? selection.useGlobalDefault ? this.data.githubDefaultLogin : selection.login : null,
+        followsDefault: selection.mode === 'account' && selection.useGlobalDefault === true };
+    });
+  }
+
+  async setGitHubSuggestedLogin(login: string): Promise<void> {
+    const parsed = githubAccountSelectionSchema.parse({ mode: 'account', host: 'github.com', login });
+    if (parsed.mode !== 'account') throw new Error('Invalid suggested account.');
+    const previous = this.data.githubSuggestedLogin;
+    this.data.githubSuggestedLogin = parsed.login;
+    try { await this.save(); }
+    catch (error) { if (this.data.githubSuggestedLogin === parsed.login) this.data.githubSuggestedLogin = previous; throw error; }
+  }
+
 
   async setGitHubDefaultLogin(login: string): Promise<void> {
     const parsed = githubAccountSelectionSchema.parse({ mode: 'account', host: 'github.com', login });
@@ -542,6 +570,7 @@ function validate(value: unknown, defaultDoubleControlShortcutEnabled: boolean):
     repositoryAiInstructions: Object.fromEntries(Object.entries(
       input.repositoryAiInstructions && typeof input.repositoryAiInstructions === 'object' && !Array.isArray(input.repositoryAiInstructions) ? input.repositoryAiInstructions : {},
     ).slice(0, 1000).filter(([key, value]) => value === true && key.length <= MAX_REPOSITORY_KEY_LENGTH && !hasControlCharacters(key) && path.isAbsolute(key)).map(([key]) => [githubRepositoryKey(key), true])),
+    githubSuggestedLogin: typeof input.githubSuggestedLogin === 'string' && githubAccountSelectionSchema.safeParse({ mode: 'account', host: 'github.com', login: input.githubSuggestedLogin }).success ? input.githubSuggestedLogin : null,
     githubDefaultLogin: typeof input.githubDefaultLogin === 'string' && githubAccountSelectionSchema.safeParse({ mode: 'account', host: 'github.com', login: input.githubDefaultLogin }).success ? input.githubDefaultLogin : null,
     recentRepositories,
     repositoryProjects,

@@ -120,7 +120,7 @@ Use the desktop app or the same UI in a paired browser; browsers select folders 
 
 ### GitHub pull requests
 
-Use the authenticated GitHub CLI to review PR metadata, descriptions, cumulative or per-commit diffs, and native stacks; open them in OpenTig or GitHub, or create an editable draft before publishing. Repository account selection, Git HTTPS authentication, and commit authorship are separate controls. See [GitHub accounts and pull requests](github.md) for setup, scopes, access checks, publication review, and credential boundaries.
+Use the authenticated GitHub CLI to review PR metadata, descriptions, cumulative or per-commit diffs, and native stacks; open them in OpenTig or GitHub, or create an editable draft before publishing. Repository account selection, Git HTTPS authentication, and commit authorship are separate controls. See [GitHub accounts and pull requests](github.md) for setup, scopes, access checks, direct push behavior across clients, and credential boundaries.
 
 ### Optional AI assistance
 

@@ -28,7 +28,9 @@ You can write the title and description yourself or generate an editable draft f
 
 ## Choose an account
 
-After selecting a repository folder, choose **Continue** to review GitHub/PR and Git access plus the effective destination. Select a saved account, **Global default**, or **Use existing credentials**, then choose **Add repository**. Canceling, closing the dialog, or failing setup leaves the repository list and active repository unchanged.
+After selecting a repository folder, choose **Continue** to review GitHub/PR and Git access plus the effective destination. Select a connected account or **Use existing credentials**, then choose **Add repository**. Canceling, closing the dialog, or failing setup leaves the repository list and active repository unchanged.
+
+The suggested account, when connected, is preselected for new repositories. Adding the repository saves that specific account; it does not create a link to a global default.
 
 For new compatible GitHub HTTPS destinations, **Use this account for fetch and push too** starts checked. Saved choices, existing unpinned repositories, SSH, and other providers retain their current authentication mode. **Use existing credentials** explicitly preserves existing Git and GitHub CLI credentials, including for local work without configuring a GitHub account.
 
@@ -41,13 +43,17 @@ An account selection applies to PR lists, branch links, details, diffs, stacks, 
 | Tab | Scope |
 | --- | --- |
 | **This repository** | Account selection, Git HTTPS credentials, access checks, push destination, and commit authorship; shared across worktrees and connected clients. |
-| **OpenTig** | Instance-wide default account, adding accounts, saved-account inventory, and CLI details. |
+| **Accounts** | Connected accounts, their repository usage counts, the suggested account for new repositories, and CLI availability. |
 
-**Default account for OpenTig** is independent of the globally active `gh` account. Repositories set to **Global default** follow it; pinned repositories keep their own account. Changing the default invalidates checks and prepared operations for followers. If the selected account disappears, OpenTig reports that instead of falling back to another account.
+**Suggested account for new repositories** is saved on the server and shared by clients. Changing it does not modify any existing repository account, Git credentials, commit author, or active `gh` account. The account list shows how many registered repositories use each account; worktrees count as one repository.
 
-Opening Settings shows saved metadata: the last checked CLI version, accounts for `github.com`, authentication/storage states, the active global account, and repository identity. **Check access** refreshes inventory and verifies repository access after external login, logout, or account changes. Failed checks retain the previous inventory as unverified. Refreshing the account inventory alone does not run repository access checks. Operations still validate credentials as needed; successful identity and SSH checks are reused for up to one minute, while manual refresh bypasses those caches.
+Existing repositories linked to **Global default** retain their saved behavior. Only those repositories show **Following default** in **This repository**, where choosing a specific account removes the default link. **Accounts** does not expose a shared-default editor or a repository assignment table. The saved shared default remains independent of the active `gh` account. If an explicitly selected account disappears, OpenTig reports that instead of falling back to another account.
 
-The compact grouped rows match General settings. Separate summaries identify the account for GitHub/PRs and fetch/push. Technical details stay collapsed and can be copied; failed Git operations remain visible without expanding them. GitHub CLI details expand on demand.
+Opening Settings shows saved metadata: the last checked CLI version, accounts for `github.com`, authentication/storage states and repository identity. **Check access** refreshes inventory and verifies repository access after external login, logout, or account changes. Failed checks retain the previous inventory as unverified. Refreshing the account inventory alone does not run repository access checks. Operations still validate credentials as needed; successful identity and SSH checks are reused for up to one minute, while manual refresh bypasses those caches.
+
+The repository account is the primary control. A short description states how the selected account is used. Separate GitHub/PR and fetch/push summaries appear only when Git uses external authentication. The push destination shows the repository and branch before the remote alias and protocol. The GitHub/PR repository is shown separately when it differs from the push destination. The PR integration currently resolves its repository through `origin`.
+
+The commit author’s name, email, and **Edit authorship** action are visible in the repository settings. **Advanced → Git** groups the compact destination summary, Git authentication selector, and **Copy diagnostics** action in one collapsed section; **Accounts** shows the CLI version and availability in a compact row without a disclosure. Access shows a brief verification state and **Check access**. Missing, stale, and failed checks stay distinct from verified access; external credentials are never declared verified by GitHub checks. Failures remain visible with their next steps. **Copy diagnostics** copies check results, URLs, timestamps, and the last Git operation for troubleshooting without displaying a diagnostic report in Settings. Account changes use the server revision to reject edits prepared against an outdated selection. Changes are broadcast to connected clients and reloaded after reconnection.
 
 ### Add an account
 
@@ -67,15 +73,17 @@ Legacy unpinned configurations keep working until you choose an account. Automat
 
 HTTPS Automatic uses active `gh` credentials and honors backend `GH_TOKEN`/`GITHUB_TOKEN`. Explicit and verified SSH selections use their own stored credentials instead of these environment overrides. Checks do not create keys or change known hosts.
 
-## Git credentials and publication review
+## Git credentials and push
 
-Under **Git HTTPS**, **Use @account** uses the selected account for compatible GitHub HTTPS fetch, pull, push, and remote-branch operations. **Git credentials** uses Git's existing helpers and authentication on the computer (desktop) or server (web); that identity remains unverified rather than inferred from saved GitHub accounts. SSH and other providers remain external, and remote URLs are not converted.
+Under **Advanced → Git**, **Repository account · @username** uses that account’s saved GitHub CLI credentials for compatible GitHub HTTPS fetch, pull, push, and remote-branch operations. It is the account selected for this repository, which can differ from the globally active `gh` account. Switching the active CLI account does not change an explicit repository selection. **Existing Git credentials** uses Git's existing helpers and authentication on the computer (desktop) or server (web); that identity remains unverified rather than inferred from saved GitHub accounts. SSH and other providers remain external, and remote URLs are not converted.
 
-Choosing an account for the first time in Settings also selects it for Git when the push destination supports managed GitHub HTTPS. Existing authentication choices are preserved; you can choose **Git credentials** to use external authentication again. No global helpers, SSH keys, remotes, or active `gh` account are changed.
+Choosing an account for the first time in Settings also selects it for Git when the push destination supports managed GitHub HTTPS. Existing authentication choices are preserved; you can choose **Existing Git credentials** to use external authentication again. No global helpers, SSH keys, remotes, or active `gh` account are changed.
 
-Publication resolves push remotes and rewritten push URLs separately from the PR destination. Multiple URLs or unsupported push configurations require review. New branches show **Publish branch** and set an upstream; tracked branches show **Confirm push** when review is needed.
+Push uses the account and destination configured on the server for the repository. Account, destination, target branch, and Git authentication can be consulted in **Settings → GitHub → This repository**, without a permanent indicator in the toolbar or mobile repository menu. External credentials are marked unverified rather than attributed to the selected PR account.
 
-Reviews are remembered on each client across reloads and restarts. Changing the effective Git account, authentication mode, remote, URL, or target branch requires another review. Restricted browser storage falls back to session-only memory. Every push validates fresh server context; changed account, branch, tip, or destination invalidates prepared publication before execution.
+An ordinary push executes directly. There is no client-local confirmation, browser-storage approval, or prerequisite to visit Settings. A fresh client and a client that has already pushed use the same server configuration. New branches with a resolved destination use **Publish branch** directly and set an upstream. When Git cannot choose between configured remotes, **Where do you want to push?** lists their full repository destinations, aliases, and branches; publishing saves the tracking branch in Git on the server.
+
+Every push reads and validates fresh server configuration when invoked. A change to the prepared server context during execution stops the operation. Multiple push URLs and unsupported push configurations remain blocked with their specific explanation. No operation silently switches accounts, rewrites remotes, or forces a push.
 
 Access checks distinguish identity, PR API access, Git read access to the push destination, and API-declared write permission. The write permission names the GitHub account checked; it does not verify external Git credentials or guarantee branch-policy approval. Sanitized Git errors retain the actual rejection and never trigger an automatic force push. GitHub errors distinguish missing accounts, rejected credentials, repository/token/organization permissions, and unavailable CLI installations.
 

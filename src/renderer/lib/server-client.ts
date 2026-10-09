@@ -139,6 +139,7 @@ export function createOpenTigServerClient(options: ServerClientOptions = {}): Op
       clearLog: () => invoke(IPC.aiClearLog),
     },
     github: {
+      setSuggestedAccount: (login) => invoke(IPC.githubSetSuggestedAccount, login),
       setDefaultAccount: (login) => invoke(IPC.githubSetDefaultAccount, login),
       accountsStatus: (forceRefresh) => transport.request(IPC.githubAccountsStatus, [forceRefresh], { timeoutMs: 90_000 }),
       repositoryAccount: (repositoryId, forceRefresh) => transport.request(IPC.githubRepositoryAccount, [repositoryId, forceRefresh], { timeoutMs: 60_000 }),

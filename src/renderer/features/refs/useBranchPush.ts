@@ -3,7 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import type { PushResult } from '../../../shared/contracts';
 import type { PublicationContext } from '@shared/repository-access';
 import { opentig } from '@/lib/opentig-api';
-import { hasReviewedPublication, publicationIdentity, publicationKey, rememberPublication } from './publication-context';
+import { publicationKey } from './publication-context';
 
 export interface RemoteChoice {
   id: string;
@@ -14,7 +14,7 @@ export interface RemoteChoice {
   resolve(context: PublicationContext | null): void;
 }
 
-/** Each concurrent project push owns its original repository and reviewed context. */
+/** The server owns account/destination configuration; clients never approve or remember it. */
 export function useBranchPush() {
   const client = useQueryClient();
   const [choices, setChoices] = useState<RemoteChoice[]>([]);
@@ -24,12 +24,10 @@ export function useBranchPush() {
     return () => { for (const request of requests) request.resolve(null); requests.clear(); };
   }, []);
   const push = useCallback(async (repositoryId: string, label: string): Promise<PushResult | null> => {
-    const cached = client.getQueriesData<PublicationContext>({ queryKey: publicationKey(repositoryId) }).map(([, data]) => data).filter(Boolean).at(-1);
     let context = await opentig.refs.pushContext(repositoryId);
     if (context.blocked) return { status: 'rejected', reason: 'configuration', message: context.blocked };
     if (!context.branch || !context.oid || !context.remotes.length) return { status: 'rejected', reason: 'configuration', message: 'Choose a branch with commits and configure a remote before publishing.' };
-    const reviewedBefore = cached ? publicationIdentity(cached) === publicationIdentity(context) : hasReviewedPublication(context);
-    if (!context.remote || !reviewedBefore) {
+    if (!context.remote) {
       const reviewed = await new Promise<PublicationContext | null>((resolve) => {
         const request: RemoteChoice = { id: crypto.randomUUID(), repositoryId, label, hasUpstream: context.hasUpstream ?? false,
           result: { status: 'remote-required', branch: context.branch!, oid: context.oid!, remotes: context.remote ? [context.remote, ...context.remotes.filter(remote => remote !== context.remote)] : context.remotes }, resolve };
@@ -38,9 +36,11 @@ export function useBranchPush() {
       if (!reviewed) return null;
       context = reviewed;
     }
-    client.setQueryData(publicationKey(repositoryId), context);
-    rememberPublication(context);
-    return opentig.refs.push(repositoryId, { remote: context.remote!, expectedBranch: context.branch!, expectedOid: context.oid! }, context.id);
+    try {
+      return await opentig.refs.push(repositoryId, { remote: context.remote!, expectedBranch: context.branch!, expectedOid: context.oid! }, context.id);
+    } finally {
+      await client.invalidateQueries({ queryKey: publicationKey(repositoryId) });
+    }
   }, [client]);
   const choice = choices[0];
   const finish = (context: PublicationContext | null) => {

@@ -25,6 +25,9 @@ export interface GitHubAccount {
 export interface GitHubAccountsStatus {
   /** OpenTig default, independent of the active gh account. */
   defaultLogin?: string | null;
+  /** A suggestion for new repositories, never a live account binding. */
+  suggestedLogin?: string | null;
+  repositoryAccounts?: Array<{ repositoryId: string; name: string; login: string | null; followsDefault: boolean }>;
   installationStatus: 'unchecked' | 'available' | 'not-found' | 'not-executable' | 'incompatible' | 'inspection-failed';
   version?: string;
   accounts: GitHubAccount[];

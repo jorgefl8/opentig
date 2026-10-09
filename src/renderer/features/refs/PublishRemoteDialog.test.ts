@@ -34,11 +34,12 @@ async function mount(value: PublicationContext) {
 it('reviews an ordinary push without describing the branch as unpublished and identifies external credentials', async () => {
   const view = await mount(context);
   try {
-    expect(document.querySelector('[role=dialog]')?.textContent).toContain('Confirm push');
-    expect(document.querySelector('[role=dialog]')?.textContent).not.toContain('sets an upstream');
+    await act(async () => document.querySelector<HTMLInputElement>('input[type=radio]')?.click());
+    expect(document.querySelector('[role=dialog]')?.textContent).toContain('Where do you want to push?');
+    expect(document.querySelector('[role=dialog]')?.textContent).not.toContain('sets a tracking branch');
     expect(document.body.textContent).toContain('Git credentials · account unverified');
     expect(document.body.textContent).toContain('credentials on the server');
-    expect(document.body.textContent).toContain('remembered on this client');
+    expect(document.body.textContent).not.toContain('remembered on this client');
     const push = [...document.querySelectorAll('button')].find(node => node.textContent === 'Push commits');
     expect(push).toHaveProperty('disabled', false);
     await act(async () => push!.click());
@@ -50,8 +51,9 @@ it('publishes a new branch with its managed account and explains upstream creati
   const value = { ...context, mode: 'managed' as const, login: 'alice', hasUpstream: false };
   const view = await mount(value);
   try {
+    await act(async () => document.querySelector<HTMLInputElement>('input[type=radio]')?.click());
     expect(document.querySelector('[role=dialog]')?.textContent).toContain('Publish branch');
-    expect(document.body.textContent).toContain('sets an upstream');
+    expect(document.body.textContent).toContain('sets a tracking branch');
     expect(document.querySelector('.repository-access-status')?.textContent).toContain('@alice');
     expect(document.body.textContent).not.toContain('account unverified');
     const publish = [...document.querySelectorAll('button')].find(node => node.textContent === 'Publish branch');

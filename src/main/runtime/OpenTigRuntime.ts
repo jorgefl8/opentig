@@ -94,7 +94,7 @@ export class OpenTigRuntime {
       const selection = this.settings.githubAccount(repo.commonDir);
       return selection.mode === 'account' && selection.useGlobalDefault;
     }).map(repo => repo.id) : commonDir ? repositories.filter(repo => githubRepositoryKey(repo.commonDir) === githubRepositoryKey(commonDir)).map(repo => repo.id) : undefined;
-    this.onEvent({ type: 'github.accounts-changed', ...(repositoryIds ? { repositoryIds } : {}), ...(defaultOnly ? { inventoryChanged: true } : {}) });
+    this.onEvent({ type: 'github.accounts-changed', ...(repositoryIds ? { repositoryIds } : {}), ...(defaultOnly || commonDir ? { inventoryChanged: true } : {}) });
   }
 
   publishAiInstructionsChange(commonDir: string): void {

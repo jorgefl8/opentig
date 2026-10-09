@@ -42,10 +42,23 @@ export class GitHubAccountsService {
   status(force = false): Promise<GitHubAccountsStatus> {
     if (force) {
       this.checking ??= this.check().finally(() => { this.checking = null; });
-      return this.checking.then((value) => ({ ...structuredClone(value), defaultLogin: this.settings?.githubDefaultLogin ?? null }));
+      return this.checking.then((value) => ({ ...structuredClone(value), ...this.accountPreferences() }));
     }
     this.loading ??= (async () => { this.inventory ??= await this.store?.load() ?? emptyStatus(); return this.inventory; })();
-    return this.loading.then(() => ({ ...structuredClone(this.inventory ?? emptyStatus()), defaultLogin: this.settings?.githubDefaultLogin ?? null }));
+    return this.loading.then(() => ({ ...structuredClone(this.inventory ?? emptyStatus()), ...this.accountPreferences() }));
+  }
+
+  private accountPreferences() {
+    return { defaultLogin: this.settings?.githubDefaultLogin ?? null,
+      suggestedLogin: this.settings?.githubSuggestedLogin ?? null,
+      repositoryAccounts: this.settings?.githubRepositoryAccounts ?? [] };
+  }
+
+  async setSuggestedAccount(login: string): Promise<GitHubAccountsStatus> {
+    if (!this.settings) throw new Error('GitHub account settings are unavailable.');
+    await this.settings.setGitHubSuggestedLogin(login);
+    this.changed();
+    return this.status();
   }
 
   selection(repository: RepositoryInfo): GitHubAccountSelection {

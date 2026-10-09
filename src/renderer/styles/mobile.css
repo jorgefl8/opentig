@@ -179,8 +179,6 @@
   html .settings-general-content, html .github-settings-content { padding: 12px; }
   html .github-scope-tabs { width: 100%; }
   html .github-scope-tabs button { min-height: 40px; height: 40px; font-size: 12px; }
-  html .github-git-mode-options { width: 100%; }
-  html .github-git-mode-options label { flex: 1; min-height: 40px; height: 40px; justify-content: center; }
   html .github-account-select { width: 100%; }
   html .github-account-picker { justify-content: flex-start; width: 100%; }
   html .github-accounts-actions { justify-content: flex-start; }

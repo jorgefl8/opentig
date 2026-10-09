@@ -11,7 +11,7 @@ vi.mock('@/lib/opentig-api', () => ({ opentig: { github: calls, repository: call
 vi.mock('./GitHubSettings', () => ({ GitHubSettings: () => createElement('div', null, 'Manage accounts') }));
 vi.mock('motion/react', async original => ({ ...await original<typeof import('motion/react')>(), useReducedMotion: () => true }));
 const repository = { id: 'new', name: 'Demo', repositoryName: 'Demo', path: '/fixture/demo', commonDir: '/fixture/demo/.git' };
-const inventory: GitHubAccountsStatus = { installationStatus: 'available', activeLogin: 'alice', defaultLogin: 'bob', checkedAt: null, environment: { present: false, login: null, state: 'unknown' }, accounts: [
+const inventory: GitHubAccountsStatus = { installationStatus: 'available', activeLogin: 'alice', defaultLogin: 'alice', suggestedLogin: 'bob', checkedAt: null, environment: { present: false, login: null, state: 'unknown' }, accounts: [
   { host: 'github.com', login: 'alice', active: true, state: 'authenticated', storage: 'keyring' },
   { host: 'github.com', login: 'bob', active: false, state: 'authenticated', storage: 'keyring' },
 ] };
@@ -37,15 +37,15 @@ async function click(name: string) {
   const button = [...document.querySelectorAll('button')].find(node => node.textContent?.includes(name)); expect(button).toBeDefined();
   await act(async () => { button!.click(); await settle(); }); await act(settle);
 }
-it('proposes the global default for both GitHub and HTTPS Git, then saves the reviewed repository revision', async () => {
+it('proposes a suggested account without linking to a global default for both GitHub and HTTPS Git, then saves the reviewed repository revision', async () => {
   const view = await mount();
   try {
-    expect(document.body.textContent).toContain('Global default · @bob');
+    expect(document.body.textContent).toContain('@bob');
     expect(document.querySelector('input[type=checkbox]')).toHaveProperty('checked', true);
     expect(document.querySelector('.github-setup-summary')?.textContent).toContain('@bob · OpenTig');
     expect(calls.setRepositoryAccount).not.toHaveBeenCalled();
     await click('Add repository');
-    expect(calls.setRepositoryAccount).toHaveBeenCalledWith('new', { mode: 'account', host: 'github.com', login: 'bob', useGlobalDefault: true, gitMode: 'managed' }, 3);
+    expect(calls.setRepositoryAccount).toHaveBeenCalledWith('new', { mode: 'account', host: 'github.com', login: 'bob', gitMode: 'managed' }, 3);
     expect(view.added).toHaveBeenCalledWith(repository);
     expect(calls.completeSetup).toHaveBeenCalledWith(repository.id, 3);
     expect(view.close).not.toHaveBeenCalled();
@@ -94,7 +94,7 @@ it('requires explicit completion with external authentication when no accounts a
   try {
     expect([...document.querySelectorAll('button')].find(node => node.textContent === 'Add repository')).toHaveProperty('disabled', false);
     expect(document.querySelector('.github-setup-summary')?.textContent).toContain('Existing credentials');
-    await click('Add an account'); expect(document.body.textContent).toContain('Manage accounts');
+    await click('Manage connected accounts'); expect(document.body.textContent).toContain('Manage accounts');
     await click('Back to repository setup');
     await click('Cancel'); expect(view.close).toHaveBeenCalledOnce(); expect(calls.completeSetup).not.toHaveBeenCalled();
     expect(calls.setRepositoryAccount).not.toHaveBeenCalled();
@@ -167,7 +167,7 @@ it('preserves the Git authentication draft when managing accounts', async () => 
   const view = await mount();
   try {
     await act(async () => { (document.querySelector('input[type=checkbox]') as HTMLInputElement).click(); });
-    await click('Add an account'); await click('Back to repository setup');
+    await click('Manage connected accounts'); await click('Back to repository setup');
     expect(document.querySelector('input[type=checkbox]')).toHaveProperty('checked', false);
     await click('Add repository');
     expect(calls.setRepositoryAccount.mock.calls[0]?.[1].gitMode).toBe('external');

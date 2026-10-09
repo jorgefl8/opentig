@@ -124,6 +124,7 @@ export const OPEN_TIG_SERVER_COMMANDS = {
 
   'github.accountsStatus': command(IPC.githubAccountsStatus, 'gh-accounts-status', false, { timeoutMs: 90_000 }),
   'github.repositoryAccount': command(IPC.githubRepositoryAccount, 'gh-repository-account', false, { timeoutMs: 60_000 }),
+  'github.setSuggestedAccount': command(IPC.githubSetSuggestedAccount, 'gh-set-suggested-account', true),
   'github.setDefaultAccount': command(IPC.githubSetDefaultAccount, 'gh-set-default-account', true),
   'github.setRepositoryAccount': command(IPC.githubSetRepositoryAccount, 'gh-set-repository-account', true),
   'github.status': command(IPC.githubStatus, 'gh-status', false),

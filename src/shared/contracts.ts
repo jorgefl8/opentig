@@ -622,6 +622,7 @@ export interface OpenTigApi {
   };
   github: {
     accountsStatus(forceRefresh?: boolean): Promise<GitHubAccountsStatus>;
+    setSuggestedAccount(login: string): Promise<GitHubAccountsStatus>;
     setDefaultAccount(login: string): Promise<GitHubAccountsStatus>;
     repositoryAccount(repositoryId: string, forceRefresh?: boolean): Promise<GitHubRepositoryAccount>;
     setRepositoryAccount(repositoryId: string, selection: GitHubAccountSelection, expectedRevision?: number): Promise<GitHubRepositoryAccount>;
@@ -678,7 +679,7 @@ export const IPC = {
   aiRepositoryInstructions: 'ai:repository-instructions', aiSetRepositoryInstructions: 'ai:set-repository-instructions',
   aiStatuses: 'ai:statuses', aiGenerateCommitMessage: 'ai:generate-commit-message', aiCancelGeneration: 'ai:cancel-generation', aiLog: 'ai:log', aiClearLog: 'ai:clear-log',
   diagnosticsList: 'diagnostics:list', diagnosticsClear: 'diagnostics:clear', diagnosticsRecord: 'diagnostics:record',
-  githubAccountsStatus: 'github:accounts-status', githubSetDefaultAccount: 'github:set-default-account', githubRepositoryAccount: 'github:repository-account', githubSetRepositoryAccount: 'github:set-repository-account',
+  githubSetSuggestedAccount: 'github:set-suggested-account', githubAccountsStatus: 'github:accounts-status', githubSetDefaultAccount: 'github:set-default-account', githubRepositoryAccount: 'github:repository-account', githubSetRepositoryAccount: 'github:set-repository-account',
   githubStatus: 'github:status', githubRepositoryInfo: 'github:repository-info', githubPrForBranch: 'github:pr-for-branch', githubPrList: 'github:pr-list', githubPrView: 'github:pr-view',
   githubPrStack: 'github:pr-stack', githubPrDiff: 'github:pr-diff', githubPrCommitDiff: 'github:pr-commit-diff', githubPrCreate: 'github:pr-create', githubPrDraft: 'github:pr-draft', githubPrDraftCancel: 'github:pr-draft-cancel',
 } as const;

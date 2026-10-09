@@ -436,6 +436,7 @@ export function registerServerCommands(
     services.ai.cancel(aiString(requestId, 'ai-cancel-generation', 100, true));
   });
   handle(IPC.githubAccountsStatus, 'gh-accounts-status', (forceRefresh) => services.github.accounts.status(booleanArg(forceRefresh, 'gh-accounts-status')));
+  handle(IPC.githubSetSuggestedAccount, 'gh-set-suggested-account', (login) => services.github.accounts.setSuggestedAccount(stringArg(login, 'gh-set-suggested-account', 39)));
   handle(IPC.githubSetDefaultAccount, 'gh-set-default-account', (login) => services.github.accounts.setDefaultAccount(stringArg(login, 'gh-set-default-account', 39)));
   handle(IPC.githubRepositoryAccount, 'gh-repository-account', (id, forceRefresh) => services.github.repositoryAccount(stringArg(id, 'gh-repository-account', 64), booleanArg(forceRefresh, 'gh-repository-account')));
   handle(IPC.githubSetRepositoryAccount, 'gh-set-repository-account', (id, selection, expectedRevision) => {

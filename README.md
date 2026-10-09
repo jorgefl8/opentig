@@ -31,7 +31,7 @@ Use the Windows desktop app or run the CLI on another machine and reach the same
 | [Browse and edit](docs/features.md#files-and-editing) | File tabs, find and replace, repository search, and Markdown, image, HTML, and SVG previews. |
 | [Work with Git](docs/features.md#safe-pull-and-push) | Safe pull and push, branch publication, commit graphs, branches, and worktrees. |
 | [Keep repositories together](docs/features.md#repositories-and-projects) | Saved repositories, project groups, and relocation without moving files. |
-| [Review GitHub PRs](docs/github.md) | PR details and diffs, native stacks, account selection, and new PRs through the GitHub CLI. |
+| [Review GitHub PRs](docs/github.md) | PR details and diffs, native stacks, shared repository accounts, and direct pushes using server configuration. |
 | [Use a remote server](docs/web-access.md) | Browser pairing, trusted remote access, and a touch-friendly phone interface. |
 
 **AI is optional.** Reviewing, editing, and committing need no AI account. Locally installed Codex, Claude Code, OpenCode 2, or Grok Build can draft commit messages, propose commit splits, and write PR descriptions. You review and confirm every commit or PR. See [AI assistance](docs/ai-assistance.md) and [AI privacy](docs/security-and-privacy.md#ai-privacy).

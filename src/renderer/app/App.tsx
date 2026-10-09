@@ -1818,7 +1818,7 @@ export default function App() {
     setBusy('push');
     try {
       await sileo.promise(async () => {
-        const result = await branchPush.push(repositoryId, repository.path);
+        const result = await branchPush.push(repositoryId, repository.name);
         await refresh({ background: true });
         if (!result || result.status === 'success' || result.status === 'up-to-date' || result.status === 'published') return result;
         throw new PushBlocked(result);
@@ -1855,7 +1855,7 @@ export default function App() {
               };
             }
             if (result.status === 'remote-required') return { title: 'Choose a remote to publish the branch' };
-            return { title: `${repository.name}: could not push commits`, description: result.message, duration: 10_000 };
+            return { title: `${repository.name}: could not push commits`, description: result.message, duration: 10_000, button: { title: 'Repository access', onClick: () => { setSettingsSection('github'); setSettingsOpen(true); } } };
           }
           const message = messageOf(err);
           return { title: `${repository.name}: could not push commits`, description: message, duration: 10_000 };

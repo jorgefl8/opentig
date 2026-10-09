@@ -81,7 +81,7 @@ describe('GitHub account inventory and repository policy', () => {
     await f.accounts.status();
     expect(f.run.mock.calls).toHaveLength(calls);
     const saved = await new GitHubStatusStore(f.statusFile).load();
-    expect({ ...saved, defaultLogin: null }).toEqual(first);
+    expect({ ...saved, defaultLogin: null, suggestedLogin: null, repositoryAccounts: [] }).toEqual(first);
   });
 
   it('keeps saved global and environment authentication distinct', async () => {

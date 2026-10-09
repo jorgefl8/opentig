@@ -1,68 +1,51 @@
-import { useEffect } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import type { ReactNode } from 'react';
 import { IconCopy } from '@tabler/icons-react';
 import { sileo } from 'sileo';
-import type { RepositoryAccess, AccessCheck } from '@shared/repository-access';
-import { formatDateTime } from '@shared/date-format';
+import type { RepositoryAccess } from '@shared/repository-access';
 import { Button } from '@/components/ui/button';
-import { ShimmeringText } from '@/components/ui/shimmering-text';
-import { publicationDestination, publicationKey } from '@/features/refs/publication-context';
 import { writeClipboardText } from '@/lib/browser-capabilities';
-import { accessStateLabels, gitHttpsModeLabel, lastGitOperationLabel, repositoryAccessDebugText } from './github-access-copy';
+import { repositoryAccessDebugText } from './github-access-copy';
 
-function checkLabel(label: string, check: AccessCheck): string {
-  if (check.state === 'ok' && label === 'Write permission') return 'Declared by GitHub';
-  return accessStateLabels[check.state];
+const accessChecks = (access: RepositoryAccess) => [['Account', access.identity], ['GitHub / PRs', access.api], ['Git read', access.read], ['Write permission', access.write]] as const;
+
+function accessSummary(access: RepositoryAccess, checking: boolean): string {
+  if (checking) return 'Checking access…';
+  const states = accessChecks(access).map(([, check]) => check.state);
+  if (states.includes('expired')) return 'Reconnect your GitHub account';
+  if (states.includes('offline')) return 'Could not reach GitHub · try again';
+  if (access.publication.blocked || states.includes('inaccessible')) return 'Access needs attention';
+  if (access.lastOperation && !access.lastOperation.ok) return `Last ${access.lastOperation.operation} failed`;
+  if (states.includes('stale')) return 'Access check out of date · check again';
+  const verified = access.identity.state === 'ok' && access.api.state === 'ok' && access.write.state === 'ok';
+  if (verified && access.publication.mode === 'external') return 'GitHub access verified';
+  if (verified && access.read.state === 'ok') return 'Access verified';
+  return 'Access not fully checked';
 }
 
-export function RepositoryAccessStatus({ access, checking, accountLogin }: { access: RepositoryAccess; checking: boolean; accountLogin?: string | null }) {
-  const client = useQueryClient();
-  const { publication } = access;
+export function RepositoryAccessStatus({ access, checking, action }: { access: RepositoryAccess; checking: boolean; action: ReactNode }) {
   const failed = access.lastOperation && !access.lastOperation.ok ? access.lastOperation : null;
-  // Remember the context shown in Settings; a different context must be reviewed before pushing.
-  useEffect(() => { client.setQueryData(publicationKey(publication.repositoryId), publication); }, [client, publication]);
-  const checks = [['Account', access.identity], ['GitHub / PRs', access.api], ['Git read', access.read], ['Write permission', access.write]] as const;
+  const failures = accessChecks(access).filter(([, check]) => ['expired', 'inaccessible', 'offline'].includes(check.state));
+  return <div className="repository-access-status" aria-busy={checking}>
+    <div className="settings-general-row">
+      <strong className="github-access-summary" role="status">{accessSummary(access, checking)}</strong>
+      <div className="settings-general-control">{action}</div>
+    </div>
+    {access.publication.blocked && <p className="github-settings-notice" role="status">{access.publication.blocked}</p>}
+    {!checking && failures.map(([label, check]) => <p className="github-settings-notice" role="status" key={label}><strong>{label}</strong>{check.message || (check.state === 'expired' ? 'Reconnect the account or choose another one.' : check.state === 'offline' ? 'Check the connection and try again.' : 'Check the selected account and its repository permissions.')}</p>)}
+    {failed && <p className="github-settings-notice" role="status"><strong>Last {failed.operation} failed</strong>{failed.message || 'Check access and retry the operation.'}</p>}
+  </div>;
+}
+
+export function CopyAccessDiagnostics({ access, accountLogin }: { access: RepositoryAccess; accountLogin?: string | null }) {
   const copy = async () => {
     try {
       await writeClipboardText(repositoryAccessDebugText(access, accountLogin));
-      sileo.success({ title: 'Copied technical details' });
+      sileo.success({ title: 'Diagnostics copied' });
     } catch (error) {
-      sileo.error({ title: 'Could not copy technical details', description: error instanceof Error ? error.message : 'The request could not be completed.' });
+      sileo.error({ title: 'Could not copy diagnostics', description: error instanceof Error ? error.message : 'The request could not be completed.' });
     }
   };
-  return <div className="repository-access-status" aria-busy={checking}>
-    <dl className="github-access-grid">{checks.map(([label, check]) => <div key={label}>
-      <dt>{label}{label === 'Write permission' && accountLogin ? ` · @${accountLogin}` : ''}</dt><dd data-state={checking ? 'checking' : check.state}>
-        <span className="github-access-dot" aria-hidden="true" />
-        {checking ? <ShimmeringText text="Checking…" /> : checkLabel(label, check)}
-      </dd>
-    </div>)}</dl>
-    {publication.mode === 'external' && <p className="github-settings-note" role="status">These GitHub checks do not verify access with Git's own credentials. The account used for fetch and push is unverified.</p>}
-    <div className="github-push-destination">
-      <span className="github-settings-eyebrow">Push destination</span>
-      <strong>{publicationDestination(publication)}</strong>
-      <p>{publication.branch ?? 'No branch'} → {publication.remote ?? 'Choose a remote'}{publication.targetRef && ` / ${publication.targetRef.replace(/^refs\/heads\//, '')}`}</p>
-    </div>
-    {publication.blocked && <p className="github-settings-notice" role="status">{publication.blocked}</p>}
-    {!checking && checks.filter(([, check]) => ['expired', 'inaccessible', 'offline'].includes(check.state) && check.message)
-      .map(([label, check]) => <p className="github-settings-notice" role="status" key={label}><strong>{label}</strong>{check.message}</p>)}
-    {failed && <p className="github-settings-notice" role="status"><strong>Last {failed.operation} failed</strong>{failed.message || 'The Git operation did not complete.'}</p>}
-    <details className="github-access-details">
-      <summary>Technical details{failed && <span>Last Git operation failed</span>}</summary>
-      <div className="github-access-debug">
-        <dl>
-          <div><dt>Last checked</dt><dd>{access.checkedAt ? formatDateTime(access.checkedAt, { seconds: true }) : 'Not checked yet'}</dd></div>
-          <div><dt>Push URL</dt><dd>{publication.urls.join(', ') || 'No push URL configured.'}</dd></div>
-          <div><dt>Git HTTPS</dt><dd>{gitHttpsModeLabel(publication.mode, publication.login)}</dd></div>
-          {access.lastOperation && <div><dt>Last Git</dt><dd>{lastGitOperationLabel(access.lastOperation)}</dd></div>}
-        </dl>
-        <p className="github-settings-note">Write permission is declared by GitHub. Branch policies can still reject a push.</p>
-        <div className="github-access-debug-actions">
-          <Button type="button" variant="outline" size="sm" onClick={() => void copy()} aria-label="Copy technical details">
-            <IconCopy />Copy details
-          </Button>
-        </div>
-      </div>
-    </details>
-  </div>;
+  return <Button type="button" variant="ghost" size="sm" onClick={() => void copy()}>
+    <IconCopy />Copy diagnostics
+  </Button>;
 }

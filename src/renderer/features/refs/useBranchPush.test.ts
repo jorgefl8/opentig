@@ -25,138 +25,90 @@ async function mount(cached: PublicationContext[] = []) {
   await act(async () => root.render(createElement(QueryClientProvider, { client }, createElement(Test))));
   return { get hook() { return hook; }, close: async () => { await act(async () => root.unmount()); client.clear(); container.remove(); } };
 }
-it('uses the displayed account/destination without an extra confirmation for an ordinary push', async () => {
+it('pushes from a fresh client without Settings, cached review or browser storage', async () => {
+  const get = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('No storage'); });
+  const set = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('No storage'); });
   const value = context('a'); refs.pushContext.mockResolvedValue(value); refs.push.mockResolvedValue({ status: 'success', commits: 1 });
-  const view = await mount([value]);
+  const view = await mount();
   try {
-    await act(async () => { expect(await view.hook.push('a', 'Project A')).toMatchObject({ status: 'success' }); });
+    await act(async () => { expect(await view.hook.push('a', 'A')).toMatchObject({ status: 'success' }); });
     expect(view.hook.remoteChoice).toBeUndefined();
     expect(refs.push).toHaveBeenCalledWith('a', { remote: 'origin', expectedBranch: 'main', expectedOid: value.oid }, value.id);
-  } finally { await view.close(); }
+    expect(get).not.toHaveBeenCalled(); expect(set).not.toHaveBeenCalled();
+  } finally { await view.close(); get.mockRestore(); set.mockRestore(); }
 });
-it('requires review when the effective account changes before publication', async () => {
-  const changed = context('a', 'bob'); refs.pushContext.mockResolvedValue(changed); refs.push.mockResolvedValue({ status: 'success', commits: 1 });
-  const view = await mount([context('a')]);
+
+it('uses the same server configuration from two independent clients and after switching branches', async () => {
+  const a = await mount(); const b = await mount();
+  refs.push.mockResolvedValue({ status: 'success', commits: 1 });
   try {
-    let result!: ReturnType<typeof view.hook.push>;
-    await act(async () => { result = view.hook.push('a', 'Project A'); await Promise.resolve(); });
-    expect(refs.push).not.toHaveBeenCalled(); expect(view.hook.remoteChoice?.repositoryId).toBe('a');
-    await act(async () => { view.hook.selectRemote(changed); await result; });
-    expect(refs.push.mock.calls[0]?.[2]).toBe(changed.id);
+    for (const branch of ['main', 'feature', 'main']) {
+      const value = { ...context('a'), branch, targetRef: `refs/heads/${branch}` };
+      refs.pushContext.mockResolvedValue(value);
+      for (const view of [a, b]) {
+        await act(async () => { await view.hook.push('a', 'A'); });
+        expect(view.hook.remoteChoice).toBeUndefined();
+        expect(refs.push).toHaveBeenLastCalledWith('a', { remote: 'origin', expectedBranch: branch, expectedOid: value.oid }, value.id);
+      }
+    }
+    expect(refs.push).toHaveBeenCalledTimes(6);
+  } finally { await a.close(); await b.close(); }
+});
+
+it('does not treat Settings cache as an approval or a configuration source', async () => {
+  const value = context('a', 'bob'); refs.pushContext.mockResolvedValue(value); refs.push.mockResolvedValue({ status: 'success', commits: 1 });
+  const view = await mount([context('a', 'alice')]);
+  try {
+    await act(async () => { await view.hook.push('a', 'A'); });
+    expect(view.hook.remoteChoice).toBeUndefined();
+    expect(refs.push.mock.calls[0]?.[2]).toBe(value.id);
   } finally { await view.close(); }
 });
-it('keeps concurrent project publications and errors attached to their own repositories', async () => {
+
+it('uses a fresh server context after new commits without another review', async () => {
+  const value = context('a'); const fresh = { ...value, id: 'fresh', oid: 'b'.repeat(40) };
+  refs.pushContext.mockResolvedValue(fresh); refs.push.mockResolvedValue({ status: 'success', commits: 1 });
+  const view = await mount();
+  try {
+    await act(async () => { await view.hook.push('a', 'A'); });
+    expect(refs.push).toHaveBeenCalledWith('a', { remote: 'origin', expectedBranch: 'main', expectedOid: fresh.oid }, 'fresh');
+  } finally { await view.close(); }
+});
+
+it('publishes a new branch directly when the server already resolves its destination', async () => {
+  const value = { ...context('a'), hasUpstream: false };
+  refs.pushContext.mockResolvedValue(value); refs.push.mockResolvedValue({ status: 'published', branch: 'main', remote: 'origin' });
+  const view = await mount();
+  try {
+    await act(async () => { expect(await view.hook.push('a', 'A')).toMatchObject({ status: 'published' }); });
+    expect(view.hook.remoteChoice).toBeUndefined();
+  } finally { await view.close(); }
+});
+
+it('only asks for a destination when it is genuinely missing and keeps concurrent repositories isolated', async () => {
   const a = context('a'); const b = context('b', 'bob');
-  refs.pushContext.mockImplementation(id => Promise.resolve(id === 'a' ? a : b));
+  refs.pushContext.mockImplementation(id => Promise.resolve({ ...(id === 'a' ? a : b), remote: null, urls: [], remotes: ['origin', 'fork'] }));
   refs.push.mockImplementation(id => Promise.resolve(id === 'a' ? { status: 'success', commits: 1 } : { status: 'rejected', reason: 'permission', message: 'B denied' }));
   const view = await mount();
   try {
     let first!: ReturnType<typeof view.hook.push>; let second!: ReturnType<typeof view.hook.push>;
-    await act(async () => { first = view.hook.push('a', 'Project A'); second = view.hook.push('b', 'Project B'); await Promise.resolve(); });
-    expect(view.hook.remoteChoice?.label).toBe('Project A');
+    await act(async () => { first = view.hook.push('a', 'A'); second = view.hook.push('b', 'B'); await Promise.resolve(); });
+    expect(refs.push).not.toHaveBeenCalled(); expect(view.hook.remoteChoice?.label).toBe('A');
     await act(async () => { view.hook.selectRemote(a); await first; });
-    expect(view.hook.remoteChoice?.label).toBe('Project B');
+    expect(view.hook.remoteChoice?.label).toBe('B');
     await act(async () => { view.hook.selectRemote(b); await second; });
-    expect(await first).toMatchObject({ status: 'success' }); expect(await second).toMatchObject({ status: 'rejected', message: 'B denied' });
+    expect(await second).toMatchObject({ status: 'rejected', message: 'B denied' });
     expect(refs.push.mock.calls.map(call => [call[0], call[2]])).toEqual([['a', a.id], ['b', b.id]]);
   } finally { await view.close(); }
 });
 
-it('remembers a reviewed publication so the next ordinary push needs no repeated review', async () => {
-  const value = context('a'); refs.pushContext.mockResolvedValue(value); refs.push.mockResolvedValue({ status: 'success', commits: 1 });
-  const view = await mount();
-  try {
-    let first!: ReturnType<typeof view.hook.push>;
-    await act(async () => { first = view.hook.push('a', 'Project A'); await Promise.resolve(); });
-    expect(view.hook.remoteChoice).toBeDefined();
-    await act(async () => { view.hook.selectRemote(value); await first; });
-    await act(async () => { expect(await view.hook.push('a', 'Project A')).toMatchObject({ status: 'success' }); });
-    expect(view.hook.remoteChoice).toBeUndefined();
-    expect(refs.push).toHaveBeenCalledTimes(2);
-  } finally { await view.close(); }
-});
-
-it('starts publication review with the effective push remote when it differs from the first remote', async () => {
-  const value = { ...context('a'), remote: 'fork', remotes: ['origin', 'fork'] };
-  refs.pushContext.mockResolvedValue(value);
+it('cancels a missing destination without pushing or saving an approval', async () => {
+  refs.pushContext.mockResolvedValue({ ...context('a'), remote: null });
   const view = await mount();
   try {
     let result!: ReturnType<typeof view.hook.push>;
-    await act(async () => { result = view.hook.push('a', 'Project A'); await Promise.resolve(); });
-    expect(view.hook.remoteChoice?.result.remotes).toEqual(['fork', 'origin']);
-    await act(async () => { view.hook.selectRemote(null); await result; });
-    expect(refs.push).not.toHaveBeenCalled();
+    await act(async () => { result = view.hook.push('a', 'A'); await Promise.resolve(); });
+    await act(async () => { view.hook.selectRemote(null); expect(await result).toBeNull(); });
+    expect(refs.push).not.toHaveBeenCalled(); expect(localStorage.length).toBe(0);
   } finally { await view.close(); }
-});
-
-it('keeps a confirmed push across a client reload and new commits, with a fresh server context', async () => {
-  const value = context('a'); refs.pushContext.mockResolvedValue(value); refs.push.mockResolvedValue({ status: 'success', commits: 1 });
-  const first = await mount();
-  try {
-    let result!: ReturnType<typeof first.hook.push>;
-    await act(async () => { result = first.hook.push('a', 'Project A'); await Promise.resolve(); });
-    expect(first.hook.remoteChoice?.hasUpstream).toBe(true);
-    await act(async () => { first.hook.selectRemote(value); await result; });
-  } finally { await first.close(); }
-  const updated = { ...value, id: 'fresh-server-context', oid: 'b'.repeat(40) };
-  refs.pushContext.mockResolvedValue(updated);
-  const reloaded = await mount();
-  try {
-    await act(async () => { expect(await reloaded.hook.push('a', 'Project A')).toMatchObject({ status: 'success' }); });
-    expect(reloaded.hook.remoteChoice).toBeUndefined();
-    expect(refs.push).toHaveBeenLastCalledWith('a', { remote: 'origin', expectedBranch: 'main', expectedOid: updated.oid }, updated.id);
-  } finally { await reloaded.close(); }
-});
-
-it.each(['login', 'mode', 'urls', 'remote', 'targetRef'] as const)('requires review after a persisted %s changes', async field => {
-  const value = context('a'); refs.pushContext.mockResolvedValue(value); refs.push.mockResolvedValue({ status: 'success', commits: 1 });
-  const first = await mount();
-  try {
-    let result!: ReturnType<typeof first.hook.push>;
-    await act(async () => { result = first.hook.push('a', 'Project A'); await Promise.resolve(); });
-    await act(async () => { first.hook.selectRemote(value); await result; });
-  } finally { await first.close(); }
-  const changes = { login: 'bob', mode: 'external', urls: ['https://github.com/alice/other.git'], remote: 'fork', targetRef: 'refs/heads/other' };
-  refs.pushContext.mockResolvedValue({ ...value, [field]: changes[field] });
-  refs.push.mockClear();
-  const reloaded = await mount();
-  try {
-    let result!: ReturnType<typeof reloaded.hook.push>;
-    await act(async () => { result = reloaded.hook.push('a', 'Project A'); await Promise.resolve(); });
-    expect(reloaded.hook.remoteChoice).toBeDefined();
-    expect(refs.push).not.toHaveBeenCalled();
-    await act(async () => { reloaded.hook.selectRemote(null); await result; });
-  } finally { await reloaded.close(); }
-});
-
-it('never remembers a canceled review', async () => {
-  const value = context('a'); refs.pushContext.mockResolvedValue(value);
-  const first = await mount();
-  try {
-    let result!: ReturnType<typeof first.hook.push>;
-    await act(async () => { result = first.hook.push('a', 'Project A'); await Promise.resolve(); });
-    await act(async () => { first.hook.selectRemote(null); expect(await result).toBeNull(); });
-  } finally { await first.close(); }
-  const reloaded = await mount();
-  try {
-    let result!: ReturnType<typeof reloaded.hook.push>;
-    await act(async () => { result = reloaded.hook.push('a', 'Project A'); await Promise.resolve(); });
-    expect(reloaded.hook.remoteChoice).toBeDefined();
-    await act(async () => { reloaded.hook.selectRemote(null); await result; });
-    expect(refs.push).not.toHaveBeenCalled();
-  } finally { await reloaded.close(); }
-});
-
-it('falls back to session review when browser storage is unavailable', async () => {
-  vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('Storage disabled'); });
-  vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('Storage disabled'); });
-  const value = context('a'); refs.pushContext.mockResolvedValue(value); refs.push.mockResolvedValue({ status: 'success', commits: 1 });
-  const view = await mount();
-  try {
-    let result!: ReturnType<typeof view.hook.push>;
-    await act(async () => { result = view.hook.push('a', 'Project A'); await Promise.resolve(); });
-    await act(async () => { view.hook.selectRemote(value); expect(await result).toMatchObject({ status: 'success' }); });
-    await act(async () => { expect(await view.hook.push('a', 'Project A')).toMatchObject({ status: 'success' }); });
-    expect(view.hook.remoteChoice).toBeUndefined();
-  } finally { await view.close(); vi.restoreAllMocks(); }
 });

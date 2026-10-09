@@ -117,3 +117,17 @@ it('broadcasts a default change to followers and their worktrees without affecti
   runtime.publishGitHubAccountsChange(undefined, true);
   expect(sink).toHaveBeenCalledExactlyOnceWith({ type: 'github.accounts-changed', repositoryIds: ['follower', 'worktree'], inventoryChanged: true });
 });
+
+it('broadcasts a repository account change and refreshed assignments to every connected client', () => {
+  const f = fixture(); const firstClient = vi.fn(); const secondClient = vi.fn();
+  f.services.repositories = { recents: () => [
+    { id: 'repo', commonDir: '/fixture/shared/.git' },
+    { id: 'worktree', commonDir: '/fixture/shared/.git' },
+    { id: 'clone', commonDir: '/fixture/clone/.git' },
+  ] } as typeof f.services.repositories;
+  const runtime = new OpenTigRuntime(f.services, event => { firstClient(event); secondClient(event); });
+  runtime.publishGitHubAccountsChange('/fixture/shared/.git');
+  const event = { type: 'github.accounts-changed', repositoryIds: ['repo', 'worktree'], inventoryChanged: true };
+  expect(firstClient).toHaveBeenCalledExactlyOnceWith(event);
+  expect(secondClient).toHaveBeenCalledExactlyOnceWith(event);
+});
