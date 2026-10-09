@@ -39,7 +39,7 @@ function ConflictSection({ scrollRef, changes, onSelect, onOpenFile }: { scrollR
   const mobile = useMobileLayout();
   const sortedChanges = useMemo(() => [...changes].sort((a, b) => a.path.localeCompare(b.path)), [changes]);
   const { listRef, scrollMargin } = useVirtualScrollMargin(scrollRef);
-  // eslint-disable-next-line react-hooks/incompatible-library -- TanStack Virtual is intentionally imperative.
+  // oxlint-disable-next-line react/incompatible-library -- TanStack Virtual is intentionally imperative.
   const virtualizer = useVirtualizer({
     count: sortedChanges.length,
     getScrollElement: () => scrollRef.current,
@@ -106,7 +106,7 @@ function ChangeSection({ scrollRef, displayMode, title, changes, disabled, actio
   const mobile = useMobileLayout();
   const { listRef, scrollMargin } = useVirtualScrollMargin(scrollRef);
   const rowHeight = mobile ? 48 : displayMode === 'list' ? 38 : 30;
-  // eslint-disable-next-line react-hooks/incompatible-library -- TanStack Virtual is intentionally imperative.
+  // oxlint-disable-next-line react/incompatible-library -- TanStack Virtual is intentionally imperative.
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => scrollRef.current,

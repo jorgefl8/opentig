@@ -9,9 +9,6 @@ updates:
       timezone: Europe/Madrid
     open-pull-requests-limit: 3
     ignore:
-      # typescript-eslint currently supports TypeScript <6.1.
-      - dependency-name: typescript
-        update-types: [version-update:semver-major]
       # Electron 44 requires migrating file/image clipboard integration.
       - dependency-name: electron
         update-types: [version-update:semver-major]

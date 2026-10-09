@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, createElement } from 'react';
+import { act, createElement, useLayoutEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -16,7 +16,11 @@ async function mount(cached: PublicationContext[] = []) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   for (const value of cached) client.setQueryData(publicationKey(value.repositoryId), value);
   let hook!: ReturnType<typeof useBranchPush>;
-  function Test() { hook = useBranchPush(); return null; }
+  function Test() {
+    const value = useBranchPush();
+    useLayoutEffect(() => { hook = value; }, [value]);
+    return null;
+  }
   const container = document.createElement('div'); document.body.append(container); const root = createRoot(container);
   await act(async () => root.render(createElement(QueryClientProvider, { client }, createElement(Test))));
   return { get hook() { return hook; }, close: async () => { await act(async () => root.unmount()); client.clear(); container.remove(); } };

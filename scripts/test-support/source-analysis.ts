@@ -1,46 +1,53 @@
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
-import ts from 'typescript';
+import { parseSync, Visitor, type JSXMemberExpression, type MemberExpression, type Node } from 'oxc-parser';
 
 export function analyzeSource(source: string, filename = 'source.ts') {
-  const tree = ts.createSourceFile(filename, source, ts.ScriptTarget.Latest, true, filename.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
+  const parsed = parseSync(filename, source);
+  if (parsed.errors.length) throw new SyntaxError(`Cannot analyze ${filename}: ${parsed.errors.map((error) => error.message).join('; ')}`);
+  const tree = parsed.program;
   const imports: string[] = [];
   const accesses: string[] = [];
   const names = new Map<string, string>();
-  function accessPath(node: ts.Node): string | undefined {
-    if (ts.isIdentifier(node)) return names.get(node.text) ?? node.text;
-    if (ts.isPropertyAccessExpression(node)) {
-      const parent = accessPath(node.expression);
-      return parent ? `${parent}.${node.name.text}` : undefined;
-    }
-    if (ts.isElementAccessExpression(node) && ts.isStringLiteral(node.argumentExpression)) {
-      const parent = accessPath(node.expression);
-      return parent ? `${parent}.${node.argumentExpression.text}` : undefined;
+  function accessPath(node: Node): string | undefined {
+    if (node.type === 'Identifier' || node.type === 'JSXIdentifier') return names.get(node.name) ?? node.name;
+    if (node.type === 'MemberExpression' || node.type === 'JSXMemberExpression') {
+      const parent = accessPath(node.object);
+      const property = node.type === 'JSXMemberExpression' ? node.property.name
+        : node.computed ? node.property.type === 'Literal' && typeof node.property.value === 'string' ? node.property.value : undefined
+          : node.property.type === 'Identifier' ? node.property.name : undefined;
+      return parent && property ? `${parent}.${property}` : undefined;
     }
   }
-  function visit(node: ts.Node) {
-    if ((ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) && node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier)) {
-      imports.push(node.moduleSpecifier.text);
-    } else if (ts.isImportEqualsDeclaration(node) && ts.isExternalModuleReference(node.moduleReference) && node.moduleReference.expression && ts.isStringLiteral(node.moduleReference.expression)) {
-      imports.push(node.moduleReference.expression.text);
-    } else if (ts.isCallExpression(node) && (node.expression.kind === ts.SyntaxKind.ImportKeyword || (ts.isIdentifier(node.expression) && node.expression.text === 'require'))) {
-      const argument = node.arguments[0];
-      if (argument && ts.isStringLiteral(argument)) imports.push(argument.text);
-    }
-    if (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) {
-      const name = accessPath(node);
-      if (name) accesses.push(name);
-    }
-    ts.forEachChild(node, visit);
+  function collectAccess(node: MemberExpression | JSXMemberExpression) {
+    const name = accessPath(node);
+    if (name) accesses.push(name);
   }
   // Resolve named import aliases before examining member access.
-  for (const node of tree.statements) {
-    if (!ts.isImportDeclaration(node) || !node.importClause?.namedBindings || !ts.isNamedImports(node.importClause.namedBindings)) continue;
-    for (const binding of node.importClause.namedBindings.elements) {
-      names.set(binding.name.text, binding.propertyName?.text ?? binding.name.text);
+  for (const node of tree.body) {
+    if (node.type !== 'ImportDeclaration') continue;
+    for (const binding of node.specifiers) {
+      if (binding.type === 'ImportSpecifier') names.set(binding.local.name, binding.imported.type === 'Identifier' ? binding.imported.name : binding.imported.value);
     }
   }
-  visit(tree);
+  new Visitor({
+    ImportDeclaration(node) { imports.push(node.source.value); },
+    ExportAllDeclaration(node) { imports.push(node.source.value); },
+    ExportNamedDeclaration(node) { if (node.source) imports.push(node.source.value); },
+    TSImportEqualsDeclaration(node) {
+      if (node.moduleReference.type === 'TSExternalModuleReference') imports.push(node.moduleReference.expression.value);
+    },
+    ImportExpression(node) {
+      if (node.source.type === 'Literal' && typeof node.source.value === 'string') imports.push(node.source.value);
+    },
+    CallExpression(node) {
+      if (node.callee.type !== 'Identifier' || node.callee.name !== 'require') return;
+      const argument = node.arguments[0];
+      if (argument?.type === 'Literal' && typeof argument.value === 'string') imports.push(argument.value);
+    },
+    MemberExpression: collectAccess,
+    JSXMemberExpression: collectAccess,
+  }).visit(tree);
   return { imports, accesses };
 }
 
