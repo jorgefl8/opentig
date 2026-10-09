@@ -92,9 +92,17 @@ describe('repository Git access and publication', () => {
     const f = await fixture(true); await f.select('alice', 'external');
     await git(f.work, ['commit', '--allow-empty', '-m', 'Local']);
     const context = await f.service.publication(f.repositoryId);
+    expect(context.hasUpstream).toBe(true);
     expect(await f.operations.push(f.repositoryId, undefined, context.id)).toMatchObject({ status: 'success' });
     expect(await f.operations.fetch(f.repositoryId)).toMatchObject({ status: 'success' });
     expect(f.run).not.toHaveBeenCalled();
+  });
+
+  it('distinguishes a new branch from an existing upstream for publication review', async () => {
+    const f = await fixture(true);
+    expect((await f.service.publication(f.repositoryId)).hasUpstream).toBe(true);
+    await git(f.work, ['switch', '-c', 'feature/new']);
+    expect((await f.service.publication(f.repositoryId)).hasUpstream).toBe(false);
   });
 
   it('routes all read and write commands through the selected credential and cleans each broker', async () => {

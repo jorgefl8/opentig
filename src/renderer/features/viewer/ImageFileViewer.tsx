@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { IconZoomIn, IconZoomOut } from '@tabler/icons-react';
+import { IconLoader4, IconZoomIn, IconZoomOut } from '@tabler/icons-react';
 import type { FileResult, ImageFileResult, ThemePreference, WriteFileResult } from '@shared/contracts';
 import { Button } from '@/components/ui/button';
+import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { ViewerTabs, ViewerTabsList, ViewerTabsPanel } from '@/components/ui/viewer-tabs';
 import { FileSaveControls, SourceCodeEditor } from './EditableFileViewer';
@@ -226,7 +227,7 @@ function ImagePreviewWorkspace({ objectUrl, path, size, toolbarStart, toolbarEnd
         }}
       >
         {!objectUrl ? (
-          <span className="image-preview-loading">Loading image…</span>
+          <span className="image-preview-loading"><IconLoader4 className="animate-spin" aria-hidden="true" /><ShimmeringText text="Loading image…" /></span>
         ) : decodeError ? (
           <ImageViewerMessage title="Could not decode this image" detail={path} />
         ) : (

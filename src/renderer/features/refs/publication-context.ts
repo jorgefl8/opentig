@@ -5,6 +5,19 @@ export function publicationIdentity(context: Context) {
   return JSON.stringify([context.remote, context.urls, context.targetRef, context.mode, context.login]);
 }
 
+/** Client-local review only; the server still validates each fresh context before a push. */
+export function hasReviewedPublication(context: Context): boolean {
+  try { return window.localStorage.getItem(reviewKey(context.repositoryId)) === publicationIdentity(context); }
+  catch { return false; }
+}
+
+export function rememberPublication(context: Context): void {
+  try { window.localStorage.setItem(reviewKey(context.repositoryId), publicationIdentity(context)); }
+  catch { /* Unavailable storage leaves the in-memory review working for this session. */ }
+}
+
+const reviewKey = (repositoryId: string) => `opentig.push-review.v1:${repositoryId}`;
+
 export function publicationDestination(context: Context): string {
   return context.urls.map(value => {
     try {

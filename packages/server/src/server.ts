@@ -134,9 +134,11 @@ function validateAdmin(admin: { token: string; instanceId: string }): { token: s
   return admin;
 }
 
-/** Assets resolve beside bundled server entry, never from process.cwd(). */
+/** Assets resolve from the build root, including when shared code lives in chunks/. */
 export function resolveServerClientRoot(moduleUrl: string = import.meta.url): string {
-  return fileURLToPath(new URL('./client/', moduleUrl));
+  const directory = path.dirname(fileURLToPath(moduleUrl));
+  const buildRoot = path.basename(directory) === 'chunks' ? path.dirname(directory) : directory;
+  return path.join(buildRoot, 'client');
 }
 
 function pairingLink(origin: string, pairing: { token: string; expiresAt: string }): { url: string; expiresAt: string } {

@@ -1,3 +1,4 @@
+import { RepositoryAiInstructions } from '../ai/RepositoryAiInstructions';
 import type { OpenTigPlatform, OpenTigRuntimeMode } from '../../shared/contracts';
 import path from 'node:path';
 import { aiExecutablePathsKey } from '../../shared/ai-status';
@@ -70,11 +71,12 @@ export async function createOpenTigRuntime(
   ];
   const aiLog = new AiLogStore(options.aiLogPath);
   await aiLog.load();
+  const aiInstructions = new RepositoryAiInstructions(repositories, settings);
   const ai = new CommitMessageService(operations, providers, aiLog, () => cliResolver.invalidate(), {
     store: new AiStatusStore(path.join(path.dirname(options.settingsPath), 'ai-statuses.json')),
     key: () => aiExecutablePathsKey(settings.preferences.aiExecutablePaths),
-  });
-  const prDrafts = new PullRequestDraftService(operations, providers, aiLog);
+  }, aiInstructions);
+  const prDrafts = new PullRequestDraftService(operations, providers, aiLog, aiInstructions);
   let runtime: OpenTigRuntime | null = null;
   const githubAccounts = new GitHubAccountsService(cliResolver, cliRunner, git, settings,
     new GitHubStatusStore(path.join(path.dirname(options.settingsPath), 'github-status.json')),
@@ -85,6 +87,7 @@ export async function createOpenTigRuntime(
   const github = new GitHubService(cliResolver, cliRunner, git, repositories, githubAccounts);
   github.gitAccess = gitAccess;
   const events = {
+    aiInstructionsChanged: (commonDir: string) => runtime?.publishAiInstructionsChange(commonDir),
     repositoryChanged: (repositoryId: string, scope: Parameters<OpenTigRuntime['publishRepositoryChange']>[1]) => {
       runtime?.publishRepositoryChange(repositoryId, scope);
     },
@@ -109,6 +112,7 @@ export async function createOpenTigRuntime(
     operations,
     watcher,
     ai,
+    aiInstructions,
     cliRunner,
     aiLog,
     problems,

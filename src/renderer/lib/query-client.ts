@@ -21,6 +21,7 @@ export const queryKeys = {
   githubAccounts: ['github', 'accounts'] as const,
   githubCliStatus: ['github', 'cli-status'] as const,
   githubAccount: (repositoryId: string) => ['repository', repositoryId, 'github-account'] as const,
+  aiRepositoryInstructions: (repositoryId: string) => ['repository', repositoryId, 'ai-instructions'] as const,
   aiStatuses: (executablePathsKey: string) => ['ai', 'statuses', executablePathsKey] as const,
   repository: (repositoryId: string) => ['repository', repositoryId] as const,
   status: (repositoryId: string) => ['repository', repositoryId, 'status'] as const,

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type PropsWithChildren } from 'react';
 import { EditProvider } from '@pierre/diffs/react';
-import type { EditorOptions } from '@pierre/diffs/edit';
+import type { EditorFactory } from '@pierre/diffs/react';
 import { sileo } from 'sileo';
 import { readClipboardText } from '@/lib/browser-capabilities';
 import { EditReadyContext } from './edit-ready-context';
@@ -30,12 +30,12 @@ export function PierreEditBoundary({ enabled, children }: PropsWithChildren<{ en
     return () => { active = false; };
   }, [EditorClass, enabled]);
 
-  const createEditor = useCallback((options: EditorOptions<undefined>) => {
+  const createEditor = useCallback<EditorFactory<undefined, undefined>>((editorType, options, editStateKey) => {
     if (!EditorClass) throw new Error('Pierre edit mode has not loaded.');
-    return new EditorClass({
+    return new EditorClass(editorType, {
       clipboard: { readText: () => readClipboardText() },
       ...options,
-    });
+    }, editStateKey);
   }, [EditorClass]);
 
   if (!EditorClass) return <EditReadyContext.Provider value={false}>{children}</EditReadyContext.Provider>;

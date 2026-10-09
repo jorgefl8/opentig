@@ -11,6 +11,8 @@ export interface PublicationContext {
   remotes: string[];
   mode: 'managed' | 'external';
   login: string | null;
+  /** Whether this branch already tracks a remote branch. */
+  hasUpstream?: boolean;
   blocked?: string;
 }
 export interface RepositoryAccess {

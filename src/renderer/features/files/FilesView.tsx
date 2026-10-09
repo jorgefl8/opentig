@@ -7,6 +7,7 @@ import {
 } from '@dnd-kit/core';
 import {
   IconSearch, IconDots, IconArrowBackUp, IconArrowForwardUp, IconChevronRight, IconClipboard, IconColumns2, IconCopy, IconCut, IconEdit,
+  IconLoader4,
   IconExternalLink, IconFileArrowRight, IconFilePlus, IconFiles, IconFileText, IconFolderPlus, IconTrash,
 } from '@tabler/icons-react';
 import type { FileHistoryState } from '@shared/contracts';
@@ -400,7 +401,7 @@ function DesktopFilesView({
   }, [rows, rowByPath, scrollTop, activePath, rowHeight]);
 
   if (visibleFiles === null) {
-    return <div className="view-loading" role="status" hidden={!active}><ShimmeringText text="Loading files…" /></div>;
+    return <div className="view-loading" role="status" hidden={!active}><IconLoader4 className="spinner" aria-hidden="true" /><ShimmeringText text="Loading files…" /></div>;
   }
 
   // When nothing is explicitly selected, mirror the open file so it stays highlighted.

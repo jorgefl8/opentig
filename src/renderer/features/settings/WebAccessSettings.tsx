@@ -16,6 +16,7 @@ import {
 } from '@tabler/icons-react';
 import { renderSVG } from 'uqr';
 import { sileo } from 'sileo';
+import { ShimmeringText } from '@/components/ui/shimmering-text';
 import type { OpenTigPairingLink, OpenTigWebAccessStatus } from '@shared/desktop-api';
 import type { OpenTigOwnerSession } from '@shared/server-protocol';
 import { Badge } from '@/components/ui/badge';
@@ -147,7 +148,7 @@ export function WebAccessSettings() {
     : '', [pairing]);
 
   if (loading && !(desktopApi ? status : browserStatus) && sessions.length === 0) {
-    return <div className="web-access-loading" role="status"><IconLoader4 className="animate-spin" /> Loading web access…</div>;
+    return <div className="web-access-loading" role="status"><IconLoader4 className="animate-spin" aria-hidden="true" /><ShimmeringText text="Loading web access…" /></div>;
   }
 
   const changeExposure = async (enabled: boolean) => {
@@ -432,7 +433,7 @@ export function WebAccessSettings() {
           <div className="web-access-pairing" role="status">
             <div className="web-access-pairing-copy">
               {pairing ? <IconQrcode aria-hidden="true" /> : <IconLoader4 className="animate-spin" aria-hidden="true" />}
-              <div><strong>{pairing ? 'Pairing link ready' : 'Creating pairing link…'}</strong><span>{pairing ? `Expires ${formatDateTime(pairing.expiresAt, { seconds: true })}.` : 'You can close this while the link is being created.'}</span></div>
+              <div><strong>{pairing ? 'Pairing link ready' : <ShimmeringText text="Creating pairing link…" />}</strong><span>{pairing ? `Expires ${formatDateTime(pairing.expiresAt, { seconds: true })}.` : 'You can close this while the link is being created.'}</span></div>
               <Tooltip><TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Close pairing link" onClick={dismissPairing} />}><IconX /></TooltipTrigger><TooltipContent>Close pairing link</TooltipContent></Tooltip>
             </div>
             {pairing && <>

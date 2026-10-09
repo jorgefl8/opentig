@@ -4,6 +4,7 @@ import type { RemoteBranchDetails } from '@shared/git-types';
 import type { PullRequestSummary } from '@shared/contracts';
 import { formatDateTime } from '@shared/date-format';
 import { Button } from '@/components/ui/button';
+import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { openOnGitHub, prStateLabel } from '@/features/pulls/gh-utils';
 
 interface Props {
@@ -58,17 +59,17 @@ export function RemoteBranchDetailPanel(props: Props) {
       <label htmlFor="tracking-branch-name">Local branch name</label>
       <input id="tracking-branch-name" value={localName} onChange={(event) => setLocalName(event.target.value)} disabled={anyBusy} autoFocus autoComplete="off" spellCheck={false} />
       <p>Creates a tracking branch at the fetched tip. Your checkout and uncommitted changes stay intact.</p>
-      <div className="local-refs-detail-actions"><Button type="submit" variant="outline" size="sm" disabled={anyBusy || !localName.trim()}>{props.creating ? <IconLoader4 className="animate-spin" /> : <IconGitBranch />} {props.creating ? 'Creating…' : 'Create local branch'}</Button><Button type="button" variant="ghost" size="sm" disabled={anyBusy} onClick={() => setCreateOpen(false)}>Cancel</Button></div>
+      <div className="local-refs-detail-actions"><Button type="submit" variant="outline" size="sm" disabled={anyBusy || !localName.trim()}>{props.creating ? <IconLoader4 className="animate-spin" /> : <IconGitBranch />} {props.creating ? <ShimmeringText text="Creating…" /> : 'Create local branch'}</Button><Button type="button" variant="ghost" size="sm" disabled={anyBusy} onClick={() => setCreateOpen(false)}>Cancel</Button></div>
     </form>}
     <div className={`local-refs-danger ${details.deletionBlockedReason ? 'blocked' : 'ready'}`}>
       {details.deletionBlockedReason ? <>
         <p className="local-refs-reason"><IconAlertTriangle aria-hidden="true" /><span>{missing ? `This branch was already deleted from ${details.remote}. Only its cached reference remains; there is no remote branch to delete.` : details.deletionBlockedReason}</span></p>
-        {missing && <Button variant="outline" size="sm" disabled={anyBusy} onClick={props.onFetch}>{props.fetching ? <IconLoader4 className="animate-spin" /> : <IconRefresh />}{props.fetching ? 'Fetching…' : 'Fetch and clean up'}</Button>}
+        {missing && <Button variant="outline" size="sm" disabled={anyBusy} onClick={props.onFetch}>{props.fetching ? <IconLoader4 className="animate-spin" /> : <IconRefresh />}{props.fetching ? <ShimmeringText text="Fetching…" /> : 'Fetch and clean up'}</Button>}
       </>
         : props.confirming ? <div className="local-refs-confirm" role="alert">
           <IconAlertTriangle aria-hidden="true" />
           <p>Delete <strong>{details.branchName}</strong> from <strong>{details.remote}</strong>? This removes the branch on the remote server. Your local branches, commits and worktrees stay intact.</p>
-          <span className="local-refs-confirm-actions"><Button variant="destructive" size="sm" disabled={anyBusy} onClick={props.onDelete}>{props.deleting ? <IconLoader4 className="animate-spin" /> : <IconTrash />}{props.deleting ? 'Deleting…' : `Delete from ${details.remote}`}</Button><Button variant="ghost" size="sm" disabled={anyBusy} onClick={props.onCancel}>Cancel</Button></span>
+          <span className="local-refs-confirm-actions"><Button variant="destructive" size="sm" disabled={anyBusy} onClick={props.onDelete}>{props.deleting ? <IconLoader4 className="animate-spin" /> : <IconTrash />}{props.deleting ? <ShimmeringText text="Deleting…" /> : `Delete from ${details.remote}`}</Button><Button variant="ghost" size="sm" disabled={anyBusy} onClick={props.onCancel}>Cancel</Button></span>
         </div> : <>
           <p className="local-refs-reason"><IconCloud aria-hidden="true" /><span>Delete only this branch from {details.remote}. Local branches and worktrees are kept.</span></p>
           <Button variant="destructive" size="sm" disabled={anyBusy} onClick={props.onConfirm}><IconTrash />Delete from {details.remote}</Button>

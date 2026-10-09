@@ -164,3 +164,21 @@ it('transports global defaults and the reviewed setup revision without exposing 
   f.event({ type: 'github.accounts-changed', repositoryIds: ['repo'], inventoryChanged: true });
   expect(changed).toHaveBeenCalledWith(['repo'], true);
 });
+
+it('routes repository AI instructions and notifies only instruction listeners, without notifying account listeners', async () => {
+  const f = transportFixture();
+  const client = createOpenTigServerClient({ transport: f.transport });
+  const changed = vi.fn(); const accountsChanged = vi.fn();
+  const unsubscribe = client.api.events.onAiInstructionsChanged(changed);
+  client.api.events.onGitHubAccountsChanged(accountsChanged);
+  await client.api.ai.repositoryInstructions('repo');
+  expect(f.request).toHaveBeenCalledWith(IPC.aiRepositoryInstructions, ['repo']);
+  await client.api.ai.setRepositoryInstructions('repo', true);
+  expect(f.request).toHaveBeenCalledWith(IPC.aiSetRepositoryInstructions, ['repo', true]);
+  f.event({ type: 'ai.instructions-changed', repositoryIds: ['repo', 'worktree'] });
+  expect(changed).toHaveBeenCalledWith(['repo', 'worktree']);
+  expect(accountsChanged).not.toHaveBeenCalled();
+  unsubscribe();
+  f.event({ type: 'ai.instructions-changed', repositoryIds: ['repo'] });
+  expect(changed).toHaveBeenCalledOnce();
+});

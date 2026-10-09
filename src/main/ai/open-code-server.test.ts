@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -15,7 +15,9 @@ describe('startOpenCodeV2Server', () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), 'opentig-opencode2-'));
     temporaryDirectories.push(directory);
     const script = path.join(directory, 'fake-serve.js');
+    const authentication = path.join(directory, 'server-auth.json');
     await writeFile(script, [
+      'require("node:fs").writeFileSync(process.env.TEST_AUTH_OUTPUT, JSON.stringify({ username: process.env.OPENCODE_SERVER_USERNAME, password: process.env.OPENCODE_SERVER_PASSWORD, config: process.env.OPENCODE_CONFIG }));',
       'const port = process.argv[process.argv.indexOf("--port") + 1];',
       'process.stdout.write("server listening on http://127.0.0.1:" + port + "\\n");',
       'setInterval(() => {}, 1000);',
@@ -28,10 +30,14 @@ describe('startOpenCodeV2Server', () => {
       await writeFile(executable, `#!/bin/sh\nexec "${process.execPath}" "${script}" "$@"\n`, { mode: 0o755 });
     }
 
-    const server = await startOpenCodeV2Server({ executable, timeoutMs: 5_000 });
+    const server = await startOpenCodeV2Server({ executable, timeoutMs: 5_000,
+      env: { TEST_AUTH_OUTPUT: authentication, OPENCODE_SERVER_USERNAME: 'inherited', OPENCODE_SERVER_PASSWORD: 'inherited', OPENCODE_CONFIG: 'untrusted.json' },
+      removeEnv: ['OPENCODE_SERVER_USERNAME', 'OPENCODE_SERVER_PASSWORD', 'OPENCODE_CONFIG'],
+    });
     try {
       expect(server.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/);
       expect(server.password).toMatch(/^[A-Za-z0-9_-]+$/);
+      expect(JSON.parse(await readFile(authentication, 'utf8'))).toEqual({ username: 'opencode', password: server.password });
     } finally {
       server.close();
     }

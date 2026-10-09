@@ -86,3 +86,28 @@ it('shows truncated descriptions and dismisses the tooltip when a resize makes t
     expect(document.querySelector('[data-slot="tooltip-content"][data-open]')).toBeNull();
   } finally { width.mockRestore(); available.mockRestore(); }
 });
+
+it.each([undefined, 'branch-picker'])('keeps a truncated trigger tooltip open until the dropdown opens (id: %s)', async triggerId => {
+  const label = 'feat/ai-generation-isolation';
+  const width = vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockReturnValue(240);
+  const available = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(160);
+  try {
+    await act(async () => root.render(createElement(TooltipProvider, { delay: 0 }, createElement(SearchablePicker, {
+      key: 'branch', ...(triggerId ? { triggerId } : {}),
+      groups: [{ id: 'branches', label: 'Branches', items: [{ value: label, label }] }],
+      value: label, onValueChange, label: 'Select branch', triggerLabel: label, placeholder: 'Search branches…',
+    }))));
+    const trigger = document.querySelector<HTMLButtonElement>('[role="combobox"]')!;
+    await act(async () => {
+      trigger.dispatchEvent(new MouseEvent('mouseenter', { bubbles: false }));
+      trigger.dispatchEvent(new MouseEvent('mousemove', { bubbles: true }));
+      await new Promise(resolve => setTimeout(resolve, 100));
+    });
+    expect(document.querySelector('[data-slot="tooltip-content"][data-open]')?.textContent).toBe(label);
+    expect(trigger.querySelector('button')).toBeNull();
+    await act(async () => trigger.click());
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
+    expect(document.querySelector('[data-slot="tooltip-content"][data-open]')).toBeNull();
+    expect(option(label)).toBeDefined();
+  } finally { width.mockRestore(); available.mockRestore(); }
+});

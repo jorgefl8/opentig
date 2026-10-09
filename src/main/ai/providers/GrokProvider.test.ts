@@ -12,7 +12,7 @@ const originalOverlay = process.env.GROK_CONFIG;
 afterEach(() => { if (originalOverlay === undefined) delete process.env.GROK_CONFIG; else process.env.GROK_CONFIG = originalOverlay; });
 
 function fixture(response: CliRunResult = { exitCode: 0, stderr: '', stdout: JSON.stringify({ stopReason: 'end_turn', structuredOutput: { subject: 'Add feature', body: '' }, usage: { input_tokens: 10, output_tokens: 5, cache_read_input_tokens: 2 } }) }) {
-  const resolver = { discover: vi.fn(async () => [{ executable: '/bin/grok', alias: 'grok', source: 'process-path', env: {} }]), warning: async () => undefined } as unknown as CliResolver;
+  const resolver = { discover: vi.fn(async () => [{ executable: '/bin/grok', alias: 'grok', source: 'process-path', env: { GROK_CONFIG_CONTENT: 'untrusted refreshed configuration' } }]), warning: async () => undefined } as unknown as CliResolver;
   const run = vi.fn(async (...call: [string, string[], CliRunOptions?]): Promise<CliRunResult> => {
     const args = call[1];
     const stdout = args[0] === '--version' ? 'grok 1.0.46 (revision) [stable]'
@@ -29,6 +29,8 @@ describe('GrokProvider', () => {
   it('discovers status and removes the temporary profile', async () => {
     const { provider, run } = fixture();
     expect(await provider.status(true)).toMatchObject({ id: 'grok', installed: true, availability: 'ready', authStatus: 'authenticated', models: [{ id: 'default' }, { id: 'grok-test' }] });
+    const inspected = run.mock.calls.find(([, args]) => args[0] === 'inspect');
+    expect(inspected?.[2]?.removeEnv).toContain('GROK_CONFIG_CONTENT');
     const temporary = run.mock.calls[0]?.[2]?.cwd;
     expect(temporary).toBeTruthy();
     await expect(access(temporary!)).rejects.toThrow();

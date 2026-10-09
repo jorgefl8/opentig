@@ -103,12 +103,16 @@
 }
 
 .image-preview-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   border-radius: var(--radius-md);
   background: color-mix(in oklch, var(--background) 86%, transparent);
   padding: 8px 12px;
   color: var(--muted-foreground);
   font-size: 11px;
 }
+.image-preview-loading svg { width: 15px; height: 15px; flex: none; color: var(--primary); }
 
 .image-viewer-message {
   display: flex;

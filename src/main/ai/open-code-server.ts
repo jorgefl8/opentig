@@ -26,6 +26,7 @@ export interface OpenCodeV2Server {
 export async function startOpenCodeV2Server(options: {
   executable: string;
   env?: Record<string, string>;
+  removeEnv?: string[];
   cwd?: string;
   timeoutMs?: number;
   signal?: AbortSignal;
@@ -37,10 +38,11 @@ export async function startOpenCodeV2Server(options: {
     Object.entries({
       ...process.env,
       ...options.env,
-      OPENCODE_SERVER_USERNAME: SERVER_USERNAME,
-      OPENCODE_SERVER_PASSWORD: password,
     }).filter((entry): entry is [string, string] => entry[1] !== undefined),
   ));
+  for (const key of options.removeEnv ?? []) delete environment[key];
+  environment.OPENCODE_SERVER_USERNAME = SERVER_USERNAME;
+  environment.OPENCODE_SERVER_PASSWORD = password;
   const resolved = resolveProcessCommand(options.executable, options.cwd ?? process.cwd(), environment);
   if (!resolved.found) {
     throw new AiOperationError({ code: 'AI_PROCESS_FAILED', operation: 'opencode-server', harness: 'opencode', message: 'Could not start the local OpenCode server.', retryable: true });

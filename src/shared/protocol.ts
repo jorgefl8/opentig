@@ -114,6 +114,8 @@ export const OPEN_TIG_SERVER_COMMANDS = {
   'refs.deleteBranch': command(IPC.branchDelete, 'delete-branch', true),
   'refs.removeWorktree': command(IPC.worktreeRemove, 'remove-worktree', true),
 
+  'ai.repositoryInstructions': command(IPC.aiRepositoryInstructions, 'ai-repository-instructions', false),
+  'ai.setRepositoryInstructions': command(IPC.aiSetRepositoryInstructions, 'ai-set-repository-instructions', true),
   'ai.statuses': command(IPC.aiStatuses, 'ai-statuses', false),
   'ai.generateCommitMessage': command(IPC.aiGenerateCommitMessage, 'ai-generate-commit-message', true, { timeoutMs: AI_SERVER_TIMEOUT_MS }),
   'ai.log': command(IPC.aiLog, 'ai-log', false),

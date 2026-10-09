@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogClose, DialogDescription, DialogPopup, DialogTitle } from '@/components/ui/dialog';
+import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { opentig } from '@/lib/opentig-api';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
@@ -301,7 +302,7 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
           aria-labelledby={`local-refs-tab-${tab}`}
         >
           <div className="local-refs-list" role="listbox" aria-label={tab === 'branches' ? 'Branches' : 'Worktrees'} tabIndex={-1}>
-            {loading && !snapshot && <p className="local-refs-placeholder"><IconLoader4 className="animate-spin" aria-hidden="true" /> Reading the repository…</p>}
+            {loading && !snapshot && <p className="local-refs-placeholder"><IconLoader4 className="animate-spin" aria-hidden="true" /><ShimmeringText text="Reading the repository…" /></p>}
             {!loading && listEmpty && (
               <p className="local-refs-placeholder">{query || remoteFilter ? 'No matches for these filters.' : `This repository has no ${tab === 'branches' ? `${branchScope === 'all' ? '' : `${branchScope} `}branches` : 'worktrees'}.`}</p>
             )}
@@ -354,7 +355,7 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
 
           <div className="local-refs-detail">
             {detailsError && <div className="local-refs-error" role="alert"><IconAlertTriangle aria-hidden="true" /><span>{detailsError}</span></div>}
-            {detailsLoading && <p className="local-refs-placeholder"><IconLoader4 className="animate-spin" aria-hidden="true" /> Loading details…</p>}
+            {detailsLoading && <p className="local-refs-placeholder"><IconLoader4 className="animate-spin" aria-hidden="true" /><ShimmeringText text="Loading details…" /></p>}
             {!detailsLoading && !detailsError && tab === 'branches' && remoteDetails && branch?.remote && <RemoteBranchDetailPanel
               details={remoteDetails} pullRequest={branchPullRequest} anyBusy={Boolean(busy)} deleting={busy === 'delete-remote-branch'} creating={busy === 'create-tracking-branch'}
               confirming={confirming === 'delete-remote-branch'} onConfirm={() => setConfirming('delete-remote-branch')} onCancel={() => setConfirming(null)}
@@ -547,7 +548,7 @@ function DestructiveSection({ tone, reason, actionError, confirming, busy, anyBu
           <p>{confirmation}</p>
           <span className="local-refs-confirm-actions">
             <Button variant="destructive" size="sm" onClick={onAct} disabled={busy}>
-              {busy ? <IconLoader4 className="animate-spin" /> : <IconTrash />} {confirmLabel}
+              {busy ? <IconLoader4 className="animate-spin" /> : <IconTrash />} {busy ? <ShimmeringText text={confirmLabel} /> : confirmLabel}
             </Button>
             <Button variant="ghost" size="sm" onClick={onCancel} disabled={busy}>Cancel</Button>
           </span>

@@ -5,17 +5,17 @@ import { sileo } from 'sileo';
 import type { RepositoryAccess, AccessCheck } from '@shared/repository-access';
 import { formatDateTime } from '@shared/date-format';
 import { Button } from '@/components/ui/button';
+import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { publicationDestination, publicationKey } from '@/features/refs/publication-context';
 import { writeClipboardText } from '@/lib/browser-capabilities';
 import { accessStateLabels, gitHttpsModeLabel, lastGitOperationLabel, repositoryAccessDebugText } from './github-access-copy';
 
-function checkLabel(label: string, check: AccessCheck, checking: boolean): string {
-  if (checking) return 'Checking…';
+function checkLabel(label: string, check: AccessCheck): string {
   if (check.state === 'ok' && label === 'Write permission') return 'Declared by GitHub';
   return accessStateLabels[check.state];
 }
 
-export function RepositoryAccessStatus({ access, checking }: { access: RepositoryAccess; checking: boolean }) {
+export function RepositoryAccessStatus({ access, checking, accountLogin }: { access: RepositoryAccess; checking: boolean; accountLogin?: string | null }) {
   const client = useQueryClient();
   const { publication } = access;
   const failed = access.lastOperation && !access.lastOperation.ok ? access.lastOperation : null;
@@ -24,7 +24,7 @@ export function RepositoryAccessStatus({ access, checking }: { access: Repositor
   const checks = [['Account', access.identity], ['GitHub / PRs', access.api], ['Git read', access.read], ['Write permission', access.write]] as const;
   const copy = async () => {
     try {
-      await writeClipboardText(repositoryAccessDebugText(access));
+      await writeClipboardText(repositoryAccessDebugText(access, accountLogin));
       sileo.success({ title: 'Copied technical details' });
     } catch (error) {
       sileo.error({ title: 'Could not copy technical details', description: error instanceof Error ? error.message : 'The request could not be completed.' });
@@ -32,11 +32,12 @@ export function RepositoryAccessStatus({ access, checking }: { access: Repositor
   };
   return <div className="repository-access-status" aria-busy={checking}>
     <dl className="github-access-grid">{checks.map(([label, check]) => <div key={label}>
-      <dt>{label}</dt><dd data-state={checking ? 'checking' : check.state}>
+      <dt>{label}{label === 'Write permission' && accountLogin ? ` · @${accountLogin}` : ''}</dt><dd data-state={checking ? 'checking' : check.state}>
         <span className="github-access-dot" aria-hidden="true" />
-        {checkLabel(label, check, checking)}
+        {checking ? <ShimmeringText text="Checking…" /> : checkLabel(label, check)}
       </dd>
     </div>)}</dl>
+    {publication.mode === 'external' && <p className="github-settings-note" role="status">These GitHub checks do not verify access with Git's own credentials. The account used for fetch and push is unverified.</p>}
     <div className="github-push-destination">
       <span className="github-settings-eyebrow">Push destination</span>
       <strong>{publicationDestination(publication)}</strong>

@@ -1,3 +1,4 @@
+import { withGenerationEnvironment } from '../GenerationEnvironment';
 import { detectionFailure, detectionFields, requireCandidate, runCandidate, selectCli } from '../cli-selection';
 import type { CliCandidate } from '../CliResolver';
 import { EMPTY_AI_USAGE } from '../../../shared/ai-log';
@@ -74,24 +75,26 @@ export class OpenCodeProvider implements AiProvider {
   }
 
   private async generateV2(executable: CliCandidate, input: ProviderGenerateInput) {
-    const server = await startOpenCodeV2Server({ executable: executable.executable, env: executable.env, cwd: input.repositoryPath, timeoutMs: 15_000, signal: input.signal }).catch((error) => {
-      if (error instanceof AiOperationError) throw error;
-      throw new AiOperationError({ code: 'AI_PROCESS_FAILED', operation: 'opencode-server', harness: this.id, message: 'Could not start the local OpenCode server.', retryable: true });
+    return withGenerationEnvironment('opencode', executable.env, async (options) => {
+      const server = await startOpenCodeV2Server({ executable: executable.executable, env: { ...executable.env, ...options.env }, removeEnv: options.removeEnv ?? [], cwd: options.cwd!, timeoutMs: 15_000, signal: input.signal }).catch((error) => {
+        if (error instanceof AiOperationError) throw error;
+        throw new AiOperationError({ code: 'AI_PROCESS_FAILED', operation: 'opencode-server', harness: this.id, message: 'Could not start the local OpenCode server.', retryable: true });
+      });
+      this.servers.add(server);
+      try {
+        const text = await generateOpenCodeV2Text(server, { prompt: `Reply with a single JSON object satisfying this JSON Schema:\n${JSON.stringify(input.schema)}\n\n${input.prompt}`, model: input.model, cwd: options.cwd!, signal: input.signal });
+        return { output: parseJsonPayload(text), usage: { ...EMPTY_AI_USAGE } };
+      } catch (error) {
+        if (input.signal.aborted) throw new AiOperationError({ code: 'AI_CANCELLED', operation: 'opencode-generate', harness: this.id, message: 'Generation canceled.' });
+        if (error instanceof AiOperationError) throw error;
+        const synthetic = { exitCode: 1, stdout: '', stderr: error instanceof Error ? error.message : '' };
+        requireSuccess(synthetic, this.id, 'opencode-generate');
+        throw error;
+      } finally {
+        server.close();
+        this.servers.delete(server);
+      }
     });
-    this.servers.add(server);
-    try {
-      const text = await generateOpenCodeV2Text(server, { prompt: `Reply with a single JSON object satisfying this JSON Schema:\n${JSON.stringify(input.schema)}\n\n${input.prompt}`, model: input.model, cwd: input.repositoryPath, signal: input.signal });
-      return { output: parseJsonPayload(text), usage: { ...EMPTY_AI_USAGE } };
-    } catch (error) {
-      if (input.signal.aborted) throw new AiOperationError({ code: 'AI_CANCELLED', operation: 'opencode-generate', harness: this.id, message: 'Generation canceled.' });
-      if (error instanceof AiOperationError) throw error;
-      const synthetic = { exitCode: 1, stdout: '', stderr: error instanceof Error ? error.message : '' };
-      requireSuccess(synthetic, this.id, 'opencode-generate');
-      throw error;
-    } finally {
-      server.close();
-      this.servers.delete(server);
-    }
   }
 
   private async detect(forceRefresh = false, signal?: AbortSignal) {
