@@ -2,7 +2,9 @@
 
 [← Documentation](README.md)
 
-All commands below run from the repository root.
+Building from source requires Node.js 24.15 or newer and Git. All commands below run from the repository root.
+
+Keep Node type definitions on the Node 24 line. Dependabot defers TypeScript major updates until `typescript-eslint` supports them, Electron major updates until file/image clipboard integration is migrated, Trash major updates until its glob dependencies have a patched version, and KaTeX 0.19+ until `marked-katex-extension` supports it. Revisit these exclusions when updating the corresponding integrations.
 
 ## Run from source
 

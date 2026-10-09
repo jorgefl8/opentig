@@ -12,6 +12,11 @@ describe('private server workspace', () => {
     expect(path.resolve(resolveServerClientRoot(moduleUrl))).toBe(path.join(path.dirname(fileURLToPath(moduleUrl)), 'client'));
   });
 
+  it('resolves client assets from the build root when the server is in a shared chunk', () => {
+    const moduleUrl = new URL('file:///C:/opentig/chunks/server-shared.mjs').href;
+    expect(path.resolve(resolveServerClientRoot(moduleUrl))).toBe(path.join(path.dirname(path.dirname(fileURLToPath(moduleUrl))), 'client'));
+  });
+
   it('constructs one headless runtime behind the server factory', async () => {
     const directory = await mkdtemp(path.join(tmpdir(), 'opentig-server-runtime-'));
     try {
