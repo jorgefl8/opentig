@@ -309,7 +309,7 @@ function DesktopFilesView({
     [expandedPaths, visibleFiles],
   );
   // TanStack Virtual intentionally returns an imperative, non-memoizable instance.
-  // eslint-disable-next-line react-hooks/incompatible-library
+  // oxlint-disable-next-line react/incompatible-library
   const virtualizer = useVirtualizer({
     enabled: active,
     count: rows.length,
@@ -351,7 +351,7 @@ function DesktopFilesView({
       revealedPathRef.current = activePath;
     }
     // virtualizer is a fresh instance each render and must stay out of the deps.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react/exhaustive-deps
   }, [active, activePath, rows]);
 
   const rowByPath = useMemo(() => {

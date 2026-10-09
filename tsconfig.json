@@ -11,11 +11,9 @@
     "skipLibCheck": true,
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
-    "baseUrl": ".",
-    "paths": {"@/*": ["src/renderer/*"], "@shared/*": ["src/shared/*"]},
+    "paths": {"@/*": ["./src/renderer/*"], "@shared/*": ["./src/shared/*"]},
     "moduleResolution": "Bundler",
     "resolveJsonModule": true,
-    "ignoreDeprecations": "6.0",
     "types": ["node"]
   },
   "include": ["src", "packages", "*.ts", "*.mts"]

@@ -29,3 +29,12 @@ it('recognizes an aliased IPC registration regardless of whitespace or brackets'
   expect(analyzeSource(`import { ipcMain as ipc } from 'electron'; ipc ['handle'] ('desktop:test', handler);`).accesses)
     .toContain('ipcMain.handle');
 });
+
+it('detects member access in JSX tags', () => {
+  expect(analyzeSource(`const view = <window.opentig.Panel />;`, 'source.tsx').accesses)
+    .toContain('window.opentig');
+});
+
+it('rejects malformed source rather than silently skipping a dependency boundary check', () => {
+  expect(() => analyzeSource(`import { from 'electron';`)).toThrow(SyntaxError);
+});

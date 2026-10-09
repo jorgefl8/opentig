@@ -9,7 +9,7 @@
 
 ## Local setup
 
-Requirements: Node.js 24+, npm 11+, and Git on `PATH`. Development can run on Linux; Windows installer checks require Windows. See [development and packaging](docs/development.md).
+Requirements: Node.js 24.15+, npm 11+, and Git on `PATH`. Development can run on Linux; Windows installer checks require Windows. See [development and packaging](docs/development.md).
 
 ```powershell
 npm ci

@@ -81,7 +81,7 @@ export function PullRequestsView(props: PullRequestsViewProps) {
 function PullsList(props: PullRequestsViewProps & { nameWithOwner: string }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const pulls = props.pulls;
-  // eslint-disable-next-line react-hooks/incompatible-library -- TanStack Virtual is intentionally imperative.
+  // oxlint-disable-next-line react/incompatible-library -- TanStack Virtual is intentionally imperative.
   const virtualizer = useVirtualizer({
     count: pulls?.length ?? 0,
     getScrollElement: () => scrollRef.current,

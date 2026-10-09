@@ -86,7 +86,7 @@ export function SearchView({ repositoryId, active, revision, onOpenFile, unsaved
     return flattened;
   }, [collapsed, result]);
 
-  // eslint-disable-next-line react-hooks/incompatible-library -- TanStack Virtual is intentionally imperative.
+  // oxlint-disable-next-line react/incompatible-library -- TanStack Virtual is intentionally imperative.
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => scrollRef.current,

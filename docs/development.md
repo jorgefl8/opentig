@@ -4,7 +4,7 @@
 
 Building from source requires Node.js 24.15 or newer and Git. All commands below run from the repository root.
 
-Keep Node type definitions on the Node 24 line. Dependabot defers TypeScript major updates until `typescript-eslint` supports them, Electron major updates until file/image clipboard integration is migrated, Trash major updates until its glob dependencies have a patched version, and KaTeX 0.19+ until `marked-katex-extension` supports it. Revisit these exclusions when updating the corresponding integrations.
+Keep Node type definitions on the Node 24 line. Dependabot defers Electron major updates until file/image clipboard integration is migrated, Trash major updates until its glob dependencies have a patched version, and KaTeX 0.19+ until `marked-katex-extension` supports it. Revisit these exclusions when updating the corresponding integrations.
 
 ## Run from source
 
@@ -70,6 +70,8 @@ Run all quality gates before integrating:
 ```powershell
 npm run check
 ```
+
+`npm run typecheck` uses the native TypeScript 7 compiler with strict checking. `npm run lint` uses Oxlint with the existing JavaScript, TypeScript, React Hooks, and React Refresh rule severities and environment-specific overrides in `.oxlintrc.json`. `npm run lint:fix` applies safe lint fixes. The configuration explicitly enables the migrated rules rather than adopting a broader default preset; `no-undef` and `no-useless-assignment` currently come from Oxlint's nursery category, so review their behavior when updating the pinned Oxlint version. React Compiler configuration and gating rules are omitted because the build does not enable configurable React Compiler options. Oxc Parser powers the architecture tests without depending on the old TypeScript compiler API. Formatting is handled separately from these checks.
 
 PRs and pushes to `main` run the same CI for code, configuration, and asset changes: tests on Windows and Linux, with typecheck, lint, and the production dependency audit running once on Linux. Native Trash and packed CLI smoke checks run on Windows, Linux, and macOS. Automatic CI does not package the desktop application or run its packaged server/utility checks; desktop package verification and portable Dev ZIPs are available through **Actions → Desktop Dev builds → Run workflow**. Prose-only changes to the root README, contribution guide, agent instructions, third-party notices, or Markdown files under `docs/` keep the validation checks but skip dependency installs, tests, and smoke checks. Manual CI runs always validate fully. A new push to a PR cancels its superseded CI run; main and manual runs remain independent. Windows releases also run the test suite on the Windows builder before packaging. Dependency install scripts are reviewed and pinned in `package.json` (`allowScripts`); review the relevant script again when updating one of those versions.
 

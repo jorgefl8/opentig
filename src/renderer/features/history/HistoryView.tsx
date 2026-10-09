@@ -38,7 +38,7 @@ export function HistoryView({ repositoryId, upstream, readOnly, operation, canPu
   const graph = useMemo(() => buildCommitGraph(rows.map(({ commit, parentOids }) => ({ oid: commit.oid, parentOids, color: historyColor(commit) }))), [rows]);
   const matches = useMemo(() => rows.flatMap(({ commit }, index) => matchesHistory(commit, search) ? [index] : []), [rows, search]);
   const graphWidth = graphWidthForLanes(graph.laneCount);
-  // eslint-disable-next-line react-hooks/incompatible-library -- TanStack Virtual is intentionally imperative.
+  // oxlint-disable-next-line react/incompatible-library -- TanStack Virtual is intentionally imperative.
   const commitVirtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => scrollRef.current,

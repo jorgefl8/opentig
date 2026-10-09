@@ -28,7 +28,7 @@ export function MobileFilesView(props: FilesViewProps) {
   const { entries: level, failed } = useDirectoryLevel(directory, props.filesSnapshotRevision, props.onLoadDirectory, props.active);
   const entries = useMemo(() => (level ?? []).filter((entry) => (props.showDotEnvFiles || !entry.ignored)
     && entry.name.toLocaleLowerCase().includes(query.toLocaleLowerCase())), [level, props.showDotEnvFiles, query]);
-  // eslint-disable-next-line react-hooks/incompatible-library -- Virtual rows use an imperative scroll instance.
+  // oxlint-disable-next-line react/incompatible-library -- Virtual rows use an imperative scroll instance.
   const virtualizer = useVirtualizer({
     count: entries.length,
     enabled: props.active && level !== null,
