@@ -90,6 +90,11 @@
     "which-command": "^0.1.0",
     "zod": "^4.6.5"
   },
+  "overrides": {
+    "mermaid": {
+      "katex": "$katex"
+    }
+  },
   "devDependencies": {
     "@electron/asar": "4.3.1",
     "@electron/fuses": "2.1.3",

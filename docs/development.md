@@ -6,6 +6,8 @@ Building from source requires Node.js 24.15 or newer and Git. All commands below
 
 Keep Node type definitions on the Node 24 line. Dependabot defers Trash major updates until its glob dependencies have a patched version, and KaTeX 0.19+ until `marked-katex-extension` supports it. Revisit these exclusions when updating the corresponding integrations. Desktop uses Electron 44; building or running a macOS desktop package requires macOS 13 or newer.
 
+Mermaid's KaTeX dependency is overridden to use the same patched version as Markdown math (`$katex` in `package.json`). Mermaid 12.1 still requests the vulnerable 0.16 line; the override addresses [GHSA-238p-pmpm-9mq7](https://github.com/advisories/GHSA-238p-pmpm-9mq7) without downgrading Mermaid. Remove the override once Mermaid accepts a patched KaTeX version. `scripts/mermaid-katex.test.mjs` resolves KaTeX from Mermaid and checks display math in both output modes and rejection of inherited `trust` options.
+
 ## Run from source
 
 ```powershell
