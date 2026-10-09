@@ -53,6 +53,17 @@ export function SearchablePicker({ groups, value, onValueChange, label, triggerL
   const [internalOpen, setInternalOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [scrolling, setScrolling] = useState(false);
+  const triggerCopy = useRef<HTMLSpanElement>(null);
+  const [triggerTruncated, setTriggerTruncated] = useState(false);
+  useLayoutEffect(() => {
+    const element = triggerCopy.current;
+    if (!element) return;
+    const measure = () => setTriggerTruncated(element.scrollWidth > element.clientWidth);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [triggerLabel]);
   const scrollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => { if (scrollTimer.current !== null) clearTimeout(scrollTimer.current); }, []);
   const dismissScrollingTooltips = () => {
@@ -97,11 +108,14 @@ export function SearchablePicker({ groups, value, onValueChange, label, triggerL
         if (item.value !== value) onValueChange(item.value);
       }}
     >
-      <ComboboxTrigger id={triggerId} size={size} className={triggerClassName} aria-label={label} aria-keyshortcuts={shortcut}>
-        {icon}
-        <span className="min-w-0 flex-1 truncate text-left">{triggerLabel}</span>
-        {triggerHint}
-      </ComboboxTrigger>
+      <Tooltip disabled={!triggerTruncated || (controlledOpen ?? internalOpen) || disabled}>
+        <TooltipTrigger render={<ComboboxTrigger id={triggerId} size={size} className={triggerClassName} aria-label={label} aria-keyshortcuts={shortcut} />}>
+          {icon}
+          <span ref={triggerCopy} className="min-w-0 flex-1 truncate text-left">{triggerLabel}</span>
+          {triggerHint}
+        </TooltipTrigger>
+        <TooltipContent className="break-all">{triggerLabel}</TooltipContent>
+      </Tooltip>
       <ComboboxContent align={align} className={cn('searchable-picker', contentClassName)} initialFocus={focusSearch}>
         <ComboboxInput placeholder={placeholder} aria-label={placeholder} />
         <ComboboxList className="searchable-picker-list" aria-label={label} onScroll={dismissScrollingTooltips} onWheelCapture={dismissScrollingTooltips}>
