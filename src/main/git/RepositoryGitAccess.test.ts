@@ -201,18 +201,39 @@ it.each(['missing', 'revoked', 'denied'])('shows the selected account failure wi
 it.each(['error', 'cancel'])('cleans the operation broker after %s and never exposes its token', async outcome => {
   const f = await fixture(); await f.select();
   const before = await readdir(os.tmpdir());
-  let started!: () => void; const ready = new Promise<void>(resolve => { started = resolve; });
+  const readyPath = path.join(f.root, 'cancel-ready.pid');
+  let cancellationError: unknown;
   fakeNetwork(f, async (_args, options) => {
     if (outcome === 'error') throw new Error(`failure ${token('alice')}`);
-    const pending = f.process.run(f.work, ['-c', 'alias.wait=!sleep 20', 'wait'], options);
-    started(); return pending;
+    // Wait for the actual descendant to start before cancelling its Git parent.
+    // Cancelling immediately after spawn races process-tree discovery on Windows.
+    const script = 'require("node:fs").writeFileSync(process.argv[1], String(process.pid)); setTimeout(() => {}, 15_000)';
+    const alias = `alias.wait=!${gitShellQuote(process.execPath)} -e '${script}' ${gitShellQuote(readyPath)}`;
+    return f.process.run(f.work, ['-c', alias, 'wait'], { ...options, timeoutMs: 10_000 }).catch(error => {
+      cancellationError = error;
+      throw error;
+    });
   });
   const pending = f.operations.fetch(f.repositoryId);
-  if (outcome === 'cancel') { await ready; await f.process.close(); }
-  const result = await pending;
-  expect(result).toMatchObject({ status: 'failed' });
-  expect(JSON.stringify(result)).not.toContain(token('alice'));
-  expect((await readdir(os.tmpdir())).filter(name => name.startsWith('opentig-git-auth-') && !before.includes(name))).toEqual([]);
+  try {
+    if (outcome === 'cancel') {
+      await vi.waitFor(async () => expect(Number(await readFile(readyPath, 'utf8'))).toBeGreaterThan(0), { timeout: 5_000, interval: 25 });
+      expect(f.process.hasActiveProcess()).toBe(true);
+      await f.process.close();
+    }
+    const result = await pending;
+    expect(result).toMatchObject({ status: 'failed' });
+    if (outcome === 'cancel') {
+      expect(cancellationError).toBeInstanceOf(GitOperationError);
+      if (cancellationError instanceof GitOperationError) expect(cancellationError.detail.code).not.toBe('TIMEOUT');
+    }
+    expect(f.process.hasActiveProcess()).toBe(false);
+    expect(JSON.stringify(result)).not.toContain(token('alice'));
+    expect((await readdir(os.tmpdir())).filter(name => name.startsWith('opentig-git-auth-') && !before.includes(name))).toEqual([]);
+  } finally {
+    await f.process.close();
+    await pending;
+  }
 });
 
 it('redacts selected credentials from Git output and removes credential/trace environment from hooks', async () => {
