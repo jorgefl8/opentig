@@ -9,6 +9,8 @@ import { Button } from '@/components/ui/button';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { ViewerTabs, ViewerTabsList, ViewerTabsPanel } from '@/components/ui/viewer-tabs';
+import { LinkedMarkdown } from '@/features/markdown/LinkedMarkdown';
+import { LinkedText } from '@/components/LinkedText';
 
 import { openOnGitHub, prStateLabel, reviewDecisionLabel } from './gh-utils';
 import { GitHubAvatar } from './GitHubAvatar';
@@ -75,7 +77,7 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
         <div className="pr-viewer-overview">
         <div className="pr-viewer-title">
           <Badge variant={details.state === 'OPEN' && !details.isDraft ? 'default' : 'secondary'} className={`pr-state-badge ${stateLabel.toLowerCase().replace(/\s+/g, '-')}`}>{stateLabel}</Badge>
-          <h2>{details.title || '(no title)'} <span className="pr-number">#{details.number}</span></h2>
+          <h2><LinkedText text={details.title || '(no title)'} /> <span className="pr-number">#{details.number}</span></h2>
         </div>
         <div className="pr-viewer-meta">
           <span className="pr-author-with-avatar">
@@ -120,7 +122,7 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
       <ViewerTabsPanel value="summary" className="markdown-preview-scroll pr-description-scroll">
           <section className="pr-summary-section">
             {bodyHtml
-              ? <div className="markdown-prose" dangerouslySetInnerHTML={{ __html: bodyHtml }} />
+              ? <LinkedMarkdown html={bodyHtml} />
               : <p className="pr-empty-description">This pull request has no description.</p>}
           </section>
       </ViewerTabsPanel>
@@ -132,7 +134,7 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
                 <span className="pr-timeline-rail"><span /></span>
                 <GitHubAvatar src={commit.authorAvatarUrl} className="pr-commit-avatar" />
                 <span className="pr-commit-content">
-                  <strong>{commit.messageHeadline || '(no commit message)'}</strong>
+                  <strong><LinkedText text={commit.messageHeadline || '(no commit message)'} /></strong>
                   <span><b>{commit.author}</b> committed <time dateTime={commit.authoredAt}>{formatDateTime(commit.authoredAt)}</time></span>
                 </span>
                 <Tooltip>

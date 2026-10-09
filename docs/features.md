@@ -102,6 +102,7 @@ Use the desktop app or the same UI in a paired browser; browsers select folders 
 - Inspect commit subjects, full messages, authors, dates, refs, publication state, and changed files. Expanded sidebar rows show a three-line description preview with ellipsis when needed. Click the subject to open any commit, including merge and empty commits, with complete metadata and the full message available immediately. Commit subjects have no hover tooltip.
 - Merge commits list only their own file changes relative to every parent; the viewer shows those changes as a unified diff against the first parent and labels that comparison. Commits without file changes still open their metadata and full message, with an empty-diff message below the header.
 - Copy full commit hashes.
+- Web links in the full commit subject, message, expanded description, and PR commit timeline show their destination and **Open in new tab** on hover or keyboard focus. They open in a new browser tab (the system browser on desktop); email links open the mail client. Commit messages otherwise retain their plain-text formatting.
 - Open complete commit diffs or the diff for one file, including renamed paths.
 - Undo only the latest commit when OpenTig can prove it is still local and safe to undo.
 

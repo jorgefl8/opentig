@@ -15,6 +15,7 @@ import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { Textarea } from '@/components/ui/textarea';
 import { opentig } from '@/lib/opentig-api';
 import { ViewerTabs, ViewerTabsList, ViewerTabsPanel } from '@/components/ui/viewer-tabs';
+import { LinkedMarkdown } from '@/features/markdown/LinkedMarkdown';
 
 import { AiProviderIcon } from '@/features/ai/AiProviderIcon';
 import { ghDetail, ghErrorTitle, openOnGitHub } from './gh-utils';
@@ -231,7 +232,7 @@ export function CreatePullRequestDialog(props: CreatePullRequestDialogProps) {
                 onChange={(event) => setBody(event.target.value)}
               />
             </ViewerTabsPanel>
-            <ViewerTabsPanel value="preview" className="create-pr-preview markdown-prose" dangerouslySetInnerHTML={{ __html: previewHtml }} />
+            <ViewerTabsPanel value="preview" className="create-pr-preview"><LinkedMarkdown html={previewHtml} /></ViewerTabsPanel>
           </ViewerTabs>
         </div>
         <div className="create-pr-actions">

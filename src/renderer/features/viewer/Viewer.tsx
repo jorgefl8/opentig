@@ -7,6 +7,7 @@ import { isKnownImagePath, isSvgPath } from '../../../shared/image-types';
 import { Button } from '@/components/ui/button';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { LinkedText } from '@/components/LinkedText';
 import { isHtmlPath, isMarkdownPath } from '@/features/files/file-tree';
 import { ByteBudgetLru } from '@/lib/ByteBudgetLru';
 import { opentig } from '@/lib/opentig-api';
@@ -378,10 +379,10 @@ function CommitDiffHeader({ commit, fallbackSubject }: { commit: CommitInfo | un
   const longDescription = body.length > 240 || body.split('\n').length > 3;
   return (
     <header className="commit-diff-header">
-      <h2>{commit?.subject || fallbackSubject || '(no subject)'}</h2>
+      <h2><LinkedText text={commit?.subject || fallbackSubject || '(no subject)'} /></h2>
       {body && (
         <div className="commit-diff-description-wrap">
-          <p className={`commit-diff-description ${longDescription && !descriptionExpanded ? 'collapsed' : ''}`}>{body}</p>
+          <p className={`commit-diff-description ${longDescription && !descriptionExpanded ? 'collapsed' : ''}`}><LinkedText text={body} /></p>
           {longDescription && (
             <button
               type="button"

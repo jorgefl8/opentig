@@ -63,3 +63,17 @@ it('does not add a commit header to an empty working-tree diff', async () => {
   expect(container.querySelector('.commit-diff-header')).toBeNull();
   expect(container.textContent).toContain('No differences to show.');
 });
+
+it('opens web links from the full commit subject and body in another tab while preserving plain text', async () => {
+  const linkedCommit = { ...commit, subject: 'See https://example.com/issue', body: 'Details\nhttps://example.com/fix.\n`https://example.com/code`\n<script>plain text</script>' };
+  await render({ type: 'commit', oid: commit.oid, subject: linkedCommit.subject }, [linkedCommit]);
+  const links = container.querySelectorAll<HTMLAnchorElement>('.commit-diff-header a');
+  expect([...links].map(link => link.href)).toEqual(['https://example.com/issue', 'https://example.com/fix']);
+  for (const link of links) {
+    expect(link.target).toBe('_blank');
+    expect(link.rel).toBe('noopener noreferrer');
+    expect(link.hasAttribute('title')).toBe(false);
+  }
+  expect(container.querySelector('.commit-diff-description')?.textContent).toBe(linkedCommit.body);
+  expect(container.querySelector('script')).toBeNull();
+});

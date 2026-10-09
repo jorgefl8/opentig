@@ -5,6 +5,7 @@ import { IconChevronRight, IconLoader4, IconRestore, IconGitPullRequest, IconSea
 import { sileo } from 'sileo';
 import type { CommitFile, CommitInfo } from '../../../shared/git-types';
 import { Button } from '@/components/ui/button';
+import { LinkedText } from '@/components/LinkedText';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { changeStatusCode } from '@/features/changes/change-status';
@@ -191,7 +192,7 @@ function CommitRow({ repositoryId, upstream, baseRef, commit, graphRow, graphWid
       {expanded && graphRow.continuations.length > 0 && <CommitGraphContinuation graph={graphRow} width={graphWidth} />}
       {expanded && (
         <div className="commit-files" style={{ paddingLeft: graphWidth + 31 }}>
-          {commit.body && <p className="commit-description">{commit.body}</p>}
+          {commit.body && <p className="commit-description"><LinkedText text={commit.body} /></p>}
           {filesError && <div className="commit-files-message error">{filesError}</div>}
           {!files && !filesError && <div className="commit-files-message"><IconLoader4 className="spinner" /> <ShimmeringText text="Loading files…" /></div>}
           {files && files.length === 0 && <div className="commit-files-message">{commit.parentCount > 1 ? 'This merge commit has no changes of its own.' : 'This commit has no file changes.'}</div>}

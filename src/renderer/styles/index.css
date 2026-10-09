@@ -1820,6 +1820,8 @@ section[data-sileo-viewport] [data-sileo-title] { text-transform: none; }
   .commit-diff-description { max-height: min(36vh, 360px); margin: 0; overflow: auto; color: var(--muted-foreground); font-size: 12px; line-height: 1.55; overflow-wrap: anywhere; white-space: pre-wrap; }
   .commit-diff-description.collapsed { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
   .commit-description-toggle { border-radius: var(--radius-sm); color: var(--muted-foreground); font-size: 10.5px; font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
+  .external-text-link { color: var(--primary); text-decoration: underline; text-underline-offset: 2px; }
+  .external-text-link:hover { opacity: .8; }
   .commit-description-toggle:hover { color: var(--foreground); }
   .commit-description-toggle:focus-visible { outline: 1px solid var(--ring); outline-offset: 2px; }
   .commit-diff-meta {

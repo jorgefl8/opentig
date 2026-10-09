@@ -8,6 +8,8 @@ GitHub features require an installed, authenticated GitHub CLI (`gh`) on the mac
 
 Open **PRs** to list pull requests for the current repository, inspect metadata and the Markdown description, and review the full diff. In **Code**, choose cumulative changes or the changes introduced by an individual commit. The **By commit** selector is a keyboard-accessible menu with readable subjects and scrollable options.
 
+Web links in PR titles and descriptions, including the creation dialog's Markdown preview, open in a new browser tab (the system browser on desktop). Hover or focus a link to see its destination and **Open in new tab**. Email links show **Open in mail app** and use the mail client.
+
 The toolbar opens the repository on GitHub. Beside the branch selector, the current branch or worktree's PR indicator shows its number and state, including a purple merge icon for merged PRs. Click it for the full title and status, then choose **Open in OpenTig** or **Open in GitHub**. The mobile repository menu offers the same choices.
 
 Branch matching checks both the head repository and branch name, so a PR from another fork's `main` is not shown for your clone. When several PRs match, the most recently updated open PR takes priority; otherwise the most recently updated PR is shown if merged.
