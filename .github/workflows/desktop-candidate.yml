@@ -33,6 +33,7 @@ jobs:
       - run: ./scripts/verify-windows-install.ps1
       - run: npm run verify:packaged-utility
       - run: npm run verify:packaged-trash
+      - run: npm run verify:clipboard
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: OpenTig-Windows-unsigned-candidate-${{ github.run_id }}

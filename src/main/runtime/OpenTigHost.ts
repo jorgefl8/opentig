@@ -20,7 +20,7 @@ export interface OpenTigHost {
   preferencesChanged(preferences: Preferences): void;
   setTitleBarTheme(dark: boolean): void;
   readClipboardFilePaths(): Promise<string[]>;
-  readClipboardImagePng(): Buffer | null;
+  readClipboardImagePng(): Promise<Buffer | null>;
   selectDirectory(title: string): Promise<string | null>;
   confirm(options: OpenTigHostConfirmation): Promise<boolean>;
   revealItem(path: string): void;

@@ -4,7 +4,7 @@
 
 Building from source requires Node.js 24.15 or newer and Git. All commands below run from the repository root.
 
-Keep Node type definitions on the Node 24 line. Dependabot defers Electron major updates until file/image clipboard integration is migrated, Trash major updates until its glob dependencies have a patched version, and KaTeX 0.19+ until `marked-katex-extension` supports it. Revisit these exclusions when updating the corresponding integrations.
+Keep Node type definitions on the Node 24 line. Dependabot defers Trash major updates until its glob dependencies have a patched version, and KaTeX 0.19+ until `marked-katex-extension` supports it. Revisit these exclusions when updating the corresponding integrations. Desktop uses Electron 44; building or running a macOS desktop package requires macOS 13 or newer.
 
 ## Run from source
 
@@ -85,6 +85,8 @@ npm run verify:packaged-server -- --dev
 
 On Linux x64 the executable is `out/OpenTig Dev-linux-x64/OpenTig Dev`; on Windows x64 it is `out/OpenTig Dev-win32-x64/OpenTig Dev.exe`. The Dev identity is baked into the build, so moving the executable does not change its profile. All local Dev builds share the same Dev data; use a separate worktree for a PR's source and test repository changes in a disposable clone. Dev isolates application data, not your actual repositories or authenticated Git/GitHub/AI CLIs.
 
+`npm run verify:clipboard` checks native file references, text-path fallbacks, PNG images, and the asynchronous Electron host adapter. On Windows it also reads file drops and images written by Windows Forms. This command replaces the system clipboard; use a disposable desktop or CI session. It runs in the manual Windows desktop and release workflows.
+
 Desktop packages use **electron-builder**; Vite remains the compiler. The web client is built once and served by the included server in both Electron and browser sessions. Only the Electron runtime dependencies are shipped, with native N-API binaries and platform Trash executables unpacked from ASAR.
 
 `npm run make:dev` creates a **portable Dev ZIP** for the current OS. Extract the complete ZIP before launching; it needs no installer, but still stores settings in the separate OS Dev data directory. It has no updater or stable update feed. Artifacts are written under `out/make/dev/<platform>-<arch>/`.
@@ -98,6 +100,7 @@ npm run verify:packaged-desktop
 npm run verify:packaged-server
 npm run verify:packaged-utility
 npm run verify:packaged-trash
+npm run verify:clipboard
 ```
 
 The executable is `out/OpenTig-win32-x64/OpenTig.exe`; the installer is `out/make/production/win32-x64/OpenTig-<version>-win32-x64-Setup.exe`. The one-click installer installs for the current user, creates desktop/Start menu shortcuts, and preserves application data on uninstall. Stable keeps the `OpenTig` identity and existing production data location. An existing Squirrel installation is not automatically migrated or removed; installer migration and Windows behavior must be checked on Windows before release.

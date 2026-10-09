@@ -9,9 +9,6 @@ updates:
       timezone: Europe/Madrid
     open-pull-requests-limit: 3
     ignore:
-      # Electron 44 requires migrating file/image clipboard integration.
-      - dependency-name: electron
-        update-types: [version-update:semver-major]
       # Trash 10 introduces an unpatched high-severity braces dependency.
       - dependency-name: trash
         update-types: [version-update:semver-major]

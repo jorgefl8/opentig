@@ -41,6 +41,8 @@ jobs:
       - if: runner.os == 'Windows'
         run: npm test
       - run: npm run make:dev
+      - if: runner.os == 'Windows'
+        run: npm run verify:clipboard
       - run: npm run verify:packaged-desktop -- --dev
       - run: npm run verify:packaged-server -- --dev
       - if: runner.os == 'Windows'

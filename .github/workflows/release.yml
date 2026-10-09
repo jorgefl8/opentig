@@ -84,6 +84,7 @@ jobs:
       - run: ./scripts/verify-windows-install.ps1
       - run: npm run verify:packaged-utility
       - run: npm run verify:packaged-trash
+      - run: npm run verify:clipboard
       - run: npm run verify:release
         if: env.RELEASE_SIGNING == 'unsigned'
       - run: npm run verify:release -- --signed

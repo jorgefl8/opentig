@@ -25,7 +25,7 @@ function fixture() {
     preferencesChanged: vi.fn(),
     setTitleBarTheme: vi.fn(),
     readClipboardFilePaths: vi.fn(async () => ['C:\\source.txt']),
-    readClipboardImagePng: vi.fn(() => null),
+    readClipboardImagePng: vi.fn<() => Promise<Buffer | null>>(async () => null),
     selectDirectory: vi.fn(async () => 'C:\\repo'),
     confirm: vi.fn(async () => true),
     revealItem: vi.fn(),
@@ -65,6 +65,15 @@ async function invoke<T>(channel: string, ...args: unknown[]): Promise<IpcResult
 }
 
 describe('desktop IPC boundary', () => {
+  it('awaits clipboard image data and serializes asynchronous failures', async () => {
+    const value = fixture();
+    const image = Buffer.from('png');
+    value.host.readClipboardImagePng.mockImplementation(async () => image);
+    registerDesktopHandlers(value.host);
+    expect(await invoke(OPEN_TIG_DESKTOP_IPC.clipboardReadImagePng)).toEqual({ ok: true, value: image });
+    value.host.readClipboardImagePng.mockRejectedValueOnce(new Error('Clipboard unavailable'));
+    expect(await invoke(OPEN_TIG_DESKTOP_IPC.clipboardReadImagePng)).toMatchObject({ ok: false, error: { operation: 'clipboard-read-image-png' } });
+  });
   it('registers only the named native desktop channels', () => {
     electron.handlers.clear();
     const value = fixture();
