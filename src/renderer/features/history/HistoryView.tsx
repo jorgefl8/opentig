@@ -142,10 +142,7 @@ function CommitRow({ repositoryId, upstream, baseRef, commit, graphRow, graphWid
         </button>
         <div className="commit-main">
           <span className="commit-title-row">
-            <Tooltip>
-              <TooltipTrigger render={<button className="commit-subject" aria-pressed={active} onClick={() => onSelectCommit(commit)} />}>{commit.subject || '(no subject)'}</TooltipTrigger>
-              <TooltipContent side="right">{commit.subject || '(no subject)'}<br />Open the full commit diff</TooltipContent>
-            </Tooltip>
+            <button className="commit-subject" aria-pressed={active} onClick={() => onSelectCommit(commit)}>{commit.subject || '(no subject)'}</button>
             {reference && <Tooltip>
               <TooltipTrigger render={onSelectReference ? <button className="ref-chip commit-pr" onClick={() => onSelectReference(reference.number)} aria-label={`Open pull request #${reference.number}`} /> : <span className="ref-chip commit-pr" />}><IconGitPullRequest aria-hidden="true" />#{reference.number}</TooltipTrigger>
               <TooltipContent>{reference.source === 'merge' ? 'Pull request reference from the merge message.' : 'Reference from the commit subject; it may identify a pull request or issue.'}{onSelectReference ? ' Open as a pull request in the right-hand viewer.' : ''} No merge method is inferred from the number.</TooltipContent>
@@ -195,7 +192,7 @@ function CommitRow({ repositoryId, upstream, baseRef, commit, graphRow, graphWid
           {commit.body && <p className="commit-description">{commit.body}</p>}
           {filesError && <div className="commit-files-message error">{filesError}</div>}
           {!files && !filesError && <div className="commit-files-message"><IconLoader4 className="spinner" /> <ShimmeringText text="Loading files…" /></div>}
-          {files && files.length === 0 && <div className="commit-files-message">This commit does not modify its own files (merge).</div>}
+          {files && files.length === 0 && <div className="commit-files-message">{commit.parentCount > 1 ? 'This merge commit has no changes of its own.' : 'This commit has no file changes.'}</div>}
           {files && files.length > 0 && (
             <>
               <div className="commit-files-summary">

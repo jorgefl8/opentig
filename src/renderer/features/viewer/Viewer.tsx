@@ -325,7 +325,7 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
         />
       </Suspense>
     );
-  } else if (data.type === 'diff' && data.value.patch) {
+  } else if (data.type === 'diff') {
     const commitSelection = selection.type === 'commit' || selection.type === 'commit-file' ? selection : null;
     const commit = commitSelection ? commits.find((item) => item.oid === commitSelection.oid) : undefined;
     const scopeControl = selection.type === 'commit-file'
@@ -335,7 +335,7 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
     pierreContent = (
       <div className={commitSelection ? 'commit-diff-viewer' : 'standalone-diff-viewer'}>
         {commitSelection && <CommitDiffHeader key={commitSelection.oid} commit={commit} fallbackSubject={'subject' in commitSelection ? commitSelection.subject : ''} />}
-        <Suspense fallback={<ViewerLoading />}>
+        {data.value.patch ? <Suspense fallback={<ViewerLoading />}>
           <PierreDiffViewer
             kind="diff"
             contentKey={data.docKey}
@@ -350,11 +350,9 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
             onWrapLinesChange={onWrapLinesChange}
             onClose={() => onSelect(null)}
           />
-        </Suspense>
+        </Suspense> : <div className="viewer-message">{selection.type === 'commit' && commit?.parentCount && commit.parentCount > 1 ? 'This merge commit has no changes of its own.' : 'No differences to show.'}</div>}
       </div>
     );
-  } else if (data.type === 'diff') {
-    content = <div className="viewer-message">No differences to show.</div>;
   } else {
     content = <div className="viewer-message">This file cannot be edited.</div>;
   }
@@ -375,7 +373,7 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
 
 function CommitDiffHeader({ commit, fallbackSubject }: { commit: CommitInfo | undefined; fallbackSubject: string }) {
   const date = commit?.date;
-  const [descriptionExpanded, setDescriptionExpanded] = useState(false);
+  const [descriptionExpanded, setDescriptionExpanded] = useState(true);
   const body = commit?.body ?? '';
   const longDescription = body.length > 240 || body.split('\n').length > 3;
   return (
@@ -405,7 +403,7 @@ function CommitDiffHeader({ commit, fallbackSubject }: { commit: CommitInfo | un
             <TooltipContent>{formatDateTime(date, { seconds: true })}</TooltipContent>
           </Tooltip>
         )}
-        {commit?.parentCount && commit.parentCount > 1 ? <span>Merge commit</span> : null}
+        {commit?.parentCount && commit.parentCount > 1 ? <span>Merge commit · Own files compared with first parent</span> : null}
         {commit?.upstreamState === 'local-only' && <span className="commit-local-label">Local only</span>}
       </div>
     </header>

@@ -575,7 +575,7 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   .ref-chip.local-only { background: color-mix(in oklch, var(--chart-3) 17%, transparent); color: color-mix(in oklch, var(--chart-3) 65%, var(--foreground)); box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--chart-3) 30%, transparent); }
   .ref-chip.merge { background: var(--muted); color: var(--muted-foreground); box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--foreground) 8%, transparent); }
   .commit-files { position: relative; z-index: 1; display: grid; gap: 1px; padding: 0 8px 9px 31px; animation: fade-rise var(--motion-med) var(--ease-out); }
-  .commit-description { margin: 1px 6px 7px; border-left: 2px solid var(--sidebar-border); padding: 2px 8px; color: var(--muted-foreground); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; white-space: pre-wrap; }
+  .commit-description { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 3; margin: 1px 6px 7px; border-left: 2px solid var(--sidebar-border); padding: 2px 8px; color: var(--muted-foreground); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; white-space: pre-wrap; }
   .commit-files-summary { padding: 1px 6px 5px; color: var(--muted-foreground); font-size: 10px; font-weight: 600; }
   .commit-files-summary .add { color: var(--diff-added); }
   .commit-files-summary .del { color: var(--diff-deleted); }

@@ -20,7 +20,9 @@ export function parseCommitFiles(nameStatusOutput: string, numstatOutput: string
     const letter = status[0]?.toUpperCase() ?? '';
     const kind = STATUS_KINDS[letter];
     if (!kind) continue;
-    const renamed = letter === 'R' || letter === 'C';
+    // Combined merge statuses (RM, RR, ...) carry only the result path.
+    // Only an ordinary scored rename/copy has separate old and new paths.
+    const renamed = /^(?:R|C)\d+$/.test(status);
     const first = tokens[index + 1];
     const second = renamed ? tokens[index + 2] : undefined;
     index += renamed ? 2 : 1;
