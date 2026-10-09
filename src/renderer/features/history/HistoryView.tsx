@@ -46,7 +46,9 @@ export function HistoryView({ repositoryId, upstream, readOnly, operation, canPu
     getItemKey: (index) => rows[index]!.commit.oid,
     overscan: 8,
   });
-  useEffect(() => { commitVirtualizer.measure(); }, [commitVirtualizer, compact, grouped, search, mobile]);
+  // Search and grouping retain heights by commit oid. Clearing measurements
+  // would replace unchanged expanded rows with estimates until another resize.
+  useEffect(() => { commitVirtualizer.measure(); }, [commitVirtualizer, rowHeight]);
   const nextMatch = () => {
     if (!matches.length) return;
     const next = (matchIndex + 1) % matches.length;
