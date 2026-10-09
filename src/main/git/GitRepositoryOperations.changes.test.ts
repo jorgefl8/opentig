@@ -66,6 +66,43 @@ describe('GitRepositoryOperations AI context', () => {
 });
 
 describe('pull-request context coverage', () => {
+  it('supplies the complete branch behavior despite recent editorial commits and uncommitted edits', async () => {
+    const fixture = await standaloneRepository();
+    await git(fixture.work, ['switch', '-c', 'feature']);
+    await writeFile(path.join(fixture.work, 'generation.ts'), 'export const isolateGeneration = true;\n');
+    await git(fixture.work, ['add', '.']);
+    await git(fixture.work, ['commit', '-m', 'Isolate generation']);
+    await writeFile(path.join(fixture.work, 'settings.ts'), 'export const repositoryInstructions = false;\n');
+    await git(fixture.work, ['add', '.']);
+    await git(fixture.work, ['commit', '-m', 'Make repository conventions optional']);
+    await writeFile(path.join(fixture.work, 'writing.md'), 'Use descriptive PR prose.\n');
+    await git(fixture.work, ['add', '.']);
+    await git(fixture.work, ['commit', '-m', 'Refine writing policy']);
+    // A base-only change and staged work must not become part of the PR draft.
+    await git(fixture.work, ['switch', 'main']);
+    await writeFile(path.join(fixture.work, 'base-only.txt'), 'unrelated base change\n');
+    await git(fixture.work, ['add', '.']);
+    await git(fixture.work, ['commit', '-m', 'Unrelated base change']);
+    await git(fixture.work, ['switch', 'feature']);
+    await writeFile(path.join(fixture.work, 'generation.ts'), 'uncommitted replacement\n');
+    await git(fixture.work, ['add', '.']);
+
+    const context = await fixture.operations.getPullRequestDraftContext(fixture.repositoryId, 'main');
+    const prompt = buildPullRequestPrompt(context);
+    expect(context.subjects).toEqual(['Refine writing policy', 'Make repository conventions optional', 'Isolate generation']);
+    expect(context.coverage).toMatchObject({ commitsIncluded: 3, commitsTotal: 3 });
+    expect(context.coverage.files.map(file => [file.path, file.detail])).toEqual([
+      ['generation.ts', 'complete'], ['settings.ts', 'complete'], ['writing.md', 'complete'],
+    ]);
+    expect(prompt).toContain('+export const isolateGeneration = true;');
+    expect(prompt).toContain('+export const repositoryInstructions = false;');
+    expect(prompt).toContain('+Use descriptive PR prose.');
+    expect(prompt).not.toContain('uncommitted replacement');
+    expect(prompt).not.toContain('base-only.txt');
+    expect(context.truncated).toBe(false);
+    expect(context.coverage.promptCharacters).toBe(prompt.length);
+  });
+
   it('rejects an oversized complete inventory instead of silently dropping files', async () => {
     const fixture = await standaloneRepository();
     await git(fixture.work, ['switch', '-c', 'feature']);
