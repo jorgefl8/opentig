@@ -10,7 +10,7 @@ The desktop workspace keeps navigation and file lists in a resizable sidebar, wi
 
 Choose system, light, or dark theme and adjust interface scale. Interface fonts are Geist, Plus Jakarta Sans, and Space Grotesk; code fonts are Geist Mono, JetBrains Mono, Inconsolata, Departure Mono, and Space Grotesk. Defaults are **Plus Jakarta Sans** and **JetBrains Mono**. Each font selector previews its own typeface, and the optional text preview reflects the current interface and code selections.
 
-Diffs, Files editors, merge conflicts, and Markdown code blocks share syntax colors; diffs and editors keep the active interface background regardless of which view opens first. Tooltips and their arrows follow the active theme. Loading status uses shimmering text and a primary-colored spinner; busy action buttons retain their spinner and shimmer their label.
+Diffs, Files editors, merge conflicts, and Markdown code blocks share syntax colors; diffs and editors keep the active interface background regardless of which view opens first. Tooltips and their arrows follow the active theme. Loading status uses shimmering text and a primary-colored spinner; busy action buttons retain their spinner and shimmer their label. Text shimmer pauses outside the viewport or while the document is hidden, resumes from the same point when visible, and respects reduced-motion preferences.
 
 Dates use **DD/MM/YYYY** throughout history, commits, branches, worktrees, PRs, logs, updates, and browser sessions. Timestamps use local time in 24-hour format, and CLI pairing expiry dates follow the same convention.
 
