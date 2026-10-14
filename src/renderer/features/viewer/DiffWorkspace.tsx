@@ -27,20 +27,34 @@ interface DiffWorkspaceProps {
 }
 
 export function DiffWorkspace(props: DiffWorkspaceProps) {
+  return <DiffDocument key={props.contentKey} {...props} />;
+}
+
+type ParseMessage = { text: string; error: boolean } | null;
+
+function DiffDocument(props: DiffWorkspaceProps) {
   const result = useParsedDiff(props.diff.patch, props.contentKey);
-  if (!result || result.error !== undefined) return (
+  const [lastParsed, setLastParsed] = useState<{ files: DiffFileEntry[]; diff: DiffResult } | null>(null);
+  if (result?.files && result.files !== lastParsed?.files) setLastParsed({ files: result.files, diff: props.diff });
+  const files = result?.files ?? lastParsed?.files;
+  const diff = result?.files ? props.diff : lastParsed?.diff ?? props.diff;
+  const message: ParseMessage = !result ? { text: 'Preparing diff…', error: false }
+    : result.error !== undefined ? { text: result.error, error: true } : null;
+  // Retain this document's mounted virtualizer and collapse choices during a
+  // refresh. Its old revision stays invisible and inert until parsing finishes.
+  if (files) return <ParsedDiffWorkspace {...props} diff={diff} files={files} message={message} />;
+  return (
     <div className={`diff-workspace${props.compact ? ' compact' : ''}`}>
       <div className="diff-workspace-toolbar">
         {props.scopeControl}
-        <span role={result ? 'alert' : 'status'}>{result?.error ?? 'Preparing diff…'}</span>
+        <span role={message?.error ? 'alert' : 'status'}>{message?.text}</span>
         {props.onClose && <DiffAction label="Close diff" onClick={props.onClose}><IconX /></DiffAction>}
       </div>
     </div>
   );
-  return <ParsedDiffWorkspace {...props} files={result.files} />;
 }
 
-function ParsedDiffWorkspace({ contentKey, diff, diffView, themeType, wrapLines, initiallyCollapsed = false, compact = false, scopeControl, onDiffViewChange, onWrapLinesChange, onClose, files }: DiffWorkspaceProps & { files: DiffFileEntry[] }) {
+function ParsedDiffWorkspace({ contentKey, diff, diffView, themeType, wrapLines, initiallyCollapsed = false, compact = false, scopeControl, onDiffViewChange, onWrapLinesChange, onClose, files, message }: DiffWorkspaceProps & { files: DiffFileEntry[]; message: ParseMessage }) {
   const [collapsed, setCollapsed] = useState<Set<string>>(
     () => new Set(initiallyCollapsed ? files.map((file) => file.key) : []),
   );
@@ -76,48 +90,56 @@ function ParsedDiffWorkspace({ contentKey, diff, diffView, themeType, wrapLines,
 
   return (
     <div key={contentKey} className={`diff-workspace${compact ? ' compact' : ''}`}>
-      {!compact && <div className="diff-workspace-toolbar">
-        {scopeControl && <div className="diff-workspace-scope">{scopeControl}</div>}
-        <span className="diff-file-count">{files.length} {files.length === 1 ? 'file' : 'files'}</span>
-        <span className="diff-total-stats" aria-label={`${additions} additions and ${deletions} deletions`}>
-          <span className="add">+{additions}</span><span className="del">−{deletions}</span>
-        </span>
-        {diffActions(true)}
+      {(!compact || message) && <div className="diff-workspace-toolbar">
+        {message ? <>
+          {scopeControl}
+          <span role={message.error ? 'alert' : 'status'}>{message.text}</span>
+          {onClose && <DiffAction label="Close diff" onClick={onClose}><IconX /></DiffAction>}
+        </> : <>
+          {scopeControl && <div className="diff-workspace-scope">{scopeControl}</div>}
+          <span className="diff-file-count">{files.length} {files.length === 1 ? 'file' : 'files'}</span>
+          <span className="diff-total-stats" aria-label={`${additions} additions and ${deletions} deletions`}>
+            <span className="add">+{additions}</span><span className="del">−{deletions}</span>
+          </span>
+          {diffActions(true)}
+        </>}
       </div>}
-      <Virtualizer className="diff-workspace-scroll" contentClassName="diff-workspace-content">
-        {files.map((file) => {
-          const isCollapsed = !compact && collapsed.has(file.key);
-          return (
-            <section key={file.key} className="diff-file-section">
-              {compact ? (
-                <div className="diff-file-header diff-file-header-compact">
-                  <img src={getVsCodeFileIconUrl(file.path)} className="diff-file-icon" alt="" />
-                  <span className="diff-file-path"><DiffFilePathLabel path={file.path} /></span>
-                  {file.previousPath && file.previousPath !== file.path && <span className="diff-file-previous">from {file.previousPath}</span>}
-                  <span className="diff-file-stats"><span className="add">+{file.additions}</span><span className="del">−{file.deletions}</span></span>
-                  {diffActions(false)}
-                </div>
-              ) : (
-                <button type="button" className="diff-file-header" aria-expanded={!isCollapsed} onClick={() => toggleFile(file.key)}>
-                  {isCollapsed ? <IconChevronRight className="diff-file-chevron" /> : <IconChevronDown className="diff-file-chevron" />}
-                  <img src={getVsCodeFileIconUrl(file.path)} className="diff-file-icon" alt="" />
-                  <span className="diff-file-path"><DiffFilePathLabel path={file.path} /></span>
-                  {file.previousPath && file.previousPath !== file.path && <span className="diff-file-previous">from {file.previousPath}</span>}
-                  <span className="diff-file-stats"><span className="add">+{file.additions}</span><span className="del">−{file.deletions}</span></span>
-                </button>
-              )}
-              {!isCollapsed && (
-                <FileDiff
-                  key={`${contentKey}:${file.key}:${diffView}:${wrapLines}`}
-                  fileDiff={file.fileDiff}
-                  disableWorkerPool={diff.lineCount > 10_000}
-                  options={{ diffStyle: diffView, diffIndicators: 'classic', themeType, theme: OPENTIG_CODE_THEMES, overflow: wrapLines ? 'wrap' : 'scroll', disableFileHeader: true, hunkSeparators: 'line-info-basic', unsafeCSS: VIEWER_SCROLLBAR_CSS }}
-                />
-              )}
-            </section>
-          );
-        })}
-      </Virtualizer>
+      <div style={{ display: 'contents' }} inert={message !== null} aria-hidden={message ? true : undefined}>
+        <Virtualizer className="diff-workspace-scroll" contentClassName="diff-workspace-content" style={{ visibility: message ? 'hidden' : undefined }}>
+          {files.map((file) => {
+            const isCollapsed = !compact && collapsed.has(file.key);
+            return (
+              <section key={file.key} className="diff-file-section">
+                {compact ? (
+                  <div className="diff-file-header diff-file-header-compact">
+                    <img src={getVsCodeFileIconUrl(file.path)} className="diff-file-icon" alt="" />
+                    <span className="diff-file-path"><DiffFilePathLabel path={file.path} /></span>
+                    {file.previousPath && file.previousPath !== file.path && <span className="diff-file-previous">from {file.previousPath}</span>}
+                    <span className="diff-file-stats"><span className="add">+{file.additions}</span><span className="del">−{file.deletions}</span></span>
+                    {diffActions(false)}
+                  </div>
+                ) : (
+                  <button type="button" className="diff-file-header" aria-expanded={!isCollapsed} onClick={() => toggleFile(file.key)}>
+                    {isCollapsed ? <IconChevronRight className="diff-file-chevron" /> : <IconChevronDown className="diff-file-chevron" />}
+                    <img src={getVsCodeFileIconUrl(file.path)} className="diff-file-icon" alt="" />
+                    <span className="diff-file-path"><DiffFilePathLabel path={file.path} /></span>
+                    {file.previousPath && file.previousPath !== file.path && <span className="diff-file-previous">from {file.previousPath}</span>}
+                    <span className="diff-file-stats"><span className="add">+{file.additions}</span><span className="del">−{file.deletions}</span></span>
+                  </button>
+                )}
+                {!isCollapsed && (
+                  <FileDiff
+                    key={`${contentKey}:${file.key}:${diffView}:${wrapLines}`}
+                    fileDiff={file.fileDiff}
+                    disableWorkerPool={diff.lineCount > 10_000}
+                    options={{ diffStyle: diffView, diffIndicators: 'classic', themeType, theme: OPENTIG_CODE_THEMES, overflow: wrapLines ? 'wrap' : 'scroll', disableFileHeader: true, hunkSeparators: 'line-info-basic', unsafeCSS: VIEWER_SCROLLBAR_CSS }}
+                  />
+                )}
+              </section>
+            );
+          })}
+        </Virtualizer>
+      </div>
     </div>
   );
 }

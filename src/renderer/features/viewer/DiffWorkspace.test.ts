@@ -18,7 +18,7 @@ vi.mock('./diff-parse.worker?worker', () => ({ default: class {
   postMessage(request: DiffParseRequest) { Object.assign(this, { request }); }
 } }));
 vi.mock('@pierre/diffs/react', () => ({
-  Virtualizer: ({ children }: { children: React.ReactNode }) => createElement('div', null, children),
+  Virtualizer: ({ children, className, style }: { children: React.ReactNode; className: string; style: React.CSSProperties }) => createElement('div', { className, style }, children),
   FileDiff: ({ fileDiff, disableWorkerPool }: { fileDiff: { name: string }; disableWorkerPool: boolean }) => createElement('div', { 'data-code-file': fileDiff.name, 'data-worker-disabled': disableWorkerPool }, fileDiff.name),
 }));
 let root: Root;
@@ -30,9 +30,9 @@ beforeEach(() => {
 });
 afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.unstubAllGlobals(); });
 
-async function render(patch: string, initiallyCollapsed = false, contentKey = 'test') {
+async function render(patch: string, initiallyCollapsed = false, contentKey = 'test', lineCount = 10_001) {
   await act(async () => root.render(createElement(TooltipProvider, null, createElement(DiffWorkspace, {
-    contentKey, diff: { path: '', patch, binary: false, truncated: false, lineCount: 10_001 },
+    contentKey, diff: { path: '', patch, binary: false, truncated: false, lineCount },
     diffView: 'unified', themeType: 'light', wrapLines: false, initiallyCollapsed,
   }))));
 }
@@ -66,7 +66,8 @@ it('hides superseded content immediately and ignores a late revision after switc
   await finish(1, second);
   expect(container.textContent).toContain('second.ts');
   await render(first);
-  expect(container.textContent).not.toContain('second.ts');
+  expect(container.querySelector<HTMLElement>('.diff-workspace-scroll')?.style.visibility).toBe('hidden');
+  expect(container.querySelector('[inert][aria-hidden="true"]')).not.toBeNull();
   const last = state.workers[2]!;
   const handler = last.onmessage!;
   await act(async () => root.unmount());
@@ -102,4 +103,63 @@ it('reuses results within a document and clears the cache on document changes an
   expect(clear).toHaveBeenCalledTimes(2);
   expect(state.workers[2]!.terminate).toHaveBeenCalledOnce();
   clear.mockRestore();
+});
+
+it('preserves collapse choices and the scroll container across background patch refreshes', async () => {
+  const first = MIXED_PATCH + largePatch();
+  const second = MIXED_PATCH + largePatch(10_002);
+  await render(first);
+  await finish(0, first);
+  const header = container.querySelector<HTMLButtonElement>('.diff-file-header')!;
+  await act(async () => header.click());
+  expect(header.getAttribute('aria-expanded')).toBe('false');
+  const scroll = container.querySelector<HTMLElement>('.diff-workspace-scroll')!;
+  scroll.scrollTop = 600;
+  await render(second);
+  expect(container.querySelector('.diff-workspace-scroll')).toBe(scroll);
+  expect(scroll.style.visibility).toBe('hidden');
+  expect(scroll.closest('[inert]')).not.toBeNull();
+  await finish(1, second);
+  expect(scroll.style.visibility).toBe('');
+  expect(scroll.closest('[inert]')).toBeNull();
+  expect(container.querySelector('.diff-workspace-scroll')).toBe(scroll);
+  expect(scroll.scrollTop).toBe(600);
+  expect(container.querySelector('.diff-file-header')?.getAttribute('aria-expanded')).toBe('false');
+  await render(second, false, 'other-document');
+  await finish(2, second);
+  expect(container.querySelector('.diff-workspace-scroll')).not.toBe(scroll);
+  expect(container.querySelector('.diff-file-header')?.getAttribute('aria-expanded')).toBe('true');
+});
+
+it('keeps the previous revision hidden through a failed refresh and restores state on recovery', async () => {
+  const first = MIXED_PATCH + largePatch();
+  await render(first, true);
+  await finish(0, first);
+  await act(async () => container.querySelector<HTMLButtonElement>('.diff-file-header')!.click());
+  const scroll = container.querySelector<HTMLElement>('.diff-workspace-scroll')!;
+  const second = MIXED_PATCH + largePatch(10_002);
+  await render(second, true);
+  const worker = state.workers[1]!;
+  await act(async () => worker.onmessage?.({ data: { revision: worker.request!.revision, error: 'Invalid diff' } } as MessageEvent<DiffParseResponse>));
+  expect(container.querySelector('[role="alert"]')?.textContent).toBe('Invalid diff');
+  expect(scroll.style.visibility).toBe('hidden');
+  expect(scroll.closest('[inert][aria-hidden="true"]')).not.toBeNull();
+  await render(first, true);
+  expect(container.querySelector('.diff-workspace-scroll')).toBe(scroll);
+  expect(scroll.style.visibility).toBe('');
+  expect(container.querySelector('.diff-file-header')?.getAttribute('aria-expanded')).toBe('true');
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+});
+
+it('retains the highlighting guard for the hidden revision until its replacement is ready', async () => {
+  const first = largePatch();
+  const second = largePatch(1, 150_000);
+  await render(first);
+  await finish(0, first);
+  expect(container.querySelector('[data-worker-disabled="true"]')).not.toBeNull();
+  await render(second, false, 'test', 1);
+  expect(container.querySelector('[data-worker-disabled="true"]')).not.toBeNull();
+  expect(container.querySelector('[data-worker-disabled="false"]')).toBeNull();
+  await finish(1, second);
+  expect(container.querySelector('[data-worker-disabled="false"]')).not.toBeNull();
 });
