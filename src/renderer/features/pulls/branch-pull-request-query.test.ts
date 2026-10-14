@@ -15,7 +15,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   focusManager.setFocused(true);
   onlineManager.setOnline(true);
-  client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+  client = new QueryClient({ defaultOptions: { queries: { networkMode: 'always', retry: false, gcTime: 0 } } });
   client.mount();
 });
 afterEach(() => {
@@ -79,4 +79,31 @@ describe('branch pull request refresh', () => {
     await vi.advanceTimersByTimeAsync(600_000);
     expect(find).toHaveBeenCalledTimes(2);
   });
+});
+
+it('discards an old account response that resolves after account queries reset', async () => {
+  let resolvePrevious!: (value: PullRequestSummary) => void;
+  find.mockReturnValueOnce(new Promise<PullRequestSummary>(resolve => { resolvePrevious = resolve; }))
+    .mockResolvedValue(pull('OPEN', 2));
+  const observer = await observe();
+  expect(find).toHaveBeenCalledOnce();
+  await resetGitHubQueries(client, ['repo']);
+  expect(observer.getCurrentResult().data).toMatchObject({ number: 2, state: 'OPEN' });
+  resolvePrevious(pull('MERGED', 1));
+  await vi.advanceTimersByTimeAsync(0);
+  expect(observer.getCurrentResult().data).toMatchObject({ number: 2, state: 'OPEN' });
+});
+
+it('refreshes on reconnect while hidden even when the previous result is fresh', async () => {
+  find.mockResolvedValue(pull('CLOSED'));
+  const observer = await observe();
+  focusManager.setFocused(false);
+  onlineManager.setOnline(false);
+  find.mockResolvedValue(pull('OPEN', 2));
+  onlineManager.setOnline(true);
+  await vi.advanceTimersByTimeAsync(0);
+  expect(find).toHaveBeenCalledTimes(2);
+  expect(observer.getCurrentResult().data).toMatchObject({ number: 2, state: 'OPEN' });
+  await vi.advanceTimersByTimeAsync(300_000);
+  expect(find).toHaveBeenCalledTimes(2);
 });
