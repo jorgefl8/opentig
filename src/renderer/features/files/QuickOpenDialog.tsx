@@ -5,7 +5,7 @@ import type { FileTreeEntry } from '@shared/git-types';
 import { Dialog, DialogDescription, DialogPopup, DialogTitle } from '@/components/ui/dialog';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { getVsCodeFileIconUrl } from '@/lib/vscode-icons';
-import { rankQuickOpenFiles } from './quick-open';
+import { createQuickOpenIndex, rankQuickOpenIndex } from './quick-open';
 
 interface QuickOpenDialogProps {
   open: boolean;
@@ -19,9 +19,10 @@ interface QuickOpenDialogProps {
 export function QuickOpenDialog({ open, files, includeIgnored, activePath, onOpenChange, onOpenFile }: QuickOpenDialogProps) {
   const [query, setQuery] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
+  const index = useMemo(() => files ? createQuickOpenIndex(files) : null, [files]);
   const results = useMemo(
-    () => files ? rankQuickOpenFiles(files, query, { includeIgnored, activePath, limit: 100 }) : [],
-    [activePath, files, includeIgnored, query],
+    () => index ? rankQuickOpenIndex(index, query, { includeIgnored, activePath, limit: 100 }) : [],
+    [activePath, index, includeIgnored, query],
   );
 
   useEffect(() => {
