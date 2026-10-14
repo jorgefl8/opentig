@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { FileDiff, Virtualizer } from '@pierre/diffs/react';
 import {
   IconArrowsMaximize, IconArrowsMinimize, IconChevronDown, IconChevronRight,
@@ -8,8 +8,9 @@ import type { DiffResult, DiffViewPreference, ThemePreference } from '@shared/co
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { getVsCodeFileIconUrl } from '@/lib/vscode-icons';
+import { useParsedDiff } from './useParsedDiff';
 import { OPENTIG_CODE_THEMES } from './diffThemes';
-import { buildDiffFileEntries, VIEWER_SCROLLBAR_CSS } from './patch-utils';
+import { type DiffFileEntry, VIEWER_SCROLLBAR_CSS } from './patch-utils';
 
 interface DiffWorkspaceProps {
   contentKey: string;
@@ -25,8 +26,21 @@ interface DiffWorkspaceProps {
   onClose?: (() => void) | undefined;
 }
 
-export function DiffWorkspace({ contentKey, diff, diffView, themeType, wrapLines, initiallyCollapsed = false, compact = false, scopeControl, onDiffViewChange, onWrapLinesChange, onClose }: DiffWorkspaceProps) {
-  const files = useMemo(() => buildDiffFileEntries(diff.patch), [diff.patch]);
+export function DiffWorkspace(props: DiffWorkspaceProps) {
+  const result = useParsedDiff(props.diff.patch);
+  if (!result || result.error !== undefined) return (
+    <div className={`diff-workspace${props.compact ? ' compact' : ''}`}>
+      <div className="diff-workspace-toolbar">
+        {props.scopeControl}
+        <span role={result ? 'alert' : 'status'}>{result?.error ?? 'Preparing diff…'}</span>
+        {props.onClose && <DiffAction label="Close diff" onClick={props.onClose}><IconX /></DiffAction>}
+      </div>
+    </div>
+  );
+  return <ParsedDiffWorkspace {...props} files={result.files} />;
+}
+
+function ParsedDiffWorkspace({ contentKey, diff, diffView, themeType, wrapLines, initiallyCollapsed = false, compact = false, scopeControl, onDiffViewChange, onWrapLinesChange, onClose, files }: DiffWorkspaceProps & { files: DiffFileEntry[] }) {
   const [collapsed, setCollapsed] = useState<Set<string>>(
     () => new Set(initiallyCollapsed ? files.map((file) => file.key) : []),
   );
