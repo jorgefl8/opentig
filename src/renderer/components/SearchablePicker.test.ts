@@ -140,13 +140,13 @@ function mockListLayout() {
   return () => { height.mockRestore(); width.mockRestore(); scrollHeight.mockRestore(); rect.mockRestore(); HTMLElement.prototype.scrollTo = previous; };
 }
 
-async function showLargePicker(count: number, value = 'item-900') {
+async function showLargePicker(count: number, value = 'item-900', open = true) {
   const items = Array.from({ length: count }, (_, index) => ({ value: `item-${index}`, label: `Option ${index}`, ...(index % 3 === 0 ? { description: 'Sample description' } : {}), disabled: index === 901 }));
   await act(async () => root.render(createElement(TooltipProvider, { delay: 0 }, createElement(SearchablePicker, {
     key: 'large', groups: [{ id: 'first', label: 'First group', items: items.slice(0, count / 2) }, { id: 'second', label: 'Second group', items: items.slice(count / 2) }],
     value, onValueChange, label: 'Sample selection', triggerLabel: value, placeholder: 'Search options',
   }))));
-  await act(async () => document.querySelector<HTMLButtonElement>('button[role="combobox"]')!.click());
+  if (open) await act(async () => document.querySelector<HTMLButtonElement>('button[role="combobox"]')!.click());
 }
 
 async function key(key: string) {
@@ -231,5 +231,19 @@ it('navigates beyond the mounted buffer and wraps to a different group', async (
     expect(document.getElementById(group.getAttribute('aria-labelledby')!)?.textContent).toBe('First group');
     await key('Enter');
     expect(onValueChange).toHaveBeenCalledExactlyOnceWith('item-0');
+  } finally { restore(); }
+});
+
+it('preserves user scrolling when live groups refresh without a query or highlight change', async () => {
+  const restore = mockListLayout();
+  try {
+    await showLargePicker(1000);
+    const list = document.querySelector<HTMLElement>('.searchable-picker-list')!;
+    await act(async () => { list.scrollTop = 15_000; list.dispatchEvent(new Event('scroll')); });
+    const before = list.scrollTop;
+    await showLargePicker(1000, 'item-900', false);
+    expect(document.querySelector<HTMLElement>('.searchable-picker-list')!.scrollTop).toBe(before);
+    const input = document.querySelector<HTMLInputElement>('input[role="combobox"]')!;
+    expect(document.getElementById(input.getAttribute('aria-activedescendant')!)?.textContent).toContain('Option 900');
   } finally { restore(); }
 });

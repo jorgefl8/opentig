@@ -128,7 +128,7 @@ export function SearchablePicker({ groups, value, onValueChange, label, triggerL
       </Tooltip>
       <ComboboxContent align={align} className={cn('searchable-picker', contentClassName)} initialFocus={focusSearch}>
         <ComboboxInput placeholder={placeholder} aria-label={placeholder} />
-        {virtualized ? <VirtualPickerList groups={filtered} selectedIndex={selected ? filteredItems.indexOf(selected) : -1} highlight={highlight} scrolling={scrolling} label={label} comboboxId={comboboxId} onScroll={dismissScrollingTooltips} /> : <ComboboxList className="searchable-picker-list" aria-label={label} onScroll={dismissScrollingTooltips} onWheelCapture={dismissScrollingTooltips}>
+        {virtualized ? <VirtualPickerList query={needle} groups={filtered} selectedIndex={selected ? filteredItems.indexOf(selected) : -1} highlight={highlight} scrolling={scrolling} label={label} comboboxId={comboboxId} onScroll={dismissScrollingTooltips} /> : <ComboboxList className="searchable-picker-list" aria-label={label} onScroll={dismissScrollingTooltips} onWheelCapture={dismissScrollingTooltips}>
           {filtered.length === 0 && <div className="searchable-picker-empty" role="status">No matches</div>}
           {filtered.map((group) => (
             <ComboboxGroup key={group.id}>
@@ -150,7 +150,8 @@ export function SearchablePicker({ groups, value, onValueChange, label, triggerL
   );
 }
 
-function VirtualPickerList({ groups, selectedIndex, highlight, scrolling, label, comboboxId, onScroll }: {
+function VirtualPickerList({ query, groups, selectedIndex, highlight, scrolling, label, comboboxId, onScroll }: {
+  query: string;
   groups: SearchablePickerGroup[];
   selectedIndex: number;
   highlight: { index: number; scroll: boolean };
@@ -178,11 +179,11 @@ function VirtualPickerList({ groups, selectedIndex, highlight, scrolling, label,
       return indexes.sort((a, b) => a - b);
     },
   });
-  // A new filtered collection starts at the top; the next highlight can scroll to its own row.
-  useLayoutEffect(() => { virtualizer.scrollToOffset(0); }, [rows, virtualizer]);
+  // Search changes reset the viewport; live group refreshes preserve the user's scroll.
+  useLayoutEffect(() => { virtualizer.scrollToOffset(0); }, [query, virtualizer]);
   useLayoutEffect(() => {
     if (activeIndex >= 0 && (highlight.scroll || highlight.index < 0)) virtualizer.scrollToIndex(activeIndex, { align: 'auto' });
-  }, [activeIndex, highlight, rows, virtualizer]);
+  }, [activeIndex, highlight, virtualizer]);
   const visibleGroups = new Map<string, ReturnType<typeof virtualizer.getVirtualItems>>();
   for (const row of virtualizer.getVirtualItems()) {
     const id = rows[row.index]!.group.id;
