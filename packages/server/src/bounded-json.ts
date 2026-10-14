@@ -1,3 +1,5 @@
+import { types } from 'node:util';
+
 /** Stop JSON.stringify before it builds an oversized wire message. */
 export class JsonByteLimitError extends Error {}
 
@@ -10,7 +12,14 @@ export function stringifyBounded(value: unknown, maxBytes: number): { text: stri
     if (bytes > maxBytes) throw new JsonByteLimitError('JSON byte limit exceeded.');
   };
   const text = JSON.stringify(value, function (key, entry: unknown): unknown {
-    if (entry instanceof Number || entry instanceof String || entry instanceof Boolean) entry = entry.valueOf();
+    // Match native wrapper coercion: Number/String use primitive conversion,
+    // while Boolean reads its internal value. Prototype inheritance alone does
+    // not make an object a wrapper, and an overridden valueOf is not sufficient.
+    if (typeof entry === 'object' && entry !== null && types.isBoxedPrimitive(entry)) {
+      if (types.isNumberObject(entry)) entry = +(entry as unknown as number);
+      else if (types.isStringObject(entry)) entry = String(entry);
+      else if (types.isBooleanObject(entry)) entry = Boolean.prototype.valueOf.call(entry);
+    }
     // The native serializer has already applied toJSON. Omitted object values
     // do not occupy bytes; the same values in an array become null.
     const omitted = entry === undefined || typeof entry === 'function' || typeof entry === 'symbol';

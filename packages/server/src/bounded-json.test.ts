@@ -2,6 +2,20 @@ import { describe, expect, it, vi } from 'vitest';
 import { JsonByteLimitError, stringifyBounded } from './bounded-json';
 
 describe('bounded wire JSON', () => {
+  it('preserves native boxed primitive coercion and exact budgets', () => {
+    const number = Object.assign(new Number(1), { [Symbol.toPrimitive]: () => 100 });
+    const string = Object.assign(new String('a'), { [Symbol.toPrimitive]: () => 'longer' });
+    const boolean = new Boolean(false);
+    boolean.valueOf = () => true;
+    const fakeNumber = Object.create(Number.prototype);
+    for (const value of [number, string, boolean, fakeNumber]) {
+      const text = JSON.stringify(value);
+      const bytes = Buffer.byteLength(text);
+      expect(stringifyBounded(value, bytes)).toEqual({ text, bytes });
+      expect(() => stringifyBounded(value, bytes - 1)).toThrow(JsonByteLimitError);
+    }
+  });
+
   it.each([
     { patch: 'a\n\t\b\r\f\\"\u0000é€😀\ud800\udc00\ud800', 'é\n': 'end' },
     { list: [undefined, NaN, Infinity, null, true, false, 1e30], omitted: undefined },
@@ -19,6 +33,26 @@ describe('bounded wire JSON', () => {
     const value = [shared, shared];
     const text = JSON.stringify(value);
     expect(stringifyBounded(value, Buffer.byteLength(text))).toEqual({ text, bytes: Buffer.byteLength(text) });
+  });
+
+  it('applies toJSON once per visit with native keys and omissions', () => {
+    const toJSON = vi.fn((key: string) => key === 'omitted' ? undefined : { key });
+    const shared = { toJSON };
+    const value = { first: shared, list: [shared], omitted: shared };
+    const text = JSON.stringify(value);
+    const calls = [...toJSON.mock.calls];
+    toJSON.mockClear();
+    expect(stringifyBounded(value, Buffer.byteLength(text))).toEqual({ text, bytes: Buffer.byteLength(text) });
+    expect(toJSON.mock.calls).toEqual(calls);
+  });
+
+  it('preserves native rejection of cycles and BigInt values', () => {
+    const cyclic: { self?: unknown } = {};
+    cyclic.self = cyclic;
+    for (const value of [cyclic, { integer: 1n }, Object(1n)]) {
+      expect(() => JSON.stringify(value)).toThrow(TypeError);
+      expect(() => stringifyBounded(value, 1024)).toThrow(TypeError);
+    }
   });
 
   it('preserves exact budgets for long text with paired and lone surrogates', () => {
