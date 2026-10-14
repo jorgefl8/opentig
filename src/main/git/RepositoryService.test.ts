@@ -57,7 +57,8 @@ describe('RepositoryService change stats', () => {
     });
     const readers = Array.from({ length: 4 }, () => fixture.repositories.status(fixture.repositoryId, false));
     await snapshot;
-    await fixture.git.runWrite(fixture.work, ['checkout', '-b', 'updated'], { operation: 'checkout' });
+    // Match the registered path used by status, even when the temp path is an alias.
+    await fixture.git.runWrite(fixture.repositories.get(fixture.repositoryId).path, ['checkout', '-b', 'updated'], { operation: 'checkout' });
     release();
     expect((await Promise.all(readers)).every(status => status.branch === 'updated')).toBe(true);
     expect(run.mock.calls.filter(([, , options]) => options.operation === 'status')).toHaveLength(2);
