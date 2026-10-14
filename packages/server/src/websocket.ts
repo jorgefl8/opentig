@@ -3,13 +3,14 @@ import type { Duplex } from 'node:stream';
 import { IPC, type IpcResult } from '../../../src/shared/contracts';
 import { DEFAULT_COMMAND_TIMEOUT_MS, OPEN_TIG_SERVER_COMMANDS, type OpenTigServerCommandDefinition } from '../../../src/shared/protocol';
 import type { OpenTigRuntimeEvent } from '../../../src/shared/runtime-events';
-import type { OpenTigServerIdentity, OpenTigServerMessage } from '../../../src/shared/server-protocol';
+import { OPEN_TIG_MAX_SERVER_MESSAGE_BYTES, type OpenTigServerIdentity, type OpenTigServerMessage } from '../../../src/shared/server-protocol';
 import { CommandRegistry } from '../../../src/main/runtime/CommandRegistry';
 import { OpenTigSessionAuth } from './auth';
 import type { OpenTigServerLogger } from './http';
 import { isAllowedOrigin } from './origin';
 import { redactOperationResult } from './redact';
 import WebSocket, { WebSocketServer } from 'ws';
+import { JsonByteLimitError, stringifyBounded } from './bounded-json';
 
 const NORMAL_FRAME_LIMIT = 1024 * 1024;
 const CONTENT_FRAME_LIMIT = 9 * 1024 * 1024;
@@ -191,12 +192,31 @@ export class OpenTigWebSocketTransport {
     if (socket.readyState !== WebSocket.OPEN) return;
     const state = this.clients.get(socket);
     if (state && !this.options.auth.hasSession(state.sessionId)) return socket.close(1008, 'Session expired or revoked');
-    const serialized = JSON.stringify(message);
-    if (socket.bufferedAmount + Buffer.byteLength(serialized) > MAX_BUFFERED_SEND_BYTES) {
+    let serialized: { text: string; bytes: number };
+    try {
+      serialized = stringifyBounded(message, OPEN_TIG_MAX_SERVER_MESSAGE_BYTES);
+    } catch (error) {
+      if (!(error instanceof JsonByteLimitError)) throw error;
+      if (message.type !== 'result') {
+        socket.close(1009, 'Server message too large');
+        return;
+      }
+      // The result envelope stays compatible with clients that predate this
+      // code: they show the message and keep the authenticated socket open.
+      serialized = stringifyBounded({
+        type: 'result', id: message.id,
+        result: { ok: false, error: {
+          code: 'RESPONSE_TOO_LARGE', operation: 'server-protocol',
+          message: 'Response exceeded the 4 MiB transport limit. Request a smaller scope.',
+          maxBytes: OPEN_TIG_MAX_SERVER_MESSAGE_BYTES,
+        } },
+      }, OPEN_TIG_MAX_SERVER_MESSAGE_BYTES);
+    }
+    if (socket.bufferedAmount + serialized.bytes > MAX_BUFFERED_SEND_BYTES) {
       socket.close(1013, 'Client is too slow');
       return;
     }
-    socket.send(serialized, (error) => {
+    socket.send(serialized.text, (error) => {
       if (error) this.options.logger('warn', 'WebSocket send failed.');
     });
   }

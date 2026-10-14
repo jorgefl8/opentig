@@ -257,6 +257,14 @@ Authentication failure stops automatic retries and asks the browser to pair
 again. Browsers without a valid session see pairing instructions without a startup
 error notification.
 
+Each WebSocket response is limited to 4 MiB of UTF-8 JSON, including its envelope
+and escaped text. Larger results fail with `RESPONSE_TOO_LARGE` while the session
+stays connected; content is never silently truncated. Request a narrower scope
+where available. A diff allowed by Git's 32 MiB output limit can still exceed this
+transport limit. Images use authenticated HTTP rather than WebSocket JSON.
+The separate 4 MiB send-queue budget closes an accumulating slow connection with
+code 1013; reconnect does not replay pending operations.
+
 If a server upgrade makes an open client's version incompatible, the connection
 notification offers **Reload** to fetch the current interface. The browser still
 warns about unsaved editor changes before reloading.

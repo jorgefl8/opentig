@@ -9,6 +9,7 @@ import { OPEN_TIG_SERVER_COMMANDS } from '../../../src/shared/protocol';
 import { BROWSER_SESSION_MAX_AGE_SECONDS, OneTimeBootstrapAuthSource, OpenTigSessionAuth } from './auth';
 import { OpenTigServer } from './OpenTigServer';
 import { NetworkSettings } from './network-settings';
+import { OPEN_TIG_MAX_SERVER_MESSAGE_BYTES } from '../../../src/shared/server-protocol';
 
 interface Fixture {
   auth: OpenTigSessionAuth;
@@ -133,12 +134,98 @@ describe('WebSocket safety limits', () => {
     expect(aborted).toBe(true);
   });
 
-  it('disconnects a client when one result would exceed the bounded send queue', async () => {
-    const fixture = await startFixture(() => ({ payload: 'x'.repeat(5 * 1024 * 1024) }));
+  it.each([
+    ['plain 5 MiB', 'x', 5 * 1024 * 1024],
+    ['32 MiB diff', 'x', 32 * 1024 * 1024],
+    ['JSON escapes', '\u0000', 1024 * 1024],
+    ['UTF-8', '€', 2 * 1024 * 1024],
+  ])('returns a typed error for %s on an empty queue and keeps the socket usable', async (_label, content, count) => {
+    const fixture = await startFixture(() => ({ payload: content.repeat(count) }));
     const socket = await fixture.socket();
+    const response = await sendAndReceive(socket, { type: 'request', id: 'large-result', command: 'app:bootstrap', args: [] });
+    expect(response).toMatchObject({ type: 'result', id: 'large-result', result: { ok: false, error: {
+      code: 'RESPONSE_TOO_LARGE', maxBytes: OPEN_TIG_MAX_SERVER_MESSAGE_BYTES,
+    } } });
+    expect(socket.readyState).toBe(WebSocket.OPEN);
+    expect(await sendAndReceive(socket, { type: 'ping' })).toEqual({ type: 'pong' });
+    expect(await sendAndReceive(socket, { type: 'request', id: 'recovered', command: 'repository:write-file', args: ['repository', 'small.txt', 'x', ''] }))
+      .toMatchObject({ result: { ok: true } });
+    socket.close();
+  });
+
+  it('accepts exactly the byte limit and rejects one more byte without truncating', async () => {
+    const envelope = { type: 'result', id: 'boundary', result: { ok: true, value: { payload: '', server: { protocolVersion: 1, appVersion: 'test' } } } };
+    const overhead = Buffer.byteLength(JSON.stringify(envelope));
+    let payload = 'x'.repeat(OPEN_TIG_MAX_SERVER_MESSAGE_BYTES - overhead);
+    const fixture = await startFixture(() => ({ payload }));
+    const socket = await fixture.socket();
+    const response = await sendAndReceive(socket, { type: 'request', id: 'boundary', command: 'app:bootstrap', args: [] });
+    expect(Buffer.byteLength(JSON.stringify(response))).toBe(OPEN_TIG_MAX_SERVER_MESSAGE_BYTES);
+    expect(response).toEqual({ ...envelope, result: { ...envelope.result, value: { ...envelope.result.value, payload } } });
+    payload += 'x';
+    expect(await sendAndReceive(socket, { type: 'request', id: 'boundary', command: 'app:bootstrap', args: [] }))
+      .toMatchObject({ result: { ok: false, error: { code: 'RESPONSE_TOO_LARGE' } } });
+    socket.close();
+  });
+
+  it('still requires authenticated HTTP for images rather than sending image bytes on the socket', async () => {
+    const fixture = await startFixture(() => emptyBootstrap());
+    const socket = await fixture.socket();
+    expect(await sendAndReceive(socket, { type: 'request', id: 'image', command: 'repository:read-image', args: ['repository', 'image.png'] }))
+      .toMatchObject({ result: { ok: false, error: { message: 'Image previews use authenticated HTTP.' } } });
+    socket.close();
+  });
+
+  it('closes a genuinely backpressured TCP peer and leaves another client and reconnection usable', async () => {
+    const fixture = await startFixture(() => ({ payload: 'x'.repeat(2 * 1024 * 1024) }));
+    const slow = await fixture.socket();
+    const healthy = await fixture.socket();
+    const slowClosed = closed(slow);
+    const original = Object.getOwnPropertyDescriptor(WebSocket.prototype, 'bufferedAmount')!.get!;
+    let peakBuffered = 0;
+    const observed = vi.spyOn(WebSocket.prototype, 'bufferedAmount', 'get').mockImplementation(function (this: WebSocket) {
+      const bytes = original.call(this) as number;
+      peakBuffered = Math.max(peakBuffered, bytes);
+      return bytes;
+    });
+    try {
+      slow.pause(); // Real ws/TCP reads stop; send and bufferedAmount stay native.
+      for (let index = 0; index < 32; index += 1) {
+        slow.send(JSON.stringify({ type: 'request', id: `slow-${index}`, command: 'app:bootstrap', args: [] }));
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      slow.resume();
+      await expect(slowClosed).resolves.toBe(1013);
+      expect(peakBuffered).toBeGreaterThan(2 * 1024 * 1024);
+      expect(await sendAndReceive(healthy, { type: 'request', id: 'healthy', command: 'repository:write-file', args: ['repository', 'small.txt', 'x', ''] }))
+        .toMatchObject({ result: { ok: true } });
+      const recovered = await fixture.socket();
+      expect(await sendAndReceive(recovered, { type: 'ping' })).toEqual({ type: 'pong' });
+      recovered.close();
+      healthy.close();
+    } finally {
+      slow.resume();
+      observed.mockRestore();
+    }
+  });
+
+  it('rechecks authentication before delivering an asynchronously completed response', async () => {
+    let finish!: (value: unknown) => void;
+    let started!: () => void;
+    const running = new Promise<void>((resolve) => { started = resolve; });
+    const fixture = await startFixture(() => new Promise((resolve) => { finish = resolve; started(); }));
+    const cookie = (await fixture.auth.exchangePairingToken(fixture.auth.createPairingToken().token))!.split(';', 1)[0]!;
+    const sessionId = fixture.auth.authenticate({ cookie })!;
+    const socket = await openWebSocket(fixture.origin, cookie);
+    const messages = vi.fn();
+    socket.on('message', messages);
     const close = closed(socket);
-    socket.send(JSON.stringify({ type: 'request', id: 'large-result', command: 'app:bootstrap', args: [] }));
-    await expect(close).resolves.toBe(1013);
+    socket.send(JSON.stringify({ type: 'request', id: 'revoked', command: 'app:bootstrap', args: [] }));
+    await running;
+    await fixture.auth.revokeBrowserSession(sessionId);
+    finish({ payload: 'x'.repeat(5 * 1024 * 1024) });
+    await expect(close).resolves.toBe(1008);
+    expect(messages).not.toHaveBeenCalled();
   });
 
   it('allows the bounded text-write exception above the normal frame limit', async () => {
