@@ -81,28 +81,31 @@ export class GitProcess {
     for (const listener of this.invalidationListeners) listener(scope);
   }
 
-  shareRead<T>(cwd: string, key: string, read: () => Promise<T>): Promise<T> {
+  shareRead<T>(cwd: string, key: string, read: () => Promise<T>, retryInvalidated = true): Promise<T> {
     // Worktrees share invalidation of refs/config, but never share their status/index.
-    return this.reads.run(this.readScope(cwd), JSON.stringify([path.resolve(cwd), key]), read);
+    return this.reads.run(this.readScope(cwd), JSON.stringify([path.resolve(cwd), key]), read, retryInvalidated);
   }
 
   run(cwd: string, args: string[], options: RunOptions): Promise<GitOutput> {
     let index = 0;
     while (args[index] === '-c') index += 2;
     if (this.network && ['fetch', 'push', 'ls-remote'].includes(args[index] ?? '')) {
-      return this.network(cwd, args, options, (next, settings) => this.runDirect(cwd, next, settings));
+      // Routing owns the account session and credential broker. A raw retry
+      // would replay its old credentials/destination instead of opening a new
+      // session. Let the complete operation decide whether to refresh/retry.
+      return this.network(cwd, args, options, (next, settings) => this.runDirect(cwd, next, settings, false));
     }
     return this.runDirect(cwd, args, options);
   }
 
-  private runDirect(cwd: string, args: string[], options: RunOptions): Promise<GitOutput> {
+  private runDirect(cwd: string, args: string[], options: RunOptions, retryInvalidated = true): Promise<GitOutput> {
     const globalArgs = ['--no-pager'];
     if (options.readOnly) globalArgs.push('--no-optional-locks');
     const execute = () => this.spawnGit(cwd, [...globalArgs, ...args], options);
     if (options.readOnly) {
       // Hash options: managed command arguments/options may contain credentials.
       const key = createHash('sha256').update(JSON.stringify([args, options, this.authenticationKey?.(cwd)])).digest('hex');
-      return this.shareRead(cwd, `git:${key}`, execute).then(output => ({ ...output,
+      return this.shareRead(cwd, `git:${key}`, execute, retryInvalidated).then(output => ({ ...output,
         stdout: Buffer.from(output.stdout), stderr: Buffer.from(output.stderr) }));
     }
     this.invalidate(cwd);
