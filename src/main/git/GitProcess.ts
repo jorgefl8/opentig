@@ -103,6 +103,10 @@ export class GitProcess {
     if (options.readOnly) globalArgs.push('--no-optional-locks');
     const execute = () => this.spawnGit(cwd, [...globalArgs, ...args], options);
     if (options.readOnly) {
+      // Consumer-owned cancellation/progress cannot share a process. Keep this
+      // boundary safe when callers extend the execution options: JSON keys
+      // omit callbacks and cannot distinguish AbortSignal instances.
+      if (('signal' in options && options.signal != null) || ('onStderr' in options && options.onStderr != null)) return execute();
       // Hash options: managed command arguments/options may contain credentials.
       const key = createHash('sha256').update(JSON.stringify([args, options, this.authenticationKey?.(cwd)])).digest('hex');
       return this.shareRead(cwd, `git:${key}`, execute, retryInvalidated).then(output => ({ ...output,

@@ -5,6 +5,17 @@ import { describe, expect, it } from 'vitest';
 import { GitProcess } from './GitProcess';
 
 describe('GitProcess', () => {
+  it.each(['signal', 'onStderr'] as const)('does not share reads with consumer-owned %s options', async key => {
+    const git = new GitProcess();
+    const args = alias('consumer-pid', 'setTimeout(() => process.stdout.write(String(process.pid)), 50)');
+    const outputs = await Promise.all(Array.from({ length: 2 }, () => {
+      const options = { operation: 'consumer-pid', readOnly: true, timeoutMs: 5_000,
+        [key]: key === 'signal' ? new AbortController().signal : () => undefined };
+      return git.run(process.cwd(), args, options);
+    }));
+    expect(new Set(outputs.map(output => output.stdout.toString())).size).toBe(2);
+  });
+
   it('uses one child process for four identical reads and fresh processes after settlement', async () => {
     const git = new GitProcess();
     const args = alias('read-pid', 'setTimeout(() => process.stdout.write(String(process.pid)), 50)');
