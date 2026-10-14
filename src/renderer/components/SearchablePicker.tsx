@@ -171,6 +171,11 @@ function VirtualPickerList({ query, groups, selectedIndex, highlight, scrolling,
     // Measurements replace these estimates, including larger phone targets and custom fonts.
     estimateSize: index => (rows[index]!.item.description ? 42 : 32) + (rows[index]!.first ? (rows[index]!.group.label ? 23 : 0) : 2),
     overscan: 4,
+    // The spacer starts after the list's 4px padding. Match that origin so
+    // scrolling to a row does not clip its bottom edge on phone targets.
+    scrollMargin: 4,
+    scrollPaddingStart: 4,
+    scrollPaddingEnd: 4,
     initialRect: { width: 340, height: 292 },
     rangeExtractor: range => {
       const indexes = defaultRangeExtractor(range);
@@ -196,7 +201,7 @@ function VirtualPickerList({ query, groups, selectedIndex, highlight, scrolling,
       {[...visibleGroups].map(([id, groupRows]) => {
         const first = groupRows[0]!;
         const group = rows[first.index]!.group;
-        return <ComboboxGroup key={id} style={{ position: 'absolute', top: first.start, width: '100%', height: groupRows.at(-1)!.end - first.start }}>
+        return <ComboboxGroup key={id} style={{ position: 'absolute', top: first.start - virtualizer.options.scrollMargin, width: '100%', height: groupRows.at(-1)!.end - first.start }}>
           {group.label && !rows[first.index]!.first && <ComboboxGroupLabel className="sr-only">{group.label}</ComboboxGroupLabel>}
           {groupRows.map(row => {
             const entry = rows[row.index]!;

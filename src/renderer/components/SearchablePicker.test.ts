@@ -247,3 +247,17 @@ it('preserves user scrolling when live groups refresh without a query or highlig
     expect(document.getElementById(input.getAttribute('aria-activedescendant')!)?.textContent).toContain('Option 900');
   } finally { restore(); }
 });
+
+it('keeps a distant highlighted row fully inside the padded list viewport', async () => {
+  const restore = mockListLayout();
+  try {
+    await showLargePicker(1000);
+    const row = option('Option 900').closest<HTMLElement>('[data-index]')!;
+    const group = row.closest<HTMLElement>('[role="group"]')!;
+    const list = document.querySelector<HTMLElement>('.searchable-picker-list')!;
+    // The real list has 4px of padding, outside the positioned inner spacer.
+    const top = 4 + Number.parseFloat(group.style.top) + Number.parseFloat(row.style.top) - list.scrollTop;
+    expect(top).toBeGreaterThanOrEqual(4);
+    expect(top + row.offsetHeight).toBeLessThanOrEqual(list.offsetHeight - 4);
+  } finally { restore(); }
+});
