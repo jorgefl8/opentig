@@ -21,6 +21,16 @@ describe('bounded wire JSON', () => {
     expect(stringifyBounded(value, Buffer.byteLength(text))).toEqual({ text, bytes: Buffer.byteLength(text) });
   });
 
+  it('preserves exact budgets for long text with paired and lone surrogates', () => {
+    for (const offset of [16_382, 16_383, 16_384, 32_767]) {
+      const value = { patch: 'a'.repeat(offset) + '😀\ud800x\udc00\n' + '\u0000'.repeat(30_000) };
+      const text = JSON.stringify(value);
+      const bytes = Buffer.byteLength(text);
+      expect(stringifyBounded(value, bytes)).toEqual({ text, bytes });
+      expect(() => stringifyBounded(value, bytes - 1)).toThrow(JsonByteLimitError);
+    }
+  });
+
   it('stops before visiting the rest of an oversized response', () => {
     const later = vi.fn(() => 'must not serialize');
     const value = { patch: '\u0000'.repeat(1024), get later() { return later(); } };

@@ -41,19 +41,18 @@ function stringBytes(value: string, remaining: number): number {
   // so huge strings can be rejected by the caller without scanning escapes.
   let bytes = Buffer.byteLength(value) + 2;
   if (bytes > remaining) throw new JsonByteLimitError('JSON byte limit exceeded.');
-  // JSON escapes control characters; most plain text needs no extra scan.
+  // Count escaped text in bounded native-serializer chunks instead of walking
+  // every code unit in JavaScript. Keep surrogate pairs together at boundaries.
   // oxlint-disable-next-line eslint/no-control-regex
   if (!/[\u0000-\u001f"\\\ud800-\udfff]/.test(value)) return bytes;
-  for (let index = 0; index < value.length; index += 1) {
-    const code = value.charCodeAt(index);
-    if (code === 0x22 || code === 0x5c || code === 8 || code === 9 || code === 10 || code === 12 || code === 13) bytes += 1;
-    else if (code < 0x20) bytes += 5;
-    else if (code >= 0xd800 && code <= 0xdbff) {
-      const next = value.charCodeAt(index + 1);
-      if (next >= 0xdc00 && next <= 0xdfff) index += 1;
-      else bytes += 3; // escaped lone surrogate replaces three UTF-8 bytes
-    } else if (code >= 0xdc00 && code <= 0xdfff) bytes += 3;
+  bytes = 2;
+  for (let start = 0; start < value.length;) {
+    let end = Math.min(start + 16_384, value.length);
+    const previous = value.charCodeAt(end - 1), next = value.charCodeAt(end);
+    if (previous >= 0xd800 && previous <= 0xdbff && next >= 0xdc00 && next <= 0xdfff) end++;
+    bytes += Buffer.byteLength(JSON.stringify(value.slice(start, end))) - 2;
     if (bytes > remaining) throw new JsonByteLimitError('JSON byte limit exceeded.');
+    start = end;
   }
   return bytes;
 }
