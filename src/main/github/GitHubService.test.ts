@@ -63,6 +63,31 @@ describe('GitHub SSH remote detection', () => {
   });
 });
 describe('current branch pull requests', () => {
+  it.each(['OPEN', 'MERGED'] as const)('includes native membership for the selected %s branch PR without fetching layers', async state => {
+    const { service, run } = fixture(args => {
+      if (args[1] === 'graphql') return ok({ data: { repository: { pr12: {
+        stack: { number: 7, size: 3, baseRefName: 'main' }, stackEntry: { position: 2 },
+      } } } });
+      return ok(state === 'MERGED' && args.includes('open') ? [] : [
+        { number: 12, state, headRefName: 'feature', headRepository: { nameWithOwner: 'example/demo' } },
+      ]);
+    });
+    expect(await service.findPullRequestForBranch('repo', 'feature')).toMatchObject({
+      number: 12, state, stack: { number: 7, size: 3, position: 2, base: 'main' },
+    });
+    expect(run.mock.calls.filter(([, args]) => args[1] === 'graphql')).toHaveLength(1);
+    expect(run.mock.calls.some(([, args]) => args[1]?.includes('/stacks'))).toBe(false);
+  });
+
+  it('preserves the branch PR when optional stack metadata is unavailable', async () => {
+    const { service } = fixture(args => args[1] === 'graphql' ? fail('HTTP 403: rate limit') : ok([
+      { number: 12, state: 'OPEN', headRefName: 'feature', headRepository: { nameWithOwner: 'example/demo' } },
+    ]));
+    const pull = await service.findPullRequestForBranch('repo', 'feature');
+    expect(pull?.number).toBe(12);
+    expect(pull?.stack).toBeUndefined();
+  });
+
   it('selects the most recently updated open PR when several PRs share a branch', async () => {
     const { service } = fixture(() => ok([
       { headRepository: { nameWithOwner: 'example/demo' }, headRefName: 'feature', number: 11, state: 'OPEN', updatedAt: '2026-09-01' },

@@ -53,7 +53,7 @@ export function MobileToolbar({ props, repositoryControl, worktreeControl, branc
         <Button variant="outline" size="sm" disabled={syncDisabled || (!publish && !(props.status && props.status.ahead > 0))} onClick={() => contextAction(props.onPush)}><IconArrowUp />{publish ? 'Publish' : 'Push'}{props.status?.ahead ? ` (${props.status.ahead})` : ''}</Button>
       </div>
       <button className="mobile-sheet-action" onClick={() => contextAction(props.onOpen)}><IconPlus /><span>Open repository</span></button>
-      {props.branchPullRequest && <BranchPullRequestMenu key={props.branchPullRequest.url} pullRequest={props.branchPullRequest} onOpenPullRequest={props.onOpenPullRequest} mobile onNavigate={() => onContextOpen(false)} />}
+      {props.branchPullRequest && <BranchPullRequestMenu repositoryId={props.repository.id} key={props.branchPullRequest.url} pullRequest={props.branchPullRequest} onOpenPullRequest={props.onOpenPullRequest} mobile onNavigate={() => onContextOpen(false)} />}
       {props.githubInfo?.isGitHub && props.githubInfo.nameWithOwner && <button className="mobile-sheet-action" onClick={() => contextAction(() => openOnGitHub(`https://github.com/${props.githubInfo!.nameWithOwner}`))}><IconBrandGithub /><span>Open on GitHub</span></button>}
       <button className="mobile-sheet-action" onClick={() => contextAction(() => props.onSettingsOpen(true))}><IconSettings /><span>Settings</span></button>
     </MobileSheet>

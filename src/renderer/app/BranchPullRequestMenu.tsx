@@ -1,10 +1,12 @@
 import { IconBrandGithub, IconGitMerge, IconGitPullRequest } from '@tabler/icons-react';
 import type { PullRequestSummary } from '../../shared/contracts';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { PullRequestStackMenu } from '@/features/pulls/PullRequestStackMenu';
 import { OpenTigMark } from '@/components/OpenTigMark';
 import { openOnGitHub, prStateLabel } from '@/features/pulls/gh-utils';
 
-export function BranchPullRequestMenu({ pullRequest, onOpenPullRequest, mobile = false, onNavigate }: {
+export function BranchPullRequestMenu({ repositoryId, pullRequest, onOpenPullRequest, mobile = false, onNavigate }: {
+  repositoryId: string;
   pullRequest: PullRequestSummary;
   onOpenPullRequest(number: number): void;
   mobile?: boolean;
@@ -12,7 +14,7 @@ export function BranchPullRequestMenu({ pullRequest, onOpenPullRequest, mobile =
 }) {
   const merged = pullRequest.state === 'MERGED';
   const draft = pullRequest.state === 'OPEN' && pullRequest.isDraft;
-  return <DropdownMenu>
+  return <div className={`toolbar-branch-pr-group${mobile ? ' is-mobile' : ''}`}><DropdownMenu>
     <DropdownMenuTrigger render={<button type="button"
       className={`${mobile ? 'mobile-sheet-action mobile-branch-pr' : 'toolbar-branch-pr'} ${pullRequest.state.toLowerCase()}${draft ? ' draft' : ''}`}
       aria-label={`View ${prStateLabel(pullRequest).toLowerCase()} pull request #${pullRequest.number}`} />}>
@@ -32,5 +34,8 @@ export function BranchPullRequestMenu({ pullRequest, onOpenPullRequest, mobile =
         <IconBrandGithub aria-hidden="true" /> Open in GitHub
       </DropdownMenuItem>
     </DropdownMenuContent>
-  </DropdownMenu>;
+  </DropdownMenu>
+    {pullRequest.stack && <PullRequestStackMenu key={`${repositoryId}:${pullRequest.number}`} repositoryId={repositoryId} number={pullRequest.number} membership={pullRequest.stack}
+      onSelect={number => { onNavigate?.(); onOpenPullRequest(number); }} />}
+  </div>;
 }

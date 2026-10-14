@@ -291,6 +291,10 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   .app-name { white-space: nowrap; }
   .app-name-dev { font-weight: 800; color: var(--foreground); background-image: repeating-linear-gradient(135deg, var(--dev-stripe-foreground) 0 .18em, var(--dev-stripe-yellow) .18em .36em); background-clip: text; -webkit-text-fill-color: transparent; -webkit-text-stroke: .35px color-mix(in oklch, var(--foreground) 65%, transparent); }
   .toolbar-spacer { flex: 1; }
+  .toolbar-branch-pr-group { display: inline-flex; align-items: center; gap: 5px; flex: none; }
+  .toolbar-branch-pr-group.is-mobile { display: flex; width: 100%; }
+  .toolbar-branch-pr-group.is-mobile .mobile-branch-pr { flex: 1; min-width: 0; }
+  .toolbar-branch-pr-group.is-mobile .pr-stack-trigger { min-height: 44px; min-width: 44px; justify-content: center; }
   .toolbar-branch-pr { display: inline-flex; flex: none; min-height: 28px; align-items: center; gap: 4px; padding: 0 3px; background: transparent; color: var(--success); font-size: 11px; font-weight: 500; }
   .toolbar-branch-pr > svg { width: 14px; height: 14px; flex: none; }
   .toolbar-branch-pr:hover .toolbar-pr-label { text-decoration: underline; text-underline-offset: 3px; }

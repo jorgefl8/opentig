@@ -20,7 +20,7 @@ CLI availability is checked at startup and reused across repositories and list f
 
 ### Native stacks
 
-A layer indicator such as **2/3** in each PR row and the right-hand viewer opens the native GitHub stack. Its menu lists layer states, titles, branches, and bases, including layers outside the current filter. Details load when opened. A failed refresh keeps previously loaded layers available with a notice and retry.
+A layer indicator such as **2/3** beside the current branch PR, in each PR row, and in the right-hand viewer opens the native GitHub stack. The mobile repository menu includes the same indicator. It appears only when GitHub reports native stack membership, independently of the worktree or other local branches. Its menu lists layer states, titles, branches, and bases, including layers outside the current filter. Details load when opened. A failed refresh keeps previously loaded layers available with a notice and retry.
 
 Stack navigation is read-only: OpenTig does not infer stacks from branch relationships, merge layers, or rebase branches.
 

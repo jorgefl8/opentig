@@ -1,9 +1,13 @@
 // @vitest-environment jsdom
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { PullRequestSummary } from '../../shared/contracts';
 import { BranchPullRequestMenu } from './BranchPullRequestMenu';
+import { opentig } from '@/lib/opentig-api';
+
+vi.mock('@/lib/opentig-api', () => ({ opentig: { github: { getPullRequestStack: vi.fn() } } }));
 
 let root: Root;
 let container: HTMLDivElement;
@@ -31,7 +35,7 @@ afterEach(async () => {
 
 async function render(pr = pullRequest, mobile = false) {
   await act(async () => root.render(createElement(BranchPullRequestMenu, {
-    pullRequest: pr, onOpenPullRequest, mobile, onNavigate,
+    repositoryId: 'repo', pullRequest: pr, onOpenPullRequest, mobile, onNavigate,
   })));
 }
 async function click(element: HTMLElement) { await act(async () => element.click()); }
@@ -83,4 +87,34 @@ it('offers the same destinations in the mobile repository menu and closes it onl
   await click(choice('Open in OpenTig'));
   expect(onNavigate).toHaveBeenCalledOnce();
   expect(onOpenPullRequest).toHaveBeenCalledExactlyOnceWith(12);
+});
+
+it.each([false, true])('opens native layers on demand beside the branch PR (mobile: %s)', async mobile => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  vi.mocked(opentig.github.getPullRequestStack).mockResolvedValue({ number: 7, base: 'main', layers: [
+    { number: 11, title: 'Base change', headRefName: 'base', state: 'MERGED', isDraft: false },
+    { number: 12, title: 'Current change', headRefName: 'feature', state: 'OPEN', isDraft: false },
+  ] });
+  await act(async () => root.render(createElement(QueryClientProvider, { client }, createElement(BranchPullRequestMenu, {
+    repositoryId: 'repo', pullRequest: { ...pullRequest, stack: { number: 7, position: 2, size: 2, base: 'main' } },
+    onOpenPullRequest, mobile, onNavigate,
+  }))));
+  const stackTrigger = container.querySelector<HTMLButtonElement>('[aria-label="Stack 7, layer 2 of 2"]')!;
+  expect(stackTrigger).not.toBeNull();
+  expect(stackTrigger.closest('button')).toBe(stackTrigger);
+  expect(opentig.github.getPullRequestStack).not.toHaveBeenCalled();
+  await click(stackTrigger);
+  await vi.waitFor(() => expect(document.querySelector('.pr-stack-layer[aria-current="true"]')?.textContent).toContain('#12'));
+  expect(opentig.github.getPullRequestStack).toHaveBeenCalledExactlyOnceWith('repo', 12);
+  expect(onNavigate).not.toHaveBeenCalled();
+  await click([...document.querySelectorAll<HTMLButtonElement>('.pr-stack-layer')].find(item => item.textContent?.includes('#11'))!);
+  expect(onOpenPullRequest).toHaveBeenCalledExactlyOnceWith(11);
+  expect(onNavigate).toHaveBeenCalledOnce();
+  client.clear();
+});
+
+it('does not offer a stack for a standalone branch PR', async () => {
+  await render();
+  expect(container.querySelector('.pr-stack-trigger')).toBeNull();
+  expect(opentig.github.getPullRequestStack).not.toHaveBeenCalled();
 });
