@@ -2,6 +2,9 @@ import { redactSensitiveText } from '../../shared/redaction';
 import { execa } from 'execa';
 import { GitOperationError } from '../../shared/errors';
 import { resolveProcessCommand } from '../process/resolveProcessCommand';
+import { createHash } from 'node:crypto';
+import path from 'node:path';
+import { ReadSingleFlight } from './ReadSingleFlight';
 
 export interface GitOutput {
   stdout: Buffer;
@@ -38,6 +41,9 @@ function normalizeLockKey(value: string): string {
 }
 
 export class GitProcess {
+  private readonly reads = new ReadSingleFlight();
+  private readonly repositoryScopes = new Map<string, string>();
+  private readonly invalidationListeners = new Set<(scope: string) => void>();
   private readonly writeQueues = new Map<string, Promise<void>>();
   private readonly activeChildren = new Set<number>();
   private readonly activeControllers = new Set<AbortController>();
@@ -48,6 +54,37 @@ export class GitProcess {
   network?: (cwd: string, args: string[], options: RunOptions, execute: (args: string[], options: RunOptions) => Promise<GitOutput>) => Promise<GitOutput>;
   networkScope?: <T>(cwd: string, task: () => Promise<T>) => Promise<T>;
   withNetworkContext<T>(cwd: string, task: () => Promise<T>): Promise<T> { return this.networkScope ? this.networkScope(cwd, task) : task(); }
+
+  registerRepository(cwd: string, commonDir: string): void {
+    const key = normalizeLockKey(path.resolve(cwd));
+    const scope = normalizeLockKey(path.resolve(commonDir));
+    if (this.repositoryScopes.get(key) === scope) return;
+    this.invalidate(cwd);
+    this.repositoryScopes.set(key, scope);
+  }
+
+  unregisterRepository(cwd: string): void {
+    this.invalidate(cwd);
+    this.repositoryScopes.delete(normalizeLockKey(path.resolve(cwd)));
+  }
+
+  readScope(cwd: string): string {
+    const key = normalizeLockKey(path.resolve(cwd));
+    return this.repositoryScopes.get(key) ?? key;
+  }
+
+  onInvalidate(listener: (scope: string) => void): void { this.invalidationListeners.add(listener); }
+
+  invalidate(cwd: string): void {
+    const scope = this.readScope(cwd);
+    this.reads.invalidate(scope);
+    for (const listener of this.invalidationListeners) listener(scope);
+  }
+
+  shareRead<T>(cwd: string, key: string, read: () => Promise<T>): Promise<T> {
+    // Worktrees share invalidation of refs/config, but never share their status/index.
+    return this.reads.run(this.readScope(cwd), JSON.stringify([path.resolve(cwd), key]), read);
+  }
 
   run(cwd: string, args: string[], options: RunOptions): Promise<GitOutput> {
     let index = 0;
@@ -61,7 +98,15 @@ export class GitProcess {
   private runDirect(cwd: string, args: string[], options: RunOptions): Promise<GitOutput> {
     const globalArgs = ['--no-pager'];
     if (options.readOnly) globalArgs.push('--no-optional-locks');
-    return this.spawnGit(cwd, [...globalArgs, ...args], options);
+    const execute = () => this.spawnGit(cwd, [...globalArgs, ...args], options);
+    if (options.readOnly) {
+      // Hash options: managed command arguments/options may contain credentials.
+      const key = createHash('sha256').update(JSON.stringify([args, options, this.authenticationKey?.(cwd)])).digest('hex');
+      return this.shareRead(cwd, `git:${key}`, execute).then(output => ({ ...output,
+        stdout: Buffer.from(output.stdout), stderr: Buffer.from(output.stderr) }));
+    }
+    this.invalidate(cwd);
+    return execute().finally(() => this.invalidate(cwd));
   }
 
   /**
@@ -86,9 +131,11 @@ export class GitProcess {
     const queued = previous.then(() => current);
     this.writeQueues.set(key, queued);
     await previous;
+    this.invalidate(rawKey);
     try {
       return await task();
     } finally {
+      this.invalidate(rawKey);
       release();
       if (this.writeQueues.get(key) === queued) this.writeQueues.delete(key);
     }

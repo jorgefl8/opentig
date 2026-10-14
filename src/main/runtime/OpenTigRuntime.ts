@@ -68,6 +68,7 @@ export class OpenTigRuntime {
 
   publishRepositoryChange(repositoryId: string, scope: RepositoryChangeScope): void {
     if (this.closePromise) return;
+    this.services.repositories.invalidateIfKnown(repositoryId);
     const elapsed = Date.now() - this.lastNotifiedAt;
     if (elapsed < 1_000) {
       this.trailingChange = this.trailingChange?.repositoryId === repositoryId
