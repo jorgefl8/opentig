@@ -96,3 +96,21 @@ it('aborts on close and unmount without publishing or leaving a timer', async ()
   expect(vi.getTimerCount()).toBe(0);
   root = createRoot(container);
 });
+
+it('defers indexing closed snapshots and reuses an opened snapshot until it changes', async () => {
+  const files = [file('first.txt')];
+  await render({ files, open: false });
+  expect(calls.index).not.toHaveBeenCalled();
+  await render({ files });
+  expect(container.textContent).toBe('first.txt');
+  expect(calls.index).toHaveBeenCalledOnce();
+  await render({ files, open: false });
+  await render({ files });
+  expect(calls.index).toHaveBeenCalledOnce();
+  const next = [file('second.txt')];
+  await render({ files: next, open: false });
+  expect(calls.index).toHaveBeenCalledOnce();
+  await render({ files: next });
+  expect(container.textContent).toBe('second.txt');
+  expect(calls.index).toHaveBeenCalledTimes(2);
+});
