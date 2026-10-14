@@ -51,17 +51,18 @@ export class GitHubService {
   }
 
   private async shareRead<T>(repositoryId: string, resource: unknown[], read: () => Promise<T>): Promise<T> {
-    const repository = this.repositories.get(repositoryId);
-    const revision = this.accounts.authRevision;
-    const key = JSON.stringify([repository.path, repository.commonDir, revision, this.accounts.revisionFor(repository), ...resource]);
-    try {
-      const value = await this.reads.run(this.git.readScope(repository.path), key, read);
-      if (revision !== this.accounts.authRevision) return this.shareRead(repositoryId, resource, read);
-      return structuredClone(value);
-    } catch (error) {
-      if (revision !== this.accounts.authRevision) return this.shareRead(repositoryId, resource, read);
-      throw error;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const repository = this.repositories.get(repositoryId);
+      const revision = this.accounts.authRevision;
+      const key = JSON.stringify([repository.path, repository.commonDir, revision, this.accounts.revisionFor(repository), ...resource]);
+      try {
+        const value = await this.reads.run(this.git.readScope(repository.path), key, read);
+        if (revision === this.accounts.authRevision) return structuredClone(value);
+      } catch (error) {
+        if (revision === this.accounts.authRevision) throw error;
+      }
     }
+    throw new Error('The GitHub account changed repeatedly during the read. Try refreshing again.');
   }
 
   async status(forceRefresh = false): Promise<GhCliStatus> {

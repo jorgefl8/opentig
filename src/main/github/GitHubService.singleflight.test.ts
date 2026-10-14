@@ -54,6 +54,19 @@ async function fixture(reply: (args: string[], options: CliRunOptions) => Promis
 const views = (run: ReturnType<typeof vi.fn>) => run.mock.calls.filter(([, args]) => args[0] === 'pr' && args[1] === 'view');
 
 describe('GitHub pending reads', () => {
+  it('stops retrying when authentication keeps changing and recovers on the next request', async () => {
+    let attempts = 0;
+    const f = await fixture(async args => {
+      if (args[0] !== 'pr') return result('{}');
+      if (++attempts <= 10) await f.accounts.setSelection(f.repos[0]!, { mode: 'account', host: 'github.com', login: attempts % 2 ? 'bob' : 'alice' });
+      return result('{"number":12,"state":"OPEN"}');
+    });
+    await expect(f.service.getPullRequest('alice', 12)).rejects.toThrow(/changed repeatedly/);
+    expect(attempts).toBe(3);
+    attempts = 10;
+    expect(await f.service.getPullRequest('alice', 12)).toMatchObject({ number: 12 });
+  });
+
   it('four readers share routing, credentials, detail and stack membership, with no settled cache', async () => {
     const started = deferred<void>();
     const gate = deferred<CliRunResult>();
