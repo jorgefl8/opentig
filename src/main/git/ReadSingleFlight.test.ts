@@ -9,6 +9,24 @@ function deferred<T>() {
 }
 
 describe('pending read generations', () => {
+  it.each(['success', 'failure'])('bounds retries under continuous invalidation after a %s', async (outcome) => {
+    const flights = new ReadSingleFlight();
+    let attempts = 0;
+    const read = vi.fn(async () => {
+      // Stop the fixture after ten invalidations so a regression fails without hanging.
+      if (++attempts <= 10) flights.invalidate('repo');
+      if (outcome === 'failure') throw new Error('obsolete failure');
+      return 'obsolete snapshot';
+    });
+    const results = await Promise.allSettled(Array.from({ length: 4 }, () => flights.run('repo', 'status', read)));
+    expect(attempts).toBe(3);
+    for (const result of results) {
+      expect(result.status).toBe('rejected');
+      if (result.status === 'rejected') expect(result.reason.message).toMatch(/changed repeatedly/);
+    }
+    expect(await flights.run('repo', 'status', async () => 'settled')).toBe('settled');
+  });
+
   it('shares four readers, releases settled results, and isolates resources and repositories', async () => {
     const flights = new ReadSingleFlight();
     const gate = deferred<string>();
