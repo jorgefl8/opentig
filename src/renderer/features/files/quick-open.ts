@@ -71,11 +71,47 @@ export function rankQuickOpenFiles(entries: FileTreeEntry[], query: string, opti
   return rankQuickOpenIndex(createQuickOpenIndex(entries), query, options);
 }
 
-export function rankQuickOpenIndex(
+export function rankQuickOpenIndex(index: QuickOpenIndex, query: string, options: QuickOpenOptions): QuickOpenResult[] {
+  const search = searchQuickOpenIndex(index, query, options);
+  let step = search.next();
+  while (!step.done) step = search.next();
+  return step.value;
+}
+
+/** Same ranking pass, with a paint opportunity before work and between 4 ms slices. */
+export async function rankQuickOpenIndexAsync(
+  index: QuickOpenIndex, query: string, options: QuickOpenOptions, signal: AbortSignal,
+): Promise<QuickOpenResult[] | null> {
+  const search = searchQuickOpenIndex(index, query, options);
+  while (await yieldToBrowser(signal)) {
+    const deadline = performance.now() + 4;
+    do {
+      if (signal.aborted) return null;
+      const step = search.next();
+      if (step.done) return step.value;
+    } while (performance.now() < deadline);
+  }
+  return null;
+}
+
+function yieldToBrowser(signal: AbortSignal): Promise<boolean> {
+  if (signal.aborted) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    const finish = () => {
+      clearTimeout(timer);
+      signal.removeEventListener('abort', finish);
+      resolve(!signal.aborted);
+    };
+    const timer = setTimeout(finish, 0);
+    signal.addEventListener('abort', finish, { once: true });
+  });
+}
+
+function* searchQuickOpenIndex(
   index: QuickOpenIndex,
   query: string,
   { includeIgnored, activePath = null, limit = 100 }: QuickOpenOptions,
-): QuickOpenResult[] {
+): Generator<void, QuickOpenResult[]> {
   const cappedLimit = Math.max(0, Math.floor(limit));
   if (!cappedLimit) return [];
   const normalizedQuery = normalize(query).trim();
@@ -95,10 +131,13 @@ export function rankQuickOpenIndex(
   }
   const compactQuery = normalizedQuery.replace(/\s+/g, '');
   const heap: RankedResult[] = [];
-  for (const file of index.files) {
-    if (!includeIgnored && file.ignored) continue;
-    const rank = matchRank(file.basename, file.fullPath, normalizedQuery, compactQuery);
-    if (rank) retainBest(heap, { file, rank }, cappedLimit);
+  for (let position = 0; position < index.files.length; position += 1) {
+    const file = index.files[position]!;
+    if (includeIgnored || !file.ignored) {
+      const rank = matchRank(file.basename, file.fullPath, normalizedQuery, compactQuery);
+      if (rank) retainBest(heap, { file, rank }, cappedLimit);
+    }
+    if ((position + 1) % 256 === 0) yield;
   }
   return heap.sort(compareResults).map((item) => item.file.result);
 }

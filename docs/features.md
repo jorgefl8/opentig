@@ -84,7 +84,7 @@ Use the desktop app or the same UI in a paired browser; browsers select folders 
 
 ### Quick open and repository search
 
-- Open files by fuzzy path search with `Ctrl+P`, navigate the accessible result list with the arrow keys, and open the highlighted file with `Enter`.
+- Open files by fuzzy path search with `Ctrl+P`, navigate the accessible result list with the arrow keys, and open the highlighted file with `Enter`. Large repositories show “Searching files…” while results are calculated; only results for the current search can be selected.
 - Search file contents across the repository with case-sensitive, whole-word, and regular-expression modes.
 - Group matches by file, show line numbers, and open a result directly in the editor.
 - Replace one match, every match in a file, or all displayed repository matches; replacements are conflict-checked and undoable as one Files operation.

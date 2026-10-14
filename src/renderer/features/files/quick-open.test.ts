@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { FileTreeEntry } from '@shared/git-types';
-import { collectQuickOpenFiles, createQuickOpenIndex, rankQuickOpenFiles, rankQuickOpenIndex } from './quick-open';
+import { collectQuickOpenFiles, createQuickOpenIndex, rankQuickOpenFiles, rankQuickOpenIndex, rankQuickOpenIndexAsync } from './quick-open';
 
 const tree: FileTreeEntry[] = [
   {
@@ -121,4 +121,36 @@ describe('Quick Open snapshot index', () => {
       }
     }
   });
+});
+
+it('publishes the same complete ranking after yielding and discards a cancelled pass', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  let now = 0;
+  vi.spyOn(performance, 'now').mockImplementation(() => { now += 4; return now; });
+  try {
+    const index = createQuickOpenIndex(Array.from({ length: 4000 }, (_, i) => file(`src/App${3999 - i}.tsx`, i % 11 === 0)));
+    for (const query of ['app', 's a 9', 'not-present']) {
+      for (const includeIgnored of [true, false]) {
+        const controller = new AbortController();
+        const options = { includeIgnored, limit: 100 };
+        let published = false;
+        const search = rankQuickOpenIndexAsync(index, query, options, controller.signal).then((results) => { published = true; return results; });
+        expect(published).toBe(false);
+        await vi.advanceTimersToNextTimerAsync();
+        expect(published).toBe(false);
+        await vi.runAllTimersAsync();
+        expect(await search).toEqual(rankQuickOpenIndex(index, query, options));
+      }
+    }
+    const controller = new AbortController();
+    const cancelled = rankQuickOpenIndexAsync(index, 'app', { includeIgnored: true }, controller.signal);
+    await vi.advanceTimersToNextTimerAsync();
+    controller.abort();
+    expect(await cancelled).toBeNull();
+    expect(vi.getTimerCount()).toBe(0);
+    expect(await rankQuickOpenIndexAsync(index, 'app', { includeIgnored: true }, controller.signal)).toBeNull();
+  } finally {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+  }
 });
