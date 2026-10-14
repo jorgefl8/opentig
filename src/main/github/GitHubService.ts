@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+import { ReadSingleFlight } from '../git/ReadSingleFlight';
 import type { CliCandidate } from '../ai/CliResolver';
 import { parsePullRequestStack, parseStackMemberships, stackMembershipQuery } from './PullRequestStackParser';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
@@ -28,6 +30,7 @@ interface GhRunOptions {
 }
 
 export class GitHubService {
+  private readonly reads = new ReadSingleFlight();
   gitAccess?: import('../git/RepositoryGitAccess').RepositoryGitAccess;
   readonly accounts: GitHubAccountsService;
 
@@ -37,16 +40,39 @@ export class GitHubService {
     private readonly git: GitProcess,
     private readonly repositories: RepositoryService,
     accounts?: GitHubAccountsService,
-  ) { this.accounts = accounts ?? new GitHubAccountsService(resolver, runner, git); }
+  ) {
+    this.accounts = accounts ?? new GitHubAccountsService(resolver, runner, git);
+    this.git.onInvalidate(scope => this.reads.invalidate(scope));
+  }
+
+  invalidate(repositoryId?: string): void {
+    if (repositoryId) this.reads.invalidate(this.git.readScope(this.repositories.get(repositoryId).path));
+    else this.reads.clear();
+  }
+
+  private async shareRead<T>(repositoryId: string, resource: unknown[], read: () => Promise<T>): Promise<T> {
+    const repository = this.repositories.get(repositoryId);
+    const revision = this.accounts.authRevision;
+    const key = JSON.stringify([repository.path, repository.commonDir, revision, this.accounts.revisionFor(repository), ...resource]);
+    try {
+      const value = await this.reads.run(this.git.readScope(repository.path), key, read);
+      if (revision !== this.accounts.authRevision) return this.shareRead(repositoryId, resource, read);
+      return structuredClone(value);
+    } catch (error) {
+      if (revision !== this.accounts.authRevision) return this.shareRead(repositoryId, resource, read);
+      throw error;
+    }
+  }
 
   async status(forceRefresh = false): Promise<GhCliStatus> {
-    if (forceRefresh) this.accounts.refreshAuthentication();
+    if (forceRefresh) { this.invalidate(); this.accounts.refreshAuthentication(); }
     const detected = await this.accounts.detect(forceRefresh);
     return { installed: !!detected.candidate, availability: detected.state === 'available' ? 'ready' : 'error',
       authStatus: 'unknown', ...(detected.version ? { version: detected.version } : {}), checkedAt: new Date().toISOString() };
   }
 
   async repositoryAccount(repositoryId: string, forceRefresh = false) {
+    if (forceRefresh) this.invalidate(repositoryId);
     const repository = this.repositories.get(repositoryId);
     const info = await this.repositoryInfo(repositoryId);
     const remote = await this.remote(repositoryId);
@@ -73,9 +99,23 @@ export class GitHubService {
     } catch { return ''; }
   }
 
-  async repositoryInfo(repositoryId: string): Promise<GitHubRepositoryInfo> {
+  repositoryInfo(repositoryId: string): Promise<GitHubRepositoryInfo> {
+    return this.shareRead(repositoryId, [], () => this.readRepositoryInfo(repositoryId));
+  }
+
+  private async readRepositoryInfo(repositoryId: string): Promise<GitHubRepositoryInfo> {
+    return (await this.routing(repositoryId)).info;
+  }
+
+  private routing(repositoryId: string) {
+    return this.shareRead(repositoryId, ['routing'], async () => {
+      const remote = await this.remote(repositoryId);
+      return { remote, info: await this.infoForRemote(remote) };
+    });
+  }
+
+  private async infoForRemote(url: string): Promise<GitHubRepositoryInfo> {
     try {
-      const url = await this.remote(repositoryId);
       let parsed = parseGitHubRemote(url);
       if (!parsed) {
         const ssh = parseSshRemote(url);
@@ -95,36 +135,48 @@ export class GitHubService {
     }
   }
 
-  async listPullRequests(repositoryId: string, states: PullRequestState[]): Promise<PullRequestSummary[]> {
+  listPullRequests(repositoryId: string, states: PullRequestState[]): Promise<PullRequestSummary[]> {
+    return this.shareRead(repositoryId, ['list', [...states].sort()], () => this.readListPullRequests(repositoryId, states));
+  }
+
+  private async readListPullRequests(repositoryId: string, states: PullRequestState[]): Promise<PullRequestSummary[]> {
     const { repository, nameWithOwner, auth, executable } = await this.requireGitHub(repositoryId, 'gh-pr-list');
-    const results = await Promise.all(states.map((state) => this.runGh(
+    const results = await Promise.all(states.map((state) => this.runGhRead(
       ['pr', 'list', '-R', nameWithOwner, '--state', state.toLowerCase(), '--json', PR_SUMMARY_FIELDS, '--limit', '50'],
       { auth, executable, cwd: repository.path, operation: 'gh-pr-list', timeoutMs: NETWORK_TIMEOUT_MS, maxOutputBytes: 4 * 1024 * 1024 },
     )));
     return this.withStackMembership(repository.path, nameWithOwner, auth, executable, selectPullRequestsNewestFirst(results.flatMap((result) => parsePullRequestList(result.stdout)), states));
   }
 
-  async findPullRequestForBranch(repositoryId: string, branchName: string): Promise<PullRequestSummary | null> {
+  findPullRequestForBranch(repositoryId: string, branchName: string): Promise<PullRequestSummary | null> {
+    return this.shareRead(repositoryId, ['branch', branchName], () => this.readFindPullRequestForBranch(repositoryId, branchName));
+  }
+
+  private async readFindPullRequestForBranch(repositoryId: string, branchName: string): Promise<PullRequestSummary | null> {
     const operation = 'gh-pr-for-branch';
     const { repository, nameWithOwner, auth, executable } = await this.requireGitHub(repositoryId, operation);
     const branch = validateRef(branchName, operation);
     // An older open PR must not be hidden by newer closed PRs for a reused branch.
-    const openResult = await this.runGh(
+    const openResult = await this.runGhRead(
       ['pr', 'list', '-R', nameWithOwner, '--head', branch, '--state', 'open', '--json', `${PR_SUMMARY_FIELDS},headRepository`, '--limit', '10'],
       { auth, executable, cwd: repository.path, operation, timeoutMs: NETWORK_TIMEOUT_MS, maxOutputBytes: 1024 * 1024 },
     );
     const openPull = sortPullRequestsNewestFirst(parseBranchPullRequestList(openResult.stdout, nameWithOwner, branch)).find((pull) => pull.state === 'OPEN');
     if (openPull) return openPull;
-    const result = await this.runGh(
+    const result = await this.runGhRead(
       ['pr', 'list', '-R', nameWithOwner, '--head', branch, '--state', 'all', '--json', `${PR_SUMMARY_FIELDS},headRepository`, '--limit', '10'],
       { auth, executable, cwd: repository.path, operation, timeoutMs: NETWORK_TIMEOUT_MS, maxOutputBytes: 1024 * 1024 },
     );
     return sortPullRequestsNewestFirst(parseBranchPullRequestList(result.stdout, nameWithOwner, branch))[0] ?? null;
   }
 
-  async getPullRequest(repositoryId: string, prNumber: number): Promise<PullRequestDetails> {
+  getPullRequest(repositoryId: string, prNumber: number): Promise<PullRequestDetails> {
+    return this.shareRead(repositoryId, ['details', prNumber], () => this.readGetPullRequest(repositoryId, prNumber));
+  }
+
+  private async readGetPullRequest(repositoryId: string, prNumber: number): Promise<PullRequestDetails> {
     const { repository, nameWithOwner, auth, executable } = await this.requireGitHub(repositoryId, 'gh-pr-view');
-    const result = await this.runGh(
+    const result = await this.runGhRead(
       ['pr', 'view', String(prNumber), '-R', nameWithOwner, '--json', PR_DETAIL_FIELDS],
       { auth, executable, cwd: repository.path, operation: 'gh-pr-view', timeoutMs: NETWORK_TIMEOUT_MS, maxOutputBytes: 4 * 1024 * 1024 },
     );
@@ -141,7 +193,7 @@ export class GitHubService {
       const batch = pulls.slice(start, start + 25);
       try {
         const numbers = batch.map((pr) => pr.number);
-        const result = await this.runGh(['api', 'graphql', '-f', `owner=${owner}`, '-f', `name=${name}`, '-f', `query=${stackMembershipQuery(numbers)}`], {
+        const result = await this.runGhRead(['api', 'graphql', '-f', `owner=${owner}`, '-f', `name=${name}`, '-f', `query=${stackMembershipQuery(numbers)}`], {
           auth, executable, cwd, operation: 'gh-pr-stack-membership', timeoutMs: 10_000, maxOutputBytes: 1024 * 1024,
         });
         const memberships = parseStackMemberships(result.stdout, numbers);
@@ -154,11 +206,15 @@ export class GitHubService {
     return enriched;
   }
 
-  async getPullRequestStack(repositoryId: string, prNumber: number): Promise<PullRequestStack | null> {
+  getPullRequestStack(repositoryId: string, prNumber: number): Promise<PullRequestStack | null> {
+    return this.shareRead(repositoryId, ['stack', prNumber], () => this.readGetPullRequestStack(repositoryId, prNumber));
+  }
+
+  private async readGetPullRequestStack(repositoryId: string, prNumber: number): Promise<PullRequestStack | null> {
     const operation = 'gh-pr-stack';
     const { repository, nameWithOwner, auth, executable } = await this.requireGitHub(repositoryId, operation);
     const options = { auth, executable, cwd: repository.path, operation, timeoutMs: NETWORK_TIMEOUT_MS, maxOutputBytes: 4 * 1024 * 1024 };
-    const read = async (endpoint: string) => this.runGh(['api', endpoint], options);
+    const read = async (endpoint: string) => this.runGhRead(['api', endpoint], options);
     let listing: CliRunResult;
     try { listing = await read(`repos/${nameWithOwner}/stacks?pull_request=${prNumber}`); }
     catch (error) {
@@ -175,9 +231,13 @@ export class GitHubService {
     return complete;
   }
 
-  async getPullRequestDiff(repositoryId: string, prNumber: number): Promise<DiffResult> {
+  getPullRequestDiff(repositoryId: string, prNumber: number): Promise<DiffResult> {
+    return this.shareRead(repositoryId, ['diff', prNumber], () => this.readGetPullRequestDiff(repositoryId, prNumber));
+  }
+
+  private async readGetPullRequestDiff(repositoryId: string, prNumber: number): Promise<DiffResult> {
     const { repository, nameWithOwner, auth, executable } = await this.requireGitHub(repositoryId, 'gh-pr-diff');
-    const result = await this.runGh(
+    const result = await this.runGhRead(
       ['pr', 'diff', String(prNumber), '-R', nameWithOwner],
       { auth, executable, cwd: repository.path, operation: 'gh-pr-diff', timeoutMs: NETWORK_TIMEOUT_MS, maxOutputBytes: 32 * 1024 * 1024 },
     );
@@ -186,13 +246,17 @@ export class GitHubService {
     return { patch, path: `pull/${prNumber}`, binary, truncated: false, lineCount: patch ? patch.split('\n').length : 0 };
   }
 
-  async getPullRequestCommitDiff(repositoryId: string, oid: string): Promise<DiffResult> {
+  getPullRequestCommitDiff(repositoryId: string, oid: string): Promise<DiffResult> {
+    return this.shareRead(repositoryId, ['commit-diff', oid], () => this.readGetPullRequestCommitDiff(repositoryId, oid));
+  }
+
+  private async readGetPullRequestCommitDiff(repositoryId: string, oid: string): Promise<DiffResult> {
     const operation = 'gh-pr-commit-diff';
     const { repository, nameWithOwner, auth, executable } = await this.requireGitHub(repositoryId, operation);
     if (!/^[0-9a-f]{40,64}$/i.test(oid)) {
       throw new GhOperationError({ code: 'GH_PROCESS_FAILED', operation, message: 'The commit is not valid.' });
     }
-    const result = await this.runGh(
+    const result = await this.runGhRead(
       ['api', `repos/${nameWithOwner}/commits/${oid}`, '--header', 'Accept: application/vnd.github.diff'],
       { auth, executable, cwd: repository.path, operation, timeoutMs: NETWORK_TIMEOUT_MS, maxOutputBytes: 32 * 1024 * 1024 },
     );
@@ -233,7 +297,11 @@ export class GitHubService {
       const args = ['pr', 'create', '-R', nameWithOwner, '--title', input.title, '--body-file', bodyPath, '--base', base, '--head', head];
       if (input.draft) args.push('--draft');
       verifyAccount();
-      const result = await this.runGh(args, { auth, executable, cwd: repository.path, operation, timeoutMs: 120_000, maxOutputBytes: 1024 * 1024 });
+      this.invalidate(input.repositoryId);
+      let result: CliRunResult;
+      try {
+        result = await this.runGh(args, { auth, executable, cwd: repository.path, operation, timeoutMs: 120_000, maxOutputBytes: 1024 * 1024 });
+      } finally { this.invalidate(input.repositoryId); }
       const created = parseCreatedPullRequestUrl(result.stdout);
       if (!created) throw new GhOperationError({ code: 'GH_INVALID_OUTPUT', operation, message: 'GitHub CLI did not return the URL of the new pull request.' });
       return created;
@@ -244,11 +312,18 @@ export class GitHubService {
 
   private async requireGitHub(repositoryId: string, operation: string) {
     const repository = this.repositories.get(repositoryId);
-    const info = await this.repositoryInfo(repositoryId);
+    const { remote, info } = await this.routing(repositoryId);
     if (!info.isGitHub || !info.nameWithOwner) throw new GhOperationError({ code: 'GH_NOT_GITHUB_REPO', operation, message: 'The origin remote does not point to a GitHub repository.' });
-    const remote = await this.remote(repositoryId);
     const authenticated = await this.accounts.authenticate(repository, remote, info.nameWithOwner, operation);
     return { repository, nameWithOwner: info.nameWithOwner, ...authenticated };
+  }
+
+  private runGhRead(args: string[], options: GhRunOptions): Promise<CliRunResult> {
+    // Include executable routing and a one-way credential fingerprint. Never retain tokens as keys.
+    const key = createHash('sha256').update(JSON.stringify([args, options])).digest('hex');
+    // The complete read owns retries so it re-resolves remote and credentials;
+    // replaying this command would reuse the old routing/account snapshot.
+    return this.reads.run(this.git.readScope(options.cwd), `command:${key}`, () => this.runGh(args, options), false);
   }
 
   private async runGh(args: string[], options: GhRunOptions): Promise<CliRunResult> {
