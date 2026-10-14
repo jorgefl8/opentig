@@ -74,6 +74,7 @@ export class SettingsStore {
   private loaded = false;
   private readonly repositoryAiWriteVersions = new Map<string, number>();
   private pendingWrite: Promise<void> = Promise.resolve();
+  private persistedSnapshot: string | null = null;
   private readonly backgroundTimers = new Map<BackgroundChannel, ReturnType<typeof setTimeout>>();
   private readonly backgroundDirty = new Set<BackgroundChannel>();
   private lastBackgroundWriteError: unknown = null;
@@ -112,6 +113,7 @@ export class SettingsStore {
     }
     const backup = await readJsonDocument(backupPathFor(this.filePath));
     if (!backup.ok || backup.raw !== snapshot) await writeFileAtomically(backupPathFor(this.filePath), snapshot, { parseJson: true });
+    this.persistedSnapshot = snapshot;
   }
 
   get recentRepositories(): RecentRepository[] { return [...this.data.recentRepositories]; }
@@ -481,8 +483,14 @@ export class SettingsStore {
   private enqueueWrite(): Promise<void> {
     const snapshot = this.snapshot();
     const write = this.pendingWrite.then(async () => {
+      // Compare inside the queue: a preceding write may still change the disk.
+      if (snapshot === this.persistedSnapshot) return;
+      // A failed backup can leave the primary changed. Until both writes succeed,
+      // even a return to the previous snapshot must repair both documents.
+      this.persistedSnapshot = null;
       await writeFileAtomically(this.filePath, snapshot, { parseJson: true });
       await writeFileAtomically(backupPathFor(this.filePath), snapshot, { parseJson: true });
+      this.persistedSnapshot = snapshot;
     });
     this.pendingWrite = write.catch(() => undefined);
     return write;
