@@ -1,5 +1,6 @@
 import { RepositoryAccountSetup } from '@/features/settings/RepositoryAccountSetup';
 import { useGitHubAccount } from '@/features/pulls/useGitHubAccount';
+import { branchPullRequestQueryOptions } from '@/features/pulls/branch-pull-request-query';
 import { appDisplayName } from '@/lib/app-identity';
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -241,13 +242,10 @@ export default function App() {
   const branches = currentSnapshot ? branchesState : [];
   const worktrees = currentSnapshot ? worktreesState : [];
   const currentBranch = status && !status.detached && !status.unborn ? status.branch : null;
-  const branchPullRequestQuery = useQuery({
-    queryKey: queryKeys.branchPullRequest(repository?.id ?? '', currentBranch ?? ''),
-    queryFn: () => opentig.github.findPullRequestForBranch(repository!.id, currentBranch!),
-    enabled: repository !== null && githubInfo?.isGitHub === true && currentBranch !== null && ghStatus?.installed === true,
-    staleTime: 60_000,
-    refetchInterval: 60_000,
-  });
+  const branchPullRequestQuery = useQuery(branchPullRequestQueryOptions(
+    repository?.id ?? '', currentBranch ?? '',
+    repository !== null && githubInfo?.isGitHub === true && currentBranch !== null && ghStatus?.installed === true,
+  ));
   const currentBranchPullRequest = currentBranch && githubInfo?.isGitHub && !branchPullRequestQuery.isError
     && (branchPullRequestQuery.data?.state === 'OPEN' || branchPullRequestQuery.data?.state === 'MERGED')
     ? branchPullRequestQuery.data : null;

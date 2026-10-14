@@ -14,6 +14,8 @@ The toolbar opens the repository on GitHub. Beside the branch selector, the curr
 
 Branch matching checks both the head repository and branch name, so a PR from another fork's `main` is not shown for your clone. When several PRs match, the most recently updated open PR takes priority; otherwise the most recently updated PR is shown if merged.
 
+The current branch indicator checks open PRs once a minute while the window is visible. Closed, merged, or absent results are checked every five minutes so reopened PRs and reused branches remain discoverable. Returning to the window, reconnecting, changing the repository account, or refreshing manually checks again without waiting for that interval. Failed checks retry at the one-minute cadence; hidden windows do not poll.
+
 CLI availability is checked at startup and reused across repositories and list filters. Returning to PRs keeps cached results visible during background refreshes. **Refresh** checks CLI availability again.
 
 ### Native stacks
