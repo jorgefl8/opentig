@@ -37,6 +37,7 @@ export class RepositoryService {
   async preparePath(selectedPath: string): Promise<RepositoryInfo> {
     const repository = await this.inspectPath(selectedPath);
     this.repositories.set(repository.id, repository);
+    this.git.registerRepository(repository.path, repository.commonDir);
     return repository;
   }
 
@@ -55,13 +56,16 @@ export class RepositoryService {
     if (!this.settings.recentRepositories.some((item) => item.id === id)) {
       throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'relocate-repository', message: 'The recent repository no longer exists.' });
     }
+    const previous = this.get(id);
     const repository = await this.inspectPath(selectedPath);
     if (repository.id !== id && this.settings.recentRepositories.some((item) => item.id === repository.id)) {
       throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'relocate-repository', message: 'That folder is already in OpenTig. Remove the old entry instead, or choose a different location.' });
     }
     await this.settings.relocateRepository(id, repository);
+    this.git.unregisterRepository(previous.path);
     this.repositories.delete(id);
     this.repositories.set(repository.id, repository);
+    this.git.registerRepository(repository.path, repository.commonDir);
     return repository;
   }
 
@@ -69,7 +73,10 @@ export class RepositoryService {
     const key = normalizeRepositoryKey(repositoryKey);
     const organization = await this.settings.forgetRepository(key);
     for (const [id, repository] of this.repositories) {
-      if (normalizeRepositoryKey(repository.commonDir) === key) this.repositories.delete(id);
+      if (normalizeRepositoryKey(repository.commonDir) === key) {
+        this.git.unregisterRepository(repository.path);
+        this.repositories.delete(id);
+      }
     }
     return organization;
   }
@@ -96,6 +103,7 @@ export class RepositoryService {
     if (recent) {
       const hydrated = { id: recent.id, name: recent.name, repositoryName: recent.repositoryName, path: recent.path, commonDir: recent.commonDir };
       this.repositories.set(id, hydrated);
+      this.git.registerRepository(hydrated.path, hydrated.commonDir);
       return hydrated;
     }
     throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'repository', message: 'Unknown repository.' });
@@ -104,6 +112,17 @@ export class RepositoryService {
   recents(): RecentRepository[] { return this.settings.recentRepositories; }
 
   async status(id: string, includeStats = true): Promise<RepositoryStatus> {
+    const repository = this.get(id);
+    return structuredClone(await this.git.shareRead(repository.path, `status:${includeStats}`, () => this.readStatus(id, includeStats)));
+  }
+
+  invalidate(id: string): void { this.git.invalidate(this.get(id).path); }
+
+  invalidateIfKnown(id: unknown): void {
+    if (typeof id === 'string' && (this.repositories.has(id) || this.recent(id))) this.invalidate(id);
+  }
+
+  private async readStatus(id: string, includeStats: boolean): Promise<RepositoryStatus> {
     const repository = this.get(id);
     const output = await this.git.run(repository.path, ['status', '--porcelain=v2', '-z', '--branch', '--untracked-files=all'], { operation: 'status', readOnly: true, maxOutputBytes: 32 * 1024 * 1024 });
     const status = parseStatus(output.stdout);
@@ -126,7 +145,10 @@ export class RepositoryService {
   async forgetWorktree(worktreePath: string): Promise<RecentRepository[]> {
     const target = normalizeWorktreePath(worktreePath);
     for (const [id, repository] of this.repositories) {
-      if (normalizeWorktreePath(repository.path) === target) this.repositories.delete(id);
+      if (normalizeWorktreePath(repository.path) === target) {
+        this.git.unregisterRepository(repository.path);
+        this.repositories.delete(id);
+      }
     }
     return this.settings.forgetWorktreePath(worktreePath);
   }

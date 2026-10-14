@@ -40,6 +40,7 @@ Use the desktop app or the same UI in a paired browser; browsers select folders 
 - Stage or unstage individual files, folders, selections, or everything at once.
 - Discard selected unstaged changes through an in-app confirmation that lists the affected paths; untracked files are sent to system Trash (the Recycle Bin on Windows).
 - Review syntax-aware diffs in unified or split mode, with optional line wrapping, colored with the same One Light/One Dark Pro token palette as the Files editor and Markdown code blocks; added, deleted, and modified lines keep their own diff colors. Each file header shows the file name in full, with the folder path underneath. Sticky file headers keep an opaque background on hover so scrolled code does not show through. Language grammars load for the file being viewed rather than at startup.
+- Large diffs show **Preparing diff…** while their file models are parsed in a background worker. Switching or closing the diff cancels that work; only a complete result for the current revision is displayed. Background patch refreshes preserve file collapse choices and the mounted scroll container while the previous revision is hidden. If workers are unavailable, parsing yields between indexing batches and files, but a single large file can still pause the interface. Each mounted diff keeps a small byte-budgeted parse cache; entries too large for that cache are still displayed, and closing or changing the document releases the cache. Syntax highlighting keeps its existing size limits: the highlighting pool is bypassed above 10,000 diff lines or 500,000 conflict characters, and tokenization is limited on very long lines.
 - Open changed Markdown files directly in their staged or unstaged diff, while keeping **Open file** available for the rendered preview. Changed HTML, SVG, and image files retain their direct rich preview and separate diff action.
 - Resolve merge conflicts in the built-in conflict editor, syntax-highlighted with the same palette as diffs and the Files editor, and mark resolved files for staging. Accepting the current, incoming, or both sides stays visible while background refreshes reconcile the saved file.
 - Create commits from staged files, or create and push in one action when an upstream exists.
@@ -84,7 +85,7 @@ Use the desktop app or the same UI in a paired browser; browsers select folders 
 
 ### Quick open and repository search
 
-- Open files by fuzzy path search with `Ctrl+P`, navigate the accessible result list with the arrow keys, and open the highlighted file with `Enter`.
+- Open files by fuzzy path search with `Ctrl+P`, navigate the accessible result list with the arrow keys, and open the highlighted file with `Enter`. Search data is prepared when Quick Open opens and reused until the file list changes; the initial preparation can briefly pause very large repositories. Large repositories show “Searching files…” while results are calculated; only results for the current search can be selected.
 - Search file contents across the repository with case-sensitive, whole-word, and regular-expression modes.
 - Group matches by file, show line numbers, and open a result directly in the editor.
 - Replace one match, every match in a file, or all displayed repository matches; replacements are conflict-checked and undoable as one Files operation.
@@ -94,6 +95,7 @@ Use the desktop app or the same UI in a paired browser; browsers select folders 
 ### History
 
 - Browse commit history incrementally instead of loading the entire repository at once; refreshes preserve loaded pages without duplicating commits.
+- Expanded commit file lists are reused from a memory-bounded cache. Very large lists remain fully available in the open row but are fetched again when revisited after that row unmounts; switching repositories clears the cache.
 - Follow current-branch history through a compact Git graph: theme amber for local commits, OpenTig blue for published work and merge branches, and neutral gray for primary-line commits reachable from the locally known base branch. Lane positions and merge nodes preserve topology; the palette follows the light or dark theme. The base uses the upstream remote's symbolic default when available, then conventional main/master refs; missing information stays unknown. No background fetch is needed, and unmerged branches outside HEAD are not added to this view.
 - Switch between compact (42 px) and comfortable (56 px) rows without changing the sidebar width or right-hand diff viewer. Selecting a commit or its expanded files keeps the row highlighted.
 - Search subjects, authors, hashes, and references in loaded history. Matches are highlighted without removing graph rows; Enter or the next-match button scrolls to each result. Expanded rows keep their spacing when the search or merge grouping changes. Load more to search older commits.

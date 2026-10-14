@@ -17,6 +17,7 @@ function fixture(activeRepositoryId: string | null = 'repo-id') {
     flush: vi.fn(async () => undefined),
   };
   const services = {
+    repositories: { invalidateIfKnown: vi.fn() },
     watcher,
     prDrafts,
     fileHistory,
@@ -37,12 +38,14 @@ describe('OpenTigRuntime', () => {
     vi.useFakeTimers();
     vi.setSystemTime(10_000);
     const events: OpenTigRuntimeEvent[] = [];
-    const runtime = new OpenTigRuntime(fixture().services, (event) => events.push(event));
+    const state = fixture();
+    const runtime = new OpenTigRuntime(state.services, (event) => events.push(event));
 
     runtime.publishRepositoryChange('repo-id', 'worktree');
     vi.setSystemTime(10_100);
     runtime.publishRepositoryChange('repo-id', 'index');
     runtime.publishRepositoryChange('repo-id', 'refs');
+    expect(state.services.repositories.invalidateIfKnown).toHaveBeenCalledTimes(3);
 
     expect(events).toEqual([{ type: 'repository.changed', repositoryId: 'repo-id', scope: 'worktree' }]);
     vi.advanceTimersByTime(900);

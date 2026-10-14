@@ -2,6 +2,7 @@ import type { IpcResult } from '@shared/contracts';
 import type { OpenTigServerCommandMap } from '@shared/protocol';
 import type { OpenTigRuntimeEvent } from '@shared/runtime-events';
 import type { OpenTigServerMessage } from '@shared/server-protocol';
+import type { SerializedTransportError } from '@shared/errors';
 
 export type ServerConnectionState =
   | 'connecting'
@@ -45,6 +46,13 @@ export class ServerDisconnectedError extends ServerTransportError {}
 export class ServerAuthenticationError extends ServerTransportError {}
 export class ServerVersionError extends ServerTransportError {}
 export class ServerRequestTimeoutError extends ServerTransportError {}
+export class ServerBackpressureError extends ServerDisconnectedError {}
+export class ServerResponseTooLargeError extends ServerTransportError {
+  constructor(readonly detail: SerializedTransportError) {
+    super(detail.message);
+    this.name = 'ServerResponseTooLargeError';
+  }
+}
 
 /** One non-replaying request/event transport shared by desktop and browsers. */
 export class OpenTigWebSocketTransport {
@@ -227,6 +235,8 @@ export class OpenTigWebSocketTransport {
     this.clearHeartbeat();
     const error = closeCode === 1008
       ? new ServerAuthenticationError('Authentication required.')
+      : closeCode === 1013
+      ? new ServerBackpressureError('OpenTig server disconnected because the client send queue was full.')
       : new ServerDisconnectedError('OpenTig server disconnected before the request completed.');
     this.rejectPending(error);
     if (this.stopped) return;
@@ -340,6 +350,10 @@ export class OpenTigWebSocketTransport {
 function settleResult(pending: PendingRequest, result: IpcResult<unknown>): void {
   if (result.ok) {
     pending.resolve(result.value);
+    return;
+  }
+  if (result.error.code === 'RESPONSE_TOO_LARGE') {
+    pending.reject(new ServerResponseTooLargeError(result.error));
     return;
   }
   const error = new Error(result.error.message) as Error & { detail?: typeof result.error };

@@ -12,7 +12,7 @@ it('validates authorship writes at the server boundary and notifies sibling work
   const registry = new CommandRegistry();
   registerServerCommands(registry, {
     operations: { setCommitAuthorship },
-    repositories: { get: () => ({ commonDir: '/fixture/shared.git' }), recents: () => [
+    repositories: { invalidateIfKnown: () => undefined, get: () => ({ commonDir: '/fixture/shared.git' }), recents: () => [
       { id: 'main', commonDir: '/fixture/shared.git' }, { id: 'sibling', commonDir: '/fixture/shared.git' }, { id: 'other', commonDir: '/fixture/other.git' },
     ] }, events: { repositoryChanged },
   } as unknown as OpenTigRuntimeServices, {} as OpenTigHost);

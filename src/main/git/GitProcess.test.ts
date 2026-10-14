@@ -5,6 +5,39 @@ import { describe, expect, it } from 'vitest';
 import { GitProcess } from './GitProcess';
 
 describe('GitProcess', () => {
+  it.each(['signal', 'onStderr'] as const)('does not share reads with consumer-owned %s options', async key => {
+    const git = new GitProcess();
+    const args = alias('consumer-pid', 'setTimeout(() => process.stdout.write(String(process.pid)), 50)');
+    const outputs = await Promise.all(Array.from({ length: 2 }, () => {
+      const options = { operation: 'consumer-pid', readOnly: true, timeoutMs: 5_000,
+        [key]: key === 'signal' ? new AbortController().signal : () => undefined };
+      return git.run(process.cwd(), args, options);
+    }));
+    expect(new Set(outputs.map(output => output.stdout.toString())).size).toBe(2);
+  });
+
+  it('uses one child process for four identical reads and fresh processes after settlement', async () => {
+    const git = new GitProcess();
+    const args = alias('read-pid', 'setTimeout(() => process.stdout.write(String(process.pid)), 50)');
+    const options = { operation: 'read-pid', readOnly: true, timeoutMs: 5_000 };
+    const outputs = await Promise.all(Array.from({ length: 4 }, () => git.run(process.cwd(), args, options)));
+    const pid = outputs[0]!.stdout.toString();
+    expect(outputs.every(output => output.stdout.toString() === pid)).toBe(true);
+    outputs[0]!.stdout.fill(0);
+    expect(outputs[1]!.stdout.toString()).toBe(pid);
+    expect((await git.run(process.cwd(), args, options)).stdout.toString()).not.toBe(pid);
+  });
+
+  it('does not share writers or reads with different stdin', async () => {
+    const git = new GitProcess();
+    const args = alias('write-pid', 'process.stdout.write(String(process.pid))');
+    const writes = await Promise.all(Array.from({ length: 4 }, () => git.runWrite(process.cwd(), args, { operation: 'write-pid', timeoutMs: 5_000 })));
+    expect(new Set(writes.map(output => output.stdout.toString())).size).toBe(4);
+    const hashes = await Promise.all(['one', 'two'].map(stdin => git.run(process.cwd(), ['hash-object', '--stdin'], {
+      operation: 'hash', readOnly: true, stdin,
+    })));
+    expect(hashes[0]!.stdout.toString()).not.toBe(hashes[1]!.stdout.toString());
+  });
   it('keeps stdout and stderr as binary buffers', async () => {
     const output = await new GitProcess().run(process.cwd(), ['hash-object', '--stdin'], {
       operation: 'hash',

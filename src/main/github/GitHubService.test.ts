@@ -22,7 +22,7 @@ function fixture(reply: (args: string[]) => CliRunResult, remoteUrl = 'https://g
   const service = new GitHubService(
     { discover: async () => [{ executable: 'gh', alias: 'gh', source: 'process-path', env: { PATH: '/fixture/bin' } }], warning: async () => undefined } as unknown as CliResolver,
     { run } as unknown as CliProcessRunner,
-    { run: async (_cwd: string, args: string[]) => ({ stdout: Buffer.from(args.includes('core.sshCommand') ? '' : remoteUrl) }) } as unknown as GitProcess,
+    { onInvalidate: () => undefined, readScope: (cwd: string) => cwd, run: async (_cwd: string, args: string[]) => ({ stdout: Buffer.from(args.includes('core.sshCommand') ? '' : remoteUrl) }) } as unknown as GitProcess,
     { get: () => ({ path: '.', commonDir: '.git', id: 'repo' }) } as unknown as RepositoryService,
   );
   return { service, run };

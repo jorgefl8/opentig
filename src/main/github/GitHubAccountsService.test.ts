@@ -60,7 +60,7 @@ async function fixture(options: { https?: boolean; env?: Record<string, string>;
   });
   const resolver = { discover: async () => options.noCli ? [] : [{ executable: 'gh', alias: 'gh', source: 'process-path', env: { PATH: '/fixture/bin', ...options.env } }], warning: async () => undefined } as unknown as CliResolver;
   const runner = { run } as unknown as CliProcessRunner;
-  const git = { run: async (_cwd: string, args: string[]) => ({ stdout: Buffer.from(args.includes('core.sshCommand') ? options.customSsh ? 'custom ssh' : '' : options.https ? 'https://github.com/organisation/demo.git' : remote) }) } as unknown as GitProcess;
+  const git = { onInvalidate: () => undefined, readScope: (cwd: string) => cwd, run: async (_cwd: string, args: string[]) => ({ stdout: Buffer.from(args.includes('core.sshCommand') ? options.customSsh ? 'custom ssh' : '' : options.https ? 'https://github.com/organisation/demo.git' : remote) }) } as unknown as GitProcess;
   const repositories = { get: (id: string) => ({ ...repo, id }), status: async () => ({ branch: 'feature', upstream: 'origin/feature', ahead: 0 }) } as unknown as RepositoryService;
   const accounts = new GitHubAccountsService(resolver, runner, git, settings, new GitHubStatusStore(statusFile), changed);
   const service = new GitHubService(resolver, runner, git, repositories, accounts);

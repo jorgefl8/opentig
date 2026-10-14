@@ -2,12 +2,13 @@
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import type { CommitInfo } from '@shared/git-types';
+import type { CommitFile, CommitInfo } from '@shared/git-types';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { clearCommitFilesCache } from './commit-files-cache';
+import { clearCommitFilesCache, readCommitFilesCache } from './commit-files-cache';
 import { HistoryView } from './HistoryView';
 
-vi.mock('@/lib/opentig-api', () => ({ opentig: { commits: { files: async () => [] } } }));
+const filesRequest = vi.hoisted(() => vi.fn<(repositoryId: string, oid: string) => Promise<CommitFile[]>>());
+vi.mock('@/lib/opentig-api', () => ({ opentig: { commits: { files: filesRequest } } }));
 let root: Root;
 let container: HTMLDivElement;
 const observers = new Set<TestResizeObserver>();
@@ -34,6 +35,7 @@ function commit(oid: string, parentOids: string[], subject: string): CommitInfo 
 const commits = [commit('merge', ['main', 'feature'], 'Merge feature'), commit('main', ['base'], 'Main'), commit('feature', ['base'], 'Feature'), commit('base', [], 'Base')];
 
 beforeEach(() => {
+  filesRequest.mockReset().mockResolvedValue([]);
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
   vi.stubGlobal('ResizeObserver', TestResizeObserver);
   vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
@@ -95,4 +97,25 @@ it('keeps an expanded merge measured when grouping is toggled and search reveals
   await act(async () => grouping.click());
   expect(container.querySelectorAll('.commit-item')).toHaveLength(4);
   expectNextRowBelowExpansion();
+});
+
+it('displays an oversized response fully and keeps it in the mounted row without caching it', async () => {
+  const files: CommitFile[] = Array.from({ length: 400 }, (_, index) => ({
+    path: `src/${'directory/'.repeat(155)}file-${index}.ts`, oldPath: null, kind: 'modified', additions: 1, deletions: 0, binary: false,
+  }));
+  filesRequest.mockResolvedValue(files);
+  await mountAndExpand();
+  expect(readCommitFilesCache('history-measure-test:merge')).toBeUndefined();
+  expect(container.querySelector('.commit-files-summary')?.textContent).toContain('400 files');
+  expect(container.querySelectorAll('.commit-file-row')).toHaveLength(400);
+  expect(container.querySelector('.commit-files')?.textContent).toContain('file-399.ts');
+  await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Collapse commit"]')!.click());
+  await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Expand commit"]')!.click());
+  expect(container.querySelectorAll('.commit-file-row')).toHaveLength(400);
+  expect(filesRequest).toHaveBeenCalledTimes(1);
+  await act(async () => root.unmount());
+  root = createRoot(container);
+  await mountAndExpand();
+  expect(filesRequest).toHaveBeenCalledTimes(2);
+  expect(container.querySelectorAll('.commit-file-row')).toHaveLength(400);
 });

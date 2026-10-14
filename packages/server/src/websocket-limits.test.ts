@@ -9,6 +9,7 @@ import { OPEN_TIG_SERVER_COMMANDS } from '../../../src/shared/protocol';
 import { BROWSER_SESSION_MAX_AGE_SECONDS, OneTimeBootstrapAuthSource, OpenTigSessionAuth } from './auth';
 import { OpenTigServer } from './OpenTigServer';
 import { NetworkSettings } from './network-settings';
+import { OPEN_TIG_MAX_SERVER_MESSAGE_BYTES } from '../../../src/shared/server-protocol';
 
 interface Fixture {
   auth: OpenTigSessionAuth;
@@ -16,6 +17,7 @@ interface Fixture {
   origin: string;
   socket(): Promise<WebSocket>;
   closeRuntime: ReturnType<typeof vi.fn>;
+  logger: ReturnType<typeof vi.fn>;
 }
 
 const fixtures: Fixture[] = [];
@@ -24,9 +26,86 @@ const directories: string[] = [];
 afterEach(async () => {
   await Promise.allSettled(fixtures.splice(0).map((fixture) => fixture.server.stop()));
   await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })));
+  vi.unstubAllEnvs();
 });
 
 describe('WebSocket safety limits', () => {
+  it.each([1, 4, 16])('serializes a broadcast once for %i authenticated connections with separate send metrics', async (count) => {
+    vi.stubEnv('OPENTIG_PERF_LOG', '1');
+    const fixture = await startFixture(() => emptyBootstrap());
+    const sockets: WebSocket[] = [];
+    for (let index = 0; index < count; index += 1) sockets.push(await fixture.socket());
+    const received = sockets.map((socket) => nextMessage(socket));
+    const readRepositoryId = vi.fn(() => 'private-repository-id');
+    const event = { type: 'repository.changed' as const, get repositoryId() { return readRepositoryId(); }, scope: 'worktree' as const };
+    fixture.server.publish(event);
+    const messages = await Promise.all(received);
+    expect(readRepositoryId).toHaveBeenCalledTimes(1);
+    for (const message of messages) expect(message).toEqual({ type: 'event', event: { type: 'repository.changed', repositoryId: 'private-repository-id', scope: 'worktree' } });
+    const bytes = Buffer.byteLength(JSON.stringify(messages[0]));
+    const records = performanceRecords(fixture);
+    expect(records.filter((record) => record.kind === 'serialize')).toEqual([
+      { kind: 'serialize', durationMs: expect.any(Number), bytes, outcome: 'accepted', maxBytes: OPEN_TIG_MAX_SERVER_MESSAGE_BYTES },
+    ]);
+    await vi.waitFor(() => expect(performanceRecords(fixture).filter((record) => record.kind === 'send')).toHaveLength(count));
+    expect(JSON.stringify(performanceRecords(fixture))).not.toContain('private-repository-id');
+    for (const socket of sockets) socket.close();
+  });
+
+  it('checks each broadcast recipient even when the event encoding is shared', async () => {
+    const fixture = await startFixture(() => emptyBootstrap());
+    const healthy = await fixture.socket();
+    const cookie = (await fixture.auth.exchangePairingToken(fixture.auth.createPairingToken().token))!.split(';', 1)[0]!;
+    const revoked = await openWebSocket(fixture.origin, cookie);
+    const sessionId = fixture.auth.authenticate({ cookie })!;
+    const deniedMessages = vi.fn();
+    revoked.on('message', deniedMessages);
+    const close = closed(revoked);
+    await fixture.auth.revokeBrowserSession(sessionId);
+    const response = nextMessage(healthy);
+    fixture.server.publish({ type: 'repository.changed', repositoryId: 'repository', scope: 'worktree' });
+    expect(await response).toMatchObject({ type: 'event' });
+    await expect(close).resolves.toBe(1008);
+    expect(deniedMessages).not.toHaveBeenCalled();
+    healthy.close();
+  });
+
+  it('keeps performance logging disabled by default', async () => {
+    vi.stubEnv('OPENTIG_PERF_LOG', '');
+    const fixture = await startFixture(() => emptyBootstrap());
+    const socket = await fixture.socket();
+    await sendAndReceive(socket, { type: 'request', id: 'normal', command: 'app:bootstrap', args: [] });
+    expect(fixture.logger).not.toHaveBeenCalled();
+    socket.close();
+  });
+
+  it('records exact encoded JSON bytes and durations without payloads, paths, IDs, or unvalidated command names', async () => {
+    vi.stubEnv('OPENTIG_PERF_LOG', '1');
+    const fixture = await startFixture(() => ({ payload: 'payload-secret\n€' }));
+    const socket = await fixture.socket();
+    const request = { type: 'request', id: 'request-secret', command: 'app:bootstrap', args: [] };
+    const response = await sendAndReceive(socket, request);
+    await sendAndReceive(socket, { type: 'request', id: 'write-secret', command: 'repository:write-file', args: ['repository-secret', 'path-secret', 'content-secret', ''] });
+    await sendAndReceive(socket, { type: 'request', id: 'unknown-secret', command: 'command-secret', args: [] });
+    const records = performanceRecords(fixture);
+    expect(records).toContainEqual({ kind: 'request', durationMs: expect.any(Number), operation: 'bootstrap', requestBytes: Buffer.byteLength(JSON.stringify(request)) });
+    expect(records).toContainEqual({ kind: 'serialize', durationMs: expect.any(Number), outcome: 'accepted', maxBytes: OPEN_TIG_MAX_SERVER_MESSAGE_BYTES, bytes: Buffer.byteLength(JSON.stringify(response)) });
+    expect(records).toContainEqual({ kind: 'request', durationMs: expect.any(Number), operation: 'unknown', requestBytes: expect.any(Number) });
+    expect(JSON.stringify(records)).not.toContain('secret');
+    for (const record of records) expect(record.durationMs).toBeGreaterThanOrEqual(0);
+    socket.close();
+  });
+
+  it('does not let a failing performance logger interrupt response delivery', async () => {
+    vi.stubEnv('OPENTIG_PERF_LOG', '1');
+    const fixture = await startFixture(() => emptyBootstrap());
+    fixture.logger.mockImplementation(() => { throw new Error('Diagnostic sink failed'); });
+    const socket = await fixture.socket();
+    expect(await sendAndReceive(socket, { type: 'request', id: 'logged', command: 'app:bootstrap', args: [] }))
+      .toMatchObject({ result: { ok: true } });
+    socket.close();
+  });
+
   it('aborts only browser commands when Web access is disabled', async () => {
     const active = new Map<string, { signal: AbortSignal; finish(): void }>();
     let ready!: () => void;
@@ -133,12 +212,98 @@ describe('WebSocket safety limits', () => {
     expect(aborted).toBe(true);
   });
 
-  it('disconnects a client when one result would exceed the bounded send queue', async () => {
-    const fixture = await startFixture(() => ({ payload: 'x'.repeat(5 * 1024 * 1024) }));
+  it.each([
+    ['plain 5 MiB', 'x', 5 * 1024 * 1024],
+    ['32 MiB diff', 'x', 32 * 1024 * 1024],
+    ['JSON escapes', '\u0000', 1024 * 1024],
+    ['UTF-8', '€', 2 * 1024 * 1024],
+  ])('returns a typed error for %s on an empty queue and keeps the socket usable', async (_label, content, count) => {
+    const fixture = await startFixture(() => ({ payload: content.repeat(count) }));
     const socket = await fixture.socket();
+    const response = await sendAndReceive(socket, { type: 'request', id: 'large-result', command: 'app:bootstrap', args: [] });
+    expect(response).toMatchObject({ type: 'result', id: 'large-result', result: { ok: false, error: {
+      code: 'RESPONSE_TOO_LARGE', maxBytes: OPEN_TIG_MAX_SERVER_MESSAGE_BYTES,
+    } } });
+    expect(socket.readyState).toBe(WebSocket.OPEN);
+    expect(await sendAndReceive(socket, { type: 'ping' })).toEqual({ type: 'pong' });
+    expect(await sendAndReceive(socket, { type: 'request', id: 'recovered', command: 'repository:write-file', args: ['repository', 'small.txt', 'x', ''] }))
+      .toMatchObject({ result: { ok: true } });
+    socket.close();
+  });
+
+  it('accepts exactly the byte limit and rejects one more byte without truncating', async () => {
+    const envelope = { type: 'result', id: 'boundary', result: { ok: true, value: { payload: '', server: { protocolVersion: 1, appVersion: 'test' } } } };
+    const overhead = Buffer.byteLength(JSON.stringify(envelope));
+    let payload = 'x'.repeat(OPEN_TIG_MAX_SERVER_MESSAGE_BYTES - overhead);
+    const fixture = await startFixture(() => ({ payload }));
+    const socket = await fixture.socket();
+    const response = await sendAndReceive(socket, { type: 'request', id: 'boundary', command: 'app:bootstrap', args: [] });
+    expect(Buffer.byteLength(JSON.stringify(response))).toBe(OPEN_TIG_MAX_SERVER_MESSAGE_BYTES);
+    expect(response).toEqual({ ...envelope, result: { ...envelope.result, value: { ...envelope.result.value, payload } } });
+    payload += 'x';
+    expect(await sendAndReceive(socket, { type: 'request', id: 'boundary', command: 'app:bootstrap', args: [] }))
+      .toMatchObject({ result: { ok: false, error: { code: 'RESPONSE_TOO_LARGE' } } });
+    socket.close();
+  });
+
+  it('still requires authenticated HTTP for images rather than sending image bytes on the socket', async () => {
+    const fixture = await startFixture(() => emptyBootstrap());
+    const socket = await fixture.socket();
+    expect(await sendAndReceive(socket, { type: 'request', id: 'image', command: 'repository:read-image', args: ['repository', 'image.png'] }))
+      .toMatchObject({ result: { ok: false, error: { message: 'Image previews use authenticated HTTP.' } } });
+    socket.close();
+  });
+
+  it('closes a genuinely backpressured TCP peer and leaves another client and reconnection usable', async () => {
+    const fixture = await startFixture(() => ({ payload: 'x'.repeat(2 * 1024 * 1024) }));
+    const slow = await fixture.socket();
+    const healthy = await fixture.socket();
+    const slowClosed = closed(slow);
+    const original = Object.getOwnPropertyDescriptor(WebSocket.prototype, 'bufferedAmount')!.get!;
+    let peakBuffered = 0;
+    const observed = vi.spyOn(WebSocket.prototype, 'bufferedAmount', 'get').mockImplementation(function (this: WebSocket) {
+      const bytes = original.call(this) as number;
+      peakBuffered = Math.max(peakBuffered, bytes);
+      return bytes;
+    });
+    try {
+      slow.pause(); // Real ws/TCP reads stop; send and bufferedAmount stay native.
+      for (let index = 0; index < 32; index += 1) {
+        slow.send(JSON.stringify({ type: 'request', id: `slow-${index}`, command: 'app:bootstrap', args: [] }));
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      slow.resume();
+      await expect(slowClosed).resolves.toBe(1013);
+      expect(peakBuffered).toBeGreaterThan(2 * 1024 * 1024);
+      expect(await sendAndReceive(healthy, { type: 'request', id: 'healthy', command: 'repository:write-file', args: ['repository', 'small.txt', 'x', ''] }))
+        .toMatchObject({ result: { ok: true } });
+      const recovered = await fixture.socket();
+      expect(await sendAndReceive(recovered, { type: 'ping' })).toEqual({ type: 'pong' });
+      recovered.close();
+      healthy.close();
+    } finally {
+      slow.resume();
+      observed.mockRestore();
+    }
+  });
+
+  it('rechecks authentication before delivering an asynchronously completed response', async () => {
+    let finish!: (value: unknown) => void;
+    let started!: () => void;
+    const running = new Promise<void>((resolve) => { started = resolve; });
+    const fixture = await startFixture(() => new Promise((resolve) => { finish = resolve; started(); }));
+    const cookie = (await fixture.auth.exchangePairingToken(fixture.auth.createPairingToken().token))!.split(';', 1)[0]!;
+    const sessionId = fixture.auth.authenticate({ cookie })!;
+    const socket = await openWebSocket(fixture.origin, cookie);
+    const messages = vi.fn();
+    socket.on('message', messages);
     const close = closed(socket);
-    socket.send(JSON.stringify({ type: 'request', id: 'large-result', command: 'app:bootstrap', args: [] }));
-    await expect(close).resolves.toBe(1013);
+    socket.send(JSON.stringify({ type: 'request', id: 'revoked', command: 'app:bootstrap', args: [] }));
+    await running;
+    await fixture.auth.revokeBrowserSession(sessionId);
+    finish({ payload: 'x'.repeat(5 * 1024 * 1024) });
+    await expect(close).resolves.toBe(1008);
+    expect(messages).not.toHaveBeenCalled();
   });
 
   it('allows the bounded text-write exception above the normal frame limit', async () => {
@@ -224,6 +389,7 @@ async function startFixture(
     ...(now ? { now } : {}),
   });
   const closeRuntime = vi.fn(async () => undefined);
+  const logger = vi.fn();
   const runtime = { close: closeRuntime, services: { files: {} } } as unknown as OpenTigRuntime;
   const server = new OpenTigServer({
     network: { webAccessEnabled: true, lanAccessEnabled: false, publicOrigin: null, listenerHost: '127.0.0.1', listenerPort: 0 },
@@ -234,6 +400,7 @@ async function startFixture(
     auth,
     identity: { protocolVersion: 1, appVersion: 'test' },
     port: 0,
+    logger,
     ...limits,
   });
   const address = await server.start();
@@ -249,10 +416,20 @@ async function startFixture(
     server,
     origin: address.origin,
     closeRuntime,
+    logger,
     socket: () => openWebSocket(address.origin, cookie),
   };
   fixtures.push(fixture);
   return fixture;
+}
+
+function performanceRecords(fixture: Fixture): Array<Record<string, string | number>> {
+  return fixture.logger.mock.calls.flatMap(([, message]) => {
+    const prefix = 'WebSocket performance ';
+    return typeof message === 'string' && message.startsWith(prefix)
+      ? [JSON.parse(message.slice(prefix.length)) as Record<string, string | number>]
+      : [];
+  });
 }
 
 function openWebSocket(origin: string, cookie: string): Promise<WebSocket> {

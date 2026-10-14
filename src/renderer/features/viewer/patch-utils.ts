@@ -51,17 +51,19 @@ export interface DiffFileEntry {
 
 /** Builds the lightweight file model used by the shared diff toolbar and rows. */
 export function buildDiffFileEntries(patch: string): DiffFileEntry[] {
-  return splitPatchFiles(patch).map((filePatch, index) => {
-    const parsed = getSingularPatch(filePatch);
-    return {
-      key: `${parsed.prevName ?? ''}:${parsed.name}:${index}`,
-      path: parsed.name,
-      previousPath: parsed.prevName,
-      patch: filePatch,
-      fileDiff: { ...parsed, lang: resolvePierreLanguage(parsed.name) },
-      additions: parsed.hunks.reduce((total, hunk) => total + hunk.additionLines, 0),
-      deletions: parsed.hunks.reduce((total, hunk) => total + hunk.deletionLines, 0),
-      changeType: parsed.type,
-    };
-  });
+  return splitPatchFiles(patch).map(buildDiffFileEntry);
+}
+
+export function buildDiffFileEntry(filePatch: string, index: number): DiffFileEntry {
+  const parsed = getSingularPatch(filePatch);
+  return {
+    key: `${parsed.prevName ?? ''}:${parsed.name}:${index}`,
+    path: parsed.name,
+    previousPath: parsed.prevName,
+    patch: filePatch,
+    fileDiff: { ...parsed, lang: resolvePierreLanguage(parsed.name) },
+    additions: parsed.hunks.reduce((total, hunk) => total + hunk.additionLines, 0),
+    deletions: parsed.hunks.reduce((total, hunk) => total + hunk.deletionLines, 0),
+    changeType: parsed.type,
+  };
 }

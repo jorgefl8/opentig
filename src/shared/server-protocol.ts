@@ -5,6 +5,8 @@ import protocolMetadata from './protocol-version.json';
 
 export const OPEN_TIG_PROTOCOL_VERSION = protocolMetadata.protocolVersion;
 export const OPEN_TIG_SESSION_COOKIE = 'opentig_session';
+/** UTF-8 JSON bytes, including the envelope and escaped strings. */
+export const OPEN_TIG_MAX_SERVER_MESSAGE_BYTES = 4 * 1024 * 1024;
 
 export type OpenTigOwnerSessionKind = 'desktop' | 'browser' | 'legacy';
 export type OpenTigDeviceType = 'desktop' | 'mobile' | 'tablet' | 'bot' | 'unknown';

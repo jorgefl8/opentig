@@ -24,6 +24,9 @@ export function registerServerCommands(
   const serverDefinitions = new Map<string, OpenTigServerCommandDefinition>(
     Object.values(OPEN_TIG_SERVER_COMMANDS).map((definition) => [definition.command, definition]),
   );
+  const repositoryMutations = new Set<string>(Object.entries(OPEN_TIG_SERVER_COMMANDS)
+    .filter(([method, definition]) => definition.mutation && ['repository.', 'index.', 'commits.', 'refs.'].some(prefix => method.startsWith(prefix)))
+    .map(([, definition]) => definition.command));
   const handleWithContext = <T>(
     channel: string,
     operation: string,
@@ -32,7 +35,14 @@ export function registerServerCommands(
     const definition = serverDefinitions.get(channel);
     if (!definition) throw new Error(`Not a server command: ${channel}`);
     if (definition.operation !== operation) throw new Error(`Operation mismatch for ${channel}: ${operation}`);
-    registry.registerHandler(definition, (context, args) => handler(context, ...args));
+    registry.registerHandler(definition, async (context, args) => {
+      // Include filesystem-only mutations, which do not pass through Git's write queue.
+      const first = args[0];
+      const repositoryId = typeof first === 'object' && first !== null && 'repositoryId' in first ? first.repositoryId : first;
+      if (repositoryMutations.has(channel)) services.repositories.invalidateIfKnown(repositoryId);
+      try { return await handler(context, ...args); }
+      finally { if (repositoryMutations.has(channel)) services.repositories.invalidateIfKnown(repositoryId); }
+    });
   };
   const handle = <T>(channel: string, operation: string, handler: (...args: unknown[]) => Promise<T> | T) => {
     handleWithContext(channel, operation, (_context, ...args) => handler(...args));

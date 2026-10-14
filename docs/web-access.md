@@ -257,6 +257,14 @@ Authentication failure stops automatic retries and asks the browser to pair
 again. Browsers without a valid session see pairing instructions without a startup
 error notification.
 
+Each WebSocket response is limited to 4 MiB of UTF-8 JSON, including its envelope
+and escaped text. Larger results fail with `RESPONSE_TOO_LARGE` while the session
+stays connected; content is never silently truncated. Request a narrower scope
+where available. A diff allowed by Git's 32 MiB output limit can still exceed this
+transport limit. Images use authenticated HTTP rather than WebSocket JSON.
+The separate 4 MiB send-queue budget closes an accumulating slow connection with
+code 1013; reconnect does not replay pending operations.
+
 If a server upgrade makes an open client's version incompatible, the connection
 notification offers **Reload** to fetch the current interface. The browser still
 warns about unsaved editor changes before reloading.
@@ -282,6 +290,16 @@ returns its status, protocol version, and application version. The rotating
 server log is stored at `logs/server.log` inside Electron's OpenTig user-data
 directory or the selected CLI home; authentication material and URL secrets are
 redacted.
+
+Set `OPENTIG_PERF_LOG=1` before starting the server to add WebSocket performance
+metadata to that existing log. Entries report validated operation names, request
+bytes, encoded JSON bytes, serialization/request duration, queued bytes, and
+send outcome. Broadcasts are encoded once and send measurements remain per
+socket. An oversized response reports the replacement error's encoded size,
+not the original content size. Send duration ends at the `ws` write callback;
+it does not measure receipt, JSON parsing, or rendering on the client. Payloads,
+paths, correlation IDs, session IDs, and authentication material are excluded.
+Logging is disabled by default and can add I/O when enabled.
 
 If a browser remains on **Authentication required**, revoke stale sessions if
 appropriate, create a fresh pairing link, and open that exact link. If the

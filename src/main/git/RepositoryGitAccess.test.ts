@@ -45,6 +45,41 @@ function fakeNetwork(f: Awaited<ReturnType<typeof fixture>>, action?: (args: str
 }
 
 describe('repository Git access and publication', () => {
+  it.each(['success', 'failure'] as const)('does not replay a routed %s with obsolete credentials after invalidation', async outcome => {
+    const f = await fixture(); await f.select();
+    // Git can expand a temporary directory alias (including Windows 8.3 names).
+    // Use the registered path, just as repository operations do.
+    const cwd = f.repository.path;
+    const identities: string[] = [];
+    const process = f.process as unknown as {
+      spawnGit(cwd: string, args: string[], options: RunOptions): Promise<GitOutput>;
+    };
+    const original = process.spawnGit.bind(process);
+    const spawn = vi.spyOn(process, 'spawnGit');
+    spawn.mockImplementation(async (cwd, args, options) => {
+      if (!args.includes('ls-remote') || args.includes('--get-url')) return original(cwd, args, options);
+      const command = args.indexOf('ls-remote');
+      const result = await execa('git', [...args.slice(0, command).filter(arg => arg !== '--no-optional-locks'), 'credential', 'fill'], {
+        cwd, input: 'protocol=https\nhost=github.com\npath=team/demo.git\n\n', env: { GIT_TERMINAL_PROMPT: '0' },
+      });
+      identities.push(result.stdout.split('\n').find(line => line.startsWith('username='))!);
+      if (identities.length === 1) {
+        await f.select('bob');
+        f.process.invalidate(cwd);
+        if (outcome === 'failure') throw new GitOperationError({ code: 'UNKNOWN', operation: options.operation, message: 'Obsolete account failed.' });
+      }
+      return { stdout: Buffer.from('advertised'), stderr: Buffer.alloc(0), exitCode: 0 };
+    });
+    try {
+      const read = () => f.process.run(cwd, ['ls-remote', '--', 'origin', 'HEAD'], { operation: 'advertised', readOnly: true });
+      if (outcome === 'failure') await expect(read()).rejects.toThrow('Obsolete account failed.');
+      else expect((await read()).stdout.toString()).toBe('advertised');
+      expect(identities).toEqual(['username=alice']);
+      await read();
+      expect(identities).toEqual(['username=alice', 'username=bob']);
+    } finally { spawn.mockRestore(); await f.process.close(); }
+  });
+
   it('keeps migration explicit, worktrees shared, clones separate and authorship unchanged', async () => {
     const f = await fixture();
     await f.accounts.setSelection(f.repository, { mode: 'account', host: 'github.com', login: 'alice' });

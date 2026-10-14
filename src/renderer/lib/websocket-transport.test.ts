@@ -5,6 +5,8 @@ import {
   ServerAuthenticationError,
   ServerDisconnectedError,
   ServerRequestTimeoutError,
+  ServerResponseTooLargeError,
+  ServerBackpressureError,
 } from './websocket-transport';
 
 class FakeSocket {
@@ -63,6 +65,41 @@ afterEach(() => {
 });
 
 describe('OpenTigWebSocketTransport', () => {
+  it('rejects an oversized response with typed detail and completes another request on the same socket', async () => {
+    const { transport, sockets } = fixture();
+    const result = transport.request(IPC.capabilities, []);
+    sockets[0]!.open();
+    await Promise.resolve();
+    const { id } = JSON.parse(sockets[0]!.sent[0]!) as { id: string };
+    sockets[0]!.message({ type: 'result', id, result: { ok: false, error: {
+      code: 'RESPONSE_TOO_LARGE', operation: 'server-protocol', message: 'Too large.', maxBytes: 4 * 1024 * 1024,
+    } } });
+    await expect(result).rejects.toBeInstanceOf(ServerResponseTooLargeError);
+    await expect(result).rejects.toMatchObject({ detail: { code: 'RESPONSE_TOO_LARGE', maxBytes: 4 * 1024 * 1024 } });
+    expect(transport.getState()).toBe('connected');
+    const next = transport.request(IPC.capabilities, []);
+    await Promise.resolve();
+    const second = JSON.parse(sockets[0]!.sent[1]!) as { id: string };
+    sockets[0]!.message({ type: 'result', id: second.id, result: { ok: true, value: { runtimeMode: 'headless' } } });
+    await expect(next).resolves.toMatchObject({ runtimeMode: 'headless' });
+    expect(sockets).toHaveLength(1);
+    transport.close();
+  });
+
+  it('classifies a full send queue and reconnects without replaying requests', async () => {
+    vi.useFakeTimers();
+    const { transport, sockets } = fixture();
+    const pending = transport.request(IPC.capabilities, []);
+    sockets[0]!.open();
+    await Promise.resolve();
+    const rejected = expect(pending).rejects.toBeInstanceOf(ServerBackpressureError);
+    sockets[0]!.serverClose(1013);
+    await rejected;
+    await vi.advanceTimersByTimeAsync(100);
+    sockets[1]!.open();
+    expect(sockets[1]!.sent).toEqual([]);
+    transport.close();
+  });
   it('correlates a request made while the first connection is opening', async () => {
     const { transport, sockets } = fixture();
     const result = transport.request(IPC.capabilities, []);

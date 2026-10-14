@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Autocomplete } from '@base-ui/react/autocomplete';
 import { IconFileSearch, IconLoader4, IconSearch } from '@tabler/icons-react';
 import type { FileTreeEntry } from '@shared/git-types';
 import { Dialog, DialogDescription, DialogPopup, DialogTitle } from '@/components/ui/dialog';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { getVsCodeFileIconUrl } from '@/lib/vscode-icons';
-import { rankQuickOpenFiles } from './quick-open';
+import { useQuickOpenResults } from './use-quick-open-results';
 
 interface QuickOpenDialogProps {
   open: boolean;
@@ -19,10 +19,7 @@ interface QuickOpenDialogProps {
 export function QuickOpenDialog({ open, files, includeIgnored, activePath, onOpenChange, onOpenFile }: QuickOpenDialogProps) {
   const [query, setQuery] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
-  const results = useMemo(
-    () => files ? rankQuickOpenFiles(files, query, { includeIgnored, activePath, limit: 100 }) : [],
-    [activePath, files, includeIgnored, query],
-  );
+  const { results, pending } = useQuickOpenResults(files, query, includeIgnored, activePath, open);
 
   useEffect(() => {
     if (!open) return;
@@ -64,9 +61,9 @@ export function QuickOpenDialog({ open, files, includeIgnored, activePath, onOpe
             />
           </div>
           <Autocomplete.List aria-label="Repository files" className="quick-open-results">
-            {files === null ? (
+            {files === null || pending ? (
               <div className="quick-open-status loading" role="status">
-                <IconLoader4 className="spinner" aria-hidden="true" /> <ShimmeringText text="Loading files…" />
+                <IconLoader4 className="spinner" aria-hidden="true" /> <ShimmeringText text={pending ? "Searching files…" : "Loading files…"} />
               </div>
             ) : results.length === 0 ? (
               <div className="quick-open-status" role="status">
@@ -95,7 +92,7 @@ export function QuickOpenDialog({ open, files, includeIgnored, activePath, onOpe
             <span><kbd>↵</kbd> open</span>
             <span><kbd>Esc</kbd> close</span>
           </span>
-          {files !== null && (
+          {files !== null && !pending && (
             <span className="quick-open-count">
               {results.length === 100 ? 'Top 100 matches' : `${results.length} ${results.length === 1 ? 'file' : 'files'}`}
             </span>

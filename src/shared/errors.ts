@@ -60,7 +60,14 @@ export interface SerializedGhError {
   retryable?: boolean;
 }
 
-export type SerializedOperationError = SerializedGitError | SerializedAiError | SerializedGhError;
+export interface SerializedTransportError {
+  code: 'RESPONSE_TOO_LARGE';
+  operation: 'server-protocol';
+  message: string;
+  maxBytes: number;
+}
+
+export type SerializedOperationError = SerializedGitError | SerializedAiError | SerializedGhError | SerializedTransportError;
 
 export class GitOperationError extends Error {
   readonly detail: SerializedGitError;
