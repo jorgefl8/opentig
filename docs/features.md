@@ -95,6 +95,7 @@ Use the desktop app or the same UI in a paired browser; browsers select folders 
 ### History
 
 - Browse commit history incrementally instead of loading the entire repository at once; refreshes preserve loaded pages without duplicating commits.
+- Expanded commit file lists are reused from a memory-bounded cache. Very large lists remain fully available in the open row but are fetched again when revisited after that row unmounts; switching repositories clears the cache.
 - Follow current-branch history through a compact Git graph: theme amber for local commits, OpenTig blue for published work and merge branches, and neutral gray for primary-line commits reachable from the locally known base branch. Lane positions and merge nodes preserve topology; the palette follows the light or dark theme. The base uses the upstream remote's symbolic default when available, then conventional main/master refs; missing information stays unknown. No background fetch is needed, and unmerged branches outside HEAD are not added to this view.
 - Switch between compact (42 px) and comfortable (56 px) rows without changing the sidebar width or right-hand diff viewer. Selecting a commit or its expanded files keeps the row highlighted.
 - Search subjects, authors, hashes, and references in loaded history. Matches are highlighted without removing graph rows; Enter or the next-match button scrolls to each result. Expanded rows keep their spacing when the search or merge grouping changes. Load more to search older commits.
