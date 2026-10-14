@@ -1,3 +1,4 @@
+import { ParsedDiffCache } from './parsed-diff-cache';
 import ParseWorker from './diff-parse.worker?worker';
 import { buildDiffFileEntry, type DiffFileEntry } from './patch-utils';
 
@@ -61,9 +62,27 @@ function yieldToUI(signal: AbortSignal): Promise<void> {
  * and metadata, rather than leaving superseded work queued behind a big file. */
 export class DiffParser {
   private revision = 0;
+  private cacheGeneration = 0;
+  private readonly cache = new ParsedDiffCache();
   constructor(private readonly workerFactory: DiffParseWorkerFactory = () => new ParseWorker()) {}
 
+  clearCache() {
+    this.cacheGeneration++;
+    this.cache.clear();
+  }
+
   async parse(patch: string, signal: AbortSignal): Promise<DiffFileEntry[]> {
+    signal.throwIfAborted();
+    const cached = this.cache.get(patch);
+    if (cached) return cached;
+    const generation = this.cacheGeneration;
+    const files = await this.parseUncached(patch, signal);
+    signal.throwIfAborted();
+    if (generation === this.cacheGeneration) this.cache.set(patch, files);
+    return files;
+  }
+
+  private async parseUncached(patch: string, signal: AbortSignal): Promise<DiffFileEntry[]> {
     signal.throwIfAborted();
     const revision = ++this.revision;
     if (patch.length < DIFF_PARSE_WORKER_THRESHOLD) return parseDiffInBatches(patch, signal);

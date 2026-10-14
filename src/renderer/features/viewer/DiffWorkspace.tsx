@@ -27,7 +27,7 @@ interface DiffWorkspaceProps {
 }
 
 export function DiffWorkspace(props: DiffWorkspaceProps) {
-  const result = useParsedDiff(props.diff.patch);
+  const result = useParsedDiff(props.diff.patch, props.contentKey);
   if (!result || result.error !== undefined) return (
     <div className={`diff-workspace${props.compact ? ' compact' : ''}`}>
       <div className="diff-workspace-toolbar">

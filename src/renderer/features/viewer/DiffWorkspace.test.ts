@@ -6,7 +6,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { DiffWorkspace } from './DiffWorkspace';
 import { largePatch, MIXED_PATCH } from './diff-parser.fixtures';
 import { buildDiffFileEntries } from './patch-utils';
-import type { DiffParseRequest, DiffParseResponse } from './diff-parser';
+import { DiffParser, type DiffParseRequest, type DiffParseResponse } from './diff-parser';
 
 const state = vi.hoisted(() => ({ workers: [] as Array<{ request?: DiffParseRequest; onmessage: ((event: MessageEvent<DiffParseResponse>) => void) | null; terminate: ReturnType<typeof vi.fn> }> }));
 vi.mock('./diff-parse.worker?worker', () => ({ default: class {
@@ -30,9 +30,9 @@ beforeEach(() => {
 });
 afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.unstubAllGlobals(); });
 
-async function render(patch: string, initiallyCollapsed = false) {
+async function render(patch: string, initiallyCollapsed = false, contentKey = 'test') {
   await act(async () => root.render(createElement(TooltipProvider, null, createElement(DiffWorkspace, {
-    contentKey: 'test', diff: { path: '', patch, binary: false, truncated: false, lineCount: 10_001 },
+    contentKey, diff: { path: '', patch, binary: false, truncated: false, lineCount: 10_001 },
     diffView: 'unified', themeType: 'light', wrapLines: false, initiallyCollapsed,
   }))));
 }
@@ -81,4 +81,25 @@ it('shows parse failures instead of stale file rows', async () => {
   await act(async () => worker.onmessage?.({ data: { revision: 1, error: 'Invalid diff' } } as MessageEvent<DiffParseResponse>));
   expect(container.querySelector('[role="alert"]')?.textContent).toBe('Invalid diff');
   expect(container.querySelectorAll('.diff-file-section')).toHaveLength(0);
+});
+
+it('reuses results within a document and clears the cache on document changes and unmount', async () => {
+  const clear = vi.spyOn(DiffParser.prototype, 'clearCache');
+  const first = largePatch(10_001, 24, 'first.ts');
+  const second = largePatch(10_001, 24, 'second.ts');
+  await render(first);
+  await finish(0, first);
+  await render(second);
+  await finish(1, second);
+  await render(first);
+  expect(state.workers).toHaveLength(2);
+  expect(container.textContent).toContain('first.ts');
+  await render(first, false, 'other-document');
+  expect(clear).toHaveBeenCalledOnce();
+  expect(state.workers).toHaveLength(3);
+  expect(container.textContent).toContain('Preparing diff…');
+  await act(async () => root.unmount());
+  expect(clear).toHaveBeenCalledTimes(2);
+  expect(state.workers[2]!.terminate).toHaveBeenCalledOnce();
+  clear.mockRestore();
 });

@@ -79,3 +79,41 @@ describe('diff parsing', () => {
     } finally { vi.useRealTimers(); }
   });
 });
+
+it('reuses bounded completed parse models and releases them when the document closes', async () => {
+  const workers: DiffParseWorker[] = [];
+  const parser = new DiffParser(() => { const worker = fakeWorker(); workers.push(worker); return worker; });
+  const patch = largePatch();
+  const pending = parser.parse(patch, new AbortController().signal);
+  deliver(workers[0]!, { revision: 1, files: buildDiffFileEntries(patch) });
+  const files = await pending;
+  files[0]!.fileDiff.additionLines.length = 0;
+  expect(await parser.parse(patch, new AbortController().signal)).toEqual(buildDiffFileEntries(patch));
+  expect(workers).toHaveLength(1);
+  parser.clearCache();
+  const next = parser.parse(patch, new AbortController().signal);
+  expect(workers).toHaveLength(2);
+  deliver(workers[1]!, { revision: 2, files: [] });
+  await next;
+});
+
+it('does not retain cancelled or cleared in-flight models', async () => {
+  const worker = fakeWorker();
+  const factory = vi.fn(() => worker);
+  const parser = new DiffParser(factory);
+  const patch = largePatch();
+  const pending = parser.parse(patch, new AbortController().signal);
+  parser.clearCache();
+  deliver(worker, { revision: 1, files: buildDiffFileEntries(patch) });
+  await pending;
+  const controller = new AbortController();
+  const second = parser.parse(patch, controller.signal);
+  expect(factory).toHaveBeenCalledTimes(2);
+  controller.abort();
+  await expect(second).rejects.toMatchObject({ name: 'AbortError' });
+  const finalController = new AbortController();
+  const final = parser.parse(patch, finalController.signal);
+  expect(factory).toHaveBeenCalledTimes(3);
+  finalController.abort();
+  await expect(final).rejects.toMatchObject({ name: 'AbortError' });
+});
