@@ -17,6 +17,7 @@ interface Fixture {
   origin: string;
   socket(): Promise<WebSocket>;
   closeRuntime: ReturnType<typeof vi.fn>;
+  logger: ReturnType<typeof vi.fn>;
 }
 
 const fixtures: Fixture[] = [];
@@ -25,9 +26,86 @@ const directories: string[] = [];
 afterEach(async () => {
   await Promise.allSettled(fixtures.splice(0).map((fixture) => fixture.server.stop()));
   await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })));
+  vi.unstubAllEnvs();
 });
 
 describe('WebSocket safety limits', () => {
+  it.each([1, 4, 16])('serializes a broadcast once for %i authenticated connections with separate send metrics', async (count) => {
+    vi.stubEnv('OPENTIG_PERF_LOG', '1');
+    const fixture = await startFixture(() => emptyBootstrap());
+    const sockets: WebSocket[] = [];
+    for (let index = 0; index < count; index += 1) sockets.push(await fixture.socket());
+    const received = sockets.map((socket) => nextMessage(socket));
+    const readRepositoryId = vi.fn(() => 'private-repository-id');
+    const event = { type: 'repository.changed' as const, get repositoryId() { return readRepositoryId(); }, scope: 'worktree' as const };
+    fixture.server.publish(event);
+    const messages = await Promise.all(received);
+    expect(readRepositoryId).toHaveBeenCalledTimes(1);
+    for (const message of messages) expect(message).toEqual({ type: 'event', event: { type: 'repository.changed', repositoryId: 'private-repository-id', scope: 'worktree' } });
+    const bytes = Buffer.byteLength(JSON.stringify(messages[0]));
+    const records = performanceRecords(fixture);
+    expect(records.filter((record) => record.kind === 'serialize')).toEqual([
+      { kind: 'serialize', durationMs: expect.any(Number), bytes, outcome: 'accepted', maxBytes: OPEN_TIG_MAX_SERVER_MESSAGE_BYTES },
+    ]);
+    await vi.waitFor(() => expect(performanceRecords(fixture).filter((record) => record.kind === 'send')).toHaveLength(count));
+    expect(JSON.stringify(performanceRecords(fixture))).not.toContain('private-repository-id');
+    for (const socket of sockets) socket.close();
+  });
+
+  it('checks each broadcast recipient even when the event encoding is shared', async () => {
+    const fixture = await startFixture(() => emptyBootstrap());
+    const healthy = await fixture.socket();
+    const cookie = (await fixture.auth.exchangePairingToken(fixture.auth.createPairingToken().token))!.split(';', 1)[0]!;
+    const revoked = await openWebSocket(fixture.origin, cookie);
+    const sessionId = fixture.auth.authenticate({ cookie })!;
+    const deniedMessages = vi.fn();
+    revoked.on('message', deniedMessages);
+    const close = closed(revoked);
+    await fixture.auth.revokeBrowserSession(sessionId);
+    const response = nextMessage(healthy);
+    fixture.server.publish({ type: 'repository.changed', repositoryId: 'repository', scope: 'worktree' });
+    expect(await response).toMatchObject({ type: 'event' });
+    await expect(close).resolves.toBe(1008);
+    expect(deniedMessages).not.toHaveBeenCalled();
+    healthy.close();
+  });
+
+  it('keeps performance logging disabled by default', async () => {
+    vi.stubEnv('OPENTIG_PERF_LOG', '');
+    const fixture = await startFixture(() => emptyBootstrap());
+    const socket = await fixture.socket();
+    await sendAndReceive(socket, { type: 'request', id: 'normal', command: 'app:bootstrap', args: [] });
+    expect(fixture.logger).not.toHaveBeenCalled();
+    socket.close();
+  });
+
+  it('records exact encoded JSON bytes and durations without payloads, paths, IDs, or unvalidated command names', async () => {
+    vi.stubEnv('OPENTIG_PERF_LOG', '1');
+    const fixture = await startFixture(() => ({ payload: 'payload-secret\n€' }));
+    const socket = await fixture.socket();
+    const request = { type: 'request', id: 'request-secret', command: 'app:bootstrap', args: [] };
+    const response = await sendAndReceive(socket, request);
+    await sendAndReceive(socket, { type: 'request', id: 'write-secret', command: 'repository:write-file', args: ['repository-secret', 'path-secret', 'content-secret', ''] });
+    await sendAndReceive(socket, { type: 'request', id: 'unknown-secret', command: 'command-secret', args: [] });
+    const records = performanceRecords(fixture);
+    expect(records).toContainEqual({ kind: 'request', durationMs: expect.any(Number), operation: 'bootstrap', requestBytes: Buffer.byteLength(JSON.stringify(request)) });
+    expect(records).toContainEqual({ kind: 'serialize', durationMs: expect.any(Number), outcome: 'accepted', maxBytes: OPEN_TIG_MAX_SERVER_MESSAGE_BYTES, bytes: Buffer.byteLength(JSON.stringify(response)) });
+    expect(records).toContainEqual({ kind: 'request', durationMs: expect.any(Number), operation: 'unknown', requestBytes: expect.any(Number) });
+    expect(JSON.stringify(records)).not.toContain('secret');
+    for (const record of records) expect(record.durationMs).toBeGreaterThanOrEqual(0);
+    socket.close();
+  });
+
+  it('does not let a failing performance logger interrupt response delivery', async () => {
+    vi.stubEnv('OPENTIG_PERF_LOG', '1');
+    const fixture = await startFixture(() => emptyBootstrap());
+    fixture.logger.mockImplementation(() => { throw new Error('Diagnostic sink failed'); });
+    const socket = await fixture.socket();
+    expect(await sendAndReceive(socket, { type: 'request', id: 'logged', command: 'app:bootstrap', args: [] }))
+      .toMatchObject({ result: { ok: true } });
+    socket.close();
+  });
+
   it('aborts only browser commands when Web access is disabled', async () => {
     const active = new Map<string, { signal: AbortSignal; finish(): void }>();
     let ready!: () => void;
@@ -311,6 +389,7 @@ async function startFixture(
     ...(now ? { now } : {}),
   });
   const closeRuntime = vi.fn(async () => undefined);
+  const logger = vi.fn();
   const runtime = { close: closeRuntime, services: { files: {} } } as unknown as OpenTigRuntime;
   const server = new OpenTigServer({
     network: { webAccessEnabled: true, lanAccessEnabled: false, publicOrigin: null, listenerHost: '127.0.0.1', listenerPort: 0 },
@@ -321,6 +400,7 @@ async function startFixture(
     auth,
     identity: { protocolVersion: 1, appVersion: 'test' },
     port: 0,
+    logger,
     ...limits,
   });
   const address = await server.start();
@@ -336,10 +416,20 @@ async function startFixture(
     server,
     origin: address.origin,
     closeRuntime,
+    logger,
     socket: () => openWebSocket(address.origin, cookie),
   };
   fixtures.push(fixture);
   return fixture;
+}
+
+function performanceRecords(fixture: Fixture): Array<Record<string, string | number>> {
+  return fixture.logger.mock.calls.flatMap(([, message]) => {
+    const prefix = 'WebSocket performance ';
+    return typeof message === 'string' && message.startsWith(prefix)
+      ? [JSON.parse(message.slice(prefix.length)) as Record<string, string | number>]
+      : [];
+  });
 }
 
 function openWebSocket(origin: string, cookie: string): Promise<WebSocket> {

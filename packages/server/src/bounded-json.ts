@@ -41,6 +41,9 @@ function stringBytes(value: string, remaining: number): number {
   // so huge strings can be rejected by the caller without scanning escapes.
   let bytes = Buffer.byteLength(value) + 2;
   if (bytes > remaining) throw new JsonByteLimitError('JSON byte limit exceeded.');
+  // JSON escapes control characters; most plain text needs no extra scan.
+  // oxlint-disable-next-line eslint/no-control-regex
+  if (!/[\u0000-\u001f"\\\ud800-\udfff]/.test(value)) return bytes;
   for (let index = 0; index < value.length; index += 1) {
     const code = value.charCodeAt(index);
     if (code === 0x22 || code === 0x5c || code === 8 || code === 9 || code === 10 || code === 12 || code === 13) bytes += 1;

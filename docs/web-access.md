@@ -291,6 +291,16 @@ server log is stored at `logs/server.log` inside Electron's OpenTig user-data
 directory or the selected CLI home; authentication material and URL secrets are
 redacted.
 
+Set `OPENTIG_PERF_LOG=1` before starting the server to add WebSocket performance
+metadata to that existing log. Entries report validated operation names, request
+bytes, encoded JSON bytes, serialization/request duration, queued bytes, and
+send outcome. Broadcasts are encoded once and send measurements remain per
+socket. An oversized response reports the replacement error's encoded size,
+not the original content size. Send duration ends at the `ws` write callback;
+it does not measure receipt, JSON parsing, or rendering on the client. Payloads,
+paths, correlation IDs, session IDs, and authentication material are excluded.
+Logging is disabled by default and can add I/O when enabled.
+
 If a browser remains on **Authentication required**, revoke stale sessions if
 appropriate, create a fresh pairing link, and open that exact link. If the
 desktop cannot connect, restart the packaged application and inspect the server

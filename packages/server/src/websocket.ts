@@ -53,6 +53,7 @@ export class OpenTigWebSocketTransport {
   private readonly connectionLimit: number;
   private readonly requestRateLimit: number;
   private readonly requestRateWindowMs: number;
+  private readonly measureTransport = process.env.OPENTIG_PERF_LOG === '1';
   private readonly heartbeat: NodeJS.Timeout;
   private readonly upgradeHandler: (request: IncomingMessage, socket: Duplex, head: Buffer) => void;
   private closePromise: Promise<void> | null = null;
@@ -160,6 +161,7 @@ export class OpenTigWebSocketTransport {
     if (input.command === IPC.repositoryReadImage) return this.sendProtocolError(socket, input.id, 'Image previews use authenticated HTTP.');
 
     const controller = new AbortController();
+    const startedAt = this.measureTransport ? performance.now() : undefined;
     state.requests.set(input.id, controller);
     const execution = this.options.registry.execute(state.sessionId, input.command, input.args, { signal: controller.signal });
     this.pendingOperations.add(execution);
@@ -173,6 +175,10 @@ export class OpenTigWebSocketTransport {
       this.send(socket, { type: 'result', id: input.id, result });
     } finally {
       state.requests.delete(input.id);
+      if (startedAt !== undefined) this.measure('request', startedAt, {
+        requestBytes: bytes.byteLength,
+        operation: commandDefinition(input.command)?.operation ?? 'unknown',
+      });
     }
   }
 
@@ -185,40 +191,81 @@ export class OpenTigWebSocketTransport {
   }
 
   private broadcast(message: OpenTigServerMessage): void {
-    for (const socket of this.clients.keys()) this.send(socket, message);
+    // Events are owner-wide invalidations. Share only the encoding; admission,
+    // session authentication, and queued bytes remain per connection.
+    let serialized: ReturnType<typeof stringifyBounded> | null | undefined;
+    for (const socket of this.clients.keys()) {
+      if (!this.canSend(socket)) continue;
+      if (serialized === undefined) serialized = this.serialize(message);
+      this.sendSerialized(socket, serialized);
+    }
   }
 
   private send(socket: WebSocket, message: OpenTigServerMessage): void {
-    if (socket.readyState !== WebSocket.OPEN) return;
+    if (this.canSend(socket)) this.sendSerialized(socket, this.serialize(message));
+  }
+
+  private canSend(socket: WebSocket): boolean {
+    if (socket.readyState !== WebSocket.OPEN) return false;
     const state = this.clients.get(socket);
-    if (state && !this.options.auth.hasSession(state.sessionId)) return socket.close(1008, 'Session expired or revoked');
-    let serialized: { text: string; bytes: number };
+    if (!state || !this.options.auth.hasSession(state.sessionId)) {
+      socket.close(1008, 'Session expired or revoked');
+      return false;
+    }
+    return true;
+  }
+
+  private serialize(message: OpenTigServerMessage): ReturnType<typeof stringifyBounded> | null {
+    const startedAt = this.measureTransport ? performance.now() : undefined;
+    let serialized: ReturnType<typeof stringifyBounded> | null = null;
+    let outcome = 'accepted';
     try {
       serialized = stringifyBounded(message, OPEN_TIG_MAX_SERVER_MESSAGE_BYTES);
     } catch (error) {
       if (!(error instanceof JsonByteLimitError)) throw error;
-      if (message.type !== 'result') {
-        socket.close(1009, 'Server message too large');
-        return;
+      outcome = 'message-too-large';
+      if (message.type === 'result') {
+        outcome = 'response-too-large';
+        // Keep the result envelope compatible with older clients.
+        serialized = stringifyBounded({
+          type: 'result', id: message.id,
+          result: { ok: false, error: {
+            code: 'RESPONSE_TOO_LARGE', operation: 'server-protocol',
+            message: 'Response exceeded the 4 MiB transport limit. Request a smaller scope.',
+            maxBytes: OPEN_TIG_MAX_SERVER_MESSAGE_BYTES,
+          } },
+        }, OPEN_TIG_MAX_SERVER_MESSAGE_BYTES);
       }
-      // The result envelope stays compatible with clients that predate this
-      // code: they show the message and keep the authenticated socket open.
-      serialized = stringifyBounded({
-        type: 'result', id: message.id,
-        result: { ok: false, error: {
-          code: 'RESPONSE_TOO_LARGE', operation: 'server-protocol',
-          message: 'Response exceeded the 4 MiB transport limit. Request a smaller scope.',
-          maxBytes: OPEN_TIG_MAX_SERVER_MESSAGE_BYTES,
-        } },
-      }, OPEN_TIG_MAX_SERVER_MESSAGE_BYTES);
     }
-    if (socket.bufferedAmount + serialized.bytes > MAX_BUFFERED_SEND_BYTES) {
+    if (startedAt !== undefined) this.measure('serialize', startedAt, {
+      bytes: serialized?.bytes ?? 0, outcome, maxBytes: OPEN_TIG_MAX_SERVER_MESSAGE_BYTES,
+    });
+    return serialized;
+  }
+
+  private sendSerialized(socket: WebSocket, serialized: ReturnType<typeof stringifyBounded> | null): void {
+    if (!this.canSend(socket)) return;
+    if (!serialized) {
+      socket.close(1009, 'Server message too large');
+      return;
+    }
+    const startedAt = this.measureTransport ? performance.now() : undefined;
+    const bufferedBytes = socket.bufferedAmount;
+    if (bufferedBytes + serialized.bytes > MAX_BUFFERED_SEND_BYTES) {
+      if (startedAt !== undefined) this.measure('send', startedAt, { bytes: serialized.bytes, bufferedBytes, outcome: 'backpressure' });
       socket.close(1013, 'Client is too slow');
       return;
     }
     socket.send(serialized.text, (error) => {
+      if (startedAt !== undefined) this.measure('send', startedAt, { bytes: serialized.bytes, bufferedBytes, outcome: error ? 'failed' : 'written' });
       if (error) this.options.logger('warn', 'WebSocket send failed.');
     });
+  }
+
+  private measure(kind: 'request' | 'serialize' | 'send', startedAt: number, data: Record<string, string | number>): void {
+    try {
+      this.options.logger('info', `WebSocket performance ${JSON.stringify({ kind, durationMs: performance.now() - startedAt, ...data })}`);
+    } catch { /* Diagnostics must not interrupt delivery. */ }
   }
 
   private checkHeartbeats(): void {
