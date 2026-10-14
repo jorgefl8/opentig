@@ -111,3 +111,125 @@ it.each([undefined, 'branch-picker'])('keeps a truncated trigger tooltip open un
     expect(option(label)).toBeDefined();
   } finally { width.mockRestore(); available.mockRestore(); }
 });
+
+function mockListLayout() {
+  const height = vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function(this: HTMLElement) {
+    if (this.classList.contains('searchable-picker-list')) return 292;
+    if (this.hasAttribute('data-index')) return (this.querySelector('small') ? 42 : 32) + (this.querySelector('[data-slot="combobox-group-label"]') ? 23 : 2);
+    return 32;
+  });
+  const width = vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(340);
+  const scrollHeight = vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(function(this: HTMLElement) {
+    return this.classList.contains('searchable-picker-list') ? Number.parseFloat((this.firstElementChild as HTMLElement)?.style.height ?? '0') : this.offsetHeight;
+  });
+  const rect = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function(this: HTMLElement) {
+    return { x: 0, y: 0, top: 0, left: 0, right: 340, bottom: this.offsetHeight, width: 340, height: this.offsetHeight, toJSON() {} };
+  });
+  vi.stubGlobal('ResizeObserver', class {
+    constructor(private callback: ResizeObserverCallback) {}
+    observe(element: Element) { this.callback([{ target: element, borderBoxSize: [{ blockSize: (element as HTMLElement).offsetHeight, inlineSize: 340 }] } as unknown as ResizeObserverEntry], this as unknown as ResizeObserver); }
+    unobserve() {} disconnect() {}
+  });
+  const scrollTo = vi.fn(function(this: HTMLElement, options?: ScrollToOptions | number, y?: number) {
+    this.scrollTop = typeof options === 'number' ? y ?? 0 : options?.top ?? 0;
+    queueMicrotask(() => this.dispatchEvent(new Event('scroll')));
+  });
+  vi.stubGlobal('scrollTo', scrollTo);
+  const previous = HTMLElement.prototype.scrollTo;
+  HTMLElement.prototype.scrollTo = scrollTo;
+  return () => { height.mockRestore(); width.mockRestore(); scrollHeight.mockRestore(); rect.mockRestore(); HTMLElement.prototype.scrollTo = previous; };
+}
+
+async function showLargePicker(count: number, value = 'item-900') {
+  const items = Array.from({ length: count }, (_, index) => ({ value: `item-${index}`, label: `Option ${index}`, ...(index % 3 === 0 ? { description: 'Sample description' } : {}), disabled: index === 901 }));
+  await act(async () => root.render(createElement(TooltipProvider, { delay: 0 }, createElement(SearchablePicker, {
+    key: 'large', groups: [{ id: 'first', label: 'First group', items: items.slice(0, count / 2) }, { id: 'second', label: 'Second group', items: items.slice(count / 2) }],
+    value, onValueChange, label: 'Sample selection', triggerLabel: value, placeholder: 'Search options',
+  }))));
+  await act(async () => document.querySelector<HTMLButtonElement>('button[role="combobox"]')!.click());
+}
+
+async function key(key: string) {
+  await act(async () => {
+    document.querySelector<HTMLInputElement>('input[role="combobox"]')!.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
+  });
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 30)); });
+}
+
+it.each([1000, 3000])('bounds mounted options and reveals a distant selection among %i choices', async count => {
+  const restore = mockListLayout();
+  try {
+    await showLargePicker(count);
+    expect(document.querySelectorAll('[role="option"]').length).toBeLessThan(30);
+    expect(option('Option 900').hasAttribute('data-selected')).toBe(true);
+    const list = document.querySelector<HTMLElement>('.searchable-picker-list')!;
+    expect(list.scrollTop).toBeGreaterThan(20_000);
+    expect(option('Option 900').closest('[role="group"]')?.getAttribute('aria-labelledby')).toBeTruthy();
+    expect(option('Option 900').getAttribute('aria-setsize')).toBe(String(count));
+    await act(async () => option('Option 902').click());
+    expect(onValueChange).toHaveBeenCalledExactlyOnceWith('item-902');
+  } finally { restore(); }
+});
+
+it('keeps keyboard descendants mounted, prevents disabled selection, and selects after scrolling away', async () => {
+  const restore = mockListLayout();
+  try {
+    await showLargePicker(1000);
+    await key('ArrowDown');
+    await key('Enter');
+    expect(onValueChange).not.toHaveBeenCalled();
+    expect(option('Option 901').getAttribute('aria-disabled')).toBe('true');
+    await key('ArrowDown');
+    const input = document.querySelector<HTMLInputElement>('input[role="combobox"]')!;
+    const activeId = input.getAttribute('aria-activedescendant')!;
+    expect(document.getElementById(activeId)?.textContent).toContain('Option 902');
+    await act(async () => {
+      const list = document.querySelector<HTMLElement>('.searchable-picker-list')!;
+      list.scrollTop = 0; list.dispatchEvent(new Event('scroll'));
+    });
+    expect(document.getElementById(activeId)?.textContent).toContain('Option 902');
+    expect(document.querySelectorAll('[role="option"]').length).toBeLessThan(30);
+    await key('Enter');
+    expect(onValueChange).toHaveBeenCalledExactlyOnceWith('item-902');
+  } finally { restore(); }
+});
+
+it('filters virtual groups into an ordinary small menu without losing keyboard selection', async () => {
+  const restore = mockListLayout();
+  try {
+    await showLargePicker(1000);
+    await act(async () => {
+      const input = document.querySelector<HTMLInputElement>('input[role="combobox"]')!;
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'Option 98');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    expect(document.querySelectorAll('[role="option"]')).toHaveLength(11);
+    expect(document.querySelector('[role="group"]')?.textContent).toContain('First group');
+    expect(document.querySelectorAll('[role="group"]')).toHaveLength(2);
+    await key('ArrowDown');
+    await key('Enter');
+    expect(onValueChange).toHaveBeenCalledExactlyOnceWith('item-98');
+  } finally { restore(); }
+});
+
+it('navigates beyond the mounted buffer and wraps to a different group', async () => {
+  const restore = mockListLayout();
+  try {
+    await showLargePicker(1000, 'item-980');
+    for (let index = 981; index <= 999; index++) {
+      await key('ArrowDown');
+      const input = document.querySelector<HTMLInputElement>('input[role="combobox"]')!;
+      expect(document.getElementById(input.getAttribute('aria-activedescendant')!)?.textContent).toContain(`Option ${index}`);
+      expect(document.querySelectorAll('[role="option"]').length).toBeLessThan(30);
+    }
+    // The ordinary combobox permits one unhighlighted step before wrapping.
+    await key('ArrowDown'); await key('ArrowDown');
+    const input = document.querySelector<HTMLInputElement>('input[role="combobox"]')!;
+    const active = document.getElementById(input.getAttribute('aria-activedescendant')!)!;
+    expect(active.textContent).toContain('Option 0');
+    const group = active.closest('[role="group"]')!;
+    expect(document.getElementById(group.getAttribute('aria-labelledby')!)?.textContent).toBe('First group');
+    await key('Enter');
+    expect(onValueChange).toHaveBeenCalledExactlyOnceWith('item-0');
+  } finally { restore(); }
+});

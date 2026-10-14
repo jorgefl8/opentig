@@ -36,6 +36,8 @@ Rebind most shortcuts in **Settings → Shortcuts**, with conflict detection and
 
 Repository, worktree, branch, AI model, project assignment, and PR base selectors share searchable menus in the current theme. Repositories and worktrees show a second checkout line; other choices use one line. Phone menus use larger touch targets, and a gap separates hovered and selected options.
 
+Menus with 100 or more matching choices render only the visible rows and a small buffer. Group labels, disabled choices, keyboard navigation, and scrolling to the selected choice remain available; filtering a menu below that size restores its ordinary list.
+
 Hover a truncated selected name to see it in full; its tooltip stays while the pointer remains on the control and hides while the menu is open. Options show hints only for truncated text or additional information. Scrolling dismisses row tooltips, and clipped anchors hide their hints. Branch and worktree management rows use their details panel instead of hover hints. Diff headers show the file name and directory directly.
 
 Repository menus can grow to 80% of viewport height while search and management remain visible; other menus remain compact. Toolbar selectors keep management actions available. Models can be searched by name or identifier and grouped by provider. **Default (CLI)** and **No project** remain available during filtering; repository number shortcuts stay active until the search field takes focus. In narrow desktop windows, wrapped toolbar controls stay aligned to the right.
