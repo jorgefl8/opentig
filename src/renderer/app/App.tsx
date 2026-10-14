@@ -153,6 +153,7 @@ export default function App() {
   // Holding Ctrl reveals the section numbers, so the shortcut is discoverable
   // without a cheat sheet.
   const [ctrlHeld, setCtrlHeld] = useState(false);
+  const ctrlHeldRef = useRef(false);
   const filesRef = useRef<FileTreeEntry[] | null>(null);
   const viewerSelectionRef = useRef<ViewerSelection>(null);
   // A path we just created/renamed/moved the viewer onto; it may be missing from
@@ -187,7 +188,10 @@ export default function App() {
     getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
     enabled: repository !== null && view === 'history',
   });
-  const commits = historyQuery.data ? historyQuery.data.pages.flatMap((page) => page.commits) : null;
+  const commits = useMemo(
+    () => historyQuery.data ? historyQuery.data.pages.flatMap((page) => page.commits) : null,
+    [historyQuery.data],
+  );
   const nextCursor = historyQuery.hasNextPage ? historyQuery.data?.pages.at(-1)?.nextCursor ?? null : null;
 
   const githubInfoQuery = useQuery<GitHubRepositoryInfo>({
@@ -857,9 +861,14 @@ export default function App() {
   }), [recordOpenedRepository]);
 
   useEffect(() => {
-    const update = (event: KeyboardEvent) => setCtrlHeld(event.ctrlKey && !event.altKey && !event.metaKey);
+    const setHeld = (held: boolean) => {
+      if (ctrlHeldRef.current === held) return;
+      ctrlHeldRef.current = held;
+      setCtrlHeld(held);
+    };
+    const update = (event: KeyboardEvent) => setHeld(event.ctrlKey && !event.altKey && !event.metaKey);
     // A lost focus never delivers the keyup, so the hint would stay pinned open.
-    const clear = () => setCtrlHeld(false);
+    const clear = () => setHeld(false);
     window.addEventListener('keydown', update);
     window.addEventListener('keyup', update);
     window.addEventListener('blur', clear);
