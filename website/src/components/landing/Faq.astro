@@ -1,0 +1,116 @@
+---
+import { docsUrl, repositoryUrl } from '@/site';
+
+const questions = [
+  {
+    question: 'Can I use OpenTig in a browser?',
+    answer: 'Yes. Pair your browser with a running OpenTig desktop app or CLI server. That instance must stay running: files and Git operations live on its host machine. To connect from another device, use a trusted network, VPN, or HTTPS tunnel to that host.',
+    link: 'Browser access and pairing',
+    href: `${docsUrl}/web-access.md`,
+  },
+  {
+    question: 'Which operating systems does OpenTig support?',
+    answer: 'The desktop installer is available for Windows 10 or later (x64), with Git installed. On Linux, macOS, or Windows, you can run the CLI server with Node.js 24 or later and Git, then connect through your browser.',
+    link: 'Installation requirements',
+    href: `${docsUrl}/getting-started.md`,
+  },
+  {
+    question: 'Can I open my existing Git repositories?',
+    answer: 'Yes. Choose an existing repository on the machine running OpenTig. Your files stay in their current location, and you can continue using Git from your terminal alongside OpenTig.',
+    link: 'Working with repositories',
+    href: `${docsUrl}/features.md`,
+  },
+  {
+    question: 'Is OpenTig free and open source?',
+    answer: 'Yes. OpenTig is free to use and its source code is available under the MIT license. You can use, modify, and distribute it under the terms of that license.',
+    link: 'Read the MIT license',
+    href: `${repositoryUrl}/blob/main/LICENSE`,
+  },
+  {
+    question: 'Do I need a GitHub account?',
+    answer: 'No. Browsing files, reviewing diffs, editing, staging, and committing work with a local Git repository. GitHub features, such as reviewing or creating pull requests, require the GitHub CLI (gh), installed and authenticated on the machine running OpenTig.',
+    link: 'GitHub integration',
+    href: `${docsUrl}/github.md`,
+  },
+  {
+    question: 'Do I need AI to use OpenTig?',
+    answer: 'No. The Git workflow works without an AI account. For help drafting commit messages, splitting staged changes into commits, or writing pull request descriptions, install and authenticate a supported AI CLI on the host. You review and confirm each commit or pull request yourself.',
+    link: 'Optional AI assistance',
+    href: `${docsUrl}/ai-assistance.md`,
+  },
+  {
+    question: 'What does AI assistance share with the provider?',
+    answer: 'When you request AI assistance, OpenTig passes task-specific context to your selected CLI, which may send it to its provider. Commit assistance uses staged changes and recent commit subjects; pull request drafting uses the comparison with the selected base branch.',
+    link: 'What goes into AI requests',
+    href: `${docsUrl}/security-and-privacy.md#ai-privacy`,
+  },
+];
+---
+
+<section id="faq" aria-labelledby="faq-heading" class="py-24 px-6">
+  <div class="max-w-3xl mx-auto">
+    <h2 id="faq-heading" class="font-['GeistPixelTriangle'] text-3xl md:text-4xl font-bold tracking-tight text-center mb-12">
+      Questions about OpenTig
+    </h2>
+    <div class="faq-list rounded-2xl border border-border bg-background/80 backdrop-blur-sm">
+      {questions.map((item, index) => (
+        <details open={index === 0}>
+          <summary>
+            <span>{item.question}</span>
+            <span class="faq-indicator" aria-hidden="true"></span>
+          </summary>
+          <div class="faq-answer">
+            <p>{item.answer}</p>
+            <a href={item.href} class="inline-block mt-4 underline underline-offset-4 hover:text-foreground">{item.link}</a>
+          </div>
+        </details>
+      ))}
+    </div>
+  </div>
+</section>
+
+<style>
+  details + details { border-top: 1px solid var(--border); }
+  summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+    padding: 22px 24px;
+    cursor: pointer;
+    list-style: none;
+    font-weight: 600;
+    line-height: 1.5;
+    border-radius: 8px;
+    scroll-margin-block: calc(4rem + 24px) 20px;
+  }
+  summary::-webkit-details-marker { display: none; }
+  summary:hover { background: #ffffff04; }
+  summary:focus-visible { outline: 2px solid var(--focus); outline-offset: -4px; }
+  .faq-answer {
+    padding: 0 24px 24px;
+    color: var(--muted-foreground);
+    font-size: 14px;
+    line-height: 1.75;
+  }
+  .faq-indicator { position: relative; flex: 0 0 16px; height: 16px; color: var(--muted-foreground); }
+  .faq-indicator::before, .faq-indicator::after {
+    content: '';
+    position: absolute;
+    top: 7px;
+    left: 1px;
+    width: 14px;
+    height: 2px;
+    background: currentColor;
+  }
+  .faq-indicator::after { transform: rotate(90deg); transition: transform 150ms ease; }
+  details[open] .faq-indicator { color: var(--primary-text); }
+  details[open] .faq-indicator::after { transform: rotate(0); }
+  @media (max-width: 639px) {
+    summary { padding: 20px; gap: 16px; font-size: 14px; }
+    .faq-answer { padding: 0 20px 20px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .faq-indicator::after { transition: none; }
+  }
+</style>

@@ -6,6 +6,7 @@ const year = new Date().getFullYear();
 const links = [
   { label: "GitHub", href: "https://github.com/jorgefl8/opentig" },
   { label: "Releases", href: "https://github.com/jorgefl8/opentig/releases" },
+  { label: "FAQ", href: "#faq" },
   { label: "Docs", href: "https://github.com/jorgefl8/opentig/blob/main/docs/README.md" },
   { label: "License", href: "https://github.com/jorgefl8/opentig/blob/main/LICENSE" },
 ];
@@ -19,13 +20,13 @@ const links = [
       <span>&copy; {year}</span>
     </div>
 
-    <div class="flex items-center gap-6">
+    <div class="flex flex-wrap items-center justify-center gap-x-6 gap-y-3">
       {links.map((link) => (
         <a
           href={link.href}
           class="text-sm text-muted-foreground hover:text-foreground transition-colors"
-          target="_blank"
-          rel="noreferrer"
+          target={link.href.startsWith('#') ? undefined : '_blank'}
+          rel={link.href.startsWith('#') ? undefined : 'noreferrer'}
         >
           {link.label}
         </a>

@@ -8,6 +8,7 @@ import Features from '@/components/landing/Features.astro';
 import Providers from '@/components/landing/Providers.astro';
 import HowItWorks from '@/components/landing/HowItWorks.astro';
 import Cta from '@/components/landing/Cta.astro';
+import Faq from '@/components/landing/Faq.astro';
 import Footer from '@/components/landing/Footer.astro';
 import { indexable } from '@/indexing';
 import { repositoryUrl, downloadUrl, docsUrl, siteDescription } from '@/site';
@@ -64,6 +65,7 @@ const structuredData = homeUrl && indexable ? {
         <Providers />
         <HowItWorks />
         <Cta />
+        <Faq />
       </main>
       <Footer />
     </div>
