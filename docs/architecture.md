@@ -1,46 +1,40 @@
 # Server architecture
 
-OpenTig is server-first even when it runs as a Windows desktop application. The
-React renderer never executes Git, filesystem, GitHub, or AI operations itself.
-It sends typed commands to one authenticated server, exactly as a paired browser
-does.
+OpenTig's desktop app and paired browsers use **the same server API**. The React renderer handles the interface; Git, filesystem, GitHub, and AI operations run on the machine hosting the server.
+
+Electron starts that server in a utility process. The Node CLI starts it in its own process. A browser connects to a running instance; it does not run the backend or operate on repositories on the browsing device.
+
+- [Runtime topology](#runtime-topology): what runs where.
+- [Ownership boundaries](#ownership-boundaries): which layer owns a change.
+- [Request and event flow](#request-and-event-flow): how clients call the server and recover after reconnect.
+- [Source map](#source-map): where to find the implementation.
 
 ## Runtime topology
 
 ```text
-Electron renderer ───────────────┐
-                                 │ authenticated HTTP + WebSocket
-Paired browser ──────────────────┤
-                                 ▼
-                         OpenTig server runtime
-                         ├─ Git and filesystem services
-                         ├─ settings and repository state
-                         ├─ GitHub and optional AI CLI adapters
-                         ├─ repository watcher and runtime events
-                         ├─ owner-session authentication and persistent access/listener configuration
-                         └─ production React client
-                                 │
-                                 ▼
-                         host Git / gh / AI CLIs
-
-Electron main
-├─ starts, probes, restarts, and stops the utility server
-├─ installs the private desktop owner session
-├─ delegates access configuration to the shared server
-└─ provides narrow native-only capabilities through preload
-
-Node CLI
-├─ parses host/port/home/presentation options
-├─ invokes the same runOpenTigServer factory in-process
-├─ leaves repository discovery and selection to the shared web UI
-├─ writes credential-free runtime identity for `opentig pair`
-├─ owns browser launch and SIGINT/SIGTERM shutdown
-└─ optionally installs the exact build as a Linux systemd user service
+Desktop UI       Browser UI
+     \             /
+   authenticated HTTP + WebSocket
+                 |
+          OpenTig server
+                 |
+       host Git / gh / AI CLIs
 ```
 
-The desktop window loads the production client from the local server origin.
-There is no separate desktop renderer backend and no duplicate Web Access
-runtime.
+The desktop window loads the production React client from the local server origin. There is **one server runtime**, with no separate desktop renderer backend or duplicate Web Access runtime.
+
+The shared server contains Git and filesystem services, settings and repository state, GitHub and optional AI CLI adapters, repository watchers, and runtime events. Its HTTP/WebSocket layer serves the production client and owns session authentication and persistent access/listener configuration.
+
+<details>
+<summary>What Electron and the Node CLI add</summary>
+
+**Electron main** starts, probes, restarts, and stops the utility server. It installs the private desktop owner session, delegates access configuration to the shared server, and provides narrow native-only capabilities through preload.
+
+**The Node CLI** parses host, port, home, and presentation options, then invokes the same `runOpenTigServer` factory in-process. Repository discovery and selection stay in the shared web UI. The CLI writes credential-free runtime identity for `opentig pair`, handles browser launch, and shuts down on SIGINT/SIGTERM.
+
+The CLI can also install its exact build as a background service: a systemd user service on Linux, a launchd LaunchAgent on macOS, or a scheduled task on Windows. See [background services](getting-started.md#background-services) for requirements and commands.
+
+</details>
 
 ## Ownership boundaries
 
@@ -84,7 +78,7 @@ arguments or environment variables.
 
 The supervisor:
 
-- prefers port `6767` and scans a bounded range when that implicit port is busy;
+- prefers port `6767` in production or `6867` in Dev, scanning a bounded range within that profile when the implicit port is busy;
 - waits for `/readyz` before loading the application;
 - writes redacted rotating server logs;
 - restarts unexpected exits with bounded backoff;
@@ -97,14 +91,12 @@ authoritative state.
 
 ## Data and persistence
 
-`GitHubAccountsService` resolves a repository's account once per GitHub operation
-and supplies the same child-process authentication to its REST, GraphQL and `gh`
-commands. Explicit choices live in `settings.json`, keyed by the canonical Git
-common directory. Only allowlisted account metadata is cached on disk. A
-`github.accounts-changed` runtime event cancels and resets GitHub queries across
-connected clients; Git queries remain intact. PR creation includes the reviewed
-login and authentication revision so a changed identity cannot silently publish.
-Protocol version 2 adds this event and the account-management commands.
+Repository files stay at their existing paths on the host. Application settings and logs live separately: Electron uses its user-data directory; the headless CLI uses `~/.opentig` or the directory selected with `--home`.
+
+`settings.json` stores repositories, preferences, and application state. If it cannot be parsed, OpenTig uses the last known-good `settings.json.bak`.
+
+<details>
+<summary>Desktop data files</summary>
 
 Desktop paths are derived from Electron's user-data directory:
 
@@ -119,6 +111,11 @@ Desktop paths are derived from Electron's user-data directory:
 | `server/` | hash-only owner-session authentication state |
 | `logs/server.log` | redacted rotating utility-server log |
 
+</details>
+
+<details>
+<summary>Headless CLI data files</summary>
+
 The headless CLI derives equivalent paths from `~/.opentig` or `--home`:
 
 | Path | Purpose |
@@ -126,11 +123,16 @@ The headless CLI derives equivalent paths from `~/.opentig` or `--home`:
 | `settings.json` | repositories, preferences, and application state |
 | `settings.json.bak` | last known-good settings document, used if the primary file cannot be parsed |
 | `ai-log.jsonl` | local AI-operation history |
+| `github-status.json` | last checked GitHub CLI/account metadata; no tokens or credential paths |
 | `problems.jsonl` | local Git, file, and network failure log |
 | `server/web-access.json` | saved CLI web access, domain, address and port |
 | `server/` | hash-only sessions plus a private same-host admin credential |
 | `runtime.json` | PID, bind address, version/protocol, and instance identity; no credential |
 | `logs/server.log` | redacted rotating CLI server log |
+
+</details>
+
+### Sessions and device metadata
 
 Pairing secrets are memory-only. Persistent session files contain credential
 hashes rather than usable cookie values, plus editable device names and
@@ -139,17 +141,34 @@ private desktop session is replaced on a new desktop bootstrap instead of
 accumulating duplicates. Live connection counts are derived from WebSockets and
 are not persisted.
 
+See [security and privacy](security-and-privacy.md) for permissions, credential handling, and AI context.
+
+### GitHub account state
+
+`GitHubAccountsService` resolves a repository's account once per GitHub operation
+and supplies the same child-process authentication to its REST, GraphQL and `gh`
+commands. Explicit choices live in `settings.json`, keyed by the canonical Git
+common directory. Only allowlisted account metadata is cached on disk.
+
+A `github.accounts-changed` runtime event cancels and resets GitHub queries across
+connected clients; Git queries remain intact. PR creation includes the reviewed
+login and authentication revision so a changed identity cannot silently publish.
+The current protocol version is 4, declared in `src/shared/protocol-version.json`; it includes this event and the account-management commands.
+
 ## Native capability boundary
 
-The preload bridge is intentionally narrow. It exposes only capabilities that a
-normal browser cannot reproduce safely: selecting/relocating a directory,
-reading explicit file paths or an image from the desktop clipboard, revealing a
-path in Explorer, title-bar theming, zoom, and desktop-only listener controls.
-Authenticated session inventory, renaming, and browser revocation remain
-ordinary server APIs, so the same management view works in desktop and browser.
+The preload bridge exposes desktop capabilities that a normal browser cannot reproduce safely:
 
-Confirmation dialogs live in React. Cross-platform deletion moves content to
-the operating system Trash from the server runtime.
+- Selecting or relocating a directory through a native picker.
+- Reading explicit file paths or an image from the desktop clipboard.
+- Revealing a path in Explorer.
+- Title-bar theming and zoom.
+
+It also exposes desktop update controls and a desktop adapter for Web access controls. **Access and listener configuration belong to the shared server**: the desktop adapter delegates there, while paired browsers use authenticated HTTP routes.
+
+Authenticated session inventory, renaming, and browser revocation remain ordinary server APIs, so the same management view works in desktop and browser.
+
+Confirmation dialogs live in React. Cross-platform deletion moves content to the operating system Trash from the server runtime.
 
 ## Source map
 
@@ -188,3 +207,5 @@ one tarball plus JSON metadata containing its version, SHA-256, npm integrity,
 and exact file list. `npm run release:inspect:headless` rejects version drift,
 checkout paths, source/tests/state, Electron/native imports, and undeclared
 artifacts. Release automation consumes that tested tarball rather than rebuilding it.
+
+For Dev builds, platform requirements, and website/documentation checks, see [development and packaging](development.md).
