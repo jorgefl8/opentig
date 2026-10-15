@@ -9,15 +9,23 @@ import Button from './Button.astro';
 
 <section class="relative min-h-screen flex items-center justify-center overflow-hidden">
   <div class="relative z-10 max-w-4xl mx-auto text-center px-6 py-24">
+    <p class="border border-primary/30 text-foreground bg-background mb-6 mx-auto px-4 py-1.5 font-mono text-xs rounded-xl w-fit">
+      Free, open-source Git client
+    </p>
+
     <h1 class="font-['GeistPixelTriangle'] text-4xl sm:text-5xl md:text-7xl font-bold tracking-tight leading-[1.1]">
-      All your <span class="text-primary">code changes</span>{" "}
+      A focused workspace{" "}
       <br class="hidden sm:block" />
-      in <span class="text-primary">OpenTig</span>
+      for your <span class="text-primary">Git repositories.</span>
     </h1>
 
     <p class="text-base md:text-lg text-muted-foreground max-w-2xl mx-auto mt-6 leading-relaxed">
-      Review diffs, edit files, stage changes, and commit with confidence.
-      Your everyday Git workflow, together in one focused workspace.
+      Browse files, review diffs, make edits, and commit changes.
+      Work with branches, worktrees, and GitHub pull requests from the same interface.
+    </p>
+
+    <p class="text-sm text-muted-foreground max-w-xl mx-auto mt-4 leading-relaxed">
+      Optional AI assistance for commit messages, commit splitting, and pull request descriptions.
     </p>
 
     <div class="flex items-center justify-center gap-5 sm:gap-8 flex-wrap mt-6 text-muted-foreground text-sm">
@@ -38,8 +46,5 @@ import Button from './Button.astro';
       </Button>
     </div>
 
-    <span class="h-5 gap-1 border text-xs font-medium inline-flex items-center justify-center w-fit whitespace-nowrap shrink-0 overflow-hidden border-primary/30 text-foreground bg-background mt-6 px-4 py-1.5 font-mono text-[0.7rem] rounded-xl">
-      Git workspace <span class="mx-1">&middot;</span> Free <span class="mx-1">&middot;</span> Open source
-    </span>
   </div>
 </section>

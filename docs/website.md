@@ -29,6 +29,8 @@ Color tokens in `website/src/index.css` mirror the desktop dark theme in `src/re
 
 Website copy avoids em dashes. Describe browser access as a connection to a running OpenTig instance on the repository host, with pairing required; the Windows app can provide that instance itself, or the CLI can run the server. Keep this setup detail separate from the main product promise.
 
+The hero identifies OpenTig as a free, open-source Git client and presents a focused workspace for Git repositories. Its supporting copy covers file browsing, diffs, editing, commits, branches, worktrees, and GitHub pull requests. Optional AI assistance is described separately as help with commit messages, commit splitting, and PR descriptions.
+
 Edit sections in `website/src/components/landing/`. Shared GitHub, download, and documentation destinations live in `website/src/site.ts`. The website explicitly pins Astro's `cookie` dependency so its prerendered build resolves the correct API independently of the application's older transitive copy. Downloads link to the latest published GitHub release without fetching release metadata during the build. Browser/CLI setup instructions link to the installation guide. The site contains no repository operations or hosted accounts.
 
 Fonts and branding are served locally from `website/public/`. The author avatar in the footer loads from GitHub. License notices for the port and bundled assets are in [third-party notices](../THIRD_PARTY_NOTICES.md).
