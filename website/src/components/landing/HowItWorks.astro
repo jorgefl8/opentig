@@ -2,13 +2,13 @@
 const steps = [
   {
     number: "01",
-    title: "Choose your workspace",
-    description: "Install the Windows app, or start the CLI with Node.js 24+ and Git. Both give you the same focused workspace.",
+    title: "Start OpenTig",
+    description: "Install the Windows app, or run the CLI server on the machine with your repositories and pair your browser.",
   },
   {
     number: "02",
     title: "Open a repository",
-    description: "Choose an existing repository on the host. Browse files, inspect history, and see your working changes.",
+    description: "Choose an existing repository on the machine running OpenTig. Browse files, inspect history, and see your working changes.",
   },
   {
     number: "03",
@@ -22,10 +22,10 @@ const steps = [
   <div class="max-w-5xl mx-auto">
     <div class="text-center mb-16">
       <h2 class="font-['GeistPixelTriangle'] text-3xl md:text-4xl font-bold tracking-tight">
-        Up and running in minutes
+        Start with an existing Git repository
       </h2>
       <p class="text-muted-foreground mt-4 max-w-xl mx-auto">
-        Three simple steps from your repository to your next commit.
+        Run OpenTig where your files live, open a repository, and prepare your next commit.
       </p>
     </div>
 
@@ -36,11 +36,14 @@ const steps = [
             <span class="font-['GeistPixelTriangle'] text-2xl text-primary mb-1">
               {step.number}
             </span>
-            <div class="text-base leading-snug font-medium">{step.title}</div>
+            <h3 class="text-base leading-snug font-medium">{step.title}</h3>
             <div class="text-muted-foreground text-sm">{step.description}</div>
           </div>
         </div>
       ))}
     </div>
+    <p class="mt-8 text-center text-sm">
+      <a href="#install" class="text-muted-foreground underline underline-offset-4 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary">Choose a Windows or CLI installation</a>
+    </p>
   </div>
 </section>

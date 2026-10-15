@@ -12,7 +12,7 @@ const features = [
   },
   {
     title: "GitHub pull requests",
-    description: "Read pull request details, inspect diffs, and work with stacked PRs using your GitHub account.",
+    description: "Read pull request details and diffs, create pull requests, and navigate GitHub native stacks.",
     icon: `<path d="M20 18.5011L18.349 7.93407C17.8603 4.80601 15.166 2.5 12 2.5C8.83398 2.5 6.13971 4.80601 5.65098 7.93407L4 18.5011" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"/><path d="M20 18.5C20 16.8431 16.4183 15.5 12 15.5C7.58172 15.5 4 16.8431 4 18.5C4 20.1569 7.58172 21.5 12 21.5C16.4183 21.5 20 20.1569 20 18.5Z" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"/><path d="M13 18.5H11" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"/>`,
   },
   {
@@ -37,10 +37,10 @@ const features = [
   <div class="max-w-7xl mx-auto">
     <div class="text-center mb-16">
       <h2 class="font-['GeistPixelTriangle'] text-3xl md:text-4xl font-bold tracking-tight">
-        Everything you need
+        Review diffs, edit files, and manage Git
       </h2>
       <p class="text-muted-foreground mt-4 max-w-xl mx-auto">
-        From the first diff to the final commit. Keep your everyday Git work in one focused workspace.
+        Browse your repository, prepare commits, and work with branches, worktrees, and GitHub pull requests.
       </p>
     </div>
 
@@ -51,7 +51,7 @@ const features = [
             <div class="mb-2">
               <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" class="text-primary" set:html={feature.icon} />
             </div>
-            <div class="text-base leading-snug font-medium">{feature.title}</div>
+            <h3 class="text-base leading-snug font-medium">{feature.title}</h3>
             <div class="text-muted-foreground text-sm">{feature.description}</div>
           </div>
         </div>

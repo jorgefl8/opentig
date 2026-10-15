@@ -1,37 +1,42 @@
 ---
 import WindowsIcon from '@/assets/icons/windows.svg';
-import GithubIcon from '@tabler/icons/outline/brand-github.svg';
+import TerminalIcon from '@tabler/icons/outline/terminal-2.svg';
 import Button from './Button.astro';
 
-import { repositoryUrl, downloadUrl, docsUrl } from '@/site';
+import { downloadUrl, docsUrl } from '@/site';
 ---
 
-<section class="py-24 px-6">
+<section id="install" class="py-24 px-6 scroll-mt-20">
   <div class="max-w-3xl mx-auto">
-    <div class="bg-card/30 backdrop-blur-sm border border-border/50 rounded-2xl p-8 md:p-12 text-center">
+    <div class="bg-card/30 backdrop-blur-sm border border-border/50 rounded-2xl p-6 sm:p-8 md:p-12 text-center">
       <h2 class="font-['GeistPixelTriangle'] text-3xl md:text-4xl font-bold tracking-tight">
-        Ready to <span class="text-primary">review your changes</span>?
+        Choose how to <span class="text-primary">run OpenTig</span>
       </h2>
       <p class="text-muted-foreground mt-4 max-w-lg mx-auto">
-        Bring your files, diffs, and Git controls together. Install the Windows app,
-        or set up the OpenTig server with the CLI.
+        Install the desktop app or run the CLI server on your own machine.
+        Both work with repositories on the host running OpenTig.
       </p>
 
-      <div class="flex flex-col sm:flex-row gap-3 justify-center mt-8">
-        <Button href={downloadUrl}>
-          <WindowsIcon width={20} height={20} />
-          Download for Windows
-        </Button>
-        <Button href={repositoryUrl} variant="outline" target="_blank" rel="noreferrer">
-          <GithubIcon width={20} height={20} />
-          View on GitHub
-        </Button>
+      <div class="grid md:grid-cols-2 gap-6 mt-8 text-left">
+        <div class="min-w-0 flex flex-col gap-4 rounded-xl border border-border/50 bg-background/40 p-4 sm:p-5">
+          <h3 class="flex items-center gap-2 text-base font-semibold"><WindowsIcon width={20} height={20} />Windows desktop</h3>
+          <p class="text-sm text-muted-foreground leading-relaxed">For Windows 10 or later (x64), with Git installed. The app includes the OpenTig server.</p>
+          <p class="text-sm text-muted-foreground leading-relaxed">The installer is currently unsigned.</p>
+          <Button href={downloadUrl} class="mt-auto px-3!">Download for Windows</Button>
+        </div>
+        <div class="min-w-0 flex flex-col gap-4 rounded-xl border border-border/50 bg-background/40 p-4 sm:p-5">
+          <h3 class="flex items-center gap-2 text-base font-semibold"><TerminalIcon width={20} height={20} />CLI server</h3>
+          <p class="text-sm text-muted-foreground leading-relaxed">For Linux, macOS, or Windows, with Node.js 24+ and Git. Start it on the machine with your repositories.</p>
+          <code class="block break-all font-mono text-xs leading-relaxed text-foreground">npx --yes @opentig/cli@latest</code>
+          <Button href={`${docsUrl}/getting-started.md#run-the-headless-cli`} variant="outline" class="mt-auto px-3!">Set up OpenTig CLI</Button>
+        </div>
       </div>
-      <div class="mt-6 text-sm text-muted-foreground">
-        <p>Start a local OpenTig server with Node.js 24+ and Git:</p>
-        <code class="inline-block mt-3 max-w-full break-all rounded-lg border border-border/50 bg-background px-4 py-3 font-mono text-foreground">npx --yes @opentig/cli@latest</code>
-        <p class="mt-3">Keep the server running and pair your browser to access repositories on that machine.</p>
-        <p class="mt-4"><a href={`${docsUrl}/getting-started.md`} class="underline underline-offset-4 hover:text-foreground">Installation guide</a>{" · "}Early development{" · "}Windows installer currently unsigned</p>
+      <div class="mt-8 text-sm text-muted-foreground leading-relaxed">
+        <h3 class="text-base font-semibold text-foreground">Connect a browser to your running instance</h3>
+        <p class="mt-3">Keep the app or CLI server running. In the desktop app, enable Web access and create a pairing code. With the CLI, use the pairing link or code it provides.</p>
+        <p class="mt-3">To connect from another device, first set up a private network or tunnel to that host. Files and Git operations stay on the host.</p>
+        <p class="mt-4"><a href={`${docsUrl}/web-access.md`} class="underline underline-offset-4 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary">Browser pairing and remote access guide</a></p>
+        <p class="mt-4"><a href={`${docsUrl}/getting-started.md`} class="underline underline-offset-4 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary">Full installation guide</a>{" · "}Early development</p>
       </div>
     </div>
   </div>
