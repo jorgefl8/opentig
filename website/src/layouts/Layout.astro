@@ -1,6 +1,7 @@
 ---
 import '@/index.css';
 import { indexable } from '@/indexing';
+import { siteDescription } from '@/site';
 
 interface Props {
   title?: string;
@@ -10,7 +11,7 @@ interface Props {
 }
 const {
   title = 'OpenTig | Free, open-source Git client',
-  description = 'Browse files, review diffs, edit code, and commit changes. OpenTig brings branches, worktrees, and GitHub pull requests into one focused Git workspace.',
+  description = siteDescription,
   noindex = false,
   canonicalPage = true,
 } = Astro.props;
@@ -47,6 +48,7 @@ const socialImageAlt = 'OpenTig, a free, open-source Git client, showing changed
     <meta name="twitter:description" content={description} />
     {socialImage && <meta name="twitter:image" content={socialImage} />}
     {socialImage && <meta name="twitter:image:alt" content={socialImageAlt} />}
+    <slot name="head" />
     <link rel="preload" href="/fonts/GeistPixel-Triangle.woff2" as="font" type="font/woff2" crossorigin />
     <link rel="preload" href="/fonts/Inconsolata.ttf" as="font" type="font/ttf" crossorigin />
     <link rel="preload" href="/fonts/Geist.woff2" as="font" type="font/woff2" crossorigin />

@@ -8,9 +8,47 @@ import Providers from '@/components/landing/Providers.astro';
 import HowItWorks from '@/components/landing/HowItWorks.astro';
 import Cta from '@/components/landing/Cta.astro';
 import Footer from '@/components/landing/Footer.astro';
+import { indexable } from '@/indexing';
+import { repositoryUrl, downloadUrl, docsUrl, siteDescription } from '@/site';
+
+const homeUrl = Astro.site ? new URL('/', Astro.site).href : undefined;
+const structuredData = homeUrl && indexable ? {
+  '@context': 'https://schema.org',
+  '@graph': [
+    {
+      '@type': 'WebSite',
+      '@id': `${homeUrl}#website`,
+      name: 'OpenTig',
+      url: homeUrl,
+      inLanguage: 'en',
+      about: { '@id': `${homeUrl}#application` },
+    },
+    {
+      '@type': 'SoftwareApplication',
+      '@id': `${homeUrl}#application`,
+      name: 'OpenTig',
+      url: homeUrl,
+      description: siteDescription,
+      applicationCategory: 'DeveloperApplication',
+      applicationSubCategory: 'Git client',
+      operatingSystem: ['Windows', 'Linux', 'macOS'],
+      softwareRequirements: 'Git is required on the repository host. The desktop installer is for Windows 10 or later (x64). The CLI server runs on Windows, Linux, and macOS with Node.js 24 or later. Browser access requires a running OpenTig instance on the repository host and browser pairing.',
+      license: `${repositoryUrl}/blob/main/LICENSE`,
+      isAccessibleForFree: true,
+      sameAs: repositoryUrl,
+      installUrl: `${docsUrl}/getting-started.md`,
+      offers: {
+        '@type': 'Offer',
+        price: 0,
+        url: downloadUrl,
+      },
+    },
+  ],
+} : undefined;
 ---
 
 <Layout>
+  {structuredData && <script slot="head" type="application/ld+json" set:html={JSON.stringify(structuredData).replace(/</g, '\\u003c')} />}
   <div class="relative min-h-screen text-foreground scroll-smooth">
     <div class="fixed inset-0 z-0">
       <FaultyTerminal />
