@@ -2,68 +2,142 @@
 
 [← Documentation](README.md) · [Feature guide](features.md) · [Keyboard shortcuts](features.md#keyboard-shortcuts)
 
-The desktop workspace keeps navigation and file lists in a resizable sidebar, with editors, diffs, commits, and PRs in the viewer. Phone browsers use one pane at a time. Both clients connect to the same repository backend; native desktop controls remain available only in the desktop app.
+Use **Settings → General** to change themes, fonts, file views, and remote checks. Use **Settings → Shortcuts** to customize keyboard controls.
+
+On desktop, navigation and file lists sit in a resizable sidebar; editors, diffs, commits, and PRs open in the viewer. Phone browsers show one pane at a time. Both clients connect to the same repository backend. Native desktop controls are available only in the desktop app.
 
 ## Appearance and settings
 
-**Settings → General** groups Appearance, Files & viewer, and Repository sync into compact rows, with labels and controls side by side on desktop and stacked on phones. Changes apply immediately and preserve existing selections.
+General settings groups controls under **Appearance**, **Files & viewer**, and **Repository sync**. Changes apply immediately and preserve your existing selections.
 
-Choose system, light, or dark theme and adjust interface scale. Interface fonts are Geist, Plus Jakarta Sans, and Space Grotesk; code fonts are Geist Mono, JetBrains Mono, Inconsolata, Departure Mono, and Space Grotesk. Defaults are **Plus Jakarta Sans** and **JetBrains Mono**. Each font selector previews its own typeface, and the optional text preview reflects the current interface and code selections.
+| Control | Choices |
+| --- | --- |
+| **Theme** | System, light, or dark |
+| **Interface size** | Scale text, icons, and controls |
+| **Interface font** | Geist, **Plus Jakarta Sans** (default), or Space Grotesk |
+| **Code font** | Geist Mono, **JetBrains Mono** (default), Inconsolata, Departure Mono, or Space Grotesk |
 
-Diffs, Files editors, merge conflicts, and Markdown code blocks share syntax colors; diffs and editors keep the active interface background regardless of which view opens first. Tooltips and their arrows follow the active theme. Loading status uses shimmering text and a primary-colored spinner; busy action buttons retain their spinner and shimmer their label. Text shimmer pauses outside the viewport or while the document is hidden, resumes from the same point when visible, and respects reduced-motion preferences.
+Each font selector previews its own typeface. Open **Text preview** to see the current interface and code fonts together.
 
-Dates use **DD/MM/YYYY** throughout history, commits, branches, worktrees, PRs, logs, updates, and browser sessions. Timestamps use local time in 24-hour format, and CLI pairing expiry dates follow the same convention.
+**Dates use DD/MM/YYYY and local, 24-hour time.** This applies to history, commits, branches, worktrees, PRs, logs, updates, browser sessions, and CLI pairing expiry dates.
 
-All Settings sections share a desktop frame that keeps its size as sections change. Content scrolls inside while navigation and headings remain visible, with a short transition that honors reduced-motion preferences. The frame fits smaller windows and uses available screen height on phones. Secondary dialogs such as browser revocation, LAN confirmation, device rename, and AI history open at their own size above Settings and diff content.
+<details>
+<summary>Syntax colors, loading indicators, and motion</summary>
+
+Diffs, Files editors, merge conflicts, and Markdown code blocks share syntax colors. Diffs and editors keep the active interface background regardless of which view opens first. Tooltips and their arrows follow the active theme.
+
+Loading status uses shimmering text and a primary-colored spinner. Busy buttons retain their spinner and shimmer their label. Text shimmer pauses outside the viewport or while the document is hidden, resumes from the same point when visible, and respects reduced-motion preferences.
+
+</details>
+
+<details>
+<summary>Settings layout and secondary dialogs</summary>
+
+Labels and controls sit side by side on desktop and stack on phones. Settings keeps the same desktop frame size as you switch sections; content scrolls inside while navigation and headings remain visible. Its short transition honors reduced-motion preferences.
+
+The frame fits smaller windows and uses available screen height on phones. Browser revocation, LAN confirmation, device rename, and AI history dialogs open at their own size above Settings and diff content.
+
+</details>
 
 ### Viewer and saved preferences
 
-OpenTig starts in **Files** on first use, then reopens the last active section: Changes, Files, History, PRs, or Search. This choice is stored in the client, applies across repositories, and is independent for each browser profile or desktop client. Clearing site data resets it to Files; if local storage is unavailable, the client starts in Files. Restoring a section does not restore a selected PR or search query.
+Choose a **tree or list** for Changes, enable **line wrapping**, and decide whether to **show Git-ignored files** in General settings.
 
-Choose tree or list layout for Changes, line wrapping for viewers, and whether Git-ignored files are visible. OpenTig remembers sidebar width, viewer preferences, fonts, shortcut customizations, repositories, projects, expanded file-tree paths, and open file tabs for each worktree. AI model selection is saved per provider. Tab paths are remembered between sessions; unsaved text is not written to disk.
+OpenTig starts in **Files** on first use, then reopens your last active section: Changes, Files, History, PRs, or Search. This choice applies across repositories but is independent for each browser profile or desktop client.
+
+| Remembered item | Behavior |
+| --- | --- |
+| **Last active section** | Stored in the client. Clearing site data or unavailable local storage returns it to Files; a selected PR or search query is not restored |
+| **Workspace preferences** | Sidebar width, viewer preferences, fonts, shortcut customizations, repositories, and projects are remembered |
+| **File navigation** | Expanded tree paths and open file tabs are remembered for each worktree |
+| **AI model** | Selection is saved per provider |
+
+**Remembered tabs do not save your edits.** Tab paths persist between sessions; unsaved text is not written to disk.
 
 ### Remote checks and refresh
 
-Remote checks default to every 30 seconds. General settings offers common intervals, a custom value from 5 to 300 seconds in steps of five, and **Off** for manual checks. Turning periodic checks off keeps checks on pull and push.
+Set **Settings → General → Repository sync → Remote check interval** to control periodic checks:
 
-The toolbar Refresh button and `Ctrl+R` fetch remote Git changes, then refresh the local workspace, even when automatic checks are off. The icon rotates during refresh and returns to rest afterward. Refresh also checks for app updates immediately instead of waiting for the five-minute update interval.
+| Interval | Behavior |
+| --- | --- |
+| **30 seconds** | Default |
+| **Preset or custom** | Choose a common interval, or 5–300 seconds in steps of five |
+| **Off** | Disables periodic checks; checks still run when you pull or push |
+
+Use the toolbar **Refresh** button or `Ctrl+R` to fetch remote Git changes and then refresh the local workspace, even with automatic checks off. The icon rotates while refreshing and returns to rest afterward.
+
+Refresh also checks for app updates immediately instead of waiting for the five-minute update interval.
 
 ### Shortcuts
 
-Rebind most shortcuts in **Settings → Shortcuts**, with conflict detection and reset to defaults. Fixed shortcuts follow platform or file-manager conventions. You can disable double-tap-Control, which brings the desktop app to the front from another application. See the [default shortcut table](features.md#keyboard-shortcuts).
+Open **Settings → Shortcuts** to rebind most shortcuts, check for conflicts, or reset them to defaults. Fixed shortcuts follow platform or file-manager conventions.
+
+You can disable **double-tap-Control**, which brings the desktop app to the front from another application. See the [default shortcut table](features.md#keyboard-shortcuts).
 
 ## Dropdowns and tooltips
 
-Repository, worktree, branch, AI model, project assignment, and PR base selectors share searchable menus in the current theme. Repositories and worktrees show a second checkout line; other choices use one line. Phone menus use larger touch targets, and a gap separates hovered and selected options.
+Repository, worktree, branch, AI model, project assignment, and PR base selectors have searchable menus. Repository and worktree choices show a second checkout line; other choices use one line.
 
-Menus with 100 or more matching choices render only the visible rows and a small buffer. Group labels, disabled choices, keyboard navigation, and scrolling to the selected choice remain available; filtering a menu below that size restores its ordinary list. Background option refreshes preserve the current scroll position.
+- **Find a model:** search by name or identifier; models are grouped by provider.
+- **Keep a default:** **Default (CLI)** and **No project** remain available during filtering.
+- **Switch repositories by number:** number shortcuts remain active until the search field takes focus.
+- **Read a shortened name:** hover a truncated selected name to see it in full. The hint stays while the pointer remains on the control and hides while the menu is open.
 
-Hover a truncated selected name to see it in full; its tooltip stays while the pointer remains on the control and hides while the menu is open. Options show hints only for truncated text or additional information. Scrolling dismisses row tooltips, and clipped anchors hide their hints. Branch and worktree management rows use their details panel instead of hover hints. Diff headers show the file name and directory directly.
+Toolbar selectors keep management actions available. Branch and worktree management rows show information in their details panel; diff headers show the file name and directory directly.
 
-Repository menus can grow to 80% of viewport height while search and management remain visible; other menus remain compact. Toolbar selectors keep management actions available. Models can be searched by name or identifier and grouped by provider. **Default (CLI)** and **No project** remain available during filtering; repository number shortcuts stay active until the search field takes focus. In narrow desktop windows, wrapped toolbar controls stay aligned to the right.
+<details>
+<summary>Long menus, scrolling, and option hints</summary>
+
+Repository menus can grow to 80% of viewport height while search and management remain visible. Other menus remain compact. Menus use the current theme, with larger touch targets on phones and a gap between hovered and selected options. In narrow desktop windows, wrapped toolbar controls stay aligned to the right.
+
+With 100 or more matching choices, menus render only visible rows and a small buffer. Group labels, disabled choices, keyboard navigation, and scrolling to the selected choice remain available. Filtering below that size restores the ordinary list. Background option refreshes preserve scroll position.
+
+Options show hints only for truncated text or additional information. Scrolling dismisses row tooltips, and clipped anchors hide their hints.
+
+</details>
 
 ## Phone navigation
 
-Phone browsers have a compact repository header and bottom **Changes**, **Files**, **History**, **PRs**, and **Search** navigation. Tap repository context for branch, worktree, pull/push, and Settings controls. Pull and Push show pending commit counts and stay disabled when up to date; unpublished branches can still be published.
+Use the bottom **Changes**, **Files**, **History**, **PRs**, and **Search** tabs to switch sections. Tap the compact repository header's context controls for branches, worktrees, pull/push, and Settings.
 
-Open a row to review content and use Back to return to its list. The open-files button opens a sheet for switching or closing tabs. The Commit form opens separately so staging controls stay accessible. Notifications leave navigation and open sheets accessible. Short landscape phones keep the mobile layout, while the bottom navigation hides when the software keyboard opens. Dialogs and forms fit the keyboard and safe areas.
+| Task | On a phone |
+| --- | --- |
+| **Review content** | Open a row, then use Back to return to its list |
+| **Switch or close a file tab** | Use the open-files button to open the tab sheet |
+| **Commit** | Open the separate Commit form; staging controls remain accessible |
+| **Pull or push** | Check the pending commit counts. Actions are disabled when up to date; unpublished branches can still be published |
+
+Notifications leave navigation and open sheets accessible. Short landscape phones keep the mobile layout. The bottom navigation hides when the software keyboard opens, and dialogs and forms fit the keyboard and safe areas.
 
 ### Files and search
 
-Files opens one folder at a time with breadcrumbs, a folder filter, visible action menus, creation controls, and multiple selection. Background refreshes preserve the current folder and scroll position. **Move to…** chooses a destination using the same folder icons as Files. Touch and pen gestures scroll; desktop mouse dragging remains available.
+**Files opens one folder at a time.** Use breadcrumbs, the folder filter, action menus, creation controls, and multiple selection to navigate and manage files. Background refreshes preserve the current folder and scroll position.
 
-The browser repository dialog chooses folders on the backend host with a visual picker. Search keeps its query and options in one compact row. The PR toolbar aligns refresh, filters, and New at a consistent touch-friendly height.
+**Move to…** opens a destination picker with the same folder icons as Files. Touch and pen gestures scroll; desktop mouse dragging remains available.
+
+When adding a repository in a browser, the visual folder picker browses **the backend host**, not the phone's filesystem.
+
+Search keeps its query and options in one compact row. The PR toolbar aligns refresh, filters, and New at a consistent touch-friendly height.
 
 ### History, diffs, and projects
 
-History combines search and grouping in a mobile toolbar with compact rows and touch-sized expansion controls. Phone diffs start unified with a session-only layout choice, preserving the saved desktop layout.
+- **History:** search and grouping share a mobile toolbar, with compact rows and touch-sized expansion controls.
+- **Diffs:** start in unified layout. A phone's layout choice lasts for the session and preserves the saved desktop layout.
+- **Projects:** use the larger up/down buttons and free scrolling in Manage projects. Moving a project or repository preserves focus and scroll, then briefly highlights its new position. Reduced-motion preferences suppress that highlight; desktop dragging remains available.
 
-Manage projects uses larger up/down buttons and free scrolling on phones. Moving a project or repository preserves focus and scroll, then briefly highlights its new position; reduced-motion preferences suppress that highlight. Dragging remains available on desktop. Settings, diagnostics, branch, and worktree controls remain available on touch screens.
+Settings, diagnostics, branch, and worktree controls are also available on touch screens.
 
 ## Desktop and Dev identity
 
-The toolbar, browser favicon, Windows application, installer, and taskbar use the OpenTig logo. In the toolbar, its ring follows the theme text color and the T remains blue; application icons use a dark rounded badge. The first painted frame is a splash that remains until the workspace restores, with shimmering connection status.
+Desktop windows reopen at their previous position and size, including maximized state. If monitor layout or scaling makes a saved position unavailable, the window moves and, when needed, shrinks to fit a display. New windows and disconnected-monitor positions center on the primary display. The welcome screen follows the selected theme and has a draggable top edge.
 
-Desktop windows reopen at the previous position and size, including maximized state. If monitor layout or scaling makes a saved position unavailable, the window moves and, when needed, shrinks to fit a display. New windows and disconnected-monitor positions center on the primary display. The welcome screen has a draggable top edge and follows the selected theme.
+**OpenTig Dev uses separate data and update behavior.** Its desktop/mobile headers and welcome screen show **OpenTig Dev**, with black/yellow stripes in light mode and white/yellow stripes in dark mode. This identity follows the backend's Dev profile, including in browsers. See [development and packaging](development.md).
 
-Development profiles display **OpenTig Dev** in desktop/mobile headers and the welcome screen, with black/yellow stripes in light mode and white/yellow stripes in dark mode. The identity follows the backend's Dev profile, including in browsers. Dev has separate data and update behavior; see [development and packaging](development.md).
+<details>
+<summary>Application icons and startup screen</summary>
+
+The toolbar, browser favicon, Windows application, installer, and taskbar use the OpenTig logo. Its toolbar ring follows the theme text color while the T stays blue; application icons use a dark rounded badge.
+
+The first painted frame is a splash with shimmering connection status. It stays visible until the workspace restores.
+
+</details>
