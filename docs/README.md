@@ -14,6 +14,7 @@ Start with the [project overview](../README.md), then choose a guide for your wo
 | [Remote access and pairing](web-access.md) | SSH tunnels, LAN access, HTTPS proxies, browser sessions, and revocation |
 | [Security and AI privacy](security-and-privacy.md) | Trust boundaries, local data, permissions, and what optional AI receives |
 | [Development and packaging](development.md) | Running from source, isolated Dev profiles, validation, and local packages |
+| [Public website](website.md) | Astro landing page, local development, content, and static output |
 | [Release automation](releases.md) | Drafts, tags, Windows installers, npm publication, and signing |
 | [AI writing policy](ai-writing-policy.md) | English, Conventional Commits, evidence, privacy, and editorial rules for generated drafts and development agents |
 | [Architecture](architecture.md) | Shared server, Electron shell, browser transport, and source layout |

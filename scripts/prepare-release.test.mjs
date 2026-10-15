@@ -72,6 +72,21 @@ function fixture({ draft = true, changed = true } = {}) {
   return { api, git, root, remote, remotePath, directory, releases, repository: 'jorgefl8/opentig' };
 }
 
+it('refuses to tag or bump the app when only the public website changed', async () => {
+  const context = fixture({ draft: false, changed: false });
+  mkdirSync(path.join(context.root, 'website'));
+  writeFileSync(path.join(context.root, 'website/index.astro'), '<main>OpenTig</main>');
+  context.git('add', '.');
+  context.git('commit', '-m', 'feat: landing page');
+  context.git('push', 'origin', 'main');
+  const head = context.git('rev-parse', 'HEAD').trim();
+  await expect(prepareRelease(context)).rejects.toThrow('No changes');
+  expect(context.git('status', '--porcelain').trim()).toBe('');
+  expect(context.remote('rev-parse', 'main').trim()).toBe(head);
+  expect(context.remote('tag', '--list').trim()).toBe('v0.1.0');
+  expect(context.api.mock.calls.every(([method]) => method === 'GET')).toBe(true);
+});
+
 it('prepares one draft from real history, atomically bumps all package versions and pins the tag and notes', async () => {
   const context = fixture();
   const result = await prepareRelease(context);

@@ -28,6 +28,8 @@ Validate the affected runtime using the [development guide](docs/development.md)
 
 Add focused tests for behavior changes. Keep Electron security boundaries intact: renderer code must not gain direct Node.js, filesystem, process, or unrestricted IPC access.
 
+Public website changes require `npm run check:website` and `npm run build:website`; see the [website guide](docs/website.md). Changes to shared dependencies or release/CI tooling also require the application checks. Website development does not require restarting or packaging the desktop application or CLI server.
+
 ## Documentation
 
 Keep the root `README.md` concise: it is the project overview and entry point for installation and documentation. Update it when the overview, basic setup, headline capabilities, or guide navigation changes.

@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { expect, it, vi } from 'vitest';
@@ -225,4 +225,63 @@ it('does not create a draft for a release-preparation-only push', async () => {
   context.git.mockImplementation((command) => command === 'rev-parse' ? head : command === 'log' ? `${head}\0chore(release): prepare v0.1.1\n\0\n` : '');
   expect(await updateDraft(context)).toContain('No changes');
   expect(context.api.mock.calls.every(([method]) => method === 'GET')).toBe(true);
+});
+
+it('does not create a draft when only public website files changed', async () => {
+  const context = fixture([published]);
+  const originalGit = context.git.getMockImplementation();
+  context.git.mockImplementation((command, ...args) => command === 'diff-tree'
+    ? 'website/src/pages/index.astro\0docs/website.md\0.github/workflows/website.yml\0'
+    : originalGit(command, ...args));
+  expect(await updateDraft(context)).toContain('No changes');
+  expect(context.api.mock.calls.every(([method]) => method === 'GET')).toBe(true);
+});
+
+it('filters website history by paths, including merges, while retaining mixed commits and moves', () => {
+  const directory = mkdtempSync(path.join(tmpdir(), 'opentig-website-history-'));
+  const git = (...args) => execFileSync('git', args, { cwd: directory, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  const write = (file, content) => {
+    mkdirSync(path.dirname(path.join(directory, file)), { recursive: true });
+    writeFileSync(path.join(directory, file), content);
+  };
+  const commit = (message) => { git('add', '.'); git('commit', '-m', message); };
+  try {
+    git('init', '-b', 'main');
+    git('config', 'user.name', 'Test');
+    git('config', 'user.email', 'test@example.invalid');
+    write('website/index.astro', 'Initial site');
+    commit('feat: initial website');
+    expect(readCommits(git, null, 'HEAD')).toEqual([]);
+    write('application.ts', 'export const value = 1;');
+    commit('feat: first app release');
+    git('tag', 'v0.1.0');
+    git('checkout', '-b', 'website-change');
+    write('website/index.astro', 'Changed site');
+    commit('fix: change the landing page');
+    git('checkout', 'main');
+    git('merge', '--no-ff', 'website-change', '-m', 'Merge pull request #1\n\nfeat: improve landing');
+    write('docs/website.md', 'Website guide');
+    write('.github/workflows/website.yml', 'Website CI');
+    commit('docs: website setup');
+    expect(readCommits(git, 'v0.1.0', 'HEAD')).toEqual([]);
+    git('checkout', '-b', 'mixed-change');
+    write('website/index.astro', 'Another update');
+    write('application.ts', 'export const value = 2;');
+    commit('feat(website): includes application code');
+    git('checkout', 'main');
+    // The merge must be attributed once, against its first parent.
+    const mixedMessage = 'Merge pull request #2\n\nfeat(website): mixed change';
+    git('merge', '--no-ff', 'mixed-change', '-m', mixedMessage);
+    write('package-lock.json', '{}');
+    commit('chore(website): update shared lockfile');
+    git('mv', 'application.ts', 'website/application.ts');
+    commit('refactor(website): move application code');
+    git('rm', 'website/index.astro');
+    commit('fix: remove website page');
+    expect(readCommits(git, 'v0.1.0', 'HEAD').map(({ message }) => message.trim())).toEqual([
+      mixedMessage,
+      'chore(website): update shared lockfile',
+      'refactor(website): move application code',
+    ]);
+  } finally { rmSync(directory, { recursive: true, force: true }); }
 });

@@ -39,6 +39,33 @@ it('validates a code change mixed with documentation', async () => {
   expect(needsValidation('push', { before: base }, commit(), root)).toBe(true);
 });
 
+it('skips application jobs for website-only pushes and PRs', async () => {
+  for (const file of ['website/src/pages/index.astro', '.github/workflows/website.yml', 'docs/website.md']) {
+    await mkdir(path.dirname(path.join(root, file)), { recursive: true });
+    await writeFile(path.join(root, file), 'Website fixture\n');
+  }
+  const head = commit();
+  expect(needsValidation('push', { before: base }, head, root)).toBe(false);
+  expect(needsValidation('pull_request', { pull_request: { base: { sha: base } } }, head, root)).toBe(false);
+  expect(needsValidation('workflow_dispatch', {}, head, root)).toBe(true);
+});
+
+it.each(['application.ts', 'package.json', 'package-lock.json', '.oxlintrc.json', 'scripts/change-scope.mjs'])(
+  'validates website changes mixed with shared or application file %s', async (file) => {
+    await mkdir(path.join(root, 'website'));
+    await writeFile(path.join(root, 'website/index.astro'), '<main>OpenTig</main>');
+    await mkdir(path.dirname(path.join(root, file)), { recursive: true });
+    await writeFile(path.join(root, file), 'Changed fixture\n');
+    expect(needsValidation('push', { before: base }, commit(), root)).toBe(true);
+  },
+);
+
+it('does not exempt application code moved into the website', async () => {
+  await mkdir(path.join(root, 'website'));
+  await rename(path.join(root, 'application.ts'), path.join(root, 'website', 'application.ts'));
+  expect(needsValidation('push', { before: base }, commit(), root)).toBe(true);
+});
+
 it('does not exempt a code file renamed into documentation', async () => {
   await rename(path.join(root, 'application.ts'), path.join(root, 'docs', 'example.md'));
   expect(needsValidation('push', { before: base }, commit(), root)).toBe(true);

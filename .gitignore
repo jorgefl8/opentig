@@ -31,3 +31,6 @@ CLAUDE.md
 skills-lock.json
 .tmp
 .ai
+
+# Astro website generated types
+website/.astro/

@@ -1,0 +1,45 @@
+---
+import WindowsIcon from '@/assets/icons/windows.svg';
+import GithubIcon from '@tabler/icons/outline/brand-github.svg';
+import GitLogo from '@tabler/icons/outline/brand-git.svg';
+import BrowserLogo from '@tabler/icons/outline/browser.svg';
+import { repositoryUrl, downloadUrl } from '@/site';
+import Button from './Button.astro';
+---
+
+<section class="relative min-h-screen flex items-center justify-center overflow-hidden">
+  <div class="relative z-10 max-w-4xl mx-auto text-center px-6 py-24">
+    <h1 class="font-['GeistPixelTriangle'] text-4xl sm:text-5xl md:text-7xl font-bold tracking-tight leading-[1.1]">
+      All your <span class="text-primary">code changes</span>{" "}
+      <br class="hidden sm:block" />
+      in <span class="text-primary">OpenTig</span>
+    </h1>
+
+    <p class="text-base md:text-lg text-muted-foreground max-w-2xl mx-auto mt-6 leading-relaxed">
+      Review diffs, edit files, stage changes, and commit with confidence.
+      Your everyday Git workflow, together in one focused workspace.
+    </p>
+
+    <div class="flex items-center justify-center gap-5 sm:gap-8 flex-wrap mt-6 text-muted-foreground text-sm">
+      <span class="inline-flex items-center gap-2"><GitLogo width={20} height={20} /> Git</span>
+      <span class="inline-flex items-center gap-2"><GithubIcon width={20} height={20} /> GitHub</span>
+      <span class="inline-flex items-center gap-2"><BrowserLogo width={20} height={20} /> Browser</span>
+      <span class="text-muted-foreground/50 italic">and more…</span>
+    </div>
+
+    <div class="flex flex-col sm:flex-row gap-3 justify-center mt-10">
+      <Button href={downloadUrl}>
+        <WindowsIcon width={20} height={20} />
+        Download for Windows
+      </Button>
+      <Button href={repositoryUrl} variant="outline" target="_blank" rel="noreferrer">
+        <GithubIcon width={20} height={20} />
+        View on GitHub
+      </Button>
+    </div>
+
+    <span class="h-5 gap-1 border text-xs font-medium inline-flex items-center justify-center w-fit whitespace-nowrap shrink-0 overflow-hidden border-primary/30 text-foreground bg-background mt-6 px-4 py-1.5 font-mono text-[0.7rem] rounded-xl">
+      Git workspace <span class="mx-1">&middot;</span> Free <span class="mx-1">&middot;</span> Open source
+    </span>
+  </div>
+</section>

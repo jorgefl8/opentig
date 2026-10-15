@@ -6,7 +6,8 @@
   "main": ".vite/build/main.js",
   "private": true,
   "workspaces": [
-    "packages/*"
+    "packages/*",
+    "website"
   ],
   "scripts": {
     "start": "node scripts/start-desktop.mjs",
@@ -32,7 +33,11 @@
     "check": "npm run typecheck && npm run lint && npm test && npm run audit:prod",
     "build:desktop": "node scripts/build-desktop.mjs",
     "verify:packaged-desktop": "node scripts/verify-packaged-desktop.mjs",
-    "verify:release": "node scripts/verify-release.mjs"
+    "verify:release": "node scripts/verify-release.mjs",
+    "dev:website": "npm run dev --workspace @opentig/website --",
+    "build:website": "npm run build --workspace @opentig/website",
+    "preview:website": "npm run preview --workspace @opentig/website --",
+    "check:website": "npm run check --workspace @opentig/website"
   },
   "keywords": [
     "git",

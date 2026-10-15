@@ -1,0 +1,65 @@
+---
+import type { SvgComponent } from "astro/types";
+
+export interface Logo {
+  Svg: SvgComponent;
+  alt: string;
+  label?: string;
+  href?: string;
+}
+
+interface Props {
+  logos: Logo[];
+  speed?: number;
+  logoHeight?: number;
+  gap?: number;
+  class?: string;
+}
+
+const {
+  logos,
+  speed = 25,
+  logoHeight = 32,
+  gap = 48,
+  class: className,
+} = Astro.props;
+---
+
+<div
+  class:list={["logo-loop w-full overflow-hidden whitespace-nowrap", className]}
+  data-speed={speed}
+  data-pause="true"
+  style={`--logo-gap:${gap}px; --logo-height:${logoHeight}px`}
+>
+  <div class="logo-loop-track inline-flex whitespace-nowrap will-change-transform transform-[translate3d(0,0,0)]">
+    <div class="logo-loop-measure inline-flex items-center whitespace-nowrap">
+      {logos.map((logo) => {
+        const Svg = logo.Svg;
+        return (
+          <div
+            class="inline-flex h-(--logo-height) items-center gap-2 align-middle opacity-50 transition-opacity duration-300 hover:opacity-100"
+            style={`margin-inline: calc(var(--logo-gap) / 2)`}
+          >
+            {logo.href ? (
+              <a href={logo.href} target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-2">
+                <Svg width={logoHeight} height={logoHeight} aria-label={logo.alt} />
+                {logo.label && <span class="font-mono text-[18px] text-muted-foreground">{logo.label}</span>}
+              </a>
+            ) : (
+              <>
+                <Svg width={logoHeight} height={logoHeight} aria-label={logo.alt} />
+                {logo.label && <span class="font-mono text-[18px] text-muted-foreground">{logo.label}</span>}
+              </>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  </div>
+</div>
+
+<script>
+  import { initAllLogoLoops } from "@/scripts/logo-loop"
+  document.addEventListener("astro:page-load", initAllLogoLoops)
+  initAllLogoLoops()
+</script>

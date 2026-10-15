@@ -1,0 +1,36 @@
+---
+import LogoLoop from '@/components/LogoLoop.astro';
+import ClaudeCodeSvg from '@/assets/icons/claude-code.svg';
+import CodexSvg from '@/assets/icons/codex.svg';
+import GitSvg from '@tabler/icons/outline/brand-git.svg';
+import GithubSvg from '@tabler/icons/outline/brand-github.svg';
+import TerminalSvg from '@tabler/icons/outline/terminal-2.svg';
+import BrowserSvg from '@tabler/icons/outline/browser.svg';
+---
+
+<section id="tools" class="py-24">
+  <div class="max-w-7xl mx-auto px-6 text-center mb-16">
+    <h2 class="font-['GeistPixelTriangle'] text-3xl md:text-4xl font-bold tracking-tight">
+      Works with your tools
+    </h2>
+    <p class="text-muted-foreground mt-4 max-w-xl mx-auto">
+      Built on Git, with GitHub PRs and optional AI assistance from installed CLIs. No AI account needed for everyday Git work.
+    </p>
+  </div>
+
+  <div class="h-20 relative overflow-hidden text-white">
+    <LogoLoop
+      logos={[
+        { Svg: GitSvg, alt: "Git", label: "Git" },
+        { Svg: GithubSvg, alt: "GitHub", label: "GitHub" },
+        { Svg: ClaudeCodeSvg, alt: "Claude Code", label: "Claude Code" },
+        { Svg: CodexSvg, alt: "Codex", label: "Codex" },
+        { Svg: TerminalSvg, alt: "CLI", label: "CLI" },
+        { Svg: BrowserSvg, alt: "Browser", label: "Browser" },
+      ]}
+      speed={25}
+      logoHeight={32}
+      gap={48}
+    />
+  </div>
+</section>

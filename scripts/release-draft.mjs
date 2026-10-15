@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { listReleases, releaseApi } from './release-api.mjs';
+import { isWebsitePath } from './change-scope.mjs';
 
 export const NOTES_START = '<!-- opentig:release-notes:start -->';
 export const NOTES_END = '<!-- opentig:release-notes:end -->';
@@ -172,7 +173,13 @@ export function readCommits(git, previousTag, head) {
     const sha = fields[i].trim();
     if (!/^[a-f0-9]{40}$/.test(sha)) throw new Error('Invalid commit in release history.');
     const commit = { sha, message: fields[i + 1] };
-    if (!isReleasePreparation(commit)) commits.push(commit);
+    if (isReleasePreparation(commit)) continue;
+    // Compare merge commits with their first parent, like the release history.
+    // Disable renames so moving application code into website/ cannot hide it.
+    const files = git('diff-tree', '--root', '--no-commit-id', '--name-only', '--no-renames',
+      '--diff-merges=first-parent', '-r', '-z', sha, '--').split('\0').filter(Boolean);
+    if (files.length && files.every(isWebsitePath)) continue;
+    commits.push(commit);
   }
   return commits;
 }

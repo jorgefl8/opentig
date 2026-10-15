@@ -1,0 +1,30 @@
+---
+import Layout from '@/layouts/Layout.astro';
+import FaultyTerminal from '@/components/FaultyTerminal.astro';
+import Navbar from '@/components/landing/navbar.astro';
+import Hero from '@/components/landing/Hero.astro';
+import Features from '@/components/landing/Features.astro';
+import Providers from '@/components/landing/Providers.astro';
+import HowItWorks from '@/components/landing/HowItWorks.astro';
+import Cta from '@/components/landing/Cta.astro';
+import Footer from '@/components/landing/Footer.astro';
+---
+
+<Layout>
+  <div class="relative min-h-screen text-foreground scroll-smooth">
+    <div class="fixed inset-0 z-0">
+      <FaultyTerminal />
+    </div>
+    <div class="relative z-10">
+      <Navbar />
+      <main>
+        <Hero />
+        <Features />
+        <Providers />
+        <HowItWorks />
+        <Cta />
+      </main>
+      <Footer />
+    </div>
+  </div>
+</Layout>
