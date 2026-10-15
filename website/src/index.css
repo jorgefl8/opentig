@@ -26,7 +26,7 @@
 
 :root {
   color-scheme: dark;
-  /* Keep these colors aligned with the desktop dark theme. */
+  /* Desktop base palette, with website text/action variants for contrast. */
   --background: oklch(0.13 0 0);
   --foreground: oklch(0.92 0 0);
   --card: oklch(0.165 0 0);
@@ -38,7 +38,14 @@
   --secondary: oklch(0.205 0 0);
   --secondary-foreground: oklch(0.9 0 0);
   --muted: oklch(0.205 0 0);
-  --muted-foreground: oklch(0.66 0 0);
+  --muted-foreground: oklch(0.78 0 0);
+  /* Large headings keep a stronger blue; small text needs more contrast. */
+  --primary-heading: #4f91ff;
+  --primary-text: #95baff;
+  --focus: #95baff;
+  --action-top: #2863d8;
+  --action-bottom: #2459c4;
+  --action-hover-top: #2d6ae0;
   --accent: oklch(0.225 0 0);
   --accent-foreground: oklch(0.93 0 0);
   --destructive: oklch(0.71 0.17 24);
@@ -94,6 +101,8 @@
   --color-secondary: var(--secondary);
   --color-primary-foreground: var(--primary-foreground);
   --color-primary: var(--primary);
+  --color-primary-text: var(--primary-text);
+  --color-primary-heading: var(--primary-heading);
   --color-popover-foreground: var(--popover-foreground);
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
@@ -144,3 +153,26 @@
     html { scroll-behavior: auto; }
   }
 }
+
+/* Keep keyboard focus consistent across links, including outlined buttons. */
+a[href]:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 4px;
+}
+a[href], button, iframe, [tabindex] { scroll-margin-block: calc(4rem + 24px) 20px; }
+section[id] { scroll-margin-top: calc(4rem + 24px); }
+
+.skip-link {
+  position: fixed;
+  z-index: 100;
+  top: 24px;
+  left: 24px;
+  padding: 10px 16px;
+  border-radius: 8px;
+  background: var(--foreground);
+  color: var(--background);
+  font-size: 14px;
+  font-weight: 600;
+  transform: translateY(calc(-100% - 32px));
+}
+.skip-link:focus { transform: none; }

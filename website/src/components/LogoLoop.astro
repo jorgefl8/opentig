@@ -37,18 +37,18 @@ const {
         const Svg = logo.Svg;
         return (
           <div
-            class="inline-flex h-(--logo-height) items-center gap-2 align-middle opacity-50 transition-opacity duration-300 hover:opacity-100"
+            class="inline-flex h-(--logo-height) items-center gap-2 align-middle text-muted-foreground transition-colors duration-150 hover:text-foreground"
             style={`margin-inline: calc(var(--logo-gap) / 2)`}
           >
             {logo.href ? (
               <a href={logo.href} target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-2">
                 <Svg width={logoHeight} height={logoHeight} aria-label={logo.alt} />
-                {logo.label && <span class="font-mono text-[18px] text-muted-foreground">{logo.label}</span>}
+                {logo.label && <span class="font-mono text-[18px]">{logo.label}</span>}
               </a>
             ) : (
               <>
                 <Svg width={logoHeight} height={logoHeight} aria-label={logo.alt} />
-                {logo.label && <span class="font-mono text-[18px] text-muted-foreground">{logo.label}</span>}
+                {logo.label && <span class="font-mono text-[18px]">{logo.label}</span>}
               </>
             )}
           </div>

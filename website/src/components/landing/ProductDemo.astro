@@ -12,6 +12,7 @@ const steps = [
       <h2 id="workflow-heading" class="font-['GeistPixelTriangle'] text-3xl md:text-4xl font-bold tracking-tight">Try OpenTig</h2>
       <p class="text-muted-foreground mt-4 max-w-2xl mx-auto">Explore a sample repository. Edit a file, stage your changes, and make a commit.</p>
     </div>
+    <a href="#features" class="skip-link">Skip interactive demo</a>
     <div data-live-demo class="demo-shell">
       <div class="demo-toolbar">
         <span class="demo-live"><span class="demo-live-dot" aria-hidden="true"></span>Live demo</span>
@@ -33,7 +34,7 @@ const steps = [
     </div>
     <ol class="grid sm:grid-cols-2 lg:grid-cols-4 gap-6 mt-10">
       {steps.map((step,index) => <li class="border-l border-primary/40 pl-4">
-        <span class="font-mono text-xs text-primary">0{index+1}</span>
+        <span class="font-mono text-xs text-primary-text">0{index+1}</span>
         <h3 class="font-semibold mt-2">{step.title}</h3>
         <p class="mt-2 text-sm leading-relaxed text-muted-foreground">{step.text}</p>
       </li>)}

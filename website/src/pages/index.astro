@@ -55,8 +55,9 @@ const structuredData = homeUrl && indexable ? {
       <FaultyTerminal />
     </div>
     <div class="relative z-10">
+      <a href="#main-content" class="skip-link">Skip to content</a>
       <Navbar />
-      <main>
+      <main id="main-content" tabindex="-1">
         <Hero />
         <ProductDemo />
         <Features />
