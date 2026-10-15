@@ -91,6 +91,11 @@ jobs:
         run: npm run check:website
       - if: needs.changes.outputs.website == 'true'
         run: npm run build:website
+      - name: Validate noindex preview output
+        if: needs.changes.outputs.website == 'true'
+        env:
+          WEBSITE_NOINDEX: 'true'
+        run: npm run build --workspace @opentig/website -- --outDir ../.ai/website-preview
 
   system-trash-smoke:
     needs: changes

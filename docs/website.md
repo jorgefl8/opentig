@@ -19,7 +19,11 @@ npm run build:website
 npm run preview:website
 ```
 
-`check:website` runs Astro's component/type checks, Oxlint, and the www redirect tests. The website keeps its own TypeScript version because the Astro checker currently supports TypeScript 6; the application uses its existing version. A process-local module hook in `website/scripts/check.mjs` keeps Astro/Volar on that compatible compiler even when npm hoists them alongside the application compiler. Dependencies are pinned in `website/package.json` and resolved in the repository's single `package-lock.json`.
+`check:website` runs Astro's component/type checks, Oxlint, the www redirect tests, and regression tests for the build validator. The website keeps its own TypeScript version because the Astro checker currently supports TypeScript 6; the application uses its existing version. A process-local module hook in `website/scripts/check.mjs` keeps Astro/Volar on that compatible compiler even when npm hoists them alongside the application compiler. Dependencies are pinned in `website/package.json` and resolved in the repository's single `package-lock.json`.
+
+Every Astro build runs `website/scripts/validate-build.mjs` through the `astro:build:done` hook, including builds to a custom output directory. It parses the generated HTML and XML with parse5 and saxes and fails on missing or duplicate metadata, inconsistent canonical/social URLs, wrong indexing policy, broken local links or fragments, missing HTML/CSS asset references, and incorrect social PNG dimensions. It also checks the homepage JSON-LD structure and its agreement with the metadata, and compares the sitemap against the generated indexable pages. The expected indexing policy comes from Vite's environment loader using the build's actual mode and environment directory. `WEBSITE_NOINDEX` accepts only `true`, `false`, or an unset value.
+
+Validation is offline: external links are checked for URL format and local/private hosts, not network availability. The JSON-LD checks protect this site's agreed data contract; they do not replace Schema.org validation or establish search-result eligibility. When adding pages or deliberately changing the metadata contract, update the sitemap and relevant checks together. Regression tests mutate temporary output to ensure real failures are rejected and remove their files afterwards. No test artifacts are published.
 
 ## Content and appearance
 
@@ -57,7 +61,7 @@ For example, build a preview into an ignored directory without replacing the pro
 WEBSITE_NOINDEX=true npm run build --workspace @opentig/website -- --outDir ../.ai/website-preview
 ```
 
-Leave `WEBSITE_NOINDEX` unset for production and rebuild with `npm run build:website` or `npm run deploy:website`. Never upload a preview build to the production domain. `WEBSITE_URL` only controls URL generation; it does not switch indexing policy. The current Cloudflare configuration keeps `workers.dev` and version URLs disabled; `_headers` additionally marks those hosts `noindex` if they are enabled later, following [Cloudflare's header guidance](https://developers.cloudflare.com/workers/static-assets/headers/).
+Leave `WEBSITE_NOINDEX` unset for production and rebuild with `npm run build:website` or `npm run deploy:website`. A noindex build targeting `website/dist` fails validation, stopping the normal deployment command before Wrangler runs; previews must use a separate output directory. If a build fails, rebuild successfully before manually uploading its files. `WEBSITE_URL` only controls URL generation; it does not switch indexing policy. The current Cloudflare configuration keeps `workers.dev` and version URLs disabled; `_headers` additionally marks those hosts `noindex` if they are enabled later, following [Cloudflare's header guidance](https://developers.cloudflare.com/workers/static-assets/headers/).
 
 ## Manual deployment to Cloudflare Workers
 
@@ -90,7 +94,7 @@ Astro uses `https://opentig.com` as the default public origin for canonical and 
 
 ## CI and release separation
 
-The existing **CI** workflow (`.github/workflows/ci.yml`) has a separate `website` job that installs only the website workspace, checks and builds it on relevant pull requests and pushes to `main`. A manual CI run validates both projects. There is no extra website workflow, artifact upload, or deployment job. CI has read-only repository permissions and no Cloudflare credentials.
+The existing **CI** workflow (`.github/workflows/ci.yml`) has a separate `website` job that installs only the website workspace, runs checks, and builds both production and a noindex preview on relevant pull requests and pushes to `main`. Both builds run the SEO validator; the preview goes to `.ai/website-preview`. A manual CI run validates both projects. There is no extra website workflow, artifact upload, or deployment job. CI has read-only repository permissions and no Cloudflare credentials.
 
 Changes confined to `website/` or this guide skip the application's heavy CI jobs and do not trigger **Next release draft**. CI still reports a scope decision for each project. Application release notes exclude these website-only commits, including merged PRs; **Prepare release** will not create an application version or tag when those are the only changes since the last stable release.
 
