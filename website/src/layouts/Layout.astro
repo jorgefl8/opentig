@@ -8,12 +8,14 @@ interface Props {
   description?: string;
   noindex?: boolean;
   canonicalPage?: boolean;
+  pixelFont?: boolean;
 }
 const {
   title = 'OpenTig | Free, open-source Git client',
   description = siteDescription,
   noindex = false,
   canonicalPage = true,
+  pixelFont = true,
 } = Astro.props;
 // Only emit absolute social URLs when a public origin has been configured.
 const canonical = canonicalPage && Astro.site ? new URL(Astro.url.pathname, Astro.site) : undefined;
@@ -49,7 +51,7 @@ const socialImageAlt = 'OpenTig, a free, open-source Git client, showing changed
     {socialImage && <meta name="twitter:image" content={socialImage} />}
     {socialImage && <meta name="twitter:image:alt" content={socialImageAlt} />}
     <slot name="head" />
-    <link rel="preload" href="/fonts/GeistPixel-Triangle.woff2" as="font" type="font/woff2" crossorigin />
+    {pixelFont && <link rel="preload" href="/fonts/GeistPixel-Triangle.woff2" as="font" type="font/woff2" crossorigin />}
     <link rel="preload" href="/fonts/Geist.woff2" as="font" type="font/woff2" crossorigin />
   </head>
   <body>

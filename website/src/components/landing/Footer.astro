@@ -7,7 +7,7 @@ const links = [
   { label: "GitHub", href: "https://github.com/jorgefl8/opentig" },
   { label: "Releases", href: "https://github.com/jorgefl8/opentig/releases" },
   { label: "FAQ", href: "#faq" },
-  { label: "Docs", href: "https://github.com/jorgefl8/opentig/blob/main/docs/README.md" },
+  { label: "Docs", href: "/docs/" },
   { label: "License", href: "https://github.com/jorgefl8/opentig/blob/main/LICENSE" },
 ];
 ---
@@ -25,8 +25,8 @@ const links = [
         <a
           href={link.href}
           class="text-sm text-muted-foreground hover:text-foreground transition-colors"
-          target={link.href.startsWith('#') ? undefined : '_blank'}
-          rel={link.href.startsWith('#') ? undefined : 'noreferrer'}
+          target={!link.href.startsWith('https:') ? undefined : '_blank'}
+          rel={!link.href.startsWith('https:') ? undefined : 'noreferrer'}
         >
           {link.label}
         </a>

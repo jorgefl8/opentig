@@ -10,8 +10,9 @@ import HowItWorks from '@/components/landing/HowItWorks.astro';
 import Cta from '@/components/landing/Cta.astro';
 import Faq from '@/components/landing/Faq.astro';
 import Footer from '@/components/landing/Footer.astro';
+import { installationPath } from '@/docs';
 import { indexable } from '@/indexing';
-import { repositoryUrl, downloadUrl, docsUrl, siteDescription } from '@/site';
+import { repositoryUrl, downloadUrl, siteDescription } from '@/site';
 
 const homeUrl = Astro.site ? new URL('/', Astro.site).href : undefined;
 const structuredData = homeUrl && indexable ? {
@@ -38,7 +39,7 @@ const structuredData = homeUrl && indexable ? {
       license: `${repositoryUrl}/blob/main/LICENSE`,
       isAccessibleForFree: true,
       sameAs: repositoryUrl,
-      installUrl: `${docsUrl}/getting-started.md`,
+      installUrl: new URL(installationPath, homeUrl).href,
       offers: {
         '@type': 'Offer',
         price: 0,

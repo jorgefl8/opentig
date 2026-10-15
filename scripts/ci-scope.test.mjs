@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, rename, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, beforeEach, expect, it } from 'vitest';
+import { publishedSources } from '../website/docs.config.mjs';
 import { needsValidation, validationScope } from './ci-scope.mjs';
 
 let root;
@@ -102,4 +103,11 @@ it('fails safe for unavailable bases, initial pushes, empty diffs, and unknown e
   expect(needsValidation('push', { before: 'a'.repeat(40) }, base, root)).toBe(true);
   expect(needsValidation('push', { before: base }, base, root)).toBe(true);
   expect(needsValidation('unknown', {}, base, root)).toBe(true);
+});
+
+it.each([...publishedSources])('validates the website when the published source %s changes', async (source) => {
+  await writeFile(path.join(root, source), '# Updated guide\n');
+  const head = commit();
+  expect(validationScope('push', { before: base }, head, root)).toEqual({ required: false, website: true });
+  expect(validationScope('pull_request', { pull_request: { base: { sha: base } } }, head, root)).toEqual({ required: false, website: true });
 });

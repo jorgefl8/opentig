@@ -11,6 +11,8 @@
     "public/demo"
   ],
   "compilerOptions": {
+    "jsx": "react-jsx",
+    "jsxImportSource": "react",
     "paths": {
       "@/*": [
         "./src/*"

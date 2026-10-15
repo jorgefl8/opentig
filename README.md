@@ -76,6 +76,7 @@ Use `opentig service install` to keep the CLI running after closing the terminal
 
 OpenTig opens existing repositories; cloning and initial remote setup remain Git CLI tasks. GitHub features require `gh` on the host. Normal Git work needs no OpenTig account or hosted backend; optional AI can send the supplied context to its provider.
 
+- [Website documentation](https://opentig.com/docs/): installation and CLI setup.
 - [Feature guide](docs/features.md): daily workflows, history, branches, editing, and shortcuts.
 - [Interface and mobile use](docs/interface.md): themes, settings, touch controls, and navigation.
 - [Security and privacy](docs/security-and-privacy.md): permissions, browser authority, and AI context.

@@ -2,7 +2,7 @@
 
 [← OpenTig](../README.md)
 
-Start with the [project overview](../README.md), then choose a guide for your workflow:
+Read the [documentation on opentig.com](https://opentig.com/docs/) with navigation and search, or browse the same Markdown guides below:
 
 | Guide | What it covers |
 | --- | --- |

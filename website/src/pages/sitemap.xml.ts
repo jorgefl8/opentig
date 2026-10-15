@@ -1,8 +1,9 @@
 import type { APIRoute } from 'astro';
+import { documentationPaths } from '@/docs';
 import { indexable } from '@/indexing';
 
 // Add canonical content routes here when new public pages are published.
-const publicPaths = ['/'];
+const publicPaths = ['/', ...documentationPaths];
 
 export const GET: APIRoute = ({ site }) => {
   const urls = indexable && site

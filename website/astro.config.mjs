@@ -1,4 +1,7 @@
 import { defineConfig } from 'astro/config';
+import react from '@astrojs/react';
+import { unified } from '@astrojs/markdown-remark';
+import { guideMarkdown, guideTables } from './scripts/guide-markdown.mjs';
 import tailwindcss from '@tailwindcss/vite';
 import { fileURLToPath } from 'node:url';
 import { loadEnv } from 'vite';
@@ -26,7 +29,8 @@ export default defineConfig({
   site: process.env.WEBSITE_URL || 'https://opentig.com',
   compressHTML: true,
   devToolbar: { enabled: false },
-  integrations: [seoValidation],
+  integrations: [react(), seoValidation],
+  markdown: { processor: unified({ smartypants: false, remarkPlugins: [guideMarkdown], rehypePlugins: [guideTables] }) },
   vite: {
     plugins: [tailwindcss(), {
       name: 'opentig-indexing-policy',

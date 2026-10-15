@@ -1,11 +1,12 @@
 import { execFileSync } from 'node:child_process';
 import { appendFileSync, readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
+import { publishedSources } from '../website/docs.config.mjs';
 import { isWebsitePath } from './change-scope.mjs';
 
 // Prose and the separately validated public site are exempt. Application docs
 // assets, examples, configuration, and scripts still require the complete CI.
-const isDocumentation = (file) => /^(?:README\.md|CONTRIBUTING\.md|AGENTS\.md|THIRD_PARTY_NOTICES\.md|docs\/.+\.md)$/.test(file);
+const isDocumentation = (file) => /^(?:README\.md|CONTRIBUTING\.md|SECURITY\.md|AGENTS\.md|THIRD_PARTY_NOTICES\.md|docs\/.+\.md)$/.test(file);
 
 export function validationScope(eventName, event, head, cwd = process.cwd()) {
   const both = { required: true, website: true };
@@ -19,7 +20,7 @@ export function validationScope(eventName, event, head, cwd = process.cwd()) {
     if (!files.length) return both;
     return {
       required: files.some((file) => !isDocumentation(file) && !isWebsitePath(file)),
-      website: files.some((file) => ['website/', 'src/renderer/', 'src/shared/', 'public/'].some(prefix => file.startsWith(prefix)) || file === 'tsconfig.json' || [
+      website: files.some((file) => publishedSources.has(file) || ['website/', 'src/renderer/', 'src/shared/', 'public/'].some(prefix => file.startsWith(prefix)) || file === 'tsconfig.json' || [
         'package.json', 'package-lock.json', '.oxlintrc.json', '.npmrc',
         '.github/workflows/ci.yml', 'scripts/ci-scope.mjs', 'scripts/change-scope.mjs',
       ].includes(file)),

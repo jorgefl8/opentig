@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join, resolve, sep } from 'node:path';
 import { parse } from 'parse5';
+import { documentationRoutes } from '../docs.config.mjs';
 import { SaxesParser } from 'saxes';
 
 const attr = (node, name) => node.attrs?.find((item) => item.name === name)?.value;
@@ -84,6 +85,20 @@ export function validateBuild({ directory, site, indexable }) {
     const target = targetFile(url);
     if (url.hash && pages.has(target)) check(pages.get(target).ids.has(decodeURIComponent(url.hash.slice(1))), `${label}: missing fragment ${url.hash}`);
   };
+  if ([...pages.keys()].some(file => file.startsWith('docs/'))) {
+    check(files.has('api/docs-search.json'), 'missing static documentation search index');
+    const search = JSON.parse(readFileSync(join(root, 'api/docs-search.json'), 'utf8'));
+    const records = Object.values(search.docs?.docs ?? {});
+    check(records.length > 0, 'empty documentation search index');
+    for (const record of records) {
+      check(record.url?.startsWith('/docs'), 'search includes a non-documentation URL');
+      checkReference(record.url, origin, 'documentation search');
+    }
+    const indexedPages = new Set(records.map(record => record.url?.split(/[?#]/)[0].replace(/\/$/, '')));
+    for (const page of pages.values()) {
+      if (page.route.startsWith('/docs/')) check(indexedPages.has(page.route.replace(/\/$/, '')), `documentation page absent from search: ${page.route}`);
+    }
+  }
   const expectedLocations = [];
   for (const [file, page] of pages) {
     const { nodes, headNodes, route } = page;
@@ -131,7 +146,14 @@ export function validateBuild({ directory, site, indexable }) {
     for (const node of nodes) {
       for (const attribute of ['href', 'src', 'poster']) {
         const value = attr(node, attribute);
-        if (value !== undefined) checkReference(value, url, label);
+        if (value !== undefined) {
+          checkReference(value, url, label);
+          const repositoryPrefix = 'https://github.com/jorgefl8/opentig/blob/main/';
+          if (attribute === 'href' && value.startsWith(repositoryPrefix) && !attr(node, 'data-docs-source')) {
+            const source = decodeURIComponent(new URL(value).pathname.slice(new URL(repositoryPrefix).pathname.length));
+            check(!documentationRoutes.has(source), `${label} published documentation links to GitHub: ${value}`);
+          }
+        }
       }
     }
     const scripts = nodes.filter((node) => node.tagName === 'script' && attr(node, 'type') === 'application/ld+json');

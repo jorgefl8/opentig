@@ -109,3 +109,41 @@ test('demo stays noindex and outside the sitemap in production', (t) => {
   output.change('sitemap.xml', '</urlset>', '<url><loc>https://opentig.com/demo/</loc></url></urlset>');
   assert.throws(output.validate, /sitemap does not match/);
 });
+
+test('documentation search must only point to published pages and real sections', (t) => {
+  const output = fixture(t);
+  mkdirSync(join(output.directory, 'docs'));
+  mkdirSync(join(output.directory, 'api'));
+  const home = readFileSync(join(output.directory, 'index.html'), 'utf8');
+  output.write('docs/index.html', home
+    .replace('rel="canonical" href="https://opentig.com/"', 'rel="canonical" href="https://opentig.com/docs/"')
+    .replace('property="og:url" content="https://opentig.com/"', 'property="og:url" content="https://opentig.com/docs/"')
+    .replace(/<script type="application\/ld\+json">.*?<\/script>/, ''));
+  output.change('sitemap.xml', '</urlset>', '<url><loc>https://opentig.com/docs/</loc></url></urlset>');
+  assert.throws(output.validate, /missing static documentation search index/);
+  const index = url => output.write('api/docs-search.json', JSON.stringify({ docs: { docs: { 1: { url } } } }));
+  index('/docs/#features%26more');
+  assert.equal(output.validate(), 3);
+  index('/docs');
+  assert.equal(output.validate(), 3);
+  index('/docs/#missing');
+  assert.throws(output.validate, /documentation search: missing fragment/);
+  index('/docs/development/');
+  assert.throws(output.validate, /missing local target/);
+  index('/demo/');
+  assert.throws(output.validate, /non-documentation URL/);
+  index('/docs/');
+  mkdirSync(join(output.directory, 'docs', 'second'));
+  output.write('docs/second/index.html', home);
+  assert.throws(output.validate, /documentation page absent from search/);
+});
+
+
+test('published guide reading links stay on site while explicit editing links may open GitHub', (t) => {
+  const output = fixture(t);
+  const destination = 'https://github.com/jorgefl8/opentig/blob/main/docs/web-access.md#pairing-and-sessions';
+  output.change('index.html', '</body>', `<a href="${destination}">Read guide</a></body>`);
+  assert.throws(output.validate, /published documentation links to GitHub/);
+  output.change('index.html', `<a href="${destination}">Read guide</a>`, `<a data-docs-source="true" href="${destination}">Edit on GitHub</a>`);
+  assert.equal(output.validate(), 2);
+});

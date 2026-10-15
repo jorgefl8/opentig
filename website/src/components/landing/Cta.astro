@@ -1,9 +1,10 @@
 ---
+import { installationPath } from '@/docs';
 import WindowsIcon from '@/assets/icons/windows.svg';
 import TerminalIcon from '@tabler/icons/outline/terminal-2.svg';
 import Button from './Button.astro';
 
-import { downloadUrl, docsUrl } from '@/site';
+import { downloadUrl } from '@/site';
 ---
 
 <section id="install" class="py-24 px-6 scroll-mt-20">
@@ -28,15 +29,15 @@ import { downloadUrl, docsUrl } from '@/site';
           <h3 class="flex items-center gap-2 text-base font-semibold"><TerminalIcon width={20} height={20} />CLI server</h3>
           <p class="text-sm text-muted-foreground leading-relaxed">For Linux, macOS, or Windows, with Node.js 24+ and Git. Start it on the machine with your repositories.</p>
           <code class="block break-all font-mono text-xs leading-relaxed text-foreground">npx --yes @opentig/cli@latest</code>
-          <Button href={`${docsUrl}/getting-started.md#run-the-headless-cli`} variant="outline" class="mt-auto px-3!">Set up OpenTig CLI</Button>
+          <Button href={`${installationPath}#run-the-headless-cli`} variant="outline" class="mt-auto px-3!">Set up OpenTig CLI</Button>
         </div>
       </div>
       <div class="mt-8 text-sm text-muted-foreground leading-relaxed">
         <h3 class="text-base font-semibold text-foreground">Connect a browser to your running instance</h3>
         <p class="mt-3">Keep the app or CLI server running. In the desktop app, enable Web access and create a pairing code. With the CLI, use the pairing link or code it provides.</p>
         <p class="mt-3">To connect from another device, first set up a private network or tunnel to that host. Files and Git operations stay on the host.</p>
-        <p class="mt-4"><a href={`${docsUrl}/web-access.md`} class="underline underline-offset-4 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary">Browser pairing and remote access guide</a></p>
-        <p class="mt-4"><a href={`${docsUrl}/getting-started.md`} class="underline underline-offset-4 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary">Full installation guide</a>{" · "}Early development</p>
+        <p class="mt-4"><a href={'/docs/web-access/'} class="underline underline-offset-4 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary">Browser pairing and remote access guide</a></p>
+        <p class="mt-4"><a href={installationPath} class="underline underline-offset-4 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary">Full installation guide</a>{" · "}Early development</p>
       </div>
     </div>
   </div>
