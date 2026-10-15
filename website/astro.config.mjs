@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 export default defineConfig({
   output: 'static',
-  site: process.env.WEBSITE_URL || undefined,
+  site: process.env.WEBSITE_URL || 'https://opentig.com',
   compressHTML: true,
   devToolbar: { enabled: false },
   vite: {

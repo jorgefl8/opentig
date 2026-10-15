@@ -10,20 +10,23 @@
     "dev": "astro dev --host 127.0.0.1",
     "build": "astro build",
     "preview": "astro preview --host 127.0.0.1",
-    "check": "astro sync && node scripts/check.mjs && oxlint ."
+    "check": "astro sync && node scripts/check.mjs && oxlint . && node --test scripts/www.test.mjs",
+    "deploy": "npm run check && npm run build && wrangler deploy",
+    "deploy:www": "npm run check && wrangler deploy --config wrangler.www.jsonc"
   },
   "dependencies": {
     "astro": "7.3.8",
-    "ogl": "1.0.11",
-    "cookie": "2.0.1"
+    "cookie": "2.0.1",
+    "ogl": "1.0.11"
   },
   "devDependencies": {
     "@astrojs/check": "0.9.10",
-    "@tailwindcss/vite": "4.3.3",
     "@tabler/icons": "3.49.0",
+    "@tailwindcss/vite": "4.3.3",
     "@types/node": "26.6.5",
     "oxlint": "1.88.0",
     "tailwindcss": "4.3.3",
-    "typescript": "6.0.3"
+    "typescript": "6.0.3",
+    "wrangler": "4.151.0"
   }
 }

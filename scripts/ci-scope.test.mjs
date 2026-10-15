@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, rename, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, beforeEach, expect, it } from 'vitest';
-import { needsValidation } from './ci-scope.mjs';
+import { needsValidation, validationScope } from './ci-scope.mjs';
 
 let root;
 let base;
@@ -29,24 +29,24 @@ afterAll(async () => { if (root) await rm(root, { recursive: true, force: true, 
 it('skips prose-only push and PR changes while retaining manual validation', async () => {
   await writeFile(path.join(root, 'docs', 'guide.md'), 'New documentation\n');
   const head = commit();
-  expect(needsValidation('push', { before: base }, head, root)).toBe(false);
+  expect(validationScope('push', { before: base }, head, root)).toEqual({ required: false, website: false });
   expect(needsValidation('pull_request', { pull_request: { base: { sha: base } } }, head, root)).toBe(false);
   expect(needsValidation('workflow_dispatch', {}, head, root)).toBe(true);
 });
 
 it('validates a code change mixed with documentation', async () => {
   await writeFile(path.join(root, 'application.ts'), 'export const value = 2;\n');
-  expect(needsValidation('push', { before: base }, commit(), root)).toBe(true);
+  expect(validationScope('push', { before: base }, commit(), root)).toEqual({ required: true, website: false });
 });
 
 it('skips application jobs for website-only pushes and PRs', async () => {
-  for (const file of ['website/src/pages/index.astro', '.github/workflows/website.yml', 'docs/website.md']) {
+  for (const file of ['website/src/pages/index.astro', 'website/wrangler.jsonc', 'docs/website.md']) {
     await mkdir(path.dirname(path.join(root, file)), { recursive: true });
     await writeFile(path.join(root, file), 'Website fixture\n');
   }
   const head = commit();
-  expect(needsValidation('push', { before: base }, head, root)).toBe(false);
-  expect(needsValidation('pull_request', { pull_request: { base: { sha: base } } }, head, root)).toBe(false);
+  expect(validationScope('push', { before: base }, head, root)).toEqual({ required: false, website: true });
+  expect(validationScope('pull_request', { pull_request: { base: { sha: base } } }, head, root)).toEqual({ required: false, website: true });
   expect(needsValidation('workflow_dispatch', {}, head, root)).toBe(true);
 });
 
@@ -59,6 +59,25 @@ it.each(['application.ts', 'package.json', 'package-lock.json', '.oxlintrc.json'
     expect(needsValidation('push', { before: base }, commit(), root)).toBe(true);
   },
 );
+
+it.each(['package.json', 'package-lock.json', '.oxlintrc.json', '.npmrc', '.github/workflows/ci.yml', 'scripts/ci-scope.mjs', 'scripts/change-scope.mjs'])(
+  'validates both projects when shared file %s changes alone', async (file) => {
+    await mkdir(path.dirname(path.join(root, file)), { recursive: true });
+    await writeFile(path.join(root, file), 'Changed shared fixture\n');
+    expect(validationScope('push', { before: base }, commit(), root)).toEqual({ required: true, website: true });
+  },
+);
+
+it('validates both projects for manual runs and when history cannot establish scope', () => {
+  for (const [event, payload, head] of [
+    ['workflow_dispatch', {}, base],
+    ['push', { before: '0'.repeat(40) }, base],
+    ['pull_request', {}, base],
+    ['push', { before: 'a'.repeat(40) }, base],
+    ['push', { before: base }, base],
+    ['unknown', {}, base],
+  ]) expect(validationScope(event, payload, head, root)).toEqual({ required: true, website: true });
+});
 
 it('does not exempt application code moved into the website', async () => {
   await mkdir(path.join(root, 'website'));

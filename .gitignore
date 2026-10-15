@@ -34,3 +34,6 @@ skills-lock.json
 
 # Astro website generated types
 website/.astro/
+website/.wrangler/
+website/.dev.vars
+website/.dev.vars.*

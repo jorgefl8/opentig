@@ -37,7 +37,8 @@
     "dev:website": "npm run dev --workspace @opentig/website --",
     "build:website": "npm run build --workspace @opentig/website",
     "preview:website": "npm run preview --workspace @opentig/website --",
-    "check:website": "npm run check --workspace @opentig/website"
+    "check:website": "npm run check --workspace @opentig/website",
+    "deploy:website": "npm run deploy --workspace @opentig/website --"
   },
   "keywords": [
     "git",
@@ -122,7 +123,9 @@
   "allowScripts": {
     "electron-winstaller@5.4.0": true,
     "esbuild@0.28.1": true,
+    "esbuild@0.28.2": true,
     "fsevents@2.3.3": true,
-    "uiohook-napi@1.5.5": true
+    "uiohook-napi@1.5.5": true,
+    "workerd@1.20261012.1": true
   }
 }
