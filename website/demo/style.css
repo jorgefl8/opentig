@@ -1,0 +1,38 @@
+body {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  background: #080808;
+}
+html #root {
+  flex: 1;
+  height: auto;
+  min-height: 0;
+}
+.demo-loading {
+  padding: 24px;
+  color: #ccc;
+}
+html .demo-settings {
+  display: flex;
+  flex-direction: column;
+  width: min(680px, calc((100vw - 32px) / var(--demo-ui-scale, 1)));
+  max-width: none;
+  height: min(560px, calc((100dvh - 32px) / var(--demo-ui-scale, 1)));
+  max-height: calc((100dvh - 32px) / var(--demo-ui-scale, 1));
+  overflow: hidden;
+}
+.demo-settings > .settings-general {
+  flex: 1;
+  overflow: hidden;
+}
+.demo-settings .settings-panel-header {
+  align-items: center;
+}
+@media (max-width: 767px) {
+  html .demo-settings {
+    width: calc(100vw - 16px);
+    height: calc(var(--mobile-viewport-height, 100dvh) - 16px);
+    max-height: calc(var(--mobile-viewport-height, 100dvh) - 16px);
+  }
+}

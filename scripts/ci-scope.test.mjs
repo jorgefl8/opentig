@@ -60,7 +60,7 @@ it.each(['application.ts', 'package.json', 'package-lock.json', '.oxlintrc.json'
   },
 );
 
-it.each(['package.json', 'package-lock.json', '.oxlintrc.json', '.npmrc', '.github/workflows/ci.yml', 'scripts/ci-scope.mjs', 'scripts/change-scope.mjs'])(
+it.each(['src/renderer/app/App.tsx', 'src/shared/contracts.ts', 'public/vscode-icons/file.svg', 'tsconfig.json', 'package.json', 'package-lock.json', '.oxlintrc.json', '.npmrc', '.github/workflows/ci.yml', 'scripts/ci-scope.mjs', 'scripts/change-scope.mjs'])(
   'validates both projects when shared file %s changes alone', async (file) => {
     await mkdir(path.dirname(path.join(root, file)), { recursive: true });
     await writeFile(path.join(root, file), 'Changed shared fixture\n');

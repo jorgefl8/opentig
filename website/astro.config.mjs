@@ -22,6 +22,7 @@ const seoValidation = {
 
 export default defineConfig({
   output: 'static',
+  trailingSlash: 'always',
   site: process.env.WEBSITE_URL || 'https://opentig.com',
   compressHTML: true,
   devToolbar: { enabled: false },

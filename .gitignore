@@ -37,3 +37,7 @@ website/.astro/
 website/.wrangler/
 website/.dev.vars
 website/.dev.vars.*
+
+# Generated website demo bundle
+website/public/demo/
+website/.demo-manifest.json

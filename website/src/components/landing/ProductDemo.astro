@@ -1,0 +1,177 @@
+---
+const steps = [
+  { title: 'Review the diff', text: 'Select a changed file to compare the working copy with the last commit.' },
+  { title: 'Make an edit', text: 'Open filter-tasks.js, add .trim() before .toLowerCase(), and save your change.' },
+  { title: 'Stage what belongs', text: 'Stage the filter and its tests. Leave the unrelated README change for later.' },
+  { title: 'Create a sample commit', text: 'Write a message, commit the staged files, and inspect the result in history.' },
+];
+---
+<section id="workflow" class="px-4 sm:px-6 py-24 scroll-mt-20" aria-labelledby="workflow-heading">
+  <div class="max-w-7xl mx-auto">
+    <div class="text-center mb-10">
+      <h2 id="workflow-heading" class="font-['GeistPixelTriangle'] text-3xl md:text-4xl font-bold tracking-tight">Try OpenTig</h2>
+      <p class="text-muted-foreground mt-4 max-w-2xl mx-auto">Explore a sample repository. Edit a file, stage your changes, and make a commit.</p>
+    </div>
+    <div data-live-demo class="demo-shell">
+      <div class="demo-toolbar">
+        <span class="demo-live"><span class="demo-live-dot" aria-hidden="true"></span>Live demo</span>
+        <a href="/demo/" target="_blank" rel="noreferrer" class="demo-expand">
+          <span>Open full screen</span>
+          <span class="demo-expand-icon" aria-hidden="true">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M8 3H3v5M16 3h5v5M21 16v5h-5M8 21H3v-5" />
+            </svg>
+          </span>
+          <span class="sr-only"> (opens in a new tab)</span>
+        </a>
+      </div>
+      <div class="demo-viewport">
+        <img src="/images/workflow-review.webp" alt="OpenTig showing the Launchpad task-filter diff and its changed files." width="1280" height="720" loading="lazy" class="demo-poster" />
+        <p data-demo-status class="demo-status" role="status">Loading OpenTig…</p>
+        <iframe data-demo-frame data-src="/demo/" title="Interactive OpenTig demo with a sample repository" sandbox="allow-scripts allow-same-origin allow-modals allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation" class="demo-frame" hidden></iframe>
+      </div>
+    </div>
+    <ol class="grid sm:grid-cols-2 lg:grid-cols-4 gap-6 mt-10">
+      {steps.map((step,index) => <li class="border-l border-primary/40 pl-4">
+        <span class="font-mono text-xs text-primary">0{index+1}</span>
+        <h3 class="font-semibold mt-2">{step.title}</h3>
+        <p class="mt-2 text-sm leading-relaxed text-muted-foreground">{step.text}</p>
+      </li>)}
+    </ol>
+    <noscript><p class="mt-4 text-muted-foreground">Enable JavaScript to try the interactive demo. The steps above explain the same workflow.</p></noscript>
+  </div>
+</section>
+<style>
+  .demo-shell {
+    position: relative;
+    padding: 0 6px 6px;
+    border: 1px solid color-mix(in oklch, var(--primary) 20%, #343434);
+    border-radius: 20px;
+    background: linear-gradient(145deg, #222630, #151619 38%, #111214);
+    box-shadow: 0 1px 0 #ffffff12 inset, 0 20px 70px #0006, 0 3px 8px #0005;
+  }
+  .demo-shell::before {
+    content: '';
+    position: absolute;
+    top: -1px;
+    left: 28px;
+    right: 28px;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, color-mix(in oklch, var(--primary) 65%, white), transparent);
+    pointer-events: none;
+  }
+  .demo-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    min-height: 68px;
+    padding: 12px 14px;
+  }
+  .demo-live {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: .025em;
+    color: #d9e2f6;
+    white-space: nowrap;
+  }
+  .demo-live-dot {
+    width: 7px;
+    height: 7px;
+    flex: 0 0 auto;
+    border-radius: 50%;
+    background: #777;
+    box-shadow: 0 0 0 4px #ffffff08;
+    transition: background .25s, box-shadow .25s;
+  }
+  .demo-shell[data-ready] .demo-live-dot {
+    background: #8ab4ff;
+    box-shadow: 0 0 0 4px #528dff16, 0 0 12px #528dff40;
+  }
+  .demo-expand {
+    display: inline-flex;
+    align-items: center;
+    gap: 14px;
+    min-height: 40px;
+    padding: 0 10px 0 14px;
+    border: 1px solid #ffffff1f;
+    border-radius: 9px;
+    background: linear-gradient(180deg, #ffffff0e, #ffffff03);
+    box-shadow: 0 1px 0 #ffffff0a inset, 0 2px 3px #0003;
+    color: #e4e7ee;
+    font-size: 12px;
+    font-weight: 500;
+    text-decoration: none;
+    white-space: nowrap;
+    transition: border-color .18s, background-color .18s, box-shadow .18s;
+  }
+  .demo-expand-icon {
+    display: grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    border-left: 1px solid #ffffff12;
+    padding-left: 9px;
+    color: #a9b6ce;
+  }
+  .demo-expand-icon svg { transition: transform .18s, color .18s; }
+  .demo-expand:hover {
+    border-color: color-mix(in oklch, var(--primary) 55%, #ffffff25);
+    background-color: color-mix(in oklch, var(--primary) 12%, transparent);
+    box-shadow: 0 1px 0 #ffffff12 inset, 0 2px 6px #0004;
+  }
+  .demo-expand:hover svg { transform: scale(1.12); color: #c8dcff; }
+  .demo-expand:focus-visible { outline: 2px solid #8ab4ff; outline-offset: 4px; }
+  .demo-expand:active { transform: translateY(1px); }
+  .demo-viewport {
+    position: relative;
+    height: 720px;
+    overflow: hidden;
+    border: 1px solid #ffffff12;
+    border-radius: 12px;
+    background: #080808;
+    box-shadow: 0 1px 6px #0007;
+  }
+  .demo-poster { width: 100%; height: 100%; object-fit: cover; object-position: top left; }
+  .demo-frame { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+  .demo-status { position: absolute; inset: auto 16px 24px; padding: 12px 16px; background: #141414; border: 1px solid #444; border-radius: 8px; color: #ddd; font-size: 13px; }
+  @media (max-width: 767px) {
+    .demo-shell { padding: 0 4px 4px; border-radius: 16px; }
+    .demo-toolbar { min-height: 64px; padding: 10px 8px; gap: 12px; }
+    .demo-live { gap: 8px; font-size: 12px; }
+    .demo-expand { min-height: 42px; gap: 8px; padding-left: 10px; padding-right: 8px; }
+    .demo-viewport { height: 660px; border-radius: 10px; }
+    .demo-poster { object-fit: contain; object-position: top; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .demo-live-dot, .demo-expand, .demo-expand-icon svg { transition: none; }
+    .demo-expand:hover svg, .demo-expand:active { transform: none; }
+  }
+</style>
+<script>
+  for (const demo of document.querySelectorAll<HTMLElement>('[data-live-demo]')) {
+    const frame=demo.querySelector<HTMLIFrameElement>('[data-demo-frame]');
+    const status=demo.querySelector<HTMLElement>('[data-demo-status]');
+    if(!frame || !status) continue;
+    let timeout: ReturnType<typeof setTimeout>;
+    const ready=(event:MessageEvent)=>{
+      if(event.origin!==location.origin || event.source!==frame.contentWindow || event.data?.type!=='opentig-demo-ready')return;
+      clearTimeout(timeout); frame.hidden=false; status.hidden=true; demo.dataset.ready='';
+      window.removeEventListener('message',ready);
+    };
+    window.addEventListener('message',ready);
+    const load=()=>{
+      frame.src=frame.dataset.src!;
+      status.textContent='Loading OpenTig…';
+      timeout=setTimeout(()=>{status.innerHTML='The demo is taking longer to load. <a class="underline" href="/demo/" target="_blank" rel="noreferrer">Open the demo in a new tab</a>.';},20000);
+    };
+    if('IntersectionObserver' in window){
+      const observer=new IntersectionObserver(entries=>{if(entries.some(e=>e.isIntersecting)){observer.disconnect();load();}},{rootMargin:'400px'});
+      observer.observe(demo);
+    } else load();
+  }
+</script>

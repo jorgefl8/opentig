@@ -86,7 +86,7 @@ jobs:
           node-version: 24
           cache: npm
       - if: needs.changes.outputs.website == 'true'
-        run: npm ci --workspace @opentig/website --include-workspace-root=false
+        run: npm ci --ignore-scripts
       - if: needs.changes.outputs.website == 'true'
         run: npm run check:website
       - if: needs.changes.outputs.website == 'true'

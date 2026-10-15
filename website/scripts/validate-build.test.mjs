@@ -92,3 +92,20 @@ test('rejects a preview that becomes indexable or announces a sitemap', (t) => {
   second.write('robots.txt', 'User-agent: *\nAllow: /\nSitemap: https://opentig.com/sitemap.xml\n');
   assert.throws(second.validate, /robots.txt policy/);
 });
+
+test('demo stays noindex and outside the sitemap in production', (t) => {
+  const output = fixture(t);
+  mkdirSync(join(output.directory, 'demo'));
+  const demo = readFileSync(join(output.directory, 'index.html'), 'utf8')
+    .replace(/<script type="application\/ld\+json">.*?<\/script>/s, '')
+    .replace('</head>', '<meta name="robots" content="noindex"></head>')
+    .replace('rel="canonical" href="https://opentig.com/"', 'rel="canonical" href="https://opentig.com/demo/"')
+    .replace('property="og:url" content="https://opentig.com/"', 'property="og:url" content="https://opentig.com/demo/"');
+  output.write('demo/index.html', demo);
+  assert.equal(output.validate(), 3);
+  output.change('demo/index.html', '<meta name="robots" content="noindex">', '');
+  assert.throws(output.validate, /noindex policy/);
+  output.write('demo/index.html', demo);
+  output.change('sitemap.xml', '</urlset>', '<url><loc>https://opentig.com/demo/</loc></url></urlset>');
+  assert.throws(output.validate, /sitemap does not match/);
+});

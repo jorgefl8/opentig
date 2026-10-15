@@ -75,7 +75,7 @@ export function PullRequestsView(props: PullRequestsViewProps) {
       </PullsNotice>
     );
   }
-  return <PullsList {...props} nameWithOwner={props.info.nameWithOwner ?? ''} />;
+  return <PullsList {...props} nameWithOwner={props.info.nameWithOwner ?? 'Pull requests'} />;
 }
 
 function PullsList(props: PullRequestsViewProps & { nameWithOwner: string }) {
@@ -193,12 +193,12 @@ function PullRow({ repositoryId, pr, active, onSelect }: { repositoryId: string;
         </span>
       </button>
       {pr.stack && <PullRequestStackMenu repositoryId={repositoryId} number={pr.number} membership={pr.stack} onSelect={onSelect} />}
-      <Tooltip>
+      {pr.url && <Tooltip>
         <TooltipTrigger render={<Button variant="ghost" size="icon-xs" className="change-action-button pull-open-external" onClick={() => openOnGitHub(pr.url)} aria-label={`Open #${pr.number} on GitHub`} />}>
           <IconExternalLink />
         </TooltipTrigger>
         <TooltipContent>Open on GitHub</TooltipContent>
-      </Tooltip>
+      </Tooltip>}
     </div>
   );
 }

@@ -90,6 +90,7 @@ export function validateBuild({ directory, site, indexable }) {
     const label = `${file}:`;
     const url = new URL(route, origin).href;
     const errorPage = file === '404.html';
+    const demoPage = file === 'demo/index.html';
     const meta = (key, optional = false) => {
       const matches = headNodes.filter((node) => node.tagName === 'meta' && (attr(node, 'name') === key || attr(node, 'property') === key));
       check(matches.length === 1 || (optional && matches.length === 0), `${label} expected one ${key} meta tag`);
@@ -108,7 +109,7 @@ export function validateBuild({ directory, site, indexable }) {
     }
     const robots = tokens(meta('robots', true));
     const noindex = robots.includes('noindex') || robots.includes('none');
-    check(noindex === (errorPage || !indexable), `${label} incorrect noindex policy`);
+    check(noindex === (errorPage || demoPage || !indexable), `${label} incorrect noindex policy`);
     for (const agent of ['googlebot', 'bingbot']) check(!meta(agent, true), `${label} crawler-specific override needs review`);
     const canonicals = headNodes.filter((node) => node.tagName === 'link' && tokens(attr(node, 'rel')).includes('canonical'));
     if (errorPage) {
@@ -116,7 +117,7 @@ export function validateBuild({ directory, site, indexable }) {
     } else {
       check(canonicals.length === 1 && attr(canonicals[0], 'href') === url, `${label} incorrect canonical`);
       check(meta('og:url') === url, `${label} incorrect og:url`);
-      if (indexable) expectedLocations.push(url);
+      if (indexable && !demoPage) expectedLocations.push(url);
     }
     check(meta('og:type') === 'website' && meta('og:site_name') === 'OpenTig', `${label} incorrect website identity`);
     check(meta('twitter:card') === 'summary_large_image', `${label} expected large social card`);
@@ -134,7 +135,7 @@ export function validateBuild({ directory, site, indexable }) {
       }
     }
     const scripts = nodes.filter((node) => node.tagName === 'script' && attr(node, 'type') === 'application/ld+json');
-    if (errorPage || !indexable) check(scripts.length === 0, `${label} unexpected structured data on noindex page`);
+    if (errorPage || demoPage || !indexable) check(scripts.length === 0, `${label} unexpected structured data on noindex page`);
     else if (route === '/') {
       check(scripts.length === 1 && headNodes.includes(scripts[0]), `${label} expected one JSON-LD script in head`);
       const schema = JSON.parse(text(scripts[0]));

@@ -10,13 +10,17 @@
     "dev": "astro dev --host 127.0.0.1",
     "build": "astro build",
     "preview": "astro preview --host 127.0.0.1",
-    "check": "astro sync && node scripts/check.mjs && oxlint . && node --test scripts/*.test.mjs",
+    "check": "astro sync && node scripts/check.mjs && tsc --project demo/tsconfig.json && oxlint . && node --test scripts/*.test.mjs",
     "deploy": "npm run check && npm run build && wrangler deploy",
-    "deploy:www": "npm run check && wrangler deploy --config wrangler.www.jsonc"
+    "deploy:www": "npm run check && wrangler deploy --config wrangler.www.jsonc",
+    "predev": "node scripts/build-demo.mjs",
+    "prebuild": "node scripts/build-demo.mjs",
+    "precheck": "node scripts/build-demo.mjs"
   },
   "dependencies": {
     "astro": "7.3.8",
     "cookie": "2.0.1",
+    "diff": "9.0.0",
     "ogl": "1.0.11"
   },
   "devDependencies": {

@@ -3,6 +3,7 @@ import Layout from '@/layouts/Layout.astro';
 import FaultyTerminal from '@/components/FaultyTerminal.astro';
 import Navbar from '@/components/landing/navbar.astro';
 import Hero from '@/components/landing/Hero.astro';
+import ProductDemo from '@/components/landing/ProductDemo.astro';
 import Features from '@/components/landing/Features.astro';
 import Providers from '@/components/landing/Providers.astro';
 import HowItWorks from '@/components/landing/HowItWorks.astro';
@@ -57,6 +58,7 @@ const structuredData = homeUrl && indexable ? {
       <Navbar />
       <main>
         <Hero />
+        <ProductDemo />
         <Features />
         <Providers />
         <HowItWorks />
