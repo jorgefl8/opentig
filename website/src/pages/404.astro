@@ -1,0 +1,30 @@
+---
+import Layout from '@/layouts/Layout.astro';
+import Logo from '@/assets/logo.svg';
+import Button from '@/components/landing/Button.astro';
+import { repositoryUrl } from '@/site';
+---
+
+<Layout title="Page not found | OpenTig" description="This page could not be found. Return to OpenTig, a free, open-source Git client." noindex canonicalPage={false}>
+  <div class="relative min-h-screen flex flex-col overflow-hidden">
+    <div aria-hidden="true" class="pointer-events-none absolute -top-48 left-1/2 -translate-x-1/2 size-[36rem] rounded-full bg-primary/10 blur-[100px]"></div>
+    <header class="relative px-6 py-6 sm:px-10">
+      <a href="/" class="inline-flex items-center gap-2.5 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary">
+        <Logo class="h-8 w-8" />
+        <span class="font-semibold">OpenTig</span>
+      </a>
+    </header>
+    <main class="relative flex-1 flex items-center justify-center px-6 py-16 text-center">
+      <div class="max-w-xl">
+        <p class="font-['GeistPixelTriangle'] text-8xl sm:text-9xl text-primary" aria-hidden="true">404</p>
+        <h1 class="mt-6 text-3xl sm:text-4xl font-semibold tracking-tight">Page not found</h1>
+        <p class="mt-4 text-base text-muted-foreground leading-relaxed">This page may have moved, or the link may be incorrect.</p>
+        <div class="mt-8 flex flex-col sm:flex-row items-stretch sm:items-center justify-center gap-3">
+          <Button href="/">Back to OpenTig</Button>
+          <Button href={repositoryUrl} variant="outline">View on GitHub</Button>
+        </div>
+      </div>
+    </main>
+    <footer class="relative px-6 py-6 text-center text-sm text-muted-foreground">Free, open-source Git client</footer>
+  </div>
+</Layout>

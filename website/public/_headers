@@ -1,0 +1,13 @@
+# Keep direct error-page URLs out of search results as well.
+/404
+  X-Robots-Tag: noindex
+/404.html
+  X-Robots-Tag: noindex
+/404/
+  X-Robots-Tag: noindex
+
+# Defense in depth if workers.dev or version URLs are enabled in the future.
+https://:worker.:account.workers.dev/*
+  X-Robots-Tag: noindex
+https://:version.:worker.:account.workers.dev/*
+  X-Robots-Tag: noindex

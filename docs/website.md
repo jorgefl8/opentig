@@ -39,11 +39,27 @@ Page titles, descriptions, canonical URLs, and Open Graph and Twitter card metad
 
 The editable card source is `website/design/social-card.html`, outside the published site. It combines the existing real product screenshot in `docs/images/workspace.png` with the local logo and Geist font. To update it, serve the repository root on loopback, open `/website/design/social-card.html` in a browser at exactly 1200 × 630 CSS pixels, wait for the font and images to load, and export the viewport as `website/public/opentig-social.png`. If the browser scales screenshots, normalize the exported PNG to 1200 × 630 pixels without cropping. Keep the screenshot faithful to the application and inspect the exported image before deployment. The existing `/og-image.png` remains available for previously cached previews.
 
+## Crawling, indexing, and missing pages
+
+Astro generates `/robots.txt` and `/sitemap.xml` at build time. Production robots.txt allows crawling and points to the absolute sitemap URL. The sitemap currently lists only the homepage; add new published content routes to `publicPaths` in `website/src/pages/sitemap.xml.ts`. Do not add errors, assets, redirects, or fragment links. Dates and priorities are omitted rather than inferred from the build time.
+
+`website/src/pages/404.astro` provides the branded error page. Workers uses `not_found_handling: "404-page"` to return it with HTTP 404 for missing routes, including nested paths. The page always has `noindex` and omits canonical and `og:url` metadata so an error is not presented as a content page. Direct `/404` variants also receive `X-Robots-Tag: noindex` through `website/public/_headers`.
+
+Development pages are marked `noindex`. For a separately hosted preview, set `WEBSITE_NOINDEX=true` **when building**, even if its canonical origin remains `https://opentig.com`. This adds `noindex` to every page using the shared layout, emits an empty sitemap, and removes the sitemap announcement from robots.txt. Crawling stays allowed so search engines can read the `noindex` instruction, as described in [Google's indexing guidance](https://developers.google.com/search/docs/crawling-indexing/block-indexing). This setting controls indexing, not access to the site.
+
+For example, build a preview into an ignored directory without replacing the production output (Bash):
+
+```bash
+WEBSITE_NOINDEX=true npm run build --workspace @opentig/website -- --outDir ../.ai/website-preview
+```
+
+Leave `WEBSITE_NOINDEX` unset for production and rebuild with `npm run build:website` or `npm run deploy:website`. Never upload a preview build to the production domain. `WEBSITE_URL` only controls URL generation; it does not switch indexing policy. The current Cloudflare configuration keeps `workers.dev` and version URLs disabled; `_headers` additionally marks those hosts `noindex` if they are enabled later, following [Cloudflare's header guidance](https://developers.cloudflare.com/workers/static-assets/headers/).
+
 ## Manual deployment to Cloudflare Workers
 
 `npm run build:website` writes `website/dist/`. [Cloudflare Workers Static Assets](https://developers.cloudflare.com/workers/static-assets/) serves that directory directly; no Astro server adapter, application server, or database is needed.
 
-The checked-in `website/wrangler.jsonc` targets the `opentig-website` Worker and binds `opentig.com` as a custom domain. The account ID is configured locally through `CLOUDFLARE_ACCOUNT_ID`, outside the public configuration. Cloudflare manages the domain's DNS record and TLS certificate. The `workers.dev` endpoint and version preview URLs are disabled. Unknown paths return 404 rather than falling back to the homepage.
+The checked-in `website/wrangler.jsonc` targets the `opentig-website` Worker and binds `opentig.com` as a custom domain. The account ID is configured locally through `CLOUDFLARE_ACCOUNT_ID`, outside the public configuration. Cloudflare manages the domain's DNS record and TLS certificate. The `workers.dev` endpoint and version preview URLs are disabled. Unknown paths return the branded error page with HTTP 404.
 
 `www.opentig.com` is bound to the small `opentig-www` Worker configured in `website/wrangler.www.jsonc`. It permanently redirects HTTP and HTTPS requests to `https://opentig.com`, preserving paths and query parameters. The primary site continues to serve static assets directly. If the redirect code or configuration changes, deploy it separately with `npm run deploy:www --workspace @opentig/website`; append `-- --dry-run` to validate without publishing. Website content updates still use the main deployment command below.
 

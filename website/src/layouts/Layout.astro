@@ -1,16 +1,21 @@
 ---
 import '@/index.css';
+import { indexable } from '@/indexing';
 
 interface Props {
   title?: string;
   description?: string;
+  noindex?: boolean;
+  canonicalPage?: boolean;
 }
 const {
   title = 'OpenTig | Free, open-source Git client',
   description = 'Browse files, review diffs, edit code, and commit changes. OpenTig brings branches, worktrees, and GitHub pull requests into one focused Git workspace.',
+  noindex = false,
+  canonicalPage = true,
 } = Astro.props;
 // Only emit absolute social URLs when a public origin has been configured.
-const canonical = Astro.site ? new URL(Astro.url.pathname, Astro.site) : undefined;
+const canonical = canonicalPage && Astro.site ? new URL(Astro.url.pathname, Astro.site) : undefined;
 const socialImage = Astro.site ? new URL('/opentig-social.png', Astro.site) : undefined;
 const socialImageAlt = 'OpenTig, a free, open-source Git client, showing changed files and a side-by-side code diff.';
 ---
@@ -23,6 +28,7 @@ const socialImageAlt = 'OpenTig, a free, open-source Git client, showing changed
     <link rel="icon" href="/favicon.ico" sizes="any" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content={description} />
+    {(noindex || !indexable) && <meta name="robots" content="noindex" />}
     <meta name="theme-color" content="#070707" />
     <title>{title}</title>
     {canonical && <link rel="canonical" href={canonical} />}
