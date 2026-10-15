@@ -27,7 +27,7 @@ Validation is offline: external links are checked for URL format and local/priva
 
 ## Content and appearance
 
-The page contains floating navigation, a hero, feature cards, a tool carousel, getting-started steps, a download call to action, and a footer. It uses OpenTig’s desktop dark palette (electric blue accents and neutral surfaces), Geist, Inconsolata, and Geist Pixel Triangle, plus a decorative WebGL terminal effect. Reduced-motion preferences stop the terminal animation and logo carousel; the page remains usable without WebGL.
+The page contains floating navigation, a hero, feature cards, a tool carousel, getting-started steps, a download call to action, and a footer. It uses OpenTig’s desktop dark palette (electric blue accents and neutral surfaces), Geist, Inconsolata, and Geist Pixel Triangle, plus a decorative WebGL terminal effect. The fixed background remains visible throughout the page, renders at up to 30 frames per second, and caps its internal resolution at a pixel ratio of 1.5 and two million pixels. It pauses in hidden tabs and resumes when the page returns. Reduced-motion preferences stop the terminal animation and logo carousel; resizing redraws the same terminal frame. If the browser loses and restores the WebGL context, the background recreates its resources. The page remains usable without WebGL.
 
 Color tokens in `website/src/index.css` mirror the desktop dark theme in `src/renderer/styles/index.css`. The shared landing `Button.astro` follows the desktop button’s blue shadow, hover, focus, and pressed states; navigation and section calls to action use the same component.
 

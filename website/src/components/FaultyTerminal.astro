@@ -8,7 +8,7 @@
 <div id="faulty-terminal" class="w-full h-full relative overflow-hidden" style="contain:strict" aria-hidden="true"></div>
 
 <script>
-  import { Renderer, Program, Mesh, Color, Triangle } from 'ogl';
+  import { Renderer, Program, Mesh, Triangle } from 'ogl';
 
   const VERTEX = `
 attribute vec2 position;
@@ -27,7 +27,6 @@ precision mediump float;
 varying vec2 vUv;
 
 uniform float iTime;
-uniform vec3  iResolution;
 
 // Precomputed per-frame
 uniform float uNoiseFactor;
@@ -137,9 +136,18 @@ void main(){
     if (!element) return;
     const ctn: HTMLElement = element;
     const motion = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const frameInterval = 1000 / 30;
+    const maxPixels = 2_000_000;
     let frame = 0;
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const renderer = new Renderer({ dpr });
+    let lastDraw = -Infinity;
+    let sceneTime = performance.now();
+    let needsDraw = true;
+    let contextLost = false;
+    let pageActive = true;
+    let width = 0;
+    let height = 0;
+    // A single full-screen triangle does not need a depth buffer.
+    const renderer = new Renderer({ depth: false });
     const gl = renderer.gl;
     gl.clearColor(0, 0, 0, 1);
 
@@ -150,9 +158,10 @@ void main(){
     const program = new Program(gl, {
       vertex: VERTEX,
       fragment: FRAGMENT,
+      depthTest: false,
+      depthWrite: false,
       uniforms: {
         iTime:        { value: 0 },
-        iResolution:  { value: new Color(gl.canvas.width, gl.canvas.height, gl.canvas.width / gl.canvas.height) },
         uNoiseFactor: { value: 0 },
         uRotFbm0:     { value: new Float32Array(ID) },
         uRotPattern:  { value: new Float32Array(ID) },
@@ -163,25 +172,27 @@ void main(){
 
     // ── Resize ────────────────────────────────────────────────
     function resize() {
-      renderer.setSize(ctn.offsetWidth, ctn.offsetHeight);
-      const res = program.uniforms.iResolution.value as Color;
-      res.r = gl.canvas.width;
-      res.g = gl.canvas.height;
-      res.b = gl.canvas.width / gl.canvas.height;
+      const nextWidth = ctn.offsetWidth;
+      const nextHeight = ctn.offsetHeight;
+      if (!nextWidth || !nextHeight) return;
+      const dpr = Math.min(window.devicePixelRatio || 1, 1.5, Math.sqrt(maxPixels / (nextWidth * nextHeight)));
+      if (width === nextWidth && height === nextHeight && renderer.dpr === dpr) return;
+      width = nextWidth;
+      height = nextHeight;
+      renderer.dpr = dpr;
+      renderer.setSize(width, height);
+      needsDraw = true;
+      // Resizing clears the buffer, including when reduced motion stops the loop.
+      restart();
     }
 
     const ro = new ResizeObserver(resize);
-    ro.observe(ctn);
-    resize();
     ctn.appendChild(gl.canvas);
 
     // ── Animation loop ────────────────────────────────────────
     const timeOffset = Math.random() * 100;
 
-    function update(t: number) {
-      frame = 0;
-      if (!motion.matches && !document.hidden) frame = requestAnimationFrame(update);
-
+    function draw(t: number) {
       const elapsed = (t * 0.001 + timeOffset); // timeScale = 1
       program.uniforms.iTime.value = elapsed;
 
@@ -201,20 +212,72 @@ void main(){
       renderer.render({ scene: mesh });
     }
 
+    function update(t: number) {
+      frame = 0;
+      if (document.hidden || !pageActive || contextLost) return;
+      if (needsDraw || (!motion.matches && t - lastDraw >= frameInterval - 0.5)) {
+        if (!motion.matches) sceneTime = t;
+        draw(sceneTime);
+        needsDraw = false;
+        // Preserve the cadence on screens whose refresh rate is not a multiple of 30.
+        lastDraw = Number.isFinite(lastDraw) ? t - (Math.max(0, t - lastDraw - frameInterval) % frameInterval) : t;
+      }
+      if (!motion.matches) frame = requestAnimationFrame(update);
+    }
+
     function restart() {
       cancelAnimationFrame(frame);
       frame = 0;
-      if (!document.hidden) update(performance.now());
+      if (!document.hidden && pageActive && !contextLost) frame = requestAnimationFrame(update);
+    }
+    function hidePage() {
+      pageActive = false;
+      restart();
+    }
+    function showPage() {
+      pageActive = true;
+      resize();
+      restart();
+    }
+    function loseContext(event: Event) {
+      event.preventDefault();
+      contextLost = true;
+      restart();
+    }
+    function restoreContext() {
+      cancelAnimationFrame(frame);
+      ro.disconnect();
+      motion.removeEventListener('change', restart);
+      document.removeEventListener('visibilitychange', restart);
+      window.removeEventListener('resize', resize);
+      window.removeEventListener('pagehide', hidePage);
+      window.removeEventListener('pageshow', showPage);
+      gl.canvas.removeEventListener('webglcontextlost', loseContext);
+      gl.canvas.removeEventListener('webglcontextrestored', restoreContext);
+      geometry.remove();
+      program.remove();
+      gl.canvas.remove();
+      // OGL does not rebuild GPU resources after a context loss.
+      startTerminal();
     }
     motion.addEventListener('change', restart);
     document.addEventListener('visibilitychange', restart);
-    restart();
+    window.addEventListener('resize', resize);
+    window.addEventListener('pagehide', hidePage);
+    window.addEventListener('pageshow', showPage);
+    gl.canvas.addEventListener('webglcontextlost', loseContext);
+    gl.canvas.addEventListener('webglcontextrestored', restoreContext);
+    ro.observe(ctn);
+    resize();
   }
 
-  try {
-    initializeTerminal();
-  } catch (error) {
-    // The page remains readable on its black background without WebGL.
-    console.warn('The decorative terminal background is unavailable.', error);
+  function startTerminal() {
+    try {
+      initializeTerminal();
+    } catch (error) {
+      // The page remains readable on its black background without WebGL.
+      console.warn('The decorative terminal background is unavailable.', error);
+    }
   }
+  startTerminal();
 </script>
