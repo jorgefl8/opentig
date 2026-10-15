@@ -35,6 +35,10 @@ Edit sections in `website/src/components/landing/`. Shared GitHub, download, and
 
 Fonts and branding are served locally from `website/public/`. The author avatar in the footer loads from GitHub. License notices for the port and bundled assets are in [third-party notices](../THIRD_PARTY_NOTICES.md).
 
+Page titles, descriptions, canonical URLs, and Open Graph and Twitter card metadata live in `website/src/layouts/Layout.astro`. The homepage uses the same title and description for search and social previews. The shared social image is `website/public/opentig-social.png` (1200 × 630), with matching dimensions and alternative text in the metadata.
+
+The editable card source is `website/design/social-card.html`, outside the published site. It combines the existing real product screenshot in `docs/images/workspace.png` with the local logo and Geist font. To update it, serve the repository root on loopback, open `/website/design/social-card.html` in a browser at exactly 1200 × 630 CSS pixels, wait for the font and images to load, and export the viewport as `website/public/opentig-social.png`. If the browser scales screenshots, normalize the exported PNG to 1200 × 630 pixels without cropping. Keep the screenshot faithful to the application and inspect the exported image before deployment. The existing `/og-image.png` remains available for previously cached previews.
+
 ## Manual deployment to Cloudflare Workers
 
 `npm run build:website` writes `website/dist/`. [Cloudflare Workers Static Assets](https://developers.cloudflare.com/workers/static-assets/) serves that directory directly; no Astro server adapter, application server, or database is needed.

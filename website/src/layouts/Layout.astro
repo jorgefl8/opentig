@@ -6,16 +6,17 @@ interface Props {
   description?: string;
 }
 const {
-  title = 'OpenTig | A focused workspace for your Git workflow',
-  description = 'Review diffs, edit files, stage changes, and commit with OpenTig. A free, open-source Git workspace with optional AI assistance.',
+  title = 'OpenTig | Free, open-source Git client',
+  description = 'Browse files, review diffs, edit code, and commit changes. OpenTig brings branches, worktrees, and GitHub pull requests into one focused Git workspace.',
 } = Astro.props;
 // Only emit absolute social URLs when a public origin has been configured.
 const canonical = Astro.site ? new URL(Astro.url.pathname, Astro.site) : undefined;
-const socialImage = Astro.site ? new URL('/og-image.png', Astro.site) : undefined;
+const socialImage = Astro.site ? new URL('/opentig-social.png', Astro.site) : undefined;
+const socialImageAlt = 'OpenTig, a free, open-source Git client, showing changed files and a side-by-side code diff.';
 ---
 
 <!DOCTYPE html>
-<html lang="en" class="dark">
+<html lang="en" class="dark" prefix="og: https://ogp.me/ns#">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
@@ -31,11 +32,15 @@ const socialImage = Astro.site ? new URL('/og-image.png', Astro.site) : undefine
     <meta property="og:site_name" content="OpenTig" />
     {canonical && <meta property="og:url" content={canonical} />}
     {socialImage && <meta property="og:image" content={socialImage} />}
-    {socialImage && <meta property="og:image:alt" content="OpenTig reviewing a split diff" />}
+    {socialImage && <meta property="og:image:type" content="image/png" />}
+    {socialImage && <meta property="og:image:width" content="1200" />}
+    {socialImage && <meta property="og:image:height" content="630" />}
+    {socialImage && <meta property="og:image:alt" content={socialImageAlt} />}
     <meta name="twitter:card" content={socialImage ? 'summary_large_image' : 'summary'} />
     <meta name="twitter:title" content={title} />
     <meta name="twitter:description" content={description} />
     {socialImage && <meta name="twitter:image" content={socialImage} />}
+    {socialImage && <meta name="twitter:image:alt" content={socialImageAlt} />}
     <link rel="preload" href="/fonts/GeistPixel-Triangle.woff2" as="font" type="font/woff2" crossorigin />
     <link rel="preload" href="/fonts/Inconsolata.ttf" as="font" type="font/ttf" crossorigin />
     <link rel="preload" href="/fonts/Geist.woff2" as="font" type="font/woff2" crossorigin />
