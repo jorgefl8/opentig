@@ -5,14 +5,11 @@ import GitLogo from '@tabler/icons/outline/brand-git.svg';
 import BrowserLogo from '@tabler/icons/outline/browser.svg';
 import { repositoryUrl, downloadUrl, downloadVersion } from '@/site';
 import Button from './Button.astro';
+import CopyCommand from './CopyCommand.astro';
 ---
 
 <section class="relative min-h-screen flex items-center justify-center overflow-hidden">
   <div class="relative z-10 max-w-4xl mx-auto text-center px-6 py-24">
-    <p class="border border-primary/30 text-foreground bg-background mb-6 mx-auto px-4 py-1.5 font-mono text-xs rounded-xl w-fit">
-      Free, open-source Git client
-    </p>
-
     <h1 class="font-['GeistPixelTriangle'] text-4xl sm:text-5xl md:text-7xl font-bold tracking-tight leading-[1.1]">
       A focused workspace{" "}
       <br class="hidden sm:block" />
@@ -36,17 +33,23 @@ import Button from './Button.astro';
     </div>
 
     <div class="flex flex-col sm:flex-row gap-3 justify-center sm:items-start mt-10">
-      <div class="flex flex-col gap-2">
-        <Button href={downloadUrl} data-windows-download data-analytics-placement="hero">
-          <WindowsIcon width={20} height={20} />
-          Download for Windows
-        </Button>
-        <span data-release-version class="font-mono text-xs text-muted-foreground">{downloadVersion}</span>
-      </div>
+      <Button href={downloadUrl} data-windows-download data-analytics-placement="hero">
+        <WindowsIcon width={20} height={20} />
+        Download for Windows
+      </Button>
       <Button href={repositoryUrl} variant="outline" target="_blank" rel="noreferrer">
         <GithubIcon width={20} height={20} />
         View on GitHub
       </Button>
+    </div>
+    <p class="mt-3 flex flex-wrap items-center justify-center gap-x-2 font-mono text-xs text-muted-foreground">
+      <span data-release-version>{downloadVersion}</span>
+      <span aria-hidden="true">·</span>
+      <span>Free &amp; open source</span>
+    </p>
+    <div class="mx-auto mt-6 max-w-md">
+      <p class="mb-3 text-xs text-muted-foreground">or</p>
+      <CopyCommand compact command="npm install -g @opentig/cli" placement="hero" />
     </div>
 
   </div>

@@ -109,6 +109,10 @@ The website serves the documentation at `/docs/`, grouped into getting started, 
 
 ### Edit sections and product copy
 
+The CLI installation card includes a **View on npm** link to the official `@opentig/cli` package below its setup button. Keep the npm destination in `website/src/site.ts` alongside the repository and download links. The hero uses the red npm mark in `website/src/assets/icons/npm.svg`, with a straight vertical divider between its link and the copy control.
+
+Below the hero's download and GitHub buttons, a centered monospaced line shows the Windows version and **Free & open source**. An **or** separator leads to `npm install -g @opentig/cli`, with a copy control and an npm icon linking to the package. The installation card retains the one-off `npx --yes @opentig/cli@latest` command. Both copy controls work independently and report successful copies with their own `hero` or `install` placement.
+
 Edit sections in `website/src/components/landing/`. Shared GitHub, download, and documentation destinations live in `website/src/site.ts`. Every Download button, including the documentation navigation, links directly to the Windows x64 installer. The hero and installation card show its version below the button in monospaced text. Browser/CLI setup instructions link to the installation guide.
 
 The browser checks GitHub's latest stable release once per page and updates the installer link and version together, without a website rebuild. It only accepts the matching uploaded Windows installer from the official repository. If JavaScript is disabled, the API is unavailable or rate-limited, or the release has no matching installer, the buttons retain the last verified installer in `website/src/lib/downloads.ts`. Keep that fallback current when maintaining the website; it is independent of the repository's potentially unreleased package version. Builds and tests do not require GitHub access. Release-note links still open GitHub.

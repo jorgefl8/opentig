@@ -1,42 +1,69 @@
 ---
 import CopyIcon from '@tabler/icons/outline/copy.svg';
-const command = 'npx --yes @opentig/cli@latest';
+import CheckIcon from '@tabler/icons/outline/check.svg';
+import NpmIcon from '@/assets/icons/npm.svg';
+import { npmUrl } from '@/site';
+interface Props {
+  command?: string;
+  placement?: 'hero' | 'install';
+  compact?: boolean;
+}
+const { command = 'npx --yes @opentig/cli@latest', placement = 'install', compact = false } = Astro.props;
 ---
 
-<div class="rounded-lg border border-border/60 bg-background/60 p-3">
-  <div class="flex items-center justify-between gap-2">
-    <span class="font-mono text-xs text-muted-foreground">Terminal</span>
-    <button hidden data-copy-cli={command} type="button" aria-label="Copy CLI command"
-      class="items-center gap-1.5 rounded-md border border-border bg-secondary px-2 py-1 text-xs text-foreground hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">
-      <CopyIcon width={14} height={14} aria-hidden="true" />
-      <span data-copy-label>Copy</span>
+<div data-copy-command class:list={['rounded-lg border border-border/60 bg-background/80', compact ? 'flex items-center gap-1 p-1.5 text-left' : 'p-3']}>
+  {compact && <code class="min-w-0 flex-1 break-words px-2 font-mono text-xs sm:text-sm leading-relaxed text-foreground">{command}</code>}
+  <div class={compact ? 'contents' : 'flex items-center justify-between gap-2'}>
+    {!compact && <span class="font-mono text-xs text-muted-foreground">Terminal</span>}
+    <button hidden data-copy-cli={command} data-copy-placement={placement} data-copy-compact={compact ? 'true' : undefined} type="button" aria-label={compact ? 'Copy npm install command' : 'Copy CLI command'}
+      class:list={['items-center justify-center gap-1.5 rounded-md text-xs text-foreground hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary', compact ? 'min-h-10 min-w-10 shrink-0 px-2' : 'border border-border bg-secondary px-2 py-1']}>
+      <span data-copy-icon><CopyIcon width={16} height={16} aria-hidden="true" /></span>
+      <span data-copy-success hidden><CheckIcon width={16} height={16} aria-hidden="true" /></span>
+      <span data-copy-label class:list={{ 'sr-only': compact }}>Copy</span>
     </button>
   </div>
-  <code class="mt-3 block break-all font-mono text-xs leading-relaxed text-foreground">{command}</code>
+  {compact && <>
+    <span aria-hidden="true" class="h-6 w-px shrink-0 bg-white/15"></span>
+    <a href={npmUrl} aria-label="View OpenTig CLI on npm" class="flex h-10 w-10 shrink-0 items-center justify-center rounded-md hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"><NpmIcon width={24} height={24} aria-hidden="true" /></a>
+  </>}
+  {!compact && <code class="mt-3 block break-all font-mono text-xs leading-relaxed text-foreground">{command}</code>}
   <span data-copy-status role="status" class="sr-only"></span>
 </div>
 
 <script>
   import { trackEvent } from '@/lib/analytics';
-  const button = document.querySelector<HTMLButtonElement>('[data-copy-cli]');
-  if (button && navigator.clipboard?.writeText) {
+  document.querySelectorAll<HTMLButtonElement>('[data-copy-cli]').forEach(button => {
+    if (!navigator.clipboard?.writeText) return;
     button.hidden = false;
     button.style.display = 'inline-flex';
     let reset: ReturnType<typeof setTimeout>;
     button.addEventListener('click', async () => {
       const label = button.querySelector('[data-copy-label]')!;
-      const status = button.parentElement!.parentElement!.querySelector('[data-copy-status]')!;
+      const status = button.closest('[data-copy-command]')!.querySelector('[data-copy-status]')!;
+      const icon = button.querySelector<HTMLElement>('[data-copy-icon]')!;
+      const success = button.querySelector<HTMLElement>('[data-copy-success]')!;
       clearTimeout(reset);
       try {
         await navigator.clipboard.writeText(button.dataset.copyCli!);
         label.textContent = 'Copied';
+        icon.hidden = true;
+        success.hidden = false;
         status.textContent = 'CLI command copied.';
-        trackEvent('copy_cli_command', { placement: 'install' });
+        trackEvent('copy_cli_command', { placement: button.dataset.copyPlacement! });
       } catch {
         label.textContent = 'Copy failed';
+        label.classList.remove('sr-only');
+        icon.hidden = false;
+        success.hidden = true;
         status.textContent = 'Could not copy. Select the command and copy it manually.';
       }
-      reset = setTimeout(() => { label.textContent = 'Copy'; status.textContent = ''; }, 3000);
+      reset = setTimeout(() => {
+        label.textContent = 'Copy';
+        label.classList.toggle('sr-only', button.dataset.copyCompact === 'true');
+        icon.hidden = false;
+        success.hidden = true;
+        status.textContent = '';
+      }, 3000);
     });
-  }
+  });
 </script>
