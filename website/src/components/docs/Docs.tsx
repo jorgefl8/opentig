@@ -19,7 +19,7 @@ export function Docs({ tree, pathname, title, source, toc, children }: Props) {
   return <RootProvider pathname={pathname} theme={{ enabled: false }} search={{ SearchDialog: Search }}>
     <DocsLayout tree={tree} themeSwitch={{ enabled: false }} tabs={false}
       nav={{ url: '/', title: <><img src="/favicon.svg" width={28} height={28} alt="" /><span>OpenTig</span><span className="docs-brand-label">Docs</span></> }}
-      links={[{ type: 'custom', children: <a className="docs-download" href={downloadUrl}>Download</a> }]}
+      links={[{ type: 'custom', children: <a className="docs-download" href={downloadUrl} data-analytics-placement="docs-nav">Download</a> }]}
       sidebar={{ footer: <nav aria-label="Resources" className="docs-resources">
         <a href={`${repositoryUrl}/releases`}>Release notes ↗</a>
         <a href="/demo/">Try OpenTig</a>

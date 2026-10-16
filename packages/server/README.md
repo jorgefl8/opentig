@@ -1,10 +1,10 @@
 # OpenTig CLI
 
-**A focused workspace for reviewing code changes, in your browser.**
+**A focused workspace for your Git repositories.**
 
-Browse files, inspect diffs, edit, stage, and commit on your computer or a remote server. The CLI serves the same UI as the OpenTig desktop app, without Electron.
+Browse files, review diffs, make edits, and commit changes. Work with branches, worktrees, and GitHub pull requests from the same interface. The CLI runs the OpenTig server on the machine with your repositories and serves its UI to a paired browser, without Electron.
 
-[Source](https://github.com/jorgefl8/opentig) · [Documentation](https://github.com/jorgefl8/opentig/blob/main/docs/README.md) · [Report a bug](https://github.com/jorgefl8/opentig/issues)
+[Website](https://opentig.com/) · [Installation](https://opentig.com/docs/getting-started/#run-the-headless-cli) · [Documentation](https://opentig.com/docs/) · [Source](https://github.com/jorgefl8/opentig) · [Report a bug](https://github.com/jorgefl8/opentig/issues)
 
 ![OpenTig reviewing a TypeScript split diff in a demo repository](https://raw.githubusercontent.com/jorgefl8/opentig/main/docs/images/workspace.png)
 
@@ -41,14 +41,14 @@ opentig
 
 | | |
 | --- | --- |
-| **Review changes** | Split or unified diffs, staged and unstaged files, and merge-conflict resolution. [Details](https://github.com/jorgefl8/opentig/blob/main/docs/features.md#changes-diffs-and-commits) |
-| **Browse and edit** | File tree, tabs, quick edits, find and replace, repository search, and Markdown, image, HTML, and SVG previews. [Details](https://github.com/jorgefl8/opentig/blob/main/docs/features.md#files-and-editing) |
-| **Work with Git** | Stage files, commit, pull and push, inspect history, and switch branches and worktrees. [Details](https://github.com/jorgefl8/opentig/blob/main/docs/features.md#safe-pull-and-push) |
-| **Organize repositories** | Recent repositories, project groups, and manual relocation without moving files. [Details](https://github.com/jorgefl8/opentig/blob/main/docs/features.md#repositories-and-projects) |
-| **Review GitHub PRs** | Browse pull requests, inspect changes, and prepare new PRs through your authenticated `gh` CLI. [Details](https://github.com/jorgefl8/opentig/blob/main/docs/features.md#github-pull-requests) |
-| **Use a remote server** | Pair a browser on your laptop or phone and work with repositories on the server. [Details](https://github.com/jorgefl8/opentig/blob/main/docs/web-access.md) |
+| **Review changes** | Split or unified diffs, staged and unstaged files, and merge-conflict resolution. [Details](https://opentig.com/docs/features/#changes-diffs-and-commits) |
+| **Browse and edit** | File tree, tabs, quick edits, find and replace, repository search, and Markdown, image, HTML, and SVG previews. [Details](https://opentig.com/docs/features/#files-and-editing) |
+| **Work with Git** | Stage files, commit, pull and push, inspect history, and switch branches and worktrees. [Details](https://opentig.com/docs/features/#safe-pull-and-push) |
+| **Organize repositories** | Recent repositories, project groups, and manual relocation without moving files. [Details](https://opentig.com/docs/features/#repositories-and-projects) |
+| **Review GitHub PRs** | Browse pull requests, inspect changes, and prepare new PRs through your authenticated `gh` CLI. [Details](https://opentig.com/docs/features/#github-pull-requests) |
+| **Use a remote server** | Pair a browser on your laptop or phone and work with repositories on the server. [Details](https://opentig.com/docs/web-access/) |
 
-**AI is optional.** Normal Git work needs no AI account or OpenTig account. If you choose to use AI assistance, a supported CLI installed and authenticated on the host can draft commit messages and pull-request descriptions for you to review. The selected CLI may send the supplied context to its provider. OpenTig does not run an autonomous coding agent or create commits on its own. See the [feature guide](https://github.com/jorgefl8/opentig/blob/main/docs/features.md) and [privacy details](https://github.com/jorgefl8/opentig/blob/main/docs/security-and-privacy.md).
+**AI is optional.** Normal Git work needs no AI account or OpenTig account. If you choose to use AI assistance, a supported CLI installed and authenticated on the host can draft commit messages and pull-request descriptions for you to review. The selected CLI may send the supplied context to its provider. OpenTig does not run an autonomous coding agent or create commits on its own. See the [feature guide](https://opentig.com/docs/features/) and [privacy details](https://opentig.com/docs/security-and-privacy/).
 
 ## Run on a remote server
 
@@ -64,7 +64,7 @@ Pair your browser with the one-use code printed on the server. The visual folder
 
 After a global installation, run `opentig pair` as the same OS user to generate a fresh five-minute pairing code for the running instance. If you use a custom data directory, pass the same `--home` value.
 
-Paired browsers have the host user's filesystem, Git, and configured CLI authority. Keep access private and do not expose the raw HTTP port publicly. See [remote access and pairing](https://github.com/jorgefl8/opentig/blob/main/docs/web-access.md) for SSH and reverse-proxy examples.
+Paired browsers have the host user's filesystem, Git, and configured CLI authority. Keep access private and do not expose the raw HTTP port publicly. See [remote access and pairing](https://opentig.com/docs/web-access/) for SSH and reverse-proxy examples.
 
 ## Keep a background server running
 
@@ -78,7 +78,7 @@ opentig service restart
 
 The service uses a persistent runtime outside the temporary package cache and starts independently of any repository. Running `npx` or `bunx` alone never installs a background service. Use `opentig service uninstall` to remove it. Linux uses systemd with lingering and starts at boot. macOS uses a user LaunchAgent and Windows uses a Task Scheduler task for the current user; these start at login and stop at logout. Keep the machine awake for remote access. This service is independent of the desktop app.
 
-Managed services on all three platforms can **download updates and restart from the browser UI**. Those updates replace the service's runtime, without changing the global npm package. For foreground instances, stop the process and start the desired package version. Pin an exact version instead of `latest` for repeatable deployments. See [installation, services, and updates](https://github.com/jorgefl8/opentig/blob/main/docs/getting-started.md).
+Managed services on all three platforms can **download updates and restart from the browser UI**. Those updates replace the service's runtime, without changing the global npm package. For foreground instances, stop the process and start the desired package version. Pin an exact version instead of `latest` for repeatable deployments. See [installation, services, and updates](https://opentig.com/docs/getting-started/).
 
 ## Configuration and scope
 
@@ -90,4 +90,4 @@ The separate [desktop installer](https://github.com/jorgefl8/opentig/releases/la
 
 ## License
 
-[MIT](https://github.com/jorgefl8/opentig/blob/main/LICENSE). Bundled third-party assets retain their own licences; see [third-party notices](https://github.com/jorgefl8/opentig/blob/main/THIRD_PARTY_NOTICES.md).
+[MIT](https://github.com/jorgefl8/opentig/blob/main/LICENSE). Bundled third-party assets retain their own licences; see [third-party notices](https://opentig.com/docs/third-party-notices/).

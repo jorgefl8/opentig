@@ -100,6 +100,12 @@ Explicit and verified SSH accounts override backend token variables without chan
 
 </details>
 
+## Public website analytics
+
+The public website at opentig.com uses Umami Cloud to count page views, clicks to release downloads and the installation guide, and successful copies of the CLI command. These actions indicate interest; they do not confirm a download or installation. URL queries and fragments are excluded, and the tracker respects the browser's Do Not Track setting. This integration does not enable session replay or identify visitors through OpenTig accounts.
+
+Website analytics do not run inside the interactive demo, desktop application, CLI server, or paired browser UI. They do not receive repository contents, commands entered into OpenTig, or documentation search text. Browser settings and blockers may prevent collection without affecting website actions.
+
 ## AI privacy
 
 ### Context supplied for generation

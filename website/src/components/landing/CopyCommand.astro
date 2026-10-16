@@ -1,0 +1,42 @@
+---
+import CopyIcon from '@tabler/icons/outline/copy.svg';
+const command = 'npx --yes @opentig/cli@latest';
+---
+
+<div class="rounded-lg border border-border/60 bg-background/60 p-3">
+  <div class="flex items-center justify-between gap-2">
+    <span class="font-mono text-xs text-muted-foreground">Terminal</span>
+    <button hidden data-copy-cli={command} type="button" aria-label="Copy CLI command"
+      class="items-center gap-1.5 rounded-md border border-border bg-secondary px-2 py-1 text-xs text-foreground hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">
+      <CopyIcon width={14} height={14} aria-hidden="true" />
+      <span data-copy-label>Copy</span>
+    </button>
+  </div>
+  <code class="mt-3 block break-all font-mono text-xs leading-relaxed text-foreground">{command}</code>
+  <span data-copy-status role="status" class="sr-only"></span>
+</div>
+
+<script>
+  import { trackEvent } from '@/lib/analytics';
+  const button = document.querySelector<HTMLButtonElement>('[data-copy-cli]');
+  if (button && navigator.clipboard?.writeText) {
+    button.hidden = false;
+    button.style.display = 'inline-flex';
+    let reset: ReturnType<typeof setTimeout>;
+    button.addEventListener('click', async () => {
+      const label = button.querySelector('[data-copy-label]')!;
+      const status = button.parentElement!.parentElement!.querySelector('[data-copy-status]')!;
+      clearTimeout(reset);
+      try {
+        await navigator.clipboard.writeText(button.dataset.copyCli!);
+        label.textContent = 'Copied';
+        status.textContent = 'CLI command copied.';
+        trackEvent('copy_cli_command', { placement: 'install' });
+      } catch {
+        label.textContent = 'Copy failed';
+        status.textContent = 'Could not copy. Select the command and copy it manually.';
+      }
+      reset = setTimeout(() => { label.textContent = 'Copy'; status.textContent = ''; }, 3000);
+    });
+  }
+</script>

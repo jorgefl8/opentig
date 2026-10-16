@@ -1,0 +1,19 @@
+---
+const websiteId = import.meta.env.WEBSITE_UMAMI_ID?.trim();
+---
+
+{websiteId && <script is:inline defer src="https://cloud.umami.is/script.js"
+  data-website-id={websiteId} data-domains="opentig.com"
+  data-exclude-search="true" data-exclude-hash="true" data-do-not-track="true" />}
+
+<script>
+  import { installationEvent, trackEvent } from '@/lib/analytics';
+
+  document.addEventListener('click', (event) => {
+    if (event.defaultPrevented || !(event.target instanceof Element)) return;
+    const link = event.target.closest('a');
+    if (!link) return;
+    const name = installationEvent(link.href, location.href);
+    if (name) trackEvent(name, { placement: link.dataset.analyticsPlacement ?? (location.pathname.startsWith('/docs/') ? 'docs-content' : 'content') });
+  });
+</script>

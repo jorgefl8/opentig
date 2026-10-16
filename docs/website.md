@@ -152,6 +152,20 @@ The toolbar adapts to narrow screens, has visible keyboard focus, and respects r
 
 </details>
 
+### Website analytics
+
+The public website can use Umami Cloud for page views and installation intent. Set the optional public `WEBSITE_UMAMI_ID` in an ignored `website/.env` file before building; leave it unset to disable the integration. Development, noindex previews, demo pages, and error pages omit the tracker. The tracker also restricts collection to `opentig.com`, respects Do Not Track, and excludes URL queries and fragments.
+
+| Event | Meaning |
+| --- | --- |
+| `open_downloads` | Open the latest GitHub release from a download link. |
+| `open_installation_guide` | Enter the getting-started guide from another page. |
+| `copy_cli_command` | Successfully copy the landing page's CLI command. |
+
+Each action carries only a `placement` label for its location, such as `hero`, `navbar`, `install`, or `docs-nav`. These are intent signals, not completed downloads or installations. A blocked tracker does not delay links or prevent copying. The copy button appears only when the Clipboard API is available and reports success only after the clipboard write completes.
+
+This integration does not instrument the desktop app, CLI, paired browser UI, or demo interactions. Do not add session replay, user identification, repository data, or search text to these events. Provider account administration and deployment configuration belong in the local operations runbook.
+
 ### Colors, motion, and fonts
 
 The landing page uses OpenTig’s desktop dark palette: electric blue accents and neutral surfaces, with Geist, Inconsolata, and Geist Pixel Triangle fonts and a decorative WebGL terminal effect.
