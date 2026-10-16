@@ -109,7 +109,9 @@ The website serves the documentation at `/docs/`, grouped into getting started, 
 
 ### Edit sections and product copy
 
-Edit sections in `website/src/components/landing/`. Shared GitHub, download, and documentation destinations live in `website/src/site.ts`. Downloads link to the latest published GitHub release without fetching release metadata during the build. Browser/CLI setup instructions link to the installation guide.
+Edit sections in `website/src/components/landing/`. Shared GitHub, download, and documentation destinations live in `website/src/site.ts`. Every Download button, including the documentation navigation, links directly to the Windows x64 installer. The hero and installation card show its version below the button in monospaced text. Browser/CLI setup instructions link to the installation guide.
+
+The browser checks GitHub's latest stable release once per page and updates the installer link and version together, without a website rebuild. It only accepts the matching uploaded Windows installer from the official repository. If JavaScript is disabled, the API is unavailable or rate-limited, or the release has no matching installer, the buttons retain the last verified installer in `website/src/lib/downloads.ts`. Keep that fallback current when maintaining the website; it is independent of the repository's potentially unreleased package version. Builds and tests do not require GitHub access. Release-note links still open GitHub.
 
 Website copy avoids em dashes. Describe browser access as a connection to a running OpenTig instance on the repository host, with pairing required; the Windows app can provide that instance itself, or the CLI can run the server. Keep this setup detail separate from the main product promise.
 
@@ -159,6 +161,7 @@ The public website can use Umami Cloud for page views and installation intent. S
 | Event | Meaning |
 | --- | --- |
 | `open_downloads` | Open the latest GitHub release from a download link. |
+| `download_installer` | Click a direct Windows installer link. This does not confirm that the download completed. |
 | `open_installation_guide` | Enter the getting-started guide from another page. |
 | `copy_cli_command` | Successfully copy the landing page's CLI command. |
 

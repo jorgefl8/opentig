@@ -3,7 +3,7 @@ import WindowsIcon from '@/assets/icons/windows.svg';
 import GithubIcon from '@tabler/icons/outline/brand-github.svg';
 import GitLogo from '@tabler/icons/outline/brand-git.svg';
 import BrowserLogo from '@tabler/icons/outline/browser.svg';
-import { repositoryUrl, downloadUrl } from '@/site';
+import { repositoryUrl, downloadUrl, downloadVersion } from '@/site';
 import Button from './Button.astro';
 ---
 
@@ -35,11 +35,14 @@ import Button from './Button.astro';
       <span class="text-muted-foreground italic">and more…</span>
     </div>
 
-    <div class="flex flex-col sm:flex-row gap-3 justify-center mt-10">
-      <Button href={downloadUrl} data-analytics-placement="hero">
-        <WindowsIcon width={20} height={20} />
-        Download for Windows
-      </Button>
+    <div class="flex flex-col sm:flex-row gap-3 justify-center sm:items-start mt-10">
+      <div class="flex flex-col gap-2">
+        <Button href={downloadUrl} data-windows-download data-analytics-placement="hero">
+          <WindowsIcon width={20} height={20} />
+          Download for Windows
+        </Button>
+        <span data-release-version class="font-mono text-xs text-muted-foreground">{downloadVersion}</span>
+      </div>
       <Button href={repositoryUrl} variant="outline" target="_blank" rel="noreferrer">
         <GithubIcon width={20} height={20} />
         View on GitHub

@@ -1,0 +1,9 @@
+<script>
+  import { latestDownload } from '@/lib/downloads';
+  if (document.querySelector('[data-windows-download]')) {
+    void latestDownload().then(release => {
+      document.querySelectorAll<HTMLAnchorElement>('[data-windows-download]').forEach(link => { link.href = release.url; });
+      document.querySelectorAll('[data-release-version]').forEach(label => { label.textContent = release.version; });
+    });
+  }
+</script>
