@@ -7,6 +7,7 @@ import {
   browserWindowBounds,
   DesktopWindowState,
 } from './DesktopWindowState';
+import { DESKTOP_MIN_WINDOW_HEIGHT, DESKTOP_MIN_WINDOW_WIDTH } from './desktop-window-size';
 
 const directories: string[] = [];
 
@@ -51,7 +52,16 @@ describe('DesktopWindowState', () => {
     const fixture = await createFixture({ windowBounds: { width: 'bad', height: 1 } });
     await expect(fixture.store.load()).resolves.toEqual({ width: 1280, height: 800, isMaximized: false });
     await fixture.store.save({ width: 200, height: 100, isMaximized: false });
-    await expect(fixture.store.load()).resolves.toEqual({ width: 900, height: 600, isMaximized: false });
+    await expect(fixture.store.load()).resolves.toEqual({
+      width: DESKTOP_MIN_WINDOW_WIDTH, height: DESKTOP_MIN_WINDOW_HEIGHT, isMaximized: false,
+    });
+  });
+
+  it('raises former 900px windows to the single-row toolbar minimum', async () => {
+    const fixture = await createFixture({ windowBounds: { width: 900, height: 600 } });
+    await expect(fixture.store.load()).resolves.toEqual({
+      width: DESKTOP_MIN_WINDOW_WIDTH, height: DESKTOP_MIN_WINDOW_HEIGHT, isMaximized: false,
+    });
   });
 });
 

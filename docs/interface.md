@@ -40,7 +40,7 @@ Menus with 100 or more matching choices render only the visible rows and a small
 
 Hover a truncated selected name to see it in full; its tooltip stays while the pointer remains on the control and hides while the menu is open. Options show hints only for truncated text or additional information. Scrolling dismisses row tooltips, and clipped anchors hide their hints. Branch and worktree management rows use their details panel instead of hover hints. Diff headers show the file name and directory directly.
 
-Repository menus can grow to 80% of viewport height while search and management remain visible; other menus remain compact. Toolbar selectors keep management actions available. Models can be searched by name or identifier and grouped by provider. **Default (CLI)** and **No project** remain available during filtering; repository number shortcuts stay active until the search field takes focus. In narrow desktop windows, wrapped toolbar controls stay aligned to the right.
+Repository menus can grow to 80% of viewport height while search and management remain visible; other menus remain compact. Toolbar selectors keep management actions available. Models can be searched by name or identifier and grouped by provider. **Default (CLI)** and **No project** remain available during filtering; repository number shortcuts stay active until the search field takes focus. The desktop app cannot shrink below a single toolbar row. Paired browsers between 768 and 1100 pixels wrap remaining toolbar controls to the right.
 
 ## Phone navigation
 
@@ -64,6 +64,6 @@ Manage projects uses larger up/down buttons and free scrolling on phones. Moving
 
 The toolbar, browser favicon, Windows application, installer, and taskbar use the OpenTig logo. In the toolbar, its ring follows the theme text color and the T remains blue; application icons use a dark rounded badge. The first painted frame is a splash that remains until the workspace restores, with shimmering connection status.
 
-Desktop windows reopen at the previous position and size, including maximized state. If monitor layout or scaling makes a saved position unavailable, the window moves and, when needed, shrinks to fit a display. New windows and disconnected-monitor positions center on the primary display. The welcome screen has a draggable top edge and follows the selected theme.
+Desktop windows reopen at the previous position and size, including maximized state. They stay wide enough for the toolbar to remain on one row, and cannot be resized below that width unless the display itself is narrower. If monitor layout or scaling makes a saved position unavailable, the window moves and, when needed, shrinks to fit a display. New windows and disconnected-monitor positions center on the primary display. The welcome screen has a draggable top edge and follows the selected theme.
 
 Development profiles display **OpenTig Dev** in desktop/mobile headers and the welcome screen, with black/yellow stripes in light mode and white/yellow stripes in dark mode. The identity follows the backend's Dev profile, including in browsers. Dev has separate data and update behavior; see [development and packaging](development.md).

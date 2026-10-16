@@ -11,6 +11,7 @@ import { cloneOpenFilesState, normalizeOpenFilesStates, OPEN_FILES_SAVE_DEBOUNCE
 import { MAX_PROJECT_NAME_LENGTH, MAX_REPOSITORIES_PER_PROJECT, MAX_REPOSITORY_KEY_LENGTH, MAX_REPOSITORY_PROJECTS, normalizeRepositoryKey } from '../../shared/repository-projects';
 import { DEFAULT_REMOTE_FETCH_INTERVAL_SECONDS, normalizeRemoteFetchIntervalSeconds } from '../../shared/remote-fetch';
 import { AUTOMATIC_GITHUB_ACCOUNT, githubAccountSelectionSchema, githubRepositoryKey, type GitHubAccountSelection } from '../../shared/github-accounts';
+import { DESKTOP_MIN_WINDOW_HEIGHT, DESKTOP_MIN_WINDOW_WIDTH } from '../window/desktop-window-size';
 import { backupPathFor, writeFileAtomically } from './atomicWrite';
 
 export const SETTINGS_SCHEMA_VERSION = 2;
@@ -570,7 +571,7 @@ function validate(value: unknown, defaultDoubleControlShortcutEnabled: boolean):
   const parsedBounds = windowBoundsRecordSchema.safeParse(input.windowBounds);
   const bounds = parsedBounds.success ? parsedBounds.data : null;
   const windowBounds = bounds && typeof bounds.width === 'number' && Number.isFinite(bounds.width) && typeof bounds.height === 'number' && Number.isFinite(bounds.height)
-    ? { width: Math.max(900, bounds.width), height: Math.max(600, bounds.height), ...(typeof bounds.x === 'number' && Number.isFinite(bounds.x) ? { x: bounds.x } : {}), ...(typeof bounds.y === 'number' && Number.isFinite(bounds.y) ? { y: bounds.y } : {}) }
+    ? { width: Math.max(DESKTOP_MIN_WINDOW_WIDTH, bounds.width), height: Math.max(DESKTOP_MIN_WINDOW_HEIGHT, bounds.height), ...(typeof bounds.x === 'number' && Number.isFinite(bounds.x) ? { x: bounds.x } : {}), ...(typeof bounds.y === 'number' && Number.isFinite(bounds.y) ? { y: bounds.y } : {}) }
     : { ...defaults.windowBounds };
   return {
     version: SETTINGS_SCHEMA_VERSION,

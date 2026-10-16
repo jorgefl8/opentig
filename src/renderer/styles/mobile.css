@@ -351,6 +351,8 @@
   .file-tree-row:not(.files-sticky-row) { padding-right: 40px; }
 }
 
+/* Desktop Electron stays above 1100px (DESKTOP_MIN_WINDOW_WIDTH). Paired
+   browsers in this band wrap remaining toolbar controls to the right. */
 @media (min-width: 768px) and (max-width: 1100px) {
   html .toolbar { height: auto; min-height: var(--toolbar-height); flex-wrap: wrap; justify-content: flex-end; padding-block: 5px; }
   html .open-files-strip { order: 2; flex: 1 0 100%; min-width: 0; }
