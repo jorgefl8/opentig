@@ -8,6 +8,7 @@ OpenTig releases move through three stages: **draft notes**, **prepare a tagged 
 - [Retry or correct a release](#retry-or-correct-a-release): what to do after a failure or code change.
 - [Build candidates for testing](#build-candidates-for-testing): Dev ZIPs and unsigned installers.
 - [npm publishing](#npm-publishing) and [Windows signing and updates](#windows-signing-and-updates): setup and requirements.
+- [Installer analysis tooling](#installer-analysis-tooling): the internal VirusTotal client and its current limits.
 
 ## Builds and releases on GitHub
 
@@ -15,14 +16,15 @@ OpenTig releases move through three stages: **draft notes**, **prepare a tagged 
 | --- | --- |
 | **Next release draft** | Qualifying pushes to `main` create or refresh one unpublished draft and its notes |
 | **Prepare release** | Manual workflow freezes the version, commit, tag, and notes, then builds Windows and CLI artifacts |
-| **Publish release** | Manual release-page action makes the Windows update available and triggers CLI publication |
+| **Publish release** | Manual release-page action makes the Windows update available and triggers CLI publication and installer analysis |
 | **Publish CLI to npm** | Publishes the exact prepared tarball; wait for success before installing from npm |
+| **Scan published Windows installer** | Analyses the published installer and records its exact asset identity and status; also supports manual recovery |
 
 **Drafting does not build installers or notify installed clients.** It is independent of CI success, runs only on upstream `main`, uses the built-in Actions token, and needs no additional secret.
 
 ### Website and application releases
 
-The [public website](website.md#ci-and-release-separation) has a separate validation job within CI and is deployed manually to Cloudflare Workers. Website-only means every changed path is in `website/` or `docs/website.md`; the former dedicated website workflow path is also recognized when filtering historical commits.
+The [public website](website.md#ci-and-release-separation) has a separate validation job within CI. **Deploy website** is a separate, manual workflow on upstream `main` that validates, builds, and uploads it to Cloudflare Workers. Publishing an application release or updating scan metadata does not deploy the website. Website-only means every changed path is in `website/`, `docs/website.md`, or `.github/workflows/website.yml`.
 
 Mixed commits and changes to shared manifests, lockfiles, or tooling remain application changes. **Prepare release** refuses to create a new application tag if only website changes have accumulated; the website is not versioned or published with the desktop and CLI.
 
@@ -115,6 +117,37 @@ Within this builder, only the final draft-upload job has repository write permis
 It attaches the tarball and metadata only to the matching draft. Existing assets are never replaced; retries accept identical CLI assets.
 
 It can also run manually on `main` with an existing draft tag to complete an older release without changing its tag, notes, or Windows installer. A different existing CLI artifact is rejected instead of silently rebuilding an immutable version.
+
+</details>
+
+## Installer analysis tooling
+
+**Scan published Windows installer** runs after a stable release is published. It can also be started manually on upstream `main` with an existing published stable `tag`. Its dedicated key must be configured before use. It is informational after publication, not a pre-release security gate, and does not publish npm packages or deploy the website.
+
+The workflow validates the release without access to VirusTotal credentials, then uses a frozen commit from trusted `main` for the scan job. It never executes code from the release tag. The tag must belong to that trusted history. `scripts/scan-release.mjs` downloads the final public Windows installer without rebuilding it, streams and checks its byte size and SHA-256, and rechecks the release, tag commit, and asset identity before writing state. Installers, tags, signing metadata, release titles, and release status are not modified.
+
+Only installers already intended for public distribution are submitted. VirusTotal submissions enter its community dataset; its sharing policy applies to file contents and reports. See [how VirusTotal works](https://docs.virustotal.com/docs/how-it-works). Zero detections is not a guarantee of safety and does not remove Windows SmartScreen warnings.
+
+The managed JSON comment in the release notes holds the public scan state and a minimal submission checkpoint. It records upload intent before sending bytes, then the returned analysis ID and timestamps as soon as they are available. This allows a later run to resume without uploading again. Analysis IDs identify provider records; they are not file hashes or report links. Keys, upload URLs, and raw provider responses are never stored there. A minimal receipt is also saved as a workflow artifact for 30 days when available. Do not remove a checkpoint to force a new upload.
+
+To retry, open **Actions → Scan published Windows installer → Run workflow**, select `main`, and enter the same published `tag`. Leave `analysis_id` empty for ordinary retries. A stored receipt resumes queries, a completed result reuses its previous analysis, and an exhausted poll count retains the last active state. If an upload was interrupted without a durable receipt, the run refuses to send it again automatically. Recover its analysis ID from the receipt artifact or confirm the submission in VirusTotal, then supply that ID in `analysis_id`. That input is never for an API key. If no ID can be recovered, manual investigation is required before another submission.
+
+Only the managed comment is updated. Fresh reads preserve surrounding notes and detect concurrent scan changes or repeated prose edits before writing. These checks cannot make a manual edit at the exact PATCH instant transactional; avoid editing release notes while the workflow is writing. A failure does not become zero detections. API failures retain any known receipt with an unavailable state; an already completed result is not downgraded.
+
+The report link requires a completed API analysis associated with the same SHA-256 and size, plus a successful anonymous HTML response from its exact public GUI route. This checks file identity and route availability, not the complete interactive report UI. If the route is unavailable, the completed result has no fabricated link; a later manual retry can add it without uploading again. Website presentation of scan states remains separate from the automation, and website deployment remains manual.
+
+<details>
+<summary>Client behavior, quotas, and bounded retries</summary>
+
+`scripts/virustotal-client.mjs` is an internal Node library used by the coordinator. It has no command-line entry point. Importing it does not load credentials, make requests, or submit a file.
+
+`createVirusTotalClient` requires an explicitly supplied API key. `submitInstaller` accepts the local file and its complete official release/asset identity, verifies its filename, byte size, and SHA-256 before making a request, and returns a submission receipt containing the analysis ID and installer identity. The same file-backed Blob is used for hashing and multipart upload; changes to the source file invalidate reads. Files over 32,000,000 bytes use a single-use upload URL; files over 650,000,000 bytes are rejected. These conservative decimal thresholds stay within the [documented upload limits](https://docs.virustotal.com/reference/files-upload-url). Upload destinations must use HTTPS on the expected VirusTotal host and upload path. Requests do not follow redirects.
+
+`getAnalysis` and `waitForAnalysis` require the receipt and the matching installer identity. Queued and in-progress responses return their state without partial result counts. A completed result requires all eight valid engine counters and a separate check of the analysis's [related file](https://docs.virustotal.com/reference/analysis-object-item), including SHA-256 and byte size. Malicious, suspicious, unsupported, failed, and timed-out engines remain distinct. `analysisAt` preserves VirusTotal's analysis date; `observedAt` records when the client observed the result, without claiming a precise completion time. The client derives neither a safety verdict nor a public report URL. The coordinator persists state updates through the polling callback and checks the public route separately.
+
+The default client starts with a 16-second cooldown and serializes every API call, including upload-URL requests, uploads, retries, and polling. Queries can retry up to three attempts with backoff and `Retry-After`; uploads are never replayed automatically. An interrupted, unreadable, or server-failed upload raises `submission-uncertain`, because VirusTotal may already have accepted it. Preserve successful receipts and check remote submission state before explicitly attempting another upload. Authentication and permission failures are not retried. A `QuotaExceededError` stops all further requests from that client instead of assuming which account quota was exceeded. Errors omit raw response messages, transport diagnostics, keys, and upload URLs.
+
+Each client is bounded to 100 requests, 20 minutes, 120 seconds per request, and 40 polls with a 30-second polling interval. A poll-count limit returns the last active state with `pollingStopped`; time or request-budget exhaustion raises an error. None becomes a completed or zero-detection result. Limits can be reduced, and request/poll intervals can be increased. All scan runs share one non-cancelling workflow concurrency group and use one client per run. These are per-client bounds, not an account-wide quota ledger. Use a dedicated key; other uses of it also consume the [Public API allowance](https://docs.virustotal.com/reference/public-vs-premium-api). Account eligibility and permitted use must be established independently of software tests. Credential provisioning belongs in the private operations runbook.
 
 </details>
 

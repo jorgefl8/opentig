@@ -22,7 +22,7 @@ export function validationScope(eventName, event, head, cwd = process.cwd()) {
       required: files.some((file) => !isDocumentation(file) && !isWebsitePath(file)),
       website: files.some((file) => publishedSources.has(file) || ['website/', 'src/renderer/', 'src/shared/', 'public/'].some(prefix => file.startsWith(prefix)) || file === 'tsconfig.json' || [
         'package.json', 'package-lock.json', '.oxlintrc.json', '.npmrc',
-        '.github/workflows/ci.yml', 'scripts/ci-scope.mjs', 'scripts/change-scope.mjs',
+        '.github/workflows/ci.yml', '.github/workflows/website.yml', 'scripts/ci-scope.mjs', 'scripts/change-scope.mjs',
       ].includes(file)),
     };
   } catch {

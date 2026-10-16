@@ -51,6 +51,22 @@ it('skips application jobs for website-only pushes and PRs', async () => {
   expect(needsValidation('workflow_dispatch', {}, head, root)).toBe(true);
 });
 
+it('validates the website for manual-deployment workflow edits without making an application release', async () => {
+  const file = path.join(root, '.github/workflows/website.yml');
+  await mkdir(path.dirname(file), { recursive: true });
+  await writeFile(file, 'name: Deploy website\non:\n  workflow_dispatch:\n');
+  const head = commit();
+  expect(validationScope('push', { before: base }, head, root)).toEqual({ required: false, website: true });
+  expect(validationScope('pull_request', { pull_request: { base: { sha: base } } }, head, root)).toEqual({ required: false, website: true });
+});
+
+it('keeps release-security automation in application validation scope', async () => {
+  const file = path.join(root, '.github/workflows/virustotal.yml');
+  await mkdir(path.dirname(file), { recursive: true });
+  await writeFile(file, 'name: Scan published Windows installer\n');
+  expect(validationScope('push', { before: base }, commit(), root)).toEqual({ required: true, website: false });
+});
+
 it.each(['application.ts', 'package.json', 'package-lock.json', '.oxlintrc.json', 'scripts/change-scope.mjs'])(
   'validates website changes mixed with shared or application file %s', async (file) => {
     await mkdir(path.join(root, 'website'));

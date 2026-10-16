@@ -1,0 +1,86 @@
+name: Scan published Windows installer
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing published stable release, e.g. v0.2.3'
+        type: string
+        required: true
+      analysis_id:
+        description: 'Optional recovery analysis ID from a prior receipt; never an API key'
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+# One dedicated key across every release and manual recovery, including retries.
+concurrency:
+  group: opentig-virustotal
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  validate:
+    if: github.repository == 'jorgefl8/opentig' && (github.event_name == 'release' && !github.event.release.draft && !github.event.release.prerelease || github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      tag: ${{ steps.plan.outputs.tag }}
+      release_id: ${{ steps.plan.outputs.release_id }}
+      commit: ${{ steps.plan.outputs.commit }}
+      automation_commit: ${{ steps.plan.outputs.automation_commit }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+      - name: Validate the public asset and its tag against trusted main
+        id: plan
+        run: node scripts/scan-release.mjs validate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag || github.event.release.tag_name }}
+          RECOVERY_ANALYSIS_ID: ${{ inputs.analysis_id }}
+
+  scan:
+    needs: validate
+    runs-on: ubuntu-24.04
+    environment: release-security
+    timeout-minutes: 35
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.validate.outputs.automation_commit }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+      - name: Submit or resume the exact installer and record its analysis
+        run: node scripts/scan-release.mjs scan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VIRUSTOTAL_API_KEY: ${{ secrets.VIRUSTOTAL_API_KEY }}
+          RELEASE_TAG: ${{ needs.validate.outputs.tag }}
+          EXPECTED_RELEASE_ID: ${{ needs.validate.outputs.release_id }}
+          EXPECTED_RELEASE_COMMIT: ${{ needs.validate.outputs.commit }}
+          RECOVERY_ANALYSIS_ID: ${{ inputs.analysis_id }}
+      - name: Preserve a minimal recovery receipt even if polling fails
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: virustotal-receipt-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .ai/virustotal-receipt.json
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 30

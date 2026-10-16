@@ -1,0 +1,48 @@
+name: Deploy website
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: opentig-website-production
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  deploy:
+    if: github.repository == 'jorgefl8/opentig' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    environment: website-production
+    timeout-minutes: 15
+    env:
+      WEBSITE_UMAMI_ID: ${{ vars.WEBSITE_UMAMI_ID }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+      - name: Require production configuration without printing values
+        run: |
+          node --input-type=module - <<'NODE'
+          for (const name of ['CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_ACCOUNT_ID', 'WEBSITE_UMAMI_ID']) {
+            if (!process.env[name]?.trim()) throw new Error(`Missing required deployment setting: ${name}`);
+          }
+          NODE
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      - run: npm ci --ignore-scripts
+      - run: npm run check:website
+      - run: npm run build:website
+      - name: Deploy the validated build with the pinned Wrangler CLI
+        working-directory: website
+        run: npm exec -- wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
