@@ -1,10 +1,8 @@
 import { useContext, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { MutableRefObject, Ref } from 'react';
-import { IconDeviceFloppy } from '@tabler/icons-react';
+import type { MutableRefObject, ReactNode, Ref } from 'react';
 import { File, Virtualizer, useVirtualizer } from '@pierre/diffs/react';
 import type { EditorOptions } from '@pierre/diffs/edit';
 import type { FileResult, ThemePreference, WriteFileResult } from '@shared/contracts';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { OPENTIG_CODE_THEMES } from './diffThemes';
 import { VIEWER_SCROLLBAR_CSS } from './patch-utils';
 import { EditReadyContext } from './edit-ready-context';
@@ -15,6 +13,7 @@ import { buildFileEditorKeymap } from './source-editor-keymap';
 import { shouldVirtualizeSourceEditor } from './source-editor-virtualization';
 import { useEditableFileDraft } from './useEditableFileDraft';
 import { useShortcuts } from '@/app/useShortcuts';
+import { Button } from '@/components/ui/button';
 import './source-editor.css';
 
 interface FileSaveControlsProps {
@@ -28,25 +27,34 @@ export function FileSaveControls({ dirty, saving, readOnly, onSave }: FileSaveCo
   const shortcuts = useShortcuts();
   if (!dirty && !saving) return null;
 
-  // The dirty state already shows as a dot on the file's tab, so this floats
-  // as an icon-only save button - no redundant "Unsaved" label next to it.
-  const label = readOnly ? 'Read only' : saving ? 'Saving…' : `Save file (${shortcuts.saveFile})`;
+  const label = readOnly ? 'Read only' : saving ? 'Saving…' : 'Save';
+  const ariaLabel = readOnly ? 'Read only' : saving ? 'Saving' : `Save file (${shortcuts.saveFile})`;
   return (
-    <Tooltip>
-      <TooltipTrigger render={
-        <button
-          type="button"
-          className="file-save-button"
-          data-state={readOnly ? 'readonly' : saving ? 'saving' : 'dirty'}
-          disabled={saving || readOnly}
-          onClick={onSave}
-          aria-label={label}
-        />
-      }>
-        <IconDeviceFloppy aria-hidden="true" />
-      </TooltipTrigger>
-      <TooltipContent>{label}</TooltipContent>
-    </Tooltip>
+    <span className="file-save-controls">
+      <Button
+        type="button"
+        size="sm"
+        className="file-save-button"
+        data-state={readOnly ? 'readonly' : saving ? 'saving' : 'dirty'}
+        disabled={saving || readOnly}
+        onClick={onSave}
+        aria-label={ariaLabel}
+      >
+        {label}
+      </Button>
+      {!readOnly && !saving && <kbd className="file-save-shortcut">{shortcuts.saveFile}</kbd>}
+    </span>
+  );
+}
+
+/** Centers a viewer pill and parks Save on the top-right, without putting it inside the pill. */
+export function FileViewerChrome({ children, save }: { children: ReactNode; save?: ReactNode }) {
+  return (
+    <div className="file-viewer-chrome">
+      <div className="file-viewer-chrome-side" />
+      <div className="file-viewer-chrome-center">{children}</div>
+      <div className="file-viewer-chrome-side file-viewer-chrome-end">{save}</div>
+    </div>
   );
 }
 
@@ -200,7 +208,7 @@ export function EditableFileViewer({ file, initialContent, themeType, wrapLines,
   return (
     <div className="source-file-viewer">
       {(dirty || saving) && (
-        <div className="source-file-toolbar">
+        <div className="file-save-toolbar">
           <FileSaveControls dirty={dirty} saving={saving} readOnly={readOnly} onSave={() => void save()} />
         </div>
       )}

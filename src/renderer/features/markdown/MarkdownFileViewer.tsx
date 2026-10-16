@@ -6,7 +6,7 @@ import type { FileResult, ThemePreference, WriteFileResult } from '@shared/contr
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { ViewerTabs, ViewerTabsList, ViewerTabsPanel } from '@/components/ui/viewer-tabs';
-import { FileSaveControls, SourceCodeEditor, type SourceCodeEditorHandle } from '@/features/viewer/EditableFileViewer';
+import { FileSaveControls, FileViewerChrome, SourceCodeEditor, type SourceCodeEditorHandle } from '@/features/viewer/EditableFileViewer';
 import { syncScrollFraction } from '@/features/viewer/scroll-sync';
 import { useEditableFileDraft } from '@/features/viewer/useEditableFileDraft';
 import { resolveMarkdownRepositoryPath } from './markdown-links';
@@ -281,6 +281,7 @@ export function MarkdownFileViewer({ repositoryId, file, initialContent, revisio
 
   return (
     <ViewerTabs value={tab} onValueChange={(value) => handleTabChange(value as typeof tab)} className="markdown-viewer" data-content-width={contentWidth}>
+      <FileViewerChrome save={<FileSaveControls dirty={dirty} saving={saving} readOnly={readOnly} onSave={() => void save()} />}>
       <div className="file-viewer-pill markdown-viewer-toolbar">
         <ViewerTabsList
           label="Markdown view"
@@ -290,7 +291,6 @@ export function MarkdownFileViewer({ repositoryId, file, initialContent, revisio
             { value: 'code', label: <>Code {dirty && <span className="markdown-unsaved-dot" aria-label="Unsaved changes" />}</> },
           ]}
         />
-        <FileSaveControls dirty={dirty} saving={saving} readOnly={readOnly} onSave={() => void save()} />
         <div className="markdown-width-toggle" role="group" aria-label="Markdown content width">
           <Tooltip>
             <TooltipTrigger render={
@@ -320,6 +320,7 @@ export function MarkdownFileViewer({ repositoryId, file, initialContent, revisio
           </Tooltip>
         </div>
       </div>
+      </FileViewerChrome>
       <ViewerTabsPanel ref={previewPanelRef} value="preview" className="markdown-preview-scroll" onScroll={() => setLinkTooltip(null)}>
           {loading && !html ? (
             <div className="viewer-message"><IconLoader4 className="spinner" aria-hidden="true" /><ShimmeringText text="Rendering Markdown…" /></div>

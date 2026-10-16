@@ -1,7 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { FileResult, ThemePreference, WriteFileResult } from '@shared/contracts';
 import { ViewerTabs, ViewerTabsList, ViewerTabsPanel } from '@/components/ui/viewer-tabs';
-import { FileSaveControls, SourceCodeEditor } from './EditableFileViewer';
+import { FileSaveControls, FileViewerChrome, SourceCodeEditor } from './EditableFileViewer';
 import { buildHtmlPreviewDocument } from './html-preview-document';
 import { useEditableFileDraft } from './useEditableFileDraft';
 import './html-file-viewer.css';
@@ -50,6 +50,7 @@ export function HtmlFileViewer({ file, initialContent, themeType, wrapLines, rea
 
   return (
     <ViewerTabs value={tab} onValueChange={(value) => setTab(value as typeof tab)} className="markdown-viewer html-file-viewer">
+      <FileViewerChrome save={<FileSaveControls dirty={dirty} saving={saving} readOnly={readOnly} onSave={() => void save()} />}>
       <div className="file-viewer-pill markdown-viewer-toolbar">
         <ViewerTabsList
           label="HTML view"
@@ -59,8 +60,8 @@ export function HtmlFileViewer({ file, initialContent, themeType, wrapLines, rea
             { value: 'code', label: <>Code {dirty && <span className="markdown-unsaved-dot" aria-label="Unsaved changes" />}</> },
           ]}
         />
-        <FileSaveControls dirty={dirty} saving={saving} readOnly={readOnly} onSave={() => void save()} />
       </div>
+      </FileViewerChrome>
       <ViewerTabsPanel value="preview" className="html-preview-panel">
         <iframe
           className="html-preview-frame"

@@ -146,9 +146,17 @@
   html .pr-branches { max-width: 100%; }
   html .file-viewer-pill { position: relative; top: auto; left: auto; transform: none; flex: none; align-self: stretch; max-width: 100%; min-height: 48px; border-radius: 0; border-width: 0 0 1px; box-shadow: none; }
   html .file-viewer-pill button { min-height: 40px; }
-  html .source-file-toolbar { top: 4px; right: 4px; }
-  html .file-save-button { width: 40px; height: 40px; }
-  html .source-file-viewer:has(> .source-file-toolbar) { padding-top: 48px; }
+  html .file-save-toolbar { top: 8px; right: 8px; }
+  html .file-save-button { height: 36px; padding-inline: 12px; }
+  html .file-save-shortcut { display: none; }
+  html .source-file-viewer:has(> .file-save-toolbar) { padding-top: 52px; }
+  html .file-viewer-chrome {
+    position: relative; top: auto; right: auto; left: auto;
+    display: flex; width: 100%; pointer-events: auto;
+  }
+  html .file-viewer-chrome-side:not(.file-viewer-chrome-end) { display: none; }
+  html .file-viewer-chrome-center { min-width: 0; flex: 1 1 auto; }
+  html .file-viewer-chrome-end { align-items: center; padding-right: 8px; }
   html .image-preview-toolbar { flex-wrap: wrap; overflow-x: auto; }
   html .markdown-prose { padding: 16px; overflow-wrap: anywhere; }
   html .markdown-prose pre, html .markdown-prose table { max-width: 100%; overflow-x: auto; }
