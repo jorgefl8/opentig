@@ -1,8 +1,6 @@
 ---
 import WindowsIcon from '@/assets/icons/windows.svg';
 import GithubIcon from '@tabler/icons/outline/brand-github.svg';
-import GitLogo from '@tabler/icons/outline/brand-git.svg';
-import BrowserLogo from '@tabler/icons/outline/browser.svg';
 import { repositoryUrl, downloadUrl, downloadVersion } from '@/site';
 import Button from './Button.astro';
 import CopyCommand from './CopyCommand.astro';
@@ -21,17 +19,6 @@ import SmartScreenNotice from './SmartScreenNotice.astro';
       Browse files, review diffs, make edits, and commit changes.
       Work with branches, worktrees, and GitHub pull requests from the same interface.
     </p>
-
-    <p class="text-sm text-muted-foreground max-w-xl mx-auto mt-4 leading-relaxed">
-      Optional AI assistance for commit messages, commit splitting, and pull request descriptions.
-    </p>
-
-    <div class="flex items-center justify-center gap-5 sm:gap-8 flex-wrap mt-6 text-muted-foreground text-sm">
-      <span class="inline-flex items-center gap-2"><GitLogo width={20} height={20} /> Git</span>
-      <span class="inline-flex items-center gap-2"><GithubIcon width={20} height={20} /> GitHub</span>
-      <span class="inline-flex items-center gap-2"><BrowserLogo width={20} height={20} /> Browser</span>
-      <span class="text-muted-foreground italic">and more…</span>
-    </div>
 
     <div class="flex flex-col sm:flex-row gap-3 justify-center sm:items-start mt-10">
       <div class="flex flex-col gap-2">
