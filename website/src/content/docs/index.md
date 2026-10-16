@@ -40,4 +40,4 @@ To keep the CLI running after closing your terminal, set up a [background servic
 
 ## Build and contribute
 
-Start with [contributing](/docs/contributing/) and [development and packaging](/docs/development/). Read the [architecture guide](/docs/architecture/) for the server and client boundaries, or the [website guide](/docs/website/) to work on this site.
+Start with [contributing](/docs/contributing/) and [development and packaging](/docs/development/). Read the [architecture guide](/docs/architecture/) for the server and client boundaries.

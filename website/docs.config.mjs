@@ -51,11 +51,6 @@ export const publishedGuides = {
     description: 'Explore the OpenTig server, Electron shell, browser transport, persistence, and the boundaries between shared and native capabilities.',
     source: 'docs/architecture.md',
   },
-  website: {
-    title: 'Website and documentation',
-    description: 'Develop the OpenTig Astro website and Fumadocs documentation. Learn about content, validation, indexing, and manual Cloudflare deployment.',
-    source: 'docs/website.md',
-  },
   releases: {
     title: 'Release automation',
     description: 'Understand OpenTig release drafts, version tags, Windows installers, npm publication, and the separate website deployment process.',
@@ -82,7 +77,7 @@ export const documentationSections = [
   { title: 'Get started', pages: ['index', 'getting-started'] },
   { title: 'Using OpenTig', pages: ['features', 'github', 'ai-assistance'] },
   { title: 'Configuration', pages: ['interface', 'web-access', 'security-and-privacy'] },
-  { title: 'Development', pages: ['contributing', 'development', 'architecture', 'website', 'releases'] },
+  { title: 'Development', pages: ['contributing', 'development', 'architecture', 'releases'] },
   { title: 'Policies', pages: ['ai-writing-policy', 'security', 'third-party-notices'] },
 ];
 export const installationPath = '/docs/getting-started/';

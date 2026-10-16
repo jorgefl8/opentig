@@ -48,7 +48,9 @@ test('uses the original file location for root-level guides and reference-style 
   const tree = { children: [{ type: 'definition', url: 'docs/development.md#run-from-source' }] };
   guideMarkdown()(tree, { path: fileURLToPath(new URL('../../CONTRIBUTING.md', import.meta.url)) });
   assert.equal(tree.children[0].url, '/docs/development/#run-from-source');
-  assert.deepEqual(rewrite(['docs/website.md'], 'THIRD_PARTY_NOTICES.md'), ['/docs/website/']);
+  assert.deepEqual(rewrite(['docs/website.md#published-documentation'], 'THIRD_PARTY_NOTICES.md'), [
+    'https://github.com/jorgefl8/opentig/blob/main/docs/website.md#published-documentation',
+  ]);
 });
 
 test('every published source resolves locally and appears once in navigation', () => {

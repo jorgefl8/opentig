@@ -12,7 +12,6 @@
     "preview": "astro preview --host 127.0.0.1",
     "check": "astro sync && node scripts/check.mjs && tsc --project demo/tsconfig.json && oxlint . && node --test scripts/*.test.mjs",
     "deploy": "npm run check && npm run build && wrangler deploy",
-    "deploy:www": "npm run check && wrangler deploy --config wrangler.www.jsonc",
     "predev": "node scripts/build-demo.mjs",
     "prebuild": "node scripts/build-demo.mjs",
     "precheck": "node scripts/build-demo.mjs"

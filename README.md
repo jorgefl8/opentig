@@ -81,7 +81,7 @@ OpenTig opens existing repositories; cloning and initial remote setup remain Git
 - [Interface and mobile use](docs/interface.md): themes, settings, touch controls, and navigation.
 - [Security and privacy](docs/security-and-privacy.md): permissions, browser authority, and AI context.
 - [Development and packaging](docs/development.md): source setup, isolated Dev profiles, and validation.
-- [Public website](docs/website.md): the Astro landing page and its development workflow.
+- [Website contribution guide](docs/website.md): local development and validation of the Astro site, available in the repository only.
 - [Contributing](CONTRIBUTING.md) and [documentation index](docs/README.md).
 
 Feedback, bug reports, and focused contributions are welcome. Building from source requires Node.js 24.15 or newer.

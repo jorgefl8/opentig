@@ -50,7 +50,7 @@ npm run build:website
 
 For documentation changes, check links, heading anchors, examples, and documented commands against the repository. Documentation-only changes do not require rebuilding or restarting the application. Website development does not require packaging or restarting the desktop application or CLI server.
 
-See the [website guide](docs/website.md) for the publication list, local preview, and manual deployment.
+See the repository's [website contribution guide](docs/website.md) for the publication list, local preview, and validation. Maintainers handle production publication separately.
 
 ## Documentation
 
@@ -61,7 +61,7 @@ See the [website guide](docs/website.md) for the publication list, local preview
 - Keep feature information in durable product documentation, not only in code or review notes.
 - Keep the root `README.md` concise as the project overview and entry point. Update it when the overview, basic setup, headline capabilities, or guide navigation changes.
 
-The public site reads the original repository Markdown. Edit that source; do not create a second copy under `website/`. Follow the [website publication workflow](docs/website.md#published-documentation) to add a public guide. A commit or push does not deploy the website.
+The public site reads the original repository Markdown. Edit that source; do not create a second copy under `website/`. Follow the [website publication workflow](docs/website.md#published-documentation) to add a public guide. Only explicitly listed guides are published. Contributor-only website references stay in the repository, and production runbooks stay outside Git. A commit or push does not deploy the website.
 
 Keep local development configuration, private endpoints, screenshots for review, mockups, logs, and validation reports outside tracked documentation.
 

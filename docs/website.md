@@ -1,14 +1,15 @@
-# Public website
+# Website contribution guide
 
 The `website/` npm workspace contains OpenTig's public landing page and documentation. It uses Astro, Tailwind CSS, OGL, and Fumadocs, and produces a static site independent of the desktop application, CLI, and paired browser UI. It does not start or connect to an OpenTig server.
+
+This guide is for repository contributors and is not published in the website documentation. Production operations are maintained separately in a local, untracked runbook.
 
 Choose the task you need:
 
 - [Run and check the website locally](#develop-and-check).
-- [Edit or publish documentation](#published-documentation).
+- [Edit documentation or add a public guide](#published-documentation).
 - [Change the landing page, demo, or social preview](#content-and-appearance).
 - [Control indexing and preview builds](#crawling-indexing-and-missing-pages).
-- [Deploy to Cloudflare](#manual-deployment-to-cloudflare-workers).
 - [Understand CI and application releases](#ci-and-release-separation).
 
 ## Develop and check
@@ -28,7 +29,7 @@ Astro may start in the background when launched by a coding agent:
 - Stop it with `npm run dev:website -- stop`.
 - Choose a different port with `npm run dev:website -- --port 4322`.
 
-Before publishing, run the checks and build, then preview the generated site:
+Before submitting changes, run the checks and build, then preview the generated site:
 
 ```bash
 npm run check:website
@@ -47,7 +48,7 @@ Every Astro build runs `website/scripts/validate-build.mjs` through the `astro:b
 
 Validation is offline: external links are checked for URL format and local/private hosts, not network availability. The JSON-LD checks protect this site's agreed data contract; they do not replace Schema.org validation or establish search-result eligibility. When adding pages or deliberately changing the metadata contract, update the sitemap and relevant checks together. Regression tests mutate temporary output to ensure real failures are rejected and remove their files afterwards. No test artifacts are published.
 
-Regression tests cover the sample repository, www redirect, and build validator.
+Regression tests cover the sample repository, documentation transforms, and build validator.
 
 </details>
 
@@ -69,7 +70,7 @@ The website explicitly pins Astro's `cookie` dependency so its prerendered build
 1. Find its source in `website/docs.config.mjs` and edit that file. The overview lives in `website/src/content/docs/index.md`.
 2. Keep feature changes and their documentation in the same commit. Describe current behavior, requirements, defaults, and important limits.
 3. Run `npm run check:website` and `npm run build:website`, plus any checks needed for accompanying application changes. Documentation-only changes do not require an application build.
-4. Review the rendered page, navigation, and links locally. When publication is authorized, [deploy the website](#manual-deployment-to-cloudflare-workers).
+4. Review the rendered page, navigation, and links locally. Submit the source changes for review; maintainers handle publication separately.
 
 ### Publish a new guide
 
@@ -78,6 +79,8 @@ Adding a Markdown file alone does not publish it:
 1. Add its repository-relative source, title, and description to `publishedGuides` in `website/docs.config.mjs`. The entry key becomes its public slug.
 2. Place that slug in `documentationSections` and link the guide from `docs/README.md`.
 3. Follow the same check, review, and deployment steps as for an existing guide.
+
+Keep contributor-only references such as this guide out of `publishedGuides` and `documentationSections`. Keep production runbooks in a local location excluded from Git, not in tracked guides.
 
 The content collection, internal link mapping, search, sitemap, and CI scope derive from this configuration. Changes to any published source trigger website validation. Keep local development artifacts and private infrastructure out of published sources.
 
@@ -94,7 +97,7 @@ Website build checks validate search coverage and destinations, fragments, metad
 
 The website serves the documentation at `/docs/`, grouped into getting started, using OpenTig, configuration, development, and policies. Fumadocs supplies the layout, navigation, section index, mobile menu, and search through Astro's React integration. Pages are prerendered with their content in HTML; interactive navigation and search hydrate in the browser. The landing page keeps its Astro components and does not load the documentation React island.
 
-`website/docs.config.mjs` supplies source paths, titles, descriptions, navigation groups, and public routes. `website/src/content.config.ts` reads the selected Markdown directly.
+`website/docs.config.mjs` supplies source paths, titles, descriptions, navigation groups, and public routes. `website/src/content.config.ts` reads the selected Markdown directly. Its content cache includes the publication routes, so adding or removing a guide also refreshes links in unchanged Markdown files.
 
 `website/src/lib/docs-source.ts` connects these collections to Fumadocs. The shared `/docs/[...slug]` route generates each page using the existing SEO metadata layout. The Fumadocs URL plugin preserves trailing slashes in navigation and search so links match Astro routes in development as well as production.
 
@@ -213,61 +216,7 @@ WEBSITE_NOINDEX=true npm run build --workspace @opentig/website -- --outDir ../.
 
 **Keep preview output separate from `website/dist`.** A noindex build targeting that directory fails validation, stopping the normal deployment command before Wrangler runs. If a build fails, rebuild successfully before manually uploading its files.
 
-Leave `WEBSITE_NOINDEX` unset for production and rebuild with `npm run build:website` or `npm run deploy:website`. `WEBSITE_URL` only controls URL generation; it does not switch indexing policy.
-
-The current Cloudflare configuration keeps `workers.dev` and version URLs disabled. `_headers` additionally marks those hosts `noindex` if they are enabled later, following [Cloudflare's header guidance](https://developers.cloudflare.com/workers/static-assets/headers/).
-
-## Manual deployment to Cloudflare Workers
-
-`npm run build:website` writes `website/dist/`. [Cloudflare Workers Static Assets](https://developers.cloudflare.com/workers/static-assets/) serves that directory directly; no Astro server adapter, application server, or database is needed.
-
-Deployment is manual. Neither GitHub Actions nor Cloudflare Workers Builds is connected to publish on push. `deploy:website` uploads the current working copy, so review local changes before running it. It does not create an application release, tag, or npm package.
-
-### Set up a deployment machine
-
-1. Copy `website/.env.example` to `website/.env`.
-2. Set `CLOUDFLARE_ACCOUNT_ID` to the account that owns the production domain. Wrangler loads this ignored file for both configurations. The account ID selects the target; the authenticated session supplies permission to deploy.
-3. Log in from the repository root, unless Wrangler is already logged in:
-
-```bash
-# Once per development machine, unless Wrangler is already logged in:
-npm exec --workspace @opentig/website -- wrangler login
-```
-
-Wrangler is pinned as a website development dependency. Its local login is shared across projects on the same machine, so an existing Wrangler session can be reused. Credentials are stored by Wrangler outside the repository. Its generated `.wrangler/` state and local secret files are ignored by Git.
-
-### Validate and publish
-
-From the repository root, inspect the deployment without publishing:
-
-```bash
-# Validate and build the site, then inspect the deployment without publishing:
-npm run deploy:website -- --dry-run
-```
-
-When ready to publish the reviewed working copy:
-
-```bash
-# Validate, rebuild, and publish the current local website:
-npm run deploy:website
-```
-
-Both commands run website checks and a fresh production build. The dry run stops before upload; the publishing command updates the main site. Content changes do not require redeploying the www redirect.
-
-### Domains and the www redirect
-
-The checked-in `website/wrangler.jsonc` targets the `opentig-website` Worker and binds `opentig.com` as a custom domain. The account ID is configured locally through `CLOUDFLARE_ACCOUNT_ID`, outside the public configuration. Cloudflare manages the domain's DNS record and TLS certificate. The `workers.dev` endpoint and version preview URLs are disabled. Unknown paths return the branded error page with HTTP 404.
-
-`www.opentig.com` is bound to the small `opentig-www` Worker configured in `website/wrangler.www.jsonc`. It permanently redirects HTTP and HTTPS requests to `https://opentig.com`, preserving paths and query parameters. The primary site continues to serve static assets directly. If the redirect code or configuration changes, deploy it separately with `npm run deploy:www --workspace @opentig/website`; append `-- --dry-run` to validate without publishing. Website content updates use `npm run deploy:website`.
-
-<details>
-<summary>Deploy a fork or change the public origin</summary>
-
-Contributors deploying a fork must change the Worker names, domains, Astro public origin, and www redirect destination to their own values.
-
-Astro uses `https://opentig.com` as the default public origin for canonical and social-image URLs. Set `WEBSITE_URL` at build time only when deliberately targeting another origin, and rebuild before uploading. Changing that variable does not change the Wrangler domains or the account selected through `CLOUDFLARE_ACCOUNT_ID`.
-
-</details>
+Leave `WEBSITE_NOINDEX` unset for the normal build and rebuild with `npm run build:website`. `WEBSITE_URL` only controls URL generation; it does not switch indexing policy.
 
 ## CI and release separation
 
@@ -279,7 +228,7 @@ Astro uses `https://opentig.com` as the default public origin for canonical and 
 
 A manual CI run validates both projects. There is no extra website workflow, artifact upload, or deployment job. CI has read-only repository permissions and no Cloudflare credentials.
 
-Changes confined to `website/` or this guide skip the application's heavy CI jobs and do not trigger **Next release draft**. CI still reports a scope decision for each project. Application release notes exclude these website-only commits, including merged PRs; **Prepare release** will not create an application version or tag when those are the only changes since the last stable release.
+Changes confined to `website/` or this guide skip the application's heavy CI jobs and do not trigger **Next release draft**. Editing this unpublished guide alone does not trigger the website build either; run the local website checks when changing its examples or instructions. CI still reports a scope decision for each project. Application release notes exclude these website-only commits, including merged PRs; **Prepare release** will not create an application version or tag when those are the only changes since the last stable release.
 
 Changes to the shared renderer, shared contracts, public UI assets, or root TypeScript configuration validate both projects because the demo uses them. Changes to shared files such as the root `package.json`, `package-lock.json`, and `.oxlintrc.json` validate both projects and remain eligible for application release notes. Mixed commits containing application changes also remain included regardless of their commit title.
 
