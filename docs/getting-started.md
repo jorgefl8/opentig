@@ -24,7 +24,13 @@ GitHub and AI tools are optional. Install only the integrations you want to use;
 2. Download and run the Windows x64 installer from the [latest release](https://github.com/jorgefl8/opentig/releases/latest).
 3. Open OpenTig and choose a repository on that machine.
 
-**The installer is currently unsigned.** Windows may show an unknown-publisher or SmartScreen warning.
+### Windows SmartScreen warning
+
+**The installer is currently unsigned.** Microsoft Defender SmartScreen may show **Windows protected your PC** because the download has not established sufficient reputation. Windows may also identify the publisher as unknown. A reputation warning alone does not mean malware was detected, and it is not a guarantee that the file is safe.
+
+Download OpenTig from [opentig.com](https://opentig.com) or the [official GitHub releases](https://github.com/jorgefl8/opentig/releases). If Windows reports a specific threat, treat that separately from a reputation warning. Smart App Control or your organization's policies may block unsigned apps entirely.
+
+See [Microsoft's explanation of SmartScreen and app reputation](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/smartscreen-reputation).
 
 ### Update the desktop app
 

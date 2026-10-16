@@ -6,6 +6,7 @@ import BrowserLogo from '@tabler/icons/outline/browser.svg';
 import { repositoryUrl, downloadUrl, downloadVersion } from '@/site';
 import Button from './Button.astro';
 import CopyCommand from './CopyCommand.astro';
+import SmartScreenNotice from './SmartScreenNotice.astro';
 ---
 
 <section class="relative min-h-screen flex items-center justify-center overflow-hidden">
@@ -33,10 +34,13 @@ import CopyCommand from './CopyCommand.astro';
     </div>
 
     <div class="flex flex-col sm:flex-row gap-3 justify-center sm:items-start mt-10">
-      <Button href={downloadUrl} data-windows-download data-analytics-placement="hero">
-        <WindowsIcon width={20} height={20} />
-        Download for Windows
-      </Button>
+      <div class="flex flex-col gap-2">
+        <Button href={downloadUrl} data-windows-download data-analytics-placement="hero">
+          <WindowsIcon width={20} height={20} />
+          Download for Windows
+        </Button>
+        <SmartScreenNotice />
+      </div>
       <Button href={repositoryUrl} variant="outline" target="_blank" rel="noreferrer">
         <GithubIcon width={20} height={20} />
         View on GitHub

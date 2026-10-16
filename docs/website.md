@@ -109,6 +109,8 @@ The website serves the documentation at `/docs/`, grouped into getting started, 
 
 ### Edit sections and product copy
 
+The Windows download controls in the hero and installation card include a small SmartScreen notice. `SmartScreenNotice.astro` links to the installation guide's **Windows SmartScreen warning** section. Keep the notice and guide consistent with the installer's signing status; neither claims an antivirus scan has run or certifies the download as safe.
+
 The CLI installation card includes a **View on npm** link to the official `@opentig/cli` package below its setup button. Keep the npm destination in `website/src/site.ts` alongside the repository and download links. The hero uses the red npm mark in `website/src/assets/icons/npm.svg`, with a straight vertical divider between its link and the copy control.
 
 Below the hero's download and GitHub buttons, a centered monospaced line shows the Windows version and **Free & open source**. An **or** separator leads to `npm install -g @opentig/cli`, with a copy control and an npm icon linking to the package. The installation card retains the one-off `npx --yes @opentig/cli@latest` command. Both copy controls work independently and report successful copies with their own `hero` or `install` placement.

@@ -4,6 +4,7 @@ import WindowsIcon from '@/assets/icons/windows.svg';
 import TerminalIcon from '@tabler/icons/outline/terminal-2.svg';
 import Button from './Button.astro';
 import CopyCommand from './CopyCommand.astro';
+import SmartScreenNotice from './SmartScreenNotice.astro';
 
 import { downloadUrl, downloadVersion, npmUrl } from '@/site';
 ---
@@ -23,9 +24,9 @@ import { downloadUrl, downloadVersion, npmUrl } from '@/site';
         <div class="min-w-0 flex flex-col gap-4 rounded-xl border border-border/50 bg-background/40 p-4 sm:p-5">
           <h3 class="flex items-center gap-2 text-base font-semibold"><WindowsIcon width={20} height={20} />Windows desktop</h3>
           <p class="text-sm text-muted-foreground leading-relaxed">For Windows 10 or later (x64), with Git installed. The app includes the OpenTig server.</p>
-          <p class="text-sm text-muted-foreground leading-relaxed">The installer is currently unsigned.</p>
           <div class="mt-auto flex flex-col gap-2 text-center">
             <Button href={downloadUrl} data-windows-download data-analytics-placement="install" class="px-3!">Download for Windows</Button>
+            <SmartScreenNotice />
             <span data-release-version class="font-mono text-xs text-muted-foreground">{downloadVersion}</span>
           </div>
         </div>
