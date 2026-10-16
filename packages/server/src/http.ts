@@ -139,8 +139,8 @@ async function handleRequest(context: OpenTigHttpContext, request: IncomingMessa
     return sendJson(response, 200, { sessions });
   }
 
-  if (method === 'POST' && rawPath === '/api/admin/pair') {
-    return handleLocalAdminPair(context, request, response);
+  if (method === 'POST' && (rawPath === '/api/admin/pair' || rawPath === '/api/admin/status')) {
+    return handleLocalAdminRequest(context, request, response, rawPath === '/api/admin/status');
   }
 
   if (method === 'POST' && rawPath.startsWith('/api/')) {
@@ -374,10 +374,11 @@ function isLoopbackAddress(value: string | undefined): boolean {
   return normalized === '::1' || normalized.startsWith('127.');
 }
 
-async function handleLocalAdminPair(
+async function handleLocalAdminRequest(
   context: OpenTigHttpContext,
   request: IncomingMessage,
   response: ServerResponse,
+  statusOnly = false,
 ): Promise<void> {
   const admin = context.admin;
   const suppliedToken = request.headers['x-opentig-admin'];
@@ -389,10 +390,13 @@ async function handleLocalAdminPair(
   }
   const body = await readJsonObject(request, response);
   if (!body) return;
-  if (body.instanceId !== admin.instanceId || typeof body.publicOrigin !== 'string') {
+  if (body.instanceId !== admin.instanceId) {
     return sendJson(response, 409, { error: 'OpenTig server identity mismatch.' });
   }
-  const origin = normalizePublicOrigin(body.publicOrigin);
+  if (statusOnly) return sendJson(response, context.isReady() ? 200 : 503, {
+    status: context.isReady() ? 'ready' : 'not-ready', ...context.identity, instanceId: admin.instanceId, pid: process.pid,
+  });
+  const origin = typeof body.publicOrigin === 'string' ? normalizePublicOrigin(body.publicOrigin) : null;
   if (!origin) return sendJson(response, 400, { error: 'Invalid public origin.' });
   if (!context.auth.descriptor().browserAccessEnabled) return sendJson(response, 403, { error: 'Web access is disabled.', code: 'WEB_ACCESS_DISABLED' });
   const pairing = admin.createPairingToken();

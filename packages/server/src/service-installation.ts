@@ -3,6 +3,7 @@ import { readFile, rename, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
+import { CliError } from './cli-errors';
 
 export const execute = promisify(execFile);
 export const SERVICE_NAME = 'opentig.service';
@@ -25,19 +26,19 @@ export function newerVersion(a: string, b: string): boolean {
   return false;
 }
 export function packageDirectory(home: string, install: ServiceInstallation): string {
-  if (!stableVersion(install.version) || !['flat', 'npm'].includes(install.layout)) throw new Error('Invalid managed service version.');
+  if (!stableVersion(install.version) || !['flat', 'npm'].includes(install.layout)) throw new CliError('SERVICE_METADATA_INVALID', 'Invalid managed service version.', ['Inspect the service installation metadata and restore a trusted backup before retrying.']);
   const base = path.join(home, 'service', `app-${install.version}`);
   return install.layout === 'flat' ? base : path.join(base, 'node_modules/@opentig/cli');
 }
 export async function readInstallation(home: string): Promise<ServiceInstallation | null> {
   let value: ServiceInstallation;
   try { value = JSON.parse(await readFile(path.join(home, 'service/installation.json'), 'utf8')); }
-  catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null; throw error; }
-  if ((value.manager !== undefined && !['systemd', 'launchd', 'windows-task'].includes(value.manager)) || value.schema !== 1 || !stableVersion(value.version) || !['flat', 'npm'].includes(value.layout)
+  catch (cause) { if ((cause as NodeJS.ErrnoException).code === 'ENOENT') return null; throw new CliError('SERVICE_METADATA_INVALID', 'Could not read managed service installation metadata.', [`Check permissions and JSON in ${path.join(home, 'service/installation.json')}. Do not remove the entire home or paired browser data.`], { cause }); }
+  if (!value || typeof value !== 'object' || (value.manager !== undefined && !['systemd', 'launchd', 'windows-task'].includes(value.manager)) || value.schema !== 1 || !stableVersion(value.version) || !['flat', 'npm'].includes(value.layout)
     || typeof value.host !== 'string' || !/^[a-zA-Z0-9.:[\]-]+$/.test(value.host)
     || !Number.isInteger(value.port) || value.port < 1 || value.port > 65535
     || (value.environmentPath !== undefined && (typeof value.environmentPath !== 'string' || /[\0\r\n]/.test(value.environmentPath)))
-    || typeof value.node !== 'string' || !path.isAbsolute(value.node) || /[\0\r\n]/.test(value.node)) throw new Error('Invalid managed service installation.');
+    || typeof value.node !== 'string' || !path.isAbsolute(value.node) || /[\0\r\n]/.test(value.node)) throw new CliError('SERVICE_METADATA_INVALID', 'Invalid managed service installation.', [`Inspect ${path.join(home, 'service/installation.json')} and restore valid installation metadata before retrying.`]);
   return value;
 }
 export async function atomicWrite(file: string, contents: string): Promise<void> {

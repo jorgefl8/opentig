@@ -372,6 +372,28 @@ describe('authoritative HTTP server', () => {
     expect(Date.parse(pairing.expiresAt)).toBeGreaterThan(Date.now());
   });
 
+  it('verifies CLI instance identity only through the authenticated local admin channel', async () => {
+    const admin = { token: 'a'.repeat(43), instanceId: 'b'.repeat(32) };
+    const fixture = await startFixture({ admin });
+    const endpoint = `${fixture.server.origin}/api/admin/status`;
+    const check = (token: string, instanceId = admin.instanceId) => fetch(endpoint, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'X-OpenTig-Admin': token },
+      body: JSON.stringify({ instanceId }),
+    });
+    expect((await check('wrong-token')).status).toBe(404);
+    expect((await check(admin.token, 'c'.repeat(32))).status).toBe(409);
+    const identity = await check(admin.token);
+    expect(identity.status).toBe(200);
+    expect(await identity.json()).toMatchObject({ status: 'ready', pid: process.pid, instanceId: admin.instanceId });
+    const publicReadiness = await fetch(`${fixture.server.origin}/readyz`);
+    const publicValue = await publicReadiness.json();
+    expect(publicValue).not.toHaveProperty('instanceId'); expect(publicValue).not.toHaveProperty('pid');
+    // Readiness verification must work even when browser access is paused.
+    await fixture.server.setBrowserAccessEnabled(false);
+    expect((await check(admin.token)).status).toBe(200);
+    expect((await fetch(endpoint)).status).not.toBe(200);
+  });
+
   it('reports connected sessions and replaces the private desktop session after revocation', async () => {
     const fixture = await startFixture();
     const authenticated = await postJson(`${fixture.server.origin}/api/auth/desktop`, { secret: fixture.desktopSecret }, fixture.server.origin);

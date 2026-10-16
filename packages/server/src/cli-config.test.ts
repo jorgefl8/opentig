@@ -50,7 +50,7 @@ describe('OpenTig CLI arguments', () => {
     [['--port', '0'], 'Port'],
     [['--port', '70000'], 'Port'],
     [['--host', 'bad host'], 'host'],
-    [['--wat'], 'Missing value'],
+    [['--wat'], 'Unknown option'],
     [['one'], 'Unexpected argument'],
   ] as const)('rejects invalid input %j', (args, message) => {
     expect(() => parseCliArguments(args, {}, cwd, home)).toThrow(message);
@@ -62,4 +62,18 @@ describe('OpenTig CLI arguments', () => {
     expect(parseCliArguments(['help'], { OPENTIG_PORT: 'bad' }, cwd, home).command).toBe('help');
     expect(parseCliArguments(['version'], { OPENTIG_PORT: 'bad' }, cwd, home).command).toBe('version');
   });
+  it.each(['status', 'restart', 'uninstall'])('does not evaluate irrelevant listener environment for service %s', action => {
+    expect(parseCliArguments(['service', action], { OPENTIG_PORT: 'invalid', OPENTIG_HOST: 'bad host' }, cwd, home).serviceAction).toBe(action);
+  });
+  it.each([
+    [['service', 'statuz'], 'Unknown service action'],
+    [['--port'], 'Missing value for --port'],
+    [['--port='], 'Missing value for --port'],
+    [['--port', '--host', '127.0.0.1'], 'Missing value for --port'],
+    [['serve', '--no-browser'], '--no-browser is only supported by start'],
+    [['service', 'install', '--no-browser'], '--no-browser is only supported by start'],
+  ] as const)('explains invalid command usage %j', (args, expected) => {
+    expect(() => parseCliArguments(args, {}, cwd, home)).toThrow(expected);
+  });
+
 });

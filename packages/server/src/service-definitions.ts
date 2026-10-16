@@ -25,6 +25,7 @@ Type=simple
 WorkingDirectory=${systemdWorkingDirectory(input.home)}
 ExecStart=${args.map(arg => systemdQuote(arg.replaceAll('$', () => '$$'))).join(' ')}
 Environment=NODE_ENV=production
+Environment=${systemdQuote(`OPENTIG_SERVICE_HOME=${input.home}`)}
 ${input.environmentPath === undefined ? '' : `Environment=${systemdQuote(`PATH=${input.environmentPath}`)}\n`}Restart=on-failure
 RestartSec=3
 KillSignal=SIGTERM
@@ -83,9 +84,12 @@ ${input.environmentPath === undefined ? '' : `<key>PATH</key><string>${xml(input
 
 /** Keep a recognizable parent attached so service stop can terminate its process tree. */
 export function windowsServerScript(input: ServiceDefinitionInput): string {
+  const log = path.win32.join(input.home, 'logs', 'service-stderr.log');
   return `$ErrorActionPreference = 'Stop'; $env:NODE_ENV = 'production'; $env:OPENTIG_SERVICE_HOME = ${psQuote(input.home)}; `
     + (input.environmentPath === undefined ? '' : `$env:PATH = ${psQuote(input.environmentPath)}; `)
-    + `& ${[input.nodeExecutable, ...serviceArgs(input)].map(psQuote).join(' ')} *> $null; exit $LASTEXITCODE`;
+    + `$null = New-Item -ItemType Directory -Force -Path ${psQuote(path.win32.dirname(log))}; `
+    + `if (Test-Path -LiteralPath ${psQuote(log)}) { Move-Item -LiteralPath ${psQuote(log)} -Destination ${psQuote(`${log}.1`)} -Force }; `
+    + `& ${[input.nodeExecutable, ...serviceArgs(input)].map(psQuote).join(' ')} > $null 2>> ${psQuote(log)}; exit $LASTEXITCODE`;
 }
 export function renderWindowsTask(input: { name: string; sid: string; powershell: string; script: string; home: string; worker?: boolean }): string {
   return `<?xml version="1.0" encoding="UTF-16"?>

@@ -35,6 +35,8 @@ describe('native service definitions', () => {
     const encoded = task.match(/-EncodedCommand ([A-Za-z0-9+/=]+)/)![1]!;
     expect(Buffer.from(encoded, 'base64').toString('utf16le')).toBe(script);
     expect(script).toContain("'C:\\Users\\O''Brien\\$data;&'");
+    expect(script).toContain('2>>'); expect(script).toContain('service-stderr.log');
+    expect(script).not.toContain('*> $null');
     expect(task).not.toContain('Password');
   });
   it('does not restart or persist the one-shot updater at login', () => {
@@ -69,7 +71,7 @@ describe('service ownership', () => {
     await expect(manageCliService(config, { out: vi.fn() }, manager)).rejects.toThrow('already in progress');
     expect(manager.stop).not.toHaveBeenCalled();
     await rm(path.join(home, 'service/update-lock'), { recursive: true });
-    await expect(manageCliService(config, { out: vi.fn() }, manager)).rejects.toThrow('stop failed');
+    await expect(manageCliService(config, { out: vi.fn() }, manager)).rejects.toMatchObject({ code: 'SUPERVISOR_FAILED', cause: expect.objectContaining({ message: 'stop failed' }) });
     expect(manager.remove).not.toHaveBeenCalled();
     expect(await readFile(path.join(home, 'service/installation.json'), 'utf8')).toContain('0.1.0');
     vi.mocked(manager.stop).mockResolvedValueOnce();

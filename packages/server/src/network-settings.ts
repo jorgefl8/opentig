@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { readFile } from 'node:fs/promises';
 import { isIP } from 'node:net';
 import { writeFileAtomically } from '../../../src/main/persistence/atomicWrite';
@@ -9,6 +10,19 @@ export interface NetworkConfig {
   publicOrigin: string | null;
   listenerHost: string;
   listenerPort: number;
+}
+
+/** Shared by startup and preflight so saved settings have identical precedence. */
+export async function loadStartupNetwork(config: { settingsPath: string; serverDataPath?: string; networkSettingsPath?: string;
+  mode?: 'desktop' | 'web-access'; browserAccessEnabled?: boolean; host?: string; port?: number }) {
+  const desktop = config.mode !== 'web-access';
+  const networkSettings = new NetworkSettings(config.networkSettingsPath ?? (desktop
+    ? path.join(path.dirname(config.settingsPath), 'desktop-server.json')
+    : path.join(config.serverDataPath ?? path.dirname(config.settingsPath), 'web-access.json')), desktop);
+  const network = await networkSettings.load({ webAccessEnabled: config.browserAccessEnabled ?? config.mode === 'web-access',
+    lanAccessEnabled: !isLoopbackHost(config.host ?? '127.0.0.1'), publicOrigin: null,
+    listenerHost: config.host ?? '127.0.0.1', listenerPort: config.port ?? 6767 });
+  return { networkSettings, network, savedListener: networkSettings.hasSavedListener };
 }
 
 export function applyNetworkPatch(previous: NetworkConfig, input: unknown): NetworkConfig {
@@ -34,9 +48,11 @@ export function isLoopbackHost(host: string): boolean {
 
 /** Desktop v4 remains readable; CLI settings are isolated in its private home. */
 export class NetworkSettings {
+  hasSavedListener = false;
   constructor(readonly filePath: string, private readonly desktop = false) {}
 
   async load(defaults: NetworkConfig): Promise<NetworkConfig> {
+    this.hasSavedListener = false;
     let value: Record<string, unknown>;
     try { value = JSON.parse(await readFile(this.filePath, 'utf8')); }
     catch (error) {
@@ -45,6 +61,7 @@ export class NetworkSettings {
     }
     if (!value || value.version !== (this.desktop ? 4 : 1)) throw new Error('Invalid web access settings version.');
     const { version: _version, ...patch } = value;
+    this.hasSavedListener = patch.listenerHost !== undefined || patch.listenerPort !== undefined || patch.lanAccessEnabled !== undefined;
     const config = applyNetworkPatch(defaults, patch);
     // Preserve the previous desktop startup policy when migrating v4 settings.
     if (this.desktop && patch.listenerHost === undefined && !config.webAccessEnabled) config.listenerHost = defaults.listenerHost;

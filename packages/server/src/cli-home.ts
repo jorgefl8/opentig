@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { chmod, mkdir, readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
+import { CliError, cliCommand } from './cli-errors';
 import { writeFileAtomically } from '../../../src/main/persistence/atomicWrite';
 
 const RUNTIME_STATE_VERSION = 1;
@@ -69,7 +70,7 @@ export async function loadOrCreateAdminToken(filePath: string): Promise<string> 
 
 export async function readAdminToken(filePath: string): Promise<string> {
   const token = (await readFile(filePath, 'utf8')).trim();
-  if (!isToken(token)) throw new Error('OpenTig local admin credential is corrupt.');
+  if (!isToken(token)) throw new CliError('ADMIN_CREDENTIAL_INVALID', 'OpenTig local admin credential is corrupt.', ['Check the private home permissions and restore this credential from a trusted backup; do not delete the home or copy a credential from another instance.']);
   await chmod(filePath, 0o600);
   return token;
 }
@@ -87,10 +88,10 @@ export async function readRuntimeState(filePath: string): Promise<OpenTigRuntime
   try {
     value = JSON.parse(await readFile(filePath, 'utf8')) as unknown;
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new Error('No running OpenTig server was found for this home.', { cause: error });
-    throw new Error('OpenTig runtime state is unreadable.', { cause: error });
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new CliError('RUNTIME_MISSING', 'No running OpenTig server was found for this home.', [`Start it with ${cliCommand(path.dirname(filePath), 'serve')}`, `Or check ${cliCommand(path.dirname(filePath), 'service', 'status')}`], { cause: error });
+    throw new CliError('RUNTIME_INVALID', 'OpenTig runtime state is unreadable.', [`Check permissions and server logs in ${path.dirname(filePath)}. Do not delete settings or credentials.`], { cause: error });
   }
-  if (!isRuntimeState(value)) throw new Error('OpenTig runtime state is invalid.');
+  if (!isRuntimeState(value)) throw new CliError('RUNTIME_INVALID', 'OpenTig runtime state is invalid.', [`Inspect ${filePath} and the service status before restarting; do not delete the home.`]);
   await chmod(filePath, 0o600);
   return value;
 }
@@ -100,7 +101,7 @@ export async function clearRuntimeState(filePath: string, instanceId: string): P
     const state = await readRuntimeState(filePath);
     if (state.instanceId === instanceId) await rm(filePath, { force: true });
   } catch (error) {
-    if (!(error instanceof Error && error.message === 'No running OpenTig server was found for this home.')) throw error;
+    if (!(error instanceof CliError && error.code === 'RUNTIME_MISSING')) throw error;
   }
 }
 

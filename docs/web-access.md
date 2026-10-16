@@ -157,7 +157,7 @@ Use the same `--home <path>` on both commands for a custom CLI home. For a
 foreground server, restart its process instead of using `service restart`.
 `reset-access` removes only the saved web/listener configuration; after a
 restart, browser access is enabled and the startup address and port are used.
-It preserves repositories, application preferences, and paired sessions.
+It preserves repositories, application preferences, and paired sessions. It also succeeds if the saved configuration is already absent. The command prints restart guidance for managed and foreground instances; it does not restart either automatically. Do not reset access simply because another application occupies the port: close that application or change the listener instead.
 Reload a previously paired browser at an address that reaches the server.
 
 For source web Dev, run `node packages/server/dist/dev.mjs reset-access` from
@@ -289,7 +289,7 @@ Use the actual port shown by the application if it is not `6767`. A ready server
 returns its status, protocol version, and application version. The rotating
 server log is stored at `logs/server.log` inside Electron's OpenTig user-data
 directory or the selected CLI home; authentication material and URL secrets are
-redacted.
+redacted. CLI service installation and restart also report known startup failures immediately, with the selected home and recovery instructions. For service state, run `opentig service status` with the same `--home` if applicable; public `/readyz` alone does not prove that a newly installed CLI service owns that listener. See [command errors and recovery](getting-started.md#command-errors-and-recovery) for port conflicts, startup output, and service recovery.
 
 Set `OPENTIG_PERF_LOG=1` before starting the server to add WebSocket performance
 metadata to that existing log. Entries report validated operation names, request
@@ -319,5 +319,5 @@ Treat raw LAN access as trusted-network functionality:
 - revoke sessions when a paired device is lost or no longer trusted.
 
 OpenTig does not currently ship built-in TLS, user roles, a relay, Tailscale/SSH
-automation, Docker packaging, or Windows/macOS service installers. External
+automation, Docker packaging, or services that run before login on Windows/macOS. External
 network controls must protect remote deployments.
