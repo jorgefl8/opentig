@@ -113,7 +113,7 @@ The Windows download controls in the hero and installation card include a small 
 
 The CLI installation card includes a **View on npm** link to the official `@opentig/cli` package below its setup button. Keep the npm destination in `website/src/site.ts` alongside the repository and download links. The hero uses the red npm mark in `website/src/assets/icons/npm.svg`, with a straight vertical divider between its link and the copy control.
 
-Below the hero's download and GitHub buttons, a centered monospaced line shows the Windows version and **Free & open source**. An **or** separator leads to `npm install -g @opentig/cli`, with a copy control and an npm icon linking to the package. The installation card retains the one-off `npx --yes @opentig/cli@latest` command. Both copy controls work independently and report successful copies with their own `hero` or `install` placement.
+Below the hero's download and GitHub buttons, a centered monospaced line shows the Windows version and **Free & open source**. An **or** separator leads to `npm install -g @opentig/cli`, with a copy control and an npm icon opening the package in a new tab. The installation card retains the one-off `npx --yes @opentig/cli@latest` command. Both copy controls work independently and report successful copies with their own `hero` or `install` placement.
 
 Edit sections in `website/src/components/landing/`. Shared GitHub, download, and documentation destinations live in `website/src/site.ts`. Every Download button, including the documentation navigation, links directly to the Windows x64 installer. The hero and installation card show its version below the button in monospaced text. Browser/CLI setup instructions link to the installation guide.
 

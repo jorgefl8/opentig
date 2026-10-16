@@ -24,7 +24,7 @@ const { command = 'npx --yes @opentig/cli@latest', placement = 'install', compac
   </div>
   {compact && <>
     <span aria-hidden="true" class="h-6 w-px shrink-0 bg-white/15"></span>
-    <a href={npmUrl} aria-label="View OpenTig CLI on npm" class="flex h-10 w-10 shrink-0 items-center justify-center rounded-md hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"><NpmIcon width={24} height={24} aria-hidden="true" /></a>
+    <a href={npmUrl} target="_blank" rel="noopener noreferrer" aria-label="View OpenTig CLI on npm (opens in a new tab)" class="flex h-10 w-10 shrink-0 items-center justify-center rounded-md hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"><NpmIcon width={24} height={24} aria-hidden="true" /></a>
   </>}
   {!compact && <code class="mt-3 block break-all font-mono text-xs leading-relaxed text-foreground">{command}</code>}
   <span data-copy-status role="status" class="sr-only"></span>
