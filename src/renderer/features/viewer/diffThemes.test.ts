@@ -5,7 +5,7 @@ import typescript from '@shikijs/langs-precompiled/ts';
 import { createHighlighterCore } from 'shiki/core';
 import { createJavaScriptRawEngine } from 'shiki/engine/javascript';
 import { getHighlighterThemeStyles, resolveThemes, type DiffsHighlighter } from '@pierre/diffs';
-import { OPENTIG_CODE_THEMES } from './diffThemes';
+import { concreteColor, OPENTIG_CODE_THEMES } from './diffThemes';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -60,5 +60,24 @@ describe('OPENTIG_CODE_THEMES', () => {
     } finally {
       highlighter.dispose();
     }
+  });
+
+  it('turns oklch into hex so the editor color map does not use a transparent placeholder', () => {
+    let fill = '';
+    vi.stubGlobal('document', {
+      createElement: () => ({
+        width: 0,
+        height: 0,
+        getContext: () => ({
+          set fillStyle(value: string) { fill = value; },
+          get fillStyle() { return fill; },
+          fillRect() {},
+          getImageData: () => ({ data: fill.startsWith('oklch(92%') ? [228, 228, 228, 255] : [1, 2, 3, 255] }),
+        }),
+      }),
+    });
+    expect(concreteColor('#e4e4e4', '#111111')).toBe('#e4e4e4');
+    expect(concreteColor('oklch(92% 0 0)', '#111111')).toBe('#e4e4e4');
+    expect(concreteColor('not-a-color', '#111111')).toBe('#111111');
   });
 });

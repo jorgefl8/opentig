@@ -56,6 +56,34 @@ const FALLBACK_COLORS: Record<'light' | 'dark', Record<(typeof THEME_CSS_VARIABL
  * be read regardless of which theme is currently active) sidesteps that: Shiki
  * only ever sees plain, already-resolved colors.
  */
+/**
+ * Pierre keeps non-hex theme colors by swapping in placeholders such as
+ * `#00000001`. The static stylesheet later restores the real color, but the
+ * editor's token color map does not, so the first edit paints ordinary text
+ * in that near-transparent black. Shiki and the editor both need hex.
+ */
+export function concreteColor(color: string, fallback: string): string {
+  const value = color.trim();
+  if (/^#(?:[0-9a-f]{6}|[0-9a-f]{8})$/i.test(value)) return value;
+  if (typeof document === 'undefined') return fallback;
+  const canvas = document.createElement('canvas');
+  canvas.width = 1;
+  canvas.height = 1;
+  const context = canvas.getContext('2d');
+  if (!context) return fallback;
+  context.fillStyle = '#010203';
+  context.fillRect(0, 0, 1, 1);
+  context.fillStyle = value;
+  context.fillRect(0, 0, 1, 1);
+  const pixel = context.getImageData(0, 0, 1, 1).data;
+  const red = pixel[0] ?? 0;
+  const green = pixel[1] ?? 0;
+  const blue = pixel[2] ?? 0;
+  if (red === 1 && green === 2 && blue === 3) return fallback;
+  const hex = [red, green, blue].map((channel) => channel.toString(16).padStart(2, '0')).join('');
+  return `#${hex}`;
+}
+
 function resolveThemeColors(type: 'light' | 'dark'): Record<(typeof THEME_CSS_VARIABLES)[number], string> {
   // `.dark` is toggled on <html> (see App.tsx), and custom properties inherit
   // through any descendant regardless of that descendant's own class list -
@@ -77,7 +105,7 @@ function resolveThemeColors(type: 'light' | 'dark'): Record<(typeof THEME_CSS_VA
   const fallback = FALLBACK_COLORS[type];
   const resolved = {} as Record<(typeof THEME_CSS_VARIABLES)[number], string>;
   for (const name of THEME_CSS_VARIABLES) {
-    resolved[name] = computed.getPropertyValue(`--${name}`).trim() || fallback[name];
+    resolved[name] = concreteColor(computed.getPropertyValue(`--${name}`).trim() || fallback[name], fallback[name]);
   }
   probe.remove();
   if (hadDark !== wantsDark) root.classList.toggle('dark', hadDark);
