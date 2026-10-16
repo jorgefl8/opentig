@@ -39,7 +39,7 @@
     "cli",
     "headless"
   ],
-  "author": "OpenTig contributors",
+  "author": "OpenTig",
   "license": "MIT",
   "repository": {
     "type": "git",

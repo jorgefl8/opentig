@@ -41,7 +41,7 @@
     "git-client",
     "windows"
   ],
-  "author": "OpenTig contributors",
+  "author": "OpenTig",
   "license": "MIT",
   "engines": {
     "node": ">=24.15.0"
