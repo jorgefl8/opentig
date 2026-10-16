@@ -10,9 +10,9 @@ Browse files, inspect diffs, edit, stage, and commit on your computer or a remot
 
 </div>
 
-![OpenTig reviewing a TypeScript split diff in a demo repository](docs/images/workspace.png)
+![OpenTig reviewing an open pull request and its side-by-side JavaScript diff in the Launchpad sample repository](docs/images/workspace.png)
 
-*The browser UI in the Dev build, reviewing a small demo repository.*
+*OpenTig reviewing a sample pull request in the interactive demo.*
 
 > [!IMPORTANT]
 > **Early development.** I'm building OpenTig for my own daily workflow and sharing it as it takes shape. Expect bugs, rough edges, and changes. Keep important work backed up and review Git and file operations before confirming them.

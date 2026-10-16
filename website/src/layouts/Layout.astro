@@ -22,7 +22,7 @@ const {
 // Only emit absolute social URLs when a public origin has been configured.
 const canonical = canonicalPage && Astro.site ? new URL(Astro.url.pathname, Astro.site) : undefined;
 const socialImage = Astro.site ? new URL('/opentig-social.png', Astro.site) : undefined;
-const socialImageAlt = 'OpenTig, a free, open-source Git client, showing changed files and a side-by-side code diff.';
+const socialImageAlt = 'OpenTig, a free, open-source Git client, showing an open pull request and a side-by-side code diff.';
 ---
 
 <!DOCTYPE html>
