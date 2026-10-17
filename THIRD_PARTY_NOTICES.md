@@ -85,3 +85,7 @@ The Astro landing page in `website/` includes MIT-licensed landing-page code, co
 The website bundles Geist, Inconsolata, and [Geist Pixel Triangle](https://github.com/vercel/geist-pixel-font) under SIL Open Font License 1.1. The font copyright and license texts are included in `website/public/fonts/*-OFL.txt`. The website's Inconsolata WOFF2 fixes the width axis at its normal value (100), retaining the full character set and variable weights. Asset regeneration is documented in [the website guide](docs/website.md).
 
 Tabler SVG icons are provided by `@tabler/icons` under MIT. OGL is MIT-licensed. The copied Claude Code, Codex, OpenCode, Grok, and Windows marks identify tools or platforms; their respective owners retain trademark rights, and their display does not imply endorsement.
+
+The website adapts [Gooey Nav from React Bits](https://github.com/DavidHDev/react-bits/tree/main/src/ts-default/Components/GooeyNav), copyright (c) 2026 David Haz, under its MIT + Commons Clause license. The full upstream notice is preserved in `website/public/licenses/react-bits.txt`; this component is incorporated into the OpenTig website, not distributed as a standalone component library.
+
+The hero adapts [Typing Text from Kokonut UI](https://github.com/kokonut-labs/kokonutui/blob/main/components/kokonutui/type-writer.tsx), copyright (c) 2025 kokonutUI, under MIT. Its full notice is preserved in `website/public/licenses/kokonut-ui.txt`. The animation uses Motion, also MIT-licensed.

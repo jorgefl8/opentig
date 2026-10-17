@@ -5,14 +5,14 @@ import { repositoryUrl, downloadUrl, downloadVersion } from '@/site';
 import Button from './Button.astro';
 import CopyCommand from './CopyCommand.astro';
 import SmartScreenNotice from './SmartScreenNotice.astro';
+import HeroTypewriter from './HeroTypewriter';
 ---
 
 <section class="relative min-h-screen flex items-center justify-center overflow-hidden">
-  <div class="relative z-10 max-w-4xl mx-auto text-center px-6 py-24">
-    <h1 class="font-['GeistPixelTriangle'] text-4xl sm:text-5xl md:text-7xl font-bold tracking-tight leading-[1.1]">
-      A focused workspace{" "}
-      <br class="hidden sm:block" />
-      for your <span class="text-primary-heading">Git repositories.</span>
+  <div class="relative z-10 w-full max-w-4xl mx-auto text-center px-6 py-24">
+    <h1 aria-label="A focused workspace for your Git repositories." class="font-['GeistPixelTriangle'] text-4xl sm:text-5xl md:text-7xl font-bold tracking-tight leading-[1.1]">
+      <span class="hero-title-intro">A focused workspace</span>
+      <span class="hero-title-line"><span>for your</span><HeroTypewriter client:load /></span>
     </h1>
 
     <p class="text-base md:text-lg text-muted-foreground max-w-2xl mx-auto mt-6 leading-relaxed">

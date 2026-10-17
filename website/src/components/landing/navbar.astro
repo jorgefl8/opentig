@@ -3,36 +3,23 @@ import Logo from '@/assets/logo.svg';
 import { downloadUrl } from '@/site';
 import WindowsIcon from '@/assets/icons/windows.svg';
 import Button from './Button.astro';
+import GooeyNavigation from './GooeyNavigation';
 ---
 
 <header class="fixed top-4 left-4 right-4 z-50">
-  <nav class="max-w-5xl mx-auto px-5 h-12 flex items-center justify-between backdrop-blur-xl bg-background/60 border border-border/50 rounded-xl">
+  <div class="max-w-5xl mx-auto px-5 h-12 flex items-center justify-between backdrop-blur-xl bg-background/60 border border-border/50 rounded-xl">
     <a href="/" class="flex items-center gap-2.5">
       <Logo class="h-8 w-8" />
       <span class="font-semibold text-white text-sm">OpenTig</span>
     </a>
 
-    <div class="hidden md:flex items-center gap-1">
-      {[
-        { label: "Workflow", href: "#workflow" },
-        { label: "Features", href: "#features" },
-        { label: "Tools", href: "#tools" },
-        { label: "How it works", href: "#how-it-works" },
-        { label: "Install", href: "#install" },
-        { label: "Docs", href: "/docs/" },
-      ].map(({ label, href }) => (
-        <a
-          href={href}
-          class="h-7 px-2.5 text-[0.8rem] font-medium rounded-[min(var(--radius-md),12px)] border border-transparent inline-flex items-center justify-center whitespace-nowrap transition-all cursor-pointer hover:bg-muted hover:text-foreground"
-        >
-          {label}
-        </a>
-      ))}
+    <div class="hidden md:flex items-center">
+      <GooeyNavigation client:load />
     </div>
 
     <Button href={downloadUrl} data-windows-download data-analytics-placement="navbar" size="sm">
       <WindowsIcon width={16} height={16} />
       Download
     </Button>
-  </nav>
+  </div>
 </header>
