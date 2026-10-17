@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { ViewerTabs, ViewerTabsList, ViewerTabsPanel } from '@/components/ui/viewer-tabs';
-import { FileSaveControls, SourceCodeEditor } from './EditableFileViewer';
+import { FileSaveControls, FileViewerChrome, SourceCodeEditor } from './EditableFileViewer';
 import { MAX_IMAGE_ZOOM, type ImageSizingMode, zoomIn, zoomOut } from './image-viewer-state';
 import { useEditableFileDraft } from './useEditableFileDraft';
 import './image-viewer.css';
@@ -116,7 +116,9 @@ export function SvgFileViewer({ file, initialContent, themeType, wrapLines, read
         />
       </ViewerTabsPanel>
       <ViewerTabsPanel value="code" className="svg-file-panel">
-          <div className="file-viewer-pill svg-file-toolbar">{tabs}{saveControls}</div>
+          <FileViewerChrome save={saveControls}>
+            <div className="file-viewer-pill svg-file-toolbar">{tabs}</div>
+          </FileViewerChrome>
           <div className="svg-code-view">
             <SourceCodeEditor
               path={file.path}
@@ -184,6 +186,7 @@ function ImagePreviewWorkspace({ objectUrl, path, size, toolbarStart, toolbarEnd
 
   return (
     <div className="image-preview-workspace">
+      <FileViewerChrome save={toolbarEnd}>
       <div className="file-viewer-pill image-preview-toolbar">
         {toolbarStart}
         <span className="image-file-details">{details}</span>
@@ -208,8 +211,8 @@ function ImagePreviewWorkspace({ objectUrl, path, size, toolbarStart, toolbarEnd
             <TooltipContent>Zoom in</TooltipContent>
           </Tooltip>
         </div>
-        {toolbarEnd}
       </div>
+      </FileViewerChrome>
       <div
         ref={canvasRef}
         className="image-preview-canvas"

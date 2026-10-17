@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { writeFileAtomically } from '../persistence/atomicWrite';
+import { DESKTOP_MIN_WINDOW_HEIGHT, DESKTOP_MIN_WINDOW_WIDTH } from './desktop-window-size';
 
 export interface DesktopWindowBounds {
   width: number;
@@ -113,8 +114,8 @@ function normalizeBounds(value: unknown): DesktopWindowBounds | null {
   if (typeof bounds.width !== 'number' || !Number.isFinite(bounds.width)
     || typeof bounds.height !== 'number' || !Number.isFinite(bounds.height)) return null;
   return {
-    width: Math.max(900, Math.round(bounds.width)),
-    height: Math.max(600, Math.round(bounds.height)),
+    width: Math.max(DESKTOP_MIN_WINDOW_WIDTH, Math.round(bounds.width)),
+    height: Math.max(DESKTOP_MIN_WINDOW_HEIGHT, Math.round(bounds.height)),
     ...(typeof bounds.x === 'number' && Number.isFinite(bounds.x) ? { x: Math.round(bounds.x) } : {}),
     ...(typeof bounds.y === 'number' && Number.isFinite(bounds.y) ? { y: Math.round(bounds.y) } : {}),
     isMaximized: bounds.isMaximized === true,

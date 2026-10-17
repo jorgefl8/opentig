@@ -24,6 +24,7 @@ import { hasActiveBrowserSessions } from './main/persistence/BrowserSessionFile'
 import { normalizePairingOrigin } from './shared/web-access';
 import { startGlobalDoubleControlShortcut } from './main/shortcuts/GlobalDoubleControlShortcut';
 import { boundsVisibleOnDisplays, browserWindowBounds, DesktopWindowState } from './main/window/DesktopWindowState';
+import { DESKTOP_MIN_WINDOW_HEIGHT, DESKTOP_MIN_WINDOW_WIDTH } from './main/window/desktop-window-size';
 import { getWindowTitleBarOptions, readStartupDark, startupBackground } from './main/window/WindowTitleBar';
 import { serverErrorPageUrl, serverRecoveryAction } from './main/window/ServerErrorPage';
 import { normalizeExternalUrl } from './shared/external-url';
@@ -110,8 +111,8 @@ async function createWindow(): Promise<void> {
 
   mainWindow = new BrowserWindow({
     ...bounds,
-    minWidth: Math.min(900, bounds.width),
-    minHeight: Math.min(600, bounds.height),
+    minWidth: Math.min(DESKTOP_MIN_WINDOW_WIDTH, bounds.width),
+    minHeight: Math.min(DESKTOP_MIN_WINDOW_HEIGHT, bounds.height),
     show: false,
     backgroundColor,
     title: `${displayName} — Starting…`,

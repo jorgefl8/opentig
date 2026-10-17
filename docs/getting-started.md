@@ -143,7 +143,7 @@ OpenTig does not include Docker packaging, built-in TLS, Tailscale/SSH automatio
 | `--host` | `OPENTIG_HOST` | `127.0.0.1` |
 | `--port` | `OPENTIG_PORT` | `6767` |
 | `--home` | `OPENTIG_HOME` | `~/.opentig` |
-| `--no-browser` | Not applicable | Use with `start` to prevent opening a browser. |
+| `--no-browser` | Not applicable | Supported only by `start`, to prevent opening a browser. |
 
 </details>
 
@@ -165,6 +165,10 @@ opentig service install --host 127.0.0.1 --port 6767
 ```
 
 The service uses your OS account's repository access and CLI credentials. It does not copy credentials or run as root or LocalSystem. It is independent of any repository and separate from the desktop app's server. If another instance already uses port `6767`, choose a different port.
+
+`service install` starts the server in the background and registers startup persistence. Do not also run `serve` for the same home: `serve` stays in its terminal and stops when that terminal closes, while the installed service continues independently.
+
+Installation checks the effective listening address and prerequisites before staging dependencies or registering the service. It prints preparation, registration, and startup phases, and reports success only after verifying the managed server's identity. A live service can be reinstalled using its own listener. Stop an unrelated foreground process using the same home in its terminal before installing the service.
 
 ### When the service runs
 
@@ -211,6 +215,40 @@ Reinstall the service from your terminal with `opentig service install` if:
 
 - You move Git or an integration CLI. Installation captures the terminal's `PATH` so tools such as Git, Codex, Claude Code, and OpenCode remain discoverable. Browser updates preserve the running service's effective `PATH`, including systemd overrides.
 - Your Node version manager removes the Node executable used at installation. The service captures its absolute path.
+
+## Command errors and recovery
+
+The desktop and CLI run separate servers and use separate data directories by default. Installing the CLI does not migrate desktop settings or pairing. Close the desktop before switching to the CLI on the same port, or use a different CLI port:
+
+```powershell
+opentig service install --host 127.0.0.1 --port 6768
+opentig pair
+```
+
+The example port is not reserved or checked until the command runs. For temporary foreground use, select it with `opentig serve --port 6768` instead. OpenTig never stops the application occupying a port or silently selects another port.
+
+Saved **Settings → Web access** configuration overrides startup address and port options, even when the saved values equal the defaults. A conflict message identifies this case: changing `--port` alone cannot override that saved listener. Change it in the existing instance, or follow [local access recovery](web-access.md#recover-access-locally) with an understanding that resetting access also removes its saved switches.
+
+Errors explain the problem and provide the relevant next step. Keep the same `--home` on every command when using a custom home; recommendations include it. Service operations run as your normal OS account, without a stored Windows password or general administrator requirement.
+
+| Situation | What to do |
+| --- | --- |
+| Port already occupied | Close the application using the address, or select another port. A new service is not registered when the conflict is detected during preflight. |
+| Same home already running in a terminal | Use `opentig pair` to access that instance. To replace it with a service, stop the foreground process first. |
+| Git or npm unavailable | Install the required tool or correct the terminal's `PATH`. Reinstall the service from that terminal after changing tool locations. |
+| Service manager or permissions unavailable | Check the user supervisor and the specific OS instructions above. Windows policies can restrict Task Scheduler; macOS requires an active GUI session. |
+| Dependencies could not be prepared | Check the npm registry connection, proxy configuration, permissions, disk space, and the server log. The existing service has not yet been replaced. |
+| Service failed during startup | Read the reported startup cause and final recovery state. A failed first installation attempts to remove its task; a failed replacement attempts to restore and verify its previous service. If recovery also fails, both failures are reported. |
+| Service not installed or stopped | Use `service status` to inspect the selected home, then install or restart as appropriate. A running supervisor process with an unverified backend is reported separately. |
+| Pairing cannot reach the server | Check its service status, selected home and server log. Invalid runtime state or an identity mismatch is not a reason to delete settings or credentials. |
+| Browser access paused | Re-enable it from an authorized desktop session or use local access recovery, then restart the CLI instance. Paired browsers remain saved. |
+| Installation or update already active | Wait for it to finish and check service status. Do not delete a lock without verifying that no operation is active. |
+
+Startup failures, including those before normal server initialization, are recorded in the selected home's rotating `logs/server.log`. A private `service/startup.json` record tracks the current managed startup attempt without credentials; older records are not treated as the current result. On Windows, hidden task stderr is retained in `logs/service-stderr.log`, with one previous-start backup, rather than discarded. On Linux/macOS also inspect the user supervisor's logs. If startup times out without a known cause, the command reports that uncertainty rather than attributing it to a port or missing Git.
+
+Successful commands return `0`, invalid command usage returns `2`, and operational failures return `1`. `service status` returns `1` for an absent, stopped, disabled, starting, or unverified service. `service uninstall` succeeds when the service is already absent and preserves settings and paired browsers. `reset-access` also succeeds when there is no saved access configuration; it takes effect at the next restart.
+
+Errors from `npm install -g` happen before OpenTig runs and are reported by npm. Check Node.js/npm installation, registry connectivity and npm's configured global installation permissions if that step fails.
 
 ## Updates for background services
 

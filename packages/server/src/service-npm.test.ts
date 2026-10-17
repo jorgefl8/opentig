@@ -28,3 +28,13 @@ it('does not treat a bun npm_execpath as npm', async () => {
     expect(command.mock.calls[0]?.[1]).not.toContain(path.join(directory, 'bun'));
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
+
+it.each([
+  ['ENOTFOUND', 'could not reach the package registry'],
+  ['E403', 'registry access was denied'],
+  ['ENOSPC', 'ran out of disk space'],
+  ['EACCES', 'could not write the dependencies'],
+])('translates npm %s without printing arbitrary subprocess output', async (code, expected) => {
+  command.mockRejectedValueOnce(Object.assign(new Error('npm failed'), { stderr: `npm error code ${code}\nprivate registry details` }));
+  await expect(runServiceNpm(['install'])).rejects.toMatchObject({ code: 'DEPENDENCIES_FAILED', actions: expect.arrayContaining([expect.stringContaining(expected)]) });
+});

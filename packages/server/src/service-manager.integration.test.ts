@@ -78,10 +78,26 @@ it.skipIf(process.env.OPENTIG_SERVICE_INTEGRATION !== '1')('installs the built C
   let failure: unknown;
   try {
     await writeFile(path.join(home, 'retained.txt'), 'private data');
+    // Another application's listener is detected before touching the supervisor.
+    const blocker = createServer();
+    await new Promise<void>(resolve => blocker.listen(port, '127.0.0.1', resolve));
+    try {
+      await expect(manageCliService(config('install'), io, manager)).rejects.toMatchObject({ code: 'PORT_IN_USE' });
+      expect(await manager.read()).toBeNull();
+      expect(blocker.listening).toBe(true);
+    } finally { await new Promise<void>(resolve => blocker.close(() => resolve())); }
+    expect(await manageCliService(config('install'), io, manager)).toBe(0);
+    // Reinstalling our own live listener must not conflict with itself.
     expect(await manageCliService(config('install'), io, manager)).toBe(0);
     expect((await readInstallation(home))?.manager).toBe(manager.kind);
     expect(await manageCliService(config('status'), io, manager)).toBe(0);
     expect(await manageCliService(config('restart'), io, manager)).toBe(0);
+    // Native startup failures must survive hidden wrappers and precede the timeout.
+    const current = (await readInstallation(home))!;
+    const entry = path.join(home, 'service', `app-${current.version}`, 'dist/bin.mjs');
+    await manager.write(manager.render({ nodeExecutable: process.execPath, cliEntrypoint: entry, home,
+      host: '127.0.0.1', port, environmentPath: home }));
+    await expect(manageCliService(config('restart'), io, manager)).rejects.toMatchObject({ code: 'GIT_UNAVAILABLE' });
     expect(await manageCliService(config('uninstall'), io, manager)).toBe(0);
     expect(await readFile(path.join(home, 'retained.txt'), 'utf8')).toBe('private data');
     expect(await readInstallation(home)).toBeNull();

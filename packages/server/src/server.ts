@@ -17,7 +17,7 @@ import type { ApplicationProfile } from '../../../src/shared/application-profile
 
 import type { DesktopUpdatesApi } from '../../../src/shared/desktop-updates';
 import type { OpenTigWebAccessStatus } from '../../../src/shared/desktop-api';
-import { NetworkSettings, isLoopbackHost, type NetworkConfig } from './network-settings';
+import { loadStartupNetwork, type NetworkConfig } from './network-settings';
 
 export interface OpenTigServerConfig extends Omit<CreateOpenTigRuntimeOptions, 'runtimeMode' | 'onEvent'> {
   networkSettingsPath?: string;
@@ -63,15 +63,7 @@ export interface RunningOpenTigServer extends OpenTigServerAddress {
  */
 export async function runOpenTigServer(config: OpenTigServerConfig): Promise<RunningOpenTigServer> {
   if (config.profile !== undefined && config.profile !== 'production' && config.profile !== 'dev') throw new Error('Invalid application profile.');
-  const desktop = config.mode !== 'web-access';
-  const networkSettings = new NetworkSettings(config.networkSettingsPath ?? (desktop
-    ? path.join(path.dirname(config.settingsPath), 'desktop-server.json')
-    : path.join(config.serverDataPath ?? path.dirname(config.settingsPath), 'web-access.json')), desktop);
-  const network = await networkSettings.load({
-    webAccessEnabled: config.browserAccessEnabled ?? config.mode === 'web-access',
-    lanAccessEnabled: !isLoopbackHost(config.host ?? '127.0.0.1'),
-    publicOrigin: null, listenerHost: config.host ?? '127.0.0.1', listenerPort: config.port ?? 6767,
-  });
+  const { networkSettings, network } = await loadStartupNetwork(config);
   let transport: OpenTigServer | null = null;
   const auth = await OpenTigSessionAuth.open({
     source: config.auth,

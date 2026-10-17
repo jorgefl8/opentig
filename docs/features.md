@@ -176,7 +176,7 @@ Only working-tree files become tabs. Diffs, conflicts, commits, and pull request
 
 **Edit and save**
 
-Open text files in the syntax-aware editor. A floating **Save** button appears when the file has unsaved changes; saving checks for external changes and preserves your scroll position. Press `Ctrl+F` for the integrated find-and-replace panel, including single or global replacement, case, whole-word, regular-expression, and undo support.
+Open text files in the syntax-aware editor. When the file has unsaved changes, a labeled **Save** button with its shortcut appears at the top right. Saving checks for external changes and preserves your scroll position. Press `Ctrl+F` for the integrated find-and-replace panel, including single or global replacement, case, whole-word, regular-expression, and undo support.
 
 Unsaved edits stay in memory while the app runs. Closing a modified tab offers **Save**, **Discard**, or **Cancel**. Open tab paths, order, and the active file are restored per worktree between sessions; **unsaved text is never written to disk automatically**.
 
@@ -184,7 +184,7 @@ If a file moves or is renamed, its tab follows the new path. If it disappears, a
 
 **Preview documents and images**
 
-- **Markdown, HTML, and SVG:** switch between **Preview** and **Code** with mouse or keyboard. HTML runs its own scripts in a sandbox that cannot access OpenTig.
+- **Markdown, HTML, and SVG:** switch between **Preview** and **Code** with mouse or keyboard. **Code** shows a dot while the file has unsaved edits. HTML runs its own scripts in a sandbox that cannot access OpenTig.
 - **Markdown:** render GitHub-flavoured Markdown, syntax-highlighted code with copy buttons, alerts, footnotes, KaTeX formulas, Mermaid diagrams, and repository-relative images, including PNG and SVG.
 - **Raster images:** use fit, 1:1, keyboard or wheel zoom, and view dimensions and file size.
 

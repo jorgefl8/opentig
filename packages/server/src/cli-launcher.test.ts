@@ -42,3 +42,23 @@ it('does not recurse after delegation', async () => {
   vi.stubEnv('OPENTIG_DELEGATED', '1');
   expect(await delegateToService(['pair', '--home', home], fileURLToPath(import.meta.url))).toBeNull();
 });
+
+it('explains a missing newer runtime without losing the installation identity', async () => {
+  const home = await fixture();
+  const installed = (await readInstallation(home))!;
+  await rm(path.join(packageDirectory(home, installed), 'dist/bin.mjs'));
+  await expect(delegateToService(['pair', '--home', home], fileURLToPath(import.meta.url))).rejects.toMatchObject({
+    code: 'SERVICE_LAUNCHER_MISSING', actions: expect.arrayContaining([expect.stringContaining('99.0.0')]),
+  });
+});
+it('reports malformed service metadata with a targeted repair path', async () => {
+  const home = await fixture();
+  await writeFile(path.join(home, 'service/installation.json'), 'null');
+  await expect(delegateToService(['pair', '--home', home], fileURLToPath(import.meta.url))).rejects.toMatchObject({ code: 'SERVICE_METADATA_INVALID' });
+});
+
+it.each(['--help', '--version'])('keeps %s available when service metadata is damaged', async flag => {
+  const home = await fixture();
+  await writeFile(path.join(home, 'service/installation.json'), '{');
+  expect(await delegateToService([flag, '--home', home], fileURLToPath(import.meta.url))).toBeNull();
+});

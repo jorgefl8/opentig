@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
+import { CliError } from './cli-errors';
 import { atomicWrite, execute, SERVICE_NAME, serviceUnitPath, systemctl, type ServiceInstallation } from './service-installation';
 import { encodedPowerShell, psQuote, renderLaunchAgent, renderSystemdUnit, renderWindowsTask, windowsServerScript, serviceOwnerMarker, xml, type ServiceDefinitionInput } from './service-definitions';
 
@@ -23,6 +24,7 @@ export interface ServiceManager {
   remove(): Promise<void>;
   status(): Promise<ServiceState>;
   ownsProcess(): Promise<boolean>;
+  ownsRuntime?(pid: number): Promise<boolean>;
   launchWorker(node: string, entry: string): Promise<ServiceWorker>;
   cleanupWorker(id: string): Promise<void>;
 }
@@ -38,11 +40,11 @@ export function managerKind(platform = process.platform): ServiceManagerKind {
   if (platform === 'linux') return 'systemd';
   if (platform === 'darwin') return 'launchd';
   if (platform === 'win32') return 'windows-task';
-  throw new Error('Managed CLI services support Linux, macOS, and Windows.');
+  throw new CliError('PLATFORM_UNSUPPORTED', 'Managed CLI services support Linux, macOS, and Windows.', ['Use opentig serve in a terminal on a supported Node.js host.']);
 }
 export function assertManager(installation: ServiceInstallation, kind: ServiceManagerKind): void {
   // Schema 1 installations predating cross-platform support are Linux services.
-  if ((installation.manager ?? 'systemd') !== kind) throw new Error('This service was installed for another operating system.');
+  if ((installation.manager ?? 'systemd') !== kind) throw new CliError('SERVICE_PLATFORM_MISMATCH', 'This service was installed for another operating system.', ['Use the original OS and home to manage this service; do not copy its installation metadata to this machine.']);
 }
 
 /** Optional identity is only for isolated native integration tests, never CLI input. */
@@ -67,7 +69,7 @@ function linuxManager(home: string, identity?: string): ServiceManager {
     preflight: async () => {
       await systemctl('show-environment');
       try { await execute('loginctl', ['enable-linger'], { timeout: 15_000 }); }
-      catch { throw new Error('Lingering is required. Ask an administrator to run: sudo loginctl enable-linger <your-user>. Then retry service install as your normal user.'); }
+      catch { throw new CliError('LINGERING_REQUIRED', 'Lingering is required for the Linux user service.', ['Ask an administrator to run: sudo loginctl enable-linger <your-user>', 'Then retry service install as your normal user.']); }
     },
     render: renderSystemdUnit,
     read: () => fileOrNull(file),
@@ -124,7 +126,7 @@ function macManager(home: string, identity?: string): ServiceManager {
     kind: 'launchd', location: file, startup: 'Starts at macOS login and stops at logout. Keep the user signed in and the Mac awake for remote access.',
     preflight: async () => {
       try { await launchctl('print', domain); }
-      catch { throw new Error('No macOS login session is available. Sign in on the Mac, then run service install as that user.'); }
+      catch { throw new CliError('LOGIN_SESSION_REQUIRED', 'No macOS login session is available.', ['Sign in to a GUI session on the Mac, then run service install as that user.']); }
     },
     render: input => renderLaunchAgent(input, label),
     read: () => fileOrNull(file),
@@ -206,6 +208,29 @@ if ($null -ne $task) {
     stop: () => stopTask(name),
     remove: () => removeTask(name),
     status: () => state(name),
+    ownsRuntime: async pid => {
+      if (!Number.isSafeInteger(pid) || pid <= 0) return false;
+      return await ps(`${task(name)}
+if ($null -eq $task -or $task.State -ne 4) { 'false'; exit }
+$action = $task.Definition.Actions.Item(1)
+$arguments = [string]$action.Arguments
+if ($arguments -notmatch '-EncodedCommand ([A-Za-z0-9+/=]+)$') { 'false'; exit }
+$encoded = $Matches[1]
+$processes = @(Get-CimInstance Win32_Process)
+$cursor = ${pid}
+$owned = $false
+for ($depth = 0; $depth -lt 16 -and $cursor -gt 0; $depth++) {
+  $current = $processes | Where-Object { $_.ProcessId -eq $cursor } | Select-Object -First 1
+  if ($null -eq $current) { break }
+  if ($current.ExecutablePath -eq $action.Path -and $current.CommandLine -match ('(?i)-EncodedCommand\\s+"?' + [regex]::Escape($encoded) + '"?\\s*$')) {
+    $owner = Invoke-CimMethod -InputObject $current -MethodName GetOwnerSid
+    $owned = $owner.ReturnValue -eq 0 -and $owner.Sid -eq ${psQuote(sid)}
+    break
+  }
+  $cursor = $current.ParentProcessId
+}
+$owned.ToString().ToLowerInvariant()` ) === 'true';
+    },
     ownsProcess: async () => process.env.OPENTIG_SERVICE_HOME === home && (await state(name)).running,
     launchWorker: async (node, entry) => {
       const id = `OpenTig Update ${randomUUID()}`;

@@ -144,6 +144,8 @@ For a custom CLI home, use the same `--home <path>` on both commands. For a fore
 
 `reset-access` removes only saved web/listener configuration. After restart, browser access is enabled and the startup address/port apply. Repositories, application preferences, and paired sessions are preserved. Reload a previously paired browser at an address that reaches the server. The paused pairing page also provides recovery instructions.
 
+The command also succeeds if no access configuration is saved. It prints restart guidance for managed and foreground instances but does not restart either automatically. Do not reset access simply because another application occupies the port: close that application or change the listener instead.
+
 <details>
 <summary>Recover access to a source Dev instance</summary>
 
@@ -267,12 +269,16 @@ Invoke-RestMethod http://127.0.0.1:6767/readyz
 
 Use the app's actual port if it differs from `6767`. A ready server returns its status, protocol version, and application version.
 
+To check a CLI service, run `opentig service status` with the same `--home` if applicable. Public `/readyz` alone does not prove that a newly installed service owns that listener.
+
 **If access fails**
 
 - **Browser stuck on Authentication required:** revoke stale sessions if appropriate, create a fresh pairing link, and open that exact link.
 - **Desktop cannot connect:** restart the packaged application and inspect the server log and `/readyz` response.
 
 The rotating log is `logs/server.log` inside Electron's OpenTig user-data directory or the selected CLI home. Authentication material and URL secrets are redacted.
+
+CLI service installation and restart also report known startup failures immediately, with the selected home and recovery instructions. See [command errors and recovery](getting-started.md#command-errors-and-recovery) for port conflicts, startup output, and service recovery.
 
 <details>
 <summary>Enable WebSocket performance logging</summary>
@@ -292,4 +298,4 @@ Send duration ends at the `ws` write callback. It does not measure receipt, JSON
 - Never forward the raw HTTP port to the public internet. Avoid untrusted Wi-Fi: non-loopback HTTP is unencrypted.
 - Revoke sessions when a paired device is lost or no longer trusted.
 
-OpenTig does not provide built-in TLS, user roles, a relay, Tailscale/SSH automation, or Docker packaging. External network controls must protect remote deployments. Managed CLI services are available on Linux, macOS, and Windows; see [installation and CLI](getting-started.md#background-services).
+OpenTig does not provide built-in TLS, user roles, a relay, Tailscale/SSH automation, or Docker packaging. External network controls must protect remote deployments. Managed CLI services are available on Linux, macOS, and Windows, but Windows/macOS services do not run before login; see [installation and CLI](getting-started.md#background-services).

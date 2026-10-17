@@ -52,8 +52,9 @@ export function parseCliArguments(
     }
     if (!optionsEnded && argument.startsWith('--')) {
       const [name, inline] = splitOption(argument);
+      if (!['--host', '--port', '--home'].includes(name)) throw new CliUsageError(`Unknown option: ${name}. Use --host, --port, or --home.`);
       const value = inline ?? args[++index];
-      if (value === undefined || value.startsWith('--')) throw new CliUsageError(`Missing value for ${name}.`);
+      if (value === undefined || value === '' || value.startsWith('-')) throw new CliUsageError(`Missing value for ${name}.`);
       if (name === '--host') hostValue = value;
       else if (name === '--port') portValue = value;
       else if (name === '--home') homeValue = value;
@@ -72,9 +73,11 @@ export function parseCliArguments(
       serviceAction = argument;
       continue;
     }
-    throw new CliUsageError(`Unexpected argument: ${argument}. Add and select repositories from the OpenTig web UI.`);
+    if (command === 'service' && serviceAction === null) throw new CliUsageError(`Unknown service action: ${argument}. Use install, status, restart, or uninstall.`);
+    throw new CliUsageError(`Unexpected argument: ${argument}. Check the command spelling with opentig --help. Add and select repositories from the OpenTig web UI.`);
   }
 
+  if (noBrowser && command !== 'start') throw new CliUsageError('--no-browser is only supported by start; serve and services already run without opening a browser.');
   if ((command === 'pair' || command === 'reset-access') && (hostValue !== undefined || portValue !== undefined || noBrowser)) {
     throw new CliUsageError(`The ${command} command only accepts --home.`);
   }
@@ -83,10 +86,10 @@ export function parseCliArguments(
     throw new CliUsageError(`The service ${serviceAction} command only accepts --home.`);
   }
 
-  if (command === 'pair' || command === 'reset-access') {
+  if (command === 'pair' || command === 'reset-access' || command === 'service' && serviceAction !== 'install') {
     return {
       command,
-      serviceAction: null,
+      serviceAction,
       host: DEFAULT_SERVER_HOST,
       port: DEFAULT_SERVER_PORT,
       home: resolvePath(homeValue ?? environment.OPENTIG_HOME ?? path.join(homeDirectory, '.opentig'), currentDirectory, 'home'),
@@ -159,8 +162,13 @@ Pairing and remote access:
   a trusted LAN/VPN; pairing is still required.
 
 Runtime behavior:
+  serve runs in this terminal and stops when it closes. service install starts
+  a background server and installs startup persistence; do not run both for
+  the same home. Desktop runs its own server and needs a different port.
   The configured port is never changed silently. If it is occupied, OpenTig
-  exits and asks you to stop that process or choose another --port. SIGINT and
+  exits and asks you to stop that process or choose another --port. Saved
+  Settings → Web access take precedence over startup host/port options.
+  Service installation checks the effective address before registering a service. SIGINT and
   SIGTERM shut the server down cleanly. npx and bunx never install a service;
   service installation is explicit. Linux uses systemd with lingering; macOS
   and Windows start at login and stop at logout.
@@ -209,6 +217,6 @@ function validatePort(value: string): number {
 }
 
 function resolvePath(value: string, currentDirectory: string, label: string): string {
-  if (!value || value.includes('\0')) throw new CliUsageError(`Invalid ${label}.`);
+  if (!value || /[\0\r\n]/.test(value)) throw new CliUsageError(`Invalid ${label}.`);
   return path.resolve(currentDirectory, value);
 }

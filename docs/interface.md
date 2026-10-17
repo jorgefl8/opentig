@@ -88,7 +88,7 @@ Toolbar selectors keep management actions available. Branch and worktree managem
 <details>
 <summary>Long menus, scrolling, and option hints</summary>
 
-Repository menus can grow to 80% of viewport height while search and management remain visible. Other menus remain compact. Menus use the current theme, with larger touch targets on phones and a gap between hovered and selected options. In narrow desktop windows, wrapped toolbar controls stay aligned to the right.
+Repository menus can grow to 80% of viewport height while search and management remain visible. Other menus remain compact. Menus use the current theme, with larger touch targets on phones and a gap between hovered and selected options. The desktop app keeps its toolbar on one row at its minimum window width. Paired browsers between 768 and 1100 pixels wrap remaining toolbar controls to the right.
 
 With 100 or more matching choices, menus render only visible rows and a small buffer. Group labels, disabled choices, keyboard navigation, and scrolling to the selected choice remain available. Filtering below that size restores the ordinary list. Background option refreshes preserve scroll position.
 
@@ -129,7 +129,7 @@ Settings, diagnostics, branch, and worktree controls are also available on touch
 
 ## Desktop and Dev identity
 
-Desktop windows reopen at their previous position and size, including maximized state. If monitor layout or scaling makes a saved position unavailable, the window moves and, when needed, shrinks to fit a display. New windows and disconnected-monitor positions center on the primary display. The welcome screen follows the selected theme and has a draggable top edge.
+Desktop windows reopen at their previous position and size, including maximized state. They stay wide enough for the toolbar to remain on one row and cannot be resized below that width unless the display itself is narrower. If monitor layout or scaling makes a saved position unavailable, the window moves and, when needed, shrinks to fit a display. New windows and disconnected-monitor positions center on the primary display. The welcome screen follows the selected theme and has a draggable top edge.
 
 **OpenTig Dev uses separate data and update behavior.** Its desktop/mobile headers and welcome screen show **OpenTig Dev**, with black/yellow stripes in light mode and white/yellow stripes in dark mode. This identity follows the backend's Dev profile, including in browsers. See [development and packaging](development.md).
 
