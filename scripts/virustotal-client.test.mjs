@@ -95,6 +95,23 @@ it('uses a single-use large-upload URL for files over 32 MB and counts both call
   expect(vt.calls.map(call => call.time)).toEqual([vt.calls[0].time, vt.calls[0].time + 16_000]);
 });
 
+it('upgrades the documented http upload URL to https before posting the installer', async () => {
+  const fixture = await installer(32_000_001);
+  const pathName = '/_ah/upload/AMmfu6b-_DXUeFe36Sb3b0F4B8mH9Nb-CHbRoUNVOPwG/';
+  const vt = client((url, options, call) => {
+    if (call === 1) return response({ data: `http://www.virustotal.com${pathName}` });
+    expect(url).toBe(`https://www.virustotal.com${pathName}`);
+    expect(options.method).toBe('POST');
+    expect(options.redirect).toBe('error');
+    expect(options.headers['x-apikey']).toBe(testKey);
+    expect(options.body.get('file').size).toBe(32_000_001);
+    return submitted();
+  });
+  expect((await vt.submitInstaller(fixture.file, fixture.download)).installer).toEqual(fixture.download.identity);
+  expect(vt.calls).toHaveLength(2);
+  expect(vt.calls.every(call => !String(call.url).startsWith('http://'))).toBe(true);
+});
+
 it('rejects wrong bytes, sizes, names, identities and oversized files before making any request', async () => {
   const fixture = await installer();
   const vt = client(() => { throw new Error('Must not call the network'); });
@@ -111,10 +128,13 @@ it('rejects wrong bytes, sizes, names, identities and oversized files before mak
   expect(vt.calls).toEqual([]);
 });
 
-it.each(['http://www.virustotal.com/_ah/upload/token', 'https://evil.example/_ah/upload/token',
-  'https://www.virustotal.com.evil.example/_ah/upload/token', 'https://www.virustotal.com:444/_ah/upload/token',
-  'https://user:password@www.virustotal.com/_ah/upload/token', 'https://www.virustotal.com/api/v3/files',
-  'https://www.virustotal.com/_ah/upload/', 'https://www.virustotal.com/_ah/upload/token#fragment', 'not-a-url'])(
+it.each(['http://evil.example/_ah/upload/token', 'http://www.virustotal.com:444/_ah/upload/token',
+  'http://user:password@www.virustotal.com/_ah/upload/token', 'http://www.virustotal.com/_ah/upload/token#fragment',
+  'http://www.virustotal.com/_ah/upload/', 'http://www.virustotal.com/api/v3/files',
+  'https://evil.example/_ah/upload/token', 'https://www.virustotal.com.evil.example/_ah/upload/token',
+  'https://www.virustotal.com:444/_ah/upload/token', 'https://user:password@www.virustotal.com/_ah/upload/token',
+  'https://www.virustotal.com/api/v3/files', 'https://www.virustotal.com/_ah/upload/',
+  'https://www.virustotal.com/_ah/upload/token#fragment', 'not-a-url'])(
   'refuses an unexpected upload location without forwarding file data or credentials: %s', async uploadUrl => {
     const fixture = await installer();
     // Use a sparse large file and its real digest without allocating its bytes in memory.

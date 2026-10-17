@@ -42,6 +42,9 @@ function analysisId(value) {
 function uploadLocation(value) {
   let url;
   try { url = new URL(value); } catch { throw new VirusTotalError('invalid-upload-url'); }
+  // VirusTotal documents this one-time URL with http. Upgrade only that exact host.
+  if (url.protocol === 'http:' && url.hostname === 'www.virustotal.com' && !url.port
+    && !url.username && !url.password) url.protocol = 'https:';
   if (url.protocol !== 'https:' || url.hostname !== 'www.virustotal.com' || url.port
     || url.username || url.password || url.hash || !url.pathname.startsWith('/_ah/upload/')
     || url.pathname === '/_ah/upload/') throw new VirusTotalError('invalid-upload-url');
