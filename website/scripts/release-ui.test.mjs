@@ -23,8 +23,8 @@ function scan(state = 'completed') {
 function page(t) {
   const markup = `<a data-windows-download href="${fallbackDownload.url}">Download</a>
     <span data-release-version>${fallbackDownload.version}</span>
-    <details data-installer-scan><summary>VirusTotal: <span data-scan-status role="status">Scan status unavailable</span></summary>
-    <div data-scan-details></div><p>An antivirus scan is not a guarantee of safety.</p></details>`;
+    <div data-installer-scan><button type="button">VirusTotal: <span data-scan-status role="status">Scan status unavailable</span></button>
+    <div popover><div data-scan-details></div><p>An antivirus scan is not a guarantee of safety.</p></div></div>`;
   const dom = new JSDOM(markup.repeat(2));
   t.after(() => dom.window.close());
   return dom.window.document;

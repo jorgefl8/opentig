@@ -28,8 +28,10 @@ import { downloadUrl, downloadVersion, npmUrl } from '@/site';
           <div class="mt-auto flex flex-col gap-2 text-center">
             <Button href={downloadUrl} data-windows-download data-analytics-placement="install" class="px-3!">Download for Windows</Button>
             <SmartScreenNotice />
-            <span data-release-version class="font-mono text-xs text-muted-foreground">{downloadVersion}</span>
-            <InstallerScan />
+            <div class="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+              <span data-release-version class="font-mono">{downloadVersion}</span>
+              <InstallerScan id="install-installer-scan" />
+            </div>
           </div>
         </div>
         <div class="min-w-0 flex flex-col gap-4 rounded-xl border border-border/50 bg-background/40 p-4 sm:p-5">

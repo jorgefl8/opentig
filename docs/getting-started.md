@@ -34,7 +34,7 @@ See [Microsoft's explanation of SmartScreen and app reputation](https://learn.mi
 
 ### Check the installer analysis
 
-On [opentig.com](https://opentig.com), expand **VirusTotal** beside the Windows download version to see the scan state for that exact installer. When an analysis is complete, the details show malicious and suspicious counts separately, engines that could not assess the file, the analysis date, filename, and SHA-256. **View VirusTotal report** appears only when a public report link is available.
+On [opentig.com](https://opentig.com), hover over **VirusTotal** beside the Windows download version (or focus it with the keyboard or tap it on touch screens) to see the scan state for that exact installer. When an analysis is complete, the details show malicious and suspicious counts separately, engines that could not assess the file, the analysis date, filename, and SHA-256. **View VirusTotal report** appears only when a public report link is available.
 
 Pending, queued, in-progress, or unavailable states are not completed results. Missing metadata or a failed release lookup shows **Scan status unavailable**, never zero detections. Reload the page to request a newer status; cached release metadata can delay updates.
 
