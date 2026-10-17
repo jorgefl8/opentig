@@ -1,6 +1,6 @@
 {
   "name": "@opentig/cli",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "Run OpenTig, a free, open-source Git client, on your repository host and access it through a paired browser.",
   "type": "module",
   "main": "dist/server.mjs",
