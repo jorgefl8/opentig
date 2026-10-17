@@ -385,10 +385,13 @@ it('defines a serialized upstream release scan and a main-only manual retry with
   expect(validate.if).toContain("github.ref == 'refs/heads/main'");
   expect(validate.steps[0].with.ref).toBe('main');
   expect(JSON.stringify(validate)).not.toContain('VIRUSTOTAL_API_KEY');
+  expect(workflow.on.workflow_dispatch.inputs.diagnose_upload_url).toMatchObject({ type: 'boolean', default: false });
+  expect(JSON.stringify(validate)).not.toContain('DIAGNOSE_UPLOAD_URL');
   const job = workflow.jobs.scan;
   expect(job.needs).toBe('validate');
   expect(job.environment).toBe('release-security');
   expect(job.steps[0].with.ref).toBe('${{ needs.validate.outputs.automation_commit }}');
+  expect(job.steps.find(step => step.run?.includes('scan-release.mjs scan')).env.DIAGNOSE_UPLOAD_URL).toBe('${{ inputs.diagnose_upload_url }}');
   expect(job.permissions).toEqual({ contents: 'write' });
   const receipt = job.steps.find(step => step.uses?.startsWith('actions/upload-artifact'));
   expect(receipt.if).toBe('always()');

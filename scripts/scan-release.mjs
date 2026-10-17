@@ -262,6 +262,11 @@ export async function main(action, environment = process.env) {
   if (!environment.EXPECTED_RELEASE_ID || plan.releaseId !== Number(environment.EXPECTED_RELEASE_ID)
     || plan.commit !== environment.EXPECTED_RELEASE_COMMIT) throw new ReleaseScanError('validation-plan-changed');
   const virusTotal = createVirusTotalClient({ apiKey: environment.VIRUSTOTAL_API_KEY });
+  if (environment.DIAGNOSE_UPLOAD_URL === 'true') {
+    if (environment.GITHUB_EVENT_NAME !== 'workflow_dispatch') throw new ReleaseScanError('diagnostic-requires-manual-run');
+    console.log(`VirusTotal upload URL format: ${JSON.stringify(await virusTotal.diagnoseUploadUrl())}`);
+    return;
+  }
   const directory = await mkdtemp(path.join(tmpdir(), 'opentig-release-scan-'));
   try {
     const result = await scanPublishedRelease({ api, plan, virusTotal, directory, recoveryAnalysisId: environment.RECOVERY_ANALYSIS_ID,

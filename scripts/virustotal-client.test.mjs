@@ -112,6 +112,38 @@ it('upgrades the documented http upload URL to https before posting the installe
   expect(vt.calls.every(call => !String(call.url).startsWith('http://'))).toBe(true);
 });
 
+it.each([
+  ['https://www.virustotal.com/_ah/upload/private-token', { accepted: true, protocol: 'https', hostClass: 'expected', pathClass: 'legacy-token', pathSegments: 3, hasQuery: false }],
+  ['http://www.virustotal.com/_ah/upload/private-token/', { accepted: true, protocol: 'http', hostClass: 'expected', pathClass: 'legacy-token', pathSegments: 3 }],
+  ['https://www.virustotal.com/_ah/upload/?upload_id=private-token', { accepted: false, hostClass: 'expected', pathClass: 'legacy-root', hasQuery: true, queryKeyCount: 1 }],
+  ['https://upload.virustotal.com/_ah/upload/private-token', { accepted: false, hostClass: 'provider-subdomain', pathClass: 'legacy-token' }],
+  ['https://virustotal.com/_ah/upload/private-token', { accepted: false, hostClass: 'apex', pathClass: 'legacy-token' }],
+  ['https://storage.googleapis.com/bucket/private-token', { accepted: false, hostClass: 'google-storage', pathClass: 'other', pathSegments: 2 }],
+  ['https://private-token.example/_ah/upload/private-token', { accepted: false, protocol: 'https', hostClass: 'other', pathClass: 'legacy-token' }],
+])('diagnoses an upload URL without disclosing its token or uploading: %s', async (uploadUrl, expected) => {
+  const vt = client(() => response({ data: uploadUrl }));
+  const result = await vt.diagnoseUploadUrl();
+  expect(result).toMatchObject({ valueType: 'string', parseable: true, ...expected });
+  expect(JSON.stringify(result)).not.toMatch(/private-token|example|virustotal|googleapis|bucket|https?:\/\//);
+  expect(vt.calls).toEqual([expect.objectContaining({ url: `${api}/files/upload_url` })]);
+  expect(vt.calls[0].options.method ?? 'GET').toBe('GET');
+});
+
+it.each([null, 4, { url: 'https://www.virustotal.com/_ah/upload/private-token' }])(
+  'diagnoses a non-string upload URL without echoing it: %j', async value => {
+    const vt = client(() => response({ data: value }));
+    const result = await vt.diagnoseUploadUrl();
+    expect(result).toEqual({ valueType: value === null ? 'null' : typeof value });
+    expect(JSON.stringify(result)).not.toMatch(/private-token|virustotal|https?:\/\//);
+  },
+);
+
+it('diagnoses an unparseable upload URL string without echoing it', async () => {
+  const secret = 'not a url private-token';
+  const vt = client(() => response({ data: secret }));
+  expect(await vt.diagnoseUploadUrl()).toEqual({ valueType: 'string', parseable: false, stringLength: secret.length });
+});
+
 it('rejects wrong bytes, sizes, names, identities and oversized files before making any request', async () => {
   const fixture = await installer();
   const vt = client(() => { throw new Error('Must not call the network'); });

@@ -51,6 +51,34 @@ function uploadLocation(value) {
   return url.href;
 }
 
+function uploadUrlShape(value) {
+  const valueType = value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value;
+  if (typeof value !== 'string') return { valueType };
+  let url;
+  try { url = new URL(value); } catch {
+    return { valueType: 'string', parseable: false, stringLength: value.length };
+  }
+  const hostClass = url.hostname === 'www.virustotal.com' ? 'expected'
+    : url.hostname === 'virustotal.com' ? 'apex'
+    : url.hostname.endsWith('.virustotal.com') ? 'provider-subdomain'
+    : url.hostname === 'storage.googleapis.com' ? 'google-storage'
+    : 'other';
+  const protocol = url.protocol === 'https:' ? 'https' : url.protocol === 'http:' ? 'http' : 'other';
+  let pathClass = 'other';
+  if (url.pathname === '/_ah/upload' || url.pathname === '/_ah/upload/') pathClass = 'legacy-root';
+  else if (url.pathname.startsWith('/_ah/upload/')) pathClass = 'legacy-token';
+  else if (url.pathname === '/api/v3/files' || url.pathname.startsWith('/api/v3/files/')) pathClass = 'api-files';
+  else if (url.pathname.startsWith('/api/v3/')) pathClass = 'api-v3';
+  let accepted = false;
+  try { uploadLocation(value); accepted = true; } catch { accepted = false; }
+  return {
+    valueType: 'string', parseable: true, accepted, protocol, hostClass, pathClass,
+    pathSegments: url.pathname.split('/').filter(Boolean).length, stringLength: value.length,
+    hasPort: Boolean(url.port), hasUserInfo: Boolean(url.username || url.password),
+    hasFragment: Boolean(url.hash), hasQuery: Boolean(url.search), queryKeyCount: [...url.searchParams.keys()].length,
+  };
+}
+
 function retryDelay(header, now, fallback) {
   if (!header) return fallback;
   if (/^\d+$/.test(header)) {
@@ -216,5 +244,10 @@ export function createVirusTotalClient({ apiKey, fetchImpl = fetch, now = Date.n
     throw new VirusTotalError('poll-budget-exhausted');
   }
 
-  return Object.freeze({ submitInstaller, getAnalysis, waitForAnalysis });
+  async function diagnoseUploadUrl() {
+    // Fixed labels only. Never return the URL, host, path, query, or token.
+    return uploadUrlShape((await request(`${api}/files/upload_url`))?.data);
+  }
+
+  return Object.freeze({ submitInstaller, getAnalysis, waitForAnalysis, diagnoseUploadUrl });
 }
