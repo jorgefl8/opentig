@@ -160,6 +160,44 @@ it('diagnoses an unparseable upload URL string without echoing it', async () => 
   expect(await vt.diagnoseUploadUrl()).toEqual({ valueType: 'string', parseable: false, stringLength: secret.length });
 });
 
+it('diagnoses an analysis identity mismatch without disclosing the hash or uploading', async () => {
+  const fixture = await installer();
+  const hash = fixture.download.identity.sha256;
+  const vt = client(() => response({
+    data: { type: 'analysis', id, attributes: { status: 'queued' } },
+    meta: { file_info: { sha256: hash, size: String(fixture.download.identity.size) } },
+  }));
+  const result = await vt.diagnoseAnalysis(fixture.receipt, fixture.download);
+  expect(result).toMatchObject({
+    analysisType: 'analysis', idMatch: true, status: 'queued', fileInfo: 'object', strictFileInfoRejects: true,
+    sha256: { kind: 'string', strictMatch: true, stringLength: 64 },
+    size: { kind: 'string', strictMatch: false, numericMatch: true },
+  });
+  expect(result).not.toHaveProperty('itemType');
+  expect(JSON.stringify(result)).not.toContain(hash);
+  expect(JSON.stringify(result)).not.toContain(id);
+  expect(vt.calls).toHaveLength(1);
+});
+
+it('diagnoses a completed analysis item without disclosing its hash', async () => {
+  const fixture = await installer();
+  const hash = fixture.download.identity.sha256;
+  const other = `${hash.slice(0, -1)}${hash.endsWith('a') ? 'b' : 'a'}`;
+  const vt = client((url, _options, call) => call === 1
+    ? response({ data: { type: 'analysis', id, attributes: { status: 'completed' } },
+      meta: { file_info: { sha256: hash, size: fixture.download.identity.size } } })
+    : response({ data: { type: 'file', id: other, attributes: { sha256: other, size: fixture.download.identity.size } } }));
+  const result = await vt.diagnoseAnalysis(fixture.receipt, fixture.download);
+  expect(result).toMatchObject({
+    status: 'completed', strictFileInfoRejects: false, itemType: 'file',
+    itemId: { strictMatch: false, stringLength: 64 }, itemSha256: { strictMatch: false },
+    itemSize: { kind: 'integer', strictMatch: true },
+  });
+  expect(JSON.stringify(result)).not.toContain(hash);
+  expect(JSON.stringify(result)).not.toContain(other);
+  expect(vt.calls).toHaveLength(2);
+});
+
 it('rejects wrong bytes, sizes, names, identities and oversized files before making any request', async () => {
   const fixture = await installer();
   const vt = client(() => { throw new Error('Must not call the network'); });

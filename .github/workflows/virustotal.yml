@@ -17,6 +17,10 @@ on:
         description: 'Inspect upload URL format only; no file upload or release changes'
         type: boolean
         default: false
+      diagnose_analysis:
+        description: 'Inspect the saved analysis identity only; no file upload or release changes'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -80,6 +84,7 @@ jobs:
           EXPECTED_RELEASE_COMMIT: ${{ needs.validate.outputs.commit }}
           RECOVERY_ANALYSIS_ID: ${{ inputs.analysis_id }}
           DIAGNOSE_UPLOAD_URL: ${{ inputs.diagnose_upload_url }}
+          DIAGNOSE_ANALYSIS: ${{ inputs.diagnose_analysis }}
       - name: Preserve a minimal recovery receipt even if polling fails
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

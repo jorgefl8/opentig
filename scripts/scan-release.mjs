@@ -262,8 +262,18 @@ export async function main(action, environment = process.env) {
   if (!environment.EXPECTED_RELEASE_ID || plan.releaseId !== Number(environment.EXPECTED_RELEASE_ID)
     || plan.commit !== environment.EXPECTED_RELEASE_COMMIT) throw new ReleaseScanError('validation-plan-changed');
   const virusTotal = createVirusTotalClient({ apiKey: environment.VIRUSTOTAL_API_KEY });
+  if (environment.GITHUB_EVENT_NAME !== 'workflow_dispatch'
+    && (environment.DIAGNOSE_UPLOAD_URL === 'true' || environment.DIAGNOSE_ANALYSIS === 'true')) {
+    throw new ReleaseScanError('diagnostic-requires-manual-run');
+  }
+  if (environment.DIAGNOSE_ANALYSIS === 'true') {
+    const stored = storedScan(await currentRelease(api, plan), plan.download);
+    if (stored?.submission?.phase !== 'submitted') throw new ReleaseScanError('analysis-diagnosis-requires-receipt');
+    const receipt = { analysisId: stored.submission.analysisId, installer: plan.download.identity, submittedAt: stored.submission.submittedAt };
+    console.log(`VirusTotal analysis identity: ${JSON.stringify(await virusTotal.diagnoseAnalysis(receipt, plan.download))}`);
+    return;
+  }
   if (environment.DIAGNOSE_UPLOAD_URL === 'true') {
-    if (environment.GITHUB_EVENT_NAME !== 'workflow_dispatch') throw new ReleaseScanError('diagnostic-requires-manual-run');
     console.log(`VirusTotal upload URL format: ${JSON.stringify(await virusTotal.diagnoseUploadUrl())}`);
     return;
   }

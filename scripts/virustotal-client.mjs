@@ -253,5 +253,60 @@ export function createVirusTotalClient({ apiKey, fetchImpl = fetch, now = Date.n
     return uploadUrlShape((await request(`${api}/files/upload_url`))?.data);
   }
 
-  return Object.freeze({ submitInstaller, getAnalysis, waitForAnalysis, diagnoseUploadUrl });
+  function valueClass(value) {
+    if (value === undefined) return 'missing';
+    if (value === null) return 'null';
+    if (typeof value === 'string') return 'string';
+    if (typeof value === 'number') return Number.isSafeInteger(value) ? 'integer' : 'number';
+    return 'other';
+  }
+
+  function identityComparison(actual, expected) {
+    let numericMatch = false;
+    if (typeof expected === 'number') {
+      if (typeof actual === 'number') numericMatch = actual === expected;
+      else if (typeof actual === 'string' && /^[0-9]+$/.test(actual)) {
+        const parsed = Number(actual);
+        numericMatch = Number.isSafeInteger(parsed) && String(parsed) === actual && parsed === expected;
+      }
+    }
+    return {
+      present: actual !== undefined && actual !== null, kind: valueClass(actual),
+      strictMatch: actual === expected, numericMatch,
+      stringLength: typeof actual === 'string' ? actual.length : 0,
+    };
+  }
+
+  async function diagnoseAnalysis(receipt, download) {
+    // Fixed labels only. Never return hashes, identifiers, sizes, or provider text.
+    const { installer, id } = receiptIdentity(receipt, download);
+    const result = await request(`${api}/analyses/${encodeURIComponent(id)}`);
+    const data = result?.data;
+    const status = data?.attributes?.status;
+    const info = result?.meta?.file_info;
+    const shape = {
+      analysisType: data?.type === 'analysis' ? 'analysis' : 'other',
+      idMatch: data?.id === id,
+      status: ['queued', 'in-progress', 'completed'].includes(status) ? status : 'other',
+      fileInfo: info === undefined ? 'missing' : info && typeof info === 'object' && !Array.isArray(info) ? 'object' : 'other',
+      strictFileInfoRejects: Boolean(info && (info.sha256 !== installer.sha256 || info.size !== installer.size)),
+    };
+    if (shape.fileInfo === 'object') {
+      shape.sha256 = identityComparison(info.sha256, installer.sha256);
+      shape.size = identityComparison(info.size, installer.size);
+    }
+    if (status !== 'completed') return shape;
+    try {
+      const item = (await request(`${api}/analyses/${encodeURIComponent(id)}/item`))?.data;
+      shape.itemType = item?.type === 'file' ? 'file' : 'other';
+      shape.itemId = identityComparison(item?.id, installer.sha256);
+      shape.itemSha256 = identityComparison(item?.attributes?.sha256, installer.sha256);
+      shape.itemSize = identityComparison(item?.attributes?.size, installer.size);
+    } catch (error) {
+      shape.item = error instanceof VirusTotalError ? error.code : 'request-failed';
+    }
+    return shape;
+  }
+
+  return Object.freeze({ submitInstaller, getAnalysis, waitForAnalysis, diagnoseUploadUrl, diagnoseAnalysis });
 }
