@@ -1,10 +1,11 @@
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { FileResult, ThemePreference, WriteFileResult } from '@shared/contracts';
 import { ViewerTabs, ViewerTabsList, ViewerTabsPanel } from '@/components/ui/viewer-tabs';
 import { FileSaveControls, FileViewerChrome, SourceCodeEditor } from './EditableFileViewer';
 import { buildHtmlPreviewDocument } from './html-preview-document';
 import { useEditableFileDraft } from './useEditableFileDraft';
 import './html-file-viewer.css';
+import { HtmlPreviewFrame } from './HtmlPreviewFrame';
 
 interface HtmlFileViewerProps {
   file: FileResult;
@@ -26,8 +27,6 @@ const HTML_SAVE_MESSAGES = {
 
 export function HtmlFileViewer({ file, initialContent, themeType, wrapLines, readOnly, onDirtyChange, onDraftChange, onSave }: HtmlFileViewerProps) {
   const [tab, setTab] = useState<'preview' | 'code'>('preview');
-  const formRef = useRef<HTMLFormElement>(null);
-  const frameName = `html-preview-${useId().replace(/:/g, '')}`;
   const { draft, updateDraft, dirty, saving, save } = useEditableFileDraft({
     file, initialContent, readOnly, messages: HTML_SAVE_MESSAGES, onDirtyChange, onDraftChange, onSave,
   });
@@ -37,13 +36,6 @@ export function HtmlFileViewer({ file, initialContent, themeType, wrapLines, rea
     () => buildHtmlPreviewDocument(draft, darkPreviewChrome),
     [darkPreviewChrome, draft],
   );
-  // srcdoc inherits the app Content-Security-Policy, which blocks inline scripts.
-  // Posting the draft lets the response carry its own sandboxed policy.
-  useEffect(() => {
-    if (tab !== 'preview') return;
-    formRef.current?.requestSubmit();
-  }, [previewDocument, tab]);
-
   useEffect(() => {
     setTab('preview');
   }, [file.path]);
@@ -63,23 +55,7 @@ export function HtmlFileViewer({ file, initialContent, themeType, wrapLines, rea
       </div>
       </FileViewerChrome>
       <ViewerTabsPanel value="preview" className="html-preview-panel">
-        <iframe
-          className="html-preview-frame"
-          name={frameName}
-          title={`Preview of ${file.path}`}
-          sandbox="allow-scripts"
-          referrerPolicy="no-referrer"
-        />
-        <form
-          ref={formRef}
-          className="html-preview-form"
-          method="post"
-          action="/api/html-preview"
-          target={frameName}
-          encType="application/x-www-form-urlencoded"
-        >
-          <input type="hidden" name="document" value={previewDocument} />
-        </form>
+        <HtmlPreviewFrame document={previewDocument} path={file.path} active={tab === 'preview'} />
       </ViewerTabsPanel>
       <ViewerTabsPanel value="code" className="markdown-code-view" data-theme={themeType}>
           <SourceCodeEditor

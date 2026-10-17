@@ -96,9 +96,9 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
           <PullRequestChecks state={details.checksState} />
           {review && <Badge variant="outline" className="pr-review-badge">{review}</Badge>}
           {details.stack && <PullRequestStackMenu repositoryId={repositoryId} number={prNumber} membership={details.stack} onSelect={onSelectPullRequest} />}
-          <span className="pr-viewer-actions">
+          {details.url && <span className="pr-viewer-actions">
             <Button variant="outline" size="xs" onClick={() => openOnGitHub(details.url)}><IconExternalLink /> Open on GitHub</Button>
-          </span>
+          </span>}
         </div>
         {details.labels.length > 0 && (
           <div className="pr-labels" aria-label="Pull request labels">

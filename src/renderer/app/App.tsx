@@ -93,7 +93,7 @@ class PushBlocked extends Error {
   }
 }
 
-export default function App() {
+export default function App({ initialView, initialSelection, pullRequestCreationDisabledReason }: { initialView?: SidebarView; initialSelection?: ViewerSelection; pullRequestCreationDisabledReason?: string } = {}) {
   const appQueryClient = useQueryClient();
   const branchPush = useBranchPush();
   const mobile = useMobileLayout();
@@ -116,6 +116,7 @@ export default function App() {
   const [worktreesState, setWorktrees] = useState<WorktreeInfo[]>([]);
   const [snapshotRepositoryId, setSnapshotRepositoryId] = useState<string | null>(null);
   const [view, setView] = useState<SidebarView>(() => {
+    if (initialView) return initialView;
     try {
       const stored = window.localStorage.getItem(VIEW_STORAGE_KEY);
       return SIDEBAR_VIEWS.find((item) => item === stored) ?? 'files';
@@ -127,6 +128,7 @@ export default function App() {
     try { window.localStorage.setItem(VIEW_STORAGE_KEY, view); } catch { /* storage unavailable */ }
   }, [view]);
   const [viewerSelection, setViewerSelection] = useState<ViewerSelection>(null);
+  const initialSelectionApplied = useRef(false);
   const [commitMessage, setCommitMessage] = useState('');
   const [commitProposal, setCommitProposal] = useState<CommitSplitProposal | null>(null);
   const [preparedCommitIndex, setPreparedCommitIndex] = useState<number | null>(null);
@@ -752,8 +754,12 @@ export default function App() {
       setFileSessions(map);
       persistedSessionsRef.current.set(repositoryId, JSON.stringify(serializeSession(session)));
     }
-    selectFilePath(view === 'files' ? session.activePath : null);
-  }, [openFilesStates, repository?.id, selectFilePath, view]);
+    if (!initialSelectionApplied.current && initialSelection) {
+      initialSelectionApplied.current = true;
+      viewerSelectionRef.current = initialSelection;
+      setViewerSelection(initialSelection);
+    } else selectFilePath(view === 'files' ? session.activePath : null);
+  }, [openFilesStates, repository?.id, selectFilePath, view, initialSelection]);
 
   useEffect(() => opentig.events.onRepositoryChanged((repositoryId, scope) => {
     if (repositoryId === repository?.id) void refresh({ background: true, scope });
@@ -2283,11 +2289,11 @@ export default function App() {
                   error={pullsError}
                   states={pullRequestStates}
                   activeNumber={viewerSelection?.type === 'pull-request' ? viewerSelection.number : null}
-                  createDisabledReason={!status
+                  createDisabledReason={pullRequestCreationDisabledReason ?? (!status
                     ? 'Loading repository status…'
                     : status.detached || status.unborn || !status.branch
                       ? 'Check out a branch first'
-                      : null}
+                      : null)}
                   onRefresh={() => void loadPulls(pullRequestStates, true)}
                   onStateChange={(state, checked) => {
                     const order: PullRequestState[] = ['OPEN', 'CLOSED', 'MERGED'];

@@ -1,0 +1,54 @@
+---
+import WindowsIcon from '@/assets/icons/windows.svg';
+import GithubIcon from '@tabler/icons/outline/brand-github.svg';
+import { repositoryUrl, downloadUrl, downloadVersion } from '@/site';
+import Button from './Button.astro';
+import CopyCommand from './CopyCommand.astro';
+import SmartScreenNotice from './SmartScreenNotice.astro';
+import InstallerScan from './InstallerScan.astro';
+import HeroTypewriter from './HeroTypewriter';
+---
+
+<section class="relative min-h-screen flex items-center justify-center overflow-hidden">
+  <div class="relative z-10 w-full max-w-4xl mx-auto text-center px-6 py-24">
+    <h1 aria-label="A focused workspace for your Git repositories." class="font-['GeistPixelTriangle'] text-4xl sm:text-5xl md:text-7xl font-bold tracking-tight leading-[1.1]">
+      <span class="hero-title-intro">A focused workspace</span>
+      <span class="hero-title-line"><span>for your</span><HeroTypewriter client:load /></span>
+    </h1>
+
+    <p class="text-base md:text-lg text-muted-foreground max-w-2xl mx-auto mt-6 leading-relaxed">
+      Browse files, review diffs, make edits, and commit changes.
+      Work with branches, worktrees, and GitHub pull requests from the same interface.
+    </p>
+
+    <div class="flex flex-col sm:flex-row gap-3 justify-center sm:items-start mt-10">
+      <div class="flex flex-col gap-2">
+        <Button href={downloadUrl} data-windows-download data-analytics-placement="hero">
+          <WindowsIcon width={20} height={20} />
+          Download for Windows
+        </Button>
+        <SmartScreenNotice />
+      </div>
+      <Button href={repositoryUrl} variant="outline" target="_blank" rel="noreferrer">
+        <GithubIcon width={20} height={20} />
+        View on GitHub
+      </Button>
+    </div>
+    <div class="mt-3 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 font-mono text-xs text-muted-foreground">
+      <span data-release-version>{downloadVersion}</span>
+      <span aria-hidden="true">·</span>
+      <span>Free &amp; open source</span>
+      <InstallerScan id="hero-installer-scan" />
+    </div>
+    <div class="mx-auto mt-6 max-w-md">
+      <p class="mb-3 text-xs text-muted-foreground">or</p>
+      <p class="mb-2 text-sm font-medium text-foreground">Run via CLI on macOS, Linux &amp; Windows</p>
+      <CopyCommand compact command="npm install -g @opentig/cli" placement="hero" />
+      <p class="mt-2 text-xs leading-relaxed text-muted-foreground">
+        Use OpenTig in your browser.
+        <span class="block">Requires Node.js 24+ and Git.</span>
+      </p>
+    </div>
+
+  </div>
+</section>

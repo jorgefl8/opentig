@@ -1,0 +1,80 @@
+---
+import LogoLoop from '@/components/LogoLoop.astro';
+import ClaudeCodeSvg from '@/assets/icons/claude-code.svg';
+import CodexSvg from '@/assets/icons/codex.svg';
+import GitSvg from '@tabler/icons/outline/brand-git.svg';
+import GithubSvg from '@tabler/icons/outline/brand-github.svg';
+import OpenCodeSvg from '@/assets/icons/opencode.svg';
+import GrokSvg from '@/assets/icons/grok.svg';
+import SplitIcon from '@tabler/icons/outline/git-fork.svg';
+import MessageIcon from '@tabler/icons/outline/message.svg';
+import PullRequestIcon from '@tabler/icons/outline/git-pull-request.svg';
+---
+
+<section id="tools" class="py-24">
+  <div class="max-w-7xl mx-auto px-6">
+    <div class="text-center mb-10">
+      <h2 class="font-['GeistPixelTriangle'] text-3xl md:text-4xl font-bold tracking-tight">
+        Prepare better commits with optional AI
+      </h2>
+      <p class="text-muted-foreground mt-4 max-w-2xl mx-auto leading-relaxed">
+        Turn staged changes into focused commits and help reviewers understand your work.
+        You review each proposal and confirm every commit and pull request.
+      </p>
+    </div>
+
+    <div class="grid md:grid-cols-2 gap-5 max-w-5xl mx-auto">
+      <article class="md:row-span-2 rounded-xl border border-primary/35 bg-card/90 p-6 sm:p-8 backdrop-blur-sm">
+        <SplitIcon width={28} height={28} class="text-primary" aria-hidden="true" />
+        <h3 class="mt-5 text-xl sm:text-2xl font-semibold">Commit splitting</h3>
+        <p class="mt-3 text-muted-foreground leading-relaxed">
+          Mixed several tasks into your staged changes? Get a proposal that groups complete files
+          into focused commits, each with its own message and reason.
+        </p>
+        <ol class="mt-6 space-y-3 text-sm leading-relaxed">
+          <li class="flex gap-3"><span class="font-mono text-primary" aria-hidden="true">01</span><span>Review the proposed groups and their diffs.</span></li>
+          <li class="flex gap-3"><span class="font-mono text-primary" aria-hidden="true">02</span><span>Prepare one group in the staging area.</span></li>
+          <li class="flex gap-3"><span class="font-mono text-primary" aria-hidden="true">03</span><span>Create its commit, then continue with the next group.</span></li>
+        </ol>
+      </article>
+
+      <article class="rounded-xl border border-border/60 bg-card/90 p-6 backdrop-blur-sm">
+        <MessageIcon width={24} height={24} class="text-primary" aria-hidden="true" />
+        <h3 class="mt-3 text-lg font-semibold">Commit messages</h3>
+        <p class="mt-2 text-sm text-muted-foreground leading-relaxed">
+          Draft a subject and body from your staged changes. Review and edit the wording before creating the commit.
+        </p>
+      </article>
+
+      <article class="rounded-xl border border-border/60 bg-card/90 p-6 backdrop-blur-sm">
+        <PullRequestIcon width={24} height={24} class="text-primary" aria-hidden="true" />
+        <h3 class="mt-3 text-lg font-semibold">Pull request descriptions</h3>
+        <p class="mt-2 text-sm text-muted-foreground leading-relaxed">
+          Draft a title and description from your branch changes. Refine the explanation and confirm when to publish.
+        </p>
+      </article>
+    </div>
+
+    <p class="mt-8 text-center text-sm text-muted-foreground leading-relaxed">
+      Use a supported, authenticated CLI for AI assistance. Everyday Git work needs no AI account.
+      <a href="/docs/ai-assistance/" class="inline-block underline underline-offset-4 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary">Explore AI assistance</a>
+    </p>
+    <h3 class="mt-16 mb-8 text-center text-xl md:text-2xl font-semibold tracking-tight text-foreground">Your Git tools. Your choice of AI.</h3>
+  </div>
+
+  <div class="h-20 relative overflow-hidden text-white">
+    <LogoLoop
+      logos={[
+        { Svg: GitSvg, alt: "Git", label: "Git" },
+        { Svg: GithubSvg, alt: "GitHub", label: "GitHub" },
+        { Svg: ClaudeCodeSvg, alt: "Claude Code", label: "Claude Code" },
+        { Svg: CodexSvg, alt: "Codex", label: "Codex" },
+        { Svg: OpenCodeSvg, alt: "OpenCode", label: "OpenCode" },
+        { Svg: GrokSvg, alt: "Grok Build", label: "Grok Build" },
+      ]}
+      speed={25}
+      logoHeight={32}
+      gap={48}
+    />
+  </div>
+</section>

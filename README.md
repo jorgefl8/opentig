@@ -10,9 +10,9 @@ Browse files, inspect diffs, edit, stage, and commit on your computer or a remot
 
 </div>
 
-![OpenTig reviewing a TypeScript split diff in a demo repository](docs/images/workspace.png)
+![OpenTig reviewing an open pull request and its side-by-side JavaScript diff in the Launchpad sample repository](docs/images/workspace.png)
 
-*The browser UI in the Dev build, reviewing a small demo repository.*
+*OpenTig reviewing a sample pull request in the interactive demo.*
 
 > [!IMPORTANT]
 > **Early development.** I'm building OpenTig for my own daily workflow and sharing it as it takes shape. Expect bugs, rough edges, and changes. Keep important work backed up and review Git and file operations before confirming them.
@@ -76,10 +76,12 @@ Use `opentig service install` to keep the CLI running after closing the terminal
 
 OpenTig opens existing repositories; cloning and initial remote setup remain Git CLI tasks. GitHub features require `gh` on the host. Normal Git work needs no OpenTig account or hosted backend; optional AI can send the supplied context to its provider.
 
+- [Website documentation](https://opentig.com/docs/): installation and CLI setup.
 - [Feature guide](docs/features.md): daily workflows, history, branches, editing, and shortcuts.
 - [Interface and mobile use](docs/interface.md): themes, settings, touch controls, and navigation.
 - [Security and privacy](docs/security-and-privacy.md): permissions, browser authority, and AI context.
 - [Development and packaging](docs/development.md): source setup, isolated Dev profiles, and validation.
+- [Website contribution guide](docs/website.md): local development and validation of the Astro site, available in the repository only.
 - [Contributing](CONTRIBUTING.md) and [documentation index](docs/README.md).
 
 Feedback, bug reports, and focused contributions are welcome. Building from source requires Node.js 24.15 or newer.

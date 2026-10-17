@@ -2,45 +2,179 @@
 
 [← Documentation](README.md) · [Report a vulnerability](../SECURITY.md)
 
+OpenTig reads and writes repositories on the machine running its backend. Browser access and optional AI assistance have different trust boundaries:
+
+| Question | What to expect |
+| --- | --- |
+| **Where are my files?** | Repository contents stay at their existing paths on the host; OpenTig reads and writes those files |
+| **What can a paired browser do?** | Use file, Git, GitHub, and AI CLI operations with the permissions of the server's OS account |
+| **What does an AI provider receive?** | The context supplied for the requested generation, plus repository writing conventions if enabled |
+
+Only pair devices and people you trust with owner access. A local AI CLI may send context to its provider; running the CLI on your machine does not make generation offline. See [AI privacy](#ai-privacy) below before enabling it.
+
 ## Local-first and security model
 
-- Repository contents are read from and written to their existing local paths.
-- The renderer has no direct Node.js, filesystem, or process access.
-- Git, filesystem, persistence, AI, and GitHub operations run through one typed, validated WebSocket command boundary in both desktop and browser clients. Requests have correlation IDs, cancellation and timeouts; interrupted operations are rejected rather than replayed after reconnect.
-- The private server transport binds to loopback by default, requires an owner session for commands and image bytes, validates exact mutation/WebSocket origins, and blocks static-file traversal and symlink escape. Enabling **Settings → Network access** persists a desktop-only setting and restarts that same backend on `0.0.0.0`; disabling it returns to `127.0.0.1`. OpenTig never starts a second Web Access server.
-- New browsers pair through a five-minute, one-use URL fragment displayed as a link and local QR code; the fragment is cleared before exchange. Paired browsers receive a cookie and server session lasting 30 days, renewed automatically when the app connects, resumes in the foreground, and hourly while visible. Renewal extends both the cookie and server session without another pairing code or interrupting connected tabs; temporary network failures retry. Closing the browser or restarting the server preserves access. After 30 days without a successful renewal, the server rejects the expired credential and disconnects expired browser connections. Expiry, clearing site cookies, or revoking access requires a new code; renewal cannot restore expired or revoked access. Desktop bootstrap cookies remain session-only. Steady-state credentials use host-only `HttpOnly`, `SameSite=Strict` cookies, only credential hashes are persisted, and revoking all sessions disconnects paired browsers while replacing the private desktop session. Network access grants owner-level file, Git, GitHub, and AI CLI authority as the OS user: use only a trusted LAN or VPN, an HTTPS reverse proxy, or an SSH tunnel, and never expose the raw port publicly.
-- Headless `pair` authenticates over a same-host-only administrative route using a separate private file under `~/.opentig/server`; `runtime.json` contains PID/address/version identity but no credential. Pairing secrets remain memory-only and appear only in the deliberate one-time terminal output/URL fragment, never in arguments, environment variables, routine logs, query strings, or persisted state.
-- Electron starts the backend after readiness on preferred port `6767`, scanning a bounded range upward only when that implicit port is occupied. Dev instead scans `6867`–`6876`, while production scans `6767`–`6776`; each keeps its selected port when Network access is toggled. Distinct session-cookie names let both profiles stay paired in the same browser on the same host, and revocation affects only that profile. If its range is full, startup fails rather than switching to the other profile. Its one-use desktop bootstrap secret crosses the private parent/utility message port exactly once; it is absent from process arguments, environment variables, renderer JavaScript, and redacted rotating logs. Unexpected exits restart one utility process on the same selected port.
-- The narrow preload bridge contains only proven desktop capabilities such as folder selection/relocation, file clipboard import, Explorer reveal, title-bar theming, and zoom. Text clipboard access stays in the renderer's browser API.
-- Git commands use argument arrays with `shell: false`, bounded output, timeouts, path validation, and per-repository write serialisation.
-- External links are allowlisted to `http(s)://` and `mailto:` before Electron's window-navigation interception opens them in the system browser.
-- HTML previews execute the file's scripts inside a sandbox with an opaque origin, so they cannot read OpenTig cookies, storage, or the parent page. External resources and network requests remain available; forms, popups, and top-level navigation are blocked. Rendered Markdown is sanitised before display.
-- Connected CLIs manage their own authentication. For every GitHub operation, OpenTig obtains the selected account's token from `gh` and verifies its user identity. Only backend child commands receive the token in their environment; explicit and verified SSH accounts override backend token variables without changing the global `gh` account. Tokens never travel to renderers/browsers, command arguments, settings, status files or logs; credential-command output is discarded and operation errors redact the token. In-memory identity caches retain only a one-way fingerprint and the login. `github-status.json` contains allowlisted installation and account metadata, never raw CLI output, credential paths or tokens. SSH checks require existing trusted host keys, use batch mode and do not create keys or update known hosts. The guided account flow copies official commands for the user to run; it does not execute authentication or change Git/SSH configuration. OpenTig does not read or persist AI API tokens.
+### Files and application boundaries
 
-Desktop **Web access** is off by default and is separate from the LAN listener.
-When off, only authenticated desktop sessions can use backend operations;
-browser pairing, renewal, HTTP data access and WebSocket commands/events are
-blocked even through a same-PC tunnel. Turning it off pauses browser access,
-disconnects browsers and invalidates pending pairing codes without restarting the
-desktop session. Saved browser credentials remain valid until expiry or explicit
-revocation; enabling Web access again lets those browsers reconnect.
-The standalone CLI remains browser-enabled. The optional saved public URL only
-constructs the pairing link and QR; it is not an authentication allowlist. Closing
-the QR display does not revoke a copied code. Static assets and health endpoints
-may still be served while browser backend access is disabled.
+Repository contents are read from and written to their existing local paths. The renderer has no direct Node.js, filesystem, or process access.
+
+Desktop and browser clients use the same typed, validated WebSocket command boundary for Git, filesystem, persistence, AI, and GitHub operations. Interrupted operations are rejected rather than replayed after reconnect.
+
+**HTML previews can make network requests.** Their scripts run in a sandbox with an opaque origin and cannot read OpenTig cookies, storage, or the parent page. External resources remain available; forms, popups, and top-level navigation are blocked. Rendered Markdown is sanitised before display.
+
+<details>
+<summary>Command validation, desktop bridge, and external links</summary>
+
+Requests have correlation IDs, cancellation, and timeouts. Git commands use argument arrays with `shell: false`, bounded output, timeouts, path validation, and per-repository write serialisation.
+
+The narrow preload bridge provides only desktop capabilities such as folder selection/relocation, file clipboard import, Explorer reveal, title-bar theming, and zoom. Text clipboard access uses the renderer's browser API.
+
+External links are allowlisted to `http(s)://` and `mailto:` before Electron's window-navigation interception opens them in the system browser.
+
+</details>
+
+### Browser permissions and network exposure
+
+**A paired browser receives owner-level authority as the OS user running OpenTig**, including file, Git, GitHub, and AI CLI operations. There are no read-only roles or per-repository scopes. Use a trusted LAN/VPN, HTTPS reverse proxy, or SSH tunnel; never expose the raw HTTP port publicly.
+
+The transport binds to loopback by default. Commands and image bytes require an owner session. Exact mutation/WebSocket origins are validated, and static-file traversal and symlink escape are blocked.
+
+**Settings → Web access** separates browser authorization from the listener:
+
+| Control | Effect |
+| --- | --- |
+| **Web access** | Allows or pauses browser authorization. Off by default on desktop; CLI servers start browser-enabled |
+| **LAN access** | Rebinds the existing listener to `0.0.0.0`, or back to `127.0.0.1` when disabled. It reconnects clients without replacing the runtime |
+| **Saved public URL** | Constructs pairing links and QR codes; it is not an authentication allowlist |
+
+These server settings are shared with connected clients, including paired browsers. OpenTig does not start a second Web Access server. Follow [web access and pairing](web-access.md) for setup, listener configuration, and local recovery.
+
+**Pausing Web access disconnects browsers but keeps their saved credentials.** While paused, only authenticated desktop sessions can use backend operations. Browser pairing, renewal, HTTP data access, and WebSocket commands/events are blocked, even through a same-PC tunnel. Pending pairing codes are invalidated; the desktop session is not restarted.
+
+Enabling access again lets browsers reconnect if their credentials have not expired or been revoked. Static assets and health endpoints may still be served while browser backend access is disabled. Closing the QR display does not revoke a copied code.
+
+### Pairing, renewal, and revocation
+
+New browsers pair through a **five-minute, one-use URL fragment**, displayed as a link and local QR code. The fragment is cleared before exchange. Pairing secrets stay in memory and appear only in deliberate one-time terminal output or the URL fragment, never in arguments, environment variables, routine logs, query strings, or persisted state.
+
+Browser cookies and server sessions last **30 days**. Renewal runs when the app connects, resumes in the foreground, and hourly while visible. It extends both lifetimes without another code or interrupting connected tabs; temporary network failures retry.
+
+Closing the browser or restarting the server preserves access. After 30 days without successful renewal, the server rejects the expired credential and disconnects expired browser connections. **Expiry, cleared site cookies, or revocation require a new code.** Renewal cannot restore expired or revoked access.
+
+Use **Revoke browsers** in Web access settings to remove saved browser sessions and disconnect them. This control leaves the private desktop session intact. See [revoking access](web-access.md#revoke-access).
+
+<details>
+<summary>Session cookies, hashes, and local administrative credentials</summary>
+
+Steady-state credentials use host-only `HttpOnly`, `SameSite=Strict` cookies; only credential hashes are persisted. Desktop bootstrap cookies remain session-only. The server also has a full-session reset operation that disconnects sessions and replaces the private desktop session; this differs from the browser-only revocation control in Settings.
+
+Headless `pair` uses a same-host-only administrative route and a separate private file under `~/.opentig/server`. The `runtime.json` file contains PID/address/version identity, not a credential.
+
+</details>
+
+<details>
+<summary>Desktop startup, Dev profiles, and bootstrap isolation</summary>
+
+Electron starts the backend after readiness, preferring port `6767`. If that implicit port is occupied, production scans `6767`–`6776`; Dev scans `6867`–`6876`. LAN changes retain the selected port. If a profile's range is full, startup fails rather than using the other profile's range.
+
+Distinct session-cookie names let both profiles stay paired in the same browser on the same host. Revocation affects only its own profile.
+
+The one-use desktop bootstrap secret crosses the private parent/utility message port exactly once. It is absent from process arguments, environment variables, renderer JavaScript, and redacted rotating logs. An unexpected exit restarts one utility process on the same selected port.
+
+</details>
+
+### GitHub credentials
+
+Connected CLIs manage their own authentication. For each GitHub operation, OpenTig obtains the selected account's token from `gh` and verifies the user's identity. Only backend child commands receive the token in their environment.
+
+Tokens never travel to renderers/browsers, command arguments, settings, status files, or logs. Credential-command output is discarded, and operation errors redact the token. OpenTig does not read or persist AI API tokens.
+
+The guided account flow copies official commands for you to run. It does not execute authentication or change Git/SSH configuration. See [GitHub accounts and credentials](github.md).
+
+<details>
+<summary>Account overrides, cached metadata, and SSH checks</summary>
+
+Explicit and verified SSH accounts override backend token variables without changing the global `gh` account. In-memory identity caches retain only a one-way fingerprint and login.
+
+`github-status.json` contains allowlisted installation/account metadata, never raw CLI output, credential paths, or tokens. SSH checks require existing trusted host keys, use batch mode, and do not create keys or update known hosts.
+
+</details>
+
+## Public website analytics
+
+The public website at opentig.com uses Umami Cloud to count page views, clicks to release downloads and the installation guide, and successful copies of the CLI command. These actions indicate interest; they do not confirm a download or installation. URL queries and fragments are excluded, and the tracker respects the browser's Do Not Track setting. This integration does not enable session replay or identify visitors through OpenTig accounts.
+
+Website analytics do not run inside the interactive demo, desktop application, CLI server, or paired browser UI. They do not receive repository contents, commands entered into OpenTig, or documentation search text. Browser settings and blockers may prevent collection without affecting website actions.
 
 ## AI privacy
 
-For commit-message generation, OpenTig sends the selected local AI CLI only a bounded staged diff, its summary, staged paths, the branch name, and up to ten recent commit subjects. It does not include unstaged content; untracked files are included only after you stage them.
+### Context supplied for generation
 
-Multi-commit proposals are accepted only when they partition every staged path exactly once. OpenTig preserves its generous, fairly distributed patch budget for large staged changes; a trimmed individual diff can still be grouped from the complete path list and summary. Proposals remain blocked when the complete file set cannot be trusted, such as partially staged files or staged renames, and OpenTig verifies that the staged snapshot has not changed before preparing the first group. Preparing a group changes only the Git index; every commit still requires an explicit review and confirmation.
+| Task | Supplied context |
+| --- | --- |
+| **Commit message** | A bounded staged diff, summary, staged paths, branch name, and up to ten recent commit subjects |
+| **Split proposal** | Staged changes with a complete path list and summary; individual diffs may be trimmed within a fairly distributed patch budget |
+| **Pull-request draft** | A bounded comparison between the current branch and selected base; the interface reports truncated context for careful review |
 
-For pull-request drafting, it sends a bounded comparison between the current branch and the selected base branch. If the context is truncated, the interface tells you to review the result carefully.
+Commit generation excludes unstaged content. Untracked files are included only after staging. Enabled [repository writing conventions](#repository-writing-conventions) are supplied with the diff.
 
-Generated content remains editable and pending. No commit is created and no pull request is published until you explicitly confirm the corresponding action.
+**Generated content stays editable and pending.** No commit is created or PR published until you review and confirm the action. Preparing a split group changes only the Git index.
 
-Grok Build runs in a private temporary directory with an isolated profile, using the existing CLI authentication path or API-key environment without reading or copying credentials. Generation disables tools, subagents, web search, and memory; OpenTig checks `grok inspect --json` first and refuses profiles with hooks, plugins, MCP servers, or project instructions. Custom CLI models and user configuration are excluded. Prompt files and temporary sessions are removed after generation, errors, and cancellation. Grok may make an auxiliary session-title request in addition to the requested generation.
+<details>
+<summary>Validation of multi-commit proposals</summary>
 
-Commit and PR generation uses a temporary working directory outside the repository. Codex uses a disposable home and disables project instruction discovery, shell execution, web search, bundled skills, apps and subagents; it accesses only the CLI-owned `auth.json` through a temporary hard link, without reading or copying credentials. The working directory remains in system temporary storage; a separate private Codex profile is created beside the resolved credential file so its hard link stays on the same filesystem, even when system temporary storage uses another volume. Both temporary directories are removed on completion, error and cancellation. Codex requires accessible file credential storage and permission to create the private profile in its authentication directory; keyring-only authentication and custom provider configuration are not supported in this generation profile. Claude Code uses safe mode with no built-in or MCP tools, no user/project setting sources, disabled hooks and no session persistence; its native authentication remains available. Administrator-managed Claude policy still applies. OpenCode uses private home, configuration and cache roots while retaining its CLI-owned authentication database. It refuses databases with registered remote configuration (or unverifiable configuration metadata), so remote plugins and rules cannot be imported through authentication. Custom CLI configuration and custom model/provider definitions are excluded; select an available built-in provider/model explicitly when needed. Private OpenCode sessions are deleted after generation.
+A proposal must partition every staged path exactly once. A trimmed individual diff can still be grouped from the complete path list and summary, with the available patch budget distributed fairly.
 
-Repository writing conventions are opt-in under Settings → AI assistance → This repository. The backend stores one preference per Git common directory, shared across worktrees and clients; it is disabled by default. When disabled, instruction files are not separately read or loaded as instructions. Changes to these files can still appear in a staged or branch diff, where they are treated as untrusted data. When enabled, only root `AGENTS.md`, `CLAUDE.md` and `GROK.md` regular UTF-8 files are included, up to 32 KiB combined. Parent/global/nested instructions, symlinks, imports, referenced URLs and CLI configuration are not loaded. The selected provider receives this text along with the diff. Conventions may refine terminology, writing style and structure, but English, Conventional Commits, OpenTig's required output schema, length limits, factual accuracy, privacy and staged-file coverage remain mandatory. Text generation cannot make instructions executable. If the setting or text changes during generation, OpenTig rejects the stale result. Optional instruction contents are never saved in OpenTig's settings or diagnostic history.
+Partially staged files, staged renames, or other unreliable file inventories block proposals. OpenTig verifies that the staged snapshot has not changed before preparing the first group. Every commit requires explicit review and confirmation.
+
+</details>
+
+### Provider isolation and requirements
+
+Commit and PR generation runs in a temporary working directory outside the repository. Provider-specific controls limit what each CLI can load or execute. For setup and supported versions, see [AI assistance](ai-assistance.md#supported-clis).
+
+**Codex**
+
+Generation uses a disposable home and disables project instruction discovery, shell execution, web search, bundled skills, apps, and subagents.
+
+Codex requires accessible file-based credentials and permission to create a private profile in its authentication directory. **Keyring-only authentication and custom provider configuration are not supported** by this generation profile.
+
+<details>
+<summary>Codex credential access and temporary directories</summary>
+
+The profile accesses only the CLI-owned `auth.json` through a temporary hard link, without reading or copying credentials. The working directory stays in system temporary storage. A separate private profile is created beside the resolved credential file, keeping its hard link on the same filesystem even if temporary storage is on another volume.
+
+Both temporary directories are removed on completion, error, and cancellation.
+
+</details>
+
+**Claude Code**
+
+Generation uses safe mode with no built-in or MCP tools, no user/project setting sources, disabled hooks, and no session persistence. Native authentication remains available. **Administrator-managed Claude policy still applies.**
+
+**OpenCode**
+
+Generation uses private home, configuration, and cache roots while retaining the CLI-owned authentication database. Databases with registered remote configuration, or unverifiable configuration metadata, are refused so remote plugins and rules cannot enter through authentication.
+
+Custom CLI configuration and custom model/provider definitions are excluded. Select an available built-in provider/model explicitly when needed. Private OpenCode sessions are deleted after generation.
+
+**Grok Build**
+
+Generation uses a private temporary directory and isolated profile, retaining the existing CLI authentication path or API-key environment without reading or copying credentials. Tools, subagents, web search, and memory are disabled.
+
+OpenTig first checks `grok inspect --json` and refuses profiles with hooks, plugins, MCP servers, or project instructions. Custom CLI models and user configuration are excluded.
+
+Prompt files and temporary sessions are removed after generation, errors, and cancellation. **Grok may make an auxiliary session-title request** in addition to the requested generation.
+
+### Repository writing conventions
+
+Repository instructions are **off by default**. Enable them in **Settings → AI assistance → This repository** to supply writing conventions. The preference is saved per Git common directory and shared by worktrees and clients.
+
+| Setting | What happens |
+| --- | --- |
+| **Off** | Instruction files are not separately read or loaded as instructions. Changes to them may still appear in a staged or branch diff as untrusted data |
+| **On** | Root `AGENTS.md`, `CLAUDE.md`, and `GROK.md` regular UTF-8 files are sent to the selected provider with the diff, up to 32 KiB combined |
+
+Parent/global/nested instructions, symlinks, imports, referenced URLs, and CLI configuration are not loaded. Conventions can refine terminology, writing style, and structure, but cannot override English, Conventional Commits, the required output schema, length limits, factual accuracy, privacy, or staged-file coverage.
+
+Text generation cannot make instructions executable. If the setting or file contents change during generation, OpenTig rejects the stale result. Optional instruction contents are never saved in settings or diagnostic history.

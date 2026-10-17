@@ -1,0 +1,56 @@
+---
+import { installationPath } from '@/docs';
+import WindowsIcon from '@/assets/icons/windows.svg';
+import TerminalIcon from '@tabler/icons/outline/terminal-2.svg';
+import Button from './Button.astro';
+import CopyCommand from './CopyCommand.astro';
+import SmartScreenNotice from './SmartScreenNotice.astro';
+import InstallerScan from './InstallerScan.astro';
+
+import { downloadUrl, downloadVersion, npmUrl } from '@/site';
+---
+
+<section id="install" class="py-24 px-6 scroll-mt-20">
+  <div class="max-w-3xl mx-auto">
+    <div class="bg-card/30 backdrop-blur-sm border border-border/50 rounded-2xl p-6 sm:p-8 md:p-12 text-center">
+      <h2 class="font-['GeistPixelTriangle'] text-3xl md:text-4xl font-bold tracking-tight">
+        Choose how to <span class="text-primary-heading">run OpenTig</span>
+      </h2>
+      <p class="text-muted-foreground mt-4 max-w-lg mx-auto">
+        Install the desktop app or run the CLI server on your own machine.
+        Both work with repositories on the host running OpenTig.
+      </p>
+
+      <div class="grid md:grid-cols-2 gap-6 mt-8 text-left">
+        <div class="min-w-0 flex flex-col gap-4 rounded-xl border border-border/50 bg-background/40 p-4 sm:p-5">
+          <h3 class="flex items-center gap-2 text-base font-semibold"><WindowsIcon width={20} height={20} />Windows desktop</h3>
+          <p class="text-sm text-muted-foreground leading-relaxed">For Windows 10 or later (x64), with Git installed. The app includes the OpenTig server.</p>
+          <div class="mt-auto flex flex-col gap-2 text-center">
+            <Button href={downloadUrl} data-windows-download data-analytics-placement="install" class="px-3!">Download for Windows</Button>
+            <SmartScreenNotice />
+            <div class="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+              <span data-release-version class="font-mono">{downloadVersion}</span>
+              <InstallerScan id="install-installer-scan" />
+            </div>
+          </div>
+        </div>
+        <div class="min-w-0 flex flex-col gap-4 rounded-xl border border-border/50 bg-background/40 p-4 sm:p-5">
+          <h3 class="flex items-center gap-2 text-base font-semibold"><TerminalIcon width={20} height={20} />CLI server</h3>
+          <p class="text-sm text-muted-foreground leading-relaxed">For Linux, macOS, or Windows, with Node.js 24+ and Git. Start it on the machine with your repositories.</p>
+          <CopyCommand />
+          <div class="mt-auto flex flex-col gap-2 text-center">
+            <Button href={`${installationPath}#run-the-headless-cli`} data-analytics-placement="install-cli" variant="outline" class="px-3!">Set up OpenTig CLI</Button>
+            <a href={npmUrl} class="self-center font-mono text-xs text-muted-foreground underline underline-offset-4 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary">View on npm <span aria-hidden="true">↗</span></a>
+          </div>
+        </div>
+      </div>
+      <div class="mt-8 text-sm text-muted-foreground leading-relaxed">
+        <h3 class="text-base font-semibold text-foreground">Connect a browser to your running instance</h3>
+        <p class="mt-3">Keep the app or CLI server running. In the desktop app, enable Web access and create a pairing code. With the CLI, use the pairing link or code it provides.</p>
+        <p class="mt-3">To connect from another device, first set up a private network or tunnel to that host. Files and Git operations stay on the host.</p>
+        <p class="mt-4"><a href={'/docs/web-access/'} class="underline underline-offset-4 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary">Browser pairing and remote access guide</a></p>
+        <p class="mt-4"><a href={installationPath} class="underline underline-offset-4 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary">Full installation guide</a>{" · "}Early development</p>
+      </div>
+    </div>
+  </div>
+</section>

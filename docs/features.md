@@ -2,140 +2,349 @@
 
 [← Documentation](README.md) · [Project overview](../README.md)
 
-OpenTig is early-stage software. This guide describes the current interface and its limits.
+Use OpenTig to review changes, edit files, and prepare commits in an existing Git repository. OpenTig is early-stage software; this guide covers the current interface and its limits.
 
 ## Main workflow
 
-1. Open an existing local Git repository with `Ctrl+O`, or choose one from the recent-repository picker.
-2. Review unstaged, staged, and conflicted files in **Changes**.
-3. Open a syntax-aware diff, stage only the intended files, and write or generate an editable commit message.
-4. Commit locally, optionally commit and push, then inspect the result in **History**.
-5. Use **PRs** to review or create a GitHub pull request when the repository is connected to GitHub.
+1. Open an existing local Git repository with `Ctrl+O`, or choose a recent repository.
+2. In **Changes**, review unstaged, staged, and conflicted files.
+3. Open a diff, stage the files you want to include, and write or generate an editable commit message.
+4. Commit locally, or commit and push, then inspect the result in **History**.
+5. If the repository uses GitHub, open **PRs** to review or create a pull request.
 
 ## Features
 
-[Repositories](#repositories-and-projects) · [Changes](#changes-diffs-and-commits) · [Sync](#safe-pull-and-push) · [Files](#files-and-editing) · [Search](#quick-open-and-repository-search) · [History](#history) · [Branches](#branches-and-worktrees) · [GitHub](github.md) · [AI](ai-assistance.md) · [Preferences](interface.md)
+- **Organize your work:** [repositories and projects](#repositories-and-projects), [branches and worktrees](#branches-and-worktrees).
+- **Prepare and share changes:** [diffs and commits](#changes-diffs-and-commits), [pull and push](#safe-pull-and-push), [GitHub pull requests](#github-pull-requests).
+- **Explore the repository:** [files and editing](#files-and-editing), [search](#quick-open-and-repository-search), [history](#history).
+- **Set up your workflow:** [AI assistance](#optional-ai-assistance), [preferences](#preferences), [keyboard shortcuts](#keyboard-shortcuts).
 
 ### Repositories and projects
 
-Use the desktop app or the same UI in a paired browser; browsers select folders on the backend host. [Installation and updates](getting-started.md), [remote access and pairing](web-access.md), and [development profiles](development.md) cover runtime setup. Dev keeps its application data separate from production, but repositories and authenticated host CLIs remain real resources.
+OpenTig opens repositories on the machine running its backend. The Windows app runs that backend itself; a paired browser selects folders on its host. See [installation](getting-started.md) and [remote access and pairing](web-access.md) for setup.
 
-- Open existing local repositories and keep added repositories available until you remove them. Opening a repository preserves its position and new repositories append to their group, so numbered shortcuts stay stable. The repository dialog offers location shortcuts, recent checkouts, clickable breadcrumbs, a folder filter, hidden-folder controls and an editable path. Git repositories and linked worktrees show their branch, including unborn branches and detached HEAD. Select a repository before opening it; a failed or pending navigation clears the previous selection. Ctrl+L edits the path, arrow keys select folders, Right browses into a folder, and Enter opens a repository. Desktop also offers its native folder picker. Mobile layouts keep the current folder and confirmation visible; the welcome screen scrolls when added repositories exceed the available height.
-- Use the same authenticated WebSocket backend from the desktop app or a paired browser. On desktop the backend runs in a supervised utility process, so a renderer reload or crash does not stop repository watchers or in-flight server state while the desktop process remains open; an unexpected backend exit is restarted with bounded backoff. Repository switches and filesystem/Git events propagate to every connected tab, and reconnecting clients bootstrap fresh state without replaying interrupted mutations. Browser clients choose server folders in the repository dialog; native folder selection and Explorer reveal remain desktop-only, and their header uses the full browser width instead of reserving space for desktop window controls. The first payload is the workspace shell; Settings, History, PR creation, Files, Search, and the PRs list load the first time you open them.
-- Use **Manage projects → Relocate repository** to select an existing folder manually, even before opening fails. Desktop uses a native folder picker; browsers use the visual server folder picker. Relocation updates the saved path without moving files, preserving the project assignment, open tabs, and expanded folders.
-- **Remove from OpenTig** forgets a repository and its worktrees, clears their recent entries and project assignment, and returns to the welcome screen if the active repository was removed. A confirmation explains that folders and Git data stay on disk; you can open them again later. Save or close unsaved editor tabs before removing or relocating a repository.
-- Group related repositories into named OpenTig projects without moving anything on disk. **Manage projects** saves project order and repository order within each group, including **No project**, with drag handles, keyboard dragging, and up/down buttons on desktop. Mobile uses larger up/down buttons without dragging, preserving scroll and focus after each move and briefly highlighting the moved row; reduced-motion preferences disable that highlight. Repository numbers match the selector. The repository dropdown grows to use up to 80% of the available viewport height, keeping search and management visible while its list scrolls; other dropdowns stay compact.
-- Pull or push an individual repository from its row in the repository picker. Each row shows the repository name plus the branch that pull or push will use, and the worktree folder when that checkout is a linked worktree (the filesystem path is on the hover tooltip). When the repository has a favicon or app icon on disk (`favicon.svg`/`favicon.ico` at the root or under `public/`, `app/`, and similar locations, or a `<link rel="icon">` in `index.html`), that icon appears in the toolbar picker and on the welcome screen, with a folder fallback when no usable logo exists. Only pending operations are shown, each with its ahead/behind commit count; multiple repositories can sync concurrently, and their separate Sileo progress and outcome cards remain visible together. Opening the picker fetches each listed repository so those counts and checkouts match the remote, not a stale local cache.
-- Fetch remotes periodically so ahead/behind counts stay current; choose the interval or turn periodic checks off in **Settings → General**. Manual Refresh fetches even when checks are off. See [remote checks and refresh](interface.md#remote-checks-and-refresh).
-- Create, rename, delete, and reassign project groups.
-- Switch quickly between repositories, branches, and available worktrees.
-- Display current branch, ahead/behind state, and worktree insertion/deletion totals in the main toolbar.
-- Coalesce overlapping watcher and manual refreshes, and keep the current diff mounted when a refresh changes only status or refs.
+**Open a repository**
+
+Press `Ctrl+O`, browse to an existing repository, select it, and open it. The dialog includes recent checkouts, location shortcuts, breadcrumbs, a folder filter, hidden-folder controls, and an editable path. Desktop also offers a native folder picker.
+
+| In the repository dialog | Action |
+| --- | --- |
+| `Ctrl+L` | Edit the path |
+| Arrow keys | Select a folder |
+| Right arrow | Browse into a folder |
+| `Enter` | Open the selected repository |
+
+Added repositories stay available until you remove them. Opening one preserves its position; new repositories append to their group, keeping numbered shortcuts stable. Switch between repositories, branches, and available worktrees from the selector. The toolbar shows the current branch, ahead/behind counts, and worktree insertion/deletion totals.
+
+**Organize, relocate, or remove repositories**
+
+In **Manage projects**, create, rename, delete, or reassign project groups without moving files on disk. Reorder projects and repositories within each group, including **No project**. Desktop offers drag handles, keyboard dragging, and up/down buttons; mobile uses larger up/down buttons. Repository numbers match the selector.
+
+- **Relocate repository:** select an existing folder to update its saved path, even before opening fails. Desktop uses a native picker; browsers use the server folder picker. Project assignment, tabs, and expanded folders are preserved; files are not moved.
+- **Remove from OpenTig:** confirm to forget the repository, its worktrees, recent entries, and project assignment. Folders and Git data stay on disk and can be opened again. Removing the active repository returns you to the welcome screen.
+
+**Save or close unsaved editor tabs before relocating or removing a repository.**
+
+**Sync from the repository picker**
+
+Pull or push from an individual repository's row. Opening the picker fetches each listed repository to refresh its checkout and ahead/behind counts. Only pending operations appear, with their commit counts; multiple repositories can sync concurrently with separate progress and result notifications.
+
+Choose periodic remote checks, or turn them off, in **Settings → General**. Manual Refresh still fetches when periodic checks are off. See [remote checks and refresh](interface.md#remote-checks-and-refresh).
+
+<details>
+<summary>Repository labels, icons, and mobile behavior</summary>
+
+The folder dialog shows branches for repositories and linked worktrees, including unborn branches and detached HEAD. Pending or failed navigation clears the previous selection. Mobile keeps the current folder and confirmation visible; the welcome screen scrolls when repositories exceed the available height.
+
+Picker rows show the repository name and the branch used for pull/push. Linked worktrees also show their checkout folder; a styled hover tooltip shows the filesystem path. A repository favicon or app icon appears in the toolbar picker and welcome screen when available, with a folder fallback. Supported sources include `favicon.svg`/`favicon.ico` at the root or under `public/`, `app/`, and similar locations, or a `<link rel="icon">` in `index.html`.
+
+The repository dropdown can use up to 80% of the viewport height while keeping search and management visible; other dropdowns stay compact. Mobile reordering preserves scroll and focus and briefly highlights the moved row. Reduced-motion preferences disable that highlight.
+
+</details>
+
+<details>
+<summary>Connected clients, refreshes, and backend recovery</summary>
+
+Desktop and paired browsers share an authenticated WebSocket backend. Repository switches and filesystem/Git events propagate to every connected tab. Reconnecting clients load fresh state without replaying interrupted mutations.
+
+On desktop, a supervised utility process keeps repository watchers and in-flight server state alive through a renderer reload or crash while the desktop process remains open. Unexpected backend exits restart with bounded backoff. Native folder selection and Explorer reveal are desktop-only; browser headers use the full width without reserving desktop window-control space.
+
+The workspace shell loads first. Settings, History, PR creation, Files, Search, and the PRs list load when first opened. Overlapping watcher and manual refreshes are combined; status-only or reference-only updates keep the current diff mounted.
+
+[Development profiles](development.md) separate Dev application data from production. Repositories and authenticated host CLIs remain real resources in either profile.
+
+</details>
 
 ### Changes, diffs, and commits
 
-- Separate conflicted, staged, and unstaged changes.
-- Display changes as a flat list or recursive tree. Rows stay aligned as files load, sections empty or refill, conflicts appear, and folders expand or collapse, on desktop and phones.
-- Treat each visually highlighted change or folder row as one continuous click target, with a pointer cursor across the active surface, while preserving its dedicated diff, open, stage, unstage, and discard controls.
-- Stage or unstage individual files, folders, selections, or everything at once.
-- Discard selected unstaged changes through an in-app confirmation that lists the affected paths; untracked files are sent to system Trash (the Recycle Bin on Windows).
-- Review syntax-aware diffs in unified or split mode, with optional line wrapping, colored with the same One Light/One Dark Pro token palette as the Files editor and Markdown code blocks; added, deleted, and modified lines keep their own diff colors. Each file header shows the file name in full, with the folder path underneath. Sticky file headers keep an opaque background on hover so scrolled code does not show through. Language grammars load for the file being viewed rather than at startup.
-- Large diffs show **Preparing diff…** while their file models are parsed in a background worker. Switching or closing the diff cancels that work; only a complete result for the current revision is displayed. Background patch refreshes preserve file collapse choices and the mounted scroll container while the previous revision is hidden. If workers are unavailable, parsing yields between indexing batches and files, but a single large file can still pause the interface. Each mounted diff keeps a small byte-budgeted parse cache; entries too large for that cache are still displayed, and closing or changing the document releases the cache. Syntax highlighting keeps its existing size limits: the highlighting pool is bypassed above 10,000 diff lines or 500,000 conflict characters, and tokenization is limited on very long lines.
-- Open changed Markdown files directly in their staged or unstaged diff, while keeping **Open file** available for the rendered preview. Changed HTML, SVG, and image files retain their direct rich preview and separate diff action.
-- Resolve merge conflicts in the built-in conflict editor, syntax-highlighted with the same palette as diffs and the Files editor, and mark resolved files for staging. Accepting the current, incoming, or both sides stays visible while background refreshes reconcile the saved file.
-- Create commits from staged files, or create and push in one action when an upstream exists.
-- Let the selected AI CLI suggest a reviewed multi-commit plan when staged files represent independent responsibilities, then prepare one complete-file group at a time without creating commits automatically.
-- Work through that plan at your own pace: groups keep their original numbering as you commit them, show how many are done, open any listed file's diff for review, and each group is independently rechecked against its files so a plan cannot be applied after those files changed.
-- When a split cannot be offered, OpenTig says why instead of staying silent, for example because a file is only partially staged or was renamed.
-- Review AI run metadata and failed-operation diagnostics in Settings, and clear either history when wanted. Prompts and file contents are not stored in those histories; see [usage history and problems](ai-assistance.md#usage-history-and-problems) and [AI privacy](security-and-privacy.md#ai-privacy).
-- Undo the latest unpublished commit while keeping its changes staged. OpenTig verifies the expected commit and upstream state before rewriting history.
+**Review and stage changes**
+
+1. Open **Changes** to see conflicted, staged, and unstaged files separately, as a flat list or recursive tree.
+2. Open a diff in unified or split mode, with optional line wrapping.
+3. Stage or unstage individual files, folders, a selection, or everything at once.
+
+Changed Markdown files open their staged or unstaged diff; use **Open file** for the rendered preview. HTML, SVG, and image files open a rich preview and have a separate diff action.
+
+To discard selected unstaged changes, review the affected paths in the confirmation dialog. Untracked files go to system Trash (the Recycle Bin on Windows).
+
+**Resolve conflicts**
+
+Use the built-in conflict editor to accept the current, incoming, or both sides, then mark resolved files for staging. Syntax highlighting matches the diff and Files editor. Accepted changes remain visible while background refreshes reconcile the saved file.
+
+**Create or undo a commit**
+
+Commit the staged files with an editable message. When an upstream exists, you can commit and push in one action. For a branch without an upstream, see [publishing a branch](#safe-pull-and-push).
+
+You can undo the latest unpublished commit and keep its changes staged. OpenTig checks the expected commit and upstream state before rewriting history.
+
+**Split independent changes into commits**
+
+With a [supported AI CLI](ai-assistance.md), request a multi-commit plan for staged files that represent separate responsibilities. Review the plan, then prepare one complete-file group at a time. Applying a group does not create a commit automatically.
+
+Groups retain their original numbers as you commit them and show progress. Open any listed file's diff before applying its group. Each group is rechecked against its files, so it cannot be applied after those files change. Partially staged or renamed files can prevent splitting; OpenTig explains why a plan cannot be offered.
+
+Settings includes AI run metadata and failed-operation diagnostics, and lets you clear either history. These histories do not store prompts or file contents. See [usage history and problems](ai-assistance.md#usage-history-and-problems) and [AI privacy](security-and-privacy.md#ai-privacy).
+
+<details>
+<summary>Diff colors, file headers, and change-list controls</summary>
+
+Diffs use the same One Light/One Dark Pro token palette as the Files editor and Markdown code blocks. Added, deleted, and modified lines retain their diff colors. Language grammars load for the file being viewed rather than at startup.
+
+File headers show the full filename with its folder path underneath. Sticky headers remain opaque on hover so scrolled code does not show through. Dialogs, including Settings and confirmations, stay above diff content and sticky headers.
+
+Change and folder rows stay aligned as files load, sections empty or refill, conflicts appear, and folders expand or collapse on desktop and phones. Each highlighted row is one continuous click target with a pointer cursor; dedicated diff, open, stage, unstage, and discard controls remain available.
+
+</details>
+
+<details>
+<summary>Large diffs and highlighting limits</summary>
+
+Large diffs show **Preparing diff…** while a background worker parses their file models. Switching or closing the diff cancels that work; only complete results for the current revision appear. Background patch refreshes preserve collapsed files and the mounted scroll container while hiding the previous revision.
+
+Without workers, parsing yields between indexing batches and files, but a single large file can still pause the interface. Each mounted diff has a small byte-budgeted parse cache. Oversized entries still display; closing or changing the document releases the cache.
+
+The highlighting pool is bypassed above 10,000 diff lines or 500,000 conflict characters. Tokenization is also limited on very long lines.
+
+</details>
 
 ### Safe pull and push
 
-- Pull by fast-forward when the branch has no local commits, or rebase those local commits onto the updated remote when the histories have diverged and there are no conflicts. The unpublished commits stay on top, ready to push. OpenTig does not create an implicit merge commit.
-- If a rebase would conflict, abort it and leave the branch unchanged instead of stranding the repository mid-rebase.
-- Preserve local changes through a temporary safety stash when pulling, including untracked files.
-- Keep and report the recovery stash if changes cannot be restored cleanly.
-- Publish branches without an upstream, including branches with no new commits, from the toolbar, history, repository selector, Commit & Push, or the pull-request dialog. Use the configured push remote or the only available remote; choose one when several are available without a preference. Publishing sets upstream tracking and leaves uncommitted files untouched.
-- Refuse unsafe pull or push states such as unresolved conflicts or an active Git operation. Pull requires an upstream; publishing requires a checked-out branch with at least one commit and a configured remote. Existing remote history is never force-pushed.
-- Surface remote rejection, branch-protection, authentication, configuration, pending conflicts, and other one-shot operation failures as Sileo toasts rather than a persistent top banner. Each pull and push operation has its own progress and result toast. Conflict notices are deduplicated per repository across refreshes and dismissed as soon as the conflicts are resolved, without closing an in-progress pull. The Changes view remains the persistent source of truth. Read-only Git operations still use an in-app banner.
-- Render app-authored Sileo toast copy in sentence case throughout the app, preserving product names, acronyms, and user-provided text.
-- Keep dialogs above virtualized diff content, including sticky file headers, so Settings and confirmations cannot be partially covered by the viewer.
+**Pull requires an upstream.** Pull and push refuse unsafe states such as unresolved conflicts or an active Git operation. OpenTig never force-pushes existing remote history.
+
+| When you pull | What OpenTig does |
+| --- | --- |
+| The branch has no local commits | Fast-forwards to the remote |
+| Local and remote histories have diverged, without conflicts | Rebases local commits onto the updated remote, ready to push; no implicit merge commit |
+| The rebase would conflict | Aborts it and leaves the branch unchanged |
+| You have local changes, including untracked files | Preserves them in a temporary safety stash |
+| Local changes cannot be restored cleanly | Keeps and reports the recovery stash |
+
+**Publish a branch without an upstream**
+
+Publish from the toolbar, History, repository selector, **Commit & Push**, or pull-request dialog. A checked-out branch with at least one commit and a configured remote is required; you can publish even when there are no new commits.
+
+OpenTig uses the configured push remote or the only available remote. If several exist without a preference, choose one. Publishing sets upstream tracking and leaves uncommitted files untouched.
+
+**Read progress and errors**
+
+Each pull or push has its own progress and result notification. Remote rejections, branch protection, authentication, configuration errors, pending conflicts, and other one-shot failures appear there. **Changes** remains the place to inspect unresolved work.
+
+<details>
+<summary>Notification behavior</summary>
+
+Operation notifications use Sileo toasts rather than a persistent top banner. Conflict notices are deduplicated per repository across refreshes and dismissed when conflicts are resolved, without closing an in-progress pull. Read-only Git operations still use an in-app banner.
+
+App-authored notification text uses sentence case, preserving product names, acronyms, and user-provided text.
+
+</details>
 
 ### Files and editing
 
-- Browse the repository as a virtualised tree with sticky parent folders and persisted expansion state. While a file is open, ancestor folders pin at the top of the list as opaque overlays; hovering them keeps that cover, and clicking one scrolls the folder into view without selecting or collapsing it.
-- Keep open files in a compact tab strip in the header: a single click previews a file and the next preview replaces it, while editing, double-clicking, or `Ctrl`-clicking pins the tab so it opens alongside the preview instead of replacing it. Tabs can be reordered through a lifted drag preview with animated live placement, closed with the middle mouse button, show the parent folder when two files share a name, and expose their full path and state in a styled tooltip.
-- Open a file from its **Files** context menu as a replaceable preview or choose **Open to the Side** (`Ctrl`-click) to pin it beside the current file. Dragging a file from the tree onto the header tab strip performs the same pinned open with explicit drop feedback.
-- Code, diffs, and conflicts share language detection for nested Dockerfiles and Makefiles, uppercase extensions, XML project files, JSON with comments, environment files, Git configuration, and installer scripts.
-- Open text files in the built-in syntax-aware editor, using the same One Light/One Dark Pro palette as Markdown code blocks, and save with external-change protection. Repeated blank lines can be appended at the end of ordinary files without flashing an internal render error or losing editor focus, while large files retain virtualised rendering. While a file is dirty, Save sits at the top right as a labeled button with its shortcut, and saving keeps your scroll position instead of jumping to the top. Markdown, HTML, and SVG previews share accessible Preview/Code tabs with mouse and keyboard navigation, and Code shows a dot while the file has unsaved edits.
-- Move freely between open files without losing work: unsaved changes stay in memory for the running application, closing a modified tab offers Save, Discard, or Cancel, and only the active file keeps an editor loaded.
-- Restore each worktree's open tabs, their order, and the file that was active when you return to it. Tab paths are remembered between sessions; unsaved text is never written to disk.
-- Keep a tab whose file was renamed or moved pointing at its new path. A tab with unsaved changes whose file disappears stays open and is marked unavailable so its text can still be recovered, while clean tabs simply close.
-- Only working-tree files become tabs; diffs, conflicts, commits, and pull requests stay transient. Up to 50 tabs are kept per worktree, and opening past that closes the clean tab you used least recently.
-- Press `Ctrl+F` in any editable file to open one integrated find-and-replace panel, with single or global replacement, case, whole-word, regular-expression, and undo support.
-- Preview and edit Markdown, HTML, and SVG files through compact Preview/Code controls; switching between them restores roughly the same scroll position in the tab you land on, holding it while diagrams, formulas, and syntax highlighting finish laying out, and releasing it the moment you scroll yourself. HTML previews run the file's own scripts in a sandbox that cannot access OpenTig.
-- Load Markdown images relative to the document within the repository, including PNG and SVG files. Render GitHub-flavoured Markdown with syntax-highlighted code, copy buttons, alerts, footnotes, KaTeX, and Mermaid diagrams. Syntax highlighting, KaTeX, and Mermaid load when a Markdown preview actually needs them; opening a source file does not. External links (`http(s)://`, protocol-relative, and `mailto:`) open in your system browser or mail client instead of navigating inside OpenTig; relative links to repository files open that file in a new tab, and `#anchor` links scroll within the preview. Hovering any link shows a tooltip with its destination (truncated when long) and what clicking it will do (open in browser, open in mail app, or open file).
-- Preview raster images with fit, 1:1, keyboard/wheel zoom, dimensions, and file-size information.
-- Select multiple files and folders, then copy, cut, paste, rename, create, or delete them. Desktop paste imports copied file paths from native file managers or saves a clipboard image as PNG, only when you press `Ctrl+V` or choose Paste; runtimes without native file-clipboard support hide that action. Copy and move operations reject placing a folder inside itself, including when its parent is reached through a filesystem alias or Windows short path. Deletion requires an in-app confirmation that lists the affected paths. Drag and drop moves one or many selected entries with a lifted preview, a count badge, and clear folder or repository-root destination feedback.
-- Copy file paths or contents and reveal entries in Windows File Explorer.
-- Undo and redo supported file operations. Large or directory deletions fall back to system Trash when an in-app snapshot is not practical.
-- Optionally include Git-ignored files in the tree.
-- File removal uses system Trash with literal paths; a backend inside WSL uses Linux Trash. The Trash dependency is temporarily pinned to 9.0.0 pending a patched transitive dependency; see [third-party notices](../THIRD_PARTY_NOTICES.md#trash).
+**Open and keep files in tabs**
+
+Browse the **Files** tree, then click a file to preview it. The next preview replaces that tab. To keep a file open, edit it, double-click it, or `Ctrl`-click it.
+
+| Action | Result |
+| --- | --- |
+| Open from the Files context menu | Open a replaceable preview |
+| **Open to the Side** or `Ctrl`-click | Pin the file beside the current one |
+| Drag a file from the tree onto the header tab strip | Pin it at the drop position |
+| Drag a tab | Reorder it |
+| Middle-click a tab | Close it |
+
+Only working-tree files become tabs. Diffs, conflicts, commits, and pull requests remain transient. Each worktree keeps up to 50 tabs; opening another closes the least recently used clean tab.
+
+**Edit and save**
+
+Open text files in the syntax-aware editor. When the file has unsaved changes, a labeled **Save** button with its shortcut appears at the top right. Saving checks for external changes and preserves your scroll position. Press `Ctrl+F` for the integrated find-and-replace panel, including single or global replacement, case, whole-word, regular-expression, and undo support.
+
+Unsaved edits stay in memory while the app runs. Closing a modified tab offers **Save**, **Discard**, or **Cancel**. Open tab paths, order, and the active file are restored per worktree between sessions; **unsaved text is never written to disk automatically**.
+
+If a file moves or is renamed, its tab follows the new path. If it disappears, a dirty tab stays open and is marked unavailable so you can recover the text; a clean tab closes.
+
+**Preview documents and images**
+
+- **Markdown, HTML, and SVG:** switch between **Preview** and **Code** with mouse or keyboard. **Code** shows a dot while the file has unsaved edits. HTML runs its own scripts in a sandbox that cannot access OpenTig.
+- **Markdown:** render GitHub-flavoured Markdown, syntax-highlighted code with copy buttons, alerts, footnotes, KaTeX formulas, Mermaid diagrams, and repository-relative images, including PNG and SVG.
+- **Raster images:** use fit, 1:1, keyboard or wheel zoom, and view dimensions and file size.
+
+Preview/Code switches restore roughly the same scroll position in the destination tab. That position is held while diagrams, formulas, and highlighting finish loading, until you scroll yourself.
+
+<details>
+<summary>Links in Markdown previews</summary>
+
+External links (`http(s)://` and protocol-relative URLs) open in the system browser; `mailto:` opens the mail client. Relative repository links open the file in a new tab, and `#anchor` links scroll within the preview.
+
+Hovering a link shows a styled tooltip with its destination, truncated when long, and the action: open in browser, open in mail app, or open file.
+
+</details>
+
+**Manage files and folders**
+
+Select one or more entries to copy, cut, paste, rename, create, or delete. Dragging moves selected entries to a folder or repository root, with a lifted preview, count badge, and destination feedback. Copy paths or contents, and reveal entries in Windows File Explorer on desktop. Turn on ignored-file visibility to include Git-ignored files.
+
+Desktop Paste imports file paths copied in a native file manager or saves a clipboard image as PNG, only when you press `Ctrl+V` or choose **Paste**. Runtimes without native file-clipboard support hide that action.
+
+Deletion requires confirmation listing the affected paths. Supported file operations can be undone and redone. Large or directory deletions fall back to system Trash when an in-app snapshot is impractical; a backend inside WSL uses Linux Trash.
+
+<details>
+<summary>File-operation safeguards and Trash dependency</summary>
+
+Copy and move reject placing a folder inside itself, including through filesystem aliases or Windows short paths. File removal uses literal paths with system Trash.
+
+The Trash dependency is temporarily pinned to 9.0.0 pending a patched transitive dependency. See [third-party notices](../THIRD_PARTY_NOTICES.md#trash).
+
+</details>
+
+<details>
+<summary>Tree, tab, and editor behavior</summary>
+
+The virtualised file tree remembers expanded folders. While a file is open, ancestor folders stick to the top as opaque overlays, including on hover. Clicking one scrolls it into view without selecting or collapsing it.
+
+Tabs use a compact header strip, a lifted drag preview, and animated placement. Files with the same name show their parent folder; styled tooltips expose the full path and tab state. An unsaved dot marks dirty tabs, so the floating Save button needs no redundant label.
+
+Only the active file keeps an editor loaded. Large files use virtualised rendering. Appending repeated blank lines to ordinary files preserves focus without flashing a render error.
+
+Code, diffs, and conflicts share language detection for nested Dockerfiles and Makefiles, uppercase extensions, XML project files, JSON with comments, environment files, Git configuration, and installer scripts. The editor uses the One Light/One Dark Pro palette also used by Markdown code blocks. Markdown highlighting, KaTeX, and Mermaid load only when a preview needs them, not when opening a source file.
+
+</details>
 
 ### Quick open and repository search
 
-- Open files by fuzzy path search with `Ctrl+P`, navigate the accessible result list with the arrow keys, and open the highlighted file with `Enter`. Search data is prepared when Quick Open opens and reused until the file list changes; the initial preparation can briefly pause very large repositories. Large repositories show “Searching files…” while results are calculated; only results for the current search can be selected.
-- Search file contents across the repository with case-sensitive, whole-word, and regular-expression modes.
-- Group matches by file, show line numbers, and open a result directly in the editor.
-- Replace one match, every match in a file, or all displayed repository matches; replacements are conflict-checked and undoable as one Files operation.
-- Skip Git-ignored files by default and search them only while the ignored-files toggle is on; results from them stay identified separately and folded.
-- Keep broad queries responsive: tracked files are listed first, very large result sets are cut short and marked as truncated instead of failing, and "replace all" stays disabled while a result is truncated.
+**Find a file by path**
+
+Press `Ctrl+P`, type part of a path, use the arrow keys to navigate the accessible result list, and press `Enter` to open the highlighted file.
+
+**Find or replace text across the repository**
+
+1. Open **Search** and enter a query. Enable case-sensitive, whole-word, or regular-expression matching as needed.
+2. Review matches grouped by file with line numbers. Open a result to jump into the editor.
+3. Replace one match, all matches in a file, or all displayed matches. Replacements check for conflicts and can be undone as one Files operation.
+
+Git-ignored files are excluded unless the ignored-files toggle is on. Their results remain separately identified and folded. Broad searches list tracked files first; very large result sets are marked **truncated**, and **Replace all** stays disabled until results are complete.
+
+<details>
+<summary>Quick Open in large repositories</summary>
+
+Search data is prepared when Quick Open opens and reused until the file list changes. Initial preparation can briefly pause very large repositories. While results are calculated, large repositories show **Searching files…**. Only results for the current query can be selected.
+
+</details>
 
 ### History
 
-- Browse commit history incrementally instead of loading the entire repository at once; refreshes preserve loaded pages without duplicating commits.
-- Expanded commit file lists are reused from a memory-bounded cache. Very large lists remain fully available in the open row but are fetched again when revisited after that row unmounts; switching repositories clears the cache.
-- Follow current-branch history through a compact Git graph: theme amber for local commits, OpenTig blue for published work and merge branches, and neutral gray for primary-line commits reachable from the locally known base branch. Lane positions and merge nodes preserve topology; the palette follows the light or dark theme. The base uses the upstream remote's symbolic default when available, then conventional main/master refs; missing information stays unknown. No background fetch is needed, and unmerged branches outside HEAD are not added to this view.
-- Switch between compact (42 px) and comfortable (56 px) rows without changing the sidebar width or right-hand diff viewer. Selecting a commit or its expanded files keeps the row highlighted.
-- Search subjects, authors, hashes, and references in loaded history. Matches are highlighted without removing graph rows; Enter or the next-match button scrolls to each result. Expanded rows keep their spacing when the search or merge grouping changes. Load more to search older commits.
-- Group complete, exclusive, linear side branches under their merge commit. Partial pages, shared branches, and nested side merges stay expanded in the graph. The grouped count reveals the commits again; search temporarily reveals all grouped commits.
-- Recognize GitHub-style merge messages and trailing `(#123)` references. These are message hints, not verified PR status or proof of squash/rebase. On GitHub repositories, the reference opens the existing PR viewer on the right; an issue number or unavailable PR is handled by that viewer. Squash/rebase histories remain linear because the graph always follows actual parents.
-- Inspect commit subjects, full messages, authors, dates, refs, publication state, and changed files. Expanded sidebar rows show a three-line description preview with ellipsis when needed. Click the subject to open any commit, including merge and empty commits, with complete metadata and the full message available immediately. Commit subjects have no hover tooltip.
-- Merge commits list only their own file changes relative to every parent; the viewer shows those changes as a unified diff against the first parent and labels that comparison. Commits without file changes still open their metadata and full message, with an empty-diff message below the header.
-- Copy full commit hashes.
-- Web links in the full commit subject, message, expanded description, and PR commit timeline show their destination and **Open in new tab** on hover or keyboard focus. They open in a new browser tab (the system browser on desktop); email links open the mail client. Commit messages otherwise retain their plain-text formatting.
-- Open complete commit diffs or the diff for one file, including renamed paths.
-- Undo only the latest commit when OpenTig can prove it is still local and safe to undo.
+**Inspect a commit**
+
+Open **History** and click a commit subject for its full message, author, date, references, publication state, and changed files. Open the complete diff or one file's diff, including renamed paths, and copy the full hash when needed. Merge and empty commits also open with complete metadata.
+
+History loads incrementally. Search subjects, authors, hashes, and references in the **loaded history**; load more to search older commits. Matches are highlighted without removing graph rows. Press `Enter` or use the next-match button to jump between them.
+
+Only the latest commit can be undone, and only when OpenTig can prove it is still local and safe to undo.
+
+**Read the graph**
+
+The graph follows current-branch history and actual parent relationships. It does not fetch in the background or include unmerged branches outside HEAD. Colors adapt to the theme:
+
+| Color | Meaning |
+| --- | --- |
+| Amber | Local commits |
+| OpenTig blue | Published work and merge branches |
+| Neutral gray | Primary-line commits reachable from the locally known base branch |
+
+GitHub-style merge messages and trailing `(#123)` references are hints, not verified PR status or proof of squash/rebase. On GitHub repositories, the reference opens the PR viewer on the right; that viewer handles issue numbers or unavailable PRs. Squash/rebase histories remain linear.
+
+<details>
+<summary>Merge grouping and comparisons</summary>
+
+Complete, exclusive, linear side branches can be grouped under their merge commit. Click the grouped count to reveal them; search temporarily reveals all grouped commits. Partial pages, shared branches, and nested side merges stay expanded.
+
+Merge commits list only their own file changes relative to every parent. The viewer shows these as a unified diff against the first parent and labels the comparison. Commits without file changes still show metadata and the full message, followed by an empty-diff message.
+
+Graph lanes and merge nodes preserve topology. The base comes from the upstream remote's symbolic default when available, then conventional main/master refs. Missing information stays unknown.
+
+</details>
+
+<details>
+<summary>History layout, caching, and message links</summary>
+
+Choose compact (42 px) or comfortable (56 px) rows without changing the sidebar width or diff viewer. Selecting a commit or its expanded files keeps the row highlighted. Expanded rows show a three-line description preview with an ellipsis when needed; click the subject for the full message, with no subject hover tooltip. Row spacing is preserved when search or merge grouping changes.
+
+Refreshes retain loaded pages without duplicating commits. Expanded file lists use a memory-bounded cache. Very large lists remain fully available in the open row, but are fetched again after leaving and revisiting it once the row unmounts. Switching repositories clears the cache.
+
+Web links in commit subjects, messages, expanded descriptions, and the PR commit timeline show their destination and **Open in new tab** on hover or keyboard focus. They open a browser tab, or the system browser on desktop; email links open the mail client. Other commit-message text keeps its plain-text formatting.
+
+</details>
 
 ### Branches and worktrees
 
-- Search and switch between local and remote branches; selecting a remote branch creates or uses its local tracking branch. If local changes would be overwritten, OpenTig offers to move all tracked and untracked changes to the destination branch and leaves them unstaged. Conflicts open in the Changes view and retain a safety stash for recovery.
-- Prevent switching to a branch already checked out in another worktree.
-- **Manage branches** offers All, Local and Remote filters, grouping and filtering by configured remote, and branch search. Remote references reflect the last fetch; **Fetch** updates branches from all configured remotes and prunes obsolete remote references without removing local branches, worktrees or tags.
-- Inspect local branch tips, upstreams, ahead/behind state, unique commits, and owning worktrees. Remote details show the fetched tip, local tracking branches, and associated GitHub PRs for `origin`, including merged status.
-- Branch and worktree rows use the details panel instead of hover tooltips. References whose branches were already deleted on the server are marked as cached and offer **Fetch and clean up**; they do not offer creation or remote deletion.
-- Create a local tracking branch from the remote’s Local branches details at a fetched tip with an editable name, without switching the current checkout or touching uncommitted changes.
-- Delete an individual remote branch with a separate confirmation naming the remote and branch. OpenTig rechecks the remote tip and destination, uses an expected-commit lease, and refuses deletion of the remote’s default branch. Unknown default branches, ambiguous fetch mappings, and differing or multiple fetch/push destinations also block deletion. Git permissions and server branch protection still apply. Local branches and worktrees are retained; there is no bulk remote deletion.
-- Delete local branches only through Git's non-forced, fully merged path.
-- Inspect worktree path, branch, HEAD, lock/prunable state, and local changes. Worktree selection and removal recognize filesystem aliases, including Windows short paths, while preserving case-sensitive path distinctions on Linux.
-- Open or remove eligible linked worktrees. Removing a worktree never deletes its branch, and the main worktree cannot be removed.
+**Switch branches**
+
+Search local and remote branches, then select one. Selecting a remote branch creates or uses its local tracking branch. You cannot switch to a branch already checked out in another worktree.
+
+If switching would overwrite local changes, OpenTig offers to move all tracked and untracked changes to the destination and leave them unstaged. Conflicts open in **Changes**, with a safety stash kept for recovery.
+
+**Inspect and refresh branches**
+
+Open **Manage branches** to search, choose **All**, **Local**, or **Remote**, and group or filter by configured remote. Select a branch or worktree for details rather than a hover tooltip.
+
+Remote references reflect the last fetch. **Fetch** updates all configured remotes and prunes obsolete remote references without removing local branches, worktrees, or tags. Already-deleted server branches are marked as cached and offer **Fetch and clean up**, not creation or remote deletion.
+
+| Selection | Details available |
+| --- | --- |
+| Local branch | Tip, upstream, ahead/behind state, unique commits, owning worktrees |
+| Remote branch | Fetched tip, local tracking branches, associated GitHub PRs for `origin`, including merged status |
+| Worktree | Path, branch, HEAD, lock/prunable state, local changes |
+
+From a remote's **Local branches** details, create a tracking branch at the fetched tip with an editable name. This does not switch the current checkout or touch uncommitted changes.
+
+**Delete branches or remove worktrees**
+
+- **Local branch:** deletion uses Git's non-forced, fully merged path.
+- **Remote branch:** confirm the named remote and branch individually. OpenTig rechecks the remote tip and destination with an expected-commit lease. Default branches cannot be deleted; unknown defaults, ambiguous fetch mappings, or differing/multiple fetch/push destinations also block deletion. Git permissions and server branch protection still apply. Local branches and worktrees remain; bulk remote deletion is unavailable.
+- **Linked worktree:** open or remove an eligible worktree. Removing it does not delete its branch. The main worktree cannot be removed.
+
+Worktree selection and removal recognize filesystem aliases, including Windows short paths, while preserving Linux case-sensitive path distinctions.
 
 ### GitHub pull requests
 
-Use the authenticated GitHub CLI to review PR metadata, descriptions, cumulative or per-commit diffs, and native stacks; open them in OpenTig or GitHub, or create an editable draft before publishing. Repository account selection, Git HTTPS authentication, and commit authorship are separate controls. See [GitHub accounts and pull requests](github.md) for setup, scopes, access checks, direct push behavior across clients, and credential boundaries.
+With an authenticated GitHub CLI, use **PRs** to review metadata, descriptions, cumulative or per-commit diffs, and native stacks. Open PRs in OpenTig or GitHub, or create an editable draft before publishing.
+
+Repository account selection, Git HTTPS authentication, and commit authorship are separate controls. See [GitHub accounts and pull requests](github.md) for setup, scopes, access checks, direct push behavior across clients, and credential boundaries.
 
 ### Optional AI assistance
 
-Locally installed Codex, Claude Code, OpenCode 2, or Grok Build can draft commit messages, propose complete-file commit groups, and write PR descriptions. You review and confirm every commit or PR. See [AI assistance](ai-assistance.md) for supported versions, CLI detection, model selection, coverage reports, optional repository instructions, and usage history; [AI privacy](security-and-privacy.md#ai-privacy) covers provider isolation and supplied context.
+Locally installed Codex, Claude Code, OpenCode 2, or Grok Build can draft commit messages, propose complete-file commit groups, and write PR descriptions. **You review and confirm every commit or PR.**
+
+See [AI assistance](ai-assistance.md) for supported versions, CLI detection, model selection, coverage reports, optional repository instructions, and usage history. [AI privacy](security-and-privacy.md#ai-privacy) explains provider isolation and supplied context.
 
 ### Preferences
 
-Choose themes, fonts, interface scale, change-list layout, viewer wrapping, ignored-file visibility, remote-check intervals, and shortcuts from Settings. OpenTig remembers viewer and workspace preferences, project ordering, expanded folders, and worktree tabs. See [interface, preferences, and mobile use](interface.md) for the controls, phone navigation, and saved state.
+Open **Settings** to choose themes, fonts, interface scale, change-list layout, viewer wrapping, ignored-file visibility, remote-check intervals, and shortcuts.
+
+OpenTig remembers viewer and workspace preferences, project ordering, expanded folders, and worktree tabs. See [interface, preferences, and mobile use](interface.md) for controls, phone navigation, and saved state.
 
 ## Keyboard shortcuts
 
-The shortcuts below are defaults; rebind most of them from **Settings → Shortcuts**. Shortcuts marked *fixed* follow platform or file-manager conventions and always stay as shown.
+These are the defaults. Rebind most shortcuts in **Settings → Shortcuts**. Shortcuts marked *fixed* follow platform or file-manager conventions and cannot be changed.
 
 | Shortcut | Action |
 | --- | --- |

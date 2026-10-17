@@ -1,0 +1,55 @@
+---
+import type { HTMLAttributes } from 'astro/types';
+
+interface Props extends HTMLAttributes<'a'> {
+  variant?: 'primary' | 'outline';
+  size?: 'default' | 'sm';
+  href: string;
+}
+
+const { variant = 'primary', size = 'default', href, class: className, ...rest } = Astro.props;
+
+const base =
+  'inline-flex cursor-pointer shrink-0 items-center justify-center rounded-lg border bg-clip-padding font-semibold whitespace-nowrap transition-[background-color,border-color,color,box-shadow,opacity,transform] duration-150 motion-reduce:transition-none select-none active:translate-y-px [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*=size-])]:size-4';
+
+const variants = {
+  primary: 'site-button-primary text-primary-foreground',
+  outline:
+    'site-button-outline text-foreground',
+} as const;
+
+const sizes = {
+  default: 'h-11 gap-1.5 px-6 text-sm',
+  sm: 'h-8 gap-1 px-3 text-xs',
+} as const;
+---
+
+<a href={href} class:list={[base, variants[variant], sizes[size], className]} {...rest}>
+  <slot />
+</a>
+
+<style>
+  .site-button-primary {
+    border-color: #ffffff26;
+    background: linear-gradient(180deg, var(--action-top), var(--action-bottom));
+    box-shadow: 0 1px 0 #ffffff26 inset, 0 2px 4px #0005, 0 0 0 1px #0002;
+  }
+  .site-button-primary:hover {
+    background: linear-gradient(180deg, var(--action-hover-top), var(--action-top));
+    box-shadow: 0 1px 0 #ffffff30 inset, 0 3px 8px #0005;
+  }
+  .site-button-primary:active {
+    background: linear-gradient(180deg, var(--action-bottom), #1e4ba7);
+    box-shadow: 0 1px 3px #0004 inset;
+  }
+  .site-button-outline {
+    border-color: #ffffff26;
+    background: #242424;
+    box-shadow: 0 1px 0 #ffffff0a inset, 0 2px 4px #0003;
+  }
+  .site-button-outline:hover {
+    border-color: #ffffff40;
+    background: #2b2b2b;
+  }
+  .site-button-outline:active { background: #1c1c1c; }
+</style>

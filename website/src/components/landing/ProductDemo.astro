@@ -1,0 +1,103 @@
+---
+import ExternalLinkIcon from '@tabler/icons/outline/external-link.svg';
+
+const steps = [
+  { title: 'Review the diff', text: 'Select a changed file to compare the working copy with the last commit.' },
+  { title: 'Make an edit', text: 'Open filter-tasks.js, add .trim() before .toLowerCase(), and save your change.' },
+  { title: 'Stage what belongs', text: 'Stage the filter and its tests. Leave the unrelated README change for later.' },
+  { title: 'Create a sample commit', text: 'Write a message, commit the staged files, and inspect the result in history.' },
+];
+---
+<section id="workflow" class="px-4 sm:px-6 py-24 scroll-mt-20" aria-labelledby="workflow-heading">
+  <div class="max-w-7xl mx-auto">
+    <div class="text-center mb-10">
+      <h2 id="workflow-heading" class="font-['GeistPixelTriangle'] text-3xl md:text-4xl font-bold tracking-tight">Try OpenTig</h2>
+      <p class="text-muted-foreground mt-4 max-w-2xl mx-auto">Explore a sample repository. Edit a file, stage your changes, and make a commit.</p>
+    </div>
+    <a href="#features" class="skip-link">Skip interactive demo</a>
+    <div data-live-demo class="demo-shell">
+      <div class="demo-viewport">
+        <img src="/images/workflow-review.webp" alt="OpenTig showing the Launchpad task-filter diff and its changed files." width="1280" height="720" loading="lazy" class="demo-poster" />
+        <p data-demo-status class="demo-status" role="status" hidden>Loading OpenTig…</p>
+        <iframe data-demo-frame data-src="/demo/" title="Interactive OpenTig demo with a sample repository" sandbox="allow-scripts allow-same-origin allow-modals allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation" class="demo-frame" hidden></iframe>
+      </div>
+    </div>
+    <div class="mt-2 flex justify-end">
+      <a href="/demo/" target="_blank" rel="noopener noreferrer" class="demo-expand">
+        Open in a new tab
+        <ExternalLinkIcon width={16} height={16} aria-hidden="true" />
+      </a>
+    </div>
+    <ol class="grid sm:grid-cols-2 lg:grid-cols-4 gap-6 mt-10">
+      {steps.map((step,index) => <li class="border-l border-primary/40 pl-4">
+        <span class="font-mono text-xs text-primary-text">0{index+1}</span>
+        <h3 class="font-semibold mt-2">{step.title}</h3>
+        <p class="mt-2 text-sm leading-relaxed text-muted-foreground">{step.text}</p>
+      </li>)}
+    </ol>
+    <noscript><p class="mt-4 text-muted-foreground">Enable JavaScript to try the interactive demo. The steps above explain the same workflow.</p></noscript>
+  </div>
+</section>
+<style>
+  .demo-shell {
+    overflow: hidden;
+    border: 1px solid #ffffff24;
+    border-radius: 12px;
+    background: #080808;
+  }
+  .demo-expand {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 44px;
+    color: var(--muted-foreground);
+    font-size: 13px;
+    font-weight: 500;
+    text-decoration: none;
+    white-space: nowrap;
+    text-underline-offset: 4px;
+  }
+  .demo-expand:hover {
+    color: var(--foreground);
+    text-decoration: underline;
+  }
+  .demo-expand:focus-visible { outline: 2px solid var(--primary); outline-offset: 4px; }
+  .demo-viewport {
+    position: relative;
+    height: 720px;
+    overflow: hidden;
+    background: #080808;
+  }
+  .demo-poster { width: 100%; height: 100%; object-fit: cover; object-position: top left; }
+  .demo-frame { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+  .demo-status { position: absolute; inset: auto 0 0; margin: 0; padding: 12px 16px; background: #080808; border-top: 1px solid #ffffff24; color: var(--muted-foreground); font-size: 13px; }
+  @media (max-width: 767px) {
+    .demo-shell { border-radius: 10px; }
+    .demo-viewport { height: 660px; }
+    .demo-poster { object-fit: contain; object-position: top; }
+  }
+</style>
+<script>
+  for (const demo of document.querySelectorAll<HTMLElement>('[data-live-demo]')) {
+    const frame=demo.querySelector<HTMLIFrameElement>('[data-demo-frame]');
+    const status=demo.querySelector<HTMLElement>('[data-demo-status]');
+    if(!frame || !status) continue;
+    let timeout: ReturnType<typeof setTimeout>;
+    const ready=(event:MessageEvent)=>{
+      if(event.origin!==location.origin || event.source!==frame.contentWindow || event.data?.type!=='opentig-demo-ready')return;
+      clearTimeout(timeout); frame.hidden=false; status.hidden=true; demo.dataset.ready='';
+      window.removeEventListener('message',ready);
+    };
+    window.addEventListener('message',ready);
+    const load=()=>{
+      frame.src=frame.dataset.src!;
+      status.hidden=false;
+      status.textContent='Loading OpenTig…';
+      timeout=setTimeout(()=>{status.innerHTML='The demo is taking longer to load. <a class="underline" href="/demo/" target="_blank" rel="noreferrer">Open the demo in a new tab</a>.';},20000);
+    };
+    if('IntersectionObserver' in window){
+      const observer=new IntersectionObserver(entries=>{if(entries.some(e=>e.isIntersecting)){observer.disconnect();load();}},{rootMargin:'400px'});
+      observer.observe(demo);
+    } else load();
+  }
+</script>

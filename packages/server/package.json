@@ -1,7 +1,7 @@
 {
   "name": "@opentig/cli",
   "version": "0.2.3",
-  "description": "Run the OpenTig local-first Git client in a browser from any Git worktree.",
+  "description": "Run OpenTig, a free, open-source Git client, on your repository host and access it through a paired browser.",
   "type": "module",
   "main": "dist/server.mjs",
   "bin": {
@@ -49,7 +49,7 @@
   "bugs": {
     "url": "https://github.com/jorgefl8/opentig/issues"
   },
-  "homepage": "https://github.com/jorgefl8/opentig#readme",
+  "homepage": "https://opentig.com/",
   "publishConfig": {
     "access": "public",
     "provenance": true

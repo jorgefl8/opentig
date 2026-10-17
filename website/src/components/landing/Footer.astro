@@ -1,0 +1,41 @@
+---
+import Logo from '@/assets/logo.svg';
+
+const year = new Date().getFullYear();
+
+const links = [
+  { label: "GitHub", href: "https://github.com/jorgefl8/opentig" },
+  { label: "Releases", href: "https://github.com/jorgefl8/opentig/releases" },
+  { label: "FAQ", href: "#faq" },
+  { label: "Docs", href: "/docs/" },
+  { label: "License", href: "https://github.com/jorgefl8/opentig/blob/main/LICENSE" },
+];
+---
+
+<footer class="border-t border-border/50 bg-background/80">
+  <div class="max-w-7xl mx-auto px-6 py-8 flex flex-col md:flex-row items-center justify-between gap-4">
+    <div class="flex items-center gap-2 text-sm text-muted-foreground">
+      <Logo width={18} height={18} class="text-primary" />
+      <span>OpenTig</span>
+      <span>&copy; {year}</span>
+    </div>
+
+    <div class="flex flex-wrap items-center justify-center gap-x-6 gap-y-3">
+      {links.map((link) => (
+        <a
+          href={link.href}
+          class="text-sm text-muted-foreground hover:text-foreground transition-colors"
+          target={!link.href.startsWith('https:') ? undefined : '_blank'}
+          rel={!link.href.startsWith('https:') ? undefined : 'noreferrer'}
+        >
+          {link.label}
+        </a>
+      ))}
+    </div>
+
+    <a href="https://github.com/jorgefl8" target="_blank" rel="noreferrer" class="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors">
+      <img src="https://github.com/jorgefl8.png" alt="jorgefl8" width="32" height="32" class="rounded-full ring-1 ring-border" loading="lazy" />
+      <span>by jorgefl8</span>
+    </a>
+  </div>
+</footer>

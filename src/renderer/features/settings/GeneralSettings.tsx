@@ -93,8 +93,8 @@ function intervalLabel(seconds: number): string {
   return `${seconds} seconds`;
 }
 
-export function GeneralSettings({ preferences, onPreference }: {
-  preferences: Preferences; onPreference(partial: Partial<Preferences>): void;
+export function GeneralSettings({ preferences, onPreference, showRepositoryOptions = true }: {
+  preferences: Preferences; onPreference(partial: Partial<Preferences>): void; showRepositoryOptions?: boolean;
 }) {
   const id = useId();
   const intervalTrigger = useRef<HTMLButtonElement>(null);
@@ -138,12 +138,12 @@ export function GeneralSettings({ preferences, onPreference }: {
           <span className="settings-general-switch-state" aria-hidden="true">{preferences.wrapLines ? 'On' : 'Off'}</span>
           <button type="button" role="switch" aria-label="Wrap long lines" aria-checked={preferences.wrapLines} className="settings-switch" onClick={() => onPreference({ wrapLines: !preferences.wrapLines })}><span /></button>
         </SettingRow>
-        <SettingRow label="Show ignored files" description={<>Include files excluded by <code>.gitignore</code>.</>} toggle>
+        {showRepositoryOptions && <SettingRow label="Show ignored files" description={<>Include files excluded by <code>.gitignore</code>.</>} toggle>
           <span className="settings-general-switch-state" aria-hidden="true">{preferences.showDotEnvFiles ? 'On' : 'Off'}</span>
           <button type="button" role="switch" aria-label="Show ignored files" aria-checked={preferences.showDotEnvFiles} className="settings-switch" onClick={() => onPreference({ showDotEnvFiles: !preferences.showDotEnvFiles })}><span /></button>
-        </SettingRow>
+        </SettingRow>}
       </section>
-      <section className="settings-general-group" aria-labelledby={`${id}-sync`}>
+      {showRepositoryOptions && <section className="settings-general-group" aria-labelledby={`${id}-sync`}>
         <h3 id={`${id}-sync`}><IconRefresh aria-hidden="true" />Repository sync</h3>
         <SettingRow label="Remote check interval" description="Keep ahead / behind counts current.">
           <Select value={String(interval)} onValueChange={(value) => {
@@ -191,7 +191,7 @@ export function GeneralSettings({ preferences, onPreference }: {
           </div>
           <p id={`${id}-interval-range`} className={intervalError ? 'settings-general-error' : 'settings-general-help-detail'} role={intervalError ? 'alert' : undefined}>Choose 5–300 seconds, in steps of 5.</p>
         </form>}
-      </section>
+      </section>}
     </div>
     <footer className="settings-general-footer">
       <span><IconCheck aria-hidden="true" />Changes apply immediately</span>

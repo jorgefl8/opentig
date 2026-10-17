@@ -20,7 +20,7 @@ OpenTig vendors [Departure Mono](https://departuremono.com/) (v1.500) as a selec
 
 ## vscode-icons
 
-Files under `public/vscode-icons/` and the derived mapping in `src/renderer/assets/vscode-icons-theme.json` originate from the [vscode-icons project](https://github.com/vscode-icons/vscode-icons).
+Files under `public/vscode-icons/`, the website OpenCode mark adapted from that set, and the derived mapping in `src/renderer/assets/vscode-icons-theme.json` originate from the [vscode-icons project](https://github.com/vscode-icons/vscode-icons).
 
 - Project source code: MIT License
 - Icons: [Creative Commons Attribution-ShareAlike 4.0 International](https://creativecommons.org/licenses/by-sa/4.0/)
@@ -54,7 +54,7 @@ OpenTig uses [`uqr`](https://github.com/unjs/uqr) to render one-use Web Access p
 
 ## Grok provider mark
 
-The Grok SVG path in `AiProviderIcon.tsx` is adapted from [Lobe Icons](https://github.com/lobehub/lobe-icons/blob/master/src/Grok/components/Mono.tsx). It identifies the selected CLI provider; the mark remains subject to its owner's trademark terms and does not imply endorsement.
+The Grok SVG path in `AiProviderIcon.tsx`, also used in `website/src/assets/icons/grok.svg`, is adapted from [Lobe Icons](https://github.com/lobehub/lobe-icons/blob/master/src/Grok/components/Mono.tsx). It identifies the selected CLI provider; the mark remains subject to its owner's trademark terms and does not imply endorsement.
 
 MIT License
 
@@ -77,3 +77,15 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+## Public website
+
+The Astro landing page in `website/` includes MIT-licensed landing-page code, copyright (c) 2026 Jorge Florentino Serra, including its layout, logo carousel, and OGL terminal background. The original copyright and permission notice is preserved in `website/LICENSE.txt`.
+
+The website bundles Geist, Inconsolata, and [Geist Pixel Triangle](https://github.com/vercel/geist-pixel-font) under SIL Open Font License 1.1. The font copyright and license texts are included in `website/public/fonts/*-OFL.txt`. The website's Inconsolata WOFF2 fixes the width axis at its normal value (100), retaining the full character set and variable weights. Asset regeneration is documented in [the website guide](docs/website.md).
+
+Tabler SVG icons are provided by `@tabler/icons` under MIT. OGL is MIT-licensed. The copied Claude Code, Codex, OpenCode, Grok, and Windows marks identify tools or platforms; their respective owners retain trademark rights, and their display does not imply endorsement.
+
+The website adapts [Gooey Nav from React Bits](https://github.com/DavidHDev/react-bits/tree/main/src/ts-default/Components/GooeyNav), copyright (c) 2026 David Haz, under its MIT + Commons Clause license. The full upstream notice is preserved in `website/public/licenses/react-bits.txt`; this component is incorporated into the OpenTig website, not distributed as a standalone component library.
+
+The hero adapts [Typing Text from Kokonut UI](https://github.com/kokonut-labs/kokonutui/blob/main/components/kokonutui/type-writer.tsx), copyright (c) 2025 kokonutUI, under MIT. Its full notice is preserved in `website/public/licenses/kokonut-ui.txt`. The animation uses Motion, also MIT-licensed.

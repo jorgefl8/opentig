@@ -20,6 +20,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       required: ${{ steps.scope.outputs.required }}
+      website: ${{ steps.scope.outputs.website }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -63,6 +64,38 @@ jobs:
         run: npm test
       - if: needs.changes.outputs.required == 'true' && runner.os == 'Linux'
         run: npm run audit:prod
+
+  website:
+    needs: changes
+    if: always() && !cancelled()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Require a successful website scope decision
+        env:
+          SCOPE_RESULT: ${{ needs.changes.result }}
+          SCOPE_REQUIRED: ${{ needs.changes.outputs.website }}
+        run: node -e "if (process.env.SCOPE_RESULT !== 'success' || !['true', 'false'].includes(process.env.SCOPE_REQUIRED)) process.exit(1)"
+      - if: needs.changes.outputs.website == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - if: needs.changes.outputs.website == 'true'
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+      - if: needs.changes.outputs.website == 'true'
+        run: npm ci --ignore-scripts
+      - if: needs.changes.outputs.website == 'true'
+        run: npm run check:website
+      - if: needs.changes.outputs.website == 'true'
+        run: npm run build:website
+      - name: Validate noindex preview output
+        if: needs.changes.outputs.website == 'true'
+        env:
+          WEBSITE_NOINDEX: 'true'
+        run: npm run build --workspace @opentig/website -- --outDir ../.ai/website-preview
 
   system-trash-smoke:
     needs: changes

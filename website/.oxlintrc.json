@@ -1,0 +1,16 @@
+{
+  "extends": [
+    "../.oxlintrc.json"
+  ],
+  "env": {
+    "browser": true,
+    "node": true
+  },
+  "ignorePatterns": [
+    "dist/**",
+    ".astro/**"
+  ],
+  "globals": {
+    "Astro": "readonly"
+  }
+}

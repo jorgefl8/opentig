@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OpenTig social card source</title>
+    <link rel="preload" href="../public/fonts/Geist.woff2" as="font" type="font/woff2" crossorigin />
+    <style>
+      @font-face {
+        font-family: Geist;
+        src: url('../public/fonts/Geist.woff2') format('woff2');
+        font-weight: 100 900;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        width: 1200px;
+        height: 630px;
+        overflow: hidden;
+        color: #ededed;
+        background: #090909;
+        font-family: Geist, sans-serif;
+      }
+      main {
+        height: 100%;
+        padding: 28px 48px 0;
+        background: radial-gradient(ellipse at 50% 100%, #2266ea33, transparent 70%);
+      }
+      header { display: flex; align-items: center; gap: 14px; }
+      .logo { width: 44px; height: 44px; }
+      .brand { font-size: 32px; font-weight: 700; letter-spacing: -1px; }
+      .descriptor { margin-left: 20px; font-size: 22px; color: #b8c9eb; }
+      .domain { margin-left: auto; font-size: 20px; color: #b3b3b3; }
+      h1 { margin: 20px 0 28px; font-size: 40px; line-height: 1.1; font-weight: 600; letter-spacing: -1.3px; }
+      .workspace {
+        display: block;
+        width: 980px;
+        height: auto;
+        margin: 0 auto;
+        border: 1px solid #394960;
+        border-radius: 8px;
+        box-shadow: 0 10px 60px #0009;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <img class="logo" src="../public/favicon.svg" alt="" />
+        <span class="brand">OpenTig</span>
+        <span class="descriptor">Free, open-source Git client</span>
+        <span class="domain">opentig.com</span>
+      </header>
+      <h1>A focused workspace for your Git repositories.</h1>
+      <img class="workspace" src="../../docs/images/workspace.png" width="1280" height="587" alt="OpenTig showing an open pull request and its side-by-side JavaScript diff in the Launchpad sample repository" />
+    </main>
+  </body>
+</html>

@@ -1,0 +1,81 @@
+---
+import { downloadVersion } from '@/site';
+interface Props { id: string }
+const { id } = Astro.props;
+---
+
+<div class="installer-scan" data-installer-scan data-state="unavailable">
+  <button type="button" class="scan-trigger" popovertarget={id} aria-controls={id} aria-expanded="false">
+    <span class="scan-dot" aria-hidden="true"></span>
+    <span>VirusTotal:</span>
+    <span data-scan-status role="status">Scan status unavailable</span>
+  </button>
+  <div id={id} class="scan-popover" popover="auto" role="region" aria-label="VirusTotal installer analysis">
+    <div class="scan-details" data-scan-details>
+      <p>Scan information for {downloadVersion} requires JavaScript and an available release response.</p>
+    </div>
+    <p class="scan-caution">An antivirus scan is not a guarantee of safety.</p>
+  </div>
+</div>
+
+<script>
+  document.querySelectorAll<HTMLElement>('[data-installer-scan]').forEach(host => {
+    const trigger = host.querySelector<HTMLButtonElement>('.scan-trigger')!;
+    const panel = host.querySelector<HTMLElement>('[popover]')!;
+    let closeTimer: ReturnType<typeof setTimeout>;
+    const cancelClose = () => clearTimeout(closeTimer);
+    const position = () => {
+      if (!panel.matches(':popover-open')) return;
+      const rect = trigger.getBoundingClientRect();
+      const { width, height } = panel.getBoundingClientRect();
+      const left = Math.max(16, Math.min(rect.left + rect.width / 2 - width / 2, innerWidth - width - 16));
+      const below = rect.bottom + 8;
+      const top = below + height <= innerHeight - 16 ? below : rect.top - height - 8;
+      panel.style.left = `${left}px`;
+      panel.style.top = `${Math.max(16, Math.min(top, innerHeight - height - 16))}px`;
+    };
+    const open = () => {
+      cancelClose();
+      if (!panel.matches(':popover-open')) panel.showPopover();
+      position();
+    };
+    const scheduleClose = () => {
+      cancelClose();
+      closeTimer = setTimeout(() => {
+        if (!host.matches(':hover') && !panel.matches(':hover') && !host.contains(document.activeElement)) panel.hidePopover();
+      }, 180);
+    };
+    trigger.addEventListener('pointerenter', event => { if (event.pointerType !== 'touch') open(); });
+    trigger.addEventListener('focus', open);
+    // Focus/hover may already have opened it before the click, including on touch.
+    trigger.addEventListener('click', event => { event.preventDefault(); open(); });
+    host.addEventListener('pointerleave', scheduleClose);
+    host.addEventListener('focusout', scheduleClose);
+    panel.addEventListener('pointerenter', cancelClose);
+    panel.addEventListener('pointerleave', scheduleClose);
+    panel.addEventListener('toggle', () => {
+      trigger.setAttribute('aria-expanded', String(panel.matches(':popover-open')));
+      position();
+    });
+    window.addEventListener('resize', position);
+    window.addEventListener('scroll', position, { capture: true, passive: true });
+    new ResizeObserver(position).observe(panel);
+  });
+</script>
+
+<style>
+  .installer-scan { min-width: 0; color: var(--muted-foreground); font-family: var(--font-sans); font-size: .75rem; line-height: 1.6; }
+  .scan-trigger { cursor: pointer; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: .2rem .35rem; padding: 0; border: 0; border-radius: .375rem; background: none; color: inherit; font: inherit; }
+  .scan-trigger:hover { color: var(--foreground); }
+  .scan-trigger:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
+  .scan-dot { width: .375rem; height: .375rem; border-radius: 50%; background: currentColor; flex: none; }
+  [data-state="flagged"] > .scan-trigger { color: #fbbf24; }
+  .scan-popover { position: fixed; inset: 50% auto auto max(1rem, calc(50% - 12rem)); margin: 0; width: min(24rem, calc(100vw - 2rem)); max-height: calc(100dvh - 2rem); overflow: auto; padding: 1rem; color: var(--muted-foreground); font: inherit; text-align: left; border: 1px solid var(--border); border-radius: .75rem; background: var(--background); box-shadow: 0 12px 40px #0006; overflow-wrap: anywhere; }
+  .scan-details :global(p + p), .scan-details :global(dl) { margin-top: .5rem; }
+  .scan-details :global(dl) { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .125rem .75rem; }
+  .scan-details :global(dd) { margin: 0; font-variant-numeric: tabular-nums; }
+  .scan-details :global(code) { font-size: .6875rem; }
+  .scan-details :global(a) { color: var(--primary-text); text-decoration: underline; text-underline-offset: 3px; }
+  .scan-details :global(a:focus-visible) { outline: 2px solid var(--primary); outline-offset: 3px; }
+  .scan-caution { margin: .5rem 0 0; }
+</style>

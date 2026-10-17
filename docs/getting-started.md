@@ -2,98 +2,227 @@
 
 [← Documentation](README.md)
 
-The packaged desktop installer is Windows x64 only. The Node.js CLI runs on Linux, macOS, and Windows and serves the same browser UI. All three CLI platforms support background installation and browser-driven updates using their native user service manager.
+Choose where OpenTig will run. Your repositories stay on that machine, whether you use the desktop app or connect through a browser.
+
+- **Windows desktop:** [install the Windows app](#windows-desktop).
+- **Linux, macOS, or Windows CLI:** [start the server](#run-the-headless-cli) and use the same interface in a paired browser.
+- **Keep the CLI running after closing your terminal:** [install a background service](#background-services).
 
 ## Requirements
 
-- Windows 10 or later for the desktop application.
-- Node.js 24 or later and Git on `PATH` for the headless CLI. Plain `bunx` installs and launches the Node shebang; a Bun-only runtime is not supported.
-- Node.js 24.15 or later and npm 11 or later when building from source.
+- **Desktop:** Windows 10 or later, x64, and Git installed on the host.
+- **CLI:** Linux, macOS, or Windows, with Node.js 24 or later and Git on `PATH`.
+- **Build from source:** Node.js 24.15 or later and npm 11 or later. See [development and packaging](development.md).
 
-Optional integrations require their own installed and authenticated CLI:
+Linux and macOS desktop installers are not published yet. The CLI supports background services and browser updates on all three platforms.
 
-```powershell
-gh auth login
-codex login
-claude auth login
-opencode auth login
-```
-
-OpenCode requires version 2.x; install the current CLI following the [OpenCode v2 instructions](https://opencode.ai/v2/docs/cli). If your compatible installation uses `opencode2`, run `opencode2 auth login` instead.
-
-Only install the tools you intend to use. GitHub functionality requires `gh`; AI features require at least one supported AI CLI.
-
-For optional Grok assistance, install the [official Grok Build CLI](https://docs.x.ai/build/cli), run `grok login` (or set `XAI_API_KEY` for the host process), and select **Grok Build** in **Settings → AI assistance**. OpenTig requires Grok Build 1.0.46 or later in the 1.x series, discovers its built-in models, and uses an isolated profile without custom CLI configuration.
+GitHub and AI tools are optional. Install only the integrations you want to use; [their setup is below](#optional-integrations).
 
 ## Windows desktop
 
-Download the Windows x64 installer from the [latest release](https://github.com/jorgefl8/opentig/releases/latest). Git must be installed on the host. The installer is currently unsigned, so Windows may show an unknown-publisher or SmartScreen warning. Linux and macOS desktop installers are not published yet.
+1. Install Git if it is not already available on your machine.
+2. Download and run the Windows x64 installer from the [latest release](https://github.com/jorgefl8/opentig/releases/latest).
+3. Open OpenTig and choose a repository on that machine.
 
-Installed stable Windows releases check for updates at startup, every five minutes, and when the window regains focus if the last attempt was at least five minutes ago. **Settings → Updates** offers a manual check, progress, release notes for the installed stable version and any offered update, and **Restart and install**.
+### Windows SmartScreen warning
 
-The update icon beside Settings (or on the welcome screen) shows a notification dot when a download is available, a progress ring while downloading, and a check badge when ready. Click it to download or restart; hover or focus it for the version, status, and up to eight release-note entries with a link to the rest on GitHub. Update availability uses the icon and Settings without toasts. Downloading never installs on ordinary exit; restart first lets you handle edited files and shuts down the backend and settings safely.
+**The installer is currently unsigned.** Microsoft Defender SmartScreen may show **Windows protected your PC** because the download has not established sufficient reputation. Windows may also identify the publisher as unknown. A reputation warning alone does not mean malware was detected, and it is not a guarantee that the file is safe.
 
-Dev, local candidates, unpacked or copied applications, and browser clients do not install desktop updates. **OpenTig Dev** shows the base package version and explains how to rebuild/restart a source checkout or replace a Dev ZIP. Browser Dev instances give server rebuild/restart instructions. See [development profiles](development.md).
+Download OpenTig from [opentig.com](https://opentig.com) or the [official GitHub releases](https://github.com/jorgefl8/opentig/releases). If Windows reports a specific threat, treat that separately from a reputation warning. Smart App Control or your organization's policies may block unsigned apps entirely.
 
-If the desktop backend cannot start, the offline screen offers **Restart OpenTig** and **Open server log**. The rotating log at `%APPDATA%\OpenTig\logs\server.log` records startup stages, version, port, elapsed time, error codes, and stack traces with credentials redacted.
+See [Microsoft's explanation of SmartScreen and app reputation](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/smartscreen-reputation).
+
+### Check the installer analysis
+
+On [opentig.com](https://opentig.com), hover over **VirusTotal** beside the Windows download version (or focus it with the keyboard or tap it on touch screens) to see the scan state for that exact installer. When an analysis is complete, the details show malicious and suspicious counts separately, engines that could not assess the file, the analysis date, filename, and SHA-256. **View VirusTotal report** appears only when a public report link is available.
+
+Pending, queued, in-progress, or unavailable states are not completed results. Missing metadata or a failed release lookup shows **Scan status unavailable**, never zero detections. Reload the page to request a newer status; cached release metadata can delay updates.
+
+Zero detections is not a guarantee of safety. VirusTotal analysis does not sign the installer or remove SmartScreen warnings. Take any reported detections into account before choosing to run a download.
+
+### Update the desktop app
+
+Open **Settings → Updates** to check for a new stable version, see download progress, and read release notes. The update icon beside Settings, or on the welcome screen, also lets you download an update and choose **Restart and install**.
+
+Downloading an update does not install it when you close the app normally. **Restart and install** first lets you handle edited files, then shuts down the backend and settings safely.
+
+<details>
+<summary>Automatic checks, update icons, and release notes</summary>
+
+Installed stable Windows releases check at startup, every five minutes, and when the window regains focus if the last attempt was at least five minutes ago.
+
+The update icon shows:
+
+- A notification dot when a download is available.
+- A progress ring while downloading.
+- A check badge when the update is ready to install.
+
+Hover or focus the icon to see the version, status, and up to eight release-note entries, with a link to the rest on GitHub. **Settings → Updates** includes notes for both the installed stable version and any offered update. Update availability appears in the icon and Settings, without toast notifications.
+
+</details>
+
+Desktop updates apply only to installed stable Windows releases. Dev builds, local candidates, unpacked or copied apps, and browser clients do not install them.
+
+<details>
+<summary>Updating a development build</summary>
+
+**OpenTig Dev** shows the base package version and instructions to rebuild/restart a source checkout or replace a Dev ZIP. Browser Dev instances show server rebuild/restart instructions. See [development profiles](development.md).
+
+</details>
+
+### If the desktop app cannot start
+
+The offline screen offers **Restart OpenTig** and **Open server log** when the backend cannot start.
+
+<details>
+<summary>Where to find startup diagnostics</summary>
+
+The rotating log is at `%APPDATA%\OpenTig\logs\server.log`. It records startup stages, version, port, elapsed time, error codes, and stack traces, with credentials redacted.
+
+</details>
 
 ## Run the headless CLI
 
-Try the latest published version (replace `latest` with an exact version for repeatable deployments):
+Run these commands on the machine that holds your repositories. Keep the process running while using OpenTig in a browser.
 
-```powershell
+### Try it without a global installation
+
+To start OpenTig and open a one-time browser pairing link:
+
+```bash
 npx --yes @opentig/cli@latest
+```
+
+On a server, or when you want to open the browser yourself, use `serve`:
+
+```bash
 npx --yes @opentig/cli@latest serve
+```
+
+This prints a pairing code, one-use link, and terminal QR without opening a browser. Use the link or code to pair your browser. For another device, follow [remote access and pairing](web-access.md).
+
+**Use `latest` for evaluation.** Replace it with an exact version for repeatable deployments. Running through `npx` or `bunx` does not install a background service or make OpenTig start automatically.
+
+<details>
+<summary>Using bunx</summary>
+
+```bash
 bunx @opentig/cli@latest serve
 ```
 
-For a global installation:
+Node.js is still required: plain `bunx` installs the package and launches its Node shebang. A Bun-only runtime is not supported.
+
+</details>
+
+### Install the CLI globally
 
 ```bash
 npm install -g @opentig/cli@latest
 opentig serve
 ```
 
-`opentig` and `opentig start` start the server and open its one-time pairing link. `opentig serve` stays headless and prints its code, one-use link, and terminal QR without opening a browser. The CLI starts one project-independent OpenTig instance: repositories are added, opened, and switched exclusively from the web UI using paths on the server. After a global installation, a new device can request a fresh link from the same OS account with:
+Use `opentig` or `opentig start` to open the browser automatically; `opentig serve` prints the pairing details instead. `opentig help` or `opentig --help` lists all commands, examples, pairing/tunnel instructions, fixed-port behavior, and service commands.
+
+Add, open, and switch repositories in the web UI using paths on the server. The CLI starts one project-independent instance; it does not select repositories through command-line arguments.
+
+### Pair another browser
+
+After a global installation, request a fresh pairing link from the **same OS account** that runs OpenTig:
+
+```bash
+opentig pair
+```
+
+If the instance uses a custom home, pass that same directory. For example, on Windows:
 
 ```powershell
 opentig pair --home C:\path\to\opentig-home
 ```
 
-`opentig help` and `opentig --help` show the complete command reference, examples, pairing/tunnel instructions, fixed-port behavior, and explicit service commands.
+By default, OpenTig listens on `127.0.0.1:6767` (this machine only) and stores data in `~/.opentig`. An occupied port causes an error instead of selecting another port, keeping reverse-proxy configuration predictable.
 
-Options are `--host`, `--port`, `--home`, and `--no-browser` (for `start` only), with `OPENTIG_HOST`, `OPENTIG_PORT`, and `OPENTIG_HOME` environment equivalents. Defaults are `127.0.0.1`, port `6767`, and `~/.opentig`. An occupied port fails clearly so reverse-proxy configuration remains predictable. The home contains private settings, hash-only sessions, a local-admin credential, credential-free runtime state, AI history, and rotating logs. SIGINT or SIGTERM closes WebSockets, the HTTP listener, watchers, Git/AI children, settings, and logs; a second signal forces exit.
+OpenTig does not include Docker packaging, built-in TLS, Tailscale/SSH automation, or multi-user roles. See [remote access and pairing](web-access.md) before connecting from another device.
+
+<details>
+<summary>Change the address or data directory</summary>
+
+| Option | Environment variable | Default |
+| --- | --- | --- |
+| `--host` | `OPENTIG_HOST` | `127.0.0.1` |
+| `--port` | `OPENTIG_PORT` | `6767` |
+| `--home` | `OPENTIG_HOME` | `~/.opentig` |
+| `--no-browser` | Not applicable | Supported only by `start`, to prevent opening a browser. |
+
+</details>
+
+<details>
+<summary>Stored data and process shutdown</summary>
+
+The private home contains settings, hash-only sessions, a local-admin credential, credential-free runtime state, AI history, and rotating logs.
+
+SIGINT or SIGTERM closes WebSockets, the HTTP listener, watchers, Git/AI child processes, settings, and logs. A second signal forces exit.
+
+</details>
 
 ## Background services
 
-Running through `npx` or `bunx` never installs startup persistence. On Linux, macOS, or Windows, opt in explicitly after installing the CLI globally or invoking its executable:
+A background service keeps OpenTig running after you close the terminal. Install the CLI globally first, or invoke its executable directly, then opt in:
 
 ```bash
 opentig service install --host 127.0.0.1 --port 6767
+```
+
+The service uses your OS account's repository access and CLI credentials. It does not copy credentials or run as root or LocalSystem. It is independent of any repository and separate from the desktop app's server. If another instance already uses port `6767`, choose a different port.
+
+`service install` starts the server in the background and registers startup persistence. Do not also run `serve` for the same home: `serve` stays in its terminal and stops when that terminal closes, while the installed service continues independently.
+
+Installation checks the effective listening address and prerequisites before staging dependencies or registering the service. It prints preparation, registration, and startup phases, and reports success only after verifying the managed server's identity. A live service can be reinstalled using its own listener. Stop an unrelated foreground process using the same home in its terminal before installing the service.
+
+### When the service runs
+
+| Platform | Starts and stops | Requirements |
+| --- | --- | --- |
+| Linux | Starts at boot and survives logout through a systemd user service with lingering. | If enabling lingering is denied, ask an administrator to run `sudo loginctl enable-linger <your-user>`, then retry installation as your normal user. |
+| macOS | Starts at login and stops at logout. | Installation needs an active GUI login session. No administrator access or Apple signing is needed for the Node.js CLI. |
+| Windows | Starts at login and stops at logout. | Requires Windows PowerShell and Task Scheduler access. Runs as the current user without a stored password or elevated privileges; organization policies may restrict registration. |
+
+**Keep the host awake.** Sleep suspends access. Closing the terminal does not stop the service, but logging out on macOS or Windows does. Locking the screen is not a logout.
+
+On macOS, Node may need privacy permission to access protected folders. Check **Login Items** if the background agent is disabled.
+
+<details>
+<summary>Service registration and runtime files</summary>
+
+- Linux uses a systemd user service.
+- macOS registers `~/Library/LaunchAgents/com.opentig.cli.plist`.
+- Windows registers the Task Scheduler task `OpenTig CLI <user SID>`.
+
+Installation stages the exact CLI/client version under the selected OpenTig home and uses that private home as the stable service working directory. Paths containing spaces, quotes, or percent signs are supported.
+
+OpenTig does not install system-wide LaunchDaemons or Windows services that run before login. The startup behavior is the one described in the table above.
+
+</details>
+
+### Manage the service
+
+```bash
 opentig service status
 opentig service restart
 opentig service uninstall
 ```
 
-Unlike `serve`, `service install` both starts the server in the background and registers startup persistence. Do not run `serve` as an additional step for the same home. `serve` stays in its terminal and stops when that terminal closes; an installed service continues independently.
+Only one CLI service is registered per OS user. If you installed it with a custom `--home`, use that same home for `status`, `restart`, and `uninstall`. Commands using a different home refuse to replace or remove the service.
 
-Installation checks the effective listening address and prerequisites before staging dependencies or registering the service. It prints preparation, registration, and startup phases, and reports success only after verifying the managed server's identity. A live service can be reinstalled using its own listener. An unrelated foreground process using the same home must be stopped in its terminal first.
+Uninstalling the service preserves settings and paired browsers. Installation and updates are serialized so they cannot run concurrently.
 
-Installation stages the exact CLI/client version under the selected OpenTig home, uses that private home as its stable service working directory (including paths containing spaces, quotes, or percent signs), registers with the platform service manager, and uses loopback unless `--host` or saved Settings → Web access configuration selects another address. Paired browsers can change the listener, port and browser access; see [access configuration and recovery](web-access.md#configure-access-from-a-browser). The service captures the installing terminal’s `PATH` so locally installed tools such as Codex, Claude Code, OpenCode, and Git remain discoverable. Browser updates preserve the running service’s effective `PATH`, including systemd overrides. Run `opentig service install` again from your terminal after changing your tool locations. It never binds the service to a repository. The CLI service is separate from the server owned by the desktop app. It keeps the installing user's repository access and CLI credentials; no credentials are copied and the server is not run as root or LocalSystem.
+### Change access or repair missing tools
 
-| Platform | Supervisor | Startup and permissions |
-| --- | --- | --- |
-| Linux | systemd user service | Starts at boot and survives logout using lingering. If enabling it is denied, ask an administrator to run `sudo loginctl enable-linger <your-user>`, then retry the installation as your normal user. |
-| macOS | `~/Library/LaunchAgents/com.opentig.cli.plist` | Starts at login and stops at logout. Installation needs an active GUI login session for that user. No administrator access or Apple signing is needed for the Node.js CLI. |
-| Windows | Task Scheduler, `OpenTig CLI <user SID>` | Starts at login and stops at logout. Runs under the current user without a stored password or elevated privileges. Requires Windows PowerShell and access to Task Scheduler. Organization policies can restrict task registration. |
+The listener uses loopback unless `--host` or saved **Settings → Web access** configuration selects another address. Paired browsers can change the listener, port, and browser access; see [access configuration and recovery](web-access.md#configure-access-from-a-browser).
 
-Closing the terminal does not stop these services. Logging out on macOS/Windows does; locking the screen is not a logout. Sleep suspends access, so keep the host awake. macOS may require privacy permissions for Node to access protected folders. Check Login Items if its background agent is disabled.
+Reinstall the service from your terminal with `opentig service install` if:
 
-One CLI service is registered per OS user. Commands with a different `--home` refuse to replace or remove that service. Use the installation's home for `status`, `restart`, and `uninstall`. A separate instance, including desktop, needs a different port if it already uses `6767`.
-
-Installation and updates are serialized; removing the service preserves settings and paired browsers. Service installation captures the current absolute Node executable: reinstall from your terminal if a Node version manager removes that executable.
-
-A background service here means the startup behavior in the table above. System-wide LaunchDaemons and Windows services that run before login are not installed.
+- You move Git or an integration CLI. Installation captures the terminal's `PATH` so tools such as Git, Codex, Claude Code, and OpenCode remain discoverable. Browser updates preserve the running service's effective `PATH`, including systemd overrides.
+- Your Node version manager removes the Node executable used at installation. The service captures its absolute path.
 
 ## Command errors and recovery
 
@@ -131,21 +260,62 @@ Errors from `npm install -g` happen before OpenTig runs and are reported by npm.
 
 ## Updates for background services
 
-Foreground instances are upgraded by stopping the process and running a different pinned immutable version. Dev and temporary `npx` instances require terminal updates. Use `latest` only for evaluation; pin an exact version for repeatable deployments.
+Managed CLI services on Linux, macOS, and Windows can be updated from a paired browser. If your installation predates managed updates, upgrade once from the terminal and run `opentig service install` first:
 
-Managed CLI services on Linux, macOS, and Windows offer the update icon and **Settings → Updates** in paired browsers. The server checks every five minutes and offers a stable GitHub release once its matching CLI version is available on npm. Downloading verifies the npm package's SHA-512 integrity and prepares dependencies while the current server keeps running. **Restart and install** switches the managed runtime through a separate supervisor job, preserving the address and private home; a failed readiness check restores the previous version.
+1. Use the update icon or open **Settings → Updates**.
+2. Download the offered update. The current server keeps running during preparation.
+3. Choose **Restart and install** when ready.
 
-Running commands delay installation. Browsers with unsaved edits or active operations do not reload automatically; other connected browsers reconnect and load the matching interface. See [connection behavior](web-access.md#connection-behavior) if an open browser needs to reload after a server upgrade.
+Running commands delay installation. Browsers with unsaved edits or active operations do not reload automatically; other connected browsers reconnect and load the matching interface. See [connection behavior](web-access.md#connection-behavior) if an open browser needs to reload after an upgrade.
 
-Browser updates do not modify the global npm package. A global launcher that supports managed updates delegates commands to the newer service CLI and reports both versions with `opentig --version`; an older launcher cannot reinstall an earlier service version. Keep the previous runtime for recovery. Installations predating managed updates need one terminal upgrade and `opentig service install` before this flow becomes available.
+<details>
+<summary>Update checks, verification, and recovery</summary>
+
+The server checks every five minutes and offers a stable GitHub release once the matching CLI version is available on npm.
+
+Downloading verifies the npm package's SHA-512 integrity and prepares dependencies. **Restart and install** switches the managed runtime through a separate supervisor job, preserving the address and private home. If the new version fails its readiness check, the previous version is restored. Keep the previous runtime for recovery.
+
+</details>
+
+<details>
+<summary>How browser updates affect the global CLI</summary>
+
+Browser updates do not modify the global npm package. A global launcher that supports managed updates delegates commands to the newer service CLI; `opentig --version` reports both versions. An older launcher cannot reinstall an earlier service version.
+
+</details>
+
+**Foreground, temporary `npx`, and Dev instances require terminal updates.** Stop the foreground process and run the desired pinned, immutable version. Use `latest` for evaluation and an exact version for repeatable deployments.
+
+## Optional integrations
+
+Install and authenticate each tool **on the machine running OpenTig**. You only need the integrations you intend to use: GitHub features require `gh`; AI features require at least one supported AI CLI.
+
+| Integration | Sign in after installing its CLI |
+| --- | --- |
+| GitHub | `gh auth login` |
+| Codex | `codex login` |
+| Claude Code | `claude auth login` |
+| OpenCode 2.x | `opencode auth login` |
+| Grok Build | `grok login`, or set `XAI_API_KEY` for the host process. |
+
+For OpenCode, follow the [v2 installation instructions](https://opencode.ai/v2/docs/cli). If your compatible installation uses the `opencode2` executable, run `opencode2 auth login` instead.
+
+For Grok, install the [official Grok Build CLI](https://docs.x.ai/build/cli), version **1.0.46 or later in the 1.x series**, and select **Grok Build** in **Settings → AI assistance**. OpenTig discovers its built-in models and uses an isolated profile without custom CLI configuration.
+
+Read [GitHub and pull requests](github.md) or [AI assistance](ai-assistance.md) for the available features and their settings.
 
 ## Local tarball evaluation
 
-For local tarball testing on Windows:
+<details>
+<summary>Test a local CLI package on Windows</summary>
+
+Use the tarball's absolute path:
 
 ```powershell
 npx --yes --package C:\absolute\path\opentig-cli-<version>.tgz opentig --help
 bunx --package C:\absolute\path\opentig-cli-<version>.tgz opentig --help
 ```
 
-OpenTig does not ship Docker, built-in TLS, Tailscale/SSH automation, or multi-user roles. See [remote access and pairing](web-access.md) for connection setup and [development and packaging](development.md) for building from source.
+For building packages from source, see [development and packaging](development.md).
+
+</details>

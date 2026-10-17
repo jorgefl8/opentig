@@ -2,7 +2,7 @@
 
 [← OpenTig](../README.md)
 
-Start with the [project overview](../README.md), then choose a guide for your workflow:
+Read the [documentation on opentig.com](https://opentig.com/docs/) with navigation and search, or browse the same Markdown guides below:
 
 | Guide | What it covers |
 | --- | --- |
@@ -20,4 +20,4 @@ Start with the [project overview](../README.md), then choose a guide for your wo
 
 OpenTig is in early development. The published desktop installer targets Windows x64; the npm CLI supports Linux, macOS, and Windows. The browser accesses repositories on the machine running OpenTig. It does not upload repositories from your browsing device.
 
-For source contributions, see [CONTRIBUTING.md](../CONTRIBUTING.md), including its documentation policy.
+For source contributions, see [CONTRIBUTING.md](../CONTRIBUTING.md), including its documentation policy. The [website contribution guide](website.md) covers local development, content, and validation; it is available in the repository only.

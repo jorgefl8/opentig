@@ -17,7 +17,8 @@
     ".forge-scaffold",
     "memory",
     "packages/server/.client/**",
-    "packages/server/.resource/**"
+    "packages/server/.resource/**",
+    "website/.astro/**"
   ],
   "rules": {
     "constructor-super": "error",
@@ -187,6 +188,18 @@
       ],
       "env": {
         "browser": true
+      }
+    },
+    {
+      "files": [
+        "website/**/*.astro"
+      ],
+      "globals": {
+        "Astro": "readonly"
+      },
+      "env": {
+        "browser": true,
+        "node": true
       }
     }
   ]

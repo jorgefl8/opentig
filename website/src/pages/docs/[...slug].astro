@@ -1,0 +1,20 @@
+---
+import { render } from 'astro:content';
+import Layout from '@/layouts/Layout.astro';
+import { Docs } from '@/components/docs/Docs';
+import { source } from '@/lib/docs-source';
+import '@/styles/docs.css';
+
+export function getStaticPaths() {
+  return source.getPages().map(page => ({ params: { slug: page.slugs.join('/') || undefined }, props: { page } }));
+}
+const { page } = Astro.props;
+const { Content, headings } = await render(page.data.entry);
+const toc = headings.filter(heading => heading.depth > 1).map(heading => ({ depth: heading.depth, title: heading.text, url: `#${heading.slug}` }));
+---
+<Layout title={`${page.slugs.length ? page.data.title : 'Documentation'} | OpenTig Docs`} description={page.data.description} pixelFont={false}>
+  <a class="skip-link" href="#main-content">Skip to content</a>
+  <Docs tree={source.getPageTree()} pathname={Astro.url.pathname} title={page.data.title} source={page.data.source} toc={toc} client:load>
+    <Content />
+  </Docs>
+</Layout>

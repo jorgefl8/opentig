@@ -1,0 +1,49 @@
+---
+const steps = [
+  {
+    number: "01",
+    title: "Start OpenTig",
+    description: "Install the Windows app, or run the CLI server on the machine with your repositories and pair your browser.",
+  },
+  {
+    number: "02",
+    title: "Open a repository",
+    description: "Choose an existing repository on the machine running OpenTig. Browse files, inspect history, and see your working changes.",
+  },
+  {
+    number: "03",
+    title: "Review & commit",
+    description: "Edit what needs changing, stage what belongs together, and create the commit you intended.",
+  },
+];
+---
+
+<section id="how-it-works" class="py-24 px-6">
+  <div class="max-w-5xl mx-auto">
+    <div class="text-center mb-16">
+      <h2 class="font-['GeistPixelTriangle'] text-3xl md:text-4xl font-bold tracking-tight">
+        Start with an existing Git repository
+      </h2>
+      <p class="text-muted-foreground mt-4 max-w-xl mx-auto">
+        Run OpenTig where your files live, open a repository, and prepare your next commit.
+      </p>
+    </div>
+
+    <div class="grid md:grid-cols-3 gap-6">
+      {steps.map((step) => (
+        <div class="ring-foreground/10 bg-card text-card-foreground flex flex-col gap-4 overflow-hidden rounded-xl py-4 text-sm ring-1 backdrop-blur-sm border-border/50 hover:border-primary/30 transition-colors">
+          <div class="grid auto-rows-min items-start gap-1 rounded-t-xl px-4">
+            <span class="font-['GeistPixelTriangle'] text-2xl text-primary mb-1">
+              {step.number}
+            </span>
+            <h3 class="text-base leading-snug font-medium">{step.title}</h3>
+            <div class="text-muted-foreground text-sm">{step.description}</div>
+          </div>
+        </div>
+      ))}
+    </div>
+    <p class="mt-8 text-center text-sm">
+      <a href="#install" class="text-muted-foreground underline underline-offset-4 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary">Choose a Windows or CLI installation</a>
+    </p>
+  </div>
+</section>
