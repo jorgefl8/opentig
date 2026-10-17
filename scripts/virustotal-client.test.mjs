@@ -247,6 +247,22 @@ it.each(['queued', 'in-progress'])('keeps %s results partial without returning c
   expect(vt.calls[0].url).toBe(`${api}/analyses/${encodeURIComponent(id)}`);
 });
 
+it('accepts a completed analysis when its response id differs and the file identity matches', async () => {
+  const fixture = await installer();
+  const canonical = `f-${'c'.repeat(64)}-1792151900`;
+  const vt = client((url, _options, call) => {
+    if (call === 1) return response({
+      data: { type: 'analysis', id: canonical, attributes: { status: 'completed', date: 1792151900, stats: statistics } },
+      meta: { file_info: { sha256: fixture.download.identity.sha256, size: fixture.download.identity.size } },
+    });
+    expect(url).toBe(`${api}/analyses/${encodeURIComponent(id)}/item`);
+    return item(fixture.download);
+  });
+  const result = await vt.getAnalysis(fixture.receipt, fixture.download);
+  expect(result).toMatchObject({ state: 'completed', analysisId: id });
+  expect(JSON.stringify(result)).not.toContain(canonical);
+});
+
 it('checks the completed analysis relationship against the exact SHA-256 and size', async () => {
   const fixture = await installer();
   const vt = client((url, _options, call) => {

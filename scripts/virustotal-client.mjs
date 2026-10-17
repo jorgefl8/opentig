@@ -216,11 +216,15 @@ export function createVirusTotalClient({ apiKey, fetchImpl = fetch, now = Date.n
     const result = await request(`${api}/analyses/${encodeURIComponent(id)}`);
     const data = result?.data;
     const status = data?.attributes?.status;
-    if (data?.type !== 'analysis' || data.id !== id || !['queued', 'in-progress', 'completed'].includes(status)) {
+    const info = result?.meta?.file_info;
+    // The submission id addresses the analysis. A later response may use another id
+    // once its file metadata matches this installer.
+    const sameFile = info?.sha256 === installer.sha256 && info?.size === installer.size;
+    if (data?.type !== 'analysis' || !['queued', 'in-progress', 'completed'].includes(status)
+      || (data.id !== id && !sameFile)) {
       throw new VirusTotalError('invalid-analysis-response');
     }
-    const info = result?.meta?.file_info;
-    if (info && (info.sha256 !== installer.sha256 || info.size !== installer.size)) throw new VirusTotalError('analysis-file-mismatch');
+    if (info && !sameFile) throw new VirusTotalError('analysis-file-mismatch');
     const observedAt = new Date(now()).toISOString();
     if (status !== 'completed') return { analysisId: id, installer, state: status, observedAt };
     const attributes = data.attributes;
