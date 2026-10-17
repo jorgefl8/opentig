@@ -112,12 +112,28 @@ it('upgrades the documented http upload URL to https before posting the installe
   expect(vt.calls.every(call => !String(call.url).startsWith('http://'))).toBe(true);
 });
 
+it('posts a large installer to a provider subdomain upload URL over https', async () => {
+  const fixture = await installer(32_000_001);
+  const uploadUrl = 'https://upload.virustotal.com/_ah/upload/session/private-token';
+  const vt = client((url, options, call) => {
+    if (call === 1) return response({ data: `http://upload.virustotal.com/_ah/upload/session/private-token` });
+    expect(url).toBe(uploadUrl);
+    expect(options.method).toBe('POST');
+    expect(options.redirect).toBe('error');
+    expect(options.headers['x-apikey']).toBe(testKey);
+    return submitted();
+  });
+  expect((await vt.submitInstaller(fixture.file, fixture.download)).installer).toEqual(fixture.download.identity);
+  expect(vt.calls).toHaveLength(2);
+  expect(String(vt.calls[1].url).startsWith('https://upload.virustotal.com/')).toBe(true);
+});
+
 it.each([
   ['https://www.virustotal.com/_ah/upload/private-token', { accepted: true, protocol: 'https', hostClass: 'expected', pathClass: 'legacy-token', pathSegments: 3, hasQuery: false }],
   ['http://www.virustotal.com/_ah/upload/private-token/', { accepted: true, protocol: 'http', hostClass: 'expected', pathClass: 'legacy-token', pathSegments: 3 }],
   ['https://www.virustotal.com/_ah/upload/?upload_id=private-token', { accepted: false, hostClass: 'expected', pathClass: 'legacy-root', hasQuery: true, queryKeyCount: 1 }],
-  ['https://upload.virustotal.com/_ah/upload/private-token', { accepted: false, hostClass: 'provider-subdomain', pathClass: 'legacy-token' }],
-  ['https://virustotal.com/_ah/upload/private-token', { accepted: false, hostClass: 'apex', pathClass: 'legacy-token' }],
+  ['https://upload.virustotal.com/_ah/upload/session/private-token', { accepted: true, hostClass: 'provider-subdomain', pathClass: 'legacy-token', pathSegments: 4 }],
+  ['https://virustotal.com/_ah/upload/private-token', { accepted: true, hostClass: 'apex', pathClass: 'legacy-token' }],
   ['https://storage.googleapis.com/bucket/private-token', { accepted: false, hostClass: 'google-storage', pathClass: 'other', pathSegments: 2 }],
   ['https://private-token.example/_ah/upload/private-token', { accepted: false, protocol: 'https', hostClass: 'other', pathClass: 'legacy-token' }],
 ])('diagnoses an upload URL without disclosing its token or uploading: %s', async (uploadUrl, expected) => {
