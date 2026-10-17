@@ -5,6 +5,7 @@ import { repositoryUrl, downloadUrl, downloadVersion } from '@/site';
 import Button from './Button.astro';
 import CopyCommand from './CopyCommand.astro';
 import SmartScreenNotice from './SmartScreenNotice.astro';
+import InstallerScan from './InstallerScan.astro';
 import HeroTypewriter from './HeroTypewriter';
 ---
 
@@ -38,6 +39,7 @@ import HeroTypewriter from './HeroTypewriter';
       <span aria-hidden="true">·</span>
       <span>Free &amp; open source</span>
     </p>
+    <InstallerScan />
     <div class="mx-auto mt-6 max-w-md">
       <p class="mb-3 text-xs text-muted-foreground">or</p>
       <p class="mb-2 text-sm font-medium text-foreground">Run via CLI on macOS, Linux &amp; Windows</p>

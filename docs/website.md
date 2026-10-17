@@ -121,7 +121,21 @@ The browser checks GitHub's latest stable release once per page and updates the 
 
 The resolver also retains an optional installer identity: repository, version, release ID, asset ID, exact filename, byte size, and SHA-256 from GitHub's asset digest. Missing or invalid identity metadata does not prevent downloading, but cannot establish a match with an analysis. The static fallback has no scan identity. Duplicate installer filenames are rejected rather than choosing an ambiguous asset.
 
-`website/src/lib/installer-scan.ts` defines the analysis metadata contract and validates it against that full identity. The resolver reads optional scan metadata from the same GitHub response's release notes and returns it alongside the installer as `scan`. There are no extra requests per visitor. The website does not call VirusTotal, submit installers, or display a scan result yet. The separate [release scan workflow](releases.md#installer-analysis-tooling) produces the metadata; visible presentation is not connected, and deployment remains manual.
+`website/src/lib/installer-scan.ts` defines the analysis metadata contract and validates it against that full identity. The resolver reads optional scan metadata from the same GitHub response's release notes and returns it alongside the installer as `scan`. There are no extra requests per visitor. The website does not call VirusTotal or submit installers. The separate [release scan workflow](releases.md#installer-analysis-tooling) produces the metadata, and website deployment remains manual.
+
+The hero and Windows installation card show a **VirusTotal** disclosure next to the version. `InstallerScan.astro` provides the accessible, keyboard-operable disclosure; `website/src/lib/release-ui.ts` updates links, versions, and scan information from the same resolved release, revalidating the scan identity before presenting it. Expanding the disclosure shows the exact filename and SHA-256 when available. Replacing a release clears previous counts, dates, and report links, including when the replacement has no usable scan.
+
+| Display | Meaning |
+| --- | --- |
+| **Checking scan status…** | The single GitHub release request is still pending. |
+| **Scan pending / queued / in progress** | The metadata reports that state; no final engine counts are shown. |
+| **Scan status unavailable** | The API failed, identity or metadata is missing/invalid/mismatched, or the scan explicitly reports unavailability. This is never represented as zero detections. Without JavaScript, the initial unavailable disclosure and fallback download remain usable. |
+| **N malicious · N suspicious** | A completed analysis reports those separate counts. Any nonzero count highlights the summary. Zero counts use neutral styling, without a safety verdict. |
+| **No engines assessed the file** | The analysis completed, but every engine outcome was a timeout, failure, or unsupported file type. |
+
+Completed disclosures include the UTC analysis date, assessed and unassessed engine totals, and all eight outcome counters. The status-update date is shown separately from the analysis date. The **View VirusTotal report** link appears only when validated metadata contains the report URL; it opens in a new tab. Otherwise the disclosure says that the public link is not available yet. Every disclosure explains that an antivirus scan is not a guarantee of safety. The SmartScreen explanation remains separate.
+
+Status is a snapshot loaded once per page, not a live poll. Reload to request newer release metadata; GitHub caching can delay changes. A verified report link reflects the producer's availability check at the recorded time, not a promise that VirusTotal will remain reachable.
 
 The version 1 contract requires `schemaVersion`, `installer`, `state`, and `updatedAt`. States are `pending`, `queued`, `in-progress`, `completed`, and `unavailable`. Only `completed` accepts `analysis`, containing VirusTotal's `analysisAt` date and all eight `statistics` counters: `malicious`, `suspicious`, `harmless`, `undetected`, `timeout`, `confirmed-timeout`, `failure`, and `type-unsupported`. `updatedAt` records the local state observation/write, not a claimed analysis completion time. Counters must be nonnegative safe integers with a positive, safe total. Partial or missing counters never default to zero. Suspicious results and unassessed engines remain distinct; no safety verdict is derived from zero detections.
 

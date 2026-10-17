@@ -32,6 +32,14 @@ Download OpenTig from [opentig.com](https://opentig.com) or the [official GitHub
 
 See [Microsoft's explanation of SmartScreen and app reputation](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/smartscreen-reputation).
 
+### Check the installer analysis
+
+On [opentig.com](https://opentig.com), expand **VirusTotal** beside the Windows download version to see the scan state for that exact installer. When an analysis is complete, the details show malicious and suspicious counts separately, engines that could not assess the file, the analysis date, filename, and SHA-256. **View VirusTotal report** appears only when a public report link is available.
+
+Pending, queued, in-progress, or unavailable states are not completed results. Missing metadata or a failed release lookup shows **Scan status unavailable**, never zero detections. Reload the page to request a newer status; cached release metadata can delay updates.
+
+Zero detections is not a guarantee of safety. VirusTotal analysis does not sign the installer or remove SmartScreen warnings. Take any reported detections into account before choosing to run a download.
+
 ### Update the desktop app
 
 Open **Settings → Updates** to check for a new stable version, see download progress, and read release notes. The update icon beside Settings, or on the welcome screen, also lets you download an update and choose **Restart and install**.

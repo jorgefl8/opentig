@@ -1,9 +1,8 @@
 <script>
   import { latestDownload } from '@/lib/downloads';
+  import { updateRelease } from '@/lib/release-ui';
   if (document.querySelector('[data-windows-download]')) {
-    void latestDownload().then(release => {
-      document.querySelectorAll<HTMLAnchorElement>('[data-windows-download]').forEach(link => { link.href = release.url; });
-      document.querySelectorAll('[data-release-version]').forEach(label => { label.textContent = release.version; });
-    });
+    document.querySelectorAll('[data-scan-status]').forEach(label => { label.textContent = 'Checking scan status…'; });
+    void latestDownload().then(release => updateRelease(document, release));
   }
 </script>

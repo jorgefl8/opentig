@@ -1,0 +1,35 @@
+---
+import { downloadVersion } from '@/site';
+---
+
+<details class="installer-scan" data-installer-scan data-state="unavailable">
+  <summary>
+    <span class="scan-dot" aria-hidden="true"></span>
+    <span>VirusTotal:</span>
+    <span data-scan-status role="status">Scan status unavailable</span>
+  </summary>
+  <div class="scan-details" data-scan-details>
+    <p>Scan information for {downloadVersion} requires JavaScript and an available release response.</p>
+  </div>
+  <p class="scan-caution">An antivirus scan is not a guarantee of safety.</p>
+</details>
+
+<style>
+  .installer-scan { width: 100%; max-width: 36rem; margin: .75rem auto 0; color: var(--muted-foreground); font-size: .75rem; line-height: 1.6; text-align: center; }
+  summary { cursor: pointer; list-style: none; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: .2rem .35rem; padding: .25rem; border-radius: .375rem; }
+  summary::-webkit-details-marker { display: none; }
+  summary::after { content: '+'; margin-left: .25rem; }
+  details[open] > summary::after { content: '−'; }
+  summary:hover { color: var(--foreground); }
+  summary:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
+  .scan-dot { width: .375rem; height: .375rem; border-radius: 50%; background: currentColor; flex: none; }
+  [data-state="flagged"] > summary { color: #fbbf24; }
+  .scan-details { margin-top: .5rem; padding: .75rem; text-align: left; border: 1px solid var(--border); border-radius: .5rem; background: var(--background); overflow-wrap: anywhere; }
+  .scan-details :global(p + p), .scan-details :global(dl) { margin-top: .5rem; }
+  .scan-details :global(dl) { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .125rem .75rem; }
+  .scan-details :global(dd) { margin: 0; font-variant-numeric: tabular-nums; }
+  .scan-details :global(code) { font-size: .6875rem; }
+  .scan-details :global(a) { color: var(--primary-text); text-decoration: underline; text-underline-offset: 3px; }
+  .scan-details :global(a:focus-visible) { outline: 2px solid var(--primary); outline-offset: 3px; }
+  .scan-caution { margin: .5rem 0 0; }
+</style>

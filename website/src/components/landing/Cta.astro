@@ -5,6 +5,7 @@ import TerminalIcon from '@tabler/icons/outline/terminal-2.svg';
 import Button from './Button.astro';
 import CopyCommand from './CopyCommand.astro';
 import SmartScreenNotice from './SmartScreenNotice.astro';
+import InstallerScan from './InstallerScan.astro';
 
 import { downloadUrl, downloadVersion, npmUrl } from '@/site';
 ---
@@ -28,6 +29,7 @@ import { downloadUrl, downloadVersion, npmUrl } from '@/site';
             <Button href={downloadUrl} data-windows-download data-analytics-placement="install" class="px-3!">Download for Windows</Button>
             <SmartScreenNotice />
             <span data-release-version class="font-mono text-xs text-muted-foreground">{downloadVersion}</span>
+            <InstallerScan />
           </div>
         </div>
         <div class="min-w-0 flex flex-col gap-4 rounded-xl border border-border/50 bg-background/40 p-4 sm:p-5">
