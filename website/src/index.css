@@ -160,14 +160,28 @@ a[href]:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 4px;
 }
-a[href], button, iframe, [tabindex] { scroll-margin-block: calc(4rem + 24px) 20px; }
-section[id] { scroll-margin-top: calc(4rem + 24px); }
+a[href], button, iframe, [tabindex] { scroll-margin-block: calc(4rem + 24px + var(--landing-safe-area-top, 0px)) 20px; }
+section[id] { scroll-margin-top: calc(4rem + 24px + var(--landing-safe-area-top, 0px)); }
+
+/* Extend the decorative background to the edges while keeping content clear of cutouts. */
+.landing-page {
+  --landing-safe-area-top: env(safe-area-inset-top, 0px);
+  --landing-safe-area-right: env(safe-area-inset-right, 0px);
+  --landing-safe-area-bottom: env(safe-area-inset-bottom, 0px);
+  --landing-safe-area-left: env(safe-area-inset-left, 0px);
+  padding: var(--landing-safe-area-top) var(--landing-safe-area-right) var(--landing-safe-area-bottom) var(--landing-safe-area-left);
+}
+.landing-navbar {
+  top: calc(1rem + var(--landing-safe-area-top));
+  right: calc(1rem + var(--landing-safe-area-right));
+  left: calc(1rem + var(--landing-safe-area-left));
+}
 
 .skip-link {
   position: fixed;
   z-index: 100;
-  top: 24px;
-  left: 24px;
+  top: calc(24px + var(--landing-safe-area-top, 0px));
+  left: calc(24px + var(--landing-safe-area-left, 0px));
   width: 1px;
   height: 1px;
   overflow: hidden;
