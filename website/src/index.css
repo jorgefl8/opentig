@@ -168,12 +168,22 @@ section[id] { scroll-margin-top: calc(4rem + 24px); }
   z-index: 100;
   top: 24px;
   left: 24px;
-  padding: 10px 16px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
   border-radius: 8px;
   background: var(--foreground);
   color: var(--background);
   font-size: 14px;
   font-weight: 600;
-  transform: translateY(calc(-100% - 32px));
 }
-.skip-link:focus { transform: none; }
+.skip-link:focus {
+  width: auto;
+  height: auto;
+  padding: 10px 16px;
+  overflow: visible;
+  clip-path: none;
+  white-space: normal;
+}
