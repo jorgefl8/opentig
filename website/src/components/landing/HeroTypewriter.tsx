@@ -20,6 +20,7 @@ export default function HeroTypewriter() {
         startDelay={400}
         loopDelay={220}
         naturalVariance
+        announce={false}
       />
     </span>
     <span className="sr-only">Git repositories.</span>

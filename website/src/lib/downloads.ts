@@ -20,8 +20,8 @@ export type WindowsDownload = {
 
 // No scan identity is inferred from the static fallback's version or filename.
 export const fallbackDownload: WindowsDownload = {
-  version: 'v0.2.3',
-  url: 'https://github.com/jorgefl8/opentig/releases/download/v0.2.3/OpenTig-0.2.3-win32-x64-Setup.exe',
+  version: 'v0.2.4',
+  url: 'https://github.com/jorgefl8/opentig/releases/download/v0.2.4/OpenTig-0.2.4-win32-x64-Setup.exe',
 };
 
 export function windowsInstaller(release: unknown): WindowsDownload | undefined {

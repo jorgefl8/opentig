@@ -56,6 +56,8 @@ interface TypewriterTitleProps {
   className?: string;
   /** Classes for the text itself, e.g. to fix the font size. */
   textClassName?: string;
+  /** Announce every phrase to screen readers; disable when the caller supplies its own label. */
+  announce?: boolean;
 }
 
 const DEFAULT_SEQUENCES: TypewriterSequence[] = [
@@ -78,8 +80,10 @@ const SELECT_HOLD_MS = 220;
 
 // The blink is a CSS animation so it runs off the main thread: solid for
 // the first third of the cycle, fades out, then stays hidden.
+// Animated phrases render through generated content, so search engines and
+// copied text see only the caller's static label, never every partial phrase.
 const CARET_KEYFRAMES =
-  "@keyframes kokonutui-typewriter-caret { 0%, 33.333% { opacity: 1; } 66.667%, 100% { opacity: 0; } }";
+  "@keyframes kokonutui-typewriter-caret { 0%, 33.333% { opacity: 1; } 66.667%, 100% { opacity: 0; } } .kokonutui-typewriter-glyphs::before { content: attr(data-text); }";
 
 const KEY_ROWS = ["qwertyuiop", "asdfghjkl", "zxcvbnm"];
 
@@ -161,6 +165,7 @@ export default function TypewriterTitle({
   as: Component = "div",
   className,
   textClassName,
+  announce = true,
 }: TypewriterTitleProps) {
   const [screen, setScreen] = useState<Screen>({ text: sequences[0]?.text ?? "", selected: 0 });
   const ref = useRef<HTMLSpanElement>(null);
@@ -389,9 +394,9 @@ export default function TypewriterTitle({
       </style>
       {/* Screen readers get every phrase once instead of whatever partial
           string is on screen. */}
-      <span className="sr-only">
+      {announce && <span className="sr-only">
         {sequences.map((sequence) => sequence.text).join(", ")}
-      </span>
+      </span>}
       <motion.span
         animate={{ opacity: 1 }}
         aria-hidden="true"
@@ -408,20 +413,17 @@ export default function TypewriterTitle({
       >
         {sequences.map((sequence, index) => (
           <span
-            className="invisible col-start-1 row-start-1"
+            className="kokonutui-typewriter-glyphs invisible col-start-1 row-start-1"
+            data-text={sequence.text}
             // biome-ignore lint/suspicious/noArrayIndexKey: phrases can repeat; the list is static.
             key={index}
-          >
-            {sequence.text}
-          </span>
+          />
         ))}
         <span className="col-start-1 row-start-1 min-h-[1.2em]">
-          {kept}
+          <span className="kokonutui-typewriter-glyphs" data-text={kept} />
           <Caret caretRef={caretRef} />
           {selected && (
-            <span className="rounded-[0.08em] bg-sky-500/25 dark:bg-sky-400/30">
-              {selected}
-            </span>
+            <span className="kokonutui-typewriter-glyphs rounded-[0.08em] bg-sky-500/25 dark:bg-sky-400/30" data-text={selected} />
           )}
         </span>
       </motion.span>

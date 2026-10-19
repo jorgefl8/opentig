@@ -17,8 +17,8 @@ function fixture(t, { indexable = true, site = 'https://opentig.com/' } = {}) {
       { '@type': 'SoftwareApplication', '@id': `${site}#application`, name: 'OpenTig', url: site, description: 'Review & commit.',
         applicationCategory: 'DeveloperApplication', applicationSubCategory: 'Git client', operatingSystem: ['Windows'],
         softwareRequirements: 'Git on the host.', isAccessibleForFree: true, license: 'https://github.com/jorgefl8/opentig/blob/main/LICENSE',
-        sameAs: 'https://github.com/jorgefl8/opentig', installUrl: 'https://github.com/jorgefl8/opentig/blob/main/docs/getting-started.md',
-        offers: { '@type': 'Offer', price: 0, url: 'https://github.com/jorgefl8/opentig/releases/latest' } },
+        sameAs: ['https://github.com/jorgefl8/opentig', 'https://www.npmjs.com/package/@opentig/cli'], installUrl: 'https://github.com/jorgefl8/opentig/blob/main/docs/getting-started.md',
+        offers: { '@type': 'Offer', price: 0, priceCurrency: 'USD', url: 'https://github.com/jorgefl8/opentig/releases/latest' } },
     ],
   };
   const html = (error = false) => `<!doctype html><html lang="en"><head><title>OpenTig</title>
@@ -67,7 +67,8 @@ const regressions = [
   ['incorrect image dimensions', 'index.html', 'og:image:width" content="1200', 'og:image:width" content="999', /image dimensions/],
   ['malformed JSON-LD', 'index.html', '"@context":"https://schema.org"', '"@context":', /JSON/],
   ['broken schema identity', 'index.html', '"about":{"@id":"https://opentig.com/#application"}', '"about":{"@id":"https://opentig.com/#missing"}', /schema entity links/],
-  ['local schema link', 'index.html', '"sameAs":"https://github.com/jorgefl8/opentig"', '"sameAs":"http://127.0.0.1/"', /local or private URL/],
+  ['local schema link', 'index.html', '"sameAs":["https://github.com/jorgefl8/opentig"', '"sameAs":["http://127.0.0.1/"', /local or private URL/],
+  ['missing price currency', 'index.html', '"priceCurrency":"USD",', '', /free availability/],
   ['malformed sitemap', 'sitemap.xml', '</urlset>', '</wrong>', /invalid sitemap XML/],
   ['sitemap includes 404', 'sitemap.xml', '</urlset>', '<url><loc>https://opentig.com/404</loc></url></urlset>', /sitemap does not match/],
   ['missing sitemap page', 'sitemap.xml', '<url><loc>https://opentig.com/</loc></url>', '', /sitemap does not match/],

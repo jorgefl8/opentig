@@ -13,7 +13,7 @@ import Faq from '@/components/landing/Faq.astro';
 import Footer from '@/components/landing/Footer.astro';
 import { installationPath } from '@/docs';
 import { indexable } from '@/indexing';
-import { repositoryUrl, downloadUrl, siteDescription } from '@/site';
+import { repositoryUrl, downloadUrl, npmUrl, siteDescription } from '@/site';
 
 const homeUrl = Astro.site ? new URL('/', Astro.site).href : undefined;
 const structuredData = homeUrl && indexable ? {
@@ -39,11 +39,12 @@ const structuredData = homeUrl && indexable ? {
       softwareRequirements: 'Git is required on the repository host. The desktop installer is for Windows 10 or later (x64). The CLI server runs on Windows, Linux, and macOS with Node.js 24 or later. Browser access requires a running OpenTig instance on the repository host and browser pairing.',
       license: `${repositoryUrl}/blob/main/LICENSE`,
       isAccessibleForFree: true,
-      sameAs: repositoryUrl,
+      sameAs: [repositoryUrl, npmUrl],
       installUrl: new URL(installationPath, homeUrl).href,
       offers: {
         '@type': 'Offer',
         price: 0,
+        priceCurrency: 'USD',
         url: downloadUrl,
       },
     },
