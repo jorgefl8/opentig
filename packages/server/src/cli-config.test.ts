@@ -9,7 +9,7 @@ describe('OpenTig CLI arguments', () => {
   it('defaults to a project-independent server on the loopback endpoint', () => {
     expect(parseCliArguments([], {}, cwd, home)).toEqual({
       command: 'start', serviceAction: null, host: '127.0.0.1', port: 6767,
-      home: path.join(home, '.opentig'), openBrowser: true,
+      home: path.join(home, '.opentig'), openBrowser: true, modifyPath: false,
     });
   });
 
@@ -44,6 +44,10 @@ describe('OpenTig CLI arguments', () => {
     expect(parseCliArguments(['service', 'restart'], {}, cwd, home).serviceAction).toBe('restart');
     expect(() => parseCliArguments(['service'], {}, cwd, home)).toThrow('requires install, status, restart, or uninstall');
     expect(() => parseCliArguments(['service', 'install', 'repo'], {}, cwd, home)).toThrow('Add and select repositories from the OpenTig web UI');
+    expect(parseCliArguments(['service', 'install'], {}, cwd, home).modifyPath).toBe(true);
+    expect(parseCliArguments(['service', 'install', '--no-modify-path'], {}, cwd, home).modifyPath).toBe(false);
+    expect(() => parseCliArguments(['serve', '--no-modify-path'], {}, cwd, home)).toThrow('only supported by service install');
+    expect(() => parseCliArguments(['service', 'status', '--no-modify-path'], {}, cwd, home)).toThrow('only supported by service install');
   });
 
   it.each([

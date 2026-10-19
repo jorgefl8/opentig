@@ -12,6 +12,8 @@ export interface OpenTigCliConfig {
   port: number;
   home: string;
   openBrowser: boolean;
+  /** service install may add its managed command directory to the shell profile. */
+  modifyPath: boolean;
 }
 
 export class CliUsageError extends Error {
@@ -36,6 +38,7 @@ export function parseCliArguments(
   let portValue: string | undefined;
   let homeValue: string | undefined;
   let noBrowser = false;
+  let noModifyPath = false;
   let optionsEnded = false;
 
   for (let index = 0; index < args.length; index += 1) {
@@ -48,6 +51,10 @@ export function parseCliArguments(
     if (!optionsEnded && (argument === '--version' || argument === '-v')) return terminalConfig('version', homeDirectory);
     if (!optionsEnded && argument === '--no-browser') {
       noBrowser = true;
+      continue;
+    }
+    if (!optionsEnded && argument === '--no-modify-path') {
+      noModifyPath = true;
       continue;
     }
     if (!optionsEnded && argument.startsWith('--')) {
@@ -77,6 +84,7 @@ export function parseCliArguments(
     throw new CliUsageError(`Unexpected argument: ${argument}. Check the command spelling with opentig --help. Add and select repositories from the OpenTig web UI.`);
   }
 
+  if (noModifyPath && !(command === 'service' && serviceAction === 'install')) throw new CliUsageError('--no-modify-path is only supported by service install.');
   if (noBrowser && command !== 'start') throw new CliUsageError('--no-browser is only supported by start; serve and services already run without opening a browser.');
   if ((command === 'pair' || command === 'reset-access') && (hostValue !== undefined || portValue !== undefined || noBrowser)) {
     throw new CliUsageError(`The ${command} command only accepts --home.`);
@@ -94,6 +102,7 @@ export function parseCliArguments(
       port: DEFAULT_SERVER_PORT,
       home: resolvePath(homeValue ?? environment.OPENTIG_HOME ?? path.join(homeDirectory, '.opentig'), currentDirectory, 'home'),
       openBrowser: false,
+      modifyPath: false,
     };
   }
 
@@ -109,6 +118,7 @@ export function parseCliArguments(
     port,
     home,
     openBrowser: command === 'start' && !noBrowser,
+    modifyPath: command === 'service' && !noModifyPath,
   };
 }
 
@@ -139,6 +149,7 @@ Options:
   --port <port>       Listener port (default: ${DEFAULT_SERVER_PORT}; env: OPENTIG_PORT)
   --home <path>       Data directory (default: ~/.opentig; env: OPENTIG_HOME)
   --no-browser        Do not open a browser in start mode
+  --no-modify-path    service install: do not add <home>/bin to PATH
   -h, --help          Show help
   -v, --version       Show version
 
@@ -172,6 +183,9 @@ Runtime behavior:
   SIGTERM shut the server down cleanly. npx and bunx never install a service;
   service installation is explicit. Linux uses systemd with lingering; macOS
   and Windows start at login and stop at logout.
+  service install also creates an opentig command for the managed runtime in
+  <home>/bin and adds it to PATH (zsh, bash, or fish profile; Windows user
+  Path), so npx installations need no global npm package. Uninstall removes both.
 
 Requirements: Node.js 24 or later and Git. Plain bunx launches the Node shebang;
 running OpenTig with the Bun runtime itself is not supported.`;
@@ -185,6 +199,7 @@ function terminalConfig(command: 'help' | 'version', home: string): OpenTigCliCo
     port: DEFAULT_SERVER_PORT,
     home: path.resolve(home, '.opentig'),
     openBrowser: false,
+    modifyPath: false,
   };
 }
 

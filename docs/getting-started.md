@@ -121,13 +121,15 @@ npm install -g @opentig/cli@latest
 opentig serve
 ```
 
+If npm reports `EACCES` because its global prefix (often `/usr/local` with the Node.js macOS installer) is not writable, do not use `sudo`. Install a [background service with npx](#background-services) instead, which also provides an `opentig` command, or [configure a per-user npm prefix](https://docs.npmjs.com/resolving-eacces-permissions-errors-when-installing-packages-globally/).
+
 Use `opentig` or `opentig start` to open the browser automatically; `opentig serve` prints the pairing details instead. `opentig help` or `opentig --help` lists all commands, examples, pairing/tunnel instructions, fixed-port behavior, and service commands.
 
 Add, open, and switch repositories in the web UI using paths on the server. The CLI starts one project-independent instance; it does not select repositories through command-line arguments.
 
 ### Pair another browser
 
-After a global installation, request a fresh pairing link from the **same OS account** that runs OpenTig:
+With the `opentig` command from a global installation or a [background service](#the-opentig-command), request a fresh pairing link from the **same OS account** that runs OpenTig:
 
 ```bash
 opentig pair
@@ -152,6 +154,7 @@ OpenTig does not include Docker packaging, built-in TLS, Tailscale/SSH automatio
 | `--port` | `OPENTIG_PORT` | `6767` |
 | `--home` | `OPENTIG_HOME` | `~/.opentig` |
 | `--no-browser` | Not applicable | Supported only by `start`, to prevent opening a browser. |
+| `--no-modify-path` | Not applicable | Supported only by `service install`, to leave shell profiles unchanged. |
 
 </details>
 
@@ -166,17 +169,30 @@ SIGINT or SIGTERM closes WebSockets, the HTTP listener, watchers, Git/AI child p
 
 ## Background services
 
-A background service keeps OpenTig running after you close the terminal. Install the CLI globally first, or invoke its executable directly, then opt in:
+A background service keeps OpenTig running after you close the terminal. It does not need a global installation or administrator access:
 
 ```bash
-opentig service install --host 127.0.0.1 --port 6767
+npx --yes @opentig/cli@latest service install
 ```
+
+With a global installation, run `opentig service install` instead. Add `--host` and `--port` to choose another address, for example `--host 127.0.0.1 --port 6768`. Installation finishes by printing a one-time pairing link, code, and QR for the new service.
 
 The service uses your OS account's repository access and CLI credentials. It does not copy credentials or run as root or LocalSystem. It is independent of any repository and separate from the desktop app's server. If another instance already uses port `6767`, choose a different port.
 
 `service install` starts the server in the background and registers startup persistence. Do not also run `serve` for the same home: `serve` stays in its terminal and stops when that terminal closes, while the installed service continues independently.
 
 Installation checks the effective listening address and prerequisites before staging dependencies or registering the service. It prints preparation, registration, and startup phases, and reports success only after verifying the managed server's identity. A live service can be reinstalled using its own listener. Stop an unrelated foreground process using the same home in its terminal before installing the service.
+
+### The `opentig` command
+
+`service install` also creates an `opentig` command in `<home>/bin` (by default `~/.opentig/bin`) and adds that directory to your `PATH`, without administrator access. Open a new terminal to use it. The command always runs the service's current version, including after browser updates, and defaults to that service's home.
+
+- **macOS and Linux:** the directory is added to your shell profile: `~/.zshrc` (or `$ZDOTDIR/.zshrc`) for zsh, `~/.bash_profile` on macOS or `~/.bashrc` on Linux for bash, and `~/.config/fish/conf.d/opentig.fish` for fish. The change is a marked block updated in place on reinstall; symlinked dotfiles stay links. For other shells, installation prints the line to add yourself.
+- **Windows:** `opentig.cmd` works from PowerShell and Command Prompt. The directory is appended to your user `Path` in the registry, preserving existing entries such as `%USERPROFILE%\...`. Terminals that were already open, including those inside an editor such as VS Code, keep their old `Path` until restarted.
+
+If the directory is already on `PATH` or you pass `--no-modify-path`, nothing else is changed and installation tells you what to add yourself. `service uninstall` removes the command and only the `PATH` entries that point to that home.
+
+Commands printed by an `npx` run use the same pinned `npx --yes @opentig/cli@<version>` form, so they work before the `opentig` command is available.
 
 ### When the service runs
 
@@ -222,7 +238,7 @@ The listener uses loopback unless `--host` or saved **Settings → Web access** 
 Reinstall the service from your terminal with `opentig service install` if:
 
 - You move Git or an integration CLI. Installation captures the terminal's `PATH` so tools such as Git, Codex, Claude Code, and OpenCode remain discoverable. Browser updates preserve the running service's effective `PATH`, including systemd overrides.
-- Your Node version manager removes the Node executable used at installation. The service captures its absolute path.
+- Your Node version manager removes the Node executable used at installation. The service and the `opentig` command capture its absolute path; the command reports a missing Node executable and how to reinstall.
 
 ## Command errors and recovery
 
