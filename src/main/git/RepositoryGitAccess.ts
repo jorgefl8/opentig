@@ -2,7 +2,8 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash } from 'node:crypto';
 import type { RepositoryInfo } from '../../shared/contracts';
 import type { GitHubAccountSelection } from '../../shared/github-accounts';
-import type { PublicationContext, RepositoryAccess, AccessCheck } from '../../shared/repository-access';
+import type { PublicationContext, RepositoryAccess, AccessCheck, RemoteAccessProblem } from '../../shared/repository-access';
+import { parseSshRemote } from '../github/GitHubRemoteParser';
 import { GitOperationError } from '../../shared/errors';
 import { redactSensitiveText } from '../../shared/redaction';
 import type { GitHubAccountsService } from '../github/GitHubAccountsService';
@@ -161,6 +162,21 @@ export class RepositoryGitAccess {
     this.checks.set(repositoryId, value);
     return value;
   }
+  /** Describes a GitHub access failure so clients can name the account and offer one that has access. */
+  private async accessProblem(url: string, message: string, login: string | null, switchedTo: string | null, operation: string): Promise<RemoteAccessProblem | null> {
+    const sso = /\bsaml\b|single sign-on|\bsso\b/i.test(message);
+    if (!sso && accessError(message).state !== 'inaccessible') return null;
+    const https = managedGitHubPath(url);
+    const ssh = https ? null : parseSshRemote(url);
+    const repository = (https ?? ssh?.nameWithOwner)?.replace(/\.git$/, '');
+    if (!repository || (ssh && !/(^|@)github\.com$/i.test(ssh.destination))) return null;
+    // Another account helps only over HTTPS; SSH keeps authenticating with its key.
+    const candidates = https && !switchedTo
+      ? (await this.accounts.accountsWithAccess(repository, operation).catch(() => [])).map(candidate => candidate.login).filter(candidate => candidate.toLowerCase() !== login?.toLowerCase())
+      : [];
+    return { repository, transport: https ? 'https' : 'ssh', login, candidates, sso, ...(switchedTo ? { switchedTo } : {}) };
+  }
+
   /** Only GitHub HTTPS access failures of repositories following the default account trigger detection. */
   private async adoptAccountWithAccess(repository: RepositoryInfo, selection: GitHubAccountSelection, url: string, message: string, operation: string): Promise<string | null> {
     const path = managedGitHubPath(url);
@@ -219,8 +235,10 @@ export class RepositoryGitAccess {
         return this.sessions.run({ repository, selection: this.accounts.selection(repository), login: adopted, revision: this.accounts.revisionFor(repository) },
           () => this.execute(requested, options, execute, true));
       }
-      if (adopted) throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: options.operation, message: `This repository now uses @${adopted}, which can access it. Push again to publish with @${adopted}.` });
-      if (error instanceof GitOperationError) throw error;
+      const access = await this.accessProblem(url, message, managed ? login : null, adopted, options.operation);
+      if (adopted) throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: options.operation, message: `This repository now uses @${adopted}, which can access it. Push again to publish with @${adopted}.`, ...(access ? { access } : {}) });
+      if (error instanceof GitOperationError) throw access ? new GitOperationError({ ...error.detail, access }) : error;
+      if (access) throw new GitOperationError({ code: 'UNKNOWN', operation: options.operation, message, access });
       throw new GitOperationError({ code: 'UNKNOWN', operation: options.operation, message });
     } finally { await broker?.dispose(); }
   }

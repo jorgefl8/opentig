@@ -8,7 +8,7 @@ import {
   IconLoader4, IconRestore, IconSearch, IconTrash,
 } from '@tabler/icons-react';
 import { sileo } from 'sileo';
-import type { BootstrapData, CommitSplitProposal, FileHistoryPathChange, FileHistoryState, GhCliStatus, GitHubRepositoryInfo, OpenTigCapabilities, Preferences, PullRequestState, PullRequestSummary, PullResult, PushResult, RecentRepository, RepositoryInfo, UndoLatestCommitResult } from '../../shared/contracts';
+import type { BootstrapData, CommitSplitProposal, FetchResult, FileHistoryPathChange, FileHistoryState, GhCliStatus, GitHubRepositoryInfo, OpenTigCapabilities, Preferences, PullRequestState, PullRequestSummary, PullResult, PushResult, RecentRepository, RepositoryInfo, UndoLatestCommitResult } from '../../shared/contracts';
 import { matchesCombo, resolveShortcuts, type ShortcutMap } from '../../shared/shortcuts';
 import { ShortcutsProvider } from './ShortcutsContext';
 import { Toolbar } from './Toolbar';
@@ -41,6 +41,9 @@ import { OpenRepositoryDialog } from '@/features/repositories/OpenRepositoryDial
 import { Welcome } from '@/features/repositories/Welcome';
 import { touchRecentRepositories, type RepositoryOption } from '@/features/repositories/repository-select-model';
 import { createRepositorySwitcher } from '@/features/repositories/repository-switch';
+import { remoteAccessActionLabel, remoteAccessCopy, type RemoteAccessAction } from '@/features/repositories/remote-access';
+import { openOnGitHub } from '@/features/pulls/gh-utils';
+import type { RemoteAccessProblem } from '../../shared/repository-access';
 import type { RuntimeFileDraft, ViewerSelection } from '@/features/viewer/Viewer';
 import {
   mergeRefreshRequests, refreshOperationsForScope, shouldRefreshSearch, shouldRefreshViewer, type RefreshRequest,
@@ -116,6 +119,12 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   const [worktreesState, setWorktrees] = useState<WorktreeInfo[]>([]);
   const [snapshotRepositoryId, setSnapshotRepositoryId] = useState<string | null>(null);
   const [pendingRepositoryId, setPendingRepositoryId] = useState<string | null>(null);
+  const [remoteProblem, setRemoteProblem] = useState<{ repositoryId: string; access: RemoteAccessProblem; message: string } | null>(null);
+  /** Keeps the toolbar warning in step with the latest fetch of each repository. */
+  const noteFetchResult = useCallback((repositoryId: string, result: FetchResult) => {
+    if (result.status === 'success') setRemoteProblem(current => current?.repositoryId === repositoryId ? null : current);
+    else if (result.access) setRemoteProblem({ repositoryId, access: result.access, message: result.message });
+  }, []);
   const [repositorySwitcher] = useState(createRepositorySwitcher);
   const [view, setView] = useState<SidebarView>(() => {
     if (initialView) return initialView;
@@ -606,7 +615,12 @@ export default function App({ initialView, initialSelection, pullRequestCreation
         void updatesApi().check().catch(() => undefined);
         try {
           const result = await opentig.refs.fetch(repositoryId);
-          if (result.status === 'failed') throw new Error(result.message);
+          noteFetchResult(repositoryId, result);
+          if (result.status === 'failed' && result.access) {
+            // The toolbar warning offers the fix; the toast only reports the failed refresh.
+            const copy = remoteAccessCopy(result.access);
+            if (repositoryRef.current?.id === repositoryId) sileo.error({ title: 'Could not fetch remote changes', description: `${copy.summary} ${copy.detail}`, duration: 10_000 });
+          } else if (result.status === 'failed') throw new Error(result.message);
         } catch (reason) {
           if (repositoryRef.current?.id === repositoryId) reportError('Could not fetch remote changes', reason);
         }
@@ -652,7 +666,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     } finally {
       if (!background && repositoryRef.current?.id === repositoryId) { busyRef.current = null; setBusy(null); }
     }
-  }, [applyFilesSnapshot, appQueryClient]);
+  }, [applyFilesSnapshot, appQueryClient, noteFetchResult]);
   // One cycle per repository folds watcher bursts and explicit mutation
   // refreshes into a single follow-up snapshot with the union of their scopes.
   const refresh = useCallback((options?: AppRefreshOptions): Promise<void> => {
@@ -703,6 +717,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       inFlight = true;
       try {
         const result = await opentig.refs.fetch(repositoryId);
+        if (!cancelled) noteFetchResult(repositoryId, result);
         if (cancelled || repositoryRef.current?.id !== repositoryId || result.status !== 'success') return;
         await refresh({ background: true, scope: 'refs' });
       } catch {
@@ -721,7 +736,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       window.clearInterval(timer);
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [refresh, remoteFetchIntervalSeconds, repository]);
+  }, [noteFetchResult, refresh, remoteFetchIntervalSeconds, repository]);
 
   useEffect(() => {
     setSnapshotRepositoryId(null);
@@ -1841,6 +1856,9 @@ export default function App({ initialView, initialSelection, pullRequestCreation
               duration: 10_000,
             };
           }
+          const detail = serializedErrorFromReason(err);
+          const access = detail && 'access' in detail ? detail.access : undefined;
+          if (access) return remoteAccessToast('Could not pull changes', access);
           const message = messageOf(err);
           return { title: 'Could not pull changes', description: message, duration: 10_000 };
         },
@@ -1900,6 +1918,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
               };
             }
             if (result.status === 'remote-required') return { title: 'Choose a remote to publish the branch' };
+            if (result.status === 'rejected' && result.access) return remoteAccessToast(`${repository.name}: could not push commits`, result.access, true);
             return { title: `${repository.name}: could not push commits`, description: result.message, duration: 10_000, button: { title: 'Repository access', onClick: () => { setSettingsSection('github'); setSettingsOpen(true); } } };
           }
           const message = messageOf(err);
@@ -1911,6 +1930,25 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     } finally {
       setBusy(null);
     }
+  };
+
+  const handleRemoteAccessAction = async (action: RemoteAccessAction, push = false) => {
+    const current = repositoryRef.current;
+    if (!current) return;
+    if (action.kind === 'settings') { setSettingsSection('github'); setSettingsOpen(true); return; }
+    if (action.kind === 'sso') { openOnGitHub(action.url); return; }
+    if (action.kind === 'push-again') { void pushUpdates(); return; }
+    try {
+      await opentig.github.setRepositoryAccount(current.id, { mode: 'account', host: 'github.com', login: action.login });
+      setRemoteProblem(null);
+      if (push) void pushUpdates();
+      else await refresh({ manual: true });
+    } catch (reason) { reportError('Could not change the repository account', reason); }
+  };
+  const remoteAccessToast = (title: string, access: RemoteAccessProblem, push = false) => {
+    const copy = remoteAccessCopy(access);
+    const label = push && copy.action.kind === 'use-account' ? `Use @${copy.action.login} and push again` : remoteAccessActionLabel(copy.action);
+    return { title, description: `${copy.summary} ${copy.detail}`, duration: 10_000, button: { title: label, onClick: () => void handleRemoteAccessAction(copy.action, push) } };
   };
 
   const syncRepository = async (item: RepositoryOption, projectName: string | null, action: ProjectSyncAction) => {
@@ -2155,6 +2193,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
           repositorySyncOperations={repositorySyncOperations}
           onOpen={openRepository}
           onRecent={selectRecent}
+          remoteProblem={remoteProblem?.repositoryId === repository.id ? remoteProblem : null}
+          onRemoteAccessAction={(action) => void handleRemoteAccessAction(action)}
           pendingRepositoryId={pendingRepositoryId}
           repositoryLoadPhase={repositoryLoadPhase}
           repositoryLoadVisible={repositoryLoadVisible}

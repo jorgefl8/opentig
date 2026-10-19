@@ -173,6 +173,16 @@ Checks distinguish identity, PR API access, Git read access to the push destinat
 
 Sanitized Git errors retain the actual rejection and never trigger an automatic force push. GitHub errors distinguish missing accounts, rejected credentials, repository/token/organization permissions, and unavailable CLI installations.
 
+**When GitHub refuses access**
+
+If a background or manual fetch is refused, the toolbar shows **Can’t fetch** until a later fetch succeeds. Its card names the account or credentials that were refused, keeps the Git output available, and offers the action most likely to fix it:
+
+- **Use @account** when another connected account can access the repository; OpenTig pins that account and fetches again;
+- **Authorize on GitHub** when the organization requires single sign-on for the account;
+- **Repository access** to choose an account or connect a new one.
+
+A refused pull or push shows the same explanation as a notification. For a push, the account action becomes **Use @account and push again**; when OpenTig has already switched the repository to an account with access, it offers **Push with @account**. New remote commits stay hidden while access fails.
+
 ### Managed credential boundaries
 
 Managed Git HTTPS requires `curl`, which is included with Git for Windows. These operations do not recurse into submodules: open each submodule as its own repository or choose Git’s own credentials.

@@ -591,7 +591,8 @@ export class GitRepositoryOperations {
       const message = error instanceof GitOperationError
         ? error.detail.message
         : error instanceof Error ? error.message : 'Could not fetch from the remote.';
-      return { status: 'failed', message };
+      const access = error instanceof GitOperationError ? error.detail.access : undefined;
+      return { status: 'failed', message, ...(access ? { access } : {}) };
     }
     const status = await this.repositories.status(repositoryId, false);
     return { status: 'success', ahead: status.ahead, behind: status.behind };
@@ -1253,7 +1254,7 @@ export function pushFailure(error: unknown): Extract<PushResult, { status: 'reje
   else if (/non-fast-forward|fetch first|stale info/.test(raw)) reason = 'remote-changed';
   else if (/could not resolve host|unable to access|connection.*(timed out|reset|refused)|network is unreachable|(?:http|error:)\s*50[0-4]/.test(raw)) reason = 'network';
   else if (detail?.code === 'INVALID_ARGUMENT' || /upstream branch .* does not match|no upstream branch|push\.default|context|account changed/.test(raw)) reason = 'configuration';
-  return { status: 'rejected', reason, message: explanation + message };
+  return { status: 'rejected', reason, message: explanation + message, ...(detail?.access ? { access: detail.access } : {}) };
 }
 
 function makeDiffResult(path: string, buffer: Buffer): DiffResult {

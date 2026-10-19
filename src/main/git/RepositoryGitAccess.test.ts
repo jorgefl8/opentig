@@ -428,7 +428,7 @@ describe('finding an account with access for Git HTTPS', () => {
     await git(f.work, ['commit', '--allow-empty', '-m', 'Local']);
     const context = await f.service.publication(f.repositoryId);
     const result = await f.operations.push(f.repositoryId, undefined, context.id);
-    expect(result).toMatchObject({ status: 'rejected' });
+    expect(result).toMatchObject({ status: 'rejected', access: { repository: 'team/demo', transport: 'https', login: 'alice', switchedTo: 'bob' } });
     expect(JSON.stringify(result)).toContain('now uses @bob');
     expect(usernames).toEqual(['username=alice']);
     expect(f.accounts.resolve(f.repository)).toEqual({ login: 'bob', source: 'detected' });
@@ -438,7 +438,9 @@ describe('finding an account with access for Git HTTPS', () => {
     const f = await fixture();
     const usernames = await denyingDefault(f);
     await f.select('alice');
-    expect(await f.operations.fetch(f.repositoryId)).toMatchObject({ status: 'failed' });
+    // The repository keeps its account; the failure names it and the account that could access it.
+    expect(await f.operations.fetch(f.repositoryId)).toMatchObject({ status: 'failed',
+      access: { repository: 'team/demo', transport: 'https', login: 'alice', candidates: ['bob'], sso: false } });
     expect(usernames).toEqual(['username=alice']);
     expect(f.accounts.selection(f.repository)).toMatchObject({ login: 'alice' });
     expect(f.accounts.selection(f.repository)).not.toHaveProperty('detected');

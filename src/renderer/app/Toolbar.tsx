@@ -28,6 +28,9 @@ import { useShortcuts } from './useShortcuts';
 import { useMobileLayout } from '@/lib/use-mobile-layout';
 import { MobileToolbar } from './MobileToolbar';
 import { RepositoryLoadIndicator, type RepositoryLoadPhase } from './RepositoryLoadIndicator';
+import { RemoteAccessIndicator } from './RemoteAccessIndicator';
+import type { RemoteAccessProblem } from '@shared/repository-access';
+import type { RemoteAccessAction } from '@/features/repositories/remote-access';
 import { BranchCombobox } from './BranchCombobox';
 import { openOnGitHub } from '@/features/pulls/gh-utils';
 import { BranchPullRequestMenu } from './BranchPullRequestMenu';
@@ -46,6 +49,9 @@ export interface ToolbarProps {
   repositoryLoadPhase: RepositoryLoadPhase | null;
   repositoryLoadVisible: boolean;
   repositoryLoadSlow: boolean;
+  /** The last background fetch was refused by GitHub. */
+  remoteProblem: { access: RemoteAccessProblem; message: string } | null;
+  onRemoteAccessAction(action: RemoteAccessAction): void;
   onRefresh(): void; onPreference(partial: Partial<Preferences>): void;
   onForgetRepository(repository: RepositoryOption): Promise<RepositoryOrganization>;
   onRelocateRepository(repository: RepositoryOption, path: string): Promise<void>;
@@ -365,6 +371,7 @@ export function Toolbar(props: ToolbarProps) {
         onReorder={props.onReorderFileTab}
       />
       <div className="toolbar-spacer" />
+      {props.remoteProblem && <RemoteAccessIndicator problem={props.remoteProblem.access} message={props.remoteProblem.message} onAction={props.onRemoteAccessAction} />}
       {props.status && (publishBranch || props.status.unborn || props.status.ahead > 0 || props.status.behind > 0 || props.status.insertions > 0 || props.status.deletions > 0 || props.busy === 'push' || props.busy === 'pull') && (
         <div className="branch-stats" aria-label="Branch and local changes summary">
           {(props.status.behind > 0 || props.busy === 'pull') && (

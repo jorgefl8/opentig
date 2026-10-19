@@ -10,6 +10,7 @@ import { needsBranchPublication } from '@/features/repositories/project-sync';
 import { getVsCodeFileIconUrl } from '@/lib/vscode-icons';
 import { RepositoryFaviconImage } from '@/features/repositories/RepositoryFavicon';
 import type { ToolbarProps } from './Toolbar';
+import { RemoteAccessIndicator } from './RemoteAccessIndicator';
 import { BranchPullRequestMenu } from './BranchPullRequestMenu';
 
 export function MobileToolbar({ props, repositoryControl, worktreeControl, branchControl, favicon, pendingRepositoryName, loadIndicator, contextOpen, onContextOpen, syncBusy }: {
@@ -40,6 +41,7 @@ export function MobileToolbar({ props, repositoryControl, worktreeControl, branc
       <div className="mobile-toolbar-actions">
         {isDevProfile && <AppName />}
         {props.openFiles.tabs.length > 0 && <Button variant="ghost" size="sm" className="mobile-open-files-trigger" aria-label={`Open files (${props.openFiles.tabs.length})`} onClick={() => setFilesOpen(true)}><IconFiles /><span>{props.openFiles.tabs.length}</span>{props.openFiles.tabs.some((tab) => tab.dirty) && <span className="mobile-unsaved-dot" aria-label="Unsaved files" />}</Button>}
+        {props.remoteProblem && <RemoteAccessIndicator compact problem={props.remoteProblem.access} message={props.remoteProblem.message} onAction={props.onRemoteAccessAction} />}
         <DesktopUpdateIndicator />
         <Button variant="ghost" size="icon" aria-label="Repository context and settings" onClick={() => onContextOpen(true)}><IconDots /></Button>
       </div>

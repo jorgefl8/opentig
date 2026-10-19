@@ -15,6 +15,7 @@ export interface SerializedGitError {
   message: string;
   stderr?: string;
   exitCode?: number;
+  access?: import('./repository-access').RemoteAccessProblem;
 }
 
 export type AiErrorCode =

@@ -1,4 +1,5 @@
 import type { GitHubAccountDetection, GitHubAccountSelection, GitHubAccountsStatus, GitHubRepositoryAccount } from './github-accounts';
+import type { RemoteAccessProblem } from './repository-access';
 import type { CommitAuthorship, SetCommitAuthorshipInput } from './commit-authorship';
 import type { SerializedOperationError } from './errors';
 import type { BranchDeletionResult, BranchDetails, BranchInfo, CommitFile, CommitPage, FileTreeEntry, LocalRefsSnapshot, RemoteBranchDetails, RemoteBranchDeletionResult, TrackingBranchCreationResult, RepositoryStatus, WorktreeDetails, WorktreeInfo, WorktreeRemovalBlocked } from './git-types';
@@ -196,7 +197,7 @@ export type PullResult =
 
 export type FetchResult =
   | { status: 'success'; ahead: number; behind: number }
-  | { status: 'failed'; message: string };
+  | { status: 'failed'; message: string; access?: RemoteAccessProblem };
 
 export interface PublishBranchOptions {
   remote: string;
@@ -213,7 +214,7 @@ export type PushResult =
   | { status: 'blocked-operation'; operation: string }
   | { status: 'no-upstream' }
   | { status: 'diverged'; ahead: number; behind: number }
-  | { status: 'rejected'; reason: 'authentication' | 'inaccessible' | 'permission' | 'remote-changed' | 'hook' | 'network' | 'configuration' | 'unknown'; message: string };
+  | { status: 'rejected'; reason: 'authentication' | 'inaccessible' | 'permission' | 'remote-changed' | 'hook' | 'network' | 'configuration' | 'unknown'; message: string; access?: RemoteAccessProblem };
 
 export interface BranchDetailsRequest {
   repositoryId: string;

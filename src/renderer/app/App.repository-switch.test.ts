@@ -9,7 +9,7 @@ import type { ToolbarProps } from './Toolbar';
 import { SettingsStore } from '../../main/persistence/SettingsStore';
 
 const calls = vi.hoisted(() => ({
-  bootstrap: vi.fn(), openRecent: vi.fn(), getStatus: vi.fn(), success: vi.fn(),
+  bootstrap: vi.fn(), openRecent: vi.fn(), getStatus: vi.fn(), success: vi.fn(), fetch: vi.fn(), setRepositoryAccount: vi.fn(),
   activeRepositoryChanged: null as ((repository: RepositoryInfo) => void) | null,
   accountsChanged: null as ((repositoryIds?: string[], inventoryChanged?: boolean, detected?: { login: string; previousLogin: string | null }) => void) | null,
 }));
@@ -20,8 +20,8 @@ vi.mock('@/lib/opentig-api', () => ({
       openRecent: calls.openRecent, getStatus: calls.getStatus,
       fileHistoryState: async () => ({ canUndo: false, canRedo: false }), getFiles: async () => [],
     },
-    refs: { listBranches: async () => [], listWorktrees: async () => [] },
-    github: { status: async () => ({ installed: false }), repositoryInfo: async () => ({ isGitHub: false, nameWithOwner: null }) },
+    refs: { listBranches: async () => [], listWorktrees: async () => [], fetch: calls.fetch },
+    github: { status: async () => ({ installed: false }), repositoryInfo: async () => ({ isGitHub: false, nameWithOwner: null }), setRepositoryAccount: calls.setRepositoryAccount },
     diagnostics: { record: async () => {} },
     events: {
       onGitHubAccountsChanged: (callback: NonNullable<typeof calls.accountsChanged>) => { calls.accountsChanged = callback; return () => {}; },
@@ -39,6 +39,8 @@ vi.mock('./Toolbar', () => ({ Toolbar: (props: ToolbarProps) => createElement('h
   createElement('output', { 'aria-label': 'Repository' }, props.repository.id),
   createElement('output', { 'aria-label': 'Pending' }, props.pendingRepositoryId ?? ''),
   createElement('output', { 'aria-label': 'Phase' }, props.repositoryLoadPhase ?? 'ready'),
+  createElement('output', { 'aria-label': 'Remote problem' }, props.remoteProblem ? `${props.remoteProblem.access.login} → ${props.remoteProblem.access.candidates.join(',')}` : ''),
+  props.remoteProblem && createElement('button', { 'aria-label': 'Use candidate', onClick: () => props.onRemoteAccessAction({ kind: 'use-account', login: props.remoteProblem!.access.candidates[0]! }) }),
 ) }));
 vi.mock('@/features/changes/ChangesView', () => ({ ChangesView: () => createElement('div', null, 'Changes list') }));
 vi.mock('@/features/commit/CommitComposer', () => ({ CommitComposer: () => null }));
@@ -164,4 +166,20 @@ it('announces an account chosen automatically for the open repository only', asy
     title: 'Using @bob for repo', description: 'The default account @alice can’t access this repository.',
     button: expect.objectContaining({ title: 'Change' }),
   }));
+});
+
+it('shows a refused background fetch until access works and switches to an account that has access', async () => {
+  const access = { repository: 'team/repo', transport: 'https' as const, login: 'alice', candidates: ['bob'], sso: false };
+  calls.fetch.mockResolvedValueOnce({ status: 'failed', message: 'remote: Repository not found.', access }).mockResolvedValue({ status: 'success', ahead: 0, behind: 0 });
+  calls.setRepositoryAccount.mockResolvedValue({});
+  const bootstrap = await calls.bootstrap();
+  calls.bootstrap.mockResolvedValue({ ...bootstrap, preferences: { ...bootstrap.preferences, remoteFetchIntervalSeconds: 30 } });
+  await act(async () => root.render(createElement(QueryClientProvider, { client }, createElement(App))));
+  await settle();
+  expect(output('Remote problem')).toBe('alice → bob');
+  await click('Use candidate');
+  expect(calls.setRepositoryAccount).toHaveBeenCalledWith('repo', { mode: 'account', host: 'github.com', login: 'bob' });
+  await vi.waitFor(() => expect(calls.fetch).toHaveBeenCalledTimes(2));
+  await settle();
+  expect(output('Remote problem')).toBe('');
 });
