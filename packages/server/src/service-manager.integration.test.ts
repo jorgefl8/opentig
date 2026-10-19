@@ -90,6 +90,19 @@ it.skipIf(process.env.OPENTIG_SERVICE_INTEGRATION !== '1')('installs the built C
     // Reinstalling our own live listener must not conflict with itself.
     expect(await manageCliService(config('install'), io, manager)).toBe(0);
     expect((await readInstallation(home))?.manager).toBe(manager.kind);
+    {
+      // The npx-installed command runs the real managed runtime without a global package.
+      const { installCliCommand } = await import('./cli-command');
+      const { execFile } = await import('node:child_process');
+      const { promisify } = await import('node:util');
+      const { OPEN_TIG_APP_VERSION } = await import('./version');
+      await installCliCommand({ home, node: process.execPath, environment: process.env, modifyPath: false });
+      const env = { ...process.env, OPENTIG_HOME: '' };
+      const { stdout } = process.platform === 'win32'
+        ? await promisify(execFile)(process.env.ComSpec ?? 'cmd.exe', ['/d', '/s', '/c', `""${path.join(home, 'bin/opentig.cmd')}" --version"`], { env, windowsVerbatimArguments: true })
+        : await promisify(execFile)(path.join(home, 'bin/opentig'), ['--version'], { env });
+      expect(stdout.trim()).toBe(OPEN_TIG_APP_VERSION);
+    }
     expect(await manageCliService(config('status'), io, manager)).toBe(0);
     expect(await manageCliService(config('restart'), io, manager)).toBe(0);
     // Native startup failures must survive hidden wrappers and precede the timeout.

@@ -4,7 +4,8 @@ import { rm } from 'node:fs/promises';
 import path from 'node:path';
 import { renderUnicodeCompact } from 'uqr';
 import { normalizeRuntimePlatform } from '../../../src/main/runtime/create-runtime';
-import { CliError, cliCommand, diagnostic, operationError } from './cli-errors';
+import { CliError, cliCommand, cliInvocation, diagnostic, operationError } from './cli-errors';
+import { installCliCommand, removeCliCommand } from './cli-command';
 import { assertListenerAvailable, cliNetwork, listenerError } from './cli-network';
 import { loadStartupNetwork } from './network-settings';
 import { assertGitAvailable, isProcessRunning, probeRuntime, publicOrigin } from './cli-runtime';
@@ -57,7 +58,7 @@ export async function runCli(args: readonly string[], environment: NodeJS.Proces
     }
     if (config.command === 'serve' || config.command === 'start') reporter = await startupReporter(config.home);
     assertNodeVersion();
-    if (config.command === 'service') return await manageCliService(config, io);
+    if (config.command === 'service') return await runServiceCommand(config, environment, io, profile);
     if (config.command === 'reset-access') {
       await rm(path.join(resolveCliPaths(config.home).serverData, 'web-access.json'), { force: true });
       io.out('Web access settings reset. Restart this OpenTig instance to enable browser access on its startup address and port. Paired devices are preserved.');
@@ -75,9 +76,25 @@ export async function runCli(args: readonly string[], environment: NodeJS.Proces
       await recordCliFailure(config.home, failure).catch(() => undefined);
     }
     io.error(`OpenTig: ${diagnostic(failure)}`);
-    if (error instanceof CliUsageError) io.error('Run "opentig --help" for usage.');
+    if (error instanceof CliUsageError) io.error(`Run "${cliInvocation()} --help" for usage.`);
     return error instanceof CliUsageError ? error.exitCode : 1;
   }
+}
+
+async function runServiceCommand(config: OpenTigCliConfig, environment: NodeJS.ProcessEnv, io: CliIo, profile: ApplicationProfile): Promise<number> {
+  const result = await manageCliService(config, io);
+  if (result !== 0 || config.serviceAction !== 'install' && config.serviceAction !== 'uninstall') return result;
+  // The service is already in its final state; command and pairing problems are reported without failing it.
+  try {
+    const messages = config.serviceAction === 'install'
+      ? await installCliCommand({ home: config.home, node: process.execPath, environment, modifyPath: config.modifyPath })
+      : await removeCliCommand(config.home, environment);
+    for (const message of messages) io.out(message);
+  } catch (error) { io.error(`OpenTig: ${diagnostic(error)}`); }
+  if (config.serviceAction === 'install') {
+    await pairRunningServer(config, io, profile).catch((error: unknown) => io.error(`OpenTig: No pairing link was created. ${diagnostic(error)}`));
+  }
+  return result;
 }
 
 async function startCliServer(config: OpenTigCliConfig, io: CliIo, profile: ApplicationProfile, reporter: Awaited<ReturnType<typeof startupReporter>>): Promise<number> {

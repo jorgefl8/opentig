@@ -73,7 +73,7 @@ function uploadUrlShape(value) {
   else if (url.pathname.startsWith('/_ah/upload/')) pathClass = 'legacy-token';
   else if (url.pathname === '/api/v3/files' || url.pathname.startsWith('/api/v3/files/')) pathClass = 'api-files';
   else if (url.pathname.startsWith('/api/v3/')) pathClass = 'api-v3';
-  let accepted = false;
+  let accepted;
   try { uploadLocation(value); accepted = true; } catch { accepted = false; }
   return {
     valueType: 'string', parseable: true, accepted, protocol, hostClass, pathClass,

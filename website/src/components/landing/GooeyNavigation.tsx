@@ -2,10 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import GooeyNav from '../effects/GooeyNav';
 
 const items = [
-  { label: 'Workflow', href: '#workflow' },
+  { label: 'Demo', href: '#workflow' },
   { label: 'Features', href: '#features' },
-  { label: 'Tools', href: '#tools' },
-  { label: 'How it works', href: '#how-it-works' },
+  { label: 'AI', href: '#tools' },
   { label: 'Install', href: '#install' },
   { label: 'Docs', href: '/docs/' },
 ];

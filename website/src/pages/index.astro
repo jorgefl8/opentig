@@ -2,6 +2,7 @@
 import Layout from '@/layouts/Layout.astro';
 import FaultyTerminal from '@/components/FaultyTerminal.astro';
 import Navbar from '@/components/landing/navbar.astro';
+import PlatformDetect from '@/components/landing/PlatformDetect.astro';
 import Hero from '@/components/landing/Hero.astro';
 import ProductDemo from '@/components/landing/ProductDemo.astro';
 import Features from '@/components/landing/Features.astro';
@@ -12,7 +13,7 @@ import Faq from '@/components/landing/Faq.astro';
 import Footer from '@/components/landing/Footer.astro';
 import { installationPath } from '@/docs';
 import { indexable } from '@/indexing';
-import { repositoryUrl, downloadUrl, siteDescription } from '@/site';
+import { repositoryUrl, downloadUrl, npmUrl, siteDescription } from '@/site';
 
 const homeUrl = Astro.site ? new URL('/', Astro.site).href : undefined;
 const structuredData = homeUrl && indexable ? {
@@ -38,11 +39,12 @@ const structuredData = homeUrl && indexable ? {
       softwareRequirements: 'Git is required on the repository host. The desktop installer is for Windows 10 or later (x64). The CLI server runs on Windows, Linux, and macOS with Node.js 24 or later. Browser access requires a running OpenTig instance on the repository host and browser pairing.',
       license: `${repositoryUrl}/blob/main/LICENSE`,
       isAccessibleForFree: true,
-      sameAs: repositoryUrl,
+      sameAs: [repositoryUrl, npmUrl],
       installUrl: new URL(installationPath, homeUrl).href,
       offers: {
         '@type': 'Offer',
         price: 0,
+        priceCurrency: 'USD',
         url: downloadUrl,
       },
     },
@@ -53,11 +55,12 @@ const structuredData = homeUrl && indexable ? {
 <Layout>
   {structuredData && <script slot="head" type="application/ld+json" set:html={JSON.stringify(structuredData).replace(/</g, '\\u003c')} />}
   <div class="relative min-h-screen text-foreground scroll-smooth">
-    <div class="fixed inset-0 z-0">
+    <div class="fixed inset-0 z-0" data-site-backdrop>
       <FaultyTerminal />
     </div>
     <div class="relative z-10">
       <a href="#main-content" class="skip-link">Skip to content</a>
+      <PlatformDetect />
       <Navbar />
       <main id="main-content" tabindex="-1">
         <Hero />
@@ -72,3 +75,22 @@ const structuredData = homeUrl && indexable ? {
     </div>
   </div>
 </Layout>
+
+<script>
+  // Keep the animated backdrop vivid behind the hero and quiet behind dense content.
+  const backdrop = document.querySelector<HTMLElement>('[data-site-backdrop]');
+  const hero = document.querySelector<HTMLElement>('[data-hero]');
+  if (backdrop && hero) {
+    let frame = 0;
+    const update = () => {
+      frame = 0;
+      const end = hero.offsetHeight;
+      const progress = Math.min(1, Math.max(0, (scrollY - end * 0.35) / (end * 0.5)));
+      backdrop.style.opacity = String(1 - progress * 0.7);
+    };
+    const schedule = () => { if (!frame) frame = requestAnimationFrame(update); };
+    addEventListener('scroll', schedule, { passive: true });
+    addEventListener('resize', schedule);
+    update();
+  }
+</script>

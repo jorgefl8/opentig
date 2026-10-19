@@ -1,5 +1,7 @@
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { redactSensitiveText } from '../../../src/shared/redaction';
+import { OPEN_TIG_APP_VERSION } from './version';
 
 /** Operational errors retain a stable identity independently of their wording. */
 export class CliError extends Error {
@@ -9,9 +11,14 @@ export class CliError extends Error {
   }
 }
 
+/** npx runs from its cache without an `opentig` command on PATH; print a runnable form. */
+export function cliInvocation(modulePath = fileURLToPath(import.meta.url)): string {
+  return modulePath.split(/[\\/]/).includes('_npx') ? `npx -y @opentig/cli@${OPEN_TIG_APP_VERSION}` : 'opentig';
+}
+
 export function cliCommand(home: string, ...args: string[]): string {
   const quote = (value: string) => `'${value.replaceAll("'", process.platform === 'win32' ? "''" : "'\\''")}'`;
-  return `opentig ${args.map(arg => /^[a-zA-Z0-9_.:=/-]+$/.test(arg) ? arg : quote(arg)).join(' ')} --home ${quote(home)}`;
+  return `${cliInvocation()} ${args.map(arg => /^[a-zA-Z0-9_.:=/-]+$/.test(arg) ? arg : quote(arg)).join(' ')} --home ${quote(home)}`;
 }
 
 export function errorCode(error: unknown): string | undefined {

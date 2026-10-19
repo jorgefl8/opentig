@@ -171,10 +171,11 @@ export function validateBuild({ directory, site, indexable }) {
       check(web['@id'] === `${url}#website` && app['@id'] === `${url}#application` && web.about?.['@id'] === app['@id'], `${label} schema entity links differ`);
       check(web.inLanguage === 'en' && app.description === description, `${label} schema language or description differs`);
       check(app.applicationCategory === 'DeveloperApplication' && app.applicationSubCategory === 'Git client', `${label} schema category differs`);
-      check(app.isAccessibleForFree === true && app.offers?.['@type'] === 'Offer' && [0, '0'].includes(app.offers.price), `${label} schema free availability differs`);
+      check(app.isAccessibleForFree === true && app.offers?.['@type'] === 'Offer' && [0, '0'].includes(app.offers.price) && app.offers.priceCurrency === 'USD', `${label} schema free availability differs`);
       for (const key of ['aggregateRating', 'review', 'softwareVersion']) check(!(key in app), `${label} ${key} requires verified data and updated checks`);
       check(Array.isArray(app.operatingSystem) && app.operatingSystem.length > 0 && app.softwareRequirements?.trim(), `${label} missing platforms or requirements`);
-      for (const value of [app.license, app.sameAs, app.installUrl, app.offers.url]) {
+      const sameAs = Array.isArray(app.sameAs) ? app.sameAs : [app.sameAs];
+      for (const value of [app.license, ...sameAs, app.installUrl, app.offers.url]) {
         check(typeof value === 'string' && publicUrl(value).protocol === 'https:', `${label} missing public application URL`);
       }
       const inspect = (value) => {

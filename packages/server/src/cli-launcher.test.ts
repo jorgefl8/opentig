@@ -31,7 +31,7 @@ it('reports both versions for a custom service home', async () => {
 });
 it.skipIf(process.platform !== 'linux')('refuses to reinstall an older runtime even if delegation was bypassed', async () => {
   const home = await fixture();
-  await expect(manageCliService({ command: 'service', serviceAction: 'install', home, host: '127.0.0.1', port: 6767, openBrowser: false }, { out: vi.fn() })).rejects.toThrow('newer managed service');
+  await expect(manageCliService({ command: 'service', serviceAction: 'install', home, host: '127.0.0.1', port: 6767, openBrowser: false, modifyPath: false }, { out: vi.fn() })).rejects.toThrow('newer managed service');
   expect((await readInstallation(home))?.version).toBe('99.0.0');
 });
 it('lets the CLI report invalid arguments without consulting a managed installation', async () => {

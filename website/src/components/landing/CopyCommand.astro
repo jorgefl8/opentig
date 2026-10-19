@@ -2,24 +2,26 @@
 import CopyIcon from '@tabler/icons/outline/copy.svg';
 import CheckIcon from '@tabler/icons/outline/check.svg';
 import NpmIcon from '@/assets/icons/npm.svg';
-import { npmUrl } from '@/site';
+import { cliInstallCommand, npmUrl } from '@/site';
 interface Props {
   command?: string;
   placement?: 'hero' | 'install';
   compact?: boolean;
+  /** Primary action: a visible, filled Copy button instead of the icon-only control. */
+  emphasis?: boolean;
 }
-const { command = 'npx --yes @opentig/cli@latest', placement = 'install', compact = false } = Astro.props;
+const { command = cliInstallCommand, placement = 'install', compact = false, emphasis = false } = Astro.props;
 ---
 
-<div data-copy-command class:list={['rounded-lg border border-border/60 bg-background/80', compact ? 'flex items-center gap-1 p-1.5 text-left' : 'p-3']}>
+<div data-copy-command class:list={['rounded-lg border bg-background/80', emphasis ? 'copy-emphasis border-white/15' : 'border-border/60', compact ? 'flex items-center gap-1 p-1.5 text-left' : 'p-3']}>
   {compact && <code class="min-w-0 flex-1 break-words px-2 font-mono text-xs sm:text-sm leading-relaxed text-foreground">{command}</code>}
   <div class={compact ? 'contents' : 'flex items-center justify-between gap-2'}>
     {!compact && <span class="font-mono text-xs text-muted-foreground">Terminal</span>}
-    <button hidden data-copy-cli={command} data-copy-placement={placement} data-copy-compact={compact ? 'true' : undefined} type="button" aria-label={compact ? 'Copy npm install command' : 'Copy CLI command'}
-      class:list={['items-center justify-center gap-1.5 rounded-md text-xs text-foreground hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary', compact ? 'min-h-10 min-w-10 shrink-0 px-2' : 'border border-border bg-secondary px-2 py-1']}>
+    <button hidden data-copy-cli={command} data-copy-placement={placement} data-copy-compact={compact && !emphasis ? 'true' : undefined} type="button" aria-label="Copy CLI install command"
+      class:list={['items-center justify-center gap-1.5 rounded-md text-xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary', emphasis ? 'copy-emphasis-button min-h-10 shrink-0 px-3 font-semibold text-white' : 'text-foreground hover:bg-muted', !emphasis && (compact ? 'min-h-10 min-w-10 shrink-0 px-2' : 'border border-border bg-secondary px-2 py-1')]}>
       <span data-copy-icon><CopyIcon width={16} height={16} aria-hidden="true" /></span>
       <span data-copy-success hidden><CheckIcon width={16} height={16} aria-hidden="true" /></span>
-      <span data-copy-label class:list={{ 'sr-only': compact }}>Copy</span>
+      <span data-copy-label class:list={{ 'sr-only': compact && !emphasis }}>Copy</span>
     </button>
   </div>
   {compact && <>
@@ -29,6 +31,20 @@ const { command = 'npx --yes @opentig/cli@latest', placement = 'install', compac
   {!compact && <code class="mt-3 block break-all font-mono text-xs leading-relaxed text-foreground">{command}</code>}
   <span data-copy-status role="status" class="sr-only"></span>
 </div>
+
+<style>
+  .copy-emphasis {
+    box-shadow: 0 0 0 1px #2863d84d, 0 8px 30px #2863d81f;
+  }
+  .copy-emphasis-button {
+    border: 1px solid #ffffff26;
+    background: linear-gradient(180deg, var(--action-top), var(--action-bottom));
+    box-shadow: 0 1px 0 #ffffff26 inset;
+  }
+  .copy-emphasis-button:hover {
+    background: linear-gradient(180deg, var(--action-hover-top), var(--action-top));
+  }
+</style>
 
 <script>
   import { trackEvent } from '@/lib/analytics';

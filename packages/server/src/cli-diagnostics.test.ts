@@ -171,8 +171,8 @@ describe('service installation preflight', () => {
 });
 
 describe('service startup and recovery', () => {
-  async function stagedInstall() {
-    const { state } = await runtimeFixture();
+  async function stagedInstall(options: Parameters<typeof runtimeFixture>[0] = {}) {
+    const { state } = await runtimeFixture(options);
     await saveInstallation(home, install());
     const target = path.join(home, `service/app-${OPEN_TIG_APP_VERSION}/dist/client`);
     await mkdir(target, { recursive: true });
@@ -193,6 +193,28 @@ describe('service startup and recovery', () => {
     expect(output.join('\n')).toContain('Starts at login.');
     expect(output.at(-1)).toContain(cliCommand(home, 'pair'));
     expect(manager.write).toHaveBeenCalledOnce();
+  });
+  it('creates the managed command and prints a pairing link after a successful install', async () => {
+    const state = await stagedInstall();
+    const userHome = path.join(home, 'user');
+    await mkdir(userHome);
+    // Never edit the real Windows registry Path from unit tests.
+    const pathOption = process.platform === 'win32' ? ['--no-modify-path'] : [];
+    expect(await runCli(['service', 'install', '--home', home, '--port', String(state.port), ...pathOption], { HOME: userHome, SHELL: '/bin/zsh' }, io)).toBe(0);
+    const text = output.join('\n');
+    if (process.platform !== 'win32') {
+      expect(text).toContain(`Added ${path.join(home, 'bin')} to PATH in ${path.join(userHome, '.zshrc')}`);
+      expect(await readFile(path.join(userHome, '.zshrc'), 'utf8')).toContain('# >>> opentig >>>');
+    }
+    expect(text).toContain(`http://127.0.0.1:${state.port}/pair#token=`);
+    expect(errors).toEqual([]);
+    expect(await runCli(['service', 'uninstall', '--home', home], { HOME: userHome, SHELL: '/bin/zsh' }, io)).toBe(0);
+    if (process.platform !== 'win32') expect(await readFile(path.join(userHome, '.zshrc'), 'utf8')).not.toContain('opentig');
+  });
+  it('keeps a successful install when no pairing link can be created', async () => {
+    const state = await stagedInstall({ disabled: true });
+    expect(await runCli(['service', 'install', '--home', home, '--port', String(state.port), '--no-modify-path'], {}, io)).toBe(0);
+    expect(errors.join('\n')).toContain('No pairing link was created. Web access is paused');
   });
   it('retains the startup failure and verifies the previous service after rollback', async () => {
     const state = await stagedInstall();
