@@ -22,6 +22,7 @@ import { AiProviderIcon } from '@/features/ai/AiProviderIcon';
 import { harnessLabel } from '@/features/ai/harness-copy';
 import { opentig } from '@/lib/opentig-api';
 import { queryKeys } from '@/lib/query-client';
+import { useMobileLayout } from '@/lib/use-mobile-layout';
 import { GeneralSettings } from './GeneralSettings';
 import { ProblemsLogDialog } from './ProblemsLogDialog';
 import { ShortcutsSettings } from './ShortcutsSettings';
@@ -46,7 +47,7 @@ const SETTINGS_COPY: Record<Exclude<SettingsSection, 'webAccess'>, { title: stri
   ai: { title: 'AI assistance', description: 'Local harness and model used to suggest commit messages and pull-request drafts.' },
   diagnostics: { title: 'Diagnostics', description: 'Recent local failures on this machine. Prompts and file contents are never recorded.' },
 };
-export function SettingsDialog({ preferences, onPreference, open, onOpenChange, section, onSectionChange, repository = null }: {
+export function SettingsDialog({ preferences, onPreference, open, onOpenChange, section: requestedSection, onSectionChange, repository = null }: {
   repository?: RepositoryInfo | null;
   preferences: Preferences;
   onPreference(partial: Partial<Preferences>): void | Promise<boolean>;
@@ -55,6 +56,10 @@ export function SettingsDialog({ preferences, onPreference, open, onOpenChange, 
   section: SettingsSection;
   onSectionChange(section: SettingsSection): void;
 }) {
+  // Phone browsers have no hardware keyboard to configure.
+  const phoneBrowser = useMobileLayout() && !window.opentigDesktop;
+  const sections = phoneBrowser ? SETTINGS_SECTIONS.filter(({ id }) => id !== 'shortcuts') : SETTINGS_SECTIONS;
+  const section = phoneBrowser && requestedSection === 'shortcuts' ? 'general' : requestedSection;
   const queryClient = useQueryClient();
   const executablePathsKey = aiExecutablePathsKey(preferences.aiExecutablePaths);
   const statusQueryKey = queryKeys.aiStatuses(executablePathsKey);
@@ -139,7 +144,7 @@ export function SettingsDialog({ preferences, onPreference, open, onOpenChange, 
         <div className="settings-shell">
           <aside className="settings-nav">
             <div className="settings-nav-title">Settings</div>
-            {SETTINGS_SECTIONS.map(({ id, label, icon: Icon }) => (
+            {sections.map(({ id, label, icon: Icon }) => (
               <button key={id} className={`settings-nav-item ${section === id ? 'active' : ''}`} onClick={() => onSectionChange(id)} aria-current={section === id}>
                 <Icon /> {label}
               </button>

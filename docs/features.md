@@ -344,7 +344,7 @@ OpenTig remembers viewer and workspace preferences, project ordering, expanded f
 
 ## Keyboard shortcuts
 
-These are the defaults. Rebind most shortcuts in **Settings → Shortcuts**. Shortcuts marked *fixed* follow platform or file-manager conventions and cannot be changed.
+These are the defaults. Rebind most shortcuts in **Settings → Shortcuts**. Shortcuts marked *fixed* follow platform or file-manager conventions and cannot be changed. In a paired browser, combinations the browser keeps for itself, such as `Ctrl+W` and `Ctrl+Tab`, do not reach OpenTig; see [shortcuts in a browser](interface.md#shortcuts).
 
 | Shortcut | Action |
 | --- | --- |

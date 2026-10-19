@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { IconRestore } from '@tabler/icons-react';
 import type { Preferences } from '@shared/contracts';
 import {
-  FIXED_SHORTCUTS, findShortcutConflict, formatCombo, isValidCombo, normalizeCombo, resolveShortcuts,
+  BROWSER_RESERVED_COMBOS, FIXED_SHORTCUTS, findShortcutConflict, formatCombo, isValidCombo, normalizeCombo, resolveShortcuts,
   SHORTCUT_DEFINITIONS, type ShortcutCategory, type ShortcutId,
 } from '@shared/shortcuts';
 import { Button } from '@/components/ui/button';
@@ -20,6 +20,8 @@ export function ShortcutsSettings({ preferences, onPreference }: ShortcutsSettin
   const resolved = useMemo(() => resolveShortcuts(preferences.shortcutOverrides), [preferences.shortcutOverrides]);
   const [captureError, setCaptureError] = useState<{ id: ShortcutId; message: string } | null>(null);
   const hasOverrides = Object.keys(preferences.shortcutOverrides).length > 0;
+  // Browsers cannot register global shortcuts and keep some combos for their own tabs.
+  const inBrowser = !window.opentigDesktop;
 
   const categories = useMemo(() => {
     const order: ShortcutCategory[] = ['General', 'Commit', 'Editor', 'Tabs'];
@@ -30,12 +32,17 @@ export function ShortcutsSettings({ preferences, onPreference }: ShortcutsSettin
   }, []);
 
   const fixedByCategory = useMemo(() => {
-    const categories = [...new Set(FIXED_SHORTCUTS.map((item) => item.category))];
-    return categories.map((category) => ({ category, items: FIXED_SHORTCUTS.filter((item) => item.category === category) }));
-  }, []);
+    const available = FIXED_SHORTCUTS.filter((item) => !(inBrowser && item.desktopOnly));
+    const categories = [...new Set(available.map((item) => item.category))];
+    return categories.map((category) => ({ category, items: available.filter((item) => item.category === category) }));
+  }, [inBrowser]);
 
   const capture = (id: ShortcutId, combo: string) => {
     if (combo === resolved[id]) { setCaptureError(null); return; }
+    if (inBrowser && BROWSER_RESERVED_COMBOS.has(combo)) {
+      setCaptureError({ id, message: `Your browser keeps ${formatCombo(combo)} for itself.` });
+      return;
+    }
     const conflict = findShortcutConflict(id, combo, resolved);
     if (conflict) {
       const message = conflict === 'reserved'
@@ -61,7 +68,7 @@ export function ShortcutsSettings({ preferences, onPreference }: ShortcutsSettin
 
   return (
     <>
-      <div className="settings-field settings-toggle-row">
+      {!inBrowser && <div className="settings-field settings-toggle-row">
         <div className="settings-field-label">
           <strong>Show and focus from anywhere</strong>
           <span>Double-tap Control to bring OpenTig to the front, even while another app is focused.</span>
@@ -74,12 +81,12 @@ export function ShortcutsSettings({ preferences, onPreference }: ShortcutsSettin
           className="settings-switch"
           onClick={() => onPreference({ doubleControlShortcutEnabled: !preferences.doubleControlShortcutEnabled })}
         ><span /></button>
-      </div>
+      </div>}
 
-      <div className="settings-field settings-field-separated">
+      <div className={`settings-field${inBrowser ? '' : ' settings-field-separated'}`}>
         <div className="settings-field-label">
           <strong>Keyboard shortcuts</strong>
-          <span>Click a shortcut, then press a new key combination. Press Escape to cancel.</span>
+          <span>Click a shortcut, then press a new key combination. Press Escape to cancel.{inBrowser && ' Changes also apply to the desktop app.'}</span>
         </div>
         {hasOverrides && (
           <Button
@@ -97,6 +104,9 @@ export function ShortcutsSettings({ preferences, onPreference }: ShortcutsSettin
                 <div className="settings-field-label">
                   <strong>{def.label}</strong>
                   <span>{def.description}</span>
+                  {inBrowser && BROWSER_RESERVED_COMBOS.has(resolved[def.id]) && (
+                    <span className="shortcuts-browser-note">Your browser keeps {formatCombo(resolved[def.id])}. Choose another shortcut to use this command here.</span>
+                  )}
                 </div>
                 <ShortcutRecorder
                   combo={resolved[def.id]}

@@ -74,6 +74,8 @@ Open **Settings → Shortcuts** to rebind most shortcuts, check for conflicts, o
 
 You can disable **double-tap-Control**, which brings the desktop app to the front from another application. See the [default shortcut table](features.md#keyboard-shortcuts).
 
+**In a paired browser,** the section omits double-tap-Control because a web page cannot register global shortcuts. Browsers keep some combinations for their own tabs and windows, such as `Ctrl+W`, `Ctrl+T`, `Ctrl+N`, and `Ctrl+Tab`. Commands bound to one of them show a notice there, and those combinations cannot be assigned from the browser. Shortcut changes are shared with the desktop app. Phone layouts hide the section.
+
 ## Dropdowns and tooltips
 
 Repository, worktree, branch, AI model, project assignment, and PR base selectors have searchable menus. Repository and worktree choices show a second checkout line; other choices use one line.

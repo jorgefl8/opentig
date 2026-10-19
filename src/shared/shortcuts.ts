@@ -52,16 +52,24 @@ export const RESERVED_COMBOS: ReadonlySet<string> = new Set([
   'Ctrl+A', 'Ctrl+C', 'Ctrl+X', 'Ctrl+V',
 ]);
 
+/** Combos web browsers keep for their own tabs and windows, so a page never receives them. */
+export const BROWSER_RESERVED_COMBOS: ReadonlySet<string> = new Set([
+  'Ctrl+N', 'Ctrl+Shift+N', 'Ctrl+T', 'Ctrl+Shift+T', 'Ctrl+W', 'Ctrl+Shift+W', 'Ctrl+Shift+Q',
+  'Ctrl+Tab', 'Ctrl+Shift+Tab', 'Ctrl+PageUp', 'Ctrl+PageDown',
+]);
+
 export interface FixedShortcutReference {
   combo: string;
   label: string;
   category: string;
+  /** Global desktop shortcuts that a browser page cannot provide. */
+  desktopOnly?: boolean;
 }
 
 /** Shown in Settings as read-only reference: structural or OS-convention keys that stay fixed. */
 export const FIXED_SHORTCUTS: readonly FixedShortcutReference[] = [
   { combo: 'Ctrl + 1..5', label: 'Jump to a sidebar section', category: 'General' },
-  { combo: 'Ctrl + Ctrl', label: 'Show and focus OpenTig from anywhere (double-tap Control)', category: 'General' },
+  { combo: 'Ctrl + Ctrl', label: 'Show and focus OpenTig from anywhere (double-tap Control)', category: 'General', desktopOnly: true },
   { combo: 'Ctrl + A', label: 'Select all files', category: 'Files' },
   { combo: 'Ctrl + C', label: 'Copy selected files', category: 'Files' },
   { combo: 'Ctrl + X', label: 'Cut selected files', category: 'Files' },

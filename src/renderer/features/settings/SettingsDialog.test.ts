@@ -19,17 +19,17 @@ const saved: AiHarnessStatus[] = (['codex', 'claude', 'opencode', 'grok'] as con
 afterEach(() => { vi.unstubAllGlobals(); });
 const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
 
-async function mount() {
+async function mount({ section = 'ai', phone = false }: { section?: 'ai' | 'shortcuts'; phone?: boolean } = {}) {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
   vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
-  vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} }));
+  vi.stubGlobal('matchMedia', () => ({ matches: phone, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} }));
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } } });
   const container = document.createElement('div');
   document.body.append(container);
   let root = createRoot(container);
   let preferences = new SettingsStore('unused-settings.json').preferences;
   const render = () => root.render(createElement(QueryClientProvider, { client }, createElement(SettingsDialog, {
-    preferences, onPreference: vi.fn(), open: true, onOpenChange: vi.fn(), section: 'ai', onSectionChange: vi.fn(),
+    preferences, onPreference: vi.fn(), open: true, onOpenChange: vi.fn(), section, onSectionChange: vi.fn(),
   })));
   await act(async () => { render(); await settle(); });
   await act(settle);
@@ -105,6 +105,28 @@ describe('saved AI assistance settings', () => {
       expect(view.dialog().textContent).toContain('saved-version');
       expect(view.dialog().textContent).toContain('Last checked: 06/10/2026');
       expect(toastError).toHaveBeenCalledWith(expect.objectContaining({ description: 'Disconnected' }));
+    } finally { await view.close(); }
+  });
+});
+
+describe('settings sections by device', () => {
+  const navLabels = (dialog: HTMLElement) => [...dialog.querySelectorAll('.settings-nav-item')].map((item) => item.textContent?.trim());
+
+  it('hides keyboard shortcuts in a phone browser and shows General instead', async () => {
+    statuses.mockResolvedValue(saved);
+    const view = await mount({ section: 'shortcuts', phone: true });
+    try {
+      expect(navLabels(view.dialog())).not.toContain('Shortcuts');
+      expect(view.dialog().querySelector('[data-slot="dialog-title"]')?.textContent).toBe('General');
+    } finally { await view.close(); }
+  });
+
+  it('keeps keyboard shortcuts in a wide browser', async () => {
+    statuses.mockResolvedValue(saved);
+    const view = await mount({ section: 'shortcuts' });
+    try {
+      expect(navLabels(view.dialog())).toContain('Shortcuts');
+      expect(view.dialog().textContent).toContain('Keyboard shortcuts');
     } finally { await view.close(); }
   });
 });

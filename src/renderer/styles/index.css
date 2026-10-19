@@ -1061,6 +1061,7 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   .shortcut-recorder-button.listening { border-color: color-mix(in oklch, var(--primary) 55%, transparent); color: var(--primary); }
   .shortcut-recorder-button.error { border-color: var(--destructive); }
   .shortcut-recorder-error { color: var(--destructive); font-size: 10px; }
+  .settings-field-label .shortcuts-browser-note { color: color-mix(in oklch, var(--warning) 70%, var(--foreground)); }
   .undo-commit-content { display: grid; gap: 8px; padding: 20px 20px 16px; }
   .undo-commit-summary { display: flex; min-width: 0; align-items: center; gap: 9px; margin-top: 5px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--muted); padding: 9px 10px; }
   .undo-commit-summary code { flex: none; border-radius: var(--radius-sm); background: var(--background); padding: 2px 5px; color: var(--muted-foreground); font-size: 10px; }
