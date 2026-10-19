@@ -66,6 +66,7 @@ function ConflictSection({ scrollRef, changes, onSelect, onOpenFile }: { scrollR
 
 function ConflictRow({ change, onSelect, onOpenFile }: { change: FileChange; onSelect(path: string): void; onOpenFile(path: string): void }) {
   const rowRef = useRef<HTMLDivElement>(null);
+  const [textRef, truncated] = useTruncatedText(change.path);
   const normalized = change.path.replace(/[\\/]+$/, '');
   const slash = normalized.lastIndexOf('/');
   const name = slash < 0 ? normalized : normalized.slice(slash + 1);
@@ -74,12 +75,12 @@ function ConflictRow({ change, onSelect, onOpenFile }: { change: FileChange; onS
     <div ref={rowRef} role="listitem" className="change-row conflict-row" onClick={(event) => {
       if (shouldActivateChangeRow(event.target)) onSelect(change.path);
     }}>
-      <Tooltip>
+      <Tooltip disabled={!truncated}>
         <TooltipTrigger render={<button className="file-label" onClick={() => onSelect(change.path)} aria-label={`Resolve conflict in ${change.path}`} />}>
           <VsCodeTreeIcon path={normalized} type="file" />
-          <span className="change-file-text"><span>{name}</span>{directory && <small>{directory}</small>}</span>
+          <span ref={textRef} className="change-file-text"><span>{name}</span>{directory && <small>{directory}</small>}</span>
         </TooltipTrigger>
-        <TooltipContent anchor={rowRef} side="right" sideOffset={10}>Resolve {change.path}</TooltipContent>
+        <TooltipContent anchor={rowRef} side="right" sideOffset={10}>{change.path}</TooltipContent>
       </Tooltip>
       <span className="change-row-actions">
         <Tooltip><TooltipTrigger render={<Button variant="ghost" size="icon-xs" className="change-action-button" onClick={() => onOpenFile(change.path)} aria-label="Open file" />}><IconFileArrowRight /></TooltipTrigger><TooltipContent>Open file</TooltipContent></Tooltip>
@@ -222,6 +223,7 @@ function ChangeFileRow({ change, disabled, action, depth = 0, showDirectory = fa
   onSelect(path: string): void; onOpenFile(path: string): void; onDiscard(paths: string[]): void; onAction(paths: string[]): void;
 }) {
   const rowRef = useRef<HTMLDivElement>(null);
+  const [textRef, truncated] = useTruncatedText(`${change.path}\u0000${showDirectory}`);
   const normalizedPath = change.path.replace(/[\\/]+$/, '');
   const slash = normalizedPath.lastIndexOf('/');
   const name = slash < 0 ? normalizedPath : normalizedPath.slice(slash + 1);
@@ -235,10 +237,10 @@ function ChangeFileRow({ change, disabled, action, depth = 0, showDirectory = fa
       else onSelect(change.path);
     }}>
       {!showDirectory && <span className="tree-spacer" />}
-      <Tooltip>
+      <Tooltip disabled={!truncated}>
         <TooltipTrigger render={<button className="file-label" onClick={() => previewable ? onOpenFile(change.path) : onSelect(change.path)} aria-label={`${previewable ? 'Preview' : 'View changes for'} ${change.path}`} />}>
           <VsCodeTreeIcon path={normalizedPath} type={directorySummary ? 'directory' : 'file'} />
-          <span className="change-file-text"><span>{name}</span>{showDirectory && directory && <small>{directory}</small>}</span>
+          <span ref={textRef} className="change-file-text"><span>{name}</span>{showDirectory && directory && <small>{directory}</small>}</span>
         </TooltipTrigger>
         <TooltipContent anchor={rowRef} side="right" sideOffset={10}>{change.path}</TooltipContent>
       </Tooltip>
@@ -267,4 +269,23 @@ function ChangeActions({ paths, action, disabled, onDiscard, onAction }: {
 function VsCodeTreeIcon({ path, type, expanded = false }: { path: string; type: 'file' | 'directory'; expanded?: boolean }) {
   const src = type === 'file' ? getVsCodeFileIconUrl(path) : getVsCodeFolderIconUrl(path, expanded);
   return <img className="vscode-tree-icon" src={src} alt="" aria-hidden="true" draggable={false} />;
+}
+
+/**
+ * The full path is a hint for names cut off by the sidebar width; rows whose
+ * name and folder fit show nothing on hover instead of covering the diff.
+ */
+function useTruncatedText(contentKey: string) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const [truncated, setTruncated] = useState(false);
+  useLayoutEffect(() => {
+    const element = ref.current;
+    if (!element) return;
+    const measure = () => setTruncated([...element.children].some((child) => child.scrollWidth > child.clientWidth));
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [contentKey]);
+  return [ref, truncated] as const;
 }
