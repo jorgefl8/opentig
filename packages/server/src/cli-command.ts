@@ -204,12 +204,16 @@ $key = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Environment')
 try {
   $kind = [Microsoft.Win32.RegistryValueKind]::ExpandString
   if ($key.GetValueNames() -contains 'Path') { $kind = $key.GetValueKind('Path') }
-  $entries = @(([string]$key.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)) -split ';' | Where-Object { $_ })
-  $same = { param($entry) [Environment]::ExpandEnvironmentVariables($entry).TrimEnd('\\') -ieq $directory.TrimEnd('\\') }
+  $raw = [string]$key.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+  # Keep empty segments so removal restores the value byte for byte, including a trailing ';'.
+  $entries = @($raw -split ';')
+  $same = { param($entry) $entry -and [Environment]::ExpandEnvironmentVariables($entry).TrimEnd('\\') -ieq $directory.TrimEnd('\\') }
   $present = @($entries | Where-Object { & $same $_ }).Count -gt 0
   if (${add ? '$present' : '-not $present'}) { 'unchanged'; return }
-  $next = ${add ? '@($entries) + $directory' : '@($entries | Where-Object { -not (& $same $_) })'}
-  $key.SetValue('Path', ($next -join ';'), $kind)
+  $next = ${add
+    ? "if (-not $raw) { $directory } elseif ($raw.EndsWith(';')) { $raw + $directory + ';' } else { $raw + ';' + $directory }"
+    : "@($entries | Where-Object { -not (& $same $_) }) -join ';'"}
+  $key.SetValue('Path', $next, $kind)
 } finally { $key.Close() }
 Add-Type -Namespace OpenTigNative -Name User32 -MemberDefinition '[DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr SendMessageTimeout(IntPtr window, uint message, UIntPtr wParam, string lParam, uint flags, uint timeout, out UIntPtr result);'
 $result = [UIntPtr]::Zero
