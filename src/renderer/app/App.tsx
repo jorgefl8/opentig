@@ -41,6 +41,7 @@ import { clearCommitFilesCache } from '@/features/history/commit-files-cache';
 import { OpenRepositoryDialog } from '@/features/repositories/OpenRepositoryDialog';
 import { Welcome } from '@/features/repositories/Welcome';
 import { touchRecentRepositories, type RepositoryOption } from '@/features/repositories/repository-select-model';
+import { createRepositorySwitcher } from '@/features/repositories/repository-switch';
 import type { RuntimeFileDraft, ViewerSelection } from '@/features/viewer/Viewer';
 import {
   mergeRefreshRequests, refreshOperationsForScope, shouldRefreshSearch, shouldRefreshViewer, type RefreshRequest,
@@ -49,6 +50,7 @@ import { resolveWindowControlsInset } from './window-controls';
 import { queryKeys, queryResourcesForScope, resetGitHubQueries } from '@/lib/query-client';
 import { persistTheme } from '@/lib/boot-theme';
 import { useMobileLayout } from '@/lib/use-mobile-layout';
+import { useElapsed } from '@/lib/use-elapsed';
 import { opentig, serverClient } from '@/lib/opentig-api';
 import { startupSplashDetail } from '@/lib/startup-splash';
 import { ServerAuthenticationError } from '@/lib/websocket-transport';
@@ -115,6 +117,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   const [branchesState, setBranches] = useState<BranchInfo[]>([]);
   const [worktreesState, setWorktrees] = useState<WorktreeInfo[]>([]);
   const [snapshotRepositoryId, setSnapshotRepositoryId] = useState<string | null>(null);
+  const [pendingRepositoryId, setPendingRepositoryId] = useState<string | null>(null);
+  const [repositorySwitcher] = useState(createRepositorySwitcher);
   const [view, setView] = useState<SidebarView>(() => {
     if (initialView) return initialView;
     try {
@@ -239,6 +243,10 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   const pullsError = ghStatusQuery.error ? messageOf(ghStatusQuery.error) : pullsQuery.error ? messageOf(pullsQuery.error) : null;
   useEffect(() => { setMobilePane('list'); }, [repository?.id]);
   const currentSnapshot = snapshotRepositoryId === repository?.id;
+  const repositoryLoadPhase = pendingRepositoryId ? 'opening' : repository && !currentSnapshot ? 'loading' : null;
+  // Quick switches finish without a flash; only a noticeable wait shows progress.
+  const repositoryLoadVisible = useElapsed(repositoryLoadPhase ? 'busy' : null, 200);
+  const repositoryLoadSlow = useElapsed(pendingRepositoryId ?? (repositoryLoadPhase ? repository?.id ?? null : null), 5000);
   const status = currentSnapshot ? statusState : null;
   const files = currentSnapshot ? filesState : null;
   const branches = currentSnapshot ? branchesState : [];
@@ -861,8 +869,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   }, []);
 
   useEffect(() => opentig.events.onActiveRepositoryChanged((selected) => {
-    if (selected.id !== repositoryRef.current?.id) recordOpenedRepository(selected);
-  }), [recordOpenedRepository]);
+    if (selected.id !== repositoryRef.current?.id && repositorySwitcher.accepts(selected.id)) recordOpenedRepository(selected);
+  }), [recordOpenedRepository, repositorySwitcher]);
 
   useEffect(() => {
     const setHeld = (held: boolean) => {
@@ -1546,21 +1554,27 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     if (active) void opentig.ai.cancelGeneration(active.id);
   }, []);
 
+  const recentRepositories = bootstrap?.recentRepositories;
+  useEffect(() => {
+    repositorySwitcher.connect({
+      open: async (id) => {
+        try {
+          return await opentig.repository.openRecent(id);
+        } catch (reason) {
+          const recent = recentRepositories?.find((candidate) => candidate.id === id);
+          if (!recent) throw reason;
+          const selectedPath = await opentig.repository.selectRelocation(recent.repositoryName, recent.path);
+          return selectedPath ? opentig.repository.relocateRecent(id, selectedPath) : null;
+        }
+      },
+      apply: recordOpenedRepository,
+      fail: (reason) => reportError('Could not open repository', reason),
+      pending: setPendingRepositoryId,
+    });
+  }, [recentRepositories, recordOpenedRepository, repositorySwitcher]);
+
   const selectRecent = async (id: string | null) => {
-    if (!id || id === repository?.id) return;
-    try {
-      try {
-        const selected = await opentig.repository.openRecent(id);
-        if (selected) recordOpenedRepository(selected, id);
-      } catch (reason) {
-        const recent = bootstrap?.recentRepositories.find((candidate) => candidate.id === id);
-        if (!recent) throw reason;
-        const selectedPath = await opentig.repository.selectRelocation(recent.repositoryName, recent.path);
-        if (!selectedPath) return;
-        recordOpenedRepository(await opentig.repository.relocateRecent(id, selectedPath), id);
-      }
-    }
-    catch (reason) { reportError('Could not open repository', reason); }
+    if (id) await repositorySwitcher.select(id, repository?.id ?? null);
   };
 
   const switchBranch = async (name: string | null) => {
@@ -2139,6 +2153,10 @@ export default function App({ initialView, initialSelection, pullRequestCreation
           repositorySyncOperations={repositorySyncOperations}
           onOpen={openRepository}
           onRecent={selectRecent}
+          pendingRepositoryId={pendingRepositoryId}
+          repositoryLoadPhase={repositoryLoadPhase}
+          repositoryLoadVisible={repositoryLoadVisible}
+          repositoryLoadSlow={repositoryLoadSlow}
           onBranch={switchBranch}
           onWorktree={switchWorktree}
           onRefresh={() => void refresh({ manual: true })}
@@ -2164,11 +2182,11 @@ export default function App({ initialView, initialSelection, pullRequestCreation
 
         {mobile && mobilePane === 'list' && view !== 'files' && (
           <div className="mobile-workspace-actions mobile-view-heading">
-            <h2>{view === 'changes' ? 'Changes' : view === 'history' ? 'History' : view === 'prs' ? 'Pull requests' : 'Search'}{view === 'changes' && <small>{status?.changes.length ?? 0}</small>}</h2>
+            <h2>{view === 'changes' ? 'Changes' : view === 'history' ? 'History' : view === 'prs' ? 'Pull requests' : 'Search'}{view === 'changes' && status && <small>{status.changes.length}</small>}</h2>
             {view === 'changes' && Boolean(status?.stagedCount || commitProposal) && <button className="mobile-commit-trigger" onClick={() => setMobilePane('commit')}><IconGitCommit /> Commit{status?.stagedCount ? ` (${status.stagedCount})` : ''}</button>}
           </div>
         )}
-        <main className="workspace">
+        <main className={`workspace${pendingRepositoryId && repositoryLoadVisible ? ' workspace-switching' : ''}`} aria-busy={repositoryLoadPhase ? true : undefined}>
           <aside className="sidebar" style={{ width: bootstrap.preferences.sidebarWidth }}>
             <nav className="sidebar-tabs" data-shortcuts={ctrlHeld ? 'visible' : undefined} aria-label="Repository views">
               {SIDEBAR_VIEWS.map((item, index) => (
@@ -2189,7 +2207,10 @@ export default function App({ initialView, initialSelection, pullRequestCreation
             </nav>
             <div className="sidebar-body">
               <div className="view-fade">
-              {view === 'changes' && (
+              {view === 'changes' && !currentSnapshot && (
+                <div className="view-loading" role="status"><IconLoader4 className="spinner" aria-hidden="true" /><ShimmeringText text="Loading changes…" /></div>
+              )}
+              {view === 'changes' && currentSnapshot && (
                 <ChangesView
                   conflicts={conflicts}
                   staged={staged}

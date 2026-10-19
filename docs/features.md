@@ -36,6 +36,8 @@ Press `Ctrl+O`, browse to an existing repository, select it, and open it. The di
 
 Added repositories stay available until you remove them. Opening one preserves its position; new repositories append to their group, keeping numbered shortcuts stable. Switch between repositories, branches, and available worktrees from the selector. The toolbar shows the current branch, ahead/behind counts, and worktree insertion/deletion totals.
 
+**Switching repositories** shows the chosen repository in the selector with a spinner straight away. If opening takes more than a moment, a thin progress line appears under the toolbar and the previous repository dims until the new one replaces it. **Changes** shows **Loading changes…** rather than an empty list until the new repository's status arrives, and a notice appears if opening takes more than five seconds. Choosing several repositories in quick succession opens the last choice. Errors keep the current repository and report the problem.
+
 **Organize, relocate, or remove repositories**
 
 In **Manage projects**, create, rename, delete, or reassign project groups without moving files on disk. Reorder projects and repositories within each group, including **No project**. Desktop offers drag handles, keyboard dragging, and up/down buttons; mobile uses larger up/down buttons. Repository numbers match the selector.

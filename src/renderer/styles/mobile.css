@@ -59,6 +59,7 @@
   html .sidebar-tabs { display: none; }
   html .viewer-pane { width: 100%; min-width: 0; }
   html .mobile-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 12px; min-height: 56px; flex: none; border-bottom: 1px solid var(--border); background: var(--sidebar); }
+  html .repository-load-slow { flex-wrap: wrap; justify-content: center; border-radius: 14px; white-space: normal; text-align: center; }
   html .mobile-repository-context { display: flex; align-items: center; min-width: 0; gap: 9px; min-height: 44px; padding: 4px; border-radius: var(--radius-md); text-align: left; }
   html .mobile-repository-context > img, html .mobile-repository-context > svg { width: 26px; height: 26px; flex: none; }
   html .mobile-repository-context > span { display: grid; min-width: 0; gap: 2px; }

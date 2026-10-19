@@ -629,6 +629,23 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   .view-fade { display: flex; height: 100%; min-height: 0; flex-direction: column; animation: fade-rise var(--motion-med) var(--ease-out); }
   .view-fade > * { min-width: 0; }
   .view-loading { display: flex; flex: 1; align-items: center; justify-content: center; padding: 24px; color: var(--muted-foreground); font-size: 12px; }
+  /* Repository switching: progress under the toolbar, the old repository dimmed while the new one opens. */
+  .toolbar, .mobile-toolbar { position: relative; }
+  .repository-load-progress { position: absolute; right: 0; bottom: -1px; left: 0; z-index: 30; height: 2px; overflow: hidden; pointer-events: none; }
+  .repository-load-progress > span { position: absolute; inset: 0 auto 0 0; width: 30%; border-radius: 2px; background: var(--primary); animation: repository-load-slide 1.1s var(--ease-out) infinite; }
+  .repository-load-progress[data-state="done"] { animation: repository-load-done .4s ease forwards; }
+  .repository-load-progress[data-state="done"] > span { width: 100%; animation: none; }
+  @keyframes repository-load-slide { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
+  @keyframes repository-load-done { 60% { opacity: 1; } to { opacity: 0; } }
+  .workspace { transition: opacity var(--motion-fast) ease; }
+  .workspace.workspace-switching { opacity: .5; pointer-events: none; }
+  .repository-load-slow { position: absolute; top: calc(100% + 12px); right: 12px; left: 12px; z-index: 30; display: flex; width: max-content; max-width: calc(100% - 24px); align-items: center; gap: 8px; margin-inline: auto; border: 1px solid var(--border); border-radius: 999px; background: var(--popover); padding: 7px 14px; box-shadow: 0 8px 24px color-mix(in oklch, var(--foreground) 12%, transparent); color: var(--popover-foreground); font-size: 12px; white-space: nowrap; -webkit-app-region: no-drag; }
+  .repository-load-slow svg { width: 14px; height: 14px; flex: none; color: var(--primary); }
+  .repository-load-slow small { color: var(--muted-foreground); font-size: 11px; }
+  @media (prefers-reduced-motion: reduce) {
+    .repository-load-progress > span { width: 100%; opacity: .7; animation: none; }
+    .workspace { transition: none; }
+  }
   @keyframes opentig-shimmer-text {
     0%, 100% { color: var(--shimmer-text-base); }
     45%, 55% { color: var(--shimmer-text-highlight); }

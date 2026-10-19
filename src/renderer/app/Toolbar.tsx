@@ -27,6 +27,7 @@ import { opentig } from '@/lib/opentig-api';
 import { useShortcuts } from './useShortcuts';
 import { useMobileLayout } from '@/lib/use-mobile-layout';
 import { MobileToolbar } from './MobileToolbar';
+import { RepositoryLoadIndicator, type RepositoryLoadPhase } from './RepositoryLoadIndicator';
 import { BranchCombobox } from './BranchCombobox';
 import { openOnGitHub } from '@/features/pulls/gh-utils';
 import { BranchPullRequestMenu } from './BranchPullRequestMenu';
@@ -40,6 +41,11 @@ export interface ToolbarProps {
   branchPullRequest: PullRequestSummary | null;
   onOpenPullRequest(number: number): void;
   onOpen(): void; onRecent(id: string | null): void; onBranch(name: string | null): void; onWorktree(path: string | null): void;
+  /** The repository being opened from the picker, before it replaces the current one. */
+  pendingRepositoryId: string | null;
+  repositoryLoadPhase: RepositoryLoadPhase | null;
+  repositoryLoadVisible: boolean;
+  repositoryLoadSlow: boolean;
   onRefresh(): void; onPreference(partial: Partial<Preferences>): void;
   onForgetRepository(repository: RepositoryOption): Promise<RepositoryOrganization>;
   onRelocateRepository(repository: RepositoryOption, path: string): Promise<void>;
@@ -86,6 +92,9 @@ export function Toolbar(props: ToolbarProps) {
     [visibleRepositories],
   );
   const currentRepositoryKey = normalizeRepositoryKey(props.repository.commonDir);
+  const pendingRepository = picker.repositories.find((group) => group.recent.id === props.pendingRepositoryId) ?? null;
+  const loadingRepositoryName = pendingRepository?.name ?? props.repository.repositoryName;
+  const loadIndicator = <RepositoryLoadIndicator phase={props.repositoryLoadPhase} visible={props.repositoryLoadVisible} slow={props.repositoryLoadSlow} name={loadingRepositoryName} />;
   const currentRepositorySyncBusy = props.repositorySyncOperations.has(props.repository.id);
   const faviconSources = useMemo(
     () => [{ key: currentRepositoryKey, recent: { id: props.repository.id } }, ...picker.repositories],
@@ -290,11 +299,11 @@ export function Toolbar(props: ToolbarProps) {
         onOpenChange={(open) => { setRepositorySelectOpen(open); if (!open) clearRepositoryNumberShortcut(); }}
         onSearchChange={clearRepositoryNumberShortcut}
         focusSearch={false}
-        value={currentRepositoryKey}
+        value={pendingRepository?.key ?? currentRepositoryKey}
         onValueChange={(key) => { setMobileContextOpen(false); onRecent(picker.repositories.find((group) => group.key === key)?.recent.id ?? null); }}
         label="Select project or repository"
-        triggerLabel={props.repository.repositoryName}
-        icon={<RepositoryFaviconImage src={favicons.get(currentRepositoryKey)} />}
+        triggerLabel={pendingRepository ? `Opening ${pendingRepository.name}…` : props.repository.repositoryName}
+        icon={props.repositoryLoadPhase ? <IconLoader4 className="animate-spin" /> : <RepositoryFaviconImage src={favicons.get(currentRepositoryKey)} />}
         triggerHint={<Kbd className="repo-select-shortcut" aria-hidden="true">{repoSwitcherKey.toUpperCase()}</Kbd>}
         shortcut={repoSwitcherKey.toUpperCase()}
         triggerClassName="repo-select max-w-[240px]"
@@ -337,7 +346,7 @@ export function Toolbar(props: ToolbarProps) {
   );
   return (
     <>
-    {mobile ? <MobileToolbar props={props} repositoryControl={repositoryControl} worktreeControl={worktreeControl} branchControl={branchControl} favicon={favicons.get(currentRepositoryKey)} contextOpen={mobileContextOpen} onContextOpen={(open) => { setMobileContextOpen(open); if (!open) setRepositorySelectOpen(false); }} syncBusy={currentRepositorySyncBusy} /> : <header className="toolbar">
+    {mobile ? <MobileToolbar props={props} repositoryControl={repositoryControl} worktreeControl={worktreeControl} branchControl={branchControl} favicon={favicons.get(currentRepositoryKey)} pendingRepositoryName={pendingRepository?.name ?? null} loadIndicator={loadIndicator} contextOpen={mobileContextOpen} onContextOpen={(open) => { setMobileContextOpen(open); if (!open) setRepositorySelectOpen(false); }} syncBusy={currentRepositorySyncBusy} /> : <header className="toolbar">
       <div className="toolbar-brand" aria-label={appDisplayName}>
         <OpenTigMark />
         <AppName />
@@ -406,7 +415,7 @@ export function Toolbar(props: ToolbarProps) {
         <TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Settings" onClick={() => props.onSettingsOpen(true)} />}><IconSettings /></TooltipTrigger>
         <TooltipContent>Settings</TooltipContent>
       </Tooltip>
-
+      {loadIndicator}
     </header>}
       {projectsOpen && (
         <Suspense fallback={null}>

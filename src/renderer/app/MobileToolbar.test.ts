@@ -17,9 +17,9 @@ const initialStatus: RepositoryStatus = {
 let root: Root;
 let container: HTMLDivElement;
 const pull = vi.fn(); const push = vi.fn();
-async function render(status: RepositoryStatus | null, syncBusy = false, branchPullRequest: PullRequestSummary | null = null) {
-  const props = { repository: { repositoryName: 'sample' }, status, branchPullRequest, openFiles: { tabs: [] }, onPull: pull, onPush: push } as unknown as ToolbarProps;
-  await act(async () => root.render(createElement(MobileToolbar, { props, repositoryControl: null, branchControl: null, worktreeControl: null, favicon: undefined, contextOpen: true, onContextOpen: () => {}, syncBusy })));
+async function render(status: RepositoryStatus | null, syncBusy = false, branchPullRequest: PullRequestSummary | null = null, pendingRepositoryName: string | null = null) {
+  const props = { repository: { repositoryName: 'sample' }, status, branchPullRequest, openFiles: { tabs: [] }, onPull: pull, onPush: push, repositoryLoadPhase: pendingRepositoryName ? 'opening' : null } as unknown as ToolbarProps;
+  await act(async () => root.render(createElement(MobileToolbar, { props, repositoryControl: null, branchControl: null, worktreeControl: null, favicon: undefined, pendingRepositoryName, loadIndicator: null, contextOpen: true, onContextOpen: () => {}, syncBusy })));
 }
 const syncButtons = () => [...container.querySelectorAll<HTMLButtonElement>('.mobile-context-sync button')];
 beforeEach(() => {
@@ -62,4 +62,14 @@ it('labels merged PRs in the repository menu with the merge icon', async () => {
   expect(action.querySelector('.tabler-icon-git-merge')).not.toBeNull();
   await render(initialStatus, false, { number: 13, state: 'OPEN' } as PullRequestSummary);
   expect(container.querySelector('.mobile-branch-pr')?.textContent).toBe('Open PR #13');
+});
+
+it('names the repository being opened and does not report a detached HEAD before its status loads', async () => {
+  await render(null, false, null, 'todor');
+  const context = container.querySelector('.mobile-repository-context')!;
+  expect(context.querySelector('strong')?.textContent).toBe('Opening todor…');
+  expect(context.querySelector('small')?.textContent).toBe('Loading…');
+  await render(initialStatus);
+  expect(context.querySelector('strong')?.textContent).toBe('sample');
+  expect(context.querySelector('small')?.textContent).toBe('main');
 });

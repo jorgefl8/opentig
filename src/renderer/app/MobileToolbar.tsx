@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, type ReactNode } from 'react';
-import { IconArrowDown, IconArrowLeft, IconArrowUp, IconBrandGithub, IconDots, IconFiles, IconGitBranch, IconPlus, IconRefresh, IconSettings, IconX } from '@tabler/icons-react';
+import { IconArrowDown, IconArrowLeft, IconArrowUp, IconBrandGithub, IconDots, IconFiles, IconGitBranch, IconLoader4, IconPlus, IconRefresh, IconSettings, IconX } from '@tabler/icons-react';
 import { Button } from '@/components/ui/button';
 import { isDevProfile } from '@/lib/app-identity';
 import { AppName } from '@/components/AppName';
@@ -12,12 +12,14 @@ import { RepositoryFaviconImage } from '@/features/repositories/RepositoryFavico
 import type { ToolbarProps } from './Toolbar';
 import { BranchPullRequestMenu } from './BranchPullRequestMenu';
 
-export function MobileToolbar({ props, repositoryControl, worktreeControl, branchControl, favicon, contextOpen, onContextOpen, syncBusy }: {
+export function MobileToolbar({ props, repositoryControl, worktreeControl, branchControl, favicon, pendingRepositoryName, loadIndicator, contextOpen, onContextOpen, syncBusy }: {
   props: ToolbarProps;
   repositoryControl: ReactNode;
   worktreeControl: ReactNode;
   branchControl: ReactNode;
   favicon: string | undefined;
+  pendingRepositoryName: string | null;
+  loadIndicator: ReactNode;
   contextOpen: boolean;
   onContextOpen(open: boolean): void;
   syncBusy: boolean;
@@ -32,7 +34,8 @@ export function MobileToolbar({ props, repositoryControl, worktreeControl, branc
     <header className="mobile-toolbar">
       {props.mobileBackLabel ? <button ref={backRef} className="mobile-toolbar-back" onClick={props.onMobileBack}><IconArrowLeft /><span>{props.mobileBackLabel}</span></button>
         : <button className="mobile-repository-context" aria-label="Repository context" aria-haspopup="dialog" aria-expanded={contextOpen} onClick={() => onContextOpen(true)}>
-          <RepositoryFaviconImage src={favicon} /><span><strong>{props.repository.repositoryName}</strong><small><IconGitBranch />{props.status?.branch ?? 'Detached HEAD'}</small></span>
+          {props.repositoryLoadPhase ? <IconLoader4 className="animate-spin" aria-hidden="true" /> : <RepositoryFaviconImage src={favicon} />}
+          <span><strong>{pendingRepositoryName ? `Opening ${pendingRepositoryName}…` : props.repository.repositoryName}</strong><small><IconGitBranch />{props.status ? props.status.branch ?? 'Detached HEAD' : 'Loading…'}</small></span>
         </button>}
       <div className="mobile-toolbar-actions">
         {isDevProfile && <AppName />}
@@ -40,6 +43,7 @@ export function MobileToolbar({ props, repositoryControl, worktreeControl, branc
         <DesktopUpdateIndicator />
         <Button variant="ghost" size="icon" aria-label="Repository context and settings" onClick={() => onContextOpen(true)}><IconDots /></Button>
       </div>
+      {loadIndicator}
     </header>
     <MobileSheet open={contextOpen} onOpenChange={onContextOpen} title="Repository" description="Switch checkout or manage the current repository.">
       <div className="mobile-context-selectors">
