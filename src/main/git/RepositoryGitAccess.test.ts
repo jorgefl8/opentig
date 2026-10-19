@@ -396,3 +396,51 @@ it('uses the default account for Git HTTPS of repositories without their own and
   expect(usernames).toEqual(['username=bob']);
   expect((await f.service.publication(f.repositoryId)).login).toBe('bob');
 });
+
+describe('finding an account with access for Git HTTPS', () => {
+  async function denyingDefault(f: Awaited<ReturnType<typeof fixture>>) {
+    await f.accounts.setDefaultAccount('alice');
+    vi.spyOn(f.accounts, 'accountsWithAccess').mockResolvedValue([{ login: 'bob', push: true }]);
+    const usernames: string[] = [];
+    fakeNetwork(f, async (args, options) => {
+      let index = 0; while (args[index] === '-c') index += 2;
+      const result = await execa('git', [...args.slice(0, index), 'credential', 'fill'], { cwd: f.work,
+        input: 'protocol=https\nhost=github.com\npath=team/demo.git\n\n', env: { GIT_TERMINAL_PROMPT: '0' } });
+      const username = result.stdout.split('\n').find(line => line.startsWith('username='))!;
+      usernames.push(username);
+      if (username === 'username=alice') throw new GitOperationError({ code: 'UNKNOWN', operation: options.operation, message: "remote: Repository not found.\nfatal: repository 'https://github.com/team/demo.git/' not found" });
+      return { stdout: Buffer.from(''), stderr: Buffer.from(''), exitCode: 0 };
+    });
+    return usernames;
+  }
+
+  it('switches a repository following the default to an account with access and repeats the fetch', async () => {
+    const f = await fixture();
+    const usernames = await denyingDefault(f);
+    expect(await f.operations.fetch(f.repositoryId)).toMatchObject({ status: 'success' });
+    expect(usernames).toEqual(['username=alice', 'username=bob']);
+    expect(f.accounts.selection(f.repository)).toEqual({ mode: 'account', host: 'github.com', login: 'bob', detected: true });
+  });
+
+  it('switches the account for a rejected push but asks to push again instead of retrying it', async () => {
+    const f = await fixture();
+    const usernames = await denyingDefault(f);
+    await git(f.work, ['commit', '--allow-empty', '-m', 'Local']);
+    const context = await f.service.publication(f.repositoryId);
+    const result = await f.operations.push(f.repositoryId, undefined, context.id);
+    expect(result).toMatchObject({ status: 'rejected' });
+    expect(JSON.stringify(result)).toContain('now uses @bob');
+    expect(usernames).toEqual(['username=alice']);
+    expect(f.accounts.resolve(f.repository)).toEqual({ login: 'bob', source: 'detected' });
+  });
+
+  it('never replaces a repository’s own account after an access failure', async () => {
+    const f = await fixture();
+    const usernames = await denyingDefault(f);
+    await f.select('alice');
+    expect(await f.operations.fetch(f.repositoryId)).toMatchObject({ status: 'failed' });
+    expect(usernames).toEqual(['username=alice']);
+    expect(f.accounts.selection(f.repository)).toMatchObject({ login: 'alice' });
+    expect(f.accounts.selection(f.repository)).not.toHaveProperty('detected');
+  });
+});

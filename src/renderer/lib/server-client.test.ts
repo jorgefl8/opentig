@@ -162,7 +162,9 @@ it('transports global defaults and the reviewed setup revision without exposing 
   expect(f.request).toHaveBeenCalledWith(IPC.githubSetDefaultAccount, ['alice']);
   expect(f.request).toHaveBeenCalledWith(IPC.githubSetRepositoryAccount, ['repo', selection, 5]);
   f.event({ type: 'github.accounts-changed', repositoryIds: ['repo'], inventoryChanged: true });
-  expect(changed).toHaveBeenCalledWith(['repo'], true);
+  expect(changed).toHaveBeenLastCalledWith(['repo'], true, undefined);
+  f.event({ type: 'github.accounts-changed', repositoryIds: ['repo'], detected: { login: 'bob', previousLogin: 'alice' } });
+  expect(changed).toHaveBeenLastCalledWith(['repo'], undefined, { login: 'bob', previousLogin: 'alice' });
 });
 
 it('routes repository AI instructions and notifies only instruction listeners, without notifying account listeners', async () => {

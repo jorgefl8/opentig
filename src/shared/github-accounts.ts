@@ -15,6 +15,9 @@ export const githubAccountSelectionSchema = z.discriminatedUnion('mode', [
 export type GitHubAccountSelection = z.infer<typeof githubAccountSelectionSchema>;
 export const DEFAULT_GITHUB_ACCOUNT: GitHubAccountSelection = { mode: 'default' };
 
+/** An account OpenTig chose for a repository because the default account had no access. */
+export interface GitHubAccountDetection { login: string; previousLogin: string | null }
+
 /** Where the account a repository uses comes from. */
 export type GitHubAccountSource = 'repository' | 'detected' | 'default' | 'git';
 

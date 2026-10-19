@@ -9,8 +9,9 @@ import type { ToolbarProps } from './Toolbar';
 import { SettingsStore } from '../../main/persistence/SettingsStore';
 
 const calls = vi.hoisted(() => ({
-  bootstrap: vi.fn(), openRecent: vi.fn(), getStatus: vi.fn(),
+  bootstrap: vi.fn(), openRecent: vi.fn(), getStatus: vi.fn(), success: vi.fn(),
   activeRepositoryChanged: null as ((repository: RepositoryInfo) => void) | null,
+  accountsChanged: null as ((repositoryIds?: string[], inventoryChanged?: boolean, detected?: { login: string; previousLogin: string | null }) => void) | null,
 }));
 vi.mock('@/lib/opentig-api', () => ({
   opentig: {
@@ -23,14 +24,15 @@ vi.mock('@/lib/opentig-api', () => ({
     github: { status: async () => ({ installed: false }), repositoryInfo: async () => ({ isGitHub: false, nameWithOwner: null }) },
     diagnostics: { record: async () => {} },
     events: {
-      onGitHubAccountsChanged: () => () => {}, onRepositoryChanged: () => () => {},
+      onGitHubAccountsChanged: (callback: NonNullable<typeof calls.accountsChanged>) => { calls.accountsChanged = callback; return () => {}; },
+      onRepositoryChanged: () => () => {},
       onActiveRepositoryChanged: (callback: (repository: RepositoryInfo) => void) => { calls.activeRepositoryChanged = callback; return () => {}; },
     },
   },
   serverClient: { transport: { subscribeState: () => () => {}, getState: () => 'connected' } },
 }));
 vi.mock('@/lib/boot-theme', () => ({ persistTheme: () => {} }));
-vi.mock('sileo', () => ({ sileo: { error: () => {}, dismiss: () => {} } }));
+vi.mock('sileo', () => ({ sileo: { error: () => {}, success: calls.success, dismiss: () => {} } }));
 vi.mock('./Toolbar', () => ({ Toolbar: (props: ToolbarProps) => createElement('header', null,
   createElement('button', { 'aria-label': 'Open B', onClick: () => props.onRecent('repo-b') }),
   createElement('button', { 'aria-label': 'Open C', onClick: () => props.onRecent('repo-c') }),
@@ -150,4 +152,16 @@ it('ends on the latest choice when an earlier open and its activation event arri
   await settle();
   expect(output('Repository')).toBe('repo-c');
   expect(output('Pending')).toBe('');
+});
+
+it('announces an account chosen automatically for the open repository only', async () => {
+  await act(async () => root.render(createElement(QueryClientProvider, { client }, createElement(App))));
+  await settle();
+  await act(async () => calls.accountsChanged!(['other'], true, { login: 'bob', previousLogin: 'alice' }));
+  expect(calls.success).not.toHaveBeenCalled();
+  await act(async () => calls.accountsChanged!(['repo'], true, { login: 'bob', previousLogin: 'alice' }));
+  expect(calls.success).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+    title: 'Using @bob for repo', description: 'The default account @alice can’t access this repository.',
+    button: expect.objectContaining({ title: 'Change' }),
+  }));
 });

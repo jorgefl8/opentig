@@ -2098,8 +2098,6 @@ section[data-sileo-viewport] [data-sileo-title] { text-transform: none; }
 .github-settings .settings-general-group > h3 svg { width: 13px; height: 13px; }
 .github-settings-eyebrow { font-size: 10px; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; color: var(--muted-foreground); }
 .github-repository-heading { display: flex; align-items: flex-start; gap: 8px; }
-.github-git-summary { display: grid; gap: 3px; margin-top: 6px; font-size: 11px; color: var(--muted-foreground); overflow-wrap: anywhere; }
-.github-git-summary strong { color: var(--foreground); font-weight: 550; }
 .github-cli-version { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 12px; overflow-wrap: anywhere; }
 .github-settings-note { margin: 4px 0 0; color: var(--muted-foreground); font-size: 11px; line-height: 1.5; }
 .github-settings-notice { margin: 8px 0 0; border-radius: var(--radius-md); padding: 8px 10px; background: color-mix(in oklab, var(--warning) 10%, var(--background)); color: var(--foreground); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
@@ -2166,27 +2164,9 @@ section[data-sileo-viewport] [data-sileo-title] { text-transform: none; }
 }
 
 .repository-access-status { color: var(--muted-foreground); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
-.github-push-destination { display: grid; gap: 1px; padding: 8px 10px; border-radius: var(--radius-md); background: var(--muted); }
-.github-push-destination strong { color: var(--foreground); font-size: 12px; font-weight: 550; }
 
-.github-setup-account { display: grid; gap: 8px; margin-top: 22px; }
-.github-setup-label { font-size: 13px; font-weight: 600; }
-.github-setup-account > button { width: 100%; justify-content: space-between; }
-.github-setup-both { display: flex; align-items: flex-start; gap: 10px; margin: 20px 0; cursor: pointer; }
-.github-setup-both input { margin-top: 4px; accent-color: var(--primary); flex: none; }
-.github-setup-both input:focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }
-.github-setup-both strong { display: block; font-size: 13px; }
-.github-setup-both small { display: block; margin-top: 4px; font-size: 12px; line-height: 1.6; color: var(--muted-foreground); }
-.github-setup-summary p { font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
-.github-setup-summary p + p { margin-top: 4px; }
-.github-setup-summary + .github-settings-note { margin-top: 12px; }
-.github-setup-loading { display: flex; align-items: center; gap: 8px; margin: 22px 0; }
-.github-setup-loading svg { width: 16px; height: 16px; flex: none; color: var(--primary); }
 
 /* Repository account settings and exceptional publication choices. */
-.github-settings .github-git-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 14px 0 8px; }
-.github-git-summary p { padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--muted); }
-.github-git-summary strong { display: block; margin-top: 3px; }
 .github-authentication-details, .github-authorship-section { border-top: 1px solid var(--border); padding-top: 14px; margin-top: 14px; }
 .github-authentication-details > summary { font-size: 12px; color: var(--muted-foreground); cursor: pointer; }
 .github-authentication-details > summary:focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }
@@ -2198,10 +2178,6 @@ section[data-sileo-viewport] [data-sileo-title] { text-transform: none; }
 .github-destination-option strong, .github-destination-option small { display: block; overflow-wrap: anywhere; }
 .github-destination-option strong { font-size: 13px; }
 .github-destination-option small { font-size: 11px; color: var(--muted-foreground); margin-top: 3px; }
-@media (max-width: 600px) {
-  .github-settings .github-git-summary { grid-template-columns: minmax(0, 1fr); }
-}
-
 .github-access-summary { font-size: 13px; font-weight: 550; }
 
 .dark .github-scope-tabs button[data-active] { background: oklch(0.27 0 0); }

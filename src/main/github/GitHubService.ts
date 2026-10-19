@@ -59,10 +59,20 @@ export class GitHubService {
         const value = await this.reads.run(this.git.readScope(repository.path), key, read);
         if (revision === this.accounts.authRevision) return structuredClone(value);
       } catch (error) {
-        if (revision === this.accounts.authRevision) throw error;
+        if (revision !== this.accounts.authRevision) continue;
+        // A repository following the default account switches to an account that can access it, then reads again.
+        if (attempt === 0 && error instanceof GhOperationError && error.detail.code === 'GH_ACCESS_DENIED' && await this.adoptAccountWithAccess(repositoryId)) continue;
+        throw error;
       }
     }
     throw new Error('The GitHub account changed repeatedly during the read. Try refreshing again.');
+  }
+
+  private async adoptAccountWithAccess(repositoryId: string): Promise<boolean> {
+    try {
+      const { info } = await this.routing(repositoryId);
+      return Boolean(info.nameWithOwner && await this.accounts.adoptAccountWithAccess(this.repositories.get(repositoryId), info.nameWithOwner, 'gh-detect-account'));
+    } catch { return false; }
   }
 
   async status(forceRefresh = false): Promise<GhCliStatus> {
@@ -370,6 +380,8 @@ function classifyFailure(result: CliRunResult, operation: string): GhOperationEr
   if (/rate limit|api rate|secondary rate/.test(raw)) {
     return new GhOperationError({ code: 'GH_RATE_LIMITED', operation, message: 'GitHub rejected the request because of a rate limit. Try again later.', exitCode: result.exitCode, retryable: true });
   }
+  // "Could not resolve to a Repository" means no access, not a network failure.
+  if (/could not resolve to a repository/.test(raw) && operation !== 'gh-pr-stack') return new GhOperationError({ code: 'GH_ACCESS_DENIED', operation, message: 'The repository was not found or is not accessible with this GitHub account.', exitCode: result.exitCode });
   if (/could not resolve|no such host|connection refused|connection reset|network|dial tcp|tls handshake/.test(raw)) {
     return new GhOperationError({ code: 'GH_PROCESS_FAILED', operation, message: 'Could not connect to GitHub. Check your network and try again.', exitCode: result.exitCode, retryable: true });
   }

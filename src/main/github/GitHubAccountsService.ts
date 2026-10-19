@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import os from 'node:os';
-import { DEFAULT_GITHUB_ACCOUNT, githubRepositoryKey, resolveGitHubAccount, type GitHubAccountSource, type GitHubAccountsStatus, type GitHubAccountSelection, type GitHubRepositoryAccount } from '../../shared/github-accounts';
+import { DEFAULT_GITHUB_ACCOUNT, githubRepositoryKey, resolveGitHubAccount, type GitHubAccountDetection, type GitHubAccountSource, type GitHubAccountsStatus, type GitHubAccountSelection, type GitHubRepositoryAccount } from '../../shared/github-accounts';
 import { GhOperationError } from '../../shared/errors';
 import type { RepositoryInfo } from '../../shared/contracts';
 import type { CliCandidate, CliResolver } from '../ai/CliResolver';
@@ -14,6 +14,7 @@ import { GITHUB_LOGIN, parseGitHubAuthStatus } from './GitHubAuthStatusParser';
 import { parseSshRemote } from './GitHubRemoteParser';
 
 const CACHE_MS = 60_000;
+
 const emptyStatus = (): GitHubAccountsStatus => ({ installationStatus: 'unchecked', accounts: [], activeLogin: null,
   environment: { present: false, login: null, state: 'unknown' }, checkedAt: null });
 
@@ -34,10 +35,11 @@ export class GitHubAccountsService {
   private contexts = new Map<string, { remote: string; value: GitHubRepositoryAccount }>();
   private ssh = new Map<string, { at: number; promise: Promise<string | null> }>();
   private identities = new Map<string, { at: number; promise: Promise<string> }>();
+  private access = new Map<string, { at: number; promise: Promise<Array<{ login: string; push: boolean }>> }>();
 
   constructor(private readonly resolver: CliResolver, private readonly runner: CliProcessRunner,
     private readonly git: GitProcess, private readonly settings?: SettingsStore, private readonly store?: GitHubStatusStore,
-    private readonly changed: (repository?: RepositoryInfo, defaultOnly?: boolean) => void = () => undefined) {}
+    private readonly changed: (repository?: RepositoryInfo, defaultOnly?: boolean, detected?: GitHubAccountDetection) => void = () => undefined) {}
 
   status(force = false): Promise<GitHubAccountsStatus> {
     if (force) {
@@ -92,14 +94,67 @@ export class GitHubAccountsService {
       state: 'unchecked', checkedAt: null, revision: this.revisionFor(repository) };
   }
 
-  async setSelection(repository: RepositoryInfo, selection: GitHubAccountSelection): Promise<void> {
+  async setSelection(repository: RepositoryInfo, selection: GitHubAccountSelection, detected?: GitHubAccountDetection): Promise<void> {
     if (!this.settings) throw new Error('GitHub account settings are unavailable.');
     const saving = this.settings.setGitHubAccount(repository.commonDir, selection);
     // Settings updates its in-memory choice before persisting it. Reserve the
     // revision now so another client's prepared save cannot overwrite that choice.
-    this.invalidate(repository);
+    this.invalidate(repository, detected);
     try { await saving; }
     catch (error) { this.invalidate(repository); throw error; }
+  }
+
+  /**
+   * Connected accounts that can read `nameWithOwner`, accounts with push
+   * permission first. Probes run with each account's own token and are reused
+   * for a minute; accounts that fail to authenticate are skipped.
+   */
+  accountsWithAccess(nameWithOwner: string, operation: string): Promise<Array<{ login: string; push: boolean }>> {
+    const key = nameWithOwner.toLowerCase();
+    const cached = this.access.get(key);
+    if (cached && Date.now() - cached.at < CACHE_MS) return cached.promise;
+    const promise = (async () => {
+      let inventory = await this.status();
+      if (!inventory.accounts.some(account => account.state === 'authenticated')) inventory = await this.status(true);
+      const detection = await this.detect();
+      const executable = detection.candidate;
+      if (detection.state !== 'available' || !executable) return [];
+      const results = await Promise.all(inventory.accounts.filter(account => account.state === 'authenticated').map(async ({ login }) => {
+        try {
+          const auth = await accountAuthentication(login, executable, this.runner, operation);
+          const result = await this.runner.run(executable.executable, ['api', `repos/${nameWithOwner}`], {
+            cwd: os.homedir(), env: { ...executable.env, ...GH_ENV, ...auth.env }, ...(auth.removeEnv ? { removeEnv: auth.removeEnv } : {}),
+            timeoutMs: 15_000, maxOutputBytes: 128 * 1024,
+          });
+          if (result.exitCode !== 0) return null;
+          const data = JSON.parse(result.stdout) as { permissions?: { push?: boolean } };
+          return { login, push: data.permissions?.push === true };
+        } catch { return null; }
+      }));
+      return results.filter((result): result is { login: string; push: boolean } => result !== null).sort((a, b) => Number(b.push) - Number(a.push));
+    })();
+    this.access.set(key, { at: Date.now(), promise });
+    void promise.catch(() => { if (this.access.get(key)?.promise === promise) this.access.delete(key); });
+    return promise;
+  }
+
+  /**
+   * For a repository following the default account, chooses a connected
+   * account that can access it when the default cannot, and saves it as the
+   * repository's account. Returns the chosen login, or null when nothing changed:
+   * the repository has its own account, the default already has access, no
+   * account has access, or the choice changed meanwhile.
+   */
+  async adoptAccountWithAccess(repository: RepositoryInfo, nameWithOwner: string, operation: string): Promise<string | null> {
+    if (this.selection(repository).mode !== 'default') return null;
+    const revision = this.revisionFor(repository);
+    const previousLogin = this.resolve(repository).login;
+    const candidates = await this.accountsWithAccess(nameWithOwner, operation);
+    if (!candidates.length || candidates.some(candidate => candidate.login.toLowerCase() === previousLogin?.toLowerCase())) return null;
+    if (revision !== this.revisionFor(repository) || this.selection(repository).mode !== 'default') return null;
+    const login = candidates[0]!.login;
+    await this.setSelection(repository, { mode: 'account', host: 'github.com', login, detected: true }, { login, previousLogin });
+    return login;
   }
 
   async setDefaultAccount(login: string): Promise<GitHubAccountsStatus> {
@@ -111,7 +166,7 @@ export class GitHubAccountsService {
     return this.status();
   }
 
-  private invalidate(repository?: RepositoryInfo): void {
+  private invalidate(repository?: RepositoryInfo, detected?: GitHubAccountDetection): void {
     this.revision++;
     if (repository) {
       const key = githubRepositoryKey(repository.commonDir);
@@ -122,12 +177,13 @@ export class GitHubAccountsService {
     }
     this.ssh.clear();
     this.identities.clear();
-    this.changed(repository);
+    this.changed(repository, false, detected);
   }
 
   refreshAuthentication(): void {
     this.ssh.clear();
     this.identities.clear();
+    this.access.clear();
   }
 
   async detect(force = false): Promise<CliDetection> {

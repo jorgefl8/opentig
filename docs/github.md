@@ -18,14 +18,11 @@ Start by [choosing an account](#choose-an-account), then [review](#review-pull-r
 
 **Each repository uses its own account if it has one, otherwise the default account.** Only when no default account exists does Git keep its own credentials. The default is saved on the server: the first time OpenTig finds a connected account, it becomes the default, preferring the one active in GitHub CLI at that moment. Later changes to the active `gh` account never change which account a repository uses.
 
-**When adding a repository**
+**When the default account has no access**, OpenTig finds the account that does. A repository following the default that gets "not found" or "access denied" from GitHub checks your other connected accounts with each account's own credentials. If one can access it, preferring one that can push, OpenTig saves it as the repository's account and shows **Using @username for repository** with a **Change** action. Reads such as fetch and pull repeat once with that account; a rejected push isn't retried, so push again to publish with it.
 
-1. Select its folder and choose **Continue**.
-2. Review the account and the effective destination. **Default** is preselected.
-3. Keep the default, select a connected account, or choose **Git’s own credentials**. If needed, [add an account](#add-an-account) first.
-4. Choose **Add repository**.
+This happens only for repositories following the default and for access failures of GitHub HTTPS remotes or the GitHub API. Repositories with their own account, or set to Git’s own credentials, never switch automatically. If no connected account can access the repository, nothing changes. Settings shows the chosen account as **chosen automatically**; choosing **Default** again returns the repository to the default account.
 
-Canceling, closing the dialog, or failing setup leaves the repository list and active repository unchanged.
+**When adding a repository**, select its folder and choose **Add repository**. It follows the default account, and switches automatically as above if the default can't access it. Change its account later in **Settings → GitHub → This repository**.
 
 **For an existing repository**, use **Settings → GitHub → This repository**:
 

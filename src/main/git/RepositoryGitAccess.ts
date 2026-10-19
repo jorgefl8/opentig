@@ -136,6 +136,11 @@ export class RepositoryGitAccess {
           } catch (error) { const check = accessError(redactCommandToken(messageOf(error), auth)); return { check, write: check }; }
         };
         if (apiPath) value.api = (await checkApi(apiPath)).check;
+        if (apiPath && value.api.state === 'inaccessible' && this.accounts.selection(repository).mode === 'default'
+          && await this.accounts.adoptAccountWithAccess(repository, apiPath.replace(/\.git$/, ''), 'repository-access').catch(() => null)) {
+          // The repository now uses an account that can access it; check that account instead.
+          return this.status(repositoryId, true, apiContext);
+        }
         const destination = publication.urls[0];
         const pushPath = destination && managedGitHubPath(destination);
         if (pushPath) value.write = (await checkApi(pushPath)).write;
@@ -156,9 +161,17 @@ export class RepositoryGitAccess {
     this.checks.set(repositoryId, value);
     return value;
   }
-  private async execute(args: string[], options: RunOptions, execute: (args: string[], options: RunOptions) => Promise<GitOutput>) {
+  /** Only GitHub HTTPS access failures of repositories following the default account trigger detection. */
+  private async adoptAccountWithAccess(repository: RepositoryInfo, selection: GitHubAccountSelection, url: string, message: string, operation: string): Promise<string | null> {
+    const path = managedGitHubPath(url);
+    if (selection.mode !== 'default' || !path || accessError(message).state !== 'inaccessible') return null;
+    try { return await this.accounts.adoptAccountWithAccess(repository, path.replace(/\.git$/, ''), operation); }
+    catch { return null; }
+  }
+  private async execute(args: string[], options: RunOptions, execute: (args: string[], options: RunOptions) => Promise<GitOutput>, recovered = false): Promise<GitOutput> {
     const session = this.sessions.getStore()!;
     const { repository, selection, login } = session;
+    const requested = args;
     let index = 0; while (args[index] === '-c') index += 2;
     const command = args[index]!;
     if (command === 'ls-remote' && args.includes('--get-url')) return execute(args, options);
@@ -200,6 +213,13 @@ export class RepositoryGitAccess {
     } catch (error) {
       const message = redactSensitiveText(token ? messageOf(error).split(token).join('[redacted]') : messageOf(error));
       this.latest.set(repository.id, { operation: options.operation, url: redactSensitiveText(url), login: managed ? login : null, at: new Date().toISOString(), ok: false, message });
+      const adopted = recovered ? null : await this.adoptAccountWithAccess(repository, selection, url, message, options.operation);
+      if (adopted && command !== 'push') {
+        // The account that can access the repository is now saved; repeat the read once with it.
+        return this.sessions.run({ repository, selection: this.accounts.selection(repository), login: adopted, revision: this.accounts.revisionFor(repository) },
+          () => this.execute(requested, options, execute, true));
+      }
+      if (adopted) throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: options.operation, message: `This repository now uses @${adopted}, which can access it. Push again to publish with @${adopted}.` });
       if (error instanceof GitOperationError) throw error;
       throw new GitOperationError({ code: 'UNKNOWN', operation: options.operation, message });
     } finally { await broker?.dispose(); }

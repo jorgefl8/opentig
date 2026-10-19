@@ -1,4 +1,4 @@
-import type { GitHubAccountSelection, GitHubAccountsStatus, GitHubRepositoryAccount } from './github-accounts';
+import type { GitHubAccountDetection, GitHubAccountSelection, GitHubAccountsStatus, GitHubRepositoryAccount } from './github-accounts';
 import type { CommitAuthorship, SetCommitAuthorshipInput } from './commit-authorship';
 import type { SerializedOperationError } from './errors';
 import type { BranchDeletionResult, BranchDetails, BranchInfo, CommitFile, CommitPage, FileTreeEntry, LocalRefsSnapshot, RemoteBranchDetails, RemoteBranchDeletionResult, TrackingBranchCreationResult, RepositoryStatus, WorktreeDetails, WorktreeInfo, WorktreeRemovalBlocked } from './git-types';
@@ -644,7 +644,8 @@ export interface OpenTigApi {
   };
   events: {
     onAiInstructionsChanged(callback: (repositoryIds: string[]) => void): () => void;
-    onGitHubAccountsChanged(callback: (repositoryIds?: string[], inventoryChanged?: boolean) => void): () => void;
+    /** `detected` reports an account OpenTig chose for the listed repository because the default had no access. */
+    onGitHubAccountsChanged(callback: (repositoryIds?: string[], inventoryChanged?: boolean, detected?: GitHubAccountDetection) => void): () => void;
     onRepositoryChanged(callback: (repositoryId: string, scope: RepositoryChangeScope) => void): () => void;
     onActiveRepositoryChanged(callback: (repository: RepositoryInfo) => void): () => void;
   };

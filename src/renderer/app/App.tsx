@@ -1,4 +1,3 @@
-import { RepositoryAccountSetup } from '@/features/settings/RepositoryAccountSetup';
 import { useGitHubAccount } from '@/features/pulls/useGitHubAccount';
 import { branchPullRequestQueryOptions } from '@/features/pulls/branch-pull-request-query';
 import { appDisplayName } from '@/lib/app-identity';
@@ -101,7 +100,6 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   const mobile = useMobileLayout();
   const [openRepositoryDialog, setOpenRepositoryDialog] = useState(false);
   const addingRepository = useRef(false);
-  const [accountSetup, setAccountSetup] = useState<{ repository: RepositoryInfo } | null>(null);
   const [mobilePane, setMobilePane] = useState<'list' | 'viewer' | 'commit'>('list');
   const [mobileDiffView, setMobileDiffView] = useState<Preferences['diffView']>('unified');
   const [bootstrap, setBootstrap] = useState<BootstrapData | null>(null);
@@ -220,7 +218,16 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   const ghStatus = ghStatusQuery.data ?? null;
   const githubAccountQuery = useGitHubAccount(repository && githubInfo?.isGitHub ? repository.id : null);
   const githubAccount = githubAccountQuery.data ?? null;
-  useEffect(() => opentig.events.onGitHubAccountsChanged((ids, inventoryChanged) => { void resetGitHubQueries(appQueryClient, ids, inventoryChanged); }), [appQueryClient]);
+  useEffect(() => opentig.events.onGitHubAccountsChanged((ids, inventoryChanged, detected) => {
+    void resetGitHubQueries(appQueryClient, ids, inventoryChanged);
+    const current = repositoryRef.current;
+    if (!detected || !current || !ids?.includes(current.id)) return;
+    sileo.success({
+      title: `Using @${detected.login} for ${current.repositoryName}`,
+      description: detected.previousLogin ? `The default account @${detected.previousLogin} can’t access this repository.` : 'No default account could access this repository.',
+      button: { title: 'Change', onClick: () => { setSettingsSection('github'); setSettingsOpen(true); } },
+    });
+  }), [appQueryClient]);
   const pullsQuery = useQuery<PullRequestSummary[]>({
     queryKey: queryKeys.pulls(repository?.id ?? '', pullRequestStates),
     queryFn: async () => {
@@ -685,7 +692,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
 
   const remoteFetchIntervalSeconds = bootstrap?.preferences.remoteFetchIntervalSeconds ?? DEFAULT_REMOTE_FETCH_INTERVAL_SECONDS;
   useEffect(() => {
-    if (!repository || accountSetup || remoteFetchIntervalSeconds <= 0) return;
+    if (!repository || remoteFetchIntervalSeconds <= 0) return;
     const repositoryId = repository.id;
     let cancelled = false;
     let inFlight = false;
@@ -714,7 +721,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       window.clearInterval(timer);
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [refresh, remoteFetchIntervalSeconds, repository, accountSetup]);
+  }, [refresh, remoteFetchIntervalSeconds, repository]);
 
   useEffect(() => {
     setSnapshotRepositoryId(null);
@@ -1987,16 +1994,15 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     recordOpenedRepository(await opentig.repository.relocateRecent(option.recent.id, path), option.recent.id);
   };
 
-  const browserRepositoryDialog = <OpenRepositoryDialog confirmLabel="Continue"
-    description={window.opentigDesktop ? 'Choose a Git repository, then review its GitHub and Git accounts.' : 'Choose a Git repository on your server, then review its GitHub and Git accounts.'} open={openRepositoryDialog} recent={bootstrap?.recentRepositories} onPick={window.opentigDesktop ? opentig.repository.select : undefined} onOpenChange={setOpenRepositoryDialog} onBrowse={opentig.repository.browseDirectories} onOpen={async (path) => {
+  const browserRepositoryDialog = <OpenRepositoryDialog confirmLabel="Add repository"
+    description={window.opentigDesktop ? 'Choose a Git repository to add. It uses your default GitHub account, or another connected account that can access it.' : 'Choose a Git repository on your server to add. It uses your default GitHub account, or another connected account that can access it.'} open={openRepositoryDialog} recent={bootstrap?.recentRepositories} onPick={window.opentigDesktop ? opentig.repository.select : undefined} onOpenChange={setOpenRepositoryDialog} onBrowse={opentig.repository.browseDirectories} onOpen={async (path) => {
     addingRepository.current = true;
     try {
-      setAccountSetup({ repository: await opentig.repository.preparePath(path) });
+      const prepared = await opentig.repository.preparePath(path);
+      const { revision } = await opentig.github.repositoryAccount(prepared.id, false);
+      recordOpenedRepository(await opentig.repository.completeSetup(prepared.id, revision));
     } finally { addingRepository.current = false; }
   }} />;
-
-  const repositoryAccountDialog = accountSetup && !openRepositoryDialog && <RepositoryAccountSetup key={accountSetup.repository.id} {...accountSetup}
-    onClose={() => setAccountSetup(null)} onAdded={selected => { recordOpenedRepository(selected); setAccountSetup(null); }} />;
 
   if (!bootstrap) {
     return <SplashScreen heading={appDisplayName} detail={startupSplashDetail(connectionState)} />;
@@ -2005,7 +2011,6 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     return (
       <TooltipProvider>
         {browserRepositoryDialog}
-        {repositoryAccountDialog}
         <div className="fixed right-4 top-4 z-40"><DesktopUpdateIndicator /></div>
         <Welcome recent={bootstrap.recentRepositories} onOpen={openRepository} onRecent={(id) => void selectRecent(id)} />
       </TooltipProvider>
@@ -2021,7 +2026,6 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     <ShortcutsProvider shortcuts={shortcuts}>
     <TooltipProvider>
       {browserRepositoryDialog}
-      {repositoryAccountDialog}
       {quickOpen && (
         <Suspense fallback={null}>
           <QuickOpenDialog

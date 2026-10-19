@@ -2,6 +2,7 @@ import type { ImageFileResult } from '@shared/contracts';
 import { IPC } from '@shared/contracts';
 import { AI_CLIENT_TIMEOUT_MS } from '@shared/ai-timeouts';
 import type { OpenTigRuntimeEvent } from '@shared/runtime-events';
+import type { GitHubAccountDetection } from '@shared/github-accounts';
 import type { OpenTigServerApi } from '@shared/server-api';
 import { OPEN_TIG_PROTOCOL_VERSION } from '@shared/server-protocol';
 import { OpenTigWebSocketTransport } from './websocket-transport';
@@ -24,7 +25,7 @@ export function createOpenTigServerClient(options: ServerClientOptions = {}): Op
   const fetchRequest = options.fetch ?? fetch;
   const repositoryChanged = new Set<Parameters<OpenTigServerApi['events']['onRepositoryChanged']>[0]>();
   const aiInstructionsChanged = new Set<(repositoryIds: string[]) => void>();
-  const githubAccountsChanged = new Set<(repositoryIds?: string[], inventoryChanged?: boolean) => void>();
+  const githubAccountsChanged = new Set<(repositoryIds?: string[], inventoryChanged?: boolean, detected?: GitHubAccountDetection) => void>();
   const activeRepositoryChanged = new Set<Parameters<OpenTigServerApi['events']['onActiveRepositoryChanged']>[0]>();
   const invoke = <Command extends Parameters<OpenTigWebSocketTransport['request']>[0]>(
     command: Command,
@@ -194,7 +195,7 @@ function publishRuntimeEvent(
   event: OpenTigRuntimeEvent,
   repositoryChanged: ReadonlySet<Parameters<OpenTigServerApi['events']['onRepositoryChanged']>[0]>,
   activeRepositoryChanged: ReadonlySet<Parameters<OpenTigServerApi['events']['onActiveRepositoryChanged']>[0]>,
-  githubAccountsChanged: ReadonlySet<(repositoryIds?: string[], inventoryChanged?: boolean) => void>,
+  githubAccountsChanged: ReadonlySet<(repositoryIds?: string[], inventoryChanged?: boolean, detected?: GitHubAccountDetection) => void>,
   aiInstructionsChanged: ReadonlySet<(repositoryIds: string[]) => void>,
 ): void {
   if (event.type === 'repository.changed') {
@@ -204,7 +205,7 @@ function publishRuntimeEvent(
   } else if (event.type === 'ai.instructions-changed') {
     for (const listener of aiInstructionsChanged) listener(event.repositoryIds);
   } else {
-    for (const listener of githubAccountsChanged) listener(event.repositoryIds, event.inventoryChanged);
+    for (const listener of githubAccountsChanged) listener(event.repositoryIds, event.inventoryChanged, event.detected);
   }
 }
 

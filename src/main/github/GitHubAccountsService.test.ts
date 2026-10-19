@@ -23,7 +23,7 @@ const response = (stdout = '', exitCode = 0, stderr = '') => ({ stdout, exitCode
 const remote = 'git@organisation-alias:organisation/demo.git';
 const repo: RepositoryInfo = { id: 'repo', name: 'demo', repositoryName: 'demo', path: '/fixture/demo', commonDir: '/fixture/demo/.git' };
 
-async function fixture(options: { https?: boolean; env?: Record<string, string>; invalid?: boolean; noSsh?: boolean; customSsh?: boolean; missing?: boolean; denied?: boolean; noCli?: boolean; unknownJson?: boolean } = {}) {
+async function fixture(options: { https?: boolean; env?: Record<string, string>; invalid?: boolean; noSsh?: boolean; customSsh?: boolean; missing?: boolean; denied?: boolean; noCli?: boolean; unknownJson?: boolean; accessFor?: string[] } = {}) {
   vi.stubEnv('GH_TOKEN', ''); vi.stubEnv('GITHUB_TOKEN', ''); vi.stubEnv('GIT_SSH', ''); vi.stubEnv('GIT_SSH_COMMAND', '');
   const directory = await mkdtemp(path.join(os.tmpdir(), 'opentig-account-test-'));
   directories.push(directory);
@@ -52,6 +52,11 @@ async function fixture(options: { https?: boolean; env?: Record<string, string>;
       return response(['alice', 'bob', 'envuser'].find((user) => optionsRun.env?.GH_TOKEN === token(user)) ?? 'unexpected');
     }
     if (options.denied) return response('', 1, 'HTTP 403: Resource not accessible by personal access token');
+    if (options.accessFor) {
+      const user = ['alice', 'bob', 'envuser'].find((login) => optionsRun.env?.GH_TOKEN === token(login));
+      if (!user || !options.accessFor.includes(user)) return response('', 1, "GraphQL: Could not resolve to a Repository with the name 'organisation/demo'. (repository)");
+      if (args[0] === 'api' && /^repos\/[^/]+\/[^/]+$/.test(args[1] ?? '')) return response(JSON.stringify({ permissions: { push: true } }));
+    }
     if (args[0] === 'pr' && args[1] === 'create') return response('https://github.com/organisation/demo/pull/12\n');
     if (args[0] === 'pr' && args[1] === 'view') return response(JSON.stringify({ number: 12, state: 'OPEN', title: 'Fixture' }));
     if (args[0] === 'pr' && args[1] === 'diff') return response('diff --git a/file b/file\n');
@@ -129,6 +134,7 @@ describe('GitHub account inventory and repository policy', () => {
 
   it('reports repository access errors without treating valid authentication as logout', async () => {
     const f = await fixture({ denied: true });
+    await f.accounts.status(true);
     await expect(f.service.listPullRequests('repo', ['OPEN'])).rejects.toMatchObject({ detail: { code: 'GH_ACCESS_DENIED' } });
     expect(await f.service.repositoryAccount('repo')).toMatchObject({ state: 'ready', login: 'bob' });
   });
@@ -274,4 +280,37 @@ it('does not mistake verification of a freshly saved choice for an external acco
   const saved = await f.service.setRepositoryAccount('repo', { mode: 'account', host: 'github.com', login: 'bob' }, old.revision);
   const checked = await f.service.repositoryAccount('repo', true);
   expect(checked).toMatchObject({ login: 'bob', state: 'ready', revision: saved.revision });
+});
+
+describe('finding an account with access', () => {
+  it('pins a connected account that can access the repository when the default cannot, and reports it once', async () => {
+    const f = await fixture({ https: true, accessFor: ['bob'] });
+    await f.accounts.setDefaultAccount('alice');
+    f.changed.mockClear();
+    expect(await f.service.listPullRequests('repo', ['OPEN'])).toEqual([]);
+    expect(f.accounts.selection(repo)).toEqual({ mode: 'account', host: 'github.com', login: 'bob', detected: true });
+    expect(f.accounts.resolve(repo)).toEqual({ login: 'bob', source: 'detected' });
+    expect(f.changed).toHaveBeenCalledWith(repo, false, { login: 'bob', previousLogin: 'alice' });
+    const prCalls = f.run.mock.calls.filter(([, args]) => args[0] === 'pr' && args[1] === 'list');
+    expect(prCalls.at(-1)?.[2]?.env?.GH_TOKEN).toBe(token('bob'));
+  });
+
+  it('keeps a repository’s own account even when another account has access', async () => {
+    const f = await fixture({ https: true, accessFor: ['bob'] });
+    await f.accounts.setSelection(repo, { mode: 'account', host: 'github.com', login: 'alice' });
+    await expect(f.service.listPullRequests('repo', ['OPEN'])).rejects.toMatchObject({ detail: { code: 'GH_ACCESS_DENIED' } });
+    expect(f.accounts.selection(repo)).toMatchObject({ login: 'alice' });
+    expect(f.run.mock.calls.some(([, args]) => args[0] === 'auth' && args[1] === 'status')).toBe(false);
+  });
+
+  it('changes nothing when no connected account has access, or when the default already has it', async () => {
+    const none = await fixture({ https: true, accessFor: [] });
+    await none.accounts.setDefaultAccount('alice');
+    await expect(none.service.listPullRequests('repo', ['OPEN'])).rejects.toMatchObject({ detail: { code: 'GH_ACCESS_DENIED', message: expect.stringContaining('not found or is not accessible') } });
+    expect(none.accounts.selection(repo)).toEqual({ mode: 'default' });
+    const owned = await fixture({ https: true, accessFor: ['bob'] });
+    await owned.accounts.setDefaultAccount('bob');
+    expect(await owned.accounts.adoptAccountWithAccess(repo, 'organisation/demo', 'test')).toBeNull();
+    expect(owned.accounts.selection(repo)).toEqual({ mode: 'default' });
+  });
 });

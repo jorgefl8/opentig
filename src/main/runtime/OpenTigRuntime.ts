@@ -1,5 +1,5 @@
 import type { RepositoryAiInstructions } from '../ai/RepositoryAiInstructions';
-import { githubRepositoryKey } from '../../shared/github-accounts';
+import { githubRepositoryKey, type GitHubAccountDetection } from '../../shared/github-accounts';
 import type { OpenTigPlatform, OpenTigRuntimeMode, RepositoryInfo } from '../../shared/contracts';
 import type { RepositoryChangeScope } from '../../shared/repository-change';
 import { mergeRepositoryChangeScopes } from '../../shared/repository-change';
@@ -88,13 +88,13 @@ export class OpenTigRuntime {
     this.onEvent({ type: 'repository.changed', repositoryId, scope });
   }
 
-  publishGitHubAccountsChange(commonDir?: string, defaultOnly = false): void {
+  publishGitHubAccountsChange(commonDir?: string, defaultOnly = false, detected?: GitHubAccountDetection): void {
     if (this.closePromise) return;
     const repositories = this.services.repositories.recents();
     const repositoryIds = defaultOnly ? repositories.filter(repo => {
       return this.settings.githubAccount(repo.commonDir).mode === 'default';
     }).map(repo => repo.id) : commonDir ? repositories.filter(repo => githubRepositoryKey(repo.commonDir) === githubRepositoryKey(commonDir)).map(repo => repo.id) : undefined;
-    this.onEvent({ type: 'github.accounts-changed', ...(repositoryIds ? { repositoryIds } : {}), ...(defaultOnly || commonDir ? { inventoryChanged: true } : {}) });
+    this.onEvent({ type: 'github.accounts-changed', ...(repositoryIds ? { repositoryIds } : {}), ...(defaultOnly || commonDir ? { inventoryChanged: true } : {}), ...(detected ? { detected } : {}) });
   }
 
   publishAiInstructionsChange(commonDir: string): void {
