@@ -1,0 +1,25 @@
+---
+// Runs before the navbar and hero render so platform-specific install actions never flash.
+---
+
+<script is:inline>
+  (() => {
+    const platform = (navigator.userAgentData?.platform || navigator.platform || navigator.userAgent || '').toLowerCase();
+    const agent = navigator.userAgent.toLowerCase();
+    const mobile = /iphone|ipad|ipod|android/.test(agent);
+    document.documentElement.dataset.platform = mobile ? 'windows'
+      : platform.includes('mac') ? 'macos'
+        : platform.includes('linux') || platform.includes('x11') || platform.includes('cros') ? 'linux'
+          : 'windows';
+  })();
+</script>
+
+<style is:global>
+  /* html[data-platform] selects the install action; without JavaScript the Windows action remains. */
+  html:not([data-platform='macos']):not([data-platform='linux']) [data-platform-only='cli'],
+  html[data-platform='macos'] [data-platform-only='windows'],
+  html[data-platform='linux'] [data-platform-only='windows'],
+  html:not([data-platform]) [data-platform-picker] {
+    display: none !important;
+  }
+</style>

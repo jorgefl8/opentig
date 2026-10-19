@@ -2,6 +2,7 @@
 import Logo from '@/assets/logo.svg';
 import { downloadUrl } from '@/site';
 import WindowsIcon from '@/assets/icons/windows.svg';
+import TerminalIcon from '@tabler/icons/outline/terminal-2.svg';
 import Button from './Button.astro';
 import GooeyNavigation from './GooeyNavigation';
 ---
@@ -17,9 +18,13 @@ import GooeyNavigation from './GooeyNavigation';
       <GooeyNavigation client:load />
     </div>
 
-    <Button href={downloadUrl} data-windows-download data-analytics-placement="navbar" size="sm">
+    <Button href={downloadUrl} data-windows-download data-analytics-placement="navbar" data-platform-only="windows" size="sm">
       <WindowsIcon width={16} height={16} />
       Download
+    </Button>
+    <Button href="#install" data-platform-only="cli" size="sm">
+      <TerminalIcon width={16} height={16} />
+      Install
     </Button>
   </div>
 </header>
