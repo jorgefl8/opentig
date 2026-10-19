@@ -9,8 +9,9 @@ import type { ToolbarProps } from './Toolbar';
 import { SettingsStore } from '../../main/persistence/SettingsStore';
 
 const calls = vi.hoisted(() => ({
-  bootstrap: vi.fn(), openRecent: vi.fn(), getStatus: vi.fn(), success: vi.fn(), fetch: vi.fn(), setRepositoryAccount: vi.fn(),
+  bootstrap: vi.fn(), openRecent: vi.fn(), getStatus: vi.fn(), success: vi.fn(), error: vi.fn(), fetch: vi.fn(), setRepositoryAccount: vi.fn(),
   activeRepositoryChanged: null as ((repository: RepositoryInfo) => void) | null,
+  repositoryChanged: null as ((repositoryId: string, scope: string) => void) | null,
   accountsChanged: null as ((repositoryIds?: string[], inventoryChanged?: boolean, detected?: { login: string; previousLogin: string | null }) => void) | null,
 }));
 vi.mock('@/lib/opentig-api', () => ({
@@ -25,14 +26,14 @@ vi.mock('@/lib/opentig-api', () => ({
     diagnostics: { record: async () => {} },
     events: {
       onGitHubAccountsChanged: (callback: NonNullable<typeof calls.accountsChanged>) => { calls.accountsChanged = callback; return () => {}; },
-      onRepositoryChanged: () => () => {},
+      onRepositoryChanged: (callback: NonNullable<typeof calls.repositoryChanged>) => { calls.repositoryChanged = callback; return () => {}; },
       onActiveRepositoryChanged: (callback: (repository: RepositoryInfo) => void) => { calls.activeRepositoryChanged = callback; return () => {}; },
     },
   },
   serverClient: { transport: { subscribeState: () => () => {}, getState: () => 'connected' } },
 }));
 vi.mock('@/lib/boot-theme', () => ({ persistTheme: () => {} }));
-vi.mock('sileo', () => ({ sileo: { error: () => {}, success: calls.success, dismiss: () => {} } }));
+vi.mock('sileo', () => ({ sileo: { error: calls.error, success: calls.success, dismiss: () => {} } }));
 vi.mock('./Toolbar', () => ({ Toolbar: (props: ToolbarProps) => createElement('header', null,
   createElement('button', { 'aria-label': 'Open B', onClick: () => props.onRecent('repo-b') }),
   createElement('button', { 'aria-label': 'Open C', onClick: () => props.onRecent('repo-c') }),
@@ -182,4 +183,19 @@ it('shows a refused background fetch until access works and switches to an accou
   await vi.waitFor(() => expect(calls.fetch).toHaveBeenCalledTimes(2));
   await settle();
   expect(output('Remote problem')).toBe('');
+});
+
+it.each([
+  ['retries an automatic refresh quietly while the repository is still changing', 1, false],
+  ['reports an automatic refresh that still fails after its retry', 2, true],
+] as const)('%s', async (_name, failures, reported) => {
+  await act(async () => root.render(createElement(QueryClientProvider, { client }, createElement(App))));
+  await settle();
+  const reads = calls.getStatus.mock.calls.length;
+  for (let index = 0; index < failures; index++) calls.getStatus.mockRejectedValueOnce(new Error('index.lock exists'));
+  await act(async () => calls.repositoryChanged!('repo', 'worktree'));
+  await vi.waitFor(() => expect(calls.getStatus.mock.calls.length).toBe(reads + 2), { timeout: 2_000 });
+  await settle();
+  if (reported) expect(calls.error).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ title: 'Could not refresh', description: 'index.lock exists' }));
+  else expect(calls.error).not.toHaveBeenCalled();
 });

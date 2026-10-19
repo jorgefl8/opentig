@@ -76,6 +76,7 @@ const NO_OPEN_FILES_STATES: OpenFilesState[] = [];
 type DirtyCloseChoice = 'save' | 'discard' | 'cancel';
 const SIDEBAR_VIEWS = ['changes', 'files', 'history', 'prs', 'search'] as const;
 const VIEW_STORAGE_KEY = 'opentig.lastView';
+const BACKGROUND_REFRESH_RETRY_MS = 1_000;
 type SidebarView = (typeof SIDEBAR_VIEWS)[number];
 interface AppRefreshOptions {
   manual?: boolean;
@@ -625,16 +626,19 @@ export default function App({ initialView, initialSelection, pullRequestCreation
           if (repositoryRef.current?.id === repositoryId) reportError('Could not fetch remote changes', reason);
         }
       }
-      await Promise.all(resources.map((resource) => appQueryClient.invalidateQueries({
-        queryKey: resource === 'status' ? queryKeys.status(repositoryId)
-          : resource === 'branches' ? queryKeys.branches(repositoryId)
-            : resource === 'worktrees' ? queryKeys.worktrees(repositoryId)
-              : resource === 'files' ? queryKeys.files(repositoryId)
-                : queryKeys.history(repositoryId),
-        exact: true,
-        refetchType: 'none',
-      })));
-      const [nextStatus, nextBranches, nextWorktrees, nextFiles, nextHistory] = await Promise.all([
+      const readSnapshot = async () => {
+        await Promise.all(resources.map((resource) => appQueryClient.invalidateQueries({
+          queryKey: resource === 'status' ? queryKeys.status(repositoryId)
+            : resource === 'branches' ? queryKeys.branches(repositoryId)
+              : resource === 'worktrees' ? queryKeys.worktrees(repositoryId)
+                : resource === 'files' ? queryKeys.files(repositoryId)
+                  : queryKeys.history(repositoryId),
+          exact: true,
+          refetchType: 'none',
+        })));
+        return snapshotReads();
+      };
+      const snapshotReads = () => Promise.all([
         appQueryClient.fetchQuery({ queryKey: queryKeys.status(repositoryId), queryFn: () => opentig.repository.getStatus(repositoryId) }),
         operations.branches ? appQueryClient.fetchQuery({ queryKey: queryKeys.branches(repositoryId), queryFn: () => opentig.refs.listBranches(repositoryId) }) : Promise.resolve(null),
         operations.worktrees ? appQueryClient.fetchQuery({ queryKey: queryKeys.worktrees(repositoryId), queryFn: () => opentig.refs.listWorktrees(repositoryId) }) : Promise.resolve(null),
@@ -646,6 +650,17 @@ export default function App({ initialView, initialSelection, pullRequestCreation
           getNextPageParam: (lastPage: CommitPage) => lastPage.nextCursor ?? undefined,
         }) : Promise.resolve(null),
       ]);
+      let snapshot: Awaited<ReturnType<typeof snapshotReads>>;
+      try {
+        snapshot = await readSnapshot();
+      } catch (reason) {
+        // Automatic refreshes race with tools still writing to the repository; retry once quietly before reporting.
+        if (!background || repositoryRef.current?.id !== repositoryId) throw reason;
+        await new Promise((resolve) => setTimeout(resolve, BACKGROUND_REFRESH_RETRY_MS));
+        if (repositoryRef.current?.id !== repositoryId) return;
+        snapshot = await readSnapshot();
+      }
+      const [nextStatus, nextBranches, nextWorktrees, nextFiles, nextHistory] = snapshot;
       if (repositoryRef.current?.id !== repositoryId) return;
       setSnapshotRepositoryId(repositoryId);
       setStatus(nextStatus);

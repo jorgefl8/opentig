@@ -68,6 +68,8 @@ Use the toolbar **Refresh** button or `Ctrl+R` to fetch remote Git changes and t
 
 Refresh also checks for app updates immediately instead of waiting for the five-minute update interval.
 
+The workspace also refreshes automatically when files or Git state change. While another tool keeps writing to the repository, OpenTig shows the newest state it could read and refreshes again after the next change. An automatic refresh that fails retries once after a second and reports an error only if the retry also fails.
+
 ### Shortcuts
 
 Open **Settings → Shortcuts** to rebind most shortcuts, check for conflicts, or reset them to defaults. Fixed shortcuts follow platform or file-manager conventions.

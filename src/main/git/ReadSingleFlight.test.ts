@@ -9,7 +9,7 @@ function deferred<T>() {
 }
 
 describe('pending read generations', () => {
-  it.each(['success', 'failure'])('bounds retries under continuous invalidation after a %s', async (outcome) => {
+  it.each(['success', 'failure'])('bounds retries under continuous invalidation and settles with the last %s', async (outcome) => {
     const flights = new ReadSingleFlight();
     let attempts = 0;
     const read = vi.fn(async () => {
@@ -21,8 +21,8 @@ describe('pending read generations', () => {
     const results = await Promise.allSettled(Array.from({ length: 4 }, () => flights.run('repo', 'status', read)));
     expect(attempts).toBe(3);
     for (const result of results) {
-      expect(result.status).toBe('rejected');
-      if (result.status === 'rejected') expect(result.reason.message).toMatch(/changed repeatedly/);
+      if (outcome === 'failure') expect(result).toMatchObject({ status: 'rejected', reason: { message: 'obsolete failure' } });
+      else expect(result).toEqual({ status: 'fulfilled', value: 'obsolete snapshot' });
     }
     expect(await flights.run('repo', 'status', async () => 'settled')).toBe('settled');
   });
