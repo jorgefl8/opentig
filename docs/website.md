@@ -1,6 +1,6 @@
 # Website contribution guide
 
-The `website/` npm workspace contains OpenTig's public landing page and documentation. It uses Astro, Tailwind CSS, OGL, and Fumadocs, and produces a static site independent of the desktop application, CLI, and paired browser UI. It does not start or connect to an OpenTig server.
+The `website/` pnpm workspace package contains OpenTig's public landing page and documentation. It uses Astro, Tailwind CSS, OGL, and Fumadocs, and produces a static site independent of the desktop application, CLI, and paired browser UI. It does not start or connect to an OpenTig server.
 
 This guide is for repository contributors and is not published in the website documentation. Production operations are maintained separately in a local, untracked runbook.
 
@@ -14,32 +14,32 @@ Choose the task you need:
 
 ## Develop and check
 
-Use Node.js 24.15+ and npm 11+ from the repository root:
+Use Node.js 24.15+ and pnpm 12+ from the repository root:
 
 ```bash
-npm ci
-npm run dev:website
+pnpm install
+pnpm run dev:website
 ```
 
 Astro prints its local address, normally `http://127.0.0.1:4321`. Stop a foreground server with Ctrl+C. For a remote machine, use your development environment's port forwarding to reach that listener.
 
 Astro may start in the background when launched by a coding agent:
 
-- Check that instance with `npm run dev:website -- status`.
-- Stop it with `npm run dev:website -- stop`.
-- Choose a different port with `npm run dev:website -- --port 4322`.
+- Check that instance with `pnpm run dev:website status`.
+- Stop it with `pnpm run dev:website stop`.
+- Choose a different port with `pnpm run dev:website --port 4322`.
 
 Before submitting changes, run the checks and build, then preview the generated site:
 
 ```bash
-npm run check:website
-npm run build:website
-npm run preview:website
+pnpm run check:website
+pnpm run build:website
+pnpm run preview:website
 ```
 
 `check:website` builds the demo and runs Astro and demo type checks, Oxlint, and regression tests. Every build also validates the generated pages. `preview:website` serves the build locally; it does not publish it.
 
-**Landing-page edits refresh normally in Astro.** Restart `npm run dev:website` after editing the demo or shared renderer to rebuild the demo assets.
+**Landing-page edits refresh normally in Astro.** Restart `pnpm run dev:website` after editing the demo or shared renderer to rebuild the demo assets.
 
 <details>
 <summary>What the checks validate</summary>
@@ -55,7 +55,7 @@ Regression tests cover the sample repository, documentation transforms, and buil
 <details>
 <summary>Dependency and TypeScript compatibility</summary>
 
-The website keeps its own TypeScript version because the Astro checker currently supports TypeScript 6; the application uses its existing version. A process-local module hook in `website/scripts/check.mjs` keeps Astro/Volar on that compatible compiler even when npm hoists them alongside the application compiler. Dependencies are pinned in `website/package.json` and resolved in the repository's single `package-lock.json`.
+The website keeps its own TypeScript version because the Astro checker currently supports TypeScript 6; the application uses its existing version. A process-local module hook in `website/scripts/check.mjs` keeps Astro/Volar on that compatible compiler even when the hoisted install places them alongside the application compiler. Dependencies are pinned in `website/package.json` and resolved in the repository's single `pnpm-lock.yaml`.
 
 The website explicitly pins Astro's `cookie` dependency so its prerendered build resolves the correct API independently of the application's older transitive copy.
 
@@ -69,7 +69,7 @@ The website explicitly pins Astro's `cookie` dependency so its prerendered build
 
 1. Find its source in `website/docs.config.mjs` and edit that file. The overview lives in `website/src/content/docs/index.md`.
 2. Keep feature changes and their documentation in the same commit. Describe current behavior, requirements, defaults, and important limits.
-3. Run `npm run check:website` and `npm run build:website`, plus any checks needed for accompanying application changes. Documentation-only changes do not require an application build.
+3. Run `pnpm run check:website` and `pnpm run build:website`, plus any checks needed for accompanying application changes. Documentation-only changes do not require an application build.
 4. Review the rendered page, navigation, and links locally. Submit the source changes for review; maintainers handle publication separately.
 
 ### Publish a new guide
@@ -264,12 +264,12 @@ Development pages are marked `noindex`. For a separately hosted preview, set `WE
 For example, build a preview into an ignored directory without replacing the production output (Bash):
 
 ```bash
-WEBSITE_NOINDEX=true npm run build --workspace @opentig/website -- --outDir ../.ai/website-preview
+WEBSITE_NOINDEX=true pnpm --filter @opentig/website run build --outDir ../.ai/website-preview
 ```
 
 **Keep preview output separate from `website/dist`.** A noindex build targeting that directory fails validation, stopping the normal deployment command before Wrangler runs. If a build fails, rebuild successfully before manually uploading its files.
 
-Leave `WEBSITE_NOINDEX` unset for the normal build and rebuild with `npm run build:website`. `WEBSITE_URL` only controls URL generation; it does not switch indexing policy.
+Leave `WEBSITE_NOINDEX` unset for the normal build and rebuild with `pnpm run build:website`. `WEBSITE_URL` only controls URL generation; it does not switch indexing policy.
 
 ## CI and release separation
 
@@ -285,7 +285,7 @@ To publish an approved website revision after production configuration is in pla
 
 Changes confined to `website/`, this guide, or `.github/workflows/website.yml` skip the application's heavy CI jobs and do not create application release notes or a new draft. Editing this unpublished guide alone does not trigger the website build; edits to the deployment workflow do. Run the local website checks when changing this guide's examples or instructions. CI still reports a scope decision for each project. Application release notes exclude these website-only commits, including merged PRs; **Prepare release** will not create an application version or tag when those are the only changes since the last stable release.
 
-Changes to the shared renderer, shared contracts, public UI assets, or root TypeScript configuration validate both projects because the demo uses them. Changes to shared files such as the root `package.json`, `package-lock.json`, and `.oxlintrc.json` validate both projects and remain eligible for application release notes. Mixed commits containing application changes also remain included regardless of their commit title.
+Changes to the shared renderer, shared contracts, public UI assets, or root TypeScript configuration validate both projects because the demo uses them. Changes to shared files such as the root `package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`, and `.oxlintrc.json` validate both projects and remain eligible for application release notes. Mixed commits containing application changes also remain included regardless of their commit title.
 
 The website's private package version is independent of the desktop and CLI release version. The existing `vX.Y.Z` tags and installer/npm publication workflows belong to the application.
 

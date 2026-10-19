@@ -17,19 +17,19 @@ it('validates and builds before upload, keeps deploy credentials out of build st
   const job = workflow.jobs.deploy;
   const steps = job.steps;
   const indexOf = command => steps.findIndex(step => step.run === command);
-  expect(indexOf('npm ci --ignore-scripts')).toBeGreaterThan(-1);
-  expect(indexOf('npm run check:website')).toBeGreaterThan(indexOf('npm ci --ignore-scripts'));
-  expect(indexOf('npm run build:website')).toBeGreaterThan(indexOf('npm run check:website'));
-  expect(indexOf('npm exec -- wrangler deploy')).toBeGreaterThan(indexOf('npm run build:website'));
+  expect(indexOf('pnpm install --frozen-lockfile --ignore-scripts')).toBeGreaterThan(-1);
+  expect(indexOf('pnpm run check:website')).toBeGreaterThan(indexOf('pnpm install --frozen-lockfile --ignore-scripts'));
+  expect(indexOf('pnpm run build:website')).toBeGreaterThan(indexOf('pnpm run check:website'));
+  expect(indexOf('pnpm exec wrangler deploy')).toBeGreaterThan(indexOf('pnpm run build:website'));
   expect(job.env).not.toHaveProperty('CLOUDFLARE_API_TOKEN');
   expect(job.env).not.toHaveProperty('CLOUDFLARE_ACCOUNT_ID');
   for (const step of steps) {
     if (step.uses) expect(step.uses).toMatch(/@[a-f0-9]{40}$/);
-    if (step.run?.startsWith('npm ') && step.run !== 'npm exec -- wrangler deploy') {
+    if (step.run?.startsWith('pnpm ') && step.run !== 'pnpm exec wrangler deploy') {
       expect(step.env).toBeUndefined();
     }
   }
-  const deploy = steps[indexOf('npm exec -- wrangler deploy')];
+  const deploy = steps[indexOf('pnpm exec wrangler deploy')];
   expect(deploy['working-directory']).toBe('website');
   expect(deploy.env.CLOUDFLARE_API_TOKEN).toBe('${{ secrets.CLOUDFLARE_API_TOKEN }}');
   expect(deploy.env.CLOUDFLARE_ACCOUNT_ID).toBe('${{ secrets.CLOUDFLARE_ACCOUNT_ID }}');

@@ -7,6 +7,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { prepareRelease } from './prepare-release.mjs';
 import { NOTES_START, NOTES_END, updateDraft } from './release-draft.mjs';
 
+const LOCKFILE = "lockfileVersion: '9.0'\n\nimporters:\n  .:\n    dependencies:\n      example:\n        specifier: 1.2.3\n        version: 1.2.3\n";
 const roots = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 function gitAt(root) {
@@ -28,10 +29,9 @@ function fixture({ draft = true, changed = true } = {}) {
   mkdirSync(path.join(root, 'packages/server'), { recursive: true });
   const desktop = { name: '@opentig/desktop', version: '0.1.0', dependencies: { example: '1.2.3' } };
   const server = { name: '@opentig/cli', version: '0.1.0' };
-  const documents = { 'package.json': desktop, 'packages/server/package.json': server,
-    'package-lock.json': { name: desktop.name, version: desktop.version, lockfileVersion: 3,
-      packages: { '': desktop, 'packages/server': server, 'node_modules/example': { version: '1.2.3', integrity: 'unchanged' } } } };
+  const documents = { 'package.json': desktop, 'packages/server/package.json': server };
   for (const [file, data] of Object.entries(documents)) writeFileSync(path.join(root, file), `${JSON.stringify(data, null, 2)}\n`);
+  writeFileSync(path.join(root, 'pnpm-lock.yaml'), LOCKFILE);
   git('add', '.');
   git('commit', '-m', 'feat: first version');
   git('tag', 'v0.1.0');
@@ -93,13 +93,10 @@ it('prepares one draft from real history, atomically bumps all package versions 
   expect(result).toMatchObject({ tag: 'v0.1.1', resumed: false, dryRun: false });
   expect(context.remote('rev-parse', 'main').trim()).toBe(result.commit);
   expect(context.remote('rev-parse', 'v0.1.1^{commit}').trim()).toBe(result.commit);
-  for (const file of ['package.json', 'packages/server/package.json', 'package-lock.json']) {
+  for (const file of ['package.json', 'packages/server/package.json']) {
     expect(JSON.parse(context.remote('show', `${result.commit}:${file}`)).version).toBe('0.1.1');
   }
-  const lock = JSON.parse(context.remote('show', `${result.commit}:package-lock.json`));
-  expect(lock.packages[''].version).toBe('0.1.1');
-  expect(lock.packages['packages/server'].version).toBe('0.1.1');
-  expect(lock.packages['node_modules/example']).toEqual({ version: '1.2.3', integrity: 'unchanged' });
+  expect(context.remote('show', `${result.commit}:pnpm-lock.yaml`)).toBe(LOCKFILE);
   expect(context.releases).toHaveLength(2);
   expect(context.releases[1]).toMatchObject({ name: 'Custom title', draft: true, target_commitish: result.commit });
   expect(context.releases[1].body).toContain('Manual introduction');

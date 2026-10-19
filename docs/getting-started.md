@@ -12,7 +12,7 @@ Choose where OpenTig will run. Your repositories stay on that machine, whether y
 
 - **Desktop:** Windows 10 or later, x64, and Git installed on the host.
 - **CLI:** Linux, macOS, or Windows, with Node.js 24 or later and Git on `PATH`.
-- **Build from source:** Node.js 24.15 or later and npm 11 or later. See [development and packaging](development.md).
+- **Build from source:** Node.js 24.15 or later and pnpm 12 or later. See [development and packaging](development.md).
 
 Linux and macOS desktop installers are not published yet. The CLI supports background services and browser updates on all three platforms.
 

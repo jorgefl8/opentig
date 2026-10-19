@@ -8,7 +8,7 @@ import { CliUsageError } from './cli-config';
 export function devCliArguments(args: readonly string[], environment: NodeJS.ProcessEnv = process.env, home = os.homedir(), platform: NodeJS.Platform = process.platform): string[] {
   const command = args[0] ?? 'serve';
   if (args.length > 1 || (command !== 'serve' && command !== 'pair' && command !== 'reset-access')) {
-    throw new CliUsageError('Use npm run start:web:dev or npm run pair:web:dev without additional options.');
+    throw new CliUsageError('Use pnpm run start:web:dev or pnpm run pair:web:dev without additional options.');
   }
   const directory = path.join(home, '.opentig-dev');
   const appData = platform === 'win32'

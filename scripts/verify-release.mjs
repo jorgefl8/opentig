@@ -8,7 +8,7 @@ import { repositoryRoot } from './build-desktop.mjs';
 import { verifyReleaseMetadata } from './release-metadata.mjs';
 
 if (process.platform !== 'win32') throw new Error('Release verification must run on Windows.');
-const flags = process.argv.slice(2);
+const flags = process.argv.slice(2).filter((flag) => flag !== '--');
 if (flags.some((flag) => flag !== '--signed')) throw new Error('Expected only --signed.');
 const signed = flags.includes('--signed');
 const publisher = process.env.OPENTIG_PUBLISHER_NAME?.trim();

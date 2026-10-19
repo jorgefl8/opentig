@@ -16,6 +16,8 @@ export function packageOptions(args, environment = process.env, hostPlatform = p
   let release = false;
   let signed = false;
   for (const flag of flags) {
+    // Package managers may forward a literal argument separator.
+    if (flag === '--') continue;
     if (flag === '--release') release = true;
     else if (flag === '--signed') signed = true;
     else if (flag.startsWith('--platform=')) platform = flag.slice('--platform='.length);
@@ -43,7 +45,7 @@ export async function packageDesktop(options) {
   const platform = { win32: Platform.WINDOWS, linux: Platform.LINUX, darwin: Platform.MAC }[options.platform];
   const target = options.command === 'package' ? 'dir' : options.profile === 'dev' ? 'zip' : 'nsis';
   const artifacts = await build({
-    projectDir: repositoryRoot, config, publish: 'never',
+    projectDir: appDirectory, config, publish: 'never',
     targets: platform.createTarget(target, Arch[options.arch]),
   });
   if (!unpackedDirectory) throw new Error('Builder did not produce an unpacked application.');

@@ -229,7 +229,7 @@ async function refuseActiveRuntime(config: OpenTigCliConfig, profile: Applicatio
     if (isProcessRunning(state.pid)) {
       await probeRuntime(config.home, state);
       throw new CliError('HOME_ACTIVE', 'OpenTig is already running for this home.', [
-        `Pair a browser with ${profile === 'dev' ? 'npm run pair:web:dev' : cliCommand(config.home, 'pair')}`,
+        `Pair a browser with ${profile === 'dev' ? 'pnpm run pair:web:dev' : cliCommand(config.home, 'pair')}`,
         'To switch a foreground instance to a service, stop it in its terminal first.',
       ]);
     }

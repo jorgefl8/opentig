@@ -13,19 +13,19 @@ Build from source with **Node.js 24.15 or newer** and **Git**. Run all commands 
 
 ## Run from source
 
-Install dependencies with the repository's pinned npm version:
+Install [pnpm](https://pnpm.io/installation) 12 or later. pnpm switches to the version pinned in `package.json`, then installs the locked dependencies:
 
 ```powershell
-npx --yes npm@11.6.2 ci
+pnpm install
 ```
 
 ### Desktop development
 
 ```powershell
-npm start
+pnpm start
 ```
 
-`npm start` builds the shared server/client and Electron main/preload with Vite, then launches **OpenTig Dev**. **Restart the command after source changes; there is no live reload.** Only one desktop Dev instance runs at a time.
+`pnpm start` builds the shared server/client and Electron main/preload with Vite, then launches **OpenTig Dev**. **Restart the command after source changes; there is no live reload.** Only one desktop Dev instance runs at a time.
 
 A fresh desktop Dev profile starts with **Web access**, **LAN access**, and the global **double-Control shortcut** disabled. Development can run on Linux; Windows installers and Windows-specific behavior still require Windows validation.
 
@@ -43,7 +43,7 @@ The Dev profile is selected before Electron takes its instance lock or opens a s
 On a Linux machine without a desktop session, run:
 
 ```bash
-npm run start:web:dev
+pnpm run start:web:dev
 ```
 
 This builds the current server and web client, then starts **OpenTig Dev** without Electron at `http://127.0.0.1:6867`. It prints a **five-minute pairing code/link**.
@@ -51,7 +51,7 @@ This builds the current server and web client, then starts **OpenTig Dev** witho
 Stop it with `Ctrl+C`. After code changes, run the command again to rebuild; there is no live reload. While it is running, generate a fresh code from another terminal:
 
 ```bash
-npm run pair:web:dev
+pnpm run pair:web:dev
 ```
 
 **The address is fixed.** An occupied port fails instead of selecting another port. Custom launch options are rejected. Production `OPENTIG_HOME`, `OPENTIG_HOST`, and `OPENTIG_PORT` values do not redirect this command.
@@ -98,9 +98,9 @@ StandardError=journal
 WantedBy=default.target
 ```
 
-After building with `npm run build:server`, run `systemctl --user daemon-reload` and `systemctl --user enable --now opentig-dev.service`. Enable user lingering with `loginctl enable-linger "$USER"` if the service should start at boot and survive logout.
+After building with `pnpm run build:server`, run `systemctl --user daemon-reload` and `systemctl --user enable --now opentig-dev.service`. Enable user lingering with `loginctl enable-linger "$USER"` if the service should start at boot and survive logout.
 
-Startup pairing output is discarded; use `npm run pair:web:dev` whenever you need a new code. Inspect the service with `systemctl --user status opentig-dev.service` and `journalctl --user -u opentig-dev.service`.
+Startup pairing output is discarded; use `pnpm run pair:web:dev` whenever you need a new code. Inspect the service with `systemctl --user status opentig-dev.service` and `journalctl --user -u opentig-dev.service`.
 
 After rebuilding, use `systemctl --user restart opentig-dev.service`; it keeps the same `~/.opentig-dev` data and browser sessions. Do not run `start:web:dev` alongside the service on the same port. A healthy Cloudflare connector still returns a gateway error if this application service is stopped.
 
@@ -111,24 +111,24 @@ After rebuilding, use `systemctl --user restart opentig-dev.service`; it keeps t
 During local iterations, run tests that import the changed source files:
 
 ```bash
-npm run test:related -- src/main/git/GitRepositoryOperations.ts
+pnpm run test:related src/main/git/GitRepositoryOperations.ts
 ```
 
-For changes to tests, run those files directly with `npm test -- <test-file>`. Related tests follow static imports; configuration, dynamically selected modules, and architecture checks that read source files require explicit tests or the complete suite.
+For changes to tests, run those files directly with `pnpm test <test-file>`. Related tests follow static imports; configuration, dynamically selected modules, and architecture checks that read source files require explicit tests or the complete suite.
 
 Use behavior assertions for regressions and syntax-aware checks for dependency boundaries. Avoid checking literal source text or duplicating constants.
 
 Run all quality gates before integrating:
 
 ```powershell
-npm run check
+pnpm run check
 ```
 
 This runs typecheck, lint, the test suite, and the production dependency audit. For changes to a published guide or the website, also run:
 
 ```bash
-npm run check:website
-npm run build:website
+pnpm run check:website
+pnpm run build:website
 ```
 
 See [website and documentation](website.md) for publication and preview checks.
@@ -136,7 +136,7 @@ See [website and documentation](website.md) for publication and preview checks.
 <details>
 <summary>TypeScript, lint rules, and architecture checks</summary>
 
-`npm run typecheck` uses the native TypeScript 7 compiler with strict checking. `npm run lint` uses Oxlint with the existing JavaScript, TypeScript, React Hooks, and React Refresh rule severities and environment-specific overrides in `.oxlintrc.json`. `npm run lint:fix` applies safe lint fixes.
+`pnpm run typecheck` uses the native TypeScript 7 compiler with strict checking. `pnpm run lint` uses Oxlint with the existing JavaScript, TypeScript, React Hooks, and React Refresh rule severities and environment-specific overrides in `.oxlintrc.json`. `pnpm run lint:fix` applies safe lint fixes.
 
 The configuration explicitly enables the migrated rules rather than adopting a broader default preset; `no-undef` and `no-useless-assignment` currently come from Oxlint's nursery category, so review their behavior when updating the pinned Oxlint version.
 
@@ -176,9 +176,9 @@ Desktop packages use **electron-builder**; Vite remains the compiler. The web cl
 Build a separate Dev application to evaluate local changes or a checked-out PR:
 
 ```bash
-npm run package:dev
-npm run verify:packaged-desktop -- --dev
-npm run verify:packaged-server -- --dev
+pnpm run package:dev
+pnpm run verify:packaged-desktop --dev
+pnpm run verify:packaged-server --dev
 ```
 
 | Platform | Executable |
@@ -188,7 +188,7 @@ npm run verify:packaged-server -- --dev
 
 The Dev identity is baked into the build, so moving the executable does not change its profile. Local Dev builds share the desktop Dev data described above.
 
-Use `npm run make:dev` to create a **portable Dev ZIP** for the current OS. Extract the complete ZIP before launching. It needs no installer, stores settings in the separate OS Dev data directory, and has **no updater or stable update feed**.
+Use `pnpm run make:dev` to create a **portable Dev ZIP** for the current OS. Extract the complete ZIP before launching. It needs no installer, stores settings in the separate OS Dev data directory, and has **no updater or stable update feed**.
 
 ZIP artifacts are written under `out/make/dev/<platform>-<arch>/`.
 
@@ -197,13 +197,13 @@ ZIP artifacts are written under `out/make/dev/<platform>-<arch>/`.
 Build the stable Windows x64 app and **NSIS installer** on Windows:
 
 ```powershell
-npm run package
-npm run make
-npm run verify:packaged-desktop
-npm run verify:packaged-server
-npm run verify:packaged-utility
-npm run verify:packaged-trash
-npm run verify:clipboard
+pnpm run package
+pnpm run make
+pnpm run verify:packaged-desktop
+pnpm run verify:packaged-server
+pnpm run verify:packaged-utility
+pnpm run verify:packaged-trash
+pnpm run verify:clipboard
 ```
 
 The executable is `out/OpenTig-win32-x64/OpenTig.exe`. The installer is `out/make/production/win32-x64/OpenTig-<version>-win32-x64-Setup.exe`.
@@ -214,15 +214,15 @@ The one-click installer installs for the current user, creates desktop/Start men
 
 ### Native clipboard verification
 
-`npm run verify:clipboard` checks native file references, text-path fallbacks, PNG images, and the asynchronous Electron host adapter. On Windows it also reads file drops and images written by Windows Forms. This command replaces the system clipboard; use a disposable desktop or CI session. It runs in the manual Windows desktop and release workflows.
+`pnpm run verify:clipboard` checks native file references, text-path fallbacks, PNG images, and the asynchronous Electron host adapter. On Windows it also reads file drops and images written by Windows Forms. This command replaces the system clipboard; use a disposable desktop or CI session. It runs in the manual Windows desktop and release workflows.
 
 ### Cross-build Windows from Linux
 
-To cross-build Windows targets from Linux, pass `-- --platform=win32 --arch=x64` to `package`, `make`, `package:dev`, or `make:dev`.
+To cross-build Windows targets from Linux, pass `--platform=win32 --arch=x64` to `package`, `make`, `package:dev`, or `make:dev`.
 
 Building NSIS on Linux also requires a working Wine installation and its runtime libraries, such as the environment in the electron-builder `electronuserland/builder:wine` container. ZIP builds do not need Wine.
 
-Use the same target flags with `verify:packaged-desktop` to inspect an artifact without executing it. The utility/Trash checks must run on the target OS with a graphical Electron environment; add `-- --dev` for Dev packages.
+Use the same target flags with `verify:packaged-desktop` to inspect an artifact without executing it. The utility/Trash checks must run on the target OS with a graphical Electron environment; add `--dev` for Dev packages.
 
 `package` alone creates an unpacked application for the current OS; stable `make` is deliberately limited to the planned Windows x64 installer.
 
@@ -233,7 +233,7 @@ docker run --rm --init --user "$(id -u):$(id -g)" \
   -e HOME=/tmp/opentig-builder-home \
   -v "$PWD:$PWD" -w "$PWD" \
   electronuserland/builder:wine \
-  bash -c 'mkdir -p "$HOME" && npm run make -- --platform=win32 --arch=x64'
+  bash -c 'mkdir -p "$HOME" && node scripts/package-desktop.mjs make --platform=win32 --arch=x64'
 ```
 
 ### Build metadata, signing, and publication

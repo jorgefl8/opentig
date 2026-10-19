@@ -3,7 +3,7 @@ import { CopyButton } from '@/components/ui/copy-button';
 import { isDevProfile } from '@/lib/app-identity';
 
 export function PairingCommand({ recovery = false }: { recovery?: boolean }) {
-  const command = recovery ? (isDevProfile ? 'node packages/server/dist/dev.mjs reset-access' : 'opentig reset-access') : isDevProfile ? 'npm run pair:web:dev' : 'opentig pair';
+  const command = recovery ? (isDevProfile ? 'node packages/server/dist/dev.mjs reset-access' : 'opentig reset-access') : isDevProfile ? 'pnpm run pair:web:dev' : 'opentig pair';
   const [failed, setFailed] = useState(false);
 
   return (

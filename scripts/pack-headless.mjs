@@ -5,17 +5,20 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import process from 'node:process';
+import { bundledNpm } from './bundled-npm.mjs';
 
 const execute = promisify(execFile);
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const outputDirectory = path.join(repositoryRoot, 'dist', 'headless');
-const npmCli = process.env.npm_execpath || path.join(path.dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js');
+// The CLI is published with npm, so pack it with the npm bundled with Node.js
+// rather than the workspace package manager that runs this script.
+const npmCli = bundledNpm().cli;
 
 await rm(outputDirectory, { recursive: true, force: true });
 await mkdir(outputDirectory, { recursive: true });
 const { stdout } = await execute(process.execPath, [
-  npmCli, 'pack', '--workspace', 'packages/server', '--pack-destination', outputDirectory, '--json',
-], { cwd: repositoryRoot, maxBuffer: 32 * 1024 * 1024, windowsHide: true });
+  npmCli, 'pack', '--pack-destination', outputDirectory, '--json',
+], { cwd: path.join(repositoryRoot, 'packages', 'server'), maxBuffer: 32 * 1024 * 1024, windowsHide: true });
 const packed = JSON.parse(stdout);
 if (!Array.isArray(packed) || packed.length !== 1 || packed[0]?.name !== '@opentig/cli') {
   throw new Error('Expected npm pack to produce exactly one @opentig/cli artifact.');

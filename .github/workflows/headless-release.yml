@@ -38,20 +38,23 @@ jobs:
           fetch-depth: 0
           path: source
           persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          package_json_file: source/package.json
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
-          cache: npm
-          cache-dependency-path: source/package-lock.json
+          cache: pnpm
+          cache-dependency-path: source/pnpm-lock.yaml
       - id: identity
         working-directory: source
         run: node scripts/validate-release-tag.mjs
         env:
           OPENTIG_RELEASE_TAG: ${{ inputs.tag }}
           OPENTIG_RELEASE_COMMIT: ${{ inputs.commit }}
-      - run: npm ci
+      - run: pnpm install --frozen-lockfile
         working-directory: source
-      - run: npm run release:pack:headless && npm run release:inspect:headless
+      - run: pnpm run release:pack:headless && pnpm run release:inspect:headless
         working-directory: source
       - name: Record and verify the source identity
         run: node automation/scripts/headless-release.mjs stamp source/dist/headless "$RELEASE_TAG" "$RELEASE_COMMIT"

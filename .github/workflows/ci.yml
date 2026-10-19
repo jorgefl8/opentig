@@ -50,20 +50,22 @@ jobs:
         with:
           persist-credentials: false
       - if: needs.changes.outputs.required == 'true'
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - if: needs.changes.outputs.required == 'true'
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
-          cache: npm
+          cache: pnpm
       - if: needs.changes.outputs.required == 'true'
-        run: npm ci
+        run: pnpm install --frozen-lockfile
       - if: needs.changes.outputs.required == 'true' && runner.os == 'Linux'
-        run: npm run typecheck
+        run: pnpm run typecheck
       - if: needs.changes.outputs.required == 'true' && runner.os == 'Linux'
-        run: npm run lint
+        run: pnpm run lint
       - if: needs.changes.outputs.required == 'true'
-        run: npm test
+        run: pnpm test
       - if: needs.changes.outputs.required == 'true' && runner.os == 'Linux'
-        run: npm run audit:prod
+        run: pnpm run audit:prod
 
   website:
     needs: changes
@@ -81,21 +83,23 @@ jobs:
         with:
           persist-credentials: false
       - if: needs.changes.outputs.website == 'true'
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - if: needs.changes.outputs.website == 'true'
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
-          cache: npm
+          cache: pnpm
       - if: needs.changes.outputs.website == 'true'
-        run: npm ci --ignore-scripts
+        run: pnpm install --frozen-lockfile --ignore-scripts
       - if: needs.changes.outputs.website == 'true'
-        run: npm run check:website
+        run: pnpm run check:website
       - if: needs.changes.outputs.website == 'true'
-        run: npm run build:website
+        run: pnpm run build:website
       - name: Validate noindex preview output
         if: needs.changes.outputs.website == 'true'
         env:
           WEBSITE_NOINDEX: 'true'
-        run: npm run build --workspace @opentig/website -- --outDir ../.ai/website-preview
+        run: pnpm --filter @opentig/website run build --outDir ../.ai/website-preview
 
   system-trash-smoke:
     needs: changes
@@ -110,12 +114,13 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
-          cache: npm
-      - run: npm ci
-      - run: npx vitest run src/main/platform/SystemTrash.integration.test.ts
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec vitest run src/main/platform/SystemTrash.integration.test.ts
         env:
           OPENTIG_SYSTEM_TRASH_INTEGRATION: '1'
 
@@ -133,14 +138,15 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
-          cache: npm
-      - run: npm ci
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
       - name: Verify CLI discovery on the native platform
         # Bound native process contention, including cold Windows PowerShell startup.
-        run: npx vitest run src/main/ai src/main/github/GitHubService.test.ts src/main/persistence/SettingsStore.test.ts --maxWorkers=2
+        run: pnpm exec vitest run src/main/ai src/main/github/GitHubService.test.ts src/main/persistence/SettingsStore.test.ts --maxWorkers=2
       - name: Prepare isolated runner user service manager
         if: runner.os == 'Linux'
         shell: bash
@@ -149,10 +155,10 @@ jobs:
           sudo systemctl start "user@$(id -u).service"
           echo "XDG_RUNTIME_DIR=/run/user/$(id -u)" >> "$GITHUB_ENV"
           echo "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus" >> "$GITHUB_ENV"
-      - run: npm run release:pack:headless
-      - run: npm run release:inspect:headless
+      - run: pnpm run release:pack:headless
+      - run: pnpm run release:inspect:headless
       - name: Verify native CLI service lifecycle
-        run: npx vitest run packages/server/src/service-manager.integration.test.ts packages/server/src/cli-command.test.ts packages/server/src/service-manager.test.ts packages/server/src/service-eligibility.test.ts packages/server/src/service-npm.test.ts packages/server/src/service-update-worker.test.ts
+        run: pnpm exec vitest run packages/server/src/service-manager.integration.test.ts packages/server/src/cli-command.test.ts packages/server/src/service-manager.test.ts packages/server/src/service-eligibility.test.ts packages/server/src/service-npm.test.ts packages/server/src/service-update-worker.test.ts
         env:
           OPENTIG_SERVICE_INTEGRATION: '1'
       - name: Run packed CLI with npx

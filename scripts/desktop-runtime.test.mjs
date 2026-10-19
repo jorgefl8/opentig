@@ -56,6 +56,7 @@ describe('distribution boundaries', () => {
     expect(packageOptions(['make', '--platform=win32', '--arch=x64'], {}, 'linux', 'arm64')).toMatchObject({ platform: 'win32', arch: 'x64', distribution: 'installer' });
     expect(() => packageOptions(['make'], {}, 'linux', 'x64')).toThrow('Windows x64');
     expect(() => packageOptions(['make', '--publish=always'])).toThrow('Unsupported packaging option');
+    expect(packageOptions(['make', '--', '--platform=win32', '--arch=x64'], {}, 'linux', 'x64')).toMatchObject({ platform: 'win32', arch: 'x64' });
     expect(() => packageOptions([], { OPENTIG_BUILD_PROFILE: 'typo' })).toThrow('Invalid');
   });
   it('keeps stable and Dev identities distinct and local builds unpublished', () => {

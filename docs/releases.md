@@ -75,7 +75,7 @@ To preview only, enable `dry_run`. It reports the version without changing files
 <details>
 <summary>Version alignment, atomic tag creation, and permissions</summary>
 
-Preparation chooses the managed draft's proposed version, including a higher manually selected version. It aligns the desktop/server package versions and workspace lockfile, creating a version commit only when needed.
+Preparation chooses the managed draft's proposed version, including a higher manually selected version. It aligns the desktop/server package versions, creating a version commit only when needed.
 
 The version commit and annotated `vX.Y.Z` tag are pushed together atomically. A concurrent push to `main` or a branch-protection rejection cannot leave a partial tag.
 

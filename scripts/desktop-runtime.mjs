@@ -1,5 +1,6 @@
 import { access, cp, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { bundledNpm } from './bundled-npm.mjs';
 
 export const RUNTIME_DEPENDENCIES = ['uiohook-napi', 'trash', 'electron-updater'];
 
@@ -54,6 +55,9 @@ export async function stageDesktopApp(root, options) {
     license: metadata.license,
     main: '.vite/build/main.js',
     private: true,
+    // The staged runtime is a self-contained npm-style tree. Declaring it keeps
+    // the packager from collecting the pnpm workspace's dependencies instead.
+    packageManager: `npm@${bundledNpm().version}`,
     dependencies: Object.fromEntries(RUNTIME_DEPENDENCIES.map((name) => [name, metadata.dependencies[name]])),
   }, null, 2)}\n`);
   await writeFile(path.join(directory, 'opentig-build.json'), `${JSON.stringify({

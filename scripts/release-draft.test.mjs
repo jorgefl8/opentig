@@ -272,7 +272,7 @@ it('filters website history by paths, including merges, while retaining mixed co
     // The merge must be attributed once, against its first parent.
     const mixedMessage = 'Merge pull request #2\n\nfeat(website): mixed change';
     git('merge', '--no-ff', 'mixed-change', '-m', mixedMessage);
-    write('package-lock.json', '{}');
+    write('pnpm-lock.yaml', "lockfileVersion: '9.0'\n");
     commit('chore(website): update shared lockfile');
     git('mv', 'application.ts', 'website/application.ts');
     commit('refactor(website): move application code');

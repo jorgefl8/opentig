@@ -5,14 +5,14 @@ import { pathToFileURL } from 'node:url';
 import { listReleases, releaseApi } from './release-api.mjs';
 import { attributeChanges, readCommits, renderNotes, replaceNotes, selectDraft } from './release-draft.mjs';
 
-const versionFiles = ['package.json', 'packages/server/package.json', 'package-lock.json'];
+// pnpm-lock.yaml records workspace dependencies but not workspace versions.
+const versionFiles = ['package.json', 'packages/server/package.json'];
 
 function versionDocuments(read, version) {
-  const [desktop, server, lock] = versionFiles.map((file) => JSON.parse(read(file)));
-  if (lock.lockfileVersion !== 3 || lock.packages?.['']?.name !== desktop.name
-    || lock.packages?.['packages/server']?.name !== server.name) throw new Error('Unexpected workspace lockfile layout.');
-  desktop.version = server.version = lock.version = lock.packages[''].version = lock.packages['packages/server'].version = version;
-  return [desktop, server, lock].map((document) => `${JSON.stringify(document, null, 2)}\n`);
+  const [desktop, server] = versionFiles.map((file) => JSON.parse(read(file)));
+  if (server.name !== '@opentig/cli') throw new Error('Unexpected workspace package layout.');
+  desktop.version = server.version = version;
+  return [desktop, server].map((document) => `${JSON.stringify(document, null, 2)}\n`);
 }
 
 function assertVersions(git, commit, version) {

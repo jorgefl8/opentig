@@ -1,0 +1,21 @@
+packages:
+  - packages/*
+  - website
+
+# Desktop packaging stages runtime dependencies from a flat, npm-style
+# node_modules tree, so keep pnpm's hoisted layout.
+nodeLinker: hoisted
+
+catalog:
+  # Mermaid renders math with the same KaTeX version as the app.
+  katex: 0.18.10
+
+overrides:
+  mermaid>katex: 'catalog:'
+
+allowBuilds:
+  electron-winstaller: true
+  esbuild: true
+  fsevents: true
+  uiohook-napi: true
+  workerd: true

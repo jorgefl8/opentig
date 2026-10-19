@@ -9,13 +9,13 @@
 
 ## Local setup
 
-Use Node.js 24.15+, npm 11+, and Git on `PATH`. Development can run on Linux; Windows installer checks require Windows.
+Use Node.js 24.15+, [pnpm](https://pnpm.io/installation) 12+, and Git on `PATH`. Development can run on Linux; Windows installer checks require Windows.
 
 For desktop development:
 
 ```powershell
-npm ci
-npm start
+pnpm install
+pnpm start
 ```
 
 See [development and packaging](docs/development.md) for browser development, Dev profiles, and packaging, or the [website guide](docs/website.md) to work on the public site.
@@ -27,7 +27,7 @@ See [development and packaging](docs/development.md) for browser development, De
 Run the application checks:
 
 ```powershell
-npm run check
+pnpm run check
 ```
 
 Add focused tests for behavior changes. Keep Electron security boundaries intact: renderer code must not gain direct Node.js, filesystem, process, or unrestricted IPC access.
@@ -44,8 +44,8 @@ Changes to shared dependencies or release/CI tooling also require the applicatio
 For public website changes or edits to a published guide, run:
 
 ```bash
-npm run check:website
-npm run build:website
+pnpm run check:website
+pnpm run build:website
 ```
 
 For documentation changes, check links, heading anchors, examples, and documented commands against the repository. Documentation-only changes do not require rebuilding or restarting the application. Website development does not require packaging or restarting the desktop application or CLI server.

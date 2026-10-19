@@ -161,7 +161,7 @@ From the source checkout, run `node packages/server/dist/dev.mjs reset-access`, 
 
 Codes are **one-use and valid for five minutes**. Generating another code invalidates the previous unused one. The **Close** button dismisses the QR/link/code display, even during creation; it does not invalidate a copied code. Codes remain valid until used, replaced, expired, or invalidated by disabling Web access. Expired codes disappear from the display automatically.
 
-An unpaired browser offers **Pair this browser**, with a copyable CLI command in both the authentication notice and pairing form: `opentig pair` for production or `npm run pair:web:dev` for Dev. These views fit narrow screens and scroll when needed.
+An unpaired browser offers **Pair this browser**, with a copyable CLI command in both the authentication notice and pairing form: `opentig pair` for production or `pnpm run pair:web:dev` for Dev. These views fit narrow screens and scroll when needed.
 
 Opening `/pair` checks the existing session first. Authenticated browsers return to the app; a connection failure offers retry rather than demanding another code. Sessions survive server restarts.
 

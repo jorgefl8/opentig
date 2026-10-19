@@ -67,7 +67,7 @@ it('keeps release-security automation in application validation scope', async ()
   expect(validationScope('push', { before: base }, commit(), root)).toEqual({ required: true, website: false });
 });
 
-it.each(['application.ts', 'package.json', 'package-lock.json', '.oxlintrc.json', 'scripts/change-scope.mjs'])(
+it.each(['application.ts', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', '.oxlintrc.json', 'scripts/change-scope.mjs'])(
   'validates website changes mixed with shared or application file %s', async (file) => {
     await mkdir(path.join(root, 'website'));
     await writeFile(path.join(root, 'website/index.astro'), '<main>OpenTig</main>');
@@ -77,7 +77,7 @@ it.each(['application.ts', 'package.json', 'package-lock.json', '.oxlintrc.json'
   },
 );
 
-it.each(['src/renderer/app/App.tsx', 'src/shared/contracts.ts', 'public/vscode-icons/file.svg', 'tsconfig.json', 'package.json', 'package-lock.json', '.oxlintrc.json', '.npmrc', '.github/workflows/ci.yml', 'scripts/ci-scope.mjs', 'scripts/change-scope.mjs'])(
+it.each(['src/renderer/app/App.tsx', 'src/shared/contracts.ts', 'public/vscode-icons/file.svg', 'tsconfig.json', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', '.oxlintrc.json', '.npmrc', '.github/workflows/ci.yml', 'scripts/ci-scope.mjs', 'scripts/change-scope.mjs'])(
   'validates both projects when shared file %s changes alone', async (file) => {
     await mkdir(path.dirname(path.join(root, file)), { recursive: true });
     await writeFile(path.join(root, file), 'Changed shared fixture\n');

@@ -192,19 +192,19 @@ Confirmation dialogs live in React. Cross-platform deletion moves content to the
 Run from the repository root:
 
 ```powershell
-npm run typecheck
-npm run lint
-npm test
-npm run package
+pnpm run typecheck
+pnpm run lint
+pnpm test
+pnpm run package
 ```
 
 Focused server coverage lives under `packages/server/src/*.test.ts`; runtime
 boundary tests live under `src/main/runtime`; supervisor tests live under
 `src/main/server`; renderer transport tests live under `src/renderer/lib`.
 
-`npm run release:pack:headless` builds the web client and server once, then emits
+`pnpm run release:pack:headless` builds the web client and server once, then emits
 one tarball plus JSON metadata containing its version, SHA-256, npm integrity,
-and exact file list. `npm run release:inspect:headless` rejects version drift,
+and exact file list. `pnpm run release:inspect:headless` rejects version drift,
 checkout paths, source/tests/state, Electron/native imports, and undeclared
 artifacts. Release automation consumes that tested tarball rather than rebuilding it.
 

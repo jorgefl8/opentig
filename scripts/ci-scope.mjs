@@ -21,7 +21,7 @@ export function validationScope(eventName, event, head, cwd = process.cwd()) {
     return {
       required: files.some((file) => !isDocumentation(file) && !isWebsitePath(file)),
       website: files.some((file) => publishedSources.has(file) || ['website/', 'src/renderer/', 'src/shared/', 'public/'].some(prefix => file.startsWith(prefix)) || file === 'tsconfig.json' || [
-        'package.json', 'package-lock.json', '.oxlintrc.json', '.npmrc',
+        'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', '.oxlintrc.json', '.npmrc',
         '.github/workflows/ci.yml', '.github/workflows/website.yml', 'scripts/ci-scope.mjs', 'scripts/change-scope.mjs',
       ].includes(file)),
     };

@@ -34,6 +34,10 @@ assert.ok(files.includes('/.vite/build/preload.js'));
 assert.deepEqual(files.filter((file) => file.startsWith('/.vite/build/')).sort(), ['/.vite/build/main.js', '/.vite/build/preload.js']);
 assert.ok(!files.some((file) => file.startsWith('/.vite/renderer') || file.startsWith('/src/') || file.startsWith('/node_modules/electron/')));
 const modules = path.join(resources, 'app.asar.unpacked/node_modules');
+// Only the staged runtime closure may ship; the renderer bundles its own dependencies.
+for (const name of ['react', 'react-dom', 'mermaid', 'shiki']) {
+  await assert.rejects(access(path.join(modules, name)), { code: 'ENOENT' }, `Packaged app must not include workspace dependency ${name}`);
+}
 await access(path.join(modules, 'uiohook-napi', 'prebuilds', `${platform}-${arch}`, 'uiohook-napi.node'));
 await access(path.join(resources, 'opentig.ico'));
 const trash = await import(pathToFileURL(path.join(modules, 'trash/index.js')).href);
