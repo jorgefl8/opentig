@@ -10,7 +10,7 @@ import { FILES_TREE_SAVE_DEBOUNCE_MS, normalizeFilesTreeStates, type FilesTreeSt
 import { cloneOpenFilesState, normalizeOpenFilesStates, OPEN_FILES_SAVE_DEBOUNCE_MS, type OpenFilesState, upsertOpenFilesState } from '../../shared/open-files-state';
 import { MAX_PROJECT_NAME_LENGTH, MAX_REPOSITORIES_PER_PROJECT, MAX_REPOSITORY_KEY_LENGTH, MAX_REPOSITORY_PROJECTS, normalizeRepositoryKey } from '../../shared/repository-projects';
 import { DEFAULT_REMOTE_FETCH_INTERVAL_SECONDS, normalizeRemoteFetchIntervalSeconds } from '../../shared/remote-fetch';
-import { AUTOMATIC_GITHUB_ACCOUNT, githubAccountSelectionSchema, githubRepositoryKey, type GitHubAccountSelection } from '../../shared/github-accounts';
+import { DEFAULT_GITHUB_ACCOUNT, GITHUB_LOGIN_PATTERN, githubAccountSelectionSchema, githubRepositoryKey, parseStoredGitHubAccount, resolveGitHubAccount, type GitHubAccountSelection } from '../../shared/github-accounts';
 import { DESKTOP_MIN_WINDOW_HEIGHT, DESKTOP_MIN_WINDOW_WIDTH } from '../window/desktop-window-size';
 import { backupPathFor, writeFileAtomically } from './atomicWrite';
 
@@ -22,7 +22,6 @@ interface SettingsData {
   version: number;
   githubAccounts: Record<string, GitHubAccountSelection>;
   githubDefaultLogin: string | null;
-  githubSuggestedLogin: string | null;
   repositoryAiInstructions: Record<string, boolean>;
   recentRepositories: RecentRepository[];
   repositoryProjects: RepositoryProject[];
@@ -40,7 +39,6 @@ const defaults: SettingsData = {
   version: SETTINGS_SCHEMA_VERSION,
   githubAccounts: {},
   githubDefaultLogin: null,
-  githubSuggestedLogin: null,
   repositoryAiInstructions: {},
   recentRepositories: [],
   repositoryProjects: [],
@@ -150,17 +148,10 @@ export class SettingsStore {
   }
 
   githubAccount(commonDir: string): GitHubAccountSelection {
-    const selection = this.data.githubAccounts[githubRepositoryKey(commonDir)] ?? AUTOMATIC_GITHUB_ACCOUNT;
-    if (selection.mode === 'account' && selection.useGlobalDefault) {
-      if (!this.data.githubDefaultLogin) throw new Error('Choose an OpenTig default account in Settings → GitHub.');
-      return { ...selection, login: this.data.githubDefaultLogin };
-    }
-    return { ...selection };
+    return { ...(this.data.githubAccounts[githubRepositoryKey(commonDir)] ?? DEFAULT_GITHUB_ACCOUNT) };
   }
 
   get githubDefaultLogin(): string | null { return this.data.githubDefaultLogin; }
-
-  get githubSuggestedLogin(): string | null { return this.data.githubSuggestedLogin; }
 
   get githubRepositoryAccounts() {
     const seen = new Set<string>();
@@ -168,45 +159,27 @@ export class SettingsStore {
       const key = githubRepositoryKey(repo.commonDir);
       if (seen.has(key)) return false;
       seen.add(key); return true;
-    }).map(repo => {
-      const selection = this.data.githubAccounts[githubRepositoryKey(repo.commonDir)] ?? AUTOMATIC_GITHUB_ACCOUNT;
-      return { repositoryId: repo.id, name: repo.repositoryName || repo.name,
-        login: selection.mode === 'account' ? selection.useGlobalDefault ? this.data.githubDefaultLogin : selection.login : null,
-        followsDefault: selection.mode === 'account' && selection.useGlobalDefault === true };
-    });
+    }).map(repo => ({ repositoryId: repo.id, name: repo.repositoryName || repo.name,
+      ...resolveGitHubAccount(this.githubAccount(repo.commonDir), this.data.githubDefaultLogin) }));
   }
-
-  async setGitHubSuggestedLogin(login: string): Promise<void> {
-    const parsed = githubAccountSelectionSchema.parse({ mode: 'account', host: 'github.com', login });
-    if (parsed.mode !== 'account') throw new Error('Invalid suggested account.');
-    const previous = this.data.githubSuggestedLogin;
-    this.data.githubSuggestedLogin = parsed.login;
-    try { await this.save(); }
-    catch (error) { if (this.data.githubSuggestedLogin === parsed.login) this.data.githubSuggestedLogin = previous; throw error; }
-  }
-
 
   async setGitHubDefaultLogin(login: string): Promise<void> {
-    const parsed = githubAccountSelectionSchema.parse({ mode: 'account', host: 'github.com', login });
-    if (parsed.mode !== 'account') throw new Error('Invalid default account.');
+    if (!GITHUB_LOGIN_PATTERN.test(login)) throw new Error('Invalid default account.');
     const previous = this.data.githubDefaultLogin;
-    this.data.githubDefaultLogin = parsed.login;
+    this.data.githubDefaultLogin = login;
     try { await this.save(); }
-    catch (error) { if (this.data.githubDefaultLogin === parsed.login) this.data.githubDefaultLogin = previous; throw error; }
+    catch (error) { if (this.data.githubDefaultLogin === login) this.data.githubDefaultLogin = previous; throw error; }
   }
 
   async setGitHubAccount(commonDir: string, selection: GitHubAccountSelection): Promise<void> {
     const parsed = githubAccountSelectionSchema.parse(selection);
-    if (parsed.mode === 'account' && parsed.useGlobalDefault && parsed.login.toLowerCase() !== this.data.githubDefaultLogin?.toLowerCase()) {
-      throw new Error('The OpenTig default account changed. Review the current account and try again.');
-    }
     const key = githubRepositoryKey(commonDir);
     const previous = this.data.githubAccounts[key];
-    if (parsed.mode === 'auto') delete this.data.githubAccounts[key];
+    if (parsed.mode === 'default') delete this.data.githubAccounts[key];
     else this.data.githubAccounts[key] = parsed;
     try { await this.save(); }
     catch (error) {
-      if (this.data.githubAccounts[key] === (parsed.mode === 'auto' ? undefined : parsed)) {
+      if (this.data.githubAccounts[key] === (parsed.mode === 'default' ? undefined : parsed)) {
         if (previous) this.data.githubAccounts[key] = previous;
         else delete this.data.githubAccounts[key];
       }
@@ -579,8 +552,8 @@ function validate(value: unknown, defaultDoubleControlShortcutEnabled: boolean):
     repositoryAiInstructions: Object.fromEntries(Object.entries(
       input.repositoryAiInstructions && typeof input.repositoryAiInstructions === 'object' && !Array.isArray(input.repositoryAiInstructions) ? input.repositoryAiInstructions : {},
     ).slice(0, 1000).filter(([key, value]) => value === true && key.length <= MAX_REPOSITORY_KEY_LENGTH && !hasControlCharacters(key) && path.isAbsolute(key)).map(([key]) => [githubRepositoryKey(key), true])),
-    githubSuggestedLogin: typeof input.githubSuggestedLogin === 'string' && githubAccountSelectionSchema.safeParse({ mode: 'account', host: 'github.com', login: input.githubSuggestedLogin }).success ? input.githubSuggestedLogin : null,
-    githubDefaultLogin: typeof input.githubDefaultLogin === 'string' && githubAccountSelectionSchema.safeParse({ mode: 'account', host: 'github.com', login: input.githubDefaultLogin }).success ? input.githubDefaultLogin : null,
+    // The former "suggested account for new repositories" becomes the default when none was chosen.
+    githubDefaultLogin: [input.githubDefaultLogin, input.githubSuggestedLogin].find((login): login is string => typeof login === 'string' && GITHUB_LOGIN_PATTERN.test(login)) ?? null,
     recentRepositories,
     repositoryProjects,
     filesTreeStates,
@@ -730,8 +703,8 @@ function normalizeGitHubAccounts(value: unknown): Record<string, GitHubAccountSe
   if (!value || typeof value !== 'object' || Array.isArray(value)) return result;
   for (const [key, selection] of Object.entries(value).slice(0, 1000)) {
     if (!key || key.length > MAX_REPOSITORY_KEY_LENGTH || hasControlCharacters(key) || !path.isAbsolute(key)) continue;
-    const parsed = githubAccountSelectionSchema.safeParse(selection);
-    if (parsed.success && parsed.data.mode === 'account') result[githubRepositoryKey(key)] = parsed.data;
+    const parsed = parseStoredGitHubAccount(selection);
+    if (parsed && parsed.mode !== 'default') result[githubRepositoryKey(key)] = parsed;
   }
   return result;
 }

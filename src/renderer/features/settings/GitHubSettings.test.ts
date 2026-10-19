@@ -8,7 +8,7 @@ import type { RepositoryInfo } from '@shared/contracts';
 import type { GitHubAccountsStatus, GitHubRepositoryAccount } from '@shared/github-accounts';
 import { GitHubSettings } from './GitHubSettings';
 
-const calls = vi.hoisted(() => ({ accountsStatus: vi.fn(), repositoryAccount: vi.fn(), setRepositoryAccount: vi.fn(), setDefaultAccount: vi.fn(), setSuggestedAccount: vi.fn(), authorship: vi.fn(), setAuthorship: vi.fn(), error: vi.fn(), copy: vi.fn() }));
+const calls = vi.hoisted(() => ({ accountsStatus: vi.fn(), repositoryAccount: vi.fn(), setRepositoryAccount: vi.fn(), setDefaultAccount: vi.fn(), authorship: vi.fn(), setAuthorship: vi.fn(), error: vi.fn(), copy: vi.fn() }));
 vi.mock('@/lib/opentig-api', () => ({ opentig: { github: calls, commits: calls, events: { onRepositoryChanged: () => () => undefined } } }));
 vi.mock('sileo', () => ({ sileo: { error: calls.error, success: vi.fn() } }));
 vi.mock('@/lib/browser-capabilities', () => ({ writeClipboardText: calls.copy }));
@@ -19,7 +19,7 @@ const saved: GitHubAccountsStatus = { installationStatus: 'available', version: 
     { host: 'github.com', login: 'alice', active: true, state: 'authenticated', storage: 'keyring' },
     { host: 'github.com', login: 'bob', active: false, state: 'authenticated', storage: 'file' },
   ] };
-const context: GitHubRepositoryAccount = { selection: { mode: 'auto' }, nameWithOwner: 'organisation/demo', login: 'bob', source: 'ssh', state: 'ready', checkedAt: saved.checkedAt, revision: 1 };
+const context: GitHubRepositoryAccount = { selection: { mode: 'git' }, nameWithOwner: 'organisation/demo', login: 'bob', source: 'ssh', state: 'ready', checkedAt: saved.checkedAt, revision: 1 };
 const identity: CommitAuthorship = { author: { name: 'Alice Sample', email: 'alice@example.com' }, committer: { name: 'Alice Sample', email: 'alice@example.com' }, source: 'global', editable: true, blockers: [], revision: 'a'.repeat(64) };
 beforeEach(() => { calls.authorship.mockResolvedValue(identity); });
 const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
@@ -243,27 +243,37 @@ it('never puts a late check from repository A into repository B', async () => {
   } finally { await view.close(); }
 });
 
-it('migrates only on opt-in and can return to external Git authentication', async () => {
-  calls.accountsStatus.mockResolvedValue(saved);
-  let selected: GitHubRepositoryAccount = { ...context, source: 'explicit', selection: { mode: 'account', host: 'github.com', login: 'alice' } };
+it('switches between the default, a repository account and Git’s own credentials with one control', async () => {
+  calls.accountsStatus.mockResolvedValue({ ...saved, defaultLogin: 'alice' });
+  let selected: GitHubRepositoryAccount = { ...context, selection: { mode: 'default' }, login: 'alice', source: 'default' };
   calls.repositoryAccount.mockImplementation(() => Promise.resolve(selected));
   calls.setRepositoryAccount.mockImplementation((_id, choice) => { selected = { ...selected, selection: choice }; return Promise.resolve(selected); });
   const view = await mount();
   try {
-    expect(view.container.querySelector('[aria-label="Git authentication"]')?.textContent).toContain('Existing Git credentials');
-    expect(view.container.textContent).toContain('They may belong to a different account');
-    expect(calls.setRepositoryAccount).not.toHaveBeenCalled();
-    await choosePicker('Git authentication', 'Repository account');
-    expect(calls.setRepositoryAccount).toHaveBeenLastCalledWith('repo', { mode: 'account', host: 'github.com', login: 'alice', gitMode: 'managed' }, 1);
-    expect(view.container.querySelector('[aria-label="Git authentication"]')?.textContent).toContain('Repository account · @alice');
-    expect(view.container.querySelector('.github-git-summary')).toBeNull();
-    expect(view.container.textContent).toContain('Used for GitHub, pull requests, fetch, pull and push over HTTPS.');
-    await choosePicker('Git authentication', 'Existing Git credentials');
-    expect(calls.setRepositoryAccount).toHaveBeenLastCalledWith('repo', { mode: 'account', host: 'github.com', login: 'alice', gitMode: 'external' }, 1);
+    expect(view.container.querySelector('button[aria-label="GitHub account for this repository"]')?.textContent).toContain('Default · @alice');
+    expect(view.container.textContent).toContain('Follows the default account.');
+    expect(view.container.querySelector('[aria-label="Git authentication"]')).toBeNull();
+    await choosePicker('GitHub account for this repository', '@bob');
+    expect(calls.setRepositoryAccount).toHaveBeenLastCalledWith('repo', { mode: 'account', host: 'github.com', login: 'bob' }, 1);
+    expect(view.container.textContent).toContain('Kept for this repository when the default account changes.');
+    await choosePicker('GitHub account for this repository', 'Git’s own credentials');
+    expect(calls.setRepositoryAccount).toHaveBeenLastCalledWith('repo', { mode: 'git' }, 1);
+    await choosePicker('GitHub account for this repository', 'Default · @alice');
+    expect(calls.setRepositoryAccount).toHaveBeenLastCalledWith('repo', { mode: 'default' }, 1);
+    expect(calls.setDefaultAccount).not.toHaveBeenCalled();
     expect(calls.setAuthorship).not.toHaveBeenCalled();
   } finally { await view.close(); }
 });
 
+it('explains an account chosen automatically because the default has no access', async () => {
+  calls.accountsStatus.mockResolvedValue({ ...saved, defaultLogin: 'alice' });
+  calls.repositoryAccount.mockResolvedValue({ ...context, selection: { mode: 'account', host: 'github.com', login: 'bob', detected: true }, source: 'detected' });
+  const view = await mount();
+  try {
+    expect(view.container.querySelector('button[aria-label="GitHub account for this repository"]')?.textContent).toContain('@bob · chosen automatically');
+    expect(view.container.textContent).toContain('the default account @alice has no access to this repository');
+  } finally { await view.close(); }
+});
 
 it('preserves the authorship draft when account inventory and authorship queries refresh', async () => {
   calls.accountsStatus.mockResolvedValue(saved); calls.repositoryAccount.mockResolvedValue(context);
@@ -292,12 +302,10 @@ it('keeps technical details collapsed while showing the destination and external
     expect(view.container.querySelector('.github-repository-destination')?.textContent).toContain('alice/demo · HTTPS');
     expect(view.container.querySelector('.github-repository-destination')?.textContent).not.toContain('Git account');
     expect(view.container.querySelector('.github-repository-destination')?.textContent).not.toContain('@bob');
-    expect(view.container.textContent).toContain('Choose an account above to use it for Git HTTPS too.');
     expect(view.container.querySelector('.github-access-grid')).toBeNull();
     expect(view.container.querySelector('.github-authentication-details')).toHaveProperty('open', false);
     expect(view.container.querySelector('.github-authentication-details summary')?.textContent).toBe('Advanced · Git');
     expect(view.client.getQueryData(['repository', 'repo', 'push-context'])).toBeUndefined();
-    await expectManagedDisabled();
     await act(async () => { view.container.querySelector<HTMLElement>('.github-authentication-details summary')!.click(); });
     expect(view.container.querySelector('.github-authentication-details')).toHaveProperty('open', true);
     expect(view.container.textContent).not.toContain(publication.urls[0]);
@@ -340,20 +348,21 @@ async function choosePicker(label: string, option: string) {
   expect(node).toBeDefined();
   await act(async () => { node!.click(); await settle(); }); await act(settle);
 }
-it('saves suggestions without exposing assignments or changing legacy defaults', async () => {
-  calls.accountsStatus.mockResolvedValue({ ...saved, defaultLogin: 'alice', suggestedLogin: 'alice', repositoryAccounts: [{ repositoryId: 'repo', name: 'demo', login: 'alice', followsDefault: true }] });
+it('sets the default account from Accounts without changing repository accounts', async () => {
+  calls.accountsStatus.mockResolvedValue({ ...saved, defaultLogin: 'alice', repositoryAccounts: [{ repositoryId: 'repo', name: 'demo', login: 'alice', source: 'default' }] });
   calls.repositoryAccount.mockResolvedValue(context);
-  calls.setSuggestedAccount.mockResolvedValue({ ...saved, suggestedLogin: 'bob' });
+  calls.setDefaultAccount.mockResolvedValue({ ...saved, defaultLogin: 'bob' });
   const view = await mount();
   try {
     await scopeTab('Accounts');
-    await choosePicker('Suggested account', '@bob');
-    expect(calls.setSuggestedAccount).toHaveBeenCalledWith('bob');
+    const rows = [...view.container.querySelectorAll('.github-account-row')];
+    expect(rows[0]?.textContent).toContain('Default');
+    expect(rows[0]?.textContent).toContain('Used by 1 repository');
+    expect(view.container.textContent).not.toContain('Suggested');
+    await click('Make default');
+    expect(calls.setDefaultAccount).toHaveBeenCalledWith('bob');
     expect(calls.setRepositoryAccount).not.toHaveBeenCalled();
-    expect(calls.setDefaultAccount).not.toHaveBeenCalled();
-    expect(view.container.querySelector('[aria-label="Global default account"]')).toBeNull();
-    expect(view.container.querySelector('[aria-label="Repository account assignments"]')).toBeNull();
-    expect(view.container.textContent).not.toContain('Existing shared default');
+    expect(view.container.querySelector('button[aria-label="Default account"]')?.textContent).toContain('@bob');
   } finally { await view.close(); }
 });
 
@@ -362,7 +371,7 @@ const externalAccess = {
   identity: { state: 'ok' as const }, api: { state: 'ok' as const }, read: { state: 'external' as const }, write: { state: 'ok' as const }, checkedAt: saved.checkedAt,
 };
 
-it('uses a newly selected account for HTTPS Git and PRs without changing global defaults or authorship', async () => {
+it('uses a newly selected account for HTTPS Git and PRs without changing the default or authorship', async () => {
   calls.accountsStatus.mockResolvedValue(saved);
   let selected: GitHubRepositoryAccount = { ...context, access: externalAccess };
   calls.repositoryAccount.mockImplementation(() => Promise.resolve(selected));
@@ -375,29 +384,23 @@ it('uses a newly selected account for HTTPS Git and PRs without changing global 
   try {
     expect(calls.setRepositoryAccount).not.toHaveBeenCalled();
     await choosePicker('GitHub account for this repository', '@alice');
-    expect(calls.setRepositoryAccount).toHaveBeenCalledWith('repo', { mode: 'account', host: 'github.com', login: 'alice', gitMode: 'managed' }, 1);
-    expect(view.container.querySelector('[aria-label="Git authentication"]')?.textContent).toContain('Repository account · @alice');
-    expect(view.container.querySelector('.github-git-summary')).toBeNull();
-    expect(view.container.textContent).toContain('Used for GitHub, pull requests, fetch, pull and push over HTTPS.');
+    expect(calls.setRepositoryAccount).toHaveBeenCalledWith('repo', { mode: 'account', host: 'github.com', login: 'alice' }, 1);
+    expect(view.container.querySelector('.github-repository-destination')?.textContent).toContain('Fetch and push@alice');
     expect(calls.setDefaultAccount).not.toHaveBeenCalled();
     expect(calls.setAuthorship).not.toHaveBeenCalled();
   } finally { await view.close(); }
 });
 
-it('preserves an explicit external Git choice and names the account checked by the API', async () => {
+it('names the account whose write permission was checked in diagnostics', async () => {
   calls.accountsStatus.mockResolvedValue(saved);
-  let selected: GitHubRepositoryAccount = { ...context, selection: { mode: 'account', host: 'github.com', login: 'alice', gitMode: 'external' }, login: 'alice', access: externalAccess };
+  let selected: GitHubRepositoryAccount = { ...context, selection: { mode: 'account', host: 'github.com', login: 'alice' }, login: 'alice', source: 'repository', access: externalAccess };
   calls.repositoryAccount.mockImplementation(() => Promise.resolve(selected));
   calls.setRepositoryAccount.mockImplementation((_id, selection) => { selected = { ...selected, selection, login: selection.login }; return Promise.resolve(selected); });
   const view = await mount();
   try {
-    expect(view.container.querySelector('.github-git-summary')?.textContent).toContain('Fetch / push: Git credentials · account unverified');
-    expect(view.container.textContent).toContain('configured on the server');
     await click('Copy diagnostics');
     expect(calls.copy).toHaveBeenLastCalledWith(expect.stringContaining('Write permission (@alice)'));
     await choosePicker('GitHub account for this repository', '@bob');
-    expect(calls.setRepositoryAccount).toHaveBeenCalledWith('repo', { mode: 'account', host: 'github.com', login: 'bob', gitMode: 'external' }, 1);
-    expect(view.container.querySelector('[aria-label="Git authentication"]')?.textContent).toContain('Existing Git credentials');
     await click('Copy diagnostics');
     expect(calls.copy).toHaveBeenLastCalledWith(expect.stringContaining('Write permission (@bob)'));
   } finally { await view.close(); }
@@ -414,13 +417,15 @@ it('identifies desktop Git credentials as belonging to this computer', async () 
 
 it('keeps SSH authentication external when choosing a GitHub account', async () => {
   calls.accountsStatus.mockResolvedValue(saved);
-  calls.repositoryAccount.mockResolvedValue({ ...context, access: { ...externalAccess, publication: { ...externalAccess.publication, urls: ['git@github.com:org/demo.git'] } } });
-  calls.setRepositoryAccount.mockResolvedValue(context);
+  const ssh = { ...externalAccess, publication: { ...externalAccess.publication, urls: ['git@github.com:org/demo.git'] } };
+  let selected: GitHubRepositoryAccount = { ...context, access: ssh };
+  calls.repositoryAccount.mockImplementation(() => Promise.resolve(selected));
+  calls.setRepositoryAccount.mockImplementation((_id, selection) => { selected = { ...selected, selection, login: selection.login }; return Promise.resolve(selected); });
   const view = await mount();
   try {
-    await expectManagedDisabled();
     await choosePicker('GitHub account for this repository', '@alice');
-    expect(calls.setRepositoryAccount).toHaveBeenCalledWith('repo', { mode: 'account', host: 'github.com', login: 'alice', gitMode: 'external' }, 1);
+    expect(calls.setRepositoryAccount).toHaveBeenCalledWith('repo', { mode: 'account', host: 'github.com', login: 'alice' }, 1);
+    expect(view.container.querySelector('.github-repository-destination')?.textContent).toContain('isn’t GitHub HTTPS, so Git uses its own credentials or SSH key');
   } finally { await view.close(); }
 });
 
@@ -502,26 +507,4 @@ it.each([
   } finally { await view.close(); }
 });
 
-async function expectManagedDisabled() {
-  await act(async () => { document.querySelector<HTMLButtonElement>('button[aria-label="Git authentication"]')!.click(); await settle(); });
-  const option = [...document.querySelectorAll<HTMLElement>('[role=option]')].find(item => item.textContent?.includes('Repository account'));
-  expect(option?.getAttribute('aria-disabled')).toBe('true');
-  await act(async () => { document.querySelector<HTMLButtonElement>('button[aria-label="Git authentication"]')!.click(); await settle(); });
-}
 
-it('preserves an existing default follower until a specific repository account is selected', async () => {
-  calls.accountsStatus.mockResolvedValue({ ...saved, defaultLogin: 'alice' });
-  const follower: GitHubRepositoryAccount = { ...context, login: 'alice', selection: { mode: 'account', host: 'github.com', login: 'alice', useGlobalDefault: true, gitMode: 'managed' } };
-  const pinned: GitHubRepositoryAccount = { ...follower, login: 'bob', selection: { mode: 'account', host: 'github.com', login: 'bob', gitMode: 'managed' } };
-  calls.repositoryAccount.mockResolvedValueOnce(follower).mockResolvedValue(pinned);
-  calls.setRepositoryAccount.mockResolvedValue(pinned);
-  const view = await mount();
-  try {
-    expect(view.container.textContent).toContain('Following default · @alice');
-    expect(calls.setRepositoryAccount).not.toHaveBeenCalled();
-    await choosePicker('GitHub account for this repository', '@bob');
-    expect(calls.setRepositoryAccount).toHaveBeenCalledWith('repo', { mode: 'account', host: 'github.com', login: 'bob', gitMode: 'managed' }, follower.revision);
-    expect(view.container.textContent).not.toContain('Following default');
-    expect(calls.setDefaultAccount).not.toHaveBeenCalled();
-  } finally { await view.close(); }
-});

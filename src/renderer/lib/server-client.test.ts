@@ -157,7 +157,7 @@ it('transports global defaults and the reviewed setup revision without exposing 
   const f = transportFixture(); const { api } = createOpenTigServerClient({ transport: f.transport });
   const changed = vi.fn(); api.events.onGitHubAccountsChanged(changed);
   await api.github.setDefaultAccount('alice');
-  const selection = { mode: 'account' as const, host: 'github.com' as const, login: 'alice', useGlobalDefault: true, gitMode: 'managed' as const };
+  const selection = { mode: 'account' as const, host: 'github.com' as const, login: 'alice' };
   await api.github.setRepositoryAccount('repo', selection, 5);
   expect(f.request).toHaveBeenCalledWith(IPC.githubSetDefaultAccount, ['alice']);
   expect(f.request).toHaveBeenCalledWith(IPC.githubSetRepositoryAccount, ['repo', selection, 5]);

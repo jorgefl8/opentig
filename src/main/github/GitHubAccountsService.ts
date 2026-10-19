@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import os from 'node:os';
-import { AUTOMATIC_GITHUB_ACCOUNT, githubRepositoryKey, type GitHubAccountsStatus, type GitHubAccountSelection, type GitHubRepositoryAccount } from '../../shared/github-accounts';
+import { DEFAULT_GITHUB_ACCOUNT, githubRepositoryKey, resolveGitHubAccount, type GitHubAccountSource, type GitHubAccountsStatus, type GitHubAccountSelection, type GitHubRepositoryAccount } from '../../shared/github-accounts';
 import { GhOperationError } from '../../shared/errors';
 import type { RepositoryInfo } from '../../shared/contracts';
 import type { CliCandidate, CliResolver } from '../ai/CliResolver';
@@ -29,7 +29,7 @@ export class GitHubAccountsService {
   revisionFor(repository: RepositoryInfo): number {
     const selection = this.selection(repository);
     return Math.max(this.revisions.get(githubRepositoryKey(repository.commonDir)) ?? 0,
-      selection.mode === 'account' && selection.useGlobalDefault ? this.defaultRevision : 0);
+      selection.mode === 'default' ? this.defaultRevision : 0);
   }
   private contexts = new Map<string, { remote: string; value: GitHubRepositoryAccount }>();
   private ssh = new Map<string, { at: number; promise: Promise<string | null> }>();
@@ -44,33 +44,52 @@ export class GitHubAccountsService {
       this.checking ??= this.check().finally(() => { this.checking = null; });
       return this.checking.then((value) => ({ ...structuredClone(value), ...this.accountPreferences() }));
     }
-    this.loading ??= (async () => { this.inventory ??= await this.store?.load() ?? emptyStatus(); return this.inventory; })();
+    this.loading ??= (async () => {
+      this.inventory ??= await this.store?.load() ?? emptyStatus();
+      await this.adoptDefault(this.inventory);
+      return this.inventory;
+    })();
     return this.loading.then(() => ({ ...structuredClone(this.inventory ?? emptyStatus()), ...this.accountPreferences() }));
   }
 
   private accountPreferences() {
     return { defaultLogin: this.settings?.githubDefaultLogin ?? null,
-      suggestedLogin: this.settings?.githubSuggestedLogin ?? null,
       repositoryAccounts: this.settings?.githubRepositoryAccounts ?? [] };
   }
 
-  async setSuggestedAccount(login: string): Promise<GitHubAccountsStatus> {
-    if (!this.settings) throw new Error('GitHub account settings are unavailable.');
-    await this.settings.setGitHubSuggestedLogin(login);
-    this.changed();
-    return this.status();
+  /**
+   * Without a chosen default, the first known authenticated account becomes
+   * the default, preferring the account active in GitHub CLI at that moment.
+   * It is saved so later changes to the active gh account never move repositories.
+   */
+  private async adoptDefault(inventory: GitHubAccountsStatus): Promise<void> {
+    if (!this.settings || this.settings.githubDefaultLogin) return;
+    const authenticated = inventory.accounts.filter(account => account.state === 'authenticated');
+    const login = authenticated.find(account => account.login === inventory.activeLogin)?.login ?? authenticated[0]?.login;
+    if (!login) return;
+    try {
+      this.defaultRevision = ++this.revision;
+      await this.settings.setGitHubDefaultLogin(login);
+    } catch { /* Retried on the next inventory read. */ }
+    finally { this.changed(undefined, true); }
   }
 
   selection(repository: RepositoryInfo): GitHubAccountSelection {
-    return this.settings?.githubAccount(repository.commonDir) ?? { ...AUTOMATIC_GITHUB_ACCOUNT };
+    return this.settings?.githubAccount(repository.commonDir) ?? { ...DEFAULT_GITHUB_ACCOUNT };
+  }
+
+  /** The account a repository uses for GitHub and HTTPS Git, or null for Git's own credentials. */
+  resolve(repository: RepositoryInfo): { login: string | null; source: GitHubAccountSource } {
+    return resolveGitHubAccount(this.selection(repository), this.settings?.githubDefaultLogin ?? null);
   }
 
   context(repository: RepositoryInfo, remote: string, nameWithOwner: string | null): GitHubRepositoryAccount {
     const cached = this.contexts.get(repository.id);
     if (cached?.remote === remote && cached.value.revision === this.revisionFor(repository)) return structuredClone(cached.value);
     const selection = this.selection(repository);
-    return { selection, nameWithOwner, login: selection.mode === 'account' ? selection.login : null,
-      source: selection.mode === 'account' ? 'explicit' : null, state: 'unchecked', checkedAt: null, revision: this.revisionFor(repository) };
+    const resolved = this.resolve(repository);
+    return { selection, nameWithOwner, login: resolved.login, source: resolved.login ? resolved.source : null,
+      state: 'unchecked', checkedAt: null, revision: this.revisionFor(repository) };
   }
 
   async setSelection(repository: RepositoryInfo, selection: GitHubAccountSelection): Promise<void> {
@@ -122,20 +141,22 @@ export class GitHubAccountsService {
   async authenticate(repository: RepositoryInfo, remote: string, nameWithOwner: string, operation: string) {
     const revision = this.revisionFor(repository);
     const selection = this.selection(repository);
-    let login: string | null = selection.mode === 'account' ? selection.login : null;
-    let source: GitHubRepositoryAccount['source'] = selection.mode === 'account' ? 'explicit' : null;
+    const resolved = this.resolve(repository);
+    let login: string | null = resolved.login;
+    let source: GitHubRepositoryAccount['source'] = resolved.login ? resolved.source : null;
     try {
       const detection = await this.detect();
       if (detection.state !== 'available' || !detection.candidate) throw new GhOperationError({ code: detection.state === 'not-found' ? 'GH_CLI_NOT_FOUND' : 'GH_PROCESS_FAILED', operation,
         message: detection.state === 'not-found' ? 'GitHub CLI is not installed on the backend host.' : 'GitHub CLI could not run. Check Settings → GitHub.' });
       const executable = detection.candidate;
-      if (selection.mode === 'auto' && parseSshRemote(remote)) {
+      // Git's own credentials over SSH identify the account from the SSH key.
+      if (!login && parseSshRemote(remote)) {
         const override = executable.env.GIT_SSH_COMMAND || executable.env.GIT_SSH || process.env.GIT_SSH_COMMAND || process.env.GIT_SSH;
         const configured = await this.git.run(repository.path, ['config', '--default', '', '--get', 'core.sshCommand'], {
           operation: 'github-ssh-configuration', readOnly: true, maxOutputBytes: 8 * 1024,
         });
         if (override || configured.stdout.toString('utf8').trim()) throw new GhOperationError({ code: 'GH_ACCOUNT_UNRESOLVED', operation,
-          message: 'This repository uses a custom SSH command. Choose an explicit account in Settings → GitHub.' });
+          message: 'This repository uses a custom SSH command. Choose an account in Settings → GitHub.' });
         const key = `${repository.path}\0${remote}`;
         let cached = this.ssh.get(key);
         if (!cached || Date.now() - cached.at > CACHE_MS) {
@@ -145,7 +166,7 @@ export class GitHubAccountsService {
         login = await cached.promise;
         source = 'ssh';
         if (!login) throw new GhOperationError({ code: 'GH_ACCOUNT_UNRESOLVED', operation,
-          message: 'SSH could not verify a GitHub user account. Check again or choose an explicit account in Settings → GitHub. Deploy keys do not identify user accounts.' });
+          message: 'SSH could not verify a GitHub user account. Check again or choose an account in Settings → GitHub. Deploy keys do not identify user accounts.' });
       }
       if (!source) source = executable.env.GH_TOKEN || executable.env.GITHUB_TOKEN || process.env.GH_TOKEN || process.env.GITHUB_TOKEN ? 'environment' : 'global';
       const auth = await accountAuthentication(login, executable, this.runner, operation);
@@ -237,6 +258,7 @@ export class GitHubAccountsService {
     this.inventory = result;
     try { await this.store?.save(result); }
     finally { this.invalidate(); }
+    await this.adoptDefault(result);
     return result;
   }
 }

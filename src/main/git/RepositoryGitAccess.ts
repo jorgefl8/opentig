@@ -15,7 +15,7 @@ import { createCredentialBroker, managedGitHubPath } from './GitCredentialBroker
 const read = { operation: 'repository-access', readOnly: true, maxOutputBytes: 1024 * 1024 };
 const unchecked = (): AccessCheck => ({ state: 'unchecked' });
 const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
-interface Session { repository: RepositoryInfo; selection: GitHubAccountSelection; revision: number; auth?: Awaited<ReturnType<GitHubAccountsService['authenticate']>> }
+interface Session { repository: RepositoryInfo; selection: GitHubAccountSelection; login: string | null; revision: number; auth?: Awaited<ReturnType<GitHubAccountsService['authenticate']>> }
 
 export class RepositoryGitAccess {
   private readonly sessions = new AsyncLocalStorage<Session>();
@@ -28,7 +28,7 @@ export class RepositoryGitAccess {
     this.git.network = (cwd, args, options, execute) => this.scope(cwd, () => this.execute(args, options, execute));
     this.git.authenticationKey = cwd => {
       const repository = this.repositories.recents().find(item => item.path === cwd);
-      return repository ? digest([this.accounts.selection(repository), this.accounts.revisionFor(repository)]) : '';
+      return repository ? digest([this.accounts.selection(repository), this.accounts.resolve(repository).login, this.accounts.revisionFor(repository)]) : '';
     };
     this.git.networkScope = (cwd, task) => this.scope(cwd, task);
   }
@@ -36,7 +36,7 @@ export class RepositoryGitAccess {
     if (this.sessions.getStore()?.repository.path === cwd) return task();
     const repository = this.repositories.recents().find(item => item.path === cwd);
     if (!repository) throw new Error('The repository must be open before remote operations.');
-    return this.sessions.run({ repository, selection: this.accounts.selection(repository), revision: this.accounts.revisionFor(repository) }, task);
+    return this.sessions.run({ repository, selection: this.accounts.selection(repository), login: this.accounts.resolve(repository).login, revision: this.accounts.revisionFor(repository) }, task);
   }
   private async config(repository: RepositoryInfo, key: string, all = false) {
     try { return (await this.git.run(repository.path, ['config', all ? '--get-all' : '--get', key], read)).stdout.toString('utf8').trim(); }
@@ -64,11 +64,14 @@ export class RepositoryGitAccess {
   async publication(repositoryId: string, selected?: string): Promise<PublicationContext> {
     const repository = this.repositories.get(repositoryId);
     const selection = this.accounts.selection(repository);
+    const { login } = this.accounts.resolve(repository);
     const revision = this.accounts.revisionFor(repository);
     const target = await this.resolve(repository, true, selected);
     let oid: string | null = null;
     try { oid = (await this.git.run(repository.path, ['rev-parse', '--verify', 'HEAD'], read)).stdout.toString('utf8').trim(); } catch { /* unborn */ }
-    const managed = selection.mode === 'account' && selection.gitMode === 'managed';
+    // The repository's account authenticates plain github.com HTTPS; anything
+    // else (SSH, other hosts, URLs with credentials) keeps Git's own credentials.
+    const managed = login !== null;
     const compatible = target.urls.length === 1 && !!managedGitHubPath(target.urls[0]!);
     const configuration = (await this.git.run(repository.path, ['config', '--null', '--list'], read)).stdout.toString('utf8');
     const upstreamRemote = await this.config(repository, `branch.${target.branch}.remote`);
@@ -80,12 +83,11 @@ export class RepositoryGitAccess {
       (pushDefault === 'upstream' && target.remote !== upstreamRemote) ||
       await this.config(repository, `remote.${target.remote}.push`) || await this.config(repository, `remote.${target.remote}.mirror`) === 'true');
     const blocked = selected && selected !== '.' && !target.remotes.includes(selected) ? 'The selected push remote is not configured. Review the repository remotes.' : unsafe ? 'The push refspec, mirror or push.default configuration requires review in Git before publishing.' : target.urls.length > 1 ? 'This remote has multiple push URLs. Choose a single destination in Git configuration before publishing.'
-      : target.remote && !target.urls.length ? 'The configured push remote is unavailable.'
-        : managed && target.urls.some(isGitHubHttp) && !compatible ? 'Managed Git requires a plain github.com HTTPS destination. Review the URL or use external authentication.' : undefined;
+      : target.remote && !target.urls.length ? 'The configured push remote is unavailable.' : undefined;
     return { ...target, urls: target.urls.map(redactSensitiveText), repositoryId, oid, targetRef,
       hasUpstream: Boolean(upstreamRemote && merge),
-      id: digest([repository.commonDir, selection, revision, target, oid, configuration]),
-      mode: managed && compatible ? 'managed' : 'external', login: managed && compatible && selection.mode === 'account' ? selection.login : null,
+      id: digest([repository.commonDir, selection, login, revision, target, oid, configuration]),
+      mode: managed && compatible ? 'managed' : 'external', login: managed && compatible ? login : null,
       ...(blocked ? { blocked } : {}) };
   }
   async assertPublication(repositoryId: string, expected?: string, remote?: string) {
@@ -111,9 +113,8 @@ export class RepositoryGitAccess {
     }
     value.identity = unchecked(); value.api = unchecked(); value.write = unchecked();
     value.read = publication.mode === 'external' ? { state: 'external' } : unchecked();
-    const selection = this.accounts.selection(repository);
-    if (selection.mode !== 'account') {
-      value.identity = { state: 'unchecked', message: 'Choose a saved account to pin access for this repository.' };
+    if (!this.accounts.resolve(repository).login) {
+      value.identity = { state: 'unchecked', message: 'This repository uses Git’s own credentials. Choose an account to check GitHub access.' };
     } else {
       try {
         this.accounts.refreshAuthentication();
@@ -157,7 +158,7 @@ export class RepositoryGitAccess {
   }
   private async execute(args: string[], options: RunOptions, execute: (args: string[], options: RunOptions) => Promise<GitOutput>) {
     const session = this.sessions.getStore()!;
-    const { repository, selection } = session;
+    const { repository, selection, login } = session;
     let index = 0; while (args[index] === '-c') index += 2;
     const command = args[index]!;
     if (command === 'ls-remote' && args.includes('--get-url')) return execute(args, options);
@@ -166,12 +167,11 @@ export class RepositoryGitAccess {
     if (target.urls.length !== 1) throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: options.operation, message: 'The remote destination is ambiguous. Configure or choose a single remote URL.' });
     const url = target.urls[0]!;
     if (selected?.includes('://') && selected !== url) throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: options.operation, message: 'URL rewriting changes the reviewed destination again. Resolve the chained rewrite before checking or publishing.' });
-    const managed = selection.mode === 'account' && selection.gitMode === 'managed' && isGitHubHttp(url);
+    const managed = login !== null && !!managedGitHubPath(url);
     let broker: Awaited<ReturnType<typeof createCredentialBroker>> | undefined;
     let token = '';
     try {
-      if (managed) {
-        if (!managedGitHubPath(url)) throw new Error('Managed Git cannot send credentials to this destination. Use external authentication for unsupported URLs.');
+      if (managed && login) {
         if (!session.auth) {
           if (session.revision !== this.accounts.revisionFor(repository)) throw new Error('The repository account changed before the operation started. Review and retry.');
           session.auth = await this.accounts.authenticate(repository, url, managedGitHubPath(url)!, options.operation);
@@ -179,7 +179,7 @@ export class RepositoryGitAccess {
         }
         if (command === 'fetch' && !selected && target.remote) args = [...args, '--', target.remote];
         token = session.auth.auth.env?.GH_TOKEN ?? '';
-        broker = await createCredentialBroker(url, selection.login, token);
+        broker = await createCredentialBroker(url, login, token);
         const config = (await this.git.run(repository.path, ['config', '--name-only', '--list'], read)).stdout.toString('utf8').trim().split(/\r?\n/);
         const overrides = [...new Set(config)].flatMap(key => {
           if (/^credential\..*helper$/i.test(key)) return ['-c', `${key}=`];
@@ -195,11 +195,11 @@ export class RepositoryGitAccess {
       }
       if (options.publication) await this.assertPublication(options.publication.repositoryId, options.publication.id, options.publication.remote);
       const result = await execute(args, { ...options, ...(managed ? { managed: true, managedSecrets: [token] } : {}) });
-      this.latest.set(repository.id, { operation: options.operation, url: redactSensitiveText(url), login: managed && selection.mode === 'account' ? selection.login : null, at: new Date().toISOString(), ok: true });
+      this.latest.set(repository.id, { operation: options.operation, url: redactSensitiveText(url), login: managed ? login : null, at: new Date().toISOString(), ok: true });
       return result;
     } catch (error) {
       const message = redactSensitiveText(token ? messageOf(error).split(token).join('[redacted]') : messageOf(error));
-      this.latest.set(repository.id, { operation: options.operation, url: redactSensitiveText(url), login: managed && selection.mode === 'account' ? selection.login : null, at: new Date().toISOString(), ok: false, message });
+      this.latest.set(repository.id, { operation: options.operation, url: redactSensitiveText(url), login: managed ? login : null, at: new Date().toISOString(), ok: false, message });
       if (error instanceof GitOperationError) throw error;
       throw new GitOperationError({ code: 'UNKNOWN', operation: options.operation, message });
     } finally { await broker?.dispose(); }
@@ -211,4 +211,3 @@ export function accessError(message: string): AccessCheck {
     : /404|403|not found|denied|not accessible/i.test(message) ? 'inaccessible' : 'offline', message: redactSensitiveText(message).slice(0, 1500) };
 }
 
-function isGitHubHttp(value: string): boolean { try { const url = new URL(value); return ['http:', 'https:'].includes(url.protocol) && url.hostname === 'github.com'; } catch { return false; } }

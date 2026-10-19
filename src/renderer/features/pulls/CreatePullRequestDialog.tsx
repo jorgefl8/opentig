@@ -14,6 +14,7 @@ import { SearchablePicker } from '@/components/SearchablePicker';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { Textarea } from '@/components/ui/textarea';
 import { opentig } from '@/lib/opentig-api';
+import { accountSourceLabel } from '@/features/settings/github-access-copy';
 import { ViewerTabs, ViewerTabsList, ViewerTabsPanel } from '@/components/ui/viewer-tabs';
 import { LinkedMarkdown } from '@/features/markdown/LinkedMarkdown';
 
@@ -155,7 +156,7 @@ export function CreatePullRequestDialog(props: CreatePullRequestDialogProps) {
           <DialogDescription>
             {currentBranch ? <>From <code>{currentBranch}</code> into the selected base branch on GitHub.</> : 'Check out a branch to create a pull request.'}
           </DialogDescription>
-          <div className="github-operation-account"><div><strong>{account?.state === 'ready' ? `Publish as @${account.login}` : accountQuery.isFetching ? <ShimmeringText text="Checking GitHub identity…" /> : 'GitHub account needs attention'}</strong><small>{account?.message ?? (account?.source === 'ssh' ? 'Automatic · identity verified through SSH' : account?.source === 'environment' ? 'Credentials from the backend environment' : account?.source === 'explicit' ? 'Chosen for this repository' : 'Active GitHub CLI credentials')}{accountQuery.error ? ' · Could not check the account.' : ''}</small></div><Button variant="ghost" size="sm" onClick={props.onOpenGitHubSettings} disabled={creating}>Change</Button></div>
+          <div className="github-operation-account"><div><strong>{account?.state === 'ready' ? `Publish as @${account.login}` : accountQuery.isFetching ? <ShimmeringText text="Checking GitHub identity…" /> : 'GitHub account needs attention'}</strong><small>{account?.message ?? accountSourceLabel(account?.source ?? null)}{accountQuery.error ? ' · Could not check the account.' : ''}</small></div><Button variant="ghost" size="sm" onClick={props.onOpenGitHubSettings} disabled={creating}>Change</Button></div>
           {needsPublish && (
             <div className="create-pr-notice">
               <span>{detachedOrUnborn ? 'Check out a branch with at least one commit before publishing.' : 'Publish this branch before creating a pull request.'}</span>

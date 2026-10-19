@@ -115,7 +115,7 @@ it('broadcasts a default change to followers and their worktrees without affecti
     { id: 'worktree', commonDir: '/fixture/shared/.git' },
     { id: 'fixed', commonDir: '/fixture/clone/.git' },
   ] } as unknown as OpenTigRuntimeServices['repositories'];
-  f.services.settings.githubAccount = commonDir => ({ mode: 'account', host: 'github.com', login: 'alice', useGlobalDefault: commonDir.includes('shared') });
+  f.services.settings.githubAccount = commonDir => commonDir.includes('shared') ? { mode: 'default' } : { mode: 'account', host: 'github.com', login: 'alice' };
   const runtime = new OpenTigRuntime(f.services, sink);
   runtime.publishGitHubAccountsChange(undefined, true);
   expect(sink).toHaveBeenCalledExactlyOnceWith({ type: 'github.accounts-changed', repositoryIds: ['follower', 'worktree'], inventoryChanged: true });

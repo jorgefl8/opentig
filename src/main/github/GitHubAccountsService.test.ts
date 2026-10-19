@@ -81,7 +81,8 @@ describe('GitHub account inventory and repository policy', () => {
     await f.accounts.status();
     expect(f.run.mock.calls).toHaveLength(calls);
     const saved = await new GitHubStatusStore(f.statusFile).load();
-    expect({ ...saved, defaultLogin: null, suggestedLogin: null, repositoryAccounts: [] }).toEqual(first);
+    // The first check adopts the only authenticated account as the default.
+    expect({ ...saved, defaultLogin: 'bob', repositoryAccounts: [] }).toEqual(first);
   });
 
   it('keeps saved global and environment authentication distinct', async () => {
@@ -89,13 +90,15 @@ describe('GitHub account inventory and repository policy', () => {
     const status = await f.accounts.status(true);
     expect(status).toMatchObject({ activeLogin: 'alice', environment: { present: true, login: 'envuser', state: 'authenticated' } });
     expect(f.run.mock.calls.find(([, args]) => args[1] === 'status')?.[2]?.removeEnv).toEqual(expect.arrayContaining(['GH_TOKEN', 'GITHUB_TOKEN']));
+    await f.accounts.setSelection(repo, { mode: 'git' });
     expect(await f.service.repositoryAccount('repo', true)).toMatchObject({ login: 'envuser', source: 'environment' });
     await f.accounts.setSelection(repo, { mode: 'account', host: 'github.com', login: 'bob' });
-    expect(await f.service.repositoryAccount('repo', true)).toMatchObject({ login: 'bob', source: 'explicit' });
+    expect(await f.service.repositoryAccount('repo', true)).toMatchObject({ login: 'bob', source: 'repository' });
   });
 
-  it('uses the SSH user, independent of alias, owner and invalid active account', async () => {
+  it('identifies Git’s own SSH credentials by the SSH user, independent of alias, owner and invalid active account', async () => {
     const f = await fixture(); await f.accounts.status(true);
+    await f.accounts.setSelection(repo, { mode: 'git' });
     expect(await f.service.repositoryAccount('repo', true)).toMatchObject({ login: 'bob', source: 'ssh', state: 'ready' });
     expect(f.run.mock.calls.some(([, args]) => args.includes('switch') || args.includes('login'))).toBe(false);
     expect(await f.service.listPullRequests('repo', ['OPEN'])).toEqual([]);
@@ -167,8 +170,8 @@ describe('coherent GitHub operations and persistence', () => {
     await f.accounts.setSelection(other, { mode: 'account', host: 'github.com', login: 'alice' });
     const [first, second] = await Promise.all([f.accounts.authenticate(repo, 'https://github.com/org/a.git', 'org/a', 'read'), f.accounts.authenticate(other, 'https://github.com/org/b.git', 'org/b', 'read')]);
     expect([first.auth.env?.GH_TOKEN, second.auth.env?.GH_TOKEN]).toEqual([token('bob'), token('alice')]);
-    await f.accounts.setSelection(repo, { mode: 'auto' });
-    expect(f.accounts.selection(repo)).toEqual({ mode: 'auto' });
+    await f.accounts.setSelection(repo, { mode: 'default' });
+    expect(f.accounts.selection(repo)).toEqual({ mode: 'default' });
     expect(githubRepositoryKey('/Fixture/.git', 'linux')).not.toBe(githubRepositoryKey('/fixture/.git', 'linux'));
     expect(githubRepositoryKey('C:\\Fixture\\.git', 'win32')).toBe(githubRepositoryKey('c:/fixture/.git', 'win32'));
   });
@@ -194,20 +197,21 @@ describe('coherent GitHub operations and persistence', () => {
   });
 });
 
-describe('OpenTig global default', () => {
-  it('follows the OpenTig default across worktrees without changing fixed accounts or active gh', async () => {
+describe('OpenTig default account', () => {
+  it('uses the default for repositories without their own account, independently of fixed accounts and active gh', async () => {
     const f = await fixture({ https: true });
     const fixed = { ...repo, id: 'clone', commonDir: '/fixture/clone/.git' };
     expect((await f.accounts.status()).defaultLogin).toBeNull();
     await f.accounts.setDefaultAccount('bob');
-    await f.accounts.setSelection(repo, { mode: 'account', host: 'github.com', login: 'bob', useGlobalDefault: true, gitMode: 'managed' });
-    await f.accounts.setSelection(fixed, { mode: 'account', host: 'github.com', login: 'bob', gitMode: 'external' });
+    await f.accounts.setSelection(fixed, { mode: 'account', host: 'github.com', login: 'bob' });
     const reviewed = f.accounts.revisionFor(repo); const fixedRevision = f.accounts.revisionFor(fixed);
     const authenticated = await f.accounts.authenticate(repo, 'https://github.com/org/demo.git', 'org/demo', 'read');
+    expect(authenticated.context).toMatchObject({ login: 'bob', source: 'default' });
     await f.accounts.setDefaultAccount('alice');
     expect(authenticated.auth.env?.GH_TOKEN).toBe(token('bob'));
-    expect(f.accounts.selection({ ...repo, id: 'worktree', path: '/fixture/worktree' })).toMatchObject({ login: 'alice', useGlobalDefault: true, gitMode: 'managed' });
-    expect(f.accounts.selection(fixed)).toMatchObject({ login: 'bob', gitMode: 'external' });
+    expect(f.accounts.selection({ ...repo, id: 'worktree', path: '/fixture/worktree' })).toEqual({ mode: 'default' });
+    expect(f.accounts.resolve(repo)).toEqual({ login: 'alice', source: 'default' });
+    expect(f.accounts.resolve(fixed)).toEqual({ login: 'bob', source: 'repository' });
     expect(f.accounts.revisionFor(repo)).toBeGreaterThan(reviewed);
     expect(f.accounts.revisionFor(fixed)).toBe(fixedRevision);
     f.setActive('bob');
@@ -215,14 +219,28 @@ describe('OpenTig global default', () => {
     expect(f.run.mock.calls.some(([, args]) => args[0] === 'auth' && args[1] === 'switch')).toBe(false);
     const restarted = new SettingsStore(f.file); await restarted.load();
     expect(restarted.githubDefaultLogin).toBe('alice');
-    expect(restarted.githubAccount(repo.commonDir)).toMatchObject({ login: 'alice', useGlobalDefault: true });
-    expect(restarted.githubAccount('/fixture/new/.git')).toEqual({ mode: 'auto' });
+    expect(restarted.githubAccount('/fixture/new/.git')).toEqual({ mode: 'default' });
   });
-  it('rejects a default or repository choice changed since setup was reviewed', async () => {
+  it('keeps Git’s own credentials when chosen, even with a default account', async () => {
+    const f = await fixture({ https: true });
+    await f.accounts.setDefaultAccount('bob');
+    await f.accounts.setSelection(repo, { mode: 'git' });
+    expect(f.accounts.resolve(repo)).toEqual({ login: null, source: 'git' });
+    const authenticated = await f.accounts.authenticate(repo, 'https://github.com/org/demo.git', 'org/demo', 'read');
+    expect(authenticated.context).toMatchObject({ login: 'alice', source: 'global' });
+  });
+  it('adopts the first authenticated account as the default once and keeps it when the active gh account changes', async () => {
+    const f = await fixture({ https: true });
+    expect(f.accounts.resolve(repo)).toEqual({ login: null, source: 'git' });
+    expect((await f.accounts.status(true)).defaultLogin).toBe('bob');
+    expect(f.accounts.resolve(repo)).toEqual({ login: 'bob', source: 'default' });
+    f.setActive('alice');
+    await f.accounts.status(true);
+    expect(f.settings.githubDefaultLogin).toBe('bob');
+  });
+  it('rejects a repository choice changed since it was reviewed', async () => {
     const f = await fixture({ https: true });
     const reviewed = await f.service.repositoryAccount('repo');
-    await f.accounts.setDefaultAccount('alice');
-    await expect(f.accounts.setSelection(repo, { mode: 'account', host: 'github.com', login: 'bob', useGlobalDefault: true })).rejects.toThrow('default account changed');
     await f.accounts.setSelection(repo, { mode: 'account', host: 'github.com', login: 'bob' });
     await expect(f.service.setRepositoryAccount('repo', { mode: 'account', host: 'github.com', login: 'alice' }, reviewed.revision)).rejects.toThrow('another session');
     expect(f.accounts.selection(repo)).toMatchObject({ login: 'bob' });
@@ -230,9 +248,8 @@ describe('OpenTig global default', () => {
   it('does not fall back when the default account has disappeared', async () => {
     const f = await fixture({ https: true, missing: true });
     await f.accounts.setDefaultAccount('bob');
-    await f.accounts.setSelection(repo, { mode: 'account', host: 'github.com', login: 'bob', useGlobalDefault: true, gitMode: 'managed' });
     await expect(f.accounts.authenticate(repo, 'https://github.com/org/demo.git', 'org/demo', 'read')).rejects.toThrow();
-    expect(f.accounts.selection(repo)).toMatchObject({ login: 'bob' });
+    expect(f.accounts.resolve(repo)).toMatchObject({ login: 'bob' });
     const tokenCalls = f.run.mock.calls.filter(([, args]) => args[0] === 'auth' && args[1] === 'token');
     expect(tokenCalls.every(([, args]) => args.at(-1) === 'bob')).toBe(true);
   });
@@ -254,7 +271,7 @@ it('reserves the repository revision before awaiting persistence so concurrent s
 it('does not mistake verification of a freshly saved choice for an external account change', async () => {
   const f = await fixture({ https: true });
   const old = await f.service.repositoryAccount('repo', true);
-  const saved = await f.service.setRepositoryAccount('repo', { mode: 'account', host: 'github.com', login: 'bob', gitMode: 'managed' }, old.revision);
+  const saved = await f.service.setRepositoryAccount('repo', { mode: 'account', host: 'github.com', login: 'bob' }, old.revision);
   const checked = await f.service.repositoryAccount('repo', true);
   expect(checked).toMatchObject({ login: 'bob', state: 'ready', revision: saved.revision });
 });

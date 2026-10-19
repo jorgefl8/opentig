@@ -21,14 +21,14 @@ describe('SettingsStore document recovery', () => {
     } });
     const store = new SettingsStore(file); await store.load();
     expect(store.githubAccount('/fixture/demo/.git')).toEqual({ mode: 'account', host: 'github.com', login: 'alice' });
-    expect(store.githubAccount('/fixture/bad/.git')).toEqual({ mode: 'auto' });
+    expect(store.githubAccount('/fixture/bad/.git')).toEqual({ mode: 'default' });
     const previous = { id: 'repo', name: 'demo', repositoryName: 'demo', path: '/fixture/demo', commonDir: '/fixture/demo/.git' };
     await store.touchRepository(previous);
     await store.relocateRepository('repo', { ...previous, id: 'moved', path: '/fixture/moved', commonDir: '/fixture/moved/.git' });
-    expect(store.githubAccount('/fixture/demo/.git')).toEqual({ mode: 'auto' });
+    expect(store.githubAccount('/fixture/demo/.git')).toEqual({ mode: 'default' });
     expect(store.githubAccount('/fixture/moved/.git')).toMatchObject({ login: 'alice' });
     await store.forgetRepository('/fixture/moved/.git');
-    expect(store.githubAccount('/fixture/moved/.git')).toEqual({ mode: 'auto' });
+    expect(store.githubAccount('/fixture/moved/.git')).toEqual({ mode: 'default' });
     expect(await readFile(file, 'utf8')).not.toContain('discarded');
   });
   it('defaults the Dev global shortcut off but preserves an explicit preference after restart', async () => {
@@ -586,22 +586,42 @@ it('repairs repository AI opt-ins and carries their scope through relocation and
   expect(store.repositoryAiInstructionsEnabled('/fixture/moved/.git')).toBe(false);
 });
 
-it('persists suggestions independently of explicit accounts and existing shared-default links', async () => {
+it('migrates earlier account choices: unpinned and shared-default repositories follow the default, Git modes disappear', async () => {
+  const file = await settingsFile({ githubSuggestedLogin: 'bob', githubAccounts: {
+    '/fixture/auto/.git': { mode: 'auto' },
+    '/fixture/shared/.git': { mode: 'account', host: 'github.com', login: 'alice', gitMode: 'managed', useGlobalDefault: true },
+    '/fixture/pinned/.git': { mode: 'account', host: 'github.com', login: 'carol', gitMode: 'external' },
+  } });
+  const store = new SettingsStore(file); await store.load();
+  expect(store.githubDefaultLogin).toBe('bob');
+  expect(store.githubAccount('/fixture/auto/.git')).toEqual({ mode: 'default' });
+  expect(store.githubAccount('/fixture/shared/.git')).toEqual({ mode: 'default' });
+  expect(store.githubAccount('/fixture/pinned/.git')).toEqual({ mode: 'account', host: 'github.com', login: 'carol' });
+});
+
+it('keeps an existing default over the former suggestion', async () => {
+  const store = new SettingsStore(await settingsFile({ githubDefaultLogin: 'alice', githubSuggestedLogin: 'bob' })); await store.load();
+  expect(store.githubDefaultLogin).toBe('alice');
+});
+
+it('persists repository accounts and reports the account each repository uses', async () => {
   const file = await settingsFile({ githubDefaultLogin: 'alice' });
   const store = new SettingsStore(file); await store.load();
-  const repositoryPath = path.join(path.dirname(file), 'demo');
-  const cloneCommonDir = path.join(path.dirname(file), 'clone', '.git');
-  const repo = { id: 'repo', name: 'demo', repositoryName: 'demo', path: repositoryPath, commonDir: path.join(repositoryPath, '.git') };
-  await store.touchRepository(repo);
-  await store.touchRepository({ ...repo, id: 'worktree', path: path.join(path.dirname(file), 'worktree') });
-  await store.setGitHubAccount(repo.commonDir, { mode: 'account', host: 'github.com', login: 'alice', gitMode: 'managed', useGlobalDefault: true });
-  await store.setGitHubAccount(cloneCommonDir, { mode: 'account', host: 'github.com', login: 'carol', gitMode: 'external' });
-  await store.setGitHubSuggestedLogin('bob');
+  const root = path.dirname(file);
+  const repository = (name: string) => ({ id: name, name, repositoryName: name, path: path.join(root, name), commonDir: path.join(root, name, '.git') });
+  for (const name of ['follows', 'pinned', 'detected', 'git']) await store.touchRepository(repository(name));
+  await store.touchRepository({ ...repository('follows'), id: 'worktree', path: path.join(root, 'worktree') });
+  await store.setGitHubAccount(repository('pinned').commonDir, { mode: 'account', host: 'github.com', login: 'carol' });
+  await store.setGitHubAccount(repository('detected').commonDir, { mode: 'account', host: 'github.com', login: 'dave', detected: true });
+  await store.setGitHubAccount(repository('git').commonDir, { mode: 'git' });
   const restarted = new SettingsStore(file); await restarted.load();
-  expect(restarted.githubSuggestedLogin).toBe('bob');
-  expect(restarted.githubDefaultLogin).toBe('alice');
-  expect(restarted.githubAccount(repo.commonDir)).toMatchObject({ login: 'alice', useGlobalDefault: true });
-  expect(restarted.githubAccount(cloneCommonDir)).toMatchObject({ login: 'carol', gitMode: 'external' });
-  expect(restarted.githubRepositoryAccounts).toHaveLength(1);
-  expect(restarted.githubRepositoryAccounts[0]).toMatchObject({ name: 'demo', login: 'alice', followsDefault: true });
+  expect(restarted.githubAccount(repository('pinned').commonDir)).toEqual({ mode: 'account', host: 'github.com', login: 'carol' });
+  expect(restarted.githubRepositoryAccounts).toEqual([
+    { repositoryId: 'follows', name: 'follows', login: 'alice', source: 'default' },
+    { repositoryId: 'pinned', name: 'pinned', login: 'carol', source: 'repository' },
+    { repositoryId: 'detected', name: 'detected', login: 'dave', source: 'detected' },
+    { repositoryId: 'git', name: 'git', login: null, source: 'git' },
+  ]);
+  await restarted.setGitHubAccount(repository('pinned').commonDir, { mode: 'default' });
+  expect(restarted.githubAccount(repository('pinned').commonDir)).toEqual({ mode: 'default' });
 });

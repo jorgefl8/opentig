@@ -101,7 +101,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   const mobile = useMobileLayout();
   const [openRepositoryDialog, setOpenRepositoryDialog] = useState(false);
   const addingRepository = useRef(false);
-  const [accountSetup, setAccountSetup] = useState<{ repository: RepositoryInfo; isNew: boolean } | null>(null);
+  const [accountSetup, setAccountSetup] = useState<{ repository: RepositoryInfo } | null>(null);
   const [mobilePane, setMobilePane] = useState<'list' | 'viewer' | 'commit'>('list');
   const [mobileDiffView, setMobileDiffView] = useState<Preferences['diffView']>('unified');
   const [bootstrap, setBootstrap] = useState<BootstrapData | null>(null);
@@ -1991,9 +1991,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     description={window.opentigDesktop ? 'Choose a Git repository, then review its GitHub and Git accounts.' : 'Choose a Git repository on your server, then review its GitHub and Git accounts.'} open={openRepositoryDialog} recent={bootstrap?.recentRepositories} onPick={window.opentigDesktop ? opentig.repository.select : undefined} onOpenChange={setOpenRepositoryDialog} onBrowse={opentig.repository.browseDirectories} onOpen={async (path) => {
     addingRepository.current = true;
     try {
-      const selected = await opentig.repository.preparePath(path);
-      const isNew = !bootstrap?.recentRepositories.some(item => normalizeRepositoryKey(item.commonDir) === normalizeRepositoryKey(selected.commonDir));
-      setAccountSetup({ repository: selected, isNew });
+      setAccountSetup({ repository: await opentig.repository.preparePath(path) });
     } finally { addingRepository.current = false; }
   }} />;
 

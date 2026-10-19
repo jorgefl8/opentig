@@ -32,7 +32,7 @@ async function fixture(external = false) {
   const service = new RepositoryGitAccess(process, f.repositories, accounts, runner); service.install();
   const operations = new GitRepositoryOperations(process, f.repositories, new FileService(process, f.repositories)); operations.access = service;
   const repository = f.repositories.get(f.repositoryId);
-  const select = (login = 'alice', gitMode: 'managed' | 'external' = 'managed') => accounts.setSelection(repository, { mode: 'account', host: 'github.com', login, gitMode });
+  const select = (login = 'alice', mode: 'account' | 'git' = 'account') => accounts.setSelection(repository, mode === 'git' ? { mode: 'git' } : { mode: 'account', host: 'github.com', login });
   return { ...f, process, accounts, service, operations, repository, select, run };
 }
 
@@ -80,21 +80,22 @@ describe('repository Git access and publication', () => {
     } finally { spawn.mockRestore(); await f.process.close(); }
   });
 
-  it('keeps migration explicit, worktrees shared, clones separate and authorship unchanged', async () => {
+  it('shares accounts across worktrees, keeps clones separate and leaves authorship unchanged', async () => {
     const f = await fixture();
-    await f.accounts.setSelection(f.repository, { mode: 'account', host: 'github.com', login: 'alice' });
+    // Without a default or repository account, Git keeps its own credentials.
     expect((await f.service.publication(f.repositoryId)).mode).toBe('external');
     const author = await f.operations.getCommitAuthorship(f.repositoryId);
     await f.select();
+    expect(await f.service.publication(f.repositoryId)).toMatchObject({ mode: 'managed', login: 'alice' });
     const tree = await f.repositories.openPath(await addWorktree(f, 'other', 'other'));
     expect(f.accounts.selection(tree)).toEqual(f.accounts.selection(f.repository));
     const clonePath = path.join(f.root, 'clone'); await git(f.root, ['clone', f.work, clonePath]);
     const clone = await f.repositories.openPath(clonePath);
-    expect(f.accounts.selection(clone)).toEqual({ mode: 'auto' });
-    await f.accounts.setSelection(clone, { mode: 'account', host: 'github.com', login: 'bob', gitMode: 'managed' });
+    expect(f.accounts.selection(clone)).toEqual({ mode: 'default' });
+    await f.accounts.setSelection(clone, { mode: 'account', host: 'github.com', login: 'bob' });
     expect(f.accounts.selection(tree)).toMatchObject({ login: 'alice' });
     const revision = f.accounts.revisionFor(clone);
-    await f.select('alice', 'external');
+    await f.select('alice', 'git');
     expect(f.accounts.revisionFor(clone)).toBe(revision);
     expect((await f.service.publication(f.repositoryId)).mode).toBe('external');
     expect(await f.operations.getCommitAuthorship(f.repositoryId)).toEqual(author);
@@ -124,7 +125,7 @@ describe('repository Git access and publication', () => {
   });
 
   it('publishes and fetches through the real external transport without changing its identity', async () => {
-    const f = await fixture(true); await f.select('alice', 'external');
+    const f = await fixture(true); await f.select('alice', 'git');
     await git(f.work, ['commit', '--allow-empty', '-m', 'Local']);
     const context = await f.service.publication(f.repositoryId);
     expect(context.hasUpstream).toBe(true);
@@ -304,7 +305,7 @@ it('isolates complete concurrent Git operations in two repositories', async () =
   const clonePath = path.join(f.root, 'independent'); await git(f.root, ['clone', f.work, clonePath]);
   await git(clonePath, ['remote', 'set-url', 'origin', 'https://github.com/team/demo.git']);
   const clone = await f.repositories.openPath(clonePath);
-  await f.accounts.setSelection(clone, { mode: 'account', host: 'github.com', login: 'bob', gitMode: 'managed' });
+  await f.accounts.setSelection(clone, { mode: 'account', host: 'github.com', login: 'bob' });
   const identities: string[] = [];
   fakeNetwork(f, async args => {
     let index = 0; while (args[index] === '-c') index += 2;
@@ -374,10 +375,10 @@ it('uses Git’s origin fetch default with multiple remotes and pins the managed
   expect((await f.service.publication(f.repositoryId)).remote).toBeNull();
 });
 
-it('uses the global OpenTig default for Git credentials and rejects publications prepared before a default change', async () => {
+it('uses the default account for Git HTTPS of repositories without their own and rejects publications prepared before a default change', async () => {
   const f = await fixture();
   await f.accounts.setDefaultAccount('alice');
-  await f.accounts.setSelection(f.repository, { mode: 'account', host: 'github.com', login: 'alice', useGlobalDefault: true, gitMode: 'managed' });
+  expect(await f.service.publication(f.repositoryId)).toMatchObject({ mode: 'managed', login: 'alice' });
   const before = await f.service.publication(f.repositoryId);
   await f.accounts.setDefaultAccount('bob');
   const usernames: string[] = [];

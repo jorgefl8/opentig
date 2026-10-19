@@ -1,4 +1,5 @@
 import type { AccessCheck, RepositoryAccess } from '@shared/repository-access';
+import type { GitHubRepositoryAccount } from '@shared/github-accounts';
 import { formatDateTime } from '@shared/date-format';
 import { publicationDestination } from '@/features/refs/publication-context';
 
@@ -15,14 +16,19 @@ export function gitHttpsModeLabel(mode: 'managed' | 'external', login: string | 
   return mode === 'managed' && login ? `@${login}` : 'Git credentials · account unverified';
 }
 
-export function gitCredentialsLocation(): string {
-  return window.opentigDesktop ? 'this computer' : 'the server';
+export function accountSourceLabel(source: GitHubRepositoryAccount['source']): string {
+  switch (source) {
+    case 'repository': return 'Chosen for this repository';
+    case 'detected': return 'Chosen automatically for this repository';
+    case 'default': return 'Default account';
+    case 'ssh': return 'Git’s own credentials · identity verified through SSH';
+    case 'environment': return 'Credentials from the backend environment';
+    default: return 'Active GitHub CLI credentials';
+  }
 }
 
-export function gitHttpsOutcome(input: { managed: boolean; login: string | null; compatible?: boolean }): string {
-  if (input.managed && input.login) return `PRs and Git HTTPS both use @${input.login}.`;
-  if (input.compatible === false) return `This destination uses Git credentials or SSH keys on ${gitCredentialsLocation()}. The Git account is not verified by OpenTig.`;
-  return `Git uses credentials configured on ${gitCredentialsLocation()}. They may belong to a different account from the one selected for GitHub and pull requests.`;
+export function gitCredentialsLocation(): string {
+  return window.opentigDesktop ? 'this computer' : 'the server';
 }
 
 export function lastGitOperationLabel(operation: { operation: string; ok: boolean; login: string | null; at: string; url: string; message?: string }): string {

@@ -57,7 +57,7 @@ describe('authoritative HTTP server', () => {
       expect(services.settings.activeRepositoryId).toBe(active.id);
       expect(changes).toEqual([]);
       const revision = services.github.accounts.revisionFor(candidate);
-      await services.github.accounts.setSelection(candidate, { mode: 'auto' });
+      await services.github.accounts.setSelection(candidate, { mode: 'git' });
       const stale = await request('repository:complete-setup', [candidate.id, revision]);
       expect(stale.ok).toBe(false);
       expect(stale.error?.message).toContain('account changed');

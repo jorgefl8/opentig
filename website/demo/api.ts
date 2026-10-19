@@ -284,7 +284,7 @@ export const opentig: OpenTigApi = {
     getPullRequestDiff: async (_id, number) => demoPulls.diff(number),
     getPullRequestCommitDiff: async (_id, oid) => demoPulls.commitDiff(oid),
     repositoryAccount: async () => ({
-      selection: { mode: "auto" },
+      selection: { mode: "default" },
       nameWithOwner: "demo/launchpad",
       login: null,
       source: null,
