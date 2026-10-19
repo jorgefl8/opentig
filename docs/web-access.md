@@ -192,7 +192,7 @@ Confirming immediately blocks browser access on every address, including localho
 
 Turning access back on restores still-valid sessions. Reload the browser or select **Check again** on `/pair`. Expired sessions, cleared cookies, or explicit revocation require fresh pairing.
 
-**Pausing from a browser disconnects that browser too.** CLI servers start web-enabled but can also be paused. To restore access, use desktop or [local recovery on the server](#recover-access-locally). To permanently remove saved access, [revoke the browser](#revoke-access).
+**Pausing from a browser disconnects that browser too.** CLI servers start web-enabled but can also be paused. After you pause a CLI server from a browser, its paused page shows the [local recovery command](#recover-access-locally); a desktop-hosted server is restored from the desktop app. To permanently remove saved access, [revoke the browser](#revoke-access).
 
 <details>
 <summary>Listener behavior and migration from older settings</summary>

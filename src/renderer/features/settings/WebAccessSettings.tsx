@@ -293,6 +293,8 @@ export function WebAccessSettings() {
 
   const ready = status?.serverState === 'ready';
   const browserSessions = sessions.filter((session) => session.kind !== 'desktop');
+  // Only a standalone server reports a recovery command; its paused page shows it. A desktop-hosted one is restored from the desktop app.
+  const recoveryCommand = isBrowser ? status?.recoveryCommand : undefined;
 
   return (
     <div className="web-access-settings">
@@ -300,7 +302,7 @@ export function WebAccessSettings() {
         <div className="web-access-summary">
           <div className="settings-field-label">
             <strong>Web access</strong>
-            <span>Allow paired browsers to use OpenTig. Turning this off disconnects browsers but keeps paired devices. {isBrowser ? 'Restore access from the desktop app or with the local recovery command below.' : 'Enable it again to restore their access; the desktop stays connected.'}</span>
+            <span>Allow paired browsers to use OpenTig. Turning this off disconnects browsers but keeps paired devices.{isBrowser ? '' : ' Enable it again to restore their access; the desktop stays connected.'}</span>
           </div>
           <button
             type="button"
@@ -312,7 +314,6 @@ export function WebAccessSettings() {
             onClick={() => setExposureConfirmation(status.webAccessEnabled ? 'disable' : 'enable')}
           ><span /></button>
         </div>
-        {isBrowser && status.recoveryCommand && <p className="web-access-hint">Local recovery: <code>{status.recoveryCommand}</code>, then restart this instance. For a custom CLI home, add --home. Paired devices are preserved.</p>}
 
         <div className="web-access-facts" aria-live="polite">
           <WebAccessFact label="Server status"><Badge variant={ready ? 'secondary' : 'outline'}>{STATUS_COPY[status.serverState]}</Badge></WebAccessFact>
@@ -484,7 +485,8 @@ export function WebAccessSettings() {
           <div className="undo-commit-content">
             <DialogTitle>{exposureConfirmation === 'disable' ? 'Disable Web access?' : 'Enable browser access?'}</DialogTitle>
             <DialogDescription>{exposureConfirmation === 'disable'
-              ? `Connected browsers will disconnect and cannot access OpenTig until Web access is enabled again. Paired devices stay saved and can reconnect with their valid sessions. ${isBrowser ? 'You will lose access from this browser. Restore it from the desktop app, or run the recovery command on the server and restart it.' : 'The desktop stays connected.'}`
+              ? `Connected browsers will disconnect and cannot access OpenTig until Web access is enabled again. Paired devices stay saved and can reconnect with their valid sessions. ${!isBrowser ? 'The desktop stays connected.'
+                : recoveryCommand ? 'You will lose access from this browser. The paused page explains how to restore it.' : 'You will lose access from this browser. Restore it from the desktop app.'}`
               : 'Paired browsers can edit or delete files and act with your OS user permissions. Saved paired devices can reconnect. Use only devices you trust. LAN exposure is configured separately.'}</DialogDescription>
           </div>
           <div className="undo-commit-actions">

@@ -118,15 +118,27 @@ describe('Web access settings display', () => {
     } finally { await view.unmount(); }
   });
 
-  it('warns before browser access is paused and shows the recovery command', async () => {
+  it('leaves the recovery command to the paused page when a browser pauses a CLI server', async () => {
     const view = await mountBrowser({ webAccessEnabled: true, pairingAvailable: true, listeningOnLan: false, listenerHost: '127.0.0.1', actualPort: 6767, ready: true, recoveryCommand: 'opentig reset-access' }, async () => link);
     try {
-      expect(view.container.textContent).toContain('opentig reset-access');
+      expect(view.container.textContent).not.toContain('opentig reset-access');
       await act(async () => (view.container.querySelector('[aria-label="Web access"]') as HTMLButtonElement).click());
       const dialog = document.querySelector('[role="dialog"]') as HTMLElement;
       expect(dialog.textContent).toContain('You will lose access from this browser');
+      expect(dialog.textContent).toContain('The paused page explains how to restore it.');
+      expect(dialog.textContent).not.toContain('opentig reset-access');
+      expect(dialog.textContent).not.toContain('desktop app');
       await act(async () => button(dialog, 'Disable Web access').click());
       expect(view.fetch).toHaveBeenCalledWith('/api/auth/web-access', expect.objectContaining({ body: JSON.stringify({ webAccessEnabled: false }) }));
+    } finally { await view.unmount(); }
+  });
+
+  it('points a browser on a desktop-hosted server back to the desktop app', async () => {
+    const view = await mountBrowser({ webAccessEnabled: true, pairingAvailable: true, listeningOnLan: false, listenerHost: '127.0.0.1', actualPort: 6767, ready: true }, async () => link);
+    try {
+      await act(async () => (view.container.querySelector('[aria-label="Web access"]') as HTMLButtonElement).click());
+      const dialog = document.querySelector('[role="dialog"]') as HTMLElement;
+      expect(dialog.textContent).toContain('Restore it from the desktop app.');
     } finally { await view.unmount(); }
   });
 
