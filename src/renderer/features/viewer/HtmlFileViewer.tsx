@@ -64,7 +64,7 @@ export function HtmlFileViewer({ file, initialContent, themeType, wrapLines, rea
             value={draft}
             themeType={themeType}
             wrapLines={wrapLines}
-            readOnly={readOnly || saving}
+            readOnly={readOnly}
             onChange={updateDraft}
           />
       </ViewerTabsPanel>

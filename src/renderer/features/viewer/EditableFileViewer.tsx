@@ -6,6 +6,7 @@ import type { FileResult, ThemePreference, WriteFileResult } from '@shared/contr
 import { OPENTIG_CODE_THEMES } from './diffThemes';
 import { VIEWER_SCROLLBAR_CSS } from './patch-utils';
 import { EditReadyContext } from './edit-ready-context';
+import { useEditorFileKey } from './editor-file-key';
 import { PierreWorkerPool } from './PierreWorkerPool';
 import { resolvePierreLanguage } from './pierreLanguages';
 import { syncScrollFraction } from './scroll-sync';
@@ -103,7 +104,9 @@ export function SourceCodeEditor({ path, cacheKey, value, themeType, wrapLines, 
   const virtualizerRef = useRef<VirtualizerHandle>(undefined);
   const plainScrollRef = useRef<HTMLDivElement>(null);
 
-  const file = useMemo(() => ({ name: path, lang: resolvePierreLanguage(path), contents: value, cacheKey }), [cacheKey, path, value]);
+  const editing = editReady && !readOnly;
+  const { key: fileKey, noteEditorText } = useEditorFileKey(cacheKey, value, editing);
+  const file = useMemo(() => ({ name: path, lang: resolvePierreLanguage(path), contents: value, cacheKey: fileKey }), [fileKey, path, value]);
   const options = useMemo(() => ({
     disableFileHeader: true,
     themeType,
@@ -117,8 +120,11 @@ export function SourceCodeEditor({ path, cacheKey, value, themeType, wrapLines, 
   const editorOptions = useMemo<EditorOptions<'file', undefined, undefined>>(() => ({
     historyMaxEntries: 500,
     keymap: buildFileEditorKeymap(shortcuts.editorSearch),
-    onChange(event) { onChangeRef.current(event.file.contents); },
-  }), [shortcuts.editorSearch]);
+    onChange(event) {
+      noteEditorText(event.file.contents);
+      onChangeRef.current(event.file.contents);
+    },
+  }), [noteEditorText, shortcuts.editorSearch]);
 
   const cancelScrollSync = useRef<(() => void) | null>(null);
   useEffect(() => () => cancelScrollSync.current?.(), []);
@@ -162,7 +168,7 @@ export function SourceCodeEditor({ path, cacheKey, value, themeType, wrapLines, 
       file={file}
       options={options}
       editorOptions={editorOptions}
-      edit={editReady && !readOnly}
+      edit={editing}
     />
   );
 
@@ -219,7 +225,7 @@ export function EditableFileViewer({ file, initialContent, themeType, wrapLines,
           value={draft}
           themeType={themeType}
           wrapLines={wrapLines}
-          readOnly={readOnly || saving}
+          readOnly={readOnly}
           onChange={updateDraft}
         />
       </div>

@@ -344,7 +344,7 @@ export function MarkdownFileViewer({ repositoryId, file, initialContent, revisio
             value={draft}
             themeType={themeType}
             wrapLines={wrapLines}
-            readOnly={readOnly || saving}
+            readOnly={readOnly}
             onChange={updateDraft}
           />
       </ViewerTabsPanel>

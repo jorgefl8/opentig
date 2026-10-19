@@ -126,7 +126,7 @@ export function SvgFileViewer({ file, initialContent, themeType, wrapLines, read
               value={draft}
               themeType={themeType}
               wrapLines={wrapLines}
-              readOnly={readOnly || saving}
+              readOnly={readOnly}
               onChange={updateDraft}
               />
           </div>

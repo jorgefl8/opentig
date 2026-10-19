@@ -178,7 +178,7 @@ Only working-tree files become tabs. Diffs, conflicts, commits, and pull request
 
 **Edit and save**
 
-Open text files in the syntax-aware editor. When the file has unsaved changes, a labeled **Save** button with its shortcut appears at the top right. Saving checks for external changes and preserves your scroll position. Press `Ctrl+F` for the integrated find-and-replace panel, including single or global replacement, case, whole-word, regular-expression, and undo support.
+Open text files in the syntax-aware editor. When the file has unsaved changes, a labeled **Save** button with its shortcut appears at the top right. Saving checks for external changes and keeps the saved text, caret, undo history, and scroll position; you can keep typing while it saves. A tab without unsaved edits shows changes made to the file outside OpenTig. Press `Ctrl+F` for the integrated find-and-replace panel, including single or global replacement, case, whole-word, regular-expression, and undo support.
 
 Unsaved edits stay in memory while the app runs. Closing a modified tab offers **Save**, **Discard**, or **Cancel**. Open tab paths, order, and the active file are restored per worktree between sessions; **unsaved text is never written to disk automatically**.
 
