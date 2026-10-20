@@ -2,6 +2,7 @@ import { access, readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { builtinModules } from 'node:module';
+import { parseSync } from 'oxc-parser';
 
 const FORBIDDEN_PACKAGES = [
   'electron',
@@ -80,10 +81,20 @@ async function findModules(directory) {
   return modules;
 }
 
-function importedSpecifiers(source) {
+export function importedSpecifiers(source) {
   const specifiers = [];
+  // Bundled libraries may include require/import examples in documentation.
+  // Ignore parser-identified comments without stripping comment-like text inside strings.
+  const { comments } = parseSync('bundle.mjs', source);
+  let cursor = 0;
+  let code = '';
+  for (const comment of comments) {
+    code += source.slice(cursor, comment.start) + ' ';
+    cursor = comment.end;
+  }
+  code += source.slice(cursor);
   const pattern = /(?:from\s+|import\s*\(|require\s*\()\s*['"]([^'"]+)['"]/g;
-  for (const match of source.matchAll(pattern)) specifiers.push(match[1]);
+  for (const match of code.matchAll(pattern)) specifiers.push(match[1]);
   return specifiers;
 }
 
@@ -92,8 +103,9 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   await verifyServerBuild(path.join(packageRoot, 'dist'));
 }
 
-/** Homebrew's documented Linux system prefix is not a developer home. */
+/** Standard runtime placeholders are not developer checkout paths. */
 export function containsPersonalPath(source) {
-  const checked = source.replace(/(["'])\/home\/linuxbrew\/\.linuxbrew\/bin\1/g, '""');
+  const checked = source.replace(/(["'])\/home\/linuxbrew\/\.linuxbrew\/bin\1/g, '""')
+    .replace(/\bHOME:\s*(["'])\/home\/web_user\1/g, 'HOME:""');
   return /[A-Za-z]:[\\/]Users[\\/]/i.test(checked) || checked.includes('/home/') || checked.includes('/Users/');
 }

@@ -1,5 +1,5 @@
 import { useContext, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { MutableRefObject, ReactNode, Ref } from 'react';
+import type { MutableRefObject, Ref } from 'react';
 import { File, Virtualizer, useVirtualizer } from '@pierre/diffs/react';
 import type { EditorOptions } from '@pierre/diffs/edit';
 import type { FileResult, ThemePreference, WriteFileResult } from '@shared/contracts';
@@ -45,17 +45,6 @@ export function FileSaveControls({ dirty, saving, readOnly, onSave }: FileSaveCo
       </Button>
       {!readOnly && !saving && <kbd className="file-save-shortcut">{shortcuts.saveFile}</kbd>}
     </span>
-  );
-}
-
-/** Centers a viewer pill and parks Save on the top-right, without putting it inside the pill. */
-export function FileViewerChrome({ children, save }: { children: ReactNode; save?: ReactNode }) {
-  return (
-    <div className="file-viewer-chrome">
-      <div className="file-viewer-chrome-side" />
-      <div className="file-viewer-chrome-center">{children}</div>
-      <div className="file-viewer-chrome-side file-viewer-chrome-end">{save}</div>
-    </div>
   );
 }
 

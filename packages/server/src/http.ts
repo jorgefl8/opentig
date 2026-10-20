@@ -9,6 +9,7 @@ import { normalizePairingOrigin, type OpenTigBrowserWebAccessStatus } from '../.
 import { OpenTigSessionAuth } from './auth';
 import { isAllowedOrigin, requestOriginIsSecure } from './origin';
 import { HTML_PREVIEW_BODY_LIMIT, HTML_PREVIEW_CSP, htmlPreviewDocumentFromFormBody } from './html-preview';
+import { embedHtmlPreviewAssets } from './html-preview-assets';
 import { serveStatic, STATIC_SECURITY_HEADERS } from './static';
 
 import type { DesktopUpdatesApi } from '../../../src/shared/desktop-updates';
@@ -262,6 +263,24 @@ async function handleRequest(context: OpenTigHttpContext, request: IncomingMessa
     }
   }
 
+  if (method === 'GET' && rawPath.startsWith('/api/pdf/')) {
+    if (!context.auth.authenticate(request.headers)) return sendJson(response, 401, { error: 'Authentication required.' });
+    const target = parseImageTarget(rawPath, '/api/pdf/');
+    if (!target || !/\.pdf$/i.test(target.path)) return sendJson(response, 400, { error: 'Invalid PDF path.' });
+    const result = await context.runtime.services.files.readPreviewAsset(target.repositoryId, target.path, 32 * 1024 * 1024);
+    if (!result.data) return sendJson(response, 413, { error: 'PDF preview is limited to 32 MB.' });
+    if (!result.data.subarray(0, 1024).includes(Buffer.from('%PDF-'))) return sendJson(response, 415, { error: 'This file is not a PDF document.' });
+    response.writeHead(200, {
+      ...STATIC_SECURITY_HEADERS,
+      'Cache-Control': 'private, no-store',
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': 'attachment',
+      'Content-Length': String(result.data.length),
+    });
+    response.end(result.data);
+    return;
+  }
+
   if (method === 'GET' && rawPath.startsWith('/api/image/')) {
     const sessionId = context.auth.authenticate(request.headers);
     if (!sessionId) return sendJson(response, 401, { error: 'Authentication required.' });
@@ -405,9 +424,9 @@ async function handleLocalAdminRequest(
   return sendJson(response, 200, { url: url.href, expiresAt: pairing.expiresAt });
 }
 
-function parseImageTarget(rawPath: string): { repositoryId: string; path: string } | null {
+function parseImageTarget(rawPath: string, prefix = '/api/image/'): { repositoryId: string; path: string } | null {
   try {
-    const decoded = decodeURIComponent(rawPath.slice('/api/image/'.length));
+    const decoded = decodeURIComponent(rawPath.slice(prefix.length));
     if (!decoded || decoded.includes('\0') || decoded.includes('\\')) return null;
     const parts = decoded.split('/');
     const repositoryId = parts.shift();
@@ -458,7 +477,13 @@ async function handleHtmlPreview(context: OpenTigHttpContext, request: IncomingM
   if (document === null) {
     return sendHtmlPreview(response, 400, '<!doctype html><meta charset="utf-8"><title>Preview</title><p>The preview request was incomplete.</p>');
   }
-  sendHtmlPreview(response, 200, document);
+  const params = new URLSearchParams(body);
+  const repositoryId = params.get('repositoryId');
+  const filePath = params.get('path');
+  const bundled = repositoryId && filePath
+    ? await embedHtmlPreviewAssets(document, filePath, (asset, limit) => context.runtime.services.files.readPreviewAsset(repositoryId, asset, limit), params.get('navigationId') ?? undefined)
+    : document;
+  sendHtmlPreview(response, 200, bundled);
 }
 
 function sendHtmlPreview(response: ServerResponse, status: number, html: string): void {

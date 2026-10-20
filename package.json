@@ -80,6 +80,8 @@
     "marked-katex-extension": "^5.1.13",
     "mermaid": "^12.1.0",
     "motion": "^14.0.0",
+    "parse5": "^8.0.1",
+    "pdfjs-dist": "^6.4.299",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "shiki": "^4.5.0",

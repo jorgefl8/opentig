@@ -308,11 +308,24 @@ it.each([{}, { status: 'unknown' }, { status: 'completed', date: '1792151900', s
   },
 );
 
-it('rejects mismatched file metadata even while an analysis is queued', async () => {
+it.each(['queued', 'in-progress'])('keeps polling a %s analysis whose provisional file metadata differs', async state => {
   const fixture = await installer();
-  const vt = client(() => response({ data: { type: 'analysis', id, attributes: { status: 'queued' } },
+  const vt = client(() => response({ data: { type: 'analysis', id, attributes: { status: state } },
     meta: { file_info: { sha256: 'b'.repeat(64), size: 128 } } }));
+  const result = await vt.getAnalysis(fixture.receipt, fixture.download);
+  expect(result).toMatchObject({ analysisId: id, state });
+  expect(result).not.toHaveProperty('analysis');
+  expect(vt.calls).toHaveLength(1);
+});
+
+it('rejects a completed analysis whose file metadata differs from the installer', async () => {
+  const fixture = await installer();
+  const vt = client(() => response({
+    data: { type: 'analysis', id, attributes: { status: 'completed', date: 1792151900, stats: statistics } },
+    meta: { file_info: { sha256: 'b'.repeat(64), size: fixture.download.identity.size } },
+  }));
   await expect(vt.getAnalysis(fixture.receipt, fixture.download)).rejects.toMatchObject({ code: 'analysis-file-mismatch' });
+  expect(vt.calls).toHaveLength(1);
 });
 
 it('serializes concurrent callers, including an initial cooldown and every API call', async () => {

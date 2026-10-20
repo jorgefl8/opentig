@@ -4,9 +4,9 @@ import { IconLoader4, IconViewportNarrow, IconViewportWide } from '@tabler/icons
 import { sileo } from 'sileo';
 import type { FileResult, ThemePreference, WriteFileResult } from '@shared/contracts';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { ViewerTabs, ViewerTabsList, ViewerTabsPanel } from '@/components/ui/viewer-tabs';
-import { FileSaveControls, FileViewerChrome, SourceCodeEditor, type SourceCodeEditorHandle } from '@/features/viewer/EditableFileViewer';
+import { FileSaveControls, SourceCodeEditor, type SourceCodeEditorHandle } from '@/features/viewer/EditableFileViewer';
+import { FileViewerToolbar, FileViewerToolbarButton, FileViewerToolbarGroup } from '@/features/viewer/FileViewerToolbar';
 import { syncScrollFraction } from '@/features/viewer/scroll-sync';
 import { useEditableFileDraft } from '@/features/viewer/useEditableFileDraft';
 import { resolveMarkdownRepositoryPath } from './markdown-links';
@@ -281,46 +281,29 @@ export function MarkdownFileViewer({ repositoryId, file, initialContent, revisio
 
   return (
     <ViewerTabs value={tab} onValueChange={(value) => handleTabChange(value as typeof tab)} className="markdown-viewer" data-content-width={contentWidth}>
-      <FileViewerChrome save={<FileSaveControls dirty={dirty} saving={saving} readOnly={readOnly} onSave={() => void save()} />}>
-      <div className="file-viewer-pill markdown-viewer-toolbar">
-        <ViewerTabsList
-          label="Markdown view"
-          className="file-viewer-tabs markdown-viewer-tabs"
-          items={[
-            { value: 'preview', label: 'Preview' },
-            { value: 'code', label: <>Code {dirty && <span className="markdown-unsaved-dot" aria-label="Unsaved changes" />}</> },
-          ]}
-        />
-        <div className="markdown-width-toggle" role="group" aria-label="Markdown content width">
-          <Tooltip>
-            <TooltipTrigger render={
-              <button
-                type="button"
-                aria-label="Reading width"
-                aria-pressed={contentWidth === 'reading'}
-                onClick={() => changeContentWidth('reading')}
-              />
-            }>
+      <FileViewerToolbar
+        start={
+          <ViewerTabsList
+            label="Markdown view"
+            className="file-viewer-tabs"
+            items={[
+              { value: 'preview', label: 'Preview' },
+              { value: 'code', label: <>Code {dirty && <span className="file-viewer-unsaved-dot" aria-label="Unsaved changes" />}</> },
+            ]}
+          />
+        }
+        controls={tab === 'preview' && (
+          <FileViewerToolbarGroup label="Markdown content width">
+            <FileViewerToolbarButton label="Reading width" pressed={contentWidth === 'reading'} onClick={() => changeContentWidth('reading')}>
               <IconViewportNarrow aria-hidden="true" />
-            </TooltipTrigger>
-            <TooltipContent>Reading width</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger render={
-              <button
-                type="button"
-                aria-label="Fit to width"
-                aria-pressed={contentWidth === 'fit'}
-                onClick={() => changeContentWidth('fit')}
-              />
-            }>
+            </FileViewerToolbarButton>
+            <FileViewerToolbarButton label="Fit to width" pressed={contentWidth === 'fit'} onClick={() => changeContentWidth('fit')}>
               <IconViewportWide aria-hidden="true" />
-            </TooltipTrigger>
-            <TooltipContent>Fit to width</TooltipContent>
-          </Tooltip>
-        </div>
-      </div>
-      </FileViewerChrome>
+            </FileViewerToolbarButton>
+          </FileViewerToolbarGroup>
+        )}
+        end={<FileSaveControls dirty={dirty} saving={saving} readOnly={readOnly} onSave={() => void save()} />}
+      />
       <ViewerTabsPanel ref={previewPanelRef} value="preview" className="markdown-preview-scroll" onScroll={() => setLinkTooltip(null)}>
           {loading && !html ? (
             <div className="viewer-message"><IconLoader4 className="spinner" aria-hidden="true" /><ShimmeringText text="Rendering Markdown…" /></div>

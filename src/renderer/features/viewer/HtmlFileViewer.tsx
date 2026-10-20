@@ -1,13 +1,17 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { FileResult, ThemePreference, WriteFileResult } from '@shared/contracts';
 import { ViewerTabs, ViewerTabsList, ViewerTabsPanel } from '@/components/ui/viewer-tabs';
-import { FileSaveControls, FileViewerChrome, SourceCodeEditor } from './EditableFileViewer';
-import { buildHtmlPreviewDocument } from './html-preview-document';
+import { FileSaveControls, SourceCodeEditor } from './EditableFileViewer';
+import { FileViewerToolbar } from './FileViewerToolbar';
 import { useEditableFileDraft } from './useEditableFileDraft';
 import './html-file-viewer.css';
 import { HtmlPreviewFrame } from './HtmlPreviewFrame';
+import type { HtmlPreviewAnchor } from './html-preview-links';
 
 interface HtmlFileViewerProps {
+  repositoryId: string;
+  anchor: HtmlPreviewAnchor | null;
+  onNavigate(path: string, hash: string): void;
   file: FileResult;
   /** The draft App is holding for this path, or the file's own content. */
   initialContent: string;
@@ -25,37 +29,32 @@ const HTML_SAVE_MESSAGES = {
   errorTitle: 'Could not save HTML',
 };
 
-export function HtmlFileViewer({ file, initialContent, themeType, wrapLines, readOnly, onDirtyChange, onDraftChange, onSave }: HtmlFileViewerProps) {
+export function HtmlFileViewer({ repositoryId, anchor, onNavigate, file, initialContent, themeType, wrapLines, readOnly, onDirtyChange, onDraftChange, onSave }: HtmlFileViewerProps) {
   const [tab, setTab] = useState<'preview' | 'code'>('preview');
   const { draft, updateDraft, dirty, saving, save } = useEditableFileDraft({
     file, initialContent, readOnly, messages: HTML_SAVE_MESSAGES, onDirtyChange, onDraftChange, onSave,
   });
-  const darkPreviewChrome = themeType === 'dark'
-    || (themeType === 'system' && document.documentElement.classList.contains('dark'));
-  const previewDocument = useMemo(
-    () => buildHtmlPreviewDocument(draft, darkPreviewChrome),
-    [darkPreviewChrome, draft],
-  );
   useEffect(() => {
     setTab('preview');
   }, [file.path]);
 
   return (
     <ViewerTabs value={tab} onValueChange={(value) => setTab(value as typeof tab)} className="markdown-viewer html-file-viewer">
-      <FileViewerChrome save={<FileSaveControls dirty={dirty} saving={saving} readOnly={readOnly} onSave={() => void save()} />}>
-      <div className="file-viewer-pill markdown-viewer-toolbar">
-        <ViewerTabsList
-          label="HTML view"
-          className="file-viewer-tabs markdown-viewer-tabs"
-          items={[
-            { value: 'preview', label: 'Preview' },
-            { value: 'code', label: <>Code {dirty && <span className="markdown-unsaved-dot" aria-label="Unsaved changes" />}</> },
-          ]}
-        />
-      </div>
-      </FileViewerChrome>
+      <FileViewerToolbar
+        start={
+          <ViewerTabsList
+            label="HTML view"
+            className="file-viewer-tabs"
+            items={[
+              { value: 'preview', label: 'Preview' },
+              { value: 'code', label: <>Code {dirty && <span className="file-viewer-unsaved-dot" aria-label="Unsaved changes" />}</> },
+            ]}
+          />
+        }
+        end={<FileSaveControls dirty={dirty} saving={saving} readOnly={readOnly} onSave={() => void save()} />}
+      />
       <ViewerTabsPanel value="preview" className="html-preview-panel">
-        <HtmlPreviewFrame document={previewDocument} path={file.path} active={tab === 'preview'} />
+        <HtmlPreviewFrame document={draft} repositoryId={repositoryId} path={file.path} active={tab === 'preview'} anchor={anchor} onNavigate={onNavigate} />
       </ViewerTabsPanel>
       <ViewerTabsPanel value="code" className="markdown-code-view" data-theme={themeType}>
           <SourceCodeEditor

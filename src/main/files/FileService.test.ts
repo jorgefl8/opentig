@@ -16,6 +16,23 @@ const directories: string[] = [];
 afterEach(async () => Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true, maxRetries: 3 }))));
 
 describe('FileService', () => {
+  it('reads preview bytes with a hard cap and rejects paths and symlinks outside the worktree', async () => {
+    const fixture = await createFixture();
+    const pdf = Buffer.from('%PDF-1.7\n\0binary');
+    await writeFile(path.join(fixture.work, 'preview.pdf'), pdf);
+    expect(await fixture.files.readPreviewAsset(fixture.repositoryId, 'preview.pdf', 100)).toEqual({ data: pdf, size: pdf.length });
+    expect(await fixture.files.readPreviewAsset(fixture.repositoryId, 'preview.pdf', 4)).toEqual({ data: null, size: pdf.length });
+    await expect(fixture.files.readPreviewAsset(fixture.repositoryId, '../outside.pdf', 100)).rejects.toThrow();
+    const outside = path.join(path.dirname(fixture.work), 'outside.pdf');
+    await writeFile(outside, pdf);
+    try { await symlink(outside, path.join(fixture.work, 'escape.pdf'), 'file'); }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'EPERM') return;
+      throw error;
+    }
+    await expect(fixture.files.readPreviewAsset(fixture.repositoryId, 'escape.pdf', 100)).rejects.toThrow('outside the worktree');
+  });
+
   it('reads the repository root and ordinary folders with normalized paths and child ignore flags', async () => {
     const fixture = await createFixture();
     await writeFile(path.join(fixture.work, '.gitignore'), '.env*\ncache/\nsrc/*.log\n');
