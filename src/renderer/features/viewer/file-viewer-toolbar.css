@@ -1,0 +1,114 @@
+/* Same height as the sidebar tab row beside it, so both header lines meet. */
+.file-viewer-toolbar {
+  display: grid;
+  height: 38px;
+  flex: none;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--border);
+  background: var(--background);
+  padding: 0 8px;
+  container-type: inline-size;
+  scrollbar-width: none;
+}
+
+.file-viewer-toolbar::-webkit-scrollbar { display: none; }
+
+.file-viewer-toolbar-center,
+.file-viewer-toolbar-start,
+.file-viewer-toolbar-controls,
+.file-viewer-toolbar-end {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.file-viewer-toolbar-center { grid-column: 2; }
+.file-viewer-toolbar-end { grid-column: 3; justify-content: flex-end; }
+
+.file-viewer-toolbar-start:empty,
+.file-viewer-toolbar-controls:empty { display: none; }
+
+/* A rule separates the view switch from the viewer's own controls. */
+.file-viewer-toolbar-start:not(:empty) + .file-viewer-toolbar-controls {
+  border-left: 1px solid var(--border);
+  padding-left: 8px;
+}
+
+.file-viewer-toolbar-group {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+}
+
+.file-viewer-toolbar-group + .file-viewer-toolbar-group {
+  border-left: 1px solid var(--border);
+  padding-left: 8px;
+}
+
+.file-viewer-toolbar [aria-pressed="true"] {
+  background: var(--row-selected);
+  color: var(--foreground);
+}
+
+.file-viewer-toolbar-detail {
+  flex: none;
+  color: var(--muted-foreground);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  white-space: nowrap;
+}
+
+.file-viewer-toolbar-value {
+  min-width: 46px;
+  justify-content: center;
+  color: var(--muted-foreground);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.file-viewer-tabs {
+  display: inline-grid;
+  flex: none;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--muted) 58%, var(--background));
+  padding: 2px;
+}
+
+.file-viewer-tabs > button {
+  display: inline-flex;
+  min-width: 0;
+  height: 26px;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border-radius: 999px;
+  padding: 0 12px;
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-weight: 600;
+  transition: color .12s ease;
+}
+
+.file-viewer-tabs > button:hover,
+.file-viewer-tabs > button[aria-selected="true"] { color: var(--foreground); }
+.file-viewer-tabs > button:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
+
+.file-viewer-unsaved-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--warning);
+  box-shadow: 0 0 0 2px color-mix(in oklch, var(--warning) 15%, transparent);
+}
+
+@container (max-width: 520px) {
+  .file-viewer-toolbar-detail { display: none; }
+}

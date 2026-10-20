@@ -3,9 +3,9 @@ import { IconLoader4, IconZoomIn, IconZoomOut } from '@tabler/icons-react';
 import type { FileResult, ImageFileResult, ThemePreference, WriteFileResult } from '@shared/contracts';
 import { Button } from '@/components/ui/button';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { ViewerTabs, ViewerTabsList, ViewerTabsPanel } from '@/components/ui/viewer-tabs';
-import { FileSaveControls, FileViewerChrome, SourceCodeEditor } from './EditableFileViewer';
+import { FileSaveControls, SourceCodeEditor } from './EditableFileViewer';
+import { FileViewerToolbar, FileViewerToolbarButton, FileViewerToolbarGroup } from './FileViewerToolbar';
 import { MAX_IMAGE_ZOOM, type ImageSizingMode, zoomIn, zoomOut } from './image-viewer-state';
 import { useEditableFileDraft } from './useEditableFileDraft';
 import './image-viewer.css';
@@ -95,10 +95,10 @@ export function SvgFileViewer({ file, initialContent, themeType, wrapLines, read
   const tabs = (
     <ViewerTabsList
       label="SVG view"
-      className="file-viewer-tabs image-viewer-tabs"
+      className="file-viewer-tabs"
       items={[
         { value: 'preview', label: 'Preview' },
-        { value: 'code', label: <>Code {dirty && <span className="image-unsaved-dot" aria-label="Unsaved changes" />}</> },
+        { value: 'code', label: <>Code {dirty && <span className="file-viewer-unsaved-dot" aria-label="Unsaved changes" />}</> },
       ]}
     />
   );
@@ -116,9 +116,7 @@ export function SvgFileViewer({ file, initialContent, themeType, wrapLines, read
         />
       </ViewerTabsPanel>
       <ViewerTabsPanel value="code" className="svg-file-panel">
-          <FileViewerChrome save={saveControls}>
-            <div className="file-viewer-pill svg-file-toolbar">{tabs}</div>
-          </FileViewerChrome>
+          <FileViewerToolbar start={tabs} end={saveControls} />
           <div className="svg-code-view">
             <SourceCodeEditor
               path={file.path}
@@ -186,33 +184,23 @@ function ImagePreviewWorkspace({ objectUrl, path, size, toolbarStart, toolbarEnd
 
   return (
     <div className="image-preview-workspace">
-      <FileViewerChrome save={toolbarEnd}>
-      <div className="file-viewer-pill image-preview-toolbar">
-        {toolbarStart}
-        <span className="image-file-details">{details}</span>
-        <div className="image-sizing-toggle" role="group" aria-label="Image size">
-          <Button type="button" size="xs" variant={mode === 'fit' ? 'secondary' : 'ghost'} aria-pressed={mode === 'fit'} onClick={() => setMode('fit')}>Fit</Button>
-          <Button type="button" size="xs" variant={mode === 'actual' && zoom === 1 ? 'secondary' : 'ghost'} aria-pressed={mode === 'actual' && zoom === 1} onClick={() => { setMode('actual'); setZoom(1); }}>1:1</Button>
-        </div>
-        <div className="image-zoom-controls">
-          <Tooltip>
-            <TooltipTrigger render={<Button type="button" variant="ghost" size="icon-xs" aria-label="Zoom out" onClick={() => changeZoom('out')} />}>
-              <IconZoomOut />
-            </TooltipTrigger>
-            <TooltipContent>Zoom out</TooltipContent>
-          </Tooltip>
-          <Button type="button" variant="ghost" size="xs" className="image-zoom-value" aria-label="Reset zoom to 100%" onClick={() => { setMode('actual'); setZoom(1); }}>
-            {Math.round(zoom * 100)}%
-          </Button>
-          <Tooltip>
-            <TooltipTrigger render={<Button type="button" variant="ghost" size="icon-xs" aria-label="Zoom in" onClick={() => changeZoom('in')} />}>
-              <IconZoomIn />
-            </TooltipTrigger>
-            <TooltipContent>Zoom in</TooltipContent>
-          </Tooltip>
-        </div>
-      </div>
-      </FileViewerChrome>
+      <FileViewerToolbar
+        start={<>{toolbarStart}<span className="file-viewer-toolbar-detail">{details}</span></>}
+        controls={<>
+          <FileViewerToolbarGroup label="Image size">
+            <Button type="button" size="sm" variant="ghost" aria-pressed={mode === 'fit'} onClick={() => setMode('fit')}>Fit</Button>
+            <Button type="button" size="sm" variant="ghost" aria-pressed={mode === 'actual' && zoom === 1} onClick={() => { setMode('actual'); setZoom(1); }}>1:1</Button>
+          </FileViewerToolbarGroup>
+          <FileViewerToolbarGroup label="Zoom">
+            <FileViewerToolbarButton label="Zoom out" onClick={() => changeZoom('out')}><IconZoomOut /></FileViewerToolbarButton>
+            <Button type="button" variant="ghost" size="sm" className="file-viewer-toolbar-value" aria-label="Reset zoom to 100%" onClick={() => { setMode('actual'); setZoom(1); }}>
+              {Math.round(zoom * 100)}%
+            </Button>
+            <FileViewerToolbarButton label="Zoom in" onClick={() => changeZoom('in')}><IconZoomIn /></FileViewerToolbarButton>
+          </FileViewerToolbarGroup>
+        </>}
+        end={toolbarEnd}
+      />
       <div
         ref={canvasRef}
         className="image-preview-canvas"

@@ -7,81 +7,12 @@
   background: var(--background);
 }
 
-.file-viewer-pill {
-  position: absolute;
-  top: 10px;
-  left: 50%;
-  z-index: 10;
-  display: flex;
-  max-width: calc(100% - 16px);
-  align-items: center;
-  gap: 4px;
-  transform: translateX(-50%);
-  overflow-x: auto;
-  border: 1px solid color-mix(in oklch, var(--border) 82%, var(--foreground));
-  border-radius: 999px;
-  background: color-mix(in oklch, var(--muted) 58%, var(--background));
-  padding: 4px;
-  box-shadow: 0 8px 28px rgb(0 0 0 / 24%), inset 0 1px 0 rgb(255 255 255 / 5%);
-  scrollbar-width: none;
-}
-
-.file-viewer-pill::-webkit-scrollbar { display: none; }
-
-.file-viewer-tabs {
-  position: relative;
-  display: inline-grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  isolation: isolate;
-}
-
-.file-viewer-tabs > button {
-  position: relative;
-  z-index: 1;
-  width: 100%;
-  min-width: 0;
-  justify-content: center;
-  text-align: center;
-}
-
 .file-save-toolbar {
   position: absolute;
   top: 10px;
   right: 10px;
   z-index: 11;
 }
-
-/* The pill stays centered. Save sits in the matching right column, so a wide
-   pill cannot slide underneath it. */
-.file-viewer-chrome {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  left: 10px;
-  z-index: 10;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-  align-items: center;
-  pointer-events: none;
-}
-
-.file-viewer-chrome .file-viewer-pill {
-  position: static;
-  top: auto;
-  left: auto;
-  max-width: 100%;
-  transform: none;
-  justify-self: center;
-  pointer-events: auto;
-}
-
-.file-viewer-chrome-end {
-  display: flex;
-  justify-content: flex-end;
-  pointer-events: auto;
-}
-
-.file-viewer-chrome-end:empty { pointer-events: none; }
 
 .file-save-controls {
   display: inline-flex;

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import type { FileResult, ThemePreference, WriteFileResult } from '@shared/contracts';
 import { ViewerTabs, ViewerTabsList, ViewerTabsPanel } from '@/components/ui/viewer-tabs';
-import { FileSaveControls, FileViewerChrome, SourceCodeEditor } from './EditableFileViewer';
+import { FileSaveControls, SourceCodeEditor } from './EditableFileViewer';
+import { FileViewerToolbar } from './FileViewerToolbar';
 import { useEditableFileDraft } from './useEditableFileDraft';
 import './html-file-viewer.css';
 import { HtmlPreviewFrame } from './HtmlPreviewFrame';
@@ -39,18 +40,19 @@ export function HtmlFileViewer({ repositoryId, anchor, onNavigate, file, initial
 
   return (
     <ViewerTabs value={tab} onValueChange={(value) => setTab(value as typeof tab)} className="markdown-viewer html-file-viewer">
-      <FileViewerChrome save={<FileSaveControls dirty={dirty} saving={saving} readOnly={readOnly} onSave={() => void save()} />}>
-      <div className="file-viewer-pill markdown-viewer-toolbar">
-        <ViewerTabsList
-          label="HTML view"
-          className="file-viewer-tabs markdown-viewer-tabs"
-          items={[
-            { value: 'preview', label: 'Preview' },
-            { value: 'code', label: <>Code {dirty && <span className="markdown-unsaved-dot" aria-label="Unsaved changes" />}</> },
-          ]}
-        />
-      </div>
-      </FileViewerChrome>
+      <FileViewerToolbar
+        start={
+          <ViewerTabsList
+            label="HTML view"
+            className="file-viewer-tabs"
+            items={[
+              { value: 'preview', label: 'Preview' },
+              { value: 'code', label: <>Code {dirty && <span className="file-viewer-unsaved-dot" aria-label="Unsaved changes" />}</> },
+            ]}
+          />
+        }
+        end={<FileSaveControls dirty={dirty} saving={saving} readOnly={readOnly} onSave={() => void save()} />}
+      />
       <ViewerTabsPanel value="preview" className="html-preview-panel">
         <HtmlPreviewFrame document={draft} repositoryId={repositoryId} path={file.path} active={tab === 'preview'} anchor={anchor} onNavigate={onNavigate} />
       </ViewerTabsPanel>
