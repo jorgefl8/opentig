@@ -155,7 +155,7 @@ describe('authoritative HTTP server', () => {
     const pausedSessions = await (await fetch(`${origin}/api/auth/sessions`, { headers: { Cookie: desktop } })).json();
     expect(pausedSessions.sessions).toEqual(expect.arrayContaining([expect.objectContaining({ kind: 'browser', connected: false })]));
     expect(await (await fetch(`${origin}/api/auth/descriptor`, { headers: { Cookie: browser } })).json()).toMatchObject({ authenticated: false, browserAccessEnabled: false, pairingAvailable: false });
-    for (const endpoint of ['/api/auth/sessions', '/api/updates', '/api/image/repository/file.png']) {
+    for (const endpoint of ['/api/auth/sessions', '/api/updates', '/api/image/repository/file.png', '/api/pdf/repository/file.pdf']) {
       expect((await fetch(`${origin}${endpoint}`, { headers: { Cookie: browser } })).status).toBe(401);
     }
     expect((await postJson(`${origin}/api/auth/pair`, { token: fixture.pairingToken }, origin)).status).toBe(403);
@@ -441,6 +441,40 @@ describe('authoritative HTTP server', () => {
     expect(Number(image.headers.get('x-opentig-mtime-ms'))).toBeGreaterThan(0);
     expect(Buffer.from(await image.arrayBuffer())).toEqual(png);
     expect(image.headers.get('cache-control')).toBe('private, no-store');
+  });
+
+  it('serves authenticated PDF bytes and embeds HTML assets from the selected repository', async () => {
+    const fixture = await startFixture();
+    const repositoryPath = path.join(fixture.directory, 'preview-repository');
+    await mkdir(repositoryPath);
+    await execFileAsync('git', ['init', '--quiet'], { cwd: repositoryPath });
+    const pdf = Buffer.from('%PDF-1.7\n\0binary');
+    await writeFile(path.join(repositoryPath, 'preview.pdf'), pdf);
+    await writeFile(path.join(repositoryPath, 'invalid.pdf'), 'not a pdf');
+    await writeFile(path.join(repositoryPath, 'site.css'), 'h1 { color: red; }');
+    const repository = await fixture.server.runtime.services.repositories.openPath(repositoryPath);
+    const authenticated = await postJson(`${fixture.server.origin}/api/auth/desktop`, { secret: fixture.desktopSecret }, fixture.server.origin);
+    const headers = { Cookie: cookieValue(authenticated.cookie) };
+    const url = `${fixture.server.origin}/api/pdf/${encodeURIComponent(repository.id)}/preview.pdf`;
+    expect((await fetch(url)).status).toBe(401);
+    const response = await fetch(url, { headers });
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-type')).toBe('application/pdf');
+    expect(response.headers.get('cache-control')).toBe('private, no-store');
+    expect(Buffer.from(await response.arrayBuffer())).toEqual(pdf);
+    expect((await fetch(url.replace('preview.pdf', 'invalid.pdf'), { headers })).status).toBe(415);
+    expect((await fetch(url.replace('preview.pdf', 'site.css'), { headers })).status).toBe(400);
+    const html = await fetch(`${fixture.server.origin}/api/html-preview`, {
+      method: 'POST', headers: { ...headers, Origin: fixture.server.origin },
+      body: new URLSearchParams({ repositoryId: repository.id, path: 'index.html', navigationId: 'preview-navigation', document: '<link rel="stylesheet" href="site.css"><a href="guide.html">Guide</a><h1>Hello</h1>' }),
+    });
+    expect(html.status).toBe(200);
+    expect(html.headers.get('content-security-policy')).toContain('sandbox allow-scripts');
+    const document = await html.text();
+    expect(document).toContain(`data:text/css;base64,${Buffer.from('h1 { color: red; }').toString('base64')}`);
+    expect(document).toContain('opentig:html-link');
+    expect(document).toContain('preview-navigation');
+    expect(document).toContain('href="guide.html"');
   });
 
   it('fails clearly when an explicit port is already occupied', async () => {

@@ -2,6 +2,7 @@ import path from 'node:path';
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig, type Plugin } from 'vite';
+import { pdfjsAssets } from './scripts/pdfjs-assets';
 
 /** Intercept only Pierre's `import { bundledLanguages } from "shiki"` so Vite
  *  emits the curated Git-client grammars instead of every TextMate language. */
@@ -19,7 +20,7 @@ function pierreBundledLanguages(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [react(), tailwindcss(), pierreBundledLanguages()],
+  plugins: [react(), tailwindcss(), pierreBundledLanguages(), pdfjsAssets()],
   publicDir: path.resolve(__dirname, 'public'),
   worker: { format: 'es' },
   resolve: {

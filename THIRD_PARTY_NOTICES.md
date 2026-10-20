@@ -1,5 +1,11 @@
 # Third-party notices
 
+## PDF.js and parse5
+
+OpenTig uses [PDF.js](https://github.com/mozilla/pdf.js) (`pdfjs-dist`) to render PDF documents locally. PDF.js and the adapted text-layer styles are copyright Mozilla Foundation and licensed under Apache License 2.0. The distribution includes its license and the notices supplied with its CMaps, standard fonts, and WebAssembly decoders.
+
+[parse5](https://github.com/inikulin/parse5), licensed under MIT, parses HTML when embedding repository assets into isolated document previews.
+
 ## Geist, Inconsolata, JetBrains Mono, Plus Jakarta Sans, and Space Grotesk
 
 OpenTig bundles these variable fonts via Fontsource.

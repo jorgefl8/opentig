@@ -1,13 +1,16 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { FileResult, ThemePreference, WriteFileResult } from '@shared/contracts';
 import { ViewerTabs, ViewerTabsList, ViewerTabsPanel } from '@/components/ui/viewer-tabs';
 import { FileSaveControls, FileViewerChrome, SourceCodeEditor } from './EditableFileViewer';
-import { buildHtmlPreviewDocument } from './html-preview-document';
 import { useEditableFileDraft } from './useEditableFileDraft';
 import './html-file-viewer.css';
 import { HtmlPreviewFrame } from './HtmlPreviewFrame';
+import type { HtmlPreviewAnchor } from './html-preview-links';
 
 interface HtmlFileViewerProps {
+  repositoryId: string;
+  anchor: HtmlPreviewAnchor | null;
+  onNavigate(path: string, hash: string): void;
   file: FileResult;
   /** The draft App is holding for this path, or the file's own content. */
   initialContent: string;
@@ -25,17 +28,11 @@ const HTML_SAVE_MESSAGES = {
   errorTitle: 'Could not save HTML',
 };
 
-export function HtmlFileViewer({ file, initialContent, themeType, wrapLines, readOnly, onDirtyChange, onDraftChange, onSave }: HtmlFileViewerProps) {
+export function HtmlFileViewer({ repositoryId, anchor, onNavigate, file, initialContent, themeType, wrapLines, readOnly, onDirtyChange, onDraftChange, onSave }: HtmlFileViewerProps) {
   const [tab, setTab] = useState<'preview' | 'code'>('preview');
   const { draft, updateDraft, dirty, saving, save } = useEditableFileDraft({
     file, initialContent, readOnly, messages: HTML_SAVE_MESSAGES, onDirtyChange, onDraftChange, onSave,
   });
-  const darkPreviewChrome = themeType === 'dark'
-    || (themeType === 'system' && document.documentElement.classList.contains('dark'));
-  const previewDocument = useMemo(
-    () => buildHtmlPreviewDocument(draft, darkPreviewChrome),
-    [darkPreviewChrome, draft],
-  );
   useEffect(() => {
     setTab('preview');
   }, [file.path]);
@@ -55,7 +52,7 @@ export function HtmlFileViewer({ file, initialContent, themeType, wrapLines, rea
       </div>
       </FileViewerChrome>
       <ViewerTabsPanel value="preview" className="html-preview-panel">
-        <HtmlPreviewFrame document={previewDocument} path={file.path} active={tab === 'preview'} />
+        <HtmlPreviewFrame document={draft} repositoryId={repositoryId} path={file.path} active={tab === 'preview'} anchor={anchor} onNavigate={onNavigate} />
       </ViewerTabsPanel>
       <ViewerTabsPanel value="code" className="markdown-code-view" data-theme={themeType}>
           <SourceCodeEditor

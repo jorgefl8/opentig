@@ -17,6 +17,7 @@ const MarkdownFileViewer = lazy(() => import('@/features/markdown/MarkdownFileVi
 const PullRequestViewer = lazy(() => import('@/features/pulls/PullRequestViewer').then((module) => ({ default: module.PullRequestViewer })));
 const EditableFileViewer = lazy(() => import('./EditableFileViewer').then((module) => ({ default: module.EditableFileViewer })));
 const HtmlFileViewer = lazy(() => import('./HtmlFileViewer').then((module) => ({ default: module.HtmlFileViewer })));
+const PdfFileViewer = lazy(() => import('./PdfFileViewer').then((module) => ({ default: module.PdfFileViewer })));
 const ImageFileViewer = lazy(() => import('./ImageFileViewer').then((module) => ({ default: module.ImageFileViewer })));
 const SvgFileViewer = lazy(() => import('./ImageFileViewer').then((module) => ({ default: module.SvgFileViewer })));
 
@@ -85,6 +86,14 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
   const requestToken = useRef(0);
   const fileDirty = useRef(false);
   const docKey = documentKey(repositoryId, selection);
+  const [htmlAnchor, setHtmlAnchor] = useState<{ repositoryId: string; path: string; hash: string; id: string } | null>(null);
+  const navigateHtml = useCallback((path: string, hash: string) => {
+    setHtmlAnchor({ repositoryId, path, hash, id: crypto.randomUUID() });
+    onOpenFile(path);
+  }, [onOpenFile, repositoryId]);
+  useEffect(() => {
+    if (htmlAnchor && (htmlAnchor.repositoryId !== repositoryId || selection?.type !== 'file' || htmlAnchor.path !== selection.path)) setHtmlAnchor(null);
+  }, [htmlAnchor, repositoryId, selection]);
 
   useEffect(() => {
     setAllowLarge(false);
@@ -99,7 +108,7 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
     const token = ++requestToken.current;
     setError(null);
     // Pull request selections fetch their own data inside PullRequestViewer.
-    if (!selection || selection.type === 'pull-request') { setData(null); setLoading(false); return; }
+    if (!selection || selection.type === 'pull-request' || (selection.type === 'file' && /\.pdf$/i.test(selection.path))) { setData(null); setLoading(false); return; }
     setLoading(true);
     const run = async () => {
       try {
@@ -217,6 +226,10 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
         />
       </Suspense>
     );
+  } else if (selection.type === 'file' && /\.pdf$/i.test(selection.path)) {
+    content = <Suspense fallback={<ViewerLoading />}>
+      <PdfFileViewer key={`${repositoryId}:${selection.path}`} repositoryId={repositoryId} path={selection.path} revision={revision} />
+    </Suspense>;
   } else if (error) {
     content = <div className="viewer-message text-destructive">{error}</div>;
   } else if (!data) {
@@ -297,6 +310,9 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
     content = (
       <Suspense fallback={<ViewerLoading />}>
         <HtmlFileViewer
+          repositoryId={repositoryId}
+          anchor={htmlAnchor?.repositoryId === repositoryId && htmlAnchor.path === file.path ? htmlAnchor : null}
+          onNavigate={navigateHtml}
           key={fileMountKey(file)}
           file={file}
           initialContent={draftContent(file)}

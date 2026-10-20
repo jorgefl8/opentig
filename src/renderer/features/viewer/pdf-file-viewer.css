@@ -1,0 +1,41 @@
+.pdf-file-viewer { display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--background); }
+.pdf-toolbar { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 4px; padding: 8px; border-bottom: 1px solid var(--border); }
+.pdf-page-number { display: flex; align-items: center; gap: 5px; font-size: 12px; font-variant-numeric: tabular-nums; }
+.pdf-page-number input { width: 52px; padding: 3px; border: 1px solid var(--border); border-radius: 5px; background: var(--background); text-align: center; }
+.pdf-toolbar-divider { height: 18px; border-left: 1px solid var(--border); margin: 0 4px; }
+.pdf-zoom { min-width: 42px; text-align: center; font-size: 12px; font-variant-numeric: tabular-nums; }
+.pdf-scroll { position: relative; flex: 1; min-height: 0; overflow: auto; padding: 16px; background: var(--muted); }
+.pdf-scroll:focus-visible, .pdf-page-number input:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
+.pdf-loading { padding: 24px; text-align: center; color: var(--muted-foreground); }
+.pdf-page { position: relative; margin: 0 auto; background: white; box-shadow: 0 2px 12px #0002; }
+.pdf-page canvas { display: block; }
+
+/*
+ * Text layout adapted from PDF.js, scoped and reduced to this preview.
+ * Copyright 2014 Mozilla Foundation
+ * Licensed under the Apache License, Version 2.0.
+ * http://www.apache.org/licenses/LICENSE-2.0
+ * Distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND.
+ * See the License for the specific language governing permissions and limitations.
+ */
+.pdf-text-layer {
+  position: absolute; inset: 0; overflow: clip; text-align: initial;
+  line-height: 1; letter-spacing: normal; word-spacing: normal;
+  text-size-adjust: none; forced-color-adjust: none; transform-origin: 0 0;
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+}
+.pdf-text-layer :is(span, br) {
+  position: absolute; white-space: pre; color: transparent; cursor: text;
+  transform-origin: 0 0; user-select: text;
+}
+.pdf-text-layer > :not(.markedContent), .pdf-text-layer .markedContent span:not(.markedContent) {
+  --font-height: 0;
+  --scale-x: 1;
+  --rotate: 0deg;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+.pdf-text-layer .markedContent { display: contents; }
+.pdf-text-layer ::selection { background: #2684ff55; }

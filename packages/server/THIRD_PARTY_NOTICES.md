@@ -1,5 +1,11 @@
 # Third-party notices
 
+## PDF.js and parse5
+
+The browser client bundles [PDF.js](https://github.com/mozilla/pdf.js) under Apache License 2.0, copyright Mozilla Foundation, including adapted text-layer styles. Its license and the notices for its fonts, CMaps, and WebAssembly decoders are included under `dist/client/pdfjs/`.
+
+The server bundles [parse5](https://github.com/inikulin/parse5) under the MIT License to embed local assets in HTML previews.
+
 ## vscode-icons
 
 Files bundled into the production client originate from the [vscode-icons project](https://github.com/vscode-icons/vscode-icons).

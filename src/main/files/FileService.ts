@@ -19,6 +19,31 @@ export interface FileSnapshot { path: string; bytes: Buffer; mode: number }
 export class FileService {
   constructor(private readonly git: GitProcess, private readonly repositories: RepositoryService) {}
 
+  /** Bounded binary reads for document previews, with the same worktree boundary as text reads. */
+  async readPreviewAsset(repositoryId: string, relativePath: string, limit: number) {
+    const repository = this.repositories.get(repositoryId);
+    const resolved = await realpath(this.repositories.resolvePath(repositoryId, relativePath));
+    const relative = path.relative(repository.path, resolved);
+    if (relative.startsWith('..') || path.isAbsolute(relative)) {
+      throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'read-preview', message: 'The linked file is outside the worktree.' });
+    }
+    const handle = await open(resolved, 'r');
+    try {
+      const metadata = await handle.stat();
+      if (!metadata.isFile()) throw new Error('The path is not a file.');
+      if (metadata.size > limit) return { data: null, size: metadata.size };
+      const chunks: Buffer[] = [];
+      let size = 0;
+      for await (const chunk of handle.createReadStream({ start: 0, end: limit, autoClose: false })) {
+        chunks.push(chunk as Buffer);
+        size += (chunk as Buffer).length;
+      }
+      return { data: size > limit ? null : Buffer.concat(chunks), size };
+    } finally {
+      await handle.close();
+    }
+  }
+
   async list(repositoryId: string): Promise<FileTreeEntry[]> {
     const repository = this.repositories.get(repositoryId);
     const [visible, ignored] = await Promise.all([
