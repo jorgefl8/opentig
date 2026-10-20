@@ -224,7 +224,8 @@ export function createVirusTotalClient({ apiKey, fetchImpl = fetch, now = Date.n
       || (data.id !== id && !sameFile)) {
       throw new VirusTotalError('invalid-analysis-response');
     }
-    if (info && !sameFile) throw new VirusTotalError('analysis-file-mismatch');
+    // File metadata on a fresh upload can be provisional until the analysis completes.
+    if (status === 'completed' && info && !sameFile) throw new VirusTotalError('analysis-file-mismatch');
     const observedAt = new Date(now()).toISOString();
     if (status !== 'completed') return { analysisId: id, installer, state: status, observedAt };
     const attributes = data.attributes;
