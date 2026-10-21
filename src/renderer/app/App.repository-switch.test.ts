@@ -2,7 +2,8 @@
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest';
+import { preloadLazyViews } from './test-support/lazy-views';
 import type { RepositoryInfo } from '../../shared/contracts';
 import type { RepositoryStatus } from '../../shared/git-types';
 import type { ToolbarProps } from './Toolbar';
@@ -66,6 +67,8 @@ let container: HTMLDivElement;
 let client: QueryClient;
 const opens = new Map<string, ReturnType<typeof deferred<RepositoryInfo>>>();
 const statuses = new Map<string, ReturnType<typeof deferred<RepositoryStatus>>>();
+
+beforeAll(preloadLazyViews, 60_000);
 
 beforeEach(() => {
   localStorage.setItem('opentig.lastView', 'changes');

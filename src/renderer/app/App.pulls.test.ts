@@ -2,7 +2,8 @@
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest';
+import { preloadLazyViews } from './test-support/lazy-views';
 import type { GhCliStatus, PullRequestSummary } from '../../shared/contracts';
 import type { ToolbarProps } from './Toolbar';
 import type { ViewerSelection } from '@/features/viewer/Viewer';
@@ -55,6 +56,8 @@ let container: HTMLDivElement;
 let client: QueryClient;
 const available: GhCliStatus = { installed: true, availability: 'ready', authStatus: 'unknown', checkedAt: '2026-01-01T00:00:00Z' };
 const repository = { id: 'repo', path: '/sample', commonDir: '/sample/.git', name: 'sample', repositoryName: 'sample' };
+
+beforeAll(preloadLazyViews, 60_000);
 
 beforeEach(() => {
   localStorage.clear();
