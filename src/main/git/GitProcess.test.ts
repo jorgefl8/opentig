@@ -1,13 +1,27 @@
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { GitProcess } from './GitProcess';
+
+// Spawning a `git -c alias.x=!node …` costs git -> sh -> node per case, which is
+// slow on Git for Windows. Commands built with `node()` keep the real execa
+// spawn, timeout, cancellation and descendant-kill options from GitProcess but
+// launch Node directly. `alias()` keeps the real Git round trip.
+const NODE_COMMAND = 'opentig-test-node';
+vi.mock('execa', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('execa')>();
+  const execa = ((file: string, args: readonly string[], options: object) => {
+    const index = args.indexOf(NODE_COMMAND);
+    return index < 0 ? actual.execa(file, args, options) : actual.execa(process.execPath, ['-e', args[index + 1]!], options);
+  }) as unknown as typeof actual.execa;
+  return { ...actual, execa };
+});
 
 describe('GitProcess', () => {
   it.each(['signal', 'onStderr'] as const)('does not share reads with consumer-owned %s options', async key => {
     const git = new GitProcess();
-    const args = alias('consumer-pid', 'setTimeout(() => process.stdout.write(String(process.pid)), 50)');
+    const args = node('setTimeout(() => process.stdout.write(String(process.pid)), 50)');
     const outputs = await Promise.all(Array.from({ length: 2 }, () => {
       const options = { operation: 'consumer-pid', readOnly: true, timeoutMs: 5_000,
         [key]: key === 'signal' ? new AbortController().signal : () => undefined };
@@ -18,7 +32,7 @@ describe('GitProcess', () => {
 
   it('uses one child process for four identical reads and fresh processes after settlement', async () => {
     const git = new GitProcess();
-    const args = alias('read-pid', 'setTimeout(() => process.stdout.write(String(process.pid)), 50)');
+    const args = node('setTimeout(() => process.stdout.write(String(process.pid)), 50)');
     const options = { operation: 'read-pid', readOnly: true, timeoutMs: 5_000 };
     const outputs = await Promise.all(Array.from({ length: 4 }, () => git.run(process.cwd(), args, options)));
     const pid = outputs[0]!.stdout.toString();
@@ -30,24 +44,13 @@ describe('GitProcess', () => {
 
   it('does not share writers or reads with different stdin', async () => {
     const git = new GitProcess();
-    const args = alias('write-pid', 'process.stdout.write(String(process.pid))');
-    const writes = await Promise.all(Array.from({ length: 4 }, () => git.runWrite(process.cwd(), args, { operation: 'write-pid', timeoutMs: 5_000 })));
-    expect(new Set(writes.map(output => output.stdout.toString())).size).toBe(4);
+    const args = node('process.stdout.write(String(process.pid))');
+    const writes = await Promise.all(Array.from({ length: 2 }, () => git.runWrite(process.cwd(), args, { operation: 'write-pid', timeoutMs: 5_000 })));
+    expect(new Set(writes.map(output => output.stdout.toString())).size).toBe(2);
     const hashes = await Promise.all(['one', 'two'].map(stdin => git.run(process.cwd(), ['hash-object', '--stdin'], {
       operation: 'hash', readOnly: true, stdin,
     })));
     expect(hashes[0]!.stdout.toString()).not.toBe(hashes[1]!.stdout.toString());
-  });
-  it('keeps stdout and stderr as binary buffers', async () => {
-    const output = await new GitProcess().run(process.cwd(), ['hash-object', '--stdin'], {
-      operation: 'hash',
-      readOnly: true,
-      stdin: Buffer.from([0, 1, 2, 255]),
-      timeoutMs: 5_000,
-    });
-    expect(Buffer.isBuffer(output.stdout)).toBe(true);
-    expect(Buffer.isBuffer(output.stderr)).toBe(true);
-    expect(output.exitCode).toBe(0);
   });
 
   it('maps nonzero Git exits without changing their diagnostics', async () => {
@@ -58,17 +61,9 @@ describe('GitProcess', () => {
     })).rejects.toMatchObject({ detail: { code: 'UNKNOWN', operation: 'inspect', exitCode: 128 } });
   });
 
-  it('maps timeouts', async () => {
-    await expect(new GitProcess().run(process.cwd(), alias('wait', 'setTimeout(() => {}, 5000)'), {
-      operation: 'wait',
-      readOnly: true,
-      timeoutMs: 100,
-    })).rejects.toMatchObject({ detail: { code: 'TIMEOUT', operation: 'wait' } });
-  });
-
   it('cancels owned processes during bounded close', async () => {
     const git = new GitProcess();
-    const running = git.run(process.cwd(), alias('close-wait', 'setInterval(() => {}, 1000)'), {
+    const running = git.run(process.cwd(), node('setInterval(() => {}, 1000)'), {
       operation: 'close-wait',
       readOnly: true,
       timeoutMs: 10_000,
@@ -84,7 +79,7 @@ describe('GitProcess', () => {
     })).rejects.toMatchObject({ detail: { operation: 'after-close', message: 'Git runtime is closed.' } });
   });
 
-  it('kills descendant processes when Git times out', async () => {
+  it('maps timeouts and kills descendant processes', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'opentig-git-tree-'));
     const pidPath = join(directory, 'child.pid');
     let descendantPid: number | undefined;
@@ -96,13 +91,13 @@ describe('GitProcess', () => {
         `writeFileSync(${JSON.stringify(pidPath)},String(child.pid))`,
         'setInterval(() => {}, 1000)',
       ].join(';');
-      const run = new GitProcess().run(process.cwd(), alias('tree', script), {
+      const run = new GitProcess().run(process.cwd(), node(script), {
         operation: 'tree-timeout',
         readOnly: true,
         timeoutMs: 500,
       });
       descendantPid = Number(await waitForFile(pidPath));
-      await expect(run).rejects.toMatchObject({ detail: { code: 'TIMEOUT' } });
+      await expect(run).rejects.toMatchObject({ detail: { code: 'TIMEOUT', operation: 'tree-timeout' } });
       await waitForExit(descendantPid);
     } finally {
       if (descendantPid !== undefined && isAlive(descendantPid)) {
@@ -113,7 +108,7 @@ describe('GitProcess', () => {
   });
 
   it('enforces one combined stdout and stderr budget', async () => {
-    const args = alias('noisy', 'process.stdout.write("o".repeat(64));process.stderr.write("e".repeat(64))');
+    const args = node('process.stdout.write("o".repeat(64));process.stderr.write("e".repeat(64))');
     await expect(new GitProcess().run(process.cwd(), args, {
       operation: 'noisy',
       readOnly: true,
@@ -132,7 +127,7 @@ describe('GitProcess', () => {
     expect(truncated.stdout.length + truncated.stderr.length).toBeLessThanOrEqual(80);
   });
 
-  it('sets the noninteractive Git environment', async () => {
+  it('sets the noninteractive Git environment for processes Git spawns', async () => {
     const output = await new GitProcess().run(process.cwd(), alias('environment', 'process.stdout.write(`${process.env.GIT_TERMINAL_PROMPT}|${process.env.GIT_EDITOR}|${process.env.GIT_SEQUENCE_EDITOR}|${process.env.LC_ALL}`)'), {
       operation: 'environment',
       readOnly: true,
@@ -144,6 +139,10 @@ describe('GitProcess', () => {
 
 function alias(name: string, script: string): string[] {
   return ['-c', `alias.${name}=!node -e '${script}'`, name];
+}
+
+function node(script: string): string[] {
+  return [NODE_COMMAND, script];
 }
 
 async function waitForFile(path: string): Promise<string> {

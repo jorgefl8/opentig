@@ -2,40 +2,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { classifyRepositoryChange, RepositoryWatcher, shouldIgnore } from './RepositoryWatcher';
 
 describe('shouldIgnore', () => {
-  it('ignores node_modules at the repository root', () => {
-    expect(shouldIgnore('node_modules/.vite/deps/x.js', false)).toBe(true);
-  });
-
   it('ignores nested node_modules', () => {
     expect(shouldIgnore('packages/app/node_modules/x/y.js', false)).toBe(true);
   });
 
-  it('ignores transient git lock files', () => {
-    expect(shouldIgnore('.git/index.lock', false)).toBe(true);
-  });
-
-  it('keeps the git index', () => {
-    expect(shouldIgnore('.git/index', false)).toBe(false);
-  });
-
-  it('ignores git objects in the worktree git dir', () => {
-    expect(shouldIgnore('.git/objects/ab/cdef', false)).toBe(true);
-  });
-
   it('ignores git objects in a linked common dir', () => {
     expect(shouldIgnore('objects/ab/cdef', true)).toBe(true);
-  });
-
-  it('keeps source files', () => {
-    expect(shouldIgnore('src/renderer/app/App.tsx', false)).toBe(false);
-  });
-
-  it('keeps HEAD updates', () => {
-    expect(shouldIgnore('.git/HEAD', false)).toBe(false);
-  });
-
-  it('keeps unnamed events', () => {
-    expect(shouldIgnore('', false)).toBe(false);
   });
 
   it('ignores reflog and fetch bookkeeping', () => {

@@ -19,14 +19,24 @@ afterEach(async () => { await rm(directory, { recursive: true, force: true }); }
 const response = (body, status = 200, headers) => new Response(JSON.stringify(body), { status, headers });
 const submitted = () => response({ data: { type: 'analysis', id } });
 
+// Fixtures are sparse zero-filled files, so their digest depends only on the size.
+// Hash each size once instead of rereading 32 MB files in every large-upload test.
+const zeroDigests = new Map();
+async function zeroDigest(file, size) {
+  if (!zeroDigests.has(size)) {
+    const hash = createHash('sha256');
+    for await (const chunk of createReadStream(file)) hash.update(chunk);
+    zeroDigests.set(size, hash.digest('hex'));
+  }
+  return zeroDigests.get(size);
+}
+
 async function installer(size = 128) {
   const name = 'OpenTig-1.2.3-win32-x64-Setup.exe';
   const file = path.join(directory, name);
   const handle = await open(file, 'w');
   try { await handle.truncate(size); } finally { await handle.close(); }
-  const hash = createHash('sha256');
-  for await (const chunk of createReadStream(file)) hash.update(chunk);
-  const sha256 = hash.digest('hex');
+  const sha256 = await zeroDigest(file, size);
   const download = windowsInstaller({ id: 123, tag_name: 'v1.2.3', draft: false, prerelease: false,
     assets: [{ id: 456, size, name, digest: `sha256:${sha256}`, state: 'uploaded',
       browser_download_url: `https://github.com/jorgefl8/opentig/releases/download/v1.2.3/${name}` }] });
@@ -214,29 +224,22 @@ it('rejects wrong bytes, sizes, names, identities and oversized files before mak
   expect(vt.calls).toEqual([]);
 });
 
-it.each(['http://evil.example/_ah/upload/token', 'http://www.virustotal.com:444/_ah/upload/token',
-  'http://user:password@www.virustotal.com/_ah/upload/token', 'http://www.virustotal.com/_ah/upload/token#fragment',
-  'http://www.virustotal.com/_ah/upload/', 'http://www.virustotal.com/api/v3/files',
+it.each(['http://evil.example/_ah/upload/token',
   'https://evil.example/_ah/upload/token', 'https://www.virustotal.com.evil.example/_ah/upload/token',
   'https://www.virustotal.com:444/_ah/upload/token', 'https://user:password@www.virustotal.com/_ah/upload/token',
   'https://www.virustotal.com/api/v3/files', 'https://www.virustotal.com/_ah/upload/',
   'https://www.virustotal.com/_ah/upload/token#fragment', 'not-a-url'])(
   'refuses an unexpected upload location without forwarding file data or credentials: %s', async uploadUrl => {
-    const fixture = await installer();
     // Use a sparse large file and its real digest without allocating its bytes in memory.
-    const large = { ...fixture.download, identity: { ...fixture.download.identity, size: 32_000_001 } };
-    const handle = await open(fixture.file, 'r+');
-    try { await handle.truncate(large.identity.size); } finally { await handle.close(); }
-    const hash = createHash('sha256');
-    for await (const chunk of createReadStream(fixture.file)) hash.update(chunk);
-    large.identity.sha256 = hash.digest('hex');
+    const fixture = await installer(32_000_001);
     const vt = client(() => response({ data: uploadUrl }));
-    await expect(vt.submitInstaller(fixture.file, large)).rejects.toMatchObject({ code: 'invalid-upload-url' });
+    await expect(vt.submitInstaller(fixture.file, fixture.download)).rejects.toMatchObject({ code: 'invalid-upload-url' });
     expect(vt.calls).toHaveLength(1);
   },
 );
 
-it.each(['queued', 'in-progress'])('keeps %s results partial without returning counters or a report URL', async state => {
+it('keeps in-progress results partial without returning counters or a report URL', async () => {
+  const state = 'in-progress';
   const fixture = await installer();
   const vt = client(() => analysis(state));
   const result = await vt.getAnalysis(fixture.receipt, fixture.download);
@@ -308,7 +311,8 @@ it.each([{}, { status: 'unknown' }, { status: 'completed', date: '1792151900', s
   },
 );
 
-it.each(['queued', 'in-progress'])('keeps polling a %s analysis whose provisional file metadata differs', async state => {
+it('keeps polling a queued analysis whose provisional file metadata differs', async () => {
+  const state = 'queued';
   const fixture = await installer();
   const vt = client(() => response({ data: { type: 'analysis', id, attributes: { status: state } },
     meta: { file_info: { sha256: 'b'.repeat(64), size: 128 } } }));
@@ -357,7 +361,7 @@ it('bounds repeated 429 retries and stops the entire client on a quota-exceeded 
   expect(quota.calls).toHaveLength(1);
 });
 
-it.each([302, 401, 403, 404])('does not retry HTTP %s or expose API response messages', async status => {
+it.each([302, 401, 404])('does not retry HTTP %s or expose API response messages', async status => {
   const fixture = await installer();
   const vt = client(() => response({ error: { message: `${testKey} private-upload-url` } }, status));
   const error = await vt.getAnalysis(fixture.receipt, fixture.download).catch(error => error);

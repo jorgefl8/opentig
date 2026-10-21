@@ -2,7 +2,8 @@
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest';
+import { preloadLazyViews } from './test-support/lazy-views';
 import type { RepositoryInfo } from '../../shared/contracts';
 import type { RepositoryStatus } from '../../shared/git-types';
 import type { ToolbarProps } from './Toolbar';
@@ -67,6 +68,8 @@ let client: QueryClient;
 const opens = new Map<string, ReturnType<typeof deferred<RepositoryInfo>>>();
 const statuses = new Map<string, ReturnType<typeof deferred<RepositoryStatus>>>();
 
+beforeAll(preloadLazyViews, 60_000);
+
 beforeEach(() => {
   localStorage.setItem('opentig.lastView', 'changes');
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
@@ -102,7 +105,8 @@ afterEach(async () => {
   vi.resetAllMocks();
 });
 
-async function settle() { await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)); }); }
+// Let chained server mocks, query notifications, and React work run without sleeping for real time.
+async function settle() { await act(async () => { for (let hop = 0; hop < 5; hop++) await new Promise((resolve) => setTimeout(resolve, 0)); }); }
 async function click(label: string) {
   await act(async () => { container.querySelector<HTMLButtonElement>(`[aria-label="${label}"]`)!.click(); });
   await settle();
@@ -193,8 +197,13 @@ it.each([
   await settle();
   const reads = calls.getStatus.mock.calls.length;
   for (let index = 0; index < failures; index++) calls.getStatus.mockRejectedValueOnce(new Error('index.lock exists'));
-  await act(async () => calls.repositoryChanged!('repo', 'worktree'));
-  await vi.waitFor(() => expect(calls.getStatus.mock.calls.length).toBe(reads + 2), { timeout: 2_000 });
+  vi.useFakeTimers();
+  try {
+    await act(async () => calls.repositoryChanged!('repo', 'worktree'));
+    // Advance past the quiet retry backoff instead of waiting for it in real time.
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+    expect(calls.getStatus.mock.calls.length).toBe(reads + 2);
+  } finally { vi.useRealTimers(); }
   await settle();
   if (reported) expect(calls.error).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ title: 'Could not refresh', description: 'index.lock exists' }));
   else expect(calls.error).not.toHaveBeenCalled();

@@ -1,9 +1,9 @@
 import { execFile } from 'node:child_process';
-import { mkdtemp, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdtemp, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, describe, expect, it } from 'vitest';
 import { GitProcess } from '../git/GitProcess';
 import { RepositoryService } from '../git/RepositoryService';
 import { SettingsStore } from '../persistence/SettingsStore';
@@ -92,8 +92,13 @@ describe('FileOperationHistory', () => {
   it('serializes operations for one repository', async () => {
     const fixture = await createFixture();
     const order: number[] = [];
-    const first = fixture.history.serialize(fixture.repositoryId, async () => { await new Promise((resolve) => setTimeout(resolve, 20)); order.push(1); });
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const first = fixture.history.serialize(fixture.repositoryId, async () => { await gate; order.push(1); });
     const second = fixture.history.serialize(fixture.repositoryId, async () => { order.push(2); });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(order).toEqual([]);
+    release();
     await Promise.all([first, second]);
     expect(order).toEqual([1, 2]);
   });
@@ -128,11 +133,27 @@ describe('FileOperationHistory', () => {
   });
 });
 
+let seed: Promise<string> | undefined;
+afterAll(async () => { if (seed) await rm(await seed, { recursive: true, force: true, maxRetries: 3 }); });
+
+function seedRepository(): Promise<string> {
+  seed ??= (async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'opentig-history-seed-'));
+    const work = path.join(root, 'work');
+    await git(root, ['init', '-b', 'main', work]); await git(work, ['config', 'user.name', 'OpenTig Test']); await git(work, ['config', 'user.email', 'opentig@example.invalid']);
+    await writeFile(path.join(work, 'tracked.txt'), 'tracked'); await git(work, ['add', '.']); await git(work, ['commit', '-m', 'Initial']);
+    return root;
+  })();
+  return seed;
+}
+
 async function createFixture() {
   const root = await mkdtemp(path.join(os.tmpdir(), 'opentig-history-')); directories.push(root);
+  // Copy a per-file seed (including Git objects) so each test owns its repository
+  // without paying for several Git processes, which is slow on Windows.
+  await cp(await seedRepository(), root, { recursive: true });
   const work = path.join(root, 'work'); const trashRoot = path.join(root, 'trash');
-  await git(root, ['init', '-b', 'main', work]); await git(work, ['config', 'user.name', 'OpenTig Test']); await git(work, ['config', 'user.email', 'opentig@example.invalid']);
-  await writeFile(path.join(work, 'tracked.txt'), 'tracked'); await git(work, ['add', '.']); await git(work, ['commit', '-m', 'Initial']); await mkdir(trashRoot);
+  await mkdir(trashRoot);
   const settings = new SettingsStore(path.join(root, 'settings.json')); await settings.load();
   const process = new GitProcess(); const repositories = new RepositoryService(process, settings); const files = new FileService(process, repositories); const repository = await repositories.openPath(work);
   let counter = 0;

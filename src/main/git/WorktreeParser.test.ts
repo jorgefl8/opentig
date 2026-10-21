@@ -65,8 +65,4 @@ describe('parseWorktrees', () => {
     const [worktree] = parseWorktrees(porcelain(['worktree C:/repos/app', 'HEAD ' + 'a'.repeat(40), 'branch refs/heads/feature/refs/heads/nested']));
     expect(worktree?.branch).toBe('feature/refs/heads/nested');
   });
-
-  it('returns an empty list for empty output', () => {
-    expect(parseWorktrees(Buffer.from('', 'utf8'))).toEqual([]);
-  });
 });

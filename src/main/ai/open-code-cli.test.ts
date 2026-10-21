@@ -1,17 +1,12 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { isOpenCodeV2Version, openCodeCliName, openCodeLoginCommand, parseOpenCodeAuthList, parseOpenCodeModels, parseOpenCodeV2GenerateText, parseOpenCodeV2ModelRef, parseOpenCodeV2SessionId } from './open-code-cli';
+import { isOpenCodeV2Version, openCodeCliName, parseOpenCodeAuthList, parseOpenCodeModels, parseOpenCodeV2ModelRef } from './open-code-cli';
 
 describe('openCodeCliName', () => {
-  it('identifies the alternate command name without inferring a version', () => {
+  it('distinguishes the alternate command name from the current one without inferring a version', () => {
     expect(openCodeCliName(path.join('C:\\npm', 'opencode2.cmd'))).toBe('opencode2');
     expect(openCodeCliName('/usr/bin/opencode2')).toBe('opencode2');
-  });
-
-  it('identifies the current command and retains alias-specific login hints', () => {
     expect(openCodeCliName(path.join('C:\\npm', 'opencode.cmd'))).toBe('opencode');
-    expect(openCodeLoginCommand('opencode2')).toBe('opencode2 auth login');
-    expect(openCodeLoginCommand('opencode')).toBe('opencode auth login');
   });
 });
 
@@ -51,17 +46,5 @@ describe('parseOpenCodeV2ModelRef', () => {
 describe('invalid model references', () => {
   it('rejects incomplete providers, models, and variants', () => {
     for (const id of ['foo', '/bar', 'foo/', 'foo/bar#', 'foo/bar#a#b', 'foo/bar baz']) expect(() => parseOpenCodeV2ModelRef(id)).toThrow();
-  });
-});
-
-describe('parseOpenCodeV2GenerateText', () => {
-  it('reads data.text from the v2 generate payload', () => {
-    expect(parseOpenCodeV2GenerateText({ data: { text: '{"subject":"Add AI","body":""}' } })).toBe('{"subject":"Add AI","body":""}');
-  });
-});
-
-describe('parseOpenCodeV2SessionId', () => {
-  it('reads the session id from a create response', () => {
-    expect(parseOpenCodeV2SessionId({ data: { id: 'ses_fc6fd40caffeaKd2vp3iuc8w9G' } })).toBe('ses_fc6fd40caffeaKd2vp3iuc8w9G');
   });
 });

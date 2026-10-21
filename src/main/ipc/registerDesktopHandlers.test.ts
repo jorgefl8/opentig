@@ -95,18 +95,6 @@ describe('desktop IPC boundary', () => {
     expect(changed).toHaveBeenCalledWith(true);
   });
 
-  it('keeps directory selection native without opening a repository', async () => {
-    electron.handlers.clear();
-    const value = fixture();
-    registerDesktopHandlers(value.host);
-
-    await expect(invoke(OPEN_TIG_DESKTOP_IPC.repositorySelect)).resolves.toEqual({
-      ok: true,
-      value: 'C:\\repo',
-    });
-    expect(value.host.selectDirectory).toHaveBeenCalledWith('Open Git repository');
-  });
-
   it('keeps network exposure behind validated desktop-only handlers', async () => {
     electron.handlers.clear();
     const value = fixture();

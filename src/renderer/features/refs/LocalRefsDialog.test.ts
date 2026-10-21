@@ -32,7 +32,8 @@ async function render() {
       onOpenWorktree: () => {}, onMutated: calls.mutated, onBusyChange: calls.busy })))));
   await settle();
 }
-async function settle() { await act(async () => { await new Promise(resolve => setTimeout(resolve, 25)); }); }
+// Let chained server mocks, query notifications, and React work run without sleeping for real time.
+async function settle() { await act(async () => { for (let hop = 0; hop < 5; hop++) await new Promise(resolve => setTimeout(resolve, 0)); }); }
 function button(text: string) { return [...document.querySelectorAll<HTMLButtonElement>('button')].find(item => item.textContent?.trim() === text)!; }
 async function click(text: string) { await act(async () => button(text).click()); await settle(); }
 

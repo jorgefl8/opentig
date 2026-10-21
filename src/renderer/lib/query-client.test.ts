@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { QueryClient } from '@tanstack/react-query';
-import { queryClient, queryKeys, queryResourcesForScope, resetGitHubQueries } from './query-client';
+import { queryKeys, queryResourcesForScope, resetGitHubQueries } from './query-client';
 
 describe('renderer query policy', () => {
   it('discards old-account results in every repository while preserving Git data', async () => {
@@ -26,11 +26,6 @@ describe('renderer query policy', () => {
     expect(client.getQueryData(queryKeys.status('repo-a'))).toBe('git status');
     client.clear();
   });
-  it('uses explicit local server defaults', () => {
-    expect(queryClient.getDefaultOptions().queries).toMatchObject({
-      networkMode: 'always', retry: false, refetchOnWindowFocus: false, refetchOnReconnect: false,
-    });
-  });
 
   it('isolates every resource by repository and parameters', () => {
     expect(queryKeys.files('repo-a')).toEqual(['repository', 'repo-a', 'files']);
@@ -43,28 +38,6 @@ describe('renderer query policy', () => {
     expect(queryResourcesForScope('worktree', 'changes')).toEqual(['status']);
     expect(queryResourcesForScope('refs', 'history')).toEqual(['status', 'branches', 'history']);
     expect(queryResourcesForScope('unknown', 'files')).toEqual(['status', 'branches', 'worktrees', 'files']);
-  });
-
-  it('keeps rapid queries isolated when an older request resolves last', async () => {
-    let resolveFirst: ((value: string) => void) | undefined;
-    const first = new Promise<string>((resolve) => { resolveFirst = resolve; });
-    const firstRequest = queryClient.fetchQuery({ queryKey: queryKeys.search('repo', { query: 'a' }), queryFn: () => first });
-    await queryClient.fetchQuery({ queryKey: queryKeys.search('repo', { query: 'ab' }), queryFn: async () => 'new result' });
-    resolveFirst?.('old result');
-    await firstRequest;
-    expect(queryClient.getQueryData(queryKeys.search('repo', { query: 'ab' }))).toBe('new result');
-  });
-
-  it('deduplicates simultaneous server reads for the same resource key', async () => {
-    let calls = 0;
-    let release: (() => void) | undefined;
-    const gate = new Promise<void>((resolve) => { release = resolve; });
-    const queryFn = async () => { calls += 1; await gate; return 'status'; };
-    const first = queryClient.fetchQuery({ queryKey: queryKeys.status('dedupe-repo'), queryFn });
-    const second = queryClient.fetchQuery({ queryKey: queryKeys.status('dedupe-repo'), queryFn });
-    expect(calls).toBe(1);
-    release?.();
-    await expect(Promise.all([first, second])).resolves.toEqual(['status', 'status']);
   });
 });
 

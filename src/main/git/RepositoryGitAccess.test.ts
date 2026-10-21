@@ -14,6 +14,19 @@ import { FileService } from '../files/FileService';
 import { createCredentialBroker, gitShellQuote, managedGitHubPath } from './GitCredentialBroker';
 import { GitOperationError } from '../../shared/errors';
 
+// Lets a test start a long-running child directly through GitProcess (keeping
+// its real execa cancellation) without a git -> sh -> node chain, whose process
+// tree teardown is slow and racy on Windows.
+const NODE_COMMAND = 'opentig-test-node';
+vi.mock('execa', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('execa')>();
+  const execa = ((file: string, args: readonly string[], options: object) => {
+    const index = args.indexOf(NODE_COMMAND);
+    return index < 0 ? actual.execa(file, args, options) : actual.execa(process.execPath, ['-e', ...args.slice(index + 1)], options);
+  }) as unknown as typeof actual.execa;
+  return { ...actual, execa };
+});
+
 const token = (login: string) => `gho_${login}_fixture_012345678901234567890`;
 async function fixture(external = false) {
   const f = external ? await repositoryWithUpstream() : await managementRepository();
@@ -241,11 +254,9 @@ it.each(['error', 'cancel'])('cleans the operation broker after %s and never exp
   let cancellationError: unknown;
   fakeNetwork(f, async (_args, options) => {
     if (outcome === 'error') throw new Error(`failure ${token('alice')}`);
-    // Wait for the actual descendant to start before cancelling its Git parent.
-    // Cancelling immediately after spawn races process-tree discovery on Windows.
+    // Cancel only once the owned process is running, not while it is spawning.
     const script = 'require("node:fs").writeFileSync(process.argv[1], String(process.pid)); setTimeout(() => {}, 15_000)';
-    const alias = `alias.wait=!${gitShellQuote(process.execPath)} -e '${script}' ${gitShellQuote(readyPath)}`;
-    return f.process.run(f.work, ['-c', alias, 'wait'], { ...options, timeoutMs: 10_000 }).catch(error => {
+    return f.process.run(f.work, [NODE_COMMAND, script, readyPath], { ...options, timeoutMs: 10_000 }).catch(error => {
       cancellationError = error;
       throw error;
     });

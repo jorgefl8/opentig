@@ -2,7 +2,8 @@
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest';
+import { preloadLazyViews } from './test-support/lazy-views';
 import type { GhCliStatus, PullRequestSummary } from '../../shared/contracts';
 import type { ToolbarProps } from './Toolbar';
 import type { ViewerSelection } from '@/features/viewer/Viewer';
@@ -56,6 +57,8 @@ let client: QueryClient;
 const available: GhCliStatus = { installed: true, availability: 'ready', authStatus: 'unknown', checkedAt: '2026-01-01T00:00:00Z' };
 const repository = { id: 'repo', path: '/sample', commonDir: '/sample/.git', name: 'sample', repositoryName: 'sample' };
 
+beforeAll(preloadLazyViews, 60_000);
+
 beforeEach(() => {
   localStorage.clear();
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
@@ -82,7 +85,8 @@ afterEach(async () => {
   vi.resetAllMocks();
 });
 
-async function settle() { await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)); }); }
+// Let chained server mocks, query notifications, and React work run without sleeping for real time.
+async function settle() { await act(async () => { for (let hop = 0; hop < 5; hop++) await new Promise((resolve) => setTimeout(resolve, 0)); }); }
 async function mount() {
   await act(async () => root.render(createElement(QueryClientProvider, { client }, createElement(App))));
   await settle();

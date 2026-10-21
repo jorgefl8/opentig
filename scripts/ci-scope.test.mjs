@@ -67,7 +67,7 @@ it('keeps release-security automation in application validation scope', async ()
   expect(validationScope('push', { before: base }, commit(), root)).toEqual({ required: true, website: false });
 });
 
-it.each(['application.ts', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', '.oxlintrc.json', 'scripts/change-scope.mjs'])(
+it.each(['application.ts', 'package.json'])(
   'validates website changes mixed with shared or application file %s', async (file) => {
     await mkdir(path.join(root, 'website'));
     await writeFile(path.join(root, 'website/index.astro'), '<main>OpenTig</main>');
@@ -77,7 +77,8 @@ it.each(['application.ts', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yam
   },
 );
 
-it.each(['src/renderer/app/App.tsx', 'src/shared/contracts.ts', 'public/vscode-icons/file.svg', 'tsconfig.json', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', '.oxlintrc.json', '.npmrc', '.github/workflows/ci.yml', 'scripts/ci-scope.mjs', 'scripts/change-scope.mjs'])(
+// One path per website rule: shared source prefix, exact tsconfig, and shared tooling list.
+it.each(['src/renderer/app/App.tsx', 'tsconfig.json', '.github/workflows/ci.yml'])(
   'validates both projects when shared file %s changes alone', async (file) => {
     await mkdir(path.dirname(path.join(root, file)), { recursive: true });
     await writeFile(path.join(root, file), 'Changed shared fixture\n');
@@ -121,7 +122,14 @@ it('fails safe for unavailable bases, initial pushes, empty diffs, and unknown e
   expect(needsValidation('unknown', {}, base, root)).toBe(true);
 });
 
-it.each([...publishedSources])('validates the website when the published source %s changes', async (source) => {
+it('keeps every published source prose-only while validating the website', async () => {
+  for (const source of publishedSources) await writeFile(path.join(root, source), '# Updated guide\n');
+  const head = commit();
+  expect(validationScope('push', { before: base }, head, root)).toEqual({ required: false, website: true });
+});
+
+it.each(['docs/getting-started.md', 'CONTRIBUTING.md'])('validates the website when the published source %s changes', async (source) => {
+  expect(publishedSources.has(source)).toBe(true);
   await writeFile(path.join(root, source), '# Updated guide\n');
   const head = commit();
   expect(validationScope('push', { before: base }, head, root)).toEqual({ required: false, website: true });

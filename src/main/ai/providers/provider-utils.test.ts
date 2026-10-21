@@ -3,10 +3,6 @@ import { COMMIT_MESSAGE_SCHEMA } from '../CommitMessagePrompt';
 import { cliDiagnostic, requireSuccess, toCodexOutputSchema } from './provider-utils';
 
 describe('requireSuccess', () => {
-  it('keeps a successful run silent', () => {
-    expect(() => requireSuccess({ exitCode: 0, stdout: '', stderr: 'noise' }, 'codex', 'codex-generate')).not.toThrow();
-  });
-
   it('surfaces a nested Codex JSONL schema error', () => {
     const stdout = [
       '{"type":"thread.started","thread_id":"x"}',

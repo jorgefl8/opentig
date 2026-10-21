@@ -17,7 +17,8 @@ const saved: AiHarnessStatus[] = (['codex', 'claude', 'opencode', 'grok'] as con
   version: 'saved-version', checkedAt: '2026-10-06T10:00:00.000Z', models: [{ id: 'default', label: 'Default' }, { id: 'saved-model', label: 'Saved model' }],
 }));
 afterEach(() => { vi.unstubAllGlobals(); });
-const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
+// Let chained server mocks, query notifications, and React work run without sleeping for real time.
+const settle = async () => { for (let hop = 0; hop < 5; hop++) await new Promise((resolve) => setTimeout(resolve, 0)); };
 
 async function mount({ section = 'ai', phone = false }: { section?: 'ai' | 'shortcuts'; phone?: boolean } = {}) {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);

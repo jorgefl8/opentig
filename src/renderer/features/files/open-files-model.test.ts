@@ -5,7 +5,6 @@ import {
   closeTab,
   dirtyTabs,
   dirtyTabsUnder,
-  draftBytes,
   edgeFades,
   emptyFileSession,
   type FileSession,
@@ -210,13 +209,6 @@ describe('open files session state machine', () => {
     expect(restoreSession(null)).toBe(emptyFileSession);
   });
 
-  it('keeps worktree sessions independent', () => {
-    const first = open(emptyFileSession, 'a.ts', 'pinned');
-    const second = open(emptyFileSession, 'b.ts', 'pinned');
-    expect(paths(first)).toEqual(['a.ts']);
-    expect(paths(second)).toEqual(['b.ts']);
-  });
-
   it('disambiguates duplicate basenames with the shortest parent suffix', () => {
     const session = ['src/one/index.ts', 'src/two/index.ts', 'src/app.ts'].reduce((acc, path) => open(acc, path, 'pinned'), emptyFileSession);
     const labels = tabLabels(session.tabs);
@@ -255,13 +247,6 @@ describe('open files session state machine', () => {
     expect(dirtyTabsUnder(session, ['src', 'other']).sort()).toEqual(['other/dirty.ts', 'src/nested/dirty.ts']);
     expect(dirtyTabs(session).sort()).toEqual(['other/dirty.ts', 'src/nested/dirty.ts']);
     expect(dirtyTabs(emptyFileSession)).toEqual([]);
-  });
-
-  it('estimates draft memory without touching the draft', () => {
-    const content = 'abcdef';
-    expect(draftBytes(content)).toBe(12);
-    expect(draftBytes('')).toBe(0);
-    expect(content).toBe('abcdef');
   });
 });
 

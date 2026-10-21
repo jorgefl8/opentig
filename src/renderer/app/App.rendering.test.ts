@@ -127,14 +127,14 @@ it('keeps 5,000 loaded commits identical across UI renders and invalidates on pa
   expect(calls.history.mock.lastCall![0]).toBe(loaded);
   await act(async () => {
     client.setQueryData(queryKeys.history('repo'), { ...data, pages: [page, { commits: [{ ...commits[0]!, oid: 'next-page' }], nextCursor: null }] });
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    for (let hop = 0; hop < 5; hop++) await new Promise((resolve) => setTimeout(resolve, 0));
   });
   const appended = calls.history.mock.lastCall![0];
   expect(appended).not.toBe(loaded);
   expect(appended).toHaveLength(5001);
   await act(async () => {
     client.setQueryData(queryKeys.history('repo'), { ...data, pages: [{ ...page, commits: [{ ...commits[0]!, subject: 'External update' }] }] });
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    for (let hop = 0; hop < 5; hop++) await new Promise((resolve) => setTimeout(resolve, 0));
   });
   expect(calls.history.mock.lastCall![0]).toEqual([expect.objectContaining({ subject: 'External update' })]);
 });

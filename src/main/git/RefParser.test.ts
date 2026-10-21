@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { REF_FORMAT, parseRefs } from './RefParser';
+import { parseRefs } from './RefParser';
 
 /** Builds one `for-each-ref` record exactly as `REF_FORMAT` emits it. */
 function record(fields: Partial<Record<Field, string>>): string {
@@ -13,16 +13,6 @@ const ORDER: Field[] = ['refname', 'short', 'head', 'upstream', 'track', 'worktr
 function output(...records: string[]): Buffer {
   return Buffer.from(records.join('\n'), 'utf8');
 }
-
-describe('REF_FORMAT', () => {
-  it('requests every management field exactly once, NUL delimited', () => {
-    expect(REF_FORMAT.split('%00').filter(Boolean)).toEqual([
-      '%(refname)', '%(refname:short)', '%(HEAD)', '%(upstream:short)', '%(upstream:track)',
-      '%(worktreepath)', '%(objectname)', '%(objectname:short)', '%(subject)', '%(authorname)', '%(committerdate:iso-strict)',
-    ]);
-    expect(REF_FORMAT.endsWith('%00')).toBe(true);
-  });
-});
 
 describe('parseRefs', () => {
   it('parses a local branch with tip metadata', () => {

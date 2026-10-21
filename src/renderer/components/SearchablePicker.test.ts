@@ -22,11 +22,14 @@ beforeEach(async () => {
 });
 afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.resetAllMocks(); vi.unstubAllGlobals(); });
 
+/** Lets pending tooltip and virtualizer timers run, in fake or real time. */
+const flushTimers = () => vi.isFakeTimers() ? vi.advanceTimersByTimeAsync(0) : new Promise(resolve => setTimeout(resolve, 0));
+
 async function hover(name: string) {
   await act(async () => {
     option(name).dispatchEvent(new MouseEvent('mouseenter', { bubbles: false }));
     option(name).dispatchEvent(new MouseEvent('mousemove', { bubbles: true }));
-    await new Promise(resolve => setTimeout(resolve, 30));
+    await flushTimers();
   });
 }
 
@@ -41,14 +44,17 @@ it('dismisses a hovered row tooltip on wheel input while keeping repository sele
 });
 
 it('suppresses tooltips during scrolling and allows them again after scrolling stops', async () => {
-  await act(async () => document.querySelector('.searchable-picker-list')!.dispatchEvent(new Event('scroll')));
-  expect(option('Beacon').hasAttribute('data-trigger-disabled')).toBe(true);
-  await hover('Beacon');
-  expect(document.querySelector('[data-slot="tooltip-content"][data-open]')).toBeNull();
-  await act(async () => { await new Promise(resolve => setTimeout(resolve, 180)); });
-  expect(option('Beacon').hasAttribute('data-trigger-disabled')).toBe(false);
-  await hover('Beacon');
-  expect(document.querySelector('[data-slot="tooltip-content"]')?.textContent).toContain('/sample/beacon');
+  vi.useFakeTimers();
+  try {
+    await act(async () => document.querySelector('.searchable-picker-list')!.dispatchEvent(new Event('scroll')));
+    expect(option('Beacon').hasAttribute('data-trigger-disabled')).toBe(true);
+    await hover('Beacon');
+    expect(document.querySelector('[data-slot="tooltip-content"][data-open]')).toBeNull();
+    await act(async () => { await vi.advanceTimersByTimeAsync(180); });
+    expect(option('Beacon').hasAttribute('data-trigger-disabled')).toBe(false);
+    await hover('Beacon');
+    expect(document.querySelector('[data-slot="tooltip-content"]')?.textContent).toContain('/sample/beacon');
+  } finally { vi.useRealTimers(); }
 });
 
 async function showAccountOption(tooltip?: string) {
@@ -101,7 +107,7 @@ it.each([undefined, 'branch-picker'])('keeps a truncated trigger tooltip open un
     await act(async () => {
       trigger.dispatchEvent(new MouseEvent('mouseenter', { bubbles: false }));
       trigger.dispatchEvent(new MouseEvent('mousemove', { bubbles: true }));
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await flushTimers();
     });
     expect(document.querySelector('[data-slot="tooltip-content"][data-open]')?.textContent).toBe(label);
     expect(trigger.querySelector('button')).toBeNull();
@@ -153,10 +159,11 @@ async function key(key: string) {
   await act(async () => {
     document.querySelector<HTMLInputElement>('input[role="combobox"]')!.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
   });
-  await act(async () => { await new Promise(resolve => setTimeout(resolve, 30)); });
+  await act(flushTimers);
 }
 
-it.each([1000, 3000])('bounds mounted options and reveals a distant selection among %i choices', async count => {
+it('bounds mounted options and reveals a distant selection among 1000 choices', async () => {
+  const count = 1000;
   const restore = mockListLayout();
   try {
     await showLargePicker(count);

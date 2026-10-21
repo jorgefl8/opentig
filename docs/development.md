@@ -116,7 +116,11 @@ pnpm run test:related src/main/git/GitRepositoryOperations.ts
 
 For changes to tests, run those files directly with `pnpm test <test-file>`. Related tests follow static imports; configuration, dynamically selected modules, and architecture checks that read source files require explicit tests or the complete suite.
 
-Use behavior assertions for regressions and syntax-aware checks for dependency boundaries. Avoid checking literal source text or duplicating constants.
+Use behavior assertions for regressions and syntax-aware checks for dependency boundaries. Avoid checking literal source text or duplicating constants. Give each table row a distinct branch to cover, and wait on observable conditions or fake timers instead of real sleeps. Prefer spawning Node directly over Git aliases or shells when a test only needs a child process, because those chains are slow on Windows CI.
+
+Test files without process-wide state share reused workers. A file runs in its own fresh worker when it mocks modules, changes globals, environment variables, timers, or the DOM environment, or imports a `test-support/` helper; `vitest.config.ts` detects this from the file contents. A test that changes module-level state some other way, such as a production singleton or cache, must reset it or use one of those isolating constructs. Use `pnpm exec vitest run --sequence.shuffle` to look for order dependence.
+
+The real Windows PowerShell environment read runs only with `OPENTIG_POWERSHELL_INTEGRATION=1`; CI enables it in the native CLI discovery check.
 
 Run all quality gates before integrating:
 
@@ -150,7 +154,7 @@ PRs and pushes to `main` use the same CI scope rules:
 
 | Changed scope | Validation |
 | --- | --- |
-| **Application code, configuration, or assets** | Tests on Windows and Linux; typecheck, lint, and production dependency audit once on Linux; native Trash and packed CLI smoke checks on Windows, Linux, and macOS |
+| **Application code, configuration, or assets** | Tests on Windows and Linux; typecheck, lint, and production dependency audit once on Linux; native Trash and packed CLI smoke checks on Windows, Linux, and macOS. The packed CLI `npx` run is skipped on Windows, where it is slow; the CLI release draft checks it once per release |
 | **Website or published documentation** | Website checks and production/noindex builds on Linux. This job does not deploy the site |
 | **Prose-only documentation** | Application validation jobs retain their scope checks but skip dependency installs, tests, and smoke checks. Published guides still trigger website validation |
 | **Manual CI run** | Full validation regardless of changed paths |

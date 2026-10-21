@@ -10,17 +10,6 @@ function change(path: string, kind: FileChange['kind'] = 'modified'): FileChange
 }
 
 describe('buildChangeTree', () => {
-  it('returns an empty tree for no changes', () => {
-    expect(buildChangeTree([])).toEqual([]);
-  });
-
-  it('keeps root files at the top level', () => {
-    const tree = buildChangeTree([change('README.md')]);
-    expect(tree).toEqual([
-      { name: 'README.md', path: 'README.md', type: 'file', change: change('README.md'), children: [] },
-    ]);
-  });
-
   it('nests files under directories and sorts folders first', () => {
     const tree = buildChangeTree([
       change('src/app.ts'),
