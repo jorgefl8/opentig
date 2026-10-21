@@ -3,7 +3,8 @@ import { mkdtemp, mkdir, rm, writeFile, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { publicOrigin, runCli, startOnConfiguredPort } from './cli';
+import { isAffirmative, offerPairing, publicOrigin, runCli, startOnConfiguredPort } from './cli';
+import type { OpenTigCliConfig } from './cli-config';
 
 const directories: string[] = [];
 afterEach(async () => Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true }))));
@@ -61,5 +62,29 @@ describe('OpenTig CLI runtime helpers', () => {
     const errors: string[] = [];
     await expect(runCli(['pair', '--home', directory], {}, { out: () => undefined, error: (value) => errors.push(value) })).resolves.toBe(1);
     expect(errors.join('\n')).toContain('No running OpenTig server');
+  });
+
+  it('accepts an empty, y, or yes answer and declines anything else', () => {
+    for (const answer of ['', 'y', 'Y', 'yes', 'YES', ' y ']) expect(isAffirmative(answer)).toBe(true);
+    for (const answer of ['n', 'N', 'no', 'yep', 'x']) expect(isAffirmative(answer)).toBe(false);
+  });
+
+  it('asks before pairing after an interactive service install and pairs without asking otherwise', async () => {
+    const config = { home: '/opentig-home' } as OpenTigCliConfig;
+    const run = async (answer?: boolean) => {
+      const output: string[] = [];
+      const questions: string[] = [];
+      let paired = false;
+      await offerPairing(config, {
+        out: value => output.push(value), error: value => output.push(value),
+        ...(answer === undefined ? {} : { confirm: async (question: string) => { questions.push(question); return answer; } }),
+      }, 'production', async () => { paired = true; return 0; });
+      return { output: output.join('\n'), questions, paired };
+    };
+    expect(await run(true)).toMatchObject({ paired: true, questions: ['Pair a device now? [Y/n] '] });
+    const declined = await run(false);
+    expect(declined.paired).toBe(false);
+    expect(declined.output).toMatch(/Pair a device later with .+ pair --home '\/opentig-home'/);
+    expect(await run()).toMatchObject({ paired: true, questions: [] });
   });
 });

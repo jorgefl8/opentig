@@ -175,7 +175,7 @@ A background service keeps OpenTig running after you close the terminal. It does
 npx --yes @opentig/cli@latest service install
 ```
 
-With a global installation, run `opentig service install` instead. Add `--host` and `--port` to choose another address, for example `--host 127.0.0.1 --port 6768`. Installation finishes by printing a one-time pairing link, code, and QR for the new service.
+With a global installation, run `opentig service install` instead. Add `--host` and `--port` to choose another address, for example `--host 127.0.0.1 --port 6768`. In an interactive terminal, installation then asks **Pair a device now? [Y/n]**: press Enter, `y`, or `yes` to print a one-time pairing link, code, and QR for the new service, or answer `n` and run `opentig pair` later. Non-interactive runs, such as scripts, print the pairing details without asking.
 
 The service uses your OS account's repository access and CLI credentials. It does not copy credentials or run as root or LocalSystem. It is independent of any repository and separate from the desktop app's server. If another instance already uses port `6767`, choose a different port.
 

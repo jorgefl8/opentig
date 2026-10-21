@@ -155,7 +155,7 @@ From the source checkout, run `node packages/server/dist/dev.mjs reset-access`, 
 
 ## Pairing and sessions
 
-1. Create a code or pairing link in **Settings → Web access → Pair a browser**, or generate one on the CLI host with `opentig pair`.
+1. Create a code or pairing link in **Settings → Web access → Pair a browser**, or generate one on the CLI host with `opentig pair`. `opentig service install` also offers to pair a device as soon as the service is running.
 2. Open its link/QR, or paste the code into `/pair` at any address that reaches the same instance.
 3. Review the confirmation form and choose a device name.
 

@@ -1,6 +1,7 @@
 import { formatDateTime } from '../../../src/shared/date-format';
 import process from 'node:process';
 import { rm } from 'node:fs/promises';
+import { createInterface } from 'node:readline/promises';
 import path from 'node:path';
 import { renderUnicodeCompact } from 'uqr';
 import { normalizeRuntimePlatform } from '../../../src/main/runtime/create-runtime';
@@ -36,12 +37,31 @@ const SHUTDOWN_TIMEOUT_MS = 8_000;
 export interface CliIo {
   out(value: string): void;
   error(value: string): void;
+  /** Present only for an interactive terminal; non-interactive runs keep their defaults. */
+  confirm?(question: string): Promise<boolean>;
 }
 
 const consoleIo: CliIo = {
   out: (value) => process.stdout.write(`${value}\n`),
   error: (value) => process.stderr.write(`${value}\n`),
+  ...(process.stdin.isTTY && process.stdout.isTTY ? { confirm: confirmInTerminal } : {}),
 };
+
+/** An empty answer accepts the default; only explicit yes answers count otherwise. */
+export function isAffirmative(answer: string): boolean {
+  return /^(|y|yes)$/i.test(answer.trim());
+}
+
+async function confirmInTerminal(question: string): Promise<boolean> {
+  const terminal = createInterface({ input: process.stdin, output: process.stdout });
+  // Ctrl+C or end of input declines instead of leaving the prompt pending.
+  const declined = new Promise<boolean>(resolve => {
+    terminal.once('SIGINT', () => { process.stdout.write('\n'); resolve(false); });
+    terminal.once('close', () => resolve(false));
+  });
+  try { return await Promise.race([terminal.question(question).then(isAffirmative), declined]); }
+  finally { terminal.close(); }
+}
 
 export async function runCli(args: readonly string[], environment: NodeJS.ProcessEnv = process.env, io: CliIo = consoleIo, profile: ApplicationProfile = 'production'): Promise<number> {
   let config: OpenTigCliConfig | undefined;
@@ -91,10 +111,17 @@ async function runServiceCommand(config: OpenTigCliConfig, environment: NodeJS.P
       : await removeCliCommand(config.home, environment);
     for (const message of messages) io.out(message);
   } catch (error) { io.error(`OpenTig: ${diagnostic(error)}`); }
-  if (config.serviceAction === 'install') {
-    await pairRunningServer(config, io, profile).catch((error: unknown) => io.error(`OpenTig: No pairing link was created. ${diagnostic(error)}`));
-  }
+  if (config.serviceAction === 'install') await offerPairing(config, io, profile);
   return result;
+}
+
+/** Interactive installs ask first, since each new code invalidates any unused one. */
+export async function offerPairing(config: OpenTigCliConfig, io: CliIo, profile: ApplicationProfile, pair = pairRunningServer): Promise<void> {
+  if (io.confirm && !await io.confirm('Pair a device now? [Y/n] ')) {
+    io.out(`Pair a device later with ${cliCommand(config.home, 'pair')}`);
+    return;
+  }
+  await pair(config, io, profile).catch((error: unknown) => io.error(`OpenTig: No pairing link was created. ${diagnostic(error)}`));
 }
 
 async function startCliServer(config: OpenTigCliConfig, io: CliIo, profile: ApplicationProfile, reporter: Awaited<ReturnType<typeof startupReporter>>): Promise<number> {
