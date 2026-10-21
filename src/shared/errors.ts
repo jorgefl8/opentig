@@ -2,6 +2,7 @@ export type GitErrorCode =
   | 'NOT_REPOSITORY'
   | 'DIRTY_WORKTREE'
   | 'HOOK_REJECTED'
+  | 'IDENTITY_UNKNOWN'
   | 'GIT_NOT_FOUND'
   | 'LOCKED_INDEX'
   | 'INVALID_ARGUMENT'

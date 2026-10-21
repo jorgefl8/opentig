@@ -202,6 +202,8 @@ Each operation uses a temporary helper and private loopback broker restricted to
 2. Review the current Git identity, then enter a name and commit email.
 3. Compare the before/after values and save.
 
+If Git rejects a commit because no name or email is configured, the error notification offers **Set identity**, which opens the same editor for that repository. The commit message and staged changes are kept, so you can commit again after saving.
+
 The editor saves repository-local `user.name` and `user.email` atomically. Future commits from OpenTig and other Git tools use those settings, shared across worktrees. **GitHub account changes never change authorship automatically.**
 
 Existing history, global settings, remotes, credentials, SSH, and signing settings are preserved. Stale reviews and existing Git config locks prevent saving.

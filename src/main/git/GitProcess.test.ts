@@ -61,6 +61,16 @@ describe('GitProcess', () => {
     })).rejects.toMatchObject({ detail: { code: 'UNKNOWN', operation: 'inspect', exitCode: 128 } });
   });
 
+  it('maps a missing commit identity to its own code', async () => {
+    const work = await mkdtemp(join(tmpdir(), 'opentig-identity-'));
+    try {
+      const git = new GitProcess();
+      await git.run(work, ['init', '--quiet'], { operation: 'init', timeoutMs: 5_000 });
+      await expect(git.run(work, ['-c', 'user.name=', 'commit', '--allow-empty', '-m', 'test'], { operation: 'commit', timeoutMs: 5_000 }))
+        .rejects.toMatchObject({ detail: { code: 'IDENTITY_UNKNOWN', operation: 'commit' } });
+    } finally { await rm(work, { recursive: true, force: true }); }
+  });
+
   it('cancels owned processes during bounded close', async () => {
     const git = new GitProcess();
     const running = git.run(process.cwd(), node('setInterval(() => {}, 1000)'), {

@@ -268,10 +268,12 @@ export class GitProcess {
 
   private fromExit(operation: string, exitCode: number, stderr: string): GitOperationError {
     const lower = stderr.toLowerCase();
-    let code: 'NOT_REPOSITORY' | 'DIRTY_WORKTREE' | 'HOOK_REJECTED' | 'LOCKED_INDEX' | 'UNKNOWN' = 'UNKNOWN';
+    let code: 'NOT_REPOSITORY' | 'DIRTY_WORKTREE' | 'HOOK_REJECTED' | 'IDENTITY_UNKNOWN' | 'LOCKED_INDEX' | 'UNKNOWN' = 'UNKNOWN';
     if (lower.includes('not a git repository')) code = 'NOT_REPOSITORY';
     else if (lower.includes('index.lock') || lower.includes('another git process')) code = 'LOCKED_INDEX';
     else if (lower.includes('local changes') || lower.includes('would be overwritten')) code = 'DIRTY_WORKTREE';
+    // Git prints this hint for every missing or rejected author/committer identity.
+    else if (lower.includes('please tell me who you are') || lower.includes('identity unknown')) code = 'IDENTITY_UNKNOWN';
     else if (operation === 'commit') code = 'HOOK_REJECTED';
     return new GitOperationError({
       code,

@@ -63,6 +63,7 @@ import { aiModelLabel, harnessLabel } from '@/features/ai/harness-copy';
 import { DesktopUpdateIndicator } from '@/features/settings/UpdateSettings';
 import { updatesApi } from '@/features/settings/update-api';
 import type { SettingsSection } from '@/features/settings/SettingsDialog';
+import { CommitAuthorshipDialog } from '@/features/settings/CommitAuthorshipDialog';
 
 const Viewer = lazy(() => import('@/features/viewer/Viewer'));
 const FilesView = lazy(() => import('@/features/files/FilesView').then((module) => ({ default: module.FilesView })));
@@ -158,6 +159,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   const [undoingCommit, setUndoingCommit] = useState(false);
   const [pullRequestStates, setPullRequestStates] = useState<PullRequestState[]>(['OPEN']);
   const [createPrOpen, setCreatePrOpen] = useState(false);
+  // Repository whose commit authorship editor is open, so a stale toast cannot open it for another repository.
+  const [authorshipRepositoryId, setAuthorshipRepositoryId] = useState<string | null>(null);
   const [quickOpen, setQuickOpen] = useState(false);
   // Open-file tabs, one session per worktree. Structural metadata only: the
   // draft text of a dirty tab lives in a ref-backed map, never in React state.
@@ -1472,7 +1475,17 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       setMobilePane('viewer');
       await refresh({ background: true });
       committed = true;
-    } catch (reason) { reportError('Could not create the commit', reason); }
+    } catch (reason) {
+      if (serializedErrorFromReason(reason)?.code === 'IDENTITY_UNKNOWN') {
+        const repositoryId = repository.id;
+        sileo.error({
+          title: 'Set your commit identity',
+          description: 'Git needs a name and email before it can create commits in this repository. Your message and staged changes are kept.',
+          duration: 10_000,
+          button: { title: 'Set identity', onClick: () => setAuthorshipRepositoryId(repositoryId) },
+        });
+      } else reportError('Could not create the commit', reason);
+    }
     finally { setBusy(null); }
     // The refreshed status has not reached this closure yet, so push without
     // re-checking how many commits are ahead.
@@ -2188,6 +2201,9 @@ export default function App({ initialView, initialSelection, pullRequestCreation
             }}
           />
         </Suspense>
+      )}
+      {authorshipRepositoryId === repository.id && (
+        <CommitAuthorshipDialog key={repository.id} repository={repository} open onOpenChange={(open) => { if (!open) setAuthorshipRepositoryId(null); }} />
       )}
       {branchPush.remoteChoice && <PublishRemoteDialog key={branchPush.remoteChoice.id} choice={branchPush.remoteChoice} onSelect={branchPush.selectRemote} />}
       <div className="app-shell" data-mobile-pane={mobilePane}>
