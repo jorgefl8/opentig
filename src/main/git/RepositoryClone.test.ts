@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createServer } from 'node:http';
@@ -34,7 +34,8 @@ describe('repository cloning', () => {
       const port = (server.address() as { port: number }).port;
       const progress: Progress[] = [];
       const destination = await cloneRepository(new GitProcess(), { ...input(directory), url: 'http://127.0.0.1:' + port + '/sample.git' }, new AbortController().signal, value => progress.push(value));
-      expect(await readFile(path.join(destination, 'README.md'), 'utf8')).toBe('sample\n');
+      // Windows checkouts may convert line endings (core.autocrlf).
+      expect((await readFile(path.join(destination, 'README.md'), 'utf8')).replace(/\r\n/g, '\n')).toBe('sample\n');
       expect((await execa('git', ['status', '--porcelain'], { cwd: source })).stdout).toBe('');
       expect(progress[0]?.phase).toBe('Connecting to remote');
     } finally { await new Promise<void>(resolve => server.close(() => resolve())); }
@@ -50,9 +51,11 @@ describe('repository cloning', () => {
 
   it('retains partial data on cancellation and exposes only recognized progress', async () => {
     const directory = await root(), controller = new AbortController(), progress: Progress[] = [];
+    // The clone resolves its parent; on Windows that can expand short names in the temp path.
+    const destination = path.join(await realpath(directory), 'sample');
     const run = vi.fn(async (_cwd: string, args: string[], options: RunOptions) => {
-      expect(args.slice(-3)).toEqual(['--', input(directory).url, path.join(directory, 'sample')]);
-      await writeFile(path.join(directory, 'sample', 'keep.txt'), 'partial work');
+      expect(args.slice(-3)).toEqual(['--', input(directory).url, destination]);
+      await writeFile(path.join(destination, 'keep.txt'), 'partial work');
       options.onStderr?.('Receiving objects: 42% (42/100), 1.50 MiB | 2.00 MiB/s\rprivate remote diagnostic\n');
       controller.abort();
       throw new Error('aborted');
