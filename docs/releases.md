@@ -112,9 +112,9 @@ Within this builder, only the final draft-upload job has repository write permis
 <details>
 <summary>CLI builder checks and immutable assets</summary>
 
-**CLI release draft** builds from the same frozen tag as Windows, inspects the package, installs it globally on a disposable Linux runner, and checks startup, the web client, pairing, session persistence across restart, and graceful shutdown.
+**CLI release draft** builds from the same frozen tag as Windows, inspects the package, installs it globally on a disposable Linux runner, and checks startup, the web client, pairing, session persistence across restart, and graceful shutdown. It also runs the packed CLI through `npx` on a Windows runner and checks the reported version.
 
-It attaches the tarball and metadata only to the matching draft. Existing assets are never replaced; retries accept identical CLI assets.
+It attaches the tarball and metadata only to the matching draft, and only after both checks pass. Existing assets are never replaced; retries accept identical CLI assets.
 
 It can also run manually on `main` with an existing draft tag to complete an older release without changing its tag, notes, or Windows installer. A different existing CLI artifact is rejected instead of silently rebuilding an immutable version.
 

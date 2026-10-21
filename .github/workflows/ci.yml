@@ -163,7 +163,9 @@ jobs:
         run: pnpm exec vitest run packages/server/src/service-manager.integration.test.ts packages/server/src/cli-command.test.ts packages/server/src/service-manager.test.ts packages/server/src/service-eligibility.test.ts packages/server/src/service-npm.test.ts packages/server/src/service-update-worker.test.ts
         env:
           OPENTIG_SERVICE_INTEGRATION: '1'
+      # npx on Windows takes about 95 s; CLI release draft checks it once per release.
       - name: Run packed CLI with npx
+        if: runner.os != 'Windows'
         shell: bash
         run: |
           artifact="$(node -p "require('./dist/headless/opentig-headless.json').filename")"

@@ -154,7 +154,7 @@ PRs and pushes to `main` use the same CI scope rules:
 
 | Changed scope | Validation |
 | --- | --- |
-| **Application code, configuration, or assets** | Tests on Windows and Linux; typecheck, lint, and production dependency audit once on Linux; native Trash and packed CLI smoke checks on Windows, Linux, and macOS |
+| **Application code, configuration, or assets** | Tests on Windows and Linux; typecheck, lint, and production dependency audit once on Linux; native Trash and packed CLI smoke checks on Windows, Linux, and macOS. The packed CLI `npx` run is skipped on Windows, where it is slow; the CLI release draft checks it once per release |
 | **Website or published documentation** | Website checks and production/noindex builds on Linux. This job does not deploy the site |
 | **Prose-only documentation** | Application validation jobs retain their scope checks but skip dependency installs, tests, and smoke checks. Published guides still trigger website validation |
 | **Manual CI run** | Full validation regardless of changed paths |
