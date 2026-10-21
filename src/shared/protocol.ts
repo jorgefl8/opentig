@@ -33,6 +33,12 @@ export interface OpenTigServerCommandDefinition {
  * Tuple arguments and results are derived below from OpenTigServerApi.
  */
 export const OPEN_TIG_SERVER_COMMANDS = {
+  'app.gitStatus': command(IPC.gitStatus, 'git-status', false),
+  'app.setGlobalGitIdentity': command(IPC.gitSetGlobalIdentity, 'git-identity-set', true),
+  'app.completeOnboarding': command(IPC.completeOnboarding, 'complete-onboarding', true),
+  'repository.clone': command(IPC.repositoryClone, 'clone-repository', true),
+  'repository.cloneStatus': command(IPC.repositoryCloneStatus, 'clone-status', false),
+  'repository.cancelClone': command(IPC.repositoryCancelClone, 'cancel-clone', true),
   'app.bootstrap': command(IPC.bootstrap, 'bootstrap', false),
   'app.capabilities': command(IPC.capabilities, 'capabilities', false),
   'app.setPreferences': command(IPC.preferences, 'preferences', true),

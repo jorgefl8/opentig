@@ -61,6 +61,15 @@ describe('GitProcess', () => {
     })).rejects.toMatchObject({ detail: { code: 'UNKNOWN', operation: 'inspect', exitCode: 128 } });
   });
 
+  it('cancels an individual operation and releases the process', async () => {
+    const git = new GitProcess(), controller = new AbortController();
+    const run = git.run(process.cwd(), node('setInterval(() => {}, 1000)'), { operation: 'cancel-test', signal: controller.signal, timeoutMs: 10_000 });
+    const settled = expect(run).rejects.toThrow('cancelled');
+    await delay(100); controller.abort(); await settled;
+    expect(git.hasActiveProcess()).toBe(false);
+    expect((await git.status()).state).toBe('ready');
+  });
+
   it('maps a missing commit identity to its own code', async () => {
     const work = await mkdtemp(join(tmpdir(), 'opentig-identity-'));
     try {

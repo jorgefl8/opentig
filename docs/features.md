@@ -6,7 +6,7 @@ Use OpenTig to review changes, edit files, and prepare commits in an existing Gi
 
 ## Main workflow
 
-1. Open an existing local Git repository with `Ctrl+O`, or choose a recent repository.
+1. Open an existing local Git repository with `Ctrl+O`, choose a recent repository, or clone one from a URL.
 2. In **Changes**, review unstaged, staged, and conflicted files.
 3. Open a diff, stage the files you want to include, and write or generate an editable commit message.
 4. Commit locally, or commit and push, then inspect the result in **History**.
@@ -22,6 +22,14 @@ Use OpenTig to review changes, edit files, and prepare commits in an existing Gi
 ### Repositories and projects
 
 OpenTig opens repositories on the machine running its backend. The Windows app runs that backend itself; a paired browser selects folders on its host. See [installation](getting-started.md) and [remote access and pairing](web-access.md) for setup.
+
+**First launch and cloning**
+
+The start screen offers **Open a folder**, **Clone from URL**, and **Find on this computer** (or **on the server**), with Git, GitHub CLI, and AI assistant status on one line. Only a missing Git blocks; it is replaced by install commands for the detected system and **Check again**. See [first launch](getting-started.md#first-launch).
+
+**Clone from URL** is also available from the Open dialog. It accepts HTTPS, HTTP, or SSH URLs, including SCP-style addresses, shows the detected host, and suggests the folder name and the parent folder last used. Private repositories use the host's existing Git credentials; embedded credentials and local or custom transports are rejected, and the destination must not exist. The clone runs on the server: closing the dialog, reloading, or losing the connection keeps it going, and a notification offers to open it when it finishes. Cancelling keeps the form; partial files are never deleted. Submodules are not initialized.
+
+**Find** lists repositories in the home folder and common checkout folders such as `~/code` and `~/projects`, one level deep, skipping those already added.
 
 **Open a repository**
 

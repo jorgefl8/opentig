@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEventHandler, type ReactNode, type Ref } from 'react';
-import { IconAlertCircle, IconArrowRight, IconArrowUp, IconBook2, IconCheck, IconChevronRight, IconClock, IconDeviceDesktop, IconFileText, IconFolder, IconGitBranch, IconHome, IconInbox, IconLoader4, IconPencil, IconSearch, IconServer, IconX } from '@tabler/icons-react';
+import { IconAlertCircle, IconArrowRight, IconArrowUp, IconBook2, IconCheck, IconChevronRight, IconClock, IconDeviceDesktop, IconDownload, IconFileText, IconFolder, IconGitBranch, IconHome, IconInbox, IconLoader4, IconPencil, IconSearch, IconServer, IconX } from '@tabler/icons-react';
 import type { RecentRepository, ServerDirectoryListing } from '../../../shared/contracts';
 import { Button } from '@/components/ui/button';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
@@ -11,7 +11,10 @@ type Folder = ServerDirectoryListing['directories'][number];
 const NO_RECENTS: RecentRepository[] = [];
 
 /** Paths and Git inspection always belong to the backend, including in a browser. */
-export function OpenRepositoryDialog({ open, onOpenChange, onOpen, onBrowse, recent = NO_RECENTS, initialPath, onPick, title = 'Open a repository', description = onPick ? 'Browse folders or paste a path to an existing Git repository.' : 'Browse folders on your server or paste a Git repository path.', confirmLabel = 'Open repository' }: {
+export function OpenRepositoryDialog({ directory = false, onClone, open, onOpenChange, onOpen, onBrowse, recent = NO_RECENTS, initialPath, onPick, title = 'Open a repository', description = onPick ? 'Browse folders or paste a path to an existing Git repository.' : 'Browse folders on your server or paste a Git repository path.', confirmLabel = 'Open repository' }: {
+  directory?: boolean;
+  /** Offers cloning from a URL as an alternative to choosing a folder. */
+  onClone?: (() => void) | undefined;
   title?: string;
   description?: string;
   confirmLabel?: string;
@@ -66,13 +69,13 @@ export function OpenRepositoryDialog({ open, onOpenChange, onOpen, onBrowse, rec
       setListing(result);
       setLocation(result.path);
       setDraftPath(result.path);
-      if (result.repository) setSelected({ name: folderName(result.path), path: result.path, repository: result.repository });
+      if (directory || result.repository) setSelected({ name: folderName(result.path), path: result.path, repository: result.repository });
     } catch (reason) {
       if (current === request.current) setBrowseError(messageOf(reason, 'Could not browse this folder.'));
     } finally {
       if (current === request.current) setLoading(false);
     }
-  }, [onBrowse]);
+  }, [onBrowse, directory]);
 
   useEffect(() => {
     if (open) {
@@ -87,14 +90,14 @@ export function OpenRepositoryDialog({ open, onOpenChange, onOpen, onBrowse, rec
   useEffect(() => { if (editingPath) { pathInput.current?.focus(); pathInput.current?.select(); } }, [editingPath]);
   useEffect(() => {
     if (loading || !restoreFocus.current) return;
-    const target = restoreFocus.current === 'path' && listing?.repository && !browseError ? confirmButton.current : list.current?.querySelector<HTMLButtonElement>('.repository-folder-select') ?? editButton.current;
+    const target = restoreFocus.current === 'path' && listing && (directory || listing.repository) && !browseError ? confirmButton.current : list.current?.querySelector<HTMLButtonElement>('.repository-folder-select') ?? editButton.current;
     restoreFocus.current = null;
     target?.focus();
-  }, [loading, listing, browseError]);
+  }, [loading, listing, browseError, directory]);
 
   const select = (folder: Folder) => { setSelected(folder); setOpenError(null); };
   const openSelected = async (folder = selected) => {
-    if (!folder?.repository || loading || editingPath || browseError || opening.current) return;
+    if (!folder || (!directory && !folder.repository) || loading || editingPath || browseError || opening.current) return;
     opening.current = true;
     setBusy(true);
     setOpenError(null);
@@ -116,7 +119,7 @@ export function OpenRepositoryDialog({ open, onOpenChange, onOpen, onBrowse, rec
   };
   const visibleFolders = (listing?.directories ?? []).filter(folder => (showHidden || !folder.name.startsWith('.')) && folder.name.toLocaleLowerCase().includes(filter.toLocaleLowerCase()));
   const parentPath = location ? parentFolderPath(location) : null;
-  const canOpen = Boolean(selected?.repository && !loading && !busy && !browseError && !editingPath);
+  const canOpen = Boolean(selected && (directory || selected.repository) && !loading && !busy && !browseError && !editingPath);
   const currentRepository = listing && sameFolder(location, listing.path) && listing.repository;
   const locations = listing?.locations ?? [{ name: 'Home', path: '', kind: 'home' as const }];
   const editPath = () => { if (!busy) { setDraftPath(location); setEditingPath(true); } };
@@ -149,7 +152,7 @@ export function OpenRepositoryDialog({ open, onOpenChange, onOpen, onBrowse, rec
       event.preventDefault();
       const folder = visibleFolders[index];
       if (!folder) return;
-      if (event.key === 'Enter' && folder.repository) { select(folder); void openSelected(folder); }
+      if (event.key === 'Enter' && (directory || folder.repository)) { select(folder); void openSelected(folder); }
       else void browse(folder.path);
     }
   };
@@ -171,6 +174,7 @@ export function OpenRepositoryDialog({ open, onOpenChange, onOpen, onBrowse, rec
           {recentFolders.length > 0 && <section className="repository-browser-recents"><h3>Recent repositories</h3>{recentFolders.map(item => <Tooltip key={item.id}><TooltipTrigger render={<button type="button" className="repository-place" disabled={busy} onClick={() => void browse(item.path)} />}><IconClock aria-hidden="true" /><span>{item.name}</span></TooltipTrigger><TooltipContent>{item.path}</TooltipContent></Tooltip>)}</section>}
           <div className="repository-browser-source">{onPick ? <IconDeviceDesktop aria-hidden="true" /> : <IconServer aria-hidden="true" />}<span>{onPick ? 'Folders on this computer' : 'Folders on your server'}</span></div>
           {onPick && <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => void pickFolder()}>Choose a folder…</Button>}
+          {onClone && <Button type="button" variant="ghost" size="sm" className="repository-browser-clone" disabled={busy} onClick={onClone}><IconDownload aria-hidden="true" />Clone from URL…</Button>}
         </nav>
         <section className="repository-browser-main" aria-label="Folder browser">
           <div className="repository-browser-navigation">
@@ -184,9 +188,9 @@ export function OpenRepositoryDialog({ open, onOpenChange, onOpen, onBrowse, rec
             </form>
           </div>
           <div className="repository-browser-tools"><strong>Folders <span>{loading ? '' : browseError ? '0' : visibleFolders.length}</span></strong><label className="repository-browser-filter"><IconSearch aria-hidden="true" /><input aria-label="Filter folders" placeholder="Filter folders…" value={filter} onChange={event => { setFilter(event.target.value); setSelected(null); setOpenError(null); }} disabled={busy || loading || Boolean(browseError)} /></label></div>
-          {!loading && !browseError && currentRepository && <div className="repository-current-banner"><span><IconCheck aria-hidden="true" />This folder is a Git repository</span><button type="button" disabled={busy} onClick={() => { if (listing) select({ name: folderName(listing.path), path: listing.path, repository: listing.repository }); }}>Select this repository</button></div>}
+          {!loading && !browseError && (directory || currentRepository) && <div className="repository-current-banner"><span><IconCheck aria-hidden="true" />{directory ? 'Choose a destination for the clone' : 'This folder is a Git repository'}</span><button type="button" disabled={busy} onClick={() => { if (listing) select({ name: folderName(listing.path), path: listing.path, repository: listing.repository }); }}>{directory ? 'Select this folder' : 'Select this repository'}</button></div>}
           <div className="repository-browser-folders" ref={list} aria-label="Folders" aria-busy={loading}>
-            {loading ? <div className="repository-browser-loading" role="status"><span className="sr-only">Loading folders…</span>{[0, 1, 2, 3].map(index => <div className="repository-folder-skeleton" key={index} />)}</div> : browseError ? <div className="repository-browser-state" role="alert"><IconAlertCircle aria-hidden="true" /><strong>Could not browse this folder</strong><p>{browseError}</p><div><button type="button" disabled={busy} onClick={editPath}>Edit path</button><button type="button" disabled={busy} onClick={() => void browse(location || undefined)}>Try again</button></div></div> : visibleFolders.length === 0 ? <div className="repository-browser-state">{filter ? <IconSearch aria-hidden="true" /> : <IconFolder aria-hidden="true" />}<strong>{filter ? 'No matching folders' : 'No subfolders here'}</strong><p>{filter ? 'Try a different name or clear the filter.' : currentRepository ? 'You can open this repository below.' : 'Browse another location or paste the path to your repository.'}</p>{filter ? <button type="button" onClick={() => setFilter('')}>Clear filter</button> : parentPath && <button type="button" disabled={busy} onClick={() => void browse(parentPath)}>Go to parent folder</button>}</div> : visibleFolders.map(folder => <div key={folder.path} className={`repository-folder-row${selected && sameFolder(selected.path, folder.path) ? ' selected' : ''}`} onDoubleClick={() => { if (!busy) void browse(folder.path); }}>
+            {loading ? <div className="repository-browser-loading" role="status"><span className="sr-only">Loading folders…</span>{[0, 1, 2, 3].map(index => <div className="repository-folder-skeleton" key={index} />)}</div> : browseError ? <div className="repository-browser-state" role="alert"><IconAlertCircle aria-hidden="true" /><strong>Could not browse this folder</strong><p>{browseError}</p><div><button type="button" disabled={busy} onClick={editPath}>Edit path</button><button type="button" disabled={busy} onClick={() => void browse(location || undefined)}>Try again</button></div></div> : visibleFolders.length === 0 ? <div className="repository-browser-state">{filter ? <IconSearch aria-hidden="true" /> : <IconFolder aria-hidden="true" />}<strong>{filter ? 'No matching folders' : 'No subfolders here'}</strong><p>{filter ? 'Try a different name or clear the filter.' : directory ? 'You can choose this folder below.' : currentRepository ? 'You can open this repository below.' : 'Browse another location or paste the path to your repository.'}</p>{filter ? <button type="button" onClick={() => setFilter('')}>Clear filter</button> : parentPath && <button type="button" disabled={busy} onClick={() => void browse(parentPath)}>Go to parent folder</button>}</div> : visibleFolders.map(folder => <div key={folder.path} className={`repository-folder-row${selected && sameFolder(selected.path, folder.path) ? ' selected' : ''}`} onDoubleClick={() => { if (!busy) void browse(folder.path); }}>
               <Tooltip><TooltipTrigger render={<button type="button" className="repository-folder-select" aria-pressed={Boolean(selected && sameFolder(selected.path, folder.path))} aria-label={`Select ${folder.repository ? 'repository' : 'folder'} ${folder.name}`} disabled={busy} onClick={() => select(folder)} />}>
                 <span className={`repository-folder-icon${folder.repository ? ' git' : ''}`}>{folder.repository ? <IconBook2 aria-hidden="true" /> : <IconFolder aria-hidden="true" />}</span><span className="repository-folder-copy"><strong>{folder.name}</strong><small>{folder.repository ? 'Git repository' : 'Folder'}</small></span>
                 {folder.repository && <span className="repository-folder-branch"><IconGitBranch aria-hidden="true" /><span>{folder.repository.branch ?? 'Detached HEAD'}</span></span>}
@@ -194,12 +198,12 @@ export function OpenRepositoryDialog({ open, onOpenChange, onOpen, onBrowse, rec
               <FolderIconButton label={`Browse ${folder.name}`} disabled={busy} onClick={() => void browse(folder.path)}><IconChevronRight /></FolderIconButton>
             </div>)}
           </div>
-          <div className="repository-browser-list-footer"><label><input type="checkbox" checked={showHidden} onChange={event => { setShowHidden(event.target.checked); setSelected(null); setOpenError(null); }} disabled={busy} />Show hidden folders</label><span>Select a repository to open it</span></div>
+          <div className="repository-browser-list-footer"><label><input type="checkbox" checked={showHidden} onChange={event => { setShowHidden(event.target.checked); setSelected(null); setOpenError(null); }} disabled={busy} />Show hidden folders</label><span>{directory ? 'Select a destination folder' : 'Select a repository to open it'}</span></div>
         </section>
       </div>
       {openError && <p role="alert" className="repository-browser-open-error"><IconAlertCircle aria-hidden="true" />{openError}</p>}
       <footer className="repository-browser-footer">
-        <div className="repository-browser-selection" aria-live="polite"><span className={`repository-selection-icon${selected?.repository ? ' ready' : ''}`}>{selected?.repository ? <IconCheck aria-hidden="true" /> : <IconFolder aria-hidden="true" />}</span><div><strong>{selected?.name ?? (loading ? <ShimmeringText text="Loading folders…" /> : 'Choose a repository')}{selected?.repository && <span>Git repository</span>}</strong><Tooltip><TooltipTrigger render={<span className="repository-selection-path" tabIndex={selected ? 0 : undefined} />}>{editingPath ? 'Press Enter to browse the path before opening.' : selected?.path ?? 'Select a Git repository from the list.'}</TooltipTrigger><TooltipContent>{selected?.path ?? 'Select a Git repository from the list.'}</TooltipContent></Tooltip></div></div>
+        <div className="repository-browser-selection" aria-live="polite"><span className={`repository-selection-icon${selected?.repository ? ' ready' : ''}`}>{selected?.repository ? <IconCheck aria-hidden="true" /> : <IconFolder aria-hidden="true" />}</span><div><strong>{selected?.name ?? (loading ? <ShimmeringText text="Loading folders…" /> : directory ? 'Choose a folder' : 'Choose a repository')}{selected?.repository && <span>Git repository</span>}</strong><Tooltip><TooltipTrigger render={<span className="repository-selection-path" tabIndex={selected ? 0 : undefined} />}>{editingPath ? 'Press Enter to browse the path before opening.' : selected?.path ?? (directory ? 'Select a folder from the list.' : 'Select a Git repository from the list.')}</TooltipTrigger><TooltipContent>{selected?.path ?? (directory ? 'Select a folder from the list.' : 'Select a Git repository from the list.')}</TooltipContent></Tooltip></div></div>
         <div className="repository-browser-actions"><Button type="button" variant="ghost" disabled={busy} onClick={() => onOpenChange(false)}>Cancel</Button><Button ref={confirmButton} type="button" disabled={!canOpen} onClick={() => void openSelected()}>{busy ? <><IconLoader4 className="animate-spin" /><ShimmeringText text="Working…" /></> : <>{confirmLabel}<IconArrowRight aria-hidden="true" /></>}</Button></div>
       </footer>
     </DialogPopup>

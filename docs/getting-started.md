@@ -8,6 +8,14 @@ Choose where OpenTig will run. Your repositories stay on that machine, whether y
 - **Linux, macOS, or Windows CLI:** [start the server](#run-the-headless-cli) and use the same interface in a paired browser.
 - **Keep the CLI running after closing your terminal:** [install a background service](#background-services).
 
+## First launch
+
+The start screen is the onboarding. Choose **Open a folder**, **Clone from URL**, or **Find on this computer** to bring in a repository. Below them, one line shows Git, GitHub CLI, and the AI assistant used for commit messages; choose a different assistant there. Optional tools never block; **Set up** opens their settings.
+
+If Git is missing, OpenTig shows the install command for the detected system instead of the actions. Install it, then choose **Check again**; no restart is needed.
+
+After the first repository opens, a **Ready to commit** checklist in the sidebar sets your Git name and email (for all repositories, or only this one) and connects GitHub CLI for pull requests. Skip or dismiss it at any time. Existing installations are not shown the checklist after an update. **Settings → General → Repeat onboarding** shows the start screen and checklist again without changing repositories or preferences.
+
 ## Requirements
 
 - **Desktop:** Windows 10 or later, x64, and Git installed on the host.

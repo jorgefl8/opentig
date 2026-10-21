@@ -1,3 +1,5 @@
+import { CloneJobs } from '../git/RepositoryClone';
+import { setGlobalGitIdentity } from '../git/GitGlobalIdentity';
 import { githubAccountSelectionSchema } from '../../shared/github-accounts';
 import { commitAuthorshipInputSchema } from '../../shared/commit-authorship';
 import { lstat } from 'node:fs/promises';
@@ -53,10 +55,23 @@ export function registerServerCommands(
     return repository;
   };
 
+  handle(IPC.gitStatus, 'git-status', () => services.git.status());
+  handle(IPC.completeOnboarding, 'complete-onboarding', () => services.settings.completeOnboarding());
+  handle(IPC.gitSetGlobalIdentity, 'git-identity-set', (input) => setGlobalGitIdentity(services.git, input));
+  const clones = new CloneJobs(services.git, (destination) => services.repositories.preparePath(destination));
+  handle(IPC.repositoryClone, 'clone-repository', (raw) => {
+    if (!raw || typeof raw !== 'object') throw new Error('Invalid clone request.');
+    const value = raw as Record<string, unknown>;
+    return clones.start({ url: stringArg(value.url, 'clone-repository', 4096), parentPath: stringArg(value.parentPath, 'clone-repository', 32768), folderName: stringArg(value.folderName, 'clone-repository', 150) });
+  });
+  handle(IPC.repositoryCloneStatus, 'clone-status', (id) => clones.get(stringArg(id, 'clone-status', 100)));
+  handle(IPC.repositoryCancelClone, 'cancel-clone', (id) => clones.cancel(stringArg(id, 'cancel-clone', 100)));
+
   handle(IPC.bootstrap, 'bootstrap', async () => {
     const activeRepository = await services.repositories.restore();
     if (activeRepository) services.watcher.start(activeRepository);
     return {
+      onboardingVersion: services.settings.onboardingVersion,
       recentRepositories: services.repositories.recents(),
       repositoryProjects: services.settings.repositoryProjects,
       filesTreeStates: services.settings.filesTreeStates,

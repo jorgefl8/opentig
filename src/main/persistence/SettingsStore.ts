@@ -1,3 +1,4 @@
+import { ONBOARDING_VERSION } from '../../shared/onboarding';
 import os from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
@@ -19,6 +20,7 @@ export type SettingsRecovery = 'backup' | 'defaults';
 
 interface WindowBounds { width: number; height: number; x?: number; y?: number }
 interface SettingsData {
+  onboardingVersion: number;
   version: number;
   githubAccounts: Record<string, GitHubAccountSelection>;
   githubDefaultLogin: string | null;
@@ -36,6 +38,7 @@ interface SettingsData {
 type BackgroundChannel = 'filesTree' | 'openFiles';
 
 const defaults: SettingsData = {
+  onboardingVersion: 0,
   version: SETTINGS_SCHEMA_VERSION,
   githubAccounts: {},
   githubDefaultLogin: null,
@@ -59,6 +62,7 @@ const defaults: SettingsData = {
 // Disk input is intentionally permissive. Each field is repaired independently
 // so one legacy or corrupt preference never resets valid sibling settings.
 const settingsRecordSchema = z.looseObject({
+  onboardingVersion: z.unknown().optional(),
   version: z.unknown().optional(), githubAccounts: z.unknown().optional(),
   recentRepositories: z.unknown().optional(), repositoryProjects: z.unknown().optional(), filesTreeStates: z.unknown().optional(),
   openFilesStates: z.unknown().optional(), activeRepositoryId: z.unknown().optional(), preferences: z.unknown().optional(), windowBounds: z.unknown().optional(),
@@ -119,6 +123,15 @@ export class SettingsStore {
   get repositoryProjects(): RepositoryProject[] { return this.data.repositoryProjects.map(cloneProject); }
   get filesTreeStates(): FilesTreeState[] { return this.data.filesTreeStates.map(cloneFilesTreeState); }
   get openFilesStates(): OpenFilesState[] { return this.data.openFilesStates.map(cloneOpenFilesState); }
+  get onboardingVersion(): number { return this.data.onboardingVersion; }
+
+  async completeOnboarding(): Promise<number> {
+    const previous = this.data.onboardingVersion;
+    this.data.onboardingVersion = ONBOARDING_VERSION;
+    try { await this.save(); } catch (error) { this.data.onboardingVersion = previous; throw error; }
+    return ONBOARDING_VERSION;
+  }
+
   get activeRepositoryId(): string | null { return this.data.activeRepositoryId; }
   get preferences(): Preferences {
     return { ...this.data.preferences, aiExecutablePaths: { ...this.data.preferences.aiExecutablePaths }, commitMessageModels: { ...this.data.preferences.commitMessageModels }, shortcutOverrides: { ...this.data.preferences.shortcutOverrides } };
@@ -547,6 +560,8 @@ function validate(value: unknown, defaultDoubleControlShortcutEnabled: boolean):
     ? { width: Math.max(DESKTOP_MIN_WINDOW_WIDTH, bounds.width), height: Math.max(DESKTOP_MIN_WINDOW_HEIGHT, bounds.height), ...(typeof bounds.x === 'number' && Number.isFinite(bounds.x) ? { x: bounds.x } : {}), ...(typeof bounds.y === 'number' && Number.isFinite(bounds.y) ? { y: bounds.y } : {}) }
     : { ...defaults.windowBounds };
   return {
+    // Existing installations keep their normal startup. Only new settings start at zero.
+    onboardingVersion: input.onboardingVersion === 0 ? 0 : ONBOARDING_VERSION,
     version: SETTINGS_SCHEMA_VERSION,
     githubAccounts: normalizeGitHubAccounts(input.githubAccounts),
     repositoryAiInstructions: Object.fromEntries(Object.entries(

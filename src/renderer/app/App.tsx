@@ -1,3 +1,7 @@
+import { GettingStartedChecklist } from '@/features/onboarding/GettingStartedChecklist';
+import { parentFolderPath } from '@/features/repositories/directory-navigation';
+import { ONBOARDING_VERSION } from '../../shared/onboarding';
+import { lastCloneParent, resumeBackgroundClone } from '@/features/onboarding/clone-jobs';
 import { useGitHubAccount } from '@/features/pulls/useGitHubAccount';
 import { branchPullRequestQueryOptions } from '@/features/pulls/branch-pull-request-query';
 import { appDisplayName } from '@/lib/app-identity';
@@ -99,6 +103,10 @@ class PushBlocked extends Error {
   }
 }
 
+const CloneRepositoryDialog = lazy(() => import('@/features/onboarding/CloneRepositoryDialog').then(module => ({ default: module.CloneRepositoryDialog })));
+const FindRepositoriesDialog = lazy(() => import('@/features/onboarding/FindRepositoriesDialog').then(module => ({ default: module.FindRepositoriesDialog })));
+const WelcomeSettings = lazy(() => import('@/features/settings/SettingsDialog').then(module => ({ default: module.SettingsDialog })));
+
 export default function App({ initialView, initialSelection, pullRequestCreationDisabledReason }: { initialView?: SidebarView; initialSelection?: ViewerSelection; pullRequestCreationDisabledReason?: string } = {}) {
   const appQueryClient = useQueryClient();
   const branchPush = useBranchPush();
@@ -152,6 +160,11 @@ export default function App({ initialView, initialSelection, pullRequestCreation
 
   const [refreshVersion, setRefreshVersion] = useState(0);
   const [searchRevision, setSearchRevision] = useState(0);
+  // Replaying onboarding shows the start screen over the workspace, then the checklist.
+  const [welcomeReplay, setWelcomeReplay] = useState(false);
+  const [checklistReplay, setChecklistReplay] = useState(false);
+  const [cloneOpen, setCloneOpen] = useState(false);
+  const [findOpen, setFindOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<SettingsSection>('general');
   const [generating, setGenerating] = useState<string | null>(null);
@@ -1085,6 +1098,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (matchesCombo(event, shortcuts.openRepository)) { event.preventDefault(); void openRepository(); }
+      // The replayed start screen covers the workspace; its shortcuts stay inactive.
+      if (welcomeReplay) return;
       if (matchesCombo(event, shortcuts.refresh)) {
         event.preventDefault();
         if (!event.repeat && !busyRef.current && !repositorySyncOperationsRef.current.has(repository?.id ?? '')) void refresh({ manual: true });
@@ -1109,7 +1124,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [openRepository, quickOpen, refresh, refreshFilesOnly, repository, runTabKeyboardAction, shortcuts]);
+  }, [welcomeReplay, openRepository, quickOpen, refresh, refreshFilesOnly, repository, runTabKeyboardAction, shortcuts]);
 
   // One guard for every worktree's drafts. Per-editor listeners could only see
   // the file currently on screen, so switching tabs would drop the warning.
@@ -2060,14 +2075,47 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     recordOpenedRepository(await opentig.repository.relocateRecent(option.recent.id, path), option.recent.id);
   };
 
-  const browserRepositoryDialog = <OpenRepositoryDialog confirmLabel="Add repository"
-    description={window.opentigDesktop ? 'Choose a Git repository to add. It uses your default GitHub account, or another connected account that can access it.' : 'Choose a Git repository on your server to add. It uses your default GitHub account, or another connected account that can access it.'} open={openRepositoryDialog} recent={bootstrap?.recentRepositories} onPick={window.opentigDesktop ? opentig.repository.select : undefined} onOpenChange={setOpenRepositoryDialog} onBrowse={opentig.repository.browseDirectories} onOpen={async (path) => {
+  // A clone keeps running on the server across reloads; offer its result again.
+  const bootstrapped = Boolean(bootstrap);
+  const addPreparedRepositoryRef = useRef(addPreparedRepository);
+  useEffect(() => { addPreparedRepositoryRef.current = addPreparedRepository; });
+  useEffect(() => {
+    if (bootstrapped) void resumeBackgroundClone(repository => void addPreparedRepositoryRef.current(repository));
+  }, [bootstrapped]);
+  const openSettings = (section: SettingsSection) => { setSettingsSection(section); setSettingsOpen(true); };
+  const showOnboarding = () => { setSettingsOpen(false); setWelcomeReplay(true); setChecklistReplay(true); };
+  const dismissChecklist = () => {
+    setChecklistReplay(false);
+    if (bootstrap?.onboardingVersion !== 0) return;
+    setBootstrap(current => current ? { ...current, onboardingVersion: ONBOARDING_VERSION } : current);
+    void opentig.app.completeOnboarding().catch(reason => reportError('Could not save onboarding progress', reason));
+  };
+  // Every way in (open, clone, find) uses the account the regular Open dialog would.
+  const addRepositoryPath = async (path: string) => addPreparedRepository(await opentig.repository.preparePath(path));
+  async function addPreparedRepository(prepared: RepositoryInfo) {
     addingRepository.current = true;
     try {
-      const prepared = await opentig.repository.preparePath(path);
       const { revision } = await opentig.github.repositoryAccount(prepared.id, false);
       recordOpenedRepository(await opentig.repository.completeSetup(prepared.id, revision));
+      setWelcomeReplay(false);
     } finally { addingRepository.current = false; }
+  }
+  const knownRepositoryPaths = (bootstrap?.recentRepositories ?? []).flatMap(item => [item.path, item.commonDir.replace(/[\\/]\.git[\\/]?$/i, '')]);
+  const latestRepository = bootstrap?.recentRepositories.reduce<RecentRepository | null>((latest, item) => !latest || item.lastOpenedAt > latest.lastOpenedAt ? item : latest, null);
+  const defaultCloneParent = lastCloneParent() ?? (latestRepository ? parentFolderPath(latestRepository.commonDir.replace(/[\\/]\.git[\\/]?$/i, '')) : null);
+  const onboardingDialogs = <>
+    {cloneOpen && <Suspense fallback={null}><CloneRepositoryDialog open onOpenChange={setCloneOpen} defaultParent={defaultCloneParent} onBrowse={opentig.repository.browseDirectories}
+      onPick={window.opentigDesktop ? opentig.repository.select : undefined} onCloned={addPreparedRepository} /></Suspense>}
+    {findOpen && <Suspense fallback={null}><FindRepositoriesDialog open onOpenChange={setFindOpen} known={knownRepositoryPaths} onBrowse={opentig.repository.browseDirectories}
+      onAdd={addRepositoryPath} onOpenFolder={() => setOpenRepositoryDialog(true)} /></Suspense>}
+  </>;
+  const welcome = bootstrap && <Welcome recent={bootstrap.recentRepositories} preferences={bootstrap.preferences} onPreference={updatePreference}
+    onOpen={openRepository} onClone={() => setCloneOpen(true)} onFind={() => setFindOpen(true)} onRecent={(id) => { setWelcomeReplay(false); void selectRecent(id); }}
+    onSettings={openSettings} onBack={repository ? () => setWelcomeReplay(false) : undefined} />;
+
+  const browserRepositoryDialog = <OpenRepositoryDialog confirmLabel="Add repository" onClone={() => { setOpenRepositoryDialog(false); setCloneOpen(true); }}
+    description={window.opentigDesktop ? 'Choose a Git repository to add. It uses your default GitHub account, or another connected account that can access it.' : 'Choose a Git repository on your server to add. It uses your default GitHub account, or another connected account that can access it.'} open={openRepositoryDialog} recent={bootstrap?.recentRepositories} onPick={window.opentigDesktop ? opentig.repository.select : undefined} onOpenChange={setOpenRepositoryDialog} onBrowse={opentig.repository.browseDirectories} onOpen={async (path) => {
+    await addRepositoryPath(path);
   }} />;
 
   if (!bootstrap) {
@@ -2077,8 +2125,10 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     return (
       <TooltipProvider>
         {browserRepositoryDialog}
+        {onboardingDialogs}
+        {settingsOpen && <Suspense fallback={null}><WelcomeSettings preferences={bootstrap.preferences} onPreference={updatePreference} open onOpenChange={setSettingsOpen} section={settingsSection} onSectionChange={setSettingsSection} onOnboarding={showOnboarding} /></Suspense>}
         <div className="fixed right-4 top-4 z-40"><DesktopUpdateIndicator /></div>
-        <Welcome recent={bootstrap.recentRepositories} onOpen={openRepository} onRecent={(id) => void selectRecent(id)} />
+        {welcome}
       </TooltipProvider>
     );
   }
@@ -2092,6 +2142,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     <ShortcutsProvider shortcuts={shortcuts}>
     <TooltipProvider>
       {browserRepositoryDialog}
+      {onboardingDialogs}
+      {welcomeReplay && <div className="welcome-overlay">{welcome}</div>}
       {quickOpen && (
         <Suspense fallback={null}>
           <QuickOpenDialog
@@ -2206,8 +2258,9 @@ export default function App({ initialView, initialSelection, pullRequestCreation
         <CommitAuthorshipDialog key={repository.id} repository={repository} open onOpenChange={(open) => { if (!open) setAuthorshipRepositoryId(null); }} />
       )}
       {branchPush.remoteChoice && <PublishRemoteDialog key={branchPush.remoteChoice.id} choice={branchPush.remoteChoice} onSelect={branchPush.selectRemote} />}
-      <div className="app-shell" data-mobile-pane={mobilePane}>
+      <div className="app-shell" data-mobile-pane={mobilePane} inert={welcomeReplay || undefined}>
         <Toolbar
+          onOnboarding={showOnboarding}
           mobileBackLabel={mobilePane !== 'list' ? `Back to ${view === 'prs' ? 'PRs' : view}` : undefined}
           onMobileBack={() => setMobilePane('list')}
           repository={repository}
@@ -2406,6 +2459,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
               )}
               </div>
             </div>
+            {!welcomeReplay && (bootstrap.onboardingVersion === 0 || checklistReplay) && <GettingStartedChecklist key={repository.id} repository={repository} onDismiss={dismissChecklist} onSettings={openSettings} />}
           </aside>
           <section className="viewer-pane">
             <ErrorBoundary

@@ -1,4 +1,5 @@
 import type { GitHubAccountDetection, GitHubAccountSelection, GitHubAccountsStatus, GitHubRepositoryAccount } from './github-accounts';
+import type { CloneJob, CloneRepositoryInput, GitIdentityInput, GitToolStatus } from './onboarding';
 import type { RemoteAccessProblem } from './repository-access';
 import type { CommitAuthorship, SetCommitAuthorshipInput } from './commit-authorship';
 import type { SerializedOperationError } from './errors';
@@ -484,6 +485,7 @@ export interface OpenTigCapabilities {
 }
 
 export interface BootstrapData {
+  onboardingVersion?: number;
   recentRepositories: RecentRepository[];
   repositoryProjects: RepositoryProject[];
   filesTreeStates: FilesTreeState[];
@@ -510,6 +512,10 @@ export interface ServerDirectoryListing {
 export interface OpenTigApi {
   app: {
     bootstrap(): Promise<BootstrapData>;
+    gitStatus(): Promise<GitToolStatus>;
+    /** Sets user.name/email globally; refuses to replace an existing global identity. */
+    setGlobalGitIdentity(input: GitIdentityInput): Promise<void>;
+    completeOnboarding(): Promise<number>;
     capabilities(): Promise<OpenTigCapabilities>;
     setPreferences(preferences: Partial<Preferences>): Promise<Preferences>;
     setFilesTreeExpandedPaths(repositoryId: string, expandedPaths: string[]): Promise<void>;
@@ -531,6 +537,10 @@ export interface OpenTigApi {
     openPath(path: string): Promise<RepositoryInfo>;
     /** Inspect a candidate without adding it or changing the active repository. */
     preparePath(path: string): Promise<RepositoryInfo>;
+    /** Starts a server-side clone job that survives client disconnects. */
+    clone(input: CloneRepositoryInput): Promise<CloneJob>;
+    cloneStatus(jobId: string): Promise<CloneJob | null>;
+    cancelClone(jobId: string): Promise<void>;
     /** Add/activate the candidate after reviewing its account configuration. */
     completeSetup(id: string, accountRevision: number): Promise<RepositoryInfo>;
     /** Browse folders on the server before opening a repository. Defaults to the server home. */
@@ -663,6 +673,8 @@ export interface OpenTigApi {
 export type IpcResult<T> = { ok: true; value: T } | { ok: false; error: SerializedOperationError };
 
 export const IPC = {
+  gitStatus: 'app:git-status', gitSetGlobalIdentity: 'app:git-set-global-identity', completeOnboarding: 'app:complete-onboarding',
+  repositoryClone: 'repository:clone', repositoryCloneStatus: 'repository:clone-status', repositoryCancelClone: 'repository:cancel-clone',
   bootstrap: 'app:bootstrap', capabilities: 'app:capabilities', preferences: 'app:preferences', filesTreeStateUpdate: 'app:files-tree-state', openFilesStateUpdate: 'app:open-files-state', projectCreate: 'projects:create', projectRename: 'projects:rename', projectRemove: 'projects:remove', projectAssign: 'projects:assign', projectMove: 'projects:move', projectMoveRepository: 'projects:move-repository',
   repositoryPreparePath: 'repository:prepare-path', repositoryCompleteSetup: 'repository:complete-setup', repositoryOpenPath: 'repository:open-path', repositoryBrowseDirectories: 'repository:browse-directories', repositoryOpenRecent: 'repository:open-recent', repositoryRelocateRecent: 'repository:relocate-recent', repositoryForget: 'repository:forget', repositoryStatus: 'repository:status', repositoryFiles: 'repository:files', repositoryDirectoryEntries: 'repository:directory-entries',
   repositoryReadFile: 'repository:read-file', repositoryReadImage: 'repository:read-image', repositoryGetFavicon: 'repository:favicon', repositoryWriteFile: 'repository:write-file', repositoryAbsolutePath: 'repository:absolute-path',

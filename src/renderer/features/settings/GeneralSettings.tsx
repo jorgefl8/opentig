@@ -1,8 +1,5 @@
 import { useId, useRef, useState, type ReactNode } from 'react';
-import {
-  IconCheck, IconDeviceDesktop, IconFolder, IconHierarchy2, IconList,
-  IconMoon, IconRefresh, IconSun, IconTypography,
-} from '@tabler/icons-react';
+import { IconCheck, IconDeviceDesktop, IconFolder, IconHierarchy2, IconList, IconMoon, IconRefresh, IconRocket, IconSun, IconTypography } from '@tabler/icons-react';
 import type { ChangesLayoutPreference, MonoFontPreference, Preferences, ThemePreference, UiFontPreference } from '../../../shared/contracts';
 import { MAX_REMOTE_FETCH_INTERVAL_SECONDS, MIN_REMOTE_FETCH_INTERVAL_SECONDS, REMOTE_FETCH_INTERVAL_STEP_SECONDS } from '../../../shared/remote-fetch';
 import { Button } from '@/components/ui/button';
@@ -93,8 +90,9 @@ function intervalLabel(seconds: number): string {
   return `${seconds} seconds`;
 }
 
-export function GeneralSettings({ preferences, onPreference, showRepositoryOptions = true }: {
+export function GeneralSettings({ preferences, onPreference, showRepositoryOptions = true, onOnboarding }: {
   preferences: Preferences; onPreference(partial: Partial<Preferences>): void; showRepositoryOptions?: boolean;
+  onOnboarding?(): void;
 }) {
   const id = useId();
   const intervalTrigger = useRef<HTMLButtonElement>(null);
@@ -107,6 +105,7 @@ export function GeneralSettings({ preferences, onPreference, showRepositoryOptio
 
   return <div className="settings-general">
     <div className="settings-general-content">
+      {onOnboarding && <section className="settings-general-group" aria-labelledby={`${id}-onboarding`}><h3 id={`${id}-onboarding`}><IconRocket aria-hidden="true" />Getting started</h3><SettingRow label="Onboarding" description="Show the start screen and the first-commit checklist again."><Button variant="outline" size="sm" onClick={onOnboarding}>Repeat onboarding</Button></SettingRow></section>}
       <section className="settings-general-group" aria-labelledby={`${id}-appearance`}>
         <h3 id={`${id}-appearance`}><IconSun aria-hidden="true" />Appearance</h3>
         <SettingRow label="Theme" description="Follow your system or choose a theme.">
