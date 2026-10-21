@@ -163,6 +163,17 @@ jobs:
         run: pnpm exec vitest run packages/server/src/service-manager.integration.test.ts packages/server/src/cli-command.test.ts packages/server/src/service-manager.test.ts packages/server/src/service-eligibility.test.ts packages/server/src/service-npm.test.ts packages/server/src/service-update-worker.test.ts
         env:
           OPENTIG_SERVICE_INTEGRATION: '1'
+      - name: Locate npm cache
+        id: npm-cache
+        shell: bash
+        run: echo "dir=$(npm config get cache)" >> "$GITHUB_OUTPUT"
+      # npx resolves the packed CLI's runtime dependency tree from the registry;
+      # reusing npm's content cache avoids downloading it again on every run.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.npm-cache.outputs.dir }}
+          key: npm-packed-cli-${{ runner.os }}-${{ hashFiles('packages/server/package.json') }}
+          restore-keys: npm-packed-cli-${{ runner.os }}-
       - name: Run packed CLI with npx
         shell: bash
         run: |
