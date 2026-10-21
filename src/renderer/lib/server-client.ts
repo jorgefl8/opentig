@@ -44,6 +44,9 @@ export function createOpenTigServerClient(options: ServerClientOptions = {}): Op
   const api: OpenTigServerApi = {
     app: {
       bootstrap,
+      gitStatus: () => invoke(IPC.gitStatus),
+      setGlobalGitIdentity: (input) => invoke(IPC.gitSetGlobalIdentity, input),
+      completeOnboarding: () => invoke(IPC.completeOnboarding),
       capabilities: () => invoke(IPC.capabilities),
       setPreferences: (preferences) => invoke(IPC.preferences, preferences),
       setFilesTreeExpandedPaths: (repositoryId, expandedPaths) => invoke(IPC.filesTreeStateUpdate, repositoryId, expandedPaths),
@@ -58,6 +61,9 @@ export function createOpenTigServerClient(options: ServerClientOptions = {}): Op
       moveRepository: (repositoryKey, toIndex) => invoke(IPC.projectMoveRepository, repositoryKey, toIndex),
     },
     repository: {
+      clone: (input) => invoke(IPC.repositoryClone, input),
+      cloneStatus: (id) => invoke(IPC.repositoryCloneStatus, id),
+      cancelClone: (id) => invoke(IPC.repositoryCancelClone, id),
       preparePath: (path) => invoke(IPC.repositoryPreparePath, path),
       completeSetup: (id, revision) => invoke(IPC.repositoryCompleteSetup, id, revision),
       openPath: (path) => invoke(IPC.repositoryOpenPath, path),

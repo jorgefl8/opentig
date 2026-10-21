@@ -116,6 +116,9 @@ export const opentig: OpenTigApi = {
       document.documentElement.style.zoom = String(factor);
     },
     setTitleBarTheme: noop,
+    gitStatus: async () => ({ state: "ready", platform: "other", version: "2.47.0" }),
+    setGlobalGitIdentity: disabled,
+    completeOnboarding: async () => 1,
   },
   clipboard: { readFilePaths: async () => [], readImagePng: async () => null },
   projects: group<OpenTigApi["projects"]>({}),

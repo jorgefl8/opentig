@@ -1,3 +1,7 @@
+import { homedir } from 'node:os';
+import { delimiter } from 'node:path';
+import { CliEnvironment } from '../ai/CliEnvironment';
+import type { GitToolStatus } from '../../shared/onboarding';
 import { redactSensitiveText } from '../../shared/redaction';
 import { execa } from 'execa';
 import { GitOperationError } from '../../shared/errors';
@@ -15,6 +19,8 @@ export interface GitOutput {
 }
 
 export interface RunOptions {
+  signal?: AbortSignal;
+  onStderr?: (chunk: string) => void;
   publication?: { repositoryId: string; id: string; remote?: string };
   managedSecrets?: string[];
   managed?: boolean;
@@ -44,6 +50,27 @@ export class GitProcess {
   private readonly reads = new ReadSingleFlight();
   private readonly repositoryScopes = new Map<string, string>();
   private readonly invalidationListeners = new Set<(scope: string) => void>();
+  private refreshedPath: string | undefined;
+
+  async status(): Promise<GitToolStatus> {
+    const platform = (['win32', 'darwin', 'linux'] as const).find(value => value === process.platform) ?? 'other';
+    const check = () => this.run(homedir(), ['--version'], { operation: 'git-status', readOnly: true, timeoutMs: 5_000 });
+    try {
+      let output: GitOutput;
+      try { output = await check(); } catch (error) {
+        // Git installed after OpenTig started is only on the refreshed login PATH.
+        // Adopt that PATH for later commands only when it actually finds Git.
+        if (!(error instanceof GitOperationError && error.detail.code === 'GIT_NOT_FOUND')) throw error;
+        const previous = this.refreshedPath;
+        const snapshot = await new CliEnvironment().get(true);
+        this.refreshedPath = [...new Set([...snapshot.refreshedPath, ...snapshot.inheritedPath])].join(delimiter);
+        try { output = await check(); } catch (retryError) { this.refreshedPath = previous; throw retryError; }
+      }
+      return { state: 'ready', version: output.stdout.toString('utf8').trim().replace(/^git version\s+/, ''), platform };
+    } catch (error) {
+      return { state: error instanceof GitOperationError && error.detail.code === 'GIT_NOT_FOUND' ? 'missing' : 'error', message: error instanceof Error ? error.message : 'Could not check Git.', platform };
+    }
+  }
   private readonly writeQueues = new Map<string, Promise<void>>();
   private readonly activeChildren = new Set<number>();
   private readonly activeControllers = new Set<AbortController>();
@@ -172,6 +199,10 @@ export class GitProcess {
         LC_ALL: 'C',
       }).filter((entry): entry is [string, string] => entry[1] !== undefined),
     );
+    if (this.refreshedPath) {
+      for (const key of Object.keys(environment)) if (key.toUpperCase() === 'PATH') delete environment[key];
+      environment.PATH = this.refreshedPath;
+    }
     if (options.managed) for (const key of Object.keys(environment)) {
       if (/^(GH_TOKEN|GITHUB_TOKEN|GH_DEBUG|SSLKEYLOGFILE|GIT_SSL_NO_VERIFY|GIT_ASKPASS|SSH_ASKPASS|GIT_CONFIG.*|GIT_TRACE.*|GIT_CURL_VERBOSE)$/i.test(key)) delete environment[key];
     }
@@ -204,13 +235,16 @@ export class GitProcess {
         cleanup: true,
         killDescendants: true,
         timeout: timeoutMs,
-        cancelSignal: AbortSignal.any([outputLimit.signal, lifecycle.signal]),
+        cancelSignal: AbortSignal.any([outputLimit.signal, lifecycle.signal, ...(options.signal ? [options.signal] : [])]),
         input: options.stdin ?? Buffer.alloc(0),
         encoding: 'buffer',
         stripFinalNewline: false,
         maxBuffer: maxOutputBytes,
         stdout: enforceCombinedLimit,
-        stderr: enforceCombinedLimit,
+        stderr: options.onStderr ? function* (chunk: Uint8Array) {
+          options.onStderr?.(sanitize(Buffer.from(chunk).toString('utf8')));
+          yield* enforceCombinedLimit(chunk);
+        } : enforceCombinedLimit,
         reject: false,
       });
       childPid = subprocess.pid;
@@ -219,6 +253,7 @@ export class GitProcess {
       const stdout = options.managed ? Buffer.from(sanitize(Buffer.from(result.stdout).toString('utf8'))) : Buffer.from(result.stdout);
       const stderr = Buffer.from(sanitize(Buffer.from(result.stderr).toString('utf8')));
 
+      if (options.signal?.aborted) throw new GitOperationError({ code: 'UNKNOWN', operation: options.operation, message: 'Git operation cancelled.' });
       if (overLimit || result.isMaxBuffer) {
         if (options.truncateOverflow) return { stdout, stderr, exitCode: 0, truncated: true };
         throw new GitOperationError({ code: 'OUTPUT_LIMIT', operation: options.operation, message: 'Git output exceeded the safety limit.' });

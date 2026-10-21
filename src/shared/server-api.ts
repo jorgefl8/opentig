@@ -4,6 +4,9 @@ import type { OpenTigApi } from './contracts';
 export interface OpenTigServerApi {
   app: Pick<OpenTigApi['app'],
     | 'bootstrap'
+    | 'gitStatus'
+    | 'setGlobalGitIdentity'
+    | 'completeOnboarding'
     | 'capabilities'
     | 'setPreferences'
     | 'setFilesTreeExpandedPaths'
