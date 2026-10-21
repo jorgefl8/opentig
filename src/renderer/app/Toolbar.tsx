@@ -36,6 +36,7 @@ import { openOnGitHub } from '@/features/pulls/gh-utils';
 import { BranchPullRequestMenu } from './BranchPullRequestMenu';
 
 export interface ToolbarProps {
+  onOnboarding?(): void;
   mobileBackLabel?: string | undefined;
   onMobileBack?(): void;
   repository: RepositoryInfo; recent: BootstrapData['recentRepositories']; repositoryProjects: RepositoryProject[]; status: RepositoryStatus | null;
@@ -446,6 +447,7 @@ export function Toolbar(props: ToolbarProps) {
       {props.settingsOpen && (
         <Suspense fallback={null}>
           <SettingsDialog
+            onOnboarding={props.onOnboarding}
             repository={props.repository}
             preferences={props.preferences}
             onPreference={props.onPreference}

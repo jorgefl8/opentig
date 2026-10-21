@@ -59,7 +59,7 @@ With **Node.js 24+** and **Git** installed:
 npx --yes @opentig/cli@latest
 ```
 
-This starts OpenTig locally and opens a one-use browser pairing link. Choose an existing repository in the UI.
+This starts OpenTig locally and opens a one-use browser pairing link. Open, clone, or find a repository from the start screen.
 
 For a server without a desktop:
 
@@ -74,7 +74,7 @@ Use `npx --yes @opentig/cli@latest service install` to keep the CLI running afte
 
 ## Documentation and contributing
 
-OpenTig opens existing repositories; cloning and initial remote setup remain Git CLI tasks. GitHub features require `gh` on the host. Normal Git work needs no OpenTig account or hosted backend; optional AI can send the supplied context to its provider.
+OpenTig opens existing repositories and clones HTTPS or SSH repository URLs into a folder you choose. Initializing a new repository remains a Git CLI task. GitHub features require `gh` on the host. Normal Git work needs no OpenTig account or hosted backend; optional AI can send the supplied context to its provider.
 
 - [Website documentation](https://opentig.com/docs/): installation and CLI setup.
 - [Feature guide](docs/features.md): daily workflows, history, branches, editing, and shortcuts.

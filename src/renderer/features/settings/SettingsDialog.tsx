@@ -47,8 +47,9 @@ const SETTINGS_COPY: Record<Exclude<SettingsSection, 'webAccess'>, { title: stri
   ai: { title: 'AI assistance', description: 'Local harness and model used to suggest commit messages and pull-request drafts.' },
   diagnostics: { title: 'Diagnostics', description: 'Recent local failures on this machine. Prompts and file contents are never recorded.' },
 };
-export function SettingsDialog({ preferences, onPreference, open, onOpenChange, section: requestedSection, onSectionChange, repository = null }: {
+export function SettingsDialog({ preferences, onPreference, open, onOpenChange, section: requestedSection, onSectionChange, repository = null, onOnboarding }: {
   repository?: RepositoryInfo | null;
+  onOnboarding?: (() => void) | undefined;
   preferences: Preferences;
   onPreference(partial: Partial<Preferences>): void | Promise<boolean>;
   open: boolean;
@@ -176,7 +177,7 @@ export function SettingsDialog({ preferences, onPreference, open, onOpenChange, 
                   exit={reduceMotion ? { opacity: 1 } : { opacity: 0, y: -5 }}
                   transition={settingsTransition}
                 >
-              {section === 'github' ? <GitHubSettings key={repository?.id} repository={repository} /> : section === 'general' ? <GeneralSettings preferences={preferences} onPreference={onPreference} /> : section === 'updates' ? <UpdateSettings /> : section === 'shortcuts' ? <ShortcutsSettings preferences={preferences} onPreference={onPreference} /> : section === 'webAccess' ? <WebAccessSettings /> : section === 'diagnostics' ? <>
+              {section === 'github' ? <GitHubSettings key={repository?.id} repository={repository} /> : section === 'general' ? <GeneralSettings preferences={preferences} onPreference={onPreference} {...(onOnboarding ? { onOnboarding } : {})} /> : section === 'updates' ? <UpdateSettings /> : section === 'shortcuts' ? <ShortcutsSettings preferences={preferences} onPreference={onPreference} /> : section === 'webAccess' ? <WebAccessSettings /> : section === 'diagnostics' ? <>
                 <div className="settings-field">
                   <div className="settings-field-label">
                     <strong>Problem history</strong>

@@ -139,3 +139,16 @@ describe('repository selection and asynchronous navigation', () => {
     await click('Open repository'); expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 });
+
+it('selects the current non-Git folder as a clone destination', async () => {
+  await render({ directory: true, confirmLabel: 'Use this folder' });
+  expect(button('Use this folder').disabled).toBe(false);
+  await click('Use this folder');
+  expect(onOpen).toHaveBeenCalledWith('/workspace');
+});
+it('selects a non-Git child folder without opening a repository', async () => {
+  await render({ directory: true, confirmLabel: 'Use this folder' });
+  await click('Select folder notes');
+  await click('Use this folder');
+  expect(onOpen).toHaveBeenCalledWith('/workspace/notes');
+});
