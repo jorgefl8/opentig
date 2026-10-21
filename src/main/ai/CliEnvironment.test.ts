@@ -50,8 +50,9 @@ describe('CLI user environment', () => {
     await expect(readUserEnvironment({ platform: process.platform, home, shell, env: { PATH: '/usr/bin:/bin' } })).rejects.toThrow();
   }, 8_000);
   // Opt-in: a cold system PowerShell costs seconds per run; the fake-timer
-  // CliEnvironment.windows-query tests cover the query logic itself.
-  it.skipIf(process.platform !== 'win32' || process.env.OPENTIG_POWERSHELL_INTEGRATION !== '1')('reads real Windows persisted environment with the system PowerShell', async () => {
+  // CliEnvironment.windows-query tests cover the query logic itself. A cold
+  // start on a CI runner can exceed the 15 s query limit, so allow one warm retry.
+  it.skipIf(process.platform !== 'win32' || process.env.OPENTIG_POWERSHELL_INTEGRATION !== '1')('reads real Windows persisted environment with the system PowerShell', { retry: 1, timeout: 40_000 }, async () => {
     const env = await readUserEnvironment({ platform: process.platform, home: os.homedir(), env: cleanEnvironment(process.env) });
     expect(typeof env.PATH).toBe('string'); expect(env).not.toHaveProperty('HOME');
   });
