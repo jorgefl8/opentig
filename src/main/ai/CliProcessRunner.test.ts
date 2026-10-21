@@ -5,22 +5,24 @@ import { describe, expect, it } from 'vitest';
 import { CliProcessRunner } from './CliProcessRunner';
 
 describe('CliProcessRunner', () => {
-  it('passes stdin and captures output', async () => {
+  it('passes stdin and environment changes and returns separate streams with a nonzero exit code', async () => {
     const runner = new CliProcessRunner();
-    const result = await runner.run(process.execPath, ['-e', 'process.stdin.pipe(process.stdout)'], { stdin: 'staged context', timeoutMs: 5_000 });
-    expect(result).toMatchObject({ exitCode: 0, stdout: 'staged context' });
-  });
-
-  it('captures stderr separately', async () => {
-    const runner = new CliProcessRunner();
-    const result = await runner.run(process.execPath, ['-e', 'process.stderr.write("problem")'], { timeoutMs: 5_000 });
-    expect(result).toMatchObject({ exitCode: 0, stdout: '', stderr: 'problem' });
-  });
-
-  it('returns a nonzero exit code without exposing it as a spawn failure', async () => {
-    const runner = new CliProcessRunner();
-    const result = await runner.run(process.execPath, ['-e', 'process.exit(7)'], { timeoutMs: 5_000 });
-    expect(result.exitCode).toBe(7);
+    const script = [
+      'let input = ""',
+      'process.stdin.on("data", (chunk) => { input += chunk; })',
+      'process.stdin.on("end", () => {',
+      '  process.stdout.write(input)',
+      '  process.stderr.write(`${process.env.OPENTIG_KEEP ?? ""}|${process.env.OPENTIG_REMOVE ?? "missing"}`)',
+      '  process.exitCode = 7',
+      '})',
+    ].join('\n');
+    const result = await runner.run(process.execPath, ['-e', script], {
+      stdin: 'staged context',
+      env: { OPENTIG_KEEP: 'kept', OPENTIG_REMOVE: 'removed' },
+      removeEnv: ['OPENTIG_REMOVE'],
+      timeoutMs: 5_000,
+    });
+    expect(result).toMatchObject({ exitCode: 7, stdout: 'staged context', stderr: 'kept|missing' });
   });
 
   it('bounds process output', async () => {
@@ -65,16 +67,6 @@ describe('CliProcessRunner', () => {
     await expect(runner.run(process.execPath, ['-e', 'process.exit(0)'])).rejects.toMatchObject({
       detail: { code: 'AI_CANCELLED' },
     });
-  });
-
-  it('merges and removes environment variables', async () => {
-    const runner = new CliProcessRunner();
-    const result = await runner.run(process.execPath, ['-e', 'process.stdout.write(`${process.env.OPENTIG_KEEP ?? ""}|${process.env.OPENTIG_REMOVE ?? "missing"}`)'], {
-      env: { OPENTIG_KEEP: 'kept', OPENTIG_REMOVE: 'removed' },
-      removeEnv: ['OPENTIG_REMOVE'],
-      timeoutMs: 5_000,
-    });
-    expect(result.stdout).toBe('kept|missing');
   });
 
   it('kills descendant processes when cancelled', async () => {

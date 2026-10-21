@@ -11,7 +11,8 @@ const refs = vi.hoisted(() => ({ pushContext: vi.fn() }));
 vi.mock('@/lib/opentig-api', () => ({ opentig: { refs } }));
 vi.mock('motion/react', async original => ({ ...await original<typeof import('motion/react')>(), useReducedMotion: () => true }));
 const context: PublicationContext = { id: 'review', repositoryId: 'repo', branch: 'main', oid: 'a'.repeat(40), targetRef: 'refs/heads/main', remote: 'origin', remotes: ['origin'], urls: ['https://github.com/org/demo.git'], mode: 'external', login: null, hasUpstream: true };
-const settle = () => new Promise(resolve => setTimeout(resolve, 20));
+// Let chained server mocks, query notifications, and React work run without sleeping for real time.
+const settle = async () => { for (let hop = 0; hop < 5; hop++) await new Promise(resolve => setTimeout(resolve, 0)); };
 beforeEach(() => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
   vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });

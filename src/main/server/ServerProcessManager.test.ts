@@ -87,8 +87,8 @@ describe('ServerProcessManager', () => {
     expect(manager.current).toMatchObject({ host: '0.0.0.0', port: 7100, origin: 'http://127.0.0.1:7100' });
     expect(await manager.start()).toMatchObject({ port: 7100 });
     fixture.children[0]!.crash(1);
-    await vi.waitFor(() => expect(fixture.children).toHaveLength(2));
-    await vi.waitFor(() => expect(manager.current?.port).toBe(7100));
+    await vi.waitFor(() => expect(fixture.children).toHaveLength(2), { timeout: 10_000, interval: 5 });
+    await vi.waitFor(() => expect(manager.current?.port).toBe(7100), { timeout: 10_000, interval: 5 });
     const bootstrap = fixture.children[1]!.messages[0] as Extract<OpenTigUtilityParentMessage, { type: 'bootstrap' }>;
     expect(bootstrap.config).toMatchObject({ host: '0.0.0.0', port: 7100, browserAccessEnabled: true });
     await manager.stop();
@@ -134,7 +134,9 @@ describe('ServerProcessManager', () => {
       const behavior: ChildBehavior = failure === 'timeout' ? () => {} : failure === 'early-exit' ? (child) => child.crash(17) : readyBehavior;
       const fixture = await createFixture([behavior]);
       const failureError = Object.assign(new Error('Diagnostic failure'), { code: 'DIAGNOSTIC_TEST' });
-      const options = { ...fixture.options, startupTimeoutMs: 30 };
+      // Only the timeout case depends on the deadline; every other failure settles
+      // through microtasks first, so keep the fixture's generous deadline for them.
+      const options = { ...fixture.options, ...(failure === 'timeout' ? { startupTimeoutMs: 30 } : {}) };
       if (failure === 'fork') options.fork = () => { throw failureError; };
       if (failure === 'bootstrap') options.fork = (...args) => {
         const child = fixture.options.fork(...args);
@@ -365,8 +367,10 @@ async function createFixture(behaviors: ChildBehavior[], ignoreShutdown = false)
       env: { PATH: 'test-path' },
       fork,
       probe,
-      startupTimeoutMs: 1_000,
-      shutdownTimeoutMs: 50,
+      // Fake utilities settle through microtasks, so these deadlines only bound a
+      // broken test; generous values keep loaded runners from tripping them.
+      startupTimeoutMs: 10_000,
+      shutdownTimeoutMs: 10_000,
     },
   };
 }
@@ -398,7 +402,7 @@ function bootstrapHost(child: FakeUtility): string {
   return (child.messages[0] as Extract<OpenTigUtilityParentMessage, { type: 'bootstrap' }>).config.host;
 }
 
-async function waitFor(predicate: () => boolean, timeoutMs = 1_000): Promise<void> {
+async function waitFor(predicate: () => boolean, timeoutMs = 10_000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (!predicate()) {
     if (Date.now() >= deadline) throw new Error('Timed out waiting for condition.');

@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { backupPathFor, writeFileAtomically } from './atomicWrite';
+import { writeFileAtomically } from './atomicWrite';
 
 const directories: string[] = [];
 
@@ -35,9 +35,5 @@ describe('writeFileAtomically', () => {
     const file = await tempFile('admin-token');
     await writeFileAtomically(file, 'token-value\n');
     expect(await readFile(file, 'utf8')).toBe('token-value\n');
-  });
-
-  it('names the backup beside the document', () => {
-    expect(backupPathFor('C:\\data\\settings.json').replace(/\\/g, '/')).toMatch(/settings\.json\.bak$/);
   });
 });

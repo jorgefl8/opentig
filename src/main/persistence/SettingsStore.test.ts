@@ -89,7 +89,7 @@ describe('SettingsStore AI preferences', () => {
     expect(restarted.preferences).toMatchObject({ commitMessageHarness: 'grok', commitMessageModels: { opencode: 'provider/model', grok: 'grok-test' } });
   });
 
-  it('migrates settings created before AI preferences existed', async () => {
+  it('migrates settings created before AI and shortcut preferences existed', async () => {
     const file = await settingsFile({ preferences: { theme: 'dark', diffView: 'split', sidebarWidth: 360, showDotEnvFiles: true, uiZoom: 100 } });
     const store = new SettingsStore(file);
     await store.load();
@@ -98,15 +98,9 @@ describe('SettingsStore AI preferences', () => {
     expect(store.preferences.monoFont).toBe('jetbrains-mono');
     expect(store.preferences.commitMessageHarness).toBe('codex');
     expect(store.preferences.commitMessageModels).toMatchObject({ codex: 'default', claude: 'default', opencode: 'default' });
-  });
-
-  it('persists the line wrapping preference', async () => {
-    const file = await settingsFile({});
-    const store = new SettingsStore(file);
-    await store.load();
-    await store.setPreferences({ wrapLines: true });
-    expect(store.preferences.wrapLines).toBe(true);
-    expect(await readFile(file, 'utf8')).toContain('"wrapLines": true');
+    expect(store.preferences.shortcutOverrides).toEqual({});
+    expect(store.preferences.doubleControlShortcutEnabled).toBe(true);
+    expect(store.preferences.remoteFetchIntervalSeconds).toBe(30);
   });
 
   it('persists font selections and repairs invalid values', async () => {
@@ -152,15 +146,6 @@ describe('SettingsStore AI preferences', () => {
     }));
     await store.load();
     expect(store.preferences).toMatchObject({ theme: 'dark', diffView: 'unified', wrapLines: true, sidebarWidth: 400, showDotEnvFiles: false, uiZoom: 130 });
-  });
-
-  it('migrates settings created before shortcut preferences existed', async () => {
-    const file = await settingsFile({ preferences: { theme: 'dark', diffView: 'split', sidebarWidth: 360, showDotEnvFiles: true, uiZoom: 100 } });
-    const store = new SettingsStore(file);
-    await store.load();
-    expect(store.preferences.shortcutOverrides).toEqual({});
-    expect(store.preferences.doubleControlShortcutEnabled).toBe(true);
-    expect(store.preferences.remoteFetchIntervalSeconds).toBe(30);
   });
 
   it('persists a remote fetch interval and clamps out-of-range values', async () => {
@@ -387,20 +372,6 @@ describe('SettingsStore Files tree state', () => {
     expect(absent.filesTreeStates).toEqual([]);
     expect(corrupt.filesTreeStates).toEqual([]);
     expect(corrupt.preferences).toMatchObject({ theme: 'dark', diffView: 'split', wrapLines: true, sidebarWidth: 420 });
-  });
-
-  it('coalesces updates until the debounce and persists the latest state', async () => {
-    vi.useFakeTimers();
-    const file = await settingsFile({});
-    const store = new SettingsStore(file);
-    await store.load();
-    store.setFilesTreeExpandedPaths(repositoryId, ['src']);
-    store.setFilesTreeExpandedPaths(repositoryId, ['src', 'docs']);
-    await vi.advanceTimersByTimeAsync(749);
-    expect(JSON.parse(await readFile(file, 'utf8')).filesTreeStates ?? []).toEqual([]);
-    await vi.advanceTimersByTimeAsync(1);
-    await store.flush();
-    expect(JSON.parse(await readFile(file, 'utf8')).filesTreeStates[0].expandedPaths).toEqual(['docs', 'src']);
   });
 
   it('flushes pending state immediately and returns isolated clones', async () => {

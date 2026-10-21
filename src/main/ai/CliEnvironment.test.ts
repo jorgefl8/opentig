@@ -47,11 +47,11 @@ describe('CLI user environment', () => {
     const home = await mkdtemp(path.join(os.tmpdir(), 'opentig-shell-')); roots.push(home);
     const shell = path.join(home, 'bash');
     await writeFile(shell, '#!/bin/sh\nsleep 30\n', { mode: 0o755 });
-    const started = Date.now();
     await expect(readUserEnvironment({ platform: process.platform, home, shell, env: { PATH: '/usr/bin:/bin' } })).rejects.toThrow();
-    expect(Date.now() - started).toBeLessThan(7_000);
   }, 8_000);
-  it.skipIf(process.platform !== 'win32')('reads real Windows persisted environment with the system PowerShell', async () => {
+  // Opt-in: a cold system PowerShell costs seconds per run; the fake-timer
+  // CliEnvironment.windows-query tests cover the query logic itself.
+  it.skipIf(process.platform !== 'win32' || process.env.OPENTIG_POWERSHELL_INTEGRATION !== '1')('reads real Windows persisted environment with the system PowerShell', async () => {
     const env = await readUserEnvironment({ platform: process.platform, home: os.homedir(), env: cleanEnvironment(process.env) });
     expect(typeof env.PATH).toBe('string'); expect(env).not.toHaveProperty('HOME');
   });

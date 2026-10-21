@@ -146,21 +146,25 @@ it('shows the full path on hover only for rows whose name is cut off', async () 
   vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockImplementation(function(this: HTMLElement) { return (this.textContent?.length ?? 0) * 8; });
   const [short, long] = files('', 2).map((change, index) => ({ ...change, path: index ? 'deploy/a-very-long-kubernetes-ingress-name.yaml' : 'deploy/ingress.yaml' }));
   await render([], [short!, long!], 'tree');
+  // Advance the tooltip hover delay on fake timers rather than waiting it out in real time.
+  vi.useFakeTimers();
   const hover = async (path: string) => {
     const trigger = container.querySelector<HTMLElement>(`[aria-label="View changes for ${path}"]`)!;
     await act(async () => {
       for (const type of ['pointerenter', 'pointerover', 'mouseenter', 'mouseover', 'pointermove', 'mousemove']) {
         trigger.dispatchEvent(new MouseEvent(type, { bubbles: type !== 'pointerenter' && type !== 'mouseenter' }));
       }
-      await new Promise((resolve) => setTimeout(resolve, 700));
+      await vi.advanceTimersByTimeAsync(700);
     });
     const tooltip = [...document.querySelectorAll('[data-slot="tooltip-content"]')].map((element) => element.textContent);
     await act(async () => {
       for (const type of ['pointerleave', 'mouseleave', 'pointerout', 'mouseout']) trigger.dispatchEvent(new MouseEvent(type, { bubbles: type.endsWith('out') }));
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      await vi.advanceTimersByTimeAsync(50);
     });
     return tooltip;
   };
-  expect(await hover('deploy/ingress.yaml')).not.toContain('deploy/ingress.yaml');
-  expect(await hover('deploy/a-very-long-kubernetes-ingress-name.yaml')).toContain('deploy/a-very-long-kubernetes-ingress-name.yaml');
+  try {
+    expect(await hover('deploy/ingress.yaml')).not.toContain('deploy/ingress.yaml');
+    expect(await hover('deploy/a-very-long-kubernetes-ingress-name.yaml')).toContain('deploy/a-very-long-kubernetes-ingress-name.yaml');
+  } finally { vi.useRealTimers(); }
 });

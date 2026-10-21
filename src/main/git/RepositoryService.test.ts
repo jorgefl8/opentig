@@ -1,9 +1,9 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdtemp, readFile, realpath, rename, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdtemp, readFile, realpath, rename, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 import { SettingsStore } from '../persistence/SettingsStore';
 import { GitProcess } from './GitProcess';
 import { RepositoryService } from './RepositoryService';
@@ -212,16 +212,31 @@ describe('RepositoryService change stats', () => {
   });
 });
 
+let seed: Promise<string> | undefined;
+afterAll(async () => { if (seed) await rm(await seed, { recursive: true, force: true, maxRetries: 3 }); });
+
+function seedRepository(): Promise<string> {
+  seed ??= (async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'opentig-status-seed-'));
+    const work = path.join(root, 'work');
+    await execFileAsync('git', ['init', '-b', 'main', work], { windowsHide: true });
+    await execFileAsync('git', ['config', 'user.name', 'OpenTig Test'], { cwd: work, windowsHide: true });
+    await execFileAsync('git', ['config', 'user.email', 'opentig@example.invalid'], { cwd: work, windowsHide: true });
+    await writeFile(path.join(work, 'file.txt'), 'content\n');
+    await execFileAsync('git', ['add', '.'], { cwd: work, windowsHide: true });
+    await execFileAsync('git', ['commit', '-m', 'Initial commit'], { cwd: work, windowsHide: true });
+    return root;
+  })();
+  return seed;
+}
+
 async function repository() {
   const root = await mkdtemp(path.join(os.tmpdir(), 'opentig-status-'));
   directories.push(root);
+  // Copy a per-file seed (including Git objects) so each test owns its repository
+  // without paying for several Git processes, which is slow on Windows.
+  await cp(await seedRepository(), root, { recursive: true });
   const work = path.join(root, 'work');
-  await execFileAsync('git', ['init', '-b', 'main', work], { windowsHide: true });
-  await execFileAsync('git', ['config', 'user.name', 'OpenTig Test'], { cwd: work, windowsHide: true });
-  await execFileAsync('git', ['config', 'user.email', 'opentig@example.invalid'], { cwd: work, windowsHide: true });
-  await writeFile(path.join(work, 'file.txt'), 'content\n');
-  await execFileAsync('git', ['add', '.'], { cwd: work, windowsHide: true });
-  await execFileAsync('git', ['commit', '-m', 'Initial commit'], { cwd: work, windowsHide: true });
   const settings = new SettingsStore(path.join(root, 'settings.json'));
   await settings.load();
   const git = new GitProcess();

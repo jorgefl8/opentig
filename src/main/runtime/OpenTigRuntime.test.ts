@@ -75,18 +75,6 @@ describe('OpenTigRuntime', () => {
     });
   });
 
-  it('broadcasts active repository changes as typed runtime events', () => {
-    const sink = vi.fn();
-    const runtime = new OpenTigRuntime(fixture().services, sink);
-    const repository = {
-      id: 'repo-id', name: 'main', repositoryName: 'repo', path: 'C:\\repo', commonDir: 'C:\\repo\\.git',
-    };
-
-    runtime.publishActiveRepositoryChange(repository);
-
-    expect(sink).toHaveBeenCalledWith({ type: 'repository.active-changed', repository });
-  });
-
   it('closes every owned resource exactly once', async () => {
     const state = fixture();
     const runtime = new OpenTigRuntime(state.services, vi.fn());

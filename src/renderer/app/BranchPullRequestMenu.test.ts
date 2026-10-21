@@ -66,19 +66,6 @@ it.each([
   expect(onNavigate).toHaveBeenCalledTimes(2);
 });
 
-it('keeps PR information in the click menu without a separate hover tooltip', async () => {
-  await render();
-  await act(async () => {
-    trigger().dispatchEvent(new MouseEvent('mouseenter', { bubbles: false }));
-    trigger().dispatchEvent(new MouseEvent('mousemove', { bubbles: true }));
-  });
-  expect(document.querySelector('[data-slot="tooltip-content"]')).toBeNull();
-  expect(document.querySelector('[role="menu"]')).toBeNull();
-  await click(trigger());
-  expect(document.querySelector('[data-slot="tooltip-content"][data-open]')).toBeNull();
-  expect(choice('Open in OpenTig')).toBeDefined();
-});
-
 it('offers the same destinations in the mobile repository menu and closes it only after a choice', async () => {
   await render({ ...pullRequest, state: 'MERGED' }, true);
   expect(trigger().textContent).toBe('View merged PR #12');

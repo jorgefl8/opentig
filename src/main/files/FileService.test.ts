@@ -1,9 +1,9 @@
 import { execFile } from 'node:child_process';
-import { chmod, lstat, mkdtemp, mkdir, readFile, rm, symlink, truncate, unlink, writeFile } from 'node:fs/promises';
+import { chmod, cp, lstat, mkdir, mkdtemp, readFile, rm, symlink, truncate, unlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, describe, expect, it } from 'vitest';
 import type { FileTreeEntry } from '../../shared/git-types';
 import { GitProcess } from '../git/GitProcess';
 import { RepositoryService } from '../git/RepositoryService';
@@ -472,17 +472,32 @@ describe('FileService', () => {
   });
 });
 
+let seed: Promise<string> | undefined;
+afterAll(async () => { if (seed) await rm(await seed, { recursive: true, force: true, maxRetries: 3 }); });
+
+function seedRepository(): Promise<string> {
+  seed ??= (async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'opentig-files-seed-'));
+    const work = path.join(root, 'work');
+    await git(root, ['init', '-b', 'main', work]);
+    await git(work, ['config', 'user.name', 'OpenTig Test']);
+    await git(work, ['config', 'user.email', 'opentig@example.invalid']);
+    await writeFile(path.join(work, '.gitignore'), '.env*\n');
+    await writeFile(path.join(work, 'tracked.txt'), 'tracked\n');
+    await git(work, ['add', '.']);
+    await git(work, ['commit', '-m', 'Initial commit']);
+    return root;
+  })();
+  return seed;
+}
+
 async function createFixture() {
   const root = await mkdtemp(path.join(os.tmpdir(), 'opentig-files-'));
   directories.push(root);
+  // Copy a per-file seed (including Git objects) so each test owns its repository
+  // without paying for several Git processes, which is slow on Windows.
+  await cp(await seedRepository(), root, { recursive: true });
   const work = path.join(root, 'work');
-  await git(root, ['init', '-b', 'main', work]);
-  await git(work, ['config', 'user.name', 'OpenTig Test']);
-  await git(work, ['config', 'user.email', 'opentig@example.invalid']);
-  await writeFile(path.join(work, '.gitignore'), '.env*\n');
-  await writeFile(path.join(work, 'tracked.txt'), 'tracked\n');
-  await git(work, ['add', '.']);
-  await git(work, ['commit', '-m', 'Initial commit']);
 
   const settings = new SettingsStore(path.join(root, 'settings.json'));
   await settings.load();

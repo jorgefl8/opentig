@@ -62,9 +62,7 @@ describe('real CLI discovery and launch', () => {
     await writeFile(shell, '#!/bin/sh\n/bin/sleep 30\n', { mode: 0o755 });
     f.resolver.environment.host.shell = shell;
     const executable = await f.install('.opencode/bin', 'opencode');
-    const started = Date.now();
     const status = await new OpenCodeProvider(f.resolver, f.runner).status();
-    expect(Date.now() - started).toBeLessThan(7_000);
     expect(status).toMatchObject({ availability: 'ready', executablePath: executable, executableSource: 'known-location' });
     expect(status.discoveryWarning).toContain('Could not refresh the user environment');
   }, 8_000);

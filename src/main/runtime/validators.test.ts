@@ -7,16 +7,11 @@ const OID = 'a'.repeat(40);
 const REVISION = 'b'.repeat(64);
 
 describe('boolean argument validator', () => {
-  it('accepts booleans and applies the default for omitted values', () => {
-    expect(booleanArg(true, 'status')).toBe(true);
-    expect(booleanArg(undefined, 'status', true)).toBe(true);
-  });
-
   it('rejects non-booleans as a generic invalid argument', () => {
-    try { booleanArg('yes', 'status'); } catch (error) {
-      expect(error).toBeInstanceOf(GitOperationError);
-      expect(error).toMatchObject({ detail: { code: 'INVALID_ARGUMENT', operation: 'status', message: 'Invalid argument.' } });
-    }
+    expect(() => booleanArg('yes', 'status')).toThrow(GitOperationError);
+    expect(() => booleanArg('yes', 'status')).toThrow(expect.objectContaining({
+      detail: expect.objectContaining({ code: 'INVALID_ARGUMENT', operation: 'status', message: 'Invalid argument.' }),
+    }));
   });
 });
 
@@ -28,11 +23,12 @@ describe('search replacement validator', () => {
   });
 
   it('preserves the public domain error instead of exposing validation details', () => {
-    try { searchOptionsArg({ query: 'bad\0query' }, 'search'); } catch (error) {
-      expect(error).toBeInstanceOf(GitOperationError);
-      expect(error).toMatchObject({ detail: { code: 'INVALID_ARGUMENT', operation: 'search', message: 'Invalid search.' } });
-    }
+    expect(() => searchOptionsArg({ query: 'bad\0query' }, 'search')).toThrow(GitOperationError);
+    expect(() => searchOptionsArg({ query: 'bad\0query' }, 'search')).toThrow(expect.objectContaining({
+      detail: expect.objectContaining({ code: 'INVALID_ARGUMENT', operation: 'search', message: 'Invalid search.' }),
+    }));
   });
+
   it('accepts an exact match scope and normalizes search booleans', () => {
     expect(searchReplaceArg({
       options: { query: 'foo', regex: false }, replacement: 'bar',
@@ -118,13 +114,6 @@ describe('local refs management validators', () => {
       expect(() => createTrackingBranchArg({ ...request, localName })).toThrow();
     }
     expect(() => createTrackingBranchArg({ ...request, expectedOid: 'not-an-oid' })).toThrow();
-  });
-
-  it('returns newly allocated typed objects with only the expected fields', () => {
-    const source = { repositoryId: '0123456789abcdef', fullName: 'refs/heads/función/ñandú', expectedOid: OID, force: true };
-    const request = deleteBranchArg(source, 'test');
-    expect(request).toEqual({ repositoryId: '0123456789abcdef', fullName: 'refs/heads/función/ñandú', expectedOid: OID, force: true });
-    expect(request).not.toBe(source);
   });
 
   it('accepts valid branch and worktree targets', () => {

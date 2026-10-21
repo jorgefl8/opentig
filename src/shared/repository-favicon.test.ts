@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   extractIconHref,
-  faviconMimeFromPath,
   localIconHrefCandidates,
   repositoryRootFromCommonDir,
 } from './repository-favicon';
@@ -26,12 +25,5 @@ describe('repository favicon discovery', () => {
     expect(localIconHrefCandidates('https://cdn.example/favicon.png')).toEqual([]);
     expect(localIconHrefCandidates('../secret.svg')).toEqual([]);
     expect(localIconHrefCandidates('data:image/svg+xml,<svg/>')).toEqual([]);
-  });
-
-  it('maps common favicon extensions to image MIME types', () => {
-    expect(faviconMimeFromPath('public/favicon.svg')).toBe('image/svg+xml');
-    expect(faviconMimeFromPath('app/icon.ICO')).toBe('image/x-icon');
-    expect(faviconMimeFromPath('assets/logo.png')).toBe('image/png');
-    expect(faviconMimeFromPath('readme.md')).toBeNull();
   });
 });

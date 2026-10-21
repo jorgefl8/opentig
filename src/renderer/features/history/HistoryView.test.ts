@@ -4,7 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { CommitFile, CommitInfo } from '@shared/git-types';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { clearCommitFilesCache, readCommitFilesCache } from './commit-files-cache';
+import { clearCommitFilesCache, COMMIT_FILES_CACHE_MAX_ENTRY_BYTES, readCommitFilesCache } from './commit-files-cache';
 import { HistoryView } from './HistoryView';
 
 const filesRequest = vi.hoisted(() => vi.fn<(repositoryId: string, oid: string) => Promise<CommitFile[]>>());
@@ -100,22 +100,25 @@ it('keeps an expanded merge measured when grouping is toggled and search reveals
 });
 
 it('displays an oversized response fully and keeps it in the mounted row without caching it', async () => {
-  const files: CommitFile[] = Array.from({ length: 400 }, (_, index) => ({
-    path: `src/${'directory/'.repeat(155)}file-${index}.ts`, oldPath: null, kind: 'modified', additions: 1, deletions: 0, binary: false,
+  // Few rows with long paths exceed the per-entry cache budget without rendering hundreds of rows.
+  const count = 20;
+  const directories = 'directory/'.repeat(Math.ceil(COMMIT_FILES_CACHE_MAX_ENTRY_BYTES / count / 2 / 'directory/'.length));
+  const files: CommitFile[] = Array.from({ length: count }, (_, index) => ({
+    path: `src/${directories}file-${index}.ts`, oldPath: null, kind: 'modified', additions: 1, deletions: 0, binary: false,
   }));
   filesRequest.mockResolvedValue(files);
   await mountAndExpand();
   expect(readCommitFilesCache('history-measure-test:merge')).toBeUndefined();
-  expect(container.querySelector('.commit-files-summary')?.textContent).toContain('400 files');
-  expect(container.querySelectorAll('.commit-file-row')).toHaveLength(400);
-  expect(container.querySelector('.commit-files')?.textContent).toContain('file-399.ts');
+  expect(container.querySelector('.commit-files-summary')?.textContent).toContain(`${count} files`);
+  expect(container.querySelectorAll('.commit-file-row')).toHaveLength(count);
+  expect(container.querySelector('.commit-files')?.textContent).toContain(`file-${count - 1}.ts`);
   await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Collapse commit"]')!.click());
   await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Expand commit"]')!.click());
-  expect(container.querySelectorAll('.commit-file-row')).toHaveLength(400);
+  expect(container.querySelectorAll('.commit-file-row')).toHaveLength(count);
   expect(filesRequest).toHaveBeenCalledTimes(1);
   await act(async () => root.unmount());
   root = createRoot(container);
   await mountAndExpand();
   expect(filesRequest).toHaveBeenCalledTimes(2);
-  expect(container.querySelectorAll('.commit-file-row')).toHaveLength(400);
+  expect(container.querySelectorAll('.commit-file-row')).toHaveLength(count);
 });

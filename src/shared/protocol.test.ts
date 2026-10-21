@@ -19,7 +19,8 @@ type RendererDesktopSurface = {
 };
 type SplitApi = OpenTigServerApi & RendererDesktopSurface;
 
-const TYPE_PROOF: readonly true[] = [
+// Compile-time proof checked by `tsc`; it has no runtime behavior to test.
+const _TYPE_PROOF: readonly true[] = [
   true satisfies (OpenTigApi extends SplitApi ? true : false),
   true satisfies (SplitApi extends OpenTigApi ? true : false),
   true satisfies Equal<OpenTigServerCommandMap[typeof IPC.bootstrap]['args'], []>,
@@ -41,10 +42,6 @@ const TYPE_PROOF: readonly true[] = [
 ];
 
 describe('OpenTig server protocol ownership', () => {
-  it('keeps the combined compatibility API structurally exact', () => {
-    expect(TYPE_PROOF).toEqual([true, true, true, true, true, true, true, true, true]);
-  });
-
   it('maps every remaining IPC command to the server transport', () => {
     const serverChannels = Object.values(OPEN_TIG_SERVER_COMMANDS).map((definition) => definition.command);
 

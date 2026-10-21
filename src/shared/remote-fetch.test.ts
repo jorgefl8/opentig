@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_REMOTE_FETCH_INTERVAL_SECONDS,
-  formatRemoteFetchInterval,
   MAX_REMOTE_FETCH_INTERVAL_SECONDS,
   MIN_REMOTE_FETCH_INTERVAL_SECONDS,
   normalizeRemoteFetchIntervalSeconds,
@@ -16,10 +15,5 @@ describe('remote fetch interval', () => {
     expect(normalizeRemoteFetchIntervalSeconds(7)).toBe(MIN_REMOTE_FETCH_INTERVAL_SECONDS);
     expect(normalizeRemoteFetchIntervalSeconds(32)).toBe(30);
     expect(normalizeRemoteFetchIntervalSeconds(999)).toBe(MAX_REMOTE_FETCH_INTERVAL_SECONDS);
-  });
-
-  it('labels the settings control', () => {
-    expect(formatRemoteFetchInterval(0)).toBe('Off');
-    expect(formatRemoteFetchInterval(30)).toBe('30s');
   });
 });

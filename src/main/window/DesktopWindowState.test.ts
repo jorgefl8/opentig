@@ -4,7 +4,6 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   boundsVisibleOnDisplays,
-  browserWindowBounds,
   DesktopWindowState,
 } from './DesktopWindowState';
 import { DESKTOP_MIN_WINDOW_HEIGHT, DESKTOP_MIN_WINDOW_WIDTH } from './desktop-window-size';
@@ -61,14 +60,6 @@ describe('DesktopWindowState', () => {
     const fixture = await createFixture({ windowBounds: { width: 900, height: 600 } });
     await expect(fixture.store.load()).resolves.toEqual({
       width: DESKTOP_MIN_WINDOW_WIDTH, height: DESKTOP_MIN_WINDOW_HEIGHT, isMaximized: false,
-    });
-  });
-});
-
-describe('browserWindowBounds', () => {
-  it('omits the maximized flag from BrowserWindow constructor options', () => {
-    expect(browserWindowBounds({ width: 1280, height: 800, x: 10, y: 20, isMaximized: true })).toEqual({
-      width: 1280, height: 800, x: 10, y: 20,
     });
   });
 });

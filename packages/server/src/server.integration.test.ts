@@ -88,17 +88,20 @@ describe('authoritative HTTP server', () => {
     const cookie = cookieValue((await postJson(`${origin}/api/auth/pair`, { token: fixture.pairingToken }, origin)).cookie);
     const pending = new URLSearchParams(new URL(fixture.server.createPairingLink().url).hash.slice(1)).get('token');
     const publicOrigin = 'https://git.example.com';
+    const requestedAt = Date.now();
     const response = await fetch(`${origin}/api/auth/pairing-link`, {
       method: 'POST', headers: { Cookie: cookie, Origin: publicOrigin, 'X-Forwarded-Host': 'git.example.com' },
     });
+    const respondedAt = Date.now();
     expect(response.status).toBe(200);
     expect(response.headers.get('cache-control')).toBe('no-store');
     const link = await response.json();
     const url = new URL(link.url);
     expect(url.origin).toBe(publicOrigin);
     expect(url.pathname).toBe('/pair');
-    expect(Date.parse(link.expiresAt) - Date.now()).toBeGreaterThan(290_000);
-    expect(Date.parse(link.expiresAt) - Date.now()).toBeLessThanOrEqual(300_000);
+    // The link lives for five minutes from when the server issued it during this request.
+    expect(Date.parse(link.expiresAt)).toBeGreaterThanOrEqual(requestedAt + 300_000);
+    expect(Date.parse(link.expiresAt)).toBeLessThanOrEqual(respondedAt + 300_000);
     expect(await (await fetch(`${origin}/api/auth/web-access`, { headers: { Cookie: cookie } })).json()).toMatchObject({ pairingAvailable: true });
     expect((await postJson(`${origin}/api/auth/pair`, { token: pending }, origin)).status).toBe(401);
     const token = new URLSearchParams(url.hash.slice(1)).get('token');

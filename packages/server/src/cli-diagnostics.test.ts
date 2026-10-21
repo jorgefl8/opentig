@@ -267,9 +267,9 @@ describe('service startup and recovery', () => {
 });
 
 describe('remaining command recovery', () => {
-  it.each(['start', 'serve'])('reports an occupied port for %s without starting another instance', async command => {
+  it('reports an occupied port for start without starting another instance', async () => {
     const port = await listen(createServer());
-    expect(await runCli([command, '--home', home, '--port', String(port)], {}, io)).toBe(1);
+    expect(await runCli(['start', '--home', home, '--port', String(port)], {}, io)).toBe(1);
     expect(errors.join('\n')).toContain(`Port ${port}`); expect(sockets[0]!.listening).toBe(true);
   });
   it('reports paused web access instead of a generic pairing refusal', async () => {

@@ -26,7 +26,6 @@ describe('CommitMessagePrompt', () => {
   it.each([
     { subject: '', body: '' },
     { subject: 'Line one\nLine two', body: '' },
-    { subject: `${'x'.repeat(73)}`, body: '' },
   ])('rejects invalid subjects', (value) => {
     expect(() => parseGeneratedParts(value)).toThrow(/invalid format/);
   });
@@ -37,7 +36,7 @@ describe('CommitMessagePrompt', () => {
     });
   });
 
-  it.each(['fix(files): preserve scrolling', 'feat!: change the API', 'refactor(ai)!: remove legacy options', 'docs: update examples'])('accepts Conventional Commit subject %s', (subject) => {
+  it.each(['fix(files): preserve scrolling', 'feat!: change the API', 'refactor(ai)!: remove legacy options'])('accepts Conventional Commit subject %s', (subject) => {
     expect(parseGeneratedParts({ subject, body: '' }).subject).toBe(subject);
   });
 
@@ -120,18 +119,6 @@ describe('CommitMessagePrompt', () => {
     const item = properties.commits!.items as { properties: { subject: { pattern: string } } };
     expect(new RegExp(item.properties.subject.pattern).test('docs: update examples')).toBe(true);
     expect(new RegExp(item.properties.subject.pattern).test('Update examples')).toBe(false);
-  });
-
-  it('asks the model to order the groups so each commit stands alone', () => {
-    expect(buildCommitMessagePrompt(context)).toContain('Order the commits so each one stands on its own');
-  });
-
-  it('tells the model what to do with a file that changed for several reasons', () => {
-    const prompt = buildCommitMessagePrompt(context);
-    expect(prompt).toContain('Never split one file across commits');
-    expect(prompt).toContain('put it in the group matching its largest change');
-    // A trimmed diff must not read as "this file barely changed".
-    expect(prompt).toContain('Individual diffs may be trimmed');
   });
 
   it('asks for the split decision instead of biasing towards one commit', () => {

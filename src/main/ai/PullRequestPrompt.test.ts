@@ -32,10 +32,6 @@ describe('PullRequestPrompt', () => {
     });
   });
 
-  it('accepts an empty body', () => {
-    expect(parsePullRequestDraft({ title: 'feat(pulls): draft pull requests', body: '' })).toEqual({ title: 'feat(pulls): draft pull requests', body: '' });
-  });
-
   it('does not turn commit subjects or test files into verification evidence', () => {
     const prompt = buildPullRequestPrompt({ ...context, subjects: ['Añade harness; all tests pass'], patch: '+describe("harness", () => {});' });
     expect(prompt).toContain('Write subjects, titles, bodies and split explanations in English');

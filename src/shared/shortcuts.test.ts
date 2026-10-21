@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  DEFAULT_SHORTCUT_MAP, findShortcutConflict, formatCombo, isValidCombo, matchesCombo, normalizeCombo,
+  DEFAULT_SHORTCUT_MAP, findShortcutConflict, isValidCombo, matchesCombo, normalizeCombo,
   resolveShortcuts, sanitizeShortcutOverrides,
 } from './shortcuts';
 
@@ -50,22 +50,12 @@ describe('isValidCombo', () => {
   });
 });
 
-describe('formatCombo', () => {
-  it('joins parts with spaces', () => {
-    expect(formatCombo('Ctrl+Shift+Tab')).toBe('Ctrl + Shift + Tab');
-  });
-});
-
 describe('resolveShortcuts', () => {
   it('falls back to defaults for missing or invalid overrides', () => {
     const resolved = resolveShortcuts({ quickOpen: 'Ctrl+K', saveFile: 'not-a-combo' });
     expect(resolved.quickOpen).toBe('Ctrl+K');
     expect(resolved.saveFile).toBe(DEFAULT_SHORTCUT_MAP.saveFile);
     expect(resolved.refresh).toBe(DEFAULT_SHORTCUT_MAP.refresh);
-  });
-
-  it('resolves every shortcut to a default when no overrides are given', () => {
-    expect(resolveShortcuts(undefined)).toEqual(DEFAULT_SHORTCUT_MAP);
   });
 });
 

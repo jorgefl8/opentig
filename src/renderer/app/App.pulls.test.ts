@@ -82,7 +82,8 @@ afterEach(async () => {
   vi.resetAllMocks();
 });
 
-async function settle() { await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)); }); }
+// Let chained server mocks, query notifications, and React work run without sleeping for real time.
+async function settle() { await act(async () => { for (let hop = 0; hop < 5; hop++) await new Promise((resolve) => setTimeout(resolve, 0)); }); }
 async function mount() {
   await act(async () => root.render(createElement(QueryClientProvider, { client }, createElement(App))));
   await settle();

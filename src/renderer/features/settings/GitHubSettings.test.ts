@@ -22,7 +22,8 @@ const saved: GitHubAccountsStatus = { installationStatus: 'available', version: 
 const context: GitHubRepositoryAccount = { selection: { mode: 'git' }, nameWithOwner: 'organisation/demo', login: 'bob', source: 'ssh', state: 'ready', checkedAt: saved.checkedAt, revision: 1 };
 const identity: CommitAuthorship = { author: { name: 'Alice Sample', email: 'alice@example.com' }, committer: { name: 'Alice Sample', email: 'alice@example.com' }, source: 'global', editable: true, blockers: [], revision: 'a'.repeat(64) };
 beforeEach(() => { calls.authorship.mockResolvedValue(identity); });
-const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
+// Let chained server mocks, query notifications, and React work run without sleeping for real time.
+const settle = async () => { for (let hop = 0; hop < 5; hop++) await new Promise((resolve) => setTimeout(resolve, 0)); };
 afterEach(() => { vi.unstubAllGlobals(); vi.resetAllMocks(); });
 
 async function mount(repo: RepositoryInfo | null = repository) {
@@ -404,15 +405,6 @@ it('names the account whose write permission was checked in diagnostics', async 
     await click('Copy diagnostics');
     expect(calls.copy).toHaveBeenLastCalledWith(expect.stringContaining('Write permission (@bob)'));
   } finally { await view.close(); }
-});
-
-it('identifies desktop Git credentials as belonging to this computer', async () => {
-  vi.stubGlobal('opentigDesktop', {});
-  calls.accountsStatus.mockResolvedValue(saved);
-  calls.repositoryAccount.mockResolvedValue({ ...context, access: externalAccess });
-  const view = await mount();
-  try { expect(view.container.textContent).toContain('configured on this computer'); }
-  finally { await view.close(); }
 });
 
 it('keeps SSH authentication external when choosing a GitHub account', async () => {

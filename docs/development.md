@@ -116,7 +116,9 @@ pnpm run test:related src/main/git/GitRepositoryOperations.ts
 
 For changes to tests, run those files directly with `pnpm test <test-file>`. Related tests follow static imports; configuration, dynamically selected modules, and architecture checks that read source files require explicit tests or the complete suite.
 
-Use behavior assertions for regressions and syntax-aware checks for dependency boundaries. Avoid checking literal source text or duplicating constants.
+Use behavior assertions for regressions and syntax-aware checks for dependency boundaries. Avoid checking literal source text or duplicating constants. Give each table row a distinct branch to cover, and wait on observable conditions or fake timers instead of real sleeps. Prefer spawning Node directly over Git aliases or shells when a test only needs a child process, because those chains are slow on Windows CI.
+
+The real Windows PowerShell environment read runs only with `OPENTIG_POWERSHELL_INTEGRATION=1`; CI enables it in the native CLI discovery check.
 
 Run all quality gates before integrating:
 

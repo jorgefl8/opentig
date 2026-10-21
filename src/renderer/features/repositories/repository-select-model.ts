@@ -46,12 +46,12 @@ export function shortenRepositoryPath(rootPath: string, maxSegments = 3): string
 }
 
 /** True when this picker row's pull/push target is a linked worktree, not the repository root. */
-export function isLinkedWorktree(option: RepositoryOption): boolean {
+function isLinkedWorktree(option: RepositoryOption): boolean {
   return normalizedPath(option.recent.path).toLocaleLowerCase() !== normalizedPath(option.rootPath).toLocaleLowerCase();
 }
 
 /** Folder name of the worktree this picker row will pull or push. */
-export function repositoryWorktreeLabel(option: RepositoryOption): string {
+function repositoryWorktreeLabel(option: RepositoryOption): string {
   const folder = normalizedPath(option.recent.path).split('/').pop();
   return folder && folder.length > 0 ? folder : option.name;
 }

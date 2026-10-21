@@ -16,7 +16,9 @@ const status: OpenTigWebAccessStatus = {
   localEndpoint: 'http://127.0.0.1:6767', networkEndpoints: [],
   pairingEndpoints: ['http://127.0.0.1:6767', 'https://git.example.com'], connectedSessionCount: 1, restartError: null,
 };
-const link = { url: 'https://git.example.com/pair#token=one-use-code', expiresAt: new Date(Date.now() + 300_000).toISOString() };
+const linkUrl = 'https://git.example.com/pair#token=one-use-code';
+/** Expiry is computed when the link is created, so it follows any fake clock installed by the test. */
+const pairingLink = (lifetimeMs = 300_000): OpenTigPairingLink => ({ url: linkUrl, expiresAt: new Date(Date.now() + lifetimeMs).toISOString() });
 
 async function mount(value: OpenTigWebAccessStatus, createPairingLink: (endpoint: string) => Promise<OpenTigPairingLink>, save?: (origin: string) => Promise<OpenTigWebAccessStatus>) {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
@@ -79,7 +81,7 @@ function button(container: HTMLElement, text: string): HTMLButtonElement {
 describe('Web access settings display', () => {
   it.each([false, true])('pairs browsers and exposes editable LAN access=%s', async (listeningOnLan) => {
     const browserStatus = { webAccessEnabled: true, pairingAvailable: true, listeningOnLan, listenerHost: listeningOnLan ? '0.0.0.0' : '127.0.0.1', actualPort: 6767, ready: true };
-    const browserLink = { ...link, url: `${window.location.origin}/pair#token=one-use-code` };
+    const browserLink = { ...pairingLink(), url: `${window.location.origin}/pair#token=one-use-code` };
     const view = await mountBrowser(browserStatus, async () => browserLink);
     try {
       expect(view.container.textContent).toContain('Web access');
@@ -98,7 +100,7 @@ describe('Web access settings display', () => {
 
   it('confirms browser LAN changes, persists domains, and sends the selected pairing destination', async () => {
     const value = { webAccessEnabled: true, pairingAvailable: true, listeningOnLan: false, listenerHost: '127.0.0.1', actualPort: 6767, ready: true, configuration: { ...status, publicOrigin: null } };
-    const view = await mountBrowser(value, async () => link);
+    const view = await mountBrowser(value, async () => pairingLink());
     try {
       const toggle = view.container.querySelector('[aria-label="LAN access"]') as HTMLButtonElement;
       await act(async () => toggle.click());
@@ -119,7 +121,7 @@ describe('Web access settings display', () => {
   });
 
   it('leaves the recovery command to the paused page when a browser pauses a CLI server', async () => {
-    const view = await mountBrowser({ webAccessEnabled: true, pairingAvailable: true, listeningOnLan: false, listenerHost: '127.0.0.1', actualPort: 6767, ready: true, recoveryCommand: 'opentig reset-access' }, async () => link);
+    const view = await mountBrowser({ webAccessEnabled: true, pairingAvailable: true, listeningOnLan: false, listenerHost: '127.0.0.1', actualPort: 6767, ready: true, recoveryCommand: 'opentig reset-access' }, async () => pairingLink());
     try {
       expect(view.container.textContent).not.toContain('opentig reset-access');
       await act(async () => (view.container.querySelector('[aria-label="Web access"]') as HTMLButtonElement).click());
@@ -134,7 +136,7 @@ describe('Web access settings display', () => {
   });
 
   it('points a browser on a desktop-hosted server back to the desktop app', async () => {
-    const view = await mountBrowser({ webAccessEnabled: true, pairingAvailable: true, listeningOnLan: false, listenerHost: '127.0.0.1', actualPort: 6767, ready: true }, async () => link);
+    const view = await mountBrowser({ webAccessEnabled: true, pairingAvailable: true, listeningOnLan: false, listenerHost: '127.0.0.1', actualPort: 6767, ready: true }, async () => pairingLink());
     try {
       await act(async () => (view.container.querySelector('[aria-label="Web access"]') as HTMLButtonElement).click());
       const dialog = document.querySelector('[role="dialog"]') as HTMLElement;
@@ -143,7 +145,7 @@ describe('Web access settings display', () => {
   });
 
   it('confirms listener edits and keeps the previous port visible after a rejected change', async () => {
-    const view = await mountBrowser({ webAccessEnabled: true, pairingAvailable: true, listeningOnLan: false, listenerHost: '127.0.0.1', actualPort: 6767, ready: true }, async () => link);
+    const view = await mountBrowser({ webAccessEnabled: true, pairingAvailable: true, listeningOnLan: false, listenerHost: '127.0.0.1', actualPort: 6767, ready: true }, async () => pairingLink());
     try {
       const input = view.container.querySelector('#web-access-listener-port') as HTMLInputElement;
       await act(async () => {
@@ -164,13 +166,13 @@ describe('Web access settings display', () => {
     vi.useFakeTimers();
     let release!: (value: OpenTigPairingLink) => void;
     const create = vi.fn().mockImplementationOnce(() => new Promise<OpenTigPairingLink>((resolve) => { release = resolve; }))
-      .mockImplementation(async () => ({ ...link, expiresAt: new Date(Date.now() + 1_000).toISOString() }));
+      .mockImplementation(async () => pairingLink(1_000));
     const view = await mountBrowser({ webAccessEnabled: true, pairingAvailable: true, listeningOnLan: false, listenerHost: '127.0.0.1', actualPort: 6767, ready: true }, create);
     try {
       await act(async () => button(view.container, 'Create pairing link').click());
       expect(button(view.container, 'Create pairing link').disabled).toBe(true);
       await act(async () => (view.container.querySelector('[aria-label="Close pairing link"]') as HTMLButtonElement).click());
-      await act(async () => release(link));
+      await act(async () => release(pairingLink()));
       expect(view.container.querySelector('.web-access-pairing')).toBeNull();
       await act(async () => button(view.container, 'Create pairing link').click());
       expect(view.container.querySelector('.web-access-pairing img')).not.toBeNull();
@@ -190,7 +192,7 @@ describe('Web access settings display', () => {
   it('hides the browser QR after its one-use code has been consumed', async () => {
     vi.useFakeTimers();
     const value = { webAccessEnabled: true, pairingAvailable: true, listeningOnLan: false, listenerHost: '127.0.0.1', actualPort: 6767, ready: true };
-    const view = await mountBrowser(value, async () => link);
+    const view = await mountBrowser(value, async () => pairingLink());
     try {
       await act(async () => button(view.container, 'Create pairing link').click());
       expect(view.container.querySelector('.web-access-pairing img')).not.toBeNull();
@@ -204,7 +206,7 @@ describe('Web access settings display', () => {
   it('keeps a newly created browser link visible when an older status response arrives late', async () => {
     vi.useFakeTimers();
     const value = { webAccessEnabled: true, pairingAvailable: false, listeningOnLan: false, listenerHost: '127.0.0.1', actualPort: 6767, ready: true };
-    const view = await mountBrowser(value, async () => link);
+    const view = await mountBrowser(value, async () => pairingLink());
     let release!: (value: OpenTigBrowserWebAccessStatus) => void;
     try {
       view.fetch.mockImplementationOnce(async () => ({ ok: true, json: () => new Promise<OpenTigBrowserWebAccessStatus>((resolve) => { release = resolve; }) }));
@@ -218,7 +220,7 @@ describe('Web access settings display', () => {
   it('keeps access and listener settings unchanged while the workspace has unsaved edits', async () => {
     const prevent = (event: Event) => event.preventDefault();
     window.addEventListener('opentig:before-update', prevent);
-    const view = await mountBrowser({ webAccessEnabled: true, pairingAvailable: true, listeningOnLan: false, listenerHost: '127.0.0.1', actualPort: 6767, ready: true }, async () => link);
+    const view = await mountBrowser({ webAccessEnabled: true, pairingAvailable: true, listeningOnLan: false, listenerHost: '127.0.0.1', actualPort: 6767, ready: true }, async () => pairingLink());
     try {
       const input = view.container.querySelector('#web-access-listener-port') as HTMLInputElement;
       await act(async () => {
@@ -236,7 +238,7 @@ describe('Web access settings display', () => {
   });
 
   it('confirms disabling with a red action, keeps access on cancel, and explains saved pairings', async () => {
-    const view = await mount({ ...status }, vi.fn(async () => link));
+    const view = await mount({ ...status }, vi.fn(async () => pairingLink()));
     try {
       await act(async () => button(view.container, 'Create pairing link').click());
       const toggle = view.container.querySelector('[aria-label="Web access"]') as HTMLButtonElement;
@@ -264,7 +266,7 @@ describe('Web access settings display', () => {
 
   it('closes a pending request immediately and ignores its late result, then creates a public URL and QR', async () => {
     let release!: (value: OpenTigPairingLink) => void;
-    const create = vi.fn().mockImplementationOnce(() => new Promise<OpenTigPairingLink>((resolve) => { release = resolve; })).mockResolvedValue(link);
+    const create = vi.fn().mockImplementationOnce(() => new Promise<OpenTigPairingLink>((resolve) => { release = resolve; })).mockImplementation(async () => pairingLink());
     const view = await mount(status, create);
     try {
       await choose(view.container, 'public');
@@ -273,11 +275,11 @@ describe('Web access settings display', () => {
       expect(button(view.container, 'Create pairing link').disabled).toBe(true);
       await act(async () => (view.container.querySelector('[aria-label="Close pairing link"]') as HTMLButtonElement).click());
       expect(view.container.querySelector('.web-access-pairing')).toBeNull();
-      await act(async () => release(link));
+      await act(async () => release(pairingLink()));
       expect(view.container.querySelector('.web-access-pairing')).toBeNull();
       await act(async () => button(view.container, 'Create pairing link').click());
       expect(create).toHaveBeenLastCalledWith('https://git.example.com');
-      expect(view.container.querySelector('.web-access-link')?.textContent).toBe(link.url);
+      expect(view.container.querySelector('.web-access-link')?.textContent).toBe(linkUrl);
       expect(view.container.querySelector('.web-access-pairing img')?.getAttribute('src')).toMatch(/^data:image\/svg\+xml/);
       await act(async () => (view.container.querySelector('[aria-label="Close pairing link"]') as HTMLButtonElement).click());
       expect(view.container.querySelector('.web-access-pairing')).toBeNull();
@@ -303,7 +305,7 @@ describe('Web access settings display', () => {
   });
 
   it('saves a domain and uses it immediately for the next link and QR', async () => {
-    const create = vi.fn(async (origin: string) => ({ ...link, url: `${origin}/pair#token=one-use-code` }));
+    const create = vi.fn(async (origin: string) => ({ ...pairingLink(), url: `${origin}/pair#token=one-use-code` }));
     const view = await mount({ ...status, publicOrigin: null, pairingEndpoints: [status.localEndpoint!] }, create);
     try {
       await choose(view.container, 'public');
@@ -316,13 +318,13 @@ describe('Web access settings display', () => {
       expect(view.container.querySelector('.web-access-saved-domain')?.textContent).toContain('https://git.example.com');
       await act(async () => button(view.container, 'Create pairing link').click());
       expect(create).toHaveBeenLastCalledWith('https://git.example.com');
-      expect(view.container.querySelector('.web-access-link')?.textContent).toBe(link.url);
+      expect(view.container.querySelector('.web-access-link')?.textContent).toBe(linkUrl);
       expect(view.container.querySelector('.web-access-pairing img')).not.toBeNull();
     } finally { await view.unmount(); }
   });
 
   it('cancels domain edits without changing the saved target, then removes it and returns to local', async () => {
-    const create = vi.fn(async () => link);
+    const create = vi.fn(async () => pairingLink());
     const view = await mount({ ...status }, create);
     try {
       await choose(view.container, 'public');
@@ -386,7 +388,7 @@ describe('Web access settings display', () => {
     vi.useFakeTimers();
     const lan = 'http://192.0.2.10:6767';
     const currentStatus = { ...status, listeningOnLan: true, networkEndpoints: [lan], pairingEndpoints: [...status.pairingEndpoints, lan] };
-    const create = vi.fn(async () => link);
+    const create = vi.fn(async () => pairingLink());
     const view = await mount(currentStatus, create);
     try {
       await choose(view.container, 'lan');
@@ -406,7 +408,7 @@ describe('Web access settings display', () => {
   it('hides an existing pairing link when Web access turns off and restores controls when enabled', async () => {
     vi.useFakeTimers();
     const currentStatus = { ...status };
-    const view = await mount(currentStatus, vi.fn(async () => link));
+    const view = await mount(currentStatus, vi.fn(async () => pairingLink()));
     try {
       await act(async () => button(view.container, 'Create pairing link').click());
       expect(view.container.querySelector('.web-access-pairing img')).not.toBeNull();
@@ -424,7 +426,7 @@ describe('Web access settings display', () => {
 
   it('removes the displayed QR and code when the link expires', async () => {
     vi.useFakeTimers();
-    const create = vi.fn(async () => ({ ...link, expiresAt: new Date(Date.now() + 1_000).toISOString() }));
+    const create = vi.fn(async () => pairingLink(1_000));
     const view = await mount(status, create);
     try {
       await act(async () => button(view.container, 'Create pairing link').click());

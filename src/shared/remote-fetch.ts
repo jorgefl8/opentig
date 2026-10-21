@@ -16,7 +16,3 @@ export function normalizeRemoteFetchIntervalSeconds(value: unknown): number {
     Math.max(MIN_REMOTE_FETCH_INTERVAL_SECONDS, stepped),
   );
 }
-
-export function formatRemoteFetchInterval(seconds: number): string {
-  return seconds <= 0 ? 'Off' : `${seconds}s`;
-}

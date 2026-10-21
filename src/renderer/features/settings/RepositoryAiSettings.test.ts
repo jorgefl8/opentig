@@ -11,7 +11,8 @@ vi.mock('@/lib/opentig-api', () => ({ opentig: { ai: { repositoryInstructions: m
 vi.mock('sileo', () => ({ sileo: { error: mocks.toast } }));
 afterEach(() => { vi.resetAllMocks(); vi.unstubAllGlobals(); });
 const repository: RepositoryInfo = { id: 'repo', name: 'sample', repositoryName: 'sample', path: '/sample', commonDir: '/sample/.git' };
-const settle = () => new Promise(resolve => setTimeout(resolve, 20));
+// Let chained server mocks, query notifications, and React work run without sleeping for real time.
+const settle = async () => { for (let hop = 0; hop < 5; hop++) await new Promise(resolve => setTimeout(resolve, 0)); };
 async function mount(repo: RepositoryInfo | null = repository) {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
   const container = document.createElement('div'); document.body.append(container);
