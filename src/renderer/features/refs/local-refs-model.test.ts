@@ -3,7 +3,7 @@ import type { BranchDetails, BranchInfo, ManagedWorktree, WorktreeDetails } from
 import type { PullRequestSummary } from '../../../shared/contracts';
 import {
   branchBadges, branchDeleteEligibility, branchDetailBadges, branchKey, filterBranches, filterWorktrees,
-  localChangeSummary, nextSelectionKey, normalizeWorktreePath, samePath, worktreeBadges, worktreeKey,
+  localChangeSummary, mergedPullRequestTip, nextSelectionKey, normalizeWorktreePath, samePath, worktreeBadges, worktreeKey,
   worktreeName, worktreeRemoveEligibility,
 } from './local-refs-model';
 
@@ -163,6 +163,21 @@ describe('branchDeleteEligibility', () => {
     );
     expect(eligibility).toMatchObject({ allowed: false, forceAllowed: true });
     expect(eligibility.reason).toContain('GitHub PR #98 is merged into main');
+  });
+
+  it('compares the merged PR head with the branch tip', () => {
+    const details = branchDetails({ deletion: 'unmerged', comparisonBase: 'origin/main', uniqueCommits: 3 });
+    const merged = (headRefOid?: string) => pullRequest({ state: 'MERGED', number: 98, baseRefName: 'main', ...(headRefOid ? { headRefOid } : {}) });
+
+    expect(mergedPullRequestTip(details, merged(details.oid.toUpperCase()))).toBe('same');
+    expect(branchDeleteEligibility(details, merged(details.oid)).reason).toContain('with exactly this tip');
+
+    expect(mergedPullRequestTip(details, merged('f'.repeat(40)))).toBe('different');
+    expect(branchDeleteEligibility(details, merged('f'.repeat(40))).reason).toContain('may have commits that were never merged');
+
+    expect(mergedPullRequestTip(details, merged())).toBe('unknown');
+    expect(mergedPullRequestTip(details, pullRequest({ state: 'OPEN', number: 98, baseRefName: 'main' }))).toBeNull();
+    expect(branchDeleteEligibility(details, merged()).reason).toContain('GitHub PR #98 is merged into main');
   });
 });
 

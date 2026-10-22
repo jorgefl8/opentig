@@ -2,8 +2,8 @@ import type { PullRequestCheckState, PullRequestCommit, PullRequestDetails, Pull
 import { GhOperationError } from '../../shared/errors';
 import { z } from 'zod';
 
-export const PR_SUMMARY_FIELDS = 'number,title,state,isDraft,author,headRefName,baseRefName,updatedAt,url,reviewDecision,additions,deletions,statusCheckRollup';
-export const PR_DETAIL_FIELDS = `${PR_SUMMARY_FIELDS},body,changedFiles,labels,commits,baseRefOid,headRefOid`;
+export const PR_SUMMARY_FIELDS = 'number,title,state,isDraft,author,headRefName,headRefOid,baseRefName,updatedAt,url,reviewDecision,additions,deletions,statusCheckRollup';
+export const PR_DETAIL_FIELDS = `${PR_SUMMARY_FIELDS},body,changedFiles,labels,commits,baseRefOid`;
 
 const tolerantRecordSchema = z.looseObject({});
 const pullRequestArraySchema = z.array(z.unknown());
@@ -43,7 +43,7 @@ export function parsePullRequestDetails(raw: string): PullRequestDetails {
     labels: parseLabels(record.labels),
     commits: parseCommits(record.commits),
     baseRefOid: oidOrEmpty(record.baseRefOid),
-    headRefOid: oidOrEmpty(record.headRefOid),
+    headRefOid: summary.headRefOid ?? '',
   };
 }
 
@@ -89,6 +89,7 @@ function parseSummary(item: unknown, operation: string): PullRequestSummary {
     author: authorLogin,
     authorAvatarUrl: avatarUrl(authorLogin, authorRecord?.is_bot === true),
     headRefName: typeof record.headRefName === 'string' ? record.headRefName : '',
+    ...(oidOrEmpty(record.headRefOid) ? { headRefOid: oidOrEmpty(record.headRefOid) } : {}),
     baseRefName: typeof record.baseRefName === 'string' ? record.baseRefName : '',
     updatedAt: typeof record.updatedAt === 'string' ? record.updatedAt : '',
     url: typeof record.url === 'string' ? record.url : '',

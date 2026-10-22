@@ -332,7 +332,7 @@ From a remote's **Local branches** details, create a tracking branch at the fetc
 
 **Delete branches or remove worktrees**
 
-- **Local branch:** deletion uses Git's non-forced, fully merged path.
+- **Local branch:** deletion uses Git's non-forced, fully merged path. When Git can't confirm the merge, such as after a squash or rebase merge, force deletion remains available and the branch's GitHub PR is shown as evidence: a merged PR whose head is exactly the branch tip means every commit reached GitHub, while a different tip warns that the branch may have commits that were never merged.
 - **Remote branch:** confirm the named remote and branch individually. OpenTig rechecks the remote tip and destination with an expected-commit lease. Default branches cannot be deleted; unknown defaults, ambiguous fetch mappings, or differing/multiple fetch/push destinations also block deletion. Git permissions and server branch protection still apply. Local branches and worktrees remain; bulk remote deletion is unavailable.
 - **Linked worktree:** open or remove an eligible worktree. Removing it does not delete its branch. The main worktree cannot be removed.
 

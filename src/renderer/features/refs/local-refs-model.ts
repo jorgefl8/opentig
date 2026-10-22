@@ -109,14 +109,14 @@ export function branchDeleteEligibility(details: BranchDetails, pullRequest: Pul
       return {
         allowed: false,
         forceAllowed: true,
-        reason: pullRequestReason(pullRequest)
+        reason: pullRequestReason(pullRequest, details)
           ?? `${details.uniqueCommits} ${details.uniqueCommits === 1 ? 'commit is' : 'commits are'} not in ${details.comparisonBase ?? 'the comparison base'}. Force deletion may make those commits inaccessible.`,
       };
     default:
       return {
         allowed: false,
         forceAllowed: true,
-        reason: pullRequestReason(pullRequest)
+        reason: pullRequestReason(pullRequest, details)
           ?? (details.comparisonBase
             ? `${details.comparisonBase} is not available locally, so Git cannot tell whether this branch is merged. Force deletion is still available.`
             : 'Git cannot tell whether this branch is merged. Force deletion is still available.'),
@@ -124,8 +124,26 @@ export function branchDeleteEligibility(details: BranchDetails, pullRequest: Pul
   }
 }
 
-function pullRequestReason(pullRequest: PullRequestSummary | null): string | null {
+/**
+ * Whether GitHub merged exactly this branch tip. Squash and rebase merges leave
+ * no local ancestry, so comparing the merged head commit is the only way to
+ * tell that nothing on the branch was left out.
+ */
+export function mergedPullRequestTip(details: Pick<BranchDetails, 'oid'>, pullRequest: PullRequestSummary | null): 'same' | 'different' | 'unknown' | null {
+  if (pullRequest?.state !== 'MERGED') return null;
+  if (!pullRequest.headRefOid || !details.oid) return 'unknown';
+  return pullRequest.headRefOid.toLowerCase() === details.oid.toLowerCase() ? 'same' : 'different';
+}
+
+function pullRequestReason(pullRequest: PullRequestSummary | null, details: Pick<BranchDetails, 'oid'>): string | null {
   if (!pullRequest) return null;
+  const tip = mergedPullRequestTip(details, pullRequest);
+  if (tip === 'same') {
+    return `GitHub merged PR #${pullRequest.number} into ${pullRequest.baseRefName} with exactly this tip, so every commit of the branch reached GitHub. Git cannot see that locally (for example after a squash or rebase merge), so deletion requires force.`;
+  }
+  if (tip === 'different') {
+    return `GitHub PR #${pullRequest.number} is merged into ${pullRequest.baseRefName}, but this branch's tip is not the merged head: it may have commits that were never merged. Force deletion may make them inaccessible.`;
+  }
   if (pullRequest.state === 'MERGED') {
     return `GitHub PR #${pullRequest.number} is merged into ${pullRequest.baseRefName}, but the local comparison ref is unavailable or has different ancestry. Local deletion requires force.`;
   }

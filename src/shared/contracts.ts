@@ -409,6 +409,8 @@ export interface PullRequestSummary {
   author: string;
   authorAvatarUrl: string | null;
   headRefName: string;
+  /** The PR head commit; for a merged PR, the commit GitHub merged. Empty when unknown. */
+  headRefOid?: string;
   baseRefName: string;
   updatedAt: string;
   url: string;
