@@ -5,7 +5,8 @@ import { parsePullRequestStack, parseStackMemberships, stackMembershipQuery } fr
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import type { CreatePullRequestInput, CreatePullRequestResult, DiffResult, GhCliStatus, GitHubRepositoryInfo, PullRequestDetails, PullRequestStack, PullRequestState, PullRequestSummary } from '../../shared/contracts';
+import { GITHUB_PR_COMMIT_PAGE } from '../../shared/contracts';
+import type { CreatePullRequestInput, CreatePullRequestResult, DiffResult, PullRequestCommitList, GhCliStatus, GitHubRepositoryInfo, PullRequestDetails, PullRequestStack, PullRequestState, PullRequestSummary } from '../../shared/contracts';
 import { AiOperationError, GhOperationError } from '../../shared/errors';
 import type { CliProcessRunner, CliRunResult } from '../ai/CliProcessRunner';
 import type { CliResolver } from '../ai/CliResolver';
@@ -273,6 +274,20 @@ export class GitHubService {
     try {
       return await this.localGit.ensureRange(repository.path, 'origin', range) ? { ...range, cwd: repository.path } : null;
     } catch { return null; }
+  }
+
+  /** GitHub CLI stops at its first page of commits; the local clone lists the rest. */
+  getPullRequestCommits(repositoryId: string, prNumber: number): Promise<PullRequestCommitList> {
+    return this.shareRead(repositoryId, ['commits', prNumber], async () => {
+      const details = await this.getPullRequest(repositoryId, prNumber);
+      if (details.commits.length < GITHUB_PR_COMMIT_PAGE) return { commits: details.commits, complete: true };
+      const range = await this.localRange(repositoryId, prNumber);
+      const local = range ? await this.localGit.commits(range.cwd, range).catch(() => null) : null;
+      if (!local?.length) return { commits: details.commits, complete: false };
+      // Keep GitHub's account names and avatars where it provided them.
+      const known = new Map(details.commits.map(commit => [commit.oid, commit]));
+      return { commits: local.map(commit => known.get(commit.oid) ?? commit), complete: true };
+    });
   }
 
   getPullRequestCommitDiff(repositoryId: string, oid: string): Promise<DiffResult> {

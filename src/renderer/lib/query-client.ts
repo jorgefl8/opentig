@@ -35,6 +35,7 @@ export const queryKeys = {
   pullRequest: (repositoryId: string, number: number) => ['repository', repositoryId, 'pull-request', number] as const,
   pullRequestStack: (repositoryId: string, number: number) => ['repository', repositoryId, 'pull-request-stack', number] as const,
   pullRequestDiff: (repositoryId: string, number: number) => ['repository', repositoryId, 'pull-request-diff', number] as const,
+  pullRequestCommits: (repositoryId: string, number: number) => ['repository', repositoryId, 'pull-request-commits', number] as const,
   pullRequestCommitDiff: (repositoryId: string, oid: string) => ['repository', repositoryId, 'pull-request-commit-diff', oid] as const,
   search: (repositoryId: string, input: object) => ['repository', repositoryId, 'search', input] as const,
   localRefs: (repositoryId: string) => ['repository', repositoryId, 'local-refs'] as const,

@@ -191,6 +191,30 @@ describe('pull request code', () => {
     expect(fetches).toEqual([expect.arrayContaining(['--no-write-fetch-head', 'origin', 'refs/pull/12/head'])]);
   });
 
+  it('completes the commit list from the local clone only when GitHub returns a full first page', async () => {
+    const ghCommit = (index: number) => ({ oid: index.toString(16).padStart(40, '0'), messageHeadline: `GitHub ${index}`, authors: [{ login: 'octo', name: 'Octo' }] });
+    const reply = (count: number) => (args: string[]) => args[1] === 'graphql' ? fail('unavailable')
+      : ok({ number: 12, state: 'OPEN', baseRefOid: base, headRefOid: head, commits: Array.from({ length: count }, (_, index) => ghCommit(index)) });
+    const logged = Array.from({ length: 116 }, (_, index) => `${index.toString(16).padStart(40, '0')}\x1fLocal ${index}\x1f2026-10-01T00:00:00Z\x1fOcto`).join('\0');
+    const gitCalls: string[][] = [];
+    const local = (args: string[]) => { gitCalls.push(args); return args[0] === 'cat-file' ? 'commit\ncommit\n' : args[0] === 'log' ? logged : undefined; };
+
+    const small = fixture(reply(3), undefined, undefined, local);
+    expect(await small.service.getPullRequestCommits('repo', 12)).toMatchObject({ complete: true, commits: { length: 3 } });
+    expect(gitCalls.some(args => args[0] === 'log')).toBe(false);
+
+    const large = fixture(reply(100), undefined, undefined, local);
+    const list = await large.service.getPullRequestCommits('repo', 12);
+    expect(list.complete).toBe(true);
+    expect(list.commits).toHaveLength(116);
+    expect(list.commits[0]).toMatchObject({ messageHeadline: 'GitHub 0', authorAvatarUrl: expect.stringContaining('octo') });
+    expect(list.commits[115]).toMatchObject({ messageHeadline: 'Local 115', authorAvatarUrl: null });
+    expect(gitCalls).toContainEqual(expect.arrayContaining(['log', `${base}..${head}`]));
+
+    const offline = fixture(reply(100), undefined, undefined, args => args[0] === 'cat-file' ? 'missing\nmissing\n' : args[0] === 'fetch' ? new GitOperationError({ code: 'UNKNOWN', operation: 'fetch', message: 'offline' }) : undefined);
+    expect(await offline.service.getPullRequestCommits('repo', 12)).toMatchObject({ complete: false, commits: { length: 100 } });
+  });
+
   it('falls back to GitHub when Git cannot download the commits, explaining oversized diffs', async () => {
     const offline = () => (args: string[]) => args[0] === 'cat-file' ? 'missing\nmissing\n' : args[0] === 'fetch' ? new GitOperationError({ code: 'UNKNOWN', operation: 'fetch', message: 'offline' }) : undefined;
     const working = fixture(args => args[0] === 'pr' && args[1] === 'diff' ? { exitCode: 0, stdout: 'diff --git a/x b/x\n', stderr: '' } : view(args), undefined, undefined, offline());

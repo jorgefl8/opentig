@@ -3,7 +3,7 @@ import { PullRequestStackMenu } from './PullRequestStackMenu';
 import { lazy, Suspense, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { IconCircleCheck, IconCircleX, IconClock, IconExternalLink, IconGitBranch, IconGitCommit, IconLoader4, IconRefresh, IconTag } from '@tabler/icons-react';
-import type { DiffResult, DiffViewPreference, PullRequestCheckState, PullRequestDetails, ThemePreference } from '../../../shared/contracts';
+import { GITHUB_PR_COMMIT_PAGE, type DiffResult, type DiffViewPreference, type PullRequestCheckState, type PullRequestCommitList, type PullRequestDetails, type ThemePreference } from '../../../shared/contracts';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
@@ -55,6 +55,15 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
     enabled: tab === 'diff' && details !== null,
   });
   const diff = diffQuery.data ?? null;
+  // GitHub CLI returns one page of commits; past it, the local clone lists them all.
+  const firstPageOnly = (details?.commits.length ?? 0) >= GITHUB_PR_COMMIT_PAGE;
+  const commitsQuery = useQuery<PullRequestCommitList>({
+    queryKey: queryKeys.pullRequestCommits(repositoryId, prNumber),
+    queryFn: () => opentig.github.getPullRequestCommits(repositoryId, prNumber),
+    enabled: firstPageOnly && tab !== 'summary',
+  });
+  const commits = commitsQuery.data?.commits ?? details?.commits ?? [];
+  const commitsIncomplete = firstPageOnly && commitsQuery.data?.complete !== true;
   const diffError = diffQuery.error instanceof Error ? diffQuery.error.message : diffQuery.error ? 'Could not load the diff.' : null;
 
   if (detailsError) {
@@ -128,8 +137,11 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
       </ViewerTabsPanel>
       <ViewerTabsPanel value="timeline" className="markdown-preview-scroll pr-description-scroll">
           <section className="pr-timeline standalone" aria-label="Commit timeline">
-            <h3><IconGitCommit aria-hidden="true" /> Commits <span>{details.commits.length}</span></h3>
-            {details.commits.length ? details.commits.map((commit) => (
+            <h3><IconGitCommit aria-hidden="true" /> Commits <span>{commits.length}{commitsIncomplete ? '+' : ''}</span></h3>
+            {commitsIncomplete && !commitsQuery.isFetching && (
+              <p className="pr-empty-description">Showing the first {commits.length} commits from GitHub. The rest could not be read from the local clone.</p>
+            )}
+            {commits.length ? commits.map((commit) => (
               <article key={commit.oid} className="pr-timeline-item">
                 <span className="pr-timeline-rail"><span /></span>
                 <GitHubAvatar src={commit.authorAvatarUrl} className="pr-commit-avatar" />
@@ -155,7 +167,7 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
           <div className="viewer-message"><IconLoader4 className="spinner" /> <ShimmeringText text="Loading diff…" /></div>
         ) : (
           <Suspense fallback={<div className="viewer-message"><IconLoader4 className="spinner" /> <ShimmeringText text="Loading diff viewer…" /></div>}>
-            <PullRequestDiff diff={diff} prNumber={details.number} repositoryId={repositoryId} commits={details.commits} diffView={diffView} themeType={themeType} wrapLines={wrapLines} onDiffViewChange={onDiffViewChange} onWrapLinesChange={onWrapLinesChange} onClose={onClose} />
+            <PullRequestDiff diff={diff} prNumber={details.number} repositoryId={repositoryId} commits={commits} diffView={diffView} themeType={themeType} wrapLines={wrapLines} onDiffViewChange={onDiffViewChange} onWrapLinesChange={onWrapLinesChange} onClose={onClose} />
           </Suspense>
         )}
       </ViewerTabsPanel>

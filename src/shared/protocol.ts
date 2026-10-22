@@ -140,6 +140,7 @@ export const OPEN_TIG_SERVER_COMMANDS = {
   'github.getPullRequestStack': command(IPC.githubPrStack, 'gh-pr-stack', false),
   'github.getPullRequestDiff': command(IPC.githubPrDiff, 'gh-pr-diff', false),
   'github.getPullRequestCommitDiff': command(IPC.githubPrCommitDiff, 'gh-pr-commit-diff', false),
+  'github.getPullRequestCommits': command(IPC.githubPrCommits, 'gh-pr-commits', false),
   'github.createPullRequest': command(IPC.githubPrCreate, 'gh-pr-create', true),
   'github.generateDraft': command(IPC.githubPrDraft, 'ai-pr-draft', true, { timeoutMs: AI_SERVER_TIMEOUT_MS }),
   'github.cancelDraft': command(IPC.githubPrDraftCancel, 'ai-pr-draft-cancel', true),
