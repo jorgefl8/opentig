@@ -3,7 +3,7 @@ import { GhOperationError } from '../../shared/errors';
 import { z } from 'zod';
 
 export const PR_SUMMARY_FIELDS = 'number,title,state,isDraft,author,headRefName,baseRefName,updatedAt,url,reviewDecision,additions,deletions,statusCheckRollup';
-export const PR_DETAIL_FIELDS = `${PR_SUMMARY_FIELDS},body,changedFiles,labels,commits`;
+export const PR_DETAIL_FIELDS = `${PR_SUMMARY_FIELDS},body,changedFiles,labels,commits,baseRefOid,headRefOid`;
 
 const tolerantRecordSchema = z.looseObject({});
 const pullRequestArraySchema = z.array(z.unknown());
@@ -41,6 +41,8 @@ export function parsePullRequestDetails(raw: string): PullRequestDetails {
     changedFiles: numberOrZero(record.changedFiles),
     labels: parseLabels(record.labels),
     commits: parseCommits(record.commits),
+    baseRefOid: oidOrEmpty(record.baseRefOid),
+    headRefOid: oidOrEmpty(record.headRefOid),
   };
 }
 
@@ -161,6 +163,10 @@ function parseJson(raw: string, operation: string): unknown {
   } catch {
     throw invalidOutput(operation);
   }
+}
+
+function oidOrEmpty(value: unknown): string {
+  return typeof value === 'string' && /^[0-9a-f]{40,64}$/i.test(value) ? value.toLowerCase() : '';
 }
 
 function numberOrZero(value: unknown): number {

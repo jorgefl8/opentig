@@ -147,7 +147,10 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
       </ViewerTabsPanel>
       <ViewerTabsPanel value="diff" className="pr-diff-panel">
         {diffError ? (
-          <div className="viewer-message text-destructive">{diffError}</div>
+          <div className="viewer-message flex-col gap-3">
+            <p className="pr-diff-error text-destructive">{diffError}</p>
+            <Button variant="outline" size="sm" onClick={() => void diffQuery.refetch()}><IconRefresh /> Try again</Button>
+          </div>
         ) : !diff ? (
           <div className="viewer-message"><IconLoader4 className="spinner" /> <ShimmeringText text="Loading diff…" /></div>
         ) : (

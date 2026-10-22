@@ -65,6 +65,8 @@ Your CLI must support multi-account `auth token --user` and `auth status --json 
 2. Select a PR to inspect its metadata and Markdown description.
 3. In **Code**, review the cumulative diff or use **By commit** to inspect changes from one commit. The selector supports keyboard navigation, readable subjects, and scrollable options.
 
+**Code is computed by Git in your clone**, so pull requests larger than GitHub's 300-file diff limit open normally. The first time you open a PR's code, OpenTig downloads its commits from `origin` (`refs/pull/<number>/head`, plus the base commit if it is missing) without creating or moving any branch, tag, or remote-tracking ref, and then compares them the same way GitHub's **Files changed** does. Later views and **By commit** read locally. If the commits can't be downloaded, OpenTig asks GitHub for the diff instead, which only works within GitHub's limits. A diff larger than 32 MB shows its first complete files with a notice.
+
 The PR list shows the effective GitHub account. The integration currently resolves the GitHub repository through `origin`.
 
 **Open the current branch's PR**

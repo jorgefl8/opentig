@@ -16,6 +16,7 @@ import { GH_ENV, redactCommandToken, type GitHubCommandAuth } from './GitHubAcco
 import { parseBranchPullRequestList, parseCreatedPullRequestUrl, parsePullRequestDetails, parsePullRequestList, PR_DETAIL_FIELDS, PR_SUMMARY_FIELDS, selectPullRequestsNewestFirst, sortPullRequestsNewestFirst } from './PullRequestParser';
 
 import { GitHubAccountsService } from './GitHubAccountsService';
+import { PullRequestLocalGit, type PullRequestRange } from './PullRequestLocalGit';
 import type { GitHubAccountSelection } from '../../shared/github-accounts';
 const NETWORK_TIMEOUT_MS = 60_000;
 
@@ -31,6 +32,7 @@ interface GhRunOptions {
 
 export class GitHubService {
   private readonly reads = new ReadSingleFlight();
+  private readonly localGit: PullRequestLocalGit;
   gitAccess?: import('../git/RepositoryGitAccess').RepositoryGitAccess;
   readonly accounts: GitHubAccountsService;
 
@@ -42,6 +44,7 @@ export class GitHubService {
     accounts?: GitHubAccountsService,
   ) {
     this.accounts = accounts ?? new GitHubAccountsService(resolver, runner, git);
+    this.localGit = new PullRequestLocalGit(git);
     this.git.onInvalidate(scope => this.reads.invalidate(scope));
   }
 
@@ -248,6 +251,10 @@ export class GitHubService {
   }
 
   private async readGetPullRequestDiff(repositoryId: string, prNumber: number): Promise<DiffResult> {
+    const range = await this.localRange(repositoryId, prNumber);
+    if (range) return this.localGit.rangeDiff(range.cwd, range);
+    // Without the commits locally (offline remote, shallow history, an unusual
+    // remote layout) GitHub's own diff still covers PRs within its limits.
     const { repository, nameWithOwner, auth, executable } = await this.requireGitHub(repositoryId, 'gh-pr-diff');
     const result = await this.runGhRead(
       ['pr', 'diff', String(prNumber), '-R', nameWithOwner],
@@ -258,16 +265,29 @@ export class GitHubService {
     return { patch, path: `pull/${prNumber}`, binary, truncated: false, lineCount: patch ? patch.split('\n').length : 0 };
   }
 
+  /** The PR's base and head commits, downloaded into the local clone when needed. Null when Git cannot provide them. */
+  private async localRange(repositoryId: string, prNumber: number): Promise<(PullRequestRange & { cwd: string }) | null> {
+    const details = await this.getPullRequest(repositoryId, prNumber);
+    const repository = this.repositories.get(repositoryId);
+    const range = { number: prNumber, baseOid: details.baseRefOid, headOid: details.headRefOid };
+    try {
+      return await this.localGit.ensureRange(repository.path, 'origin', range) ? { ...range, cwd: repository.path } : null;
+    } catch { return null; }
+  }
+
   getPullRequestCommitDiff(repositoryId: string, oid: string): Promise<DiffResult> {
     return this.shareRead(repositoryId, ['commit-diff', oid], () => this.readGetPullRequestCommitDiff(repositoryId, oid));
   }
 
   private async readGetPullRequestCommitDiff(repositoryId: string, oid: string): Promise<DiffResult> {
     const operation = 'gh-pr-commit-diff';
-    const { repository, nameWithOwner, auth, executable } = await this.requireGitHub(repositoryId, operation);
     if (!/^[0-9a-f]{40,64}$/i.test(oid)) {
       throw new GhOperationError({ code: 'GH_PROCESS_FAILED', operation, message: 'The commit is not valid.' });
     }
+    // Opening the PR's code downloads its commits, so this is normally local.
+    const local = await this.localGit.commitDiff(this.repositories.get(repositoryId).path, oid).catch(() => null);
+    if (local) return local;
+    const { repository, nameWithOwner, auth, executable } = await this.requireGitHub(repositoryId, operation);
     const result = await this.runGhRead(
       ['api', `repos/${nameWithOwner}/commits/${oid}`, '--header', 'Accept: application/vnd.github.diff'],
       { auth, executable, cwd: repository.path, operation, timeoutMs: NETWORK_TIMEOUT_MS, maxOutputBytes: 32 * 1024 * 1024 },
@@ -376,6 +396,9 @@ function classifyFailure(result: CliRunResult, operation: string): GhOperationEr
   const raw = `${result.stderr}\n${result.stdout}`.toLowerCase();
   if (/not logged in|gh auth login|authentication|credential|bad credentials|401/.test(raw)) {
     return new GhOperationError({ code: 'GH_AUTH_REQUIRED', operation, message: 'Sign in with gh auth login to continue.', exitCode: result.exitCode });
+  }
+  if (/http 406|exceeded the maximum number of (files|lines)|diff is taking too long|too_large/.test(raw)) {
+    return new GhOperationError({ code: 'GH_PROCESS_FAILED', operation, message: 'GitHub cannot produce a diff this large, and Git could not download the pull request commits. Check the connection to the remote and try again.', exitCode: result.exitCode });
   }
   if (/rate limit|api rate|secondary rate/.test(raw)) {
     return new GhOperationError({ code: 'GH_RATE_LIMITED', operation, message: 'GitHub rejected the request because of a rate limit. Try again later.', exitCode: result.exitCode, retryable: true });

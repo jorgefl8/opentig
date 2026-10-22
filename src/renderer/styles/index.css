@@ -1901,6 +1901,8 @@ section[data-sileo-viewport] [data-sileo-title] { text-transform: none; }
   }
   .diff-workspace-scope { min-width: 0; flex: 1; }
   .pr-code-scope { display: flex; min-width: 0; align-items: center; gap: 8px; }
+  .pr-diff-error { max-width: min(42rem, 100%); padding-inline: 20px; text-align: center; overflow-wrap: anywhere; }
+  .pr-diff-truncated { flex: none; color: var(--muted-foreground); font-size: 11px; white-space: nowrap; }
   .pr-code-mode { display: inline-flex; flex: none; gap: 2px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--muted); padding: 2px; }
   .pr-code-mode button { height: 26px; }
   .pr-commit-select { min-width: 120px; max-width: min(420px, 42vw); height: 30px; flex: 1; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--background); padding: 0 8px; color: var(--foreground); font-family: var(--font-mono); font-size: 10.5px; outline: none; }

@@ -414,6 +414,9 @@ export interface PullRequestDetails extends PullRequestSummary {
   changedFiles: number;
   labels: PullRequestLabel[];
   commits: PullRequestCommit[];
+  /** Base commit GitHub compares against: the current base tip, or the one recorded at merge. */
+  baseRefOid: string;
+  headRefOid: string;
 }
 
 export interface CreatePullRequestInput {

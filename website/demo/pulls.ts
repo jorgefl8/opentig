@@ -11,6 +11,7 @@ function sample(number: number, title: string, state: PullRequestState, branch: 
     const count = counts(c.before, c.after);
     return { additions: sum.additions + count.additions, deletions: sum.deletions + count.deletions };
   }, { additions: 0, deletions: 0 });
+  const oids = commits.map((_, i) => `${number.toString(16).padStart(6, '0')}${i}`.padEnd(40, 'b'));
   return {
     details: {
       number, title, state, isDraft: draft, author: 'OpenTig Demo', authorAvatarUrl: null,
@@ -20,7 +21,8 @@ function sample(number: number, title: string, state: PullRequestState, branch: 
       ...totals, checksState: draft ? 'PENDING' : 'PASSING', body,
       changedFiles: new Set(commits.flatMap(c => c.changes.map(f => f.path))).size,
       labels: [{ name: branch.startsWith('docs/') ? 'documentation' : 'enhancement', color: '818cf8' }],
-      commits: commits.map((c, i) => ({ oid: `${number.toString(16).padStart(6, '0')}${i}`.padEnd(40, 'b'), messageHeadline: c.title, authoredAt: sampleDate, author: 'OpenTig Demo', authorAvatarUrl: null })),
+      commits: commits.map((c, i) => ({ oid: oids[i]!, messageHeadline: c.title, authoredAt: sampleDate, author: 'OpenTig Demo', authorAvatarUrl: null })),
+      baseRefOid: 'a'.repeat(40), headRefOid: oids.at(-1) ?? '',
     },
     changes: commits.map(c => c.changes),
   };

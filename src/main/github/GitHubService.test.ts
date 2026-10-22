@@ -4,11 +4,13 @@ import type { CliProcessRunner, CliRunResult } from '../ai/CliProcessRunner';
 import type { CliResolver } from '../ai/CliResolver';
 import type { GitProcess } from '../git/GitProcess';
 import type { RepositoryService } from '../git/RepositoryService';
+import { GitOperationError } from '../../shared/errors';
 
 const ok = (value: unknown): CliRunResult => ({ exitCode: 0, stdout: JSON.stringify(value), stderr: '' });
 const fail = (stderr: string): CliRunResult => ({ exitCode: 1, stdout: '', stderr });
 const stack = { number: 7, base: { ref: 'main' }, pull_requests: [{ number: 101, state: 'open', title: 'Model', head: { ref: 'model' } }] };
-function fixture(reply: (args: string[]) => CliRunResult, remoteUrl = 'https://github.com/example/demo.git', sshResult: CliRunResult | Error = fail('SSH unavailable')) {
+type GitReply = (args: string[], stdin?: string) => string | Error | undefined;
+function fixture(reply: (args: string[]) => CliRunResult, remoteUrl = 'https://github.com/example/demo.git', sshResult: CliRunResult | Error = fail('SSH unavailable'), gitReply: GitReply = () => undefined) {
   const run = vi.fn(async (exe: string, args: string[]) => {
     if (exe === 'ssh') {
       if (sshResult instanceof Error) throw sshResult;
@@ -22,7 +24,11 @@ function fixture(reply: (args: string[]) => CliRunResult, remoteUrl = 'https://g
   const service = new GitHubService(
     { discover: async () => [{ executable: 'gh', alias: 'gh', source: 'process-path', env: { PATH: '/fixture/bin' } }], warning: async () => undefined } as unknown as CliResolver,
     { run } as unknown as CliProcessRunner,
-    { onInvalidate: () => undefined, readScope: (cwd: string) => cwd, run: async (_cwd: string, args: string[]) => ({ stdout: Buffer.from(args.includes('core.sshCommand') ? '' : remoteUrl) }) } as unknown as GitProcess,
+    { onInvalidate: () => undefined, readScope: (cwd: string) => cwd, run: async (_cwd: string, args: string[], options?: { stdin?: string }) => {
+      const custom = gitReply(args, options?.stdin);
+      if (custom instanceof Error) throw custom;
+      return { stdout: Buffer.from(custom ?? (args.includes('core.sshCommand') ? '' : remoteUrl)) };
+    } } as unknown as GitProcess,
     { get: () => ({ path: '.', commonDir: '.git', id: 'repo' }) } as unknown as RepositoryService,
   );
   return { service, run };
@@ -148,6 +154,50 @@ describe('current branch pull requests', () => {
   it('returns null when the branch has no PR and propagates lookup errors', async () => {
     expect(await fixture(() => ok([])).service.findPullRequestForBranch('repo', 'feature')).toBeNull();
     await expect(fixture(() => fail('HTTP 403: rate limit')).service.findPullRequestForBranch('repo', 'feature')).rejects.toThrow();
+  });
+});
+describe('pull request code', () => {
+  const base = 'a'.repeat(40);
+  const head = 'b'.repeat(40);
+  const view = (args: string[]) => args[1] === 'graphql' ? fail('unavailable') : ok({ number: 12, state: 'MERGED', baseRefOid: base, headRefOid: head });
+
+  it('diffs the PR locally once Git has its commits, without asking GitHub for the patch', async () => {
+    const gitCalls: string[][] = [];
+    const { service, run } = fixture(view, undefined, undefined, args => {
+      gitCalls.push(args);
+      if (args[0] === 'cat-file') return 'commit\ncommit\n';
+      if (args[0] === 'diff') return 'diff --git a/one b/one\n';
+      if (args[0] === 'show') return 'diff --git a/two b/two\n';
+      return undefined;
+    });
+    expect(await service.getPullRequestDiff('repo', 12)).toMatchObject({ patch: 'diff --git a/one b/one\n', truncated: false });
+    expect(gitCalls).toContainEqual(expect.arrayContaining(['diff', `${base}...${head}`]));
+    expect(gitCalls.some(args => args[0] === 'fetch')).toBe(false);
+    expect(await service.getPullRequestCommitDiff('repo', head)).toMatchObject({ patch: 'diff --git a/two b/two\n' });
+    expect(run.mock.calls.some(([, args]) => args[0] === 'pr' && args[1] === 'diff')).toBe(false);
+    expect(run.mock.calls.some(([, args]) => args[0] === 'api' && String(args[1]).includes('/commits/'))).toBe(false);
+  });
+
+  it('fetches the PR head ref when the commits are missing locally', async () => {
+    let fetched = false;
+    const fetches: string[][] = [];
+    const { service } = fixture(view, undefined, undefined, (args, stdin = '') => {
+      if (args[0] === 'cat-file') return stdin.split('\n').filter(Boolean).map(line => fetched || line.startsWith(base) ? 'commit' : 'missing').join('\n');
+      if (args[0] === 'fetch') { fetches.push(args); fetched = true; return ''; }
+      if (args[0] === 'diff') return 'diff --git a/one b/one\n';
+      return undefined;
+    });
+    await service.getPullRequestDiff('repo', 12);
+    expect(fetches).toEqual([expect.arrayContaining(['--no-write-fetch-head', 'origin', 'refs/pull/12/head'])]);
+  });
+
+  it('falls back to GitHub when Git cannot download the commits, explaining oversized diffs', async () => {
+    const offline = () => (args: string[]) => args[0] === 'cat-file' ? 'missing\nmissing\n' : args[0] === 'fetch' ? new GitOperationError({ code: 'UNKNOWN', operation: 'fetch', message: 'offline' }) : undefined;
+    const working = fixture(args => args[0] === 'pr' && args[1] === 'diff' ? { exitCode: 0, stdout: 'diff --git a/x b/x\n', stderr: '' } : view(args), undefined, undefined, offline());
+    expect((await working.service.getPullRequestDiff('repo', 12)).patch).toBe('diff --git a/x b/x\n');
+    const tooLarge = fixture(args => args[0] === 'pr' && args[1] === 'diff'
+      ? fail('could not find pull request diff: HTTP 406: Sorry, the diff exceeded the maximum number of files (300).') : view(args), undefined, undefined, offline());
+    await expect(tooLarge.service.getPullRequestDiff('repo', 12)).rejects.toMatchObject({ message: expect.stringContaining('GitHub cannot produce a diff this large') });
   });
 });
 describe('GitHub native stacks', () => {
