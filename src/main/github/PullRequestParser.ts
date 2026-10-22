@@ -19,15 +19,16 @@ export function parsePullRequestList(raw: string): PullRequestSummary[] {
   return list.data.map((item) => parseSummary(item, 'gh-pr-list'));
 }
 
-/** Branch names alone are ambiguous across forks of the same repository. */
-export function parseBranchPullRequestList(raw: string, nameWithOwner: string, branch: string): PullRequestSummary[] {
+/** Branch names alone are ambiguous across forks of the same repository; only the given head repositories match. */
+export function parseBranchPullRequestList(raw: string, headRepositories: string[], branch: string): PullRequestSummary[] {
+  const heads = new Set(headRepositories.map(name => name.toLowerCase()));
   const list = pullRequestArraySchema.safeParse(parseJson(raw, 'gh-pr-for-branch'));
   if (!list.success) throw invalidOutput('gh-pr-for-branch');
   const headSchema = z.looseObject({ headRefName: z.string(), headRepository: z.looseObject({ nameWithOwner: z.string() }) });
   return list.data.filter((item) => {
     const head = headSchema.safeParse(item);
     return head.success && head.data.headRefName === branch
-      && head.data.headRepository.nameWithOwner.toLowerCase() === nameWithOwner.toLowerCase();
+      && heads.has(head.data.headRepository.nameWithOwner.toLowerCase());
   }).map((item) => parseSummary(item, 'gh-pr-for-branch'));
 }
 

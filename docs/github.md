@@ -65,9 +65,9 @@ Your CLI must support multi-account `auth token --user` and `auth status --json 
 2. Select a PR to inspect its metadata and Markdown description.
 3. In **Code**, review the cumulative diff or use **By commit** to inspect changes from one commit. The selector supports keyboard navigation, readable subjects, and scrollable options.
 
-**Code is computed by Git in your clone**, so pull requests larger than GitHub's 300-file diff limit open normally. The first time you open a PR's code, OpenTig downloads its commits from `origin` (`refs/pull/<number>/head`, plus the base commit if it is missing) without creating or moving any branch, tag, or remote-tracking ref, and then compares them the same way GitHub's **Files changed** does. Later views and **By commit** read locally. GitHub CLI returns at most 100 commits per PR, so for longer PRs the **Timeline** and **By commit** lists are completed from the downloaded history; GitHub avatars appear only for the commits GitHub returned. If the commits can't be downloaded, OpenTig asks GitHub for the diff instead, which only works within GitHub's limits. A diff larger than 32 MB shows its first complete files with a notice.
+**Code is computed by Git in your clone**, so pull requests larger than GitHub's 300-file diff limit open normally. The first time you open a PR's code, OpenTig downloads its commits from the remote that holds the pull requests (`refs/pull/<number>/head`, plus the base commit if it is missing) without creating or moving any branch, tag, or remote-tracking ref, and then compares them the same way GitHub's **Files changed** does. Later views and **By commit** read locally. GitHub CLI returns at most 100 commits per PR, so for longer PRs the **Timeline** and **By commit** lists are completed from the downloaded history; GitHub avatars appear only for the commits GitHub returned. If the commits can't be downloaded, OpenTig asks GitHub for the diff instead, which only works within GitHub's limits. A diff larger than 32 MB shows its first complete files with a notice.
 
-The PR list shows the effective GitHub account. The integration currently resolves the GitHub repository through `origin`.
+The PR list shows the effective GitHub account. Pull requests come from the GitHub repository of `origin`, unless you chose another remote with `gh repo set-default`: in a fork whose `origin` is your fork, run `gh repo set-default` in the clone and choose the upstream repository to see and open its PRs.
 
 **Open the current branch's PR**
 
@@ -108,7 +108,7 @@ The menu lists layer states, titles, branches, and bases, including layers outsi
 3. Write a title and description, then check the Markdown preview. You can also generate an editable draft from the branch diff.
 4. Review and confirm to publish.
 
-No PR is published before confirmation. Creation stops if the selected account or verified identity has changed since your review.
+No PR is published before confirmation. Creation stops if the selected account or verified identity has changed since your review. The PR's head is the branch's upstream; when that is another repository, such as your fork while PRs target upstream, it is passed to GitHub as `owner:branch`.
 
 Optional AI generation, with its provider and model, is in the dialog footer. Long coverage reports scroll inside the dialog. See [AI assistance](ai-assistance.md#pull-request-drafts) for coverage reports, output conventions, and stale comparisons.
 

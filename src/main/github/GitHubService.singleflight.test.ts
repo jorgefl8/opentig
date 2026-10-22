@@ -77,7 +77,8 @@ describe('GitHub pending reads', () => {
     const readers = Array.from({ length: 4 }, () => f.service.getPullRequest('alice', 12));
     await started.promise;
     expect(views(f.run)).toHaveLength(1);
-    expect(f.gitRun).toHaveBeenCalledTimes(1);
+    // One routing probe: the `gh repo set-default` choice and the remote URL.
+    expect(f.gitRun).toHaveBeenCalledTimes(2);
     expect(f.run.mock.calls.filter(([, args]) => args[1] === 'token')).toHaveLength(1);
     gate.resolve(result('{"number":12,"state":"OPEN","title":"Initial"}'));
     const values = await Promise.all(readers);
@@ -119,7 +120,7 @@ describe('GitHub pending reads', () => {
     });
     const pending = [f.service.getPullRequest('alice', 12), f.service.getPullRequest('alice', 13), f.service.getPullRequest('bob', 12)];
     await started.promise;
-    expect(f.gitRun).toHaveBeenCalledTimes(2);
+    expect(f.gitRun).toHaveBeenCalledTimes(4);
     gate.resolve();
     expect((await Promise.all(pending)).map(value => [value.number, value.title])).toEqual([[12, 'alice'], [13, 'alice'], [12, 'bob']]);
     expect(views(f.run)).toHaveLength(3);

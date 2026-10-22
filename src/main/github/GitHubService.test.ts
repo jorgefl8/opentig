@@ -29,7 +29,7 @@ function fixture(reply: (args: string[]) => CliRunResult, remoteUrl = 'https://g
       if (custom instanceof Error) throw custom;
       return { stdout: Buffer.from(custom ?? (args.includes('core.sshCommand') ? '' : remoteUrl)) };
     } } as unknown as GitProcess,
-    { get: () => ({ path: '.', commonDir: '.git', id: 'repo' }) } as unknown as RepositoryService,
+    { get: () => ({ path: '.', commonDir: '.git', id: 'repo' }), status: async () => ({ branch: 'feature', upstream: 'origin/feature', ahead: 0, detached: false, unborn: false }) } as unknown as RepositoryService,
   );
   return { service, run };
 }
@@ -222,6 +222,62 @@ describe('pull request code', () => {
     const tooLarge = fixture(args => args[0] === 'pr' && args[1] === 'diff'
       ? fail('could not find pull request diff: HTTP 406: Sorry, the diff exceeded the maximum number of files (300).') : view(args), undefined, undefined, offline());
     await expect(tooLarge.service.getPullRequestDiff('repo', 12)).rejects.toMatchObject({ message: expect.stringContaining('GitHub cannot produce a diff this large') });
+  });
+});
+describe('forks with a GitHub CLI default repository', () => {
+  const upstream = 'https://github.com/example/demo.git';
+  const fork = 'https://github.com/contributor/demo.git';
+  const forkGit = (extra: GitReply = () => undefined): GitReply => (args, stdin) => {
+    const custom = extra(args, stdin);
+    if (custom !== undefined) return custom;
+    if (args[0] === 'config' && args[1] === '--get-regexp') return 'remote.upstream.gh-resolved base\n';
+    if (args[0] === 'config' && args[2] === 'branch.feature.remote') return 'origin\n';
+    if (args[0] === 'config' && args[2] === 'branch.feature.merge') return 'refs/heads/feature-remote\n';
+    if (args[0] === 'remote' && args.at(-1) === 'upstream') return upstream;
+    if (args[0] === 'remote' && args.at(-1) === 'origin') return fork;
+    return undefined;
+  };
+
+  it('reads pull requests from the repository chosen with gh repo set-default', async () => {
+    const { service, run } = fixture(() => ok([]), fork, undefined, forkGit());
+    expect(await service.repositoryInfo('repo')).toEqual({ isGitHub: true, nameWithOwner: 'example/demo' });
+    await service.listPullRequests('repo', ['OPEN']);
+    expect(run.mock.calls.find(([, args]) => args[0] === 'pr')?.[1]).toEqual(expect.arrayContaining(['-R', 'example/demo']));
+  });
+
+  it('keeps origin when no default was chosen or the chosen remote is gone', async () => {
+    const none = fixture(() => ok([]), fork, undefined, args => args[0] === 'config' ? new GitOperationError({ code: 'UNKNOWN', operation: 'config', message: '' }) : undefined);
+    expect(await none.service.repositoryInfo('repo')).toEqual({ isGitHub: true, nameWithOwner: 'contributor/demo' });
+    const gone = fixture(() => ok([]), fork, undefined, args => args[0] === 'config' ? 'remote.missing.gh-resolved base\n'
+      : args[0] === 'remote' && args.at(-1) === 'missing' ? new GitOperationError({ code: 'UNKNOWN', operation: 'remote', message: 'No such remote' }) : undefined);
+    expect(await gone.service.repositoryInfo('repo')).toEqual({ isGitHub: true, nameWithOwner: 'contributor/demo' });
+  });
+
+  it('matches branch PRs opened from the fork', async () => {
+    const { service } = fixture(() => ok([
+      { number: 12, state: 'OPEN', headRefName: 'feature', headRepository: { nameWithOwner: 'contributor/demo' } },
+    ]), fork, undefined, forkGit());
+    expect(await service.findPullRequestForBranch('repo', 'feature')).toMatchObject({ number: 12 });
+  });
+
+  it('creates the PR on upstream with the fork branch as owner:branch', async () => {
+    const { service, run } = fixture(args => args[1] === 'create' ? { exitCode: 0, stdout: 'https://github.com/example/demo/pull/40\n', stderr: '' } : ok({}), fork, undefined, forkGit());
+    await service.createPullRequest({ repositoryId: 'repo', title: 'Fork', body: 'Body', base: 'upstream/main', draft: false });
+    const args = run.mock.calls.find(([, args]) => args[1] === 'create')?.[1] ?? [];
+    expect(args).toEqual(expect.arrayContaining(['-R', 'example/demo', '--base', 'main', '--head', 'contributor:feature-remote']));
+  });
+
+  it('downloads PR commits from the chosen remote', async () => {
+    const fetches: string[][] = [];
+    let fetched = false;
+    const { service } = fixture(args => args[1] === 'graphql' ? fail('unavailable') : ok({ number: 12, state: 'OPEN', baseRefOid: 'a'.repeat(40), headRefOid: 'b'.repeat(40) }), fork, undefined, forkGit(args => {
+      if (args[0] === 'cat-file') return fetched ? 'commit\ncommit\n' : 'missing\nmissing\n';
+      if (args[0] === 'fetch') { fetches.push(args); fetched = true; return ''; }
+      if (args[0] === 'diff') return '';
+      return undefined;
+    }));
+    await service.getPullRequestDiff('repo', 12);
+    expect(fetches[0]).toEqual(expect.arrayContaining(['upstream', 'refs/pull/12/head']));
   });
 });
 describe('GitHub native stacks', () => {

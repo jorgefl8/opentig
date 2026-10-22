@@ -89,8 +89,7 @@ export class GitHubService {
   async repositoryAccount(repositoryId: string, forceRefresh = false) {
     if (forceRefresh) this.invalidate(repositoryId);
     const repository = this.repositories.get(repositoryId);
-    const info = await this.repositoryInfo(repositoryId);
-    const remote = await this.remote(repositoryId);
+    const { remote: { url: remote }, info } = await this.routing(repositoryId);
     if (forceRefresh && info.nameWithOwner && !this.gitAccess) {
       this.accounts.refreshAuthentication();
       try { await this.accounts.authenticate(repository, remote, info.nameWithOwner, 'gh-repository-account'); }
@@ -106,12 +105,37 @@ export class GitHubService {
     return this.repositoryAccount(repositoryId);
   }
 
-  private async remote(repositoryId: string): Promise<string> {
+  /**
+   * The remote whose GitHub repository holds the pull requests: the one chosen
+   * with `gh repo set-default` (saved by GitHub CLI as
+   * `remote.<name>.gh-resolved = base`), otherwise `origin`. In a fork whose
+   * `origin` is the fork, that lets PRs come from the upstream repository.
+   */
+  private async remote(repositoryId: string): Promise<{ name: string; url: string }> {
     const repository = this.repositories.get(repositoryId);
+    const read = { operation: 'github-remote-url', readOnly: true, maxOutputBytes: 64 * 1024 };
+    const url = async (name: string) => {
+      try { return (await this.git.run(repository.path, ['remote', 'get-url', '--', name], read)).stdout.toString('utf8').trim(); }
+      catch { return ''; }
+    };
+    let resolved: string | undefined;
     try {
-      const output = await this.git.run(repository.path, ['remote', 'get-url', '--', 'origin'], { operation: 'github-remote-url', readOnly: true, maxOutputBytes: 64 * 1024 });
-      return output.stdout.toString('utf8').trim();
-    } catch { return ''; }
+      const output = (await this.git.run(repository.path, ['config', '--get-regexp', '^remote\\..+\\.gh-resolved$'], read)).stdout.toString('utf8');
+      resolved = output.split(/\r?\n/).map(line => /^remote\.(.+)\.gh-resolved\s+base$/.exec(line.trim())?.[1]).find(Boolean);
+    } catch { /* No default chosen with GitHub CLI. */ }
+    const chosen = resolved ? await url(resolved) : '';
+    return chosen ? { name: resolved!, url: chosen } : { name: 'origin', url: await url('origin') };
+  }
+
+  /** The GitHub repository of `origin`, when it differs from the PR repository (a fork). */
+  private async originRepository(repositoryId: string, nameWithOwner: string): Promise<string | null> {
+    const { remote } = await this.routing(repositoryId);
+    if (remote.name === 'origin') return null;
+    try {
+      const url = (await this.git.run(this.repositories.get(repositoryId).path, ['remote', 'get-url', '--', 'origin'], { operation: 'github-remote-url', readOnly: true, maxOutputBytes: 64 * 1024 })).stdout.toString('utf8').trim();
+      const origin = (await this.infoForRemote(url)).nameWithOwner;
+      return origin && origin.toLowerCase() !== nameWithOwner.toLowerCase() ? origin : null;
+    } catch { return null; }
   }
 
   repositoryInfo(repositoryId: string): Promise<GitHubRepositoryInfo> {
@@ -125,7 +149,7 @@ export class GitHubService {
   private routing(repositoryId: string) {
     return this.shareRead(repositoryId, ['routing'], async () => {
       const remote = await this.remote(repositoryId);
-      return { remote, info: await this.infoForRemote(remote) };
+      return { remote, info: await this.infoForRemote(remote.url) };
     });
   }
 
@@ -171,18 +195,20 @@ export class GitHubService {
     const operation = 'gh-pr-for-branch';
     const { repository, nameWithOwner, auth, executable } = await this.requireGitHub(repositoryId, operation);
     const branch = validateRef(branchName, operation);
+    // Branches pushed to a fork's origin open PRs whose head is the fork.
+    const heads = [nameWithOwner, ...[await this.originRepository(repositoryId, nameWithOwner)].filter((value): value is string => Boolean(value))];
     // An older open PR must not be hidden by newer closed PRs for a reused branch.
     const openResult = await this.runGhRead(
       ['pr', 'list', '-R', nameWithOwner, '--head', branch, '--state', 'open', '--json', `${PR_SUMMARY_FIELDS},headRepository`, '--limit', '10'],
       { auth, executable, cwd: repository.path, operation, timeoutMs: NETWORK_TIMEOUT_MS, maxOutputBytes: 1024 * 1024 },
     );
-    const openPull = sortPullRequestsNewestFirst(parseBranchPullRequestList(openResult.stdout, nameWithOwner, branch)).find((pull) => pull.state === 'OPEN');
+    const openPull = sortPullRequestsNewestFirst(parseBranchPullRequestList(openResult.stdout, heads, branch)).find((pull) => pull.state === 'OPEN');
     if (openPull) return (await this.withStackMembership(repository.path, nameWithOwner, auth, executable, [openPull]))[0]!;
     const result = await this.runGhRead(
       ['pr', 'list', '-R', nameWithOwner, '--head', branch, '--state', 'all', '--json', `${PR_SUMMARY_FIELDS},headRepository`, '--limit', '10'],
       { auth, executable, cwd: repository.path, operation, timeoutMs: NETWORK_TIMEOUT_MS, maxOutputBytes: 1024 * 1024 },
     );
-    const pull = sortPullRequestsNewestFirst(parseBranchPullRequestList(result.stdout, nameWithOwner, branch))[0];
+    const pull = sortPullRequestsNewestFirst(parseBranchPullRequestList(result.stdout, heads, branch))[0];
     return pull ? (await this.withStackMembership(repository.path, nameWithOwner, auth, executable, [pull]))[0]! : null;
   }
 
@@ -272,7 +298,8 @@ export class GitHubService {
     const repository = this.repositories.get(repositoryId);
     const range = { number: prNumber, baseOid: details.baseRefOid, headOid: details.headRefOid };
     try {
-      return await this.localGit.ensureRange(repository.path, 'origin', range) ? { ...range, cwd: repository.path } : null;
+      const { remote } = await this.routing(repositoryId);
+      return await this.localGit.ensureRange(repository.path, remote.name, range) ? { ...range, cwd: repository.path } : null;
     } catch { return null; }
   }
 
@@ -331,8 +358,9 @@ export class GitHubService {
     }
     // The UI selects the base as a remote-tracking ref (e.g. "origin/main");
     // gh expects the plain branch name on the base repository.
-    const base = validateRef(input.base.replace(/^origin\//, ''), operation);
-    const head = validateRef(status.branch, operation);
+    const { remote } = await this.routing(input.repositoryId);
+    const base = validateRef([`${remote.name}/`, 'origin/'].reduce((value, prefix) => value.startsWith(prefix) ? value.slice(prefix.length) : value, input.base), operation);
+    const head = await this.pullRequestHead(repository.path, status.branch, nameWithOwner, operation);
     if (base === head) throw new GhOperationError({ code: 'GH_PROCESS_FAILED', operation, message: 'The base branch must be different from the current branch.' });
 
     // The body travels through a private temporary file: it avoids argument
@@ -357,9 +385,27 @@ export class GitHubService {
     }
   }
 
+  /**
+   * The head as gh expects it: the branch's name on the remote it tracks, and
+   * `owner:branch` when that remote is another repository, such as your fork
+   * while pull requests target upstream.
+   */
+  private async pullRequestHead(cwd: string, branch: string, nameWithOwner: string, operation: string): Promise<string> {
+    const local = validateRef(branch, operation);
+    const read = async (args: string[]) => {
+      try { return (await this.git.run(cwd, args, { operation: 'github-pr-head', readOnly: true, maxOutputBytes: 64 * 1024 })).stdout.toString('utf8').trim(); }
+      catch { return ''; }
+    };
+    const [remoteName, merge] = await Promise.all([read(['config', '--get', `branch.${local}.remote`]), read(['config', '--get', `branch.${local}.merge`])]);
+    const name = merge.startsWith('refs/heads/') ? validateRef(merge.slice('refs/heads/'.length), operation) : local;
+    if (!remoteName || remoteName === '.') return name;
+    const headRepository = (await this.infoForRemote(await read(['remote', 'get-url', '--', remoteName]))).nameWithOwner;
+    return headRepository && headRepository.toLowerCase() !== nameWithOwner.toLowerCase() ? `${headRepository.split('/')[0]}:${name}` : name;
+  }
+
   private async requireGitHub(repositoryId: string, operation: string) {
     const repository = this.repositories.get(repositoryId);
-    const { remote, info } = await this.routing(repositoryId);
+    const { remote: { url: remote }, info } = await this.routing(repositoryId);
     if (!info.isGitHub || !info.nameWithOwner) throw new GhOperationError({ code: 'GH_NOT_GITHUB_REPO', operation, message: 'The origin remote does not point to a GitHub repository.' });
     const authenticated = await this.accounts.authenticate(repository, remote, info.nameWithOwner, operation);
     return { repository, nameWithOwner: info.nameWithOwner, ...authenticated };
