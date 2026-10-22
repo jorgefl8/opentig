@@ -151,7 +151,7 @@ Settings initially shows the last checked CLI version, accounts for `github.com`
 
 **How Git authenticates**
 
-Fetch, pull, push, and remote-branch operations to a plain `https://github.com/owner/repository` destination use the repository's account through its saved GitHub CLI credentials. The active `gh` account and Git's global credential helpers don't affect them. Git uses its own credentials instead for:
+Fetch, pull, push, and remote-branch operations to a plain `https://github.com/owner/repository` destination use the repository's account through its saved GitHub CLI credentials. **Clone from URL** uses the default account for such URLs, or another connected account that can read the repository, which then becomes the new repository's account. The active `gh` account and Git's global credential helpers don't affect them. Git uses its own credentials instead for:
 
 - SSH remotes, which keep using your SSH key;
 - other hosts and unusual URLs, such as URLs with embedded credentials or query strings;

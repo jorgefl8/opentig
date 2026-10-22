@@ -85,6 +85,24 @@ export class GitHubAccountsService {
     return resolveGitHubAccount(this.selection(repository), this.settings?.githubDefaultLogin ?? null);
   }
 
+  /** The account new repositories follow, or null when Git keeps its own credentials. */
+  defaultLogin(): string | null {
+    return this.settings?.githubDefaultLogin ?? null;
+  }
+
+  /** A connected account's token for one operation, verified to still authenticate that account. */
+  async accountToken(login: string, operation: string): Promise<string> {
+    const detection = await this.detect();
+    if (detection.state !== 'available' || !detection.candidate) throw new GhOperationError({ code: detection.state === 'not-found' ? 'GH_CLI_NOT_FOUND' : 'GH_PROCESS_FAILED', operation,
+      message: detection.state === 'not-found' ? 'GitHub CLI is not installed on the backend host.' : 'GitHub CLI could not run. Check Settings → GitHub.' });
+    const auth = await accountAuthentication(login, detection.candidate, this.runner, operation);
+    const verified = await this.identity(detection.candidate, auth, operation);
+    const token = auth.env?.GH_TOKEN;
+    if (!token || verified.toLowerCase() !== login.toLowerCase()) throw new GhOperationError({ code: 'GH_AUTH_REQUIRED', operation,
+      message: `The saved credentials for @${login} authenticate a different account. Authenticate @${login} again and check Settings → GitHub.` });
+    return token;
+  }
+
   context(repository: RepositoryInfo, remote: string, nameWithOwner: string | null): GitHubRepositoryAccount {
     const cached = this.contexts.get(repository.id);
     if (cached?.remote === remote && cached.value.revision === this.revisionFor(repository)) return structuredClone(cached.value);

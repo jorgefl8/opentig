@@ -58,7 +58,15 @@ export function registerServerCommands(
   handle(IPC.gitStatus, 'git-status', () => services.git.status());
   handle(IPC.completeOnboarding, 'complete-onboarding', () => services.settings.completeOnboarding());
   handle(IPC.gitSetGlobalIdentity, 'git-identity-set', (input) => setGlobalGitIdentity(services.git, input));
-  const clones = new CloneJobs(services.git, (destination) => services.repositories.preparePath(destination));
+  // Resolved per clone: GitHub services are optional for this command set.
+  const clones = new CloneJobs(services.git, (destination) => services.repositories.preparePath(destination), {
+    run: async (cwd, url, task) => {
+      const gitAccess = services.github?.gitAccess;
+      return gitAccess ? gitAccess.withCloneCredentials(cwd, url, task) : { value: await task([], {}, null), adopted: null };
+    },
+    adopt: (repository, login) => services.github.accounts.setSelection(repository, { mode: 'account', host: 'github.com', login, detected: true },
+      { login, previousLogin: services.github.accounts.defaultLogin() }),
+  });
   handle(IPC.repositoryClone, 'clone-repository', (raw) => {
     if (!raw || typeof raw !== 'object') throw new Error('Invalid clone request.');
     const value = raw as Record<string, unknown>;

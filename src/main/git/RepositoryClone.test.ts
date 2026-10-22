@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createServer } from 'node:http';
 import { execa } from 'execa';
-import { cloneRepository } from './RepositoryClone';
+import { cloneRepository, type CloneCredentials } from './RepositoryClone';
 import { GitProcess, type RunOptions } from './GitProcess';
 import { cloneFailureMessage, cloneInputError, cloneSource, parseCloneProgress, type CloneJob } from '../../shared/onboarding';
 
@@ -33,7 +33,7 @@ describe('repository cloning', () => {
     try {
       const port = (server.address() as { port: number }).port;
       const progress: Progress[] = [];
-      const destination = await cloneRepository(new GitProcess(), { ...input(directory), url: 'http://127.0.0.1:' + port + '/sample.git' }, new AbortController().signal, value => progress.push(value));
+      const { destination } = await cloneRepository(new GitProcess(), { ...input(directory), url: 'http://127.0.0.1:' + port + '/sample.git' }, new AbortController().signal, value => progress.push(value));
       // Windows checkouts may convert line endings (core.autocrlf).
       expect((await readFile(path.join(destination, 'README.md'), 'utf8')).replace(/\r\n/g, '\n')).toBe('sample\n');
       expect((await execa('git', ['status', '--porcelain'], { cwd: source })).stdout).toBe('');
@@ -102,5 +102,21 @@ describe('repository cloning', () => {
     expect(cloneSource('git@github.com:acme/payments.git')).toEqual({ host: 'GitHub', transport: 'SSH' });
     expect(cloneSource('https://gitlab.example.com/acme/payments.git')).toEqual({ host: 'gitlab.example.com', transport: 'HTTPS' });
     expect(cloneSource('https://github.com')).toBeNull();
+  });
+
+  it('runs Git with the chosen account and names it when the clone is refused', async () => {
+    const directory = await root();
+    const run = vi.fn(async (_cwd: string, args: string[], options: RunOptions) => {
+      expect(args.slice(0, 2)).toEqual(['-c', 'credential.helper=']);
+      expect(options).toMatchObject({ managed: true, managedSecrets: ['secret'] });
+      options.onStderr?.('remote: Repository not found.\n');
+      throw new Error('fatal: repository not found');
+    });
+    const credentials = { run: vi.fn(async (_cwd: string, _url: string, task: (args: string[], options: Pick<RunOptions, 'managed' | 'managedSecrets'>, login: string | null) => Promise<unknown>) =>
+      ({ value: await task(['-c', 'credential.helper='], { managed: true, managedSecrets: ['secret'] }, 'alice'), adopted: null })) } as unknown as CloneCredentials & { run: ReturnType<typeof vi.fn> };
+    await expect(cloneRepository({ run } as unknown as GitProcess, { ...input(directory), url: 'https://github.com/team/private.git' }, new AbortController().signal, vi.fn(), credentials))
+      .rejects.toThrow('The GitHub account @alice cannot access this repository');
+    expect(credentials.run).toHaveBeenCalledWith(await realpath(directory), 'https://github.com/team/private.git', expect.any(Function));
+    expect(await readdir(directory)).toEqual([]);
   });
 });

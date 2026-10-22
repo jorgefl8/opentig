@@ -14,6 +14,8 @@ import type { GitProcess, GitOutput, RunOptions } from './GitProcess';
 import { createCredentialBroker, managedGitHubPath } from './GitCredentialBroker';
 
 const read = { operation: 'repository-access', readOnly: true, maxOutputBytes: 1024 * 1024 };
+/** Runs one clone attempt with extra global arguments and options; `login` names the account authenticating it. */
+export type CloneTask<T> = (args: string[], options: Pick<RunOptions, 'managed' | 'managedSecrets'>, login: string | null) => Promise<T>;
 const unchecked = (): AccessCheck => ({ state: 'unchecked' });
 const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 interface Session { repository: RepositoryInfo; selection: GitHubAccountSelection; login: string | null; revision: number; auth?: Awaited<ReturnType<GitHubAccountsService['authenticate']>> }
@@ -162,6 +164,57 @@ export class RepositoryGitAccess {
     this.checks.set(repositoryId, value);
     return value;
   }
+  /** Replaces every configured credential source with the broker for one Git command. */
+  private async managedArgs(cwd: string, helper: string): Promise<string[]> {
+    const config = (await this.git.run(cwd, ['config', '--name-only', '--list'], read)).stdout.toString('utf8').trim().split(/\r?\n/);
+    const overrides = [...new Set(config)].flatMap(key => {
+      if (/^credential\..*helper$/i.test(key)) return ['-c', `${key}=`];
+      if (/^http\..*extraheader$/i.test(key)) return ['-c', `${key}=`];
+      if (/^http\..*followredirects$/i.test(key)) return ['-c', `${key}=false`];
+      if (/^http\..*sslverify$/i.test(key)) return ['-c', `${key}=true`];
+      if (/^credential\..*usehttppath$/i.test(key)) return ['-c', `${key}=true`];
+      return [];
+    });
+    return [...overrides, '-c', 'credential.helper=', '-c', `credential.helper=${helper}`, '-c', 'credential.useHttpPath=true',
+      '-c', 'core.askPass=', '-c', 'http.extraHeader=', '-c', 'http.followRedirects=false', '-c', 'http.sslVerify=true',
+      '-c', 'fetch.recurseSubmodules=false', '-c', 'push.recurseSubmodules=no'];
+  }
+
+  /**
+   * A new clone has no repository account yet. A plain github.com HTTPS URL
+   * authenticates with the default account, like the repository will after it
+   * is added; if that account cannot read it, another connected account that
+   * can is used and reported so the repository can keep it. Other URLs, and
+   * setups without a usable account, keep Git's own credentials.
+   */
+  async withCloneCredentials<T>(cwd: string, url: string, task: CloneTask<T>): Promise<{ value: T; adopted: string | null }> {
+    const repositoryPath = managedGitHubPath(url)?.replace(/\.git$/, '');
+    const login = this.accounts.defaultLogin();
+    if (!repositoryPath || !login) return { value: await task([], {}, null), adopted: null };
+    let token: string;
+    try { token = await this.accounts.accountToken(login, 'clone-repository'); }
+    catch { return { value: await task([], {}, null), adopted: null }; }
+    try { return { value: await this.withBroker(cwd, url, login, token, task), adopted: null }; }
+    catch (error) {
+      if (accessError(messageOf(error)).state !== 'inaccessible') throw error;
+      const candidate = (await this.accounts.accountsWithAccess(repositoryPath, 'clone-repository').catch(() => []))
+        .find(item => item.login.toLowerCase() !== login.toLowerCase());
+      if (!candidate) throw error;
+      const other = await this.accounts.accountToken(candidate.login, 'clone-repository');
+      return { value: await this.withBroker(cwd, url, candidate.login, other, task), adopted: candidate.login };
+    }
+  }
+
+  private async withBroker<T>(cwd: string, url: string, login: string, token: string, task: CloneTask<T>): Promise<T> {
+    const broker = await createCredentialBroker(url, login, token);
+    try {
+      return await task(await this.managedArgs(cwd, broker.helper), { managed: true, managedSecrets: [token] }, login);
+    } catch (error) {
+      if (error instanceof Error) error.message = redactSensitiveText(error.message.split(token).join('[redacted]'));
+      throw error;
+    } finally { await broker.dispose(); }
+  }
+
   /** Describes a GitHub access failure so clients can name the account and offer one that has access. */
   private async accessProblem(url: string, message: string, login: string | null, switchedTo: string | null, operation: string): Promise<RemoteAccessProblem | null> {
     const sso = /\bsaml\b|single sign-on|\bsso\b/i.test(message);
@@ -209,18 +262,7 @@ export class RepositoryGitAccess {
         if (command === 'fetch' && !selected && target.remote) args = [...args, '--', target.remote];
         token = session.auth.auth.env?.GH_TOKEN ?? '';
         broker = await createCredentialBroker(url, login, token);
-        const config = (await this.git.run(repository.path, ['config', '--name-only', '--list'], read)).stdout.toString('utf8').trim().split(/\r?\n/);
-        const overrides = [...new Set(config)].flatMap(key => {
-          if (/^credential\..*helper$/i.test(key)) return ['-c', `${key}=`];
-          if (/^http\..*extraheader$/i.test(key)) return ['-c', `${key}=`];
-          if (/^http\..*followredirects$/i.test(key)) return ['-c', `${key}=false`];
-          if (/^http\..*sslverify$/i.test(key)) return ['-c', `${key}=true`];
-          if (/^credential\..*usehttppath$/i.test(key)) return ['-c', `${key}=true`];
-          return [];
-        });
-        args = [...overrides, '-c', 'credential.helper=', '-c', `credential.helper=${broker.helper}`, '-c', 'credential.useHttpPath=true',
-          '-c', 'core.askPass=', '-c', 'http.extraHeader=', '-c', 'http.followRedirects=false', '-c', 'http.sslVerify=true',
-          '-c', 'fetch.recurseSubmodules=false', '-c', 'push.recurseSubmodules=no', ...args];
+        args = [...await this.managedArgs(repository.path, broker.helper), ...args];
       }
       if (options.publication) await this.assertPublication(options.publication.repositoryId, options.publication.id, options.publication.remote);
       const result = await execute(args, { ...options, ...(managed ? { managed: true, managedSecrets: [token] } : {}) });
