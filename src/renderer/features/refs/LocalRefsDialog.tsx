@@ -16,7 +16,7 @@ import { opentig } from '@/lib/opentig-api';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   branchBadges, branchDeleteEligibility, branchDetailBadges, branchKey, filterBranches, filterWorktrees,
-  localChangeSummary, nextSelectionKey, worktreeBadges, worktreeKey, worktreeName, worktreeRemoveEligibility,
+  localChangeSummary, mergedPullRequestTip, nextSelectionKey, worktreeBadges, worktreeKey, worktreeName, worktreeRemoveEligibility,
   type LocalRefsTab, type RefBadge,
 } from './local-refs-model';
 import { openOnGitHub } from '@/features/pulls/gh-utils';
@@ -416,6 +416,7 @@ function BranchDetailPanel({ details, pullRequest, busy, anyBusy, confirming, ac
   onConfirm(): void; onCancel(): void; onDelete(force: boolean): void;
 }) {
   const eligibility = branchDeleteEligibility(details, pullRequest);
+  const mergedTip = mergedPullRequestTip(details, pullRequest);
   const force = eligibility.forceAllowed === true;
   const deletionAllowed = eligibility.allowed || force;
   return (
@@ -450,7 +451,7 @@ function BranchDetailPanel({ details, pullRequest, busy, anyBusy, confirming, ac
         confirmLabel={busy ? 'Deleting…' : force ? 'Permanently delete' : 'Delete branch'}
         allowed={deletionAllowed}
         confirmation={force
-          ? <>Force-delete the local branch <strong>{details.name}</strong>? This keeps any remote branch and pull request, but commits found only on this local branch may become inaccessible. {pullRequest?.state === 'MERGED' ? <>GitHub reports PR <strong>#{pullRequest.number}</strong> as merged into <strong>{pullRequest.baseRefName}</strong>, although local Git cannot verify the ancestry.</> : null}</>
+          ? <>Force-delete the local branch <strong>{details.name}</strong>? This keeps any remote branch and pull request, but commits found only on this local branch may become inaccessible. {pullRequest?.state === 'MERGED' ? <>GitHub reports PR <strong>#{pullRequest.number}</strong> as merged into <strong>{pullRequest.baseRefName}</strong>{mergedTip === 'same' ? <> with exactly this tip.</> : mergedTip === 'different' ? <>, but this branch’s tip is not the merged head.</> : <>, although local Git cannot verify the ancestry.</>}</> : null}</>
           : <>Delete the local branch <strong>{details.name}</strong>? This removes only the local branch, keeping every worktree and any remote copy. Git confirmed it is fully merged into <strong>{details.comparisonBase}</strong>.</>}
         onConfirm={onConfirm}
         onCancel={onCancel}

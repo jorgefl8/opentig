@@ -27,7 +27,7 @@ OpenTig opens repositories on the machine running its backend. The Windows app r
 
 The start screen offers **Open a folder**, **Clone from URL**, and **Find on this computer** (or **on the server**), with Git, GitHub CLI, and AI assistant status on one line. Only a missing Git blocks; it is replaced by install commands for the detected system and **Check again**. See [first launch](getting-started.md#first-launch).
 
-**Clone from URL** is also available from the Open dialog. It accepts HTTPS, HTTP, or SSH URLs, including SCP-style addresses, shows the detected host, and suggests the folder name and the parent folder last used. Private repositories use the host's existing Git credentials; embedded credentials and local or custom transports are rejected, and the destination must not exist. The clone runs on the server: closing the dialog, reloading, or losing the connection keeps it going, and a notification offers to open it when it finishes. Cancelling keeps the form; partial files are never deleted. Submodules are not initialized.
+**Clone from URL** is also available from the Open dialog. It accepts HTTPS, HTTP, or SSH URLs, including SCP-style addresses, shows the detected host, and suggests the folder name and the parent folder last used. Private repositories at a plain `https://github.com/owner/repository` URL authenticate with the default GitHub account; if it can't read the repository, another connected account that can is used and kept as the new repository's account. Other URLs, and setups without a default account, use the host's existing Git credentials; embedded credentials and local or custom transports are rejected, and the destination must not exist. The clone runs on the server: closing the dialog, reloading, or losing the connection keeps it going, and a notification offers to open it when it finishes. Cancelling keeps the form; partial files are never deleted. Submodules are not initialized.
 
 **Find** lists repositories in the home folder and common checkout folders such as `~/code` and `~/projects`, one level deep, skipping those already added.
 
@@ -332,7 +332,7 @@ From a remote's **Local branches** details, create a tracking branch at the fetc
 
 **Delete branches or remove worktrees**
 
-- **Local branch:** deletion uses Git's non-forced, fully merged path.
+- **Local branch:** deletion uses Git's non-forced, fully merged path. When Git can't confirm the merge, such as after a squash or rebase merge, force deletion remains available and the branch's GitHub PR is shown as evidence: a merged PR whose head is exactly the branch tip means every commit reached GitHub, while a different tip warns that the branch may have commits that were never merged.
 - **Remote branch:** confirm the named remote and branch individually. OpenTig rechecks the remote tip and destination with an expected-commit lease. Default branches cannot be deleted; unknown defaults, ambiguous fetch mappings, or differing/multiple fetch/push destinations also block deletion. Git permissions and server branch protection still apply. Local branches and worktrees remain; bulk remote deletion is unavailable.
 - **Linked worktree:** open or remove an eligible worktree. Removing it does not delete its branch. The main worktree cannot be removed.
 

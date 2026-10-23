@@ -101,7 +101,10 @@ export function parseCloneProgress(line: string): Pick<CloneJob, 'phase' | 'perc
 }
 
 /** Turns Git's clone stderr into an actionable message without credentials or URLs. */
-export function cloneFailureMessage(stderr: string): string {
+export function cloneFailureMessage(stderr: string, account: string | null = null): string {
+  if (account && /Authentication failed|could not read Username|terminal prompts disabled|403|Repository not found|not found/i.test(stderr)) {
+    return `The GitHub account @${account} cannot access this repository, and no other connected account can. Connect an account with access in Settings → GitHub, or use an SSH URL.`;
+  }
   if (/Authentication failed|could not read Username|terminal prompts disabled|403/i.test(stderr)) return 'Authentication failed. Sign in with your Git credential helper, or use an SSH URL with a key that has access.';
   if (/Permission denied \(publickey/i.test(stderr)) return 'SSH key rejected. Add your public key to the Git host, or use the HTTPS URL.';
   if (/Host key verification failed/i.test(stderr)) return 'The SSH host is not trusted yet. Connect once from a terminal with ssh to confirm its fingerprint, then try again.';

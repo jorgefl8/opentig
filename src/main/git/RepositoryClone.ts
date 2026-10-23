@@ -4,6 +4,7 @@ import path from 'node:path';
 import type { RepositoryInfo } from '../../shared/contracts';
 import { cloneFailureMessage, cloneInputError, parseCloneProgress, type CloneJob, type CloneRepositoryInput } from '../../shared/onboarding';
 import type { GitProcess } from './GitProcess';
+import type { CloneTask } from './RepositoryGitAccess';
 
 // Large repositories over slow links take a long time; only cancellation should stop them early.
 const CLONE_TIMEOUT_MS = 6 * 60 * 60_000;
@@ -12,8 +13,20 @@ const FINISHED_JOB_TTL_MS = 30 * 60_000;
 
 type Progress = Pick<CloneJob, 'phase' | 'percent' | 'received'>;
 
+/** Chooses how a clone authenticates; may run the task again with another account. */
+export interface CloneCredentials {
+  run<T>(cwd: string, url: string, task: CloneTask<T>): Promise<{ value: T; adopted: string | null }>;
+  /** Keeps the account that could read the repository as the new repository's account. */
+  adopt(repository: RepositoryInfo, login: string): Promise<void>;
+}
+
+const gitCredentials: Pick<CloneCredentials, 'run'> = {
+  run: async (_cwd, _url, task) => ({ value: await task([], {}, null), adopted: null }),
+};
+
 /** A clone only reserves a new directory; it never replaces an existing path. */
-export async function cloneRepository(git: GitProcess, input: CloneRepositoryInput, signal: AbortSignal, progress: (value: Progress) => void): Promise<string> {
+export async function cloneRepository(git: GitProcess, input: CloneRepositoryInput, signal: AbortSignal, progress: (value: Progress) => void,
+  credentials: Pick<CloneCredentials, 'run'> = gitCredentials): Promise<{ destination: string; adopted: string | null }> {
   const error = cloneInputError(input);
   if (error) throw new Error(error);
   if (!path.isAbsolute(input.parentPath)) throw new Error('Choose an absolute destination folder path.');
@@ -30,27 +43,31 @@ export async function cloneRepository(git: GitProcess, input: CloneRepositoryInp
   progress({ phase: 'Connecting to remote', percent: null, received: null });
   let pending = '';
   let diagnostics = '';
+  let account: string | null = null;
   try {
-    await git.run(parent, ['-c', 'protocol.allow=never', '-c', 'protocol.https.allow=always', '-c', 'protocol.http.allow=always', '-c', 'protocol.ssh.allow=always',
-      'clone', '--progress', '--', input.url, destination], {
-      operation: 'clone-repository', timeoutMs: CLONE_TIMEOUT_MS, maxOutputBytes: 64 * 1024 * 1024, signal,
-      onStderr(chunk) {
-        const lines = (pending + chunk).split(/[\r\n]/);
-        pending = (lines.pop() ?? '').slice(-4096);
-        for (const line of lines) {
-          const parsed = parseCloneProgress(line);
-          if (parsed) progress(parsed);
-          else if (line.trim()) diagnostics = (diagnostics + '\n' + line).slice(-4096);
-        }
-      },
+    const { adopted } = await credentials.run(parent, input.url, (managed, options, login) => {
+      account = login; pending = ''; diagnostics = '';
+      return git.run(parent, [...managed, '-c', 'protocol.allow=never', '-c', 'protocol.https.allow=always', '-c', 'protocol.http.allow=always', '-c', 'protocol.ssh.allow=always',
+        'clone', '--progress', '--', input.url, destination], {
+        ...options, operation: 'clone-repository', timeoutMs: CLONE_TIMEOUT_MS, maxOutputBytes: 64 * 1024 * 1024, signal,
+        onStderr(chunk) {
+          const lines = (pending + chunk).split(/[\r\n]/);
+          pending = (lines.pop() ?? '').slice(-4096);
+          for (const line of lines) {
+            const parsed = parseCloneProgress(line);
+            if (parsed) progress(parsed);
+            else if (line.trim()) diagnostics = (diagnostics + '\n' + line).slice(-4096);
+          }
+        },
+      });
     });
     signal.throwIfAborted();
-    return destination;
+    return { destination, adopted };
   } catch (reason) {
     // Only remove an empty reservation. Partial data is retained, never recursively deleted.
     let retained = false;
     try { await rmdir(destination); } catch (removeError) { retained = (removeError as NodeJS.ErrnoException).code !== 'ENOENT'; }
-    const message = signal.aborted ? 'Clone cancelled.' : cloneFailureMessage(`${diagnostics}\n${pending}\n${reason instanceof Error ? reason.message : ''}`);
+    const message = signal.aborted ? 'Clone cancelled.' : cloneFailureMessage(`${diagnostics}\n${pending}\n${reason instanceof Error ? reason.message : ''}`, account);
     throw new Error(`${message}${retained ? ' The destination contains partial data and has been kept. Choose another folder name to retry.' : ''}`, { cause: reason });
   }
 }
@@ -58,7 +75,7 @@ export async function cloneRepository(git: GitProcess, input: CloneRepositoryInp
 export class CloneJobs {
   private readonly jobs = new Map<string, { job: CloneJob; controller: AbortController }>();
 
-  constructor(private readonly git: GitProcess, private readonly prepare: (destination: string) => Promise<RepositoryInfo>) {}
+  constructor(private readonly git: GitProcess, private readonly prepare: (destination: string) => Promise<RepositoryInfo>, private readonly credentials?: CloneCredentials) {}
 
   start(input: CloneRepositoryInput): CloneJob {
     const error = cloneInputError(input);
@@ -87,9 +104,12 @@ export class CloneJobs {
 
   private async run(job: CloneJob, input: CloneRepositoryInput, signal: AbortSignal): Promise<void> {
     try {
-      job.destination = await cloneRepository(this.git, input, signal, value => Object.assign(job, value));
+      const { destination, adopted } = await cloneRepository(this.git, input, signal, value => Object.assign(job, value), this.credentials);
+      job.destination = destination;
       job.phase = 'Opening repository'; job.percent = 100;
       job.repository = await this.prepare(job.destination);
+      // Best effort: the repository is usable even if the choice can't be saved.
+      if (adopted) await this.credentials?.adopt(job.repository, adopted).catch(() => undefined);
       job.state = 'completed'; job.phase = 'Repository cloned';
     } catch (reason) {
       job.state = signal.aborted ? 'cancelled' : 'failed';

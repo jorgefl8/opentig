@@ -376,6 +376,15 @@ export interface PullRequestCommit {
   authorAvatarUrl: string | null;
 }
 
+/** `gh pr view --json commits` returns at most this many commits, without pagination. */
+export const GITHUB_PR_COMMIT_PAGE = 100;
+
+export interface PullRequestCommitList {
+  commits: PullRequestCommit[];
+  /** False when only GitHub's first page is available. */
+  complete: boolean;
+}
+
 export interface PullRequestStackMembership {
   number: number;
   size: number;
@@ -400,6 +409,8 @@ export interface PullRequestSummary {
   author: string;
   authorAvatarUrl: string | null;
   headRefName: string;
+  /** The PR head commit; for a merged PR, the commit GitHub merged. Empty when unknown. */
+  headRefOid?: string;
   baseRefName: string;
   updatedAt: string;
   url: string;
@@ -414,6 +425,9 @@ export interface PullRequestDetails extends PullRequestSummary {
   changedFiles: number;
   labels: PullRequestLabel[];
   commits: PullRequestCommit[];
+  /** Base commit GitHub compares against: the current base tip, or the one recorded at merge. */
+  baseRefOid: string;
+  headRefOid: string;
 }
 
 export interface CreatePullRequestInput {
@@ -644,6 +658,7 @@ export interface OpenTigApi {
     getPullRequestStack(repositoryId: string, number: number): Promise<PullRequestStack | null>;
     getPullRequestDiff(repositoryId: string, number: number): Promise<DiffResult>;
     getPullRequestCommitDiff(repositoryId: string, oid: string): Promise<DiffResult>;
+    getPullRequestCommits(repositoryId: string, number: number): Promise<PullRequestCommitList>;
     createPullRequest(input: CreatePullRequestInput): Promise<CreatePullRequestResult>;
     generateDraft(input: GeneratePullRequestDraftInput): Promise<GeneratedPullRequestDraft>;
     cancelDraft(requestId: string): Promise<void>;
@@ -694,5 +709,5 @@ export const IPC = {
   diagnosticsList: 'diagnostics:list', diagnosticsClear: 'diagnostics:clear', diagnosticsRecord: 'diagnostics:record',
   githubAccountsStatus: 'github:accounts-status', githubSetDefaultAccount: 'github:set-default-account', githubRepositoryAccount: 'github:repository-account', githubSetRepositoryAccount: 'github:set-repository-account',
   githubStatus: 'github:status', githubRepositoryInfo: 'github:repository-info', githubPrForBranch: 'github:pr-for-branch', githubPrList: 'github:pr-list', githubPrView: 'github:pr-view',
-  githubPrStack: 'github:pr-stack', githubPrDiff: 'github:pr-diff', githubPrCommitDiff: 'github:pr-commit-diff', githubPrCreate: 'github:pr-create', githubPrDraft: 'github:pr-draft', githubPrDraftCancel: 'github:pr-draft-cancel',
+  githubPrStack: 'github:pr-stack', githubPrDiff: 'github:pr-diff', githubPrCommitDiff: 'github:pr-commit-diff', githubPrCommits: 'github:pr-commits', githubPrCreate: 'github:pr-create', githubPrDraft: 'github:pr-draft', githubPrDraftCancel: 'github:pr-draft-cancel',
 } as const;

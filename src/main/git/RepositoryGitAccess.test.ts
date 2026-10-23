@@ -457,3 +457,61 @@ describe('finding an account with access for Git HTTPS', () => {
     expect(f.accounts.selection(f.repository)).not.toHaveProperty('detected');
   });
 });
+
+describe('clone credentials', () => {
+  type Attempt = { args: string[]; options: Pick<RunOptions, 'managed' | 'managedSecrets'>; login: string | null };
+  const recorder = (fail?: (login: string | null) => boolean) => {
+    const attempts: Attempt[] = [];
+    const task = async (args: string[], options: Attempt['options'], login: string | null) => {
+      attempts.push({ args, options, login });
+      if (fail?.(login)) throw new GitOperationError({ code: 'UNKNOWN', operation: 'clone-repository', message: "remote: Repository not found.\nfatal: repository 'https://github.com/team/private.git/' not found" });
+      return 'cloned';
+    };
+    return { attempts, task };
+  };
+
+  it('authenticates github.com HTTPS clones with the default account through the broker', async () => {
+    const f = await fixture();
+    await f.settings.setGitHubDefaultLogin('alice');
+    const { attempts, task } = recorder();
+    expect(await f.service.withCloneCredentials(f.root, 'https://github.com/team/private.git', task)).toEqual({ value: 'cloned', adopted: null });
+    expect(attempts).toHaveLength(1);
+    expect(attempts[0]).toMatchObject({ login: 'alice', options: { managed: true, managedSecrets: [token('alice')] } });
+    expect(attempts[0]!.args).toEqual(expect.arrayContaining(['credential.helper=', 'credential.useHttpPath=true', 'http.followRedirects=false']));
+    expect(attempts[0]!.args.join(' ')).not.toContain(token('alice'));
+  });
+
+  it.each(['git@github.com:team/private.git', 'https://gitlab.com/team/private.git', 'https://user@github.com/team/private.git'])('keeps Git’s own credentials for %s', async url => {
+    const f = await fixture();
+    await f.settings.setGitHubDefaultLogin('alice');
+    const { attempts, task } = recorder();
+    await f.service.withCloneCredentials(f.root, url, task);
+    expect(attempts).toEqual([{ args: [], options: {}, login: null }]);
+  });
+
+  it('keeps Git’s own credentials when there is no default account', async () => {
+    const f = await fixture();
+    const { attempts, task } = recorder();
+    await f.service.withCloneCredentials(f.root, 'https://github.com/team/private.git', task);
+    expect(attempts).toEqual([{ args: [], options: {}, login: null }]);
+  });
+
+  it('retries once with a connected account that can read the repository and reports it', async () => {
+    const f = await fixture();
+    await f.settings.setGitHubDefaultLogin('alice');
+    vi.spyOn(f.accounts, 'accountsWithAccess').mockResolvedValue([{ login: 'bob', push: false }]);
+    const { attempts, task } = recorder(login => login === 'alice');
+    expect(await f.service.withCloneCredentials(f.root, 'https://github.com/team/private.git', task)).toEqual({ value: 'cloned', adopted: 'bob' });
+    expect(attempts.map(attempt => attempt.login)).toEqual(['alice', 'bob']);
+    expect(attempts[1]!.options.managedSecrets).toEqual([token('bob')]);
+  });
+
+  it('reports the refusal when no other account can read the repository', async () => {
+    const f = await fixture();
+    await f.settings.setGitHubDefaultLogin('alice');
+    vi.spyOn(f.accounts, 'accountsWithAccess').mockResolvedValue([{ login: 'alice', push: true }]);
+    const { attempts, task } = recorder(() => true);
+    await expect(f.service.withCloneCredentials(f.root, 'https://github.com/team/private.git', task)).rejects.toThrow('Repository not found');
+    expect(attempts).toHaveLength(1);
+  });
+});

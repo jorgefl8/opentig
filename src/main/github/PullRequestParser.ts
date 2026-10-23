@@ -2,8 +2,8 @@ import type { PullRequestCheckState, PullRequestCommit, PullRequestDetails, Pull
 import { GhOperationError } from '../../shared/errors';
 import { z } from 'zod';
 
-export const PR_SUMMARY_FIELDS = 'number,title,state,isDraft,author,headRefName,baseRefName,updatedAt,url,reviewDecision,additions,deletions,statusCheckRollup';
-export const PR_DETAIL_FIELDS = `${PR_SUMMARY_FIELDS},body,changedFiles,labels,commits`;
+export const PR_SUMMARY_FIELDS = 'number,title,state,isDraft,author,headRefName,headRefOid,baseRefName,updatedAt,url,reviewDecision,additions,deletions,statusCheckRollup';
+export const PR_DETAIL_FIELDS = `${PR_SUMMARY_FIELDS},body,changedFiles,labels,commits,baseRefOid`;
 
 const tolerantRecordSchema = z.looseObject({});
 const pullRequestArraySchema = z.array(z.unknown());
@@ -19,15 +19,16 @@ export function parsePullRequestList(raw: string): PullRequestSummary[] {
   return list.data.map((item) => parseSummary(item, 'gh-pr-list'));
 }
 
-/** Branch names alone are ambiguous across forks of the same repository. */
-export function parseBranchPullRequestList(raw: string, nameWithOwner: string, branch: string): PullRequestSummary[] {
+/** Branch names alone are ambiguous across forks of the same repository; only the given head repositories match. */
+export function parseBranchPullRequestList(raw: string, headRepositories: string[], branch: string): PullRequestSummary[] {
+  const heads = new Set(headRepositories.map(name => name.toLowerCase()));
   const list = pullRequestArraySchema.safeParse(parseJson(raw, 'gh-pr-for-branch'));
   if (!list.success) throw invalidOutput('gh-pr-for-branch');
   const headSchema = z.looseObject({ headRefName: z.string(), headRepository: z.looseObject({ nameWithOwner: z.string() }) });
   return list.data.filter((item) => {
     const head = headSchema.safeParse(item);
     return head.success && head.data.headRefName === branch
-      && head.data.headRepository.nameWithOwner.toLowerCase() === nameWithOwner.toLowerCase();
+      && heads.has(head.data.headRepository.nameWithOwner.toLowerCase());
   }).map((item) => parseSummary(item, 'gh-pr-for-branch'));
 }
 
@@ -41,6 +42,8 @@ export function parsePullRequestDetails(raw: string): PullRequestDetails {
     changedFiles: numberOrZero(record.changedFiles),
     labels: parseLabels(record.labels),
     commits: parseCommits(record.commits),
+    baseRefOid: oidOrEmpty(record.baseRefOid),
+    headRefOid: summary.headRefOid ?? '',
   };
 }
 
@@ -86,6 +89,7 @@ function parseSummary(item: unknown, operation: string): PullRequestSummary {
     author: authorLogin,
     authorAvatarUrl: avatarUrl(authorLogin, authorRecord?.is_bot === true),
     headRefName: typeof record.headRefName === 'string' ? record.headRefName : '',
+    ...(oidOrEmpty(record.headRefOid) ? { headRefOid: oidOrEmpty(record.headRefOid) } : {}),
     baseRefName: typeof record.baseRefName === 'string' ? record.baseRefName : '',
     updatedAt: typeof record.updatedAt === 'string' ? record.updatedAt : '',
     url: typeof record.url === 'string' ? record.url : '',
@@ -161,6 +165,10 @@ function parseJson(raw: string, operation: string): unknown {
   } catch {
     throw invalidOutput(operation);
   }
+}
+
+function oidOrEmpty(value: unknown): string {
+  return typeof value === 'string' && /^[0-9a-f]{40,64}$/i.test(value) ? value.toLowerCase() : '';
 }
 
 function numberOrZero(value: unknown): number {

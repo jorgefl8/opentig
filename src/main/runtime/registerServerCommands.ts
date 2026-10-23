@@ -58,7 +58,15 @@ export function registerServerCommands(
   handle(IPC.gitStatus, 'git-status', () => services.git.status());
   handle(IPC.completeOnboarding, 'complete-onboarding', () => services.settings.completeOnboarding());
   handle(IPC.gitSetGlobalIdentity, 'git-identity-set', (input) => setGlobalGitIdentity(services.git, input));
-  const clones = new CloneJobs(services.git, (destination) => services.repositories.preparePath(destination));
+  // Resolved per clone: GitHub services are optional for this command set.
+  const clones = new CloneJobs(services.git, (destination) => services.repositories.preparePath(destination), {
+    run: async (cwd, url, task) => {
+      const gitAccess = services.github?.gitAccess;
+      return gitAccess ? gitAccess.withCloneCredentials(cwd, url, task) : { value: await task([], {}, null), adopted: null };
+    },
+    adopt: (repository, login) => services.github.accounts.setSelection(repository, { mode: 'account', host: 'github.com', login, detected: true },
+      { login, previousLogin: services.github.accounts.defaultLogin() }),
+  });
   handle(IPC.repositoryClone, 'clone-repository', (raw) => {
     if (!raw || typeof raw !== 'object') throw new Error('Invalid clone request.');
     const value = raw as Record<string, unknown>;
@@ -488,6 +496,7 @@ export function registerServerCommands(
   handle(IPC.githubPrStack, 'gh-pr-stack', (id, prNumber) => services.github.getPullRequestStack(stringArg(id, 'gh-pr-stack', 64), prNumberArg(prNumber, 'gh-pr-stack')));
   handle(IPC.githubPrDiff, 'gh-pr-diff', (id, prNumber) => services.github.getPullRequestDiff(stringArg(id, 'gh-pr-diff', 64), prNumberArg(prNumber, 'gh-pr-diff')));
   handle(IPC.githubPrCommitDiff, 'gh-pr-commit-diff', (id, oid) => services.github.getPullRequestCommitDiff(stringArg(id, 'gh-pr-commit-diff', 64), oidArg(oid, 'gh-pr-commit-diff')));
+  handle(IPC.githubPrCommits, 'gh-pr-commits', (id, prNumber) => services.github.getPullRequestCommits(stringArg(id, 'gh-pr-commits', 64), prNumberArg(prNumber, 'gh-pr-commits')));
   handle(IPC.githubPrCreate, 'gh-pr-create', (input) => services.github.createPullRequest(createPullRequestArg(input)));
   handleWithContext(IPC.githubPrDraft, 'ai-pr-draft', (context, input) => (
     services.prDrafts.generate(generatePullRequestDraftArg(input), context.signal)

@@ -158,6 +158,7 @@ export function createOpenTigServerClient(options: ServerClientOptions = {}): Op
       getPullRequestStack: (repositoryId, number) => invoke(IPC.githubPrStack, repositoryId, number),
       getPullRequestDiff: (repositoryId, number) => invoke(IPC.githubPrDiff, repositoryId, number),
       getPullRequestCommitDiff: (repositoryId, oid) => invoke(IPC.githubPrCommitDiff, repositoryId, oid),
+      getPullRequestCommits: (repositoryId, number) => invoke(IPC.githubPrCommits, repositoryId, number),
       createPullRequest: (input) => invoke(IPC.githubPrCreate, input),
       generateDraft: (input) => transport.request(IPC.githubPrDraft, [input], { timeoutMs: AI_CLIENT_TIMEOUT_MS }),
       cancelDraft: (requestId) => invoke(IPC.githubPrDraftCancel, requestId),

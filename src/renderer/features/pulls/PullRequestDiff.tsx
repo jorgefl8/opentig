@@ -35,6 +35,7 @@ export default function PullRequestDiff({ diff, prNumber, repositoryId, commits,
     queryFn: () => opentig.github.getPullRequestCommitDiff(repositoryId, selectedCommit!.oid),
     enabled: mode === 'commit' && selectedCommit !== null,
   });
+  const activeDiff = mode === 'all' ? diff : commitDiffQuery.data ?? null;
   const commitError = commitDiffQuery.error instanceof Error ? commitDiffQuery.error.message : commitDiffQuery.error ? 'Could not load the commit diff.' : null;
 
   const scopeControl = (
@@ -61,10 +62,9 @@ export default function PullRequestDiff({ diff, prNumber, repositoryId, commits,
           </SelectContent>
         </Select>
       )}
+      {activeDiff?.truncated && <span className="pr-diff-truncated">Showing the first files only: the complete diff is too large.</span>}
     </div>
   );
-
-  const activeDiff = mode === 'all' ? diff : commitDiffQuery.data ?? null;
   if (mode === 'commit' && commitError) {
     return (
       <DiffLoadingShell scopeControl={scopeControl}>
