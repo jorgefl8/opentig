@@ -17,6 +17,10 @@ const changed = vi.fn();
 const button = (name: string) => Array.from(document.querySelectorAll<HTMLButtonElement>('button')).find(item => item.getAttribute('aria-label') === name)!;
 const names = () => Array.from(document.querySelectorAll('.repository-assignment-copy strong')).map(item => item.textContent);
 async function click(name: string) { await act(async () => button(name).click()); }
+async function focus(name: string) { await act(async () => { button(name).focus(); }); }
+function tooltip(child: ReturnType<typeof createElement>) {
+  return createElement(TooltipProvider, { delay: 0 }, child);
+}
 function Harness() {
   const [state, setState] = useState(organization);
   const repositories = getRepositoryPickerDisplayOrder(buildRepositoryPickerModel(state.recentRepositories, state.repositoryProjects));
@@ -41,7 +45,7 @@ beforeEach(async () => {
     ],
   };
   container = document.createElement('div'); document.body.append(container); root = createRoot(container);
-  await act(async () => root.render(createElement(TooltipProvider, null, createElement(Harness))));
+  await act(async () => root.render(tooltip(createElement(Harness))));
 });
 afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.resetAllMocks(); vi.unstubAllGlobals(); });
 
@@ -91,21 +95,23 @@ it('lets arrow keys from sortable handles reach the keyboard sensor outside the 
   document.addEventListener('keydown', listener);
   try {
     const handle = button('Reorder repository Atlas');
-    handle.focus();
-    await act(async () => handle.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', code: 'ArrowDown', bubbles: true, cancelable: true })));
+    await act(async () => {
+      handle.focus();
+      handle.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', code: 'ArrowDown', bubbles: true, cancelable: true }));
+    });
     expect(listener).toHaveBeenCalledOnce();
   } finally { document.removeEventListener('keydown', listener); }
 });
 
 it('uses only arrows on mobile, preserving ongoing scrolling and focus when a move reaches a boundary', async () => {
   mobile = true;
-  await act(async () => root.render(createElement(TooltipProvider, null, createElement(Harness))));
+  await act(async () => root.render(tooltip(createElement(Harness))));
   expect(document.querySelector('.repository-order-handle')).toBeNull();
   expect(document.querySelector('[aria-roledescription="sortable"]')).toBeNull();
   expect(document.querySelector('[data-slot="dialog-description"]')?.textContent).toContain('Use the up and down arrows');
   const body = document.querySelector<HTMLDivElement>('.repository-projects-body')!;
   body.scrollTop = 160;
-  button('Move repository Beacon up').focus();
+  await focus('Move repository Beacon up');
   let finish!: (next: RepositoryOrganization) => void;
   api.moveRepository.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
   await click('Move repository Beacon up');
@@ -119,7 +125,7 @@ it('uses only arrows on mobile, preserving ongoing scrolling and focus when a mo
 
   organization = { ...organization, repositoryProjects: [...organization.repositoryProjects].reverse() };
   api.moveProject.mockResolvedValueOnce(organization);
-  button('Move project Tools up').focus();
+  await focus('Move project Tools up');
   await click('Move project Tools up');
   expect(api.moveProject).toHaveBeenCalledExactlyOnceWith('tools', 0);
   expect(document.activeElement).toBe(button('Move project Tools down'));
@@ -128,7 +134,7 @@ it('uses only arrows on mobile, preserving ongoing scrolling and focus when a mo
 
 it('restores mobile focus after a failed move without changing the order', async () => {
   mobile = true;
-  await act(async () => root.render(createElement(TooltipProvider, null, createElement(Harness))));
+  await act(async () => root.render(tooltip(createElement(Harness))));
   api.moveRepository.mockRejectedValueOnce(new Error('Could not save the order.'));
   // Touch browsers need not focus a button when tapping it.
   await click('Move repository Beacon up');
