@@ -118,7 +118,7 @@ For changes to tests, run those files directly with `pnpm test <test-file>`. Rel
 
 Use behavior assertions for regressions and syntax-aware checks for dependency boundaries. Avoid checking literal source text or duplicating constants. Give each table row a distinct branch to cover, and wait on observable conditions or fake timers instead of real sleeps. Prefer spawning Node directly over Git aliases or shells when a test only needs a child process, because those chains are slow on Windows CI.
 
-Test files without process-wide state share reused workers. A file runs in its own fresh worker when it mocks modules, changes globals, environment variables, timers, or the DOM environment, or imports a `test-support/` helper; `vitest.config.ts` detects this from the file contents. A test that changes module-level state some other way, such as a production singleton or cache, must reset it or use one of those isolating constructs. Use `pnpm exec vitest run --sequence.shuffle` to look for order dependence.
+Test files without process-wide state share reused workers. A file runs in its own fresh worker when it mocks modules, changes globals, environment variables, timers, or the DOM environment, or imports a `test-support/` helper; `vitest.config.mts` detects this from the file contents. A test that changes module-level state some other way, such as a production singleton or cache, must reset it or use one of those isolating constructs. Use `pnpm exec vitest run --sequence.shuffle` to look for order dependence.
 
 The real Windows PowerShell environment read runs only with `OPENTIG_POWERSHELL_INTEGRATION=1`; CI enables it in the native CLI discovery check.
 

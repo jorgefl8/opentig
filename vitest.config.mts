@@ -16,8 +16,8 @@ const sharedWorkerFiles = globSync(include, { exclude: (file) => file === 'node_
 export default defineConfig({
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, 'src/renderer'),
-      '@shared': path.resolve(__dirname, 'src/shared'),
+      '@': path.resolve(import.meta.dirname, 'src/renderer'),
+      '@shared': path.resolve(import.meta.dirname, 'src/shared'),
     },
   },
   test: {

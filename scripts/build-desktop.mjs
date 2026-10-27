@@ -20,8 +20,8 @@ export async function buildDesktop(profile) {
   try {
     // The server builds the shared renderer once; Electron loads that same client over HTTP.
     await run(process.execPath, ['packages/server/scripts/build.mjs']);
-    await build({ root: repositoryRoot, configFile: path.join(repositoryRoot, 'vite.main.config.ts') });
-    await build({ root: repositoryRoot, configFile: path.join(repositoryRoot, 'vite.preload.config.ts') });
+    await build({ root: repositoryRoot, configFile: path.join(repositoryRoot, 'vite.main.config.mts') });
+    await build({ root: repositoryRoot, configFile: path.join(repositoryRoot, 'vite.preload.config.mts') });
   } finally {
     if (previous === undefined) delete process.env.OPENTIG_BUILD_PROFILE;
     else process.env.OPENTIG_BUILD_PROFILE = previous;

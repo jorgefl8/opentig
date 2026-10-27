@@ -1,6 +1,6 @@
 import { defineConfig } from 'vite';
 import { builtinModules } from 'node:module';
-import { desktopBuildProfile } from './desktop-build';
+import { desktopBuildProfile } from './desktop-build.mts';
 
 export default defineConfig({
   publicDir: false,
@@ -16,7 +16,7 @@ export default defineConfig({
     // the library-mode bundle. The desktop staging step copies their runtime dependencies.
     rollupOptions: {
       external: ['electron', 'uiohook-napi', 'trash', 'electron-updater', ...builtinModules, /^node:/],
-      output: { inlineDynamicImports: true },
+      output: { codeSplitting: false },
     },
   },
   ssr: { noExternal: true },

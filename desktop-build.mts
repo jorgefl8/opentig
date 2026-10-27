@@ -1,4 +1,4 @@
-import type { ApplicationProfile } from './src/shared/application-profile';
+import type { ApplicationProfile } from './src/shared/application-profile.ts';
 
 export function desktopBuildProfile(): ApplicationProfile {
   const value = process.env.OPENTIG_BUILD_PROFILE ?? 'production';
