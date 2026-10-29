@@ -52,7 +52,7 @@ const structuredData = homeUrl && indexable ? {
 } : undefined;
 ---
 
-<Layout>
+<Layout markdown="/index.md">
   {structuredData && <script slot="head" type="application/ld+json" set:html={JSON.stringify(structuredData).replace(/</g, '\\u003c')} />}
   <div class="relative min-h-screen text-foreground scroll-smooth">
     <div class="fixed inset-0 z-0" data-site-backdrop>

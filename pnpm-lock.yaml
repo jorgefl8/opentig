@@ -408,6 +408,18 @@ importers:
       react-dom:
         specifier: 19.3.0
         version: 19.3.0(react@19.3.0)
+      remark-gfm:
+        specifier: 4.0.1
+        version: 4.0.1(supports-color@10.2.2)
+      remark-parse:
+        specifier: 11.0.0
+        version: 11.0.0(supports-color@10.2.2)
+      remark-stringify:
+        specifier: 11.0.0
+        version: 11.0.0
+      unified:
+        specifier: 11.0.5
+        version: 11.0.5
     devDependencies:
       '@astrojs/check':
         specifier: 0.9.10
