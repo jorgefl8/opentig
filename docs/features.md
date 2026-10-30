@@ -340,7 +340,7 @@ Worktree selection and removal recognize filesystem aliases, including Windows s
 
 ### GitHub pull requests
 
-With an authenticated GitHub CLI, use **PRs** to review metadata, descriptions, cumulative or per-commit diffs, and native stacks. Open PRs in OpenTig or GitHub, or create an editable draft before publishing.
+With an authenticated GitHub CLI, use **PRs** to review metadata, descriptions, cumulative or per-commit diffs, individual checks, and native stacks. An open PR shows its current status and refreshes while you view it. Open PRs in OpenTig or GitHub, or create an editable draft before publishing.
 
 Repository accounts, the default account, and commit authorship are separate controls. See [GitHub accounts and pull requests](github.md) for setup, scopes, access checks, direct push behavior across clients, and credential boundaries.
 

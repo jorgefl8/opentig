@@ -430,6 +430,60 @@ export interface PullRequestDetails extends PullRequestSummary {
   headRefOid: string;
 }
 
+export type PullRequestMergeMethod = 'MERGE' | 'SQUASH' | 'REBASE';
+export type PullRequestMergeStateStatus = 'BEHIND' | 'BLOCKED' | 'CLEAN' | 'DIRTY' | 'DRAFT' | 'HAS_HOOKS' | 'UNKNOWN' | 'UNSTABLE';
+
+export interface PullRequestCheck {
+  name: string;
+  workflow: string | null;
+  result: 'pass' | 'fail' | 'pending' | 'skipped' | 'action-required';
+  required: boolean;
+  url: string | null;
+}
+
+/** What GitHub reports right now about an open or finished PR, refreshed while its viewer is visible. */
+export interface PullRequestLiveState {
+  id: string;
+  number: number;
+  state: PullRequestState;
+  isDraft: boolean;
+  headRefOid: string;
+  headRefName: string;
+  baseRefName: string;
+  updatedAt: string;
+  mergeable: 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN';
+  mergeStateStatus: PullRequestMergeStateStatus;
+  reviewDecision: string | null;
+  isCrossRepository: boolean;
+  /** `unknown` means the membership could not be read, which is different from not being in a stack. */
+  stack: 'none' | 'member' | 'unknown';
+  autoMerge: { method: PullRequestMergeMethod } | null;
+  mergeQueue: { enabled: boolean; queued: boolean };
+  behindBy: number | null;
+  checks: {
+    rollup: PullRequestCheckState;
+    items: PullRequestCheck[];
+    /** GitHub has more checks than the first page returned. */
+    truncated: boolean;
+    /** GitHub withheld part of the response from this account, so some details may be missing. */
+    partial: boolean;
+  };
+  head: { repositoryId: string | null; owner: string | null; defaultBranch: string | null; refOid: string | null };
+  repository: {
+    methods: PullRequestMergeMethod[];
+    defaultMethod: PullRequestMergeMethod;
+    autoMergeAllowed: boolean;
+    deleteBranchOnMerge: boolean;
+  };
+  viewer: {
+    canWrite: boolean;
+    canUpdate: boolean;
+    didAuthor: boolean;
+    canUpdateBranch: boolean;
+    canDeleteBranch: boolean;
+  };
+}
+
 export interface CreatePullRequestInput {
   expectedAccount?: { login: string; revision: number };
   repositoryId: string;
@@ -655,6 +709,7 @@ export interface OpenTigApi {
     findPullRequestForBranch(repositoryId: string, branchName: string): Promise<PullRequestSummary | null>;
     listPullRequests(repositoryId: string, states: PullRequestState[]): Promise<PullRequestSummary[]>;
     getPullRequest(repositoryId: string, number: number): Promise<PullRequestDetails>;
+    getPullRequestLiveState(repositoryId: string, number: number): Promise<PullRequestLiveState>;
     getPullRequestStack(repositoryId: string, number: number): Promise<PullRequestStack | null>;
     getPullRequestDiff(repositoryId: string, number: number): Promise<DiffResult>;
     getPullRequestCommitDiff(repositoryId: string, oid: string): Promise<DiffResult>;
@@ -708,6 +763,6 @@ export const IPC = {
   aiStatuses: 'ai:statuses', aiGenerateCommitMessage: 'ai:generate-commit-message', aiCancelGeneration: 'ai:cancel-generation', aiLog: 'ai:log', aiClearLog: 'ai:clear-log',
   diagnosticsList: 'diagnostics:list', diagnosticsClear: 'diagnostics:clear', diagnosticsRecord: 'diagnostics:record',
   githubAccountsStatus: 'github:accounts-status', githubSetDefaultAccount: 'github:set-default-account', githubRepositoryAccount: 'github:repository-account', githubSetRepositoryAccount: 'github:set-repository-account',
-  githubStatus: 'github:status', githubRepositoryInfo: 'github:repository-info', githubPrForBranch: 'github:pr-for-branch', githubPrList: 'github:pr-list', githubPrView: 'github:pr-view',
+  githubStatus: 'github:status', githubRepositoryInfo: 'github:repository-info', githubPrForBranch: 'github:pr-for-branch', githubPrList: 'github:pr-list', githubPrView: 'github:pr-view', githubPrLiveState: 'github:pr-live-state',
   githubPrStack: 'github:pr-stack', githubPrDiff: 'github:pr-diff', githubPrCommitDiff: 'github:pr-commit-diff', githubPrCommits: 'github:pr-commits', githubPrCreate: 'github:pr-create', githubPrDraft: 'github:pr-draft', githubPrDraftCancel: 'github:pr-draft-cancel',
 } as const;

@@ -283,6 +283,7 @@ export const opentig: OpenTigApi = {
     findPullRequestForBranch: async (_id, branch) => demoPulls.forBranch(branch),
     listPullRequests: async (_id, states) => demoPulls.list(states),
     getPullRequest: async (_id, number) => demoPulls.get(number),
+    getPullRequestLiveState: async (_id, number) => demoPulls.liveState(number),
     getPullRequestStack: async () => null,
     getPullRequestDiff: async (_id, number) => demoPulls.diff(number),
     getPullRequestCommitDiff: async (_id, oid) => demoPulls.commitDiff(oid),

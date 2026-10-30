@@ -1,9 +1,10 @@
 import { formatDateTime } from '@shared/date-format';
 import { PullRequestStackMenu } from './PullRequestStackMenu';
-import { lazy, Suspense, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { IconCircleCheck, IconCircleX, IconClock, IconExternalLink, IconGitBranch, IconGitCommit, IconLoader4, IconRefresh, IconTag } from '@tabler/icons-react';
-import { GITHUB_PR_COMMIT_PAGE, type DiffResult, type DiffViewPreference, type PullRequestCheckState, type PullRequestCommitList, type PullRequestDetails, type ThemePreference } from '../../../shared/contracts';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { IconAlertTriangle, IconCircleCheck, IconCircleX, IconExternalLink, IconGitBranch, IconGitCommit, IconLoader4, IconRefresh, IconTag } from '@tabler/icons-react';
+import { GITHUB_PR_COMMIT_PAGE, type DiffResult, type DiffViewPreference, type PullRequestCommitList, type PullRequestDetails, type PullRequestLiveState, type PullRequestMergeMethod, type ThemePreference } from '../../../shared/contracts';
+import { pullRequestStatusLine, type PullRequestStatusTone } from '../../../shared/pull-request-actions';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
@@ -12,8 +13,10 @@ import { ViewerTabs, ViewerTabsList, ViewerTabsPanel } from '@/components/ui/vie
 import { LinkedMarkdown } from '@/features/markdown/LinkedMarkdown';
 import { LinkedText } from '@/components/LinkedText';
 
-import { openOnGitHub, prStateLabel, reviewDecisionLabel } from './gh-utils';
+import { ghDetail, openOnGitHub, prStateLabel, reviewDecisionLabel } from './gh-utils';
 import { GitHubAvatar } from './GitHubAvatar';
+import { PullRequestChecksMenu, PullRequestChecksSummary } from './PullRequestChecksMenu';
+import { pullRequestLiveStateQueryOptions, queriesOutdatedByLiveState } from './pull-request-live-state-query';
 import { opentig } from '@/lib/opentig-api';
 import { queryKeys } from '@/lib/query-client';
 import '@/features/markdown/markdown.css';
@@ -65,6 +68,16 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
   const commits = commitsQuery.data?.commits ?? details?.commits ?? [];
   const commitsIncomplete = firstPageOnly && commitsQuery.data?.complete !== true;
   const diffError = diffQuery.error instanceof Error ? diffQuery.error.message : diffQuery.error ? 'Could not load the diff.' : null;
+  const liveQuery = useQuery(pullRequestLiveStateQueryOptions(repositoryId, prNumber, details !== null));
+  const live = liveQuery.data ?? null;
+  const queryClient = useQueryClient();
+  const previousLive = useRef<PullRequestLiveState | null>(null);
+  useEffect(() => {
+    const previous = previousLive.current;
+    previousLive.current = live;
+    if (!previous || !live) return;
+    for (const queryKey of queriesOutdatedByLiveState(repositoryId, previous, live)) void queryClient.invalidateQueries({ queryKey });
+  }, [live, queryClient, repositoryId]);
 
   if (detailsError) {
     return (
@@ -79,7 +92,8 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
   }
 
   const stateLabel = prStateLabel(details);
-  const review = reviewDecisionLabel(details.reviewDecision);
+  const review = reviewDecisionLabel(live ? live.reviewDecision : details.reviewDecision);
+  const status = live ? pullRequestStatusLine(live) : null;
   return (
     <ViewerTabs value={tab} onValueChange={(value) => setTab(value as typeof tab)} className="pr-viewer">
       <header className="pr-viewer-header">
@@ -102,12 +116,21 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
             {details.changedFiles} {details.changedFiles === 1 ? 'file' : 'files'}
             {' '}<span className="add">+{details.additions}</span> <span className="del">−{details.deletions}</span>
           </span>
-          <PullRequestChecks state={details.checksState} />
-          {review && <Badge variant="outline" className="pr-review-badge">{review}</Badge>}
           {details.stack && <PullRequestStackMenu repositoryId={repositoryId} number={prNumber} membership={details.stack} onSelect={onSelectPullRequest} />}
           {details.url && <span className="pr-viewer-actions">
             <Button variant="outline" size="xs" onClick={() => openOnGitHub(details.url)}><IconExternalLink /> Open on GitHub</Button>
           </span>}
+        </div>
+        <div className="pr-viewer-status">
+          {status && <span className={`pr-status ${status.tone}`} role="status">
+            <PullRequestStatusIcon tone={status.tone} /> {status.label}
+            {status.detail && <small>{status.detail}</small>}
+          </span>}
+          {liveQuery.isPending && details.state === 'OPEN' && <span className="pr-status progress" role="status"><IconLoader4 className="animate-spin" aria-hidden="true" /> <ShimmeringText text="Checking status…" /></span>}
+          {live ? <PullRequestChecksMenu checks={live.checks} url={details.url} /> : <PullRequestChecksSummary state={details.checksState} />}
+          {review && review !== status?.label && <Badge variant="outline" className="pr-review-badge">{review}</Badge>}
+          {live?.autoMerge && <Badge variant="outline" className="pr-auto-merge-badge">Auto-merge · {MERGE_METHOD_LABELS[live.autoMerge.method]}</Badge>}
+          {liveQuery.isError && <PullRequestLiveNotice error={liveQuery.error} hasState={live !== null} retrying={liveQuery.isFetching} onRetry={() => void liveQuery.refetch()} />}
         </div>
         {details.labels.length > 0 && (
           <div className="pr-labels" aria-label="Pull request labels">
@@ -175,9 +198,23 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
   );
 }
 
-function PullRequestChecks({ state }: { state: PullRequestCheckState }) {
-  if (state === 'NONE') return null;
-  const Icon = state === 'PASSING' ? IconCircleCheck : state === 'FAILING' ? IconCircleX : IconClock;
-  const label = state === 'PASSING' ? 'Checks passing' : state === 'FAILING' ? 'Checks failing' : 'Checks pending';
-  return <span className={`pr-checks ${state.toLowerCase()}`}><Icon aria-hidden="true" /> {label}</span>;
+const MERGE_METHOD_LABELS: Record<PullRequestMergeMethod, string> = { MERGE: 'Merge', SQUASH: 'Squash', REBASE: 'Rebase' };
+
+function PullRequestStatusIcon({ tone }: { tone: PullRequestStatusTone }) {
+  if (tone === 'ready') return <IconCircleCheck aria-hidden="true" />;
+  if (tone === 'danger') return <IconCircleX aria-hidden="true" />;
+  if (tone === 'progress') return <IconLoader4 className="animate-spin" aria-hidden="true" />;
+  return <IconAlertTriangle aria-hidden="true" />;
+}
+
+function PullRequestLiveNotice({ error, hasState, retrying, onRetry }: { error: Error; hasState: boolean; retrying: boolean; onRetry(): void }) {
+  const message = ghDetail(error)?.code === 'GH_RATE_LIMITED'
+    ? 'GitHub rate limit reached. Checks resume when you return to this window.'
+    : hasState ? "Couldn't refresh. Showing the last status." : "Couldn't load the current status.";
+  return (
+    <span className="pr-live-notice" role="status">
+      {message}
+      <Button variant="ghost" size="xs" disabled={retrying} onClick={onRetry}>Retry</Button>
+    </span>
+  );
 }

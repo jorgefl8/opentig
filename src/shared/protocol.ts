@@ -137,6 +137,7 @@ export const OPEN_TIG_SERVER_COMMANDS = {
   'github.findPullRequestForBranch': command(IPC.githubPrForBranch, 'gh-pr-for-branch', false),
   'github.listPullRequests': command(IPC.githubPrList, 'gh-pr-list', false),
   'github.getPullRequest': command(IPC.githubPrView, 'gh-pr-view', false),
+  'github.getPullRequestLiveState': command(IPC.githubPrLiveState, 'gh-pr-live-state', false),
   'github.getPullRequestStack': command(IPC.githubPrStack, 'gh-pr-stack', false),
   'github.getPullRequestDiff': command(IPC.githubPrDiff, 'gh-pr-diff', false),
   'github.getPullRequestCommitDiff': command(IPC.githubPrCommitDiff, 'gh-pr-commit-diff', false),

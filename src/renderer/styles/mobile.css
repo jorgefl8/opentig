@@ -145,6 +145,7 @@
   html .pr-viewer-tabs { flex: none; align-self: flex-start; max-width: 100%; overflow-x: auto; }
   html .pr-summary-section, html .pr-timeline { padding: 12px; }
   html .pr-branches { max-width: 100%; }
+  html .pr-checks-trigger { min-height: 40px; }
   html .file-viewer-toolbar { height: 48px; }
   html .file-viewer-toolbar button { min-width: 40px; min-height: 40px; }
   html .file-save-toolbar { top: 8px; right: 8px; }

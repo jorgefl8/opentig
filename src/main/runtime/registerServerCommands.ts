@@ -493,6 +493,7 @@ export function registerServerCommands(
     pullRequestStatesArg(states, 'gh-pr-list'),
   ));
   handle(IPC.githubPrView, 'gh-pr-view', (id, prNumber) => services.github.getPullRequest(stringArg(id, 'gh-pr-view', 64), prNumberArg(prNumber, 'gh-pr-view')));
+  handle(IPC.githubPrLiveState, 'gh-pr-live-state', (id, prNumber) => services.github.getPullRequestLiveState(stringArg(id, 'gh-pr-live-state', 64), prNumberArg(prNumber, 'gh-pr-live-state')));
   handle(IPC.githubPrStack, 'gh-pr-stack', (id, prNumber) => services.github.getPullRequestStack(stringArg(id, 'gh-pr-stack', 64), prNumberArg(prNumber, 'gh-pr-stack')));
   handle(IPC.githubPrDiff, 'gh-pr-diff', (id, prNumber) => services.github.getPullRequestDiff(stringArg(id, 'gh-pr-diff', 64), prNumberArg(prNumber, 'gh-pr-diff')));
   handle(IPC.githubPrCommitDiff, 'gh-pr-commit-diff', (id, oid) => services.github.getPullRequestCommitDiff(stringArg(id, 'gh-pr-commit-diff', 64), oidArg(oid, 'gh-pr-commit-diff')));

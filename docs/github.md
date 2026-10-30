@@ -65,6 +65,28 @@ Your CLI must support multi-account `auth token --user` and `auth status --json 
 2. Select a PR to inspect its metadata and Markdown description.
 3. In **Code**, review the cumulative diff or use **By commit** to inspect changes from one commit. The selector supports keyboard navigation, readable subjects, and scrollable options.
 
+**Current status**
+
+While a PR is open in the viewer, its header shows where it stands according to GitHub: **Ready to merge**, **Review required**, **Required checks failing**, **2 commits behind main**, **Conflicts with main**, **In merge queue**, or **A branch rule blocks merging** when GitHub blocks it for a reason OpenTig can't see. Armed auto-merge appears as a badge with its method. Reading this status never changes anything on GitHub.
+
+Click the checks summary to list individual checks, with what needs attention first, then what's in progress and what has completed. Required checks are marked, and a row opens that check on GitHub. A check that ran more than once shows its newest run. Past GitHub's first 100 checks, the list says so and links to the rest. If GitHub withholds details from your account, the list says some checks may be missing.
+
+<details>
+<summary>How the status refreshes</summary>
+
+The status refreshes only while the PR is open in the viewer and the window is visible:
+
+| Situation | Refresh |
+| --- | --- |
+| GitHub is still computing mergeability | Every 10 seconds for a minute, then every minute |
+| Checks are running, auto-merge is armed, or the PR is in a merge queue | Every 45 seconds |
+| Any other open PR | Every minute |
+| Merged or closed PR | No periodic refresh |
+
+Returning to the window, reconnecting, changing the repository account, or manually refreshing checks immediately. If a refresh fails, the last status stays visible with a notice and **Retry**. Periodic refresh stops at GitHub's rate limit and resumes when you return to the window. A new head commit also refreshes the PR's details, commits, and code.
+
+</details>
+
 **Code is computed by Git in your clone**, so pull requests larger than GitHub's 300-file diff limit open normally. The first time you open a PR's code, OpenTig downloads its commits from the remote that holds the pull requests (`refs/pull/<number>/head`, plus the base commit if it is missing) without creating or moving any branch, tag, or remote-tracking ref, and then compares them the same way GitHub's **Files changed** does. Later views and **By commit** read locally. GitHub CLI returns at most 100 commits per PR, so for longer PRs the **Timeline** and **By commit** lists are completed from the downloaded history; GitHub avatars appear only for the commits GitHub returned. If the commits can't be downloaded, OpenTig asks GitHub for the diff instead, which only works within GitHub's limits. A diff larger than 32 MB shows its first complete files with a notice.
 
 The PR list shows the effective GitHub account. Pull requests come from the GitHub repository of `origin`, unless you chose another remote with `gh repo set-default`: in a fork whose `origin` is your fork, run `gh repo set-default` in the clone and choose the upstream repository to see and open its PRs.

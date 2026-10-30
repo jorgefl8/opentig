@@ -22,7 +22,7 @@ test('HTML is a tracked sample file that can be edited, staged and committed', (
 });
 
 test('PR states filter correctly and returned data cannot mutate fixtures', () => {
-  assert.deepEqual(demoPulls.list(['OPEN']).map(p => p.number), [21, 20]);
+  assert.deepEqual(demoPulls.list(['OPEN']).map(p => p.number), [25, 24, 23, 22, 21, 20]);
   assert.equal(demoPulls.get(20).isDraft, true);
   assert.deepEqual(demoPulls.list(['MERGED', 'CLOSED']).map(p => p.number), [19, 18]);
   assert.deepEqual(demoPulls.list([]), []);
@@ -33,6 +33,21 @@ test('PR states filter correctly and returned data cannot mutate fixtures', () =
   assert.equal(demoPulls.get(21).commits.length, 2);
   assert.throws(() => demoPulls.get(999), /sample repository/);
   assert.throws(() => demoPulls.commitDiff('missing'), /sample pull request/);
+});
+
+test('every sample has a live state that agrees with its details', () => {
+  for (const pr of demoPulls.list(['OPEN', 'MERGED', 'CLOSED'])) {
+    const live = demoPulls.liveState(pr.number);
+    assert.equal(live.headRefOid, pr.headRefOid);
+    assert.equal(live.state, pr.state);
+    assert.equal(live.isDraft, pr.isDraft);
+    assert.equal(live.reviewDecision, pr.reviewDecision);
+    assert.equal(live.checks.rollup, pr.checksState);
+  }
+  assert.deepEqual(demoPulls.list(['OPEN']).map(p => demoPulls.liveState(p.number).mergeStateStatus), ['BLOCKED', 'BLOCKED', 'BEHIND', 'DIRTY', 'CLEAN', 'DRAFT']);
+  const live = demoPulls.liveState(21);
+  live.checks.items.length = 0;
+  assert.ok(demoPulls.liveState(21).checks.items.length > 0);
 });
 
 test('per-commit patches apply to the sample files and compose the full PR diff', () => {

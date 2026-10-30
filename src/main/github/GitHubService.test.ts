@@ -280,6 +280,62 @@ describe('forks with a GitHub CLI default repository', () => {
     expect(fetches[0]).toEqual(expect.arrayContaining(['upstream', 'refs/pull/12/head']));
   });
 });
+describe('pull request live state', () => {
+  const pull = { id: 'PR_1', number: 12, state: 'OPEN', isDraft: false, headRefOid: 'a'.repeat(40), headRefName: 'feature', baseRefName: 'main', updatedAt: '2026-01-01T00:00:00Z', mergeable: 'MERGEABLE', mergeStateStatus: 'CLEAN', isCrossRepository: false, viewerCanUpdate: true, viewerDidAuthor: false, viewerCanUpdateBranch: true,
+    commits: { nodes: [{ commit: { statusCheckRollup: { state: 'SUCCESS', contexts: { pageInfo: { hasNextPage: false }, nodes: [{ __typename: 'CheckRun', name: 'network-tests', status: 'COMPLETED', conclusion: 'SUCCESS', detailsUrl: 'https://github.com/example/demo/runs/401' }] } } } }] } };
+  const repository = { viewerPermission: 'WRITE', mergeCommitAllowed: true, squashMergeAllowed: false, rebaseMergeAllowed: false, autoMergeAllowed: true, deleteBranchOnMerge: false, viewerDefaultMergeMethod: 'MERGE' };
+  const isStackRead = (args: string[]) => args.some(arg => arg.includes('stackEntry'));
+  const withStack = (main: CliRunResult, stack: CliRunResult = ok({ data: { repository: { pr12: { stack: null, stackEntry: null } } } })) => (args: string[]) => isStackRead(args) ? stack : main;
+
+  it('passes the repository as GraphQL variables and reads the head through the PR ref', async () => {
+    const { service, run } = fixture(withStack(ok({ data: { repository: { ...repository, pullRequest: pull } } })));
+    expect(await service.getPullRequestLiveState('repo', 12)).toMatchObject({ number: 12, stack: 'none', checks: { rollup: 'PASSING', partial: false } });
+    const args = run.mock.calls.map(([, called]) => called).find(called => called.some(arg => arg.includes('mergeStateStatus')))!;
+    expect(args).toEqual(expect.arrayContaining(['owner=example', 'name=demo', 'number=12', 'headRef=refs/pull/12/head']));
+    expect(args).not.toContain('-R');
+  });
+
+  it('keeps the data when gh exits 1 because a nested field was withheld, without reading failures into check names', async () => {
+    const response = { data: { repository: { ...repository, pullRequest: pull } }, errors: [{ type: 'FORBIDDEN', path: ['repository', 'pullRequest', 'headRepository'], message: 'Resource not accessible' }] };
+    const { service } = fixture(withStack({ exitCode: 1, stdout: JSON.stringify(response), stderr: 'gh: Resource not accessible' }));
+    expect(await service.getPullRequestLiveState('repo', 12)).toMatchObject({ number: 12, checks: { partial: true, items: [{ name: 'network-tests' }] } });
+  });
+
+  it('reports a missing PR as missing rather than as a connection problem', async () => {
+    const response = { data: { repository: { ...repository, pullRequest: null } }, errors: [{ type: 'NOT_FOUND', path: ['repository', 'pullRequest'], message: 'Could not resolve to a PullRequest with the number of 12.' }] };
+    const { service } = fixture(withStack({ exitCode: 1, stdout: JSON.stringify(response), stderr: 'gh: Could not resolve to a PullRequest with the number of 12.' }));
+    await expect(service.getPullRequestLiveState('repo', 12)).rejects.toThrow('Pull request #12 was not found in this repository.');
+  });
+
+  it.each([
+    ['gh: API rate limit exceeded for user', 'GH_RATE_LIMITED'],
+    ['gh: You have exceeded a secondary rate limit (HTTP 403)', 'GH_RATE_LIMITED'],
+    ['gh: Bad credentials (HTTP 401)', 'GH_AUTH_REQUIRED'],
+    ['dial tcp: lookup api.github.com: no such host', 'GH_PROCESS_FAILED'],
+  ])('classifies a failed read from stderr only: %s', async (stderr, code) => {
+    const { service } = fixture(withStack({ exitCode: 1, stdout: JSON.stringify({ message: 'network 401 details' }), stderr }));
+    await expect(service.getPullRequestLiveState('repo', 12)).rejects.toMatchObject({ detail: { code } });
+  });
+
+  it('does not treat stdout as the failure when stderr has nothing to classify', async () => {
+    const { service } = fixture(withStack({ exitCode: 1, stdout: JSON.stringify({ data: null, errors: [{ type: 'INTERNAL', message: 'authentication 401' }] }), stderr: 'gh: Something went wrong' }));
+    await expect(service.getPullRequestLiveState('repo', 12)).rejects.toMatchObject({ detail: { code: 'GH_PROCESS_FAILED', message: 'gh: Something went wrong' } });
+  });
+
+  it('rejects a malformed successful response instead of showing an empty state', async () => {
+    const { service } = fixture(withStack(ok({ data: { repository: { pullRequest: { number: 12 } } } })));
+    await expect(service.getPullRequestLiveState('repo', 12)).rejects.toMatchObject({ detail: { code: 'GH_INVALID_OUTPUT' } });
+  });
+
+  it('separates stack membership, its absence, and a failed membership read', async () => {
+    const main = ok({ data: { repository: { ...repository, pullRequest: pull } } });
+    const member = ok({ data: { repository: { pr12: { stack: { number: 7, size: 3, baseRefName: 'main' }, stackEntry: { position: 2 } } } } });
+    expect(await fixture(withStack(main, member)).service.getPullRequestLiveState('repo', 12)).toMatchObject({ stack: 'member' });
+    expect(await fixture(withStack(main)).service.getPullRequestLiveState('repo', 12)).toMatchObject({ stack: 'none' });
+    expect(await fixture(withStack(main, fail('HTTP 403: forbidden'))).service.getPullRequestLiveState('repo', 12)).toMatchObject({ stack: 'unknown' });
+  });
+});
+
 describe('GitHub native stacks', () => {
   it('enriches visible PRs in bounded batches and preserves list ordering', async () => {
     const { service, run } = fixture((args) => {

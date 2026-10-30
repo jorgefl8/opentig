@@ -6,7 +6,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { GITHUB_PR_COMMIT_PAGE } from '../../shared/contracts';
-import type { CreatePullRequestInput, CreatePullRequestResult, DiffResult, PullRequestCommitList, GhCliStatus, GitHubRepositoryInfo, PullRequestDetails, PullRequestStack, PullRequestState, PullRequestSummary } from '../../shared/contracts';
+import type { CreatePullRequestInput, CreatePullRequestResult, DiffResult, PullRequestCommitList, GhCliStatus, GitHubRepositoryInfo, PullRequestDetails, PullRequestLiveState, PullRequestStack, PullRequestState, PullRequestSummary } from '../../shared/contracts';
 import { AiOperationError, GhOperationError } from '../../shared/errors';
 import type { CliProcessRunner, CliRunResult } from '../ai/CliProcessRunner';
 import type { CliResolver } from '../ai/CliResolver';
@@ -14,12 +14,15 @@ import type { GitProcess } from '../git/GitProcess';
 import type { RepositoryService } from '../git/RepositoryService';
 import { parseGitHubRemote, parseSshRemote } from './GitHubRemoteParser';
 import { GH_ENV, redactCommandToken, type GitHubCommandAuth } from './GitHubAccountAuth';
+import { parsePullRequestLiveState, PR_LIVE_STATE_QUERY } from './PullRequestLiveStateParser';
 import { parseBranchPullRequestList, parseCreatedPullRequestUrl, parsePullRequestDetails, parsePullRequestList, PR_DETAIL_FIELDS, PR_SUMMARY_FIELDS, selectPullRequestsNewestFirst, sortPullRequestsNewestFirst } from './PullRequestParser';
 
 import { GitHubAccountsService } from './GitHubAccountsService';
 import { PullRequestLocalGit, type PullRequestRange } from './PullRequestLocalGit';
 import type { GitHubAccountSelection } from '../../shared/github-accounts';
 const NETWORK_TIMEOUT_MS = 60_000;
+// Below the 30 s command window, so a slow GitHub ends as a timeout the renderer can explain.
+const LIVE_STATE_TIMEOUT_MS = 20_000;
 
 interface GhRunOptions {
   cwd: string;
@@ -224,6 +227,39 @@ export class GitHubService {
     );
     const details = parsePullRequestDetails(result.stdout);
     return (await this.withStackMembership(repository.path, nameWithOwner, auth, executable, [details]))[0]!;
+  }
+
+  getPullRequestLiveState(repositoryId: string, prNumber: number): Promise<PullRequestLiveState> {
+    return this.shareRead(repositoryId, ['live-state', prNumber], () => this.readGetPullRequestLiveState(repositoryId, prNumber));
+  }
+
+  private async readGetPullRequestLiveState(repositoryId: string, prNumber: number): Promise<PullRequestLiveState> {
+    const operation = 'gh-pr-live-state';
+    const { repository, nameWithOwner, auth, executable } = await this.requireGitHub(repositoryId, operation);
+    const [owner, name] = nameWithOwner.split('/');
+    const [result, stack] = await Promise.all([
+      this.run(executable, ['api', 'graphql', '-f', `owner=${owner}`, '-f', `name=${name}`, '-F', `number=${prNumber}`, '-f', `headRef=refs/pull/${prNumber}/head`, '-f', `query=${PR_LIVE_STATE_QUERY}`], {
+        auth, executable, cwd: repository.path, operation, timeoutMs: LIVE_STATE_TIMEOUT_MS, maxOutputBytes: 4 * 1024 * 1024,
+      }),
+      this.stackStatus(repository.path, nameWithOwner, auth, executable, prNumber),
+    ]);
+    const read = parsePullRequestLiveState(result.stdout, stack);
+    if (read.status === 'ok') return read.state;
+    if (read.status === 'missing') throw new GhOperationError({ code: 'GH_PROCESS_FAILED', operation, message: `Pull request #${prNumber} was not found in this repository.`, exitCode: result.exitCode });
+    // stdout holds GitHub data here, where check names and URLs could look like another failure.
+    if (result.exitCode !== 0) throw classifyFailure({ ...result, stdout: '', stderr: redactCommandToken(result.stderr, auth) }, operation);
+    throw new GhOperationError({ code: 'GH_INVALID_OUTPUT', operation, message: 'GitHub CLI returned an unexpected response.' });
+  }
+
+  /** Membership is optional metadata: a failed read stays `unknown` instead of failing the live state. */
+  private async stackStatus(cwd: string, nameWithOwner: string, auth: GitHubCommandAuth, executable: CliCandidate, prNumber: number): Promise<PullRequestLiveState['stack']> {
+    const [owner, name] = nameWithOwner.split('/');
+    try {
+      const result = await this.runGhRead(['api', 'graphql', '-f', `owner=${owner}`, '-f', `name=${name}`, '-f', `query=${stackMembershipQuery([prNumber])}`], {
+        auth, executable, cwd, operation: 'gh-pr-stack-membership', timeoutMs: 10_000, maxOutputBytes: 1024 * 1024,
+      });
+      return parseStackMemberships(result.stdout, [prNumber]).has(prNumber) ? 'member' : 'none';
+    } catch { return 'unknown'; }
   }
 
   private async withStackMembership<T extends PullRequestSummary>(cwd: string, nameWithOwner: string, auth: GitHubCommandAuth, executable: CliCandidate, pulls: T[]): Promise<T[]> {

@@ -76,6 +76,7 @@ describe('OpenTig server protocol ownership', () => {
     expect(OPEN_TIG_SERVER_COMMANDS['commits.list'].mutation).toBe(false);
     expect(OPEN_TIG_SERVER_COMMANDS['commits.create'].mutation).toBe(true);
     expect(OPEN_TIG_SERVER_COMMANDS['github.getPullRequest'].mutation).toBe(false);
+    expect(OPEN_TIG_SERVER_COMMANDS['github.getPullRequestLiveState'].mutation).toBe(false);
     expect(OPEN_TIG_SERVER_COMMANDS['github.createPullRequest'].mutation).toBe(true);
   });
 

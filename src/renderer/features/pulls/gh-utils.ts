@@ -1,4 +1,4 @@
-import type { PullRequestSummary } from '../../../shared/contracts';
+import type { PullRequestCheck, PullRequestSummary } from '../../../shared/contracts';
 import type { SerializedGhError } from '../../../shared/errors';
 import { openExternalUrl } from '@/lib/browser-capabilities';
 
@@ -35,6 +35,23 @@ export function reviewDecisionLabel(decision: string | null): string | null {
   if (decision === 'CHANGES_REQUESTED') return 'Changes requested';
   if (decision === 'REVIEW_REQUIRED') return 'Review required';
   return null;
+}
+
+export interface PullRequestCheckGroup {
+  label: string;
+  checks: PullRequestCheck[];
+}
+
+/** What needs attention comes first, and within each group required checks lead. */
+export function groupPullRequestChecks(checks: PullRequestCheck[]): PullRequestCheckGroup[] {
+  const pick = (...results: PullRequestCheck['result'][]) => checks
+    .filter((check) => results.includes(check.result))
+    .sort((left, right) => Number(right.required) - Number(left.required));
+  return [
+    { label: 'Needs attention', checks: pick('fail', 'action-required') },
+    { label: 'In progress', checks: pick('pending') },
+    { label: 'Completed', checks: pick('pass', 'skipped') },
+  ].filter((group) => group.checks.length > 0);
 }
 
 export function openOnGitHub(url: string): void {

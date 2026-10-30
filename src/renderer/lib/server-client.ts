@@ -155,6 +155,7 @@ export function createOpenTigServerClient(options: ServerClientOptions = {}): Op
       findPullRequestForBranch: (repositoryId, branchName) => invoke(IPC.githubPrForBranch, repositoryId, branchName),
       listPullRequests: (repositoryId, states) => invoke(IPC.githubPrList, repositoryId, states),
       getPullRequest: (repositoryId, number) => invoke(IPC.githubPrView, repositoryId, number),
+      getPullRequestLiveState: (repositoryId, number) => invoke(IPC.githubPrLiveState, repositoryId, number),
       getPullRequestStack: (repositoryId, number) => invoke(IPC.githubPrStack, repositoryId, number),
       getPullRequestDiff: (repositoryId, number) => invoke(IPC.githubPrDiff, repositoryId, number),
       getPullRequestCommitDiff: (repositoryId, oid) => invoke(IPC.githubPrCommitDiff, repositoryId, oid),

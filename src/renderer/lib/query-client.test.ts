@@ -10,6 +10,8 @@ describe('renderer query policy', () => {
     const pending = client.fetchQuery({ queryKey: key, queryFn: () => new Promise<string>((resolve) => { release = resolve; }) });
     const ignored = pending.catch(() => undefined);
     client.setQueryData(queryKeys.pullRequestDiff('repo-b', 1), 'old diff');
+    client.setQueryData(queryKeys.pullRequestLiveState('repo-b', 1), 'old live state');
+    client.setQueryData(queryKeys.pullRequestCommits('repo-b', 1), 'old commits');
     client.setQueryData(queryKeys.githubAccount('repo-a'), 'old account');
     client.setQueryData(queryKeys.githubAccounts, 'old inventory');
     client.setQueryData(queryKeys.githubCliStatus, 'old CLI status');
@@ -20,6 +22,8 @@ describe('renderer query policy', () => {
     await ignored;
     expect(client.getQueryData(key)).toBe('new account');
     expect(client.getQueryData(queryKeys.pullRequestDiff('repo-b', 1))).toBeUndefined();
+    expect(client.getQueryData(queryKeys.pullRequestLiveState('repo-b', 1))).toBeUndefined();
+    expect(client.getQueryData(queryKeys.pullRequestCommits('repo-b', 1))).toBeUndefined();
     expect(client.getQueryData(queryKeys.githubAccount('repo-a'))).toBeUndefined();
     expect(client.getQueryData(queryKeys.githubAccounts)).toBeUndefined();
     expect(client.getQueryData(queryKeys.githubCliStatus)).toBeUndefined();
