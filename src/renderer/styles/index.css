@@ -1123,6 +1123,24 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   .release-asset { display: flex; align-items: center; justify-content: space-between; gap: 10px; border-top: 1px solid var(--border); padding: 7px 0; font-size: 11px; }
   .release-asset span { overflow-wrap: anywhere; }
   .release-asset small { flex: none; color: var(--muted-foreground); font-variant-numeric: tabular-nums; }
+  .local-refs-confirm > .release-publish-facts { display: grid; gap: 3px; grid-column: 2; margin: 0; font-size: 11px; }
+  .release-publish-facts > div { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 8px; }
+  .release-publish-facts dt { color: var(--muted-foreground); }
+  .release-publish-facts dd { margin: 0; overflow-wrap: anywhere; }
+  .run-workflow-content { overflow-y: auto; }
+  .run-workflow-content > * { flex-shrink: 0; }
+  .workflow-list { display: grid; gap: 2px; }
+  .workflow-row { display: grid; width: 100%; gap: 1px; border-radius: var(--radius-sm); padding: 6px 8px; text-align: left; }
+  .workflow-row:hover { background: var(--muted); }
+  .workflow-row[aria-pressed="true"] { background: var(--accent); }
+  .workflow-row strong { font-size: 12px; font-weight: 600; }
+  .workflow-row small { overflow-wrap: anywhere; color: var(--muted-foreground); font-family: var(--font-mono); font-size: 10px; }
+  .workflow-runs { display: grid; gap: 4px; }
+  .workflow-runs h4 { margin: 0; color: var(--muted-foreground); font-size: 10px; font-weight: 700; }
+  .workflow-run { display: flex; align-items: center; gap: 8px; width: 100%; padding: 3px 0; text-align: left; font-size: 11px; }
+  .workflow-run span { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .workflow-run small { flex: none; color: var(--muted-foreground); }
+  .workflow-run svg { width: 13px; height: 13px; flex: none; }
   .release-create-options { display: flex; flex-wrap: wrap; gap: 14px; }
   .release-create-options label { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; cursor: pointer; }
   .release-field-hint { color: var(--muted-foreground); font-size: 11px; }
@@ -1274,18 +1292,18 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   .pr-conversation-meta .verdict-changes { color: var(--destructive); font-weight: 600; }
   .pr-conversation-bot { border: 1px solid var(--border); border-radius: 999px; padding: 0 5px; font-size: 9px; }
   .pr-conversation-link { margin-left: auto; }
-  /* Inline styles survive for math, so third-party text can't be allowed to paint outside its box. */
+  /* Inline styles survive for math, so third-party text is kept from painting outside its box. */
   .pr-conversation-body, .pr-summary-section, .release-notes { contain: layout paint; }
   .pr-conversation-body { grid-column: 2; min-width: 0; margin-top: 4px; font-size: 12px; }
-  .pr-conversation-body .markdown-prose { padding: 0; font-size: 12px; }
   .pr-composer { display: grid; gap: 8px; border-top: 1px solid var(--border); padding-top: 12px; margin-top: 2px; }
   .pr-composer-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; }
   .pr-composer-account { margin-right: auto; color: var(--muted-foreground); font-size: 11px; }
   .pr-conversation-hidden summary { color: var(--muted-foreground); font-size: 11px; cursor: pointer; }
- flex-wrap: wrap; align-items: center; gap: 6px; margin-left: auto; }
+  .pr-action-bar { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-left: auto; }
   .pr-action-reason { color: var(--muted-foreground); }
-  .pr-action-panel { flex: 1 0 100%; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--card, var(--muted)); padding: 10px 12px; }
-  .pr-merge-method { min-width: 160px; }
+  .pr-viewer-status > .pr-action-panel { flex: 1 0 100%; }
+  .pr-action-panel { border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--card, var(--muted)); padding: 10px 12px; }
+  .pr-merge-method { min-width: 160px; font-size: 12px; }
   .pr-delete-branch-option { display: inline-flex; align-items: center; gap: 7px; font-size: 11px; cursor: pointer; }
   .pr-action-note { color: var(--muted-foreground); font-size: 11px; }
   .pr-labels { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: 5px; }

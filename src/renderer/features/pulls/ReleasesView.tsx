@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { IconBrandGithub, IconLoader4, IconPlus, IconRefresh, IconTag } from '@tabler/icons-react';
+import { IconBrandGithub, IconLoader4, IconPlayerPlay, IconPlus, IconRefresh, IconTag } from '@tabler/icons-react';
 import { formatDate } from '@shared/date-format';
 import { Button } from '@/components/ui/button';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
@@ -10,9 +10,11 @@ import { opentig } from '@/lib/opentig-api';
 import { queryKeys } from '@/lib/query-client';
 import { CreateReleaseDialog } from './CreateReleaseDialog';
 import { releaseStateLabel } from './gh-utils';
+import { RunWorkflowDialog } from './RunWorkflowDialog';
 
 export function ReleasesView({ repositoryId, activeTag, onSelect }: { repositoryId: string; activeTag: string | null; onSelect(tagName: string): void }) {
   const [creating, setCreating] = useState(false);
+  const [running, setRunning] = useState(false);
   const query = useQuery({ queryKey: queryKeys.releases(repositoryId), queryFn: () => opentig.github.listReleases(repositoryId) });
   const releases = query.data ?? null;
   const error = query.error instanceof Error ? query.error.message : query.error ? 'Could not load the releases.' : null;
@@ -25,6 +27,10 @@ export function ReleasesView({ repositoryId, activeTag, onSelect }: { repository
             {query.isFetching ? <IconLoader4 className="animate-spin" /> : <IconRefresh />}
           </TooltipTrigger>
           <TooltipContent>Refresh releases</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger render={<Button variant="ghost" size="xs" onClick={() => setRunning(true)} aria-label="Run a workflow" />}><IconPlayerPlay /> Run</TooltipTrigger>
+          <TooltipContent>Run a workflow, such as the one that prepares a release</TooltipContent>
         </Tooltip>
         <Tooltip>
           <TooltipTrigger render={<Button variant="outline" size="xs" onClick={() => setCreating(true)} aria-label="Create a draft release" />}><IconPlus /> New</TooltipTrigger>
@@ -54,6 +60,7 @@ export function ReleasesView({ repositoryId, activeTag, onSelect }: { repository
           );
         })}
       </div>
+      {running && <RunWorkflowDialog repositoryId={repositoryId} onClose={() => setRunning(false)} />}
       {creating && <CreateReleaseDialog repositoryId={repositoryId} onClose={() => setCreating(false)} onCreated={onSelect} />}
     </div>
   );

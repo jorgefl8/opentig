@@ -154,6 +154,10 @@ export const OPEN_TIG_SERVER_COMMANDS = {
   'github.createRelease': command(IPC.githubReleaseCreate, 'gh-release-create', true, { timeoutMs: GITHUB_ACTION_TIMEOUT_MS }),
   'github.updateRelease': command(IPC.githubReleaseUpdate, 'gh-release-update', true, { timeoutMs: GITHUB_ACTION_TIMEOUT_MS }),
   'github.deleteDraftRelease': command(IPC.githubReleaseDelete, 'gh-release-delete', true, { timeoutMs: GITHUB_ACTION_TIMEOUT_MS }),
+  'github.publishRelease': command(IPC.githubReleasePublish, 'gh-release-publish', true, { timeoutMs: GITHUB_ACTION_TIMEOUT_MS }),
+  'github.listWorkflows': command(IPC.githubWorkflowList, 'gh-workflow-list', false),
+  'github.listWorkflowRuns': command(IPC.githubWorkflowRuns, 'gh-workflow-runs', false),
+  'github.runWorkflow': command(IPC.githubWorkflowRun, 'gh-workflow-run', true, { timeoutMs: GITHUB_ACTION_TIMEOUT_MS }),
   'github.generateDraft': command(IPC.githubPrDraft, 'ai-pr-draft', true, { timeoutMs: AI_SERVER_TIMEOUT_MS }),
   'github.cancelDraft': command(IPC.githubPrDraftCancel, 'ai-pr-draft-cancel', true),
 

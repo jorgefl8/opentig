@@ -196,7 +196,11 @@ In **PRs**, switch to **Releases** to list the repository's releases, including 
 | --- | --- |
 | **New** | Creates a draft from an existing tag, with a title and notes, optionally adding GitHub's generated notes or marking it as a pre-release. It stops if the tag doesn't exist or already has a release |
 | **Edit** | Changes the title and notes of a draft or a published release. Notes are edited raw, so any comment markers that automation keeps in them stay as they are. Saving stops if the notes changed on GitHub first, because workflows also write to them |
+| **Publish** | Asks first, showing the tag, commit, whether it's a pre-release, and the assets. Publishing can start workflows that run on publication. Off while the tag doesn't exist, with **This tag doesn't exist yet**, and the server refuses it too, because GitHub would otherwise create the tag |
 | **Delete draft** | Asks first, lists what's lost, and keeps the tag. Published releases are only deleted on GitHub |
+| **Run** | Runs a workflow on the default branch, after naming the workflow and branch. Workflows about releases come first, with their latest runs and links. It can't pass inputs, so GitHub's message explains when a workflow needs them or can't be started manually |
+
+Assets aren't checked for completeness: **review them before publishing**. If GitHub doesn't answer in time while running a workflow, **Run** stays off until you've refreshed its runs, because trying again could start it twice.
 
 These actions use the repository's account, stop if that account changed since you reviewed it, and only appear with write access.
 

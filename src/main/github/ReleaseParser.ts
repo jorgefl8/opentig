@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
-import type { ReleaseDetails, ReleaseSummary } from '../../shared/contracts';
+import type { ReleaseDetails, ReleaseSummary, RepositoryWorkflow, WorkflowRunSummary } from '../../shared/contracts';
 import { GhOperationError } from '../../shared/errors';
 
 export const RELEASE_SUMMARY_FIELDS = 'tagName,name,isDraft,isPrerelease,isLatest,isImmutable,createdAt,publishedAt';
@@ -74,4 +74,26 @@ export function parseReleaseDetails(raw: string, facts: { isLatest: boolean; tag
     tagExists: facts.tagExists,
     viewerCanWrite: facts.viewerCanWrite,
   };
+}
+
+export const WORKFLOW_FIELDS = 'id,name,path,state';
+export const WORKFLOW_RUN_FIELDS = 'databaseId,status,conclusion,url,createdAt,displayTitle';
+
+/** Active workflows, with those about releases first, since that's why this list is open. */
+export function parseWorkflowList(raw: string): RepositoryWorkflow[] {
+  const operation = 'gh-workflow-list';
+  const parsed = z.array(z.object({ id: z.number().int().positive(), name: z.string(), path: z.string(), state: z.string() })).safeParse(parseJson(raw, operation));
+  if (!parsed.success) throw invalid(operation);
+  const aboutReleases = (workflow: { name: string; path: string }) => Number(/release/i.test(`${workflow.name} ${workflow.path}`));
+  return parsed.data
+    .filter((workflow) => workflow.state === 'active')
+    .sort((left, right) => aboutReleases(right) - aboutReleases(left) || left.name.localeCompare(right.name))
+    .map(({ id, name, path }) => ({ id, name, path }));
+}
+
+export function parseWorkflowRuns(raw: string): WorkflowRunSummary[] {
+  const operation = 'gh-workflow-runs';
+  const parsed = z.array(z.object({ databaseId: z.number().int().positive(), status: z.string(), conclusion: z.string().nullish(), url: z.string(), createdAt: z.string(), displayTitle: z.string() })).safeParse(parseJson(raw, operation));
+  if (!parsed.success) throw invalid(operation);
+  return parsed.data.map((run) => ({ ...run, conclusion: run.conclusion || null }));
 }

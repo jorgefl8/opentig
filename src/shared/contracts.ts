@@ -584,6 +584,30 @@ export interface ReleaseDetails extends ReleaseSummary {
 export type CreateReleaseInput = GitHubMutationBase & { tagName: string; title: string; notes: string; generateNotes: boolean; prerelease: boolean };
 export type UpdateReleaseInput = GitHubMutationBase & { tagName: string; expectedDatabaseId: number; expectedBodyHash: string; title: string; notes: string };
 export type DeleteDraftReleaseInput = GitHubMutationBase & { tagName: string; expectedDatabaseId: number };
+export type PublishReleaseInput = GitHubMutationBase & { tagName: string; expectedDatabaseId: number };
+
+export interface RepositoryWorkflow {
+  id: number;
+  name: string;
+  path: string;
+}
+
+export interface RepositoryWorkflowList {
+  workflows: RepositoryWorkflow[];
+  defaultBranch: string | null;
+  viewerCanWrite: boolean;
+}
+
+export interface WorkflowRunSummary {
+  databaseId: number;
+  status: string;
+  conclusion: string | null;
+  url: string;
+  createdAt: string;
+  displayTitle: string;
+}
+
+export type RunWorkflowInput = GitHubMutationBase & { path: string; ref: string };
 
 export interface CreatePullRequestInput {
   expectedAccount?: { login: string; revision: number };
@@ -826,6 +850,10 @@ export interface OpenTigApi {
     createRelease(input: CreateReleaseInput): Promise<void>;
     updateRelease(input: UpdateReleaseInput): Promise<void>;
     deleteDraftRelease(input: DeleteDraftReleaseInput): Promise<void>;
+    publishRelease(input: PublishReleaseInput): Promise<void>;
+    listWorkflows(repositoryId: string): Promise<RepositoryWorkflowList>;
+    listWorkflowRuns(repositoryId: string, path: string): Promise<WorkflowRunSummary[]>;
+    runWorkflow(input: RunWorkflowInput): Promise<void>;
     generateDraft(input: GeneratePullRequestDraftInput): Promise<GeneratedPullRequestDraft>;
     cancelDraft(requestId: string): Promise<void>;
   };
@@ -875,5 +903,5 @@ export const IPC = {
   diagnosticsList: 'diagnostics:list', diagnosticsClear: 'diagnostics:clear', diagnosticsRecord: 'diagnostics:record',
   githubAccountsStatus: 'github:accounts-status', githubSetDefaultAccount: 'github:set-default-account', githubRepositoryAccount: 'github:repository-account', githubSetRepositoryAccount: 'github:set-repository-account',
   githubStatus: 'github:status', githubRepositoryInfo: 'github:repository-info', githubPrForBranch: 'github:pr-for-branch', githubPrList: 'github:pr-list', githubPrView: 'github:pr-view', githubPrLiveState: 'github:pr-live-state', githubPrConversation: 'github:pr-conversation', githubPrAction: 'github:pr-action', githubPrUpdate: 'github:pr-update', githubPrComment: 'github:pr-comment', githubPrReview: 'github:pr-review',
-  githubPrStack: 'github:pr-stack', githubPrDiff: 'github:pr-diff', githubPrCommitDiff: 'github:pr-commit-diff', githubPrCommits: 'github:pr-commits', githubPrCreate: 'github:pr-create', githubReleaseList: 'github:release-list', githubReleaseView: 'github:release-view', githubReleaseCreate: 'github:release-create', githubReleaseUpdate: 'github:release-update', githubReleaseDelete: 'github:release-delete', githubPrDraft: 'github:pr-draft', githubPrDraftCancel: 'github:pr-draft-cancel',
+  githubPrStack: 'github:pr-stack', githubPrDiff: 'github:pr-diff', githubPrCommitDiff: 'github:pr-commit-diff', githubPrCommits: 'github:pr-commits', githubPrCreate: 'github:pr-create', githubReleaseList: 'github:release-list', githubReleaseView: 'github:release-view', githubReleaseCreate: 'github:release-create', githubReleaseUpdate: 'github:release-update', githubReleaseDelete: 'github:release-delete', githubReleasePublish: 'github:release-publish', githubWorkflowList: 'github:workflow-list', githubWorkflowRuns: 'github:workflow-runs', githubWorkflowRun: 'github:workflow-run', githubPrDraft: 'github:pr-draft', githubPrDraftCancel: 'github:pr-draft-cancel',
 } as const;

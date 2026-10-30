@@ -83,6 +83,17 @@ describe('merging', () => {
     expect(api.runPullRequestAction).not.toHaveBeenCalled();
   });
 
+  it('lets Escape close an open list first, keeping the question', async () => {
+    await render();
+    await click('Merge');
+    const list = document.createElement('div');
+    list.setAttribute('role', 'listbox');
+    document.body.append(list);
+    await act(async () => { list.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); });
+    expect(panel()).not.toBeNull();
+    list.remove();
+  });
+
   it('withdraws the question when the state it asked about changes', async () => {
     await render();
     await click('Merge');

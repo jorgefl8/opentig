@@ -56,6 +56,17 @@
   line-height: 1.75;
 }
 
+.pr-conversation-body .markdown-prose {
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.pr-conversation-body .markdown-prose > :first-child { margin-top: 0; }
+.pr-conversation-body .markdown-prose > :last-child { margin-bottom: 0; }
+
 .markdown-viewer[data-content-width="fit"] .markdown-prose {
   width: 100%;
 }

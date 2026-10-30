@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseReleaseDetails, parseReleaseList, releaseBodyHash } from './ReleaseParser';
+import { parseReleaseDetails, parseReleaseList, parseWorkflowList, parseWorkflowRuns, releaseBodyHash } from './ReleaseParser';
 
 const facts = { isLatest: false, tagExists: true, viewerCanWrite: true };
 const summary = { tagName: 'v1.0.0', name: 'One', isDraft: false, isPrerelease: false, isLatest: true, isImmutable: false, createdAt: '2026-01-01T00:00:00Z', publishedAt: '2026-01-02T00:00:00Z' };
@@ -42,5 +42,16 @@ describe('parseReleaseDetails', () => {
 
   it('rejects a release without an id', () => {
     expect(() => parseReleaseDetails(JSON.stringify({ ...details, databaseId: undefined }), facts)).toThrow('GitHub CLI returned an unexpected response.');
+  });
+});
+
+describe('workflow parsers', () => {
+  it('rejects output that is not what was asked for', () => {
+    expect(() => parseWorkflowList('{}')).toThrow('GitHub CLI returned an unexpected response.');
+    expect(() => parseWorkflowRuns(JSON.stringify([{ databaseId: 'x' }]))).toThrow('GitHub CLI returned an unexpected response.');
+  });
+
+  it('treats an unfinished run as having no conclusion', () => {
+    expect(parseWorkflowRuns(JSON.stringify([{ databaseId: 1, status: 'in_progress', conclusion: '', url: 'u', createdAt: 'd', displayTitle: 't' }]))[0]?.conclusion).toBeNull();
   });
 });

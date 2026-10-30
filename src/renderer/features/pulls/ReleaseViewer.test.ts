@@ -8,7 +8,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { ServerRequestTimeoutError } from '@/lib/websocket-transport';
 import { ReleaseViewer } from './ReleaseViewer';
 
-const api = vi.hoisted(() => ({ getRelease: vi.fn(), deleteDraftRelease: vi.fn(), repositoryAccount: vi.fn() }));
+const api = vi.hoisted(() => ({ getRelease: vi.fn(), deleteDraftRelease: vi.fn(), publishRelease: vi.fn(), repositoryAccount: vi.fn() }));
 const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn(), info: vi.fn() }));
 vi.mock('@/lib/opentig-api', () => ({ opentig: { github: api } }));
 vi.mock('sileo', () => ({ sileo: toast }));
@@ -119,4 +119,37 @@ it('offers a retry when it cannot load', async () => {
   await settle();
   expect(container.textContent).toContain('Not found');
   expect(button('Try again')).toBeDefined();
+});
+
+it('asks before publishing, listing what will go out', async () => {
+  api.publishRelease.mockResolvedValue(undefined);
+  await render();
+  await act(async () => button('Publish')!.click());
+  expect(api.publishRelease).not.toHaveBeenCalled();
+  const panel = container.querySelector('.pr-action-panel')!.textContent;
+  expect(panel).toContain('v1.0.0');
+  expect(panel).toContain('bbbbbbbbbbbb');
+  expect(panel).toContain('app.exe');
+  expect(panel).toContain('as @sample');
+  expect(panel).toContain('any workflow that runs on publication starts');
+  await act(async () => button('Publish release')!.click());
+  await settle();
+  expect(api.publishRelease).toHaveBeenCalledWith({ repositoryId: 'repo', tagName: 'v1.0.0', expectedDatabaseId: 42, expectedAccount: { login: 'sample', revision: 3 } });
+  expect(toast.success).toHaveBeenCalledWith(expect.objectContaining({ title: 'Release published' }));
+});
+
+it('warns when a draft has no assets', async () => {
+  await render(release({ assets: [] }));
+  await act(async () => button('Publish')!.click());
+  expect(container.querySelector('.pr-action-panel')?.textContent).toContain('Check that nothing is missing');
+});
+
+it('keeps Publish off without a tag, and off for what is already published', async () => {
+  await render(release({ tagExists: false }));
+  expect(button('Publish')?.disabled).toBe(true);
+  await act(async () => root.unmount());
+  root = createRoot(container);
+  client.clear();
+  await render(release({ isDraft: false, publishedAt: '2026-01-02T00:00:00Z' }));
+  expect(button('Publish')).toBeUndefined();
 });

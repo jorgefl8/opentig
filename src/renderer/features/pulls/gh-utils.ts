@@ -28,7 +28,7 @@ export function ghErrorTitle(detail: SerializedGhError | null): string {
   if (detail.code === 'GH_NO_UPSTREAM') return 'Publish the branch first';
   if (detail.code === 'GH_RATE_LIMITED') return 'GitHub rate limit reached';
   if (detail.code === 'GH_TIMEOUT') return 'GitHub CLI took too long';
-  if (detail.code === 'GH_PR_STATE_CHANGED') return 'The pull request changed';
+  if (detail.code === 'GH_PR_STATE_CHANGED') return 'It changed on GitHub';
   if (detail.code === 'GH_PR_ACTION_NOT_ALLOWED') return 'This action is no longer available';
   if (detail.code === 'GH_INVALID_OUTPUT') return 'Unexpected GitHub CLI response';
   return 'GitHub operation failed';

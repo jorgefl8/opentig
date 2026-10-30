@@ -138,6 +138,7 @@
   html .conflict-viewer-toolbar > div { min-width: 0; overflow-wrap: anywhere; }
   html .conflict-actions { flex-wrap: wrap; }
   html .pr-viewer-header { display: flex; flex-direction: column; max-height: 45%; overflow: hidden; padding: 10px; }
+  html .pr-viewer-header:has(.pr-action-panel) { max-height: 85%; }
   html .pr-viewer-overview { display: grid; min-height: 0; flex: 0 1 auto; gap: 8px; overflow-y: auto; }
   html .pr-viewer-title { flex-wrap: wrap; }
   html .pr-viewer-title h2 { flex: 1 1 100%; white-space: normal; overflow-wrap: anywhere; }

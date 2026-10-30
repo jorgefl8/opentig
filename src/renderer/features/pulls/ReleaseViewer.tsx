@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { IconExternalLink, IconFile, IconGitCommit, IconLoader4, IconPencil, IconRefresh, IconTag, IconTrash } from '@tabler/icons-react';
+import { IconExternalLink, IconFile, IconGitCommit, IconLoader4, IconPencil, IconRefresh, IconRocket, IconTag, IconTrash } from '@tabler/icons-react';
 import { sileo } from 'sileo';
 import { formatDateTime } from '@shared/date-format';
 import { ActionConfirmPanel } from '@/components/ActionConfirmPanel';
@@ -37,7 +37,7 @@ export function ReleaseViewer({ repositoryId, tagName, onClose }: { repositoryId
   const accountQuery = useGitHubAccount(release?.viewerCanWrite ? repositoryId : null);
   const account = accountQuery.data;
   const [editing, setEditing] = useState(false);
-  const [confirming, setConfirming] = useState<'delete' | null>(null);
+  const [confirming, setConfirming] = useState<'delete' | 'publish' | null>(null);
   const cancel = useCallback(() => setConfirming(null), []);
   const stateKey = release ? [release.databaseId, release.isDraft, release.tagExists, release.bodyHash].join('|') : '';
   useEffect(() => { setConfirming(null); }, [stateKey]);
@@ -62,7 +62,13 @@ export function ReleaseViewer({ repositoryId, tagName, onClose }: { repositoryId
     onError,
     onSettled: refresh,
   });
-  const busy = remove.isPending;
+  const publish = useMutation({
+    mutationFn: () => opentig.github.publishRelease(expected()),
+    onSuccess: () => { setConfirming(null); sileo.success({ title: 'Release published', description: tagName }); },
+    onError,
+    onSettled: refresh,
+  });
+  const busy = remove.isPending || publish.isPending;
 
   if (query.isError && !release) {
     return (
@@ -97,9 +103,23 @@ export function ReleaseViewer({ repositoryId, tagName, onClose }: { repositoryId
           <div className="pr-viewer-status">
             {!release.tagExists && <span className="pr-status attention" role="status">This tag doesn't exist yet</span>}
             {release.viewerCanWrite ? <span className="pr-action-bar">
+              {release.isDraft && <Button size="xs" disabled={!canAct || busy || confirming !== null || !release.tagExists} onClick={() => setConfirming('publish')}><IconRocket /> Publish</Button>}
               <Button variant="outline" size="xs" disabled={!canAct || busy} onClick={() => setEditing(true)}><IconPencil /> Edit</Button>
               {release.isDraft && <Button variant="ghost" size="xs" disabled={!canAct || busy || confirming !== null} onClick={() => setConfirming('delete')}><IconTrash /> Delete draft</Button>}
             </span> : <span className="pr-action-reason">Changing releases requires write access</span>}
+            {confirming === 'publish' && (
+              <div className="pr-action-panel">
+                <ActionConfirmPanel tone="warning" busy={busy} onCancel={cancel} confirm={<Button size="sm" disabled={busy} onClick={() => publish.mutate()}>{publish.isPending ? <><IconLoader4 className="animate-spin" /> <ShimmeringText text="Publishing…" /></> : 'Publish release'}</Button>}>
+                  <p>Publish <strong>{release.name}</strong>{account?.login ? <> as <strong>@{account.login}</strong></> : null}? Anyone with access to the repository sees it, and any workflow that runs on publication starts.</p>
+                  <dl className="release-publish-facts">
+                    <div><dt>Tag</dt><dd><code>{release.tagName}</code></dd></div>
+                    <div><dt>Commit</dt><dd><code>{release.targetCommitish.slice(0, 12)}</code></dd></div>
+                    <div><dt>Pre-release</dt><dd>{release.isPrerelease ? 'Yes' : 'No'}</dd></div>
+                    <div><dt>Assets</dt><dd>{release.assets.length ? release.assets.map((asset) => asset.name).join(', ') : 'None. Check that nothing is missing.'}</dd></div>
+                  </dl>
+                </ActionConfirmPanel>
+              </div>
+            )}
             {confirming === 'delete' && (
               <div className="pr-action-panel">
                 <ActionConfirmPanel busy={busy} onCancel={cancel} confirm={<Button variant="destructive" size="sm" disabled={busy} onClick={() => remove.mutate()}>{busy ? <><IconLoader4 className="animate-spin" /> <ShimmeringText text="Deleting…" /></> : 'Delete draft'}</Button>}>

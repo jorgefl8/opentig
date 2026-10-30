@@ -68,7 +68,7 @@ function sample(number: number, title: string, state: PullRequestState, branch: 
       checks: { rollup: rollup(checks), items: checks, truncated: false, partial: false },
       head: { repositoryId: 'demo-repository', owner: 'demo', defaultBranch: 'main', refOid: oids.at(-1) ?? null },
       repository: { methods: ['MERGE', 'SQUASH', 'REBASE'], defaultMethod: 'SQUASH', autoMergeAllowed: true, deleteBranchOnMerge: false },
-      viewer: { canWrite: true, canUpdate: true, didAuthor: true, canUpdateBranch: true, canDeleteBranch: true },
+      viewer: { canWrite: true, canUpdate: true, didAuthor: false, canUpdateBranch: true, canDeleteBranch: true },
     },
     changes: commits.map(c => c.changes),
   };

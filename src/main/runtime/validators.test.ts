@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { generateCommitMessageArg, generatePullRequestDraftArg, booleanArg, branchDetailsArg, deleteBranchArg, filesTreeStateArg, nullableProjectIdArg, openFilesStateArg, prepareCommitGroupArg, projectIdArg, projectNameArg, publishBranchArg, pullRequestStatesArg, removeWorktreeArg, repositoryKeyArg, searchOptionsArg, searchReplaceArg, worktreeDetailsArg, commentOnPullRequestArg, createReleaseArg, deleteDraftReleaseArg, pullRequestActionArg, reviewPullRequestArg, tagNameArg, updatePullRequestArg, updateReleaseArg } from './validators';
+import { generateCommitMessageArg, generatePullRequestDraftArg, booleanArg, branchDetailsArg, deleteBranchArg, filesTreeStateArg, nullableProjectIdArg, openFilesStateArg, prepareCommitGroupArg, projectIdArg, projectNameArg, publishBranchArg, pullRequestStatesArg, removeWorktreeArg, repositoryKeyArg, searchOptionsArg, searchReplaceArg, worktreeDetailsArg, commentOnPullRequestArg, createReleaseArg, deleteDraftReleaseArg, publishReleaseArg, pullRequestActionArg, reviewPullRequestArg, runWorkflowArg, tagNameArg, updatePullRequestArg, updateReleaseArg, workflowPathArg } from './validators';
 import { GitOperationError } from '../../shared/errors';
 import { createTrackingBranchArg, deleteRemoteBranchArg } from './validators';
 
@@ -323,5 +323,23 @@ describe('release arguments', () => {
     expect(() => updateReleaseArg({ ...base, expectedDatabaseId: 1, expectedBodyHash: 'short', title: 'T', notes: '' })).toThrow('Invalid release data.');
     expect(deleteDraftReleaseArg({ ...base, expectedDatabaseId: 1 })).toMatchObject({ expectedDatabaseId: 1 });
     expect(() => deleteDraftReleaseArg({ ...base })).toThrow('Invalid release data.');
+  });
+});
+
+describe('workflow arguments', () => {
+  const run = { repositoryId: 'repo', path: '.github/workflows/release.yml', ref: 'main', expectedAccount: { login: 'sample', revision: 1 } };
+  it('accepts a workflow file on a branch', () => {
+    expect(runWorkflowArg(run)).toMatchObject({ path: '.github/workflows/release.yml', ref: 'main' });
+    expect(workflowPathArg('.github/workflows/ci.yaml', 'gh-workflow-runs')).toBe('.github/workflows/ci.yaml');
+  });
+  it.each(['--help', 'release.yml', '.github/workflows/../../evil.yml', '.github/workflows/a/b.yml', '.github/workflows/release.txt'])('rejects the path %s', (path) => {
+    expect(() => workflowPathArg(path, 'gh-workflow-runs')).toThrow('Invalid release data.');
+  });
+  it('rejects a ref that could be read as a flag', () => {
+    expect(() => runWorkflowArg({ ...run, ref: '--foo' })).toThrow('Invalid release data.');
+  });
+  it('checks a publication', () => {
+    expect(publishReleaseArg({ repositoryId: 'repo', tagName: 'v1', expectedDatabaseId: 1, expectedAccount: run.expectedAccount })).toMatchObject({ tagName: 'v1' });
+    expect(() => publishReleaseArg({ repositoryId: 'repo', tagName: '--draft=false', expectedDatabaseId: 1, expectedAccount: run.expectedAccount })).toThrow('Invalid release data.');
   });
 });

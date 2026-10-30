@@ -78,6 +78,14 @@ test('sample releases cover each state and cannot mutate fixtures', () => {
   assert.throws(() => demoReleases.get('missing'), /sample repository/);
 });
 
+test('sample workflows list a release workflow first, with its recent runs', () => {
+  const { workflows, defaultBranch } = demoReleases.workflows();
+  assert.equal(defaultBranch, 'main');
+  assert.match(workflows[0].name, /release/i);
+  assert.ok(demoReleases.workflowRuns(workflows[0].path).length > 0);
+  assert.deepEqual(demoReleases.workflowRuns('missing'), []);
+});
+
 test('per-commit patches apply to the sample files and compose the full PR diff', () => {
   for (const pr of demoPulls.list(['OPEN', 'MERGED', 'CLOSED'])) {
     assert.equal(pr.url, '');

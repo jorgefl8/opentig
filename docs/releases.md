@@ -68,6 +68,8 @@ The prepared draft must contain:
 | `opentig-cli-<version>.tgz` | The prepared CLI package |
 | `opentig-headless.json` | Integrity hashes and source tag/commit |
 
+[OpenTig's Releases](github.md#manage-releases) can run **Prepare release** and publish the reviewed draft instead of GitHub's pages. Running it there uses `main` and leaves `dry_run` unchecked, so it creates the version commit and tag. The steps stay the same, including reviewing the assets and completing Windows validation before publishing.
+
 **Publishing a notes-only draft does not prepare its binaries.** Publishing the completed release makes the Windows update available and starts npm publication without rebuilding the CLI.
 
 To preview only, enable `dry_run`. It reports the version without changing files, commits, tags, or releases, and skips the builders.

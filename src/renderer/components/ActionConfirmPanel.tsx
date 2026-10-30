@@ -19,6 +19,8 @@ export function ActionConfirmPanel({ tone = 'danger', busy = false, confirm, onC
     if (busy) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
+      // An open list inside the question, such as the merge method, closes first.
+      if (event.target instanceof Element && event.target.closest('[role="listbox"], [role="menu"]')) return;
       // Only this question closes, not a dialog or menu around it.
       event.stopPropagation();
       event.preventDefault();

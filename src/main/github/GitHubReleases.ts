@@ -1,10 +1,10 @@
 import { z } from 'zod';
-import type { CreateReleaseInput, DeleteDraftReleaseInput, ReleaseDetails, ReleaseSummary, UpdateReleaseInput } from '../../shared/contracts';
+import type { CreateReleaseInput, DeleteDraftReleaseInput, PublishReleaseInput, ReleaseDetails, ReleaseSummary, RepositoryWorkflowList, RunWorkflowInput, UpdateReleaseInput, WorkflowRunSummary } from '../../shared/contracts';
 import { GhOperationError } from '../../shared/errors';
 import { redactCommandToken } from './GitHubAccountAuth';
 import { classifyActionFailure } from './GitHubActionErrors';
 import { beginGitHubMutation, withPrivateTextFile, type GitHubAccess, type GitHubTarget } from './GitHubAccess';
-import { parseReleaseDetails, parseReleaseList, RELEASE_DETAIL_FIELDS, RELEASE_SUMMARY_FIELDS } from './ReleaseParser';
+import { parseReleaseDetails, parseReleaseList, parseWorkflowList, parseWorkflowRuns, RELEASE_DETAIL_FIELDS, RELEASE_SUMMARY_FIELDS, WORKFLOW_FIELDS, WORKFLOW_RUN_FIELDS } from './ReleaseParser';
 
 const READ_TIMEOUT_MS = 20_000;
 const ACTION_TIMEOUT_MS = 60_000;
@@ -130,6 +130,64 @@ export class GitHubReleases {
     verifyAccount();
     try {
       await this.act(target, ['release', 'delete', input.tagName, '-R', target.nameWithOwner, '--yes'], operation);
+    } finally {
+      this.github.invalidate(input.repositoryId);
+    }
+  }
+
+  /**
+   * Publishing a draft whose tag doesn't exist makes GitHub create the tag at the
+   * target commit, so the tag is checked here, and `--verify-tag` only acts in
+   * `gh release edit` together with `--tag`.
+   */
+  async publish(input: PublishReleaseInput): Promise<void> {
+    const operation = 'gh-release-publish';
+    const { target, verifyAccount } = await beginGitHubMutation(this.github, input, operation);
+    this.github.invalidate(input.repositoryId);
+    const release = await this.viewFor(target, input.tagName, operation);
+    if (release.databaseId !== input.expectedDatabaseId) throw this.changed(operation, 'This release changed. Review it and try again.');
+    if (!release.isDraft) throw this.notAllowed(operation, 'This release is already published.');
+    if (!release.tagExists) throw this.notAllowed(operation, `The tag ${input.tagName} doesn't exist yet. OpenTig doesn't create tags, so this draft can't be published until it does.`);
+    if (!release.viewerCanWrite) throw this.notAllowed(operation, "This GitHub account doesn't have write access to this repository.");
+    verifyAccount();
+    try {
+      await this.act(target, ['release', 'edit', input.tagName, '-R', target.nameWithOwner, '--tag', input.tagName, '--verify-tag', '--draft=false'], operation);
+    } finally {
+      this.github.invalidate(input.repositoryId);
+    }
+  }
+
+  async listWorkflows(repositoryId: string): Promise<RepositoryWorkflowList> {
+    const operation = 'gh-workflow-list';
+    return this.workflowsFor(await this.github.requireGitHub(repositoryId, operation), operation);
+  }
+
+  private async workflowsFor(target: GitHubTarget, operation: string): Promise<RepositoryWorkflowList> {
+    const [raw, facts] = await Promise.all([
+      this.read(target, ['workflow', 'list', '-R', target.nameWithOwner, '--limit', '100', '--json', WORKFLOW_FIELDS], operation),
+      this.repositoryFacts(target, operation),
+    ]);
+    return { workflows: parseWorkflowList(raw), defaultBranch: facts.defaultBranch, viewerCanWrite: facts.canWrite };
+  }
+
+  async listWorkflowRuns(repositoryId: string, path: string): Promise<WorkflowRunSummary[]> {
+    const operation = 'gh-workflow-runs';
+    const target = await this.github.requireGitHub(repositoryId, operation);
+    return parseWorkflowRuns(await this.read(target, ['run', 'list', '-R', target.nameWithOwner, '--workflow', path, '--limit', '3', '--json', WORKFLOW_RUN_FIELDS], operation));
+  }
+
+  /** Always on the default branch and without inputs, which GitHub rejects with its own message when a workflow needs them. */
+  async runWorkflow(input: RunWorkflowInput): Promise<void> {
+    const operation = 'gh-workflow-run';
+    const { target, verifyAccount } = await beginGitHubMutation(this.github, input, operation);
+    this.github.invalidate(input.repositoryId);
+    const list = await this.workflowsFor(target, operation);
+    if (!list.viewerCanWrite) throw this.notAllowed(operation, "This GitHub account doesn't have write access to this repository.");
+    if (!list.workflows.some((workflow) => workflow.path === input.path)) throw this.notAllowed(operation, 'This workflow is no longer active. Review the list and try again.');
+    if (input.ref !== list.defaultBranch) throw this.changed(operation, "The repository's default branch changed. Review it and try again.");
+    verifyAccount();
+    try {
+      await this.act(target, ['workflow', 'run', input.path, '-R', target.nameWithOwner, '--ref', input.ref], operation);
     } finally {
       this.github.invalidate(input.repositoryId);
     }

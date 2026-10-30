@@ -13,11 +13,20 @@ const body = '<!-- opentig:release-notes:start -->\nNotes';
 const details = { tagName: 'v1.0.0', name: 'One', isDraft: true, isPrerelease: false, isImmutable: false, createdAt: '2026-01-01T00:00:00Z', publishedAt: null, databaseId: 42, body, targetCommitish: 'a'.repeat(40), url: 'https://github.com/example/demo/releases/tag/untagged-1', assets: [] };
 const summary = { tagName: 'v1.0.0', name: 'One', isDraft: true, isPrerelease: false, isLatest: false, isImmutable: false, createdAt: '2026-01-01T00:00:00Z', publishedAt: '0001-01-01T00:00:00Z' };
 
-function fixture(overrides: { view?: CliRunResult; list?: CliRunResult; tag?: CliRunResult; repository?: CliRunResult; mutate?: (args: string[]) => CliRunResult } = {}) {
+const workflows = [
+  { id: 1, name: 'CI', path: '.github/workflows/ci.yml', state: 'active' },
+  { id: 2, name: 'Old', path: '.github/workflows/old.yml', state: 'disabled_manually' },
+  { id: 3, name: 'Prepare release', path: '.github/workflows/prepare-release.yml', state: 'active' },
+  { id: 4, name: 'Build', path: '.github/workflows/build.yml', state: 'active' },
+];
+
+function fixture(overrides: { view?: CliRunResult; list?: CliRunResult; tag?: CliRunResult; repository?: CliRunResult; workflows?: CliRunResult; runs?: CliRunResult; mutate?: (args: string[]) => CliRunResult } = {}) {
   const mutations: string[][] = [];
   const run = vi.fn(async (_exe: string, args: string[]): Promise<CliRunResult> => {
     if (args[0] === 'release' && args[1] === 'view') return overrides.view ?? ok(details);
     if (args[0] === 'release' && args[1] === 'list') return overrides.list ?? ok([summary]);
+    if (args[0] === 'workflow' && args[1] === 'list') return overrides.workflows ?? ok(workflows);
+    if (args[0] === 'run' && args[1] === 'list') return overrides.runs ?? ok([{ databaseId: 1, status: 'completed', conclusion: 'success', url: 'https://github.com/example/demo/actions/runs/1', createdAt: '2026-01-01T00:00:00Z', displayTitle: 'Prepare release' }]);
     if (args[0] === 'api' && args[1]?.includes('/git/ref/tags/')) return overrides.tag ?? ok({ ref: 'refs/tags/v1.0.0' });
     if (args[0] === 'api') return overrides.repository ?? ok({ default_branch: 'main', permissions: { push: true } });
     mutations.push(args);
@@ -145,5 +154,78 @@ describe('deleting a draft', () => {
     const { service, mutations } = fixture(overrides);
     await expect(service.deleteDraftRelease(input)).rejects.toMatchObject({ detail: { code } });
     expect(mutations).toEqual([]);
+  });
+});
+
+describe('publishing', () => {
+  it('passes both the tag and the check that it exists, because gh ignores one without the other', async () => {
+    const { service, mutations } = fixture();
+    await service.publishRelease(identity);
+    expect(mutations).toEqual([['release', 'edit', 'v1.0.0', '-R', 'example/demo', '--tag', 'v1.0.0', '--verify-tag', '--draft=false']]);
+  });
+
+  it.each([
+    ['the tag does not exist', { tag: notFound }, identity, 'GH_PR_ACTION_NOT_ALLOWED', "doesn't exist yet"],
+    ['it is already published', { view: ok({ ...details, isDraft: false }) }, identity, 'GH_PR_ACTION_NOT_ALLOWED', 'already published'],
+    ['it is another release', {}, { ...identity, expectedDatabaseId: 7 }, 'GH_PR_STATE_CHANGED', 'changed'],
+    ['the viewer cannot write', { repository: ok({ permissions: { push: false } }) }, identity, 'GH_PR_ACTION_NOT_ALLOWED', 'write access'],
+  ])('refuses when %s', async (_name, overrides, input, code, message) => {
+    const { service, mutations } = fixture(overrides);
+    const failure = service.publishRelease(input);
+    await expect(failure).rejects.toMatchObject({ detail: { code } });
+    await expect(failure).rejects.toThrow(message);
+    expect(mutations).toEqual([]);
+  });
+
+  it('does not publish when it cannot tell whether the tag exists', async () => {
+    const { service, mutations } = fixture({ tag: fail('gh: Server Error (HTTP 502)') });
+    await expect(service.publishRelease(identity)).rejects.toThrow('Server Error');
+    expect(mutations).toEqual([]);
+  });
+
+  it('stops with another account', async () => {
+    const { service, mutations } = fixture();
+    await expect(service.publishRelease({ ...identity, expectedAccount: { login: 'other', revision: 3 } })).rejects.toMatchObject({ detail: { code: 'GH_ACCOUNT_UNRESOLVED' } });
+    expect(mutations).toEqual([]);
+  });
+});
+
+describe('workflows', () => {
+  const run = { repositoryId: 'repo', path: '.github/workflows/prepare-release.yml', ref: 'main', expectedAccount: { login: 'sample', revision: 3 } };
+
+  it('lists active ones, those about releases first', async () => {
+    expect(await fixture().service.listWorkflows('repo')).toEqual({
+      defaultBranch: 'main', viewerCanWrite: true,
+      workflows: [{ id: 3, name: 'Prepare release', path: '.github/workflows/prepare-release.yml' }, { id: 4, name: 'Build', path: '.github/workflows/build.yml' }, { id: 1, name: 'CI', path: '.github/workflows/ci.yml' }],
+    });
+  });
+
+  it('reads the latest runs of one', async () => {
+    const { service, run: calls } = fixture();
+    expect(await service.listWorkflowRuns('repo', run.path)).toEqual([expect.objectContaining({ databaseId: 1, conclusion: 'success' })]);
+    expect(calls.mock.calls.at(-1)?.[1]).toEqual(expect.arrayContaining(['--workflow', run.path, '--limit', '3']));
+  });
+
+  it('runs one on the default branch, without inputs', async () => {
+    const { service, mutations } = fixture();
+    await service.runWorkflow(run);
+    expect(mutations).toEqual([['workflow', 'run', run.path, '-R', 'example/demo', '--ref', 'main']]);
+  });
+
+  it.each([
+    ['another branch', { ...run, ref: 'feature' }, {}, 'GH_PR_STATE_CHANGED'],
+    ['a disabled workflow', { ...run, path: '.github/workflows/old.yml' }, {}, 'GH_PR_ACTION_NOT_ALLOWED'],
+    ['an unknown workflow', { ...run, path: '.github/workflows/other.yml' }, {}, 'GH_PR_ACTION_NOT_ALLOWED'],
+    ['no write access', run, { repository: ok({ default_branch: 'main', permissions: { push: false } }) }, 'GH_PR_ACTION_NOT_ALLOWED'],
+    ['another account', { ...run, expectedAccount: { login: 'other', revision: 3 } }, {}, 'GH_ACCOUNT_UNRESOLVED'],
+  ])('refuses %s', async (_name, input, overrides, code) => {
+    const { service, mutations } = fixture(overrides);
+    await expect(service.runWorkflow(input)).rejects.toMatchObject({ detail: { code } });
+    expect(mutations).toEqual([]);
+  });
+
+  it('passes GitHub\'s own reason through when a workflow can\'t be started', async () => {
+    const { service } = fixture({ mutate: () => ({ exitCode: 1, stdout: '', stderr: "could not create workflow dispatch event: HTTP 422: Workflow does not have 'workflow_dispatch' trigger" }) });
+    await expect(service.runWorkflow(run)).rejects.toThrow("Workflow does not have 'workflow_dispatch' trigger");
   });
 });

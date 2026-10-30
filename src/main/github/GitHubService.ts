@@ -4,7 +4,7 @@ import type { CliCandidate } from '../ai/CliResolver';
 import { parsePullRequestStack, parseStackMemberships, stackMembershipQuery } from './PullRequestStackParser';
 import os from 'node:os';
 import { GITHUB_PR_COMMIT_PAGE } from '../../shared/contracts';
-import type { RepositoryInfo, CreatePullRequestInput, CreatePullRequestResult, CommentOnPullRequestInput, CreateReleaseInput, DeleteDraftReleaseInput, ReleaseDetails, ReleaseSummary, UpdateReleaseInput, DiffResult, ReviewPullRequestInput, UpdatePullRequestInput, PullRequestActionInput, PullRequestActionResult, PullRequestConversation, PullRequestCommitList, GhCliStatus, GitHubRepositoryInfo, PullRequestDetails, PullRequestLiveState, PullRequestStack, PullRequestState, PullRequestSummary } from '../../shared/contracts';
+import type { RepositoryInfo, CreatePullRequestInput, CreatePullRequestResult, CommentOnPullRequestInput, CreateReleaseInput, DeleteDraftReleaseInput, PublishReleaseInput, ReleaseDetails, ReleaseSummary, RepositoryWorkflowList, RunWorkflowInput, UpdateReleaseInput, WorkflowRunSummary, DiffResult, ReviewPullRequestInput, UpdatePullRequestInput, PullRequestActionInput, PullRequestActionResult, PullRequestConversation, PullRequestCommitList, GhCliStatus, GitHubRepositoryInfo, PullRequestDetails, PullRequestLiveState, PullRequestStack, PullRequestState, PullRequestSummary } from '../../shared/contracts';
 import { AiOperationError, GhOperationError } from '../../shared/errors';
 import type { CliProcessRunner, CliRunResult } from '../ai/CliProcessRunner';
 import type { CliResolver } from '../ai/CliResolver';
@@ -317,6 +317,22 @@ export class GitHubService {
 
   deleteDraftRelease(input: DeleteDraftReleaseInput): Promise<void> {
     return this.releases.deleteDraft(input);
+  }
+
+  publishRelease(input: PublishReleaseInput): Promise<void> {
+    return this.releases.publish(input);
+  }
+
+  listWorkflows(repositoryId: string): Promise<RepositoryWorkflowList> {
+    return this.shareRead(repositoryId, ['workflows'], () => this.releases.listWorkflows(repositoryId));
+  }
+
+  listWorkflowRuns(repositoryId: string, path: string): Promise<WorkflowRunSummary[]> {
+    return this.shareRead(repositoryId, ['workflow-runs', path], () => this.releases.listWorkflowRuns(repositoryId, path));
+  }
+
+  runWorkflow(input: RunWorkflowInput): Promise<void> {
+    return this.releases.runWorkflow(input);
   }
 
   private async withStackMembership<T extends PullRequestSummary>(cwd: string, nameWithOwner: string, auth: GitHubCommandAuth, executable: CliCandidate, pulls: T[]): Promise<T[]> {

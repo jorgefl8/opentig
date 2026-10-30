@@ -1,6 +1,6 @@
 import { GitOperationError } from '../../shared/errors';
 import { AiOperationError, GhOperationError } from '../../shared/errors';
-import type { AiHarnessId, BranchDetailsRequest, CommentOnPullRequestInput, CreatePullRequestInput, CreateReleaseInput, DeleteDraftReleaseInput, UpdateReleaseInput, PullRequestActionInput, ReviewPullRequestInput, UpdatePullRequestInput, DeleteBranchRequest, GenerateCommitMessageInput, GeneratePullRequestDraftInput, PrepareCommitGroupInput, PublishBranchOptions, PullRequestState, RemoveWorktreeRequest, WorktreeDetailsRequest } from '../../shared/contracts';
+import type { AiHarnessId, BranchDetailsRequest, CommentOnPullRequestInput, CreatePullRequestInput, CreateReleaseInput, DeleteDraftReleaseInput, PublishReleaseInput, RunWorkflowInput, UpdateReleaseInput, PullRequestActionInput, ReviewPullRequestInput, UpdatePullRequestInput, DeleteBranchRequest, GenerateCommitMessageInput, GeneratePullRequestDraftInput, PrepareCommitGroupInput, PublishBranchOptions, PullRequestState, RemoveWorktreeRequest, WorktreeDetailsRequest } from '../../shared/contracts';
 import { MAX_PROJECT_NAME_LENGTH, MAX_REPOSITORY_KEY_LENGTH, normalizeRepositoryKey } from '../../shared/repository-projects';
 import { isFilesTreeRepositoryId, MAX_FILES_TREE_PATHS, normalizeExpandedPaths, normalizeFilesTreePath } from '../../shared/files-tree-state';
 import { isOpenFilesRepositoryId, MAX_OPEN_FILE_TABS, normalizeOpenFilePath, type OpenFileTab } from '../../shared/open-files-state';
@@ -400,6 +400,20 @@ export function updateReleaseArg(value: unknown): UpdateReleaseInput {
 
 export function deleteDraftReleaseArg(value: unknown): DeleteDraftReleaseInput {
   return parsedRelease(releaseIdentitySchema.safeParse(value), 'gh-release-delete');
+}
+
+export function publishReleaseArg(value: unknown): PublishReleaseInput {
+  return parsedRelease(releaseIdentitySchema.safeParse(value), 'gh-release-publish');
+}
+
+const workflowPathSchema = z.string().max(300).regex(/^\.github\/workflows\/[A-Za-z0-9._ -]+\.ya?ml$/);
+
+export function workflowPathArg(value: unknown, operation: string): string {
+  return parsedRelease(workflowPathSchema.safeParse(value), operation);
+}
+
+export function runWorkflowArg(value: unknown): RunWorkflowInput {
+  return parsedRelease(z.object({ repositoryId: z.string().min(1).max(64), expectedAccount: expectedAccountSchema, path: workflowPathSchema, ref: tagNameSchema }).safeParse(value), 'gh-workflow-run');
 }
 
 export function generatePullRequestDraftArg(value: unknown): GeneratePullRequestDraftInput {
