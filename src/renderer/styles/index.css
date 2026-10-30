@@ -866,6 +866,11 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   .local-refs-confirm p { grid-column: 2; line-height: 1.5; }
   .local-refs-confirm p strong { font-weight: 700; }
   .local-refs-confirm-actions { display: flex; flex-wrap: wrap; gap: 6px; grid-column: 2; }
+  .local-refs-confirm.neutral { color: var(--foreground); }
+  .local-refs-confirm.neutral > svg { color: var(--primary); }
+  .local-refs-confirm.warning > svg { color: var(--git-push); }
+  .local-refs-confirm.warning { color: var(--foreground); }
+  .local-refs-confirm > .action-confirm-fields { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; grid-column: 2; }
   .local-refs-placeholder { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 26px 16px; color: var(--muted-foreground); font-size: 11px; text-align: center; }
   .local-refs-placeholder svg { width: 15px; height: 15px; flex: none; color: var(--primary); }
   .local-refs-footer { display: flex; flex: none; align-items: center; justify-content: space-between; gap: 14px; border-top: 1px solid var(--border); background: color-mix(in oklch, var(--muted) 40%, transparent); padding: 10px 14px; }
@@ -1227,6 +1232,12 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   .pr-status.progress { color: var(--muted-foreground); }
   .pr-auto-merge-badge { color: var(--primary); }
   .pr-live-notice { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+  .pr-action-bar { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-left: auto; }
+  .pr-action-reason { color: var(--muted-foreground); }
+  .pr-action-panel { flex: 1 0 100%; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--card, var(--muted)); padding: 10px 12px; }
+  .pr-merge-method { min-width: 160px; }
+  .pr-delete-branch-option { display: inline-flex; align-items: center; gap: 7px; font-size: 11px; cursor: pointer; }
+  .pr-action-note { color: var(--muted-foreground); font-size: 11px; }
   .pr-labels { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: 5px; }
   .pr-labels > svg { width: 13px; height: 13px; flex: none; color: var(--muted-foreground); }
   .pr-label { border: 1px solid; border-radius: 999px; padding: 2px 7px; color: var(--foreground); font-size: 9.5px; font-weight: 650; line-height: 1.2; }

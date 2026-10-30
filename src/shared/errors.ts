@@ -51,6 +51,8 @@ export type GhErrorCode =
   | 'GH_NO_UPSTREAM'
   | 'GH_RATE_LIMITED'
   | 'GH_TIMEOUT'
+  | 'GH_PR_STATE_CHANGED'
+  | 'GH_PR_ACTION_NOT_ALLOWED'
   | 'GH_PROCESS_FAILED'
   | 'GH_INVALID_OUTPUT';
 

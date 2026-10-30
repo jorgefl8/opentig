@@ -1,6 +1,6 @@
 import { GitOperationError } from '../../shared/errors';
 import { AiOperationError, GhOperationError } from '../../shared/errors';
-import type { AiHarnessId, BranchDetailsRequest, CreatePullRequestInput, DeleteBranchRequest, GenerateCommitMessageInput, GeneratePullRequestDraftInput, PrepareCommitGroupInput, PublishBranchOptions, PullRequestState, RemoveWorktreeRequest, WorktreeDetailsRequest } from '../../shared/contracts';
+import type { AiHarnessId, BranchDetailsRequest, CreatePullRequestInput, PullRequestActionInput, DeleteBranchRequest, GenerateCommitMessageInput, GeneratePullRequestDraftInput, PrepareCommitGroupInput, PublishBranchOptions, PullRequestState, RemoveWorktreeRequest, WorktreeDetailsRequest } from '../../shared/contracts';
 import { MAX_PROJECT_NAME_LENGTH, MAX_REPOSITORY_KEY_LENGTH, normalizeRepositoryKey } from '../../shared/repository-projects';
 import { isFilesTreeRepositoryId, MAX_FILES_TREE_PATHS, normalizeExpandedPaths, normalizeFilesTreePath } from '../../shared/files-tree-state';
 import { isOpenFilesRepositoryId, MAX_OPEN_FILE_TABS, normalizeOpenFilePath, type OpenFileTab } from '../../shared/open-files-state';
@@ -322,6 +322,30 @@ export function createPullRequestArg(value: unknown): CreatePullRequestInput {
   return { repositoryId: input.repositoryId, title: input.title.trim(), body: input.body, base: input.base, draft: input.draft,
     ...(expected ? { expectedAccount: { login: expected.login, revision: expected.revision } } : {}) };
 
+}
+
+const expectedAccountSchema = z.object({
+  login: z.string().regex(/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/),
+  revision: z.number().int().safe().nonnegative(),
+});
+const pullRequestActionBaseSchema = z.object({
+  repositoryId: z.string().min(1).max(64),
+  number: z.number().safe().int().positive().max(1_000_000_000),
+  expectedHeadOid: z.string().regex(/^[0-9a-f]{40,64}$/i),
+  expectedAccount: expectedAccountSchema,
+});
+const mergeMethodSchema = z.enum(['MERGE', 'SQUASH', 'REBASE']);
+const pullRequestActionSchema = z.discriminatedUnion('action', [
+  pullRequestActionBaseSchema.extend({ action: z.literal('merge'), method: mergeMethodSchema, deleteBranch: z.boolean().optional() }),
+  pullRequestActionBaseSchema.extend({ action: z.literal('enable-auto-merge'), method: mergeMethodSchema }),
+  pullRequestActionBaseSchema.extend({ action: z.literal('update-branch'), method: z.enum(['MERGE', 'REBASE']) }),
+  pullRequestActionBaseSchema.extend({ action: z.enum(['disable-auto-merge', 'ready', 'draft', 'close', 'reopen', 'delete-branch']) }),
+]);
+
+export function pullRequestActionArg(value: unknown): PullRequestActionInput {
+  const parsed = pullRequestActionSchema.safeParse(value);
+  if (!parsed.success) throw invalidGh('gh-pr-action');
+  return parsed.data as PullRequestActionInput;
 }
 
 export function generatePullRequestDraftArg(value: unknown): GeneratePullRequestDraftInput {

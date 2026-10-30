@@ -3,6 +3,7 @@ import { IconAlertTriangle, IconCloud, IconExternalLink, IconGitBranch, IconGitM
 import type { RemoteBranchDetails } from '@shared/git-types';
 import type { PullRequestSummary } from '@shared/contracts';
 import { formatDateTime } from '@shared/date-format';
+import { ActionConfirmPanel } from '@/components/ActionConfirmPanel';
 import { Button } from '@/components/ui/button';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { openOnGitHub, prStateLabel } from '@/features/pulls/gh-utils';
@@ -66,11 +67,9 @@ export function RemoteBranchDetailPanel(props: Props) {
         <p className="local-refs-reason"><IconAlertTriangle aria-hidden="true" /><span>{missing ? `This branch was already deleted from ${details.remote}. Only its cached reference remains; there is no remote branch to delete.` : details.deletionBlockedReason}</span></p>
         {missing && <Button variant="outline" size="sm" disabled={anyBusy} onClick={props.onFetch}>{props.fetching ? <IconLoader4 className="animate-spin" /> : <IconRefresh />}{props.fetching ? <ShimmeringText text="Fetching…" /> : 'Fetch and clean up'}</Button>}
       </>
-        : props.confirming ? <div className="local-refs-confirm" role="alert">
-          <IconAlertTriangle aria-hidden="true" />
+        : props.confirming ? <ActionConfirmPanel busy={anyBusy} onCancel={props.onCancel} confirm={<Button variant="destructive" size="sm" disabled={anyBusy} onClick={props.onDelete}>{props.deleting ? <IconLoader4 className="animate-spin" /> : <IconTrash />}{props.deleting ? <ShimmeringText text="Deleting…" /> : `Delete from ${details.remote}`}</Button>}>
           <p>Delete <strong>{details.branchName}</strong> from <strong>{details.remote}</strong>? This removes the branch on the remote server. Your local branches, commits and worktrees stay intact.</p>
-          <span className="local-refs-confirm-actions"><Button variant="destructive" size="sm" disabled={anyBusy} onClick={props.onDelete}>{props.deleting ? <IconLoader4 className="animate-spin" /> : <IconTrash />}{props.deleting ? <ShimmeringText text="Deleting…" /> : `Delete from ${details.remote}`}</Button><Button variant="ghost" size="sm" disabled={anyBusy} onClick={props.onCancel}>Cancel</Button></span>
-        </div> : <>
+        </ActionConfirmPanel> : <>
           <p className="local-refs-reason"><IconCloud aria-hidden="true" /><span>Delete only this branch from {details.remote}. Local branches and worktrees are kept.</span></p>
           <Button variant="destructive" size="sm" disabled={anyBusy} onClick={props.onConfirm}><IconTrash />Delete from {details.remote}</Button>
         </>}

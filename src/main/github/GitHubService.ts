@@ -2,11 +2,9 @@ import { createHash } from 'node:crypto';
 import { ReadSingleFlight } from '../git/ReadSingleFlight';
 import type { CliCandidate } from '../ai/CliResolver';
 import { parsePullRequestStack, parseStackMemberships, stackMembershipQuery } from './PullRequestStackParser';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
-import path from 'node:path';
 import { GITHUB_PR_COMMIT_PAGE } from '../../shared/contracts';
-import type { CreatePullRequestInput, CreatePullRequestResult, DiffResult, PullRequestCommitList, GhCliStatus, GitHubRepositoryInfo, PullRequestDetails, PullRequestLiveState, PullRequestStack, PullRequestState, PullRequestSummary } from '../../shared/contracts';
+import type { CreatePullRequestInput, CreatePullRequestResult, DiffResult, PullRequestActionInput, PullRequestActionResult, PullRequestCommitList, GhCliStatus, GitHubRepositoryInfo, PullRequestDetails, PullRequestLiveState, PullRequestStack, PullRequestState, PullRequestSummary } from '../../shared/contracts';
 import { AiOperationError, GhOperationError } from '../../shared/errors';
 import type { CliProcessRunner, CliRunResult } from '../ai/CliProcessRunner';
 import type { CliResolver } from '../ai/CliResolver';
@@ -15,6 +13,8 @@ import type { RepositoryService } from '../git/RepositoryService';
 import { parseGitHubRemote, parseSshRemote } from './GitHubRemoteParser';
 import { GH_ENV, redactCommandToken, type GitHubCommandAuth } from './GitHubAccountAuth';
 import { parsePullRequestLiveState, PR_LIVE_STATE_QUERY } from './PullRequestLiveStateParser';
+import { PullRequestActionRunner } from './PullRequestActionRunner';
+import { withPrivateTextFile, type GhRunOptions } from './GitHubAccess';
 import { parseBranchPullRequestList, parseCreatedPullRequestUrl, parsePullRequestDetails, parsePullRequestList, PR_DETAIL_FIELDS, PR_SUMMARY_FIELDS, selectPullRequestsNewestFirst, sortPullRequestsNewestFirst } from './PullRequestParser';
 
 import { GitHubAccountsService } from './GitHubAccountsService';
@@ -24,19 +24,10 @@ const NETWORK_TIMEOUT_MS = 60_000;
 // Below the 30 s command window, so a slow GitHub ends as a timeout the renderer can explain.
 const LIVE_STATE_TIMEOUT_MS = 20_000;
 
-interface GhRunOptions {
-  cwd: string;
-  operation: string;
-  timeoutMs?: number;
-  maxOutputBytes?: number;
-  stdin?: string;
-  auth: GitHubCommandAuth;
-  executable: CliCandidate;
-}
-
 export class GitHubService {
   private readonly reads = new ReadSingleFlight();
   private readonly localGit: PullRequestLocalGit;
+  private readonly actions: PullRequestActionRunner;
   gitAccess?: import('../git/RepositoryGitAccess').RepositoryGitAccess;
   readonly accounts: GitHubAccountsService;
 
@@ -50,6 +41,13 @@ export class GitHubService {
     this.accounts = accounts ?? new GitHubAccountsService(resolver, runner, git);
     this.localGit = new PullRequestLocalGit(git);
     this.git.onInvalidate(scope => this.reads.invalidate(scope));
+    this.actions = new PullRequestActionRunner({
+      requireGitHub: (repositoryId, operation) => this.requireGitHub(repositoryId, operation),
+      run: (executable, args, options) => this.run(executable, args, options),
+      invalidate: (repositoryId) => this.invalidate(repositoryId),
+      readLiveState: (repositoryId, number) => this.readGetPullRequestLiveState(repositoryId, number),
+      revisionFor: (repository) => this.accounts.revisionFor(repository),
+    });
   }
 
   invalidate(repositoryId?: string): void {
@@ -233,6 +231,10 @@ export class GitHubService {
     return this.shareRead(repositoryId, ['live-state', prNumber], () => this.readGetPullRequestLiveState(repositoryId, prNumber));
   }
 
+  runPullRequestAction(input: PullRequestActionInput): Promise<PullRequestActionResult> {
+    return this.actions.run(input);
+  }
+
   private async readGetPullRequestLiveState(repositoryId: string, prNumber: number): Promise<PullRequestLiveState> {
     const operation = 'gh-pr-live-state';
     const { repository, nameWithOwner, auth, executable } = await this.requireGitHub(repositoryId, operation);
@@ -399,12 +401,7 @@ export class GitHubService {
     const head = await this.pullRequestHead(repository.path, status.branch, nameWithOwner, operation);
     if (base === head) throw new GhOperationError({ code: 'GH_PROCESS_FAILED', operation, message: 'The base branch must be different from the current branch.' });
 
-    // The body travels through a private temporary file: it avoids argument
-    // length limits and any shell/flag interpretation of its content.
-    const temporary = await mkdtemp(path.join(os.tmpdir(), 'opentig-gh-'));
-    const bodyPath = path.join(temporary, 'body.md');
-    try {
-      await writeFile(bodyPath, input.body, { encoding: 'utf8', mode: 0o600 });
+    return withPrivateTextFile(input.body, async (bodyPath) => {
       const args = ['pr', 'create', '-R', nameWithOwner, '--title', input.title, '--body-file', bodyPath, '--base', base, '--head', head];
       if (input.draft) args.push('--draft');
       verifyAccount();
@@ -416,9 +413,7 @@ export class GitHubService {
       const created = parseCreatedPullRequestUrl(result.stdout);
       if (!created) throw new GhOperationError({ code: 'GH_INVALID_OUTPUT', operation, message: 'GitHub CLI did not return the URL of the new pull request.' });
       return created;
-    } finally {
-      await rm(temporary, { recursive: true, force: true });
-    }
+    });
   }
 
   /**

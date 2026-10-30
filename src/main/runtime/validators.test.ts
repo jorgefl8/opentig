@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { generateCommitMessageArg, generatePullRequestDraftArg, booleanArg, branchDetailsArg, deleteBranchArg, filesTreeStateArg, nullableProjectIdArg, openFilesStateArg, prepareCommitGroupArg, projectIdArg, projectNameArg, publishBranchArg, pullRequestStatesArg, removeWorktreeArg, repositoryKeyArg, searchOptionsArg, searchReplaceArg, worktreeDetailsArg } from './validators';
+import { generateCommitMessageArg, generatePullRequestDraftArg, booleanArg, branchDetailsArg, deleteBranchArg, filesTreeStateArg, nullableProjectIdArg, openFilesStateArg, prepareCommitGroupArg, projectIdArg, projectNameArg, publishBranchArg, pullRequestStatesArg, removeWorktreeArg, repositoryKeyArg, searchOptionsArg, searchReplaceArg, worktreeDetailsArg, pullRequestActionArg } from './validators';
 import { GitOperationError } from '../../shared/errors';
 import { createTrackingBranchArg, deleteRemoteBranchArg } from './validators';
 
@@ -250,5 +250,26 @@ describe('Grok generation transport', () => {
   it('still rejects unknown harness identifiers', () => {
     expect(() => generateCommitMessageArg({ ...request, harness: 'unknown' })).toThrow();
     expect(() => generatePullRequestDraftArg({ ...request, base: 'main', harness: 'unknown' })).toThrow();
+  });
+});
+
+describe('pullRequestActionArg', () => {
+  const base = { repositoryId: 'repo', number: 7, expectedHeadOid: 'a'.repeat(40), expectedAccount: { login: 'sample', revision: 1 } };
+  it('accepts each kind of action', () => {
+    expect(pullRequestActionArg({ ...base, action: 'merge', method: 'SQUASH', deleteBranch: true })).toMatchObject({ action: 'merge', deleteBranch: true });
+    expect(pullRequestActionArg({ ...base, action: 'update-branch', method: 'REBASE' })).toMatchObject({ method: 'REBASE' });
+    expect(pullRequestActionArg({ ...base, action: 'close' })).toMatchObject({ action: 'close' });
+  });
+  it.each([
+    ['an unknown action', { ...base, action: 'force-merge' }],
+    ['a merge without a method', { ...base, action: 'merge' }],
+    ['an unknown method', { ...base, action: 'merge', method: 'FAST_FORWARD' }],
+    ['squashing to update a branch', { ...base, action: 'update-branch', method: 'SQUASH' }],
+    ['a head that is not a commit', { ...base, action: 'close', expectedHeadOid: 'HEAD' }],
+    ['no expected account', { repositoryId: 'repo', number: 7, expectedHeadOid: 'a'.repeat(40), action: 'close' }],
+    ['a malformed login', { ...base, action: 'close', expectedAccount: { login: '--flag', revision: 1 } }],
+    ['a negative number', { ...base, action: 'close', number: -1 }],
+  ])('rejects %s', (_name, value) => {
+    expect(() => pullRequestActionArg(value)).toThrow('Invalid pull request data.');
   });
 });

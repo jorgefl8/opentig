@@ -9,6 +9,8 @@ import { findSearchMatches } from "../../src/shared/search";
 
 // The shared app recognizes this error type; the demo has no authentication transport.
 export class ServerAuthenticationError extends Error {}
+export class ServerDisconnectedError extends Error {}
+export class ServerRequestTimeoutError extends Error {}
 export const model = new DemoRepository();
 const disabled = async (): Promise<never> => {
   throw new Error(
@@ -291,7 +293,7 @@ export const opentig: OpenTigApi = {
     repositoryAccount: async () => ({
       selection: { mode: "default" },
       nameWithOwner: "demo/launchpad",
-      login: null,
+      login: "opentig-demo",
       source: null,
       state: "ready",
       checkedAt: sampleDate,

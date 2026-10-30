@@ -1,6 +1,7 @@
 import { IPC } from './contracts';
 import type { OpenTigServerApi } from './server-api';
 import { AI_SERVER_TIMEOUT_MS } from './ai-timeouts';
+import { GITHUB_ACTION_TIMEOUT_MS } from './github-timeouts';
 
 const DEFAULT_MAX_REQUEST_BYTES = 1024 * 1024;
 const CONTENT_MAX_REQUEST_BYTES = 9 * 1024 * 1024;
@@ -138,6 +139,7 @@ export const OPEN_TIG_SERVER_COMMANDS = {
   'github.listPullRequests': command(IPC.githubPrList, 'gh-pr-list', false),
   'github.getPullRequest': command(IPC.githubPrView, 'gh-pr-view', false),
   'github.getPullRequestLiveState': command(IPC.githubPrLiveState, 'gh-pr-live-state', false),
+  'github.runPullRequestAction': command(IPC.githubPrAction, 'gh-pr-action', true, { timeoutMs: GITHUB_ACTION_TIMEOUT_MS }),
   'github.getPullRequestStack': command(IPC.githubPrStack, 'gh-pr-stack', false),
   'github.getPullRequestDiff': command(IPC.githubPrDiff, 'gh-pr-diff', false),
   'github.getPullRequestCommitDiff': command(IPC.githubPrCommitDiff, 'gh-pr-commit-diff', false),

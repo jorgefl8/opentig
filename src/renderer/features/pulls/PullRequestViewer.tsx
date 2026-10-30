@@ -3,7 +3,7 @@ import { PullRequestStackMenu } from './PullRequestStackMenu';
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { IconAlertTriangle, IconCircleCheck, IconCircleX, IconExternalLink, IconGitBranch, IconGitCommit, IconLoader4, IconRefresh, IconTag } from '@tabler/icons-react';
-import { GITHUB_PR_COMMIT_PAGE, type DiffResult, type DiffViewPreference, type PullRequestCommitList, type PullRequestDetails, type PullRequestLiveState, type PullRequestMergeMethod, type ThemePreference } from '../../../shared/contracts';
+import { GITHUB_PR_COMMIT_PAGE, type DiffResult, type DiffViewPreference, type PullRequestCommitList, type PullRequestDetails, type PullRequestLiveState, type ThemePreference } from '../../../shared/contracts';
 import { pullRequestStatusLine, type PullRequestStatusTone } from '../../../shared/pull-request-actions';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -13,8 +13,9 @@ import { ViewerTabs, ViewerTabsList, ViewerTabsPanel } from '@/components/ui/vie
 import { LinkedMarkdown } from '@/features/markdown/LinkedMarkdown';
 import { LinkedText } from '@/components/LinkedText';
 
-import { ghDetail, openOnGitHub, prStateLabel, reviewDecisionLabel } from './gh-utils';
+import { ghDetail, MERGE_METHOD_LABELS, openOnGitHub, prStateLabel, reviewDecisionLabel } from './gh-utils';
 import { GitHubAvatar } from './GitHubAvatar';
+import { PullRequestActionBar } from './PullRequestActionBar';
 import { PullRequestChecksMenu, PullRequestChecksSummary } from './PullRequestChecksMenu';
 import { pullRequestLiveStateQueryOptions, queriesOutdatedByLiveState } from './pull-request-live-state-query';
 import { opentig } from '@/lib/opentig-api';
@@ -130,7 +131,8 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
           {live ? <PullRequestChecksMenu checks={live.checks} url={details.url} /> : <PullRequestChecksSummary state={details.checksState} />}
           {review && review !== status?.label && <Badge variant="outline" className="pr-review-badge">{review}</Badge>}
           {live?.autoMerge && <Badge variant="outline" className="pr-auto-merge-badge">Auto-merge · {MERGE_METHOD_LABELS[live.autoMerge.method]}</Badge>}
-          {liveQuery.isError && <PullRequestLiveNotice error={liveQuery.error} hasState={live !== null} retrying={liveQuery.isFetching} onRetry={() => void liveQuery.refetch()} />}
+          {liveQuery.isError && <PullRequestLiveNotice error={liveQuery.error} hasState={live !== null} open={details.state === 'OPEN'} retrying={liveQuery.isFetching} onRetry={() => void liveQuery.refetch()} />}
+          {live && <PullRequestActionBar repositoryId={repositoryId} details={details} live={live} refreshing={liveQuery.isFetching} statusLabel={status?.label ?? null} onRefresh={() => void liveQuery.refetch()} />}
         </div>
         {details.labels.length > 0 && (
           <div className="pr-labels" aria-label="Pull request labels">
@@ -198,8 +200,6 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
   );
 }
 
-const MERGE_METHOD_LABELS: Record<PullRequestMergeMethod, string> = { MERGE: 'Merge', SQUASH: 'Squash', REBASE: 'Rebase' };
-
 function PullRequestStatusIcon({ tone }: { tone: PullRequestStatusTone }) {
   if (tone === 'ready') return <IconCircleCheck aria-hidden="true" />;
   if (tone === 'danger') return <IconCircleX aria-hidden="true" />;
@@ -207,10 +207,10 @@ function PullRequestStatusIcon({ tone }: { tone: PullRequestStatusTone }) {
   return <IconAlertTriangle aria-hidden="true" />;
 }
 
-function PullRequestLiveNotice({ error, hasState, retrying, onRetry }: { error: Error; hasState: boolean; retrying: boolean; onRetry(): void }) {
+function PullRequestLiveNotice({ error, hasState, open, retrying, onRetry }: { error: Error; hasState: boolean; open: boolean; retrying: boolean; onRetry(): void }) {
   const message = ghDetail(error)?.code === 'GH_RATE_LIMITED'
     ? 'GitHub rate limit reached. Checks resume when you return to this window.'
-    : hasState ? "Couldn't refresh. Showing the last status." : "Couldn't load the current status.";
+    : hasState ? "Couldn't refresh. Showing the last status." : open ? "Actions unavailable: couldn't load the current status." : "Couldn't load the current status.";
   return (
     <span className="pr-live-notice" role="status">
       {message}

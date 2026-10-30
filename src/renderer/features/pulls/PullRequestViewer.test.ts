@@ -8,7 +8,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { queryKeys } from '@/lib/query-client';
 import { PullRequestViewer } from './PullRequestViewer';
 
-const api = vi.hoisted(() => ({ getPullRequest: vi.fn(), getPullRequestLiveState: vi.fn(), getPullRequestDiff: vi.fn(), getPullRequestCommits: vi.fn() }));
+const api = vi.hoisted(() => ({ getPullRequest: vi.fn(), getPullRequestLiveState: vi.fn(), getPullRequestDiff: vi.fn(), getPullRequestCommits: vi.fn(), repositoryAccount: vi.fn() }));
 const browser = vi.hoisted(() => ({ openExternalUrl: vi.fn() }));
 vi.mock('@/lib/opentig-api', () => ({ opentig: { github: api } }));
 vi.mock('@/lib/browser-capabilities', async (original) => ({ ...await original<object>(), openExternalUrl: browser.openExternalUrl }));
@@ -39,6 +39,7 @@ beforeEach(() => {
   vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
   api.getPullRequest.mockResolvedValue(details);
   api.getPullRequestLiveState.mockResolvedValue(live());
+  api.repositoryAccount.mockResolvedValue({ state: 'ready', login: 'sample', revision: 1 });
   client = new QueryClient({ defaultOptions: { queries: { networkMode: 'always', retry: false, gcTime: 0 } } });
   container = document.createElement('div'); document.body.append(container); root = createRoot(container);
 });
@@ -115,7 +116,7 @@ it('falls back to the stored checks summary when the status cannot be read', asy
   api.getPullRequestLiveState.mockRejectedValue(new Error('offline'));
   await render();
   expect(statusText()).toContain('Checks pending');
-  expect(statusText()).toContain("Couldn't load the current status.");
+  expect(statusText()).toContain("Actions unavailable: couldn't load the current status.");
   expect(container.querySelector('.pr-checks-trigger')).toBeNull();
 });
 

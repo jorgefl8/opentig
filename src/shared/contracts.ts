@@ -484,6 +484,31 @@ export interface PullRequestLiveState {
   };
 }
 
+interface GitHubMutationBase {
+  repositoryId: string;
+  /** The identity the user reviewed. Mutations stop if the repository now resolves to another one. */
+  expectedAccount: { login: string; revision: number };
+}
+
+type PullRequestMutationBase = GitHubMutationBase & { number: number };
+
+export type PullRequestActionInput = PullRequestMutationBase & { expectedHeadOid: string } & (
+  | { action: 'merge'; method: PullRequestMergeMethod; deleteBranch?: boolean }
+  | { action: 'enable-auto-merge'; method: PullRequestMergeMethod }
+  | { action: 'update-branch'; method: 'MERGE' | 'REBASE' }
+  | { action: 'disable-auto-merge' | 'ready' | 'draft' | 'close' | 'reopen' | 'delete-branch' }
+);
+
+export type PullRequestAction = PullRequestActionInput['action'];
+
+export interface PullRequestActionResult {
+  outcome: 'merged' | 'auto-merge-enabled' | 'auto-merge-disabled' | 'queued' | 'updated' | 'done' | 'unconfirmed';
+  /** GitHub's state after the action, or null when it could not be read again. */
+  state: PullRequestLiveState | null;
+  url?: string;
+  branchDeleted?: boolean;
+}
+
 export interface CreatePullRequestInput {
   expectedAccount?: { login: string; revision: number };
   repositoryId: string;
@@ -710,6 +735,7 @@ export interface OpenTigApi {
     listPullRequests(repositoryId: string, states: PullRequestState[]): Promise<PullRequestSummary[]>;
     getPullRequest(repositoryId: string, number: number): Promise<PullRequestDetails>;
     getPullRequestLiveState(repositoryId: string, number: number): Promise<PullRequestLiveState>;
+    runPullRequestAction(input: PullRequestActionInput): Promise<PullRequestActionResult>;
     getPullRequestStack(repositoryId: string, number: number): Promise<PullRequestStack | null>;
     getPullRequestDiff(repositoryId: string, number: number): Promise<DiffResult>;
     getPullRequestCommitDiff(repositoryId: string, oid: string): Promise<DiffResult>;
@@ -763,6 +789,6 @@ export const IPC = {
   aiStatuses: 'ai:statuses', aiGenerateCommitMessage: 'ai:generate-commit-message', aiCancelGeneration: 'ai:cancel-generation', aiLog: 'ai:log', aiClearLog: 'ai:clear-log',
   diagnosticsList: 'diagnostics:list', diagnosticsClear: 'diagnostics:clear', diagnosticsRecord: 'diagnostics:record',
   githubAccountsStatus: 'github:accounts-status', githubSetDefaultAccount: 'github:set-default-account', githubRepositoryAccount: 'github:repository-account', githubSetRepositoryAccount: 'github:set-repository-account',
-  githubStatus: 'github:status', githubRepositoryInfo: 'github:repository-info', githubPrForBranch: 'github:pr-for-branch', githubPrList: 'github:pr-list', githubPrView: 'github:pr-view', githubPrLiveState: 'github:pr-live-state',
+  githubStatus: 'github:status', githubRepositoryInfo: 'github:repository-info', githubPrForBranch: 'github:pr-for-branch', githubPrList: 'github:pr-list', githubPrView: 'github:pr-view', githubPrLiveState: 'github:pr-live-state', githubPrAction: 'github:pr-action',
   githubPrStack: 'github:pr-stack', githubPrDiff: 'github:pr-diff', githubPrCommitDiff: 'github:pr-commit-diff', githubPrCommits: 'github:pr-commits', githubPrCreate: 'github:pr-create', githubPrDraft: 'github:pr-draft', githubPrDraftCancel: 'github:pr-draft-cancel',
 } as const;

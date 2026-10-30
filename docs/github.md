@@ -121,6 +121,40 @@ The menu lists layer states, titles, branches, and bases, including layers outsi
 
 **Stack navigation is read-only.** Indicators appear only when GitHub reports native stack membership, independently of worktrees or other local branches. OpenTig does not infer stacks from branch relationships, merge layers, or rebase branches.
 
+## Merge and manage a pull request
+
+The viewer's header offers the next step for the PR, and **⋯** lists everything else you can do with it. OpenTig checks your access first, so a reader sees no merge controls.
+
+| Situation | Main control |
+| --- | --- |
+| Ready to merge | **Merge** |
+| Behind a required base | **Update branch** |
+| Blocked, and auto-merge is allowed | **Merge when ready**, beside the reason |
+| Blocked, and auto-merge isn't allowed | The reason |
+| Repository with a merge queue | **Add to merge queue**, or **Merge when ready** while requirements are pending |
+| Draft | **Ready for review** |
+| Layer of a native stack | **Merge on GitHub** |
+| Conflicts | The conflict, with **Open on GitHub**. OpenTig doesn't resolve PR conflicts |
+
+**Merging asks first.** The panel names the method, the base, and the account, and offers **Delete branch after merging**. It starts on your default method on GitHub, if the repository allows it. The option to delete the branch doesn't appear when GitHub already deletes branches on merge, or with auto-merge and queues, which finish later. Escape cancels, and the question goes away if the PR changes while it's open.
+
+Closing, deleting a branch, enabling auto-merge, adding to a queue, and rebasing a branch also ask first. Rebasing warns that it rewrites commits. Marking as ready or draft, reopening, disabling auto-merge, and updating a branch by merge run straight away, because they're easy to undo or keep commits as they are.
+
+**Merge** only ever merges, and **Merge when ready** only arms auto-merge. Armed auto-merge shows a badge with its method and **Disable auto-merge**, even if the PR later conflicts. A PR in a queue shows **Manage on GitHub**, because it's taken out of the queue there.
+
+<details>
+<summary>What OpenTig checks before acting</summary>
+
+Just before an action, the server reads the PR again and stops if the account you reviewed has changed, if the head commit isn't the one you saw, or if the action is no longer allowed. It sends the same head commit to GitHub, so a push at the last moment also stops a merge. Your browser's copy of the PR isn't trusted for any of this, and nothing is retried automatically.
+
+**Delete branch** works on the head repository, so it also covers your fork. It stops if the branch has moved since the PR, or if it's the default or base branch, and it finishes quietly if the branch is already gone. Stacked layers are left alone.
+
+If GitHub takes too long, OpenTig says the action may have completed and checks the PR again, rather than reporting a failure. After a merge or a deleted branch it also fetches in the background, so your clone reflects the change even with periodic remote checks turned off.
+
+</details>
+
+**Stacks are still merged on GitHub.** So are stacks whose membership couldn't be confirmed: the viewer shows **Couldn't confirm the stack** with **Retry**.
+
 ## Create a pull request
 
 **Publish the current branch and bring it up to date first.**
