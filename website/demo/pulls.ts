@@ -1,4 +1,4 @@
-import type { DiffResult, PullRequestCheck, PullRequestCheckState, PullRequestDetails, PullRequestLiveState, PullRequestState } from '../../src/shared/contracts';
+import type { DiffResult, PullRequestCheck, PullRequestCheckState, PullRequestConversationEntry, PullRequestDetails, PullRequestLiveState, PullRequestParticipant, PullRequestState } from '../../src/shared/contracts';
 import { counts, initialFiles, modifiedFilter, patch, sampleDate } from './model.ts';
 
 type Change = { path: string; before: string; after: string };
@@ -14,6 +14,23 @@ type SampleStatus = {
 const filter = 'src/filter-tasks.js';
 const tests = 'test/filter-tasks.test.js';
 const html = initialFiles['index.html']!;
+const person = (login: string, isBot = false): PullRequestParticipant => ({ login, avatarUrl: null, isBot });
+const maya = person('maya-reviews');
+const leo = person('leo-builds');
+const bot = person('release-bot', true);
+const comment = (id: string, author: PullRequestParticipant, body: string): PullRequestConversationEntry => ({ id, kind: 'comment', author, body, createdAt: sampleDate, url: null, verdict: null, minimized: false });
+const review = (id: string, author: PullRequestParticipant, verdict: NonNullable<PullRequestConversationEntry['verdict']>, body = ''): PullRequestConversationEntry => ({ id, kind: 'review', author, body, createdAt: sampleDate, url: null, verdict, minimized: false });
+const conversations: Record<number, PullRequestConversationEntry[]> = {
+  21: [
+    comment('c1', bot, 'Preview ready. All sample tests passed on this commit.'),
+    review('r1', maya, 'APPROVED', 'Reads well. Completed tasks staying hidden by default is what we discussed.'),
+  ],
+  24: [
+    comment('c2', leo, 'The `test` job fails on the empty list. Could you check `filterTasks` with no tasks?'),
+    review('r2', maya, 'APPROVED'),
+  ],
+  25: [comment('c3', leo, 'Should unassigned tasks get their own group, or go at the end?')],
+};
 const check = (name: string, result: PullRequestCheck['result'], required = false): PullRequestCheck => ({ name, workflow: 'CI', result, required, url: null });
 const passing = [check('test', 'pass', true), check('lint', 'pass'), check('preview', 'skipped')];
 function rollup(checks: PullRequestCheck[]): PullRequestCheckState {
@@ -46,7 +63,7 @@ function sample(number: number, title: string, state: PullRequestState, branch: 
       // GitHub stops computing mergeability once a PR is finished.
       mergeable: state === 'OPEN' ? status.mergeable ?? 'MERGEABLE' : 'UNKNOWN',
       mergeStateStatus: state === 'OPEN' ? status.mergeState ?? (draft ? 'DRAFT' : 'CLEAN') : 'UNKNOWN',
-      reviewDecision, isCrossRepository: false, stack: 'none', autoMerge: null,
+      reviewDecision, latestReviews: reviewDecision === 'APPROVED' ? [{ author: maya, verdict: 'APPROVED', outdated: state === 'OPEN' }] : [], isCrossRepository: false, stack: 'none', autoMerge: null,
       mergeQueue: { enabled: false, queued: false }, behindBy: status.behindBy ?? 0,
       checks: { rollup: rollup(checks), items: checks, truncated: false, partial: false },
       head: { repositoryId: 'demo-repository', owner: 'demo', defaultBranch: 'main', refOid: oids.at(-1) ?? null },
@@ -105,6 +122,7 @@ export const demoPulls = {
   list(states: PullRequestState[]) { return samples.filter(s => states.includes(s.details.state)).map(s => structuredClone(s.details)); },
   get(number: number) { return structuredClone(requireSample(number).details); },
   liveState(number: number) { return structuredClone(requireSample(number).live); },
+  conversation(number: number) { requireSample(number); return { entries: structuredClone(conversations[number] ?? []), truncated: false, partial: false }; },
   forBranch(branch: string) { return structuredClone(samples.find(s => s.details.headRefName === branch)?.details ?? null); },
   diff(number: number) { return result(requireSample(number).changes.flat()); },
   commitDiff(oid: string) {

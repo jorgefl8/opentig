@@ -12,6 +12,7 @@ describe('renderer query policy', () => {
     client.setQueryData(queryKeys.pullRequestDiff('repo-b', 1), 'old diff');
     client.setQueryData(queryKeys.pullRequestLiveState('repo-b', 1), 'old live state');
     client.setQueryData(queryKeys.pullRequestCommits('repo-b', 1), 'old commits');
+    client.setQueryData(queryKeys.pullRequestConversation('repo-b', 1), 'old conversation');
     client.setQueryData(queryKeys.githubAccount('repo-a'), 'old account');
     client.setQueryData(queryKeys.githubAccounts, 'old inventory');
     client.setQueryData(queryKeys.githubCliStatus, 'old CLI status');
@@ -24,6 +25,7 @@ describe('renderer query policy', () => {
     expect(client.getQueryData(queryKeys.pullRequestDiff('repo-b', 1))).toBeUndefined();
     expect(client.getQueryData(queryKeys.pullRequestLiveState('repo-b', 1))).toBeUndefined();
     expect(client.getQueryData(queryKeys.pullRequestCommits('repo-b', 1))).toBeUndefined();
+    expect(client.getQueryData(queryKeys.pullRequestConversation('repo-b', 1))).toBeUndefined();
     expect(client.getQueryData(queryKeys.githubAccount('repo-a'))).toBeUndefined();
     expect(client.getQueryData(queryKeys.githubAccounts)).toBeUndefined();
     expect(client.getQueryData(queryKeys.githubCliStatus)).toBeUndefined();

@@ -139,6 +139,7 @@ export const OPEN_TIG_SERVER_COMMANDS = {
   'github.listPullRequests': command(IPC.githubPrList, 'gh-pr-list', false),
   'github.getPullRequest': command(IPC.githubPrView, 'gh-pr-view', false),
   'github.getPullRequestLiveState': command(IPC.githubPrLiveState, 'gh-pr-live-state', false),
+  'github.getPullRequestConversation': command(IPC.githubPrConversation, 'gh-pr-conversation', false),
   'github.runPullRequestAction': command(IPC.githubPrAction, 'gh-pr-action', true, { timeoutMs: GITHUB_ACTION_TIMEOUT_MS }),
   'github.updatePullRequest': command(IPC.githubPrUpdate, 'gh-pr-update', true, { timeoutMs: GITHUB_ACTION_TIMEOUT_MS }),
   'github.getPullRequestStack': command(IPC.githubPrStack, 'gh-pr-stack', false),

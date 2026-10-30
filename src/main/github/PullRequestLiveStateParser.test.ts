@@ -24,7 +24,7 @@ describe('parsePullRequestLiveState', () => {
   it('reads GitHub\'s response into the live state', () => {
     expect(state(response(rollup([run('test', 'COMPLETED', 'SUCCESS', { isRequired: true })])), 'member')).toEqual({
       id: 'PR_1', number: 12, state: 'OPEN', isDraft: false, headRefOid: oid, headRefName: 'feature', baseRefName: 'main', updatedAt: '2026-01-01T00:00:00Z',
-      mergeable: 'MERGEABLE', mergeStateStatus: 'BLOCKED', reviewDecision: 'REVIEW_REQUIRED', isCrossRepository: true, stack: 'member',
+      mergeable: 'MERGEABLE', mergeStateStatus: 'BLOCKED', reviewDecision: 'REVIEW_REQUIRED', latestReviews: [], isCrossRepository: true, stack: 'member',
       autoMerge: { method: 'SQUASH' }, mergeQueue: { enabled: true, queued: false }, behindBy: 3,
       checks: { rollup: 'PASSING', items: [{ name: 'test', workflow: 'CI', result: 'pass', required: true, url: 'https://github.com/sample/demo/runs/test' }], truncated: false, partial: false },
       head: { repositoryId: 'R_1', owner: 'sample', defaultBranch: 'trunk', refOid: oid },
@@ -64,6 +64,23 @@ describe('parsePullRequestLiveState', () => {
     expect(state(response(rollup([run('test', 'IN_PROGRESS', null), newer]))).checks.items.map(check => check.result)).toEqual(['pending']);
     const otherWorkflow = run('test', 'COMPLETED', 'FAILURE', { checkSuite: { workflowRun: { workflow: { name: 'Nightly' } } } });
     expect(state(response(rollup([newer, otherWorkflow]))).checks.items.map(check => check.workflow)).toEqual(['CI', 'Nightly']);
+  });
+
+  it('keeps each reviewer\'s verdict and marks those given before the current head', () => {
+    const reviews = { latestReviews: { nodes: [
+      { state: 'APPROVED', author: { __typename: 'User', login: 'ana', avatarUrl: 'https://example.invalid/a.png' }, commit: { oid } },
+      { state: 'CHANGES_REQUESTED', author: { __typename: 'User', login: 'ben', avatarUrl: null }, commit: { oid: 'b'.repeat(40) } },
+      { state: 'APPROVED', author: { __typename: 'Bot', login: 'helper', avatarUrl: null }, commit: { oid } },
+      { state: 'COMMENTED', author: { __typename: 'User', login: 'cam' }, commit: { oid } },
+      { state: 'DISMISSED', author: { __typename: 'User', login: 'dee' }, commit: { oid } },
+      { state: 'APPROVED', author: null, commit: { oid } },
+      null,
+    ] } };
+    expect(state(response(reviews)).latestReviews).toEqual([
+      { author: { login: 'ana', avatarUrl: 'https://example.invalid/a.png', isBot: false }, verdict: 'APPROVED', outdated: false },
+      { author: { login: 'ben', avatarUrl: null, isBot: false }, verdict: 'CHANGES_REQUESTED', outdated: true },
+      { author: { login: 'helper', avatarUrl: null, isBot: true }, verdict: 'APPROVED', outdated: false },
+    ]);
   });
 
   it('marks a truncated list', () => {

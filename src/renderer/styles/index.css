@@ -1232,7 +1232,32 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   .pr-status.progress { color: var(--muted-foreground); }
   .pr-auto-merge-badge { color: var(--primary); }
   .pr-live-notice { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
-  .pr-action-bar { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-left: auto; }
+  .pr-reviewer { display: inline-flex; align-items: center; gap: 3px; font-weight: 500; }
+  .pr-reviewer svg { width: 13px; height: 13px; }
+  .pr-reviewer.approved { color: var(--diff-added); }
+  .pr-reviewer.changes { color: var(--destructive); }
+  .pr-reviewer.outdated { color: var(--muted-foreground); }
+  .pr-conversation { padding: 16px 18px 4px; }
+  .pr-conversation-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+  .pr-conversation-head h3 { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 12px; font-weight: 700; }
+  .pr-conversation-head h3 svg { width: 15px; height: 15px; color: var(--muted-foreground); }
+  .pr-conversation-head h3 span { display: inline-grid; min-width: 18px; place-items: center; border-radius: 999px; background: var(--muted); padding-inline: 5px; color: var(--muted-foreground); font-size: 9px; }
+  .pr-conversation-filter { display: inline-flex; align-items: center; gap: 7px; color: var(--muted-foreground); font-size: 11px; cursor: pointer; }
+  .pr-conversation-entry { display: grid; min-width: 0; grid-template-columns: 24px minmax(0, 1fr); gap: 2px 9px; border-top: 1px solid var(--border); padding: 11px 0; }
+  .pr-conversation-avatar { width: 24px; height: 24px; }
+  .pr-conversation-meta { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: 2px 6px; color: var(--muted-foreground); font-size: 11px; }
+  .pr-conversation-meta strong { color: var(--foreground); font-weight: 600; }
+  .pr-conversation-meta svg { width: 13px; height: 13px; }
+  .pr-conversation-meta .verdict-approved { color: var(--diff-added); font-weight: 600; }
+  .pr-conversation-meta .verdict-changes { color: var(--destructive); font-weight: 600; }
+  .pr-conversation-bot { border: 1px solid var(--border); border-radius: 999px; padding: 0 5px; font-size: 9px; }
+  .pr-conversation-link { margin-left: auto; }
+  /* Inline styles survive for math, so third-party text can't be allowed to paint outside its box. */
+  .pr-conversation-body, .pr-summary-section { contain: layout paint; }
+  .pr-conversation-body { grid-column: 2; min-width: 0; margin-top: 4px; font-size: 12px; }
+  .pr-conversation-body .markdown-prose { padding: 0; font-size: 12px; }
+  .pr-conversation-hidden summary { color: var(--muted-foreground); font-size: 11px; cursor: pointer; }
+ flex-wrap: wrap; align-items: center; gap: 6px; margin-left: auto; }
   .pr-action-reason { color: var(--muted-foreground); }
   .pr-action-panel { flex: 1 0 100%; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--card, var(--muted)); padding: 10px 12px; }
   .pr-merge-method { min-width: 160px; }

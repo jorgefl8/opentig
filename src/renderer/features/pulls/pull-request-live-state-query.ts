@@ -35,11 +35,11 @@ export function pullRequestLiveStateQueryOptions(repositoryId: string, number: n
   });
 }
 
-/** The reads a newer live state has made outdated: a new head changes the code, any other update only the details. */
+/** The reads a newer live state has made outdated: a new head changes the code, any other update only the details and conversation. */
 export function queriesOutdatedByLiveState(repositoryId: string, previous: PullRequestLiveState, next: PullRequestLiveState): QueryKey[] {
   if (previous.number !== next.number) return [];
   if (previous.headRefOid !== next.headRefOid) {
-    return [queryKeys.pullRequest(repositoryId, next.number), queryKeys.pullRequestCommits(repositoryId, next.number), queryKeys.pullRequestDiff(repositoryId, next.number)];
+    return [queryKeys.pullRequest(repositoryId, next.number), queryKeys.pullRequestConversation(repositoryId, next.number), queryKeys.pullRequestCommits(repositoryId, next.number), queryKeys.pullRequestDiff(repositoryId, next.number)];
   }
-  return previous.updatedAt !== next.updatedAt ? [queryKeys.pullRequest(repositoryId, next.number)] : [];
+  return previous.updatedAt !== next.updatedAt ? [queryKeys.pullRequest(repositoryId, next.number), queryKeys.pullRequestConversation(repositoryId, next.number)] : [];
 }

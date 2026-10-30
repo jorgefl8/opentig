@@ -8,7 +8,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { queryKeys } from '@/lib/query-client';
 import { PullRequestViewer } from './PullRequestViewer';
 
-const api = vi.hoisted(() => ({ getPullRequest: vi.fn(), getPullRequestLiveState: vi.fn(), getPullRequestDiff: vi.fn(), getPullRequestCommits: vi.fn(), repositoryAccount: vi.fn() }));
+const api = vi.hoisted(() => ({ getPullRequest: vi.fn(), getPullRequestLiveState: vi.fn(), getPullRequestDiff: vi.fn(), getPullRequestCommits: vi.fn(), getPullRequestConversation: vi.fn(), repositoryAccount: vi.fn() }));
 const browser = vi.hoisted(() => ({ openExternalUrl: vi.fn() }));
 vi.mock('@/lib/opentig-api', () => ({ opentig: { github: api } }));
 vi.mock('@/lib/browser-capabilities', async (original) => ({ ...await original<object>(), openExternalUrl: browser.openExternalUrl }));
@@ -19,7 +19,7 @@ const details: PullRequestDetails = {
 };
 function live(overrides: Partial<PullRequestLiveState> = {}): PullRequestLiveState {
   return {
-    id: 'PR', number: 7, state: 'OPEN', isDraft: false, headRefOid: 'a'.repeat(40), headRefName: 'feature', baseRefName: 'main', updatedAt: details.updatedAt, mergeable: 'MERGEABLE', mergeStateStatus: 'BLOCKED', reviewDecision: 'REVIEW_REQUIRED',
+    id: 'PR', number: 7, state: 'OPEN', isDraft: false, headRefOid: 'a'.repeat(40), headRefName: 'feature', baseRefName: 'main', updatedAt: details.updatedAt, mergeable: 'MERGEABLE', mergeStateStatus: 'BLOCKED', reviewDecision: 'REVIEW_REQUIRED', latestReviews: [],
     isCrossRepository: false, stack: 'none', autoMerge: null, mergeQueue: { enabled: false, queued: false }, behindBy: 0,
     checks: { rollup: 'FAILING', truncated: false, partial: false, items: [
       { name: 'lint', workflow: 'CI', result: 'pass', required: false, url: 'https://github.com/sample/demo/runs/1' },
@@ -129,6 +129,22 @@ it('reloads the details when the live state reports a new head', async () => {
   api.getPullRequestLiveState.mockResolvedValue(live({ headRefOid: 'c'.repeat(40), updatedAt: '2026-01-02T00:00:00Z' }));
   await refetchLive();
   expect(api.getPullRequest).toHaveBeenCalledTimes(2);
+});
+
+it('shows each reviewer\'s verdict and marks those before the latest commit', async () => {
+  api.getPullRequestLiveState.mockResolvedValue(live({ latestReviews: [
+    { author: { login: 'ana', avatarUrl: null, isBot: false }, verdict: 'APPROVED', outdated: false },
+    { author: { login: 'ben', avatarUrl: null, isBot: false }, verdict: 'CHANGES_REQUESTED', outdated: true },
+  ] }));
+  await render();
+  const reviewers = [...container.querySelectorAll('.pr-reviewer')];
+  expect(reviewers.map(item => item.getAttribute('aria-label'))).toEqual(['Approved by ana', 'Changes requested by ben, before the latest commit']);
+  expect(reviewers[1]?.classList.contains('outdated')).toBe(true);
+});
+
+it('does not read the conversation until Timeline is open', async () => {
+  await render();
+  expect(api.getPullRequestConversation).not.toHaveBeenCalled();
 });
 
 it('does not read the live state of a PR that failed to load', async () => {

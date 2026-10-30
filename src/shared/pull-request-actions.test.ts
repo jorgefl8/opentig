@@ -5,7 +5,7 @@ import { allowedPullRequestActions, canDeleteBranchWithMerge, pullRequestActionB
 const check = (result: PullRequestCheck['result'], required: boolean): PullRequestCheck => ({ name: `${result}-${required}`, workflow: null, result, required, url: null });
 function live(overrides: Partial<PullRequestLiveState> = {}): PullRequestLiveState {
   return {
-    id: 'PR', number: 1, state: 'OPEN', isDraft: false, headRefOid: 'a', headRefName: 'feature', baseRefName: 'main', updatedAt: '', mergeable: 'MERGEABLE', mergeStateStatus: 'CLEAN', reviewDecision: null,
+    id: 'PR', number: 1, state: 'OPEN', isDraft: false, headRefOid: 'a', headRefName: 'feature', baseRefName: 'main', updatedAt: '', mergeable: 'MERGEABLE', mergeStateStatus: 'CLEAN', reviewDecision: null, latestReviews: [],
     isCrossRepository: false, stack: 'none', autoMerge: null, mergeQueue: { enabled: false, queued: false }, behindBy: 0, checks: { rollup: 'NONE', items: [], truncated: false, partial: false },
     head: { repositoryId: 'R', owner: 'sample', defaultBranch: 'main', refOid: 'a' }, repository: { methods: ['MERGE'], defaultMethod: 'MERGE', autoMergeAllowed: false, deleteBranchOnMerge: false },
     viewer: { canWrite: true, canUpdate: true, didAuthor: false, canUpdateBranch: true, canDeleteBranch: true }, ...overrides,

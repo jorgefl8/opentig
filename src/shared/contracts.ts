@@ -441,6 +441,43 @@ export interface PullRequestCheck {
   url: string | null;
 }
 
+export interface PullRequestParticipant {
+  login: string;
+  avatarUrl: string | null;
+  isBot: boolean;
+}
+
+export type PullRequestReviewVerdict = 'APPROVED' | 'CHANGES_REQUESTED' | 'COMMENTED' | 'DISMISSED' | 'PENDING';
+
+export interface PullRequestLatestReview {
+  author: PullRequestParticipant;
+  verdict: 'APPROVED' | 'CHANGES_REQUESTED';
+  /** The verdict was given on an earlier commit than the current head. */
+  outdated: boolean;
+}
+
+export interface PullRequestConversationEntry {
+  id: string;
+  kind: 'comment' | 'review';
+  author: PullRequestParticipant | null;
+  body: string;
+  createdAt: string;
+  url: string | null;
+  /** For a review; a comment has none. */
+  verdict: PullRequestReviewVerdict | null;
+  /** Hidden by a maintainer on GitHub. */
+  minimized: boolean;
+}
+
+export interface PullRequestConversation {
+  /** Oldest first. */
+  entries: PullRequestConversationEntry[];
+  /** GitHub has more than the most recent page of comments or reviews. */
+  truncated: boolean;
+  /** GitHub withheld part of the response from this account. */
+  partial: boolean;
+}
+
 /** What GitHub reports right now about an open or finished PR, refreshed while its viewer is visible. */
 export interface PullRequestLiveState {
   id: string;
@@ -454,6 +491,7 @@ export interface PullRequestLiveState {
   mergeable: 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN';
   mergeStateStatus: PullRequestMergeStateStatus;
   reviewDecision: string | null;
+  latestReviews: PullRequestLatestReview[];
   isCrossRepository: boolean;
   /** `unknown` means the membership could not be read, which is different from not being in a stack. */
   stack: 'none' | 'member' | 'unknown';
@@ -739,6 +777,7 @@ export interface OpenTigApi {
     listPullRequests(repositoryId: string, states: PullRequestState[]): Promise<PullRequestSummary[]>;
     getPullRequest(repositoryId: string, number: number): Promise<PullRequestDetails>;
     getPullRequestLiveState(repositoryId: string, number: number): Promise<PullRequestLiveState>;
+    getPullRequestConversation(repositoryId: string, number: number): Promise<PullRequestConversation>;
     runPullRequestAction(input: PullRequestActionInput): Promise<PullRequestActionResult>;
     updatePullRequest(input: UpdatePullRequestInput): Promise<void>;
     getPullRequestStack(repositoryId: string, number: number): Promise<PullRequestStack | null>;
@@ -794,6 +833,6 @@ export const IPC = {
   aiStatuses: 'ai:statuses', aiGenerateCommitMessage: 'ai:generate-commit-message', aiCancelGeneration: 'ai:cancel-generation', aiLog: 'ai:log', aiClearLog: 'ai:clear-log',
   diagnosticsList: 'diagnostics:list', diagnosticsClear: 'diagnostics:clear', diagnosticsRecord: 'diagnostics:record',
   githubAccountsStatus: 'github:accounts-status', githubSetDefaultAccount: 'github:set-default-account', githubRepositoryAccount: 'github:repository-account', githubSetRepositoryAccount: 'github:set-repository-account',
-  githubStatus: 'github:status', githubRepositoryInfo: 'github:repository-info', githubPrForBranch: 'github:pr-for-branch', githubPrList: 'github:pr-list', githubPrView: 'github:pr-view', githubPrLiveState: 'github:pr-live-state', githubPrAction: 'github:pr-action', githubPrUpdate: 'github:pr-update',
+  githubStatus: 'github:status', githubRepositoryInfo: 'github:repository-info', githubPrForBranch: 'github:pr-for-branch', githubPrList: 'github:pr-list', githubPrView: 'github:pr-view', githubPrLiveState: 'github:pr-live-state', githubPrConversation: 'github:pr-conversation', githubPrAction: 'github:pr-action', githubPrUpdate: 'github:pr-update',
   githubPrStack: 'github:pr-stack', githubPrDiff: 'github:pr-diff', githubPrCommitDiff: 'github:pr-commit-diff', githubPrCommits: 'github:pr-commits', githubPrCreate: 'github:pr-create', githubPrDraft: 'github:pr-draft', githubPrDraftCancel: 'github:pr-draft-cancel',
 } as const;

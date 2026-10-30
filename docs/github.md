@@ -71,6 +71,8 @@ While a PR is open in the viewer, its header shows where it stands according to 
 
 Click the checks summary to list individual checks, with what needs attention first, then what's in progress and what has completed. Required checks are marked, and a row opens that check on GitHub. A check that ran more than once shows its newest run. Past GitHub's first 100 checks, the list says so and links to the rest. If GitHub withholds details from your account, the list says some checks may be missing.
 
+The latest verdict of each reviewer also appears in the header, marked if it was given before the latest commit.
+
 <details>
 <summary>How the status refreshes</summary>
 
@@ -90,6 +92,10 @@ Returning to the window, reconnecting, changing the repository account, or manua
 **Code is computed by Git in your clone**, so pull requests larger than GitHub's 300-file diff limit open normally. The first time you open a PR's code, OpenTig downloads its commits from the remote that holds the pull requests (`refs/pull/<number>/head`, plus the base commit if it is missing) without creating or moving any branch, tag, or remote-tracking ref, and then compares them the same way GitHub's **Files changed** does. Later views and **By commit** read locally. GitHub CLI returns at most 100 commits per PR, so for longer PRs the **Timeline** and **By commit** lists are completed from the downloaded history; GitHub avatars appear only for the commits GitHub returned. If the commits can't be downloaded, OpenTig asks GitHub for the diff instead, which only works within GitHub's limits. A diff larger than 32 MB shows its first complete files with a notice.
 
 The PR list shows the effective GitHub account. Pull requests come from the GitHub repository of `origin`, unless you chose another remote with `gh repo set-default`: in a fork whose `origin` is your fork, run `gh repo set-default` in the clone and choose the upstream repository to see and open its PRs.
+
+**Read the conversation**
+
+**Timeline** shows the PR's comments and reviews above its commits, with Markdown rendered and links that open in a new tab. Choose **Hide bots** to leave out comments from bots. Comments hidden on GitHub stay collapsed until you open them. Past the most recent 100 comments and 100 reviews, the list says so and links to the rest. They load when you open **Timeline**. Inline code comments stay on GitHub.
 
 **Open the current branch's PR**
 

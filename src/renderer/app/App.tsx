@@ -787,6 +787,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
           appQueryClient.invalidateQueries({ queryKey: ['repository', repository.id, 'pull-request-stack'] }),
           appQueryClient.invalidateQueries({ queryKey: ['repository', repository.id, 'pull-request'] }),
           appQueryClient.invalidateQueries({ queryKey: ['repository', repository.id, 'pull-request-state'] }),
+          appQueryClient.invalidateQueries({ queryKey: ['repository', repository.id, 'pull-request-conversation'] }),
         ]);
       }
     }

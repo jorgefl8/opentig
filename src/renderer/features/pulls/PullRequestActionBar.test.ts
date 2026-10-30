@@ -19,7 +19,7 @@ const oid = 'a'.repeat(40);
 const details = { number: 7, title: 'Sample', state: 'OPEN', isDraft: false, headRefName: 'feature', baseRefName: 'main', url: 'https://github.com/sample/demo/pull/7' } as PullRequestDetails;
 function live(overrides: Partial<PullRequestLiveState> = {}): PullRequestLiveState {
   return {
-    id: 'PR', number: 7, state: 'OPEN', isDraft: false, headRefOid: oid, headRefName: 'feature', baseRefName: 'main', updatedAt: '1', mergeable: 'MERGEABLE', mergeStateStatus: 'CLEAN', reviewDecision: null,
+    id: 'PR', number: 7, state: 'OPEN', isDraft: false, headRefOid: oid, headRefName: 'feature', baseRefName: 'main', updatedAt: '1', mergeable: 'MERGEABLE', mergeStateStatus: 'CLEAN', reviewDecision: null, latestReviews: [],
     isCrossRepository: false, stack: 'none', autoMerge: null, mergeQueue: { enabled: false, queued: false }, behindBy: 0, checks: { rollup: 'NONE', items: [], truncated: false, partial: false },
     head: { repositoryId: 'R', owner: 'sample', defaultBranch: 'main', refOid: oid }, repository: { methods: ['MERGE', 'SQUASH'], defaultMethod: 'SQUASH', autoMergeAllowed: true, deleteBranchOnMerge: false },
     viewer: { canWrite: true, canUpdate: true, didAuthor: false, canUpdateBranch: true, canDeleteBranch: true }, ...overrides,

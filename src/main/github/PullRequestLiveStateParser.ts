@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { PullRequestCheck, PullRequestCheckState, PullRequestLiveState, PullRequestMergeMethod, PullRequestMergeStateStatus } from '../../shared/contracts';
+import type { PullRequestCheck, PullRequestCheckState, PullRequestLatestReview, PullRequestLiveState, PullRequestMergeMethod, PullRequestMergeStateStatus, PullRequestParticipant } from '../../shared/contracts';
 
 /** `$headRef` is `refs/pull/<number>/head`, which also reaches branches of forks. */
 export const PR_LIVE_STATE_QUERY = `query($owner:String!,$name:String!,$number:Int!,$headRef:String!){
@@ -12,6 +12,7 @@ export const PR_LIVE_STATE_QUERY = `query($owner:String!,$name:String!,$number:I
       isMergeQueueEnabled isInMergeQueue
       viewerCanUpdate viewerDidAuthor viewerCanUpdateBranch
       autoMergeRequest{mergeMethod}
+      latestReviews(first:30){nodes{state author{__typename login avatarUrl} commit{oid}}}
       headRef{id target{oid}}
       headRepositoryOwner{login}
       headRepository{id viewerPermission defaultBranchRef{name}}
@@ -35,6 +36,8 @@ export type PullRequestLiveStateRead =
   | { status: 'missing' }
   /** No usable answer; the command's exit status and stderr explain why. */
   | { status: 'unusable' };
+
+export const participantSchema = z.object({ __typename: z.string().optional(), login: z.string(), avatarUrl: z.string().nullish() });
 
 const checkRunSchema = z.object({
   __typename: z.literal('CheckRun'),
@@ -81,6 +84,7 @@ const pullRequestSchema = z.object({
   viewerDidAuthor: z.boolean(),
   viewerCanUpdateBranch: z.boolean(),
   autoMergeRequest: z.object({ mergeMethod: z.string() }).nullish(),
+  latestReviews: z.object({ nodes: z.array(z.object({ state: z.string(), author: participantSchema.nullish(), commit: z.object({ oid: z.string() }).nullish() }).nullable()).nullish() }).nullish(),
   headRef: z.object({ target: z.object({ oid: z.string() }).nullish() }).nullish(),
   headRepositoryOwner: z.object({ login: z.string() }).nullish(),
   headRepository: z.object({
@@ -144,6 +148,10 @@ export function parsePullRequestLiveState(raw: string, stack: PullRequestLiveSta
       mergeable: pull.mergeable === 'MERGEABLE' || pull.mergeable === 'CONFLICTING' ? pull.mergeable : 'UNKNOWN',
       mergeStateStatus: mergeStateStatus(pull.mergeStateStatus),
       reviewDecision: pull.reviewDecision || null,
+      latestReviews: (pull.latestReviews?.nodes ?? []).flatMap((review): PullRequestLatestReview[] => {
+        if (!review?.author || (review.state !== 'APPROVED' && review.state !== 'CHANGES_REQUESTED')) return [];
+        return [{ author: participant(review.author), verdict: review.state, outdated: review.commit?.oid !== pull.headRefOid }];
+      }),
       isCrossRepository: pull.isCrossRepository,
       stack,
       autoMerge: pull.autoMergeRequest ? { method: mergeMethod(pull.autoMergeRequest.mergeMethod) ?? 'MERGE' } : null,
@@ -184,7 +192,11 @@ function isMissingPullRequest(error: ResponseError): boolean {
   return error.type === 'NOT_FOUND' && error.path?.length === 2 && error.path[0] === 'repository' && error.path[1] === 'pullRequest';
 }
 
-function isWithheldField(error: ResponseError): boolean {
+export function participant(author: z.infer<typeof participantSchema>): PullRequestParticipant {
+  return { login: author.login, avatarUrl: author.avatarUrl || null, isBot: author.__typename === 'Bot' };
+}
+
+export function isWithheldField(error: ResponseError): boolean {
   return (error.type === 'FORBIDDEN' || error.type === 'NOT_FOUND')
     && (error.path?.length ?? 0) > 2 && error.path?.[0] === 'repository' && error.path[1] === 'pullRequest';
 }

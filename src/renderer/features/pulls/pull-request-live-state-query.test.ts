@@ -12,7 +12,7 @@ let client: QueryClient;
 let unsubscribe: (() => void) | undefined;
 function live(overrides: Partial<PullRequestLiveState> = {}): PullRequestLiveState {
   return {
-    id: 'PR', number: 1, state: 'OPEN', isDraft: false, headRefOid: 'a', headRefName: 'feature', baseRefName: 'main', updatedAt: '1', mergeable: 'MERGEABLE', mergeStateStatus: 'CLEAN', reviewDecision: null,
+    id: 'PR', number: 1, state: 'OPEN', isDraft: false, headRefOid: 'a', headRefName: 'feature', baseRefName: 'main', updatedAt: '1', mergeable: 'MERGEABLE', mergeStateStatus: 'CLEAN', reviewDecision: null, latestReviews: [],
     isCrossRepository: false, stack: 'none', autoMerge: null, mergeQueue: { enabled: false, queued: false }, behindBy: 0, checks: { rollup: 'PASSING', items: [], truncated: false, partial: false },
     head: { repositoryId: null, owner: null, defaultBranch: null, refOid: null }, repository: { methods: ['MERGE'], defaultMethod: 'MERGE', autoMergeAllowed: false, deleteBranchOnMerge: false },
     viewer: { canWrite: true, canUpdate: true, didAuthor: false, canUpdateBranch: true, canDeleteBranch: true }, ...overrides,
@@ -155,12 +155,12 @@ describe('pull request live state refresh', () => {
 describe('queriesOutdatedByLiveState', () => {
   it('refreshes details, commits and code when the head changes', () => {
     expect(queriesOutdatedByLiveState('repo', live(), live({ headRefOid: 'b', updatedAt: '2' }))).toEqual([
-      queryKeys.pullRequest('repo', 1), queryKeys.pullRequestCommits('repo', 1), queryKeys.pullRequestDiff('repo', 1),
+      queryKeys.pullRequest('repo', 1), queryKeys.pullRequestConversation('repo', 1), queryKeys.pullRequestCommits('repo', 1), queryKeys.pullRequestDiff('repo', 1),
     ]);
   });
 
-  it('refreshes only the details when the PR was otherwise updated', () => {
-    expect(queriesOutdatedByLiveState('repo', live(), live({ updatedAt: '2' }))).toEqual([queryKeys.pullRequest('repo', 1)]);
+  it('refreshes only the details and conversation when the PR was otherwise updated', () => {
+    expect(queriesOutdatedByLiveState('repo', live(), live({ updatedAt: '2' }))).toEqual([queryKeys.pullRequest('repo', 1), queryKeys.pullRequestConversation('repo', 1)]);
   });
 
   it('refreshes nothing when nothing changed or another PR was selected', () => {

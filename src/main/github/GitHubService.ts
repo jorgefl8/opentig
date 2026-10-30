@@ -4,7 +4,7 @@ import type { CliCandidate } from '../ai/CliResolver';
 import { parsePullRequestStack, parseStackMemberships, stackMembershipQuery } from './PullRequestStackParser';
 import os from 'node:os';
 import { GITHUB_PR_COMMIT_PAGE } from '../../shared/contracts';
-import type { CreatePullRequestInput, CreatePullRequestResult, DiffResult, UpdatePullRequestInput, PullRequestActionInput, PullRequestActionResult, PullRequestCommitList, GhCliStatus, GitHubRepositoryInfo, PullRequestDetails, PullRequestLiveState, PullRequestStack, PullRequestState, PullRequestSummary } from '../../shared/contracts';
+import type { CreatePullRequestInput, CreatePullRequestResult, DiffResult, UpdatePullRequestInput, PullRequestActionInput, PullRequestActionResult, PullRequestConversation, PullRequestCommitList, GhCliStatus, GitHubRepositoryInfo, PullRequestDetails, PullRequestLiveState, PullRequestStack, PullRequestState, PullRequestSummary } from '../../shared/contracts';
 import { AiOperationError, GhOperationError } from '../../shared/errors';
 import type { CliProcessRunner, CliRunResult } from '../ai/CliProcessRunner';
 import type { CliResolver } from '../ai/CliResolver';
@@ -13,6 +13,7 @@ import type { RepositoryService } from '../git/RepositoryService';
 import { parseGitHubRemote, parseSshRemote } from './GitHubRemoteParser';
 import { GH_ENV, redactCommandToken, type GitHubCommandAuth } from './GitHubAccountAuth';
 import { parsePullRequestLiveState, PR_LIVE_STATE_QUERY } from './PullRequestLiveStateParser';
+import { PR_CONVERSATION_QUERY, parsePullRequestConversation } from './PullRequestConversationParser';
 import { PullRequestActionRunner } from './PullRequestActionRunner';
 import { withPrivateTextFile, type GhRunOptions } from './GitHubAccess';
 import { parseBranchPullRequestList, parseCreatedPullRequestUrl, parsePullRequestDetails, parsePullRequestList, PR_DETAIL_FIELDS, PR_SUMMARY_FIELDS, selectPullRequestsNewestFirst, sortPullRequestsNewestFirst } from './PullRequestParser';
@@ -253,6 +254,23 @@ export class GitHubService {
     if (read.status === 'ok') return read.state;
     if (read.status === 'missing') throw new GhOperationError({ code: 'GH_PROCESS_FAILED', operation, message: `Pull request #${prNumber} was not found in this repository.`, exitCode: result.exitCode });
     // stdout holds GitHub data here, where check names and URLs could look like another failure.
+    if (result.exitCode !== 0) throw classifyFailure({ ...result, stdout: '', stderr: redactCommandToken(result.stderr, auth) }, operation);
+    throw new GhOperationError({ code: 'GH_INVALID_OUTPUT', operation, message: 'GitHub CLI returned an unexpected response.' });
+  }
+
+  getPullRequestConversation(repositoryId: string, prNumber: number): Promise<PullRequestConversation> {
+    return this.shareRead(repositoryId, ['conversation', prNumber], () => this.readGetPullRequestConversation(repositoryId, prNumber));
+  }
+
+  private async readGetPullRequestConversation(repositoryId: string, prNumber: number): Promise<PullRequestConversation> {
+    const operation = 'gh-pr-conversation';
+    const { repository, nameWithOwner, auth, executable } = await this.requireGitHub(repositoryId, operation);
+    const [owner, name] = nameWithOwner.split('/');
+    const result = await this.run(executable, ['api', 'graphql', '-f', `owner=${owner}`, '-f', `name=${name}`, '-F', `number=${prNumber}`, '-f', `query=${PR_CONVERSATION_QUERY}`], {
+      auth, executable, cwd: repository.path, operation, timeoutMs: LIVE_STATE_TIMEOUT_MS, maxOutputBytes: 16 * 1024 * 1024,
+    });
+    const conversation = parsePullRequestConversation(result.stdout);
+    if (conversation) return conversation;
     if (result.exitCode !== 0) throw classifyFailure({ ...result, stdout: '', stderr: redactCommandToken(result.stderr, auth) }, operation);
     throw new GhOperationError({ code: 'GH_INVALID_OUTPUT', operation, message: 'GitHub CLI returned an unexpected response.' });
   }

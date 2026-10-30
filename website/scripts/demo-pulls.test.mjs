@@ -50,6 +50,15 @@ test('every sample has a live state that agrees with its details', () => {
   assert.ok(demoPulls.liveState(21).checks.items.length > 0);
 });
 
+test('sample conversations exist for every PR and cannot mutate fixtures', () => {
+  for (const pr of demoPulls.list(['OPEN', 'MERGED', 'CLOSED'])) assert.ok(Array.isArray(demoPulls.conversation(pr.number).entries));
+  const conversation = demoPulls.conversation(21);
+  assert.ok(conversation.entries.some(entry => entry.author.isBot));
+  conversation.entries.length = 0;
+  assert.ok(demoPulls.conversation(21).entries.length > 0);
+  assert.throws(() => demoPulls.conversation(999), /sample repository/);
+});
+
 test('per-commit patches apply to the sample files and compose the full PR diff', () => {
   for (const pr of demoPulls.list(['OPEN', 'MERGED', 'CLOSED'])) {
     assert.equal(pr.url, '');
