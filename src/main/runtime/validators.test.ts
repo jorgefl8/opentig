@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { generateCommitMessageArg, generatePullRequestDraftArg, booleanArg, branchDetailsArg, deleteBranchArg, filesTreeStateArg, nullableProjectIdArg, openFilesStateArg, prepareCommitGroupArg, projectIdArg, projectNameArg, publishBranchArg, pullRequestStatesArg, removeWorktreeArg, repositoryKeyArg, searchOptionsArg, searchReplaceArg, worktreeDetailsArg, pullRequestActionArg } from './validators';
+import { generateCommitMessageArg, generatePullRequestDraftArg, booleanArg, branchDetailsArg, deleteBranchArg, filesTreeStateArg, nullableProjectIdArg, openFilesStateArg, prepareCommitGroupArg, projectIdArg, projectNameArg, publishBranchArg, pullRequestStatesArg, removeWorktreeArg, repositoryKeyArg, searchOptionsArg, searchReplaceArg, worktreeDetailsArg, pullRequestActionArg, updatePullRequestArg } from './validators';
 import { GitOperationError } from '../../shared/errors';
 import { createTrackingBranchArg, deleteRemoteBranchArg } from './validators';
 
@@ -271,5 +271,22 @@ describe('pullRequestActionArg', () => {
     ['a negative number', { ...base, action: 'close', number: -1 }],
   ])('rejects %s', (_name, value) => {
     expect(() => pullRequestActionArg(value)).toThrow('Invalid pull request data.');
+  });
+});
+
+describe('updatePullRequestArg', () => {
+  const edit = { repositoryId: 'repo', number: 7, title: ' Title ', body: 'Body', expectedUpdatedAt: '2026-01-01T00:00:00Z', expectedAccount: { login: 'sample', revision: 1 } };
+  it('trims the title and keeps the body as written', () => {
+    expect(updatePullRequestArg({ ...edit, body: ' Body\n' })).toMatchObject({ title: 'Title', body: ' Body\n' });
+  });
+  it.each([
+    ['an empty title', { ...edit, title: '   ' }],
+    ['a very long title', { ...edit, title: 'x'.repeat(301) }],
+    ['a null character', { ...edit, body: 'a\0b' }],
+    ['a very long body', { ...edit, body: 'x'.repeat(100 * 1024 + 1) }],
+    ['no version', { ...edit, expectedUpdatedAt: '' }],
+    ['no account', { ...edit, expectedAccount: undefined }],
+  ])('rejects %s', (_name, value) => {
+    expect(() => updatePullRequestArg(value)).toThrow('Invalid pull request data.');
   });
 });

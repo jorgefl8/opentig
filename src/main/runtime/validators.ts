@@ -1,6 +1,6 @@
 import { GitOperationError } from '../../shared/errors';
 import { AiOperationError, GhOperationError } from '../../shared/errors';
-import type { AiHarnessId, BranchDetailsRequest, CreatePullRequestInput, PullRequestActionInput, DeleteBranchRequest, GenerateCommitMessageInput, GeneratePullRequestDraftInput, PrepareCommitGroupInput, PublishBranchOptions, PullRequestState, RemoveWorktreeRequest, WorktreeDetailsRequest } from '../../shared/contracts';
+import type { AiHarnessId, BranchDetailsRequest, CreatePullRequestInput, PullRequestActionInput, UpdatePullRequestInput, DeleteBranchRequest, GenerateCommitMessageInput, GeneratePullRequestDraftInput, PrepareCommitGroupInput, PublishBranchOptions, PullRequestState, RemoveWorktreeRequest, WorktreeDetailsRequest } from '../../shared/contracts';
 import { MAX_PROJECT_NAME_LENGTH, MAX_REPOSITORY_KEY_LENGTH, normalizeRepositoryKey } from '../../shared/repository-projects';
 import { isFilesTreeRepositoryId, MAX_FILES_TREE_PATHS, normalizeExpandedPaths, normalizeFilesTreePath } from '../../shared/files-tree-state';
 import { isOpenFilesRepositoryId, MAX_OPEN_FILE_TABS, normalizeOpenFilePath, type OpenFileTab } from '../../shared/open-files-state';
@@ -339,13 +339,25 @@ const pullRequestActionSchema = z.discriminatedUnion('action', [
   pullRequestActionBaseSchema.extend({ action: z.literal('merge'), method: mergeMethodSchema, deleteBranch: z.boolean().optional() }),
   pullRequestActionBaseSchema.extend({ action: z.literal('enable-auto-merge'), method: mergeMethodSchema }),
   pullRequestActionBaseSchema.extend({ action: z.literal('update-branch'), method: z.enum(['MERGE', 'REBASE']) }),
-  pullRequestActionBaseSchema.extend({ action: z.enum(['disable-auto-merge', 'ready', 'draft', 'close', 'reopen', 'delete-branch']) }),
+  pullRequestActionBaseSchema.extend({ action: z.enum(['disable-auto-merge', 'ready', 'draft', 'close', 'reopen', 'delete-branch', 'revert', 'approve-workflows']) }),
 ]);
 
 export function pullRequestActionArg(value: unknown): PullRequestActionInput {
   const parsed = pullRequestActionSchema.safeParse(value);
   if (!parsed.success) throw invalidGh('gh-pr-action');
   return parsed.data as PullRequestActionInput;
+}
+
+const pullRequestTextSchema = z.string().max(100 * 1024).refine((value) => !value.includes('\0'));
+
+export function updatePullRequestArg(value: unknown): UpdatePullRequestInput {
+  const parsed = pullRequestActionBaseSchema.omit({ expectedHeadOid: true }).extend({
+    title: z.string().trim().min(1).max(300).refine((title) => !title.includes('\0')),
+    body: pullRequestTextSchema,
+    expectedUpdatedAt: z.string().min(1).max(64),
+  }).safeParse(value);
+  if (!parsed.success) throw invalidGh('gh-pr-update');
+  return parsed.data;
 }
 
 export function generatePullRequestDraftArg(value: unknown): GeneratePullRequestDraftInput {

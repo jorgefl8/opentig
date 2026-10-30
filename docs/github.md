@@ -153,6 +153,12 @@ If GitHub takes too long, OpenTig says the action may have completed and checks 
 
 </details>
 
+**Edit a PR.** Choose **Edit title and description** in **⋯**. It uses the same Markdown editor as creating a PR. Saving stops if the PR changed on GitHub after you started, so another person's or a bot's edit isn't overwritten.
+
+**Revert a merged PR.** **Revert** opens a new PR that undoes the merge, and shows it in the viewer. Nothing changes until you merge that PR. If GitHub doesn't answer in time, OpenTig holds **Revert** back until you've checked, because trying again could open a second PR.
+
+**Approve workflows from a fork.** When a fork's checks wait for approval, **Approve workflows** lets them run. They run the fork's code, so review it first. OpenTig only approves runs that can belong to this PR: it refuses if another open PR uses the same commit and fork, and it checks each run again just before approving it.
+
 **Stacks are still merged on GitHub.** So are stacks whose membership couldn't be confirmed: the viewer shows **Couldn't confirm the stack** with **Retry**.
 
 ## Create a pull request

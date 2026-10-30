@@ -116,12 +116,15 @@ describe('allowedPullRequestActions', () => {
     ['a reader', { viewer: viewer({ canWrite: false, canUpdate: false, canUpdateBranch: false, canDeleteBranch: false }), mergeStateStatus: 'BEHIND' }, []],
     ['a fork author', { viewer: viewer({ canWrite: false, canUpdate: true, canUpdateBranch: true, canDeleteBranch: true }), mergeStateStatus: 'BEHIND', behindBy: 1, isCrossRepository: true }, ['update-branch', 'draft', 'close']],
     ['a closed PR', { state: 'CLOSED' }, ['reopen', 'delete-branch']],
-    ['a merged PR', { state: 'MERGED' }, ['delete-branch']],
-    ['a merged PR whose branch moved', { state: 'MERGED', head: { ...live().head, refOid: 'b' } }, []],
-    ['a merged PR whose branch is gone', { state: 'MERGED', head: { ...live().head, refOid: null } }, []],
-    ['a merged PR from the default branch', { state: 'MERGED', headRefName: 'main', baseRefName: 'release' }, []],
-    ['a merged stack layer', { state: 'MERGED', stack: 'member' }, []],
-    ['a merged PR with an unconfirmed stack', { state: 'MERGED', stack: 'unknown' }, []],
+    ['a merged PR', { state: 'MERGED' }, ['delete-branch', 'revert']],
+    ['a merged PR for a reader', { state: 'MERGED', viewer: viewer({ canWrite: false, canDeleteBranch: false }) }, []],
+    ['a fork PR with workflows waiting', { isCrossRepository: true, checks: { rollup: 'PENDING', items: [{ name: 'CI', workflow: null, result: 'action-required', required: false, url: null }], truncated: false, partial: false } }, ['merge', 'draft', 'close', 'approve-workflows']],
+    ['a same-repository PR with a check needing action', { checks: { rollup: 'PENDING', items: [{ name: 'CI', workflow: null, result: 'action-required', required: false, url: null }], truncated: false, partial: false } }, ['merge', 'draft', 'close']],
+    ['a merged PR whose branch moved', { state: 'MERGED', head: { ...live().head, refOid: 'b' } }, ['revert']],
+    ['a merged PR whose branch is gone', { state: 'MERGED', head: { ...live().head, refOid: null } }, ['revert']],
+    ['a merged PR from the default branch', { state: 'MERGED', headRefName: 'main', baseRefName: 'release' }, ['revert']],
+    ['a merged stack layer', { state: 'MERGED', stack: 'member' }, ['revert']],
+    ['a merged PR with an unconfirmed stack', { state: 'MERGED', stack: 'unknown' }, ['revert']],
   ] as const)('for %s', (_name, overrides, expected) => {
     expect(allowedPullRequestActions(live(overrides as unknown as Partial<PullRequestLiveState>))).toEqual(expected);
   });

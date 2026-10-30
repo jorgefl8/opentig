@@ -23,7 +23,7 @@ type ActionRequest = { action: 'merge'; method: PullRequestMergeMethod; deleteBr
   | { action: Exclude<PullRequestAction, 'merge' | 'enable-auto-merge' | 'update-branch'> };
 
 /** What each action asks before running. Reversible ones run straight away. */
-type Panel = 'merge' | 'enable-auto-merge' | 'close' | 'delete-branch' | 'rebase-branch';
+type Panel = 'merge' | 'enable-auto-merge' | 'close' | 'delete-branch' | 'rebase-branch' | 'revert' | 'approve-workflows';
 
 const MENU_LABELS: Partial<Record<PullRequestAction, string>> = {
   merge: 'Merge…',
@@ -33,6 +33,8 @@ const MENU_LABELS: Partial<Record<PullRequestAction, string>> = {
   close: 'Close pull request…',
   reopen: 'Reopen pull request',
   'delete-branch': 'Delete branch…',
+  revert: 'Revert…',
+  'approve-workflows': 'Approve workflows…',
 };
 
 function successToast(request: ActionRequest, result: PullRequestActionResult, details: PullRequestDetails): void {
@@ -56,10 +58,12 @@ function successToast(request: ActionRequest, result: PullRequestActionResult, d
       else if (request.action === 'close') sileo.success({ title: 'Pull request closed', description: pull });
       else if (request.action === 'reopen') sileo.success({ title: 'Pull request reopened', description: pull });
       else if (request.action === 'delete-branch') sileo.success({ title: 'Branch deleted', description: details.headRefName });
+      else if (request.action === 'approve-workflows') sileo.success({ title: 'Workflows approved', description: `The workflows of ${pull} can run now.` });
+      else if (request.action === 'revert') sileo.success({ title: 'Revert pull request opened', description: result.created?.url ?? pull });
   }
 }
 
-export function PullRequestActionBar({ repositoryId, details, live, refreshing, statusLabel, onRefresh }: {
+export function PullRequestActionBar({ repositoryId, details, live, refreshing, statusLabel, onRefresh, onEdit, onSelectPullRequest }: {
   repositoryId: string;
   details: PullRequestDetails;
   live: PullRequestLiveState;
@@ -67,6 +71,8 @@ export function PullRequestActionBar({ repositoryId, details, live, refreshing, 
   /** Already on screen, so a primary that would only repeat it stays out. */
   statusLabel: string | null;
   onRefresh(): void;
+  onEdit(): void;
+  onSelectPullRequest(number: number): void;
 }) {
   const queryClient = useQueryClient();
   const accountQuery = useGitHubAccount(repositoryId);
@@ -74,6 +80,8 @@ export function PullRequestActionBar({ repositoryId, details, live, refreshing, 
   const [panel, setPanel] = useState<Panel | null>(null);
   const [method, setMethod] = useState<PullRequestMergeMethod>(live.repository.defaultMethod);
   const [deleteBranch, setDeleteBranch] = useState(false);
+  // A revert with no answer may already exist. Offering it again could open a second one.
+  const [revertUncertain, setRevertUncertain] = useState(false);
   const closePanel = useCallback(() => setPanel(null), []);
 
   // A question about a state that no longer holds would mislead, so it goes away with that state.
@@ -91,10 +99,12 @@ export function PullRequestActionBar({ repositoryId, details, live, refreshing, 
       successToast(request, result, details);
       // Merging or removing a branch changes the remote refs even when periodic fetches are off.
       if (result.outcome === 'merged' || request.action === 'delete-branch') void opentig.refs.fetch(repositoryId).catch(() => undefined);
+      if (result.created?.number) onSelectPullRequest(result.created.number);
     },
-    onError: (reason) => {
+    onError: (reason, request) => {
       const detail = ghDetail(reason);
       if (isUncertainFailure(reason)) {
+        if (request.action === 'revert') setRevertUncertain(true);
         sileo.info({ title: 'No answer from GitHub yet', description: 'The action may have completed. OpenTig is checking the current status.', duration: 10_000 });
       } else {
         sileo.error({ title: ghErrorTitle(detail), description: detail?.message ?? (reason instanceof Error ? reason.message : 'An unexpected error occurred.'), duration: 10_000 });
@@ -117,7 +127,7 @@ export function PullRequestActionBar({ repositoryId, details, live, refreshing, 
   };
   const start = (action: PullRequestAction) => {
     switch (action) {
-      case 'merge': case 'enable-auto-merge': case 'close': case 'delete-branch': open(action); return;
+      case 'merge': case 'enable-auto-merge': case 'close': case 'delete-branch': case 'revert': case 'approve-workflows': open(action); return;
       case 'update-branch': run({ action, method: 'MERGE' }); return;
       default: run({ action });
     }
@@ -126,11 +136,11 @@ export function PullRequestActionBar({ repositoryId, details, live, refreshing, 
   const primary = resolvePullRequestPrimary(live);
   const primaryAction = primary.kind === 'action' ? primary.action : null;
   const allowed = allowedPullRequestActions(live);
-  const menuActions = allowed.filter((action) => action !== primaryAction && action !== 'update-branch' && action !== 'disable-auto-merge');
+  const menuActions = allowed.filter((action) => action !== primaryAction && action !== 'update-branch' && action !== 'disable-auto-merge' && !(action === 'revert' && revertUncertain));
   const canUpdateBranch = allowed.includes('update-branch');
   const canDisableAutoMerge = allowed.includes('disable-auto-merge');
   const accountReady = account?.state === 'ready' && Boolean(account.login);
-  const hasMenu = menuActions.length > 0 || canUpdateBranch;
+  const hasMenu = menuActions.length > 0 || canUpdateBranch || live.viewer.canUpdate;
 
   return (
     <>
@@ -141,6 +151,7 @@ export function PullRequestActionBar({ repositoryId, details, live, refreshing, 
           <Button variant="ghost" size="xs" disabled={refreshing} onClick={onRefresh}>{refreshing ? <IconLoader4 className="animate-spin" /> : <IconRefresh />} Retry</Button>
         </>}
         {primary.kind === 'github' && details.url && <Button variant="outline" size="xs" onClick={() => openOnGitHub(details.url)}><IconExternalLink /> {primary.label}</Button>}
+ {revertUncertain && <span className="pr-action-reason">The revert may have been created. Check GitHub first.<Button variant="ghost" size="xs" onClick={() => { setRevertUncertain(false); onRefresh(); }}>Refresh</Button></span>}
         {canDisableAutoMerge && <Button variant="outline" size="xs" disabled={busy || !accountReady} onClick={() => run({ action: 'disable-auto-merge' })}>Disable auto-merge</Button>}
         {primary.kind === 'action' && (
           <Button size="xs" disabled={busy || !accountReady || panel !== null} onClick={() => start(primary.action)}>
@@ -154,6 +165,7 @@ export function PullRequestActionBar({ repositoryId, details, live, refreshing, 
             <DropdownMenuContent>
               {canUpdateBranch && primaryAction !== 'update-branch' && <DropdownMenuItem onClick={() => run({ action: 'update-branch', method: 'MERGE' })}>Update branch with merge</DropdownMenuItem>}
               {canUpdateBranch && <DropdownMenuItem onClick={() => open('rebase-branch')}>Update branch with rebase…</DropdownMenuItem>}
+              {live.viewer.canUpdate && <DropdownMenuItem onClick={onEdit}>Edit title and description…</DropdownMenuItem>}
               {menuActions.map((action) => <DropdownMenuItem key={action} onClick={() => start(action)}>{MENU_LABELS[action]}</DropdownMenuItem>)}
             </DropdownMenuContent>
           </DropdownMenu>
@@ -233,6 +245,18 @@ function ConfirmPanel({ panel, live, details, login, busy, method, deleteBranch,
       return (
         <ActionConfirmPanel busy={busy} onCancel={onCancel} confirm={<Button variant="destructive" size="sm" disabled={busy} onClick={() => onConfirm({ action: 'delete-branch' })}>{working('Delete branch')}</Button>}>
           <p>Delete {branch} from <strong>{live.head.owner ?? 'the source repository'}</strong>{asViewer}? This fails if the branch has moved. Local branches are kept.</p>
+        </ActionConfirmPanel>
+      );
+    case 'revert':
+      return (
+        <ActionConfirmPanel busy={busy} onCancel={onCancel} confirm={<Button size="sm" disabled={busy} onClick={() => onConfirm({ action: 'revert' })}>{working('Create revert pull request')}</Button>}>
+          <p>Open a pull request that reverts <strong>{pull}</strong> on {base}{asViewer}? Nothing changes until that pull request is merged.</p>
+        </ActionConfirmPanel>
+      );
+    case 'approve-workflows':
+      return (
+        <ActionConfirmPanel tone="warning" busy={busy} onCancel={onCancel} confirm={<Button size="sm" disabled={busy} onClick={() => onConfirm({ action: 'approve-workflows' })}>{working('Approve workflows')}</Button>}>
+          <p>Let the workflows of <strong>{pull}</strong> from <strong>{live.head.owner ?? 'this fork'}</strong> run{asViewer}? They run this fork's code at <code>{live.headRefOid.slice(0, 7)}</code>. Review it first.</p>
         </ActionConfirmPanel>
       );
     case 'rebase-branch':

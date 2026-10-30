@@ -15,6 +15,7 @@ import { LinkedText } from '@/components/LinkedText';
 
 import { ghDetail, MERGE_METHOD_LABELS, openOnGitHub, prStateLabel, reviewDecisionLabel } from './gh-utils';
 import { GitHubAvatar } from './GitHubAvatar';
+import { EditPullRequestDialog } from './EditPullRequestDialog';
 import { PullRequestActionBar } from './PullRequestActionBar';
 import { PullRequestChecksMenu, PullRequestChecksSummary } from './PullRequestChecksMenu';
 import { pullRequestLiveStateQueryOptions, queriesOutdatedByLiveState } from './pull-request-live-state-query';
@@ -38,6 +39,7 @@ interface PullRequestViewerProps {
 
 export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType, wrapLines, onDiffViewChange, onWrapLinesChange, onClose, onSelectPullRequest }: PullRequestViewerProps) {
   const [tab, setTab] = useState<'summary' | 'timeline' | 'diff'>('summary');
+  const [editing, setEditing] = useState(false);
   const detailsQuery = useQuery<{ details: PullRequestDetails; bodyHtml: string }>({
     queryKey: queryKeys.pullRequest(repositoryId, prNumber),
     queryFn: async () => {
@@ -132,7 +134,7 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
           {review && review !== status?.label && <Badge variant="outline" className="pr-review-badge">{review}</Badge>}
           {live?.autoMerge && <Badge variant="outline" className="pr-auto-merge-badge">Auto-merge · {MERGE_METHOD_LABELS[live.autoMerge.method]}</Badge>}
           {liveQuery.isError && <PullRequestLiveNotice error={liveQuery.error} hasState={live !== null} open={details.state === 'OPEN'} retrying={liveQuery.isFetching} onRetry={() => void liveQuery.refetch()} />}
-          {live && <PullRequestActionBar repositoryId={repositoryId} details={details} live={live} refreshing={liveQuery.isFetching} statusLabel={status?.label ?? null} onRefresh={() => void liveQuery.refetch()} />}
+          {live && <PullRequestActionBar repositoryId={repositoryId} details={details} live={live} refreshing={liveQuery.isFetching} statusLabel={status?.label ?? null} onRefresh={() => void liveQuery.refetch()} onEdit={() => setEditing(true)} onSelectPullRequest={onSelectPullRequest} />}
         </div>
         {details.labels.length > 0 && (
           <div className="pr-labels" aria-label="Pull request labels">
@@ -196,6 +198,7 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
           </Suspense>
         )}
       </ViewerTabsPanel>
+      {editing && live && <EditPullRequestDialog repositoryId={repositoryId} details={details} expectedUpdatedAt={live.updatedAt} onClose={() => setEditing(false)} />}
     </ViewerTabs>
   );
 }

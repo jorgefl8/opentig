@@ -30,6 +30,8 @@ let root: Root;
 let container: HTMLDivElement;
 let client: QueryClient;
 const onRefresh = vi.fn();
+const onEdit = vi.fn();
+const onSelectPullRequest = vi.fn();
 beforeEach(() => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
   vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
@@ -47,7 +49,7 @@ async function settle() {
 }
 async function render(state: PullRequestLiveState = live()) {
   await act(async () => root.render(createElement(QueryClientProvider, { client }, createElement(TooltipProvider, null, createElement(PullRequestActionBar, {
-    repositoryId: 'repo', details, live: state, refreshing: false, statusLabel: null, onRefresh,
+    repositoryId: 'repo', details, live: state, refreshing: false, statusLabel: null, onRefresh, onEdit, onSelectPullRequest,
   })))));
   await settle();
 }
@@ -192,7 +194,7 @@ describe('what is offered', () => {
 
   it('does not repeat a reason already on screen', async () => {
     await act(async () => root.render(createElement(QueryClientProvider, { client }, createElement(TooltipProvider, null, createElement(PullRequestActionBar, {
-      repositoryId: 'repo', details, live: live({ mergeable: 'CONFLICTING', mergeStateStatus: 'DIRTY' }), refreshing: false, statusLabel: 'Conflicts with main', onRefresh,
+      repositoryId: 'repo', details, live: live({ mergeable: 'CONFLICTING', mergeStateStatus: 'DIRTY' }), refreshing: false, statusLabel: 'Conflicts with main', onRefresh, onEdit, onSelectPullRequest,
     })))));
     await settle();
     expect(container.querySelector('.pr-action-reason')).toBeNull();
@@ -212,5 +214,80 @@ describe('what is offered', () => {
     await click('Merge');
     await click('Squash and merge');
     expect(setData).toHaveBeenCalledWith(queryKeys.pullRequestLiveState('repo', 7), next);
+  });
+});
+
+describe('the menu', () => {
+  async function openMenu() {
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="More pull request actions"]')!.click());
+    await settle();
+  }
+  const items = () => [...document.querySelectorAll('[role="menuitem"]')].map(item => item.textContent);
+  async function choose(label: string) {
+    await act(async () => [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(item => item.textContent === label)!.click());
+    await settle();
+  }
+  const merged = () => live({ state: 'MERGED', mergeable: 'UNKNOWN', mergeStateStatus: 'UNKNOWN' });
+
+  it('lists everything allowed except the main control', async () => {
+    await render(live({ behindBy: 2 }));
+    await openMenu();
+    expect(items()).toEqual(['Update branch with merge', 'Update branch with rebase…', 'Edit title and description…', 'Convert to draft', 'Close pull request…']);
+  });
+
+  it('warns before rebasing a branch', async () => {
+    await render(live({ mergeStateStatus: 'BEHIND', behindBy: 2 }));
+    await openMenu();
+    await choose('Update branch with rebase…');
+    expect(panel()?.textContent).toContain('rewrites its commits');
+    expect(api.runPullRequestAction).not.toHaveBeenCalled();
+    api.runPullRequestAction.mockResolvedValue({ outcome: 'updated', state: live() });
+    await click('Rebase branch');
+    expect(api.runPullRequestAction).toHaveBeenCalledWith({ ...expectedRequest, action: 'update-branch', method: 'REBASE' });
+  });
+
+  it('opens the editor', async () => {
+    await render();
+    await openMenu();
+    await choose('Edit title and description…');
+    expect(onEdit).toHaveBeenCalledOnce();
+  });
+
+  it('shows the PR a revert opened', async () => {
+    api.runPullRequestAction.mockResolvedValue({ outcome: 'done', state: merged(), created: { url: 'https://github.com/sample/demo/pull/9', number: 9 } });
+    await render(merged());
+    await openMenu();
+    await choose('Revert…');
+    await click('Create revert pull request');
+    expect(api.runPullRequestAction).toHaveBeenCalledWith({ ...expectedRequest, action: 'revert' });
+    expect(onSelectPullRequest).toHaveBeenCalledWith(9);
+  });
+
+  it('holds revert back after no answer, so a second one is not opened by accident', async () => {
+    api.runPullRequestAction.mockRejectedValue(new ServerRequestTimeoutError('Server request timed out'));
+    await render(merged());
+    await openMenu();
+    await choose('Revert…');
+    await click('Create revert pull request');
+    expect(container.textContent).toContain('The revert may have been created');
+    await openMenu();
+    expect(items()).not.toContain('Revert…');
+    await openMenu();
+    await click('Refresh');
+    expect(onRefresh).toHaveBeenCalled();
+    await openMenu();
+    expect(items()).toContain('Revert…');
+  });
+
+  it('warns that approving runs the fork\'s code', async () => {
+    const waiting = live({ isCrossRepository: true, head: { ...live().head, owner: 'contributor' }, checks: { rollup: 'PENDING', items: [{ name: 'CI', workflow: null, result: 'action-required', required: false, url: null }], truncated: false, partial: false } });
+    api.runPullRequestAction.mockResolvedValue({ outcome: 'done', state: waiting });
+    await render(waiting);
+    await openMenu();
+    await choose('Approve workflows…');
+    expect(panel()?.textContent).toContain("They run this fork's code");
+    expect(panel()?.textContent).toContain('contributor');
+    await click('Approve workflows');
+    expect(api.runPullRequestAction).toHaveBeenCalledWith({ ...expectedRequest, action: 'approve-workflows' });
   });
 });

@@ -4,7 +4,7 @@ import type { CliCandidate } from '../ai/CliResolver';
 import { parsePullRequestStack, parseStackMemberships, stackMembershipQuery } from './PullRequestStackParser';
 import os from 'node:os';
 import { GITHUB_PR_COMMIT_PAGE } from '../../shared/contracts';
-import type { CreatePullRequestInput, CreatePullRequestResult, DiffResult, PullRequestActionInput, PullRequestActionResult, PullRequestCommitList, GhCliStatus, GitHubRepositoryInfo, PullRequestDetails, PullRequestLiveState, PullRequestStack, PullRequestState, PullRequestSummary } from '../../shared/contracts';
+import type { CreatePullRequestInput, CreatePullRequestResult, DiffResult, UpdatePullRequestInput, PullRequestActionInput, PullRequestActionResult, PullRequestCommitList, GhCliStatus, GitHubRepositoryInfo, PullRequestDetails, PullRequestLiveState, PullRequestStack, PullRequestState, PullRequestSummary } from '../../shared/contracts';
 import { AiOperationError, GhOperationError } from '../../shared/errors';
 import type { CliProcessRunner, CliRunResult } from '../ai/CliProcessRunner';
 import type { CliResolver } from '../ai/CliResolver';
@@ -233,6 +233,10 @@ export class GitHubService {
 
   runPullRequestAction(input: PullRequestActionInput): Promise<PullRequestActionResult> {
     return this.actions.run(input);
+  }
+
+  updatePullRequest(input: UpdatePullRequestInput): Promise<void> {
+    return this.actions.update(input);
   }
 
   private async readGetPullRequestLiveState(repositoryId: string, prNumber: number): Promise<PullRequestLiveState> {

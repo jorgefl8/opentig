@@ -189,4 +189,116 @@ describe('runPullRequestAction', () => {
       expect(mutations).toHaveLength(1);
     });
   });
+
+  describe('reverting', () => {
+    it('reports the PR GitHub opened', async () => {
+      const state = { state: 'MERGED', mergeable: 'UNKNOWN', mergeStateStatus: 'UNKNOWN' };
+      const { service, mutations } = fixture({ reads: [liveResponse(state)], mutate: () => ({ exitCode: 0, stdout: 'https://github.com/example/demo/pull/13\n', stderr: '' }) });
+      expect(await service.runPullRequestAction({ ...base, action: 'revert' })).toMatchObject({ outcome: 'done', created: { url: 'https://github.com/example/demo/pull/13', number: 13 } });
+      expect(mutations).toEqual([['pr', 'revert', '12', '-R', 'example/demo']]);
+    });
+
+    it('still reports the PR it opened when GitHub cannot be read afterwards', async () => {
+      const state = { state: 'MERGED', mergeable: 'UNKNOWN', mergeStateStatus: 'UNKNOWN' };
+      const { service } = fixture({ reads: [liveResponse(state), fail('gh: HTTP 502: Bad Gateway')], mutate: () => ({ exitCode: 0, stdout: 'https://github.com/example/demo/pull/13\n', stderr: '' }) });
+      expect(await service.runPullRequestAction({ ...base, action: 'revert' })).toEqual({ outcome: 'unconfirmed', state: null, created: { url: 'https://github.com/example/demo/pull/13', number: 13 } });
+    });
+
+    it('refuses a PR that was not merged', async () => {
+      const { service, mutations } = fixture({ reads: [liveResponse()] });
+      await expect(service.runPullRequestAction({ ...base, action: 'revert' })).rejects.toMatchObject({ detail: { code: 'GH_PR_ACTION_NOT_ALLOWED' } });
+      expect(mutations).toEqual([]);
+    });
+  });
+
+  describe('approving workflows', () => {
+    const waiting = {
+      isCrossRepository: true, headRepositoryOwner: { login: 'contributor' }, headRepository: { id: 'R_2', viewerPermission: 'READ' },
+      commits: { nodes: [{ commit: { statusCheckRollup: { state: 'PENDING', contexts: { pageInfo: { hasNextPage: false }, nodes: [{ __typename: 'CheckRun', name: 'CI', status: 'COMPLETED', conclusion: 'ACTION_REQUIRED', detailsUrl: null }] } } } }] },
+    };
+    const heads = (...nodes: object[]) => ok({ data: { repository: { pullRequests: { pageInfo: { hasNextPage: false }, nodes } } } });
+    const thisHead = { number: 12, headRefOid: oid, isCrossRepository: true, headRepositoryOwner: { login: 'contributor' } };
+    const runs = (...ids: number[]) => ok({ workflow_runs: ids.map(id => ({ id, status: 'completed', conclusion: 'action_required', head_branch: 'feature' })) });
+    const respond = (headsResult: CliRunResult, runsResult: CliRunResult) => (args: string[]) => {
+      if (mutationOf(args).includes('pullRequests(')) return headsResult;
+      if (args.some(arg => arg.includes('/actions/runs?'))) return runsResult;
+      return ok({});
+    };
+    const approvals = (mutations: string[][]) => mutations.filter(args => args.includes('POST')).map(args => args.at(-1));
+
+    it('approves runs that can only belong to this PR, filtered by commit, branch and event', async () => {
+      const { service, mutations } = fixture({ reads: [liveResponse(waiting)], mutate: respond(heads(thisHead), runs(5, 6)) });
+      expect((await service.runPullRequestAction({ ...base, action: 'approve-workflows' })).outcome).toBe('done');
+      expect(approvals(mutations)).toEqual(['repos/example/demo/actions/runs/5/approve', 'repos/example/demo/actions/runs/6/approve']);
+      const listing = mutations.flat().find(arg => arg.includes('/actions/runs?'))!;
+      expect(listing).toContain(`head_sha=${oid}`);
+      expect(listing).toContain('branch=feature');
+      expect(listing).toContain('event=pull_request');
+      expect(listing).toContain('status=action_required');
+    });
+
+    it.each([
+      ['another open PR shares the commit from the same fork', () => heads(thisHead, { ...thisHead, number: 13 })],
+      ['the PR is not the one with that head', () => heads({ ...thisHead, number: 13 })],
+      ['the list of heads is incomplete', () => ok({ data: { repository: { pullRequests: { pageInfo: { hasNextPage: true }, nodes: [thisHead] } } } })],
+    ])('approves nothing when %s', async (_name, headsResult) => {
+      const { service, mutations } = fixture({ reads: [liveResponse(waiting)], mutate: respond(headsResult(), runs(5)) });
+      await expect(service.runPullRequestAction({ ...base, action: 'approve-workflows' })).rejects.toMatchObject({ detail: { code: 'GH_PR_ACTION_NOT_ALLOWED' } });
+      expect(approvals(mutations)).toEqual([]);
+    });
+
+    it('stops when the head moves between approvals', async () => {
+      const moved = liveResponse({ ...waiting, headRefOid: 'c'.repeat(40) });
+      const { service, mutations } = fixture({ reads: [liveResponse(waiting), moved], mutate: respond(heads(thisHead), runs(5)) });
+      await expect(service.runPullRequestAction({ ...base, action: 'approve-workflows' })).rejects.toMatchObject({ detail: { code: 'GH_PR_STATE_CHANGED' } });
+      expect(approvals(mutations)).toEqual([]);
+    });
+
+    it('skips a run that no longer waits, and one from another branch', async () => {
+      let listings = 0;
+      const { service, mutations } = fixture({ reads: [liveResponse(waiting)], mutate: args => {
+        if (mutationOf(args).includes('pullRequests(')) return heads(thisHead);
+        if (args.some(arg => arg.includes('/actions/runs?'))) return listings++ === 0
+          ? ok({ workflow_runs: [{ id: 5, conclusion: 'action_required', head_branch: 'feature' }, { id: 6, conclusion: 'action_required', head_branch: 'other' }] })
+          : runs();
+        return ok({});
+      } });
+      await service.runPullRequestAction({ ...base, action: 'approve-workflows' });
+      expect(approvals(mutations)).toEqual([]);
+    });
+
+    it('refuses a PR from the same repository', async () => {
+      const sameRepository = { ...waiting, isCrossRepository: false };
+      const { service, mutations } = fixture({ reads: [liveResponse(sameRepository)] });
+      await expect(service.runPullRequestAction({ ...base, action: 'approve-workflows' })).rejects.toMatchObject({ detail: { code: 'GH_PR_ACTION_NOT_ALLOWED' } });
+      expect(mutations).toEqual([]);
+    });
+  });
+});
+
+describe('updatePullRequest', () => {
+  const edit = { ...base, title: 'New title', body: 'New body', expectedUpdatedAt: pull.updatedAt };
+  const { expectedHeadOid: _unused, ...withoutHead } = edit;
+
+  it('sends the title, and the body through a file', async () => {
+    const { service, mutations } = fixture({ reads: [liveResponse()] });
+    await service.updatePullRequest(withoutHead);
+    expect(mutations[0]!.slice(0, 7)).toEqual(['pr', 'edit', '12', '-R', 'example/demo', '--title', 'New title']);
+    expect(mutations[0]![7]).toBe('--body-file');
+    expect(mutations[0]).not.toContain('New body');
+  });
+
+  it('refuses to overwrite a PR that changed since the edit started', async () => {
+    const { service, mutations } = fixture({ reads: [liveResponse({ updatedAt: '2026-02-02T00:00:00Z' })] });
+    await expect(service.updatePullRequest(withoutHead)).rejects.toMatchObject({ detail: { code: 'GH_PR_STATE_CHANGED' } });
+    expect(mutations).toEqual([]);
+  });
+
+  it('refuses without permission or with another account', async () => {
+    const reader = fixture({ reads: [liveResponse({ viewerCanUpdate: false })] });
+    await expect(reader.service.updatePullRequest(withoutHead)).rejects.toMatchObject({ detail: { code: 'GH_PR_ACTION_NOT_ALLOWED' } });
+    const other = fixture({ reads: [liveResponse()] });
+    await expect(other.service.updatePullRequest({ ...withoutHead, expectedAccount: { login: 'other', revision: 3 } })).rejects.toMatchObject({ detail: { code: 'GH_ACCOUNT_UNRESOLVED' } });
+    expect([...reader.mutations, ...other.mutations]).toEqual([]);
+  });
 });

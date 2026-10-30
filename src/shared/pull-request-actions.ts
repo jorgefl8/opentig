@@ -120,10 +120,18 @@ export function pullRequestActionBlocked(state: PullRequestLiveState, action: Pu
       return state.mergeStateStatus === 'BEHIND' || (state.behindBy ?? 0) > 0 ? null : 'This branch is already up to date.';
     case 'delete-branch':
       return open ? 'Close or merge this pull request first.' : branchRemovalBlocked(state);
+    case 'revert':
+      if (state.state !== 'MERGED') return 'Only a merged pull request can be reverted.';
+      return state.viewer.canWrite ? null : NO_WRITE;
+    case 'approve-workflows':
+      if (!open) return NOT_OPEN;
+      if (!state.isCrossRepository) return 'Only workflows from a fork need approval.';
+      if (!state.viewer.canWrite) return NO_WRITE;
+      return state.checks.items.some((check) => check.result === 'action-required') ? null : 'No workflows are waiting for approval.';
   }
 }
 
-const ACTIONS: PullRequestAction[] = ['merge', 'enable-auto-merge', 'disable-auto-merge', 'update-branch', 'ready', 'draft', 'close', 'reopen', 'delete-branch'];
+const ACTIONS: PullRequestAction[] = ['merge', 'enable-auto-merge', 'disable-auto-merge', 'update-branch', 'ready', 'draft', 'close', 'reopen', 'delete-branch', 'revert', 'approve-workflows'];
 
 /** What can be done whichever control is primary, so the state a button shows never hides an action. */
 export function allowedPullRequestActions(state: PullRequestLiveState): PullRequestAction[] {
