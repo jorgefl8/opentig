@@ -23,7 +23,9 @@ const onOpenChange = vi.fn();
 const onBrowse = vi.fn<(path?: string) => Promise<ServerDirectoryListing>>();
 const button = (name: string) => Array.from(document.querySelectorAll<HTMLButtonElement>('button')).find(item => item.getAttribute('aria-label') === name || item.textContent?.trim() === name)!;
 async function click(name: string) { await act(async () => button(name).click()); }
-async function render(overrides: Partial<Parameters<typeof OpenRepositoryDialog>[0]> = {}) { await act(async () => root.render(createElement(TooltipProvider, null, createElement(OpenRepositoryDialog, { open: true, initialPath: '/workspace', onOpen, onOpenChange, onBrowse, ...overrides })))); }
+async function render(overrides: Partial<Parameters<typeof OpenRepositoryDialog>[0]> = {}) {
+  await act(async () => root.render(createElement(TooltipProvider, { delay: 0 }, createElement(OpenRepositoryDialog, { open: true, initialPath: '/workspace', onOpen, onOpenChange, onBrowse, ...overrides }))));
+}
 async function input(selector: string, value: string) {
   const node = document.querySelector<HTMLInputElement>(selector)!;
   await act(async () => {
@@ -125,8 +127,11 @@ describe('repository selection and asynchronous navigation', () => {
     expect(button('Select repository .hidden')).toBeTruthy();
     await input('[aria-label="Filter folders"]', 'hidden');
     expect(document.querySelector('[aria-label="Select repository atlas"]')).toBeNull();
-    const row = button('Select repository .hidden'); row.focus();
-    await act(async () => row.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })));
+    const row = button('Select repository .hidden');
+    await act(async () => {
+      row.focus();
+      row.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    });
     expect(onOpen).toHaveBeenCalledExactlyOnceWith('/workspace/.hidden');
   });
 

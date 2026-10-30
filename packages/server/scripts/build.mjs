@@ -14,7 +14,7 @@ const protocolMetadata = JSON.parse(await readFile(path.join(repositoryRoot, 'sr
 
 await build({
   root: repositoryRoot,
-  configFile: path.join(repositoryRoot, 'vite.renderer.config.ts'),
+  configFile: path.join(repositoryRoot, 'vite.renderer.config.mts'),
   build: {
     outDir: clientBuild,
     emptyOutDir: true,

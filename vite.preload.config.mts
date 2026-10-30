@@ -11,7 +11,7 @@ export default defineConfig({
     lib: { entry: 'src/preload.ts', formats: ['cjs'], fileName: () => 'preload.js' },
     rollupOptions: {
       external: ['electron', ...builtinModules, /^node:/],
-      output: { inlineDynamicImports: true },
+      output: { codeSplitting: false },
     },
   },
 });

@@ -14,6 +14,8 @@
     "paths": {"@/*": ["./src/renderer/*"], "@shared/*": ["./src/shared/*"]},
     "moduleResolution": "Bundler",
     "resolveJsonModule": true,
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
     "types": ["node"]
   },
   "include": ["src", "packages", "*.ts", "*.mts"]
