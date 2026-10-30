@@ -1,7 +1,7 @@
 import type { GitHubRepositoryAccount } from '@shared/github-accounts';
 import { formatDate } from '@shared/date-format';
 import { PullRequestStackMenu } from './PullRequestStackMenu';
-import { useRef } from 'react';
+import { lazy, Suspense, useRef } from 'react';
 import { Popover } from '@base-ui/react/popover';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { IconBrandGithub, IconCircleCheck, IconCircleX, IconClock, IconCopy, IconExternalLink, IconFilter, IconGitMerge, IconGitPullRequest, IconLoader4, IconPlus, IconRefresh } from '@tabler/icons-react';
@@ -12,6 +12,10 @@ import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { openOnGitHub } from './gh-utils';
 import { GitHubAvatar } from './GitHubAvatar';
+
+const ReleasesView = lazy(() => import('./ReleasesView').then((module) => ({ default: module.ReleasesView })));
+
+export type PullRequestsSection = 'pulls' | 'releases';
 
 interface PullRequestsViewProps {
   repositoryId: string;
@@ -30,6 +34,10 @@ interface PullRequestsViewProps {
   onSelect(number: number): void;
   onCreate(): void;
   onCopyCommand(command: string): void;
+  section: PullRequestsSection;
+  onSectionChange(section: PullRequestsSection): void;
+  activeRelease: string | null;
+  onSelectRelease(tagName: string): void;
 }
 
 export function PullRequestsView(props: PullRequestsViewProps) {
@@ -75,7 +83,19 @@ export function PullRequestsView(props: PullRequestsViewProps) {
       </PullsNotice>
     );
   }
-  return <PullsList {...props} nameWithOwner={props.info.nameWithOwner ?? 'Pull requests'} />;
+  return (
+    <div className="pulls-section">
+      <div className="pulls-section-switch" role="group" aria-label="Show">
+        <Button variant={props.section === 'pulls' ? 'secondary' : 'ghost'} size="xs" aria-pressed={props.section === 'pulls'} onClick={() => props.onSectionChange('pulls')}>Pull requests</Button>
+        <Button variant={props.section === 'releases' ? 'secondary' : 'ghost'} size="xs" aria-pressed={props.section === 'releases'} onClick={() => props.onSectionChange('releases')}>Releases</Button>
+      </div>
+      {props.section === 'pulls'
+        ? <PullsList {...props} nameWithOwner={props.info.nameWithOwner ?? 'Pull requests'} />
+        : <Suspense fallback={<div className="view-loading" role="status"><IconLoader4 className="spinner" /> <ShimmeringText text="Loading releases…" /></div>}>
+          <ReleasesView repositoryId={props.repositoryId} activeTag={props.activeRelease} onSelect={props.onSelectRelease} />
+        </Suspense>}
+    </div>
+  );
 }
 
 function PullsList(props: PullRequestsViewProps & { nameWithOwner: string }) {

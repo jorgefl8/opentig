@@ -186,6 +186,20 @@ No PR is published before confirmation. Creation stops if the selected account o
 
 Optional AI generation, with its provider and model, is in the dialog footer. Long coverage reports scroll inside the dialog. See [AI assistance](ai-assistance.md#pull-request-drafts) for coverage reports, output conventions, and stale comparisons.
 
+## Manage releases
+
+In **PRs**, switch to **Releases** to list the repository's releases, including drafts if your account can see them. Select one to read its notes and assets in the viewer.
+
+**OpenTig never creates or moves a tag.** A release only ever points at a tag that already exists on GitHub. Assets are managed outside OpenTig.
+
+| Action | What to expect |
+| --- | --- |
+| **New** | Creates a draft from an existing tag, with a title and notes, optionally adding GitHub's generated notes or marking it as a pre-release. It stops if the tag doesn't exist or already has a release |
+| **Edit** | Changes the title and notes of a draft or a published release. Notes are edited raw, so any comment markers that automation keeps in them stay as they are. Saving stops if the notes changed on GitHub first, because workflows also write to them |
+| **Delete draft** | Asks first, lists what's lost, and keeps the tag. Published releases are only deleted on GitHub |
+
+These actions use the repository's account, stop if that account changed since you reviewed it, and only appear with write access.
+
 ## Settings scopes
 
 Open **Settings → GitHub** to manage repository choices and connected accounts:

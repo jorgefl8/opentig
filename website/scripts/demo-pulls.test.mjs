@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { applyPatch } from 'diff';
 import { demoPulls } from '../demo/pulls.ts';
+import { demoReleases } from '../demo/releases.ts';
 import { DemoRepository, initialFiles } from '../demo/model.ts';
 
 test('HTML is a tracked sample file that can be edited, staged and committed', () => {
@@ -57,6 +58,24 @@ test('sample conversations exist for every PR and cannot mutate fixtures', () =>
   conversation.entries.length = 0;
   assert.ok(demoPulls.conversation(21).entries.length > 0);
   assert.throws(() => demoPulls.conversation(999), /sample repository/);
+});
+
+test('sample releases cover each state and cannot mutate fixtures', () => {
+  const releases = demoReleases.list();
+  assert.ok(releases.some(release => release.isDraft));
+  assert.ok(releases.some(release => release.isLatest));
+  assert.ok(releases.some(release => release.isPrerelease));
+  for (const release of releases) {
+    const details = demoReleases.get(release.tagName);
+    assert.equal(details.tagName, release.tagName);
+    assert.equal(details.isDraft, release.isDraft);
+    assert.equal(details.publishedAt, release.publishedAt);
+  }
+  assert.ok(releases.filter(release => release.isDraft).some(release => !demoReleases.get(release.tagName).tagExists));
+  demoReleases.get(releases[0].tagName).assets.length = 0;
+  releases.length = 0;
+  assert.ok(demoReleases.list().length > 0);
+  assert.throws(() => demoReleases.get('missing'), /sample repository/);
 });
 
 test('per-commit patches apply to the sample files and compose the full PR diff', () => {

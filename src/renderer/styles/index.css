@@ -1103,7 +1103,29 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   .undo-commit-summary strong { overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
   .destructive-confirmation-detail { max-height: 160px; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--muted); padding: 9px 10px; color: var(--muted-foreground); font-size: 11px; line-height: 1.45; overflow-wrap: anywhere; white-space: pre-wrap; }
   .undo-commit-actions { display: flex; justify-content: flex-end; gap: 7px; border-top: 1px solid var(--border); background: color-mix(in oklch, var(--muted) 40%, transparent); padding: 12px 14px; }
+  .pulls-section { display: flex; height: 100%; min-height: 0; flex-direction: column; }
+  .pulls-section > .pulls-view { flex: 1; height: auto; }
+  .pulls-section-switch { display: flex; flex: none; gap: 3px; padding: 5px 8px; border-bottom: 1px solid var(--sidebar-border); }
   .pulls-view { display: flex; height: 100%; min-height: 0; flex-direction: column; }
+  .release-item { display: flex; width: 100%; min-height: 56px; align-items: flex-start; gap: 9px; padding: 9px 12px; text-align: left; }
+  .release-item:hover { background: var(--muted); }
+  .release-item.active { background: var(--accent); }
+  .release-item > svg { width: 15px; height: 15px; flex: none; margin-top: 2px; color: var(--muted-foreground); }
+  .release-item.published > svg { color: var(--diff-added); }
+  .release-item.draft > svg { color: var(--git-push); }
+  .release-item-text { display: grid; min-width: 0; flex: 1; gap: 3px; }
+  .release-item-text strong { overflow: hidden; font-size: 12px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+  .release-item-meta { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: 2px 6px; color: var(--muted-foreground); font-size: 10.5px; }
+  .release-item-meta code { font-size: 10.5px; }
+  .release-assets { padding: 0 18px 18px; }
+  .release-assets h3 { display: flex; align-items: center; gap: 6px; margin: 0 0 8px; font-size: 12px; font-weight: 700; }
+  .release-assets h3 svg { width: 15px; height: 15px; color: var(--muted-foreground); }
+  .release-asset { display: flex; align-items: center; justify-content: space-between; gap: 10px; border-top: 1px solid var(--border); padding: 7px 0; font-size: 11px; }
+  .release-asset span { overflow-wrap: anywhere; }
+  .release-asset small { flex: none; color: var(--muted-foreground); font-variant-numeric: tabular-nums; }
+  .release-create-options { display: flex; flex-wrap: wrap; gap: 14px; }
+  .release-create-options label { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; cursor: pointer; }
+  .release-field-hint { color: var(--muted-foreground); font-size: 11px; }
   .pulls-toolbar { display: flex; height: 40px; flex: none; align-items: center; gap: 6px; border-bottom: 1px solid var(--sidebar-border); padding: 0 8px 0 12px; background: color-mix(in oklch, var(--sidebar) 55%, var(--background)); }
   .pulls-repo { display: flex; min-width: 0; flex: 1; align-items: center; gap: 6px; overflow: hidden; color: var(--muted-foreground); font-size: 11px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
   .pulls-repo svg { width: 14px; height: 14px; flex: none; }
@@ -1253,7 +1275,7 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   .pr-conversation-bot { border: 1px solid var(--border); border-radius: 999px; padding: 0 5px; font-size: 9px; }
   .pr-conversation-link { margin-left: auto; }
   /* Inline styles survive for math, so third-party text can't be allowed to paint outside its box. */
-  .pr-conversation-body, .pr-summary-section { contain: layout paint; }
+  .pr-conversation-body, .pr-summary-section, .release-notes { contain: layout paint; }
   .pr-conversation-body { grid-column: 2; min-width: 0; margin-top: 4px; font-size: 12px; }
   .pr-conversation-body .markdown-prose { padding: 0; font-size: 12px; }
   .pr-composer { display: grid; gap: 8px; border-top: 1px solid var(--border); padding-top: 12px; margin-top: 2px; }

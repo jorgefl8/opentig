@@ -15,7 +15,7 @@ import { browseServerDirectories } from '../files/ServerDirectoryBrowser';
 import { CommandRegistry, type CommandExecutionContext } from './CommandRegistry';
 import type { OpenTigHost } from './OpenTigHost';
 import type { OpenTigRuntimeServices } from './OpenTigRuntime';
-import { aiString, booleanArg, branchDetailsArg, commentOnPullRequestArg, createPullRequestArg, deleteBranchArg, filesTreeStateArg, generateCommitMessageArg, generatePullRequestDraftArg, nullableProjectIdArg, oidArg, openFilesStateArg, pathsArg, prepareCommitGroupArg, prNumberArg, publishBranchArg, projectIdArg, projectNameArg, pullRequestActionArg, pullRequestStatesArg, reviewPullRequestArg, updatePullRequestArg, removeWorktreeArg, repositoryKeyArg, searchOptionsArg, searchReplaceArg, stringArg, textArg, worktreeDetailsArg } from './validators';
+import { aiString, booleanArg, branchDetailsArg, commentOnPullRequestArg, createPullRequestArg, createReleaseArg, deleteBranchArg, deleteDraftReleaseArg, filesTreeStateArg, generateCommitMessageArg, generatePullRequestDraftArg, nullableProjectIdArg, oidArg, openFilesStateArg, pathsArg, prepareCommitGroupArg, prNumberArg, publishBranchArg, projectIdArg, projectNameArg, pullRequestActionArg, pullRequestStatesArg, reviewPullRequestArg, updatePullRequestArg, removeWorktreeArg, repositoryKeyArg, searchOptionsArg, searchReplaceArg, stringArg, tagNameArg, textArg, updateReleaseArg, worktreeDetailsArg } from './validators';
 import { createTrackingBranchArg, deleteRemoteBranchArg, orderingIndexArg } from './validators';
 
 export function registerServerCommands(
@@ -507,6 +507,11 @@ export function registerServerCommands(
   handleWithContext(IPC.githubPrDraft, 'ai-pr-draft', (context, input) => (
     services.prDrafts.generate(generatePullRequestDraftArg(input), context.signal)
   ));
+  handle(IPC.githubReleaseList, 'gh-release-list', (id) => services.github.listReleases(stringArg(id, 'gh-release-list', 64)));
+  handle(IPC.githubReleaseView, 'gh-release-view', (id, tagName) => services.github.getRelease(stringArg(id, 'gh-release-view', 64), tagNameArg(tagName, 'gh-release-view')));
+  handle(IPC.githubReleaseCreate, 'gh-release-create', (input) => services.github.createRelease(createReleaseArg(input)));
+  handle(IPC.githubReleaseUpdate, 'gh-release-update', (input) => services.github.updateRelease(updateReleaseArg(input)));
+  handle(IPC.githubReleaseDelete, 'gh-release-delete', (input) => services.github.deleteDraftRelease(deleteDraftReleaseArg(input)));
   handle(IPC.githubPrDraftCancel, 'ai-pr-draft-cancel', (requestId) => {
     services.prDrafts.cancel(aiString(requestId, 'ai-pr-draft-cancel', 100, true));
   });

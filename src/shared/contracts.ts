@@ -556,6 +556,35 @@ export type CommentOnPullRequestInput = PullRequestMutationBase & { body: string
 /** The head is the commit the verdict is about: a push in the meantime stops it. */
 export type ReviewPullRequestInput = PullRequestMutationBase & { expectedHeadOid: string; verdict: 'approve' | 'request-changes' | 'comment'; body: string };
 
+export interface ReleaseSummary {
+  tagName: string;
+  name: string;
+  isDraft: boolean;
+  isPrerelease: boolean;
+  isLatest: boolean;
+  isImmutable: boolean;
+  createdAt: string;
+  publishedAt: string | null;
+}
+
+export interface ReleaseDetails extends ReleaseSummary {
+  databaseId: number;
+  /** Raw, including any markers automation keeps in the notes. */
+  body: string;
+  /** Lets an edit stop if automation or someone else changed the notes in the meantime. */
+  bodyHash: string;
+  targetCommitish: string;
+  url: string;
+  assets: Array<{ name: string; size: number }>;
+  /** Whether the tag exists on the remote. Only a definite answer from GitHub says it doesn't. */
+  tagExists: boolean;
+  viewerCanWrite: boolean;
+}
+
+export type CreateReleaseInput = GitHubMutationBase & { tagName: string; title: string; notes: string; generateNotes: boolean; prerelease: boolean };
+export type UpdateReleaseInput = GitHubMutationBase & { tagName: string; expectedDatabaseId: number; expectedBodyHash: string; title: string; notes: string };
+export type DeleteDraftReleaseInput = GitHubMutationBase & { tagName: string; expectedDatabaseId: number };
+
 export interface CreatePullRequestInput {
   expectedAccount?: { login: string; revision: number };
   repositoryId: string;
@@ -792,6 +821,11 @@ export interface OpenTigApi {
     getPullRequestCommitDiff(repositoryId: string, oid: string): Promise<DiffResult>;
     getPullRequestCommits(repositoryId: string, number: number): Promise<PullRequestCommitList>;
     createPullRequest(input: CreatePullRequestInput): Promise<CreatePullRequestResult>;
+    listReleases(repositoryId: string): Promise<ReleaseSummary[]>;
+    getRelease(repositoryId: string, tagName: string): Promise<ReleaseDetails>;
+    createRelease(input: CreateReleaseInput): Promise<void>;
+    updateRelease(input: UpdateReleaseInput): Promise<void>;
+    deleteDraftRelease(input: DeleteDraftReleaseInput): Promise<void>;
     generateDraft(input: GeneratePullRequestDraftInput): Promise<GeneratedPullRequestDraft>;
     cancelDraft(requestId: string): Promise<void>;
   };
@@ -841,5 +875,5 @@ export const IPC = {
   diagnosticsList: 'diagnostics:list', diagnosticsClear: 'diagnostics:clear', diagnosticsRecord: 'diagnostics:record',
   githubAccountsStatus: 'github:accounts-status', githubSetDefaultAccount: 'github:set-default-account', githubRepositoryAccount: 'github:repository-account', githubSetRepositoryAccount: 'github:set-repository-account',
   githubStatus: 'github:status', githubRepositoryInfo: 'github:repository-info', githubPrForBranch: 'github:pr-for-branch', githubPrList: 'github:pr-list', githubPrView: 'github:pr-view', githubPrLiveState: 'github:pr-live-state', githubPrConversation: 'github:pr-conversation', githubPrAction: 'github:pr-action', githubPrUpdate: 'github:pr-update', githubPrComment: 'github:pr-comment', githubPrReview: 'github:pr-review',
-  githubPrStack: 'github:pr-stack', githubPrDiff: 'github:pr-diff', githubPrCommitDiff: 'github:pr-commit-diff', githubPrCommits: 'github:pr-commits', githubPrCreate: 'github:pr-create', githubPrDraft: 'github:pr-draft', githubPrDraftCancel: 'github:pr-draft-cancel',
+  githubPrStack: 'github:pr-stack', githubPrDiff: 'github:pr-diff', githubPrCommitDiff: 'github:pr-commit-diff', githubPrCommits: 'github:pr-commits', githubPrCreate: 'github:pr-create', githubReleaseList: 'github:release-list', githubReleaseView: 'github:release-view', githubReleaseCreate: 'github:release-create', githubReleaseUpdate: 'github:release-update', githubReleaseDelete: 'github:release-delete', githubPrDraft: 'github:pr-draft', githubPrDraftCancel: 'github:pr-draft-cancel',
 } as const;

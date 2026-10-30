@@ -5,6 +5,7 @@ import type {
 } from "../../src/shared/contracts";
 import { DemoRepository, repository, sampleDate } from "./model";
 import { demoPulls } from "./pulls";
+import { demoReleases } from "./releases";
 import { findSearchMatches } from "../../src/shared/search";
 
 // The shared app recognizes this error type; the demo has no authentication transport.
@@ -291,6 +292,8 @@ export const opentig: OpenTigApi = {
     getPullRequestDiff: async (_id, number) => demoPulls.diff(number),
     getPullRequestCommitDiff: async (_id, oid) => demoPulls.commitDiff(oid),
     getPullRequestCommits: async (_id, number) => ({ commits: demoPulls.get(number).commits, complete: true }),
+    listReleases: async () => demoReleases.list(),
+    getRelease: async (_id, tagName) => demoReleases.get(tagName),
     repositoryAccount: async () => ({
       selection: { mode: "default" },
       nameWithOwner: "demo/launchpad",

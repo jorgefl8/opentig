@@ -34,7 +34,7 @@ Mixed commits and changes to shared manifests, lockfiles, or tooling remain appl
 
 The proposed version defaults to a patch increment (`0.1.0` → `0.1.1`). A higher version in `package.json`, or a higher version chosen on the managed draft, takes precedence without creating another draft. This proposal does not change package files or create a Git tag.
 
-Edit the release title or add prose outside the `opentig:release-notes` comment markers. Refreshes preserve those edits and replace only the generated block.
+Edit the release title or add prose outside the `opentig:release-notes` comment markers, on GitHub or in [OpenTig's Releases](github.md#manage-releases), which edits the notes raw and keeps the markers. Refreshes preserve those edits and replace only the generated block.
 
 <details>
 <summary>Included changes, author credits, and new contributors</summary>

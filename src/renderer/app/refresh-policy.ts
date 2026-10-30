@@ -29,7 +29,7 @@ export function mergeRefreshRequests(left: RefreshRequest, right: RefreshRequest
 
 export function shouldRefreshViewer(
   scope: RepositoryChangeScope,
-  selectionType: 'diff' | 'conflict' | 'file' | 'commit' | 'commit-file' | 'pull-request' | null,
+  selectionType: 'diff' | 'conflict' | 'file' | 'commit' | 'commit-file' | 'pull-request' | 'release' | null,
 ): boolean {
   if (selectionType !== 'diff' && selectionType !== 'conflict') return false;
   return scope === 'worktree' || scope === 'index' || scope === 'unknown';

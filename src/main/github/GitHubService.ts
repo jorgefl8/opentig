@@ -4,7 +4,7 @@ import type { CliCandidate } from '../ai/CliResolver';
 import { parsePullRequestStack, parseStackMemberships, stackMembershipQuery } from './PullRequestStackParser';
 import os from 'node:os';
 import { GITHUB_PR_COMMIT_PAGE } from '../../shared/contracts';
-import type { CreatePullRequestInput, CreatePullRequestResult, CommentOnPullRequestInput, DiffResult, ReviewPullRequestInput, UpdatePullRequestInput, PullRequestActionInput, PullRequestActionResult, PullRequestConversation, PullRequestCommitList, GhCliStatus, GitHubRepositoryInfo, PullRequestDetails, PullRequestLiveState, PullRequestStack, PullRequestState, PullRequestSummary } from '../../shared/contracts';
+import type { RepositoryInfo, CreatePullRequestInput, CreatePullRequestResult, CommentOnPullRequestInput, CreateReleaseInput, DeleteDraftReleaseInput, ReleaseDetails, ReleaseSummary, UpdateReleaseInput, DiffResult, ReviewPullRequestInput, UpdatePullRequestInput, PullRequestActionInput, PullRequestActionResult, PullRequestConversation, PullRequestCommitList, GhCliStatus, GitHubRepositoryInfo, PullRequestDetails, PullRequestLiveState, PullRequestStack, PullRequestState, PullRequestSummary } from '../../shared/contracts';
 import { AiOperationError, GhOperationError } from '../../shared/errors';
 import type { CliProcessRunner, CliRunResult } from '../ai/CliProcessRunner';
 import type { CliResolver } from '../ai/CliResolver';
@@ -15,6 +15,7 @@ import { GH_ENV, redactCommandToken, type GitHubCommandAuth } from './GitHubAcco
 import { parsePullRequestLiveState, PR_LIVE_STATE_QUERY } from './PullRequestLiveStateParser';
 import { PR_CONVERSATION_QUERY, parsePullRequestConversation } from './PullRequestConversationParser';
 import { PullRequestActionRunner } from './PullRequestActionRunner';
+import { GitHubReleases } from './GitHubReleases';
 import { withPrivateTextFile, type GhRunOptions } from './GitHubAccess';
 import { parseBranchPullRequestList, parseCreatedPullRequestUrl, parsePullRequestDetails, parsePullRequestList, PR_DETAIL_FIELDS, PR_SUMMARY_FIELDS, selectPullRequestsNewestFirst, sortPullRequestsNewestFirst } from './PullRequestParser';
 
@@ -29,6 +30,7 @@ export class GitHubService {
   private readonly reads = new ReadSingleFlight();
   private readonly localGit: PullRequestLocalGit;
   private readonly actions: PullRequestActionRunner;
+  private readonly releases: GitHubReleases;
   gitAccess?: import('../git/RepositoryGitAccess').RepositoryGitAccess;
   readonly accounts: GitHubAccountsService;
 
@@ -42,13 +44,16 @@ export class GitHubService {
     this.accounts = accounts ?? new GitHubAccountsService(resolver, runner, git);
     this.localGit = new PullRequestLocalGit(git);
     this.git.onInvalidate(scope => this.reads.invalidate(scope));
-    this.actions = new PullRequestActionRunner({
-      requireGitHub: (repositoryId, operation) => this.requireGitHub(repositoryId, operation),
-      run: (executable, args, options) => this.run(executable, args, options),
-      invalidate: (repositoryId) => this.invalidate(repositoryId),
-      readLiveState: (repositoryId, number) => this.readGetPullRequestLiveState(repositoryId, number),
-      revisionFor: (repository) => this.accounts.revisionFor(repository),
-    });
+    const access = {
+      requireGitHub: (repositoryId: string, operation: string) => this.requireGitHub(repositoryId, operation),
+      run: (executable: CliCandidate, args: string[], options: GhRunOptions) => this.run(executable, args, options),
+      runRead: (args: string[], options: GhRunOptions) => this.runGh(args, options),
+      invalidate: (repositoryId: string) => this.invalidate(repositoryId),
+      readLiveState: (repositoryId: string, number: number) => this.readGetPullRequestLiveState(repositoryId, number),
+      revisionFor: (repository: RepositoryInfo) => this.accounts.revisionFor(repository),
+    };
+    this.actions = new PullRequestActionRunner(access);
+    this.releases = new GitHubReleases(access);
   }
 
   invalidate(repositoryId?: string): void {
@@ -292,6 +297,26 @@ export class GitHubService {
       });
       return parseStackMemberships(result.stdout, [prNumber]).has(prNumber) ? 'member' : 'none';
     } catch { return 'unknown'; }
+  }
+
+  listReleases(repositoryId: string): Promise<ReleaseSummary[]> {
+    return this.shareRead(repositoryId, ['releases'], () => this.releases.list(repositoryId));
+  }
+
+  getRelease(repositoryId: string, tagName: string): Promise<ReleaseDetails> {
+    return this.shareRead(repositoryId, ['release', tagName], () => this.releases.view(repositoryId, tagName));
+  }
+
+  createRelease(input: CreateReleaseInput): Promise<void> {
+    return this.releases.create(input);
+  }
+
+  updateRelease(input: UpdateReleaseInput): Promise<void> {
+    return this.releases.update(input);
+  }
+
+  deleteDraftRelease(input: DeleteDraftReleaseInput): Promise<void> {
+    return this.releases.deleteDraft(input);
   }
 
   private async withStackMembership<T extends PullRequestSummary>(cwd: string, nameWithOwner: string, auth: GitHubCommandAuth, executable: CliCandidate, pulls: T[]): Promise<T[]> {

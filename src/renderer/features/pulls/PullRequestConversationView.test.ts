@@ -2,7 +2,7 @@
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest';
 import type { PullRequestConversation, PullRequestConversationEntry } from '@shared/contracts';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { PullRequestConversationView } from './PullRequestConversationView';
@@ -15,6 +15,8 @@ const entry = (overrides: Partial<PullRequestConversationEntry>): PullRequestCon
 });
 const conversation = (entries: PullRequestConversationEntry[], overrides: Partial<PullRequestConversation> = {}): PullRequestConversation => ({ entries, truncated: false, partial: false, ...overrides });
 
+// Entries load the Markdown pipeline on demand, which is slow the first time.
+beforeAll(() => import('@/features/markdown/render-markdown'), 60_000);
 let root: Root;
 let container: HTMLDivElement;
 let client: QueryClient;

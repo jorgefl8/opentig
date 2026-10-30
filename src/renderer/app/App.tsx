@@ -49,6 +49,7 @@ import { remoteAccessActionLabel, remoteAccessCopy, type RemoteAccessAction } fr
 import { openOnGitHub } from '@/features/pulls/gh-utils';
 import type { RemoteAccessProblem } from '../../shared/repository-access';
 import type { RuntimeFileDraft, ViewerSelection } from '@/features/viewer/Viewer';
+import type { PullRequestsSection } from '@/features/pulls/PullRequestsView';
 import {
   mergeRefreshRequests, refreshOperationsForScope, shouldRefreshSearch, shouldRefreshViewer, type RefreshRequest,
 } from './refresh-policy';
@@ -171,6 +172,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   const [undoCommit, setUndoCommit] = useState<CommitInfo | null>(null);
   const [undoingCommit, setUndoingCommit] = useState(false);
   const [pullRequestStates, setPullRequestStates] = useState<PullRequestState[]>(['OPEN']);
+  const [pullRequestsSection, setPullRequestsSection] = useState<PullRequestsSection>('pulls');
   const [createPrOpen, setCreatePrOpen] = useState(false);
   // Repository whose commit authorship editor is open, so a stale toast cannot open it for another repository.
   const [authorshipRepositoryId, setAuthorshipRepositoryId] = useState<string | null>(null);
@@ -2450,6 +2452,10 @@ export default function App({ initialView, initialSelection, pullRequestCreation
                     setPullRequestStates(nextStates);
                   }}
                   onSelect={(number) => { selectViewer({ type: 'pull-request', number }); }}
+                  section={pullRequestsSection}
+                  onSectionChange={setPullRequestsSection}
+                  activeRelease={viewerSelection?.type === 'release' ? viewerSelection.tag : null}
+                  onSelectRelease={(tag) => { selectViewer({ type: 'release', tag }); }}
                   onCreate={() => setCreatePrOpen(true)}
                   onCopyCommand={(command) => {
                     void writeClipboardText(command)
@@ -2597,6 +2603,7 @@ function isPerformanceSelection(value: unknown): value is ViewerSelection {
     return typeof selection.oid === 'string' && typeof selection.path === 'string'
       && (selection.oldPath === undefined || typeof selection.oldPath === 'string');
   }
+  if (selection.type === 'release') return typeof selection.tag === 'string';
   return selection.type === 'pull-request' && typeof selection.number === 'number';
 }
 

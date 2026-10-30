@@ -1,4 +1,4 @@
-import type { PullRequestCheck, PullRequestMergeMethod, PullRequestSummary } from '../../../shared/contracts';
+import type { PullRequestCheck, PullRequestMergeMethod, PullRequestSummary, ReleaseSummary } from '../../../shared/contracts';
 import type { SerializedGhError } from '../../../shared/errors';
 import { openExternalUrl } from '@/lib/browser-capabilities';
 import { ServerDisconnectedError, ServerRequestTimeoutError } from '@/lib/websocket-transport';
@@ -39,6 +39,12 @@ export const MERGE_METHOD_LABELS: Record<PullRequestMergeMethod, string> = { MER
 export function prStateLabel(pr: Pick<PullRequestSummary, 'state' | 'isDraft'>): string {
   if (pr.state === 'OPEN') return pr.isDraft ? 'Draft' : 'Open';
   return pr.state === 'MERGED' ? 'Merged' : 'Closed';
+}
+
+export function releaseStateLabel(release: Pick<ReleaseSummary, 'isDraft' | 'isPrerelease' | 'isLatest'>): string {
+  if (release.isDraft) return 'Draft';
+  if (release.isPrerelease) return 'Pre-release';
+  return release.isLatest ? 'Latest' : 'Published';
 }
 
 export function reviewDecisionLabel(decision: string | null): string | null {

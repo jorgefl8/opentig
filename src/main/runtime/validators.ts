@@ -1,6 +1,6 @@
 import { GitOperationError } from '../../shared/errors';
 import { AiOperationError, GhOperationError } from '../../shared/errors';
-import type { AiHarnessId, BranchDetailsRequest, CommentOnPullRequestInput, CreatePullRequestInput, PullRequestActionInput, ReviewPullRequestInput, UpdatePullRequestInput, DeleteBranchRequest, GenerateCommitMessageInput, GeneratePullRequestDraftInput, PrepareCommitGroupInput, PublishBranchOptions, PullRequestState, RemoveWorktreeRequest, WorktreeDetailsRequest } from '../../shared/contracts';
+import type { AiHarnessId, BranchDetailsRequest, CommentOnPullRequestInput, CreatePullRequestInput, CreateReleaseInput, DeleteDraftReleaseInput, UpdateReleaseInput, PullRequestActionInput, ReviewPullRequestInput, UpdatePullRequestInput, DeleteBranchRequest, GenerateCommitMessageInput, GeneratePullRequestDraftInput, PrepareCommitGroupInput, PublishBranchOptions, PullRequestState, RemoveWorktreeRequest, WorktreeDetailsRequest } from '../../shared/contracts';
 import { MAX_PROJECT_NAME_LENGTH, MAX_REPOSITORY_KEY_LENGTH, normalizeRepositoryKey } from '../../shared/repository-projects';
 import { isFilesTreeRepositoryId, MAX_FILES_TREE_PATHS, normalizeExpandedPaths, normalizeFilesTreePath } from '../../shared/files-tree-state';
 import { isOpenFilesRepositoryId, MAX_OPEN_FILE_TABS, normalizeOpenFilePath, type OpenFileTab } from '../../shared/open-files-state';
@@ -372,6 +372,34 @@ export function reviewPullRequestArg(value: unknown): ReviewPullRequestInput {
     .refine((input) => input.verdict === 'approve' || Boolean(input.body.trim())).safeParse(value);
   if (!parsed.success) throw invalidGh('gh-pr-review');
   return parsed.data;
+}
+
+const releaseTitleSchema = z.string().trim().min(1).max(300).refine((title) => !title.includes('\0'));
+const releaseNotesSchema = z.string().max(125_000).refine((notes) => !notes.includes('\0'));
+// A leading dash could be read as a flag; the rest are never valid in a Git tag.
+const tagNameSchema = z.string().min(1).max(250).refine((tag) => !tag.startsWith('-') && !tag.includes('..') && ![...tag].some((character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127) && !/[\s~^:?*[\\]/.test(tag));
+const releaseBaseSchema = z.object({ repositoryId: z.string().min(1).max(64), expectedAccount: expectedAccountSchema, tagName: tagNameSchema });
+const releaseIdentitySchema = releaseBaseSchema.extend({ expectedDatabaseId: z.number().int().safe().positive() });
+
+function parsedRelease<T>(result: z.ZodSafeParseResult<T>, operation: string): T {
+  if (!result.success) throw new GhOperationError({ code: 'GH_PROCESS_FAILED', operation, message: 'Invalid release data.' });
+  return result.data;
+}
+
+export function tagNameArg(value: unknown, operation: string): string {
+  return parsedRelease(tagNameSchema.safeParse(value), operation);
+}
+
+export function createReleaseArg(value: unknown): CreateReleaseInput {
+  return parsedRelease(releaseBaseSchema.extend({ title: releaseTitleSchema, notes: releaseNotesSchema, generateNotes: z.boolean(), prerelease: z.boolean() }).safeParse(value), 'gh-release-create');
+}
+
+export function updateReleaseArg(value: unknown): UpdateReleaseInput {
+  return parsedRelease(releaseIdentitySchema.extend({ expectedBodyHash: z.string().regex(/^[0-9a-f]{64}$/), title: releaseTitleSchema, notes: releaseNotesSchema }).safeParse(value), 'gh-release-update');
+}
+
+export function deleteDraftReleaseArg(value: unknown): DeleteDraftReleaseInput {
+  return parsedRelease(releaseIdentitySchema.safeParse(value), 'gh-release-delete');
 }
 
 export function generatePullRequestDraftArg(value: unknown): GeneratePullRequestDraftInput {

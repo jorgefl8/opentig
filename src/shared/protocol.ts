@@ -149,6 +149,11 @@ export const OPEN_TIG_SERVER_COMMANDS = {
   'github.getPullRequestCommitDiff': command(IPC.githubPrCommitDiff, 'gh-pr-commit-diff', false),
   'github.getPullRequestCommits': command(IPC.githubPrCommits, 'gh-pr-commits', false),
   'github.createPullRequest': command(IPC.githubPrCreate, 'gh-pr-create', true),
+  'github.listReleases': command(IPC.githubReleaseList, 'gh-release-list', false),
+  'github.getRelease': command(IPC.githubReleaseView, 'gh-release-view', false),
+  'github.createRelease': command(IPC.githubReleaseCreate, 'gh-release-create', true, { timeoutMs: GITHUB_ACTION_TIMEOUT_MS }),
+  'github.updateRelease': command(IPC.githubReleaseUpdate, 'gh-release-update', true, { timeoutMs: GITHUB_ACTION_TIMEOUT_MS }),
+  'github.deleteDraftRelease': command(IPC.githubReleaseDelete, 'gh-release-delete', true, { timeoutMs: GITHUB_ACTION_TIMEOUT_MS }),
   'github.generateDraft': command(IPC.githubPrDraft, 'ai-pr-draft', true, { timeoutMs: AI_SERVER_TIMEOUT_MS }),
   'github.cancelDraft': command(IPC.githubPrDraftCancel, 'ai-pr-draft-cancel', true),
 

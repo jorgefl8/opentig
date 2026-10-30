@@ -4,6 +4,7 @@ import path from 'node:path';
 import type { CliCandidate } from '../ai/CliResolver';
 import type { CliRunResult } from '../ai/CliProcessRunner';
 import type { RepositoryInfo, PullRequestLiveState } from '../../shared/contracts';
+import { GhOperationError } from '../../shared/errors';
 import type { GitHubCommandAuth } from './GitHubAccountAuth';
 
 export interface GhRunOptions {
@@ -27,10 +28,26 @@ export interface GitHubTarget {
 export interface GitHubAccess {
   requireGitHub(repositoryId: string, operation: string): Promise<GitHubTarget & { context: { revision: number; login?: string | null } }>;
   run(executable: CliCandidate, args: string[], options: GhRunOptions): Promise<CliRunResult>;
+  /** Fails with a read's classification of what went wrong. */
+  runRead(args: string[], options: GhRunOptions): Promise<CliRunResult>;
   invalidate(repositoryId: string): void;
   /** Reads GitHub now, without joining a read already in progress. */
   readLiveState(repositoryId: string, number: number): Promise<PullRequestLiveState>;
   revisionFor(repository: RepositoryInfo): number;
+}
+
+/** Resolves the repository and checks it still uses the account the user reviewed. Call the returned check again just before acting. */
+export async function beginGitHubMutation(github: GitHubAccess, input: { repositoryId: string; expectedAccount: { login: string; revision: number } }, operation: string) {
+  const { repository, nameWithOwner, auth, executable, context } = await github.requireGitHub(input.repositoryId, operation);
+  const target: GitHubTarget = { repository, nameWithOwner, auth, executable };
+  const verifyAccount = () => {
+    const expected = input.expectedAccount;
+    if (expected.revision !== github.revisionFor(repository) || expected.revision !== context.revision || expected.login.toLowerCase() !== context.login?.toLowerCase()) {
+      throw new GhOperationError({ code: 'GH_ACCOUNT_UNRESOLVED', operation, message: 'The GitHub account changed. Review the current identity before continuing.' });
+    }
+  };
+  verifyAccount();
+  return { target, verifyAccount };
 }
 
 /** Long text travels through a private temporary file: no argument limits, and nothing read as a flag or by a shell. */

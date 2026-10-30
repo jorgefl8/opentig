@@ -4,7 +4,7 @@ import type { CommentOnPullRequestInput, PullRequestActionInput, PullRequestActi
 import { pullRequestActionBlocked } from '../../shared/pull-request-actions';
 import { redactCommandToken } from './GitHubAccountAuth';
 import { classifyActionFailure } from './GitHubActionErrors';
-import { withPrivateTextFile, type GitHubAccess, type GitHubTarget } from './GitHubAccess';
+import { beginGitHubMutation, withPrivateTextFile, type GitHubAccess, type GitHubTarget } from './GitHubAccess';
 import { parseCreatedPullRequestUrl } from './PullRequestParser';
 
 const OPERATION = 'gh-pr-action';
@@ -31,22 +31,9 @@ const APPROVAL_WINDOW_MS = 120_000;
 export class PullRequestActionRunner {
   constructor(private readonly github: GitHubAccess) {}
 
-  private async begin(input: { repositoryId: string; expectedAccount: { login: string; revision: number } }, operation: string) {
-    const { repository, nameWithOwner, auth, executable, context } = await this.github.requireGitHub(input.repositoryId, operation);
-    const target: GitHubTarget = { repository, nameWithOwner, auth, executable };
-    const verifyAccount = () => {
-      const expected = input.expectedAccount;
-      if (expected.revision !== this.github.revisionFor(repository) || expected.revision !== context.revision || expected.login.toLowerCase() !== context.login?.toLowerCase()) {
-        throw new GhOperationError({ code: 'GH_ACCOUNT_UNRESOLVED', operation, message: 'The GitHub account changed. Review the current identity before continuing.' });
-      }
-    };
-    verifyAccount();
-    return { target, verifyAccount };
-  }
-
   async update(input: UpdatePullRequestInput): Promise<void> {
     const operation = 'gh-pr-update';
-    const { target, verifyAccount } = await this.begin(input, operation);
+    const { target, verifyAccount } = await beginGitHubMutation(this.github, input, operation);
     this.github.invalidate(input.repositoryId);
     const state = await this.github.readLiveState(input.repositoryId, input.number);
     if (state.updatedAt !== input.expectedUpdatedAt) throw new GhOperationError({ code: 'GH_PR_STATE_CHANGED', operation, message: 'This pull request changed on GitHub after you started editing. Your changes were not saved.' });
@@ -61,7 +48,7 @@ export class PullRequestActionRunner {
 
   async comment(input: CommentOnPullRequestInput): Promise<void> {
     const operation = 'gh-pr-comment';
-    const { target } = await this.begin(input, operation);
+    const { target } = await beginGitHubMutation(this.github, input, operation);
     try {
       await withPrivateTextFile(input.body, (bodyFile) => this.gh(target, ['pr', 'comment', String(input.number), '-R', target.nameWithOwner, '--body-file', bodyFile], operation));
     } finally {
@@ -71,7 +58,7 @@ export class PullRequestActionRunner {
 
   async review(input: ReviewPullRequestInput): Promise<void> {
     const operation = 'gh-pr-review';
-    const { target, verifyAccount } = await this.begin(input, operation);
+    const { target, verifyAccount } = await beginGitHubMutation(this.github, input, operation);
     this.github.invalidate(input.repositoryId);
     const state = await this.github.readLiveState(input.repositoryId, input.number);
     if (state.headRefOid !== input.expectedHeadOid) throw new GhOperationError({ code: 'GH_PR_STATE_CHANGED', operation, message: 'This pull request has new commits. Review them and try again.' });
@@ -89,7 +76,7 @@ export class PullRequestActionRunner {
   }
 
   async run(input: PullRequestActionInput): Promise<PullRequestActionResult> {
-    const { target, verifyAccount } = await this.begin(input, OPERATION);
+    const { target, verifyAccount } = await beginGitHubMutation(this.github, input, OPERATION);
     this.github.invalidate(input.repositoryId);
     const state = await this.github.readLiveState(input.repositoryId, input.number);
     // Someone else, or GitHub itself, already removed the branch.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { generateCommitMessageArg, generatePullRequestDraftArg, booleanArg, branchDetailsArg, deleteBranchArg, filesTreeStateArg, nullableProjectIdArg, openFilesStateArg, prepareCommitGroupArg, projectIdArg, projectNameArg, publishBranchArg, pullRequestStatesArg, removeWorktreeArg, repositoryKeyArg, searchOptionsArg, searchReplaceArg, worktreeDetailsArg, commentOnPullRequestArg, pullRequestActionArg, reviewPullRequestArg, updatePullRequestArg } from './validators';
+import { generateCommitMessageArg, generatePullRequestDraftArg, booleanArg, branchDetailsArg, deleteBranchArg, filesTreeStateArg, nullableProjectIdArg, openFilesStateArg, prepareCommitGroupArg, projectIdArg, projectNameArg, publishBranchArg, pullRequestStatesArg, removeWorktreeArg, repositoryKeyArg, searchOptionsArg, searchReplaceArg, worktreeDetailsArg, commentOnPullRequestArg, createReleaseArg, deleteDraftReleaseArg, pullRequestActionArg, reviewPullRequestArg, tagNameArg, updatePullRequestArg, updateReleaseArg } from './validators';
 import { GitOperationError } from '../../shared/errors';
 import { createTrackingBranchArg, deleteRemoteBranchArg } from './validators';
 
@@ -304,5 +304,24 @@ describe('comment and review text', () => {
     expect(() => reviewPullRequestArg({ ...head, verdict: 'request-changes', body: '' })).toThrow('Invalid pull request data.');
     expect(() => reviewPullRequestArg({ ...head, verdict: 'dismiss', body: 'x' })).toThrow('Invalid pull request data.');
     expect(() => reviewPullRequestArg({ ...pull, verdict: 'approve', body: '' })).toThrow('Invalid pull request data.');
+  });
+});
+
+describe('release arguments', () => {
+  const base = { repositoryId: 'repo', tagName: 'v1.2.3', expectedAccount: { login: 'sample', revision: 1 } };
+  it.each(['v1.2.3', 'release/1.2', 'v1.2.3-rc.1'])('accepts the tag %s', (tag) => {
+    expect(tagNameArg(tag, 'gh-release-view')).toBe(tag);
+  });
+  it.each(['', '--cleanup-tag', '-v1', 'v1 2', 'v1..2', 'v1~1', 'v1^', 'v1:2', 'v1?', 'v1*', 'v[1]', 'v1\\2', 'v1\n'])('rejects the tag %j, which could be read as a flag or is not a tag', (tag) => {
+    expect(() => tagNameArg(tag, 'gh-release-view')).toThrow('Invalid release data.');
+  });
+  it('checks each mutation', () => {
+    expect(createReleaseArg({ ...base, title: ' Title ', notes: '', generateNotes: true, prerelease: false })).toMatchObject({ title: 'Title', generateNotes: true });
+    expect(() => createReleaseArg({ ...base, title: ' ', notes: '', generateNotes: false, prerelease: false })).toThrow('Invalid release data.');
+    expect(() => createReleaseArg({ ...base, title: 'T', notes: 'x'.repeat(125_001), generateNotes: false, prerelease: false })).toThrow('Invalid release data.');
+    expect(updateReleaseArg({ ...base, expectedDatabaseId: 1, expectedBodyHash: 'a'.repeat(64), title: 'T', notes: '<!-- opentig:release-notes:start -->' })).toMatchObject({ notes: '<!-- opentig:release-notes:start -->' });
+    expect(() => updateReleaseArg({ ...base, expectedDatabaseId: 1, expectedBodyHash: 'short', title: 'T', notes: '' })).toThrow('Invalid release data.');
+    expect(deleteDraftReleaseArg({ ...base, expectedDatabaseId: 1 })).toMatchObject({ expectedDatabaseId: 1 });
+    expect(() => deleteDraftReleaseArg({ ...base })).toThrow('Invalid release data.');
   });
 });
