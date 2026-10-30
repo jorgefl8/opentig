@@ -3,6 +3,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join, resolve, sep } from 'node:path';
 import { parse } from 'parse5';
 import { documentationRoutes } from '../docs.config.mjs';
+import { contentSignals, markdownPath } from './agent-access.mjs';
 import { SaxesParser } from 'saxes';
 
 const attr = (node, name) => node.attrs?.find((item) => item.name === name)?.value;
@@ -25,6 +26,28 @@ function publicUrl(value, base) {
     && !/\.(localhost|local|test|invalid)$/.test(host), `local or private URL: ${value}`);
   check(['https:', 'http:'].includes(url.protocol), `unsupported URL: ${value}`);
   return url;
+}
+
+// Cloudflare _headers rules: an unindented path pattern followed by indented "Name: value" lines.
+function headerRules(source) {
+  const rules = [];
+  for (const line of source.split(/\r?\n/)) {
+    if (!line.trim() || line.trimStart().startsWith('#')) continue;
+    if (!/^\s/.test(line)) rules.push({ pattern: line.trim(), lines: [] });
+    else rules.at(-1)?.lines.push(line.trim().split(/:\s*(.*)/s).slice(0, 2));
+  }
+  return rules;
+}
+
+// Expand a path rule's named placeholders for one route; host rules never match here.
+function ruleMatch(pattern, route) {
+  if (!pattern.startsWith('/')) return;
+  const names = [];
+  const expression = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&')
+    .replace(/\*/g, () => { names.push('splat'); return '(.*)'; })
+    .replace(/:(\w+)/g, (_, name) => { names.push(name); return '([^/]+)'; });
+  const match = new RegExp(`^${expression}$`).exec(route);
+  return match && Object.fromEntries(names.map((name, index) => [name, match[index + 1]]));
 }
 
 function sitemapLocations(xml) {
@@ -58,7 +81,7 @@ export function validateBuild({ directory, site, indexable }) {
     'site must be an HTTPS origin without a path, query, or fragment');
   const root = resolve(directory);
   const files = new Set(filesIn(root));
-  for (const required of ['index.html', '404.html', 'robots.txt', 'sitemap.xml']) check(files.has(required), `missing ${required}`);
+  for (const required of ['index.html', '404.html', 'robots.txt', 'sitemap.xml', 'llms.txt', '_headers']) check(files.has(required), `missing ${required}`);
   const pages = new Map();
   for (const file of files) {
     if (!file.endsWith('.html')) continue;
@@ -100,6 +123,7 @@ export function validateBuild({ directory, site, indexable }) {
     }
   }
   const expectedLocations = [];
+  const markdownPages = new Map();
   for (const [file, page] of pages) {
     const { nodes, headNodes, route } = page;
     const label = `${file}:`;
@@ -133,6 +157,13 @@ export function validateBuild({ directory, site, indexable }) {
       check(canonicals.length === 1 && attr(canonicals[0], 'href') === url, `${label} incorrect canonical`);
       check(meta('og:url') === url, `${label} incorrect og:url`);
       if (indexable && !demoPage) expectedLocations.push(url);
+    }
+    const markdownLinks = headNodes.filter((node) => node.tagName === 'link' && tokens(attr(node, 'rel')).includes('alternate')
+      && attr(node, 'type') === 'text/markdown');
+    if (errorPage || demoPage) check(markdownLinks.length === 0, `${label} unexpected Markdown alternate`);
+    else {
+      check(markdownLinks.length === 1 && attr(markdownLinks[0], 'href') === markdownPath(route), `${label} missing or incorrect Markdown alternate`);
+      markdownPages.set(route, markdownPath(route));
     }
     check(meta('og:type') === 'website' && meta('og:site_name') === 'OpenTig', `${label} incorrect website identity`);
     check(meta('twitter:card') === 'summary_large_image', `${label} expected large social card`);
@@ -190,8 +221,30 @@ export function validateBuild({ directory, site, indexable }) {
   check(JSON.stringify([...locations].sort()) === JSON.stringify(expectedLocations.sort()), 'sitemap does not match indexable canonical pages');
   const robots = readFileSync(join(root, 'robots.txt'), 'utf8');
   const rules = robots.split(/\r?\n/).map((line) => line.replace(/#.*/, '').trim()).filter(Boolean);
-  const expectedRules = ['User-agent: *', 'Allow: /', ...(indexable ? [`Sitemap: ${new URL('/sitemap.xml', origin)}`] : [])];
+  const expectedRules = ['User-agent: *', `Content-Signal: ${contentSignals}`, 'Allow: /', ...(indexable ? [`Sitemap: ${new URL('/sitemap.xml', origin)}`] : [])];
   check(JSON.stringify(rules) === JSON.stringify(expectedRules), 'robots.txt policy or sitemap announcement differs');
+  // llms.txt lists the Markdown twin of every documentation page, and nothing missing.
+  const llms = readFileSync(join(root, 'llms.txt'), 'utf8');
+  check(llms.startsWith('# OpenTig\n'), 'llms.txt must start with the site title');
+  const llmsLinks = [...llms.matchAll(/\]\(([^)\s]+)\)/g)].map((match) => publicUrl(match[1]));
+  for (const url of llmsLinks) if (url.origin === origin.origin) targetFile(url);
+  const documentationTwins = [...markdownPages].filter(([route]) => route.startsWith('/docs/')).map(([, path]) => new URL(path, origin).href);
+  check(JSON.stringify(llmsLinks.filter((url) => url.origin === origin.origin).map((url) => url.href).sort()) === JSON.stringify(documentationTwins.sort()),
+    'llms.txt does not list every documentation page Markdown');
+  // Link headers announce each page's Markdown twin and point only at generated files.
+  const headers = headerRules(readFileSync(join(root, '_headers'), 'utf8'));
+  for (const [route, twin] of markdownPages) {
+    const links = headers.flatMap(({ pattern, lines }) => {
+      const values = ruleMatch(pattern, route);
+      if (!values) return [];
+      return lines.filter(([name]) => name.toLowerCase() === 'link')
+        .map(([, value]) => value.replace(/:(\w+)/g, (placeholder, name) => values[name] ?? placeholder));
+    }).join(', ');
+    const targets = [...links.matchAll(/<([^>]+)>([^,]*)/g)];
+    for (const [, target] of targets) targetFile(new URL(target, origin));
+    check(targets.some(([, target, parameters]) => target === twin && /rel="alternate"/.test(parameters) && /type="text\/markdown"/.test(parameters)),
+      `_headers: ${route} does not announce ${twin}`);
+  }
   // Fonts and images referenced by the generated CSS must also exist locally.
   for (const file of files) {
     if (!file.endsWith('.css')) continue;

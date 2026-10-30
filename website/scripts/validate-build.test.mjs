@@ -25,6 +25,7 @@ function fixture(t, { indexable = true, site = 'https://opentig.com/' } = {}) {
     <meta name="description" content="Review &amp; commit.">
     ${error || !indexable ? '<meta name="robots" content="noindex">' : ''}
     ${error ? '' : `<link rel="canonical" href="${site}"><meta property="og:url" content="${site}">`}
+    ${error ? '' : '<link rel="alternate" type="text/markdown" href="/index.md">'}
     <meta property="og:title" content="OpenTig"><meta name="twitter:title" content="OpenTig">
     <meta property="og:description" content="Review &amp; commit."><meta name="twitter:description" content="Review &amp; commit.">
     <meta property="og:type" content="website"><meta property="og:site_name" content="OpenTig">
@@ -36,7 +37,10 @@ function fixture(t, { indexable = true, site = 'https://opentig.com/' } = {}) {
     ${indexable && !error ? `<script type="application/ld+json">${JSON.stringify(schema)}</script>` : ''}
     </head><body><h1>OpenTig</h1><div id="features&amp;more">Features</div><a href="/#features%26more">Features</a></body></html>`;
   write('index.html', html()); write('404.html', html(true));
-  write('robots.txt', `User-agent: *\nAllow: /\n${indexable ? `Sitemap: ${site}sitemap.xml\n` : ''}`);
+  write('robots.txt', `User-agent: *\nContent-Signal: search=yes, ai-input=yes, ai-train=yes\nAllow: /\n${indexable ? `Sitemap: ${site}sitemap.xml\n` : ''}`);
+  write('index.md', '# OpenTig\n'); write('llms.txt', '# OpenTig\n\n> Review & commit.\n');
+  write('_headers', '/\n  Link: </index.md>; rel="alternate"; type="text/markdown", </llms.txt>; rel="describedby"\n'
+    + '/docs/:page/\n  Link: </docs/:page/index.md>; rel="alternate"; type="text/markdown"\n/404\n  X-Robots-Tag: noindex\n');
   write('sitemap.xml', `<?xml version="1.0"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${indexable ? `<url><loc>${site}</loc></url>` : ''}</urlset>`);
   mkdirSync(join(directory, 'assets'));
   write('assets/main.css', '@font-face{src:url("./font.woff2")}'); write('assets/font.woff2', 'fixture');
@@ -77,6 +81,12 @@ const regressions = [
   ['blocked crawling', 'robots.txt', 'Allow: /', 'Disallow: /', /robots.txt policy/],
   ['wrong sitemap announcement', 'robots.txt', 'https://opentig.com/sitemap.xml', 'http://localhost/sitemap.xml', /robots.txt policy/],
   ['indexable error page', '404.html', '<meta name="robots" content="noindex">', '', /noindex policy/],
+  ['missing Content Signals', 'robots.txt', 'Content-Signal: search=yes, ai-input=yes, ai-train=yes\n', '', /robots.txt policy/],
+  ['missing Markdown alternate', 'index.html', '<link rel="alternate" type="text/markdown" href="/index.md">', '', /Markdown alternate/],
+  ['wrong Markdown alternate', 'index.html', 'href="/index.md"', 'href="/llms.txt"', /Markdown alternate/],
+  ['Markdown twin not announced', '_headers', '</index.md>; rel="alternate"; type="text/markdown", ', '', /does not announce \/index.md/],
+  ['Link header to a missing file', '_headers', '</llms.txt>', '</missing.txt>', /missing local target/],
+  ['llms.txt link to a missing page', 'llms.txt', '\n', '\n- [Missing](https://opentig.com/docs/missing/index.md)\n', /missing local target: \/docs\/missing/],
 ];
 for (const [name, file, before, after, error] of regressions) {
   test(`rejects ${name}`, (t) => {
@@ -100,12 +110,15 @@ test('demo stays noindex and outside the sitemap in production', (t) => {
   const demo = readFileSync(join(output.directory, 'index.html'), 'utf8')
     .replace(/<script type="application\/ld\+json">.*?<\/script>/s, '')
     .replace('</head>', '<meta name="robots" content="noindex"></head>')
+    .replace('<link rel="alternate" type="text/markdown" href="/index.md">', '')
     .replace('rel="canonical" href="https://opentig.com/"', 'rel="canonical" href="https://opentig.com/demo/"')
     .replace('property="og:url" content="https://opentig.com/"', 'property="og:url" content="https://opentig.com/demo/"');
   output.write('demo/index.html', demo);
   assert.equal(output.validate(), 3);
   output.change('demo/index.html', '<meta name="robots" content="noindex">', '');
   assert.throws(output.validate, /noindex policy/);
+  output.write('demo/index.html', demo.replace('</head>', '<link rel="alternate" type="text/markdown" href="/index.md"></head>'));
+  assert.throws(output.validate, /unexpected Markdown alternate/);
   output.write('demo/index.html', demo);
   output.change('sitemap.xml', '</urlset>', '<url><loc>https://opentig.com/demo/</loc></url></urlset>');
   assert.throws(output.validate, /sitemap does not match/);
@@ -119,7 +132,11 @@ test('documentation search must only point to published pages and real sections'
   output.write('docs/index.html', home
     .replace('rel="canonical" href="https://opentig.com/"', 'rel="canonical" href="https://opentig.com/docs/"')
     .replace('property="og:url" content="https://opentig.com/"', 'property="og:url" content="https://opentig.com/docs/"')
+    .replace('href="/index.md"', 'href="/docs/index.md"')
     .replace(/<script type="application\/ld\+json">.*?<\/script>/, ''));
+  output.write('docs/index.md', '# Documentation\n');
+  output.change('_headers', '/docs/:page/', '/docs/\n  Link: </docs/index.md>; rel="alternate"; type="text/markdown"\n/docs/:page/');
+  output.change('llms.txt', '\n', '\n- [Documentation](https://opentig.com/docs/index.md): Overview.\n');
   output.change('sitemap.xml', '</urlset>', '<url><loc>https://opentig.com/docs/</loc></url></urlset>');
   assert.throws(output.validate, /missing static documentation search index/);
   const index = url => output.write('api/docs-search.json', JSON.stringify({ docs: { docs: { 1: { url } } } }));

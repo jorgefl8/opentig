@@ -1,6 +1,6 @@
 # Website contribution guide
 
-The `website/` pnpm workspace package contains OpenTig's public landing page and documentation. It uses Astro, Tailwind CSS, OGL, and Fumadocs, and produces a static site independent of the desktop application, CLI, and paired browser UI. It does not start or connect to an OpenTig server.
+The `website/` pnpm workspace package contains OpenTig's public landing page and documentation. It uses Astro, Tailwind CSS, OGL, and Fumadocs, and produces a static site independent of the desktop application, CLI, and paired browser UI. A small Worker in front of the static files only handles [Markdown content negotiation for agents](#agent-access). The site does not start or connect to an OpenTig server.
 
 This guide is for repository contributors and is not published in the website documentation. Production operations are maintained separately in a local, untracked runbook.
 
@@ -9,7 +9,7 @@ Choose the task you need:
 - [Run and check the website locally](#develop-and-check).
 - [Edit documentation or add a public guide](#published-documentation).
 - [Change the landing page, demo, or social preview](#content-and-appearance).
-- [Control indexing and preview builds](#crawling-indexing-and-missing-pages).
+- [Control indexing, agent access, and preview builds](#crawling-indexing-and-missing-pages).
 - [Understand CI and application releases](#ci-and-release-separation).
 
 ## Develop and check
@@ -44,11 +44,11 @@ pnpm run preview:website
 <details>
 <summary>What the checks validate</summary>
 
-Every Astro build runs `website/scripts/validate-build.mjs` through the `astro:build:done` hook, including builds to a custom output directory. It parses the generated HTML and XML with parse5 and saxes and fails on missing or duplicate metadata, inconsistent canonical/social URLs, wrong indexing policy, broken local links or fragments, missing HTML/CSS asset references, and incorrect social PNG dimensions. It also checks the homepage JSON-LD structure and its agreement with the metadata, and compares the sitemap against the generated indexable pages. The expected indexing policy comes from Vite's environment loader using the build's actual mode and environment directory. `WEBSITE_NOINDEX` accepts only `true`, `false`, or an unset value.
+Every Astro build runs `website/scripts/validate-build.mjs` through the `astro:build:done` hook, including builds to a custom output directory. It parses the generated HTML and XML with parse5 and saxes and fails on missing or duplicate metadata, inconsistent canonical/social URLs, wrong indexing policy, broken local links or fragments, missing HTML/CSS asset references, and incorrect social PNG dimensions. It also checks the homepage JSON-LD structure and its agreement with the metadata, and compares the sitemap against the generated indexable pages. For agent access, it requires the robots.txt Content Signals, a Markdown alternate on every content page, a `Link` header in `_headers` announcing that file, and an `llms.txt` that lists every documentation page's Markdown and links only to generated files. The expected indexing policy comes from Vite's environment loader using the build's actual mode and environment directory. `WEBSITE_NOINDEX` accepts only `true`, `false`, or an unset value.
 
 Validation is offline: external links are checked for URL format and local/private hosts, not network availability. The JSON-LD checks protect this site's agreed data contract; they do not replace Schema.org validation or establish search-result eligibility. When adding pages or deliberately changing the metadata contract, update the sitemap and relevant checks together. Regression tests mutate temporary output to ensure real failures are rejected and remove their files afterwards. No test artifacts are published.
 
-Regression tests cover the sample repository, documentation transforms, and build validator.
+Regression tests cover the sample repository, documentation transforms, Markdown generation, content negotiation in the Worker, and build validator.
 
 </details>
 
@@ -253,9 +253,21 @@ The graph is omitted from development, noindex preview builds, and the 404 page.
 
 ### Production pages and missing routes
 
-Astro generates `/robots.txt` and `/sitemap.xml` at build time. Production robots.txt allows crawling and points to the absolute sitemap URL. The sitemap includes the homepage and published documentation routes from `website/docs.config.mjs`. Add other published content routes to `publicPaths` in `website/src/pages/sitemap.xml.ts`. Do not add errors, assets, redirects, or fragment links. Dates and priorities are omitted rather than inferred from build time.
+Astro generates `/robots.txt` and `/sitemap.xml` at build time. Production robots.txt allows crawling, declares [Content Signals](#agent-access), and points to the absolute sitemap URL. The sitemap includes the homepage and published documentation routes from `website/docs.config.mjs`. Add other published content routes to `publicPaths` in `website/src/pages/sitemap.xml.ts`. Do not add errors, assets, redirects, or fragment links. Dates and priorities are omitted rather than inferred from build time.
 
 `website/src/pages/404.astro` provides the branded error page. Workers uses `not_found_handling: "404-page"` to return it with HTTP 404 for missing routes, including nested paths. The page always has `noindex` and omits canonical and `og:url` metadata so an error is not presented as a content page. Direct `/404` variants also receive `X-Robots-Tag: noindex` through `website/public/_headers`.
+
+### Agent access
+
+AI agents can read the site as Markdown instead of rendered HTML:
+
+- **Markdown twins.** The homepage and every documentation page have a Markdown version at the same route plus `index.md`, for example `/docs/github/index.md`. Guides are generated at build time from the same source and link rewriting as the rendered page (`website/scripts/agent-markdown.mjs`), with the page title and description at the top. The homepage version is the same overview as `llms.txt`. The demo and 404 pages have no Markdown version.
+- **`/llms.txt`.** An [llms.txt](https://llmstxt.org/) overview generated from `siteDescription`, the landing page's installation facts, and the documentation sections in `website/docs.config.mjs`, linking to each Markdown twin.
+- **Discovery.** Each page's HTML head has a `<link rel="alternate" type="text/markdown">`. `website/public/_headers` sends the same relation and `rel="describedby"` for `llms.txt` as [`Link` response headers](https://www.rfc-editor.org/rfc/rfc8288) on `/`, `/docs/`, and `/docs/:page/`.
+- **Content negotiation.** `website/worker/index.mjs` runs before the static files only for the routes in `run_worker_first` in `website/wrangler.jsonc` (`/` and `/docs/*`). A `GET` or `HEAD` request to a page whose `Accept` header lists `text/markdown` at least as highly as `text/html` receives the Markdown twin with `Content-Type: text/markdown`. Browsers, wildcard `*/*` requests, and pages without a twin get the normal response. Page responses on these routes carry `Vary: Accept`. Every other path is served by Workers Static Assets without running the Worker.
+- **Content Signals.** robots.txt declares `Content-Signal: search=yes, ai-input=yes, ai-train=yes` ([contentsignals.org](https://contentsignals.org/)): the site may be indexed for search, used as input for AI answers, and used for model training. These are stated preferences, not access controls. To change them, edit `contentSignals` in `website/scripts/agent-access.mjs`; the build validator and robots.txt use the same value.
+
+New public routes that need a Markdown version must use a trailing slash, pass `markdown` to the shared layout, generate the twin, and be covered by `_headers` and `run_worker_first`. The build validator rejects a content page without them. Use `pnpm run preview:website` for the HTML site; `pnpm --filter @opentig/website exec wrangler dev` serves the production build through the Worker to check negotiation and headers locally.
 
 ### Build a preview that stays out of search
 

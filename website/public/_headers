@@ -1,3 +1,11 @@
+# Agent discovery (RFC 8288): each page's Markdown twin and the llms.txt overview.
+/
+  Link: </index.md>; rel="alternate"; type="text/markdown", </llms.txt>; rel="describedby"; type="text/plain"
+/docs/
+  Link: </docs/index.md>; rel="alternate"; type="text/markdown", </llms.txt>; rel="describedby"; type="text/plain"
+/docs/:page/
+  Link: </docs/:page/index.md>; rel="alternate"; type="text/markdown", </llms.txt>; rel="describedby"; type="text/plain"
+
 # Keep direct error-page URLs out of search results as well.
 /404
   X-Robots-Tag: noindex

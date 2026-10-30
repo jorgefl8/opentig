@@ -11,6 +11,8 @@ interface Props {
   noindex?: boolean;
   canonicalPage?: boolean;
   pixelFont?: boolean;
+  /** Markdown twin of this page for agents. */
+  markdown?: string;
 }
 const {
   title = 'OpenTig | Free, open-source Git client for Windows, macOS & Linux',
@@ -18,6 +20,7 @@ const {
   noindex = false,
   canonicalPage = true,
   pixelFont = true,
+  markdown,
 } = Astro.props;
 // Only emit absolute social URLs when a public origin has been configured.
 const canonical = canonicalPage && Astro.site ? new URL(Astro.url.pathname, Astro.site) : undefined;
@@ -37,6 +40,7 @@ const socialImageAlt = 'OpenTig, a free, open-source Git client, showing an open
     <meta name="theme-color" content="#070707" />
     <title>{title}</title>
     {canonical && <link rel="canonical" href={canonical} />}
+    {markdown && <link rel="alternate" type="text/markdown" href={markdown} />}
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
     <meta property="og:type" content="website" />
