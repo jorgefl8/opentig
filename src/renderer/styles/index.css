@@ -1256,6 +1256,9 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   .pr-conversation-body, .pr-summary-section { contain: layout paint; }
   .pr-conversation-body { grid-column: 2; min-width: 0; margin-top: 4px; font-size: 12px; }
   .pr-conversation-body .markdown-prose { padding: 0; font-size: 12px; }
+  .pr-composer { display: grid; gap: 8px; border-top: 1px solid var(--border); padding-top: 12px; margin-top: 2px; }
+  .pr-composer-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; }
+  .pr-composer-account { margin-right: auto; color: var(--muted-foreground); font-size: 11px; }
   .pr-conversation-hidden summary { color: var(--muted-foreground); font-size: 11px; cursor: pointer; }
  flex-wrap: wrap; align-items: center; gap: 6px; margin-left: auto; }
   .pr-action-reason { color: var(--muted-foreground); }

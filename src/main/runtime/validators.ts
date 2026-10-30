@@ -1,6 +1,6 @@
 import { GitOperationError } from '../../shared/errors';
 import { AiOperationError, GhOperationError } from '../../shared/errors';
-import type { AiHarnessId, BranchDetailsRequest, CreatePullRequestInput, PullRequestActionInput, UpdatePullRequestInput, DeleteBranchRequest, GenerateCommitMessageInput, GeneratePullRequestDraftInput, PrepareCommitGroupInput, PublishBranchOptions, PullRequestState, RemoveWorktreeRequest, WorktreeDetailsRequest } from '../../shared/contracts';
+import type { AiHarnessId, BranchDetailsRequest, CommentOnPullRequestInput, CreatePullRequestInput, PullRequestActionInput, ReviewPullRequestInput, UpdatePullRequestInput, DeleteBranchRequest, GenerateCommitMessageInput, GeneratePullRequestDraftInput, PrepareCommitGroupInput, PublishBranchOptions, PullRequestState, RemoveWorktreeRequest, WorktreeDetailsRequest } from '../../shared/contracts';
 import { MAX_PROJECT_NAME_LENGTH, MAX_REPOSITORY_KEY_LENGTH, normalizeRepositoryKey } from '../../shared/repository-projects';
 import { isFilesTreeRepositoryId, MAX_FILES_TREE_PATHS, normalizeExpandedPaths, normalizeFilesTreePath } from '../../shared/files-tree-state';
 import { isOpenFilesRepositoryId, MAX_OPEN_FILE_TABS, normalizeOpenFilePath, type OpenFileTab } from '../../shared/open-files-state';
@@ -357,6 +357,20 @@ export function updatePullRequestArg(value: unknown): UpdatePullRequestInput {
     expectedUpdatedAt: z.string().min(1).max(64),
   }).safeParse(value);
   if (!parsed.success) throw invalidGh('gh-pr-update');
+  return parsed.data;
+}
+
+export function commentOnPullRequestArg(value: unknown): CommentOnPullRequestInput {
+  const parsed = pullRequestActionBaseSchema.omit({ expectedHeadOid: true }).extend({ body: pullRequestTextSchema.refine((body) => Boolean(body.trim())) }).safeParse(value);
+  if (!parsed.success) throw invalidGh('gh-pr-comment');
+  return parsed.data;
+}
+
+export function reviewPullRequestArg(value: unknown): ReviewPullRequestInput {
+  // Only an approval can go without text; GitHub CLI asks for it in the others.
+  const parsed = pullRequestActionBaseSchema.extend({ verdict: z.enum(['approve', 'request-changes', 'comment']), body: pullRequestTextSchema })
+    .refine((input) => input.verdict === 'approve' || Boolean(input.body.trim())).safeParse(value);
+  if (!parsed.success) throw invalidGh('gh-pr-review');
   return parsed.data;
 }
 

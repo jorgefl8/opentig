@@ -551,6 +551,11 @@ export interface PullRequestActionResult {
 /** Fails if the PR changed after `expectedUpdatedAt`, so another person's or a bot's edit isn't overwritten. */
 export type UpdatePullRequestInput = PullRequestMutationBase & { title: string; body: string; expectedUpdatedAt: string };
 
+export type CommentOnPullRequestInput = PullRequestMutationBase & { body: string };
+
+/** The head is the commit the verdict is about: a push in the meantime stops it. */
+export type ReviewPullRequestInput = PullRequestMutationBase & { expectedHeadOid: string; verdict: 'approve' | 'request-changes' | 'comment'; body: string };
+
 export interface CreatePullRequestInput {
   expectedAccount?: { login: string; revision: number };
   repositoryId: string;
@@ -780,6 +785,8 @@ export interface OpenTigApi {
     getPullRequestConversation(repositoryId: string, number: number): Promise<PullRequestConversation>;
     runPullRequestAction(input: PullRequestActionInput): Promise<PullRequestActionResult>;
     updatePullRequest(input: UpdatePullRequestInput): Promise<void>;
+    commentOnPullRequest(input: CommentOnPullRequestInput): Promise<void>;
+    reviewPullRequest(input: ReviewPullRequestInput): Promise<void>;
     getPullRequestStack(repositoryId: string, number: number): Promise<PullRequestStack | null>;
     getPullRequestDiff(repositoryId: string, number: number): Promise<DiffResult>;
     getPullRequestCommitDiff(repositoryId: string, oid: string): Promise<DiffResult>;
@@ -833,6 +840,6 @@ export const IPC = {
   aiStatuses: 'ai:statuses', aiGenerateCommitMessage: 'ai:generate-commit-message', aiCancelGeneration: 'ai:cancel-generation', aiLog: 'ai:log', aiClearLog: 'ai:clear-log',
   diagnosticsList: 'diagnostics:list', diagnosticsClear: 'diagnostics:clear', diagnosticsRecord: 'diagnostics:record',
   githubAccountsStatus: 'github:accounts-status', githubSetDefaultAccount: 'github:set-default-account', githubRepositoryAccount: 'github:repository-account', githubSetRepositoryAccount: 'github:set-repository-account',
-  githubStatus: 'github:status', githubRepositoryInfo: 'github:repository-info', githubPrForBranch: 'github:pr-for-branch', githubPrList: 'github:pr-list', githubPrView: 'github:pr-view', githubPrLiveState: 'github:pr-live-state', githubPrConversation: 'github:pr-conversation', githubPrAction: 'github:pr-action', githubPrUpdate: 'github:pr-update',
+  githubStatus: 'github:status', githubRepositoryInfo: 'github:repository-info', githubPrForBranch: 'github:pr-for-branch', githubPrList: 'github:pr-list', githubPrView: 'github:pr-view', githubPrLiveState: 'github:pr-live-state', githubPrConversation: 'github:pr-conversation', githubPrAction: 'github:pr-action', githubPrUpdate: 'github:pr-update', githubPrComment: 'github:pr-comment', githubPrReview: 'github:pr-review',
   githubPrStack: 'github:pr-stack', githubPrDiff: 'github:pr-diff', githubPrCommitDiff: 'github:pr-commit-diff', githubPrCommits: 'github:pr-commits', githubPrCreate: 'github:pr-create', githubPrDraft: 'github:pr-draft', githubPrDraftCancel: 'github:pr-draft-cancel',
 } as const;

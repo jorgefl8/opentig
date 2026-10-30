@@ -1,6 +1,6 @@
 import { GhOperationError } from '../../shared/errors';
 import { z } from 'zod';
-import type { PullRequestActionInput, PullRequestActionResult, PullRequestLiveState, UpdatePullRequestInput } from '../../shared/contracts';
+import type { CommentOnPullRequestInput, PullRequestActionInput, PullRequestActionResult, PullRequestLiveState, ReviewPullRequestInput, UpdatePullRequestInput } from '../../shared/contracts';
 import { pullRequestActionBlocked } from '../../shared/pull-request-actions';
 import { redactCommandToken } from './GitHubAccountAuth';
 import { classifyActionFailure } from './GitHubActionErrors';
@@ -54,6 +54,35 @@ export class PullRequestActionRunner {
     verifyAccount();
     try {
       await withPrivateTextFile(input.body, (bodyFile) => this.gh(target, ['pr', 'edit', String(input.number), '-R', target.nameWithOwner, '--title', input.title, '--body-file', bodyFile], operation));
+    } finally {
+      this.github.invalidate(input.repositoryId);
+    }
+  }
+
+  async comment(input: CommentOnPullRequestInput): Promise<void> {
+    const operation = 'gh-pr-comment';
+    const { target } = await this.begin(input, operation);
+    try {
+      await withPrivateTextFile(input.body, (bodyFile) => this.gh(target, ['pr', 'comment', String(input.number), '-R', target.nameWithOwner, '--body-file', bodyFile], operation));
+    } finally {
+      this.github.invalidate(input.repositoryId);
+    }
+  }
+
+  async review(input: ReviewPullRequestInput): Promise<void> {
+    const operation = 'gh-pr-review';
+    const { target, verifyAccount } = await this.begin(input, operation);
+    this.github.invalidate(input.repositoryId);
+    const state = await this.github.readLiveState(input.repositoryId, input.number);
+    if (state.headRefOid !== input.expectedHeadOid) throw new GhOperationError({ code: 'GH_PR_STATE_CHANGED', operation, message: 'This pull request has new commits. Review them and try again.' });
+    if (state.state !== 'OPEN') throw new GhOperationError({ code: 'GH_PR_ACTION_NOT_ALLOWED', operation, message: 'This pull request is no longer open.' });
+    if (state.viewer.didAuthor && input.verdict !== 'comment') throw new GhOperationError({ code: 'GH_PR_ACTION_NOT_ALLOWED', operation, message: "GitHub doesn't let you approve or request changes on your own pull request." });
+    verifyAccount();
+    const flag = input.verdict === 'approve' ? '--approve' : input.verdict === 'request-changes' ? '--request-changes' : '--comment';
+    const args = ['pr', 'review', String(input.number), '-R', target.nameWithOwner, flag];
+    try {
+      if (input.body.trim()) await withPrivateTextFile(input.body, (bodyFile) => this.gh(target, [...args, '--body-file', bodyFile], operation));
+      else await this.gh(target, args, operation);
     } finally {
       this.github.invalidate(input.repositoryId);
     }

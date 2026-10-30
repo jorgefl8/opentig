@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { IconExternalLink, IconLoader4, IconMessage, IconRefresh } from '@tabler/icons-react';
 import { formatDateTime } from '@shared/date-format';
-import type { PullRequestConversationEntry } from '../../../shared/contracts';
+import type { PullRequestConversationEntry, PullRequestLiveState } from '../../../shared/contracts';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
@@ -11,6 +11,7 @@ import { opentig } from '@/lib/opentig-api';
 import { queryKeys } from '@/lib/query-client';
 import { openOnGitHub } from './gh-utils';
 import { GitHubAvatar } from './GitHubAvatar';
+import { PullRequestComposer } from './PullRequestComposer';
 
 type RenderedEntry = PullRequestConversationEntry & { html: string };
 
@@ -33,7 +34,15 @@ async function readConversation(repositoryId: string, number: number) {
 }
 
 /** Comments and reviews come from third parties: they only reach the page through the sanitizing Markdown pipeline. */
-export function PullRequestConversationView({ repositoryId, number, url }: { repositoryId: string; number: number; url: string }) {
+export function PullRequestConversationView({ repositoryId, number, url, live, draft, onDraftChange }: {
+  repositoryId: string;
+  number: number;
+  url: string;
+  live: PullRequestLiveState | null;
+  /** Kept by the viewer, so it survives switching tabs. */
+  draft: string;
+  onDraftChange(value: string): void;
+}) {
   const [hideBots, setHideBots] = useState(false);
   const query = useQuery({
     queryKey: queryKeys.pullRequestConversation(repositoryId, number),
@@ -60,6 +69,7 @@ export function PullRequestConversationView({ repositoryId, number, url }: { rep
       {shown.map((entry) => <ConversationEntry key={entry.id} entry={entry} />)}
       {conversation?.partial && <p className="pr-empty-description">GitHub didn't share every detail with this account, so some of the conversation may be missing.</p>}
       {conversation?.truncated && <p className="pr-empty-description">Showing the most recent comments and reviews. {url && <button className="pr-checks-all" onClick={() => openOnGitHub(url)}>Read the rest on GitHub <IconExternalLink aria-hidden="true" /></button>}</p>}
+      {live && <PullRequestComposer repositoryId={repositoryId} number={number} live={live} draft={draft} onDraftChange={onDraftChange} onRefresh={() => void query.refetch()} />}
     </section>
   );
 }

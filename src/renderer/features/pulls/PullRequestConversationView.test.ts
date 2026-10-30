@@ -29,7 +29,7 @@ afterEach(async () => {
   container.remove(); client.clear(); vi.unstubAllGlobals(); vi.resetAllMocks();
 });
 async function render() {
-  await act(async () => root.render(createElement(QueryClientProvider, { client }, createElement(TooltipProvider, null, createElement(PullRequestConversationView, { repositoryId: 'repo', number: 1, url: 'https://github.com/sample/demo/pull/1' })))));
+  await act(async () => root.render(createElement(QueryClientProvider, { client }, createElement(TooltipProvider, null, createElement(PullRequestConversationView, { repositoryId: 'repo', number: 1, url: 'https://github.com/sample/demo/pull/1', live: null, draft: '', onDraftChange: vi.fn() })))));
   for (let tick = 0; tick < 40 && (container.textContent?.includes('Loading conversation') || client.isFetching() > 0); tick++) {
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 5)); });
   }

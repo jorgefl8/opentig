@@ -302,3 +302,59 @@ describe('updatePullRequest', () => {
     expect([...reader.mutations, ...other.mutations]).toEqual([]);
   });
 });
+
+describe('commentOnPullRequest', () => {
+  const { expectedHeadOid: _unused, ...withoutHead } = base;
+  const comment = { ...withoutHead, body: 'Looks good' };
+
+  it('sends the text through a file, without needing the PR to be open', async () => {
+    const { service, mutations } = fixture({ reads: [] });
+    await service.commentOnPullRequest(comment);
+    expect(mutations[0]!.slice(0, 6)).toEqual(['pr', 'comment', '12', '-R', 'example/demo', '--body-file']);
+    expect(mutations[0]).not.toContain('Looks good');
+  });
+
+  it('stops with another account', async () => {
+    const { service, mutations } = fixture({ reads: [] });
+    await expect(service.commentOnPullRequest({ ...comment, expectedAccount: { login: 'other', revision: 3 } })).rejects.toMatchObject({ detail: { code: 'GH_ACCOUNT_UNRESOLVED' } });
+    expect(mutations).toEqual([]);
+  });
+});
+
+describe('reviewPullRequest', () => {
+  const review = { ...base, verdict: 'approve', body: '' } as const;
+
+  it.each([
+    ['approve', '', ['--approve']],
+    ['approve', 'Nice work', ['--approve', '--body-file']],
+    ['request-changes', 'Please fix', ['--request-changes', '--body-file']],
+    ['comment', 'A note', ['--comment', '--body-file']],
+  ] as const)('sends %s with text %j', async (verdict, body, flags) => {
+    const { service, mutations } = fixture({ reads: [liveResponse()] });
+    await service.reviewPullRequest({ ...base, verdict, body });
+    expect(mutations[0]!.slice(0, 5)).toEqual(['pr', 'review', '12', '-R', 'example/demo']);
+    expect(mutations[0]!.slice(5, 5 + flags.length)).toEqual(flags);
+    expect(mutations[0]).not.toContain(body || 'unused');
+  });
+
+  it('does not approve commits the reviewer has not seen', async () => {
+    const { service, mutations } = fixture({ reads: [liveResponse({ headRefOid: 'c'.repeat(40) })] });
+    await expect(service.reviewPullRequest(review)).rejects.toMatchObject({ detail: { code: 'GH_PR_STATE_CHANGED' } });
+    expect(mutations).toEqual([]);
+  });
+
+  it('lets an author only comment on their own PR', async () => {
+    const own = fixture({ reads: [liveResponse({ viewerDidAuthor: true })] });
+    await expect(own.service.reviewPullRequest(review)).rejects.toMatchObject({ detail: { code: 'GH_PR_ACTION_NOT_ALLOWED' } });
+    await expect(own.service.reviewPullRequest({ ...base, verdict: 'request-changes', body: 'x' })).rejects.toMatchObject({ detail: { code: 'GH_PR_ACTION_NOT_ALLOWED' } });
+    expect(own.mutations).toEqual([]);
+    await own.service.reviewPullRequest({ ...base, verdict: 'comment', body: 'A note' });
+    expect(own.mutations).toHaveLength(1);
+  });
+
+  it('refuses a PR that is no longer open', async () => {
+    const { service, mutations } = fixture({ reads: [liveResponse({ state: 'MERGED' })] });
+    await expect(service.reviewPullRequest(review)).rejects.toMatchObject({ detail: { code: 'GH_PR_ACTION_NOT_ALLOWED' } });
+    expect(mutations).toEqual([]);
+  });
+});

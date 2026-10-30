@@ -41,6 +41,7 @@ interface PullRequestViewerProps {
 export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType, wrapLines, onDiffViewChange, onWrapLinesChange, onClose, onSelectPullRequest }: PullRequestViewerProps) {
   const [tab, setTab] = useState<'summary' | 'timeline' | 'diff'>('summary');
   const [editing, setEditing] = useState(false);
+  const [commentDraft, setCommentDraft] = useState('');
   const detailsQuery = useQuery<{ details: PullRequestDetails; bodyHtml: string }>({
     queryKey: queryKeys.pullRequest(repositoryId, prNumber),
     queryFn: async () => {
@@ -165,7 +166,7 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
           </section>
       </ViewerTabsPanel>
       <ViewerTabsPanel value="timeline" className="markdown-preview-scroll pr-description-scroll">
-          <PullRequestConversationView repositoryId={repositoryId} number={details.number} url={details.url} />
+          <PullRequestConversationView repositoryId={repositoryId} number={details.number} url={details.url} live={live} draft={commentDraft} onDraftChange={setCommentDraft} />
           <section className="pr-timeline standalone" aria-label="Commit timeline">
             <h3><IconGitCommit aria-hidden="true" /> Commits <span>{commits.length}{commitsIncomplete ? '+' : ''}</span></h3>
             {commitsIncomplete && !commitsQuery.isFetching && (

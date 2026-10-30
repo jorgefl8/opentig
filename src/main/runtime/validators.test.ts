@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { generateCommitMessageArg, generatePullRequestDraftArg, booleanArg, branchDetailsArg, deleteBranchArg, filesTreeStateArg, nullableProjectIdArg, openFilesStateArg, prepareCommitGroupArg, projectIdArg, projectNameArg, publishBranchArg, pullRequestStatesArg, removeWorktreeArg, repositoryKeyArg, searchOptionsArg, searchReplaceArg, worktreeDetailsArg, pullRequestActionArg, updatePullRequestArg } from './validators';
+import { generateCommitMessageArg, generatePullRequestDraftArg, booleanArg, branchDetailsArg, deleteBranchArg, filesTreeStateArg, nullableProjectIdArg, openFilesStateArg, prepareCommitGroupArg, projectIdArg, projectNameArg, publishBranchArg, pullRequestStatesArg, removeWorktreeArg, repositoryKeyArg, searchOptionsArg, searchReplaceArg, worktreeDetailsArg, commentOnPullRequestArg, pullRequestActionArg, reviewPullRequestArg, updatePullRequestArg } from './validators';
 import { GitOperationError } from '../../shared/errors';
 import { createTrackingBranchArg, deleteRemoteBranchArg } from './validators';
 
@@ -288,5 +288,21 @@ describe('updatePullRequestArg', () => {
     ['no account', { ...edit, expectedAccount: undefined }],
   ])('rejects %s', (_name, value) => {
     expect(() => updatePullRequestArg(value)).toThrow('Invalid pull request data.');
+  });
+});
+
+describe('comment and review text', () => {
+  const pull = { repositoryId: 'repo', number: 7, expectedAccount: { login: 'sample', revision: 1 } };
+  const head = { ...pull, expectedHeadOid: 'a'.repeat(40) };
+  it('requires text in a comment', () => {
+    expect(commentOnPullRequestArg({ ...pull, body: 'Hi' })).toMatchObject({ body: 'Hi' });
+    expect(() => commentOnPullRequestArg({ ...pull, body: '  ' })).toThrow('Invalid pull request data.');
+  });
+  it('requires text except to approve', () => {
+    expect(reviewPullRequestArg({ ...head, verdict: 'approve', body: '' })).toMatchObject({ verdict: 'approve' });
+    expect(() => reviewPullRequestArg({ ...head, verdict: 'comment', body: ' ' })).toThrow('Invalid pull request data.');
+    expect(() => reviewPullRequestArg({ ...head, verdict: 'request-changes', body: '' })).toThrow('Invalid pull request data.');
+    expect(() => reviewPullRequestArg({ ...head, verdict: 'dismiss', body: 'x' })).toThrow('Invalid pull request data.');
+    expect(() => reviewPullRequestArg({ ...pull, verdict: 'approve', body: '' })).toThrow('Invalid pull request data.');
   });
 });

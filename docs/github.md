@@ -97,6 +97,12 @@ The PR list shows the effective GitHub account. Pull requests come from the GitH
 
 **Timeline** shows the PR's comments and reviews above its commits, with Markdown rendered and links that open in a new tab. Choose **Hide bots** to leave out comments from bots. Comments hidden on GitHub stay collapsed until you open them. Past the most recent 100 comments and 100 reviews, the list says so and links to the rest. They load when you open **Timeline**. Inline code comments stay on GitHub.
 
+**Comment and review**
+
+Write in the box at the end of the conversation, with the same Markdown preview as creating a PR, and choose **Comment**. **Review** adds **Approve**, **Request changes**, and **Comment as a review**. Only **Approve** can go without text. On your own PR, GitHub only allows the comment, so that's all the menu offers. A review stops if the PR has received new commits since you read it, so a verdict is never applied to code you haven't seen.
+
+If GitHub doesn't answer in time, your text stays in the box and sending is held back until you've checked the conversation, because sending again could post it twice.
+
 **Open the current branch's PR**
 
 Beside the branch selector, the PR indicator shows the current branch or worktree's PR number and state. A purple merge icon identifies a merged PR. Click for its full title and status, then choose **Open in OpenTig** or **Open in GitHub**. The mobile repository menu offers the same choices; the toolbar also opens the repository on GitHub.
