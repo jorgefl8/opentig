@@ -6,17 +6,18 @@ import {
   IconLoader4, IconRefresh, IconSearch, IconTrash, IconX,
 } from '@tabler/icons-react';
 import type { PullRequestSummary, RecentRepository } from '../../../shared/contracts';
-import type { BranchDetails, LocalRefsSnapshot, RemoteBranchDetails, WorktreeDetails } from '../../../shared/git-types';
+import type { BranchDetails, LocalRefsSnapshot, RemoteBranchDetails, WorktreeDetails, WorktreeRemovalState } from '../../../shared/git-types';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogClose, DialogDescription, DialogPopup, DialogTitle } from '@/components/ui/dialog';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { opentig } from '@/lib/opentig-api';
+import { UNCONFIRMED_RESULT_MESSAGE, isUnconfirmedResult } from '@/lib/websocket-transport';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   branchBadges, branchDeleteEligibility, branchDetailBadges, branchKey, filterBranches, filterWorktrees,
-  localChangeSummary, mergedPullRequestTip, nextSelectionKey, worktreeBadges, worktreeKey, worktreeName, worktreeRemoveEligibility,
+  localChangeSummary, mergedPullRequestTip, nextSelectionKey, removingWorktreeBadges, worktreeBadges, worktreeKey, worktreeName, worktreeRemoveEligibility,
   type LocalRefsTab, type RefBadge,
 } from './local-refs-model';
 import { openOnGitHub } from '@/features/pulls/gh-utils';
@@ -24,6 +25,13 @@ import { queryKeys } from '@/lib/query-client';
 import { writeClipboardText } from '@/lib/browser-capabilities';
 import { SearchablePicker } from '@/components/SearchablePicker';
 import { RemoteBranchDetailPanel } from './RemoteBranchDetailPanel';
+
+const DISMISSED_NOTICES_KEY = 'opentig.dismissedWorktreeRemovalNotices';
+
+function readDismissedNotices(): ReadonlySet<string> {
+  try { return new Set(JSON.parse(sessionStorage.getItem(DISMISSED_NOTICES_KEY) ?? '[]') as string[]); }
+  catch { return new Set(); }
+}
 
 interface LocalRefsDialogProps {
   open: boolean;
@@ -52,6 +60,10 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
   const [busy, setBusy] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  // Removals this window started, shown until the server's snapshot takes over.
+  const [startedRemovals, setStartedRemovals] = useState<ReadonlySet<string>>(new Set());
+  // Kept for the session, so a dismissed notice doesn't return while the server still holds it.
+  const [dismissedNotices, setDismissedNotices] = useState(readDismissedNotices);
   // The previous ordering, so a deleted row hands its place to a neighbour.
   const snapshotRef = useRef<LocalRefsSnapshot | null>(null);
 
@@ -61,8 +73,15 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
     queryKey: queryKeys.localRefs(repositoryId),
     queryFn: () => opentig.refs.localRefsSnapshot(repositoryId),
     enabled: open,
+    // A removal can outlive its request, so follow it here rather than through the request's result.
+    refetchInterval: (query) => startedRemovals.size > 0 || query.state.data?.worktreeRemovals?.some((removal) => removal.state === 'running') ? 2_000 : false,
   });
   const snapshot = snapshotQuery.data ?? null;
+  const removingPaths = useMemo(() => new Set([
+    ...startedRemovals,
+    ...(snapshot?.worktreeRemovals ?? []).filter((removal) => removal.state === 'running').map((removal) => removal.path),
+  ]), [snapshot, startedRemovals]);
+  const removalNotices = (snapshot?.worktreeRemovals ?? []).filter((removal) => removal.state !== 'running' && !dismissedNotices.has(removalNoticeKey(removal)));
   const loading = snapshotQuery.isFetching;
   const error = snapshotQuery.error ? messageOf(snapshotQuery.error) : null;
 
@@ -150,7 +169,8 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
     try {
       if (await action()) setConfirming(null);
     } catch (reason) {
-      setActionError(messageOf(reason));
+      setActionError(actionFailure(reason));
+      void load().catch(() => undefined);
     } finally {
       setBusy(null);
       onBusyChange(false);
@@ -204,17 +224,36 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
     return result.status === 'success';
   });
 
-  const removeWorktree = (target: WorktreeDetails, force: boolean, deleteBranch: boolean) => run('remove-worktree', async () => {
-    const result = await opentig.refs.removeWorktree({ repositoryId, path: target.path, expectedOid: target.oid, force, deleteBranch });
-    if (result.status !== 'removed') {
-      setActionError(worktreeFailure(result.status));
-      await load();
-      return false;
+  // Deleting a large folder can take minutes, so this doesn't lock the dialog: the
+  // server finishes the removal and reports it even if this window closes.
+  const removeWorktree = async (target: WorktreeDetails, force: boolean, deleteBranch: boolean, cleanupOnly: boolean) => {
+    setActionError(null);
+    setConfirming(null);
+    setStartedRemovals((current) => new Set(current).add(target.path));
+    try {
+      const result = await opentig.refs.removeWorktree({ repositoryId, path: target.path, expectedOid: target.oid, force, deleteBranch, ...(cleanupOnly ? { cleanupOnly } : {}) });
+      if (result.status === 'removed' || result.status === 'partial') onMutated(result.recentRepositories);
+      else setActionError(`${worktreeName(target.path)}: ${worktreeFailure(result.status)}`);
+    } catch (reason) {
+      // When the server still knows about this removal, its notice or running state says more.
+      const { data } = await snapshotQuery.refetch();
+      if (!data?.worktreeRemovals?.some((removal) => removal.path === target.path)) setActionError(`${worktreeName(target.path)}: ${actionFailure(reason)}`);
+    } finally {
+      setStartedRemovals((current) => {
+        const remaining = new Set(current);
+        remaining.delete(target.path);
+        return remaining;
+      });
+      void load().catch(() => undefined);
     }
-    onMutated(result.recentRepositories);
-    await load();
-    return true;
-  });
+  };
+
+  const dismissNotice = (removal: WorktreeRemovalState) => {
+    const dismissed = new Set(dismissedNotices).add(removalNoticeKey(removal));
+    setDismissedNotices(dismissed);
+    try { sessionStorage.setItem(DISMISSED_NOTICES_KEY, JSON.stringify([...dismissed])); }
+    catch { /* It stays dismissed until the dialog closes. */ }
+  };
 
   const copyPath = async (value: string) => {
     try {
@@ -226,6 +265,8 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
     }
   };
 
+  const detailPanelShowsError = !detailsLoading && !detailsError
+    && (tab === 'worktrees' ? Boolean(worktreeDetails && worktree) : Boolean(branchDetails && branch && !branch.remote));
   const counts = { branches: snapshot?.branches.length ?? 0, worktrees: snapshot?.worktrees.length ?? 0 };
   const listEmpty = tab === 'branches' ? branches.length === 0 : worktrees.length === 0;
 
@@ -290,7 +331,15 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
           <small>Remote refs reflect the last fetch.</small>
         </div>}
 
-        {(error || actionError) && <div className="local-refs-error" role="alert"><IconAlertTriangle aria-hidden="true" /><span>{error ?? actionError}</span></div>}
+        {(error || (actionError && !detailPanelShowsError)) && <div className="local-refs-error" role="alert"><IconAlertTriangle aria-hidden="true" /><span>{error ?? actionError}</span></div>}
+        {removalNotices.length > 0 && <div className="local-refs-removal-notices">{removalNotices.map((removal) => (
+          <div className="local-refs-error local-refs-removal-notice" role="alert" key={removal.path}>
+            <IconAlertTriangle aria-hidden="true" />
+            <span className="local-refs-selectable">{removal.message}</span>
+            <Button variant="ghost" size="sm" onClick={() => void copyPath(removal.path)}><IconCopy /> Copy path</Button>
+            <Button variant="ghost" size="sm" onClick={() => dismissNotice(removal)}>Dismiss</Button>
+          </div>
+        ))}</div>}
 
         {mobileDetail && <button type="button" className="local-refs-mobile-back" onClick={() => setMobileDetail(false)}>← Back to {tab}</button>}
         <div
@@ -343,7 +392,7 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
                   <span className="local-refs-row-head">
                     <IconHierarchy2 aria-hidden="true" />
                     <strong>{worktreeName(item.path)}</strong>
-                    <BadgeRow badges={worktreeBadges(item)} />
+                    <BadgeRow badges={removingPaths.has(item.path) ? removingWorktreeBadges() : worktreeBadges(item)} />
                   </span>
                   <small className="local-refs-row-meta">
                     <span className="local-refs-row-branch">{item.branch ? `${item.branch}` : 'Detached HEAD'}</span>
@@ -378,14 +427,14 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
             {!detailsLoading && !detailsError && tab === 'worktrees' && worktreeDetails && worktree && (
               <WorktreeDetailPanel
                 details={worktreeDetails}
-                busy={busy === 'remove-worktree'}
+                removing={removingPaths.has(worktreeDetails.path)}
                 anyBusy={Boolean(busy)}
                 confirming={confirming === 'remove-worktree'}
                 actionError={actionError}
                 copied={copied}
                 onConfirm={() => setConfirming('remove-worktree')}
                 onCancel={() => setConfirming(null)}
-                onRemove={(force, deleteBranch) => void removeWorktree(worktreeDetails, force, deleteBranch)}
+                onRemove={(force, deleteBranch, cleanupOnly) => void removeWorktree(worktreeDetails, force, deleteBranch, cleanupOnly)}
                 onCopyPath={() => void copyPath(worktreeDetails.path)}
                 onOpen={() => props.onOpenWorktree(worktreeDetails.path)}
                 onShowBranch={() => {
@@ -461,9 +510,9 @@ function BranchDetailPanel({ details, pullRequest, busy, anyBusy, confirming, ac
   );
 }
 
-function WorktreeDetailPanel({ details, busy, anyBusy, confirming, actionError, copied, onConfirm, onCancel, onRemove, onCopyPath, onOpen, onShowBranch }: {
-  details: WorktreeDetails; busy: boolean; anyBusy: boolean; confirming: boolean; actionError: string | null; copied: boolean;
-  onConfirm(): void; onCancel(): void; onRemove(force: boolean, deleteBranch: boolean): void; onCopyPath(): void; onOpen(): void; onShowBranch(): void;
+function WorktreeDetailPanel({ details, removing, anyBusy, confirming, actionError, copied, onConfirm, onCancel, onRemove, onCopyPath, onOpen, onShowBranch }: {
+  details: WorktreeDetails; removing: boolean; anyBusy: boolean; confirming: boolean; actionError: string | null; copied: boolean;
+  onConfirm(): void; onCancel(): void; onRemove(force: boolean, deleteBranch: boolean, cleanupOnly: boolean): void; onCopyPath(): void; onOpen(): void; onShowBranch(): void;
 }) {
   const [deleteBranch, setDeleteBranch] = useState(false);
   const eligibility = worktreeRemoveEligibility(details);
@@ -475,7 +524,7 @@ function WorktreeDetailPanel({ details, busy, anyBusy, confirming, actionError, 
     <>
       <div className="local-refs-detail-head">
         <h3><IconHierarchy2 aria-hidden="true" /><Tooltip><TooltipTrigger render={<span />}>{worktreeName(details.path)}</TooltipTrigger><TooltipContent>{worktreeName(details.path)}</TooltipContent></Tooltip></h3>
-        <BadgeRow badges={worktreeBadges(details)} />
+        <BadgeRow badges={removing ? removingWorktreeBadges() : worktreeBadges(details)} />
       </div>
       <dl className="local-refs-facts">
         <Fact label="Folder"><span className="local-refs-path local-refs-selectable">{details.path}</span></Fact>
@@ -486,37 +535,46 @@ function WorktreeDetailPanel({ details, busy, anyBusy, confirming, actionError, 
             : <code>{details.oid ? details.oid.slice(0, 7) : '—'}</code>}
         </Fact>
         <Fact label="Committed">{details.lastCommit?.date ? formatDateTime(details.lastCommit.date) : '—'}</Fact>
-        <Fact label="Local changes">{details.available ? (changes ?? 'None') : 'Not readable'}</Fact>
+        {!removing && <Fact label="Local changes">{details.available ? (changes ?? 'None') : 'Not readable'}</Fact>}
       </dl>
       <div className="local-refs-detail-actions">
         <Button variant="outline" size="sm" onClick={onCopyPath} disabled={anyBusy}>
           {copied ? <IconCheck /> : <IconCopy />} {copied ? 'Copied' : 'Copy path'}
         </Button>
-        {!details.current && details.available && !details.locked && (
+        {!removing && !details.current && details.available && !details.locked && (
           <Button variant="outline" size="sm" onClick={onOpen} disabled={anyBusy}><IconExternalLink /> Open worktree</Button>
         )}
         {details.branch && (
           <Button variant="ghost" size="sm" onClick={onShowBranch} disabled={anyBusy}><IconGitBranch /> Show branch</Button>
         )}
       </div>
-      {details.branch && removalAllowed && (
+      {!removing && details.branch && removalAllowed && (
         <label htmlFor="remove-worktree-delete-branch" className="local-refs-delete-branch">
           <Checkbox id="remove-worktree-delete-branch" checked={deleteBranch} onCheckedChange={(checked) => setDeleteBranch(checked === true)} disabled={anyBusy} />
           <span>Also delete branch <strong>{details.branch}</strong></span>
         </label>
       )}
-      <DestructiveSection
+      {removing ? (
+        <div className="local-refs-danger blocked">
+          <p className="local-refs-reason">
+            <IconLoader4 className="animate-spin" aria-hidden="true" />
+            <span>Removing this worktree. Large folders can take a few minutes. You can close this dialog: the removal continues as long as OpenTig stays open, and the list updates when it ends.</span>
+          </p>
+        </div>
+      ) : <DestructiveSection
         tone={eligibility.allowed ? 'ready' : 'blocked'}
         reason={eligibility.reason}
         actionError={actionError}
         confirming={confirming}
-        busy={busy}
+        busy={false}
         anyBusy={anyBusy}
-        actionLabel={force ? 'Force remove worktree' : 'Remove worktree'}
-        confirmLabel={busy ? 'Removing…' : force ? 'Permanently remove' : 'Remove worktree'}
+        actionLabel={details.prunable ? 'Clean up entry' : force ? 'Force remove worktree' : 'Remove worktree'}
+        confirmLabel={details.prunable ? 'Clean up entry' : force ? 'Permanently remove' : 'Remove worktree'}
         allowed={removalAllowed}
         confirmation={<>
-          {force
+          {details.prunable
+            ? <>Remove Git's entry for this worktree? {details.leftoverFiles ? <>The files in <strong className="local-refs-path">{details.path}</strong> stay on disk, so delete that folder yourself. </> : null}</>
+            : force
             ? <>Permanently remove the worktree at <strong className="local-refs-path">{details.path}</strong>? <strong>{changes ?? `The ${details.operation ?? 'current Git operation'}`}</strong> and every uncommitted file will be lost. The folder is deleted from disk and is <strong>not</strong> moved to system Trash. </>
             : <>Remove the worktree at <strong className="local-refs-path">{details.path}</strong>? The folder is deleted from disk and is <strong>not</strong> moved to system Trash. </>}
           {deleteBranch && details.branch
@@ -525,8 +583,8 @@ function WorktreeDetailPanel({ details, busy, anyBusy, confirming, actionError, 
         </>}
         onConfirm={onConfirm}
         onCancel={onCancel}
-        onAct={() => onRemove(force, deleteBranch)}
-      />
+        onAct={() => details.prunable ? onRemove(false, deleteBranch, true) : onRemove(force, deleteBranch, false)}
+      />}
     </>
   );
 }
@@ -614,10 +672,19 @@ function worktreeFailure(status: string): string {
     case 'current': return 'OpenTig has this worktree open. Switch to another one first.';
     case 'dirty': return 'The worktree has local changes or an operation in progress, so it was kept.';
     case 'locked': return 'The worktree is locked. Unlock it in Git first.';
-    case 'prunable': return 'Git can no longer find this worktree on disk.';
+    case 'prunable': return 'Git can no longer use this worktree. Refresh to see how to clean it up.';
     case 'bare': return 'This entry is a bare repository, not a removable worktree.';
+    case 'cancelled': return 'The removal was cancelled before it started, so nothing changed.';
     default: return 'The worktree no longer exists.';
   }
+}
+
+function removalNoticeKey(removal: WorktreeRemovalState): string {
+  return `${removal.path}|${removal.finishedAt}`;
+}
+
+function actionFailure(reason: unknown): string {
+  return isUnconfirmedResult(reason) ? UNCONFIRMED_RESULT_MESSAGE : messageOf(reason);
 }
 
 function messageOf(reason: unknown): string {

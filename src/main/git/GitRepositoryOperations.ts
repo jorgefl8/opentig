@@ -1,14 +1,14 @@
 import type { BranchSwitchResult, CommitResult, DiffRequest, DiffResult, FetchResult, GitResult, PrepareCommitGroupInput, PublishBranchOptions, PullResult, PushResult, UndoLatestCommitResult, WorktreeRemovalResult } from '../../shared/contracts';
 import type {
   BranchComparisonKind, BranchDeletionResult, BranchDetails, BranchInfo, CommitFile, CommitPage, CommitSummary,
-  FileChange, LocalRefsSnapshot, WorktreeDetails, WorktreeInfo,
+  FileChange, LocalRefsSnapshot, WorktreeDetails, WorktreeInfo, WorktreeRemovalBlocked,
 } from '../../shared/git-types';
 import { AiOperationError, GitOperationError } from '../../shared/errors';
 import { redactSensitiveText } from '../../shared/redaction';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import type { FileService } from '../files/FileService';
-import { realpath, stat, writeFile } from 'node:fs/promises';
+import { lstat, readFile, readdir, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import type { CommitMessageContext, PullRequestDraftContext } from '../ai/types';
 import type { RepositoryInstructionFile } from '../ai/RepositoryAiInstructions';
 import type { GitProcess } from './GitProcess';
@@ -25,6 +25,8 @@ import { parseWorktrees } from './WorktreeParser';
 import { GitCommitAuthorship } from './GitCommitAuthorship';
 import type { SetCommitAuthorshipInput } from '../../shared/commit-authorship';
 import { GitRemoteBranches } from './GitRemoteBranches';
+import { WorktreeRemovalTracker } from './WorktreeRemovalTracker';
+import { REMOVE_WORKTREE_GIT_TIMEOUT_MS } from '../../shared/operation-timeouts';
 import type { CreateTrackingBranchRequest, DeleteRemoteBranchRequest } from '../../shared/contracts';
 
 /**
@@ -48,6 +50,7 @@ export class GitRepositoryOperations {
   private readonly knownOids = new Map<string, Set<string>>();
   private readonly authorship: GitCommitAuthorship;
   private readonly remoteBranches: GitRemoteBranches;
+  private readonly worktreeRemovals = new WorktreeRemovalTracker();
 
   constructor(
     private readonly git: GitProcess,
@@ -806,6 +809,9 @@ export class GitRepositoryOperations {
   }
 
   async selectWorktree(repositoryId: string, targetPath: string) {
+    if (this.worktreeRemovals.isRunning(await normalizePath(targetPath))) {
+      throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'select-worktree', message: 'This worktree is being removed.' });
+    }
     const worktree = await this.findWorktree(repositoryId, targetPath);
     if (!worktree || worktree.locked || worktree.prunable || worktree.bare) {
       throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'select-worktree', message: 'The worktree is unavailable.' });
@@ -819,12 +825,19 @@ export class GitRepositoryOperations {
    */
   async localRefsSnapshot(repositoryId: string): Promise<LocalRefsSnapshot> {
     const repository = this.repositories.get(repositoryId);
+    // Read before Git: a removal ending meanwhile then shows as running, never as an idle row.
+    const removals = this.worktreeRemovals.list(await normalizePath(repository.commonDir));
     const [branches, worktrees] = await Promise.all([this.branches(repositoryId), this.worktrees(repositoryId)]);
     const managed = await this.remoteBranches.snapshotBranches(repositoryId, branches);
     return {
       branches: managed.branches.sort(compareBranches),
       remotes: managed.remotes,
-      worktrees: await Promise.all(worktrees.map(async (worktree) => ({ ...worktree, current: await samePath(worktree.path, repository.path) }))),
+      worktrees: await Promise.all(worktrees.map(async (worktree) => ({
+        ...worktree,
+        current: await samePath(worktree.path, repository.path),
+        ...(worktree.prunable && await pathExists(worktree.path) ? { leftoverFiles: true } : {}),
+      }))),
+      ...(removals.length > 0 ? { worktreeRemovals: removals } : {}),
     };
   }
 
@@ -874,7 +887,7 @@ export class GitRepositoryOperations {
       operation: null, readOnly: false, lastCommit: null,
     };
     // Never run Git inside a directory Git already reports as missing or bare.
-    if (!details.available) return details;
+    if (!details.available) return { ...details, ...(details.prunable && await pathExists(details.path) ? { leftoverFiles: true } : {}) };
 
     const [counts, operation, lastCommit] = await Promise.all([
       this.worktreeChangeCounts(worktree.path),
@@ -910,34 +923,87 @@ export class GitRepositoryOperations {
   /**
    * Removes an unlocked, non-current linked worktree. Dirty state requires an
    * explicit force flag; its branch is preserved unless separately requested.
+   * `cleanupOnly` instead drops the record of a worktree Git lost track of.
+   * `signal` only stops a removal that has not started: killing Git mid-way would
+   * leave a half-deleted folder, so once started it runs to its end unless the
+   * server itself stops.
    */
-  async removeWorktree(repositoryId: string, targetPath: string, expectedOid: string, force = false, deleteBranch = false): Promise<WorktreeRemovalResult> {
+  async removeWorktree(repositoryId: string, targetPath: string, expectedOid: string, force = false, deleteBranch = false, options: { signal?: AbortSignal; cleanupOnly?: boolean } = {}): Promise<WorktreeRemovalResult> {
     const repository = this.repositories.get(repositoryId);
-    return this.git.runWriteTask(repository.path, async (run) => {
-      const worktree = await this.findWorktree(repositoryId, targetPath);
-      if (!worktree) return { status: 'missing' };
-      if (worktree.oid !== expectedOid) return { status: 'stale' };
-      if (worktree.main) return { status: 'main' };
-      if (await samePath(worktree.path, repository.path)) return { status: 'current' };
-      if (worktree.bare) return { status: 'bare' };
-      if (worktree.locked) return { status: 'locked', reason: worktree.locked };
-      if (worktree.prunable) return { status: 'prunable', reason: worktree.prunable };
+    const key = await normalizePath(targetPath);
+    return this.worktreeRemovals.track(key, await normalizePath(repository.commonDir), targetPath, async () => {
+      // Deleting can take minutes, and commands in sibling worktrees wait on this lock,
+      // so it only covers deciding to remove and recording what happened.
+      const decision = await this.git.runWriteTask(repository.path, async (): Promise<WorktreeRemovalBlocked | WorktreeInfo> => {
+        const worktree = await this.findWorktree(repositoryId, targetPath);
+        if (!worktree) return { status: 'missing' };
+        if (worktree.oid !== expectedOid) return { status: 'stale' };
+        if (worktree.main) return { status: 'main' };
+        if (await samePath(worktree.path, repository.path)) return { status: 'current' };
+        if (worktree.bare) return { status: 'bare' };
+        if (worktree.locked) return { status: 'locked', reason: worktree.locked };
+        if (options.cleanupOnly) {
+          // Its folder may have returned, and then only a real removal could touch it.
+          if (!worktree.prunable) return { status: 'stale' };
+        } else {
+          if (worktree.prunable) return { status: 'prunable', reason: worktree.prunable };
+          const [counts, operation] = await Promise.all([
+            this.worktreeChangeCounts(worktree.path),
+            this.repositories.operationAt(worktree.path).catch(() => null),
+          ]);
+          const dirty = counts.stagedCount + counts.unstagedCount + counts.untrackedCount + counts.conflictCount > 0;
+          if ((dirty || operation) && !force) return { status: 'dirty', ...counts, operation };
+        }
+        return options.signal?.aborted ? { status: 'cancelled' } : worktree;
+      }, repository.commonDir);
+      if ('status' in decision) return decision;
+      const worktree = decision;
 
-      const [counts, operation] = await Promise.all([
-        this.worktreeChangeCounts(worktree.path),
-        this.repositories.operationAt(worktree.path).catch(() => null),
-      ]);
-      const dirty = counts.stagedCount + counts.unstagedCount + counts.untrackedCount + counts.conflictCount > 0;
-      if ((dirty || operation) && !force) return { status: 'dirty', ...counts, operation };
+      const failure = options.cleanupOnly ? null : await this.git.run(repository.path, ['-c', 'core.longpaths=true', 'worktree', 'remove', ...(force ? ['--force'] : []), '--', worktree.path], {
+        operation: 'remove-worktree', timeoutMs: REMOVE_WORKTREE_GIT_TIMEOUT_MS, maxOutputBytes: 4 * 1024 * 1024,
+      }).then(() => null, (error: unknown) => error);
 
-      await run(['-c', 'core.longpaths=true', 'worktree', 'remove', ...(force ? ['--force'] : []), '--', worktree.path], { operation: 'remove-worktree', timeoutMs: 60_000, maxOutputBytes: 4 * 1024 * 1024 });
-      if (deleteBranch && worktree.branch) {
-        await run(['branch', '--delete', '--force', '--', worktree.branch], { operation: 'remove-worktree-branch', timeoutMs: 30_000, maxOutputBytes: 1024 * 1024 });
+      return this.git.runWriteTask(repository.path, async (run): Promise<WorktreeRemovalResult> => {
+        if (options.cleanupOnly) await this.dropWorktreeRecord(repository.commonDir, worktree.path);
+        // Git can fail after dropping its record, or succeed and leave files behind,
+        // so what remains decides the result rather than the exit code.
+        if (failure && await this.findWorktree(repositoryId, worktree.path)) throw failure;
+
+        const unfinished: string[] = [];
+        if (await pathExists(worktree.path)) {
+          unfinished.push(`Git no longer tracks this worktree, but its folder is still on disk. If another program is using it, close that program, then delete the folder yourself: ${worktree.path}`);
+        }
+        if (deleteBranch && worktree.branch) {
+          try {
+            await run(['branch', '--delete', '--force', '--', worktree.branch], { operation: 'remove-worktree-branch', timeoutMs: 30_000, maxOutputBytes: 1024 * 1024 });
+          } catch (error) {
+            unfinished.push(`Git could not delete the branch ${worktree.branch}: ${error instanceof Error ? error.message : 'Unknown error.'}`);
+          }
+        }
+        const recentRepositories = await this.repositories.forgetWorktree(worktree.path);
+        const removed = { path: worktree.path, branch: worktree.branch, recentRepositories };
+        return unfinished.length > 0 ? { status: 'partial', ...removed, message: unfinished.join(' ') } : { status: 'removed', ...removed };
+      }, repository.commonDir);
+    });
+  }
+
+  /**
+   * Forgets one worktree without touching its folder. `git worktree prune` would also
+   * forget any other worktree that is only missing for now, such as one on a removable
+   * drive, and Git can't remove a worktree whose folder exists without its `.git`.
+   */
+  private async dropWorktreeRecord(commonDir: string, worktreePath: string): Promise<void> {
+    const records = path.join(commonDir, 'worktrees');
+    const target = await normalizePath(path.join(worktreePath, '.git'));
+    for (const id of await readdir(records)) {
+      const record = path.join(records, id);
+      const gitFile = await readFile(path.join(record, 'gitdir'), 'utf8').catch(() => null);
+      if (gitFile !== null && await normalizePath(path.resolve(record, gitFile.trim())) === target) {
+        await rm(record, { recursive: true, force: true });
+        return;
       }
-      // Only after Git succeeded does OpenTig forget the directory.
-      const recentRepositories = await this.repositories.forgetWorktree(worktree.path);
-      return { status: 'removed', path: worktree.path, branch: worktree.branch, recentRepositories };
-    }, repository.commonDir);
+    }
+    throw new GitOperationError({ code: 'UNKNOWN', operation: 'clean-up-worktree', message: 'Git has no record of this worktree.' });
   }
 
   /**
@@ -988,10 +1054,12 @@ export class GitRepositoryOperations {
         operation: 'worktree-status', readOnly: true, maxOutputBytes: 32 * 1024 * 1024,
       });
       const status = parseStatus(output.stdout);
+      const untrackedCount = status.changes.filter((change) => change.kind === 'untracked').length;
       return {
         stagedCount: status.stagedCount,
-        unstagedCount: status.unstagedCount,
-        untrackedCount: status.changes.filter((change) => change.kind === 'untracked').length,
+        // The status count includes untracked files, which are reported on their own here.
+        unstagedCount: status.unstagedCount - untrackedCount,
+        untrackedCount,
         conflictCount: status.changes.filter((change) => change.conflict).length,
       };
     } catch {
@@ -1196,6 +1264,10 @@ async function samePath(left: string, right: string): Promise<boolean> {
 
 function sameStrings(left: string[], right: string[]): boolean {
   return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
+function pathExists(target: string): Promise<boolean> {
+  return lstat(target).then(() => true, () => false);
 }
 
 async function normalizePath(value: string): Promise<string> {

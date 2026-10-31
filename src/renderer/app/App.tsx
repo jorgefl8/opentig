@@ -832,8 +832,11 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   }, [openFilesStates, repository?.id, selectFilePath, view, initialSelection]);
 
   useEffect(() => opentig.events.onRepositoryChanged((repositoryId, scope) => {
-    if (repositoryId === repository?.id) void refresh({ background: true, scope });
-  }), [refresh, repository?.id]);
+    if (repositoryId !== repository?.id) return;
+    void refresh({ background: true, scope });
+    // An open refs manager may be showing a worktree whose removal another request finished.
+    if (scope === 'worktrees' || scope === 'unknown') void appQueryClient.invalidateQueries({ queryKey: queryKeys.localRefs(repositoryId) });
+  }), [appQueryClient, refresh, repository?.id]);
 
   useEffect(() => {
     if (!bootstrap?.performanceAutomation) return;

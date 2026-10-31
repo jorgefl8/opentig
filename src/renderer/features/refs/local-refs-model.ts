@@ -73,15 +73,20 @@ export function branchDetailBadges(details: BranchDetails): RefBadge[] {
   });
 }
 
-export function worktreeBadges(worktree: Pick<ManagedWorktree, 'main' | 'current' | 'bare' | 'detached' | 'locked' | 'prunable'>): RefBadge[] {
+export function worktreeBadges(worktree: Pick<ManagedWorktree, 'main' | 'current' | 'bare' | 'detached' | 'locked' | 'prunable' | 'leftoverFiles'>): RefBadge[] {
   const badges: RefBadge[] = [];
   if (worktree.main) badges.push({ label: 'Main', tone: 'neutral' });
   if (worktree.current) badges.push({ label: 'Open', tone: 'current' });
   if (worktree.bare) badges.push({ label: 'Bare', tone: 'warning' });
   if (worktree.detached) badges.push({ label: 'Detached HEAD', tone: 'warning' });
   if (worktree.locked) badges.push({ label: 'Locked', tone: 'warning' });
-  if (worktree.prunable) badges.push({ label: 'Missing', tone: 'warning' });
+  if (worktree.prunable) badges.push({ label: worktree.leftoverFiles ? 'Incomplete' : 'Missing', tone: 'warning' });
   return badges;
+}
+
+/** Git reports a worktree as missing as soon as its `.git` file goes, long before the removal ends. */
+export function removingWorktreeBadges(): RefBadge[] {
+  return [{ label: 'Removing', tone: 'neutral' }];
 }
 
 export interface DeleteEligibility {
@@ -157,7 +162,9 @@ export function worktreeRemoveEligibility(details: WorktreeDetails): DeleteEligi
   if (details.current) return { allowed: false, reason: 'OpenTig has this worktree open. Switch to another worktree first.' };
   if (details.bare) return { allowed: false, reason: 'This entry is a bare repository, not a removable worktree.' };
   if (details.locked) return { allowed: false, reason: `Locked${details.locked === 'locked' ? '' : `: ${details.locked}`}. Unlock it in Git before removing it.` };
-  if (details.prunable) return { allowed: false, reason: 'Git can no longer find this worktree on disk, so there is nothing to remove.' };
+  if (details.prunable) return { allowed: false, forceAllowed: true, reason: details.leftoverFiles
+    ? 'This worktree is incomplete, for example because a removal stopped before it finished. Git can no longer use it, but its folder still has files.'
+    : 'Git can no longer find this worktree on disk. Only its entry remains.' };
   if (details.operation) return { allowed: false, forceAllowed: true, reason: `A ${details.operation} is in progress here. Force removal permanently discards it and every local change.` };
   const pending = localChangeSummary(details);
   if (pending) return { allowed: false, forceAllowed: true, reason: `${pending} would be permanently lost by force removal.` };

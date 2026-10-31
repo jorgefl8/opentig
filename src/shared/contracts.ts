@@ -257,6 +257,11 @@ export interface RemoveWorktreeRequest {
   force: boolean;
   /** Also force-deletes the checked-out local branch after removing the worktree. */
   deleteBranch: boolean;
+  /**
+   * Only drops Git's record of a worktree it lost track of, and never deletes its
+   * files. Refused if Git can use the worktree again, for example once a drive returns.
+   */
+  cleanupOnly?: boolean;
 }
 
 /**
@@ -265,6 +270,8 @@ export interface RemoveWorktreeRequest {
  */
 export type WorktreeRemovalResult =
   | { status: 'removed'; path: string; branch: string | null; recentRepositories: RecentRepository[] }
+  /** Git no longer tracks the worktree, but files or the branch remain. */
+  | { status: 'partial'; path: string; branch: string | null; recentRepositories: RecentRepository[]; message: string }
   | WorktreeRemovalBlocked;
 
 export type ThemePreference = 'system' | 'light' | 'dark';
