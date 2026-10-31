@@ -207,6 +207,7 @@ export function removeWorktreeArg(value: unknown, operation: string): RemoveWork
     expectedOid: oidArg(request.expectedOid, operation),
     force: booleanArg(request.force, operation),
     deleteBranch: booleanArg(request.deleteBranch, operation),
+    ...(request.cleanupOnly === undefined ? {} : { cleanupOnly: booleanArg(request.cleanupOnly, operation) }),
   };
 }
 

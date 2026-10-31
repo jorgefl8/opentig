@@ -3,7 +3,10 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { GitProcess } from '../git/GitProcess';
 import { git, repositoryWithUpstream } from '../git/test-support/repository-fixtures';
-import { PullRequestLocalGit } from './PullRequestLocalGit';
+import { OPEN_TIG_MAX_SERVER_MESSAGE_BYTES } from '../../shared/server-protocol';
+import { PullRequestLocalGit, diffResult } from './PullRequestLocalGit';
+
+const jsonBytes = (value: unknown) => Buffer.byteLength(JSON.stringify(value), 'utf8');
 
 /** Publishes a PR head only as GitHub does: under refs/pull/<n>/head on the remote. */
 async function remotePullRequest(fixture: { root: string; remote: string }, files: number) {
@@ -63,6 +66,54 @@ describe('PullRequestLocalGit', () => {
     const diff = await local.rangeDiff(fixture.work, moved);
     expect(diff.patch).not.toContain('base-only.txt');
     expect(diff.patch.match(/^diff --git /gm)).toHaveLength(2);
+  });
+
+  it('keeps a diff above the transport limit to complete files that fit one response', async () => {
+    const fixture = await repositoryWithUpstream();
+    const baseOid = await git(fixture.work, ['rev-parse', 'HEAD']);
+    await mkdir(path.join(fixture.work, 'large'));
+    const content = `${'x'.repeat(100)}\n`.repeat(60);
+    for (let index = 0; index < 731; index++) await writeFile(path.join(fixture.work, 'large', `file-${index}.txt`), content);
+    await git(fixture.work, ['add', '.']);
+    await git(fixture.work, ['commit', '-q', '-m', 'Add a large change']);
+    const headOid = await git(fixture.work, ['rev-parse', 'HEAD']);
+
+    const diff = await new PullRequestLocalGit(new GitProcess()).rangeDiff(fixture.work, { number: 7, baseOid, headOid });
+
+    expect(diff.truncated).toBe(true);
+    expect(jsonBytes(diff)).toBeLessThan(OPEN_TIG_MAX_SERVER_MESSAGE_BYTES);
+    const sections = diff.patch.split(/^diff --git /m).slice(1);
+    expect(sections.length).toBeGreaterThan(100);
+    expect(sections.length).toBeLessThan(731);
+    for (const section of sections) expect(section.trimEnd().endsWith('x')).toBe(true);
+  });
+
+  it('accounts for escaping when deciding what fits', () => {
+    const small = 'diff --git a/one b/one\nsmall\n';
+    // Three million quotes are under the limit as text and over it once escaped.
+    const escaped = `diff --git a/two b/two\n${'"'.repeat(3_000_000)}\n`;
+    expect(diffResult('pull/7', small + escaped, false)).toMatchObject({ truncated: true, patch: small });
+    expect(diffResult('pull/7', escaped, false)).toMatchObject({ truncated: true, patch: '' });
+  });
+
+  it('does not let one huge file hide the files after it', () => {
+    const huge = `diff --git a/bundle b/bundle\n${'x'.repeat(5_000_000)}\n`;
+    const small = 'diff --git a/one b/one\nsmall\n';
+    expect(diffResult('pull/7', huge + small, false)).toMatchObject({ truncated: true, patch: small });
+  });
+
+  it('leaves a diff within the limit untouched', () => {
+    const patch = 'diff --git a/one b/one\n+"quoted"\n';
+    expect(diffResult('pull/7', patch, false)).toEqual({ patch, path: 'pull/7', binary: false, truncated: false, lineCount: 3 });
+  });
+
+  it('says why downloading the commits failed', async () => {
+    const fixture = await repositoryWithUpstream();
+    const failures: string[] = [];
+    const range = { number: 99, baseOid: 'a'.repeat(40), headOid: 'b'.repeat(40) };
+    expect(await new PullRequestLocalGit(new GitProcess()).ensureRange(fixture.work, 'origin', range, (message) => failures.push(message))).toBe(false);
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toBeTruthy();
   });
 
   it('reports unavailable commits instead of failing so GitHub can be used', async () => {

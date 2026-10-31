@@ -18,6 +18,7 @@ interface Fixture {
   socket(): Promise<WebSocket>;
   closeRuntime: ReturnType<typeof vi.fn>;
   logger: ReturnType<typeof vi.fn>;
+  registry: CommandRegistry;
 }
 
 const fixtures: Fixture[] = [];
@@ -216,7 +217,33 @@ describe('WebSocket safety limits', () => {
     const response = await sendAndReceive(socket, { type: 'request', id: 'timeout', command: 'app:bootstrap', args: [] });
 
     expect(response).toMatchObject({ result: { ok: false, error: { code: 'TIMEOUT' } } });
+    expect((response as { result: { error: object } }).result.error).not.toHaveProperty('unconfirmed');
     expect(aborted).toBe(true);
+  });
+
+  it('reports a change that ran out of time as unconfirmed', async () => {
+    const fixture = await startFixture(() => emptyBootstrap(), { commandTimeoutMs: 50 });
+    fixture.registry.registerHandler(OPEN_TIG_SERVER_COMMANDS['refs.pull'], () => new Promise(() => {}));
+    const socket = await fixture.socket();
+
+    expect(await sendAndReceive(socket, { type: 'request', id: 'change', command: 'refs:pull', args: ['0123456789abcdef'] }))
+      .toMatchObject({ result: { ok: false, error: { code: 'TIMEOUT', unconfirmed: true } } });
+  });
+
+  it('records a command timeout and the success that arrives after it', async () => {
+    let finish!: () => void;
+    const fixture = await startFixture(() => new Promise((resolve) => { finish = () => resolve(emptyBootstrap()); }), { commandTimeoutMs: 50 });
+    const recordTimeout = vi.spyOn(fixture.registry, 'recordCommandTimeout');
+    const recordLate = vi.spyOn(fixture.registry, 'recordLateSuccess');
+    const socket = await fixture.socket();
+
+    expect(await sendAndReceive(socket, { type: 'request', id: 'late', command: 'app:bootstrap', args: [] }))
+      .toMatchObject({ result: { ok: false, error: { code: 'TIMEOUT' } } });
+    expect(recordTimeout).toHaveBeenCalledOnce();
+    expect(recordLate).not.toHaveBeenCalled();
+
+    finish();
+    await vi.waitFor(() => expect(recordLate).toHaveBeenCalledOnce());
   });
 
   it.each([
@@ -278,13 +305,13 @@ describe('WebSocket safety limits', () => {
     try {
       slow.pause(); // Real ws/TCP reads stop; send and bufferedAmount stay native.
       // Send one request at a time until the unread responses exceed the OS socket buffers.
-      for (let index = 0; index < 32 && peakBuffered <= 2 * 1024 * 1024; index += 1) {
+      for (let index = 0; index < 32 && peakBuffered <= 6 * 1024 * 1024; index += 1) {
         slow.send(JSON.stringify({ type: 'request', id: `slow-${index}`, command: 'app:bootstrap', args: [] }));
         await vi.waitFor(() => expect(sendAttempts).toBe(index + 1), { timeout: 5_000, interval: 5 });
       }
       slow.resume();
       await expect(slowClosed).resolves.toBe(1013);
-      expect(peakBuffered).toBeGreaterThan(2 * 1024 * 1024);
+      expect(peakBuffered).toBeGreaterThan(6 * 1024 * 1024);
       expect(await sendAndReceive(healthy, { type: 'request', id: 'healthy', command: 'repository:write-file', args: ['repository', 'small.txt', 'x', ''] }))
         .toMatchObject({ result: { ok: true } });
       const recovered = await fixture.socket();
@@ -428,6 +455,7 @@ async function startFixture(
     closeRuntime,
     logger,
     socket: () => openWebSocket(address.origin, cookie),
+    registry,
   };
   fixtures.push(fixture);
   return fixture;

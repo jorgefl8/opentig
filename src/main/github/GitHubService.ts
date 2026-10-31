@@ -17,9 +17,12 @@ import { GH_ENV, redactCommandToken, type GitHubCommandAuth } from './GitHubAcco
 import { parseBranchPullRequestList, parseCreatedPullRequestUrl, parsePullRequestDetails, parsePullRequestList, PR_DETAIL_FIELDS, PR_SUMMARY_FIELDS, selectPullRequestsNewestFirst, sortPullRequestsNewestFirst } from './PullRequestParser';
 
 import { GitHubAccountsService } from './GitHubAccountsService';
-import { PullRequestLocalGit, type PullRequestRange } from './PullRequestLocalGit';
+import { PullRequestLocalGit, diffResult, type PullRequestRange } from './PullRequestLocalGit';
 import type { GitHubAccountSelection } from '../../shared/github-accounts';
-const NETWORK_TIMEOUT_MS = 60_000;
+import { GITHUB_NETWORK_TIMEOUT_MS as NETWORK_TIMEOUT_MS } from '../../shared/operation-timeouts';
+import { classifyFailure } from './GitHubFailure';
+
+const ACCOUNT_USED = 'Account used:';
 
 interface GhRunOptions {
   cwd: string;
@@ -66,10 +69,18 @@ export class GitHubService {
         if (revision !== this.accounts.authRevision) continue;
         // A repository following the default account switches to an account that can access it, then reads again.
         if (attempt === 0 && error instanceof GhOperationError && error.detail.code === 'GH_ACCESS_DENIED' && await this.adoptAccountWithAccess(repositoryId)) continue;
-        throw error;
+        throw this.namingAccount(error, repository);
       }
     }
     throw new Error('The GitHub account changed repeatedly during the read. Try refreshing again.');
+  }
+
+  /** Several accounts can be connected, so a denial is only useful if it says whose it was. */
+  private namingAccount(error: unknown, repository: ReturnType<RepositoryService['get']>): unknown {
+    // Reads nest, so an inner one may already have named it.
+    if (!(error instanceof GhOperationError) || error.detail.code !== 'GH_ACCESS_DENIED' || error.message.includes(ACCOUNT_USED)) return error;
+    const login = this.accounts.verifiedLogin(repository);
+    return login ? new GhOperationError({ ...error.detail, message: `${error.message} ${ACCOUNT_USED} @${login}.` }) : error;
   }
 
   private async adoptAccountWithAccess(repositoryId: string): Promise<boolean> {
@@ -278,7 +289,8 @@ export class GitHubService {
   }
 
   private async readGetPullRequestDiff(repositoryId: string, prNumber: number): Promise<DiffResult> {
-    const range = await this.localRange(repositoryId, prNumber);
+    let fetchFailure = '';
+    const range = await this.localRange(repositoryId, prNumber, (message) => { fetchFailure = message; });
     if (range) return this.localGit.rangeDiff(range.cwd, range);
     // Without the commits locally (offline remote, shallow history, an unusual
     // remote layout) GitHub's own diff still covers PRs within its limits.
@@ -286,20 +298,23 @@ export class GitHubService {
     const result = await this.runGhRead(
       ['pr', 'diff', String(prNumber), '-R', nameWithOwner],
       { auth, executable, cwd: repository.path, operation: 'gh-pr-diff', timeoutMs: NETWORK_TIMEOUT_MS, maxOutputBytes: 32 * 1024 * 1024 },
-    );
-    const patch = result.stdout;
-    const binary = /Binary files .* differ|GIT binary patch/.test(patch);
-    return { patch, path: `pull/${prNumber}`, binary, truncated: false, lineCount: patch ? patch.split('\n').length : 0 };
+    ).catch((error: unknown) => {
+      // GitHub's refusal is only half the story: Git's failure is what can be fixed.
+      throw fetchFailure && error instanceof GhOperationError
+        ? new GhOperationError({ ...error.detail, message: `${error.message} Git reported: ${fetchFailure}` })
+        : error;
+    });
+    return diffResult(`pull/${prNumber}`, result.stdout, false);
   }
 
   /** The PR's base and head commits, downloaded into the local clone when needed. Null when Git cannot provide them. */
-  private async localRange(repositoryId: string, prNumber: number): Promise<(PullRequestRange & { cwd: string }) | null> {
+  private async localRange(repositoryId: string, prNumber: number, onFetchFailure?: (message: string) => void): Promise<(PullRequestRange & { cwd: string }) | null> {
     const details = await this.getPullRequest(repositoryId, prNumber);
     const repository = this.repositories.get(repositoryId);
     const range = { number: prNumber, baseOid: details.baseRefOid, headOid: details.headRefOid };
     try {
       const { remote } = await this.routing(repositoryId);
-      return await this.localGit.ensureRange(repository.path, remote.name, range) ? { ...range, cwd: repository.path } : null;
+      return await this.localGit.ensureRange(repository.path, remote.name, range, onFetchFailure) ? { ...range, cwd: repository.path } : null;
     } catch { return null; }
   }
 
@@ -334,9 +349,7 @@ export class GitHubService {
       ['api', `repos/${nameWithOwner}/commits/${oid}`, '--header', 'Accept: application/vnd.github.diff'],
       { auth, executable, cwd: repository.path, operation, timeoutMs: NETWORK_TIMEOUT_MS, maxOutputBytes: 32 * 1024 * 1024 },
     );
-    const patch = result.stdout;
-    const binary = /Binary files .* differ|GIT binary patch/.test(patch);
-    return { patch, path: `commit/${oid}`, binary, truncated: false, lineCount: patch ? patch.split('\n').length : 0 };
+    return diffResult(`commit/${oid}`, result.stdout, false);
   }
 
   async createPullRequest(input: CreatePullRequestInput): Promise<CreatePullRequestResult> {
@@ -453,28 +466,6 @@ function validateRef(value: string, operation: string): string {
   return ref;
 }
 
-function classifyFailure(result: CliRunResult, operation: string): GhOperationError {
-  const raw = `${result.stderr}\n${result.stdout}`.toLowerCase();
-  if (/not logged in|gh auth login|authentication|credential|bad credentials|401/.test(raw)) {
-    return new GhOperationError({ code: 'GH_AUTH_REQUIRED', operation, message: 'Sign in with gh auth login to continue.', exitCode: result.exitCode });
-  }
-  if (/http 406|exceeded the maximum number of (files|lines)|diff is taking too long|too_large/.test(raw)) {
-    return new GhOperationError({ code: 'GH_PROCESS_FAILED', operation, message: 'GitHub cannot produce a diff this large, and Git could not download the pull request commits. Check the connection to the remote and try again.', exitCode: result.exitCode });
-  }
-  if (/rate limit|api rate|secondary rate/.test(raw)) {
-    return new GhOperationError({ code: 'GH_RATE_LIMITED', operation, message: 'GitHub rejected the request because of a rate limit. Try again later.', exitCode: result.exitCode, retryable: true });
-  }
-  // "Could not resolve to a Repository" means no access, not a network failure.
-  if (/could not resolve to a repository/.test(raw) && operation !== 'gh-pr-stack') return new GhOperationError({ code: 'GH_ACCESS_DENIED', operation, message: 'The repository was not found or is not accessible with this GitHub account.', exitCode: result.exitCode });
-  if (/could not resolve|no such host|connection refused|connection reset|network|dial tcp|tls handshake/.test(raw)) {
-    return new GhOperationError({ code: 'GH_PROCESS_FAILED', operation, message: 'Could not connect to GitHub. Check your network and try again.', exitCode: result.exitCode, retryable: true });
-  }
-  if (/403|resource not accessible|insufficient.*scope|saml|sso/.test(raw)) return new GhOperationError({ code: 'GH_ACCESS_DENIED', operation, message: 'This GitHub account cannot perform the operation. Check repository permissions, token permissions and organisation SSO policies.', exitCode: result.exitCode });
-  if (/404|could not resolve to a repository/.test(raw) && operation !== 'gh-pr-stack') return new GhOperationError({ code: 'GH_ACCESS_DENIED', operation, message: 'The repository was not found or is not accessible with this GitHub account.', exitCode: result.exitCode });
-  const detail = firstLine(result.stderr) || firstLine(result.stdout);
-  return new GhOperationError({ code: 'GH_PROCESS_FAILED', operation, message: detail || 'GitHub CLI could not complete the operation.', exitCode: result.exitCode });
-}
-
 function mapRunnerError(error: unknown, operation: string): GhOperationError {
   if (error instanceof GhOperationError) return error;
   if (error instanceof AiOperationError) {
@@ -485,6 +476,3 @@ function mapRunnerError(error: unknown, operation: string): GhOperationError {
   return new GhOperationError({ code: 'GH_PROCESS_FAILED', operation, message: error instanceof Error ? error.message : 'Could not run GitHub CLI.' });
 }
 
-function firstLine(value: string): string {
-  return (value.split(/\r?\n/).map((line) => line.trim()).find(Boolean) ?? '').slice(0, 300);
-}

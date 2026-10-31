@@ -136,7 +136,7 @@ async function createOperations(root: string, work: string) {
   const files = new FileService(process, repositories);
   const operations = new GitRepositoryOperations(process, repositories, files);
   const repository = await repositories.openPath(work);
-  return { work, operations, repositoryId: repository.id, settings, repositories };
+  return { work, operations, repositoryId: repository.id, settings, repositories, gitProcess: process };
 }
 
 async function configure(work: string): Promise<void> {

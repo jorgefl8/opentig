@@ -23,7 +23,7 @@ const response = (stdout = '', exitCode = 0, stderr = '') => ({ stdout, exitCode
 const remote = 'git@organisation-alias:organisation/demo.git';
 const repo: RepositoryInfo = { id: 'repo', name: 'demo', repositoryName: 'demo', path: '/fixture/demo', commonDir: '/fixture/demo/.git' };
 
-async function fixture(options: { https?: boolean; env?: Record<string, string>; invalid?: boolean; noSsh?: boolean; customSsh?: boolean; missing?: boolean; denied?: boolean; noCli?: boolean; unknownJson?: boolean; accessFor?: string[] } = {}) {
+async function fixture(options: { identityFailure?: string; https?: boolean; env?: Record<string, string>; invalid?: boolean; noSsh?: boolean; customSsh?: boolean; missing?: boolean; denied?: boolean; noCli?: boolean; unknownJson?: boolean; accessFor?: string[] } = {}) {
   vi.stubEnv('GH_TOKEN', ''); vi.stubEnv('GITHUB_TOKEN', ''); vi.stubEnv('GIT_SSH', ''); vi.stubEnv('GIT_SSH_COMMAND', '');
   const directory = await mkdtemp(path.join(os.tmpdir(), 'opentig-account-test-'));
   directories.push(directory);
@@ -49,6 +49,7 @@ async function fixture(options: { https?: boolean; env?: Record<string, string>;
     }
     if (args[0] === 'api' && args[1] === 'user') {
       if (options.invalid) return response(token('bob'), 1, 'HTTP 401: Bad credentials');
+      if (options.identityFailure) return response('', 1, options.identityFailure);
       return response(['alice', 'bob', 'envuser'].find((user) => optionsRun.env?.GH_TOKEN === token(user)) ?? 'unexpected');
     }
     if (options.denied) return response('', 1, 'HTTP 403: Resource not accessible by personal access token');
@@ -280,6 +281,41 @@ it('does not mistake verification of a freshly saved choice for an external acco
   const saved = await f.service.setRepositoryAccount('repo', { mode: 'account', host: 'github.com', login: 'bob' }, old.revision);
   const checked = await f.service.repositoryAccount('repo', true);
   expect(checked).toMatchObject({ login: 'bob', state: 'ready', revision: saved.revision });
+});
+
+describe('why an account check failed', () => {
+  it.each([
+    ['HTTP 403: API rate limit exceeded for user ID 1.', 'GH_RATE_LIMITED', 'rate limit'],
+    ['HTTP 502: Bad Gateway (https://api.github.com/user)', 'GH_PROCESS_FAILED', 'HTTP 502: Bad Gateway'],
+    ['Get "https://api.github.com/user": dial tcp: lookup api.github.com: no such host', 'GH_PROCESS_FAILED', 'Could not connect to GitHub'],
+  ])('reports %s as what it is, and as worth retrying', async (stderr, code, message) => {
+    const { service, settings } = await fixture({ identityFailure: stderr });
+    await settings.setGitHubDefaultLogin('alice');
+    await expect(service.findPullRequestForBranch('repo', 'feature')).rejects.toMatchObject({ detail: { code, retryable: true, message: expect.stringContaining(message) } });
+  });
+
+  it('still asks to authenticate again when GitHub rejects the credentials', async () => {
+    const { service, settings } = await fixture({ invalid: true });
+    await settings.setGitHubDefaultLogin('alice');
+    const failure = await service.findPullRequestForBranch('repo', 'feature').catch((error: { detail: unknown }) => error.detail);
+    expect(failure).toMatchObject({ code: 'GH_AUTH_REQUIRED', message: expect.stringContaining('GitHub rejected these credentials') });
+    expect(failure).not.toHaveProperty('retryable');
+  });
+
+  it('does not mistake a port number for rejected credentials', async () => {
+    const { service, settings } = await fixture({ identityFailure: 'read tcp 192.168.1.5:54401->140.82.121.6:443: connection reset by peer' });
+    await settings.setGitHubDefaultLogin('alice');
+    await expect(service.findPullRequestForBranch('repo', 'feature')).rejects.toMatchObject({ detail: { code: 'GH_PROCESS_FAILED', retryable: true, message: expect.stringContaining('Could not connect') } });
+  });
+
+  it('names the account a repository denied', async () => {
+    const { service, settings } = await fixture({ denied: true });
+    await settings.setGitHubDefaultLogin('alice');
+    await expect(service.listPullRequests('repo', ['OPEN'])).rejects.toMatchObject({ detail: { code: 'GH_ACCESS_DENIED', message: expect.stringContaining('Account used: @alice.') } });
+    // Reading a PR's code nests several reads, and the account should appear once.
+    const nested = await service.getPullRequestDiff('repo', 12).catch((error: Error) => error.message);
+    expect(String(nested).match(/Account used:/g)).toHaveLength(1);
+  });
 });
 
 describe('finding an account with access', () => {

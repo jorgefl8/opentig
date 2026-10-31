@@ -195,7 +195,7 @@ describe('worktreeRemoveEligibility', () => {
       [{ bare: true }, 'bare repository'],
       [{ locked: 'on a usb drive' }, 'Locked: on a usb drive'],
       [{ locked: 'locked' }, 'Locked.'],
-      [{ prunable: 'gitdir missing', available: false }, 'no longer find this worktree'],
+      
       [{ operation: 'rebase', readOnly: true }, 'A rebase is in progress'],
       [{ stagedCount: 2 }, '2 staged changes'],
       [{ untrackedCount: 1 }, '1 untracked change'],
@@ -251,5 +251,17 @@ describe('nextSelectionKey', () => {
     expect(branchKey(branch({ name: 'main' }))).toBe('refs/heads/main');
     expect(nextSelectionKey(['c:/repos/app-trees/review'], ['c:/repos/app-trees/review'], worktreeKey(worktree({ path: 'C:/repos/app-trees/review/' }))))
       .toBe('c:/repos/app-trees/review');
+  });
+});
+
+describe('worktrees Git lost track of', () => {
+  const lost = { path: '/sample/review', oid: 'a'.repeat(40), branch: 'review', main: false, current: false, detached: false, bare: false, locked: null, prunable: 'gitdir file points to non-existent location',
+    available: false, stagedCount: 0, unstagedCount: 0, untrackedCount: 0, conflictCount: 0, operation: null, readOnly: false, lastCommit: null };
+
+  it('offers only an explicit cleanup, and tells an empty entry from leftover files', () => {
+    expect(worktreeRemoveEligibility(lost)).toMatchObject({ allowed: false, forceAllowed: true, reason: expect.stringContaining('Only its entry remains') });
+    expect(worktreeRemoveEligibility({ ...lost, leftoverFiles: true })).toMatchObject({ allowed: false, forceAllowed: true, reason: expect.stringContaining('its folder still has files') });
+    expect(worktreeBadges(lost)).toEqual([{ label: 'Missing', tone: 'warning' }]);
+    expect(worktreeBadges({ ...lost, leftoverFiles: true })).toEqual([{ label: 'Incomplete', tone: 'warning' }]);
   });
 });

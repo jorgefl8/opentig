@@ -1,7 +1,7 @@
 import type { IncomingMessage, Server as HttpServer } from 'node:http';
 import type { Duplex } from 'node:stream';
 import { IPC, type IpcResult } from '../../../src/shared/contracts';
-import { DEFAULT_COMMAND_TIMEOUT_MS, OPEN_TIG_SERVER_COMMANDS, type OpenTigServerCommandDefinition } from '../../../src/shared/protocol';
+import { DEFAULT_COMMAND_TIMEOUT_MS, commandDefinition } from '../../../src/shared/protocol';
 import type { OpenTigRuntimeEvent } from '../../../src/shared/runtime-events';
 import { OPEN_TIG_MAX_SERVER_MESSAGE_BYTES, type OpenTigServerIdentity, type OpenTigServerMessage } from '../../../src/shared/server-protocol';
 import { CommandRegistry } from '../../../src/main/runtime/CommandRegistry';
@@ -16,7 +16,10 @@ const NORMAL_FRAME_LIMIT = 1024 * 1024;
 const CONTENT_FRAME_LIMIT = 9 * 1024 * 1024;
 const FILE_WRITE_FRAME_LIMIT = 17 * 1024 * 1024;
 const MAX_IN_FLIGHT = 32;
-const MAX_BUFFERED_SEND_BYTES = 4 * 1024 * 1024;
+/** Slow enough to help explain a timeout or a stall, without logging ordinary work. */
+const SLOW_COMMAND_MS = 10_000;
+/** Above one full message, so a second response doesn't drop a connection still receiving the first. */
+const MAX_BUFFERED_SEND_BYTES = 2 * OPEN_TIG_MAX_SERVER_MESSAGE_BYTES;
 const DEFAULT_CONNECTION_LIMIT = 16;
 const DEFAULT_REQUEST_RATE_LIMIT = 120;
 const DEFAULT_REQUEST_RATE_WINDOW_MS = 10_000;
@@ -129,7 +132,11 @@ export class OpenTigWebSocketTransport {
     });
     socket.on('pong', () => { state.alive = true; });
     socket.on('message', (data, isBinary) => { void this.message(socket, state, data, isBinary); });
-    socket.on('close', () => {
+    socket.on('close', (code) => {
+      // 1000, 1001 and 1005 are a client closing or navigating away as usual.
+      if (state.requests.size > 0 || ![1000, 1001, 1005].includes(code)) {
+        this.note(`WebSocket closed ${JSON.stringify({ code, requestsInFlight: state.requests.size })}`);
+      }
       for (const controller of state.requests.values()) controller.abort();
       this.clients.delete(socket);
       if (![...this.clients.values()].some((client) => client.sessionId === sessionId)) {
@@ -166,9 +173,22 @@ export class OpenTigWebSocketTransport {
     const execution = this.options.registry.execute(state.sessionId, input.command, input.args, { signal: controller.signal });
     this.pendingOperations.add(execution);
     void execution.finally(() => this.pendingOperations.delete(execution));
+    const requestedAt = Date.now();
+    let timedOut = false;
+    void execution.then((settled) => {
+      const durationMs = Date.now() - requestedAt;
+      if (durationMs >= SLOW_COMMAND_MS) {
+        this.note(`Slow command ${JSON.stringify({ operation: commandDefinition(input.command)?.operation ?? 'unknown', durationMs, outcome: settled.ok ? 'ok' : settled.error.code, timedOut })}`);
+      }
+      if (timedOut && settled.ok) this.options.registry.recordLateSuccess(input.command, input.args, durationMs);
+    });
     try {
       const timeoutMs = this.commandTimeoutMs ?? commandDefinition(input.command)?.timeoutMs ?? DEFAULT_COMMAND_TIMEOUT_MS;
-      const result = redactOperationResult(await withTimeout(execution, timeoutMs, input.command, () => controller.abort()));
+      const result = redactOperationResult(await withTimeout(execution, timeoutMs, input.command, () => {
+        timedOut = true;
+        controller.abort();
+        this.options.registry.recordCommandTimeout(input.command, input.args, timeoutMs);
+      }));
       if (input.command === IPC.bootstrap && result.ok && isRecord(result.value)) {
         result.value = { ...result.value, server: this.options.identity };
       }
@@ -263,9 +283,12 @@ export class OpenTigWebSocketTransport {
   }
 
   private measure(kind: 'request' | 'serialize' | 'send', startedAt: number, data: Record<string, string | number>): void {
-    try {
-      this.options.logger('info', `WebSocket performance ${JSON.stringify({ kind, durationMs: performance.now() - startedAt, ...data })}`);
-    } catch { /* Diagnostics must not interrupt delivery. */ }
+    this.note(`WebSocket performance ${JSON.stringify({ kind, durationMs: performance.now() - startedAt, ...data })}`);
+  }
+
+  private note(message: string): void {
+    try { this.options.logger('info', message); }
+    catch { /* Diagnostics must not interrupt delivery. */ }
   }
 
   private checkHeartbeats(): void {
@@ -305,10 +328,6 @@ function frameLimit(command: string): number {
   if (command === IPC.indexResolveConflict || command === IPC.indexUpdateConflict) return CONTENT_FRAME_LIMIT;
   const definition = commandDefinition(command);
   return Math.min(definition?.maxRequestBytes ?? NORMAL_FRAME_LIMIT, NORMAL_FRAME_LIMIT);
-}
-
-function commandDefinition(command: string): OpenTigServerCommandDefinition | undefined {
-  return Object.values(OPEN_TIG_SERVER_COMMANDS).find((candidate) => candidate.command === command);
 }
 
 function isPing(value: unknown): value is { type: 'ping' } {
@@ -354,7 +373,7 @@ async function withTimeout(
       onTimeout();
       resolve({
         ok: false,
-        error: { code: 'TIMEOUT', operation: command, message: 'Command timed out.' },
+        error: { code: 'TIMEOUT', operation: command, message: 'Command timed out.', ...(commandDefinition(command)?.mutation ? { unconfirmed: true } : {}) },
       });
     }, timeoutMs);
   });

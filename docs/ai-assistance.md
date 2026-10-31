@@ -149,7 +149,7 @@ Instruction contents are not stored in settings or diagnostic history. See [AI p
 | Where to look | What it records |
 | --- | --- |
 | **Settings → AI assistance → View history** | Provider, model, outcome, duration, reported tokens/cost, split refusal reason, and failure details |
-| **Settings → Diagnostics → View problems** | Failed Git, file, and network operations, with the operation, error code, and redacted message |
+| **Settings → Diagnostics → View problems** | Failed Git, file, and network operations, with the operation, error code, and redacted message. Repeats of one failure share a row with their count and first and last time. Commands that ran past their time limit are listed too, and so is the result if they finish later |
 
 In AI history, sort by a column header and inspect totals for runs, failures, tokens, and reported cost. On mobile, tap to open history details. You can clear either history.
 

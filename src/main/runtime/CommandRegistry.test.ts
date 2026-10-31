@@ -136,12 +136,57 @@ describe('CommandRegistry', () => {
     const controller = new AbortController();
     controller.abort();
     registry.register(OPEN_TIG_SERVER_COMMANDS['refs.pull'], () => {
-      throw new GitOperationError({ code: 'TIMEOUT', operation: 'pull', message: 'Timed out.' });
+      throw new DOMException('The request was cancelled.', 'AbortError');
     });
     await registry.execute('session', IPC.refsPull, ['0123456789abcdef'], { signal: controller.signal });
 
     expect(recorded).toEqual([
       expect.objectContaining({ source: 'command', operation: 'open-path', code: 'NOT_REPOSITORY' }),
+    ]);
+  });
+
+  it('records a failure that arrives after its request ended', async () => {
+    const registry = new CommandRegistry();
+    const recorded: unknown[] = [];
+    registry.setProblemLog({ record: (entry) => { recorded.push(entry); } });
+    const controller = new AbortController();
+    controller.abort();
+    registry.register(OPEN_TIG_SERVER_COMMANDS['refs.pull'], () => {
+      throw new GitOperationError({ code: 'TIMEOUT', operation: 'pull', message: 'Git took too long.' });
+    });
+
+    await registry.execute('session', IPC.refsPull, ['0123456789abcdef'], { signal: controller.signal });
+
+    expect(recorded).toEqual([expect.objectContaining({ source: 'command', operation: 'pull', code: 'TIMEOUT', repositoryId: '0123456789abcdef' })]);
+  });
+
+  it('does not record a file that disappeared while it was being opened', async () => {
+    const registry = new CommandRegistry();
+    const recorded: unknown[] = [];
+    registry.setProblemLog({ record: (entry) => { recorded.push(entry); } });
+    registry.register(OPEN_TIG_SERVER_COMMANDS['repository.readFile'], () => {
+      throw Object.assign(new Error("ENOENT: no such file or directory, realpath '/sample/gone.txt'"), { code: 'ENOENT', syscall: 'realpath' });
+    });
+
+    const result = await registry.execute('session', IPC.repositoryReadFile, ['0123456789abcdef', 'gone.txt']);
+
+    expect(result).toEqual({ ok: false, error: { code: 'FILE_NOT_FOUND', operation: 'read-file', message: 'The file no longer exists.' } });
+    expect(recorded).toEqual([]);
+  });
+
+  it('records a command timeout and its late success without repeating diagnostics commands', () => {
+    const registry = new CommandRegistry();
+    const recorded: unknown[] = [];
+    registry.setProblemLog({ record: (entry) => { recorded.push(entry); } });
+    registry.register(OPEN_TIG_SERVER_COMMANDS['refs.pull'], () => undefined as never);
+
+    registry.recordCommandTimeout(IPC.refsPull, ['0123456789abcdef'], 30_000);
+    registry.recordLateSuccess(IPC.refsPull, ['0123456789abcdef'], 41_000);
+    registry.recordCommandTimeout(IPC.diagnosticsList, [], 30_000);
+
+    expect(recorded).toEqual([
+      expect.objectContaining({ level: 'error', source: 'server', operation: 'pull', code: 'TIMEOUT', message: expect.stringContaining('after 30 s'), repositoryId: '0123456789abcdef' }),
+      expect.objectContaining({ level: 'warn', source: 'server', operation: 'pull', code: 'TIMEOUT', message: expect.stringContaining('after 41 s') }),
     ]);
   });
 

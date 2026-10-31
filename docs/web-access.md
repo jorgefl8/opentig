@@ -244,14 +244,14 @@ Healthy connections show no connection notification. Before the first successful
 | Authentication fails | Automatic retries stop and the browser is asked to pair again; browsers without a valid session see pairing instructions without a startup error notification |
 | Server upgrade makes the open client incompatible | **Reload** fetches the current interface; the browser still warns about unsaved editor changes |
 
-**Interrupted requests fail and are not replayed on reconnect.** Retry attempts use bounded exponential backoff and jitter. The connection notification also disappears when pairing is required.
+**Interrupted requests fail and are not replayed on reconnect.** The server may have finished an interrupted change or may still be running it, so a commit, push, pull, or branch switch shows **Result not confirmed** and refreshes. Check the current state before trying again. Each command has its own time limit, long enough for its slowest Git or GitHub CLI steps; while disconnected, a new request waits for the connection for up to 30 seconds and is not sent after that. Retry attempts use bounded exponential backoff and jitter. The connection notification also disappears when pairing is required.
 
 <details>
 <summary>Large responses and slow connections</summary>
 
 Each WebSocket response is limited to 4 MiB of UTF-8 JSON, including its envelope and escaped text. Larger results fail with `RESPONSE_TOO_LARGE` while the session stays connected; content is never silently truncated. Request a narrower scope where possible. A diff within Git's 32 MiB output limit can still exceed this transport limit. Images use authenticated HTTP instead of WebSocket JSON.
 
-A separate 4 MiB send-queue budget closes an accumulating slow connection with code 1013. Reconnection does not replay pending operations.
+A separate 8 MiB send-queue budget closes an accumulating slow connection with code 1013. Reconnection does not replay pending operations.
 
 </details>
 
@@ -276,7 +276,7 @@ To check a CLI service, run `opentig service status` with the same `--home` if a
 - **Browser stuck on Authentication required:** revoke stale sessions if appropriate, create a fresh pairing link, and open that exact link.
 - **Desktop cannot connect:** restart the packaged application and inspect the server log and `/readyz` response.
 
-The rotating log is `logs/server.log` inside Electron's OpenTig user-data directory or the selected CLI home. Authentication material and URL secrets are redacted.
+The rotating log is `logs/server.log` inside Electron's OpenTig user-data directory or the selected CLI home. Authentication material and URL secrets are redacted. Besides startup and errors, it notes commands that took over 10 seconds, connections that closed unexpectedly or with requests in flight, and periods when the server stopped running for over 5 seconds because its event loop was blocked or the machine was suspended. It doesn't include command arguments.
 
 CLI service installation and restart also report known startup failures immediately, with the selected home and recovery instructions. See [command errors and recovery](getting-started.md#command-errors-and-recovery) for port conflicts, startup output, and service recovery.
 

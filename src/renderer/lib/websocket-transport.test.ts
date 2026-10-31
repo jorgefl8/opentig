@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { IPC } from '@shared/contracts';
+import { clientCommandTimeoutMs } from '@shared/protocol';
 import {
   OpenTigWebSocketTransport,
+  isConnectionLoss,
+  isUnconfirmedResult,
   ServerAuthenticationError,
   ServerDisconnectedError,
   ServerRequestTimeoutError,
@@ -161,6 +164,98 @@ describe('OpenTigWebSocketTransport', () => {
     const timeoutRejection = expect(timedOut).rejects.toBeInstanceOf(ServerRequestTimeoutError);
     await vi.advanceTimersByTimeAsync(50);
     await timeoutRejection;
+    transport.close();
+  });
+
+  it('waits for each command as long as the protocol allows', async () => {
+    vi.useFakeTimers();
+    const { transport, sockets } = fixture({ requestTimeoutMs: undefined as unknown as number, heartbeatMs: 60 * 60_000 });
+    let settled = false;
+    const slow = transport.request(IPC.refsPull, ['repo-id']).catch((reason: unknown) => { settled = true; return reason; });
+    sockets[0]!.open();
+    await Promise.resolve();
+    const budget = clientCommandTimeoutMs(IPC.refsPull);
+    expect(budget).toBeGreaterThan(30_000);
+
+    await vi.advanceTimersByTimeAsync(budget - 1);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    const reason = await slow;
+    expect(reason).toBeInstanceOf(ServerRequestTimeoutError);
+    expect(isUnconfirmedResult(reason)).toBe(true);
+    transport.close();
+  });
+
+  it('keeps the connection wait short and does not send a request that timed out waiting', async () => {
+    vi.useFakeTimers();
+    const { transport, sockets } = fixture({ requestTimeoutMs: undefined as unknown as number });
+    const waiting = transport.request(IPC.worktreeRemove, [{ repositoryId: 'repo-id', path: '/sample/review', expectedOid: 'a'.repeat(40), force: false, deleteBranch: false }])
+      .catch((reason: unknown) => reason);
+    await vi.advanceTimersByTimeAsync(30_000);
+    const reason = await waiting;
+    expect(reason).toBeInstanceOf(ServerRequestTimeoutError);
+    expect(isUnconfirmedResult(reason)).toBe(false);
+    expect(isConnectionLoss(reason)).toBe(true);
+
+    sockets[0]!.open();
+    await Promise.resolve();
+    expect(sockets[0]!.sent).toEqual([]);
+    transport.close();
+  });
+
+  it('reports only a change interrupted by a disconnect as unconfirmed', async () => {
+    const { transport, sockets } = fixture();
+    const change = transport.request(IPC.commitCreate, ['repo-id', 'message']).catch((reason: unknown) => reason);
+    const read = transport.request(IPC.capabilities, []).catch((reason: unknown) => reason);
+    sockets[0]!.open();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(sockets[0]!.sent).toHaveLength(2);
+    sockets[0]!.serverClose(1006);
+    expect(await change).toBeInstanceOf(ServerDisconnectedError);
+    expect(isUnconfirmedResult(await change)).toBe(true);
+    expect(isUnconfirmedResult(await read)).toBe(false);
+    expect(isConnectionLoss(await read)).toBe(true);
+    transport.close();
+  });
+
+  it('does not call a read that ran out of time unconfirmed', async () => {
+    vi.useFakeTimers();
+    const { transport, sockets } = fixture({ requestTimeoutMs: 50 });
+    const read = transport.request(IPC.capabilities, []).catch((reason: unknown) => reason);
+    sockets[0]!.open();
+    await vi.advanceTimersByTimeAsync(50);
+    expect(await read).toBeInstanceOf(ServerRequestTimeoutError);
+    expect(isUnconfirmedResult(await read)).toBe(false);
+    transport.close();
+  });
+
+  it.each([
+    [4000, 'stopped responding'],
+    [1001, 'restarted or shut down'],
+    [1006, 'ended unexpectedly'],
+  ])('keeps why the connection closed with code %i', async (code, cause) => {
+    const { transport, sockets } = fixture();
+    const pending = transport.request(IPC.capabilities, []).catch((reason: unknown) => reason);
+    sockets[0]!.open();
+    await Promise.resolve();
+    sockets[0]!.serverClose(code);
+    expect(await pending).toMatchObject({ closeCode: code, message: expect.stringContaining(cause) });
+    transport.close();
+  });
+
+  it('recognizes a server timeout as unconfirmed but not an ordinary failure', async () => {
+    const { transport, sockets } = fixture();
+    const timedOut = transport.request(IPC.commitCreate, ['repo-id', 'message']).catch((reason: unknown) => reason);
+    const failed = transport.request(IPC.commitCreate, ['repo-id', 'message']).catch((reason: unknown) => reason);
+    sockets[0]!.open();
+    await Promise.resolve();
+    await Promise.resolve();
+    const [first, second] = sockets[0]!.sent.map((raw) => (JSON.parse(raw) as { id: string }).id);
+    sockets[0]!.message({ type: 'result', id: first, result: { ok: false, error: { code: 'TIMEOUT', operation: IPC.commitCreate, message: 'Command timed out.', unconfirmed: true } } });
+    sockets[0]!.message({ type: 'result', id: second, result: { ok: false, error: { code: 'TIMEOUT', operation: 'commit', message: 'Git took too long.' } } });
+    expect(isUnconfirmedResult(await timedOut)).toBe(true);
+    expect(isUnconfirmedResult(await failed)).toBe(false);
     transport.close();
   });
 

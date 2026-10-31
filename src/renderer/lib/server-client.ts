@@ -147,8 +147,8 @@ export function createOpenTigServerClient(options: ServerClientOptions = {}): Op
     },
     github: {
       setDefaultAccount: (login) => invoke(IPC.githubSetDefaultAccount, login),
-      accountsStatus: (forceRefresh) => transport.request(IPC.githubAccountsStatus, [forceRefresh], { timeoutMs: 90_000 }),
-      repositoryAccount: (repositoryId, forceRefresh) => transport.request(IPC.githubRepositoryAccount, [repositoryId, forceRefresh], { timeoutMs: 60_000 }),
+      accountsStatus: (forceRefresh) => invoke(IPC.githubAccountsStatus, forceRefresh),
+      repositoryAccount: (repositoryId, forceRefresh) => invoke(IPC.githubRepositoryAccount, repositoryId, forceRefresh),
       setRepositoryAccount: (repositoryId, selection, expectedRevision) => expectedRevision === undefined ? invoke(IPC.githubSetRepositoryAccount, repositoryId, selection) : invoke(IPC.githubSetRepositoryAccount, repositoryId, selection, expectedRevision),
       status: (forceRefresh) => invoke(IPC.githubStatus, forceRefresh),
       repositoryInfo: (repositoryId) => invoke(IPC.githubRepositoryInfo, repositoryId),
