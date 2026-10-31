@@ -343,10 +343,6 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   .workspace { display: flex; min-height: 0; flex: 1; }
   .sidebar { display: flex; min-width: 300px; max-width: 680px; flex: none; flex-direction: column; border-right: 1px solid var(--border); background: var(--sidebar); }
   .sidebar-body { min-height: 0; flex: 1; overflow: hidden; }
-  /* Sections separate each other; the last one ends against empty space, so it
-     needs no closing rule. */
-  .change-section { border-bottom: 1px solid var(--sidebar-border); }
-  .change-section:last-child { border-bottom: 0; }
   /* Search ---------------------------------------------------------------- */
   .search-view { display: flex; height: 100%; min-height: 0; flex-direction: column; }
   .search-controls { display: grid; flex: none; gap: 6px; padding: 10px 10px 8px; }
@@ -390,10 +386,23 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
 
   .changes-view { display: flex; height: 100%; min-height: 0; flex-direction: column; container-type: inline-size; }
   .changes-scroll { min-height: 0; flex: 1; overflow: auto; }
-  .section-heading { display: flex; height: 32px; align-items: center; gap: 8px; padding: 0 8px 0 12px; color: var(--muted-foreground); font-size: var(--text-meta); font-weight: var(--weight-strong); }
-  .heading-actions { margin-left: auto; }
-  .empty-list { display: flex; align-items: center; padding: 12px; color: var(--muted-foreground); font-size: var(--text-ui); }
-  .change-tree { padding-bottom: 5px; }
+  .changes-strip { display: flex; min-height: 34px; flex: none; align-items: center; gap: 8px; padding: 0 12px; font-size: var(--text-ui); font-weight: var(--weight-strong); white-space: nowrap; }
+  .changes-strip > .quiet-action { margin-left: auto; }
+  .changes-line-stats { display: inline-flex; min-width: 0; gap: 6px; overflow: hidden; font-weight: var(--weight-medium); font-variant-numeric: tabular-nums; }
+  .changes-line-stats .add { color: var(--diff-added); }
+  .changes-line-stats .del { color: var(--diff-deleted); }
+  .changes-empty p { margin: 0; padding: 0 12px; color: var(--muted-foreground); font-size: var(--text-ui); line-height: 1.5; }
+  /* A text action that sits among labels: nothing around it until it is used. */
+  .quiet-action { flex: none; border-radius: var(--radius-sm); color: var(--muted-foreground); font-size: var(--text-meta); font-weight: var(--weight-medium); white-space: nowrap; }
+  .quiet-action:hover:not(:disabled) { color: var(--foreground); }
+  .quiet-action:disabled { color: color-mix(in oklch, var(--muted-foreground) 55%, transparent); cursor: not-allowed; }
+  /* A link-style action inside a sentence. */
+  .inline-action { border-radius: var(--radius-sm); color: var(--foreground); text-decoration: underline; text-decoration-color: var(--border); text-underline-offset: 3px; }
+  .inline-action:hover:not(:disabled) { text-decoration-color: currentColor; }
+  .inline-action:disabled { color: var(--muted-foreground); cursor: not-allowed; }
+  .change-group-label { display: flex; min-height: 28px; align-items: center; gap: 6px; padding: 4px 12px 0; color: var(--muted-foreground); font-size: var(--text-meta); font-weight: var(--weight-strong); }
+  .change-group-label .quiet-action { margin-left: auto; opacity: 0; }
+  .change-group-label:hover .quiet-action, .change-group-label .quiet-action:focus-visible { opacity: 1; }
   .collapsible-panel { overflow: hidden; height: auto; transition: height var(--motion-med) var(--ease-out); }
   .collapsible-panel[data-starting-style], .collapsible-panel[data-ending-style] { height: 0; }
   .folder-chevron { transition: transform var(--motion-fast) var(--ease-out); }
@@ -401,20 +410,23 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   /* Physically empty directories keep the twisty for alignment, but dimmed so a
      row that expands into nothing reads as empty before it is clicked. */
   .folder-chevron.empty { opacity: .32; }
-  .tree-folder, .change-row { display: flex; height: 30px; align-items: center; gap: 7px; padding: 0 8px 0 12px; font-size: var(--text-ui); cursor: pointer; }
-  .tree-folder { color: var(--muted-foreground); font-weight: var(--weight-strong); transition: background-color .12s ease, color .12s ease; }
+  /* Match this height to the row height constants in ChangesView. */
+  .tree-folder, .change-row { --row-surface: transparent; position: relative; display: flex; height: 28px; align-items: center; gap: 7px; padding: 0 12px; background: var(--row-surface); font-size: var(--text-ui); cursor: pointer; }
+  .tree-folder { color: var(--muted-foreground); }
   .tree-folder:hover { color: var(--foreground); }
-  .tree-folder > svg { flex: none; }
   .folder-toggle { display: grid; width: 16px; height: 24px; flex: none; place-items: center; }
   .folder-toggle svg { width: 14px; height: 14px; }
   .folder-name { min-width: 0; flex: 1; overflow: hidden; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+  .folder-icon { width: 16px; height: 16px; flex: none; color: var(--muted-foreground); }
   /* File-label is a nested <button>; Chromium clips button glyphs when the
      wrapper itself is overflow:hidden with a tight line box. Ellipsis belongs
-     on the name/path, not on the two-line grid. */
+     on the name/path, not on the line that holds them. */
   .file-label { display: flex; min-width: 0; flex: 1; align-items: center; gap: 7px; overflow: visible; padding: 0; border: 0; background: transparent; color: inherit; text-align: left; }
-  .file-label > svg, .file-tree-row > svg, .tree-folder > svg { width: 15px; height: 15px; flex: none; }
-  .change-list .change-row { height: 38px; }
-  .change-file-text { display: grid; min-width: 0; flex: 1; align-content: center; gap: 1px; line-height: 1.4; }
+  /* The ring belongs to the whole row and is drawn over the actions that cover its end. */
+  .file-label:focus-visible, .folder-name:focus-visible, .folder-toggle:focus-visible { outline: none; }
+  .change-row:has(.file-label:focus-visible)::after, .tree-folder:has(.folder-name:focus-visible, .folder-toggle:focus-visible)::after { position: absolute; inset: 0; outline: 2px solid var(--ring); outline-offset: -2px; content: ""; pointer-events: none; }
+  /* The folder gives way before the name, so a long path never hides the file. */
+  .change-file-text { display: flex; min-width: 0; flex: 1; align-items: baseline; gap: 6px; line-height: 1.4; }
   .change-file-text > span,
   .change-file-text small {
     min-width: 0;
@@ -424,19 +436,37 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .change-file-text small { color: var(--muted-foreground); font-size: var(--text-meta); }
-  .change-row-actions, .change-actions { display: flex; flex: none; align-items: center; gap: 3px; }
-  .change-row-actions .change-actions { display: contents; }
-  .change-action-button { min-width: 26px; min-height: 26px; color: color-mix(in oklch, var(--muted-foreground) 82%, var(--foreground)); }
+  .change-file-text small { flex-shrink: 1000; padding-right: 0; color: var(--muted-foreground); font-size: var(--text-meta); }
+  /* Actions cover the end of the row instead of joining its flow, so neither
+     the row nor where its name cuts off moves when they appear. They stay in
+     the tab order while hidden, which is how the keyboard reaches them. The
+     surface repeats the row's own translucent wash over an opaque base. */
+  .change-row-actions {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    gap: 1px;
+    padding: 0 8px 0 18px;
+    background: linear-gradient(var(--row-surface), var(--row-surface)), var(--sidebar);
+    mask-image: linear-gradient(to right, transparent, black 12px);
+    opacity: 0;
+    pointer-events: none;
+  }
+  .change-row:hover > .change-row-actions, .tree-folder:hover > .change-row-actions,
+  .change-row:has(:focus-visible) > .change-row-actions, .tree-folder:has(:focus-visible) > .change-row-actions { opacity: 1; pointer-events: auto; }
+  .change-action-button { color: var(--muted-foreground); }
   .change-action-button svg { width: 14px; min-width: 14px; height: 14px; min-height: 14px; }
-  .change-action-button:hover { background: color-mix(in oklch, var(--foreground) 11%, transparent); color: var(--foreground); box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--foreground) 8%, transparent); }
-  .status-code { width: 18px; color: var(--chart-3); font-family: var(--font-mono); font-size: var(--text-meta); text-align: center; }
-  .status-code.conflict { color: var(--destructive); }
-  .conflict-section .section-heading { color: var(--destructive); }
-  /* A real positioned rail avoids the top/bottom hairlines that an inset
-     shadow can paint when virtual rows land on fractional device pixels. */
-  .conflict-row { position: relative; }
-  .conflict-row::before { position: absolute; top: 0; bottom: 0; left: 0; width: 2px; background: color-mix(in oklch, var(--destructive) 70%, transparent); content: ""; pointer-events: none; }
+  .change-action-button:hover { background: var(--row-hover); color: var(--foreground); }
+  /* Status letters are where a change's meaning is colour-coded; anything else stays muted. */
+  .status-code { width: 12px; flex: none; color: var(--muted-foreground); font-family: var(--font-mono); font-size: var(--text-meta); font-weight: var(--weight-strong); text-align: center; }
+  .status-code[data-kind="modified"] { color: var(--warning); }
+  .status-code[data-kind="added"] { color: var(--success); }
+  .status-code[data-kind="deleted"], .status-code[data-kind="conflicted"] { color: var(--destructive); }
+  .conflict-section .change-group-label { color: var(--destructive); }
+  .conflict-section .plain-count { color: inherit; }
   .virtual-scroll { height: 100%; min-height: 0; overflow: auto; }
   .virtual-list, .files-tree { position: relative; width: 100%; }
   .virtual-row { position: absolute; top: 0; left: 0; width: 100%; }
@@ -447,6 +477,7 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   .files-sticky { position: sticky; top: 0; left: 0; z-index: 5; width: 100%; height: 0; }
   .files-sticky-row { position: absolute; left: 0; right: 0; background: var(--sidebar); cursor: pointer; }
   .files-sticky-row:last-child { box-shadow: 0 3px 6px -3px color-mix(in oklch, black 45%, transparent); }
+  .file-tree-row > svg { width: 15px; height: 15px; flex: none; }
   .file-tree-row { display: flex; width: 100%; height: 29px; align-items: center; gap: 6px; overflow: hidden; padding-right: 8px; font-size: var(--text-ui); text-align: left; }
   .file-tree-row.dragging { opacity: .42; }
   .file-drag-overlay { display: flex; max-width: 320px; align-items: center; gap: 7px; overflow: hidden; border: 1px solid color-mix(in oklch, var(--primary) 45%, var(--sidebar-border)); border-radius: var(--radius-md); background: color-mix(in oklch, var(--sidebar) 94%, transparent); padding: 7px 9px; color: var(--foreground); font-size: var(--text-ui); box-shadow: 0 10px 24px color-mix(in oklch, black 34%, transparent); transform: translateZ(0); }
@@ -1570,26 +1601,24 @@ section[data-sileo-viewport] [data-sileo-title] { text-transform: none; }
 
   /* Lists ---------------------------------------------------------------- */
   .tree-folder, .change-row, .file-tree-row { font-family: var(--font-sans); }
-  .change-list .change-row { height: 38px; }
-  .tree-folder, .file-tree-row { min-height: 30px; }
-  .change-row:hover, .file-tree-row:hover:not(.files-sticky-row), .tree-folder:hover,
-  .commit-header:hover, .commit-file-row:hover, .pull-item:hover {
+  .file-tree-row { min-height: 30px; }
+  .file-tree-row:hover:not(.files-sticky-row), .commit-header:hover, .commit-file-row:hover, .pull-item:hover {
     background: var(--row-hover);
   }
+  .change-row:hover, .tree-folder:hover, .change-row:has(:focus-visible), .tree-folder:has(:focus-visible) { --row-surface: var(--row-hover); }
   /* Selection is a neutral surface with no accent rail: contrast and weight
      carry the state, so a long file list stays quiet while scanning. */
-  .change-row[aria-selected="true"], .file-tree-row[aria-selected="true"], .pull-item.active {
+  .file-tree-row[aria-selected="true"], .pull-item.active {
     background: var(--row-selected);
     color: var(--foreground);
     font-weight: var(--weight-medium);
   }
+  .change-row[aria-current="true"] { --row-surface: var(--row-selected); }
   /* The keyboard cursor is a hairline, so it never competes with selection. */
   .file-tree-row[aria-current="true"]:not([aria-selected="true"]) {
     background: transparent;
     box-shadow: inset 0 0 0 1px var(--row-selected-edge);
   }
-  .conflict-row { box-shadow: none; }
-  .conflict-row::before { background: var(--destructive); }
   .file-tree-row.drop-target {
     background: color-mix(in oklch, var(--primary) 16%, transparent);
     box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--primary) 50%, transparent);
@@ -1604,14 +1633,9 @@ section[data-sileo-viewport] [data-sileo-title] { text-transform: none; }
   .file-tree-row.files-sticky-row { background: var(--sidebar); }
   .file-tree-row.files-sticky-row:hover { background: color-mix(in oklch, var(--foreground) 8%, var(--sidebar)); }
   .change-file-text small, .commit-meta { letter-spacing: .005em; }
-  .status-code, .commit-oid, .ref-chip, code, kbd {
+  .commit-oid, .ref-chip, code, kbd {
     font-family: var(--font-mono);
   }
-  /* The status letter is where the meaning of a change is colour-coded. */
-  .status-code { color: var(--muted-foreground); font-weight: var(--weight-strong); }
-  .status-code[data-kind="added"], .status-code[data-kind="untracked"] { color: var(--diff-added); }
-  .status-code[data-kind="deleted"] { color: var(--diff-deleted); }
-  .status-code.conflict, .status-code[data-kind="conflicted"] { color: var(--destructive); }
 
   /* Anything that destroys work turns red on hover, everywhere in the app. */
   .change-action-discard:hover, .commit-undo:hover, .repository-row-delete:hover {
@@ -1621,71 +1645,57 @@ section[data-sileo-viewport] [data-sileo-title] { text-transform: none; }
   }
 
   /* Commit composer ------------------------------------------------------
-     The composer floats over the workspace instead of living in the sidebar:
-     writing a commit message is a moment of focus, not a permanent panel. */
+     Docked at the bottom of the sidebar. The plan is the part that scrolls, so
+     the message and its actions stay in view however long the plan gets. */
   .commit-composer {
-    position: fixed;
-    bottom: 26px;
-    left: 50%;
-    z-index: 40;
-    display: grid;
-    width: min(680px, calc(100vw - 48px));
-    max-height: min(78vh, 720px);
-    overflow-y: auto;
-    gap: 10px;
-    border: 1px solid color-mix(in oklch, var(--primary) 18%, var(--border));
-    border-radius: var(--radius-xl);
-    background: color-mix(in oklch, var(--popover) 92%, var(--background));
-    padding: 12px;
-    box-shadow: 0 18px 48px rgb(0 0 0 / 38%), 0 2px 8px rgb(0 0 0 / 22%);
-    animation: commit-composer-in .22s var(--ease-out) both;
-    backdrop-filter: blur(14px);
+    display: flex;
+    max-height: 72%;
+    min-height: 0;
+    flex: 0 1 auto;
+    flex-direction: column;
+    gap: 8px;
+    border-top: 1px solid var(--sidebar-border);
+    padding: 10px 12px;
   }
-  .commit-composer[data-state="closed"] { animation: commit-composer-out .17s ease-in both; pointer-events: none; }
-  .commit-composer-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-  .commit-composer-title { display: inline-flex; align-items: center; gap: 6px; color: var(--foreground); font-size: var(--text-ui); font-weight: var(--weight-strong); }
-  .commit-composer-title svg { width: 14px; height: 14px; color: var(--primary); }
-  .commit-composer-hint { display: inline-flex; gap: 3px; opacity: .7; }
-  .commit-composer-input { min-height: 78px; background: var(--background); line-height: 1.45; resize: none; }
-  .commit-composer-actions { display: grid; gap: 8px; }
-  .commit-composer-actions [data-slot="button"] { height: 36px; font-weight: var(--weight-strong); }
-  .commit-composer-generate { width: 100%; border-color: var(--border); background: transparent; color: var(--muted-foreground); }
+  .commit-composer-input { flex: none; max-height: 40vh; }
+  .commit-composer > .commit-composer-generate { max-width: calc(100% + 6px); align-self: flex-start; justify-content: flex-start; margin-left: -6px; padding-inline: 6px; font-weight: var(--weight-medium); }
+  .commit-composer-generate-text { display: flex; min-width: 0; }
+  .commit-composer-generate { color: var(--muted-foreground); }
   .commit-composer-generate:hover:not(:disabled) { background: var(--row-hover); color: var(--foreground); }
   .commit-composer-generate > .ai-provider-icon { width: 16px; height: 16px; }
-  .commit-composer-provider { display: inline-flex; min-width: 0; align-items: center; gap: 5px; }
-  .commit-composer-harness { color: var(--primary); font-weight: var(--weight-strong); }
-  .commit-composer-model { color: var(--foreground); font-weight: var(--weight-medium); }
-  .commit-plan { display: grid; gap: 7px; border: 1px solid color-mix(in oklch, var(--primary) 28%, var(--border)); border-radius: var(--radius-lg); background: color-mix(in oklch, var(--primary) 6%, var(--background)); padding: 9px; }
-  .commit-plan-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .commit-composer-provider { display: inline-block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .commit-composer-provider > [aria-hidden="true"] { margin-inline: 5px; }
+  .commit-composer-harness, .commit-composer-model { color: var(--foreground); font-weight: var(--weight-medium); }
+  /* The first control in the markup is the main action, drawn at the far right.
+     The shortcut hint is the one thing here that can give way in a narrow sidebar. */
+  .commit-composer-commit { display: flex; flex: none; flex-direction: row-reverse; align-items: center; gap: 4px; }
+  .commit-composer-hint { min-width: 0; margin-right: auto; overflow: hidden; color: var(--muted-foreground); font-size: var(--text-meta); white-space: nowrap; }
+  .commit-plan { display: flex; min-height: 0; flex: 0 1 auto; flex-direction: column; gap: 4px; }
+  .commit-plan-heading { display: flex; flex: none; align-items: center; justify-content: space-between; gap: 8px; }
   .commit-plan-heading > span { display: inline-flex; align-items: center; gap: 6px; font-size: var(--text-ui); }
-  .commit-plan-heading svg { width: 15px; height: 15px; color: var(--primary); }
-  .commit-plan > p { margin: 0; color: var(--muted-foreground); font-size: var(--text-meta); line-height: 1.4; }
-  .commit-plan-list { display: grid; max-height: 280px; gap: 5px; overflow-y: auto; overscroll-behavior: contain; }
-  .commit-plan-list article { display: flex; min-width: 0; align-items: flex-start; gap: 10px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--background); padding: 7px 8px; }
-  .commit-plan-list article > button { margin-top: 1px; }
-  .commit-plan-list article.prepared { border-color: color-mix(in oklch, var(--primary) 45%, var(--border)); background: color-mix(in oklch, var(--primary) 8%, var(--background)); }
+  .commit-plan-heading-actions { flex: none; gap: 2px; }
+  .commit-plan-progress { color: var(--muted-foreground); font-size: var(--text-meta); font-style: normal; font-weight: var(--weight-regular); }
+  .commit-plan-body { display: grid; min-height: 0; flex: 0 1 auto; gap: 6px; overflow-y: auto; overscroll-behavior: contain; margin-inline: -12px; padding-inline: 12px; }
+  .commit-plan-body > p { margin: 0; color: var(--muted-foreground); font-size: var(--text-meta); line-height: 1.4; }
+  .commit-plan-list { display: grid; min-width: 0; }
+  /* A prepared group wears the same surface as a selected row, edge to edge. */
+  .commit-plan-list article { display: flex; min-width: 0; align-items: flex-start; gap: 8px; margin-inline: -12px; padding: 6px 12px; }
+  .commit-plan-list article.prepared { background: var(--row-selected); }
   .commit-plan-list article > div { display: grid; min-width: 0; flex: 1; gap: 2px; }
-  .commit-plan-list article strong { overflow: hidden; font-size: var(--text-ui); text-overflow: ellipsis; white-space: nowrap; }
-  .commit-plan-list article small { overflow: hidden; color: var(--muted-foreground); font-size: var(--text-meta); line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
-  .commit-plan-heading-actions { display: inline-flex; align-items: center; gap: 2px; }
-  .commit-plan-progress { color: var(--muted-foreground); font-size: var(--text-meta); font-style: normal; font-weight: var(--weight-strong); }
-  .commit-plan-list article.done { border-style: dashed; opacity: .62; }
-  .commit-plan-list article.done strong { text-decoration: line-through; }
-  .commit-plan-done-icon { width: 12px; height: 12px; margin-right: 3px; color: var(--git-push); vertical-align: -2px; }
+  .commit-plan-list article > button { flex: none; }
+  .commit-plan-list article strong { font-size: var(--text-ui); font-weight: var(--weight-medium); overflow-wrap: anywhere; }
+  .commit-plan-list article small { color: var(--muted-foreground); font-size: var(--text-meta); line-height: 1.35; }
+  .commit-plan-list article.done strong { color: var(--muted-foreground); text-decoration: line-through; }
+  .commit-plan-done-icon { display: inline; width: 12px; height: 12px; margin-right: 3px; color: var(--success); vertical-align: -2px; }
   /* Paths wrap as individual targets so a long group stays readable and every
-     file can be opened for review before the group is prepared. They do not
-     scroll on their own: a 44px scroll box nested inside the already scrolling
-     plan list rendered as a stray scrollbar stub and trapped the wheel. Only
-     the list scrolls; a group is simply as tall as its files need. */
-  .commit-plan-paths { display: flex; flex-wrap: wrap; gap: 3px; }
+     file can be opened for review before the group is prepared. */
+  .commit-plan-paths { display: flex; flex-wrap: wrap; gap: 0 8px; }
   .commit-plan-path {
     max-width: 100%; overflow: hidden; border-radius: var(--radius-sm);
-    background: color-mix(in oklch, var(--foreground) 7%, transparent); padding: 1px 5px;
     color: var(--muted-foreground); font-family: var(--font-mono); font-size: var(--text-meta);
-    text-overflow: ellipsis; white-space: nowrap;
+    text-align: left; text-overflow: ellipsis; white-space: nowrap;
   }
-  .commit-plan-path:hover { background: color-mix(in oklch, var(--primary) 16%, transparent); color: var(--foreground); }
-  .commit-plan-path:focus-visible { outline: 2px solid var(--primary); outline-offset: -1px; }
+  .commit-plan-path:hover { color: var(--foreground); text-decoration: underline; text-underline-offset: 2px; }
   .commit-plan-note { color: var(--muted-foreground); font-size: var(--text-meta); line-height: 1.4; }
   .ai-log-dialog { display: grid; max-height: min(720px, calc(100vh - 96px)); gap: 10px; grid-template-rows: auto auto 1fr; padding: 16px; }
   .ai-log-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
@@ -1706,26 +1716,6 @@ section[data-sileo-viewport] [data-sileo-title] { text-transform: none; }
   button.ai-log-note { border: 0; max-width: 28rem; overflow: hidden; font: inherit; text-align: left; text-overflow: ellipsis; white-space: nowrap; cursor: default; }
   .ai-log-note.warn { background: color-mix(in oklch, var(--diff-token-keyword) 14%, transparent); color: var(--diff-token-keyword); }
   .ai-log-note.error { background: color-mix(in oklch, var(--destructive) 14%, transparent); color: var(--destructive); }
-  .commit-composer-commit { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; animation: commit-actions-in .2s var(--ease-out) both; }
-  .commit-composer-commit[data-state="closed"] { animation: commit-actions-out .16s ease-in both; pointer-events: none; }
-  .commit-composer-secondary { border-color: color-mix(in oklch, var(--primary) 26%, var(--border)); color: var(--foreground); }
-
-  @keyframes commit-composer-in {
-    from { opacity: 0; transform: translate(-50%, 14px) scale(.97); }
-    to { opacity: 1; transform: translate(-50%, 0) scale(1); }
-  }
-  @keyframes commit-composer-out {
-    from { opacity: 1; transform: translate(-50%, 0) scale(1); }
-    to { opacity: 0; transform: translate(-50%, 10px) scale(.98); }
-  }
-  @keyframes commit-actions-in {
-    from { opacity: 0; transform: translateY(-6px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
-  @keyframes commit-actions-out {
-    from { opacity: 1; transform: translateY(0); }
-    to { opacity: 0; transform: translateY(-6px); }
-  }
 
   /* History -------------------------------------------------------------- */
   .history-list { --history-local: var(--warning); --history-published: var(--primary); --history-base: var(--muted-foreground); }
@@ -1860,7 +1850,7 @@ section[data-sileo-viewport] [data-sileo-title] { text-transform: none; }
     gap: 10px;
     border-bottom: 1px solid var(--border);
     background: var(--background);
-    padding: 5px 8px 5px 12px;
+    padding: 5px 8px 5px 16px;
   }
   .diff-workspace-scope { min-width: 0; flex: 1; }
   .pr-code-scope { display: flex; min-width: 0; align-items: center; gap: 8px; }
@@ -1872,66 +1862,60 @@ section[data-sileo-viewport] [data-sileo-title] { text-transform: none; }
   .pr-commit-menu { width: min(40rem, var(--available-width)); }
   .pr-commit-select:focus-visible { border-color: var(--ring); box-shadow: 0 0 0 2px color-mix(in oklch, var(--ring) 30%, transparent); }
   .diff-file-count { flex: none; color: var(--muted-foreground); font-size: var(--text-meta); white-space: nowrap; }
-  .diff-total-stats, .diff-file-stats { display: inline-flex; flex: none; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: var(--text-meta); font-weight: var(--weight-strong); }
+  .diff-total-stats, .diff-file-stats { display: inline-flex; flex: none; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: var(--text-meta); font-weight: var(--weight-medium); }
   .diff-total-stats .add, .diff-file-stats .add { color: var(--diff-added); }
   .diff-total-stats .del, .diff-file-stats .del { color: var(--diff-deleted); }
   .diff-workspace-actions { display: flex; flex: none; align-items: center; gap: 2px; margin-left: auto; }
-  .diff-workspace-actions button[aria-pressed="true"] { background: var(--row-selected); color: var(--foreground); }
+  /* Plain tools: an active one is simply brighter than the rest. */
+  .diff-workspace-actions button { color: var(--muted-foreground); }
+  .diff-workspace-actions button[aria-pressed="true"] { color: var(--foreground); }
   .diff-workspace-scroll { min-height: 0; flex: 1; overflow: auto; }
   .diff-workspace-content { display: grid; min-width: 100%; align-content: start; }
-  /* The rule between files separates them; after the last one there is nothing
-     left to separate. */
+  /* The rule after a file's code closes it before the next header. A collapsed
+     file has no code, so its header's own rule is the only one it needs. */
   .diff-file-section { min-width: 100%; border-bottom: 1px solid var(--border); }
-  .diff-file-section:last-child { border-bottom: 0; }
+  .diff-file-section:last-child, .diff-file-section:has(> .diff-file-header[aria-expanded="false"]) { border-bottom: 0; }
+  /* Sticky, so it stays opaque while code scrolls under it. */
   .diff-file-header {
     position: sticky;
     z-index: 3;
     top: 0;
     display: flex;
     width: 100%;
-    min-height: 38px;
+    min-height: 40px;
     align-items: center;
-    gap: 7px;
+    gap: 8px;
     border: 0;
-    background: color-mix(in oklch, var(--background) 94%, var(--muted));
-    padding: 6px 12px;
+    border-bottom: 1px solid var(--border);
+    background: var(--background);
+    padding: 4px 16px;
     color: var(--foreground);
     text-align: left;
     cursor: pointer;
   }
-  .diff-file-header:hover { background: color-mix(in oklch, var(--foreground) 8%, var(--background)); }
+  .diff-file-header:hover { background: color-mix(in oklch, var(--foreground) 5%, var(--background)); }
   .diff-file-header:focus-visible { z-index: 4; outline: 2px solid var(--ring); outline-offset: -2px; }
-  .diff-file-header-compact { min-height: 48px; cursor: default; padding-right: 8px; }
-  .diff-file-header-compact:hover { background: color-mix(in oklch, var(--background) 94%, var(--muted)); }
+  .diff-file-header-compact { cursor: default; padding-right: 8px; }
+  .diff-file-header-compact:hover { background: var(--background); }
   .diff-file-header-compact .diff-workspace-actions { margin-left: 4px; }
   .diff-file-chevron { width: 14px; height: 14px; flex: none; color: var(--muted-foreground); }
-  .diff-file-icon { width: 16px; height: 16px; flex: none; object-fit: contain; }
+  /* One line: the directory gives way first, and a name too long for the row
+     wraps, so the file being read is never cut off. */
   .diff-file-path {
-    display: grid;
+    display: flex;
     min-width: 0;
     flex: 1;
-    align-content: center;
-    gap: 1px;
-    overflow: visible;
+    align-items: baseline;
     font-family: var(--font-mono);
-    line-height: 1.4;
-  }
-  .diff-file-name {
-    min-width: 0;
-    overflow-wrap: anywhere;
-    padding-right: 2px;
     font-size: var(--text-ui);
-    font-weight: var(--weight-medium);
     line-height: 1.4;
-    white-space: normal;
   }
+  .diff-file-name { min-width: 0; font-weight: var(--weight-medium); overflow-wrap: anywhere; }
   .diff-file-directory {
     min-width: 0;
+    flex-shrink: 1000;
     overflow: hidden;
-    padding-right: 2px;
     color: var(--muted-foreground);
-    font-size: var(--text-meta);
-    line-height: 1.4;
     text-overflow: ellipsis;
     white-space: nowrap;
   }

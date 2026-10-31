@@ -7,7 +7,7 @@ import {
 import type { DiffResult, DiffViewPreference, ThemePreference } from '@shared/contracts';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { getVsCodeFileIconUrl } from '@/lib/vscode-icons';
+import { useTruncatedText } from '@/lib/use-truncated-text';
 import { useParsedDiff } from './useParsedDiff';
 import { OPENTIG_CODE_THEMES } from './diffThemes';
 import { type DiffFileEntry, VIEWER_SCROLLBAR_CSS } from './patch-utils';
@@ -110,23 +110,9 @@ function ParsedDiffWorkspace({ contentKey, diff, diffView, themeType, wrapLines,
             const isCollapsed = !compact && collapsed.has(file.key);
             return (
               <section key={file.key} className="diff-file-section">
-                {compact ? (
-                  <div className="diff-file-header diff-file-header-compact">
-                    <img src={getVsCodeFileIconUrl(file.path)} className="diff-file-icon" alt="" />
-                    <span className="diff-file-path"><DiffFilePathLabel path={file.path} /></span>
-                    {file.previousPath && file.previousPath !== file.path && <span className="diff-file-previous">from {file.previousPath}</span>}
-                    <span className="diff-file-stats"><span className="add">+{file.additions}</span><span className="del">−{file.deletions}</span></span>
-                    {diffActions(false)}
-                  </div>
-                ) : (
-                  <button type="button" className="diff-file-header" aria-expanded={!isCollapsed} onClick={() => toggleFile(file.key)}>
-                    {isCollapsed ? <IconChevronRight className="diff-file-chevron" /> : <IconChevronDown className="diff-file-chevron" />}
-                    <img src={getVsCodeFileIconUrl(file.path)} className="diff-file-icon" alt="" />
-                    <span className="diff-file-path"><DiffFilePathLabel path={file.path} /></span>
-                    {file.previousPath && file.previousPath !== file.path && <span className="diff-file-previous">from {file.previousPath}</span>}
-                    <span className="diff-file-stats"><span className="add">+{file.additions}</span><span className="del">−{file.deletions}</span></span>
-                  </button>
-                )}
+                {compact
+                  ? <CompactFileHeader file={file} actions={diffActions(false)} />
+                  : <CollapsibleFileHeader file={file} collapsed={isCollapsed} onToggle={() => toggleFile(file.key)} />}
                 {!isCollapsed && (
                   <FileDiff
                     key={`${contentKey}:${file.key}:${diffView}:${wrapLines}`}
@@ -156,16 +142,53 @@ function DiffFilePathLabel({ path }: { path: string }) {
   const { name, directory } = diffPathParts(path);
   return (
     <>
+      {directory ? <span className="diff-file-directory">{directory}/</span> : null}
       <span className="diff-file-name">{name}</span>
-      {directory ? <small className="diff-file-directory">{directory}</small> : null}
     </>
+  );
+}
+
+function FileHeaderFacts({ file }: { file: DiffFileEntry }) {
+  return (
+    <>
+      {file.previousPath && file.previousPath !== file.path && <span className="diff-file-previous">from {file.previousPath}</span>}
+      <span className="diff-file-stats"><span className="add">+{file.additions}</span><span className="del">−{file.deletions}</span></span>
+    </>
+  );
+}
+
+function CompactFileHeader({ file, actions }: { file: DiffFileEntry; actions: React.ReactNode }) {
+  const [pathRef, truncated] = useTruncatedText(file.path);
+  return (
+    <div className="diff-file-header diff-file-header-compact">
+      <Tooltip disabled={!truncated}>
+        <TooltipTrigger render={<span ref={pathRef} className="diff-file-path" />}><DiffFilePathLabel path={file.path} /></TooltipTrigger>
+        <TooltipContent>{file.path}</TooltipContent>
+      </Tooltip>
+      <FileHeaderFacts file={file} />
+      {actions}
+    </div>
+  );
+}
+
+function CollapsibleFileHeader({ file, collapsed, onToggle }: { file: DiffFileEntry; collapsed: boolean; onToggle(): void }) {
+  const [pathRef, truncated] = useTruncatedText(file.path);
+  return (
+    <Tooltip disabled={!truncated}>
+      <TooltipTrigger render={<button type="button" className="diff-file-header" aria-expanded={!collapsed} onClick={onToggle} />}>
+        {collapsed ? <IconChevronRight className="diff-file-chevron" /> : <IconChevronDown className="diff-file-chevron" />}
+        <span ref={pathRef} className="diff-file-path"><DiffFilePathLabel path={file.path} /></span>
+        <FileHeaderFacts file={file} />
+      </TooltipTrigger>
+      <TooltipContent anchor={pathRef}>{file.path}</TooltipContent>
+    </Tooltip>
   );
 }
 
 function DiffAction({ label, pressed, onClick, children }: { label: string; pressed?: boolean; onClick(): void; children: React.ReactNode }) {
   return (
     <Tooltip>
-      <TooltipTrigger render={<Button type="button" variant={pressed ? 'secondary' : 'ghost'} size="icon-sm" aria-label={label} aria-pressed={pressed} onClick={onClick} />}>
+      <TooltipTrigger render={<Button type="button" variant="ghost" size="icon-sm" aria-label={label} aria-pressed={pressed} onClick={onClick} />}>
         {children}
       </TooltipTrigger>
       <TooltipContent>{label}</TooltipContent>

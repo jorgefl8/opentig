@@ -23,9 +23,15 @@ vi.mock('@pierre/diffs/react', () => ({
 }));
 let root: Root;
 let container: HTMLDivElement;
+const observers = new Set<() => void>();
 beforeEach(() => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+  vi.stubGlobal('ResizeObserver', class {
+    constructor(notify: () => void) { observers.add(notify); }
+    observe() {} unobserve() {} disconnect() {}
+  });
   state.workers.length = 0;
+  observers.clear();
   container = document.createElement('div'); document.body.append(container); root = createRoot(container);
 });
 afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.unstubAllGlobals(); });
@@ -74,6 +80,55 @@ it('hides superseded content immediately and ignores a late revision after switc
   expect(last.terminate).toHaveBeenCalledOnce();
   await act(async () => handler({ data: { revision: 3, files: buildDiffFileEntries(first) } } as MessageEvent<DiffParseResponse>));
   expect(container.textContent).toBe('');
+});
+
+it('shows the directory and name on one line with the file\'s line counts', async () => {
+  const patch = largePatch(10_001, 24, 'src/deep/first.ts');
+  await render(patch);
+  await finish(0, patch);
+  const header = container.querySelector('.diff-file-header')!;
+  expect(header.querySelector('.diff-file-directory')?.textContent).toBe('src/deep/');
+  expect(header.querySelector('.diff-file-name')?.textContent).toBe('first.ts');
+  expect(header.querySelector('.diff-file-stats')?.textContent).toMatch(/^\+\d+−\d+$/);
+  expect(header.querySelector('.diff-file-path')?.firstElementChild).toBe(header.querySelector('.diff-file-directory'));
+});
+
+// Hovers on fake timers rather than waiting out the tooltip delay in real time.
+async function tooltipAfterHovering(selector: string) {
+  const trigger = container.querySelector<HTMLElement>(selector)!;
+  vi.useFakeTimers();
+  try {
+    await act(async () => {
+      for (const type of ['pointerenter', 'pointerover', 'mouseenter', 'mouseover', 'pointermove', 'mousemove']) {
+        trigger.dispatchEvent(new MouseEvent(type, { bubbles: type !== 'pointerenter' && type !== 'mouseenter' }));
+      }
+      await vi.advanceTimersByTimeAsync(700);
+    });
+  } finally { vi.useRealTimers(); }
+  return [...document.querySelectorAll('[data-slot="tooltip-content"]')].map((element) => element.textContent);
+}
+
+it.each([
+  ['collapsible', false, '.diff-file-header'],
+  ['compact', true, '.diff-file-path'],
+])('offers the full path on a %s header only when it is cut off', async (_name, compact, trigger) => {
+  const patch = largePatch(10_001, 24, 'src/deep/first.ts');
+  const renderHeader = async () => {
+    await act(async () => root.render(createElement(TooltipProvider, null, createElement(DiffWorkspace, {
+      contentKey: 'test', diff: { path: '', patch, binary: false, truncated: false, lineCount: 10_001 },
+      diffView: 'unified', themeType: 'light', wrapLines: false, compact,
+    }))));
+    await finish(0, patch);
+  };
+  vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(400);
+  const scrollWidth = vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockReturnValue(100);
+  await renderHeader();
+  try {
+    expect(await tooltipAfterHovering(trigger)).toEqual([]);
+    scrollWidth.mockReturnValue(900);
+    await act(async () => observers.forEach((notify) => notify()));
+    expect(await tooltipAfterHovering(trigger)).toContain('src/deep/first.ts');
+  } finally { vi.restoreAllMocks(); }
 });
 
 it('shows parse failures instead of stale file rows', async () => {

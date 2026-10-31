@@ -7,7 +7,7 @@ Use OpenTig to review changes, edit files, and prepare commits in an existing Gi
 ## Main workflow
 
 1. Open an existing local Git repository with `Ctrl+O`, choose a recent repository, or clone one from a URL.
-2. In **Changes**, review unstaged, staged, and conflicted files.
+2. In **Changes**, review conflicted, staged, and unstaged files.
 3. Open a diff, stage the files you want to include, and write or generate an editable commit message.
 4. Commit locally, or commit and push, then inspect the result in **History**.
 5. If the repository uses GitHub, open **GitHub** to review or create a pull request.
@@ -89,9 +89,15 @@ The workspace shell loads first. Settings, History, PR creation, Files, Search, 
 
 **Review and stage changes**
 
-1. Open **Changes** to see conflicted, staged, and unstaged files separately, as a flat list or recursive tree.
+1. Open **Changes** to see every changed file as a flat list or recursive tree. The line at the top counts the files and the lines added and removed in the worktree.
 2. Open a diff in unified or split mode, with optional line wrapping.
 3. Stage or unstage individual files, folders, a selection, or everything at once.
+
+Conflicts come first in their own group. A **Staged** group appears once something is staged, and files that aren't staged then sit under **Not staged**. With nothing staged and no conflicts, there's one list with no labels.
+
+The top line offers **Stage all**, or **Unstage all** once everything is staged. While files are in both groups, hover or focus the **Staged** label to reach an **Unstage all** for that group.
+
+With no changes, the section says so and, when the branch has commits that aren't on its remote yet, offers to push or publish them.
 
 Changed Markdown files open their staged or unstaged diff; use **Open file** for the rendered preview. HTML, SVG, and image files open a rich preview and have a separate diff action.
 
@@ -103,13 +109,13 @@ Use the built-in conflict editor to accept the current, incoming, or both sides,
 
 **Create or undo a commit**
 
-Commit the staged files with an editable message. When an upstream exists, you can commit and push in one action. For a branch without an upstream, see [publishing a branch](#safe-pull-and-push).
+The commit composer is docked at the bottom of the **Changes** sidebar while something is staged or a commit plan is open. Commit the staged files with an editable message, or press the commit shortcut from the message field. When an upstream exists, you can commit and push in one action. For a branch without an upstream, see [publishing a branch](#safe-pull-and-push).
 
 You can undo the latest unpublished commit and keep its changes staged. OpenTig checks the expected commit and upstream state before rewriting history.
 
 **Split independent changes into commits**
 
-With a [supported AI CLI](ai-assistance.md), request a multi-commit plan for staged files that represent separate responsibilities. Review the plan, then prepare one complete-file group at a time. Applying a group does not create a commit automatically.
+With a [supported AI CLI](ai-assistance.md), request a multi-commit plan for staged files that represent separate responsibilities. The plan opens in the commit composer and scrolls on its own, so the message and commit actions stay in view. Review it, then prepare one complete-file group at a time. Applying a group does not create a commit automatically.
 
 Groups retain their original numbers as you commit them and show progress. Open any listed file's diff before applying its group. Each group is rechecked against its files, so it cannot be applied after those files change. Partially staged or renamed files can prevent splitting; OpenTig explains why a plan cannot be offered.
 
@@ -120,9 +126,13 @@ Settings includes AI run metadata and failed-operation diagnostics, and lets you
 
 Diffs use the same One Light/One Dark Pro token palette as the Files editor and Markdown code blocks. Added, deleted, and modified lines retain their diff colors. Language grammars load for the file being viewed rather than at startup.
 
-File headers show the full filename with its folder path underneath. Sticky headers remain opaque on hover so scrolled code does not show through. Dialogs, including Settings and confirmations, stay above diff content and sticky headers.
+File headers show the folder path and filename on one line, then the lines added and removed. When space runs short the folder path shortens first and hovering shows the full path; a filename too long for the row wraps. Sticky headers remain opaque on hover so scrolled code does not show through. Dialogs, including Settings and confirmations, stay above diff content and sticky headers.
 
-Change and folder rows stay aligned as files load, sections empty or refill, conflicts appear, and folders expand or collapse on desktop and phones. Each highlighted row is one continuous click target with a pointer cursor; dedicated diff, open, stage, unstage, and discard controls remain available.
+A change row shows the file and a status letter: **M** modified, **A** added, and **D** deleted are colored, and other statuses stay muted. In a tree, folders use one neutral icon and their chevron shows whether they're open.
+
+Hovering a change or folder row, or moving keyboard focus into it, replaces the letter with its diff, open, stage, unstage, and discard controls without moving the row's text. On touch screens the controls stay visible. The row showing in the viewer stays highlighted.
+
+Change and folder rows stay aligned as files load, sections empty or refill, conflicts appear, and folders expand or collapse on desktop and phones. Each highlighted row is one continuous click target with a pointer cursor.
 
 </details>
 
@@ -376,7 +386,7 @@ These are the defaults. Rebind most shortcuts in **Settings → Shortcuts**. Sho
 | `Enter`, `Delete` (fixed) | Activate or close the focused file tab |
 | `Ctrl+F` | Open the integrated panel with both Find and Replace fields in the open editable file |
 | `Ctrl+Alt+F` (fixed) | Alternative shortcut that always opens Find and Replace, alongside the rebindable one above |
-| `Ctrl+Enter` | Create a commit while the commit composer is focused |
+| `Ctrl+Enter` | Create a commit while the commit message field is focused |
 | `Ctrl+Shift+Enter` | Create a commit and push when available |
 | `Ctrl+C`, `Ctrl+X`, `Ctrl+V` (fixed) | Copy, cut, or paste selected Files entries |
 | `Ctrl+Z`, `Ctrl+Shift+Z` | Undo or redo a supported Files operation |

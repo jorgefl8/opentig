@@ -4,7 +4,7 @@
 
 Use **Settings → General** to change themes, fonts, file views, and remote checks. Use **Settings → Shortcuts** to customize keyboard controls.
 
-On desktop, navigation and file lists sit in a resizable sidebar; editors, diffs, commits, PRs, and releases open in the viewer. Phone browsers show one pane at a time. Both clients connect to the same repository backend. Native desktop controls are available only in the desktop app.
+On desktop, navigation, file lists, and the commit composer sit in a resizable sidebar; editors, diffs, commits, PRs, and releases open in the viewer. Phone browsers show one pane at a time. Both clients connect to the same repository backend. Native desktop controls are available only in the desktop app.
 
 ## Appearance and settings
 
@@ -92,7 +92,7 @@ The top bar reads as a breadcrumb: the repository, the branch, and the branch's 
 - **Repository menu:** repositories, then **Open repository…** (`Ctrl+O`), **Open on GitHub** for GitHub repositories, and **Manage projects…**.
 - **Branch menu:** local and remote branches, a **Worktrees** group when the repository has more than one worktree, and **Manage branches…** and **Manage worktrees…**. While an operation makes the repository read-only, branches can't be chosen but other worktrees can.
 
-Branch and worktree management rows show information in their details panel; diff headers show the file name and directory directly.
+Branch and worktree management rows show information in their details panel; diff headers show the directory and file name directly.
 
 <details>
 <summary>Long menus, scrolling, and option hints</summary>

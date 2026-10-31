@@ -2165,6 +2165,38 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   const conflicts = status?.changes.filter((change) => change.conflict) ?? [];
   const staged = status?.changes.filter((change) => change.staged && !change.conflict) ?? [];
   const changed = status?.changes.filter((change) => change.unstaged && !change.conflict) ?? [];
+  // Docked at the bottom of the sidebar on desktop; a pane of its own on phones.
+  const commitComposer = (
+    <CommitComposer
+      open={mobile ? mobilePane === 'commit' : view === 'changes' && Boolean(status?.stagedCount || commitProposal)}
+      stagedCount={status?.stagedCount ?? 0}
+      message={commitMessage}
+      generating={Boolean(generating)}
+      harness={bootstrap.preferences.commitMessageHarness}
+      harnessLabel={harnessLabel(bootstrap.preferences.commitMessageHarness)}
+      modelLabel={aiModelLabel(
+        capabilities?.aiProviders,
+        bootstrap.preferences.commitMessageHarness,
+        bootstrap.preferences.commitMessageModels[bootstrap.preferences.commitMessageHarness] ?? 'default',
+      )}
+      busy={busy}
+      readOnly={Boolean(status?.readOnly)}
+      canPush={Boolean(status?.branch && !status.detached && !status.readOnly)}
+      proposal={commitProposal}
+      preparedIndex={preparedCommitIndex}
+      completed={completedCommitIndices}
+      collapsed={commitPlanCollapsed}
+      textareaRef={commitTextareaRef}
+      onMessage={setCommitMessage}
+      onGenerate={() => void generateCommitMessage()}
+      onCancelGenerate={() => void cancelCommitMessageGeneration()}
+      onDismissProposal={() => { setCommitProposal(null); setPreparedCommitIndex(null); setCompletedCommitIndices(new Set()); }}
+      onToggleCollapsed={() => setCommitPlanCollapsed((value) => !value)}
+      onOpenPath={(path) => { selectViewer({ type: 'diff', path, kind: 'staged' }); }}
+      onPrepare={(index) => void prepareCommitGroup(index)}
+      onCommit={(options) => void createCommit(options)}
+    />
+  );
 
   return (
     <ShortcutsProvider shortcuts={shortcuts}>
@@ -2368,6 +2400,16 @@ export default function App({ initialView, initialSelection, pullRequestCreation
                   changed={changed}
                   displayMode={bootstrap.preferences.changesLayout}
                   readOnly={Boolean(status?.readOnly)}
+                  changeCount={status?.changes.length ?? 0}
+                  insertions={status?.insertions ?? 0}
+                  deletions={status?.deletions ?? 0}
+                  selection={viewerSelection?.type === 'diff' ? { path: viewerSelection.path, kind: viewerSelection.kind }
+                    : viewerSelection?.type === 'conflict' || viewerSelection?.type === 'file' ? { path: viewerSelection.path, kind: null }
+                    : null}
+                  unpublishedCommits={status?.ahead ?? 0}
+                  branchNeedsPublication={needsBranchPublication(status)}
+                  publishDisabled={Boolean(busy) || Boolean(status?.readOnly) || repositorySyncOperations.has(repository.id)}
+                  onPublish={() => void pushUpdates()}
                   onSelect={(path, kind) => { selectViewer({ type: 'diff', path, kind }); }}
                   onConflict={(path) => { selectViewer({ type: 'conflict', path }); }}
                   onOpenFile={openFile}
@@ -2488,6 +2530,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
               )}
               </div>
             </div>
+            {!mobile && commitComposer}
             {!welcomeReplay && (bootstrap.onboardingVersion === 0 || checklistReplay) && <GettingStartedChecklist key={repository.id} repository={repository} onDismiss={dismissChecklist} onSettings={openSettings} />}
           </aside>
           <section className="viewer-pane">
@@ -2538,35 +2581,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
             </div>
           </section>
         </main>
-        <CommitComposer
-          open={mobile ? mobilePane === 'commit' : view === 'changes' && Boolean(status?.stagedCount || commitProposal)}
-          stagedCount={status?.stagedCount ?? 0}
-          message={commitMessage}
-          generating={Boolean(generating)}
-          harness={bootstrap.preferences.commitMessageHarness}
-          harnessLabel={harnessLabel(bootstrap.preferences.commitMessageHarness)}
-          modelLabel={aiModelLabel(
-            capabilities?.aiProviders,
-            bootstrap.preferences.commitMessageHarness,
-            bootstrap.preferences.commitMessageModels[bootstrap.preferences.commitMessageHarness] ?? 'default',
-          )}
-          busy={busy}
-          readOnly={Boolean(status?.readOnly)}
-          canPush={Boolean(status?.branch && !status.detached && !status.readOnly)}
-          proposal={commitProposal}
-          preparedIndex={preparedCommitIndex}
-          completed={completedCommitIndices}
-          collapsed={commitPlanCollapsed}
-          textareaRef={commitTextareaRef}
-          onMessage={setCommitMessage}
-          onGenerate={() => void generateCommitMessage()}
-          onCancelGenerate={() => void cancelCommitMessageGeneration()}
-          onDismissProposal={() => { setCommitProposal(null); setPreparedCommitIndex(null); setCompletedCommitIndices(new Set()); }}
-          onToggleCollapsed={() => setCommitPlanCollapsed((value) => !value)}
-          onOpenPath={(path) => { selectViewer({ type: 'diff', path, kind: 'staged' }); }}
-          onPrepare={(index) => void prepareCommitGroup(index)}
-          onCommit={(options) => void createCommit(options)}
-        />
+        {mobile && commitComposer}
         <nav className="mobile-navigation" aria-label="Repository views">
           {SIDEBAR_VIEWS.map((item) => (
             <button key={item} aria-current={view === item ? 'page' : undefined} onClick={() => { setView(item); setMobilePane('list'); }}>

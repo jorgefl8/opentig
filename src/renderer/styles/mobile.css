@@ -74,11 +74,14 @@
   html .file-tree-row { height: 44px; }
   html .change-row { min-height: 48px; height: 48px; }
   html .tree-folder { min-height: 48px; }
-  html .change-row-actions { opacity: 1; }
+  html .change-row-actions { position: static; padding: 0; background: none; mask-image: none; opacity: 1; pointer-events: auto; }
+  html .change-file-text { display: grid; align-content: center; gap: 1px; }
   html .change-action-button { min-width: 36px; min-height: 40px; }
   html .folder-toggle { width: 36px; height: 44px; }
   html .file-label { min-height: 44px; }
-  html .section-heading { min-height: 44px; }
+  html .change-group-label { min-height: 44px; padding-top: 0; }
+  html .change-group-label .quiet-action { min-height: 40px; opacity: 1; }
+  html .changes-strip > .quiet-action { min-height: 40px; }
   html .files-mobile-tools { display: flex; flex: none; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--border); padding: 4px 8px; }
   html .file-touch-actions { display: inline-flex; position: absolute; top: 0; right: 0; width: 44px; height: 44px; align-items: center; justify-content: center; background: var(--sidebar); }
   html .file-touch-actions svg { width: 18px; height: 18px; }
@@ -97,15 +100,16 @@
 
   /* The commit form is a workspace destination on phones, so it cannot cover
      staging controls. Going back leaves the draft and suggested plan intact. */
-  html .commit-composer { position: relative; bottom: auto; left: auto; min-height: 0; max-height: none; width: 100%; flex: 1; align-content: start; border: 0; border-radius: 0; padding: 16px; box-shadow: none; animation: none; transform: none; }
-  html .commit-composer { overflow-y: auto; overscroll-behavior: contain; }
-  html .commit-composer[data-state="closed"] { display: none; }
+  html .commit-composer { max-height: none; width: 100%; flex: 1; border-top: 0; padding: 16px; overflow-y: auto; overscroll-behavior: contain; }
+  html .commit-plan, html .commit-plan-body { flex: none; overflow: visible; }
   html .commit-composer-hint { display: none; }
   html .commit-composer-input { min-height: 120px; }
-  html .commit-composer-header, html .commit-plan-heading { flex-wrap: wrap; }
-  html .commit-composer-provider { flex-wrap: wrap; justify-content: center; overflow-wrap: anywhere; }
+  html .commit-plan-heading { flex-wrap: wrap; }
+  html .commit-composer-provider { overflow: visible; overflow-wrap: anywhere; white-space: normal; }
   html .commit-composer-generate { flex-wrap: wrap; height: auto; padding-block: 10px; white-space: normal; }
-  html .commit-composer-commit { grid-template-columns: minmax(0, 1fr); }
+  html .commit-composer > .commit-composer-generate { width: 100%; max-width: none; min-height: 44px; justify-content: center; margin-left: 0; }
+  html .commit-composer-commit { flex-direction: column; align-items: stretch; }
+  html .commit-composer-commit [data-slot="button"] { height: 44px; }
   html .commit-plan-heading-actions { margin-left: auto; }
 
   html .diff-workspace-toolbar { flex-wrap: wrap; gap: 6px; padding: 6px 8px; }
@@ -114,6 +118,7 @@
   html .pr-code-scope { flex-wrap: wrap; }
   html .pr-commit-select { max-width: 100%; min-height: 40px; }
   html .diff-file-header { gap: 5px; padding-inline: 8px; }
+  html .diff-file-path { flex-wrap: wrap; }
   html .diff-file-stats { font-size: var(--text-meta); gap: 3px; }
   html .commit-diff-header { padding: 12px; }
   html .commit-diff-header h2 { font-size: var(--text-title); overflow-wrap: anywhere; }
@@ -330,7 +335,8 @@
 /* Tablets and touch-enabled desktop windows retain the wide layout, while
    essential actions are still visible without hovering. */
 @media (hover: none), (pointer: coarse) {
-  .open-file-tab-close, .change-row-actions, .commit-undo, .search-replace-action, .pull-open-external, .repository-row-actions { opacity: 1; }
+  .open-file-tab-close, .commit-undo, .search-replace-action, .pull-open-external, .repository-row-actions, .change-group-label .quiet-action { opacity: 1; }
+  .change-row-actions { position: static; padding: 0; background: none; mask-image: none; opacity: 1; pointer-events: auto; }
   .file-touch-actions { display: inline-flex; position: absolute; right: 0; top: 0; height: 100%; width: 36px; align-items: center; justify-content: center; background: var(--sidebar); }
   .file-touch-actions svg { width: 18px; height: 18px; }
   .file-tree-row:not(.files-sticky-row) { padding-right: 40px; }
