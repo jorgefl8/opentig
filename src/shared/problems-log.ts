@@ -49,7 +49,7 @@ export function normalizeProblemLogEntry(value: unknown): ProblemLogEntry | null
   const source = SOURCES.find((item) => item === input.source);
   const level = LEVELS.find((item) => item === input.level) ?? 'error';
   const operation = text(input.operation, 80);
-  const message = text(input.message, MAX_TEXT);
+  const message = text(typeof input.message === 'string' ? singleLineMessage(input.message) : input.message, MAX_TEXT);
   if (!id || !source || !operation || !message || !isIsoDate(input.at)) return null;
   return {
     id,
@@ -83,16 +83,52 @@ export function sortProblemLogEntries(entries: readonly ProblemLogEntry[]): Prob
     .map((item) => item.entry);
 }
 
+/**
+ * A request that ended early doesn't explain a failure: most commands ignore its
+ * signal and keep running, so what they report afterwards is real and nobody else
+ * saw it. Only failures caused by the cancellation itself are skipped.
+ */
 export function shouldRecordCommandProblem(input: {
   command: string;
   code: string;
-  aborted?: boolean;
   error?: unknown;
 }): boolean {
   if (input.command.startsWith('diagnostics:')) return false;
-  if (input.aborted || isAbortError(input.error)) return false;
-  if (input.code === 'AI_CANCELLED' || input.code === 'INVALID_ARGUMENT') return false;
+  if (isAbortError(input.error)) return false;
+  // A file deleted while it was being opened is ordinary, not a failure.
+  if (input.code === 'AI_CANCELLED' || input.code === 'INVALID_ARGUMENT' || input.code === 'FILE_NOT_FOUND') return false;
+  // The safety checks of a GitHub action working: the user already sees why it stopped.
+  if (input.code === 'GH_PR_STATE_CHANGED' || input.code === 'GH_PR_ACTION_NOT_ALLOWED') return false;
   return true;
+}
+
+export interface ProblemLogGroup {
+  id: string;
+  level: ProblemLogLevel;
+  operation: string;
+  code: string | null;
+  message: string;
+  repositoryId: string | null;
+  count: number;
+  firstAt: string;
+  lastAt: string;
+}
+
+/** Repeats of one failure as a single row, most recent first. The stored entries stay individual. */
+export function groupProblemLogEntries(entries: readonly ProblemLogEntry[]): ProblemLogGroup[] {
+  const groups = new Map<string, ProblemLogGroup>();
+  for (const entry of entries) {
+    const key = JSON.stringify([entry.level, entry.operation, entry.code, entry.message, entry.repositoryId]);
+    const group = groups.get(key);
+    if (!group) {
+      groups.set(key, { id: entry.id, level: entry.level, operation: entry.operation, code: entry.code, message: entry.message, repositoryId: entry.repositoryId, count: 1, firstAt: entry.at, lastAt: entry.at });
+      continue;
+    }
+    group.count += 1;
+    if (entry.at < group.firstAt) group.firstAt = entry.at;
+    if (entry.at > group.lastAt) group.lastAt = entry.at;
+  }
+  return [...groups.values()].sort((left, right) => right.lastAt.localeCompare(left.lastAt));
 }
 
 export function repositoryIdFromCommandArgs(args: unknown): string | null {
@@ -124,6 +160,17 @@ function isIsoDate(value: unknown): value is string {
   return Number.isFinite(timestamp) && new Date(timestamp).toISOString() === value;
 }
 
+/** Git and hook output spans lines and may carry colors. Those shouldn't cost the whole entry. */
+function singleLineMessage(value: string): string {
+  const withoutColors = value.replace(new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*[A-Za-z]`, 'g'), '');
+  return [...withoutColors].map((character) => isControlCharacter(character) ? ' ' : character).join('').replace(/ {2,}/g, ' ');
+}
+
+function isControlCharacter(character: string): boolean {
+  const code = character.charCodeAt(0);
+  return code < 32 || code === 127;
+}
+
 function hasControlCharacters(value: string): boolean {
-  return [...value].some((character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127);
+  return [...value].some(isControlCharacter);
 }

@@ -114,7 +114,7 @@ it('keeps the text after a rejection', async () => {
 });
 
 it('holds sending back after no answer, until the conversation is checked', async () => {
-  api.commentOnPullRequest.mockRejectedValue(new ServerRequestTimeoutError('Server request timed out'));
+  api.commentOnPullRequest.mockRejectedValue(Object.assign(new ServerRequestTimeoutError('Server request timed out'), { unconfirmed: true }));
   await render();
   await type('Important');
   await act(async () => button('Comment')!.click());

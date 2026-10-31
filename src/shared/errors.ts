@@ -8,6 +8,7 @@ export type GitErrorCode =
   | 'INVALID_ARGUMENT'
   | 'OUTPUT_LIMIT'
   | 'TIMEOUT'
+  | 'FILE_NOT_FOUND'
   | 'UNKNOWN';
 
 export interface SerializedGitError {
@@ -17,6 +18,8 @@ export interface SerializedGitError {
   stderr?: string;
   exitCode?: number;
   access?: import('./repository-access').RemoteAccessProblem;
+  /** The server stopped waiting, but the work keeps running and may still succeed. */
+  unconfirmed?: boolean;
 }
 
 export type AiErrorCode =
@@ -106,6 +109,9 @@ export class GhOperationError extends Error {
 export function serializeError(error: unknown, operation = 'unknown'): SerializedOperationError {
   if (error instanceof GitOperationError || error instanceof AiOperationError || error instanceof GhOperationError) return error.detail;
   if (error instanceof Error) {
+    const { code, syscall } = error as NodeJS.ErrnoException;
+    // Resolving a path that was deleted after it was listed. The raw text also exposes the full path.
+    if (code === 'ENOENT' && syscall === 'realpath') return { code: 'FILE_NOT_FOUND', operation, message: 'The file no longer exists.' };
     return { code: 'UNKNOWN', operation, message: error.message };
   }
   return { code: 'UNKNOWN', operation, message: 'Unknown error' };

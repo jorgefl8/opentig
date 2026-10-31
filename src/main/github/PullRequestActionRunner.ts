@@ -1,6 +1,7 @@
 import { GhOperationError } from '../../shared/errors';
 import { z } from 'zod';
 import type { CommentOnPullRequestInput, PullRequestActionInput, PullRequestActionResult, PullRequestLiveState, ReviewPullRequestInput, UpdatePullRequestInput } from '../../shared/contracts';
+import { GITHUB_ACTION_STEP_TIMEOUT_MS, WORKFLOW_APPROVAL_WINDOW_MS } from '../../shared/operation-timeouts';
 import { pullRequestActionBlocked } from '../../shared/pull-request-actions';
 import { redactCommandToken } from './GitHubAccountAuth';
 import { classifyActionFailure } from './GitHubActionErrors';
@@ -8,8 +9,6 @@ import { beginGitHubMutation, withPrivateTextFile, type GitHubAccess, type GitHu
 import { parseCreatedPullRequestUrl } from './PullRequestParser';
 
 const OPERATION = 'gh-pr-action';
-// With the reads around it, this stays inside the command's 180 s window.
-const ACTION_PROCESS_TIMEOUT_MS = 45_000;
 const ZERO_OID = '0'.repeat(40);
 
 const MERGE = 'mutation($id:ID!,$method:PullRequestMergeMethod!,$head:GitObjectID!){mergePullRequest(input:{pullRequestId:$id,mergeMethod:$method,expectedHeadOid:$head}){clientMutationId}}';
@@ -25,8 +24,6 @@ const openHeadsSchema = z.object({ data: z.object({ repository: z.object({ pullR
 }) }) }) });
 const waitingRunsSchema = z.object({ workflow_runs: z.array(z.object({ id: z.number().int().positive(), status: z.string().nullish(), conclusion: z.string().nullish(), head_branch: z.string().nullish() })) });
 const RUNS_PER_PAGE = 100;
-// Approving asks GitHub again for every run, so stop before the command's window closes.
-const APPROVAL_WINDOW_MS = 120_000;
 
 export class PullRequestActionRunner {
   constructor(private readonly github: GitHubAccess) {}
@@ -162,7 +159,7 @@ export class PullRequestActionRunner {
    * approving lets the fork's code run with the repository's workflows.
    */
   private async approveWorkflows(repositoryId: string, state: PullRequestLiveState, target: GitHubTarget): Promise<void> {
-    const deadline = Date.now() + APPROVAL_WINDOW_MS;
+    const deadline = Date.now() + WORKFLOW_APPROVAL_WINDOW_MS;
     for (const id of await this.waitingRuns(state, target)) {
       if (Date.now() > deadline) throw new GhOperationError({ code: 'GH_TIMEOUT', operation: OPERATION, message: 'Some workflows may still need approval. Check the pull request and try again.', retryable: true });
       const current = await this.github.readLiveState(repositoryId, state.number);
@@ -202,7 +199,7 @@ export class PullRequestActionRunner {
   }
 
   private async gh(target: GitHubTarget, args: string[], operation = OPERATION): Promise<string> {
-    const result = await this.github.run(target.executable, args, { auth: target.auth, executable: target.executable, cwd: target.repository.path, operation, timeoutMs: ACTION_PROCESS_TIMEOUT_MS, maxOutputBytes: 4 * 1024 * 1024 });
+    const result = await this.github.run(target.executable, args, { auth: target.auth, executable: target.executable, cwd: target.repository.path, operation, timeoutMs: GITHUB_ACTION_STEP_TIMEOUT_MS, maxOutputBytes: 4 * 1024 * 1024 });
     if (result.exitCode !== 0) throw classifyActionFailure({ ...result, stderr: redactCommandToken(result.stderr, target.auth) }, operation);
     return result.stdout;
   }

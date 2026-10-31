@@ -10,7 +10,7 @@ import {
 } from '@tanstack/react-table';
 import { IconArrowsSort, IconLoader4, IconRefresh, IconSortAscending, IconSortDescending, IconTrash, IconX } from '@tabler/icons-react';
 import { sileo } from 'sileo';
-import type { ProblemLogEntry } from '@shared/problems-log';
+import { groupProblemLogEntries, type ProblemLogEntry, type ProblemLogGroup } from '@shared/problems-log';
 import { opentig } from '@/lib/opentig-api';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -45,7 +45,7 @@ const features = tableFeatures({
   sortedRowModel: createSortedRowModel(),
 });
 
-const columnHelper = createColumnHelper<typeof features, ProblemLogEntry>();
+const columnHelper = createColumnHelper<typeof features, ProblemLogGroup>();
 
 const columns = columnHelper.columns([
   columnHelper.accessor('level', {
@@ -63,10 +63,19 @@ const columns = columnHelper.columns([
     header: ({ column }) => <SortableHeader column={column} label="Code" />,
     cell: ({ getValue }) => getValue() ?? '—',
   }),
-  columnHelper.accessor((entry) => new Date(entry.at).getTime(), {
+  columnHelper.accessor('count', {
+    header: ({ column }) => <SortableHeader column={column} label="Times" />,
+    cell: ({ getValue }) => getValue(),
+  }),
+  columnHelper.accessor((group) => new Date(group.lastAt).getTime(), {
     id: 'at',
-    header: ({ column }) => <SortableHeader column={column} label="Date" />,
-    cell: ({ row }) => <time dateTime={row.original.at}>{formatDateTime(row.original.at, { seconds: true })}</time>,
+    header: ({ column }) => <SortableHeader column={column} label="Last seen" />,
+    cell: ({ row }) => (
+      <>
+        <time dateTime={row.original.lastAt}>{formatDateTime(row.original.lastAt, { seconds: true })}</time>
+        {row.original.count > 1 && <small className="ai-log-first-seen">First: <time dateTime={row.original.firstAt}>{formatDateTime(row.original.firstAt, { seconds: true })}</time></small>}
+      </>
+    ),
   }),
   columnHelper.accessor('message', {
     header: ({ column }) => <SortableHeader column={column} label="Message" />,
@@ -92,6 +101,7 @@ export function ProblemsLogDialog({ open, onOpenChange }: ProblemsLogDialogProps
 
   useEffect(() => { if (open) void load(); }, [load, open]);
 
+  const groups = useMemo(() => groupProblemLogEntries(entries), [entries]);
   const totals = useMemo(() => ({
     all: entries.length,
     errors: entries.filter((entry) => entry.level === 'error').length,
@@ -99,7 +109,7 @@ export function ProblemsLogDialog({ open, onOpenChange }: ProblemsLogDialogProps
 
   const table = useTable({
     features,
-    data: entries,
+    data: groups,
     columns,
     onSortingChange: setSorting,
     state: { sorting },
@@ -134,6 +144,7 @@ export function ProblemsLogDialog({ open, onOpenChange }: ProblemsLogDialogProps
 
         {entries.length > 0 && (
           <div className="ai-log-totals">
+            <span><strong>{groups.length}</strong> different problems</span>
             <span><strong>{totals.all}</strong> recorded</span>
             <span><strong>{totals.errors}</strong> errors</span>
           </div>

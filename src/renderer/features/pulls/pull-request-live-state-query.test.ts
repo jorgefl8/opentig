@@ -111,6 +111,31 @@ describe('pull request live state refresh', () => {
     expect(read).toHaveBeenCalledTimes(4);
   });
 
+  it.each(['GH_ACCESS_DENIED', 'GH_AUTH_REQUIRED', 'GH_ACCOUNT_MISSING', 'GH_ACCOUNT_UNRESOLVED'] as const)('stops asking after %s until the user acts', async (code) => {
+    read.mockRejectedValue(new GhOperationError({ code, operation: 'gh-pr-live-state', message: 'Needs you.' }));
+    await observe();
+    await vi.advanceTimersByTimeAsync(600_000);
+    focusManager.setFocused(false);
+    focusManager.setFocused(true);
+    onlineManager.setOnline(false);
+    onlineManager.setOnline(true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(read).toHaveBeenCalledTimes(1);
+    read.mockResolvedValue(live());
+    await resetGitHubQueries(client, ['repo']);
+    expect(read).toHaveBeenCalledTimes(2);
+  });
+
+  it('tries once more soon after a failure that may pass by itself', async () => {
+    read.mockRejectedValueOnce(new GhOperationError({ code: 'GH_PROCESS_FAILED', operation: 'gh-pr-live-state', message: 'Could not connect.', retryable: true })).mockResolvedValue(live());
+    const observer = await observe();
+    await vi.advanceTimersByTimeAsync(4_999);
+    expect(read).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(read).toHaveBeenCalledTimes(2);
+    expect(observer.getCurrentResult().data?.number).toBe(1);
+  });
+
   it('keeps the last state after a failed refresh and keeps trying', async () => {
     read.mockResolvedValueOnce(live()).mockRejectedValueOnce(new Error('offline')).mockResolvedValue(live({ updatedAt: '2' }));
     const observer = await observe();

@@ -2,17 +2,19 @@ import { queryOptions, type Query, type QueryKey } from '@tanstack/react-query';
 import type { PullRequestLiveState } from '../../../shared/contracts';
 import { opentig } from '@/lib/opentig-api';
 import { queryKeys } from '@/lib/query-client';
-import { ghDetail } from './gh-utils';
+import { serializedErrorFromReason } from '@shared/errors';
+import { failureCode, needsUserAction } from './branch-pull-request-query';
 
 const CALCULATING_WINDOW_MS = 60_000;
 const unknownSince = new WeakMap<object, number>();
 
 /** GitHub computes mergeability with a delay, so an unknown result is worth checking soon, but not for long. */
 export function pullRequestLiveStateInterval(query: Query<PullRequestLiveState, Error, PullRequestLiveState, QueryKey>): number | false {
-  const { data, error } = query.state;
+  const { data } = query.state;
   if (data && data.state !== 'OPEN') return false;
-  // Polling can't help during a rate limit. Returning to the window checks again.
-  if (ghDetail(error)?.code === 'GH_RATE_LIMITED') return false;
+  // Asking again can't help: returning to the window checks again after a rate limit,
+  // and a failure only the user can fix waits for them.
+  if (failureCode(query) === 'GH_RATE_LIMITED' || needsUserAction(query)) return false;
   if (data && (data.mergeable === 'UNKNOWN' || data.mergeStateStatus === 'UNKNOWN')) {
     const since = unknownSince.get(query) ?? Date.now();
     unknownSince.set(query, since);
@@ -30,8 +32,15 @@ export function pullRequestLiveStateQueryOptions(repositoryId: string, number: n
     enabled,
     refetchInterval: pullRequestLiveStateInterval,
     refetchIntervalInBackground: false,
-    refetchOnWindowFocus: 'always',
-    refetchOnReconnect: 'always',
+    // Right after waking the machine the network usually needs a few more seconds.
+    retry: (failures, error) => {
+      const detail = serializedErrorFromReason(error);
+      return failures < 1 && detail !== null && 'retryable' in detail && detail.retryable === true;
+    },
+    retryDelay: 5_000,
+    retryOnMount: false,
+    refetchOnWindowFocus: (query) => needsUserAction(query) ? false : 'always',
+    refetchOnReconnect: (query) => needsUserAction(query) ? false : 'always',
   });
 }
 

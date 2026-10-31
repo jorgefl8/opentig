@@ -1,7 +1,6 @@
 import type { ImageFileResult } from '@shared/contracts';
 import { IPC } from '@shared/contracts';
 import { AI_CLIENT_TIMEOUT_MS } from '@shared/ai-timeouts';
-import { GITHUB_ACTION_TIMEOUT_MS } from '@shared/github-timeouts';
 import type { OpenTigRuntimeEvent } from '@shared/runtime-events';
 import type { GitHubAccountDetection } from '@shared/github-accounts';
 import type { OpenTigServerApi } from '@shared/server-api';
@@ -148,8 +147,8 @@ export function createOpenTigServerClient(options: ServerClientOptions = {}): Op
     },
     github: {
       setDefaultAccount: (login) => invoke(IPC.githubSetDefaultAccount, login),
-      accountsStatus: (forceRefresh) => transport.request(IPC.githubAccountsStatus, [forceRefresh], { timeoutMs: 90_000 }),
-      repositoryAccount: (repositoryId, forceRefresh) => transport.request(IPC.githubRepositoryAccount, [repositoryId, forceRefresh], { timeoutMs: 60_000 }),
+      accountsStatus: (forceRefresh) => invoke(IPC.githubAccountsStatus, forceRefresh),
+      repositoryAccount: (repositoryId, forceRefresh) => invoke(IPC.githubRepositoryAccount, repositoryId, forceRefresh),
       setRepositoryAccount: (repositoryId, selection, expectedRevision) => expectedRevision === undefined ? invoke(IPC.githubSetRepositoryAccount, repositoryId, selection) : invoke(IPC.githubSetRepositoryAccount, repositoryId, selection, expectedRevision),
       status: (forceRefresh) => invoke(IPC.githubStatus, forceRefresh),
       repositoryInfo: (repositoryId) => invoke(IPC.githubRepositoryInfo, repositoryId),
@@ -158,10 +157,10 @@ export function createOpenTigServerClient(options: ServerClientOptions = {}): Op
       getPullRequest: (repositoryId, number) => invoke(IPC.githubPrView, repositoryId, number),
       getPullRequestLiveState: (repositoryId, number) => invoke(IPC.githubPrLiveState, repositoryId, number),
       getPullRequestConversation: (repositoryId, number) => invoke(IPC.githubPrConversation, repositoryId, number),
-      runPullRequestAction: (input) => transport.request(IPC.githubPrAction, [input], { timeoutMs: GITHUB_ACTION_TIMEOUT_MS }),
-      updatePullRequest: (input) => transport.request(IPC.githubPrUpdate, [input], { timeoutMs: GITHUB_ACTION_TIMEOUT_MS }),
-      commentOnPullRequest: (input) => transport.request(IPC.githubPrComment, [input], { timeoutMs: GITHUB_ACTION_TIMEOUT_MS }),
-      reviewPullRequest: (input) => transport.request(IPC.githubPrReview, [input], { timeoutMs: GITHUB_ACTION_TIMEOUT_MS }),
+      runPullRequestAction: (input) => invoke(IPC.githubPrAction, input),
+      updatePullRequest: (input) => invoke(IPC.githubPrUpdate, input),
+      commentOnPullRequest: (input) => invoke(IPC.githubPrComment, input),
+      reviewPullRequest: (input) => invoke(IPC.githubPrReview, input),
       getPullRequestStack: (repositoryId, number) => invoke(IPC.githubPrStack, repositoryId, number),
       getPullRequestDiff: (repositoryId, number) => invoke(IPC.githubPrDiff, repositoryId, number),
       getPullRequestCommitDiff: (repositoryId, oid) => invoke(IPC.githubPrCommitDiff, repositoryId, oid),
@@ -169,13 +168,13 @@ export function createOpenTigServerClient(options: ServerClientOptions = {}): Op
       createPullRequest: (input) => invoke(IPC.githubPrCreate, input),
       listReleases: (repositoryId) => invoke(IPC.githubReleaseList, repositoryId),
       getRelease: (repositoryId, tagName) => invoke(IPC.githubReleaseView, repositoryId, tagName),
-      createRelease: (input) => transport.request(IPC.githubReleaseCreate, [input], { timeoutMs: GITHUB_ACTION_TIMEOUT_MS }),
-      updateRelease: (input) => transport.request(IPC.githubReleaseUpdate, [input], { timeoutMs: GITHUB_ACTION_TIMEOUT_MS }),
-      deleteDraftRelease: (input) => transport.request(IPC.githubReleaseDelete, [input], { timeoutMs: GITHUB_ACTION_TIMEOUT_MS }),
-      publishRelease: (input) => transport.request(IPC.githubReleasePublish, [input], { timeoutMs: GITHUB_ACTION_TIMEOUT_MS }),
+      createRelease: (input) => invoke(IPC.githubReleaseCreate, input),
+      updateRelease: (input) => invoke(IPC.githubReleaseUpdate, input),
+      deleteDraftRelease: (input) => invoke(IPC.githubReleaseDelete, input),
+      publishRelease: (input) => invoke(IPC.githubReleasePublish, input),
       listWorkflows: (repositoryId) => invoke(IPC.githubWorkflowList, repositoryId),
       listWorkflowRuns: (repositoryId, path) => invoke(IPC.githubWorkflowRuns, repositoryId, path),
-      runWorkflow: (input) => transport.request(IPC.githubWorkflowRun, [input], { timeoutMs: GITHUB_ACTION_TIMEOUT_MS }),
+      runWorkflow: (input) => invoke(IPC.githubWorkflowRun, input),
       generateDraft: (input) => transport.request(IPC.githubPrDraft, [input], { timeoutMs: AI_CLIENT_TIMEOUT_MS }),
       cancelDraft: (requestId) => invoke(IPC.githubPrDraftCancel, requestId),
     },

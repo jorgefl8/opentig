@@ -81,6 +81,50 @@ describe('branch pull request refresh', () => {
   });
 });
 
+describe('failures', () => {
+  const failure = (code: string, retryable?: boolean) => Object.assign(new Error('Failed.'), { detail: { code, operation: 'gh-pr-for-branch', message: 'Failed.', ...(retryable ? { retryable } : {}) } });
+
+  it.each(['GH_ACCESS_DENIED', 'GH_AUTH_REQUIRED', 'GH_ACCOUNT_MISSING', 'GH_ACCOUNT_UNRESOLVED'])('stops checking after %s until an account change or manual refresh', async code => {
+    find.mockRejectedValue(failure(code));
+    const observer = await observe();
+    await vi.advanceTimersByTimeAsync(600_000);
+    focusManager.setFocused(false);
+    focusManager.setFocused(true);
+    onlineManager.setOnline(false);
+    onlineManager.setOnline(true);
+    await vi.advanceTimersByTimeAsync(600_000);
+    expect(find).toHaveBeenCalledTimes(1);
+
+    find.mockResolvedValue(pull('OPEN'));
+    await resetGitHubQueries(client, ['repo']);
+    expect(find).toHaveBeenCalledTimes(2);
+    expect(observer.getCurrentResult().data?.state).toBe('OPEN');
+
+    find.mockRejectedValue(failure(code));
+    await client.invalidateQueries({ queryKey: queryKeys.branchPullRequest('repo', 'feature') });
+    expect(find).toHaveBeenCalledTimes(3);
+  });
+
+  it('waits five minutes after a rate limit', async () => {
+    find.mockRejectedValue(failure('GH_RATE_LIMITED'));
+    await observe();
+    await vi.advanceTimersByTimeAsync(299_999);
+    expect(find).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(find).toHaveBeenCalledTimes(2);
+  });
+
+  it('retries a retryable failure once after five seconds, as when the network returns after waking', async () => {
+    find.mockRejectedValueOnce(failure('GH_PROCESS_FAILED', true)).mockResolvedValue(pull('OPEN'));
+    const observer = await observe();
+    await vi.advanceTimersByTimeAsync(4_999);
+    expect(find).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(find).toHaveBeenCalledTimes(2);
+    expect(observer.getCurrentResult().data?.state).toBe('OPEN');
+  });
+});
+
 it('discards an old account response that resolves after account queries reset', async () => {
   let resolvePrevious!: (value: PullRequestSummary) => void;
   find.mockReturnValueOnce(new Promise<PullRequestSummary>(resolve => { resolvePrevious = resolve; }))

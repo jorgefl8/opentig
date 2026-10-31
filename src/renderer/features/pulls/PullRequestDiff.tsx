@@ -62,7 +62,7 @@ export default function PullRequestDiff({ diff, prNumber, repositoryId, commits,
           </SelectContent>
         </Select>
       )}
-      {activeDiff?.truncated && <span className="pr-diff-truncated">Showing the first files only: the complete diff is too large.</span>}
+      {activeDiff?.truncated && <span className="pr-diff-truncated">Some files are not shown: the complete diff is too large.</span>}
     </div>
   );
   if (mode === 'commit' && commitError) {
@@ -76,7 +76,7 @@ export default function PullRequestDiff({ diff, prNumber, repositoryId, commits,
   if (!activeDiff) {
     return <DiffLoadingShell scopeControl={scopeControl}><IconLoader4 className="spinner" /> <ShimmeringText text="Loading commit diff…" /></DiffLoadingShell>;
   }
-  if (!activeDiff.patch) return <DiffLoadingShell scopeControl={scopeControl}>No differences to show.</DiffLoadingShell>;
+  if (!activeDiff.patch) return <DiffLoadingShell scopeControl={scopeControl}>{activeDiff.truncated ? 'Every changed file is too large to show here.' : 'No differences to show.'}</DiffLoadingShell>;
   return (
     <PierreWorkerPool>
       <DiffWorkspace

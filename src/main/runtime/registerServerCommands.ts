@@ -428,9 +428,16 @@ export function registerServerCommands(
     const { repositoryId, fullName, expectedOid, force } = deleteBranchArg(request, 'delete-branch');
     return services.operations.deleteLocalBranch(repositoryId, fullName, expectedOid, force);
   });
-  handle(IPC.worktreeRemove, 'remove-worktree', (request) => {
-    const { repositoryId, path, expectedOid, force, deleteBranch } = removeWorktreeArg(request, 'remove-worktree');
-    return services.operations.removeWorktree(repositoryId, path, expectedOid, force, deleteBranch);
+  handleWithContext(IPC.worktreeRemove, 'remove-worktree', async (context, request) => {
+    const { repositoryId, path, expectedOid, force, deleteBranch, cleanupOnly } = removeWorktreeArg(request, 'remove-worktree');
+    const { commonDir } = services.repositories.get(repositoryId);
+    const siblingIds = new Set([repositoryId, ...services.repositories.recents().filter((item) => item.commonDir === commonDir).map((item) => item.id)]);
+    try {
+      return await services.operations.removeWorktree(repositoryId, path, expectedOid, force, deleteBranch, { signal: context.signal, ...(cleanupOnly === undefined ? {} : { cleanupOnly }) });
+    } finally {
+      // Whoever asked may have stopped waiting long ago, and siblings list the same worktrees.
+      for (const siblingId of siblingIds) services.events.repositoryChanged(siblingId, 'worktrees');
+    }
   });
   handle(IPC.refsPull, 'pull', (id) => services.operations.pull(stringArg(id, 'pull', 64)));
   handle(IPC.refsPushContext, 'push-context', (id, remote) => services.operations.publicationContext(stringArg(id, 'push-context', 64), remote == null ? undefined : stringArg(remote, 'push-context', 512)));

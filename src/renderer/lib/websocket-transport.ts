@@ -1,8 +1,9 @@
 import type { IpcResult } from '@shared/contracts';
-import type { OpenTigServerCommandMap } from '@shared/protocol';
+import { CONNECTION_WAIT_TIMEOUT_MS } from '@shared/operation-timeouts';
+import { clientCommandTimeoutMs, commandDefinition, type OpenTigServerCommandMap } from '@shared/protocol';
 import type { OpenTigRuntimeEvent } from '@shared/runtime-events';
 import type { OpenTigServerMessage } from '@shared/server-protocol';
-import type { SerializedTransportError } from '@shared/errors';
+import { serializedErrorFromReason, type SerializedTransportError } from '@shared/errors';
 
 export type ServerConnectionState =
   | 'connecting'
@@ -15,7 +16,9 @@ export type ServerConnectionState =
 export interface WebSocketTransportOptions {
   url?: string;
   createSocket?: (url: string) => WebSocket;
+  /** Replaces the per-command budgets from the protocol. */
   requestTimeoutMs?: number;
+  connectionWaitMs?: number;
   heartbeatMs?: number;
   reconnectBaseMs?: number;
   reconnectMaxMs?: number;
@@ -24,6 +27,7 @@ export interface WebSocketTransportOptions {
 }
 
 interface PendingRequest {
+  mutation: boolean;
   resolve(value: unknown): void;
   reject(reason: Error): void;
   timer: ReturnType<typeof setTimeout>;
@@ -41,8 +45,17 @@ interface ConnectionWaiter {
 
 const SOCKET_OPEN = 1;
 
-export class ServerTransportError extends Error {}
-export class ServerDisconnectedError extends ServerTransportError {}
+export const UNCONFIRMED_RESULT_MESSAGE = 'OpenTig did not receive the result. The operation may have finished or may still be running, so check the current state before trying again.';
+
+export class ServerTransportError extends Error {
+  /** A change that reached the server, which may have finished or may still be running it. */
+  unconfirmed = false;
+}
+export class ServerDisconnectedError extends ServerTransportError {
+  constructor(message: string, readonly closeCode?: number) {
+    super(message);
+  }
+}
 export class ServerAuthenticationError extends ServerTransportError {}
 export class ServerVersionError extends ServerTransportError {}
 export class ServerRequestTimeoutError extends ServerTransportError {}
@@ -58,7 +71,8 @@ export class ServerResponseTooLargeError extends ServerTransportError {
 export class OpenTigWebSocketTransport {
   private readonly url: string;
   private readonly createSocket: (url: string) => WebSocket;
-  private readonly requestTimeoutMs: number;
+  private readonly requestTimeoutMs: number | undefined;
+  private readonly connectionWaitMs: number;
   private readonly heartbeatMs: number;
   private readonly reconnectBaseMs: number;
   private readonly reconnectMaxMs: number;
@@ -84,7 +98,8 @@ export class OpenTigWebSocketTransport {
   constructor(options: WebSocketTransportOptions = {}) {
     this.url = options.url ?? defaultWebSocketUrl();
     this.createSocket = options.createSocket ?? ((url) => new WebSocket(url));
-    this.requestTimeoutMs = options.requestTimeoutMs ?? 30_000;
+    this.requestTimeoutMs = options.requestTimeoutMs;
+    this.connectionWaitMs = options.connectionWaitMs ?? CONNECTION_WAIT_TIMEOUT_MS;
     this.heartbeatMs = options.heartbeatMs ?? 20_000;
     this.reconnectBaseMs = options.reconnectBaseMs ?? 250;
     this.reconnectMaxMs = options.reconnectMaxMs ?? 5_000;
@@ -116,24 +131,26 @@ export class OpenTigWebSocketTransport {
     args: OpenTigServerCommandMap[Command]['args'],
     options: { signal?: AbortSignal; timeoutMs?: number } = {},
   ): Promise<OpenTigServerCommandMap[Command]['result']> {
-    const timeoutMs = options.timeoutMs ?? this.requestTimeoutMs;
-    const startedAt = Date.now();
+    const timeoutMs = options.timeoutMs ?? this.requestTimeoutMs ?? clientCommandTimeoutMs(command);
     this.start();
-    await this.waitForConnection(timeoutMs, options.signal);
+    await this.waitForConnection(Math.min(timeoutMs, this.connectionWaitMs), options.signal);
     if (options.signal?.aborted) throw abortError();
     const socket = this.socket;
     if (!socket || socket.readyState !== SOCKET_OPEN) throw new ServerDisconnectedError('OpenTig server disconnected.');
 
     const id = `${Date.now().toString(36)}-${(++this.requestSequence).toString(36)}`;
-    const remaining = Math.max(1, timeoutMs - (Date.now() - startedAt));
+    const mutation = commandDefinition(command)?.mutation === true;
     return new Promise<OpenTigServerCommandMap[Command]['result']>((resolve, reject) => {
       const pending: PendingRequest = {
+        mutation,
         resolve,
         reject,
         timer: setTimeout(() => {
           this.finishPending(id);
-          reject(new ServerRequestTimeoutError(`Server request timed out: ${String(command)}`));
-        }, remaining),
+          const timedOut = new ServerRequestTimeoutError('The OpenTig server did not respond in time.');
+          timedOut.unconfirmed = mutation;
+          reject(timedOut);
+        }, timeoutMs),
         ...(options.signal ? { signal: options.signal } : {}),
       };
       if (options.signal) {
@@ -160,7 +177,7 @@ export class OpenTigWebSocketTransport {
     this.clearReconnect();
     this.setState('incompatible-version');
     this.rejectConnectionWaiters(new ServerVersionError('OpenTig server protocol is incompatible.'));
-    this.rejectPending(new ServerVersionError('OpenTig server protocol is incompatible.'));
+    this.rejectPending(() => new ServerVersionError('OpenTig server protocol is incompatible.'));
     this.socket?.close(1000, 'Incompatible protocol');
   }
 
@@ -169,7 +186,7 @@ export class OpenTigWebSocketTransport {
     this.clearReconnect();
     this.clearHeartbeat();
     this.rejectConnectionWaiters(new ServerDisconnectedError('OpenTig server connection closed.'));
-    this.rejectPending(new ServerDisconnectedError('OpenTig server connection closed.'));
+    this.rejectPending(() => new ServerDisconnectedError('OpenTig server connection closed.'));
     this.socket?.close(1000, 'Client closing');
     this.socket = null;
   }
@@ -233,17 +250,17 @@ export class OpenTigWebSocketTransport {
     if (generation !== this.socketGeneration) return;
     this.socket = null;
     this.clearHeartbeat();
-    const error = closeCode === 1008
+    const createError = () => closeCode === 1008
       ? new ServerAuthenticationError('Authentication required.')
       : closeCode === 1013
       ? new ServerBackpressureError('OpenTig server disconnected because the client send queue was full.')
-      : new ServerDisconnectedError('OpenTig server disconnected before the request completed.');
-    this.rejectPending(error);
+      : new ServerDisconnectedError(`OpenTig server disconnected before the request completed. ${disconnectCause(closeCode)}`, closeCode);
+    this.rejectPending(createError);
     if (this.stopped) return;
     if (closeCode === 1008) {
       this.stopped = true;
       this.setState('auth-required');
-      this.rejectConnectionWaiters(error);
+      this.rejectConnectionWaiters(createError());
       return;
     }
     this.reconnectAttempts += 1;
@@ -308,9 +325,11 @@ export class OpenTigWebSocketTransport {
     this.pending.delete(id);
   }
 
-  private rejectPending(error: Error): void {
+  private rejectPending(createError: () => ServerTransportError): void {
     for (const [id, pending] of [...this.pending]) {
       this.finishPending(id);
+      const error = createError();
+      error.unconfirmed = pending.mutation;
       pending.reject(error);
     }
   }
@@ -345,6 +364,25 @@ export class OpenTigWebSocketTransport {
     this.state = state;
     for (const listener of this.stateListeners) listener();
   }
+}
+
+/** The server can't be reached, as opposed to a request failing or running out of time. */
+export function isConnectionLoss(reason: unknown): boolean {
+  return reason instanceof ServerDisconnectedError || (reason instanceof ServerRequestTimeoutError && !reason.unconfirmed);
+}
+
+function disconnectCause(closeCode: number): string {
+  if (closeCode === 4000) return 'The server stopped responding.';
+  if (closeCode === 1001) return 'The server restarted or shut down.';
+  if (closeCode === 1009) return 'A server message was too large.';
+  return 'The connection ended unexpectedly.';
+}
+
+/** A failure that says nothing about the work: it may have succeeded or may still be running. */
+export function isUnconfirmedResult(reason: unknown): boolean {
+  if (reason instanceof ServerTransportError) return reason.unconfirmed;
+  const detail = serializedErrorFromReason(reason);
+  return detail !== null && 'unconfirmed' in detail && detail.unconfirmed === true;
 }
 
 function settleResult(pending: PendingRequest, result: IpcResult<unknown>): void {

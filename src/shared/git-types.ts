@@ -115,6 +115,8 @@ export interface WorktreeInfo {
 /** A worktree row annotated with whether OpenTig currently has it open. */
 export interface ManagedWorktree extends WorktreeInfo {
   current: boolean;
+  /** Git lost track of this worktree, but its folder is still on disk. */
+  leftoverFiles?: boolean;
 }
 
 /**
@@ -125,6 +127,16 @@ export interface LocalRefsSnapshot {
   branches: BranchInfo[];
   worktrees: ManagedWorktree[];
   remotes: string[];
+  /** Removals still running, and recent ones that failed or left something for the user to do. */
+  worktreeRemovals?: WorktreeRemovalState[];
+}
+
+export interface WorktreeRemovalState {
+  path: string;
+  state: 'running' | 'partial' | 'failed';
+  /** What happened, for whoever wasn't waiting when the removal ended. */
+  message: string | null;
+  finishedAt: string | null;
 }
 
 export interface RemoteBranchDetails extends CommitSummary {
@@ -198,6 +210,8 @@ export interface WorktreeDetails {
   bare: boolean;
   locked: string | null;
   prunable: string | null;
+  /** Git lost track of this worktree, but its folder is still on disk. */
+  leftoverFiles?: boolean;
   /** False when the worktree is missing, prunable, or bare, so no status ran. */
   available: boolean;
   stagedCount: number;
@@ -233,4 +247,6 @@ export type WorktreeRemovalBlocked =
   | { status: 'locked'; reason: string }
   | { status: 'prunable'; reason: string }
   | { status: 'bare' }
-  | { status: 'missing' };
+  | { status: 'missing' }
+  /** The request ended before Git started, so nothing changed. */
+  | { status: 'cancelled' };

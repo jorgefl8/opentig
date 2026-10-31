@@ -86,7 +86,7 @@ it('shows GitHub\'s reason when a workflow cannot start', async () => {
 });
 
 it('holds running back after no answer, until the runs have been read again', async () => {
-  api.runWorkflow.mockRejectedValue(new ServerRequestTimeoutError('Server request timed out'));
+  api.runWorkflow.mockRejectedValue(Object.assign(new ServerRequestTimeoutError('Server request timed out'), { unconfirmed: true }));
   await render();
   await click('Run workflow');
   await click('Run Prepare release');
@@ -97,7 +97,7 @@ it('holds running back after no answer, until the runs have been read again', as
 });
 
 it('keeps holding back when the runs could not be read', async () => {
-  api.runWorkflow.mockRejectedValue(new ServerRequestTimeoutError('Server request timed out'));
+  api.runWorkflow.mockRejectedValue(Object.assign(new ServerRequestTimeoutError('Server request timed out'), { unconfirmed: true }));
   await render();
   await click('Run workflow');
   await click('Run Prepare release');

@@ -60,7 +60,7 @@ import { useMobileLayout } from '@/lib/use-mobile-layout';
 import { useElapsed } from '@/lib/use-elapsed';
 import { opentig, serverClient } from '@/lib/opentig-api';
 import { startupSplashDetail } from '@/lib/startup-splash';
-import { ServerAuthenticationError } from '@/lib/websocket-transport';
+import { ServerAuthenticationError, ServerDisconnectedError, UNCONFIRMED_RESULT_MESSAGE, isConnectionLoss, isUnconfirmedResult } from '@/lib/websocket-transport';
 import { conflictNotificationAction, conflictToastId } from '@/features/changes/conflict-notification';
 import { fileCutTransferId, writeClipboardText, writeFileTransfer } from '@/lib/browser-capabilities';
 import { needsBranchPublication, projectPullBlockedCopy, projectPullSuccessCopy, projectPushBlockedCopy, projectPushSuccessCopy, pullSuccessCopy, repositorySyncLoadingToast, type ProjectSyncAction } from '@/features/repositories/project-sync';
@@ -592,7 +592,9 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       });
       if (repositoryRef.current?.id === repositoryId) applyFilesSnapshot(nextFiles);
     } catch (reason) {
-      if (repositoryRef.current?.id === repositoryId) reportError('Could not refresh files', reason);
+      if (repositoryRef.current?.id !== repositoryId) return;
+      if (isConnectionLoss(reason)) recordConnectionLoss('Could not refresh files', reason);
+      else reportError('Could not refresh files', reason);
     }
   }, [applyFilesSnapshot, appQueryClient, repository]);
 
@@ -695,7 +697,9 @@ export default function App({ initialView, initialSelection, pullRequestCreation
         void appQueryClient.invalidateQueries({ queryKey: ['repository', repositoryId, 'branch-pull-request'] });
       }
     } catch (reason) {
-      if (repositoryRef.current?.id === repositoryId) reportError('Could not refresh', reason);
+      if (repositoryRef.current?.id !== repositoryId) return;
+      if (background && isConnectionLoss(reason)) recordConnectionLoss('Could not refresh', reason);
+      else reportError('Could not refresh', reason);
     } finally {
       if (!background && repositoryRef.current?.id === repositoryId) { busyRef.current = null; setBusy(null); }
     }
@@ -734,6 +738,15 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     refreshCyclesRef.current.set(repositoryId, cycle);
     return cycle.promise;
   }, [performRefresh, repository, view]);
+
+  // A timeout or disconnect says nothing about the work, so show the real state before anyone retries.
+  const refreshAfterUnconfirmedResult = (reason: unknown) => {
+    if (isUnconfirmedResult(reason)) void refresh({ background: true });
+  };
+  const rethrowAfterRefreshing = (reason: unknown): never => {
+    refreshAfterUnconfirmedResult(reason);
+    throw reason;
+  };
 
   useEffect(() => { busyRef.current = busy; }, [busy]);
 
@@ -827,8 +840,11 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   }, [openFilesStates, repository?.id, selectFilePath, view, initialSelection]);
 
   useEffect(() => opentig.events.onRepositoryChanged((repositoryId, scope) => {
-    if (repositoryId === repository?.id) void refresh({ background: true, scope });
-  }), [refresh, repository?.id]);
+    if (repositoryId !== repository?.id) return;
+    void refresh({ background: true, scope });
+    // An open refs manager may be showing a worktree whose removal another request finished.
+    if (scope === 'worktrees' || scope === 'unknown') void appQueryClient.invalidateQueries({ queryKey: queryKeys.localRefs(repositoryId) });
+  }), [appQueryClient, refresh, repository?.id]);
 
   useEffect(() => {
     if (!bootstrap?.performanceAutomation) return;
@@ -1503,7 +1519,10 @@ export default function App({ initialView, initialSelection, pullRequestCreation
           duration: 10_000,
           button: { title: 'Set identity', onClick: () => setAuthorshipRepositoryId(repositoryId) },
         });
-      } else reportError('Could not create the commit', reason);
+      } else {
+        reportError('Could not create the commit', reason);
+        refreshAfterUnconfirmedResult(reason);
+      }
     }
     finally { setBusy(null); }
     // The refreshed status has not reached this closure yet, so push without
@@ -1658,7 +1677,10 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       }
       await refresh({ background: true });
     }
-    catch (reason) { reportError('Could not switch branch', reason); }
+    catch (reason) {
+      reportError('Could not switch branch', reason);
+      refreshAfterUnconfirmedResult(reason);
+    }
     finally { setBusy(null); }
   };
 
@@ -1843,7 +1865,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     setBusy('pull');
     try {
       await sileo.promise(async () => {
-        const result = await opentig.refs.pull(repositoryId);
+        const result = await opentig.refs.pull(repositoryId).catch(rethrowAfterRefreshing);
         await refresh({ background: true });
         if (result.status === 'success' || result.status === 'up-to-date') return result;
         throw new PullBlocked(result);
@@ -1903,6 +1925,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
               duration: 10_000,
             };
           }
+          const unconfirmed = unconfirmedResultToast(err);
+          if (unconfirmed) return unconfirmed;
           const detail = serializedErrorFromReason(err);
           const access = detail && 'access' in detail ? detail.access : undefined;
           if (access) return remoteAccessToast('Could not pull changes', access);
@@ -1928,7 +1952,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     setBusy('push');
     try {
       await sileo.promise(async () => {
-        const result = await branchPush.push(repositoryId, repository.name);
+        const result = await branchPush.push(repositoryId, repository.name).catch(rethrowAfterRefreshing);
         await refresh({ background: true });
         if (!result || result.status === 'success' || result.status === 'up-to-date' || result.status === 'published') return result;
         throw new PushBlocked(result);
@@ -1968,8 +1992,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
             if (result.status === 'rejected' && result.access) return remoteAccessToast(`${repository.name}: could not push commits`, result.access, true);
             return { title: `${repository.name}: could not push commits`, description: result.message, duration: 10_000, button: { title: 'Repository access', onClick: () => { setSettingsSection('github'); setSettingsOpen(true); } } };
           }
-          const message = messageOf(err);
-          return { title: `${repository.name}: could not push commits`, description: message, duration: 10_000 };
+          return unconfirmedResultToast(err) ?? { title: `${repository.name}: could not push commits`, description: messageOf(err), duration: 10_000 };
         },
       });
     } catch {
@@ -2008,7 +2031,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       const label = projectName ? `${projectName} · ${item.name}` : item.name;
       if (action === 'pull') {
         await sileo.promise(async () => {
-          const result = await opentig.refs.pull(repositoryId);
+          const result = await opentig.refs.pull(repositoryId).catch(rethrowAfterRefreshing);
           if (repositoryRef.current?.id === repositoryId) await refresh({ background: true });
           if (result.status === 'success' || result.status === 'up-to-date') return result;
           throw new PullBlocked(result);
@@ -2017,11 +2040,11 @@ export default function App({ initialView, initialSelection, pullRequestCreation
           success: (result) => projectPullSuccessCopy(label, result),
           error: (reason) => reason instanceof PullBlocked
             ? projectPullBlockedCopy(label, reason.result)
-            : { title: `Could not pull ${label}`, description: messageOf(reason), duration: 10_000 },
+            : unconfirmedResultToast(reason) ?? { title: `Could not pull ${label}`, description: messageOf(reason), duration: 10_000 },
         });
       } else {
         await sileo.promise(async () => {
-          const result = await branchPush.push(repositoryId, label);
+          const result = await branchPush.push(repositoryId, label).catch(rethrowAfterRefreshing);
           if (repositoryRef.current?.id === repositoryId) await refresh({ background: true });
           if (!result || result.status === 'success' || result.status === 'up-to-date' || result.status === 'published') return result;
           throw new PushBlocked(result);
@@ -2030,7 +2053,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
           success: (result) => result ? projectPushSuccessCopy(label, result) : { title: `${label}: publication canceled` },
           error: (reason) => reason instanceof PushBlocked
             ? projectPushBlockedCopy(label, reason.result)
-            : { title: `Could not push ${label}`, description: messageOf(reason), duration: 10_000 },
+            : unconfirmedResultToast(reason) ?? { title: `Could not push ${label}`, description: messageOf(reason), duration: 10_000 },
         });
       }
     } catch {
@@ -2611,10 +2634,24 @@ function messageOf(reason: unknown): string { return reason instanceof Error ? r
 function sentenceCaseLabel(label: string): string {
   return label.length > 0 ? `${label[0]!.toLocaleLowerCase()}${label.slice(1)}` : label;
 }
+function unconfirmedResultToast(reason: unknown): { title: string; description: string; duration: number } | null {
+  return isUnconfirmedResult(reason) ? { title: 'Result not confirmed', description: UNCONFIRMED_RESULT_MESSAGE, duration: 10_000 } : null;
+}
 function reportError(title: string, reason: unknown): void {
-  sileo.error({ title, description: messageOf(reason), duration: 10_000 });
+  sileo.error(unconfirmedResultToast(reason) ?? { title, description: messageOf(reason), duration: 10_000 });
   if (serializedErrorFromReason(reason)) return;
-  void opentig.diagnostics.record({ operation: title, message: messageOf(reason) }).catch(() => undefined);
+  void opentig.diagnostics.record({ operation: title, message: messageOf(reason), ...connectionCloseCode(reason) }).catch(() => undefined);
+}
+let lastConnectionLossRecord = 0;
+/** A background refresh repeats when the connection returns, so losing one needs no toast. Its retries are one problem, not several. */
+function recordConnectionLoss(title: string, reason: unknown): void {
+  const now = Date.now();
+  if (now - lastConnectionLossRecord < 60_000) return;
+  lastConnectionLossRecord = now;
+  void opentig.diagnostics.record({ operation: title, level: 'warn', message: messageOf(reason), ...connectionCloseCode(reason) }).catch(() => undefined);
+}
+function connectionCloseCode(reason: unknown): { code: string } | Record<string, never> {
+  return reason instanceof ServerDisconnectedError && reason.closeCode !== undefined ? { code: `WS_CLOSE_${reason.closeCode}` } : {};
 }
 function undoBlockedCopy(result: Exclude<UndoLatestCommitResult, { status: 'success' }>): { title: string; description: string } {
   if (result.status === 'stale-head') return { title: 'History changed', description: 'The view was refreshed without undoing any commit.' };

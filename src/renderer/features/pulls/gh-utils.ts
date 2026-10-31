@@ -1,7 +1,7 @@
 import type { PullRequestCheck, PullRequestMergeMethod, PullRequestSummary, ReleaseSummary } from '../../../shared/contracts';
 import type { SerializedGhError } from '../../../shared/errors';
 import { openExternalUrl } from '@/lib/browser-capabilities';
-import { ServerDisconnectedError, ServerRequestTimeoutError } from '@/lib/websocket-transport';
+import { isUnconfirmedResult } from '@/lib/websocket-transport';
 
 export function ghDetail(reason: unknown): SerializedGhError | null {
   if (!(reason instanceof Error) || !('detail' in reason) || !reason.detail || typeof reason.detail !== 'object') return null;
@@ -9,11 +9,9 @@ export function ghDetail(reason: unknown): SerializedGhError | null {
   return typeof detail.code === 'string' && detail.code.startsWith('GH_') && typeof detail.message === 'string' ? detail as SerializedGhError : null;
 }
 
-/** The request ended without an answer, so the action may still have reached GitHub. */
+/** The action reached GitHub, or may have: the server or GitHub CLI stopped waiting before the answer. */
 export function isUncertainFailure(reason: unknown): boolean {
-  if (reason instanceof ServerRequestTimeoutError || reason instanceof ServerDisconnectedError) return true;
-  const code = reason instanceof Error && 'detail' in reason ? (reason.detail as { code?: unknown } | null)?.code : undefined;
-  return code === 'TIMEOUT' || code === 'GH_TIMEOUT';
+  return isUnconfirmedResult(reason) || ghDetail(reason)?.code === 'GH_TIMEOUT';
 }
 
 export function ghErrorTitle(detail: SerializedGhError | null): string {

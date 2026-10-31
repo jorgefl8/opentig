@@ -815,6 +815,9 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   .local-refs-search input::placeholder { color: var(--muted-foreground); }
   .local-refs-error { display: flex; flex: none; align-items: center; gap: 8px; border-bottom: 1px solid color-mix(in oklch, var(--destructive) 32%, var(--border)); background: color-mix(in oklch, var(--destructive) 9%, transparent); padding: 8px 20px; color: var(--destructive); font-size: 11px; line-height: 1.4; }
   .local-refs-error svg { width: 15px; height: 15px; flex: none; }
+  .local-refs-removal-notices { flex: none; max-height: 30%; overflow-y: auto; }
+  .local-refs-removal-notice > span { min-width: 0; flex: 1; overflow-wrap: anywhere; }
+  .local-refs-removal-notice button { flex: none; }
   .local-refs-body { display: grid; min-height: 0; flex: 1; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); animation: local-refs-tab-enter var(--motion-med) var(--ease-out); }
   @keyframes local-refs-tab-enter { from { opacity: 0; transform: translateX(5px); } to { opacity: 1; transform: none; } }
   .local-refs-list { display: grid; min-height: 0; align-content: start; gap: 3px; overflow-y: auto; border-right: 1px solid var(--border); padding: 10px; }
@@ -1847,6 +1850,7 @@ section[data-sileo-viewport] [data-sileo-title] { text-transform: none; }
   .ai-log-table-wrap { min-height: 0; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius-md); }
   .ai-log-table-wrap thead th { position: sticky; top: 0; z-index: 1; background: var(--popover); border-bottom: 1px solid var(--border); }
   .ai-log-model { color: var(--muted-foreground); }
+  .ai-log-first-seen { display: block; color: var(--muted-foreground); font-size: 10px; }
   .ai-log-row-failed { background: color-mix(in oklch, var(--destructive) 6%, transparent); }
   .ai-log-sort-button { display: inline-flex; align-items: center; gap: 3px; color: inherit; font: inherit; cursor: pointer; }
   .ai-log-sort-idle { opacity: .4; }

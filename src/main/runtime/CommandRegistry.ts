@@ -108,10 +108,11 @@ export class CommandRegistry {
       if (this.problemLog && shouldRecordCommandProblem({
         command,
         code: serialized.code,
-        aborted: options.signal?.aborted === true,
         error,
       })) {
         recordProblemSafely(this.problemLog, {
+          // A failure the caller can simply retry, such as a network blip after waking the machine.
+          ...('retryable' in serialized && serialized.retryable ? { level: 'warn' as const } : {}),
           source: 'command',
           operation,
           code: serialized.code,
@@ -121,6 +122,28 @@ export class CommandRegistry {
       }
       return { ok: false, error: serialized };
     }
+  }
+
+  /** The transport stopped waiting, but the handler keeps running and may still succeed. */
+  recordCommandTimeout(command: string, args: unknown, timeoutMs: number): void {
+    this.recordTransportProblem(command, args, 'error', `Stopped waiting after ${Math.round(timeoutMs / 1000)} s. The work may still finish.`);
+  }
+
+  /** Clears up an earlier timeout: a late failure is already recorded by `execute`. */
+  recordLateSuccess(command: string, args: unknown, durationMs: number): void {
+    this.recordTransportProblem(command, args, 'warn', `Finished successfully after ${Math.round(durationMs / 1000)} s, past its time limit.`);
+  }
+
+  private recordTransportProblem(command: string, args: unknown, level: 'error' | 'warn', message: string): void {
+    if (!this.problemLog || !shouldRecordCommandProblem({ command, code: 'TIMEOUT' })) return;
+    recordProblemSafely(this.problemLog, {
+      level,
+      source: 'server',
+      operation: this.commands.get(command as OpenTigServerCommandName)?.definition.operation ?? 'command',
+      code: 'TIMEOUT',
+      message,
+      repositoryId: repositoryIdFromCommandArgs(args),
+    });
   }
 
   sessionState<Value>(sessionId: string, key: string, initialize: () => Value): Value {

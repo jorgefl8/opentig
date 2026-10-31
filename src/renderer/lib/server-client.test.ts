@@ -54,8 +54,8 @@ describe('OpenTig server client', () => {
     await api.github.accountsStatus(false);
     await api.github.repositoryAccount('repo-id', true);
     await api.github.setRepositoryAccount('repo-id', { mode: 'account', host: 'github.com', login: 'alice' });
-    expect(fixture.request).toHaveBeenCalledWith(IPC.githubAccountsStatus, [false], { timeoutMs: 90_000 });
-    expect(fixture.request).toHaveBeenCalledWith(IPC.githubRepositoryAccount, ['repo-id', true], { timeoutMs: 60_000 });
+    expect(fixture.request).toHaveBeenCalledWith(IPC.githubAccountsStatus, [false]);
+    expect(fixture.request).toHaveBeenCalledWith(IPC.githubRepositoryAccount, ['repo-id', true]);
     expect(fixture.request).toHaveBeenCalledWith(IPC.githubSetRepositoryAccount, ['repo-id', { mode: 'account', host: 'github.com', login: 'alice' }]);
   });
   it('omits an absent directory path instead of serializing it as null', async () => {

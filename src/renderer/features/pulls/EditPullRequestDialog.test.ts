@@ -80,7 +80,7 @@ it('keeps the text when GitHub changed first', async () => {
 });
 
 it('says the save may have worked when there is no answer', async () => {
-  api.updatePullRequest.mockRejectedValue(new ServerRequestTimeoutError('Server request timed out'));
+  api.updatePullRequest.mockRejectedValue(Object.assign(new ServerRequestTimeoutError('Server request timed out'), { unconfirmed: true }));
   await render();
   await act(async () => saveButton().click());
   await settle();

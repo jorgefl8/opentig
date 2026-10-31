@@ -4,6 +4,8 @@ import { AI_SERVER_TIMEOUT_MS } from './ai-timeouts';
 import type { OpenTigDesktopApi } from './desktop-api';
 import {
   OPEN_TIG_SERVER_COMMANDS,
+  clientCommandTimeoutMs,
+  commandDefinition,
   type OpenTigServerCommandMap,
 } from './protocol';
 import type { OpenTigServerApi } from './server-api';
@@ -66,6 +68,23 @@ describe('OpenTig server protocol ownership', () => {
     expect(OPEN_TIG_SERVER_COMMANDS['ai.generateCommitMessage'].timeoutMs).toBe(AI_SERVER_TIMEOUT_MS);
     expect(OPEN_TIG_SERVER_COMMANDS['github.generateDraft'].timeoutMs).toBe(AI_SERVER_TIMEOUT_MS);
     expect(AI_SERVER_TIMEOUT_MS).toBeGreaterThan(OPEN_TIG_SERVER_COMMANDS['repository.getStatus'].timeoutMs);
+  });
+
+  it('gives slow Git and GitHub work a budget that outlasts its steps', () => {
+    expect(OPEN_TIG_SERVER_COMMANDS['commits.create'].timeoutMs).toBeGreaterThan(120_000);
+    expect(OPEN_TIG_SERVER_COMMANDS['refs.push'].timeoutMs).toBeGreaterThan(120_000);
+    expect(OPEN_TIG_SERVER_COMMANDS['refs.fetch'].timeoutMs).toBeGreaterThan(120_000);
+    expect(OPEN_TIG_SERVER_COMMANDS['refs.pull'].timeoutMs).toBeGreaterThan(660_000);
+    expect(OPEN_TIG_SERVER_COMMANDS['refs.switchBranch'].timeoutMs).toBeGreaterThan(360_000);
+    expect(OPEN_TIG_SERVER_COMMANDS['refs.removeWorktree'].timeoutMs).toBeGreaterThan(660_000);
+    expect(OPEN_TIG_SERVER_COMMANDS['github.getPullRequestDiff'].timeoutMs).toBeGreaterThan(780_000);
+  });
+
+  it('makes every client wait outlast its server command', () => {
+    for (const definition of Object.values(OPEN_TIG_SERVER_COMMANDS)) {
+      expect(commandDefinition(definition.command)).toBe(definition);
+      expect(clientCommandTimeoutMs(definition.command)).toBeGreaterThan(definition.timeoutMs);
+    }
   });
 
   it('marks representative reads and writes correctly', () => {

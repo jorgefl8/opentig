@@ -103,7 +103,7 @@ it('says when the tag does not exist', async () => {
 });
 
 it('says the deletion may have worked when there is no answer', async () => {
-  api.deleteDraftRelease.mockRejectedValue(new ServerRequestTimeoutError('Server request timed out'));
+  api.deleteDraftRelease.mockRejectedValue(Object.assign(new ServerRequestTimeoutError('Server request timed out'), { unconfirmed: true }));
   await render();
   await act(async () => button('Delete draft')!.click());
   await act(async () => container.querySelector<HTMLButtonElement>('.pr-action-panel .local-refs-confirm-actions button')!.click());

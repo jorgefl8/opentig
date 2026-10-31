@@ -1,13 +1,12 @@
 import { z } from 'zod';
 import type { CreateReleaseInput, DeleteDraftReleaseInput, PublishReleaseInput, ReleaseDetails, ReleaseSummary, RepositoryWorkflowList, RunWorkflowInput, UpdateReleaseInput, WorkflowRunSummary } from '../../shared/contracts';
 import { GhOperationError } from '../../shared/errors';
+import { GITHUB_ACTION_STEP_TIMEOUT_MS, GITHUB_LIVE_READ_TIMEOUT_MS } from '../../shared/operation-timeouts';
 import { redactCommandToken } from './GitHubAccountAuth';
 import { classifyActionFailure } from './GitHubActionErrors';
 import { beginGitHubMutation, withPrivateTextFile, type GitHubAccess, type GitHubTarget } from './GitHubAccess';
 import { parseReleaseDetails, parseReleaseList, parseWorkflowList, parseWorkflowRuns, RELEASE_DETAIL_FIELDS, RELEASE_SUMMARY_FIELDS, WORKFLOW_FIELDS, WORKFLOW_RUN_FIELDS } from './ReleaseParser';
 
-const READ_TIMEOUT_MS = 20_000;
-const ACTION_TIMEOUT_MS = 60_000;
 const repositoryFactsSchema = z.object({ default_branch: z.string().nullish(), permissions: z.object({ push: z.boolean().nullish() }).nullish() });
 
 /** OpenTig never creates or moves a tag: a release only ever points at one that already exists. */
@@ -15,7 +14,7 @@ export class GitHubReleases {
   constructor(private readonly github: GitHubAccess) {}
 
   private readOptions(target: GitHubTarget, operation: string) {
-    return { auth: target.auth, executable: target.executable, cwd: target.repository.path, operation, timeoutMs: READ_TIMEOUT_MS, maxOutputBytes: 4 * 1024 * 1024 };
+    return { auth: target.auth, executable: target.executable, cwd: target.repository.path, operation, timeoutMs: GITHUB_LIVE_READ_TIMEOUT_MS, maxOutputBytes: 4 * 1024 * 1024 };
   }
 
   private async read(target: GitHubTarget, args: string[], operation: string) {
@@ -79,7 +78,7 @@ export class GitHubReleases {
   }
 
   private async act(target: GitHubTarget, args: string[], operation: string): Promise<void> {
-    const result = await this.github.run(target.executable, args, { ...this.readOptions(target, operation), timeoutMs: ACTION_TIMEOUT_MS });
+    const result = await this.github.run(target.executable, args, { ...this.readOptions(target, operation), timeoutMs: GITHUB_ACTION_STEP_TIMEOUT_MS });
     if (result.exitCode !== 0) throw classifyActionFailure({ ...result, stderr: redactCommandToken(result.stderr, target.auth) }, operation);
   }
 

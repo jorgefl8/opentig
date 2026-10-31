@@ -12,6 +12,7 @@ import type { DesktopUpdatesApi } from '../../../src/shared/desktop-updates';
 import { networkInterfaces } from 'node:os';
 import type { OpenTigWebAccessStatus } from '../../../src/shared/desktop-api';
 import { applyNetworkPatch, isLoopbackHost, type NetworkConfig, type NetworkSettings } from './network-settings';
+import { startStallMonitor } from './stall-monitor';
 
 export interface OpenTigServerOptions {
   network: NetworkConfig;
@@ -48,6 +49,7 @@ export class OpenTigServer {
   private readonly webSockets: OpenTigWebSocketTransport;
   private readonly logger: OpenTigServerLogger;
   private ready = false;
+  private stopStallMonitor: (() => void) | null = null;
   private startPromise: Promise<OpenTigServerAddress> | null = null;
   private stopPromise: Promise<void> | null = null;
   private networkMutation: Promise<unknown> = Promise.resolve();
@@ -222,6 +224,7 @@ export class OpenTigServer {
         const address = this.httpServer.address() as AddressInfo | null;
         if (!address) return reject(new Error('Server did not expose a TCP address.'));
         this.ready = true;
+        this.stopStallMonitor ??= startStallMonitor(this.logger);
         resolve({
           host: address.address,
           port: address.port,
@@ -235,6 +238,9 @@ export class OpenTigServer {
   private async stopServer(): Promise<void> {
     await this.networkMutation;
     this.ready = false;
+    this.stopStallMonitor?.();
+    // Stopping kills running Git and GitHub CLI processes, which isn't a failure to report.
+    this.options.registry.setProblemLog(null);
     await this.webSockets.close();
     if (this.httpServer.listening) {
       await new Promise<void>((resolve, reject) => {

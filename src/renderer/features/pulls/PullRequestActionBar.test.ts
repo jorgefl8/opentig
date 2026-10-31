@@ -146,8 +146,8 @@ describe('failures', () => {
   });
 
   it.each([
-    ['a client timeout', new ServerRequestTimeoutError('Server request timed out')],
-    ['a server timeout', Object.assign(new Error('Timed out'), { detail: { code: 'TIMEOUT', operation: 'gh-pr-action', message: 'Timed out' } })],
+    ['a client timeout', Object.assign(new ServerRequestTimeoutError('Server request timed out'), { unconfirmed: true })],
+    ['a server timeout', Object.assign(new Error('Timed out'), { detail: { code: 'TIMEOUT', operation: 'gh-pr-action', message: 'Timed out', unconfirmed: true } })],
   ])('after %s, says the action may have completed and rereads the state', async (_name, reason) => {
     const invalidate = vi.spyOn(client, 'invalidateQueries');
     api.runPullRequestAction.mockRejectedValue(reason);
@@ -275,7 +275,7 @@ describe('the menu', () => {
   });
 
   it('holds revert back after no answer, so a second one is not opened by accident', async () => {
-    api.runPullRequestAction.mockRejectedValue(new ServerRequestTimeoutError('Server request timed out'));
+    api.runPullRequestAction.mockRejectedValue(Object.assign(new ServerRequestTimeoutError('Server request timed out'), { unconfirmed: true }));
     await render(merged());
     await openMenu();
     await choose('Revert…');
