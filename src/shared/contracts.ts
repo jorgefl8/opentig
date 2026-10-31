@@ -437,6 +437,185 @@ export interface PullRequestDetails extends PullRequestSummary {
   headRefOid: string;
 }
 
+export type PullRequestMergeMethod = 'MERGE' | 'SQUASH' | 'REBASE';
+export type PullRequestMergeStateStatus = 'BEHIND' | 'BLOCKED' | 'CLEAN' | 'DIRTY' | 'DRAFT' | 'HAS_HOOKS' | 'UNKNOWN' | 'UNSTABLE';
+
+export interface PullRequestCheck {
+  name: string;
+  workflow: string | null;
+  result: 'pass' | 'fail' | 'pending' | 'skipped' | 'action-required';
+  required: boolean;
+  url: string | null;
+}
+
+export interface PullRequestParticipant {
+  login: string;
+  avatarUrl: string | null;
+  isBot: boolean;
+}
+
+export type PullRequestReviewVerdict = 'APPROVED' | 'CHANGES_REQUESTED' | 'COMMENTED' | 'DISMISSED' | 'PENDING';
+
+export interface PullRequestLatestReview {
+  author: PullRequestParticipant;
+  verdict: 'APPROVED' | 'CHANGES_REQUESTED';
+  /** The verdict was given on an earlier commit than the current head. */
+  outdated: boolean;
+}
+
+export interface PullRequestConversationEntry {
+  id: string;
+  kind: 'comment' | 'review';
+  author: PullRequestParticipant | null;
+  body: string;
+  createdAt: string;
+  url: string | null;
+  /** For a review; a comment has none. */
+  verdict: PullRequestReviewVerdict | null;
+  /** Hidden by a maintainer on GitHub. */
+  minimized: boolean;
+}
+
+export interface PullRequestConversation {
+  /** Oldest first. */
+  entries: PullRequestConversationEntry[];
+  /** GitHub has more than the most recent page of comments or reviews. */
+  truncated: boolean;
+  /** GitHub withheld part of the response from this account. */
+  partial: boolean;
+}
+
+/** What GitHub reports right now about an open or finished PR, refreshed while its viewer is visible. */
+export interface PullRequestLiveState {
+  id: string;
+  number: number;
+  state: PullRequestState;
+  isDraft: boolean;
+  headRefOid: string;
+  headRefName: string;
+  baseRefName: string;
+  updatedAt: string;
+  mergeable: 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN';
+  mergeStateStatus: PullRequestMergeStateStatus;
+  reviewDecision: string | null;
+  latestReviews: PullRequestLatestReview[];
+  isCrossRepository: boolean;
+  /** `unknown` means the membership could not be read, which is different from not being in a stack. */
+  stack: 'none' | 'member' | 'unknown';
+  autoMerge: { method: PullRequestMergeMethod } | null;
+  mergeQueue: { enabled: boolean; queued: boolean };
+  behindBy: number | null;
+  checks: {
+    rollup: PullRequestCheckState;
+    items: PullRequestCheck[];
+    /** GitHub has more checks than the first page returned. */
+    truncated: boolean;
+    /** GitHub withheld part of the response from this account, so some details may be missing. */
+    partial: boolean;
+  };
+  head: { repositoryId: string | null; owner: string | null; defaultBranch: string | null; refOid: string | null };
+  repository: {
+    methods: PullRequestMergeMethod[];
+    defaultMethod: PullRequestMergeMethod;
+    autoMergeAllowed: boolean;
+    deleteBranchOnMerge: boolean;
+  };
+  viewer: {
+    canWrite: boolean;
+    canUpdate: boolean;
+    didAuthor: boolean;
+    canUpdateBranch: boolean;
+    canDeleteBranch: boolean;
+  };
+}
+
+interface GitHubMutationBase {
+  repositoryId: string;
+  /** The identity the user reviewed. Mutations stop if the repository now resolves to another one. */
+  expectedAccount: { login: string; revision: number };
+}
+
+type PullRequestMutationBase = GitHubMutationBase & { number: number };
+
+export type PullRequestActionInput = PullRequestMutationBase & { expectedHeadOid: string } & (
+  | { action: 'merge'; method: PullRequestMergeMethod; deleteBranch?: boolean }
+  | { action: 'enable-auto-merge'; method: PullRequestMergeMethod }
+  | { action: 'update-branch'; method: 'MERGE' | 'REBASE' }
+  | { action: 'disable-auto-merge' | 'ready' | 'draft' | 'close' | 'reopen' | 'delete-branch' | 'revert' | 'approve-workflows' }
+);
+
+export type PullRequestAction = PullRequestActionInput['action'];
+
+export interface PullRequestActionResult {
+  outcome: 'merged' | 'auto-merge-enabled' | 'auto-merge-disabled' | 'queued' | 'updated' | 'done' | 'unconfirmed';
+  /** GitHub's state after the action, or null when it could not be read again. */
+  state: PullRequestLiveState | null;
+  /** The PR the action opened, such as a revert. */
+  created?: { url: string; number: number | null };
+  branchDeleted?: boolean;
+}
+
+/** Fails if the PR changed after `expectedUpdatedAt`, so another person's or a bot's edit isn't overwritten. */
+export type UpdatePullRequestInput = PullRequestMutationBase & { title: string; body: string; expectedUpdatedAt: string };
+
+export type CommentOnPullRequestInput = PullRequestMutationBase & { body: string };
+
+/** The head is the commit the verdict is about: a push in the meantime stops it. */
+export type ReviewPullRequestInput = PullRequestMutationBase & { expectedHeadOid: string; verdict: 'approve' | 'request-changes' | 'comment'; body: string };
+
+export interface ReleaseSummary {
+  tagName: string;
+  name: string;
+  isDraft: boolean;
+  isPrerelease: boolean;
+  isLatest: boolean;
+  isImmutable: boolean;
+  createdAt: string;
+  publishedAt: string | null;
+}
+
+export interface ReleaseDetails extends ReleaseSummary {
+  databaseId: number;
+  /** Raw, including any markers automation keeps in the notes. */
+  body: string;
+  /** Lets an edit stop if automation or someone else changed the notes in the meantime. */
+  bodyHash: string;
+  targetCommitish: string;
+  url: string;
+  assets: Array<{ name: string; size: number }>;
+  /** Whether the tag exists on the remote. Only a definite answer from GitHub says it doesn't. */
+  tagExists: boolean;
+  viewerCanWrite: boolean;
+}
+
+export type CreateReleaseInput = GitHubMutationBase & { tagName: string; title: string; notes: string; generateNotes: boolean; prerelease: boolean };
+export type UpdateReleaseInput = GitHubMutationBase & { tagName: string; expectedDatabaseId: number; expectedBodyHash: string; title: string; notes: string };
+export type DeleteDraftReleaseInput = GitHubMutationBase & { tagName: string; expectedDatabaseId: number };
+export type PublishReleaseInput = GitHubMutationBase & { tagName: string; expectedDatabaseId: number };
+
+export interface RepositoryWorkflow {
+  id: number;
+  name: string;
+  path: string;
+}
+
+export interface RepositoryWorkflowList {
+  workflows: RepositoryWorkflow[];
+  defaultBranch: string | null;
+  viewerCanWrite: boolean;
+}
+
+export interface WorkflowRunSummary {
+  databaseId: number;
+  status: string;
+  conclusion: string | null;
+  url: string;
+  createdAt: string;
+  displayTitle: string;
+}
+
+export type RunWorkflowInput = GitHubMutationBase & { path: string; ref: string };
+
 export interface CreatePullRequestInput {
   expectedAccount?: { login: string; revision: number };
   repositoryId: string;
@@ -662,11 +841,26 @@ export interface OpenTigApi {
     findPullRequestForBranch(repositoryId: string, branchName: string): Promise<PullRequestSummary | null>;
     listPullRequests(repositoryId: string, states: PullRequestState[]): Promise<PullRequestSummary[]>;
     getPullRequest(repositoryId: string, number: number): Promise<PullRequestDetails>;
+    getPullRequestLiveState(repositoryId: string, number: number): Promise<PullRequestLiveState>;
+    getPullRequestConversation(repositoryId: string, number: number): Promise<PullRequestConversation>;
+    runPullRequestAction(input: PullRequestActionInput): Promise<PullRequestActionResult>;
+    updatePullRequest(input: UpdatePullRequestInput): Promise<void>;
+    commentOnPullRequest(input: CommentOnPullRequestInput): Promise<void>;
+    reviewPullRequest(input: ReviewPullRequestInput): Promise<void>;
     getPullRequestStack(repositoryId: string, number: number): Promise<PullRequestStack | null>;
     getPullRequestDiff(repositoryId: string, number: number): Promise<DiffResult>;
     getPullRequestCommitDiff(repositoryId: string, oid: string): Promise<DiffResult>;
     getPullRequestCommits(repositoryId: string, number: number): Promise<PullRequestCommitList>;
     createPullRequest(input: CreatePullRequestInput): Promise<CreatePullRequestResult>;
+    listReleases(repositoryId: string): Promise<ReleaseSummary[]>;
+    getRelease(repositoryId: string, tagName: string): Promise<ReleaseDetails>;
+    createRelease(input: CreateReleaseInput): Promise<void>;
+    updateRelease(input: UpdateReleaseInput): Promise<void>;
+    deleteDraftRelease(input: DeleteDraftReleaseInput): Promise<void>;
+    publishRelease(input: PublishReleaseInput): Promise<void>;
+    listWorkflows(repositoryId: string): Promise<RepositoryWorkflowList>;
+    listWorkflowRuns(repositoryId: string, path: string): Promise<WorkflowRunSummary[]>;
+    runWorkflow(input: RunWorkflowInput): Promise<void>;
     generateDraft(input: GeneratePullRequestDraftInput): Promise<GeneratedPullRequestDraft>;
     cancelDraft(requestId: string): Promise<void>;
   };
@@ -715,6 +909,6 @@ export const IPC = {
   aiStatuses: 'ai:statuses', aiGenerateCommitMessage: 'ai:generate-commit-message', aiCancelGeneration: 'ai:cancel-generation', aiLog: 'ai:log', aiClearLog: 'ai:clear-log',
   diagnosticsList: 'diagnostics:list', diagnosticsClear: 'diagnostics:clear', diagnosticsRecord: 'diagnostics:record',
   githubAccountsStatus: 'github:accounts-status', githubSetDefaultAccount: 'github:set-default-account', githubRepositoryAccount: 'github:repository-account', githubSetRepositoryAccount: 'github:set-repository-account',
-  githubStatus: 'github:status', githubRepositoryInfo: 'github:repository-info', githubPrForBranch: 'github:pr-for-branch', githubPrList: 'github:pr-list', githubPrView: 'github:pr-view',
-  githubPrStack: 'github:pr-stack', githubPrDiff: 'github:pr-diff', githubPrCommitDiff: 'github:pr-commit-diff', githubPrCommits: 'github:pr-commits', githubPrCreate: 'github:pr-create', githubPrDraft: 'github:pr-draft', githubPrDraftCancel: 'github:pr-draft-cancel',
+  githubStatus: 'github:status', githubRepositoryInfo: 'github:repository-info', githubPrForBranch: 'github:pr-for-branch', githubPrList: 'github:pr-list', githubPrView: 'github:pr-view', githubPrLiveState: 'github:pr-live-state', githubPrConversation: 'github:pr-conversation', githubPrAction: 'github:pr-action', githubPrUpdate: 'github:pr-update', githubPrComment: 'github:pr-comment', githubPrReview: 'github:pr-review',
+  githubPrStack: 'github:pr-stack', githubPrDiff: 'github:pr-diff', githubPrCommitDiff: 'github:pr-commit-diff', githubPrCommits: 'github:pr-commits', githubPrCreate: 'github:pr-create', githubReleaseList: 'github:release-list', githubReleaseView: 'github:release-view', githubReleaseCreate: 'github:release-create', githubReleaseUpdate: 'github:release-update', githubReleaseDelete: 'github:release-delete', githubReleasePublish: 'github:release-publish', githubWorkflowList: 'github:workflow-list', githubWorkflowRuns: 'github:workflow-runs', githubWorkflowRun: 'github:workflow-run', githubPrDraft: 'github:pr-draft', githubPrDraftCancel: 'github:pr-draft-cancel',
 } as const;

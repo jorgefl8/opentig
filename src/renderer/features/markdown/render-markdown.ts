@@ -64,6 +64,9 @@ export async function renderMarkdown(content: string): Promise<string> {
   return DOMPurify.sanitize(result, {
     USE_PROFILES: { html: true, mathMl: true, svg: true },
     ADD_ATTR: ['aria-label', 'data-copy-code', 'data-language', 'data-mermaid-source'],
+    // Comments come from anyone: a form could pass for part of the app and send what's typed elsewhere.
+    FORBID_TAGS: ['form'],
+    FORBID_ATTR: ['action', 'formaction'],
   });
 }
 

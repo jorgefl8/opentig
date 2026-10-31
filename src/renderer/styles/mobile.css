@@ -138,6 +138,7 @@
   html .conflict-viewer-toolbar > div { min-width: 0; overflow-wrap: anywhere; }
   html .conflict-actions { flex-wrap: wrap; }
   html .pr-viewer-header { display: flex; flex-direction: column; max-height: 45%; overflow: hidden; padding: 10px; }
+  html .pr-viewer-header:has(.pr-action-panel) { max-height: 85%; }
   html .pr-viewer-overview { display: grid; min-height: 0; flex: 0 1 auto; gap: 8px; overflow-y: auto; }
   html .pr-viewer-title { flex-wrap: wrap; }
   html .pr-viewer-title h2 { flex: 1 1 100%; white-space: normal; overflow-wrap: anywhere; }
@@ -145,6 +146,7 @@
   html .pr-viewer-tabs { flex: none; align-self: flex-start; max-width: 100%; overflow-x: auto; }
   html .pr-summary-section, html .pr-timeline { padding: 12px; }
   html .pr-branches { max-width: 100%; }
+  html .pr-checks-trigger { min-height: 40px; }
   html .file-viewer-toolbar { height: 48px; }
   html .file-viewer-toolbar button { min-width: 40px; min-height: 40px; }
   html .file-save-toolbar { top: 8px; right: 8px; }

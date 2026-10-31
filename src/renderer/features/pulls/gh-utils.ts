@@ -1,11 +1,17 @@
-import type { PullRequestSummary } from '../../../shared/contracts';
+import type { PullRequestCheck, PullRequestMergeMethod, PullRequestSummary, ReleaseSummary } from '../../../shared/contracts';
 import type { SerializedGhError } from '../../../shared/errors';
 import { openExternalUrl } from '@/lib/browser-capabilities';
+import { isUnconfirmedResult } from '@/lib/websocket-transport';
 
 export function ghDetail(reason: unknown): SerializedGhError | null {
   if (!(reason instanceof Error) || !('detail' in reason) || !reason.detail || typeof reason.detail !== 'object') return null;
   const detail = reason.detail as Partial<SerializedGhError>;
   return typeof detail.code === 'string' && detail.code.startsWith('GH_') && typeof detail.message === 'string' ? detail as SerializedGhError : null;
+}
+
+/** The action reached GitHub, or may have: the server or GitHub CLI stopped waiting before the answer. */
+export function isUncertainFailure(reason: unknown): boolean {
+  return isUnconfirmedResult(reason) || ghDetail(reason)?.code === 'GH_TIMEOUT';
 }
 
 export function ghErrorTitle(detail: SerializedGhError | null): string {
@@ -20,13 +26,23 @@ export function ghErrorTitle(detail: SerializedGhError | null): string {
   if (detail.code === 'GH_NO_UPSTREAM') return 'Publish the branch first';
   if (detail.code === 'GH_RATE_LIMITED') return 'GitHub rate limit reached';
   if (detail.code === 'GH_TIMEOUT') return 'GitHub CLI took too long';
+  if (detail.code === 'GH_PR_STATE_CHANGED') return 'It changed on GitHub';
+  if (detail.code === 'GH_PR_ACTION_NOT_ALLOWED') return 'This action is no longer available';
   if (detail.code === 'GH_INVALID_OUTPUT') return 'Unexpected GitHub CLI response';
   return 'GitHub operation failed';
 }
 
+export const MERGE_METHOD_LABELS: Record<PullRequestMergeMethod, string> = { MERGE: 'Merge', SQUASH: 'Squash', REBASE: 'Rebase' };
+
 export function prStateLabel(pr: Pick<PullRequestSummary, 'state' | 'isDraft'>): string {
   if (pr.state === 'OPEN') return pr.isDraft ? 'Draft' : 'Open';
   return pr.state === 'MERGED' ? 'Merged' : 'Closed';
+}
+
+export function releaseStateLabel(release: Pick<ReleaseSummary, 'isDraft' | 'isPrerelease' | 'isLatest'>): string {
+  if (release.isDraft) return 'Draft';
+  if (release.isPrerelease) return 'Pre-release';
+  return release.isLatest ? 'Latest' : 'Published';
 }
 
 export function reviewDecisionLabel(decision: string | null): string | null {
@@ -35,6 +51,23 @@ export function reviewDecisionLabel(decision: string | null): string | null {
   if (decision === 'CHANGES_REQUESTED') return 'Changes requested';
   if (decision === 'REVIEW_REQUIRED') return 'Review required';
   return null;
+}
+
+export interface PullRequestCheckGroup {
+  label: string;
+  checks: PullRequestCheck[];
+}
+
+/** What needs attention comes first, and within each group required checks lead. */
+export function groupPullRequestChecks(checks: PullRequestCheck[]): PullRequestCheckGroup[] {
+  const pick = (...results: PullRequestCheck['result'][]) => checks
+    .filter((check) => results.includes(check.result))
+    .sort((left, right) => Number(right.required) - Number(left.required));
+  return [
+    { label: 'Needs attention', checks: pick('fail', 'action-required') },
+    { label: 'In progress', checks: pick('pending') },
+    { label: 'Completed', checks: pick('pass', 'skipped') },
+  ].filter((group) => group.checks.length > 0);
 }
 
 export function openOnGitHub(url: string): void {

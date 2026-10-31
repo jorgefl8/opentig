@@ -1,6 +1,6 @@
 import { GitOperationError } from '../../shared/errors';
 import { AiOperationError, GhOperationError } from '../../shared/errors';
-import type { AiHarnessId, BranchDetailsRequest, CreatePullRequestInput, DeleteBranchRequest, GenerateCommitMessageInput, GeneratePullRequestDraftInput, PrepareCommitGroupInput, PublishBranchOptions, PullRequestState, RemoveWorktreeRequest, WorktreeDetailsRequest } from '../../shared/contracts';
+import type { AiHarnessId, BranchDetailsRequest, CommentOnPullRequestInput, CreatePullRequestInput, CreateReleaseInput, DeleteDraftReleaseInput, PublishReleaseInput, RunWorkflowInput, UpdateReleaseInput, PullRequestActionInput, ReviewPullRequestInput, UpdatePullRequestInput, DeleteBranchRequest, GenerateCommitMessageInput, GeneratePullRequestDraftInput, PrepareCommitGroupInput, PublishBranchOptions, PullRequestState, RemoveWorktreeRequest, WorktreeDetailsRequest } from '../../shared/contracts';
 import { MAX_PROJECT_NAME_LENGTH, MAX_REPOSITORY_KEY_LENGTH, normalizeRepositoryKey } from '../../shared/repository-projects';
 import { isFilesTreeRepositoryId, MAX_FILES_TREE_PATHS, normalizeExpandedPaths, normalizeFilesTreePath } from '../../shared/files-tree-state';
 import { isOpenFilesRepositoryId, MAX_OPEN_FILE_TABS, normalizeOpenFilePath, type OpenFileTab } from '../../shared/open-files-state';
@@ -323,6 +323,98 @@ export function createPullRequestArg(value: unknown): CreatePullRequestInput {
   return { repositoryId: input.repositoryId, title: input.title.trim(), body: input.body, base: input.base, draft: input.draft,
     ...(expected ? { expectedAccount: { login: expected.login, revision: expected.revision } } : {}) };
 
+}
+
+const expectedAccountSchema = z.object({
+  login: z.string().regex(/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/),
+  revision: z.number().int().safe().nonnegative(),
+});
+const pullRequestActionBaseSchema = z.object({
+  repositoryId: z.string().min(1).max(64),
+  number: z.number().safe().int().positive().max(1_000_000_000),
+  expectedHeadOid: z.string().regex(/^[0-9a-f]{40,64}$/i),
+  expectedAccount: expectedAccountSchema,
+});
+const mergeMethodSchema = z.enum(['MERGE', 'SQUASH', 'REBASE']);
+const pullRequestActionSchema = z.discriminatedUnion('action', [
+  pullRequestActionBaseSchema.extend({ action: z.literal('merge'), method: mergeMethodSchema, deleteBranch: z.boolean().optional() }),
+  pullRequestActionBaseSchema.extend({ action: z.literal('enable-auto-merge'), method: mergeMethodSchema }),
+  pullRequestActionBaseSchema.extend({ action: z.literal('update-branch'), method: z.enum(['MERGE', 'REBASE']) }),
+  pullRequestActionBaseSchema.extend({ action: z.enum(['disable-auto-merge', 'ready', 'draft', 'close', 'reopen', 'delete-branch', 'revert', 'approve-workflows']) }),
+]);
+
+export function pullRequestActionArg(value: unknown): PullRequestActionInput {
+  const parsed = pullRequestActionSchema.safeParse(value);
+  if (!parsed.success) throw invalidGh('gh-pr-action');
+  return parsed.data as PullRequestActionInput;
+}
+
+const pullRequestTextSchema = z.string().max(100 * 1024).refine((value) => !value.includes('\0'));
+
+export function updatePullRequestArg(value: unknown): UpdatePullRequestInput {
+  const parsed = pullRequestActionBaseSchema.omit({ expectedHeadOid: true }).extend({
+    title: z.string().trim().min(1).max(300).refine((title) => !title.includes('\0')),
+    body: pullRequestTextSchema,
+    expectedUpdatedAt: z.string().min(1).max(64),
+  }).safeParse(value);
+  if (!parsed.success) throw invalidGh('gh-pr-update');
+  return parsed.data;
+}
+
+export function commentOnPullRequestArg(value: unknown): CommentOnPullRequestInput {
+  const parsed = pullRequestActionBaseSchema.omit({ expectedHeadOid: true }).extend({ body: pullRequestTextSchema.refine((body) => Boolean(body.trim())) }).safeParse(value);
+  if (!parsed.success) throw invalidGh('gh-pr-comment');
+  return parsed.data;
+}
+
+export function reviewPullRequestArg(value: unknown): ReviewPullRequestInput {
+  // Only an approval can go without text; GitHub CLI asks for it in the others.
+  const parsed = pullRequestActionBaseSchema.extend({ verdict: z.enum(['approve', 'request-changes', 'comment']), body: pullRequestTextSchema })
+    .refine((input) => input.verdict === 'approve' || Boolean(input.body.trim())).safeParse(value);
+  if (!parsed.success) throw invalidGh('gh-pr-review');
+  return parsed.data;
+}
+
+const releaseTitleSchema = z.string().trim().min(1).max(300).refine((title) => !title.includes('\0'));
+const releaseNotesSchema = z.string().max(125_000).refine((notes) => !notes.includes('\0'));
+// A leading dash could be read as a flag; the rest are never valid in a Git tag.
+const tagNameSchema = z.string().min(1).max(250).refine((tag) => !tag.startsWith('-') && !tag.includes('..') && ![...tag].some((character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127) && !/[\s~^:?*[\\]/.test(tag));
+const releaseBaseSchema = z.object({ repositoryId: z.string().min(1).max(64), expectedAccount: expectedAccountSchema, tagName: tagNameSchema });
+const releaseIdentitySchema = releaseBaseSchema.extend({ expectedDatabaseId: z.number().int().safe().positive() });
+
+function parsedRelease<T>(result: z.ZodSafeParseResult<T>, operation: string): T {
+  if (!result.success) throw new GhOperationError({ code: 'GH_PROCESS_FAILED', operation, message: 'Invalid release data.' });
+  return result.data;
+}
+
+export function tagNameArg(value: unknown, operation: string): string {
+  return parsedRelease(tagNameSchema.safeParse(value), operation);
+}
+
+export function createReleaseArg(value: unknown): CreateReleaseInput {
+  return parsedRelease(releaseBaseSchema.extend({ title: releaseTitleSchema, notes: releaseNotesSchema, generateNotes: z.boolean(), prerelease: z.boolean() }).safeParse(value), 'gh-release-create');
+}
+
+export function updateReleaseArg(value: unknown): UpdateReleaseInput {
+  return parsedRelease(releaseIdentitySchema.extend({ expectedBodyHash: z.string().regex(/^[0-9a-f]{64}$/), title: releaseTitleSchema, notes: releaseNotesSchema }).safeParse(value), 'gh-release-update');
+}
+
+export function deleteDraftReleaseArg(value: unknown): DeleteDraftReleaseInput {
+  return parsedRelease(releaseIdentitySchema.safeParse(value), 'gh-release-delete');
+}
+
+export function publishReleaseArg(value: unknown): PublishReleaseInput {
+  return parsedRelease(releaseIdentitySchema.safeParse(value), 'gh-release-publish');
+}
+
+const workflowPathSchema = z.string().max(300).regex(/^\.github\/workflows\/[A-Za-z0-9._ -]+\.ya?ml$/);
+
+export function workflowPathArg(value: unknown, operation: string): string {
+  return parsedRelease(workflowPathSchema.safeParse(value), operation);
+}
+
+export function runWorkflowArg(value: unknown): RunWorkflowInput {
+  return parsedRelease(z.object({ repositoryId: z.string().min(1).max(64), expectedAccount: expectedAccountSchema, path: workflowPathSchema, ref: tagNameSchema }).safeParse(value), 'gh-workflow-run');
 }
 
 export function generatePullRequestDraftArg(value: unknown): GeneratePullRequestDraftInput {

@@ -17,6 +17,7 @@ const MarkdownFileViewer = lazy(() => import('@/features/markdown/MarkdownFileVi
 const PullRequestViewer = lazy(() => import('@/features/pulls/PullRequestViewer').then((module) => ({ default: module.PullRequestViewer })));
 const EditableFileViewer = lazy(() => import('./EditableFileViewer').then((module) => ({ default: module.EditableFileViewer })));
 const HtmlFileViewer = lazy(() => import('./HtmlFileViewer').then((module) => ({ default: module.HtmlFileViewer })));
+const ReleaseViewer = lazy(() => import('@/features/pulls/ReleaseViewer').then((module) => ({ default: module.ReleaseViewer })));
 const PdfFileViewer = lazy(() => import('./PdfFileViewer').then((module) => ({ default: module.PdfFileViewer })));
 const ImageFileViewer = lazy(() => import('./ImageFileViewer').then((module) => ({ default: module.ImageFileViewer })));
 const SvgFileViewer = lazy(() => import('./ImageFileViewer').then((module) => ({ default: module.SvgFileViewer })));
@@ -28,6 +29,7 @@ export type ViewerSelection =
   | { type: 'commit'; oid: string; subject: string }
   | { type: 'commit-file'; oid: string; path: string; oldPath?: string | undefined }
   | { type: 'pull-request'; number: number }
+  | { type: 'release'; tag: string }
   | null;
 
 /**
@@ -108,7 +110,7 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
     const token = ++requestToken.current;
     setError(null);
     // Pull request selections fetch their own data inside PullRequestViewer.
-    if (!selection || selection.type === 'pull-request' || (selection.type === 'file' && /\.pdf$/i.test(selection.path))) { setData(null); setLoading(false); return; }
+    if (!selection || selection.type === 'pull-request' || selection.type === 'release' || (selection.type === 'file' && /\.pdf$/i.test(selection.path))) { setData(null); setLoading(false); return; }
     setLoading(true);
     const run = async () => {
       try {
@@ -224,6 +226,12 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
           onWrapLinesChange={onWrapLinesChange}
           onClose={() => onSelect(null)}
         />
+      </Suspense>
+    );
+  } else if (selection.type === 'release') {
+    content = (
+      <Suspense fallback={<ViewerLoading />}>
+        <ReleaseViewer key={`${repositoryId}:${selection.tag}`} repositoryId={repositoryId} tagName={selection.tag} onClose={() => onSelect(null)} />
       </Suspense>
     );
   } else if (selection.type === 'file' && /\.pdf$/i.test(selection.path)) {
@@ -430,6 +438,7 @@ function CommitDiffHeader({ commit, fallbackSubject }: { commit: CommitInfo | un
 function documentKey(repositoryId: string, selection: ViewerSelection): string {
   if (!selection) return `${repositoryId}:empty`;
   if (selection.type === 'pull-request') return `${repositoryId}:pull:${selection.number}`;
+  if (selection.type === 'release') return `${repositoryId}:release:${selection.tag}`;
   if (selection.type === 'commit') return `${repositoryId}:commit:${selection.oid}`;
   if (selection.type === 'commit-file') return `${repositoryId}:commit-file:${selection.oid}:${selection.oldPath ?? ''}:${selection.path}`;
   if (selection.type === 'diff') return `${repositoryId}:diff:${selection.kind}:${selection.path}`;

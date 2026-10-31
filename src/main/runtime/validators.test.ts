@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { generateCommitMessageArg, generatePullRequestDraftArg, booleanArg, branchDetailsArg, deleteBranchArg, filesTreeStateArg, nullableProjectIdArg, openFilesStateArg, prepareCommitGroupArg, projectIdArg, projectNameArg, publishBranchArg, pullRequestStatesArg, removeWorktreeArg, repositoryKeyArg, searchOptionsArg, searchReplaceArg, worktreeDetailsArg } from './validators';
+import { generateCommitMessageArg, generatePullRequestDraftArg, booleanArg, branchDetailsArg, deleteBranchArg, filesTreeStateArg, nullableProjectIdArg, openFilesStateArg, prepareCommitGroupArg, projectIdArg, projectNameArg, publishBranchArg, pullRequestStatesArg, removeWorktreeArg, repositoryKeyArg, searchOptionsArg, searchReplaceArg, worktreeDetailsArg, commentOnPullRequestArg, createReleaseArg, deleteDraftReleaseArg, publishReleaseArg, pullRequestActionArg, reviewPullRequestArg, runWorkflowArg, tagNameArg, updatePullRequestArg, updateReleaseArg, workflowPathArg } from './validators';
 import { GitOperationError } from '../../shared/errors';
 import { createTrackingBranchArg, deleteRemoteBranchArg } from './validators';
 
@@ -250,5 +250,96 @@ describe('Grok generation transport', () => {
   it('still rejects unknown harness identifiers', () => {
     expect(() => generateCommitMessageArg({ ...request, harness: 'unknown' })).toThrow();
     expect(() => generatePullRequestDraftArg({ ...request, base: 'main', harness: 'unknown' })).toThrow();
+  });
+});
+
+describe('pullRequestActionArg', () => {
+  const base = { repositoryId: 'repo', number: 7, expectedHeadOid: 'a'.repeat(40), expectedAccount: { login: 'sample', revision: 1 } };
+  it('accepts each kind of action', () => {
+    expect(pullRequestActionArg({ ...base, action: 'merge', method: 'SQUASH', deleteBranch: true })).toMatchObject({ action: 'merge', deleteBranch: true });
+    expect(pullRequestActionArg({ ...base, action: 'update-branch', method: 'REBASE' })).toMatchObject({ method: 'REBASE' });
+    expect(pullRequestActionArg({ ...base, action: 'close' })).toMatchObject({ action: 'close' });
+  });
+  it.each([
+    ['an unknown action', { ...base, action: 'force-merge' }],
+    ['a merge without a method', { ...base, action: 'merge' }],
+    ['an unknown method', { ...base, action: 'merge', method: 'FAST_FORWARD' }],
+    ['squashing to update a branch', { ...base, action: 'update-branch', method: 'SQUASH' }],
+    ['a head that is not a commit', { ...base, action: 'close', expectedHeadOid: 'HEAD' }],
+    ['no expected account', { repositoryId: 'repo', number: 7, expectedHeadOid: 'a'.repeat(40), action: 'close' }],
+    ['a malformed login', { ...base, action: 'close', expectedAccount: { login: '--flag', revision: 1 } }],
+    ['a negative number', { ...base, action: 'close', number: -1 }],
+  ])('rejects %s', (_name, value) => {
+    expect(() => pullRequestActionArg(value)).toThrow('Invalid pull request data.');
+  });
+});
+
+describe('updatePullRequestArg', () => {
+  const edit = { repositoryId: 'repo', number: 7, title: ' Title ', body: 'Body', expectedUpdatedAt: '2026-01-01T00:00:00Z', expectedAccount: { login: 'sample', revision: 1 } };
+  it('trims the title and keeps the body as written', () => {
+    expect(updatePullRequestArg({ ...edit, body: ' Body\n' })).toMatchObject({ title: 'Title', body: ' Body\n' });
+  });
+  it.each([
+    ['an empty title', { ...edit, title: '   ' }],
+    ['a very long title', { ...edit, title: 'x'.repeat(301) }],
+    ['a null character', { ...edit, body: 'a\0b' }],
+    ['a very long body', { ...edit, body: 'x'.repeat(100 * 1024 + 1) }],
+    ['no version', { ...edit, expectedUpdatedAt: '' }],
+    ['no account', { ...edit, expectedAccount: undefined }],
+  ])('rejects %s', (_name, value) => {
+    expect(() => updatePullRequestArg(value)).toThrow('Invalid pull request data.');
+  });
+});
+
+describe('comment and review text', () => {
+  const pull = { repositoryId: 'repo', number: 7, expectedAccount: { login: 'sample', revision: 1 } };
+  const head = { ...pull, expectedHeadOid: 'a'.repeat(40) };
+  it('requires text in a comment', () => {
+    expect(commentOnPullRequestArg({ ...pull, body: 'Hi' })).toMatchObject({ body: 'Hi' });
+    expect(() => commentOnPullRequestArg({ ...pull, body: '  ' })).toThrow('Invalid pull request data.');
+  });
+  it('requires text except to approve', () => {
+    expect(reviewPullRequestArg({ ...head, verdict: 'approve', body: '' })).toMatchObject({ verdict: 'approve' });
+    expect(() => reviewPullRequestArg({ ...head, verdict: 'comment', body: ' ' })).toThrow('Invalid pull request data.');
+    expect(() => reviewPullRequestArg({ ...head, verdict: 'request-changes', body: '' })).toThrow('Invalid pull request data.');
+    expect(() => reviewPullRequestArg({ ...head, verdict: 'dismiss', body: 'x' })).toThrow('Invalid pull request data.');
+    expect(() => reviewPullRequestArg({ ...pull, verdict: 'approve', body: '' })).toThrow('Invalid pull request data.');
+  });
+});
+
+describe('release arguments', () => {
+  const base = { repositoryId: 'repo', tagName: 'v1.2.3', expectedAccount: { login: 'sample', revision: 1 } };
+  it.each(['v1.2.3', 'release/1.2', 'v1.2.3-rc.1'])('accepts the tag %s', (tag) => {
+    expect(tagNameArg(tag, 'gh-release-view')).toBe(tag);
+  });
+  it.each(['', '--cleanup-tag', '-v1', 'v1 2', 'v1..2', 'v1~1', 'v1^', 'v1:2', 'v1?', 'v1*', 'v[1]', 'v1\\2', 'v1\n'])('rejects the tag %j, which could be read as a flag or is not a tag', (tag) => {
+    expect(() => tagNameArg(tag, 'gh-release-view')).toThrow('Invalid release data.');
+  });
+  it('checks each mutation', () => {
+    expect(createReleaseArg({ ...base, title: ' Title ', notes: '', generateNotes: true, prerelease: false })).toMatchObject({ title: 'Title', generateNotes: true });
+    expect(() => createReleaseArg({ ...base, title: ' ', notes: '', generateNotes: false, prerelease: false })).toThrow('Invalid release data.');
+    expect(() => createReleaseArg({ ...base, title: 'T', notes: 'x'.repeat(125_001), generateNotes: false, prerelease: false })).toThrow('Invalid release data.');
+    expect(updateReleaseArg({ ...base, expectedDatabaseId: 1, expectedBodyHash: 'a'.repeat(64), title: 'T', notes: '<!-- opentig:release-notes:start -->' })).toMatchObject({ notes: '<!-- opentig:release-notes:start -->' });
+    expect(() => updateReleaseArg({ ...base, expectedDatabaseId: 1, expectedBodyHash: 'short', title: 'T', notes: '' })).toThrow('Invalid release data.');
+    expect(deleteDraftReleaseArg({ ...base, expectedDatabaseId: 1 })).toMatchObject({ expectedDatabaseId: 1 });
+    expect(() => deleteDraftReleaseArg({ ...base })).toThrow('Invalid release data.');
+  });
+});
+
+describe('workflow arguments', () => {
+  const run = { repositoryId: 'repo', path: '.github/workflows/release.yml', ref: 'main', expectedAccount: { login: 'sample', revision: 1 } };
+  it('accepts a workflow file on a branch', () => {
+    expect(runWorkflowArg(run)).toMatchObject({ path: '.github/workflows/release.yml', ref: 'main' });
+    expect(workflowPathArg('.github/workflows/ci.yaml', 'gh-workflow-runs')).toBe('.github/workflows/ci.yaml');
+  });
+  it.each(['--help', 'release.yml', '.github/workflows/../../evil.yml', '.github/workflows/a/b.yml', '.github/workflows/release.txt'])('rejects the path %s', (path) => {
+    expect(() => workflowPathArg(path, 'gh-workflow-runs')).toThrow('Invalid release data.');
+  });
+  it('rejects a ref that could be read as a flag', () => {
+    expect(() => runWorkflowArg({ ...run, ref: '--foo' })).toThrow('Invalid release data.');
+  });
+  it('checks a publication', () => {
+    expect(publishReleaseArg({ repositoryId: 'repo', tagName: 'v1', expectedDatabaseId: 1, expectedAccount: run.expectedAccount })).toMatchObject({ tagName: 'v1' });
+    expect(() => publishReleaseArg({ repositoryId: 'repo', tagName: '--draft=false', expectedDatabaseId: 1, expectedAccount: run.expectedAccount })).toThrow('Invalid release data.');
   });
 });

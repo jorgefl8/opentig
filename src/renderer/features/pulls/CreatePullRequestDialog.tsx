@@ -12,15 +12,11 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogDescription, DialogPopup, DialogTitle } from '@/components/ui/dialog';
 import { SearchablePicker } from '@/components/SearchablePicker';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
-import { Textarea } from '@/components/ui/textarea';
 import { opentig } from '@/lib/opentig-api';
 import { accountSourceLabel } from '@/features/settings/github-access-copy';
-import { ViewerTabs, ViewerTabsList, ViewerTabsPanel } from '@/components/ui/viewer-tabs';
-import { LinkedMarkdown } from '@/features/markdown/LinkedMarkdown';
-
 import { AiProviderIcon } from '@/features/ai/AiProviderIcon';
 import { ghDetail, ghErrorTitle, openOnGitHub } from './gh-utils';
-import '@/features/markdown/markdown.css';
+import { MarkdownField } from './MarkdownField';
 
 interface CreatePullRequestDialogProps {
   open: boolean;
@@ -44,12 +40,9 @@ export function CreatePullRequestDialog(props: CreatePullRequestDialogProps) {
   const [body, setBody] = useState('');
   const [base, setBase] = useState('');
   const [draft, setDraft] = useState(false);
-  const [bodyTab, setBodyTab] = useState<'edit' | 'preview'>('edit');
-  const [previewHtml, setPreviewHtml] = useState('');
   const [creating, setCreating] = useState(false);
   const [generating, setGenerating] = useState<string | null>(null);
   const generationRequest = useRef<string | null>(null);
-  const previewToken = useRef(0);
 
   const currentBranch = props.status?.branch ?? null;
   const harness = props.preferences.commitMessageHarness;
@@ -63,19 +56,6 @@ export function CreatePullRequestDialog(props: CreatePullRequestDialogProps) {
     if (!props.open) return;
     setBase((current) => current && baseOptions.includes(current) ? current : defaultBase(baseOptions));
   }, [baseOptions, props.open]);
-
-  useEffect(() => {
-    if (!props.open || bodyTab !== 'preview') return;
-    const token = ++previewToken.current;
-    void import('@/features/markdown/render-markdown')
-      .then(({ renderMarkdown }) => renderMarkdown(body || '_No description._'))
-      .then((html) => {
-        if (token === previewToken.current) setPreviewHtml(html);
-      })
-      .catch(() => {
-        if (token === previewToken.current) setPreviewHtml('<p>Could not render the preview.</p>');
-      });
-  }, [body, bodyTab, props.open]);
 
   const baseOid = props.branches.find(branch => branch.name === base)?.oid;
   // A response for an old selection must not overwrite the user's current draft.
@@ -108,7 +88,6 @@ export function CreatePullRequestDialog(props: CreatePullRequestDialogProps) {
       setTitle(result.title);
       setBody(result.body);
       setCoverage(result.coverage ?? null);
-      setBodyTab('edit');
       sileo.success({
         title: `Draft generated with ${harnessLabel(result.harness)}`,
         description: result.contextWasTruncated ? 'Some context was omitted. Review the coverage details before publishing.' : 'Review and edit before publishing.',
@@ -214,27 +193,16 @@ export function CreatePullRequestDialog(props: CreatePullRequestDialogProps) {
             />
           </div>
           {coverage && <PullRequestCoverage coverage={coverage} stale={!isCoverageCurrent(coverage, props.repositoryId, base, props.status, props.branches)} />}
-          <ViewerTabs value={bodyTab} onValueChange={(value) => setBodyTab(value as typeof bodyTab)} className="create-pr-field create-pr-body-field">
-            <div className="create-pr-body-header">
-              <label htmlFor="create-pr-body">Description</label>
-              <ViewerTabsList
-                label="Description view"
-                className="markdown-viewer-tabs"
-                items={[{ value: 'edit', label: 'Edit' }, { value: 'preview', label: 'Preview' }]}
-              />
-            </div>
-            <ViewerTabsPanel value="edit" className="create-pr-body-panel">
-              <Textarea
-                id="create-pr-body"
-                value={body}
-                rows={10}
-                placeholder="Describe the change (GitHub Markdown)"
-                disabled={blocked || creating || Boolean(generating)}
-                onChange={(event) => setBody(event.target.value)}
-              />
-            </ViewerTabsPanel>
-            <ViewerTabsPanel value="preview" className="create-pr-preview"><LinkedMarkdown html={previewHtml} /></ViewerTabsPanel>
-          </ViewerTabs>
+          <MarkdownField
+            id="create-pr-body"
+            label="Description"
+            value={body}
+            rows={10}
+            placeholder="Describe the change (GitHub Markdown)"
+            emptyPreview="_No description._"
+            disabled={blocked || creating || Boolean(generating)}
+            onChange={setBody}
+          />
         </div>
         <div className="create-pr-actions">
           <Button

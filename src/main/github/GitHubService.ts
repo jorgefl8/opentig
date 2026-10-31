@@ -2,11 +2,9 @@ import { createHash } from 'node:crypto';
 import { ReadSingleFlight } from '../git/ReadSingleFlight';
 import type { CliCandidate } from '../ai/CliResolver';
 import { parsePullRequestStack, parseStackMemberships, stackMembershipQuery } from './PullRequestStackParser';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
-import path from 'node:path';
 import { GITHUB_PR_COMMIT_PAGE } from '../../shared/contracts';
-import type { CreatePullRequestInput, CreatePullRequestResult, DiffResult, PullRequestCommitList, GhCliStatus, GitHubRepositoryInfo, PullRequestDetails, PullRequestStack, PullRequestState, PullRequestSummary } from '../../shared/contracts';
+import type { RepositoryInfo, CreatePullRequestInput, CreatePullRequestResult, CommentOnPullRequestInput, CreateReleaseInput, DeleteDraftReleaseInput, PublishReleaseInput, ReleaseDetails, ReleaseSummary, RepositoryWorkflowList, RunWorkflowInput, UpdateReleaseInput, WorkflowRunSummary, DiffResult, ReviewPullRequestInput, UpdatePullRequestInput, PullRequestActionInput, PullRequestActionResult, PullRequestConversation, PullRequestCommitList, GhCliStatus, GitHubRepositoryInfo, PullRequestDetails, PullRequestLiveState, PullRequestStack, PullRequestState, PullRequestSummary } from '../../shared/contracts';
 import { AiOperationError, GhOperationError } from '../../shared/errors';
 import type { CliProcessRunner, CliRunResult } from '../ai/CliProcessRunner';
 import type { CliResolver } from '../ai/CliResolver';
@@ -14,29 +12,26 @@ import type { GitProcess } from '../git/GitProcess';
 import type { RepositoryService } from '../git/RepositoryService';
 import { parseGitHubRemote, parseSshRemote } from './GitHubRemoteParser';
 import { GH_ENV, redactCommandToken, type GitHubCommandAuth } from './GitHubAccountAuth';
+import { parsePullRequestLiveState, PR_LIVE_STATE_QUERY } from './PullRequestLiveStateParser';
+import { PR_CONVERSATION_QUERY, parsePullRequestConversation } from './PullRequestConversationParser';
+import { PullRequestActionRunner } from './PullRequestActionRunner';
+import { GitHubReleases } from './GitHubReleases';
+import { withPrivateTextFile, type GhRunOptions } from './GitHubAccess';
 import { parseBranchPullRequestList, parseCreatedPullRequestUrl, parsePullRequestDetails, parsePullRequestList, PR_DETAIL_FIELDS, PR_SUMMARY_FIELDS, selectPullRequestsNewestFirst, sortPullRequestsNewestFirst } from './PullRequestParser';
 
 import { GitHubAccountsService } from './GitHubAccountsService';
 import { PullRequestLocalGit, diffResult, type PullRequestRange } from './PullRequestLocalGit';
 import type { GitHubAccountSelection } from '../../shared/github-accounts';
-import { GITHUB_NETWORK_TIMEOUT_MS as NETWORK_TIMEOUT_MS } from '../../shared/operation-timeouts';
+import { GITHUB_LIVE_READ_TIMEOUT_MS, GITHUB_NETWORK_TIMEOUT_MS as NETWORK_TIMEOUT_MS } from '../../shared/operation-timeouts';
 import { classifyFailure } from './GitHubFailure';
 
 const ACCOUNT_USED = 'Account used:';
 
-interface GhRunOptions {
-  cwd: string;
-  operation: string;
-  timeoutMs?: number;
-  maxOutputBytes?: number;
-  stdin?: string;
-  auth: GitHubCommandAuth;
-  executable: CliCandidate;
-}
-
 export class GitHubService {
   private readonly reads = new ReadSingleFlight();
   private readonly localGit: PullRequestLocalGit;
+  private readonly actions: PullRequestActionRunner;
+  private readonly releases: GitHubReleases;
   gitAccess?: import('../git/RepositoryGitAccess').RepositoryGitAccess;
   readonly accounts: GitHubAccountsService;
 
@@ -50,6 +45,16 @@ export class GitHubService {
     this.accounts = accounts ?? new GitHubAccountsService(resolver, runner, git);
     this.localGit = new PullRequestLocalGit(git);
     this.git.onInvalidate(scope => this.reads.invalidate(scope));
+    const access = {
+      requireGitHub: (repositoryId: string, operation: string) => this.requireGitHub(repositoryId, operation),
+      run: (executable: CliCandidate, args: string[], options: GhRunOptions) => this.run(executable, args, options),
+      runRead: (args: string[], options: GhRunOptions) => this.runGh(args, options),
+      invalidate: (repositoryId: string) => this.invalidate(repositoryId),
+      readLiveState: (repositoryId: string, number: number) => this.readGetPullRequestLiveState(repositoryId, number),
+      revisionFor: (repository: RepositoryInfo) => this.accounts.revisionFor(repository),
+    };
+    this.actions = new PullRequestActionRunner(access);
+    this.releases = new GitHubReleases(access);
   }
 
   invalidate(repositoryId?: string): void {
@@ -237,6 +242,108 @@ export class GitHubService {
     return (await this.withStackMembership(repository.path, nameWithOwner, auth, executable, [details]))[0]!;
   }
 
+  getPullRequestLiveState(repositoryId: string, prNumber: number): Promise<PullRequestLiveState> {
+    return this.shareRead(repositoryId, ['live-state', prNumber], () => this.readGetPullRequestLiveState(repositoryId, prNumber));
+  }
+
+  runPullRequestAction(input: PullRequestActionInput): Promise<PullRequestActionResult> {
+    return this.actions.run(input);
+  }
+
+  updatePullRequest(input: UpdatePullRequestInput): Promise<void> {
+    return this.actions.update(input);
+  }
+
+  commentOnPullRequest(input: CommentOnPullRequestInput): Promise<void> {
+    return this.actions.comment(input);
+  }
+
+  reviewPullRequest(input: ReviewPullRequestInput): Promise<void> {
+    return this.actions.review(input);
+  }
+
+  private async readGetPullRequestLiveState(repositoryId: string, prNumber: number): Promise<PullRequestLiveState> {
+    const operation = 'gh-pr-live-state';
+    const { repository, nameWithOwner, auth, executable } = await this.requireGitHub(repositoryId, operation);
+    const [owner, name] = nameWithOwner.split('/');
+    const [result, stack] = await Promise.all([
+      this.run(executable, ['api', 'graphql', '-f', `owner=${owner}`, '-f', `name=${name}`, '-F', `number=${prNumber}`, '-f', `headRef=refs/pull/${prNumber}/head`, '-f', `query=${PR_LIVE_STATE_QUERY}`], {
+        auth, executable, cwd: repository.path, operation, timeoutMs: GITHUB_LIVE_READ_TIMEOUT_MS, maxOutputBytes: 4 * 1024 * 1024,
+      }),
+      this.stackStatus(repository.path, nameWithOwner, auth, executable, prNumber),
+    ]);
+    const read = parsePullRequestLiveState(result.stdout, stack);
+    if (read.status === 'ok') return read.state;
+    if (read.status === 'missing') throw new GhOperationError({ code: 'GH_PROCESS_FAILED', operation, message: `Pull request #${prNumber} was not found in this repository.`, exitCode: result.exitCode });
+    // stdout holds GitHub data here, where check names and URLs could look like another failure.
+    if (result.exitCode !== 0) throw classifyFailure({ ...result, stdout: '', stderr: redactCommandToken(result.stderr, auth) }, operation);
+    throw new GhOperationError({ code: 'GH_INVALID_OUTPUT', operation, message: 'GitHub CLI returned an unexpected response.' });
+  }
+
+  getPullRequestConversation(repositoryId: string, prNumber: number): Promise<PullRequestConversation> {
+    return this.shareRead(repositoryId, ['conversation', prNumber], () => this.readGetPullRequestConversation(repositoryId, prNumber));
+  }
+
+  private async readGetPullRequestConversation(repositoryId: string, prNumber: number): Promise<PullRequestConversation> {
+    const operation = 'gh-pr-conversation';
+    const { repository, nameWithOwner, auth, executable } = await this.requireGitHub(repositoryId, operation);
+    const [owner, name] = nameWithOwner.split('/');
+    const result = await this.run(executable, ['api', 'graphql', '-f', `owner=${owner}`, '-f', `name=${name}`, '-F', `number=${prNumber}`, '-f', `query=${PR_CONVERSATION_QUERY}`], {
+      auth, executable, cwd: repository.path, operation, timeoutMs: GITHUB_LIVE_READ_TIMEOUT_MS, maxOutputBytes: 16 * 1024 * 1024,
+    });
+    const conversation = parsePullRequestConversation(result.stdout);
+    if (conversation) return conversation;
+    if (result.exitCode !== 0) throw classifyFailure({ ...result, stdout: '', stderr: redactCommandToken(result.stderr, auth) }, operation);
+    throw new GhOperationError({ code: 'GH_INVALID_OUTPUT', operation, message: 'GitHub CLI returned an unexpected response.' });
+  }
+
+  /** Membership is optional metadata: a failed read stays `unknown` instead of failing the live state. */
+  private async stackStatus(cwd: string, nameWithOwner: string, auth: GitHubCommandAuth, executable: CliCandidate, prNumber: number): Promise<PullRequestLiveState['stack']> {
+    const [owner, name] = nameWithOwner.split('/');
+    try {
+      const result = await this.runGhRead(['api', 'graphql', '-f', `owner=${owner}`, '-f', `name=${name}`, '-f', `query=${stackMembershipQuery([prNumber])}`], {
+        auth, executable, cwd, operation: 'gh-pr-stack-membership', timeoutMs: 10_000, maxOutputBytes: 1024 * 1024,
+      });
+      return parseStackMemberships(result.stdout, [prNumber]).has(prNumber) ? 'member' : 'none';
+    } catch { return 'unknown'; }
+  }
+
+  listReleases(repositoryId: string): Promise<ReleaseSummary[]> {
+    return this.shareRead(repositoryId, ['releases'], () => this.releases.list(repositoryId));
+  }
+
+  getRelease(repositoryId: string, tagName: string): Promise<ReleaseDetails> {
+    return this.shareRead(repositoryId, ['release', tagName], () => this.releases.view(repositoryId, tagName));
+  }
+
+  createRelease(input: CreateReleaseInput): Promise<void> {
+    return this.releases.create(input);
+  }
+
+  updateRelease(input: UpdateReleaseInput): Promise<void> {
+    return this.releases.update(input);
+  }
+
+  deleteDraftRelease(input: DeleteDraftReleaseInput): Promise<void> {
+    return this.releases.deleteDraft(input);
+  }
+
+  publishRelease(input: PublishReleaseInput): Promise<void> {
+    return this.releases.publish(input);
+  }
+
+  listWorkflows(repositoryId: string): Promise<RepositoryWorkflowList> {
+    return this.shareRead(repositoryId, ['workflows'], () => this.releases.listWorkflows(repositoryId));
+  }
+
+  listWorkflowRuns(repositoryId: string, path: string): Promise<WorkflowRunSummary[]> {
+    return this.shareRead(repositoryId, ['workflow-runs', path], () => this.releases.listWorkflowRuns(repositoryId, path));
+  }
+
+  runWorkflow(input: RunWorkflowInput): Promise<void> {
+    return this.releases.runWorkflow(input);
+  }
+
   private async withStackMembership<T extends PullRequestSummary>(cwd: string, nameWithOwner: string, auth: GitHubCommandAuth, executable: CliCandidate, pulls: T[]): Promise<T[]> {
     const [owner, name] = nameWithOwner.split('/');
     const enriched: T[] = [];
@@ -376,12 +483,7 @@ export class GitHubService {
     const head = await this.pullRequestHead(repository.path, status.branch, nameWithOwner, operation);
     if (base === head) throw new GhOperationError({ code: 'GH_PROCESS_FAILED', operation, message: 'The base branch must be different from the current branch.' });
 
-    // The body travels through a private temporary file: it avoids argument
-    // length limits and any shell/flag interpretation of its content.
-    const temporary = await mkdtemp(path.join(os.tmpdir(), 'opentig-gh-'));
-    const bodyPath = path.join(temporary, 'body.md');
-    try {
-      await writeFile(bodyPath, input.body, { encoding: 'utf8', mode: 0o600 });
+    return withPrivateTextFile(input.body, async (bodyPath) => {
       const args = ['pr', 'create', '-R', nameWithOwner, '--title', input.title, '--body-file', bodyPath, '--base', base, '--head', head];
       if (input.draft) args.push('--draft');
       verifyAccount();
@@ -393,9 +495,7 @@ export class GitHubService {
       const created = parseCreatedPullRequestUrl(result.stdout);
       if (!created) throw new GhOperationError({ code: 'GH_INVALID_OUTPUT', operation, message: 'GitHub CLI did not return the URL of the new pull request.' });
       return created;
-    } finally {
-      await rm(temporary, { recursive: true, force: true });
-    }
+    });
   }
 
   /**

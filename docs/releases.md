@@ -34,7 +34,7 @@ Mixed commits and changes to shared manifests, lockfiles, or tooling remain appl
 
 The proposed version defaults to a patch increment (`0.1.0` → `0.1.1`). A higher version in `package.json`, or a higher version chosen on the managed draft, takes precedence without creating another draft. This proposal does not change package files or create a Git tag.
 
-Edit the release title or add prose outside the `opentig:release-notes` comment markers. Refreshes preserve those edits and replace only the generated block.
+Edit the release title or add prose outside the `opentig:release-notes` comment markers, on GitHub or in [OpenTig's Releases](github.md#manage-releases), which edits the notes raw and keeps the markers. Refreshes preserve those edits and replace only the generated block.
 
 <details>
 <summary>Included changes, author credits, and new contributors</summary>
@@ -67,6 +67,8 @@ The prepared draft must contain:
 | `.blockmap` and `latest.yml` | Windows update metadata |
 | `opentig-cli-<version>.tgz` | The prepared CLI package |
 | `opentig-headless.json` | Integrity hashes and source tag/commit |
+
+[OpenTig's Releases](github.md#manage-releases) can run **Prepare release** and publish the reviewed draft instead of GitHub's pages. Running it there uses `main` and leaves `dry_run` unchecked, so it creates the version commit and tag. The steps stay the same, including reviewing the assets and completing Windows validation before publishing.
 
 **Publishing a notes-only draft does not prepare its binaries.** Publishing the completed release makes the Windows update available and starts npm publication without rebuilding the CLI.
 

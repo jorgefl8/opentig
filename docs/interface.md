@@ -4,7 +4,7 @@
 
 Use **Settings → General** to change themes, fonts, file views, and remote checks. Use **Settings → Shortcuts** to customize keyboard controls.
 
-On desktop, navigation and file lists sit in a resizable sidebar; editors, diffs, commits, and PRs open in the viewer. Phone browsers show one pane at a time. Both clients connect to the same repository backend. Native desktop controls are available only in the desktop app.
+On desktop, navigation and file lists sit in a resizable sidebar; editors, diffs, commits, PRs, and releases open in the viewer. Phone browsers show one pane at a time. Both clients connect to the same repository backend. Native desktop controls are available only in the desktop app.
 
 ## Appearance and settings
 
@@ -102,7 +102,7 @@ Options show hints only for truncated text or additional information. Scrolling 
 
 ## Phone navigation
 
-Use the bottom **Changes**, **Files**, **History**, **PRs**, and **Search** tabs to switch sections. Tap the compact repository header's context controls for branches, worktrees, pull/push, and Settings.
+Use the bottom **Changes**, **Files**, **History**, **PRs**, and **Search** tabs to switch sections; **Releases** is inside **PRs**. Tap the compact repository header's context controls for branches, worktrees, pull/push, and Settings.
 
 | Task | On a phone |
 | --- | --- |

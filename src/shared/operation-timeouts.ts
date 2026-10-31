@@ -32,6 +32,15 @@ export const PULL_REQUEST_DIFF_TIMEOUT_MS = GITHUB_NETWORK_TIMEOUT_MS + 2 * PULL
 /** The PR's details, downloading its head and base, then the commit list. */
 export const PULL_REQUEST_COMMITS_TIMEOUT_MS = GITHUB_NETWORK_TIMEOUT_MS + 2 * PULL_REQUEST_FETCH_TIMEOUT_MS + 60_000 + STEP_MARGIN_MS;
 
+/** A status read that repeats while a PR is open, so a slow GitHub ends quickly. */
+export const GITHUB_LIVE_READ_TIMEOUT_MS = 20_000;
+/** One GitHub CLI call that changes something. */
+export const GITHUB_ACTION_STEP_TIMEOUT_MS = 60_000;
+/** Approving workflows checks each run again first, so it stops starting new approvals after this long. */
+export const WORKFLOW_APPROVAL_WINDOW_MS = 120_000;
+/** Reading the current state, the slowest action, then reading the result. That's approving workflows, whose last run can start as the window ends. */
+export const GITHUB_ACTION_TIMEOUT_MS = GITHUB_LIVE_READ_TIMEOUT_MS + WORKFLOW_APPROVAL_WINDOW_MS + GITHUB_LIVE_READ_TIMEOUT_MS + 3 * GITHUB_ACTION_STEP_TIMEOUT_MS + GITHUB_LIVE_READ_TIMEOUT_MS + STEP_MARGIN_MS;
+
 /** The client outlasts the server, so a server-side result or timeout always arrives first. */
 export const CLIENT_TIMEOUT_MARGIN_MS = 30_000;
 /** Waiting to reconnect stays short: a mutation should not run long after it was requested. */

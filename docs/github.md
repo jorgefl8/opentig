@@ -65,9 +65,43 @@ Your CLI must support multi-account `auth token --user` and `auth status --json 
 2. Select a PR to inspect its metadata and Markdown description.
 3. In **Code**, review the cumulative diff or use **By commit** to inspect changes from one commit. The selector supports keyboard navigation, readable subjects, and scrollable options.
 
+**Current status**
+
+While a PR is open in the viewer, its header shows where it stands according to GitHub: **Ready to merge**, **Review required**, **Required checks failing**, **2 commits behind main**, **Conflicts with main**, **In merge queue**, or **A branch rule blocks merging** when GitHub blocks it for a reason OpenTig can't see. Armed auto-merge appears as a badge with its method. Reading this status never changes anything on GitHub.
+
+Click the checks summary to list individual checks, with what needs attention first, then what's in progress and what has completed. Required checks are marked, and a row opens that check on GitHub. A check that ran more than once shows its newest run. Past GitHub's first 100 checks, the list says so and links to the rest. If GitHub withholds details from your account, the list says some checks may be missing.
+
+The latest verdict of each reviewer also appears in the header, marked if it was given before the latest commit.
+
+<details>
+<summary>How the status refreshes</summary>
+
+The status refreshes only while the PR is open in the viewer and the window is visible:
+
+| Situation | Refresh |
+| --- | --- |
+| GitHub is still computing mergeability | Every 10 seconds for a minute, then every minute |
+| Checks are running, auto-merge is armed, or the PR is in a merge queue | Every 45 seconds |
+| Any other open PR | Every minute |
+| Merged or closed PR | No periodic refresh |
+
+Returning to the window, reconnecting, changing the repository account, or manually refreshing checks immediately. If a refresh fails, the last status stays visible with a notice and **Retry**. Periodic refresh stops at GitHub's rate limit and resumes when you return to the window. A new head commit also refreshes the PR's details, commits, and code.
+
+</details>
+
 **Code is computed by Git in your clone**, so pull requests larger than GitHub's 300-file diff limit open normally. The first time you open a PR's code, OpenTig downloads its commits from the remote that holds the pull requests (`refs/pull/<number>/head`, plus the base commit if it is missing) without creating or moving any branch, tag, or remote-tracking ref, and then compares them the same way GitHub's **Files changed** does. Later views and **By commit** read locally. GitHub CLI returns at most 100 commits per PR, so for longer PRs the **Timeline** and **By commit** lists are completed from the downloaded history; GitHub avatars appear only for the commits GitHub returned. If the commits can't be downloaded, OpenTig asks GitHub for the diff instead, which only works within GitHub's limits. A diff too large for one server response (4 MiB) shows the complete files that fit, with a notice that some are missing.
 
 The PR list shows the effective GitHub account. When a repository can't be reached with it, the error names the account, and OpenTig stops checking the branch's PR in the background until you refresh or change the account. Failures that may pass by themselves, such as a dropped connection after waking the machine, are retried once and then checked again every minute; a rate limit is checked every 5 minutes. Pull requests come from the GitHub repository of `origin`, unless you chose another remote with `gh repo set-default`: in a fork whose `origin` is your fork, run `gh repo set-default` in the clone and choose the upstream repository to see and open its PRs.
+
+**Read the conversation**
+
+**Timeline** shows the PR's comments and reviews above its commits, with Markdown rendered and links that open in a new tab. Choose **Hide bots** to leave out comments from bots. Comments hidden on GitHub stay collapsed until you open them. Past the most recent 100 comments and 100 reviews, the list says so and links to the rest. They load when you open **Timeline**. Inline code comments stay on GitHub.
+
+**Comment and review**
+
+Write in the box at the end of the conversation, with the same Markdown preview as creating a PR, and choose **Comment**. **Review** adds **Approve**, **Request changes**, and **Comment as a review**. Only **Approve** can go without text. On your own PR, GitHub only allows the comment, so that's all the menu offers. A review stops if the PR has received new commits since you read it, so a verdict is never applied to code you haven't seen.
+
+If GitHub doesn't answer in time, your text stays in the box and sending is held back until you've checked the conversation, because sending again could post it twice.
 
 **Open the current branch's PR**
 
@@ -99,6 +133,46 @@ The menu lists layer states, titles, branches, and bases, including layers outsi
 
 **Stack navigation is read-only.** Indicators appear only when GitHub reports native stack membership, independently of worktrees or other local branches. OpenTig does not infer stacks from branch relationships, merge layers, or rebase branches.
 
+## Merge and manage a pull request
+
+The viewer's header offers the next step for the PR, and **⋯** lists everything else you can do with it. OpenTig checks your access first, so a reader sees no merge controls.
+
+| Situation | Main control |
+| --- | --- |
+| Ready to merge | **Merge** |
+| Behind a required base | **Update branch** |
+| Blocked, and auto-merge is allowed | **Merge when ready**, beside the reason |
+| Blocked, and auto-merge isn't allowed | The reason |
+| Repository with a merge queue | **Add to merge queue**, or **Merge when ready** while requirements are pending |
+| Draft | **Ready for review** |
+| Layer of a native stack | **Merge on GitHub** |
+| Conflicts | The conflict, with **Open on GitHub**. OpenTig doesn't resolve PR conflicts |
+
+**Merging asks first.** The panel names the method, the base, and the account, and offers **Delete branch after merging**. It starts on your default method on GitHub, if the repository allows it. The option to delete the branch doesn't appear when GitHub already deletes branches on merge, or with auto-merge and queues, which finish later. Escape cancels, and the question goes away if the PR changes while it's open.
+
+Closing, deleting a branch, enabling auto-merge, adding to a queue, and rebasing a branch also ask first. Rebasing warns that it rewrites commits. Marking as ready or draft, reopening, disabling auto-merge, and updating a branch by merge run straight away, because they're easy to undo or keep commits as they are.
+
+**Merge** only ever merges, and **Merge when ready** only arms auto-merge. Armed auto-merge shows a badge with its method and **Disable auto-merge**, even if the PR later conflicts. A PR in a queue shows **Manage on GitHub**, because it's taken out of the queue there.
+
+<details>
+<summary>What OpenTig checks before acting</summary>
+
+Just before an action, the server reads the PR again and stops if the account you reviewed has changed, if the head commit isn't the one you saw, or if the action is no longer allowed. It sends the same head commit to GitHub, so a push at the last moment also stops a merge. Your browser's copy of the PR isn't trusted for any of this, and nothing is retried automatically.
+
+**Delete branch** works on the head repository, so it also covers your fork. It stops if the branch has moved since the PR, or if it's the default or base branch, and it finishes quietly if the branch is already gone. Stacked layers are left alone.
+
+If GitHub takes too long, OpenTig says the action may have completed and checks the PR again, rather than reporting a failure. After a merge or a deleted branch it also fetches in the background, so your clone reflects the change even with periodic remote checks turned off.
+
+</details>
+
+**Edit a PR.** Choose **Edit title and description** in **⋯**. It uses the same Markdown editor as creating a PR. Saving stops if the PR changed on GitHub after you started, so another person's or a bot's edit isn't overwritten.
+
+**Revert a merged PR.** **Revert** opens a new PR that undoes the merge, and shows it in the viewer. Nothing changes until you merge that PR. If GitHub doesn't answer in time, OpenTig holds **Revert** back until you've checked, because trying again could open a second PR.
+
+**Approve workflows from a fork.** When a fork's checks wait for approval, **Approve workflows** lets them run. They run the fork's code, so review it first. OpenTig only approves runs that can belong to this PR: it refuses if another open PR uses the same commit and fork, and it checks each run again just before approving it.
+
+**Stacks are still merged on GitHub.** So are stacks whose membership couldn't be confirmed: the viewer shows **Couldn't confirm the stack** with **Retry**.
+
 ## Create a pull request
 
 **Publish the current branch and bring it up to date first.**
@@ -111,6 +185,24 @@ The menu lists layer states, titles, branches, and bases, including layers outsi
 No PR is published before confirmation. Creation stops if the selected account or verified identity has changed since your review. The PR's head is the branch's upstream; when that is another repository, such as your fork while PRs target upstream, it is passed to GitHub as `owner:branch`.
 
 Optional AI generation, with its provider and model, is in the dialog footer. Long coverage reports scroll inside the dialog. See [AI assistance](ai-assistance.md#pull-request-drafts) for coverage reports, output conventions, and stale comparisons.
+
+## Manage releases
+
+In **PRs**, switch to **Releases** to list the repository's releases, including drafts if your account can see them. Select one to read its notes and assets in the viewer.
+
+**OpenTig never creates or moves a tag.** A release only ever points at a tag that already exists on GitHub. Assets are managed outside OpenTig.
+
+| Action | What to expect |
+| --- | --- |
+| **New** | Creates a draft from an existing tag, with a title and notes, optionally adding GitHub's generated notes or marking it as a pre-release. It stops if the tag doesn't exist or already has a release |
+| **Edit** | Changes the title and notes of a draft or a published release. Notes are edited raw, so any comment markers that automation keeps in them stay as they are. Saving stops if the notes changed on GitHub first, because workflows also write to them |
+| **Publish** | Asks first, showing the tag, commit, whether it's a pre-release, and the assets. Publishing can start workflows that run on publication. Off while the tag doesn't exist, with **This tag doesn't exist yet**, and the server refuses it too, because GitHub would otherwise create the tag |
+| **Delete draft** | Asks first, lists what's lost, and keeps the tag. Published releases are only deleted on GitHub |
+| **Run** | Runs a workflow on the default branch, after naming the workflow and branch. Workflows about releases come first, with their latest runs and links. It can't pass inputs, so GitHub's message explains when a workflow needs them or can't be started manually |
+
+Assets aren't checked for completeness: **review them before publishing**. If GitHub doesn't answer in time while running a workflow, **Run** stays off until you've refreshed its runs, because trying again could start it twice.
+
+These actions use the repository's account, stop if that account changed since you reviewed it, and only appear with write access.
 
 ## Settings scopes
 
