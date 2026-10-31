@@ -43,7 +43,7 @@ The frame fits smaller windows and uses available screen height on phones. Brows
 
 Choose a **tree or list** for Changes, enable **line wrapping**, and decide whether to **show Git-ignored files** in General settings.
 
-OpenTig starts in **Files** on first use, then reopens your last active section: Changes, Files, History, PRs, or Search. This choice applies across repositories but is independent for each browser profile or desktop client.
+OpenTig starts in **Files** on first use, then reopens your last active section: Changes, Files, History, GitHub, or Search. This choice applies across repositories but is independent for each browser profile or desktop client.
 
 | Remembered item | Behavior |
 | --- | --- |
@@ -102,7 +102,7 @@ Options show hints only for truncated text or additional information. Scrolling 
 
 ## Phone navigation
 
-Use the bottom **Changes**, **Files**, **History**, **PRs**, and **Search** tabs to switch sections; **Releases** is inside **PRs**. Tap the compact repository header's context controls for branches, worktrees, pull/push, and Settings.
+Use the bottom **Changes**, **Files**, **History**, **GitHub**, and **Search** tabs to switch sections; **Pull requests** and **Releases** are tabs inside **GitHub**. Tap the compact repository header's context controls for branches, worktrees, pull/push, and Settings.
 
 | Task | On a phone |
 | --- | --- |
@@ -121,7 +121,7 @@ Notifications leave navigation and open sheets accessible. Short landscape phone
 
 When adding a repository in a browser, the visual folder picker browses **the backend host**, not the phone's filesystem.
 
-Search keeps its query and options in one compact row. The PR toolbar aligns refresh, filters, and New at a consistent touch-friendly height.
+Search keeps its query and options in one compact row. The **GitHub** tabs keep their menu and New at a consistent touch-friendly height.
 
 ### History, diffs, and projects
 

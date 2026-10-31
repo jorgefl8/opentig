@@ -1,17 +1,19 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { IconExternalLink, IconFile, IconGitCommit, IconLoader4, IconPencil, IconRefresh, IconRocket, IconTag, IconTrash } from '@tabler/icons-react';
+import { IconDots, IconLoader4, IconRefresh } from '@tabler/icons-react';
 import { sileo } from 'sileo';
 import { formatDateTime } from '@shared/date-format';
-import { ActionConfirmPanel } from '@/components/ActionConfirmPanel';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { LinkedMarkdown } from '@/features/markdown/LinkedMarkdown';
 import { opentig } from '@/lib/opentig-api';
 import { queryKeys } from '@/lib/query-client';
-import { EditReleaseDialog } from './EditReleaseDialog';
-import { ghDetail, ghErrorTitle, isUncertainFailure, openOnGitHub, releaseStateLabel } from './gh-utils';
+import { ConfirmPopover } from './ConfirmPopover';
+import { ghDetail, ghErrorTitle, isUncertainFailure, openOnGitHub, releaseStateLabel, releaseStateTone } from './gh-utils';
+import { ReleaseEditor } from './ReleaseEditor';
+import { hasViewerDraft, releaseEditDraft } from './viewer-drafts';
 import { useGitHubAccount } from './useGitHubAccount';
 import '@/features/markdown/markdown.css';
 
@@ -36,9 +38,10 @@ export function ReleaseViewer({ repositoryId, tagName, onClose }: { repositoryId
   const release = query.data?.release ?? null;
   const accountQuery = useGitHubAccount(release?.viewerCanWrite ? repositoryId : null);
   const account = accountQuery.data;
-  const [editing, setEditing] = useState(false);
-  const [confirming, setConfirming] = useState<'delete' | 'publish' | null>(null);
-  const cancel = useCallback(() => setConfirming(null), []);
+  const [editing, setEditing] = useState(() => hasViewerDraft(releaseEditDraft(repositoryId, tagName)));
+  const [confirming, setConfirming] = useState<{ action: 'delete' | 'publish'; anchor: HTMLElement } | null>(null);
+  const header = useRef<HTMLElement>(null);
+  const moreButton = useRef<HTMLButtonElement>(null);
   const stateKey = release ? [release.databaseId, release.isDraft, release.tagExists, release.bodyHash].join('|') : '';
   useEffect(() => { setConfirming(null); }, [stateKey]);
 
@@ -52,8 +55,11 @@ export function ReleaseViewer({ repositoryId, tagName, onClose }: { repositoryId
   };
   const onError = (reason: unknown) => {
     const detail = ghDetail(reason);
-    if (isUncertainFailure(reason)) sileo.info({ title: 'No answer from GitHub yet', description: 'The action may have completed. OpenTig is checking the release.', duration: 10_000 });
-    else sileo.error({ title: ghErrorTitle(detail), description: detail?.message ?? (reason instanceof Error ? reason.message : 'An unexpected error occurred.'), duration: 10_000 });
+    if (isUncertainFailure(reason)) {
+      // It may be done already, so the question goes and the release is read again.
+      setConfirming(null);
+      sileo.info({ title: 'No answer from GitHub yet', description: 'The action may have completed. OpenTig is checking the release.', duration: 10_000 });
+    } else sileo.error({ title: ghErrorTitle(detail), description: detail?.message ?? (reason instanceof Error ? reason.message : 'An unexpected error occurred.'), duration: 10_000 });
     if (detail?.code === 'GH_ACCOUNT_UNRESOLVED') void accountQuery.refetch();
   };
   const remove = useMutation({
@@ -80,53 +86,51 @@ export function ReleaseViewer({ repositoryId, tagName, onClose }: { repositoryId
   }
   if (!release) return <div className="viewer-message"><IconLoader4 className="spinner" /> <ShimmeringText text={`Loading release ${tagName}…`} /></div>;
 
+  if (editing) {
+    const closeEditor = () => {
+      setEditing(false);
+      // The menu that opened the editor comes back with the header.
+      requestAnimationFrame(() => header.current?.querySelector<HTMLElement>('.pr-more-actions')?.focus());
+    };
+    return <ReleaseEditor repositoryId={repositoryId} release={release} onClose={closeEditor} />;
+  }
+
   const canAct = release.viewerCanWrite && account?.state === 'ready' && Boolean(account.login);
-  const label = releaseStateLabel(release);
+  const asViewer = account?.login ? <> as <strong>@{account.login}</strong></> : null;
+  const canOpen = Boolean(release.url) && !release.isDraft;
+  const publishBlocked = !release.tagExists ? "This tag doesn't exist yet. Create and push it to publish." : !canAct ? 'Check the GitHub account in Settings.' : null;
   return (
     <div className="pr-viewer">
-      <header className="pr-viewer-header">
+      <header ref={header} className="pr-viewer-header no-tabs">
         <div className="pr-viewer-overview">
-          <div className="pr-viewer-title">
-            <Badge variant={release.isLatest ? 'default' : 'secondary'}>{label}</Badge>
-            <h2>{release.name}</h2>
-          </div>
-          <div className="pr-viewer-meta">
-            <span className="pr-branches"><IconTag aria-hidden="true" /> {release.tagName}</span>
-            <span aria-hidden="true">·</span>
-            <span className="pr-branches"><IconGitCommit aria-hidden="true" /> {release.targetCommitish.slice(0, 12)}</span>
-            <span aria-hidden="true">·</span>
-            <span>{release.publishedAt ? <>published <time dateTime={release.publishedAt}>{formatDateTime(release.publishedAt)}</time></> : <>created <time dateTime={release.createdAt}>{formatDateTime(release.createdAt)}</time></>}</span>
-            {release.isImmutable && <Badge variant="outline">Immutable</Badge>}
-            {release.isDraft && release.isPrerelease && <Badge variant="outline">Pre-release</Badge>}
-            {release.url && !release.isDraft && <span className="pr-viewer-actions"><Button variant="outline" size="xs" onClick={() => openOnGitHub(release.url)}><IconExternalLink /> Open on GitHub</Button></span>}
+          <div className="pr-viewer-top">
+            <div className="pr-viewer-heading"><h2>{release.name}</h2></div>
+            <span className="pr-action-bar">
+              {!release.viewerCanWrite && <span className="pr-action-reason">Changing releases requires write access</span>}
+              {release.viewerCanWrite && release.isDraft && <Tooltip>
+                <TooltipTrigger render={<Button size="xs" disabled={Boolean(publishBlocked) || busy} focusableWhenDisabled onClick={(event) => setConfirming({ action: 'publish', anchor: event.currentTarget })} />}>Publish</TooltipTrigger>
+                {publishBlocked && <TooltipContent>{publishBlocked}</TooltipContent>}
+              </Tooltip>}
+              {(release.viewerCanWrite || canOpen) && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger render={<Button ref={moreButton} variant="ghost" size="icon-xs" className="change-action-button pr-more-actions" aria-label="More release actions" disabled={busy} />}><IconDots /></DropdownMenuTrigger>
+                  <DropdownMenuContent>
+                    {canOpen && <DropdownMenuItem onClick={() => openOnGitHub(release.url)}>Open on GitHub</DropdownMenuItem>}
+                    {release.viewerCanWrite && <DropdownMenuItem disabled={!canAct} onClick={() => setEditing(true)}>Edit title and notes…</DropdownMenuItem>}
+                    {release.viewerCanWrite && release.isDraft && <DropdownMenuItem disabled={!canAct} onClick={() => { if (moreButton.current) setConfirming({ action: 'delete', anchor: moreButton.current }); }}>Delete draft…</DropdownMenuItem>}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
+            </span>
           </div>
           <div className="pr-viewer-status">
-            {!release.tagExists && <span className="pr-status attention" role="status">This tag doesn't exist yet</span>}
-            {release.viewerCanWrite ? <span className="pr-action-bar">
-              {release.isDraft && <Button size="xs" disabled={!canAct || busy || confirming !== null || !release.tagExists} onClick={() => setConfirming('publish')}><IconRocket /> Publish</Button>}
-              <Button variant="outline" size="xs" disabled={!canAct || busy} onClick={() => setEditing(true)}><IconPencil /> Edit</Button>
-              {release.isDraft && <Button variant="ghost" size="xs" disabled={!canAct || busy || confirming !== null} onClick={() => setConfirming('delete')}><IconTrash /> Delete draft</Button>}
-            </span> : <span className="pr-action-reason">Changing releases requires write access</span>}
-            {confirming === 'publish' && (
-              <div className="pr-action-panel">
-                <ActionConfirmPanel tone="warning" busy={busy} onCancel={cancel} confirm={<Button size="sm" disabled={busy} onClick={() => publish.mutate()}>{publish.isPending ? <><IconLoader4 className="animate-spin" /> <ShimmeringText text="Publishing…" /></> : 'Publish release'}</Button>}>
-                  <p>Publish <strong>{release.name}</strong>{account?.login ? <> as <strong>@{account.login}</strong></> : null}? Anyone with access to the repository sees it, and any workflow that runs on publication starts.</p>
-                  <dl className="release-publish-facts">
-                    <div><dt>Tag</dt><dd><code>{release.tagName}</code></dd></div>
-                    <div><dt>Commit</dt><dd><code>{release.targetCommitish.slice(0, 12)}</code></dd></div>
-                    <div><dt>Pre-release</dt><dd>{release.isPrerelease ? 'Yes' : 'No'}</dd></div>
-                    <div><dt>Assets</dt><dd>{release.assets.length ? release.assets.map((asset) => asset.name).join(', ') : 'None. Check that nothing is missing.'}</dd></div>
-                  </dl>
-                </ActionConfirmPanel>
-              </div>
-            )}
-            {confirming === 'delete' && (
-              <div className="pr-action-panel">
-                <ActionConfirmPanel busy={busy} onCancel={cancel} confirm={<Button variant="destructive" size="sm" disabled={busy} onClick={() => remove.mutate()}>{busy ? <><IconLoader4 className="animate-spin" /> <ShimmeringText text="Deleting…" /></> : 'Delete draft'}</Button>}>
-                  <p>Delete the draft <strong>{release.name}</strong>{account?.login ? <> as <strong>@{account.login}</strong></> : null}? Its notes and {release.assets.length === 1 ? '1 asset are' : `${release.assets.length} assets are`} lost. The tag isn't touched.</p>
-                </ActionConfirmPanel>
-              </div>
-            )}
+            <span className={`pr-status tone-${releaseStateTone(release)}`}><span className="status-dot" aria-hidden="true" /> {releaseStateLabel(release)}</span>
+            <span className="pr-branches">{release.tagName}</span>
+            <span className="pr-branches">{release.targetCommitish.slice(0, 12)}</span>
+            <span>{release.publishedAt ? <>published <time dateTime={release.publishedAt}>{formatDateTime(release.publishedAt)}</time></> : <>created <time dateTime={release.createdAt}>{formatDateTime(release.createdAt)}</time></>}</span>
+            {release.isImmutable && <span>Immutable</span>}
+            {release.isDraft && release.isPrerelease && <span>Pre-release</span>}
+            {!release.tagExists && <span className="pr-status tone-attention" role="status">This tag doesn't exist yet</span>}
           </div>
         </div>
       </header>
@@ -136,12 +140,35 @@ export function ReleaseViewer({ repositoryId, tagName, onClose }: { repositoryId
         </section>
         {release.assets.length > 0 && (
           <section className="release-assets" aria-label="Assets">
-            <h3><IconFile aria-hidden="true" /> Assets</h3>
+            <h3>Assets</h3>
             {release.assets.map((asset) => <div key={asset.name} className="release-asset"><span>{asset.name}</span><small>{formatSize(asset.size)}</small></div>)}
           </section>
         )}
       </div>
-      {editing && <EditReleaseDialog repositoryId={repositoryId} release={release} onClose={() => setEditing(false)} />}
+      {confirming?.action === 'publish' && <ConfirmPopover
+        anchor={confirming.anchor}
+        label="Confirm publication"
+        busy={busy}
+        onCancel={() => setConfirming(null)}
+        confirm={<Button size="xs" disabled={busy} onClick={() => publish.mutate()}>{publish.isPending ? <><IconLoader4 className="animate-spin" /> <ShimmeringText text="Publishing…" /></> : 'Publish release'}</Button>}
+      >
+        <p>Publish <strong>{release.name}</strong>{asViewer}? Anyone with access to the repository sees it, and any workflow that runs on publication starts.</p>
+        <dl className="release-publish-facts">
+          <div><dt>Tag</dt><dd><code>{release.tagName}</code></dd></div>
+          <div><dt>Commit</dt><dd><code>{release.targetCommitish.slice(0, 12)}</code></dd></div>
+          <div><dt>Pre-release</dt><dd>{release.isPrerelease ? 'Yes' : 'No'}</dd></div>
+          <div><dt>Assets</dt><dd>{release.assets.length ? release.assets.map((asset) => asset.name).join(', ') : 'None. Check that nothing is missing.'}</dd></div>
+        </dl>
+      </ConfirmPopover>}
+      {confirming?.action === 'delete' && <ConfirmPopover
+        anchor={confirming.anchor}
+        label="Confirm deletion"
+        busy={busy}
+        onCancel={() => setConfirming(null)}
+        confirm={<Button variant="destructive" size="xs" disabled={busy} onClick={() => remove.mutate()}>{busy ? <><IconLoader4 className="animate-spin" /> <ShimmeringText text="Deleting…" /></> : 'Delete draft'}</Button>}
+      >
+        <p>Delete the draft <strong>{release.name}</strong>{asViewer}? Its notes and {release.assets.length === 1 ? '1 asset are' : `${release.assets.length} assets are`} lost. The tag isn't touched.</p>
+      </ConfirmPopover>}
     </div>
   );
 }

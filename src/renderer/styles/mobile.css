@@ -136,11 +136,13 @@
   html .conflict-viewer-toolbar { flex-wrap: wrap; gap: 8px; padding: 8px; }
   html .conflict-viewer-toolbar > div { min-width: 0; overflow-wrap: anywhere; }
   html .conflict-actions { flex-wrap: wrap; }
-  html .pr-viewer-header { display: flex; flex-direction: column; max-height: 45%; overflow: hidden; padding: 10px; }
-  html .pr-viewer-header:has(.pr-action-panel) { max-height: 85%; }
+  html .pr-viewer-header { display: flex; flex-direction: column; max-height: 45%; overflow: hidden; padding: 10px 10px 0; }
+  html .pr-viewer-header.no-tabs { padding-bottom: 10px; }
   html .pr-viewer-overview { display: grid; min-height: 0; flex: 0 1 auto; gap: 8px; overflow-y: auto; }
-  html .pr-viewer-title { flex-wrap: wrap; }
-  html .pr-viewer-title h2 { flex: 1 1 100%; white-space: normal; overflow-wrap: anywhere; }
+  html .pr-viewer-top { flex-wrap: wrap; }
+  html .pr-viewer-heading { flex-basis: 100%; }
+  html .pr-action-bar { max-width: 100%; justify-content: flex-start; }
+  html .pr-action-bar button { min-height: 40px; }
   html .tab-list > button { min-height: 44px; }
   html .pr-viewer-tabs { flex: none; align-self: flex-start; max-width: 100%; overflow-x: auto; }
   html .pr-summary-section, html .pr-timeline { padding: 12px; }
@@ -257,12 +259,10 @@
   html .history-list .commit-header { padding-block: 4px; }
   html .history-list .commit-main { padding: 0; }
   html .history-list .commit-subject { font-size: var(--text-body); }
-  html .pull-item { padding: 14px 12px; min-height: 76px; }
+  html .pull-main { min-height: 60px; padding-block: 10px; }
   html .pull-title { white-space: normal; font-size: var(--text-body); line-height: 1.6; }
-  html .pull-meta { font-size: var(--text-meta); flex-wrap: wrap; }
-  html .pulls-toolbar { height: auto; min-height: 52px; flex-wrap: nowrap; gap: 6px; padding: 5px 12px; }
-  html .pulls-toolbar button { height: 40px; min-height: 40px; }
-  html .pulls-toolbar .change-action-button { width: 40px; min-width: 40px; }
+  html .pulls-section-head { --tab-height: 48px; height: 48px; }
+  html .pulls-section-tools button { width: 40px; min-width: 40px; height: 40px; min-height: 40px; }
   html [data-slot="dialog-popup"].mobile-sheet { top: auto; bottom: max(0px, calc(100dvh - var(--mobile-viewport-height, 100dvh) - var(--mobile-viewport-top, 0px))); left: 0; width: 100%; max-height: calc(var(--mobile-viewport-height, 100dvh) - env(safe-area-inset-top) - 16px); border-radius: 18px 18px 0 0; border-bottom: 0; padding-bottom: env(safe-area-inset-bottom); overflow: hidden; }
 
   html .welcome { height: 100%; justify-content: flex-start; overflow-y: auto; padding: max(40px, env(safe-area-inset-top)) 20px max(24px, env(safe-area-inset-bottom)); }

@@ -131,7 +131,7 @@ export function CreatePullRequestDialog(props: CreatePullRequestDialogProps) {
     <Dialog open={props.open} onOpenChange={(next) => { if (!creating) props.onOpenChange(next); }}>
       <DialogPopup className="create-pr-dialog">
         <div className="create-pr-content">
-          <DialogTitle><IconGitPullRequest aria-hidden="true" /> Create pull request</DialogTitle>
+          <DialogTitle>Create pull request</DialogTitle>
           <DialogDescription>
             {currentBranch ? <>From <code>{currentBranch}</code> into the selected base branch on GitHub.</> : 'Check out a branch to create a pull request.'}
           </DialogDescription>

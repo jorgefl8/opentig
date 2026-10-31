@@ -117,7 +117,7 @@ it('remembers PR navigation and restores the PR list after reopening the app', a
   await act(async () => root.unmount());
   root = createRoot(container);
   await mount();
-  expect(container.querySelector('[aria-current="page"]')?.textContent).toBe('PRs');
+  expect(container.querySelector('[aria-current="page"]')?.textContent).toBe('GitHub');
   expect(container.textContent).toContain('No open pull requests');
 });
 
@@ -134,7 +134,7 @@ it('keeps navigation working when client storage is unavailable', async () => {
   await mount();
   expect(container.querySelector('[aria-current="page"]')?.textContent).toBe('Files');
   await openPulls();
-  expect(container.querySelector('[aria-current="page"]')?.textContent).toBe('PRs');
+  expect(container.querySelector('[aria-current="page"]')?.textContent).toBe('GitHub');
   expect(container.textContent).toContain('No open pull requests');
 });
 
@@ -217,7 +217,9 @@ it('checks CLI availability on explicit Refresh even when PR results are cached'
   await mount();
   await openPulls();
   calls.cliStatus.mockResolvedValue({ ...available, installed: false, availability: 'error' });
-  await click('[aria-label="Refresh pull requests"]');
+  await click('[aria-label="Filter pull requests"]');
+  await act(async () => [...document.querySelectorAll<HTMLButtonElement>('.pulls-menu-action')].find(item => item.textContent === 'Refresh pull requests')!.click());
+  await settle();
   expect(calls.cliStatus).toHaveBeenCalledTimes(2);
   expect(calls.listPulls).toHaveBeenCalledOnce();
   expect(container.textContent).toContain('GitHub CLI is required');

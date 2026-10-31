@@ -31,15 +31,24 @@
   line-height: 1.75;
 }
 
-.pr-conversation-body .markdown-prose {
+/* Text inside the GitHub viewers starts at its section's own padding, on the left, at a reading width. */
+.pr-summary-section .markdown-prose,
+.pr-conversation-body .markdown-prose,
+.create-pr-preview .markdown-prose {
   width: 100%;
   margin: 0;
   padding: 0;
   line-height: 1.6;
 }
 
-.pr-conversation-body .markdown-prose > :first-child { margin-top: 0; }
-.pr-conversation-body .markdown-prose > :last-child { margin-bottom: 0; }
+.pr-summary-section .markdown-prose { max-width: 760px; }
+
+.pr-summary-section .markdown-prose > :first-child,
+.pr-conversation-body .markdown-prose > :first-child,
+.create-pr-preview .markdown-prose > :first-child { margin-top: 0; }
+.pr-summary-section .markdown-prose > :last-child,
+.pr-conversation-body .markdown-prose > :last-child,
+.create-pr-preview .markdown-prose > :last-child { margin-bottom: 0; }
 
 .markdown-viewer[data-content-width="fit"] .markdown-prose {
   width: 100%;

@@ -1,4 +1,5 @@
-import type { PullRequestCheck, PullRequestMergeMethod, PullRequestSummary, ReleaseSummary } from '../../../shared/contracts';
+import type { PullRequestCheck, PullRequestLiveState, PullRequestMergeMethod, PullRequestSummary, ReleaseSummary } from '../../../shared/contracts';
+import type { PullRequestStatusTone } from '../../../shared/pull-request-actions';
 import type { SerializedGhError } from '../../../shared/errors';
 import { openExternalUrl } from '@/lib/browser-capabilities';
 import { isUnconfirmedResult } from '@/lib/websocket-transport';
@@ -45,6 +46,11 @@ export function releaseStateLabel(release: Pick<ReleaseSummary, 'isDraft' | 'isP
   return release.isLatest ? 'Latest' : 'Published';
 }
 
+export function releaseStateTone(release: Pick<ReleaseSummary, 'isDraft' | 'isPrerelease' | 'isLatest'>): PullRequestStatusTone {
+  if (release.isDraft) return 'attention';
+  return release.isLatest && !release.isPrerelease ? 'ready' : 'neutral';
+}
+
 export function reviewDecisionLabel(decision: string | null): string | null {
   if (!decision) return null;
   if (decision === 'APPROVED') return 'Approved';
@@ -56,6 +62,21 @@ export function reviewDecisionLabel(decision: string | null): string | null {
 export interface PullRequestCheckGroup {
   label: string;
   checks: PullRequestCheck[];
+}
+
+/** The checks in a few words, with counts only when the list is complete enough to count. */
+export function pullRequestChecksSentence({ rollup, items, truncated }: PullRequestLiveState['checks']): string {
+  const fallback = rollup === 'PASSING' ? 'Checks passing' : rollup === 'FAILING' ? 'Checks failing' : 'Checks pending';
+  if (truncated) return fallback;
+  const count = (...results: PullRequestCheck['result'][]) => items.filter((check) => results.includes(check.result)).length;
+  if (rollup === 'FAILING') {
+    const attention = count('fail', 'action-required');
+    if (!attention) return fallback;
+    return `${attention} of ${items.length} checks ${count('action-required') ? 'need attention' : 'failing'}`;
+  }
+  if (rollup === 'PENDING') return count('pending') ? `${count('pending')} of ${items.length} checks running` : fallback;
+  const passed = count('pass');
+  return passed ? `${passed} ${passed === 1 ? 'check' : 'checks'} passed` : fallback;
 }
 
 /** What needs attention comes first, and within each group required checks lead. */

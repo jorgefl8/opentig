@@ -8,7 +8,7 @@ import { appDisplayName } from '@/lib/app-identity';
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  IconGitCommit, IconFileArrowRight, IconFiles, IconGitCompare, IconGitPullRequest, IconHistory,
+  IconBrandGithub, IconGitCommit, IconFileArrowRight, IconFiles, IconGitCompare, IconHistory,
   IconLoader4, IconRestore, IconSearch, IconTrash,
 } from '@tabler/icons-react';
 import { sileo } from 'sileo';
@@ -2288,7 +2288,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       <div className="app-shell" data-mobile-pane={mobilePane} inert={welcomeReplay || undefined}>
         <Toolbar
           onOnboarding={showOnboarding}
-          mobileBackLabel={mobilePane !== 'list' ? `Back to ${view === 'prs' ? 'PRs' : view}` : undefined}
+          mobileBackLabel={mobilePane !== 'list' ? `Back to ${view === 'prs' ? 'GitHub' : view}` : undefined}
           onMobileBack={() => setMobilePane('list')}
           repository={repository}
           recent={bootstrap.recentRepositories}
@@ -2335,7 +2335,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
 
         {mobile && mobilePane === 'list' && view !== 'files' && (
           <div className="mobile-workspace-actions mobile-view-heading">
-            <h2>{view === 'changes' ? 'Changes' : view === 'history' ? 'History' : view === 'prs' ? 'Pull requests' : 'Search'}{view === 'changes' && status && <small>{status.changes.length}</small>}</h2>
+            <h2>{view === 'changes' ? 'Changes' : view === 'history' ? 'History' : view === 'prs' ? 'GitHub' : 'Search'}{view === 'changes' && status && <small>{status.changes.length}</small>}</h2>
             {view === 'changes' && Boolean(status?.stagedCount || commitProposal) && <button className="mobile-commit-trigger" onClick={() => setMobilePane('commit')}><IconGitCommit /> Commit{status?.stagedCount ? ` (${status.stagedCount})` : ''}</button>}
           </div>
         )}
@@ -2349,8 +2349,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
                   aria-keyshortcuts={`Control+${index + 1}`}
                   onClick={() => setView(item)}
                 >
-                  {item === 'changes' ? <IconGitCompare /> : item === 'files' ? <IconFiles /> : item === 'history' ? <IconHistory /> : item === 'prs' ? <IconGitPullRequest /> : <IconSearch />}
-                  <span className="sidebar-tab-label">{item === 'changes' ? 'Changes' : item === 'files' ? 'Files' : item === 'history' ? 'History' : item === 'prs' ? 'PRs' : 'Search'}</span>
+                  {item === 'changes' ? <IconGitCompare /> : item === 'files' ? <IconFiles /> : item === 'history' ? <IconHistory /> : item === 'prs' ? <IconBrandGithub /> : <IconSearch />}
+                  <span className="sidebar-tab-label">{item === 'changes' ? 'Changes' : item === 'files' ? 'Files' : item === 'history' ? 'History' : item === 'prs' ? 'GitHub' : 'Search'}</span>
                   {item === 'changes' && status && status.changes.length > 0 && <span className="plain-count">{status.changes.length}</span>}
                   {item === 'prs' && pulls !== null && pulls.length > 0 && <span className="plain-count">{pulls.length}</span>}
                   {ctrlHeld && <span className="sidebar-tab-shortcut" aria-hidden="true">{index + 1}</span>}
@@ -2560,8 +2560,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
         <nav className="mobile-navigation" aria-label="Repository views">
           {SIDEBAR_VIEWS.map((item) => (
             <button key={item} aria-current={view === item ? 'page' : undefined} onClick={() => { setView(item); setMobilePane('list'); }}>
-              {item === 'changes' ? <IconGitCompare /> : item === 'files' ? <IconFiles /> : item === 'history' ? <IconHistory /> : item === 'prs' ? <IconGitPullRequest /> : <IconSearch />}
-              <span>{item === 'changes' ? 'Changes' : item === 'files' ? 'Files' : item === 'history' ? 'History' : item === 'prs' ? 'PRs' : 'Search'}</span>
+              {item === 'changes' ? <IconGitCompare /> : item === 'files' ? <IconFiles /> : item === 'history' ? <IconHistory /> : item === 'prs' ? <IconBrandGithub /> : <IconSearch />}
+              <span>{item === 'changes' ? 'Changes' : item === 'files' ? 'Files' : item === 'history' ? 'History' : item === 'prs' ? 'GitHub' : 'Search'}</span>
               {item === 'changes' && Boolean(status?.changes.length) && <i className="mobile-nav-indicator" aria-label={`${status!.changes.length} changes`} />}
             </button>
           ))}

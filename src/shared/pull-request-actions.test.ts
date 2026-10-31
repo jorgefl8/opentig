@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { PullRequestCheck, PullRequestLiveState } from './contracts';
-import { allowedPullRequestActions, canDeleteBranchWithMerge, pullRequestActionBlocked, pullRequestBlockReason, pullRequestStatusLine, resolvePullRequestPrimary } from './pull-request-actions';
+import { allowedPullRequestActions, canDeleteBranchWithMerge, pullRequestActionBlocked, pullRequestBlockReason, pullRequestStateLine, pullRequestStatusLine, pullRequestSummaryStatus, resolvePullRequestPrimary } from './pull-request-actions';
 
 const check = (result: PullRequestCheck['result'], required: boolean): PullRequestCheck => ({ name: `${result}-${required}`, workflow: null, result, required, url: null });
 function live(overrides: Partial<PullRequestLiveState> = {}): PullRequestLiveState {
@@ -38,12 +38,49 @@ describe('pullRequestStatusLine', () => {
     ['closed', { state: 'CLOSED', mergeable: 'CONFLICTING' }],
     ['a draft', { isDraft: true, mergeStateStatus: 'DRAFT' }],
     ['a draft still computing', { isDraft: true, mergeable: 'UNKNOWN', mergeStateStatus: 'UNKNOWN' }],
-  ] as const)('says nothing for %s, whose badge already does', (_name, overrides) => {
+  ] as const)('leaves %s to the state line', (_name, overrides) => {
     expect(pullRequestStatusLine(live(overrides as Partial<PullRequestLiveState>))).toBeNull();
   });
 
   it('describes a PR with armed auto-merge by what it is waiting for', () => {
     expect(pullRequestStatusLine(live({ mergeStateStatus: 'BLOCKED', reviewDecision: 'REVIEW_REQUIRED', autoMerge: { method: 'SQUASH' } }))?.label).toBe('Review required');
+  });
+});
+
+describe('pullRequestStateLine', () => {
+  it.each([
+    ['merged', { state: 'MERGED', isDraft: false }, 'merged', 'Merged into main'],
+    ['closed', { state: 'CLOSED', isDraft: false }, 'danger', 'Closed'],
+    ['a draft', { state: 'OPEN', isDraft: true }, 'neutral', 'Draft'],
+    ['open', { state: 'OPEN', isDraft: false }, 'neutral', 'Open'],
+  ] as const)('names %s', (_name, pr, tone, label) => {
+    expect(pullRequestStateLine({ ...pr, baseRefName: 'main' })).toEqual({ tone, label });
+  });
+});
+
+describe('pullRequestSummaryStatus', () => {
+  const summary = (overrides: Partial<Parameters<typeof pullRequestSummaryStatus>[0]>) => pullRequestSummaryStatus({ state: 'OPEN', isDraft: false, baseRefName: 'main', reviewDecision: null, checksState: 'NONE', ...overrides });
+
+  it.each([
+    ['a missing review over failing checks', { reviewDecision: 'REVIEW_REQUIRED', checksState: 'FAILING' }, 'attention', 'Review required'],
+    ['requested changes', { reviewDecision: 'CHANGES_REQUESTED', checksState: 'PASSING' }, 'attention', 'Changes requested'],
+    ['failing checks over an approval', { reviewDecision: 'APPROVED', checksState: 'FAILING' }, 'attention', 'Checks failing'],
+    ['pending checks', { checksState: 'PENDING' }, 'progress', 'Checks pending'],
+    ['an approval', { reviewDecision: 'APPROVED', checksState: 'PASSING' }, 'ready', 'Approved'],
+    ['passing checks', { checksState: 'PASSING' }, 'ready', 'Checks passing'],
+    ['nothing to report', {}, 'neutral', 'Open'],
+    ['a draft over its checks', { isDraft: true, checksState: 'FAILING' }, 'neutral', 'Draft'],
+    ['a merged PR over its review', { state: 'MERGED', reviewDecision: 'REVIEW_REQUIRED' }, 'merged', 'Merged into main'],
+  ] as const)('leads with %s', (_name, overrides, tone, label) => {
+    expect(summary(overrides)).toEqual({ tone, label });
+  });
+
+  it('never claims a PR can merge, which the summary cannot know', () => {
+    for (const reviewDecision of [null, 'APPROVED', 'REVIEW_REQUIRED', 'CHANGES_REQUESTED']) {
+      for (const checksState of ['NONE', 'PASSING', 'PENDING', 'FAILING'] as const) {
+        expect(summary({ reviewDecision, checksState }).label).not.toContain('Ready');
+      }
+    }
   });
 });
 

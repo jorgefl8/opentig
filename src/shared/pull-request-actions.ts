@@ -1,6 +1,6 @@
-import type { PullRequestAction, PullRequestLiveState } from './contracts';
+import type { PullRequestAction, PullRequestLiveState, PullRequestSummary } from './contracts';
 
-export type PullRequestStatusTone = 'ready' | 'attention' | 'danger' | 'progress';
+export type PullRequestStatusTone = 'ready' | 'attention' | 'danger' | 'progress' | 'merged' | 'neutral';
 
 export interface PullRequestStatusLine {
   tone: PullRequestStatusTone;
@@ -18,7 +18,29 @@ export function pullRequestBlockReason(state: Pick<PullRequestLiveState, 'review
   return 'A branch rule blocks merging';
 }
 
-/** One line on where an open PR stands. Finished PRs and drafts already say so in their state badge. */
+/** The state alone, for what the live rules leave out: drafts, finished PRs and open ones with nothing to report. */
+export function pullRequestStateLine(pr: Pick<PullRequestSummary, 'state' | 'isDraft' | 'baseRefName'>): PullRequestStatusLine {
+  if (pr.state === 'MERGED') return { tone: 'merged', label: `Merged into ${pr.baseRefName}` };
+  if (pr.state === 'CLOSED') return { tone: 'danger', label: 'Closed' };
+  return { tone: 'neutral', label: pr.isDraft ? 'Draft' : 'Open' };
+}
+
+/**
+ * What a list row can say from the summary alone, with the same words and order as pullRequestBlockReason.
+ * The summary knows reviews and checks but not whether the branch merges, so it never claims "Ready to merge".
+ */
+export function pullRequestSummaryStatus(pr: Pick<PullRequestSummary, 'state' | 'isDraft' | 'baseRefName' | 'reviewDecision' | 'checksState'>): PullRequestStatusLine {
+  if (pr.state !== 'OPEN' || pr.isDraft) return pullRequestStateLine(pr);
+  if (pr.reviewDecision === 'REVIEW_REQUIRED') return { tone: 'attention', label: 'Review required' };
+  if (pr.reviewDecision === 'CHANGES_REQUESTED') return { tone: 'attention', label: 'Changes requested' };
+  if (pr.checksState === 'FAILING') return { tone: 'attention', label: 'Checks failing' };
+  if (pr.checksState === 'PENDING') return { tone: 'progress', label: 'Checks pending' };
+  if (pr.reviewDecision === 'APPROVED') return { tone: 'ready', label: 'Approved' };
+  if (pr.checksState === 'PASSING') return { tone: 'ready', label: 'Checks passing' };
+  return pullRequestStateLine(pr);
+}
+
+/** One line on where an open PR stands. Finished PRs and drafts without a conflict are pullRequestStateLine's. */
 export function pullRequestStatusLine(state: PullRequestLiveState): PullRequestStatusLine | null {
   if (state.state !== 'OPEN') return null;
   if (isConflicting(state)) return { tone: 'danger', label: `Conflicts with ${state.baseRefName}` };
@@ -144,7 +166,7 @@ export function canDeleteBranchWithMerge(state: PullRequestLiveState): boolean {
 }
 
 export type PullRequestPrimary =
-  /** The state badge already says everything. */
+  /** The status line already says everything. */
   | { kind: 'none' }
   /** Nothing to press here, only a reason. */
   | { kind: 'text'; label: string }

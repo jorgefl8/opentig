@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { IconExternalLink, IconLoader4, IconMessage, IconRefresh } from '@tabler/icons-react';
+import { IconExternalLink, IconLoader4, IconRefresh } from '@tabler/icons-react';
 import { formatDateTime } from '@shared/date-format';
 import type { PullRequestConversationEntry, PullRequestLiveState } from '../../../shared/contracts';
 import { Button } from '@/components/ui/button';
@@ -55,7 +55,7 @@ export function PullRequestConversationView({ repositoryId, number, url, live, d
   return (
     <section className="pr-conversation" aria-label="Conversation">
       <div className="pr-conversation-head">
-        <h3><IconMessage aria-hidden="true" /> Conversation {conversation && <span className="plain-count">{shown.length}{conversation.truncated ? '+' : ''}</span>}</h3>
+        <h3>Conversation {conversation && <span className="plain-count">{shown.length}{conversation.truncated ? '+' : ''}</span>}</h3>
         {hasBots && <label className="pr-conversation-filter"><Checkbox checked={hideBots} onCheckedChange={(checked) => setHideBots(checked === true)} /> Hide bots</label>}
       </div>
       {query.isPending && <p className="pr-empty-description" role="status"><IconLoader4 className="animate-spin" aria-hidden="true" /> <ShimmeringText text="Loading conversation…" /></p>}

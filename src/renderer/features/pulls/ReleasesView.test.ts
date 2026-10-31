@@ -4,10 +4,13 @@ import { createRoot, type Root } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { ReleaseSummary } from '@shared/contracts';
+import type { GitHubRepositoryAccount } from '@shared/github-accounts';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { ReleasesView } from './ReleasesView';
+import { ReleasesTools, ReleasesView } from './ReleasesView';
 
 const api = vi.hoisted(() => ({ listReleases: vi.fn(), createRelease: vi.fn(), repositoryAccount: vi.fn() }));
+const browser = vi.hoisted(() => ({ openExternalUrl: vi.fn() }));
+vi.mock('@/lib/browser-capabilities', async (original) => ({ ...await original<object>(), openExternalUrl: browser.openExternalUrl }));
 const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn(), info: vi.fn() }));
 vi.mock('@/lib/opentig-api', () => ({ opentig: { github: api } }));
 vi.mock('sileo', () => ({ sileo: toast }));
@@ -20,6 +23,7 @@ vi.mock('@/components/ui/dialog', () => ({
 
 const release = (overrides: Partial<ReleaseSummary>): ReleaseSummary => ({ tagName: 'v1', name: 'One', isDraft: false, isPrerelease: false, isLatest: false, isImmutable: false, createdAt: '2026-01-01T00:00:00Z', publishedAt: '2026-01-01T00:00:00Z', ...overrides });
 const onSelect = vi.fn();
+const onOpenGitHubSettings = vi.fn();
 let root: Root;
 let container: HTMLDivElement;
 let client: QueryClient;
@@ -38,7 +42,9 @@ async function settle() {
   for (let tick = 0; tick < 6; tick++) await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
 }
 async function render() {
-  await act(async () => root.render(createElement(QueryClientProvider, { client }, createElement(TooltipProvider, null, createElement(ReleasesView, { repositoryId: 'repo', activeTag: 'v2', onSelect })))));
+  await act(async () => root.render(createElement(QueryClientProvider, { client }, createElement(TooltipProvider, null,
+    createElement(ReleasesTools, { repositoryId: 'repo', nameWithOwner: 'sample/demo', account: { state: 'ready', login: 'sample' } as GitHubRepositoryAccount, onOpenGitHubSettings, onSelect }),
+    createElement(ReleasesView, { repositoryId: 'repo', activeTag: 'v2', onSelect })))));
   await settle();
 }
 async function type(selector: string, value: string) {
@@ -53,11 +59,31 @@ const button = (label: string) => [...container.querySelectorAll('button')].find
 it('labels each state, marks the active one and selects on click', async () => {
   api.listReleases.mockResolvedValue([release({ tagName: 'v3', name: 'Three', isDraft: true, publishedAt: null }), release({ tagName: 'v2', name: 'Two', isLatest: true }), release({ tagName: 'v2-rc', name: 'RC', isPrerelease: true }), release({ tagName: 'v1', name: 'One' })]);
   await render();
-  const items = [...container.querySelectorAll('.release-item')];
-  expect(items.map(item => item.querySelector('[data-slot="badge"]')?.textContent)).toEqual(['Draft', 'Latest', 'Pre-release', 'Published']);
+  const items = [...container.querySelectorAll('.pull-item')];
+  expect(items.map(item => item.querySelector('.pull-meta')?.textContent)).toEqual(['Draft · v3', 'Latest · 01/01/2026', 'Pre-release · 01/01/2026', 'Published · 01/01/2026']);
+  expect(items.map(item => [...item.querySelector('.status-dot')!.classList].find(name => name.startsWith('tone-')))).toEqual(['tone-attention', 'tone-ready', 'tone-neutral', 'tone-neutral']);
   expect(items[1]?.classList.contains('active')).toBe(true);
-  await act(async () => (items[2] as HTMLButtonElement).click());
+  await act(async () => items[2]!.querySelector('button')!.click());
   expect(onSelect).toHaveBeenCalledWith('v2-rc');
+});
+
+it('keeps refreshing, GitHub and the account in its menu', async () => {
+  api.listReleases.mockResolvedValue([]);
+  await render();
+  expect(api.listReleases).toHaveBeenCalledOnce();
+  await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="More release options"]')!.click());
+  await settle();
+  const action = (label: string) => [...document.querySelectorAll<HTMLButtonElement>('.pulls-menu-action')].find(item => item.textContent?.includes(label))!;
+  await act(async () => action('Refresh releases').click());
+  await settle();
+  expect(api.listReleases).toHaveBeenCalledTimes(2);
+  await act(async () => action('Open on GitHub').click());
+  expect(browser.openExternalUrl).toHaveBeenCalledWith('https://github.com/sample/demo/releases');
+  await settle();
+  await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="More release options"]')!.click());
+  await settle();
+  await act(async () => action('@sample').click());
+  expect(onOpenGitHubSettings).toHaveBeenCalledOnce();
 });
 
 it('says when there are none', async () => {
@@ -77,7 +103,7 @@ it('creates a draft for a tag and opens it', async () => {
   api.listReleases.mockResolvedValue([]);
   api.createRelease.mockResolvedValue(undefined);
   await render();
-  await act(async () => button('New')!.click());
+  await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Create a draft release"]')!.click());
   await settle();
   expect(button('Create draft')?.disabled).toBe(true);
   await type('#release-tag', ' v2.0.0 ');
@@ -93,7 +119,7 @@ it('keeps the dialog and its text when GitHub refuses', async () => {
   api.listReleases.mockResolvedValue([]);
   api.createRelease.mockRejectedValue(Object.assign(new Error('no'), { detail: { code: 'GH_PR_ACTION_NOT_ALLOWED', operation: 'gh-release-create', message: "The tag v2.0.0 doesn't exist on GitHub." } }));
   await render();
-  await act(async () => button('New')!.click());
+  await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Create a draft release"]')!.click());
   await settle();
   await type('#release-tag', 'v2.0.0');
   await type('#release-title', 'Two');

@@ -1,10 +1,9 @@
-import { useCallback, useState } from 'react';
+import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { IconCircleCheck, IconCircleX, IconClock, IconLoader4, IconPlayerPlay, IconRefresh } from '@tabler/icons-react';
 import { sileo } from 'sileo';
 import { formatDateTime } from '@shared/date-format';
 import type { RepositoryWorkflow, WorkflowRunSummary } from '../../../shared/contracts';
-import { ActionConfirmPanel } from '@/components/ActionConfirmPanel';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogDescription, DialogPopup, DialogTitle } from '@/components/ui/dialog';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
@@ -30,7 +29,6 @@ export function RunWorkflowDialog({ repositoryId, onClose }: { repositoryId: str
   const [confirming, setConfirming] = useState(false);
   // A run with no answer may have started. Repeating it could start it twice, so the runs come first.
   const [uncertain, setUncertain] = useState(false);
-  const cancel = useCallback(() => setConfirming(false), []);
   const runsQuery = useQuery({
     queryKey: queryKeys.workflowRuns(repositoryId, workflow?.path ?? ''),
     queryFn: () => opentig.github.listWorkflowRuns(repositoryId, workflow!.path),
@@ -64,10 +62,11 @@ export function RunWorkflowDialog({ repositoryId, onClose }: { repositoryId: str
   };
   const canRun = Boolean(list?.viewerCanWrite && list.defaultBranch && workflow && account?.state === 'ready' && !uncertain);
   return (
-    <Dialog open onOpenChange={(next) => { if (!next && !busy) onClose(); }}>
+    // While the question is open, closing only withdraws it.
+    <Dialog open onOpenChange={(next) => { if (!next && !busy) { if (confirming) setConfirming(false); else onClose(); } }}>
       <DialogPopup className="create-pr-dialog">
         <div className="create-pr-content run-workflow-content">
-          <DialogTitle><IconPlayerPlay aria-hidden="true" /> Run a workflow</DialogTitle>
+          <DialogTitle>Run a workflow</DialogTitle>
           <DialogDescription>Runs on {list?.defaultBranch ? <code>{list.defaultBranch}</code> : 'the default branch'}, without inputs. GitHub explains when a workflow needs them or can't be started manually.</DialogDescription>
           {listQuery.isPending && <p className="pr-empty-description" role="status"><IconLoader4 className="animate-spin" aria-hidden="true" /> <ShimmeringText text="Loading workflows…" /></p>}
           {listQuery.isError && <div className="pr-live-notice" role="status">Couldn't load the workflows.<Button variant="ghost" size="xs" onClick={() => void listQuery.refetch()}>Retry</Button></div>}
@@ -97,19 +96,20 @@ export function RunWorkflowDialog({ repositoryId, onClose }: { repositoryId: str
             </div>
           )}
           {uncertain && <div className="pr-live-notice" role="status">The workflow may have started. Check its runs before trying again.<Button variant="ghost" size="xs" disabled={runsQuery.isFetching} onClick={refreshRuns}><IconRefresh /> Refresh runs</Button></div>}
-          {confirming && workflow && (
-            <div className="pr-action-panel">
-              <ActionConfirmPanel tone="warning" busy={busy} onCancel={cancel} confirm={<Button size="sm" disabled={busy} onClick={() => run.mutate()}>{busy ? <><IconLoader4 className="animate-spin" /> <ShimmeringText text="Starting…" /></> : `Run ${workflow.name}`}</Button>}>
-                <p>Run <strong>{workflow.name}</strong> on <code>{list?.defaultBranch}</code>{account?.login ? <> as <strong>@{account.login}</strong></> : null}? It does whatever this workflow does, which can include commits, tags and publications.</p>
-              </ActionConfirmPanel>
-            </div>
-          )}
         </div>
         <div className="create-pr-actions">
-          <div className="create-pr-submit-actions">
-            <Button variant="ghost" disabled={busy} onClick={onClose}>Close</Button>
-            <Button disabled={!canRun || busy || confirming} onClick={() => setConfirming(true)}><IconPlayerPlay /> Run workflow</Button>
-          </div>
+          {confirming && workflow
+            ? <>
+              <p className="run-workflow-question">Run <strong>{workflow.name}</strong> on <code>{list?.defaultBranch}</code>{account?.login ? <> as <strong>@{account.login}</strong></> : null}? It does whatever this workflow does, which can include commits, tags and publications.</p>
+              <div className="create-pr-submit-actions">
+                <Button variant="ghost" disabled={busy} onClick={() => setConfirming(false)}>Cancel</Button>
+                <Button disabled={busy} onClick={() => run.mutate()}>{busy ? <><IconLoader4 className="animate-spin" /> <ShimmeringText text="Starting…" /></> : `Run ${workflow.name}`}</Button>
+              </div>
+            </>
+            : <div className="create-pr-submit-actions">
+              <Button variant="ghost" disabled={busy} onClick={onClose}>Close</Button>
+              <Button disabled={!canRun || busy} onClick={() => setConfirming(true)}><IconPlayerPlay /> Run workflow</Button>
+            </div>}
         </div>
       </DialogPopup>
     </Dialog>

@@ -58,7 +58,7 @@ it('names the workflow and branch before running on the default branch', async (
   await render();
   await click('Run workflow');
   expect(api.runWorkflow).not.toHaveBeenCalled();
-  const panel = container.querySelector('.pr-action-panel')!.textContent;
+  const panel = container.querySelector('.run-workflow-question')!.textContent;
   expect(panel).toContain('Prepare release');
   expect(panel).toContain('main');
   expect(panel).toContain('as @sample');
@@ -73,7 +73,7 @@ it('switches workflow and withdraws the question', async () => {
   await click('Run workflow');
   await act(async () => [...container.querySelectorAll<HTMLButtonElement>('.workflow-row')][1]!.click());
   await settle();
-  expect(container.querySelector('.pr-action-panel')).toBeNull();
+  expect(container.querySelector('.run-workflow-question')).toBeNull();
   expect(api.listWorkflowRuns).toHaveBeenLastCalledWith('repo', '.github/workflows/ci.yml');
 });
 

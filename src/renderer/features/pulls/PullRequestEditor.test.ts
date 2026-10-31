@@ -1,24 +1,19 @@
 // @vitest-environment jsdom
-import { act, createElement, type ReactNode } from 'react';
+import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { PullRequestDetails } from '@shared/contracts';
 import { ServerRequestTimeoutError } from '@/lib/websocket-transport';
-import { EditPullRequestDialog } from './EditPullRequestDialog';
+import { PullRequestEditor } from './PullRequestEditor';
+import { forgetViewerDrafts } from './viewer-drafts';
 
 const api = vi.hoisted(() => ({ updatePullRequest: vi.fn(), repositoryAccount: vi.fn() }));
 const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn(), info: vi.fn() }));
 vi.mock('@/lib/opentig-api', () => ({ opentig: { github: api } }));
 vi.mock('sileo', () => ({ sileo: toast }));
-vi.mock('@/components/ui/dialog', () => ({
-  Dialog: ({ children }: { children: ReactNode }) => children,
-  DialogPopup: ({ children }: { children: ReactNode }) => createElement('div', { role: 'dialog' }, children),
-  DialogTitle: ({ children }: { children: ReactNode }) => createElement('h2', null, children),
-  DialogDescription: ({ children }: { children: ReactNode }) => createElement('p', null, children),
-}));
 
-const details = { number: 7, title: 'Old title', body: 'Old body' } as PullRequestDetails;
+const details = { number: 7, title: 'Old title', body: 'Old body', updatedAt: '2026-01-01T00:00:00Z' } as PullRequestDetails;
 let root: Root;
 let container: HTMLDivElement;
 let client: QueryClient;
@@ -32,13 +27,13 @@ beforeEach(() => {
 });
 afterEach(async () => {
   await act(async () => root.unmount());
-  container.remove(); client.clear(); vi.unstubAllGlobals(); vi.resetAllMocks();
+  container.remove(); client.clear(); forgetViewerDrafts(); vi.unstubAllGlobals(); vi.resetAllMocks();
 });
 async function settle() {
   for (let tick = 0; tick < 5; tick++) await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
 }
-async function render() {
-  await act(async () => root.render(createElement(QueryClientProvider, { client }, createElement(EditPullRequestDialog, { repositoryId: 'repo', details, expectedUpdatedAt: '2026-01-01T00:00:00Z', onClose }))));
+async function render(current = details) {
+  await act(async () => root.render(createElement(QueryClientProvider, { client }, createElement(PullRequestEditor, { repositoryId: 'repo', details: current, onClose }))));
   await settle();
 }
 const saveButton = () => [...container.querySelectorAll('button')].find(item => item.textContent === 'Save changes')!;
@@ -59,6 +54,16 @@ it('starts from the current text and sends what was edited, with the version it 
   await act(async () => saveButton().click());
   await settle();
   expect(api.updatePullRequest).toHaveBeenCalledWith({ repositoryId: 'repo', number: 7, title: 'New title', body: 'Old body', expectedUpdatedAt: '2026-01-01T00:00:00Z', expectedAccount: { login: 'sample', revision: 3 } });
+  expect(onClose).toHaveBeenCalledOnce();
+});
+
+it('lets Escape leave only while nothing has been edited', async () => {
+  await render();
+  await setTitle('Mine');
+  await act(async () => container.querySelector('#edit-pr-title')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
+  expect(onClose).not.toHaveBeenCalled();
+  await setTitle('Old title');
+  await act(async () => container.querySelector('#edit-pr-title')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
   expect(onClose).toHaveBeenCalledOnce();
 });
 
@@ -86,4 +91,40 @@ it('says the save may have worked when there is no answer', async () => {
   await settle();
   expect(toast.info).toHaveBeenCalledWith(expect.objectContaining({ description: expect.stringContaining('may have been saved') }));
   expect(toast.error).not.toHaveBeenCalled();
+});
+
+it('keeps the version it started from when polling brings a newer one', async () => {
+  api.updatePullRequest.mockResolvedValue(undefined);
+  await render();
+  await setTitle('Mine');
+  await render({ ...details, updatedAt: '2026-01-02T00:00:00Z' });
+  await act(async () => saveButton().click());
+  await settle();
+  expect(api.updatePullRequest).toHaveBeenCalledWith(expect.objectContaining({ title: 'Mine', expectedUpdatedAt: '2026-01-01T00:00:00Z' }));
+});
+
+it('replaces the newer version only when saving again after being told', async () => {
+  api.updatePullRequest.mockRejectedValueOnce(Object.assign(new Error('changed'), { detail: { code: 'GH_PR_STATE_CHANGED', operation: 'gh-pr-update', message: 'Your changes were not saved.' } }));
+  api.updatePullRequest.mockResolvedValue(undefined);
+  await render();
+  await setTitle('Mine');
+  await act(async () => saveButton().click());
+  await settle();
+  expect(container.textContent).toContain('saving again replaces that version');
+  await render({ ...details, updatedAt: '2026-01-02T00:00:00Z' });
+  await act(async () => saveButton().click());
+  await settle();
+  expect(api.updatePullRequest).toHaveBeenLastCalledWith(expect.objectContaining({ title: 'Mine', expectedUpdatedAt: '2026-01-02T00:00:00Z' }));
+});
+
+it('keeps the edited text when the viewer closes and comes back', async () => {
+  await render();
+  await setTitle('Mine');
+  await act(async () => root.unmount());
+  root = createRoot(container);
+  await render({ ...details, title: 'Newer title', updatedAt: '2026-01-02T00:00:00Z' });
+  expect(container.querySelector<HTMLInputElement>('#edit-pr-title')?.value).toBe('Mine');
+  await act(async () => saveButton().click());
+  await settle();
+  expect(api.updatePullRequest).toHaveBeenCalledWith(expect.objectContaining({ expectedUpdatedAt: '2026-01-01T00:00:00Z' }));
 });

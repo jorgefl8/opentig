@@ -8,7 +8,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { ServerRequestTimeoutError } from '@/lib/websocket-transport';
 import { ReleaseViewer } from './ReleaseViewer';
 
-const api = vi.hoisted(() => ({ getRelease: vi.fn(), deleteDraftRelease: vi.fn(), publishRelease: vi.fn(), repositoryAccount: vi.fn() }));
+const api = vi.hoisted(() => ({ getRelease: vi.fn(), deleteDraftRelease: vi.fn(), publishRelease: vi.fn(), updateRelease: vi.fn(), repositoryAccount: vi.fn() }));
 const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn(), info: vi.fn() }));
 vi.mock('@/lib/opentig-api', () => ({ opentig: { github: api } }));
 vi.mock('sileo', () => ({ sileo: toast }));
@@ -45,7 +45,18 @@ async function render(value: ReleaseDetails = release()) {
   await act(async () => root.render(createElement(QueryClientProvider, { client }, createElement(TooltipProvider, null, createElement(ReleaseViewer, { repositoryId: 'repo', tagName: 'v1.0.0', onClose })))));
   await settle();
 }
-const button = (label: string) => [...container.querySelectorAll('button')].find(item => item.textContent?.trim() === label);
+const button = (label: string) => [...document.querySelectorAll('button')].find(item => item.textContent?.trim() === label);
+const panel = () => document.querySelector('.confirm-popover');
+const moreButton = () => container.querySelector<HTMLButtonElement>('[aria-label="More release actions"]');
+async function openMenu() {
+  await act(async () => moreButton()!.click());
+  await settle();
+}
+const menuItems = () => [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')];
+async function choose(label: string) {
+  await act(async () => menuItems().find(item => item.textContent === label)!.click());
+  await settle();
+}
 
 it('shows the release, rendered notes and assets', async () => {
   await render();
@@ -65,34 +76,79 @@ it('removes what third-party notes could abuse', async () => {
 it('asks before deleting a draft, says the tag stays, and closes when done', async () => {
   api.deleteDraftRelease.mockResolvedValue(undefined);
   await render();
-  await act(async () => button('Delete draft')!.click());
+  await openMenu();
+  await choose('Delete draft…');
   expect(api.deleteDraftRelease).not.toHaveBeenCalled();
-  expect(container.querySelector('.pr-action-panel')?.textContent).toContain("The tag isn't touched");
-  expect(container.querySelector('.pr-action-panel')?.textContent).toContain('as @sample');
-  await act(async () => container.querySelector<HTMLButtonElement>('.pr-action-panel .local-refs-confirm-actions button')!.click());
+  expect(panel()?.textContent).toContain("The tag isn't touched");
+  expect(panel()?.textContent).toContain('as @sample');
+  await act(async () => button('Delete draft')!.click());
   await settle();
   expect(api.deleteDraftRelease).toHaveBeenCalledWith({ repositoryId: 'repo', tagName: 'v1.0.0', expectedDatabaseId: 42, expectedAccount: { login: 'sample', revision: 3 } });
   expect(onClose).toHaveBeenCalledOnce();
 });
 
-it('cancels with Escape', async () => {
+it('cancels with Escape, and returns focus to the menu that asked', async () => {
   await render();
-  await act(async () => button('Delete draft')!.click());
+  await openMenu();
+  await choose('Delete draft…');
   await act(async () => { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); });
-  expect(container.querySelector('.pr-action-panel')).toBeNull();
+  await settle();
+  expect(panel()).toBeNull();
+  expect(document.activeElement).toBe(moreButton());
+  expect(api.deleteDraftRelease).not.toHaveBeenCalled();
 });
 
 it('offers no deletion for a published release', async () => {
   await render(release({ isDraft: false, publishedAt: '2026-01-02T00:00:00Z', isLatest: true }));
-  expect(button('Delete draft')).toBeUndefined();
-  expect(button('Edit')).toBeDefined();
-  expect(container.textContent).toContain('Latest');
+  await openMenu();
+  expect(menuItems().map(item => item.textContent)).toEqual(['Open on GitHub', 'Edit title and notes…']);
+  expect(container.querySelector('.pr-status')?.textContent?.trim()).toBe('Latest');
+});
+
+it('leads the status line with the state and tag, as plain text', async () => {
+  await render(release({ isPrerelease: true, isImmutable: true }));
+  const status = container.querySelector('.pr-viewer-status')!;
+  expect(status.querySelector('.pr-status')?.textContent?.trim()).toBe('Draft');
+  expect(status.textContent).toContain('v1.0.0');
+  expect(status.textContent).toContain('Pre-release');
+  expect(status.textContent).toContain('Immutable');
+  expect(container.querySelector('[data-slot="badge"]')).toBeNull();
+});
+
+it('edits in place, with the version of the notes it started from', async () => {
+  api.updateRelease.mockResolvedValue(undefined);
+  await render();
+  await openMenu();
+  await choose('Edit title and notes…');
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+  expect(container.querySelector<HTMLTextAreaElement>('#edit-release-notes')?.value).toBe('Some **notes**');
+  await act(async () => {
+    const input = container.querySelector<HTMLInputElement>('#edit-release-title')!;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, ' New name ');
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await act(async () => button('Save changes')!.click());
+  await settle();
+  expect(api.updateRelease).toHaveBeenCalledWith({ repositoryId: 'repo', tagName: 'v1.0.0', expectedDatabaseId: 42, expectedBodyHash: 'a'.repeat(64), title: 'New name', notes: 'Some **notes**', expectedAccount: { login: 'sample', revision: 3 } });
+  expect(toast.success).toHaveBeenCalledWith(expect.objectContaining({ title: 'Release updated' }));
+  expect(container.querySelector('#edit-release-title')).toBeNull();
+});
+
+it('keeps the text in place when the notes changed on GitHub first', async () => {
+  api.updateRelease.mockRejectedValue(Object.assign(new Error('changed'), { detail: { code: 'GH_PR_STATE_CHANGED', operation: 'gh-release-edit', message: 'These notes changed on GitHub. Your changes were not saved.' } }));
+  await render();
+  await openMenu();
+  await choose('Edit title and notes…');
+  await act(async () => button('Save changes')!.click());
+  await settle();
+  expect(toast.error).toHaveBeenCalledWith(expect.objectContaining({ description: expect.stringContaining('not saved') }));
+  expect(container.querySelector('#edit-release-title')).not.toBeNull();
 });
 
 it('offers nothing to change without write access', async () => {
   await render(release({ viewerCanWrite: false }));
-  expect(button('Edit')).toBeUndefined();
-  expect(button('Delete draft')).toBeUndefined();
+  expect(moreButton()).toBeNull();
+  expect(button('Publish')).toBeUndefined();
   expect(container.textContent).toContain('requires write access');
   expect(api.repositoryAccount).not.toHaveBeenCalled();
 });
@@ -105,12 +161,14 @@ it('says when the tag does not exist', async () => {
 it('says the deletion may have worked when there is no answer', async () => {
   api.deleteDraftRelease.mockRejectedValue(Object.assign(new ServerRequestTimeoutError('Server request timed out'), { unconfirmed: true }));
   await render();
+  await openMenu();
+  await choose('Delete draft…');
   await act(async () => button('Delete draft')!.click());
-  await act(async () => container.querySelector<HTMLButtonElement>('.pr-action-panel .local-refs-confirm-actions button')!.click());
   await settle();
   expect(toast.info).toHaveBeenCalledWith(expect.objectContaining({ description: expect.stringContaining('may have completed') }));
   expect(toast.error).not.toHaveBeenCalled();
   expect(onClose).not.toHaveBeenCalled();
+  expect(panel()).toBeNull();
 });
 
 it('offers a retry when it cannot load', async () => {
@@ -126,12 +184,12 @@ it('asks before publishing, listing what will go out', async () => {
   await render();
   await act(async () => button('Publish')!.click());
   expect(api.publishRelease).not.toHaveBeenCalled();
-  const panel = container.querySelector('.pr-action-panel')!.textContent;
-  expect(panel).toContain('v1.0.0');
-  expect(panel).toContain('bbbbbbbbbbbb');
-  expect(panel).toContain('app.exe');
-  expect(panel).toContain('as @sample');
-  expect(panel).toContain('any workflow that runs on publication starts');
+  const question = panel()!.textContent;
+  expect(question).toContain('v1.0.0');
+  expect(question).toContain('bbbbbbbbbbbb');
+  expect(question).toContain('app.exe');
+  expect(question).toContain('as @sample');
+  expect(question).toContain('any workflow that runs on publication starts');
   await act(async () => button('Publish release')!.click());
   await settle();
   expect(api.publishRelease).toHaveBeenCalledWith({ repositoryId: 'repo', tagName: 'v1.0.0', expectedDatabaseId: 42, expectedAccount: { login: 'sample', revision: 3 } });
@@ -141,12 +199,17 @@ it('asks before publishing, listing what will go out', async () => {
 it('warns when a draft has no assets', async () => {
   await render(release({ assets: [] }));
   await act(async () => button('Publish')!.click());
-  expect(container.querySelector('.pr-action-panel')?.textContent).toContain('Check that nothing is missing');
+  expect(panel()?.textContent).toContain('Check that nothing is missing');
 });
 
 it('keeps Publish off without a tag, and off for what is already published', async () => {
   await render(release({ tagExists: false }));
-  expect(button('Publish')?.disabled).toBe(true);
+  // Still focusable, so its reason can be read from the tooltip.
+  expect(button('Publish')?.getAttribute('aria-disabled')).toBe('true');
+  await act(async () => button('Publish')!.click());
+  await settle();
+  expect(panel()).toBeNull();
+  expect(api.publishRelease).not.toHaveBeenCalled();
   await act(async () => root.unmount());
   root = createRoot(container);
   client.clear();

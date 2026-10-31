@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { IconChevronDown, IconLoader4 } from '@tabler/icons-react';
 import { sileo } from 'sileo';
@@ -28,6 +28,23 @@ export function PullRequestComposer({ repositoryId, number, live, draft, onDraft
   const account = accountQuery.data;
   // Sending again after no answer could post the same text twice.
   const [uncertain, setUncertain] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
+  // A draft that survived switching tabs is shown, not folded away.
+  const [expanded, setExpanded] = useState(Boolean(draft));
+  // Leaving an empty box folds it. Text keeps it open, so it can't go unnoticed.
+  useEffect(() => {
+    if (!expanded || draft.trim()) return;
+    const leave = (event: Event) => {
+      if (!(event.target instanceof Element) || root.current?.contains(event.target) || event.target.closest('[data-slot="dropdown-menu-content"]')) return;
+      setExpanded(false);
+    };
+    document.addEventListener('pointerdown', leave);
+    document.addEventListener('focusin', leave);
+    return () => {
+      document.removeEventListener('pointerdown', leave);
+      document.removeEventListener('focusin', leave);
+    };
+  }, [draft, expanded]);
   const send = useMutation({
     mutationFn: (request: Send) => {
       if (account?.state !== 'ready' || !account.login) throw new Error('Check the GitHub account in Settings and try again.');
@@ -38,6 +55,7 @@ export function PullRequestComposer({ repositoryId, number, live, draft, onDraft
     },
     onSuccess: (_result, request) => {
       onDraftChange('');
+      setExpanded(false);
       sileo.success({ title: request.kind === 'comment' ? 'Comment posted' : SENT[request.verdict], description: `#${number}` });
     },
     onError: (reason) => {
@@ -58,10 +76,16 @@ export function PullRequestComposer({ repositoryId, number, live, draft, onDraft
   const hasText = Boolean(draft.trim());
   const blocked = busy || uncertain || account?.state !== 'ready';
   const canReview = live.state === 'OPEN';
+  // A notice about what may have been posted must stay on screen.
+  const collapsed = !expanded && !uncertain;
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    // Menus are portalled but their keys still bubble here, and Escape only closes them.
+    if (event.key === 'Escape' && !busy && root.current?.contains(event.target as Node)) setExpanded(false);
+  };
   return (
-    <div className="pr-composer">
-      <MarkdownField id={`pr-comment-${number}`} label="Add a comment" value={draft} rows={4} placeholder="Write a comment (GitHub Markdown)" emptyPreview="_Nothing to preview._" disabled={busy} onChange={onDraftChange} />
-      <div className="pr-composer-actions">
+    <div ref={root} className={`pr-composer${collapsed ? ' collapsed' : ''}`} onFocus={() => setExpanded(true)} onClick={() => setExpanded(true)} onKeyDown={onKeyDown}>
+      <MarkdownField id={`pr-comment-${number}`} label="Add a comment" value={draft} rows={4} placeholder={collapsed ? 'Write a comment' : 'Write a comment (GitHub Markdown)'} emptyPreview="_Nothing to preview._" disabled={busy} collapsed={collapsed} onChange={(value) => { setExpanded(true); onDraftChange(value); }} />
+      {!collapsed && <div className="pr-composer-actions">
         {uncertain
           ? <span className="pr-composer-account" role="status">It may have been posted. Check the conversation first. <Button variant="ghost" size="xs" onClick={() => { setUncertain(false); onRefresh(); }}>Refresh</Button></span>
           : account?.login && <span className="pr-composer-account">Posting as @{account.login}</span>}
@@ -78,7 +102,7 @@ export function PullRequestComposer({ repositoryId, number, live, draft, onDraft
         <Button size="xs" disabled={blocked || !hasText} onClick={() => send.mutate({ kind: 'comment' })}>
           {busy ? <><IconLoader4 className="animate-spin" /> <ShimmeringText text="Sending…" /></> : 'Comment'}
         </Button>
-      </div>
+      </div>}
     </div>
   );
 }

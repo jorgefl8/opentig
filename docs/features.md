@@ -10,7 +10,7 @@ Use OpenTig to review changes, edit files, and prepare commits in an existing Gi
 2. In **Changes**, review unstaged, staged, and conflicted files.
 3. Open a diff, stage the files you want to include, and write or generate an editable commit message.
 4. Commit locally, or commit and push, then inspect the result in **History**.
-5. If the repository uses GitHub, open **PRs** to review or create a pull request.
+5. If the repository uses GitHub, open **GitHub** to review or create a pull request.
 
 ## Features
 
@@ -79,7 +79,7 @@ Desktop and paired browsers share an authenticated WebSocket backend. Repository
 
 On desktop, a supervised utility process keeps repository watchers and in-flight server state alive through a renderer reload or crash while the desktop process remains open. Unexpected backend exits restart with bounded backoff. Native folder selection and Explorer reveal are desktop-only; browser headers use the full width without reserving desktop window-control space.
 
-The workspace shell loads first. Settings, History, PR creation, Files, Search, and the PRs list load when first opened. Overlapping watcher and manual refreshes are combined; status-only or reference-only updates keep the current diff mounted.
+The workspace shell loads first. Settings, History, PR creation, Files, Search, and the GitHub section load when first opened. Overlapping watcher and manual refreshes are combined; status-only or reference-only updates keep the current diff mounted.
 
 [Development profiles](development.md) separate Dev application data from production. Repositories and authenticated host CLIs remain real resources in either profile.
 
@@ -340,7 +340,7 @@ Worktree selection and removal recognize filesystem aliases, including Windows s
 
 ### GitHub pull requests
 
-With an authenticated GitHub CLI, use **PRs** to review metadata, descriptions, cumulative or per-commit diffs, individual checks, comments and reviews, and native stacks. An open PR shows its current status and refreshes while you view it, and you can merge it, update its branch, use auto-merge and merge queues, comment and review, edit or close it, or revert it once merged, from the viewer. Open PRs in OpenTig or GitHub, or create an editable draft before publishing. The same section lists releases, where you can create, edit, publish, and delete drafts for existing tags, and run workflows.
+With an authenticated GitHub CLI, use **GitHub** to review metadata, descriptions, cumulative or per-commit diffs, individual checks, comments and reviews, and native stacks. An open PR shows its current status and refreshes while you view it, and you can merge it, update its branch, use auto-merge and merge queues, comment and review, edit or close it, or revert it once merged, from the viewer. Open PRs in OpenTig or GitHub, or create an editable draft before publishing. Its **Releases** tab lists releases, where you can create, edit, publish, and delete drafts for existing tags, and run workflows.
 
 Repository accounts, the default account, and commit authorship are separate controls. See [GitHub accounts and pull requests](github.md) for setup, scopes, access checks, direct push behavior across clients, and credential boundaries.
 
@@ -366,7 +366,7 @@ These are the defaults. Rebind most shortcuts in **Settings → Shortcuts**. Sho
 | `Ctrl+O` | Open a repository |
 | `Ctrl+P` | Quick-open a file |
 | `Ctrl+R` | Refresh repository state |
-| `Ctrl+1` … `Ctrl+5` (fixed) | Open Changes, Files, History, PRs, or Search |
+| `Ctrl+1` … `Ctrl+5` (fixed) | Open Changes, Files, History, GitHub, or Search |
 | `Ctrl+S` | Save the open editable file |
 | `Ctrl+W` | Close the active file tab |
 | `Ctrl+Tab`, `Ctrl+Shift+Tab` | Move to the next or previous file tab |

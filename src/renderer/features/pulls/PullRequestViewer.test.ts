@@ -8,7 +8,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { queryKeys } from '@/lib/query-client';
 import { PullRequestViewer } from './PullRequestViewer';
 
-const api = vi.hoisted(() => ({ getPullRequest: vi.fn(), getPullRequestLiveState: vi.fn(), getPullRequestDiff: vi.fn(), getPullRequestCommits: vi.fn(), getPullRequestConversation: vi.fn(), repositoryAccount: vi.fn() }));
+const api = vi.hoisted(() => ({ getPullRequest: vi.fn(), getPullRequestLiveState: vi.fn(), getPullRequestDiff: vi.fn(), getPullRequestCommits: vi.fn(), getPullRequestConversation: vi.fn(), updatePullRequest: vi.fn(), repositoryAccount: vi.fn() }));
 const browser = vi.hoisted(() => ({ openExternalUrl: vi.fn() }));
 vi.mock('@/lib/opentig-api', () => ({ opentig: { github: api } }));
 vi.mock('@/lib/browser-capabilities', async (original) => ({ ...await original<object>(), openExternalUrl: browser.openExternalUrl }));
@@ -66,11 +66,11 @@ async function refetchLive() {
 it('shows why the PR is blocked once, instead of repeating it in the review badge', async () => {
   await render();
   expect(container.querySelector('.pr-status')?.textContent).toContain('Review required');
-  expect(container.querySelector('.pr-review-badge')).toBeNull();
+  expect(container.querySelector('.pr-review')).toBeNull();
   api.getPullRequestLiveState.mockResolvedValue(live({ reviewDecision: 'APPROVED', mergeStateStatus: 'CLEAN' }));
   await refetchLive();
   expect(container.querySelector('.pr-status')?.textContent).toContain('Ready to merge');
-  expect(container.querySelector('.pr-review-badge')?.textContent).toBe('Approved');
+  expect(container.querySelector('.pr-review')?.textContent).toBe('Approved');
 });
 
 it('groups individual checks with failures first, marks required ones and opens their run', async () => {
@@ -93,11 +93,58 @@ it('does not claim totals for a truncated list, and links to the rest', async ()
   expect(browser.openExternalUrl).toHaveBeenCalledWith('https://github.com/sample/demo/pull/7/checks');
 });
 
-it('keeps the auto-merge badge visible even when the PR is in conflict', async () => {
+it('says how the checks stand, and opens them from there', async () => {
+  await render();
+  expect(container.querySelector('.pr-checks-trigger')?.textContent).toBe('1 of 3 checks failing');
+  await act(async () => container.querySelector<HTMLButtonElement>('.pr-checks-trigger')!.click());
+  expect(document.querySelector('.pr-checks-popup')).not.toBeNull();
+});
+
+it.each([
+  ['a draft', { isDraft: true, mergeStateStatus: 'DRAFT' }, 'Draft'],
+  ['a merged PR', { state: 'MERGED', mergeable: 'UNKNOWN', mergeStateStatus: 'UNKNOWN' }, 'Merged into main'],
+  ['a closed PR', { state: 'CLOSED', mergeable: 'UNKNOWN', mergeStateStatus: 'UNKNOWN' }, 'Closed'],
+] as const)('leads the status line with the state of %s', async (_name, overrides, label) => {
+  api.getPullRequestLiveState.mockResolvedValue(live(overrides as Partial<PullRequestLiveState>));
+  await render();
+  expect(container.querySelector('.pr-status')?.textContent?.trim()).toBe(label);
+});
+
+it('keeps the author, time and labels as quiet text', async () => {
+  api.getPullRequest.mockResolvedValue({ ...details, labels: [{ name: 'bug', color: 'ff0000' }, { name: 'docs', color: '00ff00' }] });
+  await render();
+  const meta = container.querySelector('.pr-viewer-meta')!;
+  expect(meta.textContent).toContain('feature → main');
+  expect(meta.textContent).toContain('sample');
+  expect(meta.querySelector('time')?.getAttribute('datetime')).toBe(details.updatedAt);
+  expect(meta.querySelector('.pr-labels')?.textContent).toBe('bug, docs');
+  expect(meta.querySelector('.pr-labels')?.getAttribute('style')).toBeNull();
+});
+
+it('edits in place, and comes back to the same tab with the menu focused', async () => {
+  await render();
+  await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="More pull request actions"]')!.click());
+  await settle();
+  await act(async () => [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(item => item.textContent === 'Edit title and description…')!.click());
+  await settle();
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+  expect(container.querySelector('[role="tablist"][aria-label="Pull request view"]')).toBeNull();
+  expect(container.querySelector<HTMLInputElement>('#edit-pr-title')?.value).toBe('Sample change');
+  expect(document.activeElement).toBe(container.querySelector('#edit-pr-title'));
+  await act(async () => [...container.querySelectorAll('button')].find(item => item.textContent === 'Cancel')!.click());
+  await act(async () => { await new Promise(resolve => requestAnimationFrame(resolve)); });
+  await settle();
+  expect(container.querySelector('#edit-pr-title')).toBeNull();
+  expect(container.querySelector('[role="tablist"][aria-label="Pull request view"]')).not.toBeNull();
+  expect(document.activeElement).toBe(container.querySelector('[aria-label="More pull request actions"]'));
+  expect(api.updatePullRequest).not.toHaveBeenCalled();
+});
+
+it('keeps the auto-merge note visible even when the PR is in conflict', async () => {
   api.getPullRequestLiveState.mockResolvedValue(live({ mergeable: 'CONFLICTING', mergeStateStatus: 'DIRTY', autoMerge: { method: 'SQUASH' } }));
   await render();
   expect(statusText()).toContain('Conflicts with main');
-  expect(container.querySelector('.pr-auto-merge-badge')?.textContent).toBe('Auto-merge · Squash');
+  expect(container.querySelector('.pr-auto-merge')?.textContent).toBe('Auto-merge · Squash');
 });
 
 it('keeps the last status with a notice when a refresh fails, and retries', async () => {
@@ -137,9 +184,14 @@ it('shows each reviewer\'s verdict and marks those before the latest commit', as
     { author: { login: 'ben', avatarUrl: null, isBot: false }, verdict: 'CHANGES_REQUESTED', outdated: true },
   ] }));
   await render();
-  const reviewers = [...container.querySelectorAll('.pr-reviewer')];
-  expect(reviewers.map(item => item.getAttribute('aria-label'))).toEqual(['Approved by ana', 'Changes requested by ben, before the latest commit']);
-  expect(reviewers[1]?.classList.contains('outdated')).toBe(true);
+  expect([...container.querySelectorAll('.pr-reviewer')].map(item => item.textContent)).toEqual(['Approved by ana', 'Changes requested by ben, before the latest commit']);
+});
+
+it('does not repeat a decision that a reviewer\'s verdict already gives', async () => {
+  api.getPullRequestLiveState.mockResolvedValue(live({ reviewDecision: 'APPROVED', mergeStateStatus: 'CLEAN', latestReviews: [{ author: { login: 'ana', avatarUrl: null, isBot: false }, verdict: 'APPROVED', outdated: false }] }));
+  await render();
+  expect(container.querySelector('.pr-review')).toBeNull();
+  expect(container.querySelector('.pr-reviewer')?.textContent).toBe('Approved by ana');
 });
 
 it('does not read the conversation until Timeline is open', async () => {

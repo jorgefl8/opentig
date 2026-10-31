@@ -2,10 +2,9 @@ import { formatDateTime } from '@shared/date-format';
 import { PullRequestStackMenu } from './PullRequestStackMenu';
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { IconAlertTriangle, IconCircleCheck, IconCircleX, IconClockExclamation, IconExternalLink, IconGitBranch, IconGitCommit, IconLoader4, IconRefresh, IconTag } from '@tabler/icons-react';
+import { IconExternalLink, IconLoader4, IconRefresh } from '@tabler/icons-react';
 import { GITHUB_PR_COMMIT_PAGE, type DiffResult, type DiffViewPreference, type PullRequestCommitList, type PullRequestDetails, type PullRequestLatestReview, type PullRequestLiveState, type ThemePreference } from '../../../shared/contracts';
-import { pullRequestStatusLine, type PullRequestStatusTone } from '../../../shared/pull-request-actions';
-import { Badge } from '@/components/ui/badge';
+import { pullRequestStateLine, pullRequestStatusLine } from '../../../shared/pull-request-actions';
 import { Button } from '@/components/ui/button';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -13,12 +12,13 @@ import { ViewerTabs, ViewerTabsList, ViewerTabsPanel } from '@/components/ui/vie
 import { LinkedMarkdown } from '@/features/markdown/LinkedMarkdown';
 import { LinkedText } from '@/components/LinkedText';
 
-import { ghDetail, MERGE_METHOD_LABELS, openOnGitHub, prStateLabel, reviewDecisionLabel } from './gh-utils';
+import { ghDetail, MERGE_METHOD_LABELS, openOnGitHub, reviewDecisionLabel } from './gh-utils';
 import { GitHubAvatar } from './GitHubAvatar';
-import { EditPullRequestDialog } from './EditPullRequestDialog';
 import { PullRequestActionBar } from './PullRequestActionBar';
 import { PullRequestConversationView } from './PullRequestConversationView';
 import { PullRequestChecksMenu, PullRequestChecksSummary } from './PullRequestChecksMenu';
+import { PullRequestEditor } from './PullRequestEditor';
+import { hasViewerDraft, pullRequestCommentDraft, pullRequestEditDraft, useViewerDraft } from './viewer-drafts';
 import { pullRequestLiveStateQueryOptions, queriesOutdatedByLiveState } from './pull-request-live-state-query';
 import { opentig } from '@/lib/opentig-api';
 import { queryKeys } from '@/lib/query-client';
@@ -40,8 +40,14 @@ interface PullRequestViewerProps {
 
 export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType, wrapLines, onDiffViewChange, onWrapLinesChange, onClose, onSelectPullRequest }: PullRequestViewerProps) {
   const [tab, setTab] = useState<'summary' | 'timeline' | 'diff'>('summary');
-  const [editing, setEditing] = useState(false);
-  const [commentDraft, setCommentDraft] = useState('');
+  const [editing, setEditing] = useState(() => hasViewerDraft(pullRequestEditDraft(repositoryId, prNumber)));
+  const [commentDraft, setCommentDraft] = useViewerDraft(pullRequestCommentDraft(repositoryId, prNumber), () => '');
+  const header = useRef<HTMLElement>(null);
+  const closeEditor = () => {
+    setEditing(false);
+    // The menu that opened the editor comes back with the header.
+    requestAnimationFrame(() => header.current?.querySelector<HTMLElement>('.pr-more-actions')?.focus());
+  };
   const detailsQuery = useQuery<{ details: PullRequestDetails; bodyHtml: string }>({
     queryKey: queryKeys.pullRequest(repositoryId, prNumber),
     queryFn: async () => {
@@ -96,57 +102,50 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
     return <div className="viewer-message"><IconLoader4 className="spinner" /> <ShimmeringText text={`Loading pull request #${prNumber}…`} /></div>;
   }
 
-  const stateLabel = prStateLabel(details);
+  if (editing && live) {
+    return <PullRequestEditor repositoryId={repositoryId} details={details} onClose={closeEditor} />;
+  }
+
   const review = reviewDecisionLabel(live ? live.reviewDecision : details.reviewDecision);
-  const status = live ? pullRequestStatusLine(live) : null;
+  const status = live ? pullRequestStatusLine(live) ?? pullRequestStateLine(live) : pullRequestStateLine(details);
+  const reviewers = live?.latestReviews ?? [];
   return (
     <ViewerTabs value={tab} onValueChange={(value) => setTab(value as typeof tab)} className="pr-viewer">
-      <header className="pr-viewer-header">
+      <header ref={header} className="pr-viewer-header">
         <div className="pr-viewer-overview">
-        <div className="pr-viewer-title">
-          <Badge variant={details.state === 'OPEN' && !details.isDraft ? 'default' : 'secondary'} className={`pr-state-badge ${stateLabel.toLowerCase().replace(/\s+/g, '-')}`}>{stateLabel}</Badge>
-          <h2><LinkedText text={details.title || '(no title)'} /> <span className="pr-number">#{details.number}</span></h2>
-        </div>
-        <div className="pr-viewer-meta">
-          <span className="pr-author-with-avatar">
-            <GitHubAvatar key={details.authorAvatarUrl} src={details.authorAvatarUrl} className="pr-author-avatar" />
-            <span className="pr-author">{details.author}</span>
-          </span>
-          <span aria-hidden="true">·</span>
-          <span>updated <time dateTime={details.updatedAt}>{formatDateTime(details.updatedAt)}</time></span>
-          <span aria-hidden="true">·</span>
-          <span className="pr-branches"><IconGitBranch aria-hidden="true" /> {details.headRefName} → {details.baseRefName}</span>
-          <span aria-hidden="true">·</span>
-          <span className="pr-counters">
-            {details.changedFiles} {details.changedFiles === 1 ? 'file' : 'files'}
-            {' '}<span className="add">+{details.additions}</span> <span className="del">−{details.deletions}</span>
-          </span>
-          {details.stack && <PullRequestStackMenu repositoryId={repositoryId} number={prNumber} membership={details.stack} onSelect={onSelectPullRequest} />}
-          {details.url && <span className="pr-viewer-actions">
-            <Button variant="outline" size="xs" onClick={() => openOnGitHub(details.url)}><IconExternalLink /> Open on GitHub</Button>
-          </span>}
-        </div>
-        <div className="pr-viewer-status">
-          {status && <span className={`pr-status ${status.tone}`} role="status">
-            <PullRequestStatusIcon tone={status.tone} /> {status.label}
-            {status.detail && <small>{status.detail}</small>}
-          </span>}
-          {liveQuery.isPending && details.state === 'OPEN' && <span className="pr-status progress" role="status"><IconLoader4 className="animate-spin" aria-hidden="true" /> <ShimmeringText text="Checking status…" /></span>}
-          {live ? <PullRequestChecksMenu checks={live.checks} url={details.url} /> : <PullRequestChecksSummary state={details.checksState} />}
-          {review && review !== status?.label && <Badge variant="outline" className="pr-review-badge">{review}</Badge>}
-          {live?.latestReviews.map((reviewer) => <ReviewerVerdict key={reviewer.author.login} review={reviewer} />)}
-          {live?.autoMerge && <Badge variant="outline" className="pr-auto-merge-badge">Auto-merge · {MERGE_METHOD_LABELS[live.autoMerge.method]}</Badge>}
-          {liveQuery.isError && <PullRequestLiveNotice error={liveQuery.error} hasState={live !== null} open={details.state === 'OPEN'} retrying={liveQuery.isFetching} onRetry={() => void liveQuery.refetch()} />}
-          {live && <PullRequestActionBar repositoryId={repositoryId} details={details} live={live} refreshing={liveQuery.isFetching} statusLabel={status?.label ?? null} onRefresh={() => void liveQuery.refetch()} onEdit={() => setEditing(true)} onSelectPullRequest={onSelectPullRequest} />}
-        </div>
-        {details.labels.length > 0 && (
-          <div className="pr-labels" aria-label="Pull request labels">
-            <IconTag aria-hidden="true" />
-            {details.labels.map((label) => (
-              <span key={`${label.name}-${label.color}`} className="pr-label" style={{ borderColor: `#${label.color}`, backgroundColor: `#${label.color}22` }}>{label.name}</span>
-            ))}
+          <div className="pr-viewer-top">
+            <div className="pr-viewer-heading">
+              <h2><LinkedText text={details.title || '(no title)'} /> <span className="pr-number">#{details.number}</span></h2>
+              <div className="pr-viewer-meta">
+                <span className="pr-branches">{details.headRefName} → {details.baseRefName}</span>
+                <span className="pr-counters">
+                  {details.changedFiles} {details.changedFiles === 1 ? 'file' : 'files'}
+                  {' '}<span className="add">+{details.additions}</span> <span className="del">−{details.deletions}</span>
+                </span>
+                <span>{details.author}</span>
+                <span>updated <time dateTime={details.updatedAt}>{formatDateTime(details.updatedAt)}</time></span>
+                {details.labels.length > 0 && <span className="pr-labels" aria-label="Pull request labels">{details.labels.map((label) => label.name).join(', ')}</span>}
+                {details.stack && <PullRequestStackMenu repositoryId={repositoryId} number={prNumber} membership={details.stack} onSelect={onSelectPullRequest} />}
+              </div>
+            </div>
+            {live
+              ? <PullRequestActionBar repositoryId={repositoryId} details={details} live={live} refreshing={liveQuery.isFetching} statusLabel={status.label} onRefresh={() => void liveQuery.refetch()} onEdit={() => setEditing(true)} onSelectPullRequest={onSelectPullRequest} />
+              : details.url && <Tooltip>
+                <TooltipTrigger render={<Button variant="ghost" size="icon-xs" className="change-action-button" onClick={() => openOnGitHub(details.url)} aria-label="Open on GitHub" />}><IconExternalLink /></TooltipTrigger>
+                <TooltipContent>Open on GitHub</TooltipContent>
+              </Tooltip>}
           </div>
-        )}
+          <div className="pr-viewer-status">
+            {liveQuery.isPending && details.state === 'OPEN'
+              ? <span className="pr-status tone-progress" role="status"><span className="status-dot" aria-hidden="true" /> <ShimmeringText text="Checking status…" /></span>
+              : <span className={`pr-status tone-${status.tone}`} role="status"><span className="status-dot" aria-hidden="true" /> {status.label}</span>}
+            {status.detail && <span>{status.detail}</span>}
+            {live ? <PullRequestChecksMenu checks={live.checks} url={details.url} /> : <PullRequestChecksSummary state={details.checksState} />}
+            {review && review !== status.label && !reviewers.some((reviewer) => verdictLabel(reviewer) === review) && <span className="pr-review">{review}</span>}
+            {reviewers.map((reviewer) => <span key={reviewer.author.login} className="pr-reviewer">{verdictLabel(reviewer)} by {reviewer.author.login}{reviewer.outdated ? ', before the latest commit' : ''}</span>)}
+            {live?.autoMerge && <span className="pr-auto-merge">Auto-merge · {MERGE_METHOD_LABELS[live.autoMerge.method]}</span>}
+            {liveQuery.isError && <PullRequestLiveNotice error={liveQuery.error} hasState={live !== null} open={details.state === 'OPEN'} retrying={liveQuery.isFetching} onRetry={() => void liveQuery.refetch()} />}
+          </div>
         </div>
         <ViewerTabsList
           label="Pull request view"
@@ -168,13 +167,12 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
       <ViewerTabsPanel value="timeline" className="markdown-preview-scroll pr-description-scroll">
           <PullRequestConversationView repositoryId={repositoryId} number={details.number} url={details.url} live={live} draft={commentDraft} onDraftChange={setCommentDraft} />
           <section className="pr-timeline standalone" aria-label="Commit timeline">
-            <h3><IconGitCommit aria-hidden="true" /> Commits <span className="plain-count">{commits.length}{commitsIncomplete ? '+' : ''}</span></h3>
+            <h3>Commits <span className="plain-count">{commits.length}{commitsIncomplete ? '+' : ''}</span></h3>
             {commitsIncomplete && !commitsQuery.isFetching && (
               <p className="pr-empty-description">Showing the first {commits.length} commits from GitHub. The rest could not be read from the local clone.</p>
             )}
             {commits.length ? commits.map((commit) => (
               <article key={commit.oid} className="pr-timeline-item">
-                <span className="pr-timeline-rail"><span /></span>
                 <GitHubAvatar src={commit.authorAvatarUrl} className="pr-commit-avatar" />
                 <span className="pr-commit-content">
                   <strong><LinkedText text={commit.messageHeadline || '(no commit message)'} /></strong>
@@ -202,31 +200,12 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
           </Suspense>
         )}
       </ViewerTabsPanel>
-      {editing && live && <EditPullRequestDialog repositoryId={repositoryId} details={details} expectedUpdatedAt={live.updatedAt} onClose={() => setEditing(false)} />}
     </ViewerTabs>
   );
 }
 
-function ReviewerVerdict({ review }: { review: PullRequestLatestReview }) {
-  const approved = review.verdict === 'APPROVED';
-  const verdict = approved ? 'Approved' : 'Changes requested';
-  const Icon = review.outdated ? IconClockExclamation : approved ? IconCircleCheck : IconCircleX;
-  const label = `${verdict} by ${review.author.login}${review.outdated ? ', before the latest commit' : ''}`;
-  return (
-    <Tooltip>
-      <TooltipTrigger render={<span className={`pr-reviewer ${approved ? 'approved' : 'changes'}${review.outdated ? ' outdated' : ''}`} aria-label={label} />}>
-        <Icon aria-hidden="true" /> {review.author.login}
-      </TooltipTrigger>
-      <TooltipContent>{label}</TooltipContent>
-    </Tooltip>
-  );
-}
-
-function PullRequestStatusIcon({ tone }: { tone: PullRequestStatusTone }) {
-  if (tone === 'ready') return <IconCircleCheck aria-hidden="true" />;
-  if (tone === 'danger') return <IconCircleX aria-hidden="true" />;
-  if (tone === 'progress') return <IconLoader4 className="animate-spin" aria-hidden="true" />;
-  return <IconAlertTriangle aria-hidden="true" />;
+function verdictLabel(review: PullRequestLatestReview): string {
+  return review.verdict === 'APPROVED' ? 'Approved' : 'Changes requested';
 }
 
 function PullRequestLiveNotice({ error, hasState, open, retrying, onRetry }: { error: Error; hasState: boolean; open: boolean; retrying: boolean; onRetry(): void }) {

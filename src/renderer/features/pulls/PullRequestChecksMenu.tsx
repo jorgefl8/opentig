@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { Popover } from '@base-ui/react/popover';
-import { IconAlertTriangle, IconChevronDown, IconCircleCheck, IconCircleMinus, IconCircleX, IconClock, IconExternalLink } from '@tabler/icons-react';
+import { IconAlertTriangle, IconCircleCheck, IconCircleMinus, IconCircleX, IconClock, IconExternalLink } from '@tabler/icons-react';
 import type { PullRequestCheck, PullRequestCheckState, PullRequestLiveState } from '../../../shared/contracts';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { groupPullRequestChecks, openOnGitHub } from './gh-utils';
+import { groupPullRequestChecks, openOnGitHub, pullRequestChecksSentence } from './gh-utils';
 
 const RESULTS: Record<PullRequestCheck['result'], { Icon: typeof IconClock; label: string; tone: string }> = {
   pass: { Icon: IconCircleCheck, label: 'Passed', tone: 'passing' },
@@ -13,28 +13,18 @@ const RESULTS: Record<PullRequestCheck['result'], { Icon: typeof IconClock; labe
   'action-required': { Icon: IconAlertTriangle, label: 'Action required', tone: 'failing' },
 };
 
-function checksSummary(state: PullRequestCheckState) {
-  if (state === 'PASSING') return { Icon: IconCircleCheck, label: 'Checks passing' };
-  if (state === 'FAILING') return { Icon: IconCircleX, label: 'Checks failing' };
-  return { Icon: IconClock, label: 'Checks pending' };
-}
-
 /** The checks summary alone, for when only the PR's stored rollup is available. */
 export function PullRequestChecksSummary({ state }: { state: PullRequestCheckState }) {
   if (state === 'NONE') return null;
-  const { Icon, label } = checksSummary(state);
-  return <span className={`pr-checks ${state.toLowerCase()}`}><Icon aria-hidden="true" /> {label}</span>;
+  return <span>{state === 'PASSING' ? 'Checks passing' : state === 'FAILING' ? 'Checks failing' : 'Checks pending'}</span>;
 }
 
 export function PullRequestChecksMenu({ checks, url }: { checks: PullRequestLiveState['checks']; url: string }) {
   const [open, setOpen] = useState(false);
   if (checks.rollup === 'NONE' && !checks.items.length) return <PullRequestChecksSummary state={checks.rollup} />;
-  const { Icon, label } = checksSummary(checks.rollup);
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
-      <Popover.Trigger render={<button className={`pr-checks pr-checks-trigger ${checks.rollup.toLowerCase()}`} />}>
-        <Icon aria-hidden="true" /> {label} <IconChevronDown className="pr-checks-chevron" aria-hidden="true" />
-      </Popover.Trigger>
+      <Popover.Trigger render={<button className="pr-checks-trigger" />}>{pullRequestChecksSentence(checks)}</Popover.Trigger>
       <Popover.Portal>
         <Popover.Positioner side="bottom" align="start" sideOffset={6} className="isolate z-50 outline-none">
           <Popover.Popup className="pr-stack-popup pr-checks-popup" aria-label="Checks">

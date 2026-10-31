@@ -53,7 +53,14 @@ async function type(value: string) {
   });
 }
 const button = (label: string) => [...container.querySelectorAll('button')].find(item => item.textContent?.trim() === label);
+async function expand() {
+  await act(async () => container.querySelector('textarea')!.focus());
+}
+async function press(key: string) {
+  await act(async () => container.querySelector('textarea')!.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true })));
+}
 async function openReview() {
+  await expand();
   await act(async () => button('Review')!.click());
   await settle();
 }
@@ -64,14 +71,70 @@ async function choose(label: string) {
   await settle();
 }
 
+it('starts as one line, and offers the rest once focused', async () => {
+  await render();
+  const box = container.querySelector('textarea')!;
+  expect(box.getAttribute('placeholder')).toBe('Write a comment');
+  expect(box.getAttribute('aria-label')).toBe('Add a comment');
+  expect(button('Comment')).toBeUndefined();
+  expect(button('Review')).toBeUndefined();
+  await expand();
+  expect(container.querySelector('textarea')).toBe(box);
+  expect(document.activeElement).toBe(box);
+  expect(button('Comment')?.disabled).toBe(true);
+  expect(button('Review')).toBeDefined();
+  expect(container.querySelector('label')?.textContent).toBe('Add a comment');
+});
+
+it('folds an empty box when focus leaves, and stays open with text in it', async () => {
+  await render();
+  const outside = document.createElement('button');
+  document.body.append(outside);
+  await expand();
+  await act(async () => outside.focus());
+  expect(button('Comment')).toBeUndefined();
+  await type('Important');
+  expect(button('Comment')).toBeDefined();
+  await act(async () => outside.focus());
+  expect(button('Comment')).toBeDefined();
+  outside.remove();
+});
+
+it('keeps the draft when Escape folds it, and opens again with it', async () => {
+  await render();
+  await type('Important');
+  await press('Escape');
+  expect(button('Comment')).toBeUndefined();
+  expect(container.querySelector('textarea')?.value).toBe('Important');
+  await act(async () => container.querySelector('textarea')!.click());
+  expect(button('Comment')?.disabled).toBe(false);
+  expect(container.querySelector('textarea')?.value).toBe('Important');
+});
+
+it('shows a draft kept across tabs instead of folding it', async () => {
+  await act(async () => root.render(createElement(QueryClientProvider, { client }, createElement(TooltipProvider, null, createElement(PullRequestComposer, { repositoryId: 'repo', number: 7, live: live(), draft: 'Kept', onDraftChange: vi.fn(), onRefresh })))));
+  await settle();
+  expect(button('Comment')).toBeDefined();
+  expect(container.querySelector('textarea')?.value).toBe('Kept');
+});
+
+it('does not fold while its review menu takes the focus', async () => {
+  await render();
+  await openReview();
+  await act(async () => item('Approve').focus());
+  expect(button('Review')).toBeDefined();
+});
+
 it('posts a comment and clears the box', async () => {
   await render();
+  await expand();
   expect(button('Comment')?.disabled).toBe(true);
   await type('Looks good');
   await act(async () => button('Comment')!.click());
   await settle();
   expect(api.commentOnPullRequest).toHaveBeenCalledWith({ repositoryId: 'repo', number: 7, body: 'Looks good', ...account });
   expect(container.querySelector('textarea')?.value).toBe('');
+  expect(button('Comment')).toBeUndefined();
   expect(toast.success).toHaveBeenCalledWith(expect.objectContaining({ title: 'Comment posted' }));
 });
 
@@ -99,6 +162,7 @@ it('lets an author only comment on their own PR', async () => {
 
 it('offers no review once the PR is finished, and still takes comments', async () => {
   await render(live({ state: 'MERGED' }));
+  await expand();
   expect(button('Review')).toBeUndefined();
   expect(button('Comment')).toBeDefined();
 });
@@ -123,6 +187,8 @@ it('holds sending back after no answer, until the conversation is checked', asyn
   expect(container.querySelector('textarea')?.value).toBe('Important');
   expect(button('Comment')?.disabled).toBe(true);
   expect(button('Review')?.disabled).toBe(true);
+  await press('Escape');
+  expect(button('Refresh')).toBeDefined();
   await act(async () => button('Refresh')!.click());
   await settle();
   expect(onRefresh).toHaveBeenCalled();

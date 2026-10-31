@@ -58,7 +58,7 @@ async function click(label: string | RegExp) {
   await act(async () => button(label)!.click());
   await settle();
 }
-const panel = () => container.querySelector('.pr-action-panel');
+const panel = () => document.querySelector('.confirm-popover');
 const expectedRequest = { repositoryId: 'repo', number: 7, expectedHeadOid: oid, expectedAccount: { login: 'sample', revision: 3 } };
 
 describe('merging', () => {
@@ -83,15 +83,39 @@ describe('merging', () => {
     expect(api.runPullRequestAction).not.toHaveBeenCalled();
   });
 
-  it('lets Escape close an open list first, keeping the question', async () => {
+  it('moves focus into the question, and back to the button when it closes', async () => {
+    await render();
+    await act(async () => { button('Merge')!.focus(); button('Merge')!.click(); });
+    await settle();
+    expect(panel()?.contains(document.activeElement)).toBe(true);
+    await act(async () => { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); });
+    await settle();
+    expect(panel()).toBeNull();
+    expect(document.activeElement).toBe(button('Merge'));
+  });
+
+  it('sends the method chosen in the question', async () => {
+    api.runPullRequestAction.mockResolvedValue({ outcome: 'merged', state: live({ state: 'MERGED' }) });
+    await render();
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Merge options"]')!.click());
+    await settle();
+    const radio = [...document.querySelectorAll<HTMLElement>('.pr-merge-method')].find(option => option.textContent?.startsWith('Merge'))!;
+    await act(async () => radio.querySelector<HTMLElement>('[role="radio"]')!.click());
+    expect(panel()?.textContent).toContain('Merge #7 into main as @sample?');
+    await act(async () => [...panel()!.querySelectorAll('button')].find(item => item.textContent === 'Merge')!.click());
+    await settle();
+    expect(api.runPullRequestAction).toHaveBeenCalledWith({ ...expectedRequest, action: 'merge', method: 'MERGE' });
+  });
+
+  it('stays while the answer is being sent', async () => {
+    api.runPullRequestAction.mockReturnValue(new Promise(() => undefined));
     await render();
     await click('Merge');
-    const list = document.createElement('div');
-    list.setAttribute('role', 'listbox');
-    document.body.append(list);
-    await act(async () => { list.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); });
+    await click('Squash and merge');
+    await act(async () => { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); });
+    await settle();
     expect(panel()).not.toBeNull();
-    list.remove();
+    expect([...panel()!.querySelectorAll('button')].every(item => item.disabled)).toBe(true);
   });
 
   it('withdraws the question when the state it asked about changes', async () => {
@@ -106,7 +130,7 @@ describe('merging', () => {
     api.runPullRequestAction.mockResolvedValue({ outcome: 'merged', state: live({ state: 'MERGED' }), branchDeleted: true });
     await render();
     await click('Merge');
-    await act(async () => container.querySelector<HTMLElement>('.pr-delete-branch-option [data-slot="checkbox"]')!.click());
+    await act(async () => document.querySelector<HTMLElement>('.pr-delete-branch-option [data-slot="checkbox"]')!.click());
     await click('Squash and merge');
     expect(api.runPullRequestAction).toHaveBeenCalledWith({ ...expectedRequest, action: 'merge', method: 'SQUASH', deleteBranch: true });
     expect(toast.success).toHaveBeenCalledWith(expect.objectContaining({ description: expect.stringContaining('feature deleted') }));
@@ -116,7 +140,7 @@ describe('merging', () => {
     api.runPullRequestAction.mockResolvedValue({ outcome: 'merged', state: live({ state: 'MERGED' }), branchDeleted: false });
     await render();
     await click('Merge');
-    await act(async () => container.querySelector<HTMLElement>('.pr-delete-branch-option [data-slot="checkbox"]')!.click());
+    await act(async () => document.querySelector<HTMLElement>('.pr-delete-branch-option [data-slot="checkbox"]')!.click());
     await click('Squash and merge');
     expect(toast.info).toHaveBeenCalledWith(expect.objectContaining({ title: 'Merged, but the branch was kept' }));
     expect(toast.error).not.toHaveBeenCalled();
@@ -130,18 +154,19 @@ describe('merging', () => {
     await render(state);
     await click(label);
     expect(panel()).not.toBeNull();
-    expect(container.querySelector('.pr-delete-branch-option')).toBeNull();
+    expect(document.querySelector('.pr-delete-branch-option')).toBeNull();
   });
 });
 
 describe('failures', () => {
-  it('shows GitHub\'s rejection and rereads the state', async () => {
+  it('shows GitHub\'s rejection, keeps the question and rereads the state', async () => {
     const invalidate = vi.spyOn(client, 'invalidateQueries');
     api.runPullRequestAction.mockRejectedValue(Object.assign(new Error('nope'), { detail: { code: 'GH_PROCESS_FAILED', operation: 'gh-pr-action', message: 'Pull Request is not mergeable' } }));
     await render();
     await click('Merge');
     await click('Squash and merge');
     expect(toast.error).toHaveBeenCalledWith(expect.objectContaining({ description: 'Pull Request is not mergeable' }));
+    expect(panel()).not.toBeNull();
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['repository', 'repo', 'pull-request-state'] });
   });
 
@@ -157,6 +182,7 @@ describe('failures', () => {
     expect(toast.info).toHaveBeenCalledWith(expect.objectContaining({ description: expect.stringContaining('may have completed') }));
     expect(toast.error).not.toHaveBeenCalled();
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['repository', 'repo', 'pull-request-state'] });
+    expect(panel()).toBeNull();
   });
 
   it('asks for the account again when it changed', async () => {
@@ -167,10 +193,15 @@ describe('failures', () => {
     expect(api.repositoryAccount).toHaveBeenCalledTimes(2);
   });
 
-  it('keeps actions off while the account needs attention', async () => {
+  it('keeps actions off while the account needs attention, and GitHub within reach', async () => {
     api.repositoryAccount.mockResolvedValue({ state: 'error', login: null, revision: 3 });
     await render();
     expect(button('Merge')?.disabled).toBe(true);
+    expect(container.querySelector<HTMLButtonElement>('[aria-label="Merge options"]')?.disabled).toBe(true);
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="More pull request actions"]')!.click());
+    await settle();
+    const items = [...document.querySelectorAll('[role="menuitem"]')];
+    expect(items.filter(item => !item.hasAttribute('data-disabled')).map(item => item.textContent)).toEqual(['Open on GitHub']);
   });
 });
 
@@ -199,7 +230,10 @@ describe('what is offered', () => {
 
   it('shows a reader no protected action', async () => {
     await render(live({ viewer: { canWrite: false, canUpdate: false, didAuthor: false, canUpdateBranch: false, canDeleteBranch: false } }));
-    expect(container.querySelector('button')).toBeNull();
+    expect([...container.querySelectorAll('button')].map(item => item.getAttribute('aria-label'))).toEqual(['More pull request actions']);
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="More pull request actions"]')!.click());
+    await settle();
+    expect([...document.querySelectorAll('[role="menuitem"]')].map(item => item.textContent)).toEqual(['Open on GitHub']);
     expect(container.textContent).toContain('Merging requires write access');
   });
 
@@ -243,7 +277,19 @@ describe('the menu', () => {
   it('lists everything allowed except the main control', async () => {
     await render(live({ behindBy: 2 }));
     await openMenu();
-    expect(items()).toEqual(['Update branch with merge', 'Update branch with rebase…', 'Edit title and description…', 'Convert to draft', 'Close pull request…']);
+    expect(items()).toEqual(['Open on GitHub', 'Update branch with merge', 'Update branch with rebase…', 'Edit title and description…', 'Convert to draft', 'Close pull request…']);
+  });
+
+  it('hangs a question asked from the menu on the menu\'s button', async () => {
+    await render();
+    await openMenu();
+    await choose('Close pull request…');
+    expect(panel()?.textContent).toContain('Close #7 without merging as @sample?');
+    await act(async () => { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); });
+    await settle();
+    expect(panel()).toBeNull();
+    expect(document.activeElement).toBe(container.querySelector('[aria-label="More pull request actions"]'));
+    expect(api.runPullRequestAction).not.toHaveBeenCalled();
   });
 
   it('warns before rebasing a branch', async () => {
