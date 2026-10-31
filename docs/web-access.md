@@ -244,7 +244,7 @@ Healthy connections show no connection notification. Before the first successful
 | Authentication fails | Automatic retries stop and the browser is asked to pair again; browsers without a valid session see pairing instructions without a startup error notification |
 | Server upgrade makes the open client incompatible | **Reload** fetches the current interface; the browser still warns about unsaved editor changes |
 
-**Interrupted requests fail and are not replayed on reconnect.** Retry attempts use bounded exponential backoff and jitter. The connection notification also disappears when pairing is required.
+**Interrupted requests fail and are not replayed on reconnect.** The server may have finished an interrupted change or may still be running it, so a commit, push, pull, or branch switch shows **Result not confirmed** and refreshes. Check the current state before trying again. Each command has its own time limit, long enough for its slowest Git or GitHub CLI steps; while disconnected, a new request waits for the connection for up to 30 seconds and is not sent after that. Retry attempts use bounded exponential backoff and jitter. The connection notification also disappears when pairing is required.
 
 <details>
 <summary>Large responses and slow connections</summary>

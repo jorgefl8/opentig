@@ -17,6 +17,8 @@ export interface SerializedGitError {
   stderr?: string;
   exitCode?: number;
   access?: import('./repository-access').RemoteAccessProblem;
+  /** The server stopped waiting, but the work keeps running and may still succeed. */
+  unconfirmed?: boolean;
 }
 
 export type AiErrorCode =

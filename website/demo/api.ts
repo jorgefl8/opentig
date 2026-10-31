@@ -9,6 +9,10 @@ import { findSearchMatches } from "../../src/shared/search";
 
 // The shared app recognizes this error type; the demo has no authentication transport.
 export class ServerAuthenticationError extends Error {}
+export class ServerDisconnectedError extends Error { closeCode?: number; }
+export const UNCONFIRMED_RESULT_MESSAGE = '';
+export const isConnectionLoss = (_reason: unknown) => false;
+export const isUnconfirmedResult = (_reason: unknown) => false;
 export const model = new DemoRepository();
 const disabled = async (): Promise<never> => {
   throw new Error(

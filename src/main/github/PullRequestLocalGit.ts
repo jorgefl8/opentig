@@ -1,10 +1,10 @@
 import type { DiffResult, PullRequestCommit } from '../../shared/contracts';
 import { GitOperationError } from '../../shared/errors';
+import { PULL_REQUEST_DIFF_GIT_TIMEOUT_MS, PULL_REQUEST_FETCH_TIMEOUT_MS } from '../../shared/operation-timeouts';
 import type { GitProcess } from '../git/GitProcess';
 
 const OID = /^[0-9a-f]{40,64}$/i;
 const PATCH_LIMIT_BYTES = 32 * 1024 * 1024;
-const FETCH_TIMEOUT_MS = 5 * 60_000;
 const DIFF = ['--no-color', '--no-ext-diff', '--no-textconv', '--find-renames'];
 
 export interface PullRequestRange {
@@ -28,7 +28,7 @@ export class PullRequestLocalGit {
     // No destination: objects only. Neither FETCH_HEAD nor remote-tracking refs
     // change, so the repository's refs and the user's view stay exactly as they were.
     const fetch = (refspecs: string[]) => this.git.run(cwd, ['fetch', '--quiet', '--no-tags', '--no-write-fetch-head', '--no-recurse-submodules', remote, ...refspecs], {
-      operation: 'pr-local-fetch', timeoutMs: FETCH_TIMEOUT_MS, maxOutputBytes: 1024 * 1024,
+      operation: 'pr-local-fetch', timeoutMs: PULL_REQUEST_FETCH_TIMEOUT_MS, maxOutputBytes: 1024 * 1024,
     });
     try {
       if (await this.missing(cwd, [range.headOid]).then(list => list.length > 0)) await fetch([`refs/pull/${range.number}/head`]);
@@ -45,7 +45,7 @@ export class PullRequestLocalGit {
   /** The same three-dot comparison GitHub shows in "Files changed". */
   async rangeDiff(cwd: string, range: PullRequestRange): Promise<DiffResult> {
     const output = await this.git.run(cwd, ['diff', ...DIFF, `${range.baseOid}...${range.headOid}`, '--'], {
-      operation: 'pr-local-diff', readOnly: true, timeoutMs: 120_000, maxOutputBytes: PATCH_LIMIT_BYTES, truncateOverflow: true,
+      operation: 'pr-local-diff', readOnly: true, timeoutMs: PULL_REQUEST_DIFF_GIT_TIMEOUT_MS, maxOutputBytes: PATCH_LIMIT_BYTES, truncateOverflow: true,
     });
     return diffResult(`pull/${range.number}`, output.stdout.toString('utf8'), output.truncated === true);
   }

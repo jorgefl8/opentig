@@ -19,7 +19,7 @@ import { parseBranchPullRequestList, parseCreatedPullRequestUrl, parsePullReques
 import { GitHubAccountsService } from './GitHubAccountsService';
 import { PullRequestLocalGit, type PullRequestRange } from './PullRequestLocalGit';
 import type { GitHubAccountSelection } from '../../shared/github-accounts';
-const NETWORK_TIMEOUT_MS = 60_000;
+import { GITHUB_NETWORK_TIMEOUT_MS as NETWORK_TIMEOUT_MS } from '../../shared/operation-timeouts';
 
 interface GhRunOptions {
   cwd: string;

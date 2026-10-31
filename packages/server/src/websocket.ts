@@ -1,7 +1,7 @@
 import type { IncomingMessage, Server as HttpServer } from 'node:http';
 import type { Duplex } from 'node:stream';
 import { IPC, type IpcResult } from '../../../src/shared/contracts';
-import { DEFAULT_COMMAND_TIMEOUT_MS, OPEN_TIG_SERVER_COMMANDS, type OpenTigServerCommandDefinition } from '../../../src/shared/protocol';
+import { DEFAULT_COMMAND_TIMEOUT_MS, commandDefinition } from '../../../src/shared/protocol';
 import type { OpenTigRuntimeEvent } from '../../../src/shared/runtime-events';
 import { OPEN_TIG_MAX_SERVER_MESSAGE_BYTES, type OpenTigServerIdentity, type OpenTigServerMessage } from '../../../src/shared/server-protocol';
 import { CommandRegistry } from '../../../src/main/runtime/CommandRegistry';
@@ -307,10 +307,6 @@ function frameLimit(command: string): number {
   return Math.min(definition?.maxRequestBytes ?? NORMAL_FRAME_LIMIT, NORMAL_FRAME_LIMIT);
 }
 
-function commandDefinition(command: string): OpenTigServerCommandDefinition | undefined {
-  return Object.values(OPEN_TIG_SERVER_COMMANDS).find((candidate) => candidate.command === command);
-}
-
 function isPing(value: unknown): value is { type: 'ping' } {
   return isRecord(value) && value.type === 'ping';
 }
@@ -354,7 +350,7 @@ async function withTimeout(
       onTimeout();
       resolve({
         ok: false,
-        error: { code: 'TIMEOUT', operation: command, message: 'Command timed out.' },
+        error: { code: 'TIMEOUT', operation: command, message: 'Command timed out.', unconfirmed: true },
       });
     }, timeoutMs);
   });
