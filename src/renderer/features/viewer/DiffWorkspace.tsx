@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { FileDiff, Virtualizer } from '@pierre/diffs/react';
 import {
   IconArrowsMaximize, IconArrowsMinimize, IconChevronDown, IconChevronRight,
@@ -12,6 +13,21 @@ import { useParsedDiff } from './useParsedDiff';
 import { OPENTIG_CODE_THEMES } from './diffThemes';
 import { type DiffFileEntry, VIEWER_SCROLLBAR_CSS } from './patch-utils';
 
+/** A commit reads as one document: its message and files lead into its diffs. */
+export interface DiffCommitLayout {
+  /** Where the diff tools go, beside the commit's title instead of in a row of their own. */
+  tools: HTMLElement | null;
+  /** Scrolls away above the diffs. */
+  lead: React.ReactNode;
+  /** The whole commit is showing, so list its files first. */
+  listFiles: boolean;
+}
+
+// Past either limit a commit opens as collapsed rows, which are a list already,
+// and only builds the diffs asked for.
+const LARGE_COMMIT_FILES = 30;
+const LARGE_COMMIT_LINES = 5_000;
+
 interface DiffWorkspaceProps {
   contentKey: string;
   diff: DiffResult;
@@ -21,6 +37,7 @@ interface DiffWorkspaceProps {
   initiallyCollapsed?: boolean | undefined;
   compact?: boolean | undefined;
   scopeControl?: React.ReactNode | undefined;
+  commitLayout?: DiffCommitLayout | undefined;
   onDiffViewChange?: ((value: DiffViewPreference) => void) | undefined;
   onWrapLinesChange?: ((value: boolean) => void) | undefined;
   onClose?: (() => void) | undefined;
@@ -50,14 +67,17 @@ function DiffDocument(props: DiffWorkspaceProps) {
         <span role={message?.error ? 'alert' : 'status'}>{message?.text}</span>
         {props.onClose && <DiffAction label="Close diff" onClick={props.onClose}><IconX /></DiffAction>}
       </div>
+      {props.commitLayout && <div className="diff-workspace-scroll">{props.commitLayout.lead}</div>}
     </div>
   );
 }
 
-function ParsedDiffWorkspace({ contentKey, diff, diffView, themeType, wrapLines, initiallyCollapsed = false, compact = false, scopeControl, onDiffViewChange, onWrapLinesChange, onClose, files, message }: DiffWorkspaceProps & { files: DiffFileEntry[]; message: ParseMessage }) {
+function ParsedDiffWorkspace({ contentKey, diff, diffView, themeType, wrapLines, initiallyCollapsed = false, compact = false, scopeControl, commitLayout, onDiffViewChange, onWrapLinesChange, onClose, files, message }: DiffWorkspaceProps & { files: DiffFileEntry[]; message: ParseMessage }) {
+  const largeCommit = Boolean(commitLayout?.listFiles) && (files.length > LARGE_COMMIT_FILES || diff.lineCount > LARGE_COMMIT_LINES);
   const [collapsed, setCollapsed] = useState<Set<string>>(
-    () => new Set(initiallyCollapsed ? files.map((file) => file.key) : []),
+    () => new Set(initiallyCollapsed || largeCommit ? files.map((file) => file.key) : []),
   );
+  const sections = useRef(new Map<string, HTMLElement>());
   const allCollapsed = files.length > 0 && files.every((file) => collapsed.has(file.key));
   const additions = files.reduce((total, file) => total + file.additions, 0);
   const deletions = files.reduce((total, file) => total + file.deletions, 0);
@@ -71,6 +91,14 @@ function ParsedDiffWorkspace({ contentKey, diff, diffView, themeType, wrapLines,
     });
   };
   const toggleAll = () => setCollapsed(allCollapsed ? new Set() : new Set(files.map((file) => file.key)));
+  const openFile = (key: string) => {
+    setCollapsed((current) => {
+      const next = new Set(current);
+      next.delete(key);
+      return next;
+    });
+    sections.current.get(key)?.scrollIntoView({ block: 'start' });
+  };
   const diffActions = (includeCollapse: boolean) => (
     <div className="diff-workspace-actions">
       {includeCollapse && (
@@ -90,9 +118,10 @@ function ParsedDiffWorkspace({ contentKey, diff, diffView, themeType, wrapLines,
 
   return (
     <div key={contentKey} className={`diff-workspace${compact ? ' compact' : ''}`}>
-      {(!compact || message) && <div className="diff-workspace-toolbar">
+      {commitLayout?.tools && createPortal(<>{scopeControl}{diffActions(files.length > 1)}</>, commitLayout.tools)}
+      {(commitLayout ? message : !compact || message) && <div className="diff-workspace-toolbar">
         {message ? <>
-          {scopeControl}
+          {!commitLayout && scopeControl}
           <span role={message.error ? 'alert' : 'status'}>{message.text}</span>
           {onClose && <DiffAction label="Close diff" onClick={onClose}><IconX /></DiffAction>}
         </> : <>
@@ -106,10 +135,17 @@ function ParsedDiffWorkspace({ contentKey, diff, diffView, themeType, wrapLines,
       </div>}
       <div style={{ display: 'contents' }} inert={message !== null} aria-hidden={message ? true : undefined}>
         <Virtualizer className="diff-workspace-scroll" contentClassName="diff-workspace-content" style={{ visibility: message ? 'hidden' : undefined }}>
+          {commitLayout && <div className="diff-workspace-lead">{commitLayout.lead}</div>}
+          {commitLayout?.listFiles && files.length > 1 && (
+            <div className="diff-file-list">
+              <div className="diff-file-count">{files.length} files · +{additions} −{deletions}</div>
+              {!largeCommit && files.map((file) => <DiffFileListRow key={file.key} file={file} onOpen={() => openFile(file.key)} />)}
+            </div>
+          )}
           {files.map((file) => {
             const isCollapsed = !compact && collapsed.has(file.key);
             return (
-              <section key={file.key} className="diff-file-section">
+              <section key={file.key} ref={(element) => { if (element) sections.current.set(file.key, element); else sections.current.delete(file.key); }} className="diff-file-section">
                 {compact
                   ? <CompactFileHeader file={file} actions={diffActions(false)} />
                   : <CollapsibleFileHeader file={file} collapsed={isCollapsed} onToggle={() => toggleFile(file.key)} />}
@@ -145,6 +181,19 @@ function DiffFilePathLabel({ path }: { path: string }) {
       {directory ? <span className="diff-file-directory">{directory}/</span> : null}
       <span className="diff-file-name">{name}</span>
     </>
+  );
+}
+
+function DiffFileListRow({ file, onOpen }: { file: DiffFileEntry; onOpen(): void }) {
+  const [pathRef, truncated] = useTruncatedText(file.path);
+  return (
+    <Tooltip disabled={!truncated}>
+      <TooltipTrigger render={<button type="button" className="diff-file-list-row" onClick={onOpen} />}>
+        <span ref={pathRef} className="diff-file-path"><DiffFilePathLabel path={file.path} /></span>
+        <span className="plain-count">+{file.additions} −{file.deletions}</span>
+      </TooltipTrigger>
+      <TooltipContent anchor={pathRef}>{file.path}</TooltipContent>
+    </Tooltip>
   );
 }
 

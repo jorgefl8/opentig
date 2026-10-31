@@ -74,7 +74,7 @@
   html .file-tree-row { height: 44px; }
   html .change-row { min-height: 48px; height: 48px; }
   html .tree-folder { min-height: 48px; }
-  html .change-row-actions { position: static; padding: 0; background: none; mask-image: none; opacity: 1; pointer-events: auto; }
+  html .change-row-actions, html .commit-row-actions { position: static; height: auto; padding: 0; background: none; mask-image: none; opacity: 1; pointer-events: auto; }
   html .change-file-text { display: grid; align-content: center; gap: 1px; }
   html .change-action-button { min-width: 36px; min-height: 40px; }
   html .folder-toggle { width: 36px; height: 44px; }
@@ -88,7 +88,7 @@
   html .file-tree-row:not(.files-sticky-row) { padding-right: 48px; }
   html .files-sticky { display: none; }
   html .files-view { height: auto; flex: 1; }
-  html .commit-undo, html .search-replace-action, html .pull-open-external, html .repository-row-actions { opacity: 1; }
+  html .search-replace-action, html .pull-open-external, html .repository-row-actions { opacity: 1; }
   html .commit-expand { width: 32px; height: 44px; }
   html .search-query-row { flex-wrap: nowrap; }
   html .search-query-row .search-input { flex: 1; flex-wrap: nowrap; height: 44px; }
@@ -241,13 +241,9 @@
   html .quick-open-result { min-height: 48px; }
   html .quick-open-hints { display: none; }
 
-  html .history-toolbar { padding: 4px 8px; flex-wrap: nowrap; gap: 4px; }
-  html .history-search { flex: 1; min-width: 0; min-height: 40px; }
-  html .history-option { min-height: 40px; padding: 4px 6px; }
-  html .history-next-match { width: 32px; height: 40px; }
-  html .history-list .commit-header { padding-block: 4px; }
-  html .history-list .commit-main { padding: 0; }
-  html .history-list .commit-subject { font-size: var(--text-body); }
+  html .history-toolbar { padding: 4px 8px; }
+  html .history-search input { height: 40px; }
+  html .commit-subject { font-size: var(--text-body); }
   html .pull-main { min-height: 60px; padding-block: 10px; }
   html .pull-title { white-space: normal; font-size: var(--text-body); line-height: 1.6; }
   html .pulls-section-head { --tab-height: 48px; height: 48px; }
@@ -335,8 +331,8 @@
 /* Tablets and touch-enabled desktop windows retain the wide layout, while
    essential actions are still visible without hovering. */
 @media (hover: none), (pointer: coarse) {
-  .open-file-tab-close, .commit-undo, .search-replace-action, .pull-open-external, .repository-row-actions, .change-group-label .quiet-action { opacity: 1; }
-  .change-row-actions { position: static; padding: 0; background: none; mask-image: none; opacity: 1; pointer-events: auto; }
+  .open-file-tab-close, .search-replace-action, .pull-open-external, .repository-row-actions, .change-group-label .quiet-action { opacity: 1; }
+  .change-row-actions, .commit-row-actions { position: static; height: auto; padding: 0; background: none; mask-image: none; opacity: 1; pointer-events: auto; }
   .file-touch-actions { display: inline-flex; position: absolute; right: 0; top: 0; height: 100%; width: 36px; align-items: center; justify-content: center; background: var(--sidebar); }
   .file-touch-actions svg { width: 18px; height: 18px; }
   .file-tree-row:not(.files-sticky-row) { padding-right: 40px; }

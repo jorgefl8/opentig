@@ -1,14 +1,18 @@
 import { formatDateTime } from '@shared/date-format';
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
-import { IconLoader4 } from '@tabler/icons-react';
+import { IconDots, IconLoader4 } from '@tabler/icons-react';
 import type { DiffResult, DiffViewPreference, FileResult, ImageFileResult, ThemePreference, WriteFileResult } from '../../../shared/contracts';
 import type { CommitInfo } from '../../../shared/git-types';
 import { isKnownImagePath, isSvgPath } from '../../../shared/image-types';
 import { Button } from '@/components/ui/button';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { LinkedText } from '@/components/LinkedText';
 import { isHtmlPath, isMarkdownPath } from '@/features/files/file-tree';
+import { copyCommitHash } from '@/features/history/copy-commit-hash';
+import { canUndoCommit } from '@/features/history/history-presentation';
+import { openExternalUrl } from '@/lib/browser-capabilities';
 import { ByteBudgetLru } from '@/lib/ByteBudgetLru';
 import { opentig } from '@/lib/opentig-api';
 const PierreDiffViewer = lazy(() => import('./PierreDiffViewer'));
@@ -53,6 +57,11 @@ interface ViewerProps {
   revision: number;
   readOnly: boolean;
   commits: CommitInfo[];
+  /** `owner/name` when this repository is on GitHub. */
+  githubRepository?: string | null | undefined;
+  /** The repository is busy with something an undo can't run alongside. */
+  undoBlocked?: boolean | undefined;
+  onUndoCommit?: ((commit: CommitInfo) => void) | undefined;
   draftFor(path: string): RuntimeFileDraft | null;
   onSelect(selection: ViewerSelection): void;
   /** Every `type: 'file'` selection goes through App so it registers a tab. */
@@ -80,7 +89,7 @@ const diffCache = new ByteBudgetLru<string, DiffResult>({
 });
 let diffCacheRepositoryId: string | null = null;
 
-export default function Viewer({ repositoryId, selection, diffView, wrapLines, theme, revision, readOnly, commits, draftFor, onSelect, onOpenFile, onDiffViewChange, onWrapLinesChange, onDraftChange, onDraftSaved, onUpdateConflict, onResolveConflict }: ViewerProps) {
+export default function Viewer({ repositoryId, selection, diffView, wrapLines, theme, revision, readOnly, commits, githubRepository, undoBlocked, onUndoCommit, draftFor, onSelect, onOpenFile, onDiffViewChange, onWrapLinesChange, onDraftChange, onDraftSaved, onUpdateConflict, onResolveConflict }: ViewerProps) {
   const [data, setData] = useState<ViewerData>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -352,14 +361,26 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
     );
   } else if (data.type === 'diff') {
     const commitSelection = selection.type === 'commit' || selection.type === 'commit-file' ? selection : null;
-    const commit = commitSelection ? commits.find((item) => item.oid === commitSelection.oid) : undefined;
-    const scopeControl = selection.type === 'commit-file'
-      ? <Button type="button" variant="outline" size="xs" onClick={() => onSelect({ type: 'commit', oid: selection.oid, subject: commit?.subject ?? selection.oid.slice(0, 8) })}>All files</Button>
-      : undefined;
     content = null;
-    pierreContent = (
-      <div className={commitSelection ? 'commit-diff-viewer' : 'standalone-diff-viewer'}>
-        {commitSelection && <CommitDiffHeader key={commitSelection.oid} commit={commit} fallbackSubject={'subject' in commitSelection ? commitSelection.subject : ''} />}
+    pierreContent = commitSelection ? (
+      <CommitDiffViewer
+        key={commitSelection.oid}
+        contentKey={data.docKey}
+        selection={commitSelection}
+        commit={commits.find((item) => item.oid === commitSelection.oid)}
+        value={data.value}
+        diffView={diffView}
+        themeType={themeType}
+        wrapLines={wrapLines}
+        canUndo={!readOnly && !undoBlocked}
+        githubRepository={githubRepository}
+        onUndo={onUndoCommit}
+        onSelect={onSelect}
+        onDiffViewChange={onDiffViewChange}
+        onWrapLinesChange={onWrapLinesChange}
+      />
+    ) : (
+      <div className="standalone-diff-viewer">
         {data.value.patch ? <Suspense fallback={<ViewerLoading />}>
           <PierreDiffViewer
             kind="diff"
@@ -368,14 +389,12 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
             diffView={diffView}
             themeType={themeType}
             wrapLines={wrapLines}
-            initiallyCollapsed={selection.type === 'commit'}
-            compact={selection.type === 'diff'}
-            scopeControl={scopeControl}
+            compact
             onDiffViewChange={onDiffViewChange}
             onWrapLinesChange={onWrapLinesChange}
             onClose={() => onSelect(null)}
           />
-        </Suspense> : <div className="viewer-message">{selection.type === 'commit' && commit?.parentCount && commit.parentCount > 1 ? 'This merge commit has no changes of its own.' : 'No differences to show.'}</div>}
+        </Suspense> : <div className="viewer-message">No differences to show.</div>}
       </div>
     );
   } else {
@@ -396,42 +415,108 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
   );
 }
 
-function CommitDiffHeader({ commit, fallbackSubject }: { commit: CommitInfo | undefined; fallbackSubject: string }) {
+type CommitSelection = Extract<NonNullable<ViewerSelection>, { type: 'commit' | 'commit-file' }>;
+
+function CommitDiffViewer({ contentKey, selection, commit, value, diffView, themeType, wrapLines, canUndo, githubRepository, onUndo, onSelect, onDiffViewChange, onWrapLinesChange }: {
+  contentKey: string; selection: CommitSelection; commit: CommitInfo | undefined; value: DiffResult;
+  diffView: DiffViewPreference; themeType: ThemePreference; wrapLines: boolean; canUndo: boolean; githubRepository: string | null | undefined;
+  onUndo: ((commit: CommitInfo) => void) | undefined; onSelect(selection: ViewerSelection): void;
+  onDiffViewChange(value: DiffViewPreference): void; onWrapLinesChange(value: boolean): void;
+}) {
+  const [tools, setTools] = useState<HTMLElement | null>(null);
+  const message = <CommitMessage body={commit?.body ?? ''} />;
+  return (
+    <div className="commit-diff-viewer">
+      <CommitDiffHeader
+        oid={selection.oid}
+        commit={commit}
+        fallbackSubject={'subject' in selection ? selection.subject : ''}
+        canUndo={canUndo}
+        githubRepository={githubRepository}
+        toolsRef={setTools}
+        onUndo={onUndo}
+        onClose={() => onSelect(null)}
+      />
+      {value.patch ? <Suspense fallback={<ViewerLoading />}>
+        <PierreDiffViewer
+          kind="diff"
+          contentKey={contentKey}
+          value={value}
+          diffView={diffView}
+          themeType={themeType}
+          wrapLines={wrapLines}
+          commitLayout={{ tools, lead: message, listFiles: selection.type === 'commit' }}
+          scopeControl={selection.type === 'commit-file'
+            ? <Button type="button" variant="ghost" size="xs" onClick={() => onSelect({ type: 'commit', oid: selection.oid, subject: commit?.subject ?? selection.oid.slice(0, 8) })}>All files</Button>
+            : undefined}
+          onDiffViewChange={onDiffViewChange}
+          onWrapLinesChange={onWrapLinesChange}
+        />
+      </Suspense> : <div className="commit-diff-empty">
+        {message}
+        <div className="viewer-message">{selection.type === 'commit' && commit?.parentCount && commit.parentCount > 1 ? 'This merge commit has no changes of its own.' : 'No differences to show.'}</div>
+      </div>}
+    </div>
+  );
+}
+
+function CommitDiffHeader({ oid, commit, fallbackSubject, canUndo, githubRepository, toolsRef, onUndo, onClose }: {
+  oid: string; commit: CommitInfo | undefined; fallbackSubject: string; canUndo: boolean; githubRepository: string | null | undefined;
+  toolsRef(element: HTMLElement | null): void; onUndo: ((commit: CommitInfo) => void) | undefined; onClose(): void;
+}) {
   const date = commit?.date;
-  const [descriptionExpanded, setDescriptionExpanded] = useState(true);
-  const body = commit?.body ?? '';
-  const longDescription = body.length > 240 || body.split('\n').length > 3;
+  const githubUrl = githubRepository && commit?.upstreamState === 'published' ? `https://github.com/${githubRepository}/commit/${oid}` : null;
   return (
     <header className="commit-diff-header">
-      <h2><LinkedText text={commit?.subject || fallbackSubject || '(no subject)'} /></h2>
-      {body && (
-        <div className="commit-diff-description-wrap">
-          <p className={`commit-diff-description ${longDescription && !descriptionExpanded ? 'collapsed' : ''}`}><LinkedText text={body} /></p>
-          {longDescription && (
-            <button
-              type="button"
-              className="commit-description-toggle"
-              aria-expanded={descriptionExpanded}
-              onClick={() => setDescriptionExpanded((current) => !current)}
-            >
-              {descriptionExpanded ? 'Show less' : 'Show full description'}
-            </button>
-          )}
+      <div className="commit-diff-heading">
+        <h2><LinkedText text={commit?.subject || fallbackSubject || '(no subject)'} /></h2>
+        <div className="commit-diff-meta">
+          <code>{commit?.shortOid ?? oid.slice(0, 7)}</code>
+          {commit?.author && <>
+            <span aria-hidden="true">·</span>
+            <Tooltip disabled={!commit.email}>
+              <TooltipTrigger render={<span />}>{commit.author}</TooltipTrigger>
+              <TooltipContent>{commit.email}</TooltipContent>
+            </Tooltip>
+          </>}
+          {date && Number.isFinite(new Date(date).getTime()) && <>
+            <span aria-hidden="true">·</span>
+            <Tooltip>
+              <TooltipTrigger render={<time dateTime={date} />}>{formatDateTime(date)}</TooltipTrigger>
+              <TooltipContent>{formatDateTime(date, { seconds: true })}</TooltipContent>
+            </Tooltip>
+          </>}
+          {commit?.parentCount && commit.parentCount > 1 ? <><span aria-hidden="true">·</span><span>Merge commit, own files compared with first parent</span></> : null}
+          {commit?.upstreamState === 'local-only' && <><span aria-hidden="true">·</span><span className="commit-local-label">Not published</span></>}
         </div>
-      )}
-      <div className="commit-diff-meta">
-        <code>{commit?.shortOid ?? 'commit'}</code>
-        {commit?.author && <span>{commit.author}{commit.email ? ` <${commit.email}>` : ''}</span>}
-        {date && Number.isFinite(new Date(date).getTime()) && (
-          <Tooltip>
-            <TooltipTrigger render={<time dateTime={commit?.date} />}>{formatDateTime(date, { seconds: true })}</TooltipTrigger>
-            <TooltipContent>{formatDateTime(date, { seconds: true })}</TooltipContent>
-          </Tooltip>
-        )}
-        {commit?.parentCount && commit.parentCount > 1 ? <span>Merge commit · Own files compared with first parent</span> : null}
-        {commit?.upstreamState === 'local-only' && <span className="commit-local-label">Local only</span>}
       </div>
+      <div ref={toolsRef} className="commit-diff-tools" />
+      <DropdownMenu>
+        <DropdownMenuTrigger render={<Button type="button" variant="ghost" size="icon-sm" className="commit-diff-more" aria-label="More commit actions" />}><IconDots /></DropdownMenuTrigger>
+        <DropdownMenuContent>
+          <DropdownMenuItem onClick={() => void copyCommitHash(oid)}>Copy full hash</DropdownMenuItem>
+          {githubUrl && <DropdownMenuItem onClick={() => openExternalUrl(githubUrl)}>Open on GitHub</DropdownMenuItem>}
+          {commit && onUndo && canUndo && canUndoCommit(commit) && <DropdownMenuItem onClick={() => onUndo(commit)}>Undo commit…</DropdownMenuItem>}
+          <DropdownMenuItem onClick={onClose}>Close</DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </header>
+  );
+}
+
+function CommitMessage({ body }: { body: string }) {
+  const [expanded, setExpanded] = useState(true);
+  if (!body) return null;
+  const long = body.length > 240 || body.split('\n').length > 3;
+  return (
+    <div className="commit-diff-description-wrap">
+      <p className={`commit-diff-description ${long && !expanded ? 'collapsed' : ''}`}><LinkedText text={body} /></p>
+      {long && (
+        <button type="button" className="commit-description-toggle" aria-expanded={expanded} onClick={() => setExpanded((current) => !current)}>
+          {expanded ? 'Show less' : 'Show full description'}
+        </button>
+      )}
+    </div>
   );
 }
 

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { DiffWorkspace } from './DiffWorkspace';
 import { largePatch, MIXED_PATCH } from './diff-parser.fixtures';
@@ -80,6 +80,75 @@ it('hides superseded content immediately and ignores a late revision after switc
   expect(last.terminate).toHaveBeenCalledOnce();
   await act(async () => handler({ data: { revision: 3, files: buildDiffFileEntries(first) } } as MessageEvent<DiffParseResponse>));
   expect(container.textContent).toBe('');
+});
+
+describe('as a commit', () => {
+  async function renderCommit(patch: string, { listFiles = true, lineCount = 10, tools = document.createElement('div') }: { listFiles?: boolean; lineCount?: number; tools?: HTMLElement | null } = {}) {
+    await act(async () => root.render(createElement(TooltipProvider, null, createElement(DiffWorkspace, {
+      contentKey: 'commit', diff: { path: '', patch, binary: false, truncated: false, lineCount },
+      diffView: 'unified', themeType: 'light', wrapLines: false,
+      commitLayout: { tools, lead: createElement('p', { className: 'lead' }, 'Commit message'), listFiles },
+      scopeControl: createElement('button', { className: 'scope' }, 'All files'),
+    }))));
+    await vi.waitFor(async () => {
+      await act(async () => { await Promise.resolve(); });
+      expect(container.querySelector('.diff-file-section')).not.toBeNull();
+    });
+    return tools;
+  }
+  const twoFiles = () => largePatch(1, 2, 'src/first.ts') + largePatch(1, 3, 'src/second.ts');
+
+  it('lists the files after the message and opens with their diffs showing', async () => {
+    await renderCommit(twoFiles());
+    const scroll = container.querySelector('.diff-workspace-scroll')!;
+    expect([...scroll.children].map((child) => child.className.split(' ')[0])).toEqual(['diff-workspace-lead', 'diff-file-list', 'diff-file-section', 'diff-file-section']);
+    expect(scroll.querySelector('.diff-file-count')?.textContent).toMatch(/^2 files · \+\d+ −\d+$/);
+    expect([...scroll.querySelectorAll('.diff-file-list-row .diff-file-name')].map((name) => name.textContent)).toEqual(['first.ts', 'second.ts']);
+    expect(scroll.querySelector('.diff-file-list-row .plain-count')?.textContent).toMatch(/^\+\d+ −\d+$/);
+    expect(container.querySelectorAll('[data-code-file]')).toHaveLength(2);
+  });
+
+  it('jumps to a listed file and opens it if it was collapsed', async () => {
+    const scrollIntoView = vi.fn();
+    HTMLElement.prototype.scrollIntoView = scrollIntoView;
+    await renderCommit(twoFiles());
+    await act(async () => container.querySelectorAll<HTMLElement>('.diff-file-header')[1]!.click());
+    expect(container.querySelectorAll('[data-code-file]')).toHaveLength(1);
+    await act(async () => container.querySelectorAll<HTMLElement>('.diff-file-list-row')[1]!.click());
+    expect(container.querySelectorAll('[data-code-file]')).toHaveLength(2);
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: 'start' });
+    expect(scrollIntoView.mock.contexts[0]).toBe(container.querySelectorAll('.diff-file-section')[1]);
+    delete (HTMLElement.prototype as Partial<HTMLElement>).scrollIntoView;
+  });
+
+  it('opens a large commit as collapsed rows with only its totals above them', async () => {
+    await renderCommit(twoFiles(), { lineCount: 5_001 });
+    expect(container.querySelectorAll('[data-code-file]')).toHaveLength(0);
+    expect(container.querySelectorAll('.diff-file-header[aria-expanded="false"]')).toHaveLength(2);
+    expect(container.querySelector('.diff-file-count')).not.toBeNull();
+    expect(container.querySelector('.diff-file-list-row')).toBeNull();
+  });
+
+  it('has no list for one file, and puts the scope and tools beside the title instead of a toolbar', async () => {
+    const tools = await renderCommit(largePatch(1, 2, 'src/first.ts'), { listFiles: false });
+    expect(container.querySelector('.diff-file-list')).toBeNull();
+    expect(container.querySelector('.lead')?.textContent).toBe('Commit message');
+    expect(container.querySelector('.diff-workspace-toolbar')).toBeNull();
+    expect(tools?.querySelector('.scope')).not.toBeNull();
+    expect(tools?.querySelector('[aria-label="Use split diff"]')).not.toBeNull();
+    expect(tools?.querySelector('[aria-label="Wrap long lines"]')).not.toBeNull();
+    expect(tools?.querySelector('[aria-label="Collapse all files"]')).toBeNull();
+  });
+
+  it('shows the message and the parsing status while the diff is prepared', async () => {
+    await act(async () => root.render(createElement(TooltipProvider, null, createElement(DiffWorkspace, {
+      contentKey: 'commit', diff: { path: '', patch: largePatch(10_001, 24, 'src/first.ts'), binary: false, truncated: false, lineCount: 10 },
+      diffView: 'unified', themeType: 'light', wrapLines: false,
+      commitLayout: { tools: null, lead: createElement('p', { className: 'lead' }, 'Commit message'), listFiles: true },
+    }))));
+    expect(container.querySelector('.diff-workspace-toolbar')?.textContent).toContain('Preparing diff…');
+    expect(container.querySelector('.lead')).not.toBeNull();
+  });
 });
 
 it('shows the directory and name on one line with the file\'s line counts', async () => {

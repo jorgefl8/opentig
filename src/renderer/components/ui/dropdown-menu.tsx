@@ -1,5 +1,8 @@
 import { Menu as MenuPrimitive } from '@base-ui/react/menu';
+import { IconCheck } from '@tabler/icons-react';
 import { cn } from '@/lib/utils';
+
+const ITEM_CLASS = 'flex min-h-9 cursor-pointer items-center gap-2 rounded-md px-2 text-xs outline-none select-none data-highlighted:bg-accent data-highlighted:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-45 md:min-h-8 [&_svg]:size-3.5 [&_svg]:shrink-0';
 
 const DropdownMenu = MenuPrimitive.Root;
 const DropdownMenuTrigger = MenuPrimitive.Trigger;
@@ -17,10 +20,15 @@ function DropdownMenuContent({ className, children, align = 'end', sideOffset = 
 }
 
 function DropdownMenuItem({ className, ...props }: MenuPrimitive.Item.Props) {
-  return <MenuPrimitive.Item data-slot="dropdown-menu-item" className={cn(
-    'flex min-h-9 cursor-pointer items-center gap-2 rounded-md px-2 text-xs outline-none select-none data-highlighted:bg-accent data-highlighted:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-45 md:min-h-8 [&_svg]:size-3.5 [&_svg]:shrink-0',
-    className,
-  )} {...props} />;
+  return <MenuPrimitive.Item data-slot="dropdown-menu-item" className={cn(ITEM_CLASS, className)} {...props} />;
 }
 
-export { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem };
+/** An option that stays open when toggled and shows a check at the end while on. */
+function DropdownMenuCheckboxItem({ className, children, ...props }: MenuPrimitive.CheckboxItem.Props) {
+  return <MenuPrimitive.CheckboxItem data-slot="dropdown-menu-checkbox-item" className={cn(ITEM_CLASS, 'justify-between', className)} {...props}>
+    {children}
+    <MenuPrimitive.CheckboxItemIndicator className="flex text-muted-foreground"><IconCheck /></MenuPrimitive.CheckboxItemIndicator>
+  </MenuPrimitive.CheckboxItem>;
+}
+
+export { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuCheckboxItem };

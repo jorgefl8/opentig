@@ -25,7 +25,7 @@ class TestResizeObserver implements ResizeObserver {
 // Resize notifications are delivered only when a row actually changes size.
 function height(element: HTMLElement): number {
   if (element.classList.contains('history-scroll')) return 400;
-  if (element.classList.contains('virtual-row')) return element.querySelector('[aria-expanded="true"]') ? 180 : 42;
+  if (element.classList.contains('virtual-row')) return element.querySelector('[aria-expanded="true"]') ? 180 : 46;
   return 0;
 }
 function commit(oid: string, parentOids: string[], subject: string): CommitInfo {
@@ -47,12 +47,24 @@ afterEach(async () => {
   await act(async () => root.unmount()); container.remove(); observers.clear(); clearCommitFilesCache(); vi.restoreAllMocks(); vi.unstubAllGlobals();
 });
 
-async function mountAndExpand() {
-  await act(async () => root.render(createElement(TooltipProvider, null, createElement(HistoryView, {
+async function mount(overrides: Partial<Parameters<typeof HistoryView>[0]> = {}) {
+  const props = {
     repositoryId: 'history-measure-test', upstream: 'origin/main', readOnly: true, operation: null,
-    canPublish: false, pushBusy: false, onPublish: vi.fn(), commits, nextCursor: null, loading: false, undoing: false,
+    commits, nextCursor: null, loading: false, undoing: false,
     onSelectCommit: vi.fn(), onSelectFile: vi.fn(), onUndo: vi.fn(), onMore: vi.fn(),
-  }))));
+    ...overrides,
+  };
+  await act(async () => root.render(createElement(TooltipProvider, null, createElement(HistoryView, props))));
+  await act(async () => {
+    for (const observer of [...observers]) {
+      const entries = [...observer.elements].map(element => ({ target: element, borderBoxSize: [{ inlineSize: 500, blockSize: height(element as HTMLElement) }] } as unknown as ResizeObserverEntry));
+      if (entries.length) observer.callback(entries, observer);
+    }
+  });
+  return props;
+}
+async function mountAndExpand() {
+  await mount();
   await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Expand commit"]')!.click());
   await act(async () => {
     for (const observer of [...observers]) {
@@ -65,6 +77,13 @@ async function mountAndExpand() {
 function expectNextRowBelowExpansion() {
   expect(container.querySelector('[data-index="0"] [aria-label="Collapse commit"]')).not.toBeNull();
   expect(container.querySelector<HTMLElement>('[data-index="1"]')!.style.transform).toBe('translateY(180px)');
+}
+async function setOption(label: string) {
+  await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="History options"]')!.click());
+  await act(async () => { await Promise.resolve(); });
+  await act(async () => [...document.querySelectorAll<HTMLElement>('[role="menuitemcheckbox"]')].find(item => item.textContent === label)!.click());
+  await act(async () => document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
+  await act(async () => { await Promise.resolve(); });
 }
 async function search(value: string) {
   await act(async () => {
@@ -84,8 +103,7 @@ it('keeps measured expanded rows below their headers when search is entered, edi
 
 it('keeps an expanded merge measured when grouping is toggled and search reveals its branch', async () => {
   await mountAndExpand();
-  const grouping = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Group merges')!;
-  await act(async () => grouping.click());
+  await setOption('Group merges');
   expect(container.querySelectorAll('.commit-item')).toHaveLength(3);
   expectNextRowBelowExpansion();
   await search('Merge');
@@ -94,9 +112,100 @@ it('keeps an expanded merge measured when grouping is toggled and search reveals
   await search('');
   expect(container.querySelectorAll('.commit-item')).toHaveLength(3);
   expectNextRowBelowExpansion();
-  await act(async () => grouping.click());
+  await setOption('Group merges');
   expect(container.querySelectorAll('.commit-item')).toHaveLength(4);
   expectNextRowBelowExpansion();
+});
+
+it('offers the row density from the menu and keeps the rows at that height', async () => {
+  await mount();
+  const list = () => container.querySelector<HTMLElement>('.history-list')!.style.getPropertyValue('--history-row-height');
+  expect(list()).toBe('46px');
+  await setOption('Compact');
+  expect(list()).toBe('56px');
+});
+
+it('holds Group merges back until the loaded history has a merge', async () => {
+  await mount({ commits: [commit('main', ['base'], 'Main'), commit('base', [], 'Base')] });
+  await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="History options"]')!.click());
+  await act(async () => { await Promise.resolve(); });
+  const item = [...document.querySelectorAll<HTMLElement>('[role="menuitemcheckbox"]')].find(option => option.textContent === 'Group merges')!;
+  expect(item.getAttribute('aria-disabled')).toBe('true');
+});
+
+it('names each dot by whether its commit is published', async () => {
+  await mount({ commits: [
+    { ...commit('local', ['published'], 'Local'), upstreamState: 'local-only' },
+    commit('published', ['unknown'], 'Published'),
+    { ...commit('unknown', [], 'Unknown'), upstreamState: 'unknown' },
+  ] });
+  expect([...container.querySelectorAll('.commit-dot')].map(dot => [dot.getAttribute('role'), dot.getAttribute('aria-label')])).toEqual([
+    ['img', 'Not published'], ['img', 'Published'], ['img', 'Publication unknown'],
+  ]);
+});
+
+it('reads as one muted line ending in plain reference names, with no legend, counter or publish callout', async () => {
+  await mount({ upstream: null, commits: [{ ...commit('head', ['base'], 'Head'), decorations: ['HEAD -> main', 'origin/main', 'tag: v1.0.0'] }, commit('base', [], 'Base')] });
+  expect(container.querySelector('.commit-meta')?.textContent).toBe('01/01/2026·Sample author·headmain origin/main v1.0.0');
+  expect(container.querySelector('.commit-meta')?.lastElementChild?.textContent).toBe('main origin/main v1.0.0');
+  expect(container.textContent).not.toMatch(/Publish|loaded|Local\b/);
+});
+
+it('selects a commit from anywhere in its row except the controls inside it', async () => {
+  const props = await mount({ commits: [{ ...commit('head', ['base'], 'Fix the thing (#87)') }, commit('base', [], 'Base')], onSelectReference: vi.fn() });
+  const row = container.querySelector('.commit-item')!;
+  await act(async () => row.querySelector<HTMLElement>('.commit-subject')!.click());
+  expect(props.onSelectCommit).toHaveBeenCalledTimes(1);
+  await act(async () => row.querySelector<HTMLElement>('time')!.click());
+  expect(props.onSelectCommit).toHaveBeenCalledTimes(2);
+  await act(async () => row.querySelector<HTMLElement>('[aria-label="Expand commit"]')!.click());
+  await act(async () => row.querySelector<HTMLElement>('[aria-label="Copy hash head"]')!.click());
+  expect(props.onSelectCommit).toHaveBeenCalledTimes(2);
+  await act(async () => row.querySelector<HTMLElement>('[aria-label="Open pull request #87"]')!.click());
+  expect(props.onSelectReference).toHaveBeenCalledWith(87);
+  expect(props.onSelectCommit).toHaveBeenCalledTimes(2);
+});
+
+it('offers undo only on the latest local commit, without selecting it', async () => {
+  const head = { ...commit('head', ['older'], 'Head'), upstreamState: 'local-only' as const, isHead: true };
+  const older = { ...commit('older', [], 'Older'), upstreamState: 'local-only' as const };
+  const props = await mount({ readOnly: false, commits: [head, older] });
+  expect(container.querySelectorAll('.commit-undo')).toHaveLength(1);
+  await act(async () => container.querySelector<HTMLElement>('[aria-label="Undo commit head"]')!.click());
+  expect(props.onUndo).toHaveBeenCalledWith(head);
+  expect(props.onSelectCommit).not.toHaveBeenCalled();
+});
+
+it('counts matches in the field and steps through them from the next-match button', async () => {
+  await mount();
+  await search('feature');
+  const count = () => container.querySelector('.history-search .plain-count')?.textContent;
+  expect(count()).toBe('2 matches');
+  expect(container.querySelectorAll('.commit-search-match')).toHaveLength(2);
+  const next = () => container.querySelector<HTMLElement>('[aria-label="Next matching commit"]')!;
+  await act(async () => next().click());
+  expect(count()).toBe('1 of 2');
+  expect(container.querySelector('.commit-current-match .commit-subject')?.textContent).toBe('Merge feature');
+  await act(async () => next().click());
+  expect(count()).toBe('2 of 2');
+  expect(container.querySelector('.commit-current-match .commit-subject')?.textContent).toBe('Feature');
+  await act(async () => next().click());
+  expect(count()).toBe('1 of 2');
+  await search('');
+  expect(count()).toBeUndefined();
+  expect(container.querySelector('[aria-label="Next matching commit"]')).toBeNull();
+});
+
+it('loads more from a quiet row at the end of the list', async () => {
+  const props = await mount({ nextCursor: 'base' });
+  const more = container.querySelector<HTMLButtonElement>('.history-more')!;
+  expect(more.textContent).toBe('Load more');
+  await act(async () => more.click());
+  expect(props.onMore).toHaveBeenCalledTimes(1);
+  await mount({ nextCursor: 'base', loading: true });
+  expect(container.querySelector<HTMLButtonElement>('.history-more')!.disabled).toBe(true);
+  await mount({ nextCursor: null });
+  expect(container.querySelector('.history-more')).toBeNull();
 });
 
 it('displays an oversized response fully and keeps it in the mounted row without caching it', async () => {

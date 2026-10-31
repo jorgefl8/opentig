@@ -130,7 +130,7 @@ Search keeps its query and options in one compact row. The **GitHub** tabs keep 
 
 ### History, diffs, and projects
 
-- **History:** search and grouping share a mobile toolbar, with compact rows and touch-sized expansion controls.
+- **History:** the find field and filter menu share one row. Commit rows keep their undo and touch-sized expansion controls visible.
 - **Diffs:** start in unified layout. A phone's layout choice lasts for the session and preserves the saved desktop layout.
 - **Projects:** use the larger up/down buttons and free scrolling in Manage projects. Moving a project or repository preserves focus and scroll, then briefly highlights its new position. Reduced-motion preferences suppress that highlight; desktop dragging remains available.
 

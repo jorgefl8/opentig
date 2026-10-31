@@ -161,7 +161,7 @@ The highlighting pool is bypassed above 10,000 diff lines or 500,000 conflict ch
 
 **Publish a branch without an upstream**
 
-Publish from the toolbar, History, repository selector, **Commit & Push**, or pull-request dialog. A checked-out branch with at least one commit and a configured remote is required; you can publish even when there are no new commits.
+Publish from the toolbar, repository selector, **Commit & Push**, or pull-request dialog. A checked-out branch with at least one commit and a configured remote is required; you can publish even when there are no new commits.
 
 OpenTig uses the configured push remote or the only available remote. If several exist without a preference, choose one. Publishing sets upstream tracking and leaves uncommitted files untouched.
 
@@ -278,39 +278,48 @@ Search data is prepared when Quick Open opens and reused until the file list cha
 
 **Inspect a commit**
 
-Open **History** and click a commit subject for its full message, author, date, references, publication state, and changed files. Open the complete diff or one file's diff, including renamed paths, and copy the full hash when needed. Merge and empty commits also open with complete metadata.
+Open **History** and click a commit's row for its title, hash, author, date, publication state, full message, changed files, and diffs. Merge and empty commits also open with complete metadata.
 
-History loads incrementally. Search subjects, authors, hashes, and references in the **loaded history**; load more to search older commits. Matches are highlighted without removing graph rows. Press `Enter` or use the next-match button to jump between them.
+Click a listed file to jump to its diff, or expand a row with its chevron and pick a file to see only that file's diff, including renamed paths; **All files** returns to the whole commit. A commit with more than 30 files or 5,000 patch lines opens with its files collapsed, and those rows are the list.
 
-Only the latest commit can be undone, and only when OpenTig can prove it is still local and safe to undo.
+The commit's **⋯** menu copies the full hash, opens a published commit on GitHub, undoes the commit, and closes the viewer. In the list, click a short hash to copy the full one.
 
-**Read the graph**
+Only the latest commit can be undone, and only when OpenTig can prove it is still local and safe to undo. The undo button appears with the chevron when you hover or focus its row, and both stay visible on touch screens.
 
-The graph follows current-branch history and actual parent relationships. It does not fetch in the background or include unmerged branches outside HEAD. Colors adapt to the theme:
+**Find a commit**
 
-| Color | Meaning |
+History loads incrementally. Search subjects, authors, hashes, and references in the **loaded history**; **Load more** at the end of the list adds older commits. Rows that don't match fade without leaving the list. The field counts matches: press `Enter` or use the next-match button to jump between them.
+
+**Read a row**
+
+Each row has a dot, the title, and one line with the date, author, short hash, any `#123` reference, and branch and tag names. Hover a dot for what it means:
+
+| Dot | Meaning |
 | --- | --- |
-| Amber | Local commits |
-| OpenTig blue | Published work and merge branches |
-| Neutral gray | Primary-line commits reachable from the locally known base branch |
+| Amber | Not published |
+| Gray | Published. Its hint says when the commit is reachable from the locally known base branch |
+| Hollow | There is no upstream to compare with |
+| Ring | Merge commit, in the color of its state |
+
+When the loaded commits branch and rejoin, quiet lanes connect the dots; a linear history shows only the dots. The lanes follow current-branch history and actual parent relationships. OpenTig does not fetch in the background or include unmerged branches outside HEAD.
 
 GitHub-style merge messages and trailing `(#123)` references are hints, not verified PR status or proof of squash/rebase. On GitHub repositories, the reference opens the PR viewer on the right; that viewer handles issue numbers or unavailable PRs. Squash/rebase histories remain linear.
 
 <details>
 <summary>Merge grouping and comparisons</summary>
 
-Complete, exclusive, linear side branches can be grouped under their merge commit. Click the grouped count to reveal them; search temporarily reveals all grouped commits. Partial pages, shared branches, and nested side merges stay expanded.
+Turn on **Group merges** in the filter menu beside the find field to group complete, exclusive, linear side branches under their merge commit. It is available once the loaded history has a merge. Click the grouped count to reveal them; search temporarily reveals all grouped commits. Partial pages, shared branches, and nested side merges stay expanded.
 
 Merge commits list only their own file changes relative to every parent. The viewer shows these as a unified diff against the first parent and labels the comparison. Commits without file changes still show metadata and the full message, followed by an empty-diff message.
 
-Graph lanes and merge nodes preserve topology. The base comes from the upstream remote's symbolic default when available, then conventional main/master refs. Missing information stays unknown.
+The base comes from the upstream remote's symbolic default when available, then conventional main/master refs. Missing information stays unknown.
 
 </details>
 
 <details>
 <summary>History layout, caching, and message links</summary>
 
-Choose compact (42 px) or comfortable (56 px) rows without changing the sidebar width or diff viewer. Selecting a commit or its expanded files keeps the row highlighted. Expanded rows show a three-line description preview with an ellipsis when needed; click the subject for the full message, with no subject hover tooltip. Row spacing is preserved when search or merge grouping changes.
+**Compact** in the filter menu switches between 46 px and 56 px rows without changing the sidebar width or diff viewer. Selecting a commit or its expanded files keeps the row highlighted. Expanded rows show a three-line description preview with an ellipsis when needed; click the row for the full message. Row spacing is preserved when search or merge grouping changes.
 
 Refreshes retain loaded pages without duplicating commits. Expanded file lists use a memory-bounded cache. Very large lists remain fully available in the open row, but are fetched again after leaving and revisiting it once the row unmounts. Switching repositories clears the cache.
 

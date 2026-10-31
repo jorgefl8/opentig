@@ -195,7 +195,7 @@ html[data-mono-font="space-grotesk"] {
     --opentig-font-mono: 'Space Grotesk Variable', sans-serif;
 }
 
-html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, .commit-oid, .search-match-line, .search-match-text, .diff-file-path, .diff-file-previous, .diff-total-stats, .diff-file-stats, .pr-branches, .local-refs-path, .source-code-editor, .diff-workspace) {
+html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, .commit-oid, .commit-refs, .search-match-line, .search-match-text, .diff-file-path, .diff-file-previous, .diff-total-stats, .diff-file-stats, .pr-branches, .local-refs-path, .source-code-editor, .diff-workspace) {
     font-synthesis: none;
     font-weight: var(--weight-regular);
     font-feature-settings: normal;
@@ -441,7 +441,7 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
      the row nor where its name cuts off moves when they appear. They stay in
      the tab order while hidden, which is how the keyboard reaches them. The
      surface repeats the row's own translucent wash over an opaque base. */
-  .change-row-actions {
+  .change-row-actions, .commit-row-actions {
     position: absolute;
     top: 0;
     right: 0;
@@ -456,7 +456,8 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
     pointer-events: none;
   }
   .change-row:hover > .change-row-actions, .tree-folder:hover > .change-row-actions,
-  .change-row:has(:focus-visible) > .change-row-actions, .tree-folder:has(:focus-visible) > .change-row-actions { opacity: 1; pointer-events: auto; }
+  .change-row:has(:focus-visible) > .change-row-actions, .tree-folder:has(:focus-visible) > .change-row-actions,
+  .commit-header:hover > .commit-row-actions, .commit-header:has(:focus-visible) > .commit-row-actions { opacity: 1; pointer-events: auto; }
   .change-action-button { color: var(--muted-foreground); }
   .change-action-button svg { width: 14px; min-width: 14px; height: 14px; min-height: 14px; }
   .change-action-button:hover { background: var(--row-hover); color: var(--foreground); }
@@ -494,58 +495,6 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   @media (prefers-reduced-motion: reduce) {
     .file-tree-row, .file-drag-overlay { transition: none !important; }
   }
-  .history-list { display: flex; height: 100%; min-height: 0; flex-direction: column; }
-  .history-scroll { min-height: 0; flex: 1; overflow: auto; padding-bottom: 12px; }
-  .history-more { position: absolute; left: 12px; right: 12px; width: calc(100% - 24px); margin-top: 6px; }
-  .history-upstream-notice { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; flex: none; margin: 5px 9px 9px; border: 1px solid var(--sidebar-border); border-radius: var(--radius-md); background: color-mix(in oklch, var(--muted) 60%, transparent); padding: 8px 9px; color: var(--muted-foreground); font-size: var(--text-meta); line-height: 1.4; }
-  .commit-item { position: relative; border-bottom: 1px solid color-mix(in oklch, var(--sidebar-border) 55%, transparent); }
-  .commit-header { position: relative; z-index: 1; display: flex; width: 100%; min-height: 52px; align-items: center; gap: 4px; padding: 0 6px 0 4px; transition: background-color .12s ease; }
-  .commit-header:focus-within { background: var(--row-hover); }
-  .commit-graph { display: block; flex: none; overflow: visible; }
-  .commit-graph path, .commit-graph-continuation line { fill: none; stroke-width: 1.5; vector-effect: non-scaling-stroke; }
-  .commit-graph circle { stroke-width: 1.75; vector-effect: non-scaling-stroke; }
-  .commit-graph-continuation { position: absolute; top: 52px; bottom: 0; left: 4px; z-index: 0; height: calc(100% - 52px); pointer-events: none; }
-  .commit-expand { display: grid; width: 20px; height: 24px; flex: none; place-items: center; border-radius: var(--radius-md); color: var(--muted-foreground); transition: background-color .12s ease, color .12s ease, box-shadow .12s ease; }
-  .commit-expand svg { width: 12px; height: 12px; }
-  .commit-expand:hover { background: color-mix(in oklch, var(--foreground) 11%, transparent); color: var(--foreground); box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--foreground) 8%, transparent); }
-  .commit-main { display: grid; min-width: 0; flex: 1; gap: 3px; padding: 5px 0; }
-  .commit-title-row { display: flex; min-width: 0; align-items: baseline; gap: 8px; }
-  .commit-subject { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-ui); font-weight: var(--weight-strong); text-align: left; transition: color .12s ease; }
-  .commit-subject:hover { color: var(--primary); }
-  .commit-meta { display: flex; min-width: 0; align-items: center; gap: 5px; overflow: hidden; color: var(--muted-foreground); font-size: var(--text-meta); white-space: nowrap; }
-  .commit-undo { flex: none; opacity: 0; color: var(--muted-foreground); transition: opacity .12s ease, background-color .12s ease, color .12s ease, box-shadow .12s ease; }
-  .commit-header:hover .commit-undo, .commit-header:focus-within .commit-undo, .commit-undo:focus-visible { opacity: 1; }
-  .commit-undo:hover { color: var(--destructive); }
-  .commit-author { max-width: 34%; overflow: hidden; text-overflow: ellipsis; }
-  .commit-date { flex: none; color: var(--muted-foreground); font-size: var(--text-meta); }
-  .commit-oid { flex: none; border-radius: var(--radius-sm); background: var(--muted); padding: 0 4px; color: var(--muted-foreground); font-family: var(--font-mono); font-size: var(--text-meta); font-weight: var(--weight-strong); transition: background-color .12s ease, color .12s ease; }
-  .commit-oid:hover { background: color-mix(in oklch, var(--primary) 16%, var(--muted)); color: var(--foreground); }
-  .commit-refs { display: flex; min-width: 0; flex: 1; gap: 3px; overflow: hidden; }
-  .ref-chip { display: inline-block; min-width: 0; max-width: 120px; flex: 0 1 auto; overflow: hidden; border-radius: 999px; padding: 1px 5px; font-size: var(--text-meta); line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
-  .ref-chip.head { background: color-mix(in oklch, var(--primary) 16%, transparent); color: color-mix(in oklch, var(--primary) 70%, var(--foreground)); box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--primary) 32%, transparent); }
-  .ref-chip.branch { background: color-mix(in oklch, var(--chart-2) 16%, transparent); color: color-mix(in oklch, var(--chart-2) 62%, var(--foreground)); box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--chart-2) 30%, transparent); }
-  .ref-chip.remote { background: var(--muted); color: var(--muted-foreground); box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--foreground) 8%, transparent); }
-  .ref-chip.tag { background: color-mix(in oklch, var(--chart-3) 16%, transparent); color: color-mix(in oklch, var(--chart-3) 65%, var(--foreground)); box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--chart-3) 32%, transparent); }
-  .ref-chip.more { flex: none; background: var(--muted); color: var(--muted-foreground); cursor: default; }
-  .ref-chip.local-only { flex: none; background: color-mix(in oklch, var(--chart-3) 17%, transparent); color: color-mix(in oklch, var(--chart-3) 65%, var(--foreground)); box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--chart-3) 30%, transparent); }
-  .ref-chip.merge { background: var(--muted); color: var(--muted-foreground); box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--foreground) 8%, transparent); }
-  .commit-files { position: relative; z-index: 1; display: grid; gap: 1px; padding: 0 8px 9px 31px; animation: fade-rise var(--motion-med) var(--ease-out); }
-  .commit-description { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 3; margin: 1px 6px 7px; border-left: 2px solid var(--sidebar-border); padding: 2px 8px; color: var(--muted-foreground); font-size: var(--text-meta); line-height: 1.5; overflow-wrap: anywhere; white-space: pre-wrap; }
-  .commit-files-summary { padding: 1px 6px 5px; color: var(--muted-foreground); font-size: var(--text-meta); font-weight: var(--weight-strong); }
-  .commit-files-summary .add { color: var(--diff-added); }
-  .commit-files-summary .del { color: var(--diff-deleted); }
-  .commit-files-message { display: flex; align-items: center; gap: 7px; padding: 4px 6px 6px; color: var(--muted-foreground); font-size: var(--text-meta); }
-  .commit-files-message.error { color: var(--destructive); }
-  .commit-file-row { display: flex; align-items: center; gap: 4px; border-radius: var(--radius-md); padding: 2px 4px 2px 6px; transition: background-color .12s ease; }
-  .commit-file-label { display: flex; min-width: 0; flex: 1; align-items: center; gap: 6px; padding: 2px 0; font-size: var(--text-ui); text-align: left; }
-  .commit-file-text { display: flex; min-width: 0; flex: 1; align-items: baseline; gap: 6px; overflow: hidden; }
-  .commit-file-text > span { flex: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .commit-file-text small { overflow: hidden; color: var(--muted-foreground); font-size: var(--text-meta); text-overflow: ellipsis; white-space: nowrap; }
-  .commit-file-rename { flex: none; }
-  .commit-file-stats { display: flex; flex: none; align-items: center; gap: 4px; font-size: var(--text-meta); font-weight: var(--weight-strong); }
-  .commit-file-stats .add { color: var(--diff-added); }
-  .commit-file-stats .del { color: var(--diff-deleted); }
-  .commit-file-stats .binary { color: var(--muted-foreground); }
   .viewer-pane {
     /* @pierre/diffs paints its shadow-DOM host with `background-color:
        light-dark(var(--diffs-light-bg,#fff), var(--diffs-dark-bg,#000))`
@@ -1602,7 +1551,7 @@ section[data-sileo-viewport] [data-sileo-title] { text-transform: none; }
   /* Lists ---------------------------------------------------------------- */
   .tree-folder, .change-row, .file-tree-row { font-family: var(--font-sans); }
   .file-tree-row { min-height: 30px; }
-  .file-tree-row:hover:not(.files-sticky-row), .commit-header:hover, .commit-file-row:hover, .pull-item:hover {
+  .file-tree-row:hover:not(.files-sticky-row), .commit-file-row:hover, .pull-item:hover {
     background: var(--row-hover);
   }
   .change-row:hover, .tree-folder:hover, .change-row:has(:focus-visible), .tree-folder:has(:focus-visible) { --row-surface: var(--row-hover); }
@@ -1632,8 +1581,8 @@ section[data-sileo-viewport] [data-sileo-title] { text-transform: none; }
      transparent wash, which would let files show through and steal clicks. */
   .file-tree-row.files-sticky-row { background: var(--sidebar); }
   .file-tree-row.files-sticky-row:hover { background: color-mix(in oklch, var(--foreground) 8%, var(--sidebar)); }
-  .change-file-text small, .commit-meta { letter-spacing: .005em; }
-  .commit-oid, .ref-chip, code, kbd {
+  .change-file-text small { letter-spacing: .005em; }
+  code, kbd {
     font-family: var(--font-mono);
   }
 
@@ -1718,57 +1667,67 @@ section[data-sileo-viewport] [data-sileo-title] { text-transform: none; }
   .ai-log-note.error { background: color-mix(in oklch, var(--destructive) 14%, transparent); color: var(--destructive); }
 
   /* History -------------------------------------------------------------- */
-  .history-list { --history-local: var(--warning); --history-published: var(--primary); --history-base: var(--muted-foreground); }
-  .history-toolbar { display: flex; flex: none; min-height: 35px; align-items: center; gap: 4px; border-bottom: 1px solid var(--sidebar-border); padding: 3px 7px; }
-  .history-search { display: flex; min-width: 50px; flex: 1; align-items: center; gap: 4px; color: var(--muted-foreground); }
-  .history-search svg, .history-next-match svg { width: 13px; height: 13px; flex: none; }
-  .history-search input { min-width: 0; width: 100%; border: 0; background: transparent; padding: 4px 0; font-size: var(--text-meta); }
-  .history-option { flex: none; border-radius: var(--radius-sm); padding: 4px 5px; color: var(--muted-foreground); font-size: var(--text-meta); white-space: nowrap; }
-  .history-option[aria-pressed="true"] { background: var(--row-selected); color: var(--foreground); }
-  .history-option:disabled { opacity: .45; }
-  .history-next-match { display: grid; width: 23px; height: 25px; flex: none; place-items: center; color: var(--muted-foreground); }
-  .history-local-summary { flex: none; border-bottom: 1px solid var(--sidebar-border); background: color-mix(in oklch, var(--history-local) 7%, var(--sidebar)); padding: 5px 10px; color: color-mix(in oklch, var(--history-local) 75%, var(--foreground)); font-size: var(--text-meta); }
-  .history-legend { display: flex; flex: none; min-width: 0; align-items: center; flex-wrap: wrap; gap: 5px 10px; border-top: 1px solid var(--sidebar-border); padding: 6px 9px; color: var(--muted-foreground); font-size: var(--text-meta); }
-  .history-legend i { display: inline-block; width: 5px; height: 5px; margin-right: 4px; border-radius: 50%; }
-  .history-legend i[data-color="local"] { background: var(--history-local); }
-  .history-legend i[data-color="published"] { background: var(--history-published); }
-  .history-legend i[data-color="base"] { background: var(--history-base); }
-  .history-base-label { min-width: 0; max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .history-count { margin-left: auto; }
-  .history-list .commit-item { border-bottom: 0; }
-  .history-list .commit-header { height: var(--history-row-height); min-height: var(--history-row-height); box-shadow: inset 0 -1px color-mix(in oklch, var(--sidebar-border) 45%, transparent); }
-  .history-list .commit-item.active > .commit-header { background: var(--row-selected); }
-  .history-list .commit-item.commit-search-match > .commit-header { box-shadow: inset 2px 0 var(--history-base); background: color-mix(in oklch, var(--history-base) 10%, var(--sidebar)); }
-  .history-list .commit-main { gap: 1px; padding: 3px 0; }
-  .history-list .commit-title-row { line-height: 17px; gap: 5px; }
-  .history-list .commit-subject { font-weight: var(--weight-medium); }
-  .history-list .commit-meta { height: 18px; line-height: 16px; }
-  .history-list .commit-refs { flex: 0 1 auto; max-width: 60%; }
-  .history-list .commit-author { flex: 1; max-width: none; }
-  .history-list .commit-graph-continuation { top: var(--history-row-height); height: calc(100% - var(--history-row-height)); }
-  .history-list .commit-pr { display: inline-flex; flex: none; align-items: center; gap: 3px; padding: 1px 4px; color: color-mix(in oklch, var(--history-published) 80%, var(--foreground)); background: color-mix(in oklch, var(--history-published) 12%, var(--sidebar)); }
-  .commit-pr svg { width: 11px; height: 11px; }
-  .commit-group-count { flex: none; color: color-mix(in oklch, var(--history-published) 80%, var(--foreground)); font-size: var(--text-meta); }
-  .commit-group-count:hover { text-decoration: underline; }
-  .commit-oid { background: var(--muted); }
-  .commit-oid:hover { background: var(--row-selected); color: var(--foreground); }
-  .commit-subject:hover { color: var(--foreground); text-decoration: underline; text-underline-offset: 2px; }
-  .ref-chip { border-radius: var(--radius-sm); font-weight: var(--weight-strong); }
-  .ref-chip.head {
-    background: color-mix(in oklch, var(--primary) 14%, transparent);
-    color: color-mix(in oklch, var(--primary) 80%, var(--foreground));
-    box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--primary) 26%, transparent);
-  }
-  .ref-chip.branch, .ref-chip.remote, .ref-chip.tag, .ref-chip.merge, .ref-chip.more, .ref-chip.local-only {
-    background: var(--muted);
-    color: var(--muted-foreground);
-    box-shadow: inset 0 0 0 1px var(--border);
-  }
-  .history-list .ref-chip.local-only, .history-list .ref-chip.head { color: color-mix(in oklch, var(--history-local) 80%, var(--foreground)); }
-  .history-list .ref-chip.head { background: color-mix(in oklch, var(--history-local) 14%, transparent); box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--history-local) 26%, transparent); }
-  .history-list .ref-chip.remote { color: color-mix(in oklch, var(--history-published) 80%, var(--foreground)); }
-
-  .history-list .ref-chip[data-base="true"] { color: color-mix(in oklch, var(--history-base) 80%, var(--foreground)); }
+  .history-list { --history-lane: color-mix(in oklch, var(--muted-foreground) 35%, transparent); display: flex; height: 100%; min-height: 0; flex-direction: column; }
+  .history-toolbar { display: flex; flex: none; align-items: center; gap: 2px; padding: 8px 8px 6px; }
+  .history-search { min-width: 0; flex: 1; margin-right: 2px; }
+  .history-search input { width: 100%; }
+  .history-search input::-webkit-search-cancel-button { opacity: .55; }
+  .history-scroll { min-height: 0; flex: 1; overflow: auto; padding-bottom: 12px; }
+  /* Match this height to LOAD_MORE_HEIGHT in HistoryView. */
+  .history-more { position: absolute; right: 0; left: 0; height: 36px; padding: 0 12px 0 28px; color: var(--muted-foreground); font-size: var(--text-meta); text-align: left; }
+  .history-more:hover:not(:disabled) { background: var(--row-hover); color: var(--foreground); }
+  .history-more:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
+  .commit-item { position: relative; }
+  /* The left padding and gap set where the text starts: match COMMIT_TEXT_INSET in HistoryView. */
+  .commit-header { --row-surface: transparent; position: relative; z-index: 1; display: flex; height: var(--history-row-height); align-items: center; gap: 6px; padding: 0 8px; background: var(--row-surface); cursor: pointer; }
+  .commit-header:hover, .commit-header:has(:focus-visible), .commit-item.commit-current-match > .commit-header { --row-surface: var(--row-hover); }
+  .commit-item.active > .commit-header { --row-surface: var(--row-selected); }
+  /* While searching, the rows that don't match step back and keep their place. */
+  .history-list[data-searching] .commit-item:not(.commit-search-match) .commit-main { opacity: .45; }
+  .commit-lane { position: relative; flex: none; align-self: stretch; }
+  .commit-graph { position: absolute; top: 0; left: 0; display: block; overflow: visible; }
+  .commit-graph path, .commit-graph-continuation line { fill: none; stroke: var(--history-lane); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+  .commit-graph-continuation { position: absolute; top: var(--history-row-height); bottom: 0; left: 8px; height: calc(100% - var(--history-row-height)); pointer-events: none; }
+  /* A wider target than the dot, for its tooltip. A hollow dot repeats the row's surface so no lane shows through. */
+  .commit-dot { position: absolute; display: grid; width: 14px; height: 14px; place-items: center; color: var(--muted-foreground); transform: translate(-50%, -50%); }
+  .commit-dot::before { width: 7px; height: 7px; border-radius: 50%; background: currentColor; content: ""; }
+  .commit-dot[data-publication="local-only"] { color: var(--warning); }
+  .commit-dot[data-publication="unknown"]::before { border: 1.5px solid currentColor; background: linear-gradient(var(--row-surface), var(--row-surface)), var(--sidebar); }
+  .commit-dot[data-merge]::before { width: 9px; height: 9px; border: 1.5px solid currentColor; background: radial-gradient(circle, currentColor 1.5px, transparent 2px), linear-gradient(var(--row-surface), var(--row-surface)), var(--sidebar); }
+  .commit-main { display: grid; min-width: 0; flex: 1; gap: 1px; }
+  .commit-subject { min-width: 0; overflow: hidden; font-size: var(--text-ui); font-weight: var(--weight-medium); line-height: 17px; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+  .commit-subject:focus-visible { outline: none; }
+  .commit-header:has(.commit-subject:focus-visible)::after { position: absolute; inset: 0; outline: 2px solid var(--ring); outline-offset: -2px; content: ""; pointer-events: none; }
+  /* Facts keep their width. References take what is left, which also keeps them
+     from pushing the author a fraction of a pixel into an early ellipsis. */
+  .commit-meta { display: flex; min-width: 0; align-items: baseline; gap: 4px; overflow: hidden; color: var(--muted-foreground); font-size: var(--text-meta); letter-spacing: .005em; line-height: 15px; white-space: nowrap; }
+  .commit-meta > * { flex: none; }
+  .commit-meta > .commit-author { min-width: 24px; max-width: 40%; flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; }
+  .commit-meta > .commit-refs { min-width: 0; flex: 1 1 0; overflow: hidden; font-family: var(--font-mono); text-overflow: ellipsis; }
+  .commit-refs::before { margin-right: 4px; font-family: var(--font-sans); content: "·"; }
+  .commit-oid { font-family: var(--font-mono); }
+  .commit-oid:hover, button.commit-pr:hover, .commit-group-count:hover { color: var(--foreground); text-decoration: underline; text-underline-offset: 2px; }
+  .commit-oid:focus-visible, button.commit-pr:focus-visible, .commit-group-count:focus-visible { border-radius: var(--radius-sm); outline: 2px solid var(--ring); outline-offset: -1px; }
+  /* Over the title's line only: the line below has its own controls to reach. */
+  .commit-row-actions { top: calc(50% - 18px); bottom: auto; height: 20px; }
+  .commit-expand { display: grid; width: 20px; height: 20px; flex: none; place-items: center; border-radius: var(--radius-md); color: var(--muted-foreground); }
+  .commit-expand svg { width: 14px; height: 14px; }
+  .commit-expand:hover { background: var(--row-hover); color: var(--foreground); }
+  .commit-expand:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
+  /* An open row keeps its chevron, so it takes its place in the row. */
+  .commit-item.expanded .commit-row-actions { position: static; height: auto; padding: 0; background: none; mask-image: none; opacity: 1; pointer-events: auto; }
+  .commit-files { position: relative; z-index: 1; display: grid; gap: 1px; padding: 2px 8px 10px 0; animation: fade-rise var(--motion-med) var(--ease-out); }
+  .commit-description { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 3; margin: 0 0 6px; color: var(--muted-foreground); font-size: var(--text-meta); line-height: 1.5; overflow-wrap: anywhere; white-space: pre-wrap; }
+  .commit-files-summary { padding-bottom: 3px; color: var(--muted-foreground); font-size: var(--text-meta); }
+  .commit-files-message { display: flex; align-items: center; gap: 7px; padding-block: 2px; color: var(--muted-foreground); font-size: var(--text-meta); }
+  .commit-files-message.error { color: var(--destructive); }
+  .commit-file-row { display: flex; align-items: center; gap: 6px; margin-left: -4px; border-radius: var(--radius-md); padding: 1px 4px; transition: background-color .12s ease; }
+  .commit-file-label { display: flex; min-width: 0; flex: 1; align-items: center; gap: 6px; padding: 2px 0; font-size: var(--text-ui); text-align: left; }
+  .commit-file-text { display: flex; min-width: 0; flex: 1; align-items: baseline; gap: 6px; overflow: hidden; }
+  .commit-file-text > span { flex: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .commit-file-text small { overflow: hidden; color: var(--muted-foreground); font-size: var(--text-meta); text-overflow: ellipsis; white-space: nowrap; }
+  .commit-file-rename { flex: none; }
+  .commit-file-stats { display: flex; flex: none; align-items: center; gap: 4px; color: var(--muted-foreground); font-size: var(--text-meta); font-variant-numeric: tabular-nums; }
 
   /* Viewer --------------------------------------------------------------- */
   .viewer-pane { background: var(--diff-editor-background); }
@@ -1789,49 +1748,39 @@ section[data-sileo-viewport] [data-sileo-title] { text-transform: none; }
     min-height: 0;
     flex: 1;
   }
-  .commit-diff-header {
-    display: grid;
-    flex: none;
-    gap: 6px;
-    border-bottom: 1px solid var(--border);
-    background: var(--background);
-    padding: 13px 16px 11px;
-  }
+  .commit-diff-header { display: flex; flex: none; align-items: flex-start; gap: 2px; padding: 12px 8px 10px 16px; }
+  .commit-diff-heading { display: grid; min-width: 0; flex: 1; gap: 3px; margin-right: 8px; }
   .commit-diff-header h2 {
     margin: 0;
     color: var(--foreground);
     font-family: var(--font-sans);
     font-size: var(--text-title);
     font-weight: var(--weight-strong);
-    line-height: 1.35;
+    line-height: 1.3;
     overflow-wrap: anywhere;
   }
-  .commit-diff-description-wrap { display: grid; justify-items: start; gap: 4px; min-width: 0; }
-  .commit-diff-description { max-height: min(36vh, 360px); margin: 0; overflow: auto; color: var(--muted-foreground); font-size: var(--text-ui); line-height: 1.55; overflow-wrap: anywhere; white-space: pre-wrap; }
+  .commit-diff-meta { display: flex; min-width: 0; flex-wrap: wrap; align-items: baseline; gap: 2px 6px; color: var(--muted-foreground); font-size: var(--text-meta); }
+  .commit-local-label { color: var(--warning); }
+  .commit-diff-tools { display: flex; flex: none; align-items: center; gap: 2px; }
+  .commit-diff-tools:empty { display: none; }
+  .commit-diff-more { flex: none; color: var(--muted-foreground); }
+  /* A refresh hides the old diffs while parsing; the message hasn't changed. */
+  .diff-workspace-lead { visibility: visible; }
+  .commit-diff-description-wrap { display: grid; justify-items: start; gap: 4px; min-width: 0; padding: 2px 16px 12px; }
+  .commit-diff-description { max-width: 72ch; margin: 0; font-size: var(--text-body); line-height: 1.6; overflow-wrap: anywhere; white-space: pre-wrap; }
   .commit-diff-description.collapsed { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
-  .commit-description-toggle { border-radius: var(--radius-sm); color: var(--muted-foreground); font-size: var(--text-meta); font-weight: var(--weight-strong); text-decoration: underline; text-underline-offset: 2px; }
-  .external-text-link { color: var(--primary); text-decoration: underline; text-underline-offset: 2px; }
-  .external-text-link:hover { opacity: .8; }
+  .commit-description-toggle { border-radius: var(--radius-sm); color: var(--muted-foreground); font-size: var(--text-meta); text-decoration: underline; text-underline-offset: 2px; }
   .commit-description-toggle:hover { color: var(--foreground); }
   .commit-description-toggle:focus-visible { outline: 1px solid var(--ring); outline-offset: 2px; }
-  .commit-diff-meta {
-    display: flex;
-    min-width: 0;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 5px 9px;
-    color: var(--muted-foreground);
-    font-size: var(--text-meta);
-  }
-  .commit-diff-meta code, .commit-local-label {
-    border-radius: var(--radius-sm);
-    background: var(--muted);
-    padding: 2px 5px;
-    color: var(--foreground);
-    font-family: var(--font-mono);
-    font-size: var(--text-meta);
-  }
-  .commit-local-label { color: var(--muted-foreground); }
+  .commit-diff-empty { display: flex; min-height: 0; flex: 1; flex-direction: column; overflow: auto; }
+  .commit-diff-empty > .viewer-message { min-height: 80px; flex: 1; }
+  .external-text-link { color: var(--primary); text-decoration: underline; text-underline-offset: 2px; }
+  .external-text-link:hover { opacity: .8; }
+  .diff-file-list { display: grid; min-width: 0; padding: 0 16px 12px; }
+  .diff-file-list .diff-file-count { padding-bottom: 4px; }
+  .diff-file-list-row { display: flex; min-width: 0; align-items: baseline; gap: 12px; padding: 2px 0; text-align: left; }
+  .diff-file-list-row:hover .diff-file-name { text-decoration: underline; text-underline-offset: 2px; }
+  .diff-file-list-row:focus-visible { border-radius: var(--radius-sm); outline: 2px solid var(--ring); outline-offset: 1px; }
 
   .diff-workspace {
     display: flex;

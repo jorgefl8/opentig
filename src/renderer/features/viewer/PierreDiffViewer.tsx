@@ -4,7 +4,7 @@ import type { MergeConflictRegion, MergeConflictResolution } from '@pierre/diffs
 import type { DiffResult, DiffViewPreference, FileResult, ThemePreference } from '@shared/contracts';
 import { Button } from '@/components/ui/button';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
-import { DiffWorkspace } from './DiffWorkspace';
+import { DiffWorkspace, type DiffCommitLayout } from './DiffWorkspace';
 import { OPENTIG_CODE_THEMES } from './diffThemes';
 import { VIEWER_SCROLLBAR_CSS } from './patch-utils';
 import { PierreWorkerPool } from './PierreWorkerPool';
@@ -24,6 +24,7 @@ type PierreDiffViewerProps =
       initiallyCollapsed?: boolean;
       compact?: boolean;
       scopeControl?: React.ReactNode;
+      commitLayout?: DiffCommitLayout;
       onDiffViewChange?(value: DiffViewPreference): void;
       onWrapLinesChange?(value: boolean): void;
       onClose?(): void;
@@ -59,7 +60,7 @@ export default function PierreDiffViewer(props: PierreDiffViewerProps) {
   );
 }
 
-function DiffContent({ contentKey, value, diffView, themeType, wrapLines, initiallyCollapsed, compact, scopeControl, onDiffViewChange, onWrapLinesChange, onClose }: Extract<PierreDiffViewerProps, { kind: 'diff' }>) {
+function DiffContent({ contentKey, value, diffView, themeType, wrapLines, initiallyCollapsed, compact, scopeControl, commitLayout, onDiffViewChange, onWrapLinesChange, onClose }: Extract<PierreDiffViewerProps, { kind: 'diff' }>) {
   return (
     <DiffWorkspace
       key={contentKey}
@@ -71,6 +72,7 @@ function DiffContent({ contentKey, value, diffView, themeType, wrapLines, initia
       initiallyCollapsed={initiallyCollapsed}
       compact={compact}
       scopeControl={scopeControl}
+      commitLayout={commitLayout}
       onDiffViewChange={onDiffViewChange}
       onWrapLinesChange={onWrapLinesChange}
       onClose={onClose}

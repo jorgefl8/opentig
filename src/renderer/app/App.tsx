@@ -2462,9 +2462,6 @@ export default function App({ initialView, initialSelection, pullRequestCreation
                   activeOid={viewerSelection?.type === 'commit' || viewerSelection?.type === 'commit-file' ? viewerSelection.oid : null}
                   onSelectReference={githubInfo?.isGitHub ? (number) => { selectViewer({ type: 'pull-request', number }); } : undefined}
                   upstream={status?.upstream ?? null}
-                  canPublish={needsBranchPublication(status)}
-                  pushBusy={Boolean(busy) || repositorySyncOperations.has(repository.id)}
-                  onPublish={() => void pushUpdates()}
                   readOnly={Boolean(status?.readOnly)}
                   operation={status?.operation ?? null}
                   commits={commits}
@@ -2563,6 +2560,9 @@ export default function App({ initialView, initialSelection, pullRequestCreation
                     revision={refreshVersion}
                     readOnly={Boolean(status?.readOnly)}
                     commits={commits ?? []}
+                    githubRepository={githubInfo?.isGitHub ? githubInfo.nameWithOwner : null}
+                    undoBlocked={Boolean(status?.operation) || undoingCommit}
+                    onUndoCommit={setUndoCommit}
                     draftFor={(path) => readFileDraft(repository.id, path)}
                     onSelect={selectViewer}
                     onOpenFile={openFile}
