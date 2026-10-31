@@ -223,6 +223,16 @@ describe('pull request code', () => {
       ? fail('could not find pull request diff: HTTP 406: Sorry, the diff exceeded the maximum number of files (300).') : view(args), undefined, undefined, offline());
     await expect(tooLarge.service.getPullRequestDiff('repo', 12)).rejects.toMatchObject({ message: expect.stringContaining('GitHub cannot produce a diff this large') });
   });
+
+  it("adds Git's reason when it could not download what GitHub refuses to diff", async () => {
+    const { service } = fixture(args => args[0] === 'pr' && args[1] === 'diff'
+      ? fail('could not find pull request diff: HTTP 406: Sorry, the diff exceeded the maximum number of files (300).') : view(args), undefined, undefined, args => {
+      if (args[0] === 'cat-file') return 'missing\nmissing\n';
+      if (args[0] === 'fetch') return new GitOperationError({ code: 'UNKNOWN', operation: 'pr-local-fetch', message: 'Authentication failed for the remote.' });
+      return undefined;
+    });
+    await expect(service.getPullRequestDiff('repo', 12)).rejects.toMatchObject({ message: expect.stringContaining('Git reported: Authentication failed for the remote.') });
+  });
 });
 describe('forks with a GitHub CLI default repository', () => {
   const upstream = 'https://github.com/example/demo.git';

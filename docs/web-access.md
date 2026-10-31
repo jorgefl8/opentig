@@ -251,7 +251,7 @@ Healthy connections show no connection notification. Before the first successful
 
 Each WebSocket response is limited to 4 MiB of UTF-8 JSON, including its envelope and escaped text. Larger results fail with `RESPONSE_TOO_LARGE` while the session stays connected; content is never silently truncated. Request a narrower scope where possible. A diff within Git's 32 MiB output limit can still exceed this transport limit. Images use authenticated HTTP instead of WebSocket JSON.
 
-A separate 4 MiB send-queue budget closes an accumulating slow connection with code 1013. Reconnection does not replay pending operations.
+A separate 8 MiB send-queue budget closes an accumulating slow connection with code 1013. Reconnection does not replay pending operations.
 
 </details>
 

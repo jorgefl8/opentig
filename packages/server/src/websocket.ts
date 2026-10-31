@@ -16,7 +16,8 @@ const NORMAL_FRAME_LIMIT = 1024 * 1024;
 const CONTENT_FRAME_LIMIT = 9 * 1024 * 1024;
 const FILE_WRITE_FRAME_LIMIT = 17 * 1024 * 1024;
 const MAX_IN_FLIGHT = 32;
-const MAX_BUFFERED_SEND_BYTES = 4 * 1024 * 1024;
+/** Above one full message, so a second response doesn't drop a connection still receiving the first. */
+const MAX_BUFFERED_SEND_BYTES = 2 * OPEN_TIG_MAX_SERVER_MESSAGE_BYTES;
 const DEFAULT_CONNECTION_LIMIT = 16;
 const DEFAULT_REQUEST_RATE_LIMIT = 120;
 const DEFAULT_REQUEST_RATE_WINDOW_MS = 10_000;

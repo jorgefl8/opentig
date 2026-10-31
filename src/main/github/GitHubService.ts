@@ -17,7 +17,7 @@ import { GH_ENV, redactCommandToken, type GitHubCommandAuth } from './GitHubAcco
 import { parseBranchPullRequestList, parseCreatedPullRequestUrl, parsePullRequestDetails, parsePullRequestList, PR_DETAIL_FIELDS, PR_SUMMARY_FIELDS, selectPullRequestsNewestFirst, sortPullRequestsNewestFirst } from './PullRequestParser';
 
 import { GitHubAccountsService } from './GitHubAccountsService';
-import { PullRequestLocalGit, type PullRequestRange } from './PullRequestLocalGit';
+import { PullRequestLocalGit, diffResult, type PullRequestRange } from './PullRequestLocalGit';
 import type { GitHubAccountSelection } from '../../shared/github-accounts';
 import { GITHUB_NETWORK_TIMEOUT_MS as NETWORK_TIMEOUT_MS } from '../../shared/operation-timeouts';
 
@@ -278,7 +278,8 @@ export class GitHubService {
   }
 
   private async readGetPullRequestDiff(repositoryId: string, prNumber: number): Promise<DiffResult> {
-    const range = await this.localRange(repositoryId, prNumber);
+    let fetchFailure = '';
+    const range = await this.localRange(repositoryId, prNumber, (message) => { fetchFailure = message; });
     if (range) return this.localGit.rangeDiff(range.cwd, range);
     // Without the commits locally (offline remote, shallow history, an unusual
     // remote layout) GitHub's own diff still covers PRs within its limits.
@@ -286,20 +287,23 @@ export class GitHubService {
     const result = await this.runGhRead(
       ['pr', 'diff', String(prNumber), '-R', nameWithOwner],
       { auth, executable, cwd: repository.path, operation: 'gh-pr-diff', timeoutMs: NETWORK_TIMEOUT_MS, maxOutputBytes: 32 * 1024 * 1024 },
-    );
-    const patch = result.stdout;
-    const binary = /Binary files .* differ|GIT binary patch/.test(patch);
-    return { patch, path: `pull/${prNumber}`, binary, truncated: false, lineCount: patch ? patch.split('\n').length : 0 };
+    ).catch((error: unknown) => {
+      // GitHub's refusal is only half the story: Git's failure is what can be fixed.
+      throw fetchFailure && error instanceof GhOperationError
+        ? new GhOperationError({ ...error.detail, message: `${error.message} Git reported: ${fetchFailure}` })
+        : error;
+    });
+    return diffResult(`pull/${prNumber}`, result.stdout, false);
   }
 
   /** The PR's base and head commits, downloaded into the local clone when needed. Null when Git cannot provide them. */
-  private async localRange(repositoryId: string, prNumber: number): Promise<(PullRequestRange & { cwd: string }) | null> {
+  private async localRange(repositoryId: string, prNumber: number, onFetchFailure?: (message: string) => void): Promise<(PullRequestRange & { cwd: string }) | null> {
     const details = await this.getPullRequest(repositoryId, prNumber);
     const repository = this.repositories.get(repositoryId);
     const range = { number: prNumber, baseOid: details.baseRefOid, headOid: details.headRefOid };
     try {
       const { remote } = await this.routing(repositoryId);
-      return await this.localGit.ensureRange(repository.path, remote.name, range) ? { ...range, cwd: repository.path } : null;
+      return await this.localGit.ensureRange(repository.path, remote.name, range, onFetchFailure) ? { ...range, cwd: repository.path } : null;
     } catch { return null; }
   }
 
@@ -334,9 +338,7 @@ export class GitHubService {
       ['api', `repos/${nameWithOwner}/commits/${oid}`, '--header', 'Accept: application/vnd.github.diff'],
       { auth, executable, cwd: repository.path, operation, timeoutMs: NETWORK_TIMEOUT_MS, maxOutputBytes: 32 * 1024 * 1024 },
     );
-    const patch = result.stdout;
-    const binary = /Binary files .* differ|GIT binary patch/.test(patch);
-    return { patch, path: `commit/${oid}`, binary, truncated: false, lineCount: patch ? patch.split('\n').length : 0 };
+    return diffResult(`commit/${oid}`, result.stdout, false);
   }
 
   async createPullRequest(input: CreatePullRequestInput): Promise<CreatePullRequestResult> {

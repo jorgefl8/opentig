@@ -278,13 +278,13 @@ describe('WebSocket safety limits', () => {
     try {
       slow.pause(); // Real ws/TCP reads stop; send and bufferedAmount stay native.
       // Send one request at a time until the unread responses exceed the OS socket buffers.
-      for (let index = 0; index < 32 && peakBuffered <= 2 * 1024 * 1024; index += 1) {
+      for (let index = 0; index < 32 && peakBuffered <= 6 * 1024 * 1024; index += 1) {
         slow.send(JSON.stringify({ type: 'request', id: `slow-${index}`, command: 'app:bootstrap', args: [] }));
         await vi.waitFor(() => expect(sendAttempts).toBe(index + 1), { timeout: 5_000, interval: 5 });
       }
       slow.resume();
       await expect(slowClosed).resolves.toBe(1013);
-      expect(peakBuffered).toBeGreaterThan(2 * 1024 * 1024);
+      expect(peakBuffered).toBeGreaterThan(6 * 1024 * 1024);
       expect(await sendAndReceive(healthy, { type: 'request', id: 'healthy', command: 'repository:write-file', args: ['repository', 'small.txt', 'x', ''] }))
         .toMatchObject({ result: { ok: true } });
       const recovered = await fixture.socket();
