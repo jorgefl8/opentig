@@ -33,9 +33,9 @@ Loading status uses shimmering text and a primary-colored spinner. Busy buttons 
 <details>
 <summary>Settings layout and secondary dialogs</summary>
 
-Labels and controls share one line where the control fits, and the control wraps below its label where it doesn't, as on phones. Settings keeps the same desktop frame size as you switch sections; content scrolls inside while navigation and headings remain visible. Its short transition honors reduced-motion preferences.
+Labels and controls share one line where the control fits, and the control wraps below its label where it doesn't. Settings keeps the same desktop frame size as you switch sections; content scrolls inside while navigation and headings remain visible. Its short transition honors reduced-motion preferences.
 
-The frame fits smaller windows and uses available screen height on phones. Browser revocation, LAN confirmation, device rename, and AI history dialogs open at their own size above Settings and diff content.
+The frame fits smaller windows. Browser revocation, LAN confirmation, device rename, and AI history dialogs open at their own size above Settings and diff content.
 
 </details>
 
@@ -107,20 +107,44 @@ Options show hints only for truncated text or additional information. Scrolling 
 
 ## Phone navigation
 
-Use the bottom **Changes**, **Files**, **History**, **GitHub**, and **Search** tabs to switch sections; **Pull requests** and **Releases** are tabs inside **GitHub**. Tap the compact repository header's context controls for branches, worktrees, pull/push, and Settings.
+Use the bottom **Changes**, **Files**, **History**, **GitHub**, and **Search** tabs to switch sections; **Pull requests** and **Releases** are tabs inside **GitHub**.
+
+**On a list, the top bar says where you are.** Its two lines name the repository and the branch, with the branch's pull request number when it has one. Tap them for the repository sheet: **Repository**, **Branch**, **Worktree** when there are several, then whichever of **Publish this branch** or **Push** and **Pull** applies, **Refresh**, the branch's pull request, **Open on GitHub**, and **Open another repository**. To the right, a pill shows the sync action that applies: **Publish**, **Push** with its count, or **Pull** with its count. When both apply it shows **Pull**, because that has to happen first, and **Push** stays in the sheet. The gear opens Settings. Warnings about the remote and available updates appear here too.
+
+**Inside a viewer, the top bar is about what you opened:** a back arrow, a title, and that thing's actions. Focus moves to the arrow when a viewer opens.
+
+| Viewer | Title | Actions |
+| --- | --- | --- |
+| **Diff** | File name, then folder and lines added and removed | Stage or unstage. **⋯**: **Open file**, **Wrap lines**, **Discard changes** |
+| **File** | File name. Tap it for the sheet of open files, to switch, close, and see which are unsaved or missing | **⋯**: what the file's row in Files offers, such as **Rename**, **Copy path**, **Move to…**, **Delete** |
+| **Commit** | Short hash | **⋯**: **Copy hash**, **Open on GitHub**, **Undo commit…** |
+| **Pull request** | Number, then source and base branch | **⋯**: the pull request menu, plus **Disable auto-merge** when it's on |
+| **Release** | Tag | **⋯**: the release menu |
+
+**Each screen has at most one main action,** floating above the bottom bar on a fade. Lists and viewers leave extra room at their end while it shows, and it hides while the software keyboard is open.
+
+| Screen | Main action |
+| --- | --- |
+| **Changes** with staged files | **Commit** with the file count, or **Commit plan** when only a plan is left. Opens the commit sheet |
+| **Pull request, Summary** | Its primary action, such as **Merge**, **Merge when ready**, **Update branch**, or **Ready for review**. Nothing floats when there's only a reason to give, such as a conflict |
+| **Pull request, Timeline** | A one-line **Write a comment** field that opens the composer in a sheet. A draft stays when the sheet closes, and shows on the field |
+| **Pull request, Code** | None, so the screen goes to the code |
+| **Draft release** | **Publish**. It's disabled with the reason above it when the tag doesn't exist or the account can't publish |
+| **A file with unsaved edits** | **Save** |
+
+The commit sheet has the message, **Generate with** your provider, **Commit**, and **Commit and push**. A suggested plan appears there with its groups, and the sheet takes the full height. Closing the sheet keeps the message and the plan, and generating carries on until it finishes or you cancel it.
+
+Actions that ask first do so in a sheet with the same checks as on desktop: merging shows **Method** as a picker and **Delete branch** as a switch where they apply, one button, and the account underneath. A sheet can't be dismissed while its answer is being sent. A notification that arrives while a sheet is open appears at the top of the screen, above the sheet.
+
+Pull requests and releases scroll as one: the header goes away with the content, and the **Summary**, **Timeline**, and **Code** tabs stick to the top of the screen. On **Code** the header gives way to the tabs alone and the code has its own scroller. Its files start as a list with lines added and removed; tap one to read its diff.
+
+**Settings opens as a tall sheet.** It leads with the general settings, followed by a row for each other section. Tap a row to drill in, and use the back arrow to return. **Branches and worktrees** and **Create pull request** fill the screen the same way and keep their close button, since they don't drag away.
 
 The tabs float over the content in a glass bar. The current section shows its name and the others show an icon, with their names still available to screen readers. A dot on **Changes** means the worktree has changes while you are in another section. Lists and viewers scroll under the bar and leave room at their end, so the last row or line can always be scrolled clear of it. The bar is solid instead of glass when the device asks for reduced transparency, when the browser has no background blur, and on low-end Android phones.
 
 Sheets slide up from the bottom. Drag one down, press outside it, or press Escape to close it. A slow drag that stops short lets the sheet return to its place.
 
-| Task | On a phone |
-| --- | --- |
-| **Review content** | Open a row, then use Back to return to its list |
-| **Switch or close a file tab** | Use the open-files button to open the tab sheet |
-| **Commit** | Open the separate Commit form; staging controls remain accessible |
-| **Pull or push** | Check the pending commit counts. Actions are disabled when up to date; unpublished branches can still be published |
-
-Notifications appear above the bottom bar and leave navigation and open sheets accessible. Short landscape phones keep the mobile layout with a lower, narrower bar. The bottom bar hides when the software keyboard opens, and dialogs, sheets, and forms fit the keyboard and safe areas.
+Notifications appear above the bottom bar and any main action, and leave navigation accessible. Short landscape phones keep the mobile layout with a lower, narrower bar. The bottom bar hides when the software keyboard opens, and dialogs, sheets, and forms fit the keyboard and safe areas.
 
 ### Files and search
 
@@ -135,7 +159,7 @@ Search keeps its query and matching toggles in one field, with **Include ignored
 ### History, diffs, and projects
 
 - **History:** the find field and filter menu share one row. Commit rows keep their undo and touch-sized expansion controls visible.
-- **Diffs:** start in unified layout. A phone's layout choice lasts for the session and preserves the saved desktop layout.
+- **Diffs and code:** a phone always shows diffs inline and leaves the saved desktop layout as it is. Text is compact, and **Interface size** scales it; that setting scales nothing else on a phone. Long lines wrap by default. Turning that off, from a diff's **⋯** or from Settings, lasts for the session and leaves the saved desktop choice as it is.
 - **Projects:** use the larger up/down buttons and free scrolling in Manage projects. Moving a project or repository preserves focus and scroll, then briefly highlights its new position. Reduced-motion preferences suppress that highlight; desktop dragging remains available.
 
 Settings, diagnostics, branch, and worktree controls are also available on touch screens.

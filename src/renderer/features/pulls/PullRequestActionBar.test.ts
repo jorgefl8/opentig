@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PullRequestDetails, PullRequestLiveState } from '@shared/contracts';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { MobileChromeContext, type MobileChromeHosts } from '@/components/mobile-chrome-context';
 import { ServerRequestTimeoutError } from '@/lib/websocket-transport';
 import { queryKeys } from '@/lib/query-client';
 import { PullRequestActionBar } from './PullRequestActionBar';
@@ -346,5 +347,117 @@ describe('the menu', () => {
     expect(panel()?.textContent).toContain('contributor');
     await click('Approve workflows');
     expect(api.runPullRequestAction).toHaveBeenCalledWith({ ...expectedRequest, action: 'approve-workflows' });
+  });
+});
+
+describe('on a phone', () => {
+  let hosts: MobileChromeHosts;
+  beforeEach(() => {
+    hosts = { title: document.createElement('div'), actions: document.createElement('div'), float: document.createElement('div') };
+    document.body.append(hosts.title!, hosts.actions!, hosts.float!);
+  });
+  async function renderPhone(state: PullRequestLiveState = live(), tab: 'summary' | 'timeline' | 'diff' = 'summary') {
+    await act(async () => root.render(createElement(QueryClientProvider, { client }, createElement(TooltipProvider, null, createElement(MobileChromeContext.Provider, { value: hosts }, createElement(PullRequestActionBar, {
+      repositoryId: 'repo', details, live: state, refreshing: false, statusLabel: null, tab, onRefresh, onEdit, onSelectPullRequest,
+    }))))));
+    await settle();
+  }
+  const sheet = () => document.querySelector('.mobile-sheet');
+  const floating = () => [...hosts.float!.querySelectorAll('button')].map((item) => item.textContent?.trim());
+
+  it('floats the primary action on Summary and nowhere else', async () => {
+    await renderPhone(live(), 'summary');
+    expect(floating()).toEqual(['Merge']);
+    expect(container.querySelector('.pr-action-bar button')).toBeNull();
+    await renderPhone(live(), 'timeline');
+    expect(floating()).toEqual([]);
+    await renderPhone(live(), 'diff');
+    expect(floating()).toEqual([]);
+  });
+
+  it('takes the primary action from the same rules as the desktop', async () => {
+    await renderPhone(live({ mergeStateStatus: 'BEHIND' }));
+    expect(floating()).toEqual(['Update branch']);
+    await renderPhone(live({ isDraft: true }));
+    expect(floating()).toEqual(['Ready for review']);
+    await renderPhone(live({ mergeStateStatus: 'BLOCKED', reviewDecision: 'REVIEW_REQUIRED' }));
+    expect(floating()).toEqual(['Merge when ready']);
+  });
+
+  it('floats nothing on a conflict, and says why', async () => {
+    await renderPhone(live({ mergeable: 'CONFLICTING', mergeStateStatus: 'DIRTY' }));
+    expect(floating()).toEqual([]);
+    expect(container.querySelector('.pr-action-reason')?.textContent).toBe('Conflicts with main');
+  });
+
+  it('keeps the action off until the account is ready', async () => {
+    api.repositoryAccount.mockResolvedValue({ state: 'unresolved', login: null, revision: 3 });
+    await renderPhone();
+    expect(hosts.float!.querySelector('button')?.disabled).toBe(true);
+  });
+
+  it('confirms a merge in a sheet, with the method, the branch option and the account, then sends what was shown', async () => {
+    api.runPullRequestAction.mockResolvedValue({ outcome: 'merged', state: live({ state: 'MERGED' }) });
+    await renderPhone(live({ state: 'OPEN' }));
+    await act(async () => hosts.float!.querySelector('button')!.click());
+    await settle();
+    expect(api.runPullRequestAction).not.toHaveBeenCalled();
+    expect(panel()).toBeNull();
+    expect(sheet()?.querySelector('.mobile-sheet-title')?.textContent).toBe('Merge #7 into main');
+    expect(sheet()?.querySelector('[aria-label="Merge method"]')?.textContent).toContain('Squash and merge');
+    expect(sheet()?.textContent).toContain('as @sample');
+    const remove = sheet()!.querySelector<HTMLButtonElement>('[role="switch"]')!;
+    expect(remove.textContent).toContain('feature');
+    expect(remove.getAttribute('aria-checked')).toBe('false');
+    await act(async () => remove.click());
+    expect(remove.getAttribute('aria-checked')).toBe('true');
+    await act(async () => sheet()!.querySelector<HTMLButtonElement>('.confirm-sheet-actions button')!.click());
+    await settle();
+    expect(api.runPullRequestAction).toHaveBeenCalledWith({ ...expectedRequest, action: 'merge', method: 'SQUASH', deleteBranch: true });
+  });
+
+  it('leaves out what can not apply to the merge, as the desktop does', async () => {
+    await renderPhone(live({ repository: { methods: ['MERGE'], defaultMethod: 'MERGE', autoMergeAllowed: true, deleteBranchOnMerge: true } }));
+    await act(async () => hosts.float!.querySelector('button')!.click());
+    await settle();
+    expect(sheet()?.querySelector('[aria-label="Merge method"]')).toBeNull();
+    expect(sheet()?.querySelector('[role="switch"]')).toBeNull();
+    expect(sheet()?.textContent).toContain('GitHub deletes feature after merging.');
+  });
+
+  it('drops the question when the state it was about changes', async () => {
+    await renderPhone();
+    await act(async () => hosts.float!.querySelector('button')!.click());
+    await settle();
+    expect(sheet()).not.toBeNull();
+    await renderPhone(live({ headRefOid: 'b'.repeat(40) }));
+    expect(sheet()).toBeNull();
+  });
+
+  it('keeps the sheet open while the answer is on its way', async () => {
+    let finish!: (value: unknown) => void;
+    api.runPullRequestAction.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+    await renderPhone();
+    await act(async () => hosts.float!.querySelector('button')!.click());
+    await settle();
+    await act(async () => sheet()!.querySelector<HTMLButtonElement>('.confirm-sheet-actions button')!.click());
+    await settle();
+    await act(async () => { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); });
+    await settle();
+    expect(sheet()).not.toBeNull();
+    expect(sheet()!.hasAttribute('data-base-ui-swipe-ignore')).toBe(true);
+    await act(async () => { finish({ outcome: 'merged', state: live({ state: 'MERGED' }) }); });
+    await settle();
+    expect(sheet()).toBeNull();
+  });
+
+  it('offers the same menu from the top bar, with a dangerous item last and auto-merge among them', async () => {
+    await renderPhone(live({ mergeable: 'CONFLICTING', mergeStateStatus: 'DIRTY', autoMerge: { method: 'SQUASH' } }));
+    expect(container.querySelector('.pr-more-actions')).toBeNull();
+    await act(async () => hosts.actions!.querySelector<HTMLButtonElement>('.pr-more-actions')!.click());
+    await settle();
+    const rows = [...document.querySelectorAll<HTMLButtonElement>('.mobile-sheet-action')];
+    expect(rows.map((row) => row.textContent)).toEqual(['Open on GitHub', 'Edit title and description…', 'Convert to draft', 'Disable auto-merge', 'Close pull request…']);
+    expect(rows.at(-1)!.classList.contains('destructive')).toBe(true);
   });
 });

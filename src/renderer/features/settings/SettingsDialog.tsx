@@ -5,13 +5,14 @@ import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import { aiExecutablePathsKey } from '@shared/ai-status';
 import { formatDateTime } from '@shared/date-format';
-import { IconLoader4, IconRefresh, IconSparkles, IconX } from '@tabler/icons-react';
+import { IconArrowLeft, IconChevronRight, IconLoader4, IconRefresh, IconSparkles, IconX } from '@tabler/icons-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { sileo } from 'sileo';
 import type { AiHarnessId, AiHarnessStatus, Preferences, RepositoryInfo } from '../../../shared/contracts';
 import { StatusWord, type StatusTone } from '@/components/StatusWord';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogClose, DialogPopup, DialogTitle } from '@/components/ui/dialog';
+import { MobileSheet } from '@/components/MobileSheet';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { SearchablePicker, type SearchablePickerGroup } from '@/components/SearchablePicker';
 import { AiLogDialog } from '@/features/ai/AiLogDialog';
@@ -48,7 +49,8 @@ export function SettingsDialog({ preferences, onPreference, open, onOpenChange, 
   onSectionChange(section: SettingsSection): void;
 }) {
   // Phone browsers have no hardware keyboard to configure.
-  const phoneBrowser = useMobileLayout() && !window.opentigDesktop;
+  const phone = useMobileLayout();
+  const phoneBrowser = phone && !window.opentigDesktop;
   const sections = phoneBrowser ? SETTINGS_SECTIONS.filter(({ id }) => id !== 'shortcuts') : SETTINGS_SECTIONS;
   const section = phoneBrowser && requestedSection === 'shortcuts' ? 'general' : requestedSection;
   const queryClient = useQueryClient();
@@ -120,46 +122,7 @@ export function SettingsDialog({ preferences, onPreference, open, onOpenChange, 
   }
   const selectedModelLabel = visibleModels.find((model) => model.id === selectedModel)?.label ?? selectedModel;
   const title = SETTINGS_SECTIONS.find(({ id }) => id === section)?.label;
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogPopup className="settings-dialog w-[min(800px,calc((100vw-48px)/var(--settings-ui-scale,1)))]" style={{
-        '--settings-ui-scale': window.opentigDesktop || window.matchMedia('(max-width: 767px)').matches ? 1 : preferences.uiZoom / 100,
-      } as CSSProperties}>
-        <div className="settings-shell">
-          <aside className="settings-nav">
-            <div className="settings-nav-title">Settings</div>
-            {sections.map(({ id, label }) => (
-              <button key={id} className={`settings-nav-item ${section === id ? 'active' : ''}`} onClick={() => onSectionChange(id)} aria-current={section === id}>
-                {label}
-              </button>
-            ))}
-          </aside>
-          <section className="settings-panel">
-            <header className="settings-panel-header">
-              <AnimatePresence initial={false} mode="wait">
-                <motion.div
-                  key={section}
-                  initial={reduceMotion ? false : { opacity: 0, y: 4 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={reduceMotion ? { opacity: 1 } : { opacity: 0, y: -3 }}
-                  transition={settingsTransition}
-                >
-                  <DialogTitle>{title}</DialogTitle>
-                </motion.div>
-              </AnimatePresence>
-              <DialogClose render={<Button variant="ghost" size="icon-sm" aria-label="Close settings" />}><IconX /></DialogClose>
-            </header>
-            <div ref={settingsBodyRef} className="settings-panel-body">
-              <AnimatePresence initial={false} mode="wait">
-                <motion.div
-                  key={section}
-                  className="settings-panel-section"
-                  initial={reduceMotion ? false : { opacity: 0, y: 7 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={reduceMotion ? { opacity: 1 } : { opacity: 0, y: -5 }}
-                  transition={settingsTransition}
-                >
-              {section === 'github' ? <GitHubSettings key={repository?.id} repository={repository} /> : section === 'general' ? <GeneralSettings preferences={preferences} onPreference={onPreference} {...(onOnboarding ? { onOnboarding } : {})} /> : section === 'updates' ? <UpdateSettings /> : section === 'shortcuts' ? <ShortcutsSettings preferences={preferences} onPreference={onPreference} /> : section === 'webAccess' ? <WebAccessSettings /> : section === 'diagnostics' ? <>
+  const panel = section === 'github' ? <GitHubSettings key={repository?.id} repository={repository} /> : section === 'general' ? <GeneralSettings preferences={preferences} onPreference={onPreference} {...(onOnboarding ? { onOnboarding } : {})} /> : section === 'updates' ? <UpdateSettings /> : section === 'shortcuts' ? <ShortcutsSettings preferences={preferences} onPreference={onPreference} /> : section === 'webAccess' ? <WebAccessSettings /> : section === 'diagnostics' ? <>
                 <SettingRow label="Problem history" description="Failed Git, file, and network operations recorded locally. Prompts and file contents are never stored.">
                   <Button variant="ghost" size="sm" onClick={() => setProblemsOpen(true)}>View problems</Button>
                 </SettingRow>
@@ -212,7 +175,74 @@ export function SettingsDialog({ preferences, onPreference, open, onOpenChange, 
                   <p className="settings-note">OpenTig sends the relevant diff, summary and commit subjects to the selected harness, plus supported repository instruction text when enabled. Generated content remains pending your review; history records metadata only.</p>
                 </div>
                 <AiLogDialog open={aiLogOpen} onOpenChange={setAiLogOpen} />
-              </>}
+              </>;
+  if (phone) {
+    // General is the sheet's first level; every other section is a row that drills in, and back returns to it.
+    const atRoot = section === 'general';
+    return (
+      <MobileSheet
+        open={open}
+        onOpenChange={onOpenChange}
+        title={atRoot ? 'Settings' : title ?? 'Settings'}
+        tall
+        bodyRef={settingsBodyRef}
+        leading={atRoot ? undefined : <Button variant="ghost" size="icon" className="mobile-bar-button" aria-label="Back to Settings" autoFocus onClick={() => onSectionChange('general')}><IconArrowLeft /></Button>}
+      >
+        <div className="settings-sheet">
+          {panel}
+          {atRoot && <nav className="settings-sheet-sections" aria-label="Settings sections">
+            {sections.filter(({ id }) => id !== 'general').map(({ id, label }) => (
+              <button key={id} type="button" className="mobile-sheet-action settings-nav-item" onClick={() => onSectionChange(id)}>
+                <span>{label}</span>
+                {id === 'ai' && <small className="mobile-sheet-value">{harnessLabel(selectedHarness)}</small>}
+                <IconChevronRight aria-hidden="true" />
+              </button>
+            ))}
+          </nav>}
+        </div>
+      </MobileSheet>
+    );
+  }
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogPopup className="settings-dialog w-[min(800px,calc((100vw-48px)/var(--settings-ui-scale,1)))]" style={{
+        '--settings-ui-scale': window.opentigDesktop || window.matchMedia('(max-width: 767px)').matches ? 1 : preferences.uiZoom / 100,
+      } as CSSProperties}>
+        <div className="settings-shell">
+          <aside className="settings-nav">
+            <div className="settings-nav-title">Settings</div>
+            {sections.map(({ id, label }) => (
+              <button key={id} className={`settings-nav-item ${section === id ? 'active' : ''}`} onClick={() => onSectionChange(id)} aria-current={section === id}>
+                {label}
+              </button>
+            ))}
+          </aside>
+          <section className="settings-panel">
+            <header className="settings-panel-header">
+              <AnimatePresence initial={false} mode="wait">
+                <motion.div
+                  key={section}
+                  initial={reduceMotion ? false : { opacity: 0, y: 4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={reduceMotion ? { opacity: 1 } : { opacity: 0, y: -3 }}
+                  transition={settingsTransition}
+                >
+                  <DialogTitle>{title}</DialogTitle>
+                </motion.div>
+              </AnimatePresence>
+              <DialogClose render={<Button variant="ghost" size="icon-sm" aria-label="Close settings" />}><IconX /></DialogClose>
+            </header>
+            <div ref={settingsBodyRef} className="settings-panel-body">
+              <AnimatePresence initial={false} mode="wait">
+                <motion.div
+                  key={section}
+                  className="settings-panel-section"
+                  initial={reduceMotion ? false : { opacity: 0, y: 7 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={reduceMotion ? { opacity: 1 } : { opacity: 0, y: -5 }}
+                  transition={settingsTransition}
+                >
+              {panel}
                 </motion.div>
               </AnimatePresence>
             </div>

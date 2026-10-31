@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { IconArrowBackUp, IconArrowForwardUp, IconCheck, IconChevronRight, IconClipboard, IconCopy, IconCut, IconDots, IconEdit, IconExternalLink, IconFilePlus, IconFolder, IconFolderPlus, IconFolderSymlink, IconLoader4, IconSearch, IconTrash } from '@tabler/icons-react';
+import { IconArrowBackUp, IconArrowForwardUp, IconCheck, IconChevronRight, IconClipboard, IconCopy, IconCut, IconDots, IconFilePlus, IconFolder, IconFolderPlus, IconFolderSymlink, IconLoader4, IconSearch, IconTrash } from '@tabler/icons-react';
 import type { FileTreeEntry } from '@shared/git-types';
 import { Button } from '@/components/ui/button';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { MobileSheet } from '@/components/MobileSheet';
 import { FolderIcon } from '@/components/FolderIcon';
 import { getVsCodeFileIconUrl } from '@/lib/vscode-icons';
+import { FileEntryActions } from './FileEntryActions';
 import { MoveFilesDialog } from './MoveFilesDialog';
 import { NameDialog, type NameDialogState } from './NameDialog';
 import { parentDirectory, snapshotPathPresence } from './file-tree';
@@ -79,14 +80,11 @@ export function MobileFilesView(props: FilesViewProps) {
 
   return (
     <div className="mobile-files-view">
-      <div className="mobile-view-heading">
-        <h2>{selecting ? 'Select items' : 'Files'}{selecting && <small>{selected.size}</small>}</h2>
-        <div>
-          <Button variant="ghost" size="sm" aria-pressed={selecting} onClick={() => { setSelecting(!selecting); setSelected(new Map()); }}>{selecting ? 'Cancel' : 'Select'}</Button>
-          <Button variant="ghost" size="icon" aria-label="File browser actions" onClick={() => setMenu('tools')}><IconDots /></Button>
-        </div>
+      <div className="mobile-files-tools">
+        <label className="mobile-file-filter"><IconSearch aria-hidden="true" /><input type="search" value={query} placeholder="Filter this folder…" aria-label="Filter this folder" onChange={(event) => { setQuery(event.target.value); scrollPositions.current.set(directory, 0); scrollRef.current?.scrollTo({ top: 0 }); }} /></label>
+        <Button variant="ghost" size="sm" aria-pressed={selecting} aria-label={selecting ? `Cancel selection, ${selected.size} selected` : undefined} onClick={() => { setSelecting(!selecting); setSelected(new Map()); }}>{selecting ? 'Cancel' : 'Select'}</Button>
+        <Button variant="ghost" size="icon" aria-label="File browser actions" onClick={() => setMenu('tools')}><IconDots /></Button>
       </div>
-      <label className="mobile-file-filter"><IconSearch aria-hidden="true" /><input type="search" value={query} placeholder="Filter this folder…" aria-label="Filter this folder" onChange={(event) => { setQuery(event.target.value); scrollPositions.current.set(directory, 0); scrollRef.current?.scrollTo({ top: 0 }); }} /></label>
       <nav className="mobile-file-breadcrumb" aria-label="Folder location">
         <button onClick={() => navigate('')} aria-current={directory === '' ? 'location' : undefined}><IconFolder aria-hidden="true" /> Root</button>
         {directory.split('/').filter(Boolean).map((part, index, parts) => {
@@ -120,19 +118,7 @@ export function MobileFilesView(props: FilesViewProps) {
         <Button variant="ghost" size="icon" aria-label="Delete selected items" disabled={props.readOnly || selected.size === 0} onClick={() => void props.onDeleteEntries(selectedEntries)}><IconTrash /></Button>
       </div>}
       <MobileSheet open={menu !== null} onOpenChange={(open) => { if (!open) setMenu(null); }} title={target?.name ?? 'File browser actions'} description={target && target.path !== target.name ? target.path : undefined}>
-        {target ? <>
-          {target.type === 'file' && <button className="mobile-sheet-action" onClick={() => menuAction(() => props.onOpenFile(target.path, 'pinned'))}><IconFilePlus /><span>Keep file open</span></button>}
-          {target.type === 'directory' && <button className="mobile-sheet-action" onClick={() => menuAction(() => navigate(target.path))}><IconFolder /><span>Open folder</span></button>}
-          <button className="mobile-sheet-action" disabled={props.readOnly} onClick={() => menuAction(() => setMoveEntries([target]))}><IconFolderSymlink /><span>Move to…</span></button>
-          <button className="mobile-sheet-action" disabled={props.readOnly} onClick={() => menuAction(() => setNameDialog({ mode: 'rename', entry: target }))}><IconEdit /><span>Rename</span></button>
-          {props.fileClipboardAvailable && <button className="mobile-sheet-action" onClick={() => menuAction(() => { void props.onCopyEntries([target]); })}><IconCopy /><span>Copy</span></button>}
-          {props.fileClipboardAvailable && <button className="mobile-sheet-action" disabled={props.readOnly} onClick={() => menuAction(() => { void props.onCutEntries([target]); })}><IconCut /><span>Cut</span></button>}
-          <button className="mobile-sheet-action" onClick={() => menuAction(() => { void props.onCopyPath([target]); })}><IconCopy /><span>Copy path</span></button>
-          {target.type === 'file' && <button className="mobile-sheet-action" onClick={() => menuAction(() => { void props.onCopyContents(target); })}><IconCopy /><span>Copy contents</span></button>}
-          {props.revealAvailable && <button className="mobile-sheet-action" onClick={() => menuAction(() => { void props.onReveal(target); })}><IconExternalLink /><span>Reveal in file manager</span></button>}
-          {props.fileClipboardAvailable && <button className="mobile-sheet-action" disabled={props.readOnly} onClick={() => menuAction(() => { void props.onPaste(target.type === 'directory' ? target.path : parentDirectory(target.path)); })}><IconClipboard /><span>Paste here</span></button>}
-          <button className="mobile-sheet-action destructive" disabled={props.readOnly} onClick={() => menuAction(() => { void props.onDeleteEntries([target]); })}><IconTrash /><span>Delete</span></button>
-        </> : <>
+        {target ? <FileEntryActions target={target} actions={props} run={menuAction} onOpenFolder={navigate} onMove={(entry) => setMoveEntries([entry])} onRename={(entry) => setNameDialog({ mode: 'rename', entry })} /> : <>
           <button className="mobile-sheet-action" onClick={() => menuAction(props.onQuickOpen)}><IconSearch /><span>Find file in repository</span></button>
           <button className="mobile-sheet-action" disabled={props.readOnly} onClick={() => menuAction(() => setNameDialog({ mode: 'new-file', entry: destination }))}><IconFilePlus /><span>New file</span></button>
           <button className="mobile-sheet-action" disabled={props.readOnly} onClick={() => menuAction(() => setNameDialog({ mode: 'new-folder', entry: destination }))}><IconFolderPlus /><span>New folder</span></button>

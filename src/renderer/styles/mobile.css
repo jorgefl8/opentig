@@ -1,17 +1,30 @@
 /* Phone layouts are intentionally independent of the saved desktop layout. */
 .pr-viewer-overview { display: contents; }
-.mobile-navigation, .mobile-workspace-actions, .files-mobile-tools, .local-refs-mobile-back { display: none; }
+.mobile-navigation, .files-mobile-tools, .local-refs-mobile-back { display: none; }
 
 @media (max-width: 767px), (pointer: coarse) and (max-width: 1100px) and (max-height: 500px) {
-  html { --diffs-font-size: 16px; --diffs-line-height: 26px; }
+  /* Interface size scales code here, since a phone's layout itself never zooms.
+     :root is needed: the defaults in index.css are set there, unlayered. */
+  html:root {
+    --diffs-font-size: calc(13px * var(--mobile-code-scale, 1));
+    --diffs-line-height: calc(20px * var(--mobile-code-scale, 1));
+    --text-body: 14px;
+    --text-title: 17px;
+    /* Solid, unlike --input, because it sits over content or on a raised sheet. */
+    --mobile-soft: color-mix(in oklab, var(--foreground) 14%, var(--background));
+  }
   html, body, #root { width: 100%; min-width: 0; overscroll-behavior: none; }
   html {
     /* What the keyboard or a moved visual viewport hides of the layout viewport's bottom. */
     --mobile-viewport-gap: max(0px, calc(100dvh - var(--mobile-viewport-height, 100dvh) - var(--mobile-viewport-top, 0px)));
     --mobile-nav-height: 56px;
+    /* A floating action adds its own height to what the bottom bar covers. */
+    --mobile-float-room: 0px;
     /* The room every scroller keeps at its end: the bottom bar, its 8px offset and 8px of air. */
-    --mobile-nav-clearance: calc(var(--mobile-nav-height) + 16px + env(safe-area-inset-bottom));
+    --mobile-nav-clearance: calc(var(--mobile-nav-height) + 16px + var(--mobile-float-room) + env(safe-area-inset-bottom));
   }
+  html:has(.mobile-float:not(:empty)) { --mobile-float-room: 64px; }
+  html:has(.mobile-float > .mobile-float-note) { --mobile-float-room: 104px; }
   html[data-mobile-keyboard="true"] { --mobile-nav-clearance: 0px; }
   html #root { height: var(--mobile-viewport-height, 100dvh); }
   /* No bottom inset: content runs under the bottom bar, to the screen's edge. */
@@ -128,7 +141,7 @@
      so the HTML preview stops above the bar instead. */
   html .changes-scroll, html .virtual-scroll, html .mobile-files-scroll, html .history-scroll, html .search-results, html .pulls-scroll,
   html .viewer-scroll, html .diff-workspace-scroll, html .source-code-editor, html .markdown-preview-scroll, html .image-preview-canvas,
-  html .pdf-scroll, html .commit-diff-empty, html .commit-composer, html .html-preview-panel {
+  html .pdf-scroll, html .commit-diff-empty, html .html-preview-panel {
     padding-bottom: var(--mobile-nav-clearance);
     scroll-padding-bottom: var(--mobile-nav-clearance);
   }
@@ -139,41 +152,62 @@
   html .onboarding-checklist { margin-bottom: var(--mobile-nav-clearance); }
   html [data-sileo-viewport][data-position^="bottom"] { bottom: var(--mobile-nav-clearance); }
   html[data-mobile-keyboard="true"] [data-sileo-viewport][data-position^="bottom"] { bottom: env(safe-area-inset-bottom); }
-  html body:has(.mobile-sheet[data-open]) section[data-sileo-viewport] { z-index: 900; }
-  html .mobile-workspace-actions { display: flex; min-height: 56px; flex: none; align-items: center; justify-content: space-between; gap: 4px; padding: 8px 16px 4px; font-size: var(--text-ui); }
-  html .mobile-workspace-actions > span { color: var(--muted-foreground); }
-  html .mobile-workspace-actions button { display: inline-flex; min-height: 40px; align-items: center; gap: 5px; border-radius: var(--radius-md); padding: 0 6px; }
-  html .mobile-workspace-actions button[aria-pressed="true"] { background: var(--row-selected); }
-  html .mobile-workspace-actions svg { width: 17px; height: 17px; }
+  /* A sheet would cover the corner toasts use, and hide why what it asked for failed. */
+  html body:has(.mobile-sheet[data-open]) section[data-sileo-viewport] { z-index: 1100; top: calc(env(safe-area-inset-top) + 8px); bottom: auto; }
+  /* The screen's one main action, on a fade so what's underneath doesn't compete with it. */
+  html .mobile-float {
+    position: fixed;
+    right: env(safe-area-inset-right);
+    bottom: calc(var(--mobile-nav-height) + 8px + env(safe-area-inset-bottom) + var(--mobile-viewport-gap));
+    left: env(safe-area-inset-left);
+    z-index: 39;
+    padding: 26px 12px 8px;
+    background: linear-gradient(to top, color-mix(in oklab, var(--background) 92%, transparent), color-mix(in oklab, var(--background) 72%, transparent) 60%, transparent);
+    pointer-events: none;
+  }
+  html .mobile-float:empty, html[data-mobile-keyboard="true"] .mobile-float { display: none; }
+  html .mobile-float:has(.mobile-float-note) { background: linear-gradient(to top, color-mix(in oklab, var(--background) 96%, transparent), color-mix(in oklab, var(--background) 92%, transparent) 75%, transparent); }
+  html .mobile-float > button { pointer-events: auto; }
+  html .mobile-float-note { margin: 0 8px 6px; color: var(--muted-foreground); font-size: var(--text-ui); line-height: 1.35; text-align: center; }
+  html .mobile-main-action { display: flex; width: 100%; max-width: 480px; height: 48px; gap: 7px; margin-inline: auto; border-radius: 999px; font-size: var(--text-body); box-shadow: 0 10px 22px -8px color-mix(in oklab, var(--primary) 65%, transparent); }
+  html .mobile-main-action svg { width: 20px; height: 20px; stroke-width: 1.75; }
+  html .mobile-main-action:disabled { background: var(--mobile-soft); color: var(--muted-foreground); box-shadow: none; opacity: 1; }
+  html .mobile-main-dock { display: block; width: 100%; max-width: 480px; height: 44px; margin-inline: auto; overflow: hidden; border-radius: 999px; background: var(--muted); padding: 0 16px; color: var(--muted-foreground); font-size: var(--text-body); line-height: 44px; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+  html .mobile-main-dock.has-text { color: var(--foreground); }
+  html .mobile-main-dock:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
   html .workspace { min-width: 0; }
   html .sidebar { width: 100% !important; min-width: 0; max-width: none; flex: 1; border-right: 0; }
   html .sidebar-tabs { display: none; }
   html .viewer-pane { width: 100%; min-width: 0; }
-  html .mobile-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 12px; min-height: 56px; flex: none; border-bottom: 1px solid var(--border); background: var(--sidebar); }
+  html .mobile-toolbar { display: flex; align-items: center; gap: 2px; padding: 6px 6px 6px 14px; min-height: 56px; flex: none; border-bottom: 1px solid var(--border); background: var(--sidebar); }
+  html .mobile-toolbar.in-viewer { padding-left: 2px; }
+  html .mobile-bar-button { display: inline-grid; width: 44px; min-width: 44px; height: 44px; min-height: 44px; flex: none; place-items: center; border-radius: 50%; color: var(--muted-foreground); }
+  html .mobile-bar-button svg { width: 22px; height: 22px; stroke-width: 1.75; }
+  html .mobile-bar-button:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
   html .repository-load-slow { flex-wrap: wrap; justify-content: center; border-radius: 14px; white-space: normal; text-align: center; }
-  html .mobile-repository-context { display: flex; align-items: center; min-width: 0; gap: 9px; min-height: 44px; padding: 4px; border-radius: var(--radius-md); text-align: left; }
-  html .mobile-repository-context > img, html .mobile-repository-context > svg { width: 26px; height: 26px; flex: none; }
-  html .mobile-repository-context > span { display: grid; min-width: 0; gap: 2px; }
-  html .mobile-repository-context strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-body); font-weight: var(--weight-strong); }
-  html .mobile-repository-context small { display: flex; gap: 4px; align-items: center; min-width: 0; color: var(--muted-foreground); font-size: var(--text-meta); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  html .mobile-repository-context small svg { width: 12px; height: 12px; flex: none; }
-  html .mobile-toolbar-actions { display: flex; gap: 2px; align-items: center; flex: none; }
+  /* Two lines: the name with an end mark, then a quieter line. For the repository and for a viewer. */
+  html .mobile-repository-context, html .mobile-viewer-title { display: grid; min-width: 0; min-height: 44px; flex: 1; align-content: center; gap: 1px; border-radius: var(--radius-md); text-align: left; }
+  html .mobile-viewer-title-slot { display: flex; min-width: 0; flex: 1; }
+  html .mobile-repository-context strong, html .mobile-viewer-title strong { display: flex; min-width: 0; align-items: center; gap: 3px; font-size: var(--text-body); font-weight: var(--weight-strong); }
+  html .mobile-repository-context strong > span, html .mobile-viewer-title strong > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  html .mobile-repository-context strong > svg, html .mobile-viewer-title strong > svg { width: 14px; height: 14px; flex: none; color: var(--muted-foreground); }
+  html .mobile-repository-context small, html .mobile-viewer-title small { overflow: hidden; color: var(--muted-foreground); font-size: var(--text-ui); text-overflow: ellipsis; white-space: nowrap; }
+  html .mobile-repository-context:focus-visible, html .mobile-viewer-title:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+  html .mobile-viewer-mono { font-family: var(--font-mono); }
+  html .mobile-viewer-stats .add { color: var(--diff-added); }
+  html .mobile-viewer-stats .del { color: var(--diff-deleted); }
+  html .mobile-unsaved-dot { width: 8px; height: 8px; flex: none; border-radius: 50%; background: var(--warning); }
+  html .mobile-toolbar-actions { display: flex; flex: none; align-items: center; gap: 2px; }
   html .mobile-toolbar-actions .app-name { font-size: var(--text-meta); }
   html .mobile-toolbar-actions > [data-slot="button"] { min-height: 44px; }
-  html .mobile-open-files-trigger { position: relative; padding: 0 8px; gap: 6px; color: var(--muted-foreground); font-size: var(--text-ui); }
-  html .mobile-unsaved-dot { position: absolute; top: 6px; right: 3px; width: 5px; height: 5px; border-radius: 50%; background: var(--warning); }
-  html .mobile-toolbar-back { display: flex; align-items: center; gap: 6px; min-width: 0; min-height: 44px; border-radius: var(--radius-md); font-size: var(--text-ui); }
-  html .mobile-toolbar-back svg { width: 18px; height: 18px; flex: none; }
-  html .mobile-toolbar-back span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  html .mobile-view-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex: none; padding: 8px 16px 4px; min-height: 56px; }
-  html .mobile-view-heading h2 { min-width: 0; font-size: var(--text-display); font-weight: var(--weight-strong); letter-spacing: -.7px; }
-  html .mobile-view-heading h2 small { margin-left: 8px; font-size: var(--text-meta); font-weight: var(--weight-regular); color: var(--muted-foreground); }
-  html .mobile-view-heading > div { display: flex; align-items: center; gap: 2px; }
-  html .mobile-view-heading [data-slot="button"], html .mobile-commit-trigger { color: var(--primary); }
-  html .mobile-workspace-actions .mobile-commit-trigger { flex: none; }
+  /* 36px tall with a 44px target, so it sits inside the bar without crowding it. */
+  html .mobile-sync-pill { position: relative; display: inline-flex; height: 36px; flex: none; align-items: center; gap: 5px; border-radius: 999px; background: var(--muted); padding: 0 12px 0 9px; font-size: var(--text-ui); font-weight: var(--weight-strong); white-space: nowrap; }
+  html .mobile-sync-pill::before { content: ""; position: absolute; inset: -4px 0; }
+  html .mobile-sync-pill svg { width: 16px; height: 16px; flex: none; }
+  html .mobile-sync-pill:disabled { opacity: .6; }
+  html .mobile-sync-pill:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
   html .app-shell[data-mobile-pane="list"] .viewer-pane,
-  html .app-shell[data-mobile-pane="viewer"] .sidebar,
-  html .app-shell[data-mobile-pane="commit"] .workspace { display: none; }
+  html .app-shell[data-mobile-pane="viewer"] .sidebar { display: none; }
   html .viewer-message, html .viewer-empty { padding: 20px; overflow-wrap: anywhere; }
   html .operation-banner { flex: none; white-space: normal; overflow-wrap: anywhere; }
 
@@ -205,49 +239,76 @@
   html .search-input input { height: 40px; }
   html .search-match-open { padding-left: 12px; }
 
-  /* The commit form is a workspace destination on phones, so it cannot cover
-     staging controls. Going back leaves the draft and suggested plan intact. */
-  html .commit-composer { max-height: none; width: 100%; flex: 1; border-top: 0; padding: 16px 16px var(--mobile-nav-clearance); overflow-y: auto; overscroll-behavior: contain; }
+  /* The commit form is a sheet on phones. Closing it leaves the draft and suggested plan intact. */
+  html .commit-composer { max-height: none; width: 100%; gap: 8px; border-top: 0; background: none; padding: 0 10px 4px; }
   html .commit-plan, html .commit-plan-body { flex: none; overflow: visible; }
   html .commit-composer-hint { display: none; }
   html .commit-composer-input { min-height: 120px; }
   html .commit-plan-heading { flex-wrap: wrap; }
   html .commit-composer-provider { overflow: visible; overflow-wrap: anywhere; white-space: normal; }
   html .commit-composer-generate { flex-wrap: wrap; height: auto; padding-block: 10px; white-space: normal; }
-  html .commit-composer > .commit-composer-generate { width: 100%; max-width: none; min-height: 44px; justify-content: center; margin-left: 0; }
+  html .commit-composer > .commit-composer-generate { width: calc(100% + 20px); max-width: none; min-height: 48px; justify-content: flex-start; gap: 12px; margin-inline: -10px; border-radius: 12px; padding-inline: 10px; font-size: var(--text-body); }
+  html .commit-composer-generate > .ai-provider-icon { width: 20px; height: 20px; }
   html .commit-composer-commit { flex-direction: column; align-items: stretch; }
-  html .commit-composer-commit [data-slot="button"] { height: 44px; }
+  html .commit-composer-commit [data-slot="button"] { height: 44px; font-size: var(--text-body); }
+  html .commit-composer-commit [data-slot="button"][data-variant="default"] { height: 48px; box-shadow: 0 10px 22px -8px color-mix(in oklab, var(--primary) 65%, transparent); }
+  html .commit-composer-commit [data-slot="button"][data-variant="default"]:disabled { background: var(--mobile-soft); color: var(--muted-foreground); box-shadow: none; opacity: 1; }
   html .commit-plan-heading-actions { margin-left: auto; }
 
   html .diff-workspace-toolbar { flex-wrap: wrap; gap: 6px; padding: 6px 8px; }
-  html .diff-workspace-scope { flex: 1 1 100%; }
+  html .diff-workspace-scope { flex: 1 1 auto; }
   html .diff-workspace-actions { flex-wrap: wrap; }
   html .pr-code-scope { flex-wrap: wrap; }
+  html .pr-code-mode { border: 0; background: none; padding: 0; }
+  html .pr-code-mode button { height: 40px; }
   html .pr-commit-select { max-width: 100%; min-height: 40px; }
-  html .diff-file-header { gap: 5px; padding-inline: 8px; }
+  html .diff-file-header { min-height: 48px; gap: 5px; padding-inline: 14px; }
+  html .diff-file-header-compact { min-height: 32px; }
   html .diff-file-path { flex-wrap: wrap; }
   html .diff-file-stats { font-size: var(--text-meta); gap: 3px; }
-  html .commit-diff-header { padding: 12px; }
-  html .commit-diff-header h2 { font-size: var(--text-title); overflow-wrap: anywhere; }
+  html .commit-diff-header { flex-wrap: wrap; padding: 14px 14px 10px; }
+  html .commit-diff-heading { flex-basis: 100%; margin-right: 0; }
+  html .commit-diff-header h2 { font-size: var(--text-title); line-height: 1.3; overflow-wrap: anywhere; }
+  html .commit-diff-meta { margin-top: 4px; font-size: var(--text-ui); }
+  html .commit-diff-tools { margin-left: auto; }
+  html .commit-diff-description-wrap { padding-inline: 14px; }
   html .conflict-viewer-toolbar { flex-wrap: wrap; gap: 8px; padding: 8px; }
   html .conflict-viewer-toolbar > div { min-width: 0; overflow-wrap: anywhere; }
   html .conflict-actions { flex-wrap: wrap; }
-  html .pr-viewer-header { display: flex; flex-direction: column; max-height: 45%; overflow: hidden; padding: 10px 10px 0; }
-  html .pr-viewer-header.no-tabs { padding-bottom: 10px; }
-  html .pr-viewer-overview { display: grid; min-height: 0; flex: 0 1 auto; gap: 8px; overflow-y: auto; }
-  html .pr-viewer-top { flex-wrap: wrap; }
-  html .pr-viewer-heading { flex-basis: 100%; }
-  html .pr-action-bar { max-width: 100%; justify-content: flex-start; }
+  /* A pull request or release scrolls as one: its header goes away with the content and the
+     tabs stick. Only the Code tab keeps a scroller of its own, because Pierre's virtualizer
+     measures against the element it creates, so there the header gives way to the tabs alone. */
+  html .pr-viewer { overflow-y: auto; overscroll-behavior: contain; }
+  html .pr-viewer-header { display: contents; }
+  html .pr-viewer-header > .pr-viewer-top { display: flex; flex: none; flex-wrap: wrap; gap: 8px; padding: 10px 14px; }
+  html .pr-viewer-overview { display: flex; flex: none; flex-direction: column; padding: 14px 14px 10px; }
+  html .pr-viewer-overview .pr-viewer-top, html .pr-viewer-heading { display: contents; }
+  html .pr-viewer-heading h2 { font-size: var(--text-title); line-height: 1.3; letter-spacing: -.01em; }
+  html .pr-viewer-status { order: 1; margin-top: 8px; gap: 2px 6px; font-size: var(--text-ui); }
+  html .pr-viewer-status .pr-status { font-size: var(--text-body); }
+  html .pr-viewer-overview > .pr-viewer-meta { order: 2; margin-top: 4px; font-size: var(--text-ui); }
+  html .pr-action-bar { order: 3; max-width: 100%; justify-content: flex-start; }
+  html .pr-action-bar:empty { display: none; }
+  html .pr-viewer-overview .pr-action-bar:not(:empty) { margin-top: 6px; }
+  html .pr-action-reason { font-size: var(--text-ui); }
   html .pr-action-bar button { min-height: 40px; }
+  html .pr-editor-title { flex-basis: 100%; min-height: 44px; }
+  html .pr-editor-title + .pr-action-bar { margin-left: auto; }
+  html .pr-editor-body { flex: none; padding: 0 14px var(--mobile-nav-clearance); }
   html .tab-list > button { min-height: 44px; }
-  html .pr-viewer-tabs { flex: none; align-self: flex-start; max-width: 100%; overflow-x: auto; }
-  html .pr-summary-section, html .pr-timeline { padding: 12px; }
+  html .pr-viewer-tabs { --tab-height: 44px; position: sticky; top: 0; z-index: 5; flex: none; align-self: stretch; gap: 18px; margin: 0; border-bottom: 1px solid var(--border); background: var(--background); padding: 0 14px; }
+  html .pr-description-scroll { min-height: auto; flex: none; overflow: visible; }
+  html .pr-viewer[data-tab="diff"] { overflow: hidden; }
+  html .pr-viewer[data-tab="diff"] .pr-viewer-overview { display: none; }
+  html .pr-viewer[data-tab="diff"] .pr-viewer-tabs { position: static; }
+  html .pr-summary-section, html .pr-timeline, html .pr-conversation { padding-inline: 14px; }
+  html .pr-summary-section { padding-block: 14px; }
   html .pr-branches { max-width: 100%; }
-  html .pr-checks-trigger { min-height: 40px; }
+  html .pr-checks-trigger { min-height: 32px; }
+  html .pr-merge-method-option small { display: block; margin-top: 2px; color: var(--muted-foreground); font-size: var(--text-ui); white-space: normal; }
   html .file-viewer-toolbar { height: 48px; }
   html .file-viewer-tabs { --tab-height: 48px; }
   html .file-viewer-toolbar button { min-width: 40px; min-height: 40px; }
-  html .file-save-button { height: 36px; padding-inline: 12px; }
   html .markdown-prose { padding: 16px; overflow-wrap: anywhere; }
   html .markdown-prose pre, html .markdown-prose table { max-width: 100%; overflow-x: auto; }
 
@@ -262,12 +323,31 @@
     --tw-translate-x: 0px; --tw-translate-y: 0px;
     animation: none; transform: none; translate: none; overflow-y: auto; overscroll-behavior: contain;
   }
-  html .settings-dialog, html .local-refs-dialog, html .create-pr-dialog { height: calc(var(--mobile-viewport-height, 100dvh) - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 16px); }
-  html .settings-shell { min-height: 0; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
-  html .settings-nav { display: flex; flex-direction: row; min-width: 0; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--border); padding: 6px; gap: 3px; }
-  html .settings-nav-title { display: none; }
-  html .settings-nav-item { flex: none; min-height: 44px; padding: 8px; }
-  html .settings-panel-header, html .settings-panel-body { padding: 12px; }
+  /* These two are forms with their own header and scroll, so they keep their close button and fill the screen as a sheet would. */
+  html .local-refs-dialog, html .create-pr-dialog {
+    top: auto;
+    bottom: var(--mobile-viewport-gap);
+    left: 0;
+    width: 100vw;
+    height: calc(var(--mobile-viewport-height, 100dvh) - env(safe-area-inset-top) - 16px);
+    max-height: none;
+    border: 0;
+    border-radius: 20px 20px 0 0;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  html .settings-sheet { display: grid; min-width: 0; padding: 0 10px 8px; }
+  html .settings-sheet .settings-field-label strong { font-size: var(--text-body); }
+  html .settings-sheet .settings-field-label > span { font-size: var(--text-ui); }
+  html .settings-sheet .settings-group > h3 { font-size: var(--text-ui); }
+  html .settings-sheet .settings-row { min-height: 48px; gap: 4px 12px; }
+  html .settings-sheet .settings-row > .settings-field-label { flex-basis: 110px; }
+  html .settings-sheet .settings-zoom-control input { width: 110px; }
+  /* Everyday settings first, as the rest of the sheet leads with them. */
+  html .settings-sheet .settings-general { display: flex; flex-direction: column; }
+  html .settings-sheet .settings-general > .settings-group { margin-top: 16px; }
+  html .settings-sheet .settings-general > .settings-group:first-child:not(.settings-group-onboarding), html .settings-sheet .settings-group-onboarding + .settings-group { margin-top: 0; }
+  html .settings-sheet .settings-group-onboarding { order: 1; }
+  html .settings-sheet-sections { margin: 8px -10px 0; border-top: 1px solid var(--border); padding-top: 6px; }
   html .settings-switch { width: 44px; height: 28px; }
   html .settings-switch span { width: 24px; height: 24px; }
   html .settings-switch[aria-checked="true"] span { transform: translateX(16px); }
@@ -344,7 +424,8 @@ html[data-low-end] .mobile-navigation { background: var(--card); -webkit-backdro
 
 /* Phone views render their own components; these also work in short landscape windows. */
 .mobile-files-view { display: flex; flex: 1; min-height: 0; flex-direction: column; }
-.mobile-file-filter { display: flex; align-items: center; gap: 8px; flex: none; min-width: 0; min-height: 44px; margin: 6px 16px 8px; padding: 0 12px; border: 1px solid var(--border); border-radius: 14px; background: var(--input); color: var(--muted-foreground); }
+.mobile-files-tools { display: flex; flex: none; align-items: center; gap: 2px; padding: 8px 6px 6px 14px; }
+.mobile-file-filter { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; min-height: 44px; padding: 0 12px; border: 1px solid var(--border); border-radius: 14px; background: var(--input); color: var(--muted-foreground); }
 .mobile-file-filter svg { width: 17px; height: 17px; flex: none; }
 .mobile-file-filter input { min-width: 0; width: 100%; height: 42px; outline: none; border: 0; background: transparent; color: var(--foreground); }
 .mobile-file-filter:focus-within { border-color: var(--primary); box-shadow: 0 0 0 2px color-mix(in oklch, var(--primary) 15%, transparent); }
@@ -396,6 +477,7 @@ html[data-low-end] .mobile-navigation { background: var(--card); -webkit-backdro
   transform: translate3d(0, var(--drawer-swipe-movement-y), 0);
   transition: transform 220ms cubic-bezier(.2, .8, .2, 1);
 }
+.mobile-sheet.tall { height: calc(var(--mobile-viewport-height, 100dvh) - env(safe-area-inset-top) - 16px); max-height: none; }
 .mobile-sheet[data-swiping] { transition-duration: 0ms; user-select: none; }
 .mobile-sheet[data-starting-style], .mobile-sheet[data-ending-style] { transform: translate3d(0, calc(100% + 2px), 0); }
 .mobile-sheet[data-ending-style] { transition-duration: calc(var(--drawer-swipe-strength) * 220ms); }
@@ -405,7 +487,9 @@ html[data-low-end] .mobile-navigation { background: var(--card); -webkit-backdro
 /* Reached by keyboard and screen readers only: it must not take the handle's drag. */
 .mobile-sheet-close { position: absolute; inset: 0; border-radius: inherit; pointer-events: none; }
 .mobile-sheet-close:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
-.mobile-sheet-title { flex: none; padding: 0 18px 8px; font-size: var(--text-title); font-weight: var(--weight-strong); overflow-wrap: anywhere; }
+.mobile-sheet-heading { display: flex; flex: none; align-items: center; gap: 2px; padding: 0 18px 8px; }
+.mobile-sheet-heading.has-leading { padding-left: 6px; }
+.mobile-sheet-title { min-width: 0; flex: 1; font-size: var(--text-title); font-weight: var(--weight-strong); overflow-wrap: anywhere; }
 .mobile-sheet-description { flex: none; margin-top: -4px; padding: 0 18px 10px; color: var(--muted-foreground); font-size: var(--text-ui); line-height: 1.5; overflow-wrap: anywhere; }
 .mobile-sheet-body { min-height: 0; flex: 1 1 auto; overflow-y: auto; overscroll-behavior: contain; padding: 0 8px 14px; }
 .mobile-sheet-action { position: relative; display: flex; align-items: center; gap: 12px; width: 100%; min-height: 48px; padding: 6px 10px; border-radius: 12px; text-align: left; font-size: var(--text-body); }
@@ -428,18 +512,36 @@ html[data-low-end] .mobile-navigation { background: var(--card); -webkit-backdro
 .mobile-sheet-body hr { height: 1px; margin: 6px 10px; border: 0; background: var(--border); }
 .mobile-sheet-action.go, .mobile-sheet-action.go > svg { color: var(--primary-ink); }
 .mobile-sheet-action.go { font-weight: var(--weight-strong); }
+.mobile-sheet-value { flex: none; color: var(--muted-foreground); font-size: var(--text-body); font-weight: var(--weight-regular); }
+.mobile-switch { position: relative; width: 44px; height: 28px; flex: none; border-radius: 999px; background: var(--mobile-soft); transition: background-color .15s ease; }
+.mobile-switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 24px; height: 24px; border-radius: 50%; background: var(--primary-foreground); transition: transform .15s ease; }
+[aria-checked="true"] > .mobile-switch { background: var(--primary); }
+[aria-checked="true"] > .mobile-switch::after { transform: translateX(16px); }
+/* A question asked in a sheet: its text, then one pill and who it acts as. */
+.confirm-sheet { display: grid; min-width: 0; gap: 10px; padding: 0 10px 4px; font-size: var(--text-body); line-height: 1.5; }
+.confirm-sheet p { margin: 0; overflow-wrap: anywhere; }
+.confirm-sheet strong { font-weight: var(--weight-strong); }
+.confirm-sheet code { font-size: var(--text-ui); overflow-wrap: anywhere; }
+.confirm-sheet > .mobile-picker-rows, .confirm-sheet > .mobile-sheet-action { width: calc(100% + 20px); margin-inline: -10px; }
+.mobile-sheet .pr-composer { margin: 0; padding: 0 10px 4px; }
+.confirm-sheet-actions { display: grid; gap: 6px; margin-top: 6px; }
+.confirm-sheet-actions [data-slot="button"] { width: 100%; height: 44px; font-size: var(--text-body); }
+.confirm-sheet-actions [data-slot="button"][data-variant="default"], .confirm-sheet-actions [data-slot="button"][data-variant="destructive"] { height: 48px; border-radius: 999px; }
+.confirm-sheet-actions [data-slot="button"][data-variant="default"] { box-shadow: 0 10px 22px -8px color-mix(in oklab, var(--primary) 65%, transparent); }
+.confirm-sheet-actions [data-slot="button"][data-variant="default"]:disabled { background: var(--mobile-soft); color: var(--muted-foreground); box-shadow: none; opacity: 1; }
+.confirm-sheet-actions small { color: var(--muted-foreground); font-size: var(--text-ui); text-align: center; }
 /* Each picker reads as a sheet row with its value at the end; the whole row opens it. */
-.mobile-context-selectors > div { position: relative; display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 6px 10px; border-radius: 12px; font-size: var(--text-body); }
-.mobile-context-selectors > div:hover, .mobile-context-selectors > div:active { background: var(--row-hover); }
-.mobile-context-selectors > div > svg { width: 20px; height: 20px; flex: none; color: var(--muted-foreground); stroke-width: 1.75; }
-.mobile-context-selectors > div > span { flex: none; }
-html .mobile-context-selectors button[role="combobox"] { width: auto; min-width: 0; max-width: none; min-height: 0; flex: 0 1 auto; margin-left: auto; border: 0; padding: 0; background: none; color: var(--muted-foreground); font-size: var(--text-body); font-weight: var(--weight-regular); }
-.mobile-context-selectors button[role="combobox"]:hover { background: none; }
-.mobile-context-selectors button[role="combobox"]:focus-visible { outline: none; box-shadow: none; }
-.mobile-context-selectors button[role="combobox"]::after { content: ""; position: absolute; inset: 0; border-radius: 12px; }
-.mobile-context-selectors button[role="combobox"]:focus-visible::after { outline: 2px solid var(--ring); outline-offset: -2px; }
+.mobile-picker-rows > div { position: relative; display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 6px 10px; border-radius: 12px; font-size: var(--text-body); }
+.mobile-picker-rows > div:hover, .mobile-picker-rows > div:active { background: var(--row-hover); }
+.mobile-picker-rows > div > svg { width: 20px; height: 20px; flex: none; color: var(--muted-foreground); stroke-width: 1.75; }
+.mobile-picker-rows > div > span { flex: none; }
+html .mobile-picker-rows button[role="combobox"] { width: auto; min-width: 0; max-width: none; min-height: 0; flex: 0 1 auto; margin-left: auto; border: 0; padding: 0; background: none; color: var(--muted-foreground); font-size: var(--text-body); font-weight: var(--weight-regular); }
+.mobile-picker-rows button[role="combobox"]:hover { background: none; }
+.mobile-picker-rows button[role="combobox"]:focus-visible { outline: none; box-shadow: none; }
+.mobile-picker-rows button[role="combobox"]::after { content: ""; position: absolute; inset: 0; border-radius: 12px; }
+.mobile-picker-rows button[role="combobox"]:focus-visible::after { outline: 2px solid var(--ring); outline-offset: -2px; }
 /* The row's own icon replaces the trigger's. */
-.mobile-context-selectors button[role="combobox"] > :has(+ span) { display: none; }
+.mobile-picker-rows button[role="combobox"] > :has(+ span) { display: none; }
 .mobile-open-file { display: flex; align-items: center; gap: 3px; border-radius: var(--radius-md); }
 .mobile-open-file.active { background: var(--row-selected); }
 .mobile-open-file .mobile-sheet-action { min-width: 0; flex: 1; }
@@ -447,9 +549,7 @@ html .mobile-context-selectors button[role="combobox"] { width: auto; min-width:
 
 @media (pointer: coarse) and (max-width: 1100px) and (max-height: 500px) {
   html .mobile-toolbar { min-height: 48px; padding-block: 0; }
-  html .mobile-view-heading { min-height: 44px; padding-block: 0; }
-  html .mobile-view-heading h2 { font-size: var(--text-title); }
-  html .mobile-file-filter { margin-top: 3px; margin-bottom: 4px; }
+  html .mobile-files-tools { padding-block: 3px 4px; }
   html .mobile-file-breadcrumb { padding-bottom: 2px; }
   html { --mobile-nav-height: 44px; }
   html .mobile-navigation { max-width: 420px; }

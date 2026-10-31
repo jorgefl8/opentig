@@ -1,79 +1,111 @@
-import { useState, useEffect, useRef, type ReactNode } from 'react';
-import { IconArrowDown, IconArrowLeft, IconArrowUp, IconBrandGithub, IconDots, IconFiles, IconFolder, IconGitBranch, IconHierarchy2, IconLoader4, IconPlus, IconRefresh, IconSettings, IconX } from '@tabler/icons-react';
+import { useEffect, useRef, type ReactNode } from 'react';
+import { IconArrowDown, IconArrowLeft, IconArrowUp, IconBrandGithub, IconFolder, IconGitBranch, IconHierarchy2, IconLoader4, IconPlus, IconRefresh, IconSelector, IconSettings } from '@tabler/icons-react';
 import { Button } from '@/components/ui/button';
 import { isDevProfile } from '@/lib/app-identity';
 import { AppName } from '@/components/AppName';
 import { MobileSheet } from '@/components/MobileSheet';
 import { DesktopUpdateIndicator } from '@/features/settings/UpdateSettings';
 import { openOnGitHub } from '@/features/pulls/gh-utils';
-import { needsBranchPublication } from '@/features/repositories/project-sync';
-import { getVsCodeFileIconUrl } from '@/lib/vscode-icons';
-import { RepositoryFaviconImage } from '@/features/repositories/RepositoryFavicon';
+import { mobileSyncPill, needsBranchPublication } from '@/features/repositories/project-sync';
 import type { ToolbarProps } from './Toolbar';
 import { RemoteAccessIndicator } from './RemoteAccessIndicator';
 import { BranchPullRequestMenu } from './BranchPullRequestMenu';
 
-export function MobileToolbar({ props, repositoryControl, worktreeControl, branchControl, favicon, pendingRepositoryName, loadIndicator, contextOpen, onContextOpen, syncBusy }: {
+export interface MobileViewerBarProps {
+  onBack(): void;
+  /** Where the viewer's title and actions go. */
+  setTitleHost(element: HTMLElement | null): void;
+  setActionsHost(element: HTMLElement | null): void;
+}
+
+/** Focus lands on the arrow when a viewer opens, so a keyboard or screen reader starts from the way out. */
+function MobileViewerBar({ onBack, setTitleHost, setActionsHost, indicators, loadIndicator }: MobileViewerBarProps & { indicators: ReactNode; loadIndicator: ReactNode }) {
+  const backRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => { backRef.current?.focus(); }, []);
+  return (
+    <header className="mobile-toolbar in-viewer">
+      <button ref={backRef} type="button" className="mobile-bar-button" aria-label="Back" onClick={onBack}><IconArrowLeft aria-hidden="true" /></button>
+      <div ref={setTitleHost} className="mobile-viewer-title-slot" />
+      <div className="mobile-toolbar-actions">
+        <div ref={setActionsHost} className="contents" />
+        {indicators}
+      </div>
+      {loadIndicator}
+    </header>
+  );
+}
+
+const commitCount = (count: number) => `${count} ${count === 1 ? 'commit' : 'commits'}`;
+
+/** On a list, where you are and what to sync. Inside a viewer, a back arrow plus what that viewer puts in the bar's two slots. */
+export function MobileToolbar({ props, repositoryControl, worktreeControl, branchControl, pendingRepositoryName, loadIndicator, contextOpen, onContextOpen, syncBusy }: {
   props: ToolbarProps;
   repositoryControl: ReactNode;
   worktreeControl: ReactNode;
   branchControl: ReactNode;
-  favicon: string | undefined;
   pendingRepositoryName: string | null;
   loadIndicator: ReactNode;
   contextOpen: boolean;
   onContextOpen(open: boolean): void;
   syncBusy: boolean;
 }) {
-  const backRef = useRef<HTMLButtonElement>(null);
-  useEffect(() => { if (props.mobileBackLabel) backRef.current?.focus(); }, [props.mobileBackLabel]);
-  const [filesOpen, setFilesOpen] = useState(false);
-  const publish = needsBranchPublication(props.status);
-  const syncDisabled = Boolean(props.busy) || syncBusy || !props.status || props.status.readOnly || props.status.unborn || props.status.detached;
-  const pushDisabled = syncDisabled || (!publish && !(props.status && props.status.ahead > 0));
+  const viewer = props.mobileViewer;
+  const status = props.status;
+  const publish = needsBranchPublication(status);
+  const syncDisabled = Boolean(props.busy) || syncBusy || !status || status.readOnly || status.unborn || status.detached;
+  const pill = mobileSyncPill(status);
+  const runPill = pill && (pill.action === 'pull' ? props.onPull : props.onPush);
+  const pillRunning = pill && props.busy === (pill.action === 'pull' ? 'pull' : 'push');
   const contextAction = (action: () => void) => { onContextOpen(false); action(); };
+  const indicators = <>
+    {props.remoteProblem && <RemoteAccessIndicator compact problem={props.remoteProblem.access} message={props.remoteProblem.message} onAction={props.onRemoteAccessAction} />}
+    <DesktopUpdateIndicator />
+  </>;
   return <>
-    <header className="mobile-toolbar">
-      {props.mobileBackLabel ? <button ref={backRef} className="mobile-toolbar-back" onClick={props.onMobileBack}><IconArrowLeft /><span>{props.mobileBackLabel}</span></button>
-        : <button className="mobile-repository-context" aria-label="Repository context" aria-haspopup="dialog" aria-expanded={contextOpen} onClick={() => onContextOpen(true)}>
-          {props.repositoryLoadPhase ? <IconLoader4 className="animate-spin" aria-hidden="true" /> : <RepositoryFaviconImage src={favicon} />}
-          <span><strong>{pendingRepositoryName ? `Opening ${pendingRepositoryName}…` : props.repository.repositoryName}</strong><small><IconGitBranch />{props.status ? props.status.branch ?? 'Detached HEAD' : 'Loading…'}</small></span>
-        </button>}
-      <div className="mobile-toolbar-actions">
-        {isDevProfile && <AppName />}
-        {props.openFiles.tabs.length > 0 && <Button variant="ghost" size="sm" className="mobile-open-files-trigger" aria-label={`Open files (${props.openFiles.tabs.length})`} onClick={() => setFilesOpen(true)}><IconFiles /><span>{props.openFiles.tabs.length}</span>{props.openFiles.tabs.some((tab) => tab.dirty) && <span className="mobile-unsaved-dot" aria-label="Unsaved files" />}</Button>}
-        {props.remoteProblem && <RemoteAccessIndicator compact problem={props.remoteProblem.access} message={props.remoteProblem.message} onAction={props.onRemoteAccessAction} />}
-        <DesktopUpdateIndicator />
-        <Button variant="ghost" size="icon" aria-label="Repository context and settings" onClick={() => onContextOpen(true)}><IconDots /></Button>
-      </div>
-      {loadIndicator}
-    </header>
+    {viewer ? <MobileViewerBar {...viewer} indicators={indicators} loadIndicator={loadIndicator} /> : (
+      <header className="mobile-toolbar">
+        <button className="mobile-repository-context" aria-label="Repository and branch" aria-haspopup="dialog" aria-expanded={contextOpen} onClick={() => onContextOpen(true)}>
+          <strong><span>{pendingRepositoryName ? `Opening ${pendingRepositoryName}…` : props.repository.repositoryName}</span>{props.repositoryLoadPhase ? <IconLoader4 className="animate-spin" aria-hidden="true" /> : <IconSelector aria-hidden="true" />}</strong>
+          <small>{status ? status.branch ?? 'Detached HEAD' : 'Loading…'}{props.branchPullRequest && ` · #${props.branchPullRequest.number}`}</small>
+        </button>
+        <div className="mobile-toolbar-actions">
+          {isDevProfile && <AppName />}
+          {indicators}
+          {pill && runPill && (
+            <button type="button" className="mobile-sync-pill" disabled={Boolean(props.busy) || syncBusy} aria-label={pill.action === 'publish' ? 'Publish branch' : `${pill.action === 'pull' ? 'Pull' : 'Push'} ${commitCount(pill.count)}`} onClick={runPill}>
+              {pillRunning ? <IconLoader4 className="animate-spin" aria-hidden="true" /> : pill.action === 'pull' ? <IconArrowDown aria-hidden="true" /> : <IconArrowUp aria-hidden="true" />}
+              <span>{pill.action === 'publish' ? 'Publish' : `${pill.action === 'pull' ? 'Pull' : 'Push'} ${pill.count}`}</span>
+            </button>
+          )}
+          <Button variant="ghost" size="icon" className="mobile-bar-button" aria-label="Settings" onClick={() => props.onSettingsOpen(true)}><IconSettings /></Button>
+        </div>
+        {loadIndicator}
+      </header>
+    )}
     <MobileSheet open={contextOpen} onOpenChange={onContextOpen} title="Repository">
-      <div className="mobile-context-selectors">
+      <div className="mobile-picker-rows">
         <div><IconFolder aria-hidden="true" /><span>Repository</span>{repositoryControl}</div>
         <div><IconGitBranch aria-hidden="true" /><span>Branch</span>{branchControl}</div>
-        <div><IconHierarchy2 aria-hidden="true" /><span>Worktree</span>{worktreeControl}</div>
+        {props.worktrees.length > 1 && <div><IconHierarchy2 aria-hidden="true" /><span>Worktree</span>{worktreeControl}</div>}
       </div>
       <hr />
       <div className="mobile-context-sync">
+        {(publish || Boolean(status?.ahead)) && (
+          <button className={`mobile-sheet-action${syncDisabled ? '' : ' go'}`} disabled={syncDisabled} onClick={() => contextAction(props.onPush)}>
+            <IconArrowUp /><span>{publish ? 'Publish this branch' : 'Push'}</span>{Boolean(status?.ahead) && <small className="mobile-sheet-value">{commitCount(status!.ahead)}</small>}
+          </button>
+        )}
+        {Boolean(status?.behind) && (
+          <button className="mobile-sheet-action" disabled={syncDisabled || !status?.upstream} onClick={() => contextAction(props.onPull)}>
+            <IconArrowDown /><span>Pull</span><small className="mobile-sheet-value">{commitCount(status!.behind)}</small>
+          </button>
+        )}
         <button className="mobile-sheet-action" disabled={Boolean(props.busy) || syncBusy} onClick={() => contextAction(props.onRefresh)}><IconRefresh /><span>Refresh</span></button>
-        <button className="mobile-sheet-action" disabled={syncDisabled || !props.status?.upstream || !(props.status.behind > 0)} onClick={() => contextAction(props.onPull)}><IconArrowDown /><span>Pull{props.status?.behind ? ` (${props.status.behind})` : ''}</span></button>
-        <button className={`mobile-sheet-action${pushDisabled ? '' : ' go'}`} disabled={pushDisabled} onClick={() => contextAction(props.onPush)}><IconArrowUp /><span>{publish ? 'Publish' : 'Push'}{props.status?.ahead ? ` (${props.status.ahead})` : ''}</span></button>
       </div>
       <hr />
       {props.branchPullRequest && <BranchPullRequestMenu repositoryId={props.repository.id} key={props.branchPullRequest.url} pullRequest={props.branchPullRequest} onOpenPullRequest={props.onOpenPullRequest} mobile onNavigate={() => onContextOpen(false)} />}
       {props.githubInfo?.isGitHub && props.githubInfo.nameWithOwner && <button className="mobile-sheet-action" onClick={() => contextAction(() => openOnGitHub(`https://github.com/${props.githubInfo!.nameWithOwner}`))}><IconBrandGithub /><span>Open on GitHub</span></button>}
-      <button className="mobile-sheet-action" onClick={() => contextAction(props.onOpen)}><IconPlus /><span>Open repository</span></button>
-      <button className="mobile-sheet-action" onClick={() => contextAction(() => props.onSettingsOpen(true))}><IconSettings /><span>Settings</span></button>
-    </MobileSheet>
-    <MobileSheet open={filesOpen} onOpenChange={setFilesOpen} title="Open files">
-      {props.openFiles.tabs.map((tab) => <div className={`mobile-open-file ${props.openFiles.activePath === tab.path ? 'active' : ''}`} key={tab.path}>
-        <button className="mobile-sheet-action" aria-current={props.openFiles.activePath === tab.path ? 'true' : undefined} onClick={() => { setFilesOpen(false); props.onOpenFileTab(tab.path); }}>
-          <img src={getVsCodeFileIconUrl(tab.path)} alt="" draggable={false} /><span><strong>{tab.path.split('/').pop()}</strong><small>{tab.path}{tab.missing ? ' · Missing' : tab.dirty ? ' · Unsaved' : props.openFiles.previewPath === tab.path ? ' · Preview' : ''}</small></span>
-        </button>
-        <Button variant="ghost" size="icon" aria-label={`Close ${tab.path}`} onClick={() => props.onCloseFileTab(tab.path)}><IconX /></Button>
-      </div>)}
-      {props.openFiles.tabs.length === 0 && <p className="mobile-list-message">No open files.</p>}
+      <button className="mobile-sheet-action" onClick={() => contextAction(props.onOpen)}><IconPlus /><span>Open another repository</span></button>
     </MobileSheet>
   </>;
 }

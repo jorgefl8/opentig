@@ -20,7 +20,7 @@ afterEach(() => { vi.unstubAllGlobals(); });
 // Let chained server mocks, query notifications, and React work run without sleeping for real time.
 const settle = async () => { for (let hop = 0; hop < 5; hop++) await new Promise((resolve) => setTimeout(resolve, 0)); };
 
-async function mount({ section = 'ai', phone = false }: { section?: 'ai' | 'shortcuts'; phone?: boolean } = {}) {
+async function mount({ section = 'ai', phone = false, onSectionChange = vi.fn() }: { section?: 'ai' | 'shortcuts' | 'general' | 'diagnostics'; phone?: boolean; onSectionChange?(section: string): void } = {}) {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
   vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
   vi.stubGlobal('matchMedia', () => ({ matches: phone, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} }));
@@ -30,7 +30,7 @@ async function mount({ section = 'ai', phone = false }: { section?: 'ai' | 'shor
   let root = createRoot(container);
   let preferences = new SettingsStore('unused-settings.json').preferences;
   const render = () => root.render(createElement(QueryClientProvider, { client }, createElement(SettingsDialog, {
-    preferences, onPreference: vi.fn(), open: true, onOpenChange: vi.fn(), section, onSectionChange: vi.fn(),
+    preferences, onPreference: vi.fn(), open: true, onOpenChange: vi.fn(), section, onSectionChange,
   })));
   await act(async () => { render(); await settle(); });
   await act(settle);
@@ -118,8 +118,29 @@ describe('settings sections by device', () => {
     const view = await mount({ section: 'shortcuts', phone: true });
     try {
       expect(navLabels(view.dialog())).not.toContain('Shortcuts');
-      expect(view.dialog().querySelector('[data-slot="dialog-title"]')?.textContent).toBe('General');
+      expect(view.dialog().querySelector('.mobile-sheet-title')?.textContent).toBe('Settings');
     } finally { await view.close(); }
+  });
+
+  it('on a phone leads with General, and every other section is a row that drills in and comes back', async () => {
+    statuses.mockResolvedValue(saved);
+    const sections = vi.fn();
+    const view = await mount({ section: 'general', phone: true, onSectionChange: sections });
+    try {
+      expect(view.dialog().querySelector('.mobile-sheet-title')?.textContent).toBe('Settings');
+      expect(view.dialog().textContent).toContain('Interface font');
+      expect(navLabels(view.dialog())).toEqual(['Updates', 'GitHub', 'AI assistanceCodex', 'Diagnostics', 'Web access']);
+      await act(async () => [...view.dialog().querySelectorAll<HTMLButtonElement>('.settings-nav-item')].find((row) => row.textContent?.startsWith('Diagnostics'))!.click());
+      expect(sections).toHaveBeenCalledWith('diagnostics');
+    } finally { await view.close(); }
+    const drilled = await mount({ section: 'diagnostics', phone: true, onSectionChange: sections });
+    try {
+      expect(drilled.dialog().querySelector('.mobile-sheet-title')?.textContent).toBe('Diagnostics');
+      expect(drilled.dialog().querySelector('.settings-nav-item')).toBeNull();
+      expect(drilled.dialog().textContent).toContain('Problem history');
+      await act(async () => drilled.dialog().querySelector<HTMLButtonElement>('button[aria-label="Back to Settings"]')!.click());
+      expect(sections).toHaveBeenLastCalledWith('general');
+    } finally { await drilled.close(); }
   });
 
   it('keeps keyboard shortcuts in a wide browser', async () => {

@@ -1,15 +1,19 @@
-import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
+import { useEffect, useState, type MouseEvent, type ReactNode } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Radio } from '@base-ui/react/radio';
 import { RadioGroup } from '@base-ui/react/radio-group';
-import { IconChevronDown, IconDots, IconExternalLink, IconGitMerge, IconLoader4, IconRefresh } from '@tabler/icons-react';
+import { IconChevronDown, IconDots, IconExternalLink, IconGitBranch, IconGitMerge, IconLoader4, IconRefresh } from '@tabler/icons-react';
 import { sileo } from 'sileo';
 import type { PullRequestAction, PullRequestActionInput, PullRequestActionResult, PullRequestDetails, PullRequestLiveState, PullRequestMergeMethod } from '../../../shared/contracts';
 import { allowedPullRequestActions, canDeleteBranchWithMerge, resolvePullRequestPrimary } from '../../../shared/pull-request-actions';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { MobileActionsMenu, MobileMainAction, MobileSwitchRow, MobileViewerActions, type MobileMenuItem } from '@/components/MobileChrome';
+import { useMobileChrome } from '@/components/mobile-chrome-context';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
+import { mobileMainAction } from '@/lib/mobile-main-action';
 import { opentig } from '@/lib/opentig-api';
 import { queryKeys } from '@/lib/query-client';
 import { ConfirmPopover } from './ConfirmPopover';
@@ -65,22 +69,25 @@ function successToast(request: ActionRequest, result: PullRequestActionResult, d
   }
 }
 
-export function PullRequestActionBar({ repositoryId, details, live, refreshing, statusLabel, onRefresh, onEdit, onSelectPullRequest }: {
+export function PullRequestActionBar({ repositoryId, details, live, refreshing, statusLabel, tab = 'summary', onRefresh, onEdit, onSelectPullRequest }: {
   repositoryId: string;
   details: PullRequestDetails;
   live: PullRequestLiveState;
   refreshing: boolean;
   /** Already on screen, so a primary that would only repeat it stays out. */
   statusLabel: string | null;
+  /** On a phone the primary action floats, only where it's what the screen is for. */
+  tab?: 'summary' | 'timeline' | 'diff';
   onRefresh(): void;
   onEdit(): void;
   onSelectPullRequest(number: number): void;
 }) {
   const queryClient = useQueryClient();
+  const phone = useMobileChrome() !== null;
   const accountQuery = useGitHubAccount(repositoryId);
   const account = accountQuery.data;
   const [question, setQuestion] = useState<{ panel: Panel; anchor: HTMLElement } | null>(null);
-  const moreButton = useRef<HTMLButtonElement>(null);
+  const [moreButton, setMoreButton] = useState<HTMLButtonElement | null>(null);
   const [method, setMethod] = useState<PullRequestMergeMethod>(live.repository.defaultMethod);
   const [deleteBranch, setDeleteBranch] = useState(false);
   // A revert with no answer may already exist. Offering it again could open a second one.
@@ -150,15 +157,55 @@ export function PullRequestActionBar({ repositoryId, details, live, refreshing, 
   const hasMenu = menuActions.length > 0 || canUpdateBranch || live.viewer.canUpdate || Boolean(details.url);
   // A merge queue decides the method by itself, so only a plain merge has options to open.
   const splitMerge = primaryAction === 'merge' && !live.mergeQueue.enabled;
+  const menu: MobileMenuItem[] = [
+    ...(details.url ? [{ label: 'Open on GitHub', onSelect: () => openOnGitHub(details.url) }] : []),
+    ...(canUpdateBranch && primaryAction !== 'update-branch' ? [{ label: 'Update branch with merge', disabled: !accountReady, onSelect: () => run({ action: 'update-branch', method: 'MERGE' }) }] : []),
+    ...(canUpdateBranch ? [{ label: 'Update branch with rebase…', disabled: !accountReady, onSelect: () => ask('rebase-branch', moreButton) }] : []),
+    ...(live.viewer.canUpdate ? [{ label: 'Edit title and description…', disabled: !accountReady, onSelect: onEdit }] : []),
+    ...menuActions.map((action) => ({ label: MENU_LABELS[action] ?? action, disabled: !accountReady, danger: action === 'close' || action === 'delete-branch', onSelect: () => start(action, moreButton) })),
+  ];
+
+  const reasons = <>
+    {primary.kind === 'text' && primary.label !== statusLabel && primary.label !== 'Draft' && <span className="pr-action-reason">{primary.label}</span>}
+    {primary.kind === 'retry' && <>
+      <span className="pr-action-reason">{primary.label}</span>
+      <Button variant="ghost" size="xs" disabled={refreshing} onClick={onRefresh}>{refreshing ? <IconLoader4 className="animate-spin" /> : <IconRefresh />} Retry</Button>
+    </>}
+    {revertUncertain && <span className="pr-action-reason">The revert may have been created. Check GitHub first.<Button variant="ghost" size="xs" onClick={() => { setRevertUncertain(false); onRefresh(); }}>Refresh</Button></span>}
+  </>;
+
+  if (phone) {
+    const floating = mobileMainAction({ screen: 'pull-request', tab, primary: primary.kind }) === 'pull-request-primary';
+    return (
+      <span className="pr-action-bar">
+        {reasons}
+        <MobileViewerActions>
+          {(hasMenu || canDisableAutoMerge) && <MobileActionsMenu
+            label="More pull request actions"
+            title="Pull request"
+            triggerRef={setMoreButton}
+            triggerClassName="pr-more-actions"
+            disabled={busy}
+            items={canDisableAutoMerge ? [...menu, { label: 'Disable auto-merge', disabled: !accountReady, onSelect: () => run({ action: 'disable-auto-merge' }) }] : menu}
+          />}
+        </MobileViewerActions>
+        {floating && <MobileMainAction>
+          {primary.kind === 'github' && <Button className="mobile-main-action" disabled={!details.url} onClick={() => openOnGitHub(details.url)}><IconExternalLink /> {primary.label}</Button>}
+          {primary.kind === 'action' && (
+            <Button className="mobile-main-action" disabled={busy || !accountReady} onClick={fromPrimary(primary.action)}>
+              {busy ? <IconLoader4 className="animate-spin" /> : primary.action === 'merge' || primary.action === 'enable-auto-merge' ? <IconGitMerge /> : null}
+              {busy ? <ShimmeringText text="Working…" /> : primary.label}
+            </Button>
+          )}
+        </MobileMainAction>}
+        {question && <Confirmation question={question} live={live} details={details} login={account?.login ?? ''} busy={busy} method={method} deleteBranch={deleteBranch} phone onMethodChange={setMethod} onDeleteBranchChange={setDeleteBranch} onCancel={() => setQuestion(null)} onConfirm={run} />}
+      </span>
+    );
+  }
 
   return (
     <span className="pr-action-bar">
-      {primary.kind === 'text' && primary.label !== statusLabel && primary.label !== 'Draft' && <span className="pr-action-reason">{primary.label}</span>}
-      {primary.kind === 'retry' && <>
-        <span className="pr-action-reason">{primary.label}</span>
-        <Button variant="ghost" size="xs" disabled={refreshing} onClick={onRefresh}>{refreshing ? <IconLoader4 className="animate-spin" /> : <IconRefresh />} Retry</Button>
-      </>}
-      {revertUncertain && <span className="pr-action-reason">The revert may have been created. Check GitHub first.<Button variant="ghost" size="xs" onClick={() => { setRevertUncertain(false); onRefresh(); }}>Refresh</Button></span>}
+      {reasons}
       {canDisableAutoMerge && <Button variant="ghost" size="xs" disabled={busy || !accountReady} onClick={() => run({ action: 'disable-auto-merge' })}>Disable auto-merge</Button>}
       {primary.kind === 'github' && details.url && <Button size="xs" onClick={() => openOnGitHub(details.url)}><IconExternalLink /> {primary.label}</Button>}
       {primary.kind === 'action' && (
@@ -172,13 +219,9 @@ export function PullRequestActionBar({ repositoryId, details, live, refreshing, 
       )}
       {hasMenu && (
         <DropdownMenu>
-          <DropdownMenuTrigger render={<Button ref={moreButton} variant="ghost" size="icon-xs" className="change-action-button pr-more-actions" aria-label="More pull request actions" disabled={busy} />}><IconDots /></DropdownMenuTrigger>
+          <DropdownMenuTrigger render={<Button ref={setMoreButton} variant="ghost" size="icon-xs" className="change-action-button pr-more-actions" aria-label="More pull request actions" disabled={busy} />}><IconDots /></DropdownMenuTrigger>
           <DropdownMenuContent>
-            {details.url && <DropdownMenuItem onClick={() => openOnGitHub(details.url)}>Open on GitHub</DropdownMenuItem>}
-            {canUpdateBranch && primaryAction !== 'update-branch' && <DropdownMenuItem disabled={!accountReady} onClick={() => run({ action: 'update-branch', method: 'MERGE' })}>Update branch with merge</DropdownMenuItem>}
-            {canUpdateBranch && <DropdownMenuItem disabled={!accountReady} onClick={() => ask('rebase-branch', moreButton.current)}>Update branch with rebase…</DropdownMenuItem>}
-            {live.viewer.canUpdate && <DropdownMenuItem disabled={!accountReady} onClick={onEdit}>Edit title and description…</DropdownMenuItem>}
-            {menuActions.map((action) => <DropdownMenuItem key={action} disabled={!accountReady} onClick={() => start(action, moreButton.current)}>{MENU_LABELS[action]}</DropdownMenuItem>)}
+            {menu.map((item) => <DropdownMenuItem key={item.label} disabled={item.disabled} onClick={item.onSelect}>{item.label}</DropdownMenuItem>)}
           </DropdownMenuContent>
         </DropdownMenu>
       )}
@@ -187,7 +230,7 @@ export function PullRequestActionBar({ repositoryId, details, live, refreshing, 
   );
 }
 
-function Confirmation({ question, live, details, login, busy, method, deleteBranch, onMethodChange, onDeleteBranchChange, onCancel, onConfirm }: {
+function Confirmation({ question, live, details, login, busy, method, deleteBranch, phone = false, onMethodChange, onDeleteBranchChange, onCancel, onConfirm }: {
   question: { panel: Panel; anchor: HTMLElement };
   live: PullRequestLiveState;
   details: PullRequestDetails;
@@ -195,6 +238,7 @@ function Confirmation({ question, live, details, login, busy, method, deleteBran
   busy: boolean;
   method: PullRequestMergeMethod;
   deleteBranch: boolean;
+  phone?: boolean;
   onMethodChange(method: PullRequestMergeMethod): void;
   onDeleteBranchChange(value: boolean): void;
   onCancel(): void;
@@ -204,11 +248,29 @@ function Confirmation({ question, live, details, login, busy, method, deleteBran
   const pull = `#${details.number}`;
   const base = <code>{live.baseRefName}</code>;
   const branch = <code>{live.headRefName}</code>;
-  const asViewer = login ? <> as <strong>@{login}</strong></> : null;
-  const popover = (label: string, confirm: ReactNode, children: ReactNode) => (
-    <ConfirmPopover anchor={question.anchor} label={label} busy={busy} confirm={confirm} onCancel={onCancel}>{children}</ConfirmPopover>
+  // A phone says who this acts as once, under the button, instead of in each sentence.
+  const asViewer = login && !phone ? <> as <strong>@{login}</strong></> : null;
+  const popover = (label: string, confirm: ReactNode, children: ReactNode, title?: string) => (
+    <ConfirmPopover anchor={question.anchor} label={label} {...(title ? { title } : {})} footnote={login ? `as @${login}` : undefined} busy={busy} confirm={confirm} onCancel={onCancel}>{children}</ConfirmPopover>
   );
-  const methodPicker = live.repository.methods.length > 1 && (
+  const methodPicker = live.repository.methods.length > 1 && (phone ? (
+    <div className="mobile-picker-rows">
+      <div>
+        <IconGitMerge aria-hidden="true" />
+        <span>Method</span>
+        <Select value={method} disabled={busy} onValueChange={(next) => { if (next) onMethodChange(next as PullRequestMergeMethod); }}>
+          <SelectTrigger aria-label="Merge method"><SelectValue>{MERGE_VERBS[method]}</SelectValue></SelectTrigger>
+          <SelectContent align="end" alignItemWithTrigger={false} className="pr-merge-method-menu">
+            {live.repository.methods.map((option) => (
+              <SelectItem key={option} value={option} label={MERGE_VERBS[option]}>
+                <span className="pr-merge-method-option">{MERGE_VERBS[option]}<small>{MERGE_HELP[option]}</small></span>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+    </div>
+  ) : (
     <RadioGroup className="pr-merge-methods" aria-label="Merge method" value={method} disabled={busy} onValueChange={(next) => onMethodChange(next as PullRequestMergeMethod)}>
       {live.repository.methods.map((option) => (
         <label key={option} className="pr-merge-method">
@@ -217,42 +279,44 @@ function Confirmation({ question, live, details, login, busy, method, deleteBran
         </label>
       ))}
     </RadioGroup>
-  );
+  ));
   switch (question.panel) {
     case 'merge': {
       if (live.mergeQueue.enabled) {
         return popover('Confirm adding to the merge queue', <Button size="xs" disabled={busy} onClick={() => onConfirm({ action: 'merge', method: live.repository.defaultMethod })}>{working('Add to merge queue')}</Button>, <>
           <p>Add <strong>{pull}</strong> to the merge queue of {base}{asViewer}?</p>
           <p className="pr-action-note">The queue decides how and when it merges. Take it out of the queue on GitHub.</p>
-        </>);
+        </>, 'Add to merge queue');
       }
       const canDelete = canDeleteBranchWithMerge(live);
       return popover('Confirm merge', <Button size="xs" disabled={busy} onClick={() => onConfirm({ action: 'merge', method, ...(canDelete && deleteBranch ? { deleteBranch: true } : {}) })}>{working(MERGE_VERBS[method])}</Button>, <>
-        <p>{MERGE_VERBS[method]} <strong>{pull}</strong> into {base}{asViewer}?</p>
+        {!phone && <p>{MERGE_VERBS[method]} <strong>{pull}</strong> into {base}{asViewer}?</p>}
         {methodPicker}
-        {canDelete && <label className="pr-delete-branch-option"><Checkbox checked={deleteBranch} disabled={busy} onCheckedChange={(checked) => onDeleteBranchChange(checked === true)} /> <span>Delete {branch} after merging</span></label>}
+        {canDelete && (phone
+          ? <MobileSwitchRow label="Delete branch" detail={live.headRefName} icon={<IconGitBranch aria-hidden="true" />} checked={deleteBranch} disabled={busy} onChange={onDeleteBranchChange} />
+          : <label className="pr-delete-branch-option"><Checkbox checked={deleteBranch} disabled={busy} onCheckedChange={(checked) => onDeleteBranchChange(checked === true)} /> <span>Delete {branch} after merging</span></label>)}
         {live.repository.deleteBranchOnMerge && <p className="pr-action-note">GitHub deletes {branch} after merging.</p>}
-      </>);
+      </>, `Merge ${pull} into ${live.baseRefName}`);
     }
     case 'enable-auto-merge':
       return popover('Confirm auto-merge', <Button size="xs" disabled={busy} onClick={() => onConfirm({ action: 'enable-auto-merge', method })}>{working('Enable auto-merge')}</Button>, <>
         <p>Merge <strong>{pull}</strong> into {base} automatically{asViewer}, once its requirements are met?</p>
         {methodPicker}
-      </>);
+      </>, `Auto-merge ${pull}`);
     case 'close':
       return popover('Confirm closing', <Button variant="destructive" size="xs" disabled={busy} onClick={() => onConfirm({ action: 'close' })}>{working('Close pull request')}</Button>,
-        <p>Close <strong>{pull}</strong> without merging{asViewer}? You can reopen it later.</p>);
+        <p>Close <strong>{pull}</strong> without merging{asViewer}? You can reopen it later.</p>, `Close ${pull}`);
     case 'delete-branch':
       return popover('Confirm deleting the branch', <Button variant="destructive" size="xs" disabled={busy} onClick={() => onConfirm({ action: 'delete-branch' })}>{working('Delete branch')}</Button>,
-        <p>Delete {branch} from <strong>{live.head.owner ?? 'the source repository'}</strong>{asViewer}? This fails if the branch has moved. Local branches are kept.</p>);
+        <p>Delete {branch} from <strong>{live.head.owner ?? 'the source repository'}</strong>{asViewer}? This fails if the branch has moved. Local branches are kept.</p>, 'Delete branch');
     case 'revert':
       return popover('Confirm revert', <Button size="xs" disabled={busy} onClick={() => onConfirm({ action: 'revert' })}>{working('Create revert pull request')}</Button>,
-        <p>Open a pull request that reverts <strong>{pull}</strong> on {base}{asViewer}? Nothing changes until that pull request is merged.</p>);
+        <p>Open a pull request that reverts <strong>{pull}</strong> on {base}{asViewer}? Nothing changes until that pull request is merged.</p>, `Revert ${pull}`);
     case 'approve-workflows':
       return popover('Confirm approving workflows', <Button size="xs" disabled={busy} onClick={() => onConfirm({ action: 'approve-workflows' })}>{working('Approve workflows')}</Button>,
-        <p>Let the workflows of <strong>{pull}</strong> from <strong>{live.head.owner ?? 'this fork'}</strong> run{asViewer}? They run this fork's code at <code>{live.headRefOid.slice(0, 7)}</code>. Review it first.</p>);
+        <p>Let the workflows of <strong>{pull}</strong> from <strong>{live.head.owner ?? 'this fork'}</strong> run{asViewer}? They run this fork's code at <code>{live.headRefOid.slice(0, 7)}</code>. Review it first.</p>, 'Approve workflows');
     case 'rebase-branch':
       return popover('Confirm rebasing the branch', <Button size="xs" disabled={busy} onClick={() => onConfirm({ action: 'update-branch', method: 'REBASE' })}>{working('Rebase branch')}</Button>,
-        <p>Rebase {branch} onto {base}{asViewer}? This rewrites its commits, so anyone working on the branch has to reset to the new history.</p>);
+        <p>Rebase {branch} onto {base}{asViewer}? This rewrites its commits, so anyone working on the branch has to reset to the new history.</p>, 'Rebase branch');
   }
 }

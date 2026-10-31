@@ -7,6 +7,7 @@ import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useShortcuts } from '@/app/useShortcuts';
+import { useMobileChrome } from '@/components/mobile-chrome-context';
 import { AiProviderIcon } from '@/features/ai/AiProviderIcon';
 import { useTruncatedText } from '@/lib/use-truncated-text';
 
@@ -42,6 +43,8 @@ export function CommitComposer({
   onMessage, onGenerate, onCancelGenerate, onDismissProposal, onToggleCollapsed, onOpenPath, onPrepare, onCommit,
 }: CommitComposerProps) {
   const shortcuts = useShortcuts();
+  // On a phone the sheet's title already counts the files.
+  const phone = useMobileChrome() !== null;
   if (!open) return null;
 
   const commitCombo = shortcuts.commit.replace('Enter', '↵');
@@ -146,7 +149,7 @@ export function CommitComposer({
           />
           <div className="commit-composer-commit">
             <Button size="sm" disabled={commitDisabled} onClick={() => onCommit({ push: false })}>
-              {committing ? <ShimmeringText text="Committing…" /> : `Commit ${stagedCount} ${stagedCount === 1 ? 'file' : 'files'}`}
+              {committing ? <ShimmeringText text="Committing…" /> : phone ? 'Commit' : `Commit ${stagedCount} ${stagedCount === 1 ? 'file' : 'files'}`}
             </Button>
             <Button variant="ghost" size="sm" className="px-2" disabled={commitDisabled || !canPush} onClick={() => onCommit({ push: true })}>
               {pushing ? <ShimmeringText text="Pushing…" /> : 'Commit and push'}

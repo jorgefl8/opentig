@@ -141,7 +141,7 @@ The menu lists layer states, titles, branches, and bases, including layers outsi
 
 ## Merge and manage a pull request
 
-The viewer's header offers the next step for the PR, and **⋯** lists everything else you can do with it. OpenTig checks your access first, so a reader sees no merge controls.
+The viewer's header offers the next step for the PR, and **⋯** lists everything else you can do with it. OpenTig checks your access first, so a reader sees no merge controls. On a phone the next step floats above the bottom bar on **Summary**, **⋯** is in the top bar, and what asks first does so in a sheet with the same checks. See [phone navigation](interface.md#phone-navigation).
 
 | Situation | Main control |
 | --- | --- |

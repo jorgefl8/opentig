@@ -38,6 +38,24 @@ export function splitPatchFiles(patch: string): string[] {
   return headers.map((header, index) => patch.slice(header.index, headers[index + 1]?.index ?? patch.length));
 }
 
+/** Lines added and removed in a unified patch. A `+++` or `---` counts as a line only inside a hunk. */
+export function patchLineStats(patch: string): { additions: number; deletions: number } {
+  let additions = 0;
+  let deletions = 0;
+  let inHunk = false;
+  for (let start = 0; start < patch.length;) {
+    const end = patch.indexOf('\n', start);
+    const next = end < 0 ? patch.length : end + 1;
+    const first = patch[start];
+    if (first === 'd' && patch.startsWith('diff --git ', start)) inHunk = false;
+    else if (first === '@' && patch.startsWith('@@', start)) inHunk = true;
+    else if (inHunk && first === '+') additions++;
+    else if (inHunk && first === '-') deletions++;
+    start = next;
+  }
+  return { additions, deletions };
+}
+
 export interface DiffFileEntry {
   key: string;
   path: string;

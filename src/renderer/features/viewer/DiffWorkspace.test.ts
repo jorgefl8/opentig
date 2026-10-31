@@ -3,6 +3,7 @@ import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { MobileChromeContext, NO_MOBILE_CHROME_HOSTS } from '@/components/mobile-chrome-context';
 import { DiffWorkspace } from './DiffWorkspace';
 import { largePatch, MIXED_PATCH } from './diff-parser.fixtures';
 import { buildDiffFileEntries } from './patch-utils';
@@ -286,4 +287,65 @@ it('retains the highlighting guard for the hidden revision until its replacement
   expect(container.querySelector('[data-worker-disabled="false"]')).toBeNull();
   await finish(1, second);
   expect(container.querySelector('[data-worker-disabled="false"]')).not.toBeNull();
+});
+
+describe('on a phone', () => {
+  const single = `diff --git a/src/a.ts b/src/a.ts
+--- a/src/a.ts
++++ b/src/a.ts
+@@ -1 +1 @@
+-one
++uno
+`;
+  const renamed = `diff --git a/src/old.ts b/src/new.ts
+similarity index 80%
+rename from src/old.ts
+rename to src/new.ts
+--- a/src/old.ts
++++ b/src/new.ts
+@@ -1 +1 @@
+-one
++uno
+`;
+  async function renderPhone(patch: string, props: { compact?: boolean; initiallyCollapsed?: boolean } = {}) {
+    await act(async () => root.render(createElement(TooltipProvider, null, createElement(MobileChromeContext.Provider, { value: NO_MOBILE_CHROME_HOSTS }, createElement(DiffWorkspace, {
+      contentKey: 'phone', diff: { path: '', patch, binary: false, truncated: false, lineCount: 2 }, diffView: 'unified', themeType: 'light', wrapLines: true, onClose: vi.fn(), onDiffViewChange: vi.fn(), onWrapLinesChange: vi.fn(), ...props,
+    })))));
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+  }
+  const labels = () => [...container.querySelectorAll('button')].map((item) => item.getAttribute('aria-label'));
+
+  it('offers no split view and no close, and keeps wrapping', async () => {
+    await renderPhone(MIXED_PATCH);
+    expect(labels()).not.toContain('Use split diff');
+    expect(labels()).not.toContain('Close diff');
+    expect(labels()).toContain('Disable line wrapping');
+  });
+
+  it('lists files with their counts inside the scroller, so the code gets the screen', async () => {
+    await renderPhone(MIXED_PATCH, { initiallyCollapsed: true });
+    expect(container.querySelector('.diff-workspace-scroll .diff-workspace-toolbar')).not.toBeNull();
+    const rows = [...container.querySelectorAll<HTMLButtonElement>('.diff-file-header')];
+    expect(rows.length).toBeGreaterThan(1);
+    expect(rows[0]!.getAttribute('aria-expanded')).toBe('false');
+    expect(rows[0]!.querySelector('.diff-file-stats')).not.toBeNull();
+    await act(async () => rows[0]!.click());
+    expect(rows[0]!.getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('does not repeat the name of a lone file, since the top bar has it', async () => {
+    await renderPhone(single, { compact: true });
+    expect(container.querySelector('.diff-file-header')).toBeNull();
+  });
+
+  it('still says when that file was renamed', async () => {
+    await renderPhone(renamed, { compact: true });
+    expect(container.querySelector('.diff-file-header')?.textContent).toBe('Renamed from src/old.ts');
+  });
+
+  it('keeps the headers when several files share the view', async () => {
+    await renderPhone(MIXED_PATCH, { compact: true });
+    expect(container.querySelectorAll('.diff-file-header').length).toBeGreaterThan(1);
+    expect(container.querySelector('.diff-file-header .diff-workspace-actions')).toBeNull();
+  });
 });

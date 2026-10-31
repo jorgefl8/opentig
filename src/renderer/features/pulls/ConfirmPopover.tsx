@@ -1,22 +1,43 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Popover } from '@base-ui/react/popover';
 import { Button } from '@/components/ui/button';
+import { MobileSheet } from '@/components/MobileSheet';
+import { useMobileChrome } from '@/components/mobile-chrome-context';
 
 /**
  * A question beside the button that asked it, rendered only while it's being asked. It stays until
  * it's answered, nothing else can be pressed meanwhile, and closing it returns focus to that button.
- * While an answer is being sent it can't be dismissed.
+ * While an answer is being sent it can't be dismissed. On a phone it's a sheet with the same rules.
  */
-export function ConfirmPopover({ anchor, label, busy, confirm, onCancel, children }: {
+export function ConfirmPopover({ anchor, label, title, footnote, busy, confirm, onCancel, children }: {
   /** The button that opened it. */
   anchor: HTMLElement;
   label: string;
+  /** The sheet's title on a phone. */
+  title?: string;
+  /** Small, under the confirming button on a phone: who this acts as. */
+  footnote?: ReactNode;
   busy: boolean;
   /** The confirming button. */
   confirm: ReactNode;
   onCancel(): void;
   children: ReactNode;
 }) {
+  const phone = useMobileChrome() !== null;
+  const [sheetOpen, setSheetOpen] = useState(true);
+  if (phone) {
+    return (
+      <MobileSheet open={sheetOpen} onOpenChange={(next) => { if (!next && !busy) setSheetOpen(false); }} onClosed={onCancel} title={title ?? label} locked={busy} finalFocus={() => anchor}>
+        <div className="confirm-sheet">
+          {children}
+          <div className="confirm-sheet-actions">
+            {confirm}
+            {footnote && <small>{footnote}</small>}
+          </div>
+        </div>
+      </MobileSheet>
+    );
+  }
   return (
     <Popover.Root open modal onOpenChange={(next) => { if (!next && !busy) onCancel(); }}>
       <Popover.Portal>

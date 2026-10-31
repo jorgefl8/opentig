@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { Popover } from '@base-ui/react/popover';
 import { IconAlertTriangle, IconCircleCheck, IconCircleMinus, IconCircleX, IconClock, IconExternalLink } from '@tabler/icons-react';
 import type { PullRequestCheck, PullRequestCheckState, PullRequestLiveState } from '../../../shared/contracts';
+import { MobileSheet } from '@/components/MobileSheet';
+import { useMobileChrome } from '@/components/mobile-chrome-context';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { groupPullRequestChecks, openOnGitHub, pullRequestChecksSentence } from './gh-utils';
 
@@ -21,28 +23,36 @@ export function PullRequestChecksSummary({ state }: { state: PullRequestCheckSta
 
 export function PullRequestChecksMenu({ checks, url }: { checks: PullRequestLiveState['checks']; url: string }) {
   const [open, setOpen] = useState(false);
+  const phone = useMobileChrome() !== null;
   if (checks.rollup === 'NONE' && !checks.items.length) return <PullRequestChecksSummary state={checks.rollup} />;
+  const list = <>
+    {groupPullRequestChecks(checks.items).map((group) => (
+      <section key={group.label} className="pr-checks-group" aria-label={group.label}>
+        <h4>{group.label}{checks.truncated ? null : <span className="plain-count">{group.checks.length}</span>}</h4>
+        {group.checks.map((check) => <CheckRow key={JSON.stringify([check.workflow, check.name])} check={check} />)}
+      </section>
+    ))}
+    {!checks.items.length && <p className="pr-stack-notice">GitHub didn't return the individual checks.</p>}
+    {checks.partial && <p className="pr-stack-notice">GitHub didn't share every detail with this account, so some checks may be missing.</p>}
+    {checks.truncated && (
+      <div className="pr-stack-notice pr-checks-truncated">
+        <p>Some checks aren't listed here.</p>
+        {url && <button className="pr-checks-all" onClick={() => openOnGitHub(`${url}/checks`)}>View all on GitHub <IconExternalLink aria-hidden="true" /></button>}
+      </div>
+    )}
+  </>;
+  if (phone) {
+    return <>
+      <button className="pr-checks-trigger" aria-haspopup="dialog" onClick={() => setOpen(true)}>{pullRequestChecksSentence(checks)}</button>
+      <MobileSheet open={open} onOpenChange={setOpen} title="Checks">{list}</MobileSheet>
+    </>;
+  }
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
       <Popover.Trigger render={<button className="pr-checks-trigger" />}>{pullRequestChecksSentence(checks)}</Popover.Trigger>
       <Popover.Portal>
         <Popover.Positioner side="bottom" align="start" sideOffset={6} className="isolate z-50 outline-none">
-          <Popover.Popup className="pr-stack-popup pr-checks-popup" aria-label="Checks">
-            {groupPullRequestChecks(checks.items).map((group) => (
-              <section key={group.label} className="pr-checks-group" aria-label={group.label}>
-                <h4>{group.label}{checks.truncated ? null : <span className="plain-count">{group.checks.length}</span>}</h4>
-                {group.checks.map((check) => <CheckRow key={JSON.stringify([check.workflow, check.name])} check={check} />)}
-              </section>
-            ))}
-            {!checks.items.length && <p className="pr-stack-notice">GitHub didn't return the individual checks.</p>}
-            {checks.partial && <p className="pr-stack-notice">GitHub didn't share every detail with this account, so some checks may be missing.</p>}
-            {checks.truncated && (
-              <div className="pr-stack-notice pr-checks-truncated">
-                <p>Some checks aren't listed here.</p>
-                {url && <button className="pr-checks-all" onClick={() => openOnGitHub(`${url}/checks`)}>View all on GitHub <IconExternalLink aria-hidden="true" /></button>}
-              </div>
-            )}
-          </Popover.Popup>
+          <Popover.Popup className="pr-stack-popup pr-checks-popup" aria-label="Checks">{list}</Popover.Popup>
         </Popover.Positioner>
       </Popover.Portal>
     </Popover.Root>

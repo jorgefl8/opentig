@@ -2,9 +2,10 @@
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReleaseDetails } from '@shared/contracts';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { MobileChromeContext, type MobileChromeHosts } from '@/components/mobile-chrome-context';
 import { ServerRequestTimeoutError } from '@/lib/websocket-transport';
 import { ReleaseViewer } from './ReleaseViewer';
 
@@ -215,4 +216,55 @@ it('keeps Publish off without a tag, and off for what is already published', asy
   client.clear();
   await render(release({ isDraft: false, publishedAt: '2026-01-02T00:00:00Z' }));
   expect(button('Publish')).toBeUndefined();
+});
+
+describe('on a phone', () => {
+  let hosts: MobileChromeHosts;
+  async function renderPhone(value: ReleaseDetails = release()) {
+    hosts = { title: document.createElement('div'), actions: document.createElement('div'), float: document.createElement('div') };
+    document.body.append(hosts.title!, hosts.actions!, hosts.float!);
+    api.getRelease.mockResolvedValue(value);
+    await act(async () => root.render(createElement(QueryClientProvider, { client }, createElement(TooltipProvider, null, createElement(MobileChromeContext.Provider, { value: hosts }, createElement(ReleaseViewer, { repositoryId: 'repo', tagName: value.tagName, onClose }))))));
+    await settle();
+  }
+  const publishPill = () => hosts.float!.querySelector<HTMLButtonElement>('button');
+  const sheet = () => document.querySelector<HTMLElement>('.mobile-sheet');
+
+  it('names the tag in the top bar', async () => {
+    await renderPhone();
+    expect(hosts.title!.textContent).toBe('v1.0.0');
+    expect(hosts.actions!.querySelector('[aria-label="More release actions"]')).not.toBeNull();
+    expect(moreButton()).toBeNull();
+  });
+
+  it('asks in a sheet before publishing, listing the same facts and who it acts as', async () => {
+    api.publishRelease.mockResolvedValue(undefined);
+    await renderPhone();
+    await act(async () => publishPill()!.click());
+    await settle();
+    expect(api.publishRelease).not.toHaveBeenCalled();
+    expect(panel()).toBeNull();
+    expect(sheet()!.querySelector('.mobile-sheet-title')?.textContent).toBe('Publish v1.0.0');
+    for (const fact of ['bbbbbbbbbbbb', 'app.exe', 'any workflow that runs on publication starts', 'as @sample']) expect(sheet()!.textContent).toContain(fact);
+    await act(async () => [...sheet()!.querySelectorAll('button')].find((item) => item.textContent === 'Publish release')!.click());
+    await settle();
+    expect(api.publishRelease).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps Publish off and says why when the tag is missing', async () => {
+    await renderPhone(release({ tagExists: false }));
+    expect(publishPill()!.disabled).toBe(true);
+    expect(hosts.float!.querySelector('.mobile-float-note')?.textContent).toBe("This tag doesn't exist yet. Create and push it to publish.");
+    await act(async () => publishPill()!.click());
+    expect(sheet()).toBeNull();
+  });
+
+  it('floats nothing for what is published or out of reach', async () => {
+    await renderPhone(release({ isDraft: false }));
+    expect(publishPill()).toBeNull();
+    await act(async () => root.unmount()); root = createRoot(container);
+    await renderPhone(release({ viewerCanWrite: false }));
+    expect(publishPill()).toBeNull();
+    expect(container.textContent).toContain('requires write access');
+  });
 });

@@ -9,12 +9,15 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { LinkedText } from '@/components/LinkedText';
+import { MobileViewerTitle } from '@/components/MobileChrome';
+import { useMobileChrome } from '@/components/mobile-chrome-context';
 import { isHtmlPath, isMarkdownPath } from '@/features/files/file-tree';
 import { copyCommitHash } from '@/features/history/copy-commit-hash';
-import { canUndoCommit } from '@/features/history/history-presentation';
+import { canUndoCommit, commitGitHubUrl } from '@/features/history/history-presentation';
 import { openExternalUrl } from '@/lib/browser-capabilities';
 import { ByteBudgetLru } from '@/lib/ByteBudgetLru';
 import { opentig } from '@/lib/opentig-api';
+import { MobileCommitBar, MobileDiffBar } from './MobileViewerBars';
 const PierreDiffViewer = lazy(() => import('./PierreDiffViewer'));
 const PierreEditBoundary = lazy(() => import('./PierreEditBoundary').then((module) => ({ default: module.PierreEditBoundary })));
 const MarkdownFileViewer = lazy(() => import('@/features/markdown/MarkdownFileViewer').then((module) => ({ default: module.MarkdownFileViewer })));
@@ -61,6 +64,8 @@ interface ViewerProps {
   githubRepository?: string | null | undefined;
   /** The repository is busy with something an undo can't run alongside. */
   undoBlocked?: boolean | undefined;
+  /** The repository is running something that staging can't run alongside. */
+  busy?: boolean | undefined;
   onUndoCommit?: ((commit: CommitInfo) => void) | undefined;
   draftFor(path: string): RuntimeFileDraft | null;
   onSelect(selection: ViewerSelection): void;
@@ -72,6 +77,9 @@ interface ViewerProps {
   onDraftSaved(path: string): void;
   onUpdateConflict(path: string, content: string): Promise<boolean>;
   onResolveConflict(path: string, content: string): Promise<boolean>;
+  /** A phone's diff bar stages, unstages and discards the change it shows. */
+  onMoveDiffAcrossIndex?: ((path: string, kind: 'staged' | 'unstaged') => void) | undefined;
+  onDiscardDiff?: ((path: string) => void) | undefined;
 }
 
 type ViewerData =
@@ -89,7 +97,7 @@ const diffCache = new ByteBudgetLru<string, DiffResult>({
 });
 let diffCacheRepositoryId: string | null = null;
 
-export default function Viewer({ repositoryId, selection, diffView, wrapLines, theme, revision, readOnly, commits, githubRepository, undoBlocked, onUndoCommit, draftFor, onSelect, onOpenFile, onDiffViewChange, onWrapLinesChange, onDraftChange, onDraftSaved, onUpdateConflict, onResolveConflict }: ViewerProps) {
+export default function Viewer({ repositoryId, selection, diffView, wrapLines, theme, revision, readOnly, commits, githubRepository, undoBlocked, busy, onUndoCommit, draftFor, onSelect, onOpenFile, onDiffViewChange, onWrapLinesChange, onDraftChange, onDraftSaved, onUpdateConflict, onResolveConflict, onMoveDiffAcrossIndex, onDiscardDiff }: ViewerProps) {
   const [data, setData] = useState<ViewerData>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -222,7 +230,7 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
     content = <EmptyViewer />;
   } else if (selection.type === 'pull-request') {
     content = (
-      <Suspense fallback={<ViewerLoading />}>
+      <Suspense fallback={<><MobileViewerTitle title={`#${selection.number}`} /><ViewerLoading /></>}>
         <PullRequestViewer
           key={`${repositoryId}:${selection.number}`}
           repositoryId={repositoryId}
@@ -239,7 +247,7 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
     );
   } else if (selection.type === 'release') {
     content = (
-      <Suspense fallback={<ViewerLoading />}>
+      <Suspense fallback={<><MobileViewerTitle title={selection.tag} /><ViewerLoading /></>}>
         <ReleaseViewer key={`${repositoryId}:${selection.tag}`} repositoryId={repositoryId} tagName={selection.tag} onClose={() => onSelect(null)} />
       </Suspense>
     );
@@ -401,8 +409,33 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
     content = <div className="viewer-message">This file cannot be edited.</div>;
   }
 
+  // What a phone's top bar shows while this document loads, and once it has. A file's comes from App, which has its tabs and actions.
+  const bar = selection?.type === 'diff' ? (
+    <MobileDiffBar
+      path={selection.path}
+      kind={selection.kind}
+      diff={data?.docKey === docKey && data.type === 'diff' ? data.value : null}
+      wrapLines={wrapLines}
+      readOnly={readOnly}
+      busy={Boolean(busy)}
+      onOpenFile={onOpenFile}
+      onWrapLinesChange={onWrapLinesChange}
+      onMoveAcrossIndex={onMoveDiffAcrossIndex}
+      onDiscard={onDiscardDiff}
+    />
+  ) : selection?.type === 'commit' || selection?.type === 'commit-file' ? (
+    <MobileCommitBar
+      oid={selection.oid}
+      path={selection.type === 'commit-file' ? selection.path : undefined}
+      commit={commits.find((item) => item.oid === selection.oid)}
+      canUndo={!readOnly && !undoBlocked}
+      githubRepository={githubRepository}
+      onUndo={onUndoCommit}
+    />
+  ) : selection?.type === 'conflict' ? <MobileViewerTitle title={selection.path.split('/').pop()} subtitle="Conflict" /> : null;
   const body = (
     <>
+      {bar}
       {pierreContent ?? <div key={data ? data.docKey : docKey} className="viewer-transition">{content}</div>}
       {reloading && <span className="viewer-reloading" aria-hidden="true"><IconLoader4 className="spinner" /></span>}
     </>
@@ -424,19 +457,26 @@ function CommitDiffViewer({ contentKey, selection, commit, value, diffView, them
   onDiffViewChange(value: DiffViewPreference): void; onWrapLinesChange(value: boolean): void;
 }) {
   const [tools, setTools] = useState<HTMLElement | null>(null);
-  const message = <CommitMessage body={commit?.body ?? ''} />;
+  const phone = useMobileChrome() !== null;
+  const header = (
+    <CommitDiffHeader
+      oid={selection.oid}
+      commit={commit}
+      fallbackSubject={'subject' in selection ? selection.subject : ''}
+      canUndo={canUndo}
+      githubRepository={githubRepository}
+      toolsRef={setTools}
+      phone={phone}
+      onUndo={onUndo}
+      onClose={() => onSelect(null)}
+    />
+  );
+  const description = <CommitMessage body={commit?.body ?? ''} />;
+  // A phone's top bar already names the commit, so everything else scrolls away with the diffs.
+  const message = phone ? <>{header}{description}</> : description;
   return (
     <div className="commit-diff-viewer">
-      <CommitDiffHeader
-        oid={selection.oid}
-        commit={commit}
-        fallbackSubject={'subject' in selection ? selection.subject : ''}
-        canUndo={canUndo}
-        githubRepository={githubRepository}
-        toolsRef={setTools}
-        onUndo={onUndo}
-        onClose={() => onSelect(null)}
-      />
+      {!phone && header}
       {value.patch ? <Suspense fallback={<ViewerLoading />}>
         <PierreDiffViewer
           kind="diff"
@@ -460,20 +500,20 @@ function CommitDiffViewer({ contentKey, selection, commit, value, diffView, them
   );
 }
 
-function CommitDiffHeader({ oid, commit, fallbackSubject, canUndo, githubRepository, toolsRef, onUndo, onClose }: {
+function CommitDiffHeader({ oid, commit, fallbackSubject, canUndo, githubRepository, toolsRef, phone, onUndo, onClose }: {
   oid: string; commit: CommitInfo | undefined; fallbackSubject: string; canUndo: boolean; githubRepository: string | null | undefined;
-  toolsRef(element: HTMLElement | null): void; onUndo: ((commit: CommitInfo) => void) | undefined; onClose(): void;
+  toolsRef(element: HTMLElement | null): void; phone: boolean; onUndo: ((commit: CommitInfo) => void) | undefined; onClose(): void;
 }) {
   const date = commit?.date;
-  const githubUrl = githubRepository && commit?.upstreamState === 'published' ? `https://github.com/${githubRepository}/commit/${oid}` : null;
+  const githubUrl = commitGitHubUrl(githubRepository, oid, commit);
   return (
     <header className="commit-diff-header">
       <div className="commit-diff-heading">
         <h2><LinkedText text={commit?.subject || fallbackSubject || '(no subject)'} /></h2>
         <div className="commit-diff-meta">
-          <code>{commit?.shortOid ?? oid.slice(0, 7)}</code>
+          {!phone && <code>{commit?.shortOid ?? oid.slice(0, 7)}</code>}
           {commit?.author && <>
-            <span aria-hidden="true">·</span>
+            {!phone && <span aria-hidden="true">·</span>}
             <Tooltip disabled={!commit.email}>
               <TooltipTrigger render={<span />}>{commit.author}</TooltipTrigger>
               <TooltipContent>{commit.email}</TooltipContent>
@@ -491,7 +531,7 @@ function CommitDiffHeader({ oid, commit, fallbackSubject, canUndo, githubReposit
         </div>
       </div>
       <div ref={toolsRef} className="commit-diff-tools" />
-      <DropdownMenu>
+      {!phone && <DropdownMenu>
         <DropdownMenuTrigger render={<Button type="button" variant="ghost" size="icon-sm" className="commit-diff-more" aria-label="More commit actions" />}><IconDots /></DropdownMenuTrigger>
         <DropdownMenuContent>
           <DropdownMenuItem onClick={() => void copyCommitHash(oid)}>Copy full hash</DropdownMenuItem>
@@ -499,7 +539,7 @@ function CommitDiffHeader({ oid, commit, fallbackSubject, canUndo, githubReposit
           {commit && onUndo && canUndo && canUndoCommit(commit) && <DropdownMenuItem onClick={() => onUndo(commit)}>Undo commit…</DropdownMenuItem>}
           <DropdownMenuItem onClick={onClose}>Close</DropdownMenuItem>
         </DropdownMenuContent>
-      </DropdownMenu>
+      </DropdownMenu>}
     </header>
   );
 }

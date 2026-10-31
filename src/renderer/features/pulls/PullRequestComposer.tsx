@@ -5,6 +5,9 @@ import { sileo } from 'sileo';
 import type { PullRequestLiveState, ReviewPullRequestInput } from '../../../shared/contracts';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { MobileMainAction } from '@/components/MobileChrome';
+import { MobileSheet } from '@/components/MobileSheet';
+import { useMobileChrome } from '@/components/mobile-chrome-context';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { opentig } from '@/lib/opentig-api';
 import { ghDetail, ghErrorTitle, isUncertainFailure } from './gh-utils';
@@ -29,11 +32,12 @@ export function PullRequestComposer({ repositoryId, number, live, draft, onDraft
   // Sending again after no answer could post the same text twice.
   const [uncertain, setUncertain] = useState(false);
   const root = useRef<HTMLDivElement>(null);
-  // A draft that survived switching tabs is shown, not folded away.
-  const [expanded, setExpanded] = useState(Boolean(draft));
+  const phone = useMobileChrome() !== null;
+  // A draft that survived switching tabs is shown, not folded away. A phone shows it on the docked field instead.
+  const [expanded, setExpanded] = useState(!phone && Boolean(draft));
   // Leaving an empty box folds it. Text keeps it open, so it can't go unnoticed.
   useEffect(() => {
-    if (!expanded || draft.trim()) return;
+    if (phone || !expanded || draft.trim()) return;
     const leave = (event: Event) => {
       if (!(event.target instanceof Element) || root.current?.contains(event.target) || event.target.closest('[data-slot="dropdown-menu-content"]')) return;
       setExpanded(false);
@@ -44,7 +48,7 @@ export function PullRequestComposer({ repositoryId, number, live, draft, onDraft
       document.removeEventListener('pointerdown', leave);
       document.removeEventListener('focusin', leave);
     };
-  }, [draft, expanded]);
+  }, [draft, expanded, phone]);
   const send = useMutation({
     mutationFn: (request: Send) => {
       if (account?.state !== 'ready' || !account.login) throw new Error('Check the GitHub account in Settings and try again.');
@@ -82,26 +86,50 @@ export function PullRequestComposer({ repositoryId, number, live, draft, onDraft
     // Menus are portalled but their keys still bubble here, and Escape only closes them.
     if (event.key === 'Escape' && !busy && root.current?.contains(event.target as Node)) setExpanded(false);
   };
+  const reviewMenu = canReview && (
+    <DropdownMenu>
+      <DropdownMenuTrigger render={<Button variant={phone ? 'ghost' : 'outline'} size="xs" disabled={blocked} />}>Review <IconChevronDown /></DropdownMenuTrigger>
+      <DropdownMenuContent>
+        {!live.viewer.didAuthor && <DropdownMenuItem onClick={() => send.mutate({ kind: 'review', verdict: 'approve' })}>Approve</DropdownMenuItem>}
+        {!live.viewer.didAuthor && <DropdownMenuItem disabled={!hasText} onClick={() => send.mutate({ kind: 'review', verdict: 'request-changes' })}>Request changes</DropdownMenuItem>}
+        <DropdownMenuItem disabled={!hasText} onClick={() => send.mutate({ kind: 'review', verdict: 'comment' })}>Comment as a review</DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+  const commentButton = (
+    <Button size="xs" disabled={blocked || !hasText} onClick={() => send.mutate({ kind: 'comment' })}>
+      {busy ? <><IconLoader4 className="animate-spin" /> <ShimmeringText text="Sending…" /></> : 'Comment'}
+    </Button>
+  );
+  const accountNote = uncertain
+    ? <span className="pr-composer-account" role="status">It may have been posted. Check the conversation first. <Button variant="ghost" size="xs" onClick={() => { setUncertain(false); onRefresh(); }}>Refresh</Button></span>
+    : account?.login && <span className="pr-composer-account">Posting as @{account.login}</span>;
+  // This stays mounted while the sheet is closed, so what may have been posted is still known and still blocks a second send.
+  if (phone) {
+    const firstLine = draft.trim().split('\n', 1)[0];
+    return <>
+      <MobileMainAction note={uncertain ? 'It may have been posted. Check the conversation first.' : undefined}>
+        <button type="button" className={`mobile-main-dock${firstLine ? ' has-text' : ''}`} aria-haspopup="dialog" onClick={() => setExpanded(true)}>{firstLine || 'Write a comment'}</button>
+      </MobileMainAction>
+      <MobileSheet open={expanded} onOpenChange={(next) => { if (next || !busy) setExpanded(next); }} title="Comment" locked={busy}>
+        <div className="pr-composer">
+          <MarkdownField id={`pr-comment-${number}`} label="Add a comment" value={draft} rows={4} placeholder="Write a comment (GitHub Markdown)" emptyPreview="_Nothing to preview._" disabled={busy} onChange={onDraftChange} />
+          <div className="confirm-sheet-actions">
+            {commentButton}
+            {reviewMenu}
+            {accountNote && <small>{accountNote}</small>}
+          </div>
+        </div>
+      </MobileSheet>
+    </>;
+  }
   return (
     <div ref={root} className={`pr-composer${collapsed ? ' collapsed' : ''}`} onFocus={() => setExpanded(true)} onClick={() => setExpanded(true)} onKeyDown={onKeyDown}>
       <MarkdownField id={`pr-comment-${number}`} label="Add a comment" value={draft} rows={4} placeholder={collapsed ? 'Write a comment' : 'Write a comment (GitHub Markdown)'} emptyPreview="_Nothing to preview._" disabled={busy} collapsed={collapsed} onChange={(value) => { setExpanded(true); onDraftChange(value); }} />
       {!collapsed && <div className="pr-composer-actions">
-        {uncertain
-          ? <span className="pr-composer-account" role="status">It may have been posted. Check the conversation first. <Button variant="ghost" size="xs" onClick={() => { setUncertain(false); onRefresh(); }}>Refresh</Button></span>
-          : account?.login && <span className="pr-composer-account">Posting as @{account.login}</span>}
-        {canReview && (
-          <DropdownMenu>
-            <DropdownMenuTrigger render={<Button variant="outline" size="xs" disabled={blocked} />}>Review <IconChevronDown /></DropdownMenuTrigger>
-            <DropdownMenuContent>
-              {!live.viewer.didAuthor && <DropdownMenuItem onClick={() => send.mutate({ kind: 'review', verdict: 'approve' })}>Approve</DropdownMenuItem>}
-              {!live.viewer.didAuthor && <DropdownMenuItem disabled={!hasText} onClick={() => send.mutate({ kind: 'review', verdict: 'request-changes' })}>Request changes</DropdownMenuItem>}
-              <DropdownMenuItem disabled={!hasText} onClick={() => send.mutate({ kind: 'review', verdict: 'comment' })}>Comment as a review</DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        )}
-        <Button size="xs" disabled={blocked || !hasText} onClick={() => send.mutate({ kind: 'comment' })}>
-          {busy ? <><IconLoader4 className="animate-spin" /> <ShimmeringText text="Sending…" /></> : 'Comment'}
-        </Button>
+        {accountNote}
+        {reviewMenu}
+        {commentButton}
       </div>}
     </div>
   );

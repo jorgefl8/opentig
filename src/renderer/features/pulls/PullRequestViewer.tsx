@@ -1,6 +1,6 @@
 import { formatDateTime } from '@shared/date-format';
 import { PullRequestStackMenu } from './PullRequestStackMenu';
-import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { IconExternalLink, IconLoader4, IconRefresh } from '@tabler/icons-react';
 import { GITHUB_PR_COMMIT_PAGE, type DiffResult, type DiffViewPreference, type PullRequestCommitList, type PullRequestDetails, type PullRequestLatestReview, type PullRequestLiveState, type ThemePreference } from '../../../shared/contracts';
@@ -11,6 +11,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { ViewerTabs, ViewerTabsList, ViewerTabsPanel } from '@/components/ui/viewer-tabs';
 import { LinkedMarkdown } from '@/features/markdown/LinkedMarkdown';
 import { LinkedText } from '@/components/LinkedText';
+import { MobileViewerActions, MobileViewerTitle } from '@/components/MobileChrome';
+import { useMobileChrome } from '@/components/mobile-chrome-context';
 
 import { ghDetail, MERGE_METHOD_LABELS, openOnGitHub, reviewDecisionLabel } from './gh-utils';
 import { GitHubAvatar } from './GitHubAvatar';
@@ -43,11 +45,18 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
   const [editing, setEditing] = useState(() => hasViewerDraft(pullRequestEditDraft(repositoryId, prNumber)));
   const [commentDraft, setCommentDraft] = useViewerDraft(pullRequestCommentDraft(repositoryId, prNumber), () => '');
   const header = useRef<HTMLElement>(null);
+  const phone = useMobileChrome() !== null;
+  const scroller = useRef<HTMLDivElement>(null);
+  const overview = useRef<HTMLDivElement>(null);
   const closeEditor = () => {
     setEditing(false);
-    // The menu that opened the editor comes back with the header.
-    requestAnimationFrame(() => header.current?.querySelector<HTMLElement>('.pr-more-actions')?.focus());
+    // The menu that opened the editor comes back with the header, or in the top bar on a phone.
+    requestAnimationFrame(() => (header.current?.querySelector<HTMLElement>('.pr-more-actions') ?? document.querySelector<HTMLElement>('.mobile-toolbar .pr-more-actions'))?.focus());
   };
+  // On a phone the tabs stay stuck when changing panel, which starts right under them.
+  useLayoutEffect(() => {
+    if (phone && scroller.current && overview.current) scroller.current.scrollTop = Math.min(scroller.current.scrollTop, overview.current.offsetHeight);
+  }, [phone, tab]);
   const detailsQuery = useQuery<{ details: PullRequestDetails; bodyHtml: string }>({
     queryKey: queryKeys.pullRequest(repositoryId, prNumber),
     queryFn: async () => {
@@ -90,50 +99,62 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
     for (const queryKey of queriesOutdatedByLiveState(repositoryId, previous, live)) void queryClient.invalidateQueries({ queryKey });
   }, [live, queryClient, repositoryId]);
 
+  const bar = <MobileViewerTitle title={`#${prNumber}`} subtitle={details && <span className="mobile-viewer-mono">{details.headRefName} → {details.baseRefName}</span>} />;
   if (detailsError) {
     return (
       <div className="viewer-message flex-col gap-3">
+        {bar}
         <p className="text-destructive">{detailsError}</p>
         <Button variant="outline" size="sm" onClick={() => void detailsQuery.refetch()}><IconRefresh /> Try again</Button>
       </div>
     );
   }
   if (!details) {
-    return <div className="viewer-message"><IconLoader4 className="spinner" /> <ShimmeringText text={`Loading pull request #${prNumber}…`} /></div>;
+    return <div className="viewer-message">{bar}<IconLoader4 className="spinner" /> <ShimmeringText text={`Loading pull request #${prNumber}…`} /></div>;
   }
 
   if (editing && live) {
-    return <PullRequestEditor repositoryId={repositoryId} details={details} onClose={closeEditor} />;
+    return <>{bar}<PullRequestEditor repositoryId={repositoryId} details={details} onClose={closeEditor} /></>;
   }
 
   const review = reviewDecisionLabel(live ? live.reviewDecision : details.reviewDecision);
   const status = live ? pullRequestStatusLine(live) ?? pullRequestStateLine(live) : pullRequestStateLine(details);
   const reviewers = live?.latestReviews ?? [];
+  const counters = (
+    <span className="pr-counters">
+      {details.changedFiles} {details.changedFiles === 1 ? 'file' : 'files'}
+      {' '}<span className="add">+{details.additions}</span> <span className="del">−{details.deletions}</span>
+    </span>
+  );
+  const labelsAndStack = <>
+    {details.labels.length > 0 && <span className="pr-labels" aria-label="Pull request labels">{details.labels.map((label) => label.name).join(', ')}</span>}
+    {details.stack && <PullRequestStackMenu repositoryId={repositoryId} number={prNumber} membership={details.stack} onSelect={onSelectPullRequest} />}
+  </>;
+  const updated = <span>updated <time dateTime={details.updatedAt}>{formatDateTime(details.updatedAt)}</time></span>;
   return (
-    <ViewerTabs value={tab} onValueChange={(value) => setTab(value as typeof tab)} className="pr-viewer">
+    <ViewerTabs ref={scroller} value={tab} onValueChange={(value) => setTab(value as typeof tab)} className="pr-viewer" data-tab={tab}>
+      {bar}
       <header ref={header} className="pr-viewer-header">
-        <div className="pr-viewer-overview">
+        <div ref={overview} className="pr-viewer-overview">
           <div className="pr-viewer-top">
             <div className="pr-viewer-heading">
-              <h2><LinkedText text={details.title || '(no title)'} /> <span className="pr-number">#{details.number}</span></h2>
-              <div className="pr-viewer-meta">
+              <h2><LinkedText text={details.title || '(no title)'} />{!phone && <> <span className="pr-number">#{details.number}</span></>}</h2>
+              {!phone && <div className="pr-viewer-meta">
                 <span className="pr-branches">{details.headRefName} → {details.baseRefName}</span>
-                <span className="pr-counters">
-                  {details.changedFiles} {details.changedFiles === 1 ? 'file' : 'files'}
-                  {' '}<span className="add">+{details.additions}</span> <span className="del">−{details.deletions}</span>
-                </span>
+                {counters}
                 <span>{details.author}</span>
-                <span>updated <time dateTime={details.updatedAt}>{formatDateTime(details.updatedAt)}</time></span>
-                {details.labels.length > 0 && <span className="pr-labels" aria-label="Pull request labels">{details.labels.map((label) => label.name).join(', ')}</span>}
-                {details.stack && <PullRequestStackMenu repositoryId={repositoryId} number={prNumber} membership={details.stack} onSelect={onSelectPullRequest} />}
-              </div>
+                {updated}
+                {labelsAndStack}
+              </div>}
             </div>
             {live
-              ? <PullRequestActionBar repositoryId={repositoryId} details={details} live={live} refreshing={liveQuery.isFetching} statusLabel={status.label} onRefresh={() => void liveQuery.refetch()} onEdit={() => setEditing(true)} onSelectPullRequest={onSelectPullRequest} />
-              : details.url && <Tooltip>
-                <TooltipTrigger render={<Button variant="ghost" size="icon-xs" className="change-action-button" onClick={() => openOnGitHub(details.url)} aria-label="Open on GitHub" />}><IconExternalLink /></TooltipTrigger>
-                <TooltipContent>Open on GitHub</TooltipContent>
-              </Tooltip>}
+              ? <PullRequestActionBar repositoryId={repositoryId} details={details} live={live} refreshing={liveQuery.isFetching} statusLabel={status.label} tab={tab} onRefresh={() => void liveQuery.refetch()} onEdit={() => setEditing(true)} onSelectPullRequest={onSelectPullRequest} />
+              : details.url && (phone
+                ? <MobileViewerActions><Button variant="ghost" size="icon" className="mobile-bar-button" onClick={() => openOnGitHub(details.url)} aria-label="Open on GitHub"><IconExternalLink /></Button></MobileViewerActions>
+                : <Tooltip>
+                  <TooltipTrigger render={<Button variant="ghost" size="icon-xs" className="change-action-button" onClick={() => openOnGitHub(details.url)} aria-label="Open on GitHub" />}><IconExternalLink /></TooltipTrigger>
+                  <TooltipContent>Open on GitHub</TooltipContent>
+                </Tooltip>)}
           </div>
           <div className="pr-viewer-status">
             {liveQuery.isPending && details.state === 'OPEN'
@@ -146,6 +167,12 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
             {live?.autoMerge && <span className="pr-auto-merge">Auto-merge · {MERGE_METHOD_LABELS[live.autoMerge.method]}</span>}
             {liveQuery.isError && <PullRequestLiveNotice error={liveQuery.error} hasState={live !== null} open={details.state === 'OPEN'} retrying={liveQuery.isFetching} onRetry={() => void liveQuery.refetch()} />}
           </div>
+          {phone && <div className="pr-viewer-meta">
+            <span>{details.author}</span>
+            {updated}
+            {counters}
+            {labelsAndStack}
+          </div>}
         </div>
         <ViewerTabsList
           label="Pull request view"

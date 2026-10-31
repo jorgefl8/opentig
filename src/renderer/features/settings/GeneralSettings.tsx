@@ -94,7 +94,7 @@ export function GeneralSettings({ preferences, onPreference, showRepositoryOptio
   const closeCustomInterval = () => { setCustomInterval(null); setIntervalError(false); intervalTrigger.current?.focus(); };
 
   return <div className="settings-general">
-    {onOnboarding && <SettingGroup title="Getting started"><SettingRow label="Onboarding" description="Show the start screen and the first-commit checklist again."><Button variant="ghost" size="sm" onClick={onOnboarding}>Repeat onboarding</Button></SettingRow></SettingGroup>}
+    {onOnboarding && <SettingGroup title="Getting started" className="settings-group-onboarding"><SettingRow label="Onboarding" description="Show the start screen and the first-commit checklist again."><Button variant="ghost" size="sm" onClick={onOnboarding}>Repeat onboarding</Button></SettingRow></SettingGroup>}
     <SettingGroup title="Appearance">
       <SettingRow label="Theme">
         <ChoiceGroup label="Theme" options={THEME_OPTIONS} value={preferences.theme} onChange={(theme) => onPreference({ theme })} />

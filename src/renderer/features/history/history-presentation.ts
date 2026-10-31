@@ -36,6 +36,10 @@ export function canUndoCommit(commit: Pick<CommitInfo, 'upstreamState' | 'isHead
   return commit.upstreamState === 'local-only' && commit.isHead && commit.parentCount === 1;
 }
 
+export function commitGitHubUrl(githubRepository: string | null | undefined, oid: string, commit: Pick<CommitInfo, 'upstreamState'> | undefined): string | null {
+  return githubRepository && commit?.upstreamState === 'published' ? `https://github.com/${githubRepository}/commit/${oid}` : null;
+}
+
 export interface HistoryRow { commit: CommitInfo; parentOids: string[]; grouped: CommitInfo[]; }
 
 /** Collapse only complete, exclusive, linear merge branches in the loaded page. */

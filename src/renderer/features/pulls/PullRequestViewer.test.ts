@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { PullRequestDetails, PullRequestLiveState } from '@shared/contracts';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { MobileChromeContext, type MobileChromeHosts } from '@/components/mobile-chrome-context';
 import { queryKeys } from '@/lib/query-client';
 import { PullRequestViewer } from './PullRequestViewer';
 
@@ -203,4 +204,31 @@ it('does not read the live state of a PR that failed to load', async () => {
   api.getPullRequest.mockRejectedValue(new Error('Not found'));
   await render();
   expect(api.getPullRequestLiveState).not.toHaveBeenCalled();
+});
+
+it('on a phone puts its number and branches in the top bar, and floats one thing per tab', async () => {
+  const hosts: MobileChromeHosts = { title: document.createElement('div'), actions: document.createElement('div'), float: document.createElement('div') };
+  document.body.append(hosts.title!, hosts.actions!, hosts.float!);
+  api.getPullRequestLiveState.mockResolvedValue(live({ reviewDecision: 'APPROVED', mergeStateStatus: 'CLEAN' }));
+  api.getPullRequestConversation.mockResolvedValue({ entries: [], truncated: false, partial: false });
+  api.getPullRequestDiff.mockReturnValue(new Promise(() => {}));
+  await act(async () => root.render(createElement(QueryClientProvider, { client }, createElement(TooltipProvider, null, createElement(MobileChromeContext.Provider, { value: hosts }, createElement(PullRequestViewer, {
+    repositoryId: 'repo', prNumber: 7, diffView: 'unified', themeType: 'dark', wrapLines: false, onDiffViewChange: vi.fn(), onWrapLinesChange: vi.fn(), onClose: vi.fn(), onSelectPullRequest: vi.fn(),
+  }))))));
+  await settle();
+  expect(hosts.title!.textContent).toBe('#7feature → main');
+  expect(container.querySelector('.pr-number')).toBeNull();
+  const floating = () => [...hosts.float!.querySelectorAll('button')].map((item) => item.textContent?.trim());
+  const open = async (name: string) => {
+    await act(async () => [...container.querySelectorAll<HTMLElement>('[role="tab"]')].find((tab) => tab.textContent === name)!.click());
+    await settle();
+  };
+  expect(floating()).toEqual(['Merge']);
+  await open('Timeline');
+  expect(floating()).toEqual(['Write a comment']);
+  await open('Code');
+  expect(floating()).toEqual([]);
+  expect(container.querySelector('.pr-viewer')?.getAttribute('data-tab')).toBe('diff');
+  await open('Summary');
+  expect(floating()).toEqual(['Merge']);
 });

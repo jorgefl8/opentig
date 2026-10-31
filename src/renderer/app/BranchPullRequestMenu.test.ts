@@ -70,7 +70,7 @@ it.each([
 
 it('offers the same destinations in the mobile repository menu and closes it only after a choice', async () => {
   await render({ ...pullRequest, state: 'MERGED' }, true);
-  expect(trigger().textContent).toBe('View merged PR #12');
+  expect(trigger().textContent).toBe('View merged pull request #12');
   await click(trigger());
   expect(onNavigate).not.toHaveBeenCalled();
   await click(choice('Open in OpenTig'));

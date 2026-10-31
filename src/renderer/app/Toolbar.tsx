@@ -11,7 +11,6 @@ import { SearchablePicker, type SearchablePickerItem } from '@/components/Search
 import { AppName } from '@/components/AppName';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { isEditableTarget } from '@/features/files/file-tree';
-import type { FileSession } from '@/features/files/open-files-model';
 import type { LocalRefsTab } from '@/features/refs/local-refs-model';
 import { samePath } from '@/features/refs/local-refs-model';
 import { RepositoryFaviconImage } from '@/features/repositories/RepositoryFavicon';
@@ -24,7 +23,7 @@ import { normalizeRepositoryKey } from '../../shared/repository-projects';
 import { opentig } from '@/lib/opentig-api';
 import { useShortcuts } from './useShortcuts';
 import { useMobileLayout } from '@/lib/use-mobile-layout';
-import { MobileToolbar } from './MobileToolbar';
+import { MobileToolbar, type MobileViewerBarProps } from './MobileToolbar';
 import { RepositoryLoadIndicator, type RepositoryLoadPhase } from './RepositoryLoadIndicator';
 import { RemoteAccessIndicator } from './RemoteAccessIndicator';
 import type { RemoteAccessProblem } from '@shared/repository-access';
@@ -35,8 +34,8 @@ import { BranchPullRequestMenu } from './BranchPullRequestMenu';
 
 export interface ToolbarProps {
   onOnboarding?(): void;
-  mobileBackLabel?: string | undefined;
-  onMobileBack?(): void;
+  /** On a phone with a viewer showing, the top bar becomes that viewer's. */
+  mobileViewer?: MobileViewerBarProps | undefined;
   repository: RepositoryInfo; recent: BootstrapData['recentRepositories']; repositoryProjects: RepositoryProject[]; status: RepositoryStatus | null;
   branches: BranchInfo[]; worktrees: WorktreeInfo[]; preferences: Preferences; busy: string | null;
   githubInfo: GitHubRepositoryInfo | null;
@@ -56,9 +55,6 @@ export interface ToolbarProps {
   onRelocateRepository(repository: RepositoryOption, path: string): Promise<void>;
   onOrganizationChange(organization: RepositoryOrganization): void;
   onRefsManaged(recentRepositories: RecentRepository[] | null): void;
-  openFiles: FileSession;
-  onOpenFileTab(path: string): void;
-  onCloseFileTab(path: string): void;
   onPull(): void; onPush(): void;
   repositorySyncOperations: ReadonlyMap<string, ProjectSyncAction>;
   onRepositorySync(repository: RepositoryOption, projectName: string | null, action: ProjectSyncAction): Promise<void>;
@@ -365,7 +361,7 @@ export function Toolbar(props: ToolbarProps) {
   );
   return (
     <>
-    {mobile ? <MobileToolbar props={props} repositoryControl={repositoryControl} worktreeControl={worktreeControl} branchControl={branchControl} favicon={favicons.get(currentRepositoryKey)} pendingRepositoryName={pendingRepository?.name ?? null} loadIndicator={loadIndicator} contextOpen={mobileContextOpen} onContextOpen={(open) => { setMobileContextOpen(open); if (!open) setRepositorySelectOpen(false); }} syncBusy={currentRepositorySyncBusy} /> : <header className="toolbar">
+    {mobile ? <MobileToolbar props={props} repositoryControl={repositoryControl} worktreeControl={worktreeControl} branchControl={branchControl} pendingRepositoryName={pendingRepository?.name ?? null} loadIndicator={loadIndicator} contextOpen={mobileContextOpen} onContextOpen={(open) => { setMobileContextOpen(open); if (!open) setRepositorySelectOpen(false); }} syncBusy={currentRepositorySyncBusy} /> : <header className="toolbar">
       <div className="toolbar-crumbs">
         {repositoryControl}
         <span className="toolbar-crumb-separator" aria-hidden="true">/</span>

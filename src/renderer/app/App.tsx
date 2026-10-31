@@ -26,6 +26,8 @@ import { normalizeRepositoryKey } from '../../shared/repository-projects';
 import { DEFAULT_REMOTE_FETCH_INTERVAL_SECONDS } from '../../shared/remote-fetch';
 import type { RepositoryChangeScope } from '../../shared/repository-change';
 import { Button } from '@/components/ui/button';
+import { MobileSheet } from '@/components/MobileSheet';
+import { MobileChromeContext, NO_MOBILE_CHROME_HOSTS } from '@/components/mobile-chrome-context';
 import { Dialog, DialogDescription, DialogPopup, DialogTitle } from '@/components/ui/dialog';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { SplashScreen } from '@/components/SplashScreen';
@@ -34,6 +36,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { ChangesView } from '@/features/changes/ChangesView';
 import { createDeleteAction, createDiscardAction, destructiveActionCopy, dispatchDestructiveAction, type DestructiveAction } from '@/features/files/destructive-action';
 import { fileSnapshotFingerprint, pathContains, selectedFileChanged, snapshotPathPresence } from '@/features/files/file-tree';
+import { MobileFileBar } from '@/features/files/MobileFileBar';
 import { OpenFilesStrip } from '@/features/files/OpenFilesStrip';
 import {
   activateTab, applyKeyboardAction, closeTab, dirtyTabs, dirtyTabsUnder, DRAFT_MEMORY_WARNING_BYTES, draftBytes,
@@ -59,6 +62,7 @@ import { resolveWindowControlsInset } from './window-controls';
 import { queryKeys, queryResourcesForScope, resetGitHubQueries } from '@/lib/query-client';
 import { persistTheme } from '@/lib/boot-theme';
 import { useMobileLayout } from '@/lib/use-mobile-layout';
+import { mobileMainAction } from '@/lib/mobile-main-action';
 import { useElapsed } from '@/lib/use-elapsed';
 import { opentig, serverClient } from '@/lib/opentig-api';
 import { startupSplashDetail } from '@/lib/startup-splash';
@@ -116,8 +120,13 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   const mobile = useMobileLayout();
   const [openRepositoryDialog, setOpenRepositoryDialog] = useState(false);
   const addingRepository = useRef(false);
-  const [mobilePane, setMobilePane] = useState<'list' | 'viewer' | 'commit'>('list');
-  const [mobileDiffView, setMobileDiffView] = useState<Preferences['diffView']>('unified');
+  const [mobilePane, setMobilePane] = useState<'list' | 'viewer'>('list');
+  const [commitSheetOpen, setCommitSheetOpen] = useState(false);
+  // Long lines wrap on a phone unless turned off for the session; the saved desktop choice stays as it is.
+  const [mobileWrapLines, setMobileWrapLines] = useState(true);
+  const [viewerTitleHost, setViewerTitleHost] = useState<HTMLElement | null>(null);
+  const [viewerActionsHost, setViewerActionsHost] = useState<HTMLElement | null>(null);
+  const [mobileFloatHost, setMobileFloatHost] = useState<HTMLElement | null>(null);
   const [bootstrap, setBootstrap] = useState<BootstrapData | null>(null);
   const [capabilities, setCapabilities] = useState<OpenTigCapabilities | null>(null);
   const [repository, setRepository] = useState<RepositoryInfo | null>(null);
@@ -280,6 +289,10 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   const pullsLoading = pullsQuery.isFetching || ghStatusQuery.isFetching;
   const pullsError = ghStatusQuery.error ? messageOf(ghStatusQuery.error) : pullsQuery.error ? messageOf(pullsQuery.error) : null;
   useEffect(() => { setMobilePane('list'); }, [repository?.id]);
+  const mobileViewerBar = useMemo(() => ({ onBack: () => setMobilePane('list'), setTitleHost: setViewerTitleHost, setActionsHost: setViewerActionsHost }), []);
+  const mobileChrome = useMemo(() => !mobile ? null
+    : mobilePane === 'viewer' ? { title: viewerTitleHost, actions: viewerActionsHost, float: mobileFloatHost } : NO_MOBILE_CHROME_HOSTS,
+  [mobile, mobileFloatHost, mobilePane, viewerActionsHost, viewerTitleHost]);
   const currentSnapshot = snapshotRepositoryId === repository?.id;
   const repositoryLoadPhase = pendingRepositoryId ? 'opening' : repository && !currentSnapshot ? 'loading' : null;
   // Quick switches finish without a flash; only a noticeable wait shows progress.
@@ -305,8 +318,9 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     serverClient.transport.getState,
   );
   const theme = bootstrap?.preferences.theme ?? 'system';
-  const diffView = mobile ? mobileDiffView : bootstrap?.preferences.diffView ?? 'unified';
-  const wrapLines = bootstrap?.preferences.wrapLines ?? false;
+  // A phone has no room for two columns, so it always reads inline.
+  const diffView = mobile ? 'unified' : bootstrap?.preferences.diffView ?? 'unified';
+  const wrapLines = mobile ? mobileWrapLines : bootstrap?.preferences.wrapLines ?? false;
   const uiZoom = bootstrap?.preferences.uiZoom ?? 100;
   const uiFont = bootstrap?.preferences.uiFont ?? 'plus-jakarta-sans';
   const monoFont = bootstrap?.preferences.monoFont ?? 'jetbrains-mono';
@@ -382,6 +396,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
 
   useEffect(() => {
     opentig.app.setZoomFactor(mobile ? 1 : uiZoom / 100);
+    // Zooming a phone's whole layout would undo its fixed bars, so the size reaches code through its text.
+    document.documentElement.style.setProperty('--mobile-code-scale', String(uiZoom / 100));
   }, [uiZoom, mobile]);
 
   useLayoutEffect(() => {
@@ -459,7 +475,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     const selection: ViewerSelection = path ? { type: 'file', path } : null;
     viewerSelectionRef.current = selection;
     setViewerSelection(selection);
-    if (!path) setMobilePane((pane) => pane === 'viewer' ? 'list' : pane);
+    if (!path) setMobilePane('list');
   }, []);
 
   const dropFileDraft = useCallback((repositoryId: string, path: string) => {
@@ -974,6 +990,17 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       return true;
     } catch (reason) { reportError('Could not save settings', reason); return false; }
   };
+  const changeWrapLines = (value: boolean) => {
+    if (mobile) setMobileWrapLines(value);
+    else void updatePreference({ wrapLines: value });
+  };
+  /** What Settings changes. On a phone, wrapping belongs to the session, as it does in a viewer's menu. */
+  const updateSettingsPreference = async (partial: Partial<Preferences>) => {
+    const { wrapLines: wrap, ...rest } = partial;
+    if (!mobile || wrap === undefined) return updatePreference(partial);
+    setMobileWrapLines(wrap);
+    return Object.keys(rest).length > 0 ? updatePreference(rest) : true;
+  };
 
   const persistFilesTreeExpandedPaths = useCallback((paths: string[]) => {
     if (!repository) return;
@@ -982,8 +1009,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       .catch((reason) => reportError('Could not save folder state', reason));
   }, [filesTreeStates, repository]);
 
-  const runIndexOperation = async (mode: 'stage' | 'unstage', paths: string[]) => {
-    if (!repository || !status || paths.length === 0) return;
+  const runIndexOperation = async (mode: 'stage' | 'unstage', paths: string[]): Promise<boolean> => {
+    if (!repository || !status || paths.length === 0) return false;
     const previous = status;
     setStatus(optimisticStatus(status, paths, mode));
     setBusy(mode);
@@ -993,9 +1020,11 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       if (mode === 'stage') await opentig.index.stage(repository.id, paths);
       else await opentig.index.unstage(repository.id, paths);
       await refresh({ background: true });
+      return true;
     } catch (reason) {
       setStatus(previous);
       reportError(mode === 'stage' ? 'Could not stage changes' : 'Could not unstage changes', reason);
+      return false;
     } finally { setBusy(null); }
   };
 
@@ -1018,6 +1047,13 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     if (selection) setMobilePane('viewer');
     return true;
   }, []);
+
+  /** From a diff's own top bar: the same file stays on screen, showing the side it moved to. */
+  const moveDiffAcrossIndex = async (path: string, kind: 'staged' | 'unstaged') => {
+    if (!await runIndexOperation(kind === 'unstaged' ? 'stage' : 'unstage', [path])) return;
+    const current = viewerSelectionRef.current;
+    if (current?.type === 'diff' && current.path === path && current.kind === kind) selectViewer({ type: 'diff', path, kind: kind === 'unstaged' ? 'staged' : 'unstaged' });
+  };
 
   /** The single entry point for every `type: 'file'` selection in the app. */
   const openFile = useCallback((path: string, mode: OpenMode = 'preview'): boolean => {
@@ -1511,6 +1547,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       lastAppliedMessageRef.current = '';
       setViewerSelection({ type: 'commit', oid: result.oid, subject });
       setMobilePane('viewer');
+      setCommitSheetOpen(false);
       await refresh({ background: true });
       committed = true;
     } catch (reason) {
@@ -1639,6 +1676,11 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     setCommitProposal(null);
     setPreparedCommitIndex(null);
   }, [repository?.id]);
+
+  // Nothing is left to show in the commit sheet once the last staged file is gone.
+  useEffect(() => {
+    if (!status?.stagedCount && !commitProposal) setCommitSheetOpen(false);
+  }, [commitProposal, status?.stagedCount]);
 
   useEffect(() => () => {
     const active = generationRequest.current;
@@ -2151,12 +2193,13 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   if (!bootstrap) {
     return <SplashScreen heading={appDisplayName} detail={startupSplashDetail(connectionState)} />;
   }
+  const settingsPreferences = mobile ? { ...bootstrap.preferences, wrapLines: mobileWrapLines } : bootstrap.preferences;
   if (!repository) {
     return (
       <TooltipProvider>
         {browserRepositoryDialog}
         {onboardingDialogs}
-        {settingsOpen && <Suspense fallback={null}><WelcomeSettings preferences={bootstrap.preferences} onPreference={updatePreference} open onOpenChange={setSettingsOpen} section={settingsSection} onSectionChange={setSettingsSection} onOnboarding={showOnboarding} /></Suspense>}
+        {settingsOpen && <Suspense fallback={null}><WelcomeSettings preferences={settingsPreferences} onPreference={updateSettingsPreference} open onOpenChange={setSettingsOpen} section={settingsSection} onSectionChange={setSettingsSection} onOnboarding={showOnboarding} /></Suspense>}
         <div className="fixed right-4 top-4 z-40"><DesktopUpdateIndicator /></div>
         {welcome}
       </TooltipProvider>
@@ -2167,10 +2210,12 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   const conflicts = status?.changes.filter((change) => change.conflict) ?? [];
   const staged = status?.changes.filter((change) => change.staged && !change.conflict) ?? [];
   const changed = status?.changes.filter((change) => change.unstaged && !change.conflict) ?? [];
-  // Docked at the bottom of the sidebar on desktop; a pane of its own on phones.
+  const stagedCount = status?.stagedCount ?? 0;
+  const commitSheetTitle = stagedCount ? `Commit ${stagedCount} ${stagedCount === 1 ? 'file' : 'files'}` : 'Commit plan';
+  // Docked at the bottom of the sidebar on desktop; in a sheet on phones, whose text and plan live here and outlast it.
   const commitComposer = (
     <CommitComposer
-      open={mobile ? mobilePane === 'commit' : view === 'changes' && Boolean(status?.stagedCount || commitProposal)}
+      open={mobile ? commitSheetOpen : view === 'changes' && Boolean(status?.stagedCount || commitProposal)}
       stagedCount={status?.stagedCount ?? 0}
       message={commitMessage}
       generating={Boolean(generating)}
@@ -2194,7 +2239,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       onCancelGenerate={() => void cancelCommitMessageGeneration()}
       onDismissProposal={() => { setCommitProposal(null); setPreparedCommitIndex(null); setCompletedCommitIndices(new Set()); }}
       onToggleCollapsed={() => setCommitPlanCollapsed((value) => !value)}
-      onOpenPath={(path) => { selectViewer({ type: 'diff', path, kind: 'staged' }); }}
+      onOpenPath={(path) => { setCommitSheetOpen(false); selectViewer({ type: 'diff', path, kind: 'staged' }); }}
       onPrepare={(index) => void prepareCommitGroup(index)}
       onCommit={(options) => void createCommit(options)}
     />
@@ -2320,11 +2365,11 @@ export default function App({ initialView, initialSelection, pullRequestCreation
         <CommitAuthorshipDialog key={repository.id} repository={repository} open onOpenChange={(open) => { if (!open) setAuthorshipRepositoryId(null); }} />
       )}
       {branchPush.remoteChoice && <PublishRemoteDialog key={branchPush.remoteChoice.id} choice={branchPush.remoteChoice} onSelect={branchPush.selectRemote} />}
+      <MobileChromeContext.Provider value={mobileChrome}>
       <div className="app-shell" data-mobile-pane={mobilePane} inert={welcomeReplay || undefined}>
         <Toolbar
           onOnboarding={showOnboarding}
-          mobileBackLabel={mobilePane !== 'list' ? `Back to ${view === 'prs' ? 'GitHub' : view}` : undefined}
-          onMobileBack={() => setMobilePane('list')}
+          mobileViewer={mobile && mobilePane === 'viewer' ? mobileViewerBar : undefined}
           repository={repository}
           recent={bootstrap.recentRepositories}
           repositoryProjects={bootstrap.repositoryProjects}
@@ -2334,7 +2379,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
           onOpenPullRequest={(number) => { selectViewer({ type: 'pull-request', number }); }}
           branches={branches}
           worktrees={worktrees}
-          preferences={bootstrap.preferences}
+          preferences={settingsPreferences}
           busy={busy}
           repositorySyncOperations={repositorySyncOperations}
           onOpen={openRepository}
@@ -2351,14 +2396,11 @@ export default function App({ initialView, initialSelection, pullRequestCreation
           onPull={() => void pullUpdates()}
           onPush={() => void pushUpdates()}
           onRepositorySync={syncRepository}
-          onPreference={updatePreference}
+          onPreference={updateSettingsPreference}
           onForgetRepository={forgetRepository}
           onRelocateRepository={relocateRepository}
           onOrganizationChange={(organization) => setBootstrap((current) => current ? { ...current, ...organization } : current)}
           onRefsManaged={handleRefsManaged}
-          openFiles={fileSessions.get(repository.id) ?? emptyFileSession}
-          onOpenFileTab={activateFileTab}
-          onCloseFileTab={(path) => void closeFileTab(path)}
           settingsOpen={settingsOpen}
           settingsSection={settingsSection}
           onSettingsOpen={setSettingsOpen}
@@ -2366,12 +2408,6 @@ export default function App({ initialView, initialSelection, pullRequestCreation
         />
         {status?.readOnly && <div className="operation-banner">Repository is read-only: {status.operation} is in progress.</div>}
 
-        {mobile && mobilePane === 'list' && view !== 'files' && (
-          <div className="mobile-workspace-actions mobile-view-heading">
-            <h2>{view === 'changes' ? 'Changes' : view === 'history' ? 'History' : view === 'prs' ? 'GitHub' : 'Search'}{view === 'changes' && status && <small>{status.changes.length}</small>}</h2>
-            {view === 'changes' && Boolean(status?.stagedCount || commitProposal) && <button className="mobile-commit-trigger" onClick={() => setMobilePane('commit')}><IconGitCommit /> Commit{status?.stagedCount ? ` (${status.stagedCount})` : ''}</button>}
-          </div>
-        )}
         <main className={`workspace${pendingRepositoryId && repositoryLoadVisible ? ' workspace-switching' : ''}`} aria-busy={repositoryLoadPhase ? true : undefined}>
           <aside className="sidebar" style={{ width: bootstrap.preferences.sidebarWidth }}>
             <nav className="sidebar-tabs tab-list" data-shortcuts={ctrlHeld ? 'visible' : undefined} aria-label="Repository views">
@@ -2566,12 +2602,15 @@ export default function App({ initialView, initialSelection, pullRequestCreation
                       commits={commits ?? []}
                       githubRepository={githubInfo?.isGitHub ? githubInfo.nameWithOwner : null}
                       undoBlocked={Boolean(status?.operation) || undoingCommit}
+                      busy={Boolean(busy)}
                       onUndoCommit={setUndoCommit}
                       draftFor={(path) => readFileDraft(repository.id, path)}
                       onSelect={selectViewer}
                       onOpenFile={openFile}
-                      onDiffViewChange={(value) => { if (mobile) setMobileDiffView(value); else void updatePreference({ diffView: value }); }}
-                      onWrapLinesChange={(value) => void updatePreference({ wrapLines: value })}
+                      onDiffViewChange={(value) => void updatePreference({ diffView: value })}
+                      onWrapLinesChange={changeWrapLines}
+                      onMoveDiffAcrossIndex={(path, kind) => void moveDiffAcrossIndex(path, kind)}
+                      onDiscardDiff={(path) => discardChanges([path])}
                       onDraftChange={storeFileDraft}
                       onDraftSaved={(path) => {
                         dropFileDraft(repository.id, path);
@@ -2580,13 +2619,35 @@ export default function App({ initialView, initialSelection, pullRequestCreation
                       onUpdateConflict={updateConflictFile}
                       onResolveConflict={resolveConflictFile}
                     />
+                    {mobile && viewerSelection?.type === 'file' && (
+                      <MobileFileBar
+                        path={viewerSelection.path}
+                        files={files}
+                        session={fileSessions.get(repository.id) ?? emptyFileSession}
+                        revision={filesSnapshotRevision}
+                        actions={{ readOnly: Boolean(status?.readOnly || busy), fileClipboardAvailable: capabilities?.fileClipboard === true, revealAvailable: capabilities?.revealInFileManager === true, onOpenFile: openFile, onCopyEntries: copyFileEntries, onCutEntries: cutFileEntries, onCopyPath: copyFilePaths, onCopyContents: copyFileContents, onReveal: revealFileEntry, onPaste: pasteFileEntries, onDeleteEntries: deleteFileEntries }}
+                        onActivateFile={activateFileTab}
+                        onCloseFile={(path) => void closeFileTab(path)}
+                        onLoadDirectory={loadDirectoryEntries}
+                        onMove={moveFileEntries}
+                        onRename={renameFileEntry}
+                        onCreate={createFileEntry}
+                      />
+                    )}
                   </FileViewerToolbarHostContext.Provider>
                 </Suspense>
               </ErrorBoundary>
             </div>
           </section>
         </main>
-        {mobile && commitComposer}
+        {mobile && <MobileSheet open={commitSheetOpen} onOpenChange={setCommitSheetOpen} title={commitSheetTitle} tall={commitProposal !== null}>{commitComposer}</MobileSheet>}
+        {mobile && (
+          <div ref={setMobileFloatHost} className="mobile-float">
+            {mobilePane === 'list' && view === 'changes' && mobileMainAction({ screen: 'changes', stagedCount, hasCommitPlan: commitProposal !== null }) === 'commit' && (
+              <Button className="mobile-main-action" aria-haspopup="dialog" onClick={() => setCommitSheetOpen(true)}><IconGitCommit />{commitSheetTitle}</Button>
+            )}
+          </div>
+        )}
         <nav className="mobile-navigation" aria-label="Repository views">
           {SIDEBAR_VIEWS.map((item) => (
             <button key={item} aria-current={view === item ? 'page' : undefined} onClick={() => { setView(item); setMobilePane('list'); }}>
@@ -2597,6 +2658,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
           ))}
         </nav>
       </div>
+      </MobileChromeContext.Provider>
     </TooltipProvider>
     </ShortcutsProvider>
   );

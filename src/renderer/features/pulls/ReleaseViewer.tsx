@@ -7,7 +7,10 @@ import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { MobileActionsMenu, MobileMainAction, MobileViewerActions, MobileViewerTitle, type MobileMenuItem } from '@/components/MobileChrome';
+import { useMobileChrome } from '@/components/mobile-chrome-context';
 import { LinkedMarkdown } from '@/features/markdown/LinkedMarkdown';
+import { mobileMainAction } from '@/lib/mobile-main-action';
 import { opentig } from '@/lib/opentig-api';
 import { queryKeys } from '@/lib/query-client';
 import { ConfirmPopover } from './ConfirmPopover';
@@ -25,6 +28,7 @@ function formatSize(bytes: number): string {
 
 export function ReleaseViewer({ repositoryId, tagName, onClose }: { repositoryId: string; tagName: string; onClose(): void }) {
   const queryClient = useQueryClient();
+  const phone = useMobileChrome() !== null;
   const query = useQuery({
     queryKey: queryKeys.release(repositoryId, tagName),
     queryFn: async () => {
@@ -41,7 +45,7 @@ export function ReleaseViewer({ repositoryId, tagName, onClose }: { repositoryId
   const [editing, setEditing] = useState(() => hasViewerDraft(releaseEditDraft(repositoryId, tagName)));
   const [confirming, setConfirming] = useState<{ action: 'delete' | 'publish'; anchor: HTMLElement } | null>(null);
   const header = useRef<HTMLElement>(null);
-  const moreButton = useRef<HTMLButtonElement>(null);
+  const [moreButton, setMoreButton] = useState<HTMLButtonElement | null>(null);
   const stateKey = release ? [release.databaseId, release.isDraft, release.tagExists, release.bodyHash].join('|') : '';
   useEffect(() => { setConfirming(null); }, [stateKey]);
 
@@ -75,49 +79,66 @@ export function ReleaseViewer({ repositoryId, tagName, onClose }: { repositoryId
     onSettled: refresh,
   });
   const busy = remove.isPending || publish.isPending;
+  const bar = <MobileViewerTitle title={tagName} />;
 
   if (query.isError && !release) {
     return (
       <div className="viewer-message flex-col gap-3">
+        {bar}
         <p className="text-destructive">{query.error instanceof Error ? query.error.message : 'Could not load the release.'}</p>
         <Button variant="outline" size="sm" onClick={() => void query.refetch()}><IconRefresh /> Try again</Button>
       </div>
     );
   }
-  if (!release) return <div className="viewer-message"><IconLoader4 className="spinner" /> <ShimmeringText text={`Loading release ${tagName}…`} /></div>;
+  if (!release) return <div className="viewer-message">{bar}<IconLoader4 className="spinner" /> <ShimmeringText text={`Loading release ${tagName}…`} /></div>;
 
   if (editing) {
     const closeEditor = () => {
       setEditing(false);
-      // The menu that opened the editor comes back with the header.
-      requestAnimationFrame(() => header.current?.querySelector<HTMLElement>('.pr-more-actions')?.focus());
+      // The menu that opened the editor comes back with the header, or in the top bar on a phone.
+      requestAnimationFrame(() => (header.current?.querySelector<HTMLElement>('.pr-more-actions') ?? document.querySelector<HTMLElement>('.mobile-toolbar .pr-more-actions'))?.focus());
     };
-    return <ReleaseEditor repositoryId={repositoryId} release={release} onClose={closeEditor} />;
+    return <>{bar}<ReleaseEditor repositoryId={repositoryId} release={release} onClose={closeEditor} /></>;
   }
 
   const canAct = release.viewerCanWrite && account?.state === 'ready' && Boolean(account.login);
-  const asViewer = account?.login ? <> as <strong>@{account.login}</strong></> : null;
+  // A phone says who this acts as once, under the button, instead of in each sentence.
+  const asViewer = account?.login && !phone ? <> as <strong>@{account.login}</strong></> : null;
+  const footnote = account?.login ? `as @${account.login}` : undefined;
   const canOpen = Boolean(release.url) && !release.isDraft;
   const publishBlocked = !release.tagExists ? "This tag doesn't exist yet. Create and push it to publish." : !canAct ? 'Check the GitHub account in Settings.' : null;
+  const askToDelete = () => { if (moreButton) setConfirming({ action: 'delete', anchor: moreButton }); };
+  const menu: MobileMenuItem[] = [
+    ...(canOpen ? [{ label: 'Open on GitHub', onSelect: () => openOnGitHub(release.url) }] : []),
+    ...(release.viewerCanWrite ? [{ label: 'Edit title and notes…', disabled: !canAct, onSelect: () => setEditing(true) }] : []),
+    ...(release.viewerCanWrite && release.isDraft ? [{ label: 'Delete draft…', danger: true, disabled: !canAct, onSelect: askToDelete }] : []),
+  ];
   return (
     <div className="pr-viewer">
+      {bar}
+      {phone && menu.length > 0 && <MobileViewerActions>
+        <MobileActionsMenu label="More release actions" title="Release" triggerRef={setMoreButton} triggerClassName="pr-more-actions" disabled={busy} items={menu} />
+      </MobileViewerActions>}
+      {phone && mobileMainAction({ screen: 'release', isDraft: release.isDraft, canWrite: release.viewerCanWrite }) === 'publish-release' && (
+        <MobileMainAction note={publishBlocked}>
+          <Button className="mobile-main-action" disabled={Boolean(publishBlocked) || busy} onClick={(event) => setConfirming({ action: 'publish', anchor: event.currentTarget })}>Publish</Button>
+        </MobileMainAction>
+      )}
       <header ref={header} className="pr-viewer-header no-tabs">
         <div className="pr-viewer-overview">
           <div className="pr-viewer-top">
             <div className="pr-viewer-heading"><h2>{release.name}</h2></div>
             <span className="pr-action-bar">
               {!release.viewerCanWrite && <span className="pr-action-reason">Changing releases requires write access</span>}
-              {release.viewerCanWrite && release.isDraft && <Tooltip>
+              {!phone && release.viewerCanWrite && release.isDraft && <Tooltip>
                 <TooltipTrigger render={<Button size="xs" disabled={Boolean(publishBlocked) || busy} focusableWhenDisabled onClick={(event) => setConfirming({ action: 'publish', anchor: event.currentTarget })} />}>Publish</TooltipTrigger>
                 {publishBlocked && <TooltipContent>{publishBlocked}</TooltipContent>}
               </Tooltip>}
-              {(release.viewerCanWrite || canOpen) && (
+              {!phone && (release.viewerCanWrite || canOpen) && (
                 <DropdownMenu>
-                  <DropdownMenuTrigger render={<Button ref={moreButton} variant="ghost" size="icon-xs" className="change-action-button pr-more-actions" aria-label="More release actions" disabled={busy} />}><IconDots /></DropdownMenuTrigger>
+                  <DropdownMenuTrigger render={<Button ref={setMoreButton} variant="ghost" size="icon-xs" className="change-action-button pr-more-actions" aria-label="More release actions" disabled={busy} />}><IconDots /></DropdownMenuTrigger>
                   <DropdownMenuContent>
-                    {canOpen && <DropdownMenuItem onClick={() => openOnGitHub(release.url)}>Open on GitHub</DropdownMenuItem>}
-                    {release.viewerCanWrite && <DropdownMenuItem disabled={!canAct} onClick={() => setEditing(true)}>Edit title and notes…</DropdownMenuItem>}
-                    {release.viewerCanWrite && release.isDraft && <DropdownMenuItem disabled={!canAct} onClick={() => { if (moreButton.current) setConfirming({ action: 'delete', anchor: moreButton.current }); }}>Delete draft…</DropdownMenuItem>}
+                    {menu.map((item) => <DropdownMenuItem key={item.label} disabled={item.disabled} onClick={item.onSelect}>{item.label}</DropdownMenuItem>)}
                   </DropdownMenuContent>
                 </DropdownMenu>
               )}
@@ -148,6 +169,8 @@ export function ReleaseViewer({ repositoryId, tagName, onClose }: { repositoryId
       {confirming?.action === 'publish' && <ConfirmPopover
         anchor={confirming.anchor}
         label="Confirm publication"
+        title={`Publish ${release.tagName}`}
+        footnote={footnote}
         busy={busy}
         onCancel={() => setConfirming(null)}
         confirm={<Button size="xs" disabled={busy} onClick={() => publish.mutate()}>{publish.isPending ? <><IconLoader4 className="animate-spin" /> <ShimmeringText text="Publishing…" /></> : 'Publish release'}</Button>}
@@ -163,6 +186,8 @@ export function ReleaseViewer({ repositoryId, tagName, onClose }: { repositoryId
       {confirming?.action === 'delete' && <ConfirmPopover
         anchor={confirming.anchor}
         label="Confirm deletion"
+        title="Delete draft"
+        footnote={footnote}
         busy={busy}
         onCancel={() => setConfirming(null)}
         confirm={<Button variant="destructive" size="xs" disabled={busy} onClick={() => remove.mutate()}>{busy ? <><IconLoader4 className="animate-spin" /> <ShimmeringText text="Deleting…" /></> : 'Delete draft'}</Button>}

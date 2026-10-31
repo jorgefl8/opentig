@@ -2,9 +2,10 @@
 import { act, createElement, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PullRequestLiveState } from '@shared/contracts';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { MobileChromeContext, type MobileChromeHosts } from '@/components/mobile-chrome-context';
 import { ServerRequestTimeoutError } from '@/lib/websocket-transport';
 import { PullRequestComposer } from './PullRequestComposer';
 
@@ -193,4 +194,90 @@ it('holds sending back after no answer, until the conversation is checked', asyn
   await settle();
   expect(onRefresh).toHaveBeenCalled();
   expect(button('Comment')?.disabled).toBe(false);
+});
+
+describe('on a phone', () => {
+  let float: HTMLDivElement;
+  async function renderPhone(initial = '') {
+    float = document.createElement('div');
+    document.body.append(float);
+    const hosts: MobileChromeHosts = { title: null, actions: null, float };
+    function Phone() {
+      const [draft, setDraft] = useState(initial);
+      return createElement(MobileChromeContext.Provider, { value: hosts }, createElement(PullRequestComposer, { repositoryId: 'repo', number: 7, live: live(), draft, onDraftChange: setDraft, onRefresh }));
+    }
+    await act(async () => root.render(createElement(QueryClientProvider, { client }, createElement(TooltipProvider, null, createElement(Phone)))));
+    await settle();
+  }
+  const dock = () => float.querySelector<HTMLButtonElement>('.mobile-main-dock')!;
+  const sheet = () => document.querySelector<HTMLElement>('.mobile-sheet');
+  const write = async (value: string) => {
+    await act(async () => {
+      const input = sheet()!.querySelector<HTMLTextAreaElement>('textarea')!;
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(input, value);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+  };
+  const inSheet = (label: string) => [...sheet()!.querySelectorAll('button')].find((item) => item.textContent?.trim() === label)!;
+  const dismiss = async () => {
+    await act(async () => sheet()!.querySelector<HTMLButtonElement>('button[aria-label="Close Comment"]')!.click());
+    await settle();
+  };
+
+  it('docks a one-line field that opens the composer in a sheet', async () => {
+    await renderPhone();
+    expect(dock().textContent).toBe('Write a comment');
+    expect(sheet()).toBeNull();
+    await act(async () => dock().click());
+    await settle();
+    expect(sheet()!.querySelector('.mobile-sheet-title')?.textContent).toBe('Comment');
+    expect(inSheet('Comment').disabled).toBe(true);
+    expect(sheet()!.textContent).toContain('Posting as @sample');
+  });
+
+  it('keeps the draft when the sheet closes, showing it on the field', async () => {
+    await renderPhone();
+    await act(async () => dock().click());
+    await settle();
+    await write('Looks good\nsecond line');
+    await dismiss();
+    expect(sheet()).toBeNull();
+    expect(dock().textContent).toBe('Looks good');
+    await act(async () => dock().click());
+    await settle();
+    expect(sheet()!.querySelector('textarea')!.value).toBe('Looks good\nsecond line');
+  });
+
+  it('does not open by itself for a draft that survived switching tabs', async () => {
+    await renderPhone('Kept');
+    expect(sheet()).toBeNull();
+    expect(dock().textContent).toBe('Kept');
+  });
+
+  it('remembers what may have been posted after the sheet closes, and blocks a second send', async () => {
+    api.commentOnPullRequest.mockRejectedValue(Object.assign(new ServerRequestTimeoutError('Server request timed out'), { unconfirmed: true }));
+    await renderPhone();
+    await act(async () => dock().click());
+    await settle();
+    await write('Once only');
+    await act(async () => inSheet('Comment').click());
+    await settle();
+    await dismiss();
+    expect(float.textContent).toContain('It may have been posted');
+    await act(async () => dock().click());
+    await settle();
+    expect(inSheet('Comment').disabled).toBe(true);
+    expect(api.commentOnPullRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('closes and clears after sending', async () => {
+    await renderPhone();
+    await act(async () => dock().click());
+    await settle();
+    await write('Done');
+    await act(async () => inSheet('Comment').click());
+    await settle();
+    expect(sheet()).toBeNull();
+    expect(dock().textContent).toBe('Write a comment');
+  });
 });
