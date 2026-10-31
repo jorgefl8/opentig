@@ -109,6 +109,10 @@ Options show hints only for truncated text or additional information. Scrolling 
 
 Use the bottom **Changes**, **Files**, **History**, **GitHub**, and **Search** tabs to switch sections; **Pull requests** and **Releases** are tabs inside **GitHub**. Tap the compact repository header's context controls for branches, worktrees, pull/push, and Settings.
 
+The tabs float over the content in a glass bar. The current section shows its name and the others show an icon, with their names still available to screen readers. A dot on **Changes** means the worktree has changes while you are in another section. Lists and viewers scroll under the bar and leave room at their end, so the last row or line can always be scrolled clear of it. The bar is solid instead of glass when the device asks for reduced transparency, when the browser has no background blur, and on low-end Android phones.
+
+Sheets slide up from the bottom. Drag one down, press outside it, or press Escape to close it. A slow drag that stops short lets the sheet return to its place.
+
 | Task | On a phone |
 | --- | --- |
 | **Review content** | Open a row, then use Back to return to its list |
@@ -116,7 +120,7 @@ Use the bottom **Changes**, **Files**, **History**, **GitHub**, and **Search** t
 | **Commit** | Open the separate Commit form; staging controls remain accessible |
 | **Pull or push** | Check the pending commit counts. Actions are disabled when up to date; unpublished branches can still be published |
 
-Notifications leave navigation and open sheets accessible. Short landscape phones keep the mobile layout. The bottom navigation hides when the software keyboard opens, and dialogs and forms fit the keyboard and safe areas.
+Notifications appear above the bottom bar and leave navigation and open sheets accessible. Short landscape phones keep the mobile layout with a lower, narrower bar. The bottom bar hides when the software keyboard opens, and dialogs, sheets, and forms fit the keyboard and safe areas.
 
 ### Files and search
 

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, type ReactNode } from 'react';
-import { IconArrowDown, IconArrowLeft, IconArrowUp, IconBrandGithub, IconDots, IconFiles, IconGitBranch, IconLoader4, IconPlus, IconRefresh, IconSettings, IconX } from '@tabler/icons-react';
+import { IconArrowDown, IconArrowLeft, IconArrowUp, IconBrandGithub, IconDots, IconFiles, IconFolder, IconGitBranch, IconHierarchy2, IconLoader4, IconPlus, IconRefresh, IconSettings, IconX } from '@tabler/icons-react';
 import { Button } from '@/components/ui/button';
 import { isDevProfile } from '@/lib/app-identity';
 import { AppName } from '@/components/AppName';
@@ -30,6 +30,7 @@ export function MobileToolbar({ props, repositoryControl, worktreeControl, branc
   const [filesOpen, setFilesOpen] = useState(false);
   const publish = needsBranchPublication(props.status);
   const syncDisabled = Boolean(props.busy) || syncBusy || !props.status || props.status.readOnly || props.status.unborn || props.status.detached;
+  const pushDisabled = syncDisabled || (!publish && !(props.status && props.status.ahead > 0));
   const contextAction = (action: () => void) => { onContextOpen(false); action(); };
   return <>
     <header className="mobile-toolbar">
@@ -47,23 +48,25 @@ export function MobileToolbar({ props, repositoryControl, worktreeControl, branc
       </div>
       {loadIndicator}
     </header>
-    <MobileSheet open={contextOpen} onOpenChange={onContextOpen} title="Repository" description="Switch checkout or manage the current repository.">
+    <MobileSheet open={contextOpen} onOpenChange={onContextOpen} title="Repository">
       <div className="mobile-context-selectors">
-        <div><span>Repository</span>{repositoryControl}</div>
-        <div><span>Branch</span>{branchControl}</div>
-        <div><span>Worktree</span>{worktreeControl}</div>
+        <div><IconFolder aria-hidden="true" /><span>Repository</span>{repositoryControl}</div>
+        <div><IconGitBranch aria-hidden="true" /><span>Branch</span>{branchControl}</div>
+        <div><IconHierarchy2 aria-hidden="true" /><span>Worktree</span>{worktreeControl}</div>
       </div>
+      <hr />
       <div className="mobile-context-sync">
-        <Button variant="outline" size="sm" disabled={Boolean(props.busy) || syncBusy} onClick={() => contextAction(props.onRefresh)}><IconRefresh />Refresh</Button>
-        <Button variant="outline" size="sm" disabled={syncDisabled || !props.status?.upstream || !(props.status.behind > 0)} onClick={() => contextAction(props.onPull)}><IconArrowDown />Pull{props.status?.behind ? ` (${props.status.behind})` : ''}</Button>
-        <Button variant="outline" size="sm" disabled={syncDisabled || (!publish && !(props.status && props.status.ahead > 0))} onClick={() => contextAction(props.onPush)}><IconArrowUp />{publish ? 'Publish' : 'Push'}{props.status?.ahead ? ` (${props.status.ahead})` : ''}</Button>
+        <button className="mobile-sheet-action" disabled={Boolean(props.busy) || syncBusy} onClick={() => contextAction(props.onRefresh)}><IconRefresh /><span>Refresh</span></button>
+        <button className="mobile-sheet-action" disabled={syncDisabled || !props.status?.upstream || !(props.status.behind > 0)} onClick={() => contextAction(props.onPull)}><IconArrowDown /><span>Pull{props.status?.behind ? ` (${props.status.behind})` : ''}</span></button>
+        <button className={`mobile-sheet-action${pushDisabled ? '' : ' go'}`} disabled={pushDisabled} onClick={() => contextAction(props.onPush)}><IconArrowUp /><span>{publish ? 'Publish' : 'Push'}{props.status?.ahead ? ` (${props.status.ahead})` : ''}</span></button>
       </div>
-      <button className="mobile-sheet-action" onClick={() => contextAction(props.onOpen)}><IconPlus /><span>Open repository</span></button>
+      <hr />
       {props.branchPullRequest && <BranchPullRequestMenu repositoryId={props.repository.id} key={props.branchPullRequest.url} pullRequest={props.branchPullRequest} onOpenPullRequest={props.onOpenPullRequest} mobile onNavigate={() => onContextOpen(false)} />}
       {props.githubInfo?.isGitHub && props.githubInfo.nameWithOwner && <button className="mobile-sheet-action" onClick={() => contextAction(() => openOnGitHub(`https://github.com/${props.githubInfo!.nameWithOwner}`))}><IconBrandGithub /><span>Open on GitHub</span></button>}
+      <button className="mobile-sheet-action" onClick={() => contextAction(props.onOpen)}><IconPlus /><span>Open repository</span></button>
       <button className="mobile-sheet-action" onClick={() => contextAction(() => props.onSettingsOpen(true))}><IconSettings /><span>Settings</span></button>
     </MobileSheet>
-    <MobileSheet open={filesOpen} onOpenChange={setFilesOpen} title="Open files" description="Switch files or close tabs. Unsaved drafts stay in their tabs.">
+    <MobileSheet open={filesOpen} onOpenChange={setFilesOpen} title="Open files">
       {props.openFiles.tabs.map((tab) => <div className={`mobile-open-file ${props.openFiles.activePath === tab.path ? 'active' : ''}`} key={tab.path}>
         <button className="mobile-sheet-action" aria-current={props.openFiles.activePath === tab.path ? 'true' : undefined} onClick={() => { setFilesOpen(false); props.onOpenFileTab(tab.path); }}>
           <img src={getVsCodeFileIconUrl(tab.path)} alt="" draggable={false} /><span><strong>{tab.path.split('/').pop()}</strong><small>{tab.path}{tab.missing ? ' · Missing' : tab.dirty ? ' · Unsaved' : props.openFiles.previewPath === tab.path ? ' · Preview' : ''}</small></span>

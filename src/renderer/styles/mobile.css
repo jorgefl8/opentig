@@ -5,15 +5,31 @@
 @media (max-width: 767px), (pointer: coarse) and (max-width: 1100px) and (max-height: 500px) {
   html { --diffs-font-size: 16px; --diffs-line-height: 26px; }
   html, body, #root { width: 100%; min-width: 0; overscroll-behavior: none; }
+  html {
+    /* What the keyboard or a moved visual viewport hides of the layout viewport's bottom. */
+    --mobile-viewport-gap: max(0px, calc(100dvh - var(--mobile-viewport-height, 100dvh) - var(--mobile-viewport-top, 0px)));
+    --mobile-nav-height: 56px;
+    /* The room every scroller keeps at its end: the bottom bar, its 8px offset and 8px of air. */
+    --mobile-nav-clearance: calc(var(--mobile-nav-height) + 16px + env(safe-area-inset-bottom));
+  }
+  html[data-mobile-keyboard="true"] { --mobile-nav-clearance: 0px; }
   html #root { height: var(--mobile-viewport-height, 100dvh); }
+  /* No bottom inset: content runs under the bottom bar, to the screen's edge. */
   html .app-shell {
     min-width: 0;
-    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
   }
   html button, html a, html [role="button"] { touch-action: manipulation; }
   /* 16px prevents iOS focus zoom, without disabling browser zoom. */
   html input:not([type="checkbox"]):not([type="range"]), html textarea, html select { font-size: 16px; }
-  html [data-slot="button"], html [data-slot="select-trigger"], html [data-slot="combobox-trigger"] { min-height: 40px; }
+  html [data-slot="button"] { min-height: 40px; }
+  /* Phone shapes: fields are 44px with a softer corner and primary buttons are pills. List rows stay square. */
+  html .field-input, html .onboarding-input, html .onboarding-identity input, html .pairing-page input, html .local-refs-create-branch > input,
+  html .search-input, html [data-slot="textarea"],
+  html button[role="combobox"]:not(.plain-select) { min-height: 44px; border-radius: 14px; }
+  html [data-slot="button"][data-variant="default"] { border-radius: 999px; }
+  html .pr-split-button > [data-slot="button"]:first-child { border-start-end-radius: 0; border-end-end-radius: 0; }
+  html .pr-split-button > [data-slot="button"]:last-child { border-start-start-radius: 0; border-end-start-radius: 0; }
   html [data-slot="button"][data-size^="icon"] { min-width: 40px; }
   html [data-slot="select-item"], html [data-slot="combobox-item"], html [data-slot="context-menu-item"] { height: auto; min-height: 44px; }
   html [data-slot="select-content"], html [data-slot="combobox-content"], html [data-slot="context-menu-content"] {
@@ -24,13 +40,104 @@
 
   html .repo-select-index { display: none; }
 
-  html .mobile-navigation { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); flex: none; border-top: 1px solid var(--border); background: var(--sidebar); padding: 4px 5px; }
-  html .mobile-navigation button { position: relative; display: flex; min-width: 0; min-height: 52px; flex-direction: column; align-items: center; justify-content: center; gap: 4px; border-radius: var(--radius-md); color: var(--muted-foreground); font-size: var(--text-meta); }
-  html .mobile-navigation button > svg { width: 19px; height: 19px; }
-  html .mobile-navigation button[aria-current="page"] { color: var(--primary); background: color-mix(in oklch, var(--primary) 9%, transparent); }
-  html .mobile-nav-indicator { position: absolute; width: 5px; height: 5px; border-radius: 50%; background: var(--warning); top: 5px; margin-left: 23px; }
+  /* A floating glass capsule. The blur stays at 10px: Chrome mirrors the backdrop at
+     a layer's edges, and on a bar this low a larger one lets the text behind show
+     through again. Each theme only sets the variables, so the plain fallbacks after
+     this media query win in both. */
+  html .mobile-navigation {
+    --glass-tint: color-mix(in oklab, var(--card) 55%, transparent);
+    --glass-sheen: rgb(255 255 255 / .35);
+    --glass-shadow: 0 10px 30px -10px rgb(0 0 0 / .3), 0 0 0 .5px rgb(0 0 0 / .07);
+    --glass-filter: blur(10px) saturate(190%) brightness(1.04);
+    --glass-rim:
+      radial-gradient(35% 120% at 8% 0%, rgb(255 255 255 / .95), transparent),
+      radial-gradient(35% 120% at 92% 100%, rgb(255 255 255 / .6), transparent),
+      linear-gradient(rgb(255 255 255 / .3));
+    --tab-tint: 13%;
+    position: fixed;
+    right: calc(12px + env(safe-area-inset-right));
+    bottom: calc(8px + env(safe-area-inset-bottom) + var(--mobile-viewport-gap));
+    left: calc(12px + env(safe-area-inset-left));
+    z-index: 40;
+    display: flex;
+    max-width: 480px;
+    height: var(--mobile-nav-height);
+    gap: 4px;
+    margin-inline: auto;
+    padding: 4px;
+    border-radius: 999px;
+    background: linear-gradient(to bottom, var(--glass-sheen), transparent 70%), var(--glass-tint);
+    box-shadow: var(--glass-shadow);
+    -webkit-backdrop-filter: var(--glass-filter);
+    backdrop-filter: var(--glass-filter);
+  }
+  html.dark .mobile-navigation {
+    --glass-tint: color-mix(in oklab, var(--card) 50%, transparent);
+    --glass-sheen: rgb(255 255 255 / .06);
+    --glass-shadow: 0 10px 30px -8px rgb(0 0 0 / .6);
+    --glass-filter: blur(10px) saturate(170%);
+    --glass-rim:
+      radial-gradient(35% 120% at 8% 0%, rgb(255 255 255 / .5), transparent),
+      radial-gradient(35% 120% at 92% 100%, rgb(255 255 255 / .25), transparent);
+    --tab-tint: 24%;
+  }
+  /* The rim of light: only the 1px ring between the padding box and the border. */
+  html .mobile-navigation::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    padding: 1px;
+    border-radius: inherit;
+    background: var(--glass-rim);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+    pointer-events: none;
+  }
+  /* The current tab opens up to fit its name; 2.6 fits the longest one at 320px. */
+  html .mobile-navigation button {
+    position: relative;
+    display: flex;
+    min-width: 0;
+    flex: 1 1 0;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    overflow: hidden;
+    border-radius: 999px;
+    color: var(--muted-foreground);
+    font-size: var(--text-ui);
+    font-weight: var(--weight-medium);
+    transition: flex-grow 200ms ease-out, background-color 200ms ease-out, color 200ms ease-out;
+  }
+  html .mobile-navigation button > svg { width: 22px; height: 22px; flex: none; stroke-width: 1.75; }
+  html .mobile-navigation button[aria-current="page"] {
+    flex-grow: 2.6;
+    background: color-mix(in oklab, var(--primary) var(--tab-tint), transparent);
+    color: var(--primary-ink);
+    font-weight: var(--weight-strong);
+  }
+  html .mobile-navigation button:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
+  html .mobile-nav-label { white-space: nowrap; }
+  html .mobile-navigation button:not([aria-current="page"]) .mobile-nav-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  html .mobile-nav-indicator { position: absolute; top: 10px; left: calc(50% + 6px); width: 8px; height: 8px; border-radius: 50%; background: var(--warning); }
   html[data-mobile-keyboard="true"] .mobile-navigation { display: none; }
-  html [data-sileo-viewport][data-position^="bottom"] { bottom: calc(60px + env(safe-area-inset-bottom)); }
+
+  /* Every scroller on a phone ends with room for the bottom bar, so its last row or
+     line can always be scrolled clear of it. An iframe can't be padded from outside,
+     so the HTML preview stops above the bar instead. */
+  html .changes-scroll, html .virtual-scroll, html .mobile-files-scroll, html .history-scroll, html .search-results, html .pulls-scroll,
+  html .viewer-scroll, html .diff-workspace-scroll, html .source-code-editor, html .markdown-preview-scroll, html .image-preview-canvas,
+  html .pdf-scroll, html .commit-diff-empty, html .commit-composer, html .html-preview-panel {
+    padding-bottom: var(--mobile-nav-clearance);
+    scroll-padding-bottom: var(--mobile-nav-clearance);
+  }
+  html .image-preview-canvas[data-sizing="fit"] { padding-bottom: calc(24px + var(--mobile-nav-clearance)); }
+  /* What docks at a list's end already sits above the bar, so the list needs no room of its own. */
+  html .sidebar:has(> .onboarding-checklist) :is(.changes-scroll, .mobile-files-scroll, .history-scroll, .search-results, .pulls-scroll),
+  html .mobile-files-view:has(> .mobile-file-selection-actions) .mobile-files-scroll { padding-bottom: 8px; scroll-padding-bottom: 8px; }
+  html .onboarding-checklist { margin-bottom: var(--mobile-nav-clearance); }
+  html [data-sileo-viewport][data-position^="bottom"] { bottom: var(--mobile-nav-clearance); }
   html[data-mobile-keyboard="true"] [data-sileo-viewport][data-position^="bottom"] { bottom: env(safe-area-inset-bottom); }
   html body:has(.mobile-sheet[data-open]) section[data-sileo-viewport] { z-index: 900; }
   html .mobile-workspace-actions { display: flex; min-height: 56px; flex: none; align-items: center; justify-content: space-between; gap: 4px; padding: 8px 16px 4px; font-size: var(--text-ui); }
@@ -91,7 +198,7 @@
   html .search-replace-action, html .pull-open-external, html .repository-row-actions { opacity: 1; }
   html .commit-expand { width: 32px; height: 44px; }
   html .search-query-row { flex-wrap: nowrap; }
-  html .search-query-row .search-input { flex: 1; flex-wrap: nowrap; height: 44px; }
+  html .search-query-row .search-input { flex: 1; flex-wrap: nowrap; }
   html .search-toggles { flex: none; padding: 0; }
   html .search-toggles button { min-width: 32px; min-height: 40px; }
   html .search-query-row > [data-slot="button"] { min-width: 36px; min-height: 40px; }
@@ -100,7 +207,7 @@
 
   /* The commit form is a workspace destination on phones, so it cannot cover
      staging controls. Going back leaves the draft and suggested plan intact. */
-  html .commit-composer { max-height: none; width: 100%; flex: 1; border-top: 0; padding: 16px; overflow-y: auto; overscroll-behavior: contain; }
+  html .commit-composer { max-height: none; width: 100%; flex: 1; border-top: 0; padding: 16px 16px var(--mobile-nav-clearance); overflow-y: auto; overscroll-behavior: contain; }
   html .commit-plan, html .commit-plan-body { flex: none; overflow: visible; }
   html .commit-composer-hint { display: none; }
   html .commit-composer-input { min-height: 120px; }
@@ -177,7 +284,6 @@
   html .local-refs-branch-filters { padding: 8px; gap: 8px; }
   html .local-refs-branch-filters > small { flex-basis: 100%; margin-left: 0; }
   html .local-refs-local-link { min-height: 40px; }
-  html .local-refs-create-branch > input { min-height: 44px; }
   html .local-refs-search { flex-basis: 100%; }
   html .local-refs-body { grid-template-rows: minmax(0, 1fr); }
   html .local-refs-body[data-mobile-detail="false"] .local-refs-detail,
@@ -204,7 +310,7 @@
   html .create-pr-notice { flex-wrap: wrap; overflow-wrap: anywhere; }
   html .create-pr-draft { min-height: 44px; }
   html .create-pr-submit-actions { width: 100%; justify-content: flex-end; }
-  html .field-input { width: 100%; min-width: 0; min-height: 44px; }
+  html .field-input { width: 100%; min-width: 0; }
   html .ai-log-note { min-height: 40px; text-align: left; }
   html .quick-open-dialog { max-height: calc(var(--mobile-viewport-height, 100dvh) - 24px); }
   html .quick-open-result { min-height: 48px; }
@@ -217,7 +323,6 @@
   html .pull-title { white-space: normal; font-size: var(--text-body); line-height: 1.6; }
   html .pulls-section-head { --tab-height: 48px; height: 48px; }
   html .pulls-section-tools button { width: 40px; min-width: 40px; height: 40px; min-height: 40px; }
-  html [data-slot="dialog-popup"].mobile-sheet { top: auto; bottom: max(0px, calc(100dvh - var(--mobile-viewport-height, 100dvh) - var(--mobile-viewport-top, 0px))); left: 0; width: 100%; max-height: calc(var(--mobile-viewport-height, 100dvh) - env(safe-area-inset-top) - 16px); border-radius: 18px 18px 0 0; border-bottom: 0; padding-bottom: env(safe-area-inset-bottom); overflow: hidden; }
 
   html .welcome { height: 100%; justify-content: flex-start; overflow-y: auto; padding: max(40px, env(safe-area-inset-top)) 20px max(24px, env(safe-area-inset-bottom)); }
   html .welcome::before, html .welcome::after { content: ''; flex: 1 0 0; }
@@ -228,9 +333,18 @@
   html .pairing-page section, html .access-page section { min-width: 0; padding: 20px; overflow-wrap: anywhere; }
 }
 
+/* The bottom bar drops its glass where it costs or is unwanted. */
+@media (prefers-reduced-transparency: reduce) {
+  html .mobile-navigation { background: var(--card); -webkit-backdrop-filter: none; backdrop-filter: none; }
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  html .mobile-navigation { background: var(--card); }
+}
+html[data-low-end] .mobile-navigation { background: var(--card); -webkit-backdrop-filter: none; backdrop-filter: none; }
+
 /* Phone views render their own components; these also work in short landscape windows. */
 .mobile-files-view { display: flex; flex: 1; min-height: 0; flex-direction: column; }
-.mobile-file-filter { display: flex; align-items: center; gap: 8px; flex: none; min-width: 0; min-height: 44px; margin: 6px 16px 8px; padding: 0 12px; border: 1px solid var(--border); border-radius: 9px; background: var(--input); color: var(--muted-foreground); }
+.mobile-file-filter { display: flex; align-items: center; gap: 8px; flex: none; min-width: 0; min-height: 44px; margin: 6px 16px 8px; padding: 0 12px; border: 1px solid var(--border); border-radius: 14px; background: var(--input); color: var(--muted-foreground); }
 .mobile-file-filter svg { width: 17px; height: 17px; flex: none; }
 .mobile-file-filter input { min-width: 0; width: 100%; height: 42px; outline: none; border: 0; background: transparent; color: var(--foreground); }
 .mobile-file-filter:focus-within { border-color: var(--primary); box-shadow: 0 0 0 2px color-mix(in oklch, var(--primary) 15%, transparent); }
@@ -253,36 +367,79 @@
 .mobile-file-check { display: grid; place-items: center; width: 20px; height: 20px; border: 1px solid var(--muted-foreground); border-radius: 5px; flex: none; }
 .mobile-file-check.checked { color: var(--primary-foreground); background: var(--primary); border-color: var(--primary); }
 .mobile-file-check svg { width: 14px; height: 14px; }
-.mobile-file-selection-actions { display: flex; justify-content: space-between; gap: 2px; flex: none; padding: 6px 8px; border-top: 1px solid var(--border); background: var(--muted); }
+.mobile-file-selection-actions { display: flex; justify-content: space-between; gap: 2px; flex: none; padding: 6px 8px; padding-bottom: calc(6px + var(--mobile-nav-clearance, 0px)); border-top: 1px solid var(--border); background: var(--muted); }
 .mobile-file-selection-actions > button:first-child { color: var(--primary); }
 .mobile-list-message { display: flex; align-items: center; justify-content: center; gap: 7px; padding: 24px 16px; color: var(--muted-foreground); font-size: var(--text-ui); line-height: 1.7; text-align: center; }
 .mobile-list-message svg { width: 15px; height: 15px; flex: none; color: var(--primary); }
-.mobile-sheet { display: flex; flex-direction: column; width: min(440px, 92vw); max-height: 80dvh; }
-.mobile-sheet-handle { width: 32px; height: 4px; border-radius: 3px; background: var(--border); margin: 10px auto 0; flex: none; }
-.mobile-sheet-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 4px 10px 4px 18px; flex: none; }
-.mobile-sheet-heading [data-slot="dialog-title"] { font-size: var(--text-title); min-width: 0; overflow-wrap: anywhere; }
-.mobile-sheet-description { padding: 0 18px 10px; font-size: var(--text-ui); line-height: 1.7; overflow-wrap: anywhere; flex: none; }
-.mobile-sheet-body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 10px 12px; }
-.mobile-sheet-action { display: flex; align-items: center; gap: 11px; width: 100%; min-height: 50px; padding: 10px; border-radius: var(--radius-md); text-align: left; font-size: var(--text-body); }
-.mobile-sheet-action > svg { width: 19px; height: 19px; flex: none; color: var(--muted-foreground); }
+.mobile-sheet-layer { position: fixed; inset: 0; z-index: 1000; isolation: isolate; }
+.mobile-sheet-backdrop { position: fixed; inset: 0; background: rgb(0 0 0 / .4); opacity: calc(1 - var(--drawer-swipe-progress)); transition: opacity 220ms ease-out; }
+.dark .mobile-sheet-backdrop { background: rgb(0 0 0 / .67); }
+.mobile-sheet-backdrop[data-swiping] { transition-duration: 0ms; }
+.mobile-sheet-backdrop[data-starting-style], .mobile-sheet-backdrop[data-ending-style] { opacity: 0; }
+.mobile-sheet-viewport { position: fixed; inset: 0; }
+/* The drag moves the popup through Base UI's variable. It sits above the keyboard and
+   never taller than what the keyboard leaves; the home bar's inset stays inside it. */
+.mobile-sheet {
+  position: fixed;
+  right: 0;
+  bottom: var(--mobile-viewport-gap, 0px);
+  left: 0;
+  display: flex;
+  max-height: min(calc(var(--mobile-viewport-height, 100dvh) * .9), calc(var(--mobile-viewport-height, 100dvh) - env(safe-area-inset-top) - 16px));
+  flex-direction: column;
+  border-radius: 20px 20px 0 0;
+  padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  background: var(--popover);
+  color: var(--popover-foreground);
+  box-shadow: 0 -10px 30px -10px rgb(0 0 0 / .4);
+  outline: none;
+  transform: translate3d(0, var(--drawer-swipe-movement-y), 0);
+  transition: transform 220ms cubic-bezier(.2, .8, .2, 1);
+}
+.mobile-sheet[data-swiping] { transition-duration: 0ms; user-select: none; }
+.mobile-sheet[data-starting-style], .mobile-sheet[data-ending-style] { transform: translate3d(0, calc(100% + 2px), 0); }
+.mobile-sheet[data-ending-style] { transition-duration: calc(var(--drawer-swipe-strength) * 220ms); }
+.mobile-sheet-handle { position: relative; flex: none; padding: 8px 0 10px; border-radius: 20px 20px 0 0; cursor: grab; touch-action: none; }
+.mobile-sheet-handle::before { content: ""; display: block; width: 36px; height: 4px; margin: auto; border-radius: 2px; background: var(--input); }
+.mobile-sheet[data-swiping] .mobile-sheet-handle { cursor: grabbing; }
+/* Reached by keyboard and screen readers only: it must not take the handle's drag. */
+.mobile-sheet-close { position: absolute; inset: 0; border-radius: inherit; pointer-events: none; }
+.mobile-sheet-close:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
+.mobile-sheet-title { flex: none; padding: 0 18px 8px; font-size: var(--text-title); font-weight: var(--weight-strong); overflow-wrap: anywhere; }
+.mobile-sheet-description { flex: none; margin-top: -4px; padding: 0 18px 10px; color: var(--muted-foreground); font-size: var(--text-ui); line-height: 1.5; overflow-wrap: anywhere; }
+.mobile-sheet-body { min-height: 0; flex: 1 1 auto; overflow-y: auto; overscroll-behavior: contain; padding: 0 8px 14px; }
+.mobile-sheet-action { position: relative; display: flex; align-items: center; gap: 12px; width: 100%; min-height: 48px; padding: 6px 10px; border-radius: 12px; text-align: left; font-size: var(--text-body); }
+.mobile-sheet-action > svg { width: 20px; height: 20px; flex: none; color: var(--muted-foreground); stroke-width: 1.75; }
 .mobile-branch-pr.merged, .mobile-branch-pr.merged > svg { color: var(--pr-merged); }
 .mobile-sheet-action > span { min-width: 0; flex: 1; overflow-wrap: anywhere; }
 .mobile-sheet-action > span strong { display: block; font-weight: var(--weight-medium); }
 .mobile-sheet-action > span small { display: block; margin-top: 4px; font-size: var(--text-meta); color: var(--muted-foreground); }
-.mobile-sheet-action:hover { background: var(--row-hover); }
+.mobile-sheet-action:hover, .mobile-sheet-action:active { background: var(--row-hover); }
 .mobile-sheet-action:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
 .mobile-sheet-action:disabled { opacity: .4; cursor: default; }
-.mobile-sheet-action.destructive { color: var(--destructive); }
+.mobile-sheet-action.destructive, .mobile-sheet-action.destructive > svg { color: var(--destructive); }
+.mobile-sheet-action.destructive { margin-top: 13px; }
+.mobile-sheet-action.destructive::before { content: ""; position: absolute; top: -7px; right: 10px; left: 10px; height: 1px; background: var(--border); }
 .mobile-sheet-footer { display: flex; justify-content: flex-end; gap: 6px; padding: 12px 6px 0; }
 .mobile-folder-location { display: flex; gap: 7px; align-items: center; min-height: 44px; padding: 0 8px 8px; border-bottom: 1px solid var(--border); }
 .mobile-folder-location span { min-width: 0; overflow-wrap: anywhere; font-size: var(--text-ui); }
 .mobile-destination-list { max-height: 35dvh; overflow-y: auto; overscroll-behavior: contain; }
 .mobile-destination-list .mobile-sheet-action > img, .mobile-destination-list .mobile-sheet-action > .folder-icon { width: 22px; height: 22px; flex: none; }
-.mobile-context-selectors { display: grid; gap: 12px; padding: 4px 8px 16px; }
-.mobile-context-selectors > div { display: grid; gap: 6px; color: var(--muted-foreground); font-size: var(--text-meta); }
-.mobile-context-selectors [data-slot="combobox-trigger"] { width: 100%; max-width: none; min-height: 44px; color: var(--foreground); }
-.mobile-context-sync { display: flex; gap: 6px; padding: 0 8px 14px; border-bottom: 1px solid var(--border); margin-bottom: 6px; }
-.mobile-context-sync button { flex: 1; }
+.mobile-sheet-body hr { height: 1px; margin: 6px 10px; border: 0; background: var(--border); }
+.mobile-sheet-action.go, .mobile-sheet-action.go > svg { color: var(--primary-ink); }
+.mobile-sheet-action.go { font-weight: var(--weight-strong); }
+/* Each picker reads as a sheet row with its value at the end; the whole row opens it. */
+.mobile-context-selectors > div { position: relative; display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 6px 10px; border-radius: 12px; font-size: var(--text-body); }
+.mobile-context-selectors > div:hover, .mobile-context-selectors > div:active { background: var(--row-hover); }
+.mobile-context-selectors > div > svg { width: 20px; height: 20px; flex: none; color: var(--muted-foreground); stroke-width: 1.75; }
+.mobile-context-selectors > div > span { flex: none; }
+html .mobile-context-selectors button[role="combobox"] { width: auto; min-width: 0; max-width: none; min-height: 0; flex: 0 1 auto; margin-left: auto; border: 0; padding: 0; background: none; color: var(--muted-foreground); font-size: var(--text-body); font-weight: var(--weight-regular); }
+.mobile-context-selectors button[role="combobox"]:hover { background: none; }
+.mobile-context-selectors button[role="combobox"]:focus-visible { outline: none; box-shadow: none; }
+.mobile-context-selectors button[role="combobox"]::after { content: ""; position: absolute; inset: 0; border-radius: 12px; }
+.mobile-context-selectors button[role="combobox"]:focus-visible::after { outline: 2px solid var(--ring); outline-offset: -2px; }
+/* The row's own icon replaces the trigger's. */
+.mobile-context-selectors button[role="combobox"] > :has(+ span) { display: none; }
 .mobile-open-file { display: flex; align-items: center; gap: 3px; border-radius: var(--radius-md); }
 .mobile-open-file.active { background: var(--row-selected); }
 .mobile-open-file .mobile-sheet-action { min-width: 0; flex: 1; }
@@ -294,8 +451,8 @@
   html .mobile-view-heading h2 { font-size: var(--text-title); }
   html .mobile-file-filter { margin-top: 3px; margin-bottom: 4px; }
   html .mobile-file-breadcrumb { padding-bottom: 2px; }
-  html .mobile-navigation { padding-block: 0; }
-  html .mobile-navigation button { flex-direction: row; gap: 5px; min-height: 44px; }
+  html { --mobile-nav-height: 44px; }
+  html .mobile-navigation { max-width: 420px; }
 }
 
 /* Tablets and touch-enabled desktop windows retain the wide layout, while

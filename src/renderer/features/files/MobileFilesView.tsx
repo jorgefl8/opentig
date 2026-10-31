@@ -119,7 +119,7 @@ export function MobileFilesView(props: FilesViewProps) {
         {props.fileClipboardAvailable && <Button variant="ghost" size="icon" aria-label="Cut selected items" disabled={props.readOnly || selected.size === 0} onClick={() => void props.onCutEntries(selectedEntries)}><IconCut /></Button>}
         <Button variant="ghost" size="icon" aria-label="Delete selected items" disabled={props.readOnly || selected.size === 0} onClick={() => void props.onDeleteEntries(selectedEntries)}><IconTrash /></Button>
       </div>}
-      <MobileSheet open={menu !== null} onOpenChange={(open) => { if (!open) setMenu(null); }} title={target?.name ?? 'File browser actions'} description={target?.path ?? 'Actions for the current folder.'}>
+      <MobileSheet open={menu !== null} onOpenChange={(open) => { if (!open) setMenu(null); }} title={target?.name ?? 'File browser actions'} description={target && target.path !== target.name ? target.path : undefined}>
         {target ? <>
           {target.type === 'file' && <button className="mobile-sheet-action" onClick={() => menuAction(() => props.onOpenFile(target.path, 'pinned'))}><IconFilePlus /><span>Keep file open</span></button>}
           {target.type === 'directory' && <button className="mobile-sheet-action" onClick={() => menuAction(() => navigate(target.path))}><IconFolder /><span>Open folder</span></button>}

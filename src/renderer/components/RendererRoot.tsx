@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react';
 import { Toaster } from 'sileo';
 import { QueryClientProvider } from '@tanstack/react-query';
+import { LowEndDevice } from './LowEndDevice';
 import { MobileViewport } from './MobileViewport';
 import { ServerConnectionBoundary } from './ServerConnectionBoundary';
 import { queryClient } from '../lib/query-client';
@@ -14,6 +15,7 @@ export function RendererRoot() {
     : <ServerConnectionBoundary><App /></ServerConnectionBoundary>;
   return <>
     <MobileViewport />
+    <LowEndDevice />
     {/* Keep one shared viewport mounted through loading and authentication.
         Sileo's light theme keeps toasts dark regardless of the app theme. */}
     <Toaster theme="light" position="bottom-right" />

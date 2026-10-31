@@ -31,7 +31,7 @@ export function MoveFilesDialog({ entries, initialDirectory, revision, readOnly,
     finally { setMoving(false); }
   };
   return (
-    <MobileSheet open onOpenChange={(open) => { if (!open && !moving) onClose(); }} title="Move to…" description={`${entries.length} selected ${entries.length === 1 ? 'item' : 'items'}. Choose a destination folder.`}>
+    <MobileSheet open onOpenChange={(open) => { if (!open && !moving) onClose(); }} title="Move to…" description={`${entries.length} selected ${entries.length === 1 ? 'item' : 'items'}`}>
       <div className="mobile-folder-location">
         {destination && <Button variant="ghost" size="icon" aria-label="Parent folder" disabled={moving} onClick={() => setDestination(parentDirectory(destination))}><IconArrowLeft /></Button>}
         <span>{destination || 'Repository root'}</span>

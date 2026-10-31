@@ -85,6 +85,7 @@
     --popover-foreground: oklch(0.18 0 0);
     --primary: oklch(0.55 0.212 262);
     --primary-foreground: oklch(0.99 0 0);
+    --primary-ink: oklch(0.5 0.2 262);
     --secondary: oklch(0.955 0 0);
     --secondary-foreground: oklch(0.24 0 0);
     --muted: oklch(0.955 0 0);
@@ -214,6 +215,7 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
     --popover-foreground: oklch(0.92 0 0);
     --primary: oklch(0.63 0.2 262);
     --primary-foreground: oklch(0.99 0 0);
+    --primary-ink: oklch(0.76 0.13 262);
     --secondary: oklch(0.205 0 0);
     --secondary-foreground: oklch(0.9 0 0);
     --muted: oklch(0.205 0 0);

@@ -2591,8 +2591,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
           {SIDEBAR_VIEWS.map((item) => (
             <button key={item} aria-current={view === item ? 'page' : undefined} onClick={() => { setView(item); setMobilePane('list'); }}>
               {item === 'changes' ? <IconGitCompare /> : item === 'files' ? <IconFiles /> : item === 'history' ? <IconHistory /> : item === 'prs' ? <IconBrandGithub /> : <IconSearch />}
-              <span>{item === 'changes' ? 'Changes' : item === 'files' ? 'Files' : item === 'history' ? 'History' : item === 'prs' ? 'GitHub' : 'Search'}</span>
-              {item === 'changes' && Boolean(status?.changes.length) && <i className="mobile-nav-indicator" aria-label={`${status!.changes.length} changes`} />}
+              <span className="mobile-nav-label">{item === 'changes' ? 'Changes' : item === 'files' ? 'Files' : item === 'history' ? 'History' : item === 'prs' ? 'GitHub' : 'Search'}</span>
+              {item === 'changes' && view !== 'changes' && Boolean(status?.changes.length) && <span className="mobile-nav-indicator" role="img" aria-label={`${status!.changes.length} changes`} />}
             </button>
           ))}
         </nav>
