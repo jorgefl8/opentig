@@ -9,8 +9,9 @@ import type { CliProcessRunner } from '../ai/CliProcessRunner';
 import type { GitProcess } from '../git/GitProcess';
 import type { SettingsStore } from '../persistence/SettingsStore';
 import type { GitHubStatusStore } from '../persistence/GitHubStatusStore';
-import { accountAuthentication, GH_ENV, GH_PRIVATE_ENV, identifySshAccount, type GitHubCommandAuth } from './GitHubAccountAuth';
+import { accountAuthentication, GH_ENV, GH_PRIVATE_ENV, identifySshAccount, redactCommandToken, type GitHubCommandAuth } from './GitHubAccountAuth';
 import { GITHUB_LOGIN, parseGitHubAuthStatus } from './GitHubAuthStatusParser';
+import { classifyFailure } from './GitHubFailure';
 import { parseSshRemote } from './GitHubRemoteParser';
 
 const CACHE_MS = 60_000;
@@ -268,6 +269,11 @@ export class GitHubAccountsService {
     }
   }
 
+  /** The account last verified for this repository, including one from the environment or SSH. */
+  verifiedLogin(repository: RepositoryInfo): string | null {
+    return this.contexts.get(repository.id)?.value.login ?? this.resolve(repository).login;
+  }
+
   private identity(executable: CliCandidate, auth: GitHubCommandAuth, operation: string): Promise<string> {
     // Only a one-way credential fingerprint is retained; tokens live in the operation's context.
     const fingerprint = createHash('sha256').update(auth.env?.GH_TOKEN ?? '').digest('hex');
@@ -280,10 +286,13 @@ export class GitHubAccountsService {
         });
         const login = result.stdout.trim();
         if (result.exitCode === 0 && GITHUB_LOGIN.test(login)) return login;
-        const invalid = /401|bad credentials|requires authentication/i.test(result.stderr);
-        throw new GhOperationError({ code: invalid ? 'GH_AUTH_REQUIRED' : 'GH_PROCESS_FAILED', operation,
-          message: invalid ? 'GitHub rejected these credentials. They may be expired or revoked. Authenticate this account again and check Settings → GitHub.'
-            : 'Could not verify this GitHub account. Check your connection and try again.', retryable: !invalid });
+        if (/HTTP 401|bad credentials|requires authentication/i.test(result.stderr)) {
+          throw new GhOperationError({ code: 'GH_AUTH_REQUIRED', operation, message: 'GitHub rejected these credentials. They may be expired or revoked. Authenticate this account again and check Settings → GitHub.' });
+        }
+        // A rate limit, an outage, and a dropped connection need different things from the user.
+        if (!result.stderr.trim()) throw new GhOperationError({ code: 'GH_PROCESS_FAILED', operation, message: 'Could not verify this GitHub account. Check your connection and try again.', retryable: true });
+        const { detail } = classifyFailure({ ...result, stdout: '', stderr: redactCommandToken(result.stderr, auth) }, operation);
+        throw new GhOperationError({ ...detail, retryable: true });
       })();
       cached = { at: Date.now(), promise };
       this.identities.set(fingerprint, cached);

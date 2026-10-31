@@ -111,6 +111,8 @@ export class CommandRegistry {
         error,
       })) {
         recordProblemSafely(this.problemLog, {
+          // A failure the caller can simply retry, such as a network blip after waking the machine.
+          ...('retryable' in serialized && serialized.retryable ? { level: 'warn' as const } : {}),
           source: 'command',
           operation,
           code: serialized.code,
