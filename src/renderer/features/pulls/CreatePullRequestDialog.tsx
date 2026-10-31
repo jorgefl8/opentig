@@ -139,7 +139,7 @@ export function CreatePullRequestDialog(props: CreatePullRequestDialogProps) {
           {needsPublish && (
             <div className="create-pr-notice">
               <span>{detachedOrUnborn ? 'Check out a branch with at least one commit before publishing.' : 'Publish this branch before creating a pull request.'}</span>
-              <Button variant="outline" size="xs" disabled={props.pushBusy || detachedOrUnborn || Boolean(props.status?.readOnly)} onClick={props.onPush}>
+              <Button variant="ghost" size="xs" disabled={props.pushBusy || detachedOrUnborn || Boolean(props.status?.readOnly)} onClick={props.onPush}>
                 {props.pushBusy ? <IconLoader4 className="animate-spin" /> : <IconUpload />} Publish branch
               </Button>
             </div>
@@ -147,7 +147,7 @@ export function CreatePullRequestDialog(props: CreatePullRequestDialogProps) {
           {needsPush && (
             <div className="create-pr-notice">
               <span>The branch has {props.status?.ahead} unpushed {props.status?.ahead === 1 ? 'commit' : 'commits'}. Push them so the pull request includes your work.</span>
-              <Button variant="outline" size="xs" disabled={props.pushBusy} onClick={props.onPush}>
+              <Button variant="ghost" size="xs" disabled={props.pushBusy} onClick={props.onPush}>
                 {props.pushBusy ? <IconLoader4 className="animate-spin" /> : <IconUpload />} Push
               </Button>
             </div>
@@ -184,7 +184,7 @@ export function CreatePullRequestDialog(props: CreatePullRequestDialogProps) {
             <label htmlFor="create-pr-title">Title</label>
             <input
               id="create-pr-title"
-              className="create-pr-title"
+              className="field-input"
               value={title}
               maxLength={300}
               placeholder="Pull request title"
@@ -206,7 +206,7 @@ export function CreatePullRequestDialog(props: CreatePullRequestDialogProps) {
         </div>
         <div className="create-pr-actions">
           <Button
-            variant="outline"
+            variant="ghost"
             className="create-pr-generate commit-composer-generate"
             disabled={blocked || creating}
             aria-label={generating ? 'Cancel generation' : undefined}

@@ -12,7 +12,7 @@ import { IconArrowsSort, IconLoader4, IconRefresh, IconSortAscending, IconSortDe
 import { sileo } from 'sileo';
 import type { AiLogEntry } from '@shared/ai-log';
 import { opentig } from '@/lib/opentig-api';
-import { Badge } from '@/components/ui/badge';
+import { StatusWord } from '@/components/StatusWord';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogClose, DialogDescription, DialogPopup, DialogTitle } from '@/components/ui/dialog';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
@@ -58,7 +58,7 @@ const columns = columnHelper.columns([
     header: ({ column }) => <SortableHeader column={column} label="Status" />,
     cell: ({ getValue }) => {
       const status = getValue();
-      return <Badge variant={status === 'success' ? 'secondary' : status === 'cancelled' ? 'outline' : 'destructive'}>{status}</Badge>;
+      return <StatusWord tone={status === 'success' ? 'ready' : status === 'cancelled' ? 'neutral' : 'danger'}>{status}</StatusWord>;
     },
   }),
   columnHelper.accessor('harness', {
@@ -171,7 +171,7 @@ export function AiLogDialog({ open, onOpenChange }: AiLogDialogProps) {
             <DialogDescription>Recent generations on this machine. Prompts and file contents are never recorded.</DialogDescription>
           </div>
           <div className="ai-log-header-actions">
-            <Button variant="outline" size="sm" disabled={loading} onClick={() => void load()}>
+            <Button variant="ghost" size="sm" disabled={loading} onClick={() => void load()}>
               {loading ? <IconLoader4 className="animate-spin" /> : <IconRefresh />} Refresh
             </Button>
             <Button variant="ghost" size="sm" disabled={entries.length === 0} onClick={() => void clear()}><IconTrash /> Clear</Button>
@@ -207,7 +207,7 @@ export function AiLogDialog({ open, onOpenChange }: AiLogDialogProps) {
                 </TableHeader>
                 <TableBody>
                   {table.getRowModel().rows.map((row) => (
-                    <TableRow key={row.id} className={row.original.status === 'failed' ? 'ai-log-row-failed' : undefined}>
+                    <TableRow key={row.id}>
                       {row.getAllCells().map((cell) => (
                         <TableCell key={cell.id}><table.FlexRender cell={cell} /></TableCell>
                       ))}
@@ -243,7 +243,7 @@ function LogNote({ text, tone, detail }: { text: string; tone?: 'error' | 'warn'
           <div className="name-dialog-content">
             <DialogTitle>Generation details</DialogTitle>
             <DialogDescription className="whitespace-pre-wrap break-words">{detail}</DialogDescription>
-            <div className="name-dialog-actions"><DialogClose render={<Button variant="outline" />}>Close</DialogClose></div>
+            <div className="name-dialog-actions"><DialogClose render={<Button variant="ghost" />}>Close</DialogClose></div>
           </div>
         </DialogPopup>
       </Dialog>

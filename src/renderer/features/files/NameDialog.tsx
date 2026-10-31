@@ -34,7 +34,7 @@ export function NameDialog({
   const isRename = state.mode === 'rename';
   const kind: EntryKind = state.mode === 'new-folder' ? 'directory' : 'file';
   const destination = state.entry.type === 'directory' ? state.entry.path : parentDirectory(state.entry.path);
-  const title = isRename ? 'Rename' : kind === 'directory' ? 'New Folder' : 'New File';
+  const title = isRename ? 'Rename' : kind === 'directory' ? 'New folder' : 'New file';
   const trimmed = name.trim();
   const canSubmit = trimmed.length > 0 && !/[\\/]/.test(trimmed) && !(isRename && trimmed === state.entry.name);
 
@@ -57,7 +57,7 @@ export function NameDialog({
           </DialogDescription>
           <input
             autoFocus
-            className="name-dialog-input"
+            className="field-input"
             value={name}
             maxLength={255}
             placeholder={isRename ? 'New name' : kind === 'directory' ? 'Folder name' : 'File name'}

@@ -5,6 +5,7 @@ import type { RepositoryInfo } from '../../../shared/contracts';
 import { Button } from '@/components/ui/button';
 import { opentig } from '@/lib/opentig-api';
 import { queryKeys } from '@/lib/query-client';
+import { SettingGroup } from './SettingRows';
 
 export function RepositoryAiSettings({ repository }: { repository: RepositoryInfo | null }) {
   const client = useQueryClient();
@@ -22,23 +23,18 @@ export function RepositoryAiSettings({ repository }: { repository: RepositoryInf
     onSuccess: (status) => { client.setQueryData(key, status); },
     onError: () => sileo.error({ title: 'Could not save repository instructions' }),
   });
-  return <div className="settings-field settings-field-separated">
-    <div className="settings-field-label">
-      <strong>This repository</strong>
-      <span>{repository ? 'Shared across its worktrees and connected clients.' : 'Open a repository to configure its AI writing conventions.'}</span>
-    </div>
-    <div className="settings-general-row settings-general-toggle">
+  return <SettingGroup title="This repository">
+    <div className="settings-row">
       <div className="settings-field-label">
         <strong id="repository-ai-instructions-label">Use repository instructions</strong>
-        <span id="repository-ai-instructions-description">Apply repository terminology and structure to commit messages and PR drafts. English and Conventional Commits stay required. Off by default.</span>
+        <span id="repository-ai-instructions-description">{repository ? 'Apply repository terminology and structure to commit messages and PR drafts. English and Conventional Commits stay required. Off by default. Shared across its worktrees and connected clients.' : 'Open a repository to configure its AI writing conventions.'}</span>
       </div>
-      <div className="settings-general-control">
-        <span className="settings-general-switch-state" aria-hidden="true">{query.data?.enabled ? 'On' : 'Off'}</span>
+      <div className="settings-row-control">
         <button type="button" role="switch" className="settings-switch" aria-labelledby="repository-ai-instructions-label" aria-describedby="repository-ai-instructions-description" aria-checked={query.data?.enabled ?? false}
           disabled={!repository || !query.data || mutation.isPending} onClick={() => mutation.mutate(!query.data?.enabled)}><span /></button>
       </div>
     </div>
-    {repository && query.data && <p className="ai-privacy-note">{query.data.files.length ? `Detected: ${query.data.files.join(', ')}.` : 'No supported instruction files detected.'} Only AGENTS.md, CLAUDE.md and GROK.md at this worktree’s root are supported. Hooks, tools and CLI configuration stay disabled.</p>}
-    {query.isError && <p className="ai-login-hint">Could not check repository instructions. <Button variant="outline" size="sm" onClick={() => void query.refetch()}>Try again</Button></p>}
-  </div>;
+    {repository && query.data && <p className="settings-note">{query.data.files.length ? `Detected: ${query.data.files.join(', ')}.` : 'No supported instruction files detected.'} Only AGENTS.md, CLAUDE.md and GROK.md at this worktree’s root are supported. Hooks, tools and CLI configuration stay disabled.</p>}
+    {query.isError && <p className="settings-note">Could not check repository instructions. <Button variant="ghost" size="xs" onClick={() => void query.refetch()}>Try again</Button></p>}
+  </SettingGroup>;
 }

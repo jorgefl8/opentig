@@ -49,11 +49,11 @@ export function CreateReleaseDialog({ repositoryId, onClose, onCreated }: { repo
           <div className="release-create-fields">
             <div className="create-pr-field">
               <label htmlFor="release-tag">Tag</label>
-              <input id="release-tag" className="create-pr-title" value={tagName} maxLength={250} placeholder="v1.2.3" autoComplete="off" spellCheck={false} disabled={busy} onChange={(event) => setTagName(event.target.value)} />
+              <input id="release-tag" className="field-input" value={tagName} maxLength={250} placeholder="v1.2.3" autoComplete="off" spellCheck={false} disabled={busy} onChange={(event) => setTagName(event.target.value)} />
             </div>
             <div className="create-pr-field">
               <label htmlFor="release-title">Title</label>
-              <input id="release-title" className="create-pr-title" value={title} maxLength={300} placeholder="Release title" disabled={busy} onChange={(event) => setTitle(event.target.value)} />
+              <input id="release-title" className="field-input" value={title} maxLength={300} placeholder="Release title" disabled={busy} onChange={(event) => setTitle(event.target.value)} />
             </div>
           </div>
           <MarkdownField id="release-notes" label="Notes" value={notes} rows={9} placeholder="Describe the release (GitHub Markdown)" emptyPreview="_No notes._" disabled={busy} onChange={setNotes} />

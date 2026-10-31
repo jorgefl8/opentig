@@ -32,7 +32,7 @@ Custom CLI configuration and custom models are excluded from the isolated genera
 **Choose a provider and model**
 
 1. Open **Settings → AI assistance**.
-2. Check the provider's availability and authentication status, then select a provider and model. The cards show provider logos and **Last checked** timestamps.
+2. Check the provider's availability and authentication status, then select a provider and model. Each provider row shows its logo, version, and status as a dot and a word. **Last checked** appears with **Check again**.
 3. If you installed or authenticated a CLI after the last check, choose **Check again**.
 
 The commit composer shows the chosen provider and model. Each provider reports its own missing, unusable, incompatible, or authentication state.

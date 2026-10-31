@@ -1,5 +1,5 @@
 import { type FormEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { IconAlertTriangle, IconFolder, IconFolderPlus, IconFolderSymlink, IconLoader4, IconPencil, IconTrash, IconX } from '@tabler/icons-react';
+import { IconFolder, IconFolderSymlink, IconLoader4, IconPencil, IconTrash, IconX } from '@tabler/icons-react';
 import type { RepositoryOrganization, RepositoryProject } from '../../../shared/contracts';
 import { MAX_PROJECT_NAME_LENGTH } from '../../../shared/repository-projects';
 import { Button } from '@/components/ui/button';
@@ -158,16 +158,16 @@ export function RepositoryProjectsDialog({ open, projects, repositories, onOpenC
         </header>
 
         <div className="repository-projects-body" ref={bodyRef}>
-          {error && <div className="repository-projects-error" role="alert"><IconAlertTriangle aria-hidden="true" /><span>{error}</span></div>}
+          {error && <p className="settings-error" role="alert">{error}</p>}
 
           <section className="repository-projects-section" aria-labelledby="projects-heading">
             <div className="repository-projects-section-heading">
               <h3 id="projects-heading">Projects <span className="plain-count">{projects.length}</span></h3>
               <form className="repository-project-create" onSubmit={(event) => void createProject(event)}>
                 <label className="sr-only" htmlFor="new-project-name">Project name</label>
-                <input id="new-project-name" value={newName} maxLength={MAX_PROJECT_NAME_LENGTH} onChange={(event) => setNewName(event.target.value)} placeholder="New project name" disabled={Boolean(busy)} />
-                <Button type="submit" size="sm" disabled={!newName.trim() || Boolean(busy)}>
-                  {busy === 'create' ? <IconLoader4 className="animate-spin" /> : <IconFolderPlus />} Create
+                <input id="new-project-name" className="field-input" value={newName} maxLength={MAX_PROJECT_NAME_LENGTH} onChange={(event) => setNewName(event.target.value)} placeholder="New project name" disabled={Boolean(busy)} />
+                <Button type="submit" variant="ghost" size="sm" disabled={!newName.trim() || Boolean(busy)}>
+                  {busy === 'create' && <IconLoader4 className="animate-spin" />} Create
                 </Button>
               </form>
             </div>
@@ -189,14 +189,12 @@ export function RepositoryProjectsDialog({ open, projects, repositories, onOpenC
                         </form>
                       ) : deletingId === project.id ? (
                         <div className="repository-project-confirm" role="alert">
-                          <IconAlertTriangle aria-hidden="true" />
                           <span>Delete <strong>{project.name}</strong>? Its repositories stay available, just ungrouped.</span>
                           <Button variant="destructive" size="xs" disabled={Boolean(busy)} onClick={() => void removeProject(project.id)}>Delete</Button>
                           <Button variant="ghost" size="xs" disabled={Boolean(busy)} onClick={() => setDeletingId(null)}>Cancel</Button>
                         </div>
                       ) : (
                         <>
-                          <span className="repository-project-icon" aria-hidden="true"><IconFolder /></span>
                           <span className="repository-project-copy"><strong>{project.name}</strong><small>{count} {count === 1 ? 'repository' : 'repositories'}</small></span>
                           <span className="repository-row-actions">
                             <RepositoryOrderButtons label={`project ${project.name}`} index={projectIndex} count={projects.length} disabled={orderingDisabled} onMove={(index, trigger) => void moveProject(project.id, index, trigger)} />
@@ -229,7 +227,6 @@ export function RepositoryProjectsDialog({ open, projects, repositories, onOpenC
                       <RepositoryOrderRow draggable={!mobile} className="repository-assignment-row" key={repository.key} id={repository.key} label={`repository ${repository.name}`} disabled={orderingDisabled} busy={rowBusy}>
                         {removingRepository === repository.key ? (
                           <div className="repository-project-confirm" role="alert">
-                            <IconAlertTriangle aria-hidden="true" />
                             <span>Remove <strong>{repository.name}</strong> and its worktrees from OpenTig? Their folders and files stay on disk. You can open them again later.</span>
                             <Button variant="destructive" size="xs" disabled={Boolean(busy)} onClick={() => {
                               void run(`forget:${repository.key}`, () => onForgetRepository(repository)).then((removed) => { if (removed) setRemovingRepository(null); });
@@ -245,6 +242,17 @@ export function RepositoryProjectsDialog({ open, projects, repositories, onOpenC
                               <TooltipContent>{repository.rootPath}</TooltipContent>
                             </Tooltip>
                           </span>
+                          <span className="repository-row-actions">
+                            <RepositoryOrderButtons label={`repository ${repository.name}`} index={repositoryIndex} count={group.repositories.length} disabled={orderingDisabled} onMove={(index, trigger) => void moveRepository(repository.key, index, trigger)} />
+                            <Tooltip>
+                              <TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label={`Relocate ${repository.name}`} disabled={Boolean(busy)} onClick={() => void relocate(repository)} />}><IconFolderSymlink /></TooltipTrigger>
+                              <TooltipContent>Relocate repository</TooltipContent>
+                            </Tooltip>
+                            <Tooltip>
+                              <TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label={`Remove ${repository.name} from OpenTig`} disabled={Boolean(busy)} onClick={() => { setRemovingRepository(repository.key); setError(null); }} />}><IconTrash /></TooltipTrigger>
+                              <TooltipContent>Remove from OpenTig</TooltipContent>
+                            </Tooltip>
+                          </span>
                           {rowBusy && <IconLoader4 className="repository-assignment-busy animate-spin" aria-hidden="true" />}
                           <SearchablePicker
                             groups={[
@@ -257,18 +265,8 @@ export function RepositoryProjectsDialog({ open, projects, repositories, onOpenC
                             triggerLabel={projects.find((project) => project.id === projectId)?.name ?? 'No project'}
                             placeholder="Search projects…"
                             disabled={Boolean(busy)}
+                            triggerClassName="plain-select"
                           />
-                          <span className="repository-management-actions">
-                            <RepositoryOrderButtons label={`repository ${repository.name}`} index={repositoryIndex} count={group.repositories.length} disabled={orderingDisabled} onMove={(index, trigger) => void moveRepository(repository.key, index, trigger)} />
-                            <Tooltip>
-                              <TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label={`Relocate ${repository.name}`} disabled={Boolean(busy)} onClick={() => void relocate(repository)} />}><IconFolderSymlink /></TooltipTrigger>
-                              <TooltipContent>Relocate repository</TooltipContent>
-                            </Tooltip>
-                            <Tooltip>
-                              <TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label={`Remove ${repository.name} from OpenTig`} disabled={Boolean(busy)} onClick={() => { setRemovingRepository(repository.key); setError(null); }} />}><IconTrash /></TooltipTrigger>
-                              <TooltipContent>Remove from OpenTig</TooltipContent>
-                            </Tooltip>
-                          </span>
                         </>)}
                       </RepositoryOrderRow>
                     );
@@ -280,7 +278,7 @@ export function RepositoryProjectsDialog({ open, projects, repositories, onOpenC
         </div>
 
         <footer className="repository-projects-footer">
-          <DialogClose render={<Button variant="outline" size="sm" disabled={Boolean(busy)} />}>Done</DialogClose>
+          <DialogClose render={<Button size="sm" disabled={Boolean(busy)} />}>Done</DialogClose>
         </footer>
       </DialogPopup>
       <OpenRepositoryDialog

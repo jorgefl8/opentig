@@ -2,15 +2,15 @@ import { formatDate, formatDateTime } from '@shared/date-format';
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  IconAlertTriangle, IconCheck, IconCloud, IconCopy, IconExternalLink, IconGitBranch, IconGitCommit, IconHierarchy2,
-  IconLoader4, IconRefresh, IconSearch, IconTrash, IconX,
+  IconCheck, IconCopy, IconExternalLink, IconGitBranch,
+  IconLoader4, IconRefresh, IconSearch, IconX,
 } from '@tabler/icons-react';
 import type { PullRequestSummary, RecentRepository } from '../../../shared/contracts';
 import type { BranchDetails, LocalRefsSnapshot, RemoteBranchDetails, WorktreeDetails, WorktreeRemovalState } from '../../../shared/git-types';
-import { Badge } from '@/components/ui/badge';
+import { StatusWord } from '@/components/StatusWord';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Dialog, DialogClose, DialogDescription, DialogPopup, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogClose, DialogPopup, DialogTitle } from '@/components/ui/dialog';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { opentig } from '@/lib/opentig-api';
 import { UNCONFIRMED_RESULT_MESSAGE, isUnconfirmedResult } from '@/lib/websocket-transport';
@@ -274,15 +274,12 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
     <Dialog open={open} onOpenChange={(next) => { if (!busy) props.onOpenChange(next); }}>
       <DialogPopup className="local-refs-dialog">
         <header className="local-refs-header">
-          <div>
-            <DialogTitle>Branches and worktrees</DialogTitle>
-            <DialogDescription>Inspect local and remote branches, and manage this repository’s worktrees.</DialogDescription>
-          </div>
+          <DialogTitle>Branches and worktrees</DialogTitle>
           <DialogClose render={<Button variant="ghost" size="icon-sm" aria-label="Close the refs manager" disabled={Boolean(busy)} />}><IconX /></DialogClose>
         </header>
 
         <div className="local-refs-toolbar">
-          <div className="local-refs-tabs" role="tablist" aria-label="Branches and worktrees">
+          <div className="tab-list local-refs-tabs" role="tablist" aria-label="Branches and worktrees">
             {(['branches', 'worktrees'] as const).map((value) => (
               <button
                 key={value}
@@ -291,17 +288,15 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
                 id={`local-refs-tab-${value}`}
                 aria-selected={tab === value}
                 aria-controls={`local-refs-panel-${value}`}
-                className="local-refs-tab"
                 disabled={Boolean(busy)}
                 onClick={() => { props.onTabChange(value); setMobileDetail(false); }}
               >
-                {value === 'branches' ? <IconGitBranch aria-hidden="true" /> : <IconHierarchy2 aria-hidden="true" />}
                 <span>{value === 'branches' ? 'Branches' : 'Worktrees'}</span>
                 <small className="plain-count">{counts[value]}</small>
               </button>
             ))}
           </div>
-          <div className="local-refs-search">
+          <div className="search-input local-refs-search">
             <IconSearch aria-hidden="true" />
             <label className="sr-only" htmlFor="local-refs-search-input">Search {tab}</label>
             <input
@@ -317,24 +312,23 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
               <Button variant="ghost" size="icon-xs" aria-label="Clear search" disabled={Boolean(busy)} onClick={() => setQuery('')}><IconX /></Button>
             )}
           </div>
-          <Tooltip><TooltipTrigger render={<Button variant="outline" size="sm" onClick={() => tab === 'branches' ? void fetchBranches() : void load()} disabled={loading || Boolean(busy)} />}>
+          <Tooltip><TooltipTrigger render={<Button variant="ghost" size="sm" onClick={() => tab === 'branches' ? void fetchBranches() : void load()} disabled={loading || Boolean(busy)} />}>
             {loading || busy === 'fetch-branches' ? <IconLoader4 className="animate-spin" /> : <IconRefresh />} {tab === 'branches' ? 'Fetch' : 'Refresh'}
           </TooltipTrigger><TooltipContent>{tab === 'branches' ? 'Fetch branches from all remotes and remove obsolete remote references' : 'Refresh local worktrees'}</TooltipContent></Tooltip>
         </div>
 
         {tab === 'branches' && <div className="local-refs-branch-filters">
-          <div className="local-refs-tabs" role="group" aria-label="Branch scope">
-            {(['all', 'local', 'remote'] as const).map(scope => <button key={scope} type="button" className="local-refs-tab" aria-pressed={branchScope === scope} disabled={Boolean(busy)} onClick={() => { setBranchScope(scope); setMobileDetail(false); }}>{scope === 'all' ? 'All' : scope === 'local' ? 'Local' : 'Remote'}</button>)}
+          <div className="plain-options" role="group" aria-label="Branch scope">
+            {(['all', 'local', 'remote'] as const).map(scope => <button key={scope} type="button" className="plain-option" aria-pressed={branchScope === scope} disabled={Boolean(busy)} onClick={() => { setBranchScope(scope); setMobileDetail(false); }}>{scope === 'all' ? 'All' : scope === 'local' ? 'Local' : 'Remote'}</button>)}
           </div>
-          {branchScope !== 'local' && <SearchablePicker label="Filter by remote" placeholder="Search remotes…" value={remoteFilter} triggerLabel={remoteFilter || 'All remotes'} onValueChange={(value) => { setRemoteFilter(value); setMobileDetail(false); }} disabled={Boolean(busy)}
+          {branchScope !== 'local' && <SearchablePicker label="Filter by remote" placeholder="Search remotes…" value={remoteFilter} triggerLabel={remoteFilter || 'All remotes'} triggerClassName="plain-select" onValueChange={(value) => { setRemoteFilter(value); setMobileDetail(false); }} disabled={Boolean(busy)}
             groups={[{ id: 'remotes', label: 'Remotes', items: [{ value: '', label: 'All remotes', pinned: true }, ...(snapshot?.remotes ?? []).map(name => ({ value: name, label: name }))] }]} />}
           <small>Remote refs reflect the last fetch.</small>
         </div>}
 
-        {(error || (actionError && !detailPanelShowsError)) && <div className="local-refs-error" role="alert"><IconAlertTriangle aria-hidden="true" /><span>{error ?? actionError}</span></div>}
+        {(error || (actionError && !detailPanelShowsError)) && <div className="local-refs-error" role="alert"><span>{error ?? actionError}</span></div>}
         {removalNotices.length > 0 && <div className="local-refs-removal-notices">{removalNotices.map((removal) => (
           <div className="local-refs-error local-refs-removal-notice" role="alert" key={removal.path}>
-            <IconAlertTriangle aria-hidden="true" />
             <span className="local-refs-selectable">{removal.message}</span>
             <Button variant="ghost" size="sm" onClick={() => void copyPath(removal.path)}><IconCopy /> Copy path</Button>
             <Button variant="ghost" size="sm" onClick={() => dismissNotice(removal)}>Dismiss</Button>
@@ -368,9 +362,8 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
                   onClick={() => { setSelectedBranch(branchKey(item)); setMobileDetail(true); }}
                 >
                   <span className="local-refs-row-head">
-                    {item.remote ? <IconCloud aria-hidden="true" /> : <IconGitBranch aria-hidden="true" />}
                     <strong>{item.remoteBranchName ?? item.name}</strong>
-                    <BadgeRow badges={branchBadges(item)} />
+                    <RefStates states={branchBadges(item)} />
                   </span>
                   <small className="local-refs-row-meta">
                     <code>{item.shortOid}</code>
@@ -390,9 +383,8 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
                   onClick={() => { setSelectedWorktree(worktreeKey(item)); setMobileDetail(true); }}
                 >
                   <span className="local-refs-row-head">
-                    <IconHierarchy2 aria-hidden="true" />
                     <strong>{worktreeName(item.path)}</strong>
-                    <BadgeRow badges={removingPaths.has(item.path) ? removingWorktreeBadges() : worktreeBadges(item)} />
+                    <RefStates states={removingPaths.has(item.path) ? removingWorktreeBadges() : worktreeBadges(item)} />
                   </span>
                   <small className="local-refs-row-meta">
                     <span className="local-refs-row-branch">{item.branch ? `${item.branch}` : 'Detached HEAD'}</span>
@@ -403,7 +395,7 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
           </div>
 
           <div className="local-refs-detail">
-            {detailsError && <div className="local-refs-error" role="alert"><IconAlertTriangle aria-hidden="true" /><span>{detailsError}</span></div>}
+            {detailsError && <div className="local-refs-error" role="alert"><span>{detailsError}</span></div>}
             {detailsLoading && <p className="local-refs-placeholder"><IconLoader4 className="animate-spin" aria-hidden="true" /><ShimmeringText text="Loading details…" /></p>}
             {!detailsLoading && !detailsError && tab === 'branches' && remoteDetails && branch?.remote && <RemoteBranchDetailPanel
               details={remoteDetails} pullRequest={branchPullRequest} anyBusy={Boolean(busy)} deleting={busy === 'delete-remote-branch'} creating={busy === 'create-tracking-branch'}
@@ -453,7 +445,7 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
 
         <footer className="local-refs-footer">
           <small>Deleting a remote branch keeps local branches and worktrees. Removing a worktree deletes its branch only when explicitly selected.</small>
-          <DialogClose render={<Button variant="outline" size="sm" disabled={Boolean(busy)} />}>Done</DialogClose>
+          <DialogClose render={<Button size="sm" disabled={Boolean(busy)} />}>Done</DialogClose>
         </footer>
       </DialogPopup>
     </Dialog>
@@ -471,8 +463,8 @@ function BranchDetailPanel({ details, pullRequest, busy, anyBusy, confirming, ac
   return (
     <>
       <div className="local-refs-detail-head">
-        <h3><IconGitBranch aria-hidden="true" /><Tooltip><TooltipTrigger render={<span />}>{details.name}</TooltipTrigger><TooltipContent>{details.name}</TooltipContent></Tooltip></h3>
-        <BadgeRow badges={branchDetailBadges(details)} />
+        <h3><Tooltip><TooltipTrigger render={<span />}>{details.name}</TooltipTrigger><TooltipContent>{details.name}</TooltipContent></Tooltip></h3>
+        <RefStates states={branchDetailBadges(details)} />
       </div>
       <dl className="local-refs-facts">
         <Fact label="Full ref"><code className="local-refs-selectable">{details.fullName}</code></Fact>
@@ -490,7 +482,6 @@ function BranchDetailPanel({ details, pullRequest, busy, anyBusy, confirming, ac
         )}
       </dl>
       <DestructiveSection
-        tone={eligibility.allowed ? 'ready' : 'blocked'}
         reason={eligibility.reason}
         actionError={actionError}
         confirming={confirming}
@@ -523,8 +514,8 @@ function WorktreeDetailPanel({ details, removing, anyBusy, confirming, actionErr
   return (
     <>
       <div className="local-refs-detail-head">
-        <h3><IconHierarchy2 aria-hidden="true" /><Tooltip><TooltipTrigger render={<span />}>{worktreeName(details.path)}</TooltipTrigger><TooltipContent>{worktreeName(details.path)}</TooltipContent></Tooltip></h3>
-        <BadgeRow badges={removing ? removingWorktreeBadges() : worktreeBadges(details)} />
+        <h3><Tooltip><TooltipTrigger render={<span />}>{worktreeName(details.path)}</TooltipTrigger><TooltipContent>{worktreeName(details.path)}</TooltipContent></Tooltip></h3>
+        <RefStates states={removing ? removingWorktreeBadges() : worktreeBadges(details)} />
       </div>
       <dl className="local-refs-facts">
         <Fact label="Folder"><span className="local-refs-path local-refs-selectable">{details.path}</span></Fact>
@@ -538,11 +529,11 @@ function WorktreeDetailPanel({ details, removing, anyBusy, confirming, actionErr
         {!removing && <Fact label="Local changes">{details.available ? (changes ?? 'None') : 'Not readable'}</Fact>}
       </dl>
       <div className="local-refs-detail-actions">
-        <Button variant="outline" size="sm" onClick={onCopyPath} disabled={anyBusy}>
+        <Button variant="ghost" size="sm" onClick={onCopyPath} disabled={anyBusy}>
           {copied ? <IconCheck /> : <IconCopy />} {copied ? 'Copied' : 'Copy path'}
         </Button>
         {!removing && !details.current && details.available && !details.locked && (
-          <Button variant="outline" size="sm" onClick={onOpen} disabled={anyBusy}><IconExternalLink /> Open worktree</Button>
+          <Button variant="ghost" size="sm" onClick={onOpen} disabled={anyBusy}><IconExternalLink /> Open worktree</Button>
         )}
         {details.branch && (
           <Button variant="ghost" size="sm" onClick={onShowBranch} disabled={anyBusy}><IconGitBranch /> Show branch</Button>
@@ -555,14 +546,13 @@ function WorktreeDetailPanel({ details, removing, anyBusy, confirming, actionErr
         </label>
       )}
       {removing ? (
-        <div className="local-refs-danger blocked">
+        <div className="local-refs-danger">
           <p className="local-refs-reason">
             <IconLoader4 className="animate-spin" aria-hidden="true" />
             <span>Removing this worktree. Large folders can take a few minutes. You can close this dialog: the removal continues as long as OpenTig stays open, and the list updates when it ends.</span>
           </p>
         </div>
       ) : <DestructiveSection
-        tone={eligibility.allowed ? 'ready' : 'blocked'}
         reason={eligibility.reason}
         actionError={actionError}
         confirming={confirming}
@@ -593,45 +583,42 @@ function WorktreeDetailPanel({ details, removing, anyBusy, confirming, actionErr
  * Renders the destructive control only for a backend state Git can act on;
  * every other state gets an explanation and no button at all.
  */
-function DestructiveSection({ tone, reason, actionError, confirming, busy, anyBusy, allowed, actionLabel, confirmLabel, confirmation, onConfirm, onCancel, onAct }: {
-  tone: 'ready' | 'blocked'; reason: string; actionError: string | null; confirming: boolean; busy: boolean; anyBusy: boolean;
+function DestructiveSection({ reason, actionError, confirming, busy, anyBusy, allowed, actionLabel, confirmLabel, confirmation, onConfirm, onCancel, onAct }: {
+  reason: string; actionError: string | null; confirming: boolean; busy: boolean; anyBusy: boolean;
   allowed: boolean; actionLabel: string; confirmLabel: string; confirmation: ReactNode;
   onConfirm(): void; onCancel(): void; onAct(): void;
 }) {
   return (
-    <div className={`local-refs-danger ${tone}`}>
-      {actionError && <p className="local-refs-danger-error" role="alert"><IconAlertTriangle aria-hidden="true" /><span>{actionError}</span></p>}
+    <div className="local-refs-danger">
+      {actionError && <p className="local-refs-danger-error" role="alert">{actionError}</p>}
       {confirming && allowed ? (
         <div className="local-refs-confirm" role="alert">
-          <IconAlertTriangle aria-hidden="true" />
           <p>{confirmation}</p>
           <span className="local-refs-confirm-actions">
             <Button variant="destructive" size="sm" onClick={onAct} disabled={busy}>
-              {busy ? <IconLoader4 className="animate-spin" /> : <IconTrash />} {busy ? <ShimmeringText text={confirmLabel} /> : confirmLabel}
+              {busy && <IconLoader4 className="animate-spin" />} {busy ? <ShimmeringText text={confirmLabel} /> : confirmLabel}
             </Button>
             <Button variant="ghost" size="sm" onClick={onCancel} disabled={busy}>Cancel</Button>
           </span>
         </div>
       ) : (
         <>
-          <p className="local-refs-reason">
-            {tone === 'ready' ? <IconGitCommit aria-hidden="true" /> : <IconAlertTriangle aria-hidden="true" />}
-            <span>{reason}</span>
-          </p>
-          {allowed && <Button variant="destructive" size="sm" onClick={onConfirm} disabled={anyBusy}><IconTrash /> {actionLabel}</Button>}
+          <p className="local-refs-reason">{reason}</p>
+          {allowed && <Button variant="ghost" size="sm" className="danger-action" onClick={onConfirm} disabled={anyBusy}>{actionLabel}</Button>}
         </>
       )}
     </div>
   );
 }
 
-function BadgeRow({ badges }: { badges: RefBadge[] }) {
-  if (badges.length === 0) return null;
+/** Each state is plain text; only what needs attention gets a dot. */
+function RefStates({ states }: { states: RefBadge[] }) {
+  if (states.length === 0) return null;
   return (
-    <span className="local-refs-badges">
-      {badges.map((badge) => (
-        <Badge key={badge.label} variant={badge.tone === 'current' ? 'default' : badge.tone === 'warning' ? 'destructive' : 'outline'}>{badge.label}</Badge>
-      ))}
+    <span className="local-refs-states">
+      {states.map((state) => state.tone === 'warning'
+        ? <StatusWord key={state.label} tone="attention">{state.label}</StatusWord>
+        : <span key={state.label} className={state.tone === 'current' ? 'current' : undefined}>{state.label}</span>)}
     </span>
   );
 }

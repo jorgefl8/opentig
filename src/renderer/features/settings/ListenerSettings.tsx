@@ -29,28 +29,32 @@ export function ListenerSettings({ status, disabled, onChange }: {
     catch (error) { setError(error instanceof Error ? error.message : 'Could not change the listener.'); setConfirmation(null); }
     finally { setPending(false); }
   };
-  return <details className="web-access-connection-details settings-field-separated">
+  return <details className="settings-disclosure">
     <summary>Connection details <span>Edit listener</span></summary>
-    <form className="web-access-listener-form" onSubmit={(event) => {
+    <form className="settings-disclosure-content" onSubmit={(event) => {
       event.preventDefault();
       setError(null);
       if (changed) setConfirmation({ listenerHost: host.trim(), listenerPort: Number(port) });
     }}>
-      <label htmlFor="web-access-listener-host">Listening address</label>
-      <input id="web-access-listener-host" className="web-access-rename-input" value={host} onChange={(event) => setHost(event.target.value)} required maxLength={45} disabled={disabled || pending} autoComplete="off" spellCheck={false} aria-describedby="web-access-listener-help" />
-      <label htmlFor="web-access-listener-port">Port</label>
-      <input id="web-access-listener-port" className="web-access-rename-input" type="number" min="1" max="65535" step="1" value={port} onChange={(event) => setPort(event.target.value)} required disabled={disabled || pending} />
-      <p id="web-access-listener-help" className="web-access-hint">Use 127.0.0.1 for a tunnel on this server, 0.0.0.0 for all IPv4 interfaces, or a specific IPv4/IPv6 address. Changing the listener may disconnect browsers. Tunnel routing is configured separately.</p>
-      {error && <p className="web-access-error" role="alert">{error}</p>}
-      <div><Button type="submit" variant="outline" size="sm" disabled={disabled || pending || !changed}>Apply listener</Button></div>
+      <div className="settings-row">
+        <div className="settings-field-label"><label htmlFor="web-access-listener-host">Listening address</label></div>
+        <input id="web-access-listener-host" className="field-input" value={host} onChange={(event) => setHost(event.target.value)} required maxLength={45} disabled={disabled || pending} autoComplete="off" spellCheck={false} aria-describedby="web-access-listener-help" />
+      </div>
+      <div className="settings-row">
+        <div className="settings-field-label"><label htmlFor="web-access-listener-port">Port</label></div>
+        <input id="web-access-listener-port" className="field-input" type="number" min="1" max="65535" step="1" value={port} onChange={(event) => setPort(event.target.value)} required disabled={disabled || pending} />
+      </div>
+      <p id="web-access-listener-help" className="settings-note">Use 127.0.0.1 for a tunnel on this server, 0.0.0.0 for all IPv4 interfaces, or a specific IPv4/IPv6 address. Changing the listener may disconnect browsers. Tunnel routing is configured separately.</p>
+      {error && <p className="settings-error" role="alert">{error}</p>}
+      <div className="settings-actions"><Button type="submit" variant="ghost" size="sm" disabled={disabled || pending || !changed}>Apply listener</Button></div>
     </form>
     <Dialog open={confirmation !== null} onOpenChange={(open) => { if (!open && !pending) setConfirmation(null); }}>
       <DialogPopup className="undo-commit-dialog">
         <div className="undo-commit-content">
           <DialogTitle>Change listening address?</DialogTitle>
           <DialogDescription>This changes the listener for every client. Save edits on connected clients first. Direct connections may need the new address and port; a tunnel may need its origin updated. Paired devices stay saved. If the new address or port cannot be used, OpenTig restores the previous listener.</DialogDescription>
-          <p className="web-access-hint"><code>{confirmation?.listenerHost}:{confirmation?.listenerPort}</code></p>
-          {status.recoveryCommand && <p className="web-access-hint">If you lose access, run <code>{status.recoveryCommand}</code> on the server and restart this instance.</p>}
+          <p className="settings-note"><code>{confirmation?.listenerHost}:{confirmation?.listenerPort}</code></p>
+          {status.recoveryCommand && <p className="settings-note">If you lose access, run <code>{status.recoveryCommand}</code> on the server and restart this instance.</p>}
         </div>
         <div className="undo-commit-actions">
           <Button variant="ghost" disabled={pending} onClick={() => setConfirmation(null)}>Cancel</Button>

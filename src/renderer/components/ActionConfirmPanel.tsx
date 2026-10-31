@@ -1,10 +1,7 @@
 import { useEffect, type ReactNode } from 'react';
-import { IconAlertTriangle, IconHelpCircle } from '@tabler/icons-react';
 import { Button } from '@/components/ui/button';
 
 interface ActionConfirmPanelProps {
-  /** `danger` for what can't be undone, `warning` for what rewrites something, `neutral` for the rest. */
-  tone?: 'danger' | 'warning' | 'neutral';
   busy?: boolean;
   /** The confirming button. */
   confirm: ReactNode;
@@ -14,7 +11,7 @@ interface ActionConfirmPanelProps {
 }
 
 /** A two-step confirmation in place. No timer: the question stays until it's answered, and Escape declines it. */
-export function ActionConfirmPanel({ tone = 'danger', busy = false, confirm, onCancel, children }: ActionConfirmPanelProps) {
+export function ActionConfirmPanel({ busy = false, confirm, onCancel, children }: ActionConfirmPanelProps) {
   useEffect(() => {
     if (busy) return;
     const onKeyDown = (event: KeyboardEvent) => {
@@ -29,10 +26,8 @@ export function ActionConfirmPanel({ tone = 'danger', busy = false, confirm, onC
     document.addEventListener('keydown', onKeyDown, true);
     return () => document.removeEventListener('keydown', onKeyDown, true);
   }, [busy, onCancel]);
-  const Icon = tone === 'neutral' ? IconHelpCircle : IconAlertTriangle;
   return (
-    <div className={`local-refs-confirm ${tone}`} role="alert">
-      <Icon aria-hidden="true" />
+    <div className="local-refs-confirm" role="alert">
       {children}
       <span className="local-refs-confirm-actions">
         {confirm}

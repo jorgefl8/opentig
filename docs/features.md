@@ -48,7 +48,7 @@ Added repositories stay available until you remove them. Opening one preserves i
 
 **Organize, relocate, or remove repositories**
 
-In **Manage projects**, create, rename, delete, or reassign project groups without moving files on disk. Reorder projects and repositories within each group, including **No project**. Desktop offers drag handles, keyboard dragging, and up/down buttons; mobile uses larger up/down buttons. Repository numbers match the selector.
+In **Manage projects**, create, rename, delete, or reassign project groups without moving files on disk. Reorder projects and repositories within each group, including **No project**. Desktop offers drag handles, keyboard dragging, and up/down buttons; mobile uses larger up/down buttons. On desktop, a row's move, rename, relocate, and delete buttons appear when you hover over or focus it. Repository numbers match the selector.
 
 - **Relocate repository:** select an existing folder to update its saved path, even before opening fails. Desktop uses a native picker; browsers use the server folder picker. Project assignment, tabs, and expanded folders are preserved; files are not moved.
 - **Remove from OpenTig:** confirm to forget the repository, its worktrees, recent entries, and project assignment. Folders and Git data stay on disk and can be opened again. Removing the active repository returns you to the welcome screen.

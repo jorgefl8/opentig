@@ -64,7 +64,7 @@ export function RunWorkflowDialog({ repositoryId, onClose }: { repositoryId: str
   return (
     // While the question is open, closing only withdraws it.
     <Dialog open onOpenChange={(next) => { if (!next && !busy) { if (confirming) setConfirming(false); else onClose(); } }}>
-      <DialogPopup className="create-pr-dialog">
+      <DialogPopup className="create-pr-dialog run-workflow-dialog">
         <div className="create-pr-content run-workflow-content">
           <DialogTitle>Run a workflow</DialogTitle>
           <DialogDescription>Runs on {list?.defaultBranch ? <code>{list.defaultBranch}</code> : 'the default branch'}, without inputs. GitHub explains when a workflow needs them or can't be started manually.</DialogDescription>

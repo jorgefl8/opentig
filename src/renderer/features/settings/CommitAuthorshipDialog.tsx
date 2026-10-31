@@ -59,19 +59,19 @@ export function CommitAuthorshipDialog({ repository, open, onOpenChange }: {
           <p>{snapshot.author?.email || 'No commit email configured'}</p><small>{authorshipSourceLabel(snapshot.source)}</small>
           {snapshot.committer && (snapshot.committer.name !== snapshot.author?.name || snapshot.committer.email !== snapshot.author?.email) && <p>Committer: {snapshot.committer.name} &lt;{snapshot.committer.email}&gt;</p>}
         </div>
-        {snapshot.blockers.map((blocker) => <p className="github-settings-notice" key={blocker}>{blocker}</p>)}
-        {review ? <div className="github-authorship-review next"><span>New author and committer</span><strong>{name.trim()}</strong><p>{email.trim()}</p><small>Repository Git settings</small></div>
+        {snapshot.blockers.map((blocker) => <p className="settings-notice" key={blocker}>{blocker}</p>)}
+        {review ? <div className="github-authorship-review"><span>New author and committer</span><strong>{name.trim()}</strong><p>{email.trim()}</p><small>Repository Git settings</small></div>
           : <form id="commit-authorship-form" onSubmit={(event) => { event.preventDefault(); if (parsed.success && snapshot.editable) setReview(true); }}>
-            <label htmlFor="commit-author-name">Name</label><input id="commit-author-name" value={name} onChange={(event) => setName(event.target.value)} autoComplete="off" maxLength={120} disabled={!snapshot.editable} required />
-            <label htmlFor="commit-author-email">Commit email</label><input id="commit-author-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="off" maxLength={254} disabled={!snapshot.editable} required />
-            <p className="github-settings-note">Choose an email associated with your GitHub account, or copy its exact noreply address from GitHub Settings → Emails. It is not inferred from the account login.</p>
+            <label htmlFor="commit-author-name">Name</label><input id="commit-author-name" className="field-input" value={name} onChange={(event) => setName(event.target.value)} autoComplete="off" maxLength={120} disabled={!snapshot.editable} required />
+            <label htmlFor="commit-author-email">Commit email</label><input id="commit-author-email" className="field-input" type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="off" maxLength={254} disabled={!snapshot.editable} required />
+            <p className="settings-note">Choose an email associated with your GitHub account, or copy its exact noreply address from GitHub Settings → Emails. It is not inferred from the account login.</p>
           </form>}
         <p className="github-authorship-scope">Applies to this repository and its worktrees, including commits from other Git tools. Only future commits change. Global Git settings, gh, SSH and commit signing are kept.</p>
       </>}
-      {error && <p className="github-settings-notice" role="alert">{error}</p>}
+      {error && <p className="settings-notice" role="alert">{error}</p>}
       <div className="github-add-actions">
         <Button variant="ghost" disabled={saving} onClick={() => onOpenChange(false)}>Cancel</Button>
-        {review ? <><Button variant="outline" disabled={saving} onClick={() => setReview(false)}>Back</Button><Button disabled={saving || !snapshot?.editable} onClick={() => void apply()}>{saving && <IconLoader4 className="animate-spin" />}Apply to repository</Button></>
+        {review ? <><Button variant="ghost" disabled={saving} onClick={() => setReview(false)}>Back</Button><Button disabled={saving || !snapshot?.editable} onClick={() => void apply()}>{saving && <IconLoader4 className="animate-spin" />}Apply to repository</Button></>
           : <Button type="submit" form="commit-authorship-form" disabled={loading || !snapshot?.editable || !parsed.success}>Review changes</Button>}
       </div>
     </DialogPopup>

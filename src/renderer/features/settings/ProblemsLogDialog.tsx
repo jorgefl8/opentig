@@ -12,7 +12,7 @@ import { IconArrowsSort, IconLoader4, IconRefresh, IconSortAscending, IconSortDe
 import { sileo } from 'sileo';
 import { groupProblemLogEntries, type ProblemLogEntry, type ProblemLogGroup } from '@shared/problems-log';
 import { opentig } from '@/lib/opentig-api';
-import { Badge } from '@/components/ui/badge';
+import { StatusWord } from '@/components/StatusWord';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogClose, DialogDescription, DialogPopup, DialogTitle } from '@/components/ui/dialog';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
@@ -52,7 +52,7 @@ const columns = columnHelper.columns([
     header: ({ column }) => <SortableHeader column={column} label="Level" />,
     cell: ({ getValue }) => {
       const level = getValue();
-      return <Badge variant={level === 'warn' ? 'outline' : 'destructive'}>{level}</Badge>;
+      return <StatusWord tone={level === 'warn' ? 'attention' : 'danger'}>{level}</StatusWord>;
     },
   }),
   columnHelper.accessor('operation', {
@@ -134,7 +134,7 @@ export function ProblemsLogDialog({ open, onOpenChange }: ProblemsLogDialogProps
             <DialogDescription>Recent local failures on this machine. Prompts and file contents are never recorded.</DialogDescription>
           </div>
           <div className="ai-log-header-actions">
-            <Button variant="outline" size="sm" disabled={loading} onClick={() => void load()}>
+            <Button variant="ghost" size="sm" disabled={loading} onClick={() => void load()}>
               {loading ? <IconLoader4 className="animate-spin" /> : <IconRefresh />} Refresh
             </Button>
             <Button variant="ghost" size="sm" disabled={entries.length === 0} onClick={() => void clear()}><IconTrash /> Clear</Button>
@@ -169,7 +169,7 @@ export function ProblemsLogDialog({ open, onOpenChange }: ProblemsLogDialogProps
                 </TableHeader>
                 <TableBody>
                   {table.getRowModel().rows.map((row) => (
-                    <TableRow key={row.id} className={row.original.level === 'error' ? 'ai-log-row-failed' : undefined}>
+                    <TableRow key={row.id}>
                       {row.getAllCells().map((cell) => (
                         <TableCell key={cell.id}><table.FlexRender cell={cell} /></TableCell>
                       ))}

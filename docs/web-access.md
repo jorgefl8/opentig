@@ -165,7 +165,7 @@ An unpaired browser offers **Pair this browser**, with a copyable CLI command in
 
 Opening `/pair` checks the existing session first. Authenticated browsers return to the app; a connection failure offers retry rather than demanding another code. Sessions survive server restarts.
 
-Paired browsers can create another five-minute link or QR using their current address or another selected destination. They can inspect, rename, and revoke sessions, and configure server access.
+Paired browsers can create another five-minute link or QR using their current address or another selected destination. They can inspect, rename, and revoke sessions, and configure server access. On desktop, a session's rename and revoke buttons appear when you hover over or focus its row.
 
 <details>
 <summary>Pairing secrets, cookies, and stored session data</summary>

@@ -1,25 +1,13 @@
 import { formatDateTime } from '@shared/date-format';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { normalizePairingOrigin } from '@shared/web-access';
-import {
-  IconAlertTriangle,
-  IconBrowser,
-  IconCopy,
-  IconDeviceDesktop,
-  IconEdit,
-  IconLink,
-  IconLoader4,
-  IconQrcode,
-  IconShieldLock,
-  IconTrash,
-  IconX,
-} from '@tabler/icons-react';
+import { IconCopy, IconEdit, IconLoader4, IconTrash, IconX } from '@tabler/icons-react';
 import { renderSVG } from 'uqr';
 import { sileo } from 'sileo';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import type { OpenTigPairingLink, OpenTigWebAccessStatus } from '@shared/desktop-api';
 import type { OpenTigOwnerSession } from '@shared/server-protocol';
-import { Badge } from '@/components/ui/badge';
+import { StatusWord, type StatusTone } from '@/components/StatusWord';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogClose, DialogDescription, DialogPopup, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -29,6 +17,7 @@ import { loadOwnerSessions, renameOwnerSession, revokeAllBrowserSessions, revoke
 import { PairingRequests } from './web-access-pairing';
 import { browserConfiguration, browserWebAccessApi, loadBrowserWebAccessStatus } from './browser-web-access';
 import { ListenerSettings } from './ListenerSettings';
+import { SettingGroup, SettingRow } from './SettingRows';
 import { canRestartForUpdate } from './update-api';
 
 const STATUS_COPY: Record<OpenTigWebAccessStatus['serverState'], string> = {
@@ -37,6 +26,13 @@ const STATUS_COPY: Record<OpenTigWebAccessStatus['serverState'], string> = {
   restarting: 'Restarting',
   failed: 'Failed',
   stopped: 'Stopped',
+};
+const STATUS_TONE: Record<OpenTigWebAccessStatus['serverState'], StatusTone> = {
+  starting: 'attention',
+  ready: 'ready',
+  restarting: 'attention',
+  failed: 'danger',
+  stopped: 'neutral',
 };
 
 type Action = 'toggle' | 'lan' | 'origin' | 'revoke-all' | `rename:${string}` | `revoke:${string}`;
@@ -297,13 +293,9 @@ export function WebAccessSettings() {
   const recoveryCommand = isBrowser ? status?.recoveryCommand : undefined;
 
   return (
-    <div className="web-access-settings">
+    <div>
       {status && <>
-        <div className="web-access-summary">
-          <div className="settings-field-label">
-            <strong>Web access</strong>
-            <span>Allow paired browsers to use OpenTig. Turning this off disconnects browsers but keeps paired devices.{isBrowser ? '' : ' Enable it again to restore their access; the desktop stays connected.'}</span>
-          </div>
+        <SettingRow label="Web access" description={<>Allow paired browsers to use OpenTig. Turning this off disconnects browsers but keeps paired devices.{isBrowser ? '' : ' Enable it again to restore their access; the desktop stays connected.'}</>}>
           <button
             type="button"
             role="switch"
@@ -313,21 +305,17 @@ export function WebAccessSettings() {
             disabled={action !== null || !ready}
             onClick={() => setExposureConfirmation(status.webAccessEnabled ? 'disable' : 'enable')}
           ><span /></button>
-        </div>
+        </SettingRow>
 
         <div className="web-access-facts" aria-live="polite">
-          <WebAccessFact label="Server status"><Badge variant={ready ? 'secondary' : 'outline'}>{STATUS_COPY[status.serverState]}</Badge></WebAccessFact>
+          <WebAccessFact label="Server status"><StatusWord tone={STATUS_TONE[status.serverState]}>{STATUS_COPY[status.serverState]}</StatusWord></WebAccessFact>
           <WebAccessFact label="Actual port"><code>{status.actualPort ?? 'Unavailable'}</code></WebAccessFact>
           <WebAccessFact label="Listening on"><span>{status.listenerHost ?? (status.listeningOnLan ? 'All network interfaces' : 'This computer (loopback)')}</span></WebAccessFact>
           <WebAccessFact label="Local endpoint"><Endpoint value={status.localEndpoint} /></WebAccessFact>
-          <div className="web-access-summary web-access-network-settings">
-            <div className="settings-field-label">
-              <strong>LAN access</strong>
-              <span>Allow direct connections from the server&apos;s network. A tunnel on the same host works with LAN access off. Changing LAN access reconnects clients.</span>
-            </div>
+          <SettingRow label="LAN access" description={<>Allow direct connections from the server&apos;s network. A tunnel on the same host works with LAN access off. Changing LAN access reconnects clients.</>}>
             <button type="button" role="switch" aria-label="LAN access" aria-checked={status.listeningOnLan} className="settings-switch"
               disabled={!status.webAccessEnabled || action !== null || !ready} onClick={() => isBrowser ? setLanConfirmation(!status.listeningOnLan) : void changeLan(!status.listeningOnLan)}><span /></button>
-          </div>
+          </SettingRow>
           <WebAccessFact label="LAN endpoints">
             <div className="web-access-endpoints">
               {status.networkEndpoints.length === 0
@@ -339,78 +327,71 @@ export function WebAccessSettings() {
 
         <ListenerSettings status={status} disabled={action !== null || !ready} onChange={setStatus} />
 
-        {status.restartError && <div className="web-access-error" role="alert"><IconAlertTriangle /> <span>{status.restartError}</span></div>}
+        {status.restartError && <p className="settings-error" role="alert">{status.restartError}</p>}
 
-        {!status.webAccessEnabled && <p className="web-access-hint">Browser access is paused, including through tunnels. Paired devices are saved; the private desktop session stays connected.</p>}
+        {!status.webAccessEnabled && <p className="settings-note">Browser access is paused, including through tunnels. Paired devices are saved; the private desktop session stays connected.</p>}
 
       </>}
 
-      {webAccessEnabled && <>
-        <div className="web-access-actions settings-field-separated">
-          <div className="settings-field-label">
-            <strong>Pair a browser</strong>
-            <span>Choose where to open your five-minute, one-use link.</span>
-          </div>
-        </div>
-        <div className="web-access-pairing-options">
-          {status && <>
-            <fieldset className="web-access-destinations" disabled={action !== null}>
+      {webAccessEnabled && <SettingGroup title="Pair a browser" className="web-access-actions">
+        {status && <>
+          <SettingRow label="Destination" description="Choose where to open your five-minute, one-use link.">
+            <fieldset className="plain-options" disabled={action !== null}>
               <legend className="sr-only">Pairing destination</legend>
               {destinations.map(({ value, label }) => (
-                <label key={value}>
-                  <input type="radio" name="web-access-destination" value={value} checked={destination === value} onChange={() => chooseDestination(value)} />
+                <label key={value} className="plain-option">
+                  <input className="sr-only" type="radio" name="web-access-destination" value={value} checked={destination === value} onChange={() => chooseDestination(value)} />
                   {label}
                 </label>
               ))}
             </fieldset>
+          </SettingRow>
+          <div className="web-access-pairing-options">
             {destination === 'public' ? (
-              <div className="web-access-domain">
-                {showOriginEditor ? <form onSubmit={(event) => { event.preventDefault(); void savePublicOrigin(); }}>
-                  <label htmlFor="web-access-public-origin">Your domain</label>
-                  <input ref={originInput} id="web-access-public-origin" className="web-access-rename-input" value={publicOriginInput}
-                    onChange={(event) => { setPublicOriginInput(event.target.value); setOriginError(null); }} placeholder="https://git.example.com"
-                    aria-invalid={originError !== null} aria-describedby={`web-access-origin-help${originError ? ' web-access-origin-error' : ''}`}
-                    maxLength={2_048} disabled={action !== null} autoComplete="off" spellCheck={false} inputMode="url" />
-                  <p id="web-access-origin-help" className="web-access-hint">Your tunnel address, without a path. It will be used in the link and QR. Point your tunnel at the local endpoint shown above.</p>
-                  {originError && <p id="web-access-origin-error" className="web-access-error" role="alert">{originError}</p>}
-                  <div className="web-access-domain-actions">
-                    <Button type="submit" size="sm" disabled={action !== null || !publicOriginInput.trim()}>Save and use</Button>
-                    <Button type="button" variant="ghost" size="sm" onClick={cancelOriginEdit} disabled={action !== null}>Cancel</Button>
-                    {status.publicOrigin && <Button type="button" variant="ghost" size="sm" onClick={() => void savePublicOrigin(true)} disabled={action !== null}>Remove</Button>}
-                  </div>
-                </form> : <>
-                  <div className="web-access-saved-domain">
-                    <code>{status.publicOrigin}</code>
-                    <Button variant="ghost" size="sm" onClick={() => { dismissPairing(); setEditingPublicOrigin(true); }} disabled={action !== null}><IconEdit /> Edit</Button>
-                  </div>
-                  <p className="web-access-hint">Saved and selected for this link and QR.</p>
-                </>}
-              </div>
+              showOriginEditor ? <form className="web-access-domain" onSubmit={(event) => { event.preventDefault(); void savePublicOrigin(); }}>
+                <label htmlFor="web-access-public-origin">Your domain</label>
+                <input ref={originInput} id="web-access-public-origin" className="field-input" value={publicOriginInput}
+                  onChange={(event) => { setPublicOriginInput(event.target.value); setOriginError(null); }} placeholder="https://git.example.com"
+                  aria-invalid={originError !== null} aria-describedby={`web-access-origin-help${originError ? ' web-access-origin-error' : ''}`}
+                  maxLength={2_048} disabled={action !== null} autoComplete="off" spellCheck={false} inputMode="url" />
+                <p id="web-access-origin-help" className="settings-note">Your tunnel address, without a path. It will be used in the link and QR. Point your tunnel at the local endpoint shown above.</p>
+                {originError && <p id="web-access-origin-error" className="settings-error" role="alert">{originError}</p>}
+                <div className="settings-actions">
+                  <Button type="submit" variant="ghost" size="sm" disabled={action !== null || !publicOriginInput.trim()}>Save and use</Button>
+                  <Button type="button" variant="ghost" size="sm" onClick={cancelOriginEdit} disabled={action !== null}>Cancel</Button>
+                  {status.publicOrigin && <Button type="button" variant="ghost" size="sm" onClick={() => void savePublicOrigin(true)} disabled={action !== null}>Remove</Button>}
+                </div>
+              </form> : <SettingRow label={<code className="web-access-saved-domain">{status.publicOrigin}</code>} description="Saved and selected for this link and QR.">
+                <Button variant="ghost" size="sm" onClick={() => { dismissPairing(); setEditingPublicOrigin(true); }} disabled={action !== null}><IconEdit /> Edit</Button>
+              </SettingRow>
             ) : destination === 'lan' ? (
-              <div className="web-access-endpoint-select">
-                <label htmlFor="web-access-endpoint">Network address</label>
+              <SettingRow label={<label htmlFor="web-access-endpoint">Network address</label>}>
                 <Select value={lanEndpoint} onValueChange={(endpoint) => { if (endpoint) setLanEndpoint(endpoint); }} disabled={action !== null}>
-                  <SelectTrigger id="web-access-endpoint" className="w-full"><SelectValue>{lanEndpoint}</SelectValue></SelectTrigger>
-                  <SelectContent alignItemWithTrigger={false}>
+                  <SelectTrigger id="web-access-endpoint" className="plain-select"><SelectValue>{lanEndpoint}</SelectValue></SelectTrigger>
+                  <SelectContent align="end" alignItemWithTrigger={false}>
                     <SelectGroup>{lanEndpoints.map((endpoint) => <SelectItem key={endpoint} value={endpoint}>{endpoint}</SelectItem>)}</SelectGroup>
                   </SelectContent>
                 </Select>
-              </div>
-            ) : <p className="web-access-hint">{destination === 'current' ? 'Use this browser’s address, including through a tunnel.' : 'For a browser on the server itself.'}</p>}
-          </>}
-          <div className="web-access-link-destination">
-            <span>Address for the link and QR</span>
+              </SettingRow>
+            ) : <p className="settings-note">{destination === 'current' ? 'Use this browser’s address, including through a tunnel.' : 'For a browser on the server itself.'}</p>}
+          </div>
+        </>}
+        <div className="settings-row web-access-link-destination">
+          <div className="settings-field-label">
+            <strong>Address for the link and QR</strong>
             <code>{selectedEndpoint || (destination === 'public' ? 'Add your domain above' : 'Unavailable')}</code>
           </div>
-          <Button size="sm" onClick={() => void createLink()} disabled={!canCreateLink}>
-            {pairingPending ? <IconLoader4 className="animate-spin" /> : <IconLink />} Create pairing link
-          </Button>
+          <div className="settings-row-control">
+            <Button size="sm" onClick={() => void createLink()} disabled={!canCreateLink}>
+              {pairingPending && <IconLoader4 className="animate-spin" />} Create pairing link
+            </Button>
+          </div>
         </div>
 
         {pairingVisible && (
           <div className="web-access-pairing" role="status">
             <div className="web-access-pairing-copy">
-              {pairing ? <IconQrcode aria-hidden="true" /> : <IconLoader4 className="animate-spin" aria-hidden="true" />}
+              {!pairing && <IconLoader4 className="animate-spin" aria-hidden="true" />}
               <div><strong>{pairing ? 'Pairing link ready' : <ShimmeringText text="Creating pairing link…" />}</strong><span>{pairing ? `Expires ${formatDateTime(pairing.expiresAt, { seconds: true })}.` : 'You can close this while the link is being created.'}</span></div>
               <Tooltip><TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Close pairing link" onClick={dismissPairing} />}><IconX /></TooltipTrigger><TooltipContent>Close pairing link</TooltipContent></Tooltip>
             </div>
@@ -418,55 +399,50 @@ export function WebAccessSettings() {
             {qrSource && <img src={qrSource} alt="QR code for the one-use OpenTig pairing link" />}
             <div className="web-access-link-row">
               <Tooltip><TooltipTrigger render={<code className="web-access-link" />}>{pairing.url}</TooltipTrigger><TooltipContent side="bottom">One-use link; do not share publicly</TooltipContent></Tooltip>
-              <Tooltip><TooltipTrigger render={<Button variant="outline" size="icon-sm" aria-label="Copy pairing link" onClick={() => void copyLink()} />}><IconCopy /></TooltipTrigger><TooltipContent>Copy pairing link</TooltipContent></Tooltip>
+              <Tooltip><TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Copy pairing link" onClick={() => void copyLink()} />}><IconCopy /></TooltipTrigger><TooltipContent>Copy pairing link</TooltipContent></Tooltip>
             </div>
             <div className="web-access-link-row">
               <Tooltip><TooltipTrigger render={<code className="web-access-link" />}>{pairingCode}</TooltipTrigger><TooltipContent side="bottom">Paste this code on any /pair page served by this OpenTig instance</TooltipContent></Tooltip>
-              <Tooltip><TooltipTrigger render={<Button variant="outline" size="icon-sm" aria-label="Copy pairing code" onClick={() => void copyCode()} />}><IconCopy /></TooltipTrigger><TooltipContent>Copy pairing code</TooltipContent></Tooltip>
+              <Tooltip><TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Copy pairing code" onClick={() => void copyCode()} />}><IconCopy /></TooltipTrigger><TooltipContent>Copy pairing code</TooltipContent></Tooltip>
             </div>
-            <p className="web-access-hint">Closing hides this code. A copied code remains valid until used, replaced, or expired. Turning off Web access invalidates it.</p>
+            <p className="settings-note">Closing hides this code. A copied code remains valid until used, replaced, or expired. Turning off Web access invalidates it.</p>
             </>}
           </div>
         )}
-      </>}
+      </SettingGroup>}
 
-      <div className="web-access-session-heading settings-field-separated">
-        <div className="settings-field-label">
-          <strong>Owner sessions</strong>
-          <span>{isBrowser ? '' : 'Desktop authentication stays private. '}Paired browsers can be renamed or disconnected individually.</span>
-        </div>
-        <Button variant="destructive" size="sm" onClick={() => setRevokeTarget('all')} disabled={browserSessions.length === 0 || action !== null}>
-          <IconShieldLock /> Revoke browsers
-        </Button>
-      </div>
-
-      <div className="web-access-session-list" aria-live="polite">
-        {sessions.length === 0
-          ? <div className="web-access-empty-session">No owner sessions found.</div>
-          : sessions.map((session) => (
-            <div className="web-access-session" key={session.id}>
-              <div className={`web-access-session-icon ${session.connected ? 'connected' : ''}`}>
-                {session.kind === 'desktop' ? <IconDeviceDesktop /> : <IconBrowser />}
-              </div>
-              <div className="web-access-session-copy">
-                <div><strong>{session.clientName}</strong>{session.current && <Badge variant="secondary">This session</Badge>}{session.kind === 'desktop' && <Badge variant="outline">Desktop</Badge>}</div>
-                <span>{session.connected ? `Connected${session.connectionCount > 1 ? ` (${session.connectionCount} tabs)` : ''}` : session.lastConnectedAt ? `Last connected ${formatDateTime(session.lastConnectedAt, { seconds: true })}` : 'Not yet connected'} · {session.browser && session.os ? `${session.browser} on ${session.os}` : session.browser ?? session.os ?? deviceLabel(session.deviceType)}{session.viaProxy ? ' · Via proxy' : ''}{session.remoteAddress ? ` · ${session.remoteAddress}` : ''}</span>
-              </div>
-              {session.kind !== 'desktop' && (
-                <div className="web-access-session-controls">
-                  <Tooltip>
-                    <TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label={`Rename ${session.clientName}`} onClick={() => { setRenameTarget(session); setRenameInput(session.clientName); }} disabled={action !== null} />}><IconEdit /></TooltipTrigger>
-                    <TooltipContent>Rename this device</TooltipContent>
-                  </Tooltip>
-                  <Tooltip>
-                    <TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label={`Revoke ${session.clientName} session`} onClick={() => setRevokeTarget(session)} disabled={action !== null} />}><IconTrash /></TooltipTrigger>
-                    <TooltipContent>Revoke this browser session</TooltipContent>
-                  </Tooltip>
+      <SettingGroup title="Owner sessions">
+        <SettingRow label="Paired browsers" description={<>{isBrowser ? '' : 'Desktop authentication stays private. '}Paired browsers can be renamed or disconnected individually.</>}>
+          <Button variant="ghost" size="sm" className="danger-action" onClick={() => setRevokeTarget('all')} disabled={browserSessions.length === 0 || action !== null}>
+            Revoke browsers
+          </Button>
+        </SettingRow>
+        <div className="web-access-session-list" aria-live="polite">
+          {sessions.length === 0
+            ? <p className="settings-note">No owner sessions found.</p>
+            : sessions.map((session) => (
+              <div className="web-access-session" key={session.id}>
+                <span className={`status-dot tone-${session.connected ? 'ready' : 'neutral'}`} aria-hidden="true" />
+                <div className="web-access-session-copy">
+                  <div><strong>{session.clientName}</strong>{session.current && <small>This session</small>}{session.kind === 'desktop' && <small>Desktop</small>}</div>
+                  <span>{session.connected ? `Connected${session.connectionCount > 1 ? ` (${session.connectionCount} tabs)` : ''}` : session.lastConnectedAt ? `Last connected ${formatDateTime(session.lastConnectedAt, { seconds: true })}` : 'Not yet connected'} · {session.browser && session.os ? `${session.browser} on ${session.os}` : session.browser ?? session.os ?? deviceLabel(session.deviceType)}{session.viaProxy ? ' · Via proxy' : ''}{session.remoteAddress ? ` · ${session.remoteAddress}` : ''}</span>
                 </div>
-              )}
-            </div>
-          ))}
-      </div>
+                {session.kind !== 'desktop' && (
+                  <div className="web-access-session-controls">
+                    <Tooltip>
+                      <TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label={`Rename ${session.clientName}`} onClick={() => { setRenameTarget(session); setRenameInput(session.clientName); }} disabled={action !== null} />}><IconEdit /></TooltipTrigger>
+                      <TooltipContent>Rename this device</TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger render={<Button variant="ghost" size="icon-sm" className="repository-row-delete" aria-label={`Revoke ${session.clientName} session`} onClick={() => setRevokeTarget(session)} disabled={action !== null} />}><IconTrash /></TooltipTrigger>
+                      <TooltipContent>Revoke this browser session</TooltipContent>
+                    </Tooltip>
+                  </div>
+                )}
+              </div>
+            ))}
+        </div>
+      </SettingGroup>
 
       <Dialog open={lanConfirmation !== null} onOpenChange={(open) => { if (!open) setLanConfirmation(null); }}>
         <DialogPopup className="undo-commit-dialog">
@@ -509,9 +485,7 @@ export function WebAccessSettings() {
           </div>
           <div className="undo-commit-actions">
             <DialogClose render={<Button variant="ghost" />}>Cancel</DialogClose>
-            <Button variant="destructive" onClick={() => void revokeConfirmed()} disabled={action !== null}>
-              <IconShieldLock /> Revoke
-            </Button>
+            <Button variant="destructive" onClick={() => void revokeConfirmed()} disabled={action !== null}>Revoke</Button>
           </div>
         </DialogPopup>
       </Dialog>
@@ -521,7 +495,7 @@ export function WebAccessSettings() {
           <div className="undo-commit-content">
             <DialogTitle>Rename paired device</DialogTitle>
             <DialogDescription>Use a name that makes this browser easy to identify later.</DialogDescription>
-            <input className="web-access-rename-input" value={renameInput} onChange={(event) => setRenameInput(event.target.value)} maxLength={64} aria-label="Device name" autoComplete="off" />
+            <input className="field-input" value={renameInput} onChange={(event) => setRenameInput(event.target.value)} maxLength={64} aria-label="Device name" autoComplete="off" />
           </div>
           <div className="undo-commit-actions">
             <DialogClose render={<Button variant="ghost" />}>Cancel</DialogClose>
@@ -534,7 +508,7 @@ export function WebAccessSettings() {
 }
 
 function WebAccessFact({ label, children }: { label: string; children: ReactNode }) {
-  return <div className="web-access-fact"><span>{label}</span><div>{children}</div></div>;
+  return <SettingRow label={label}>{children}</SettingRow>;
 }
 
 function Endpoint({ value, muted = false }: { value: string | null; muted?: boolean }) {

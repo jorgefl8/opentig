@@ -26,13 +26,13 @@ export function RepositoryAccessStatus({ access, checking, action }: { access: R
   const failed = access.lastOperation && !access.lastOperation.ok ? access.lastOperation : null;
   const failures = accessChecks(access).filter(([, check]) => ['expired', 'inaccessible', 'offline'].includes(check.state));
   return <div className="repository-access-status" aria-busy={checking}>
-    <div className="settings-general-row">
-      <strong className="github-access-summary" role="status">{accessSummary(access, checking)}</strong>
-      <div className="settings-general-control">{action}</div>
+    <div className="settings-row">
+      <div className="settings-field-label"><strong className="github-access-summary" role="status">{accessSummary(access, checking)}</strong></div>
+      <div className="settings-row-control">{action}</div>
     </div>
-    {access.publication.blocked && <p className="github-settings-notice" role="status">{access.publication.blocked}</p>}
-    {!checking && failures.map(([label, check]) => <p className="github-settings-notice" role="status" key={label}><strong>{label}</strong>{check.message || (check.state === 'expired' ? 'Reconnect the account or choose another one.' : check.state === 'offline' ? 'Check the connection and try again.' : 'Check the selected account and its repository permissions.')}</p>)}
-    {failed && <p className="github-settings-notice" role="status"><strong>Last {failed.operation} failed</strong>{failed.message || 'Check access and retry the operation.'}</p>}
+    {access.publication.blocked && <p className="settings-notice" role="status">{access.publication.blocked}</p>}
+    {!checking && failures.map(([label, check]) => <p className="settings-notice" role="status" key={label}><strong>{label}</strong>{check.message || (check.state === 'expired' ? 'Reconnect the account or choose another one.' : check.state === 'offline' ? 'Check the connection and try again.' : 'Check the selected account and its repository permissions.')}</p>)}
+    {failed && <p className="settings-notice" role="status"><strong>Last {failed.operation} failed</strong>{failed.message || 'Check access and retry the operation.'}</p>}
   </div>;
 }
 

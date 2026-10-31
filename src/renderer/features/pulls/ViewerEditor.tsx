@@ -24,7 +24,7 @@ export function ViewerEditor({ titleId, title, edited, busy, canSave, note, onTi
     <div className="pr-viewer" onKeyDown={(event) => { if (event.key === 'Escape' && !edited && !busy) onClose(); }}>
       <header className="pr-viewer-header no-tabs">
         <div className="pr-viewer-top">
-          <input ref={titleInput} id={titleId} className="create-pr-title pr-editor-title" aria-label="Title" value={title} maxLength={300} disabled={busy} onChange={(event) => onTitleChange(event.target.value)} />
+          <input ref={titleInput} id={titleId} className="field-input pr-editor-title" aria-label="Title" value={title} maxLength={300} disabled={busy} onChange={(event) => onTitleChange(event.target.value)} />
           <span className="pr-action-bar">
             <Button variant="ghost" size="xs" disabled={busy} onClick={onClose}>Cancel</Button>
             <Button size="xs" disabled={busy || !title.trim() || !canSave} onClick={onSave}>

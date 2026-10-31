@@ -33,7 +33,7 @@ Loading status uses shimmering text and a primary-colored spinner. Busy buttons 
 <details>
 <summary>Settings layout and secondary dialogs</summary>
 
-Labels and controls sit side by side on desktop and stack on phones. Settings keeps the same desktop frame size as you switch sections; content scrolls inside while navigation and headings remain visible. Its short transition honors reduced-motion preferences.
+Labels and controls share one line where the control fits, and the control wraps below its label where it doesn't, as on phones. Settings keeps the same desktop frame size as you switch sections; content scrolls inside while navigation and headings remain visible. Its short transition honors reduced-motion preferences.
 
 The frame fits smaller windows and uses available screen height on phones. Browser revocation, LAN confirmation, device rename, and AI history dialogs open at their own size above Settings and diff content.
 
