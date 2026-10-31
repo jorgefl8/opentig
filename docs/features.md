@@ -196,7 +196,7 @@ Only working-tree files become tabs. Diffs, conflicts, commits, and pull request
 
 **Edit and save**
 
-Open text files in the syntax-aware editor. When the file has unsaved changes, a labeled **Save** button with its shortcut appears at the top right. Saving checks for external changes and keeps the saved text, caret, undo history, and scroll position; you can keep typing while it saves. A tab without unsaved edits shows changes made to the file outside OpenTig. Press `Ctrl+F` for the integrated find-and-replace panel, including single or global replacement, case, whole-word, regular-expression, and undo support.
+Open text files in the syntax-aware editor. When the file has unsaved changes, a labeled **Save** button appears at the right end of the file tabs; its tooltip shows the shortcut. Saving checks for external changes and keeps the saved text, caret, undo history, and scroll position; you can keep typing while it saves. A tab without unsaved edits shows changes made to the file outside OpenTig. Press `Ctrl+F` for the integrated find-and-replace panel, including single or global replacement, case, whole-word, regular-expression, and undo support.
 
 Unsaved edits stay in memory while the app runs. Closing a modified tab offers **Save**, **Discard**, or **Cancel**. Open tab paths, order, and the active file are restored per worktree between sessions; **unsaved text is never written to disk automatically**.
 
@@ -204,7 +204,7 @@ If a file moves or is renamed, its tab follows the new path. If it disappears, a
 
 **Preview documents and images**
 
-Markdown, HTML, SVG, image, and PDF viewers share a fixed header above the document, level with the sidebar tabs, so their controls never cover it. **Preview**/**Code**, or PDF page navigation, and the viewer's own controls, such as Markdown content width, image sizing, and zoom, are centered; **Save** appears at the right end while there are unsaved edits. Controls that do not apply to the current view are hidden, and image details are hidden when the pane is narrow.
+Markdown, HTML, SVG, image, and PDF viewers keep their controls at the right of the file tabs, so they never cover the document: first the viewer's own controls, such as Markdown content width, PDF page navigation, image sizing, and zoom, then **Preview**/**Code**, and **Save** at the end while there are unsaved edits. Controls that do not apply to the current view are hidden, and image details are hidden when the pane is narrow.
 
 - **Markdown, HTML, and SVG:** switch between **Preview** and **Code** with mouse or keyboard. **Code** shows a dot while the file has unsaved edits. HTML runs its own scripts in a sandbox that cannot access OpenTig.
 - **HTML:** `.html`, `.htm`, and `.xhtml` open in **Preview** by default. OpenTig does not inject styles into the document: its colors, background, color scheme, and scrollbars remain independent of the app theme, with viewer controls above the page. Repository-relative stylesheets, scripts, images, and CSS fonts are embedded in the isolated preview, including CSS imports and `url(...)` resources. Local resources are limited to 8 MB total and 128 references; files outside the worktree are excluded. Relative document links open the destination in Files, including other HTML pages and PDFs; leading `/` means the repository root. HTML fragments such as `requirements.html#section` scroll to that section after loading, and `#section` links stay within the current page. External web and mail links open outside the preview. Query strings do not change the file being opened. This previews static documents, not a development server: local JavaScript module imports, `fetch` calls, script-driven page navigation, and repository-relative responsive `srcset` assets are not resolved. External resources still require network access.
@@ -225,7 +225,7 @@ Hovering a link shows a styled tooltip with its destination, truncated when long
 
 **Manage files and folders**
 
-Select one or more entries to copy, cut, paste, rename, create, or delete. Dragging moves selected entries to a folder or repository root, with a lifted preview, count badge, and destination feedback. Copy paths or contents, and reveal entries in Windows File Explorer on desktop. Turn on ignored-file visibility to include Git-ignored files.
+Select one or more entries to copy, cut, paste, rename, create, or delete from the context menu, which also opens from the **…** button that appears when you hover over or focus a row. Dragging moves selected entries to a folder or repository root, with a lifted preview, count badge, and destination feedback. Copy paths or contents, and reveal entries in Windows File Explorer on desktop. Turn on ignored-file visibility to include Git-ignored files.
 
 Desktop Paste imports file paths copied in a native file manager or saves a clipboard image as PNG, only when you press `Ctrl+V` or choose **Paste**. Runtimes without native file-clipboard support hide that action.
 
@@ -261,11 +261,11 @@ Press `Ctrl+P`, type part of a path, use the arrow keys to navigate the accessib
 
 **Find or replace text across the repository**
 
-1. Open **Search** and enter a query. Enable case-sensitive, whole-word, or regular-expression matching as needed.
+1. Open **Search** and enter a query. The field's **Aa**, **ab**, and **.\*** toggles turn on case-sensitive, whole-word, and regular-expression matching.
 2. Review matches grouped by file with line numbers. Open a result to jump into the editor.
-3. Replace one match, all matches in a file, or all displayed matches. Replacements check for conflicts and can be undone as one Files operation.
+3. To replace, choose **Replace…** in the menu beside the field, which reveals the replacement field. Replace one match or all matches in a file with the buttons that appear when you hover over or focus its row, or all displayed matches with the button beside the field. Replacements check for conflicts and can be undone as one Files operation. The same menu hides the replacement field again once it is empty.
 
-Git-ignored files are excluded unless the ignored-files toggle is on. Their results remain separately identified and folded. Broad searches list tracked files first; very large result sets are marked **truncated**, and **Replace all** stays disabled until results are complete.
+Git-ignored files are excluded unless **Include ignored files** is on in that menu. Their results remain separately identified and folded. Broad searches list tracked files first; very large result sets are marked **truncated**, and **Replace all** stays disabled until results are complete.
 
 <details>
 <summary>Quick Open in large repositories</summary>

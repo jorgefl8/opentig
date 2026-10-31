@@ -282,7 +282,7 @@ export function MarkdownFileViewer({ repositoryId, file, initialContent, revisio
   return (
     <ViewerTabs value={tab} onValueChange={(value) => handleTabChange(value as typeof tab)} className="markdown-viewer" data-content-width={contentWidth}>
       <FileViewerToolbar
-        start={
+        view={
           <ViewerTabsList
             label="Markdown view"
             className="file-viewer-tabs"

@@ -5,7 +5,8 @@ import type { FileTreeEntry } from '@shared/git-types';
 import { Button } from '@/components/ui/button';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { MobileSheet } from '@/components/MobileSheet';
-import { getVsCodeFileIconUrl, getVsCodeFolderIconUrl } from '@/lib/vscode-icons';
+import { FolderIcon } from '@/components/FolderIcon';
+import { getVsCodeFileIconUrl } from '@/lib/vscode-icons';
 import { MoveFilesDialog } from './MoveFilesDialog';
 import { NameDialog, type NameDialogState } from './NameDialog';
 import { parentDirectory, snapshotPathPresence } from './file-tree';
@@ -103,7 +104,7 @@ export function MobileFilesView(props: FilesViewProps) {
               return <div key={entry.path} role="listitem" className={`mobile-file-row ${isSelected ? 'selected' : ''}`} style={{ height: row.size, transform: `translateY(${row.start}px)` }}>
                 <button className="mobile-file-open" aria-pressed={selecting ? isSelected : undefined} aria-current={props.activePath === entry.path ? 'true' : undefined} onClick={() => selecting ? toggleSelected(entry) : entry.type === 'directory' ? navigate(entry.path) : props.onOpenFile(entry.path)}>
                   {selecting ? <span className={`mobile-file-check ${isSelected ? 'checked' : ''}`}>{isSelected && <IconCheck aria-hidden="true" />}</span>
-                    : <img src={entry.type === 'directory' ? getVsCodeFolderIconUrl(entry.path, false) : getVsCodeFileIconUrl(entry.path)} alt="" aria-hidden="true" draggable={false} />}
+                    : entry.type === 'directory' ? <FolderIcon /> : <img src={getVsCodeFileIconUrl(entry.path)} alt="" aria-hidden="true" draggable={false} />}
                   <span className="mobile-file-copy"><strong>{entry.name}</strong><small>{entry.type === 'directory' ? (entry.ignored ? 'Ignored folder' : 'Folder') : `${entry.ignored ? 'Ignored · ' : ''}${Math.max(1, Math.ceil(entry.size / 1024))} KB`}</small></span>
                   {!selecting && entry.type === 'directory' && <IconChevronRight aria-hidden="true" />}
                 </button>

@@ -535,12 +535,7 @@ function ViewerLoading() {
 }
 
 function EmptyViewer() {
-  return (
-    <div className="viewer-empty">
-      <h2>Nothing selected</h2>
-      <p>Select a change, file, commit, or pull request.</p>
-    </div>
-  );
+  return <div className="viewer-empty">Nothing selected</div>;
 }
 
 function formatBytes(bytes: number): string {

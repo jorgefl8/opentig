@@ -15,6 +15,8 @@ import { shouldVirtualizeSourceEditor } from './source-editor-virtualization';
 import { useEditableFileDraft } from './useEditableFileDraft';
 import { useShortcuts } from '@/app/useShortcuts';
 import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { FileViewerToolbar } from './FileViewerToolbar';
 import './source-editor.css';
 
 interface FileSaveControlsProps {
@@ -31,20 +33,20 @@ export function FileSaveControls({ dirty, saving, readOnly, onSave }: FileSaveCo
   const label = readOnly ? 'Read only' : saving ? 'Saving…' : 'Save';
   const ariaLabel = readOnly ? 'Read only' : saving ? 'Saving' : `Save file (${shortcuts.saveFile})`;
   return (
-    <span className="file-save-controls">
-      <Button
-        type="button"
-        size="sm"
-        className="file-save-button"
-        data-state={readOnly ? 'readonly' : saving ? 'saving' : 'dirty'}
-        disabled={saving || readOnly}
-        onClick={onSave}
-        aria-label={ariaLabel}
-      >
-        {label}
-      </Button>
-      {!readOnly && !saving && <kbd className="file-save-shortcut">{shortcuts.saveFile}</kbd>}
-    </span>
+    <Tooltip>
+      <TooltipTrigger render={
+        <Button
+          type="button"
+          size="xs"
+          className="file-save-button"
+          data-state={readOnly ? 'readonly' : saving ? 'saving' : 'dirty'}
+          disabled={saving || readOnly}
+          onClick={onSave}
+          aria-label={ariaLabel}
+        />
+      }>{label}</TooltipTrigger>
+      <TooltipContent>{`Save file (${shortcuts.saveFile})`}</TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -202,11 +204,7 @@ export function EditableFileViewer({ file, initialContent, themeType, wrapLines,
 
   return (
     <div className="source-file-viewer">
-      {(dirty || saving) && (
-        <div className="file-save-toolbar">
-          <FileSaveControls dirty={dirty} saving={saving} readOnly={readOnly} onSave={() => void save()} />
-        </div>
-      )}
+      {(dirty || saving) && <FileViewerToolbar end={<FileSaveControls dirty={dirty} saving={saving} readOnly={readOnly} onSave={() => void save()} />} />}
       <div className="source-editor-scroll">
         <SourceCodeEditor
           path={file.path}

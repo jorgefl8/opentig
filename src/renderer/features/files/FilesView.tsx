@@ -12,6 +12,7 @@ import {
 } from '@tabler/icons-react';
 import type { FileHistoryState } from '@shared/contracts';
 import type { FileTreeEntry } from '@shared/git-types';
+import { FolderIcon } from '@/components/FolderIcon';
 import { Button } from '@/components/ui/button';
 import {
   ContextMenu,
@@ -21,7 +22,8 @@ import {
   ContextMenuTrigger,
 } from '@/components/ui/context-menu';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
-import { getVsCodeFileIconUrl, getVsCodeFolderIconUrl } from '@/lib/vscode-icons';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { getVsCodeFileIconUrl } from '@/lib/vscode-icons';
 import { useMobileLayout } from '@/lib/use-mobile-layout';
 import { MouseDragSensor } from '@/lib/mouse-drag-sensor';
 import { useShortcuts } from '@/app/useShortcuts';
@@ -38,7 +40,8 @@ export function FilesView(props: FilesViewProps) {
   return mobile ? <MobileFilesView {...props} /> : <DesktopFilesView {...props} />;
 }
 
-const FILE_ROW_HEIGHT = 29;
+// Match this height to .file-tree-row in index.css.
+const FILE_ROW_HEIGHT = 28;
 const TREE_PADDING_START = 6;
 const ROOT_DROP_ID = 'files-tree-root-drop';
 const HOVER_EXPAND_DELAY_MS = 550;
@@ -662,7 +665,7 @@ function DesktopFilesView({
               <button
                 key={row.entry.path}
                 type="button"
-                className="file-tree-row files-sticky-row"
+                className="file-tree-row folder-row files-sticky-row"
                 aria-label={`Scroll to ${row.entry.path}`}
                 style={{
                   top: index * rowHeight - (isDeepest ? stickyScroll.push : 0),
@@ -672,7 +675,7 @@ function DesktopFilesView({
                 onClick={() => handleStickyClick(row.entry)}
               >
                 <IconChevronRight className="folder-chevron open" />
-                <VsCodeTreeIcon path={row.entry.path} type="directory" expanded />
+                <FolderIcon />
                 <span>{row.entry.name}</span>
               </button>
             );
@@ -684,11 +687,12 @@ function DesktopFilesView({
           role="tree"
           aria-label="Files"
           className={`files-tree ${dropTargetPath === '' && draggedPaths.length > 0 ? 'root-drop-target' : ''}`}
+          data-dragging={draggedPaths.length > 0 || undefined}
           style={{ height: virtualizer.getTotalSize() }}
           tabIndex={0}
           onKeyDown={handleKeyDown}
           onPointerDown={(event) => {
-            if ((event.target as HTMLElement).closest('.file-tree-row, .file-touch-actions')) return;
+            if ((event.target as HTMLElement).closest('.file-tree-row, .file-row-actions')) return;
             setSelectedPaths(new Set());
             setAnchorPath(null);
             setLeadPath(null);
@@ -782,7 +786,7 @@ function OpenFilesDropTarget({ visible }: { visible: boolean }) {
 function FileDragOverlay({ preview }: { preview: FileDragPreview }) {
   return (
     <div className="file-drag-overlay">
-      <VsCodeTreeIcon path={preview.entry.path} type={preview.entry.type} expanded={false} />
+      <TreeIcon path={preview.entry.path} type={preview.entry.type} />
       <span>{preview.entry.name}</span>
       {preview.count > 1 && <strong>{preview.count}</strong>}
     </div>
@@ -898,6 +902,7 @@ function FileRow({
       aria-expanded={entry.type === 'directory' ? expanded : undefined}
       className={[
         'file-tree-row',
+        entry.type === 'directory' ? 'folder-row' : '',
         entry.ignored ? 'ignored-file' : '',
         draggedPaths.includes(entry.path) || isDragging ? 'dragging' : '',
         isDropTarget ? 'drop-target' : '',
@@ -913,7 +918,7 @@ function FileRow({
       {entry.type === 'directory'
         ? <IconChevronRight className={`folder-chevron ${expanded ? 'open' : ''} ${entry.children.length === 0 && !pendingChildren ? 'empty' : ''}`} />
         : <span className="tree-spacer" />}
-      <VsCodeTreeIcon path={entry.path} type={entry.type} expanded={expanded} />
+      <TreeIcon path={entry.path} type={entry.type} />
       <span>{entry.name}</span>
     </button>
   );
@@ -921,12 +926,17 @@ function FileRow({
   return (
     <ContextMenu>
       <ContextMenuTrigger render={row} />
-      <button type="button" className="file-touch-actions" aria-label={`Actions for ${entry.name}`} aria-haspopup="menu" onClick={(event) => {
-        event.stopPropagation();
-        const rect = event.currentTarget.getBoundingClientRect();
-        // Reuse the row's context menu, selection handling and focus restoration.
-        rowElement.current?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: rect.left, clientY: rect.bottom }));
-      }}><IconDots /></button>
+      <Tooltip>
+        <TooltipTrigger render={
+          <button type="button" className="file-row-actions" aria-label={`Actions for ${entry.name}`} aria-haspopup="menu" onClick={(event) => {
+            event.stopPropagation();
+            const rect = event.currentTarget.getBoundingClientRect();
+            // Reuse the row's context menu, selection handling and focus restoration.
+            rowElement.current?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: rect.left, clientY: rect.bottom }));
+          }} />
+        }><IconDots /></TooltipTrigger>
+        <TooltipContent>More actions</TooltipContent>
+      </Tooltip>
       <ContextMenuContent>
         {entry.type === 'file' && (
           <>
@@ -989,7 +999,7 @@ function FileRow({
 }
 
 
-function VsCodeTreeIcon({ path, type, expanded = false }: { path: string; type: 'file' | 'directory'; expanded?: boolean }) {
-  const src = type === 'file' ? getVsCodeFileIconUrl(path) : getVsCodeFolderIconUrl(path, expanded);
-  return <img className="vscode-tree-icon" src={src} alt="" aria-hidden="true" />;
+function TreeIcon({ path, type }: { path: string; type: 'file' | 'directory' }) {
+  if (type === 'directory') return <FolderIcon />;
+  return <img className="vscode-tree-icon" src={getVsCodeFileIconUrl(path)} alt="" aria-hidden="true" />;
 }

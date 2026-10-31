@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { IconArrowLeft, IconChevronRight, IconLoader4 } from '@tabler/icons-react';
 import type { FileTreeEntry } from '@shared/git-types';
 import { MobileSheet } from '@/components/MobileSheet';
-import { getVsCodeFolderIconUrl } from '@/lib/vscode-icons';
+import { FolderIcon } from '@/components/FolderIcon';
 import { Button } from '@/components/ui/button';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { canMovePathsToDirectory, parentDirectory, pathContains } from './file-tree';
@@ -40,7 +40,7 @@ export function MoveFilesDialog({ entries, initialDirectory, revision, readOnly,
         {level === null ? <p className="mobile-list-message" role="status"><IconLoader4 className="animate-spin" aria-hidden="true" /><ShimmeringText text="Loading folders…" /></p>
           : failed ? <p className="mobile-list-message" role="alert">Could not read this folder.</p>
           : folders.length === 0 ? <p className="mobile-list-message">No subfolders. You can choose this folder below.</p>
-          : folders.map((folder) => <button key={folder.path} className="mobile-sheet-action" disabled={moving} onClick={() => setDestination(folder.path)}><img src={getVsCodeFolderIconUrl(folder.path, false)} alt="" aria-hidden="true" draggable={false} /><span>{folder.name}</span><IconChevronRight /></button>)}
+          : folders.map((folder) => <button key={folder.path} className="mobile-sheet-action" disabled={moving} onClick={() => setDestination(folder.path)}><FolderIcon /><span>{folder.name}</span><IconChevronRight /></button>)}
       </div>
       <div className="mobile-sheet-footer">
         <Button variant="ghost" disabled={moving} onClick={onClose}>Cancel</Button>

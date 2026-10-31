@@ -49,6 +49,7 @@ import { createRepositorySwitcher } from '@/features/repositories/repository-swi
 import { remoteAccessActionLabel, remoteAccessCopy, type RemoteAccessAction } from '@/features/repositories/remote-access';
 import { openOnGitHub } from '@/features/pulls/gh-utils';
 import type { RemoteAccessProblem } from '../../shared/repository-access';
+import { FileViewerToolbarHostContext } from '@/features/viewer/file-viewer-toolbar-host';
 import type { RuntimeFileDraft, ViewerSelection } from '@/features/viewer/Viewer';
 import type { PullRequestsSection } from '@/features/pulls/PullRequestsView';
 import {
@@ -151,6 +152,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     try { window.localStorage.setItem(VIEW_STORAGE_KEY, view); } catch { /* storage unavailable */ }
   }, [view]);
   const [viewerSelection, setViewerSelection] = useState<ViewerSelection>(null);
+  const [fileViewerToolbarHost, setFileViewerToolbarHost] = useState<HTMLElement | null>(null);
   const initialSelectionApplied = useRef(false);
   const [commitMessage, setCommitMessage] = useState('');
   const [commitProposal, setCommitProposal] = useState<CommitSplitProposal | null>(null);
@@ -2538,6 +2540,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
                 onPin={(path) => openFile(path, 'pinned')}
                 onClose={(path) => void closeFileTab(path)}
                 onReorder={reorderFileTab}
+                toolsRef={setFileViewerToolbarHost}
               />
             )}
             <div className="viewer-pane-body">
@@ -2551,31 +2554,33 @@ export default function App({ initialView, initialSelection, pullRequestCreation
                 )}
               >
                 <Suspense fallback={<div className="viewer-message"><IconLoader4 className="spinner" /> <ShimmeringText text="Preparing viewer…" /></div>}>
-                  <Viewer
-                    repositoryId={repository.id}
-                    selection={viewerSelection}
-                    diffView={diffView}
-                    wrapLines={wrapLines}
-                    theme={theme}
-                    revision={refreshVersion}
-                    readOnly={Boolean(status?.readOnly)}
-                    commits={commits ?? []}
-                    githubRepository={githubInfo?.isGitHub ? githubInfo.nameWithOwner : null}
-                    undoBlocked={Boolean(status?.operation) || undoingCommit}
-                    onUndoCommit={setUndoCommit}
-                    draftFor={(path) => readFileDraft(repository.id, path)}
-                    onSelect={selectViewer}
-                    onOpenFile={openFile}
-                    onDiffViewChange={(value) => { if (mobile) setMobileDiffView(value); else void updatePreference({ diffView: value }); }}
-                    onWrapLinesChange={(value) => void updatePreference({ wrapLines: value })}
-                    onDraftChange={storeFileDraft}
-                    onDraftSaved={(path) => {
-                      dropFileDraft(repository.id, path);
-                      updateFileSession(repository.id, (session) => setTabDirty(session, path, false));
-                    }}
-                    onUpdateConflict={updateConflictFile}
-                    onResolveConflict={resolveConflictFile}
-                  />
+                  <FileViewerToolbarHostContext.Provider value={fileViewerToolbarHost}>
+                    <Viewer
+                      repositoryId={repository.id}
+                      selection={viewerSelection}
+                      diffView={diffView}
+                      wrapLines={wrapLines}
+                      theme={theme}
+                      revision={refreshVersion}
+                      readOnly={Boolean(status?.readOnly)}
+                      commits={commits ?? []}
+                      githubRepository={githubInfo?.isGitHub ? githubInfo.nameWithOwner : null}
+                      undoBlocked={Boolean(status?.operation) || undoingCommit}
+                      onUndoCommit={setUndoCommit}
+                      draftFor={(path) => readFileDraft(repository.id, path)}
+                      onSelect={selectViewer}
+                      onOpenFile={openFile}
+                      onDiffViewChange={(value) => { if (mobile) setMobileDiffView(value); else void updatePreference({ diffView: value }); }}
+                      onWrapLinesChange={(value) => void updatePreference({ wrapLines: value })}
+                      onDraftChange={storeFileDraft}
+                      onDraftSaved={(path) => {
+                        dropFileDraft(repository.id, path);
+                        updateFileSession(repository.id, (session) => setTabDirty(session, path, false));
+                      }}
+                      onUpdateConflict={updateConflictFile}
+                      onResolveConflict={resolveConflictFile}
+                    />
+                  </FileViewerToolbarHostContext.Provider>
                 </Suspense>
               </ErrorBoundary>
             </div>

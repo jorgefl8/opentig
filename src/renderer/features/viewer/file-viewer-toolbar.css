@@ -1,40 +1,42 @@
-/* Same height as the sidebar tab row beside it, so both header lines meet. */
+/* A thin row with the same height and hairline as the file tabs, so the active
+   tab's rule sits on that line. The spacer, unlike end alignment, keeps tools that
+   overflow on a narrow pane reachable by scrolling. */
 .file-viewer-toolbar {
-  display: grid;
-  height: 38px;
+  display: flex;
+  height: 34px;
   flex: none;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
+  gap: 14px;
   overflow-x: auto;
-  border-bottom: 1px solid var(--border);
-  background: var(--background);
-  padding: 0 8px;
+  padding: 0 12px;
+  box-shadow: inset 0 -1px 0 var(--border);
   container-type: inline-size;
   scrollbar-width: none;
 }
 
+.file-viewer-toolbar::before { flex: 1 0 0; content: ""; }
 .file-viewer-toolbar::-webkit-scrollbar { display: none; }
 
-.file-viewer-toolbar-center,
-.file-viewer-toolbar-start,
+/* Beside the file tabs the bar draws the line and measures the width. */
+.open-files-tools > .file-viewer-toolbar {
+  min-width: 0;
+  padding-left: 0;
+  box-shadow: none;
+  container-type: normal;
+}
+
 .file-viewer-toolbar-controls,
+.file-viewer-toolbar-view,
 .file-viewer-toolbar-end {
   display: flex;
+  flex: none;
   align-items: center;
-  gap: 8px;
+  gap: 14px;
 }
 
-.file-viewer-toolbar-center { grid-column: 2; }
-.file-viewer-toolbar-end { grid-column: 3; justify-content: flex-end; }
-
-.file-viewer-toolbar-start:empty,
-.file-viewer-toolbar-controls:empty { display: none; }
-
-/* A rule separates the view switch from the viewer's own controls. */
-.file-viewer-toolbar-start:not(:empty) + .file-viewer-toolbar-controls {
-  border-left: 1px solid var(--border);
-  padding-left: 8px;
-}
+.file-viewer-toolbar-controls:empty,
+.file-viewer-toolbar-view:empty,
+.file-viewer-toolbar-end:empty { display: none; }
 
 .file-viewer-toolbar-group {
   display: inline-flex;
@@ -43,38 +45,37 @@
   gap: 2px;
 }
 
-.file-viewer-toolbar-group + .file-viewer-toolbar-group {
-  border-left: 1px solid var(--border);
-  padding-left: 8px;
+/* Tools have no box at rest; a pressed one is simply brighter. */
+.file-viewer-toolbar-controls button {
+  color: var(--muted-foreground);
+  font-weight: var(--weight-medium);
 }
 
-.file-viewer-toolbar [aria-pressed="true"] {
-  background: var(--row-selected);
-  color: var(--foreground);
-}
+.file-viewer-toolbar-controls button:hover,
+.file-viewer-toolbar-controls button[aria-pressed="true"] { color: var(--foreground); }
+
+.file-viewer-toolbar-controls button[data-size="xs"] { padding-inline: 6px; }
+.file-viewer-toolbar-controls button svg { width: 14px; height: 14px; }
 
 .file-viewer-toolbar-detail {
   flex: none;
   color: var(--muted-foreground);
-  font-family: var(--font-mono);
   font-size: var(--text-meta);
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
-.file-viewer-toolbar-value {
-  min-width: 46px;
-  justify-content: center;
-  color: var(--muted-foreground);
-  font-family: var(--font-mono);
+.file-viewer-toolbar-controls button.file-viewer-toolbar-value {
+  min-width: 42px;
+  padding-inline: 2px;
   font-size: var(--text-meta);
   font-variant-numeric: tabular-nums;
-  text-align: center;
 }
 
-/* Tall enough for the active rule to sit on the toolbar's bottom border. */
 .file-viewer-tabs {
-  --tab-height: 37px;
+  --tab-height: 34px;
   flex: none;
+  gap: 12px;
 }
 
 .file-viewer-unsaved-dot {
@@ -82,7 +83,6 @@
   height: 6px;
   border-radius: 999px;
   background: var(--warning);
-  box-shadow: 0 0 0 2px color-mix(in oklch, var(--warning) 15%, transparent);
 }
 
 @container (max-width: 520px) {

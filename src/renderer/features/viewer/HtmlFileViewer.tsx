@@ -41,7 +41,7 @@ export function HtmlFileViewer({ repositoryId, anchor, onNavigate, file, initial
   return (
     <ViewerTabs value={tab} onValueChange={(value) => setTab(value as typeof tab)} className="markdown-viewer html-file-viewer">
       <FileViewerToolbar
-        start={
+        view={
           <ViewerTabsList
             label="HTML view"
             className="file-viewer-tabs"

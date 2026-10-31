@@ -178,7 +178,7 @@ export const opentig: OpenTigApi = {
             line: m.line,
             column: m.column,
             length: m.end - m.start,
-            text: m.text,
+            text: content.split("\n")[m.line - 1]!.slice(0, 500),
           })),
         }))
         .filter((f) => f.matches.length);

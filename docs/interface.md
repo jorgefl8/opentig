@@ -126,7 +126,7 @@ Notifications leave navigation and open sheets accessible. Short landscape phone
 
 When adding a repository in a browser, the visual folder picker browses **the backend host**, not the phone's filesystem.
 
-Search keeps its query and options in one compact row. The **GitHub** tabs keep their menu and New at a consistent touch-friendly height.
+Search keeps its query and matching toggles in one field, with **Include ignored files** and **Replace…** in the menu beside it. The **GitHub** tabs keep their menu and New at a consistent touch-friendly height.
 
 ### History, diffs, and projects
 
