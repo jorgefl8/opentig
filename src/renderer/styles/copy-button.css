@@ -20,7 +20,7 @@
 .copy-button-icon,
 .copy-button-check { display: block; transition: opacity .16s ease, transform .2s cubic-bezier(.22, 1, .36, 1); }
 .copy-button-icon { width: 16px; height: 16px; }
-.copy-button-check { position: absolute; inset: 0; display: grid; place-items: center; color: #3fb950; font-family: var(--font-sans); font-size: 14px; font-weight: 800; opacity: 0; transform: translateY(5px) scale(.72); }
+.copy-button-check { position: absolute; inset: 0; display: grid; place-items: center; color: #3fb950; font-family: var(--font-sans); font-size: var(--text-title); font-weight: var(--weight-strong); opacity: 0; transform: translateY(5px) scale(.72); }
 .copy-button[data-copy-state="copied"] { background: rgb(46 160 67 / 12%); color: #3fb950; }
 .copy-button[data-copy-state="copied"] .copy-button-icon { opacity: 0; transform: translateY(-5px) scale(.82); }
 .copy-button[data-copy-state="copied"] .copy-button-check { opacity: 1; transform: translateY(0) scale(1); }

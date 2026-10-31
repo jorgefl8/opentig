@@ -150,7 +150,7 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
         </div>
         <ViewerTabsList
           label="Pull request view"
-          className="markdown-viewer-tabs pr-viewer-tabs"
+          className="pr-viewer-tabs"
           items={[
             { value: 'summary', label: 'Summary' },
             { value: 'timeline', label: 'Timeline' },
@@ -168,7 +168,7 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
       <ViewerTabsPanel value="timeline" className="markdown-preview-scroll pr-description-scroll">
           <PullRequestConversationView repositoryId={repositoryId} number={details.number} url={details.url} live={live} draft={commentDraft} onDraftChange={setCommentDraft} />
           <section className="pr-timeline standalone" aria-label="Commit timeline">
-            <h3><IconGitCommit aria-hidden="true" /> Commits <span>{commits.length}{commitsIncomplete ? '+' : ''}</span></h3>
+            <h3><IconGitCommit aria-hidden="true" /> Commits <span className="plain-count">{commits.length}{commitsIncomplete ? '+' : ''}</span></h3>
             {commitsIncomplete && !commitsQuery.isFetching && (
               <p className="pr-empty-description">Showing the first {commits.length} commits from GitHub. The rest could not be read from the local clone.</p>
             )}

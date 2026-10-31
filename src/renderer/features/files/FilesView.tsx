@@ -934,32 +934,32 @@ function FileRow({
               <IconFileArrowRight aria-hidden="true" /> Open
             </ContextMenuItem>
             <ContextMenuItem onClick={() => onOpenPinned(entry)}>
-              <IconColumns2 aria-hidden="true" /> Open to the Side <span className="ml-auto text-[10px] text-muted-foreground">Ctrl+Click</span>
+              <IconColumns2 aria-hidden="true" /> Open to the Side <span className="ml-auto text-(length:--text-meta) text-muted-foreground">Ctrl+Click</span>
             </ContextMenuItem>
             <ContextMenuSeparator />
           </>
         )}
         <ContextMenuItem disabled={readOnly || !historyState.canUndo} onClick={() => void onUndo()}>
-          <IconArrowBackUp aria-hidden="true" /> {historyState.undoLabel ? `Undo ${historyState.undoLabel}` : 'Undo'} <span className="ml-auto text-[10px] text-muted-foreground">Ctrl+Z</span>
+          <IconArrowBackUp aria-hidden="true" /> {historyState.undoLabel ? `Undo ${historyState.undoLabel}` : 'Undo'} <span className="ml-auto text-(length:--text-meta) text-muted-foreground">Ctrl+Z</span>
         </ContextMenuItem>
         <ContextMenuItem disabled={readOnly || !historyState.canRedo} onClick={() => void onRedo()}>
-          <IconArrowForwardUp aria-hidden="true" /> {historyState.redoLabel ? `Redo ${historyState.redoLabel}` : 'Redo'} <span className="ml-auto text-[10px] text-muted-foreground">Ctrl+Shift+Z</span>
+          <IconArrowForwardUp aria-hidden="true" /> {historyState.redoLabel ? `Redo ${historyState.redoLabel}` : 'Redo'} <span className="ml-auto text-(length:--text-meta) text-muted-foreground">Ctrl+Shift+Z</span>
         </ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem onClick={() => onCopy(entry)}>
-          <IconFiles aria-hidden="true" /> Copy <span className="ml-auto text-[10px] text-muted-foreground">Ctrl+C</span>
+          <IconFiles aria-hidden="true" /> Copy <span className="ml-auto text-(length:--text-meta) text-muted-foreground">Ctrl+C</span>
         </ContextMenuItem>
         <ContextMenuItem disabled={readOnly} onClick={() => onCut(entry)}>
-          <IconCut aria-hidden="true" /> Cut <span className="ml-auto text-[10px] text-muted-foreground">Ctrl+X</span>
+          <IconCut aria-hidden="true" /> Cut <span className="ml-auto text-(length:--text-meta) text-muted-foreground">Ctrl+X</span>
         </ContextMenuItem>
         {fileClipboardAvailable && (
           <ContextMenuItem disabled={readOnly} onClick={() => onPasteInto(entry)}>
-            <IconClipboard aria-hidden="true" /> Paste <span className="ml-auto text-[10px] text-muted-foreground">Ctrl+V</span>
+            <IconClipboard aria-hidden="true" /> Paste <span className="ml-auto text-(length:--text-meta) text-muted-foreground">Ctrl+V</span>
           </ContextMenuItem>
         )}
         <ContextMenuSeparator />
         <ContextMenuItem disabled={readOnly || multiSelected} onClick={() => onRename(entry)}>
-          <IconEdit aria-hidden="true" /> Rename <span className="ml-auto text-[10px] text-muted-foreground">F2</span>
+          <IconEdit aria-hidden="true" /> Rename <span className="ml-auto text-(length:--text-meta) text-muted-foreground">F2</span>
         </ContextMenuItem>
         <ContextMenuItem disabled={readOnly || multiSelected} onClick={() => onNewFile(entry)}>
           <IconFilePlus aria-hidden="true" /> New File…
@@ -981,7 +981,7 @@ function FileRow({
         )}
         <ContextMenuSeparator />
         <ContextMenuItem className="text-destructive data-highlighted:text-destructive" disabled={readOnly} onClick={() => onDelete(entry)}>
-          <IconTrash aria-hidden="true" /> Delete <span className="ml-auto text-[10px] text-muted-foreground">Del</span>
+          <IconTrash aria-hidden="true" /> Delete <span className="ml-auto text-(length:--text-meta) text-muted-foreground">Del</span>
         </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>

@@ -2341,19 +2341,18 @@ export default function App({ initialView, initialSelection, pullRequestCreation
         )}
         <main className={`workspace${pendingRepositoryId && repositoryLoadVisible ? ' workspace-switching' : ''}`} aria-busy={repositoryLoadPhase ? true : undefined}>
           <aside className="sidebar" style={{ width: bootstrap.preferences.sidebarWidth }}>
-            <nav className="sidebar-tabs" data-shortcuts={ctrlHeld ? 'visible' : undefined} aria-label="Repository views">
+            <nav className="sidebar-tabs tab-list" data-shortcuts={ctrlHeld ? 'visible' : undefined} aria-label="Repository views">
               {SIDEBAR_VIEWS.map((item, index) => (
                 <button
                   key={item}
-                  className={view === item ? 'active' : ''}
                   aria-current={view === item ? 'page' : undefined}
                   aria-keyshortcuts={`Control+${index + 1}`}
                   onClick={() => setView(item)}
                 >
                   {item === 'changes' ? <IconGitCompare /> : item === 'files' ? <IconFiles /> : item === 'history' ? <IconHistory /> : item === 'prs' ? <IconGitPullRequest /> : <IconSearch />}
                   <span className="sidebar-tab-label">{item === 'changes' ? 'Changes' : item === 'files' ? 'Files' : item === 'history' ? 'History' : item === 'prs' ? 'PRs' : 'Search'}</span>
-                  {item === 'changes' && status && status.changes.length > 0 && <span className="sidebar-tab-count">{status.changes.length}</span>}
-                  {item === 'prs' && pulls !== null && pulls.length > 0 && <span className="sidebar-tab-count">{pulls.length}</span>}
+                  {item === 'changes' && status && status.changes.length > 0 && <span className="plain-count">{status.changes.length}</span>}
+                  {item === 'prs' && pulls !== null && pulls.length > 0 && <span className="plain-count">{pulls.length}</span>}
                   {ctrlHeld && <span className="sidebar-tab-shortcut" aria-hidden="true">{index + 1}</span>}
                 </button>
               ))}

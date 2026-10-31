@@ -162,7 +162,7 @@ export function RepositoryProjectsDialog({ open, projects, repositories, onOpenC
 
           <section className="repository-projects-section" aria-labelledby="projects-heading">
             <div className="repository-projects-section-heading">
-              <h3 id="projects-heading">Projects <span>{projects.length}</span></h3>
+              <h3 id="projects-heading">Projects <span className="plain-count">{projects.length}</span></h3>
               <form className="repository-project-create" onSubmit={(event) => void createProject(event)}>
                 <label className="sr-only" htmlFor="new-project-name">Project name</label>
                 <input id="new-project-name" value={newName} maxLength={MAX_PROJECT_NAME_LENGTH} onChange={(event) => setNewName(event.target.value)} placeholder="New project name" disabled={Boolean(busy)} />
@@ -214,7 +214,7 @@ export function RepositoryProjectsDialog({ open, projects, repositories, onOpenC
 
           <section className="repository-projects-section" aria-labelledby="repository-assignments-heading">
             <div className="repository-projects-section-heading">
-              <h3 id="repository-assignments-heading">Repositories <span>{repositories.length}</span></h3>
+              <h3 id="repository-assignments-heading">Repositories <span className="plain-count">{repositories.length}</span></h3>
               <p>Reorder within each group</p>
             </div>
             {repositories.length === 0 && <p className="repository-projects-empty">No repositories added yet.</p>}

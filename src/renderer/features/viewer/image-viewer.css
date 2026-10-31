@@ -80,7 +80,7 @@
   background: color-mix(in oklch, var(--background) 86%, transparent);
   padding: 8px 12px;
   color: var(--muted-foreground);
-  font-size: 11px;
+  font-size: var(--text-meta);
 }
 .image-preview-loading svg { width: 15px; height: 15px; flex: none; color: var(--primary); }
 
@@ -99,7 +99,7 @@
 
 .image-viewer-message strong {
   color: var(--foreground);
-  font-size: 13px;
+  font-size: var(--text-body);
 }
 
 .image-viewer-message span {
@@ -107,7 +107,7 @@
   overflow: hidden;
   color: var(--muted-foreground);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--text-meta);
   text-overflow: ellipsis;
   white-space: nowrap;
 }

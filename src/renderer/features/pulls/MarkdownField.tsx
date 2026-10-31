@@ -38,7 +38,6 @@ export function MarkdownField({ id, label, value, rows, placeholder, emptyPrevie
         <label htmlFor={id}>{label}</label>
         <ViewerTabsList
           label={`${label} view`}
-          className="markdown-viewer-tabs"
           items={[{ value: 'edit', label: 'Edit' }, { value: 'preview', label: 'Preview' }]}
         />
       </div>

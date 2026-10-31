@@ -122,7 +122,7 @@ function PullsList(props: PullRequestsViewProps & { nameWithOwner: string }) {
           </TooltipTrigger>
           <TooltipContent>Refresh pull requests</TooltipContent>
         </Tooltip>
-        {props.account?.login && <Tooltip><TooltipTrigger render={<Button variant="ghost" size="xs" className="github-pulls-account" onClick={props.onOpenGitHubSettings} />}><IconBrandGithub /> @{props.account.login}</TooltipTrigger><TooltipContent>Account used for this repository · open GitHub settings</TooltipContent></Tooltip>}
+        {props.account?.login && <Tooltip><TooltipTrigger render={<Button variant="ghost" size="xs" className="github-pulls-account" onClick={props.onOpenGitHubSettings} />}><IconBrandGithub /> <span className="min-w-0 truncate">@{props.account.login}</span></TooltipTrigger><TooltipContent>Account used for this repository · open GitHub settings</TooltipContent></Tooltip>}
         <Popover.Root>
           <Popover.Trigger
             render={<Button variant={isDefaultStateFilter(props.states) ? 'ghost' : 'secondary'} size="icon-xs" className="change-action-button" aria-label="Filter pull requests" aria-pressed={!isDefaultStateFilter(props.states)} />}

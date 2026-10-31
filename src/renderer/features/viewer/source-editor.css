@@ -31,8 +31,8 @@
   padding: 1px 4px;
   color: color-mix(in oklch, var(--muted-foreground) 65%, var(--foreground));
   font-family: var(--font-mono);
-  font-size: 9.5px;
-  font-weight: 650;
+  font-size: var(--text-meta);
+  font-weight: var(--weight-strong);
   line-height: 1.5;
 }
 

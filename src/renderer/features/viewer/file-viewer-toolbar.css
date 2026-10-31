@@ -57,7 +57,7 @@
   flex: none;
   color: var(--muted-foreground);
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: var(--text-meta);
   white-space: nowrap;
 }
 
@@ -66,40 +66,16 @@
   justify-content: center;
   color: var(--muted-foreground);
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: var(--text-meta);
   font-variant-numeric: tabular-nums;
   text-align: center;
 }
 
+/* Tall enough for the active rule to sit on the toolbar's bottom border. */
 .file-viewer-tabs {
-  display: inline-grid;
+  --tab-height: 37px;
   flex: none;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 2px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: color-mix(in oklch, var(--muted) 58%, var(--background));
-  padding: 2px;
 }
-
-.file-viewer-tabs > button {
-  display: inline-flex;
-  min-width: 0;
-  height: 26px;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  border-radius: 999px;
-  padding: 0 12px;
-  color: var(--muted-foreground);
-  font-size: 11px;
-  font-weight: 600;
-  transition: color .12s ease;
-}
-
-.file-viewer-tabs > button:hover,
-.file-viewer-tabs > button[aria-selected="true"] { color: var(--foreground); }
-.file-viewer-tabs > button:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
 
 .file-viewer-unsaved-dot {
   width: 6px;

@@ -1,7 +1,6 @@
 import { Tabs } from '@base-ui/react/tabs';
 import type { ComponentProps, ReactNode, Ref } from 'react';
 import { cn } from '@/lib/utils';
-import './viewer-tabs.css';
 
 interface ViewerTabsProps<Value extends string> extends Omit<ComponentProps<typeof Tabs.Root>, 'value' | 'onValueChange'> {
   value: Value;
@@ -24,8 +23,7 @@ export function ViewerTabs<Value extends string>({ value, onValueChange, ...prop
 
 export function ViewerTabsList<Value extends string>({ label, items, className, ...props }: ViewerTabsListProps<Value>) {
   return (
-    <Tabs.List aria-label={label} activateOnFocus className={cn('viewer-tabs-list', className)} {...props}>
-      <Tabs.Indicator className="viewer-tabs-indicator" />
+    <Tabs.List aria-label={label} activateOnFocus className={cn('tab-list', className)} {...props}>
       {items.map((item) => <Tabs.Tab key={item.value} value={item.value}>{item.label}</Tabs.Tab>)}
     </Tabs.List>
   );

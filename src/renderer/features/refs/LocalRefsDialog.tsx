@@ -297,7 +297,7 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
               >
                 {value === 'branches' ? <IconGitBranch aria-hidden="true" /> : <IconHierarchy2 aria-hidden="true" />}
                 <span>{value === 'branches' ? 'Branches' : 'Worktrees'}</span>
-                <small>{counts[value]}</small>
+                <small className="plain-count">{counts[value]}</small>
               </button>
             ))}
           </div>
@@ -356,7 +356,7 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
               <p className="local-refs-placeholder">{query || remoteFilter ? 'No matches for these filters.' : `This repository has no ${tab === 'branches' ? `${branchScope === 'all' ? '' : `${branchScope} `}branches` : 'worktrees'}.`}</p>
             )}
             {tab === 'branches' && branchGroups.map(group => <div className="local-refs-branch-group" role="group" aria-label={group.label} key={group.label}>
-              <div className="local-refs-group-heading"><span>{group.label}</span><small>{group.branches.length}</small></div>
+              <div className="local-refs-group-heading"><span>{group.label}</span><small className="plain-count">{group.branches.length}</small></div>
               {group.branches.map((item) => (
                 <button
                   key={branchKey(item)}

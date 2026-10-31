@@ -4,7 +4,6 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { IconChevronRight, IconFileArrowRight, IconGitCompare, IconMinus, IconPlus, IconRestore } from '@tabler/icons-react';
 import type { ChangesLayoutPreference } from '../../../shared/contracts';
 import type { FileChange } from '../../../shared/git-types';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { shouldOpenChangePreview } from './change-preview';
@@ -28,7 +27,7 @@ export function ChangesView(props: ChangesViewProps) {
     <div className="changes-view">
       <div ref={scrollRef} className="changes-scroll">
         <ConflictSection scrollRef={scrollRef} changes={props.conflicts} onSelect={props.onConflict} onOpenFile={props.onOpenFile} />
-        <ChangeSection scrollRef={scrollRef} displayMode={displayMode} title="Staged Changes" changes={props.staged} onSelect={(path) => props.onSelect(path, 'staged')} onOpenFile={props.onOpenFile} action="unstage" disabled={props.readOnly} onAction={props.onUnstage} onDiscard={props.onDiscard} onAll={props.onUnstageAll} />
+        <ChangeSection scrollRef={scrollRef} displayMode={displayMode} title="Staged changes" changes={props.staged} onSelect={(path) => props.onSelect(path, 'staged')} onOpenFile={props.onOpenFile} action="unstage" disabled={props.readOnly} onAction={props.onUnstage} onDiscard={props.onDiscard} onAll={props.onUnstageAll} />
         <ChangeSection scrollRef={scrollRef} displayMode={displayMode} title="Changes" changes={props.changed} onSelect={(path) => props.onSelect(path, 'unstaged')} onOpenFile={props.onOpenFile} action="stage" disabled={props.readOnly} onAction={props.onStage} onDiscard={props.onDiscard} onAll={props.onStageAll} />
       </div>
     </div>
@@ -52,7 +51,7 @@ function ConflictSection({ scrollRef, changes, onSelect, onOpenFile }: { scrollR
   if (changes.length === 0) return null;
   return (
     <section className="change-section conflict-section">
-      <div className="section-heading"><span>Conflicts</span><Badge variant="destructive">{changes.length}</Badge></div>
+      <div className="section-heading"><span>Conflicts</span><span className="plain-count">{changes.length}</span></div>
       <div ref={listRef} role="list" aria-label="Conflicts" className="change-list virtual-list" style={{ height: virtualizer.getTotalSize() }}>
         {virtualizer.getVirtualItems().map((virtualRow) => (
           <div key={virtualRow.key} className="virtual-row" style={{ height: virtualRow.size, transform: `translateY(${virtualRow.start - scrollMargin}px)` }}>
@@ -123,7 +122,7 @@ function ChangeSection({ scrollRef, displayMode, title, changes, disabled, actio
   return (
     <section className="change-section">
       <div className="section-heading">
-        <span>{title}</span><Badge variant="secondary">{changes.length}</Badge>
+        <span>{title}</span><span className="plain-count">{changes.length}</span>
         <div className="heading-actions">
           <Tooltip><TooltipTrigger render={<Button variant="ghost" size="icon-xs" className="change-action-button" disabled={disabled || changes.length === 0} aria-label={action === 'stage' ? 'Stage all' : 'Unstage all'} onClick={onAll} />}>{action === 'stage' ? <IconPlus /> : <IconMinus />}</TooltipTrigger><TooltipContent>{action === 'stage' ? 'Stage all' : 'Unstage all'}</TooltipContent></Tooltip>
         </div>

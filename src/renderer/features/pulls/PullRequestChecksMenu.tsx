@@ -40,7 +40,7 @@ export function PullRequestChecksMenu({ checks, url }: { checks: PullRequestLive
           <Popover.Popup className="pr-stack-popup pr-checks-popup" aria-label="Checks">
             {groupPullRequestChecks(checks.items).map((group) => (
               <section key={group.label} className="pr-checks-group" aria-label={group.label}>
-                <h4>{group.label}{checks.truncated ? null : <span>{group.checks.length}</span>}</h4>
+                <h4>{group.label}{checks.truncated ? null : <span className="plain-count">{group.checks.length}</span>}</h4>
                 {group.checks.map((check) => <CheckRow key={JSON.stringify([check.workflow, check.name])} check={check} />)}
               </section>
             ))}

@@ -229,7 +229,7 @@ export function SearchView({ repositoryId, active, revision, onOpenFile, unsaved
                           <TooltipContent>Ignored by Git</TooltipContent>
                         </Tooltip>
                       )}
-                      <span className="search-file-count">{row.file.matches.length}</span>
+                      <span className="plain-count">{row.file.matches.length}</span>
                     </button>
                     {replaceOpen && row.file.revision && (!row.file.ignored || replaceIgnored) && (
                       <Button variant="ghost" size="icon-xs" className="search-replace-action" disabled={replacing} aria-label={`Replace all in ${row.file.path}`} onClick={() => void replace(row.file)}><IconReplaceFilled /></Button>

@@ -71,7 +71,7 @@ function FontPicker<T extends string>({ label, options, value, onChange }: {
     if (option) onChange(option.value);
   }}>
     <Tooltip>
-      <TooltipTrigger render={<SelectTrigger className="settings-general-select w-[220px] text-[11px] font-normal" aria-label={label} style={{ fontFamily: selected?.family }} />}>
+      <TooltipTrigger render={<SelectTrigger className="settings-general-select w-[220px] text-xs font-normal" aria-label={label} style={{ fontFamily: selected?.family }} />}>
         <SelectValue>{selected?.label ?? value}</SelectValue>
       </TooltipTrigger>
       <TooltipContent>{selected?.label}</TooltipContent>
@@ -153,7 +153,7 @@ export function GeneralSettings({ preferences, onPreference, showRepositoryOptio
               onPreference({ remoteFetchIntervalSeconds: Number(value) });
             }
           }}>
-            <SelectTrigger ref={intervalTrigger} className="settings-general-select settings-general-interval w-[174px] text-[11px] font-normal" aria-label="Remote check interval"><SelectValue>{intervalLabel(interval)}</SelectValue></SelectTrigger>
+            <SelectTrigger ref={intervalTrigger} className="settings-general-select settings-general-interval w-[174px] text-xs font-normal" aria-label="Remote check interval"><SelectValue>{intervalLabel(interval)}</SelectValue></SelectTrigger>
             <SelectContent align="end" alignItemWithTrigger={false} className="min-w-[14rem]">
               {REMOTE_INTERVALS.map((value) => <SelectItem key={value} value={String(value)} className="min-h-8 text-xs font-normal">
                 {intervalLabel(value)}{value === 30 && <small className="settings-general-option-note">Default</small>}
