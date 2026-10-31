@@ -8,6 +8,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { MobileChromeContext, type MobileChromeHosts } from '@/components/mobile-chrome-context';
 import { ServerRequestTimeoutError } from '@/lib/websocket-transport';
 import { PullRequestComposer } from './PullRequestComposer';
+import { forgetViewerDrafts } from './viewer-drafts';
 
 const api = vi.hoisted(() => ({ commentOnPullRequest: vi.fn(), reviewPullRequest: vi.fn(), repositoryAccount: vi.fn() }));
 const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn(), info: vi.fn() }));
@@ -33,7 +34,7 @@ beforeEach(() => {
 });
 afterEach(async () => {
   await act(async () => root.unmount());
-  container.remove(); client.clear(); document.body.innerHTML = ''; vi.unstubAllGlobals(); vi.resetAllMocks();
+  container.remove(); client.clear(); document.body.innerHTML = ''; forgetViewerDrafts(); vi.unstubAllGlobals(); vi.resetAllMocks();
 });
 async function settle() {
   for (let tick = 0; tick < 5; tick++) await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
@@ -176,6 +177,20 @@ it('keeps the text after a rejection', async () => {
   await settle();
   expect(toast.error).toHaveBeenCalledWith(expect.objectContaining({ description: 'Locked conversation' }));
   expect(container.querySelector('textarea')?.value).toBe('Important');
+});
+
+it('still holds sending back after the composer has left the screen and returned', async () => {
+  api.commentOnPullRequest.mockRejectedValue(Object.assign(new ServerRequestTimeoutError('Server request timed out'), { unconfirmed: true }));
+  await render();
+  await type('Important');
+  await act(async () => button('Comment')!.click());
+  await settle();
+  await act(async () => root.unmount());
+  root = createRoot(container);
+  await render();
+  expect(container.textContent).toContain('It may have been posted');
+  await act(async () => { container.querySelector('textarea')?.focus(); });
+  expect(button('Comment')?.disabled ?? true).toBe(true);
 });
 
 it('holds sending back after no answer, until the conversation is checked', async () => {

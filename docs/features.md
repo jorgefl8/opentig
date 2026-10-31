@@ -194,7 +194,7 @@ Browse the **Files** tree, then click a file to preview it. The next preview rep
 | Drag a tab | Reorder it |
 | Middle-click a tab | Close it |
 
-Only working-tree files become tabs. Diffs, conflicts, commits, and pull requests remain transient. Each worktree keeps up to 50 tabs; opening another closes the least recently used clean tab.
+Only working-tree files become tabs. Diffs, conflicts, commits, and pull requests remain transient. Each worktree keeps up to 50 tabs; opening another closes the least recently used clean tab. Tabs show above the viewer in **Files** and whenever the viewer shows a file; `Ctrl+W` only closes a tab you can see, and in other sections a dot on **Files** means something is unsaved.
 
 **Edit and save**
 

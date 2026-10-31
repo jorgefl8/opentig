@@ -13,6 +13,7 @@ import { opentig } from '@/lib/opentig-api';
 import { ghDetail, ghErrorTitle, isUncertainFailure } from './gh-utils';
 import { MarkdownField } from './MarkdownField';
 import { useGitHubAccount } from './useGitHubAccount';
+import { pullRequestCommentUncertain, useViewerDraft } from './viewer-drafts';
 
 type Send = { kind: 'comment' } | { kind: 'review'; verdict: ReviewPullRequestInput['verdict'] };
 
@@ -30,7 +31,7 @@ export function PullRequestComposer({ repositoryId, number, live, draft, onDraft
   const accountQuery = useGitHubAccount(repositoryId);
   const account = accountQuery.data;
   // Sending again after no answer could post the same text twice.
-  const [uncertain, setUncertain] = useState(false);
+  const [uncertain, setUncertain] = useViewerDraft(pullRequestCommentUncertain(repositoryId, number), () => false);
   const root = useRef<HTMLDivElement>(null);
   const phone = useMobileChrome() !== null;
   // A draft that survived switching tabs is shown, not folded away. A phone shows it on the docked field instead.

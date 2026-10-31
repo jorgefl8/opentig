@@ -46,6 +46,7 @@ export function ChangesView(props: ChangesViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [menu, setMenu] = useState<ChangeRowMenu | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  useEffect(() => { if (!mobile) setMenuOpen(false); }, [mobile]);
   const openMenu = mobile ? (next: ChangeRowMenu) => { setMenu(next); setMenuOpen(true); } : undefined;
   const bothGroups = props.staged.length > 0 && props.changed.length > 0;
   // With no other group above it the list needs no label. Conflicts count as a

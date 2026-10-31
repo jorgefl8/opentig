@@ -140,7 +140,7 @@ Pull requests and releases scroll as one: the header goes away with the content,
 
 **Settings opens as a tall sheet.** It leads with the general settings, followed by a row for each other section. Tap a row to drill in, and use the back arrow to return. **Branches and worktrees** and **Create pull request** fill the screen the same way and keep their close button, since they don't drag away.
 
-The tabs float over the content in a glass bar. The current section shows its name and the others show an icon, with their names still available to screen readers. A dot on **Changes** means the worktree has changes while you are in another section. Lists and viewers scroll under the bar and leave room at their end, so the last row or line can always be scrolled clear of it. The bar is solid instead of glass when the device asks for reduced transparency, when the browser has no background blur, and on low-end Android phones.
+The tabs float over the content in a glass bar. The current section shows its name and the others show an icon, with their names still available to screen readers. A dot on **Changes** means the worktree has changes while you are in another section. A dot on **Files** means a file has unsaved edits. Lists and viewers scroll under the bar and leave room at their end, so the last row or line can always be scrolled clear of it. The bar is solid instead of glass when the device asks for reduced transparency, when the browser has no background blur, and on low-end Android phones.
 
 Sheets slide up from the bottom. Drag one down, press outside it, or press Escape to close it. A slow drag that stops short lets the sheet return to its place.
 

@@ -52,6 +52,7 @@ export function SearchView({ repositoryId, active, revision, onOpenFile, unsaved
   const [replacing, setReplacing] = useState(false);
   const [replaceRevision, setReplaceRevision] = useState(0);
   const [optionsOpen, setOptionsOpen] = useState(false);
+  useEffect(() => { if (!mobile) setOptionsOpen(false); }, [mobile]);
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const inputRef = useRef<HTMLInputElement>(null);
   const replaceInputRef = useRef<HTMLInputElement>(null);

@@ -9,6 +9,7 @@ import { MobileChromeContext, type MobileChromeHosts } from '@/components/mobile
 import { ServerRequestTimeoutError } from '@/lib/websocket-transport';
 import { queryKeys } from '@/lib/query-client';
 import { PullRequestActionBar } from './PullRequestActionBar';
+import { forgetViewerDrafts } from './viewer-drafts';
 
 const api = vi.hoisted(() => ({ runPullRequestAction: vi.fn(), repositoryAccount: vi.fn() }));
 const refs = vi.hoisted(() => ({ fetch: vi.fn() }));
@@ -43,7 +44,7 @@ beforeEach(() => {
 });
 afterEach(async () => {
   await act(async () => root.unmount());
-  container.remove(); client.clear(); document.body.innerHTML = ''; vi.unstubAllGlobals(); vi.resetAllMocks();
+  container.remove(); client.clear(); document.body.innerHTML = ''; forgetViewerDrafts(); vi.unstubAllGlobals(); vi.resetAllMocks();
 });
 async function settle() {
   for (let tick = 0; tick < 5; tick++) await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
@@ -321,6 +322,20 @@ describe('the menu', () => {
     expect(onSelectPullRequest).toHaveBeenCalledWith(9);
   });
 
+  it('still holds revert back after the bar has left the screen and returned', async () => {
+    api.runPullRequestAction.mockRejectedValue(Object.assign(new ServerRequestTimeoutError('Server request timed out'), { unconfirmed: true }));
+    await render(merged());
+    await openMenu();
+    await choose('Revert…');
+    await click('Create revert pull request');
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await render(merged());
+    expect(container.textContent).toContain('The revert may have been created');
+    await openMenu();
+    expect(items()).not.toContain('Revert…');
+  });
+
   it('holds revert back after no answer, so a second one is not opened by accident', async () => {
     api.runPullRequestAction.mockRejectedValue(Object.assign(new ServerRequestTimeoutError('Server request timed out'), { unconfirmed: true }));
     await render(merged());
@@ -364,6 +379,18 @@ describe('on a phone', () => {
   }
   const sheet = () => document.querySelector('.mobile-sheet');
   const floating = () => [...hosts.float!.querySelectorAll('button')].map((item) => item.textContent?.trim());
+
+  it('sends one request when a sheet row is pressed twice as the sheet slides away', async () => {
+    api.runPullRequestAction.mockImplementation(() => new Promise(() => {}));
+    await renderPhone();
+    await act(async () => hosts.actions!.querySelector<HTMLButtonElement>('.pr-more-actions')!.click());
+    await settle();
+    const draft = [...sheet()!.querySelectorAll('button')].find((row) => row.textContent === 'Convert to draft')!;
+    await act(async () => draft.click());
+    await act(async () => draft.click());
+    await settle();
+    expect(api.runPullRequestAction).toHaveBeenCalledOnce();
+  });
 
   it('floats the primary action on Summary and nowhere else', async () => {
     await renderPhone(live(), 'summary');

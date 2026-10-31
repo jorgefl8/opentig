@@ -37,6 +37,7 @@ export function HistoryView({ repositoryId, upstream, readOnly, operation, commi
   const [compact, setCompact] = useState(true);
   const [grouped, setGrouped] = useState(false);
   const [optionsOpen, setOptionsOpen] = useState(false);
+  useEffect(() => { if (!mobile) setOptionsOpen(false); }, [mobile]);
   const [search, setSearch] = useState('');
   const [matchIndex, setMatchIndex] = useState(-1);
   const rowHeight = mobile ? 60 : compact ? 46 : 56;

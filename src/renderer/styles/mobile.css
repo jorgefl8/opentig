@@ -562,6 +562,13 @@ html .mobile-picker-rows button[role="combobox"] { width: auto; min-width: 0; ma
   html .mobile-navigation { max-width: 420px; }
 }
 
+/* A finger leaves :hover on whatever ends up under it after a tap, so on touch only selection and focus mark a row. */
+@media (hover: none) {
+  .quiet-action:hover:not(:disabled) { color: var(--muted-foreground); }
+  .change-row:hover:not([aria-selected="true"], :has(:focus-visible)), .tree-folder:hover:not(:has(:focus-visible)) { --row-surface: transparent; }
+  .file-tree-row:hover:not(.files-sticky-row, [aria-selected="true"]), .commit-file-row:hover, .pull-item:hover:not(.active) { background: transparent; }
+}
+
 /* Tablets and touch-enabled desktop windows retain the wide layout, while
    essential actions are still visible without hovering, as they are on a phone. */
 @media (hover: none), (pointer: coarse), (max-width: 767px) {

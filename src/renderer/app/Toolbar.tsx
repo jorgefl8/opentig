@@ -70,6 +70,7 @@ export function Toolbar(props: ToolbarProps) {
   const { onRecent } = props;
   const mobile = useMobileLayout();
   const [mobileContextOpen, setMobileContextOpen] = useState(false);
+  useEffect(() => { if (!mobile) setMobileContextOpen(false); }, [mobile]);
   const publishBranch = needsBranchPublication(props.status);
   const shortcuts = useShortcuts();
   const repoSwitcherKey = shortcuts.repoSwitcher.toLowerCase();
@@ -178,7 +179,7 @@ export function Toolbar(props: ToolbarProps) {
 
       if (!repositorySelectOpen && event.key.toLowerCase() === repoSwitcherKey) {
         const anotherPopupIsOpen = document.querySelector(
-          '[data-slot="dialog-popup"][data-open], [data-slot="select-content"][data-open], [data-slot="combobox-content"][data-open], [data-slot="dropdown-menu-content"][data-open]',
+          '[data-slot="dialog-popup"][data-open], [data-slot="select-content"][data-open], [data-slot="combobox-content"][data-open], [data-slot="dropdown-menu-content"][data-open], .mobile-sheet, .confirm-popover',
         );
         if (projectsOpen || refsOpen || props.settingsOpen || anotherPopupIsOpen) return;
         event.preventDefault();

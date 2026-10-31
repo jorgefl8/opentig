@@ -290,7 +290,9 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   const pulls = pullsQuery.data ?? null;
   const pullsLoading = pullsQuery.isFetching || ghStatusQuery.isFetching;
   const pullsError = ghStatusQuery.error ? messageOf(ghStatusQuery.error) : pullsQuery.error ? messageOf(pullsQuery.error) : null;
-  useEffect(() => { setMobilePane('list'); }, [repository?.id]);
+  // The commit sheet belongs to the repository it was opened for.
+  useEffect(() => { setMobilePane('list'); setCommitSheetOpen(false); }, [repository?.id]);
+  useEffect(() => { if (!mobile) setCommitSheetOpen(false); }, [mobile]);
   const mobileViewerBar = useMemo(() => ({ onBack: () => setMobilePane('list'), setTitleHost: setViewerTitleHost, setActionsHost: setViewerActionsHost }), []);
   const mobileChrome = useMemo(() => !mobile ? null
     : mobilePane === 'viewer' ? { title: viewerTitleHost, actions: viewerActionsHost, float: mobileFloatHost } : NO_MOBILE_CHROME_HOSTS,
@@ -1033,8 +1035,6 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   const discardChanges = (paths: string[]) => {
     if (!repository || busy || status?.readOnly || paths.length === 0) return;
     setBusy('discard');
-    setCommitProposal(null);
-    setPreparedCommitIndex(null);
     setDestructiveAction(createDiscardAction(repository.id, paths, status?.changes ?? []));
   };
 
@@ -1144,7 +1144,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     const session = fileSessionsRef.current.get(repositoryId) ?? emptyFileSession;
     const result = applyKeyboardAction(session, action);
     if (result.closeRequest) {
-      void closeFileTab(result.closeRequest);
+      // Tabs show only with files, and a shortcut shouldn't close one the user can't see.
+      if (document.querySelector('.open-files-strip')) void closeFileTab(result.closeRequest);
       return;
     }
     if (result.session === session) return;
@@ -1177,7 +1178,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
         if (!event.repeat) runTabKeyboardAction(tabAction);
       }
       if (repository && !event.repeat && matchesCombo(event, shortcuts.quickOpen)) {
-        if (!quickOpen && document.querySelector('[data-slot="dialog-popup"]')) return;
+        if (!quickOpen && document.querySelector('[data-slot="dialog-popup"], .mobile-sheet, .confirm-popover')) return;
         event.preventDefault();
         setQuickOpen(true);
         void refreshFilesOnly();
@@ -1413,6 +1414,10 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     }
     destructiveActionInFlightRef.current = true;
     setDestructiveAction(null);
+    if (action.kind === 'discard') {
+      setCommitProposal(null);
+      setPreparedCommitIndex(null);
+    }
     try {
       const outcome = await dispatchDestructiveAction(action, true, {
         discard: (repositoryId, paths) => opentig.index.discard(repositoryId, paths),
@@ -1813,6 +1818,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       if (result.status === 'success') {
         setUndoCommit(null);
         setViewerSelection(null);
+        setMobilePane('list');
         setView('changes');
         if (!commitMessage.trim()) {
           setCommitMessage(result.message);
@@ -2209,6 +2215,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   }
 
   const pendingDestructiveCopy = destructiveAction ? destructiveActionCopy(destructiveAction) : null;
+  // File tabs only show with files, so this is what still says something is unsaved elsewhere.
+  const hasUnsavedFiles = (fileSessions.get(repository.id) ?? emptyFileSession).tabs.some((tab) => tab.dirty);
   const conflicts = status?.changes.filter((change) => change.conflict) ?? [];
   const staged = status?.changes.filter((change) => change.staged && !change.conflict) ?? [];
   const changed = status?.changes.filter((change) => change.unstaged && !change.conflict) ?? [];
@@ -2424,6 +2432,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
                   <span className="sidebar-tab-label">{item === 'changes' ? 'Changes' : item === 'files' ? 'Files' : item === 'history' ? 'History' : item === 'prs' ? 'GitHub' : 'Search'}</span>
                   {item === 'changes' && status && status.changes.length > 0 && <span className="plain-count">{status.changes.length}</span>}
                   {item === 'prs' && pulls !== null && pulls.length > 0 && <span className="plain-count">{pulls.length}</span>}
+                  {item === 'files' && hasUnsavedFiles && <span className="sidebar-tab-dot" role="img" aria-label="Unsaved files" />}
                   {ctrlHeld && <span className="sidebar-tab-shortcut" aria-hidden="true">{index + 1}</span>}
                 </button>
               ))}
@@ -2661,6 +2670,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
               {item === 'changes' ? <IconGitCompare /> : item === 'files' ? <IconFiles /> : item === 'history' ? <IconHistory /> : item === 'prs' ? <IconBrandGithub /> : <IconSearch />}
               <span className="mobile-nav-label">{item === 'changes' ? 'Changes' : item === 'files' ? 'Files' : item === 'history' ? 'History' : item === 'prs' ? 'GitHub' : 'Search'}</span>
               {item === 'changes' && view !== 'changes' && Boolean(status?.changes.length) && <span className="mobile-nav-indicator" role="img" aria-label={`${status!.changes.length} changes`} />}
+              {item === 'files' && view !== 'files' && hasUnsavedFiles && <span className="mobile-nav-indicator" role="img" aria-label="Unsaved files" />}
             </button>
           ))}
         </nav>

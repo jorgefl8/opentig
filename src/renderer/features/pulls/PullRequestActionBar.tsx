@@ -19,6 +19,7 @@ import { queryKeys } from '@/lib/query-client';
 import { ConfirmPopover } from './ConfirmPopover';
 import { ghDetail, ghErrorTitle, isUncertainFailure, openOnGitHub } from './gh-utils';
 import { useGitHubAccount } from './useGitHubAccount';
+import { pullRequestRevertUncertain, useViewerDraft } from './viewer-drafts';
 
 const MERGE_VERBS: Record<PullRequestMergeMethod, string> = { MERGE: 'Merge', SQUASH: 'Squash and merge', REBASE: 'Rebase and merge' };
 const MERGE_HELP: Record<PullRequestMergeMethod, string> = { MERGE: 'Keeps every commit and adds a merge commit', SQUASH: 'Combines the commits into one', REBASE: 'Replays the commits on the base branch' };
@@ -91,7 +92,7 @@ export function PullRequestActionBar({ repositoryId, details, live, refreshing, 
   const [method, setMethod] = useState<PullRequestMergeMethod>(live.repository.defaultMethod);
   const [deleteBranch, setDeleteBranch] = useState(false);
   // A revert with no answer may already exist. Offering it again could open a second one.
-  const [revertUncertain, setRevertUncertain] = useState(false);
+  const [revertUncertain, setRevertUncertain] = useViewerDraft(pullRequestRevertUncertain(repositoryId, details.number), () => false);
 
   // A question about a state that no longer holds would mislead, so it goes away with that state.
   const stateKey = [live.state, live.isDraft, live.headRefOid, live.mergeable, live.mergeStateStatus, live.autoMerge?.method, live.mergeQueue.queued].join('|');
@@ -129,7 +130,10 @@ export function PullRequestActionBar({ repositoryId, details, live, refreshing, 
     },
   });
   const busy = mutation.isPending;
-  const run = (request: ActionRequest) => mutation.mutate(request);
+  // A sheet's rows stay pressable while it slides away, so a second tap must not send a second request.
+  const run = (request: ActionRequest) => {
+    if (!mutation.isPending) mutation.mutate(request);
+  };
 
   /** A question asked from the menu hangs from the menu's button, because the item that asked it is gone. */
   const ask = (panel: Panel, anchor: HTMLElement | null) => {
