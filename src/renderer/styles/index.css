@@ -302,101 +302,29 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
 
 @layer components {
   .app-shell { display: flex; height: 100%; min-height: 0; flex-direction: column; background: var(--background); color: var(--foreground); }
-  .toolbar { display: flex; height: var(--toolbar-height); flex: none; align-items: center; gap: 8px; border-bottom: 1px solid var(--border); padding: 0 calc(14px + var(--window-controls-inset)) 0 calc(14px + var(--window-controls-inset-left)); background: color-mix(in oklch, var(--sidebar) 60%, var(--background)); -webkit-app-region: drag; }
+  /* Top bar: where you are on the left, what the branch needs on the right. */
+  .toolbar { display: flex; height: var(--toolbar-height); flex: none; align-items: center; gap: 4px; border-bottom: 1px solid var(--border); padding: 0 calc(10px + var(--window-controls-inset)) 0 calc(10px + var(--window-controls-inset-left)); background: var(--background); -webkit-app-region: drag; }
   .toolbar button, .toolbar input, .toolbar textarea, .toolbar select, .toolbar a, .toolbar [role="button"] { -webkit-app-region: no-drag; }
-  .toolbar-brand { display: flex; flex: none; align-items: center; gap: 7px; color: var(--foreground); font-size: var(--text-body); font-weight: var(--weight-strong); letter-spacing: -.02em; }
-  .toolbar-brand svg { width: 18px; height: 20px; flex: none; }
+  .toolbar [data-size^="icon"] { color: var(--muted-foreground); }
+  .toolbar .app-name { font-size: var(--text-meta); }
+  .toolbar-crumbs { display: flex; min-width: 0; flex: 0 1 auto; align-items: center; gap: 2px; }
+  .toolbar-crumb-separator { flex: none; color: var(--muted-foreground); font-size: var(--text-ui); }
   .app-name { white-space: nowrap; }
   .app-name-dev { font-weight: var(--weight-strong); color: var(--foreground); background-image: repeating-linear-gradient(135deg, var(--dev-stripe-foreground) 0 .18em, var(--dev-stripe-yellow) .18em .36em); background-clip: text; -webkit-text-fill-color: transparent; -webkit-text-stroke: .35px color-mix(in oklch, var(--foreground) 65%, transparent); }
-  .toolbar-spacer { flex: 1; }
-  .toolbar-branch-pr-group { display: inline-flex; align-items: center; gap: 5px; flex: none; }
+  .toolbar-spacer { min-width: 16px; flex: 1; }
+  .toolbar-branch-pr-group { display: inline-flex; align-items: center; gap: 2px; flex: none; }
   .toolbar-branch-pr-group.is-mobile { display: flex; width: 100%; }
   .toolbar-branch-pr-group.is-mobile .mobile-branch-pr { flex: 1; min-width: 0; }
   .toolbar-branch-pr-group.is-mobile .pr-stack-trigger { min-height: 44px; min-width: 44px; justify-content: center; }
-  .toolbar-branch-pr { display: inline-flex; flex: none; min-height: 28px; align-items: center; gap: 4px; padding: 0 3px; background: transparent; color: var(--success); font-size: var(--text-meta); font-weight: var(--weight-medium); }
-  .toolbar-branch-pr > svg { width: 14px; height: 14px; flex: none; }
-  .toolbar-branch-pr:hover .toolbar-pr-label { text-decoration: underline; text-underline-offset: 3px; }
-  .toolbar-branch-pr:focus-visible { border-radius: 3px; outline: 2px solid var(--primary); outline-offset: 3px; }
-  .toolbar-branch-pr.draft { color: var(--muted-foreground); }
-  .toolbar-branch-pr.merged { color: var(--pr-merged); }
-  .toolbar-pr-draft { font-size: var(--text-meta); }
-  /* The toolbar is a window drag region, and a drag region swallows wheel and
-     pointer events. The strip opts out for itself, not only for its buttons, and
-     stays content-sized so the spacer after it keeps the header draggable. */
-  .open-files-strip {
-    position: relative; display: flex; min-width: 140px; max-width: 100%; flex: 0 1 auto; align-items: center; gap: 2px;
-    overflow-x: auto; scrollbar-width: none; white-space: nowrap; -webkit-app-region: no-drag;
-  }
-  .open-files-strip::-webkit-scrollbar { display: none; }
-  .open-files-drop-target {
-    position: absolute; inset: 0; z-index: 5; display: flex; align-items: center; justify-content: center; gap: 6px;
-    border: 1px dashed transparent; border-radius: var(--radius-md); background: transparent; color: transparent;
-    font-size: var(--text-meta); font-weight: var(--weight-strong); pointer-events: none; opacity: 0; transition: opacity var(--motion-fast) var(--ease-out), border-color var(--motion-fast) var(--ease-out), background-color var(--motion-fast) var(--ease-out);
-  }
-  .open-files-drop-target svg { width: 13px; height: 13px; }
-  .open-files-drop-target.visible { border-color: color-mix(in oklch, var(--primary) 38%, var(--border)); background: color-mix(in oklch, var(--background) 90%, var(--primary)); color: var(--foreground); opacity: .92; }
-  .open-files-drop-target.visible.over { border-color: var(--primary); background: color-mix(in oklch, var(--primary) 22%, var(--background)); color: var(--primary); opacity: 1; }
-  .open-files-strip.fade-start { mask-image: linear-gradient(to right, transparent, black 18px); }
-  .open-files-strip.fade-end { mask-image: linear-gradient(to left, transparent, black 18px); }
-  .open-files-strip.fade-start.fade-end { mask-image: linear-gradient(to right, transparent, black 18px, black calc(100% - 18px), transparent); }
-  .open-file-tab {
-    position: relative; display: flex; min-width: 0; max-width: 190px; flex: none; align-items: center; gap: 5px;
-    border-radius: var(--radius-md); padding: 4px 4px 4px 9px; color: var(--muted-foreground);
-    font-size: var(--text-ui); font-weight: var(--weight-strong); cursor: grab; transition: background-color var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out), opacity var(--motion-fast) var(--ease-out), box-shadow var(--motion-fast) var(--ease-out), scale var(--motion-fast) var(--ease-out); -webkit-app-region: no-drag;
-  }
-  .open-file-tab:hover { background: var(--row-hover); }
-  .open-file-tab:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
-  .open-file-tab.active { background: var(--row-selected); color: var(--foreground); }
-  .open-file-tab.active::after {
-    content: ""; position: absolute; right: 6px; bottom: 2px; left: 6px; height: 2px;
-    border-radius: 2px; background: var(--primary);
-  }
-  .open-file-tab.preview .open-file-tab-name { font-style: italic; font-weight: var(--weight-medium); }
-  .open-file-tab.missing .open-file-tab-name { color: var(--destructive); text-decoration: line-through; }
-  .open-files-strip.sorting .open-file-tab { cursor: grabbing; }
-  .open-file-tab.dragging { opacity: .4; }
-  .open-file-tab.drag-overlay {
-    border: 1px solid color-mix(in oklch, var(--primary) 28%, var(--border));
-    background: color-mix(in oklch, var(--background) 94%, var(--row-selected));
-    color: var(--foreground); box-shadow: 0 8px 22px rgb(0 0 0 / 28%), 0 2px 6px rgb(0 0 0 / 22%);
-    cursor: grabbing; opacity: .98; scale: 1.02;
-  }
-  .open-file-tab.drag-overlay .open-file-tab-close { opacity: .65; }
-  /* Italic glyphs lean past the advance width their layout box is measured
-     from, so a preview tab's last character was being clipped by the overflow
-     even though the text technically fit. The padding gives that lean room. */
-  .open-file-tab-name { overflow: hidden; padding-right: 2px; text-overflow: ellipsis; white-space: nowrap; }
-  .open-file-tab-suffix { flex: none; color: var(--muted-foreground); font-size: var(--text-meta); font-weight: var(--weight-regular); opacity: .75; }
-  .open-file-tab-close {
-    display: flex; flex: none; align-items: center; justify-content: center; width: 16px; height: 16px;
-    border-radius: var(--radius-sm); color: inherit; opacity: 0;
-  }
-  .open-file-tab-close svg { width: 11px; height: 11px; }
-  .open-file-tab-close:hover { background: color-mix(in oklch, var(--foreground) 14%, transparent); }
-  .open-file-tab:hover .open-file-tab-close,
-  .open-file-tab:focus-within .open-file-tab-close,
-  .open-file-tab.active .open-file-tab-close { opacity: 1; }
-  /* The dot marks unsaved changes without moving the close control: the icon
-     simply takes its place on hover or focus. */
-  .open-file-tab.dirty .open-file-tab-close { opacity: 1; }
-  .open-file-tab-dot { position: absolute; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
-  .open-file-tab.dirty .open-file-tab-close-icon { opacity: 0; }
-  .open-file-tab.dirty .open-file-tab-close:hover .open-file-tab-dot,
-  .open-file-tab.dirty .open-file-tab-close:focus-visible .open-file-tab-dot { opacity: 0; }
-  .open-file-tab.dirty .open-file-tab-close:hover .open-file-tab-close-icon,
-  .open-file-tab.dirty .open-file-tab-close:focus-visible .open-file-tab-close-icon { opacity: 1; }
-  @media (prefers-reduced-motion: reduce) {
-    .open-file-tab, .open-file-tab-close, .open-files-drop-target { transition: none !important; }
-    .open-file-tab.drag-overlay { scale: 1; }
-  }
-  .repo-select { justify-content: flex-start; gap: 6px; border-color: color-mix(in oklch, var(--border) 82%, var(--foreground)); background: color-mix(in oklch, var(--input) 45%, transparent); }
+  .toolbar-branch-pr { display: inline-flex; height: 28px; flex: none; align-items: center; gap: 4px; border-radius: var(--radius-md); padding: 0 6px; color: var(--muted-foreground); font-size: var(--text-meta); font-variant-numeric: tabular-nums; }
+  .toolbar-branch-pr > svg { width: 13px; height: 13px; flex: none; }
+  .toolbar-branch-pr:hover, .toolbar-branch-pr[aria-expanded="true"] { background: var(--row-hover); color: var(--foreground); }
+  .toolbar-branch-pr:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
+  .toolbar-branch-pr.merged, .toolbar-branch-pr.merged:hover, .toolbar-branch-pr.merged[aria-expanded="true"] { color: var(--pr-merged); }
   .repo-select-favicon { width: 16px; height: 16px; flex: none; border-radius: 3px; object-fit: contain; background: color-mix(in oklch, var(--foreground) 8%, transparent); }
-  .repo-select:hover, .repo-select[aria-expanded="true"] { border-color: color-mix(in oklch, var(--primary) 35%, var(--border)); background: color-mix(in oklch, var(--input) 72%, transparent); }
-  .repo-select [data-slot="select-value"] { min-width: 0; }
   .repository-sync-actions { display: flex; flex: none; gap: 1px; }
   .repository-sync-actions [data-slot="button"] { color: var(--muted-foreground); }
   .repository-sync-actions [data-slot="button"]:hover { background: color-mix(in oklch, var(--foreground) 14%, transparent); color: var(--foreground); }
-  .branch-stats { display: flex; flex: none; align-items: center; gap: 8px; white-space: nowrap; }
   /* A background fetch refused by GitHub stays visible until access works again. */
   .remote-access-indicator { display: inline-flex; height: 26px; flex: none; align-items: center; gap: 6px; border: 0; border-radius: var(--radius-md); background: color-mix(in oklch, var(--warning) 13%, transparent); padding: 0 8px; color: var(--warning); font-size: var(--text-meta); font-weight: var(--weight-strong); white-space: nowrap; -webkit-app-region: no-drag; }
   .remote-access-indicator:hover { background: color-mix(in oklch, var(--warning) 20%, transparent); }
@@ -410,18 +338,6 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   .remote-access-output summary { cursor: pointer; color: var(--muted-foreground); font-size: var(--text-meta); }
   .remote-access-output pre { max-height: 140px; overflow: auto; margin: 6px 0 0; border-radius: var(--radius-md); background: var(--muted); padding: 8px; font-family: var(--font-mono); font-size: var(--text-meta); white-space: pre-wrap; overflow-wrap: anywhere; }
   .remote-access-card small { color: var(--muted-foreground); font-size: var(--text-meta); }
-  .branch-sync { display: flex; align-items: center; gap: 5px; border-radius: var(--radius-md); background: color-mix(in oklch, var(--diff-token-keyword) 13%, transparent); padding: 4px 7px; color: var(--diff-token-keyword); }
-  .branch-sync:hover:not(:disabled) { background: color-mix(in oklch, var(--diff-token-keyword) 22%, transparent); box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--diff-token-keyword) 22%, transparent); }
-  .branch-sync:disabled { opacity: .65; }
-  .branch-sync svg { width: 13px; height: 13px; }
-  .branch-push { display: flex; align-items: center; gap: 5px; border-radius: var(--radius-md); background: color-mix(in oklch, var(--git-push) 15%, transparent); padding: 4px 7px; color: var(--git-push); }
-  .branch-push:hover:not(:disabled) { background: color-mix(in oklch, var(--git-push) 25%, transparent); box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--git-push) 28%, transparent); }
-  .branch-push:disabled { opacity: .65; }
-  .branch-push svg { width: 13px; height: 13px; }
-  .line-stats { display: flex; align-items: center; gap: 4px; }
-  .line-stats > span { color: var(--muted-foreground); font-weight: var(--weight-medium); }
-  .line-additions { color: var(--diff-added); }
-  .line-deletions { color: var(--diff-deleted); }
   .operation-banner { flex: none; border-bottom: 1px solid color-mix(in oklch, var(--chart-2) 30%, var(--border)); background: color-mix(in oklch, var(--chart-2) 12%, var(--background)); padding: 7px 16px; color: var(--foreground); font-size: var(--text-ui); }
 
   .workspace { display: flex; min-height: 0; flex: 1; }
@@ -619,11 +535,13 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
     --diffs-addition-color-override: var(--diff-added);
     --diffs-deletion-color-override: var(--diff-deleted);
     --diffs-modified-color-override: var(--diff-modified);
-    position: relative;
+    display: flex;
     min-width: 0;
     flex: 1;
+    flex-direction: column;
     background: var(--diff-editor-background);
   }
+  .viewer-pane-body { position: relative; min-height: 0; flex: 1; }
   .viewer-reloading { position: absolute; top: 10px; right: 14px; z-index: 5; display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: color-mix(in oklch, var(--diff-editor-background) 82%, var(--muted)); box-shadow: 0 2px 8px rgb(0 0 0 / 18%); opacity: 0; animation: viewer-reloading-show 0.2s ease-out 0.5s forwards; }
   @keyframes viewer-reloading-show { to { opacity: 1; } }
   .viewer-reloading .spinner { margin-right: 0; }
@@ -1523,60 +1441,11 @@ section[data-sileo-viewport] [data-sileo-title] { text-transform: none; }
 @layer components {
   /* Window chrome ------------------------------------------------------- */
   .app-shell, .workspace { background: var(--background); }
-  .toolbar {
-    height: var(--toolbar-height);
-    gap: 6px;
-    border-bottom: 1px solid var(--border);
-    padding: 0 calc(10px + var(--window-controls-inset)) 0 calc(10px + var(--window-controls-inset-left));
-    background: var(--background);
-    box-shadow: none;
-  }
-  .dark .toolbar { background: var(--background); box-shadow: none; }
-  .toolbar [data-slot="button"], .toolbar [data-slot="select-trigger"], .repo-select {
-    border-color: var(--border);
-    background: transparent;
-    box-shadow: none;
-  }
-  .toolbar [data-slot="button"]:hover,
-  .toolbar [data-slot="select-trigger"]:hover,
-  .toolbar [data-slot="select-trigger"][aria-expanded="true"],
-  .repo-select:hover, .repo-select[aria-expanded="true"] {
-    border-color: color-mix(in oklch, var(--foreground) 16%, var(--border));
-    background: var(--row-hover);
-  }
-  .toolbar [data-slot="select-trigger"] > svg:first-child { color: var(--muted-foreground); }
-  /* Only the Q chip turns primary while the switcher is open: it is the key
-     that opened it and the key that closes it again. */
-  .repo-select[aria-expanded="true"] .repo-select-shortcut {
-    border-color: transparent;
-    background: var(--primary);
-    color: var(--primary-foreground);
-  }
-
-  /* Counters are data, so they stay monospaced and quiet; only the line
-     totals carry the green and red of the diff. */
-  .branch-stats { gap: 6px; font-size: var(--text-meta); font-weight: var(--weight-strong); }
-  .branch-sync, .branch-push {
-    border-radius: var(--radius-md);
-    background: transparent;
-    padding: 4px 6px;
-    color: var(--muted-foreground);
-  }
-  .branch-push { color: var(--warning); }
-  .branch-sync:hover:not(:disabled), .branch-push:hover:not(:disabled) {
-    background: var(--row-hover);
-    color: var(--foreground);
-    box-shadow: none;
-  }
-  .line-stats > span { color: color-mix(in oklch, var(--muted-foreground) 55%, transparent); }
-  .line-additions { color: var(--diff-added); }
-  .line-deletions { color: var(--diff-deleted); }
-
   /* Tabs: the one tab style in the app. Inactive is muted; active is foreground
      with a 2px rule, because a tab bar is structure, not a call to action. No
      fill, box or pill. --tab-height lets a bar land the rule on its own border. */
   .tab-list { display: flex; align-items: stretch; gap: 16px; }
-  .tab-list > button {
+  .tab-list > button, .tab-list > [role="tab"] {
     position: relative;
     display: inline-flex;
     height: var(--tab-height, 28px);
@@ -1591,11 +1460,71 @@ section[data-sileo-viewport] [data-sileo-title] { text-transform: none; }
     white-space: nowrap;
     transition: color var(--motion-fast) ease;
   }
-  .tab-list > button:hover, .tab-list > button[aria-selected="true"], .tab-list > button[aria-current="page"] { color: var(--foreground); }
-  .tab-list > button[aria-selected="true"], .tab-list > button[aria-current="page"] { box-shadow: inset 0 -2px 0 var(--foreground); }
-  .tab-list > button:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
+  .tab-list > button:hover, .tab-list > button[aria-selected="true"], .tab-list > button[aria-current="page"], .tab-list > [role="tab"]:hover, .tab-list > [role="tab"][aria-selected="true"] { color: var(--foreground); }
+  .tab-list > button[aria-selected="true"], .tab-list > button[aria-current="page"], .tab-list > [role="tab"][aria-selected="true"] { box-shadow: inset 0 -2px 0 var(--foreground); }
+  .tab-list > button:focus-visible, .tab-list > [role="tab"]:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
   /* Counts in tabs and section headings are plain muted numbers, not boxes. */
   .plain-count { flex: none; color: var(--muted-foreground); font-size: var(--text-meta); font-weight: var(--weight-regular); font-variant-numeric: tabular-nums; }
+
+  /* Open file tabs, at the top of the viewer. The bar draws the hairline so that
+     the strip's overflow fade doesn't fade it too. */
+  .open-files-bar { min-width: 0; flex: none; box-shadow: inset 0 -1px 0 var(--border); }
+  .open-files-strip {
+    --tab-height: 34px;
+    position: relative; min-width: 0; gap: 10px; overflow-x: auto; padding-inline: 16px; scroll-padding-inline: 16px; scrollbar-width: none;
+  }
+  .open-files-strip::-webkit-scrollbar { display: none; }
+  .open-files-strip.fade-start { mask-image: linear-gradient(to right, transparent, black 18px); }
+  .open-files-strip.fade-end { mask-image: linear-gradient(to left, transparent, black 18px); }
+  .open-files-strip.fade-start.fade-end { mask-image: linear-gradient(to right, transparent, black 18px, black calc(100% - 18px), transparent); }
+  .open-files-drop-target {
+    position: absolute; inset: 0; z-index: 5; display: flex; align-items: center; justify-content: center; gap: 6px;
+    border: 1px dashed transparent; border-radius: var(--radius-md); background: transparent; color: transparent;
+    font-size: var(--text-meta); font-weight: var(--weight-strong); pointer-events: none; opacity: 0; transition: opacity var(--motion-fast) var(--ease-out), border-color var(--motion-fast) var(--ease-out), background-color var(--motion-fast) var(--ease-out);
+  }
+  .open-files-drop-target svg { width: 13px; height: 13px; }
+  .open-files-drop-target.visible { border-color: color-mix(in srgb, var(--primary) 38%, var(--border)); background: color-mix(in srgb, var(--background) 90%, var(--primary)); color: var(--foreground); opacity: .92; }
+  .open-files-drop-target.visible.over { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 22%, var(--background)); color: var(--primary); opacity: 1; }
+  .open-files-strip > .open-file-tab { max-width: 190px; flex: none; justify-content: flex-start; gap: 4px; padding-inline: 2px 0; cursor: grab; }
+  .open-files-strip.sorting > .open-file-tab { cursor: grabbing; }
+  .open-file-tab.preview .open-file-tab-name { font-style: italic; }
+  .open-file-tab.missing .open-file-tab-name { color: var(--destructive); text-decoration: line-through; }
+  .open-file-tab.dragging { opacity: .4; }
+  .open-file-tab.drag-overlay {
+    /* dnd-kit sizes its wrapper to the tab, which has less padding than this. */
+    display: flex; width: max-content; height: 34px; align-items: center; gap: 4px;
+    border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--popover); padding: 0 6px 0 10px;
+    color: var(--foreground); font-size: var(--text-ui); font-weight: var(--weight-medium); box-shadow: 0 8px 22px rgb(0 0 0 / 28%), 0 2px 6px rgb(0 0 0 / 22%);
+    cursor: grabbing; scale: 1.02;
+  }
+  .open-file-tab.drag-overlay .open-file-tab-close { opacity: .65; }
+  /* Italic glyphs lean past the advance width their layout box is measured
+     from, so a preview tab's last character was being clipped by the overflow
+     even though the text technically fit. The padding gives that lean room. */
+  .open-file-tab-name { overflow: hidden; padding-right: 2px; text-overflow: ellipsis; white-space: nowrap; }
+  .open-file-tab-suffix { flex: none; color: var(--muted-foreground); font-size: var(--text-meta); font-weight: var(--weight-regular); }
+  .open-file-tab-close {
+    display: flex; flex: none; align-items: center; justify-content: center; width: 16px; height: 16px;
+    border-radius: var(--radius-sm); color: inherit; opacity: 0;
+  }
+  .open-file-tab-close svg { width: 11px; height: 11px; }
+  .open-file-tab-close:hover { background: color-mix(in oklch, var(--foreground) 14%, transparent); }
+  .open-file-tab:hover .open-file-tab-close,
+  .open-file-tab:focus-within .open-file-tab-close,
+  .open-file-tab.active .open-file-tab-close { opacity: 1; }
+  /* The dot marks unsaved changes without moving the close control: the icon
+     simply takes its place on hover or focus. */
+  .open-file-tab.dirty .open-file-tab-close { opacity: 1; }
+  .open-file-tab-dot { position: absolute; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+  .open-file-tab.dirty .open-file-tab-close-icon { opacity: 0; }
+  .open-file-tab.dirty .open-file-tab-close:hover .open-file-tab-dot,
+  .open-file-tab.dirty .open-file-tab-close:focus-visible .open-file-tab-dot { opacity: 0; }
+  .open-file-tab.dirty .open-file-tab-close:hover .open-file-tab-close-icon,
+  .open-file-tab.dirty .open-file-tab-close:focus-visible .open-file-tab-close-icon { opacity: 1; }
+  @media (prefers-reduced-motion: reduce) {
+    .open-file-tab, .open-file-tab-close, .open-files-drop-target { transition: none !important; }
+    .open-file-tab.drag-overlay { scale: 1; }
+  }
 
   /* Repository navigation ----------------------------------------------- */
   .sidebar { min-width: 300px; border-right-color: var(--sidebar-border); background: var(--sidebar); box-shadow: none; }
@@ -1675,7 +1604,7 @@ section[data-sileo-viewport] [data-sileo-title] { text-transform: none; }
   .file-tree-row.files-sticky-row { background: var(--sidebar); }
   .file-tree-row.files-sticky-row:hover { background: color-mix(in oklch, var(--foreground) 8%, var(--sidebar)); }
   .change-file-text small, .commit-meta { letter-spacing: .005em; }
-  .status-code, .commit-oid, .ref-chip, .branch-stats, .line-stats, code, kbd {
+  .status-code, .commit-oid, .ref-chip, code, kbd {
     font-family: var(--font-mono);
   }
   /* The status letter is where the meaning of a change is colour-coded. */
@@ -2011,7 +1940,6 @@ section[data-sileo-viewport] [data-sileo-title] { text-transform: none; }
 
 
   /* Pickers, dialogs and settings all select with the same neutral surface. */
-  .repo-select-shortcut { margin-left: auto; flex: none; }
   .repo-select-index { display: grid; width: 20px; min-width: 20px; height: 20px; flex: none; place-items: center; padding: 0; font-variant-numeric: tabular-nums; line-height: 1; text-align: center; }
   .quick-open-input-shell:focus-within > svg { color: var(--foreground); }
   .local-refs-detail-head h3 svg { color: var(--muted-foreground); }
@@ -2075,7 +2003,6 @@ section[data-sileo-viewport] [data-sileo-title] { text-transform: none; }
 }
 
 @media (max-width: 1100px) {
-  .toolbar { padding-inline: calc(8px + var(--window-controls-inset-left)) calc(8px + var(--window-controls-inset)); }
   .diff-workspace-toolbar { gap: 6px; }
   .diff-total-stats { display: none; }
 }
@@ -2110,6 +2037,12 @@ section[data-sileo-viewport] [data-sileo-title] { text-transform: none; }
 .searchable-picker-footer button:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
 .searchable-picker-footer svg { width: 14px; height: 14px; flex: none; }
 .ai-model-picker { width: min(420px, calc(100vw - 24px)); }
+/* Breadcrumb triggers in the top bar are text with a hover background. Unlayered
+   like the picker rules above, because they replace the trigger's utility classes. */
+.toolbar-crumb { flex: 0 1 auto; gap: 3px; border-color: transparent; background: transparent; font-weight: var(--weight-strong); }
+.toolbar-crumb:hover, .toolbar-crumb[aria-expanded="true"] { background: var(--row-hover); }
+.toolbar-crumb-repository { max-width: 240px; flex-shrink: 0; }
+.toolbar-crumb-chevron { width: 12px; height: 12px; color: var(--muted-foreground); }
 
 @media (max-width: 767px) {
   html .searchable-picker [data-slot="combobox-input"] input { height: 40px; }

@@ -1,18 +1,16 @@
-import { appDisplayName } from '@/lib/app-identity';
+import { isDevProfile } from '@/lib/app-identity';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  IconArrowDown, IconArrowUp, IconBrandGithub, IconHierarchy2, IconLoader4, IconPlus, IconRefresh, IconSettings,
+  IconArrowDown, IconArrowUp, IconBrandGithub, IconChevronDown, IconHierarchy2, IconLoader4, IconPlus, IconRefresh, IconSettings,
 } from '@tabler/icons-react';
 import type { BootstrapData, GitHubRepositoryInfo, Preferences, PullRequestSummary, RecentRepository, RepositoryInfo, RepositoryOrganization, RepositoryProject } from '../../shared/contracts';
 import type { BranchInfo, RepositoryStatus, WorktreeInfo } from '../../shared/git-types';
 import { Button } from '@/components/ui/button';
 import { Kbd } from '@/components/ui/kbd';
 import { SearchablePicker, type SearchablePickerItem } from '@/components/SearchablePicker';
-import { OpenTigMark } from '@/components/OpenTigMark';
 import { AppName } from '@/components/AppName';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { isEditableTarget } from '@/features/files/file-tree';
-import { OpenFilesStrip } from '@/features/files/OpenFilesStrip';
 import type { FileSession } from '@/features/files/open-files-model';
 import type { LocalRefsTab } from '@/features/refs/local-refs-model';
 import { samePath } from '@/features/refs/local-refs-model';
@@ -60,9 +58,7 @@ export interface ToolbarProps {
   onRefsManaged(recentRepositories: RecentRepository[] | null): void;
   openFiles: FileSession;
   onOpenFileTab(path: string): void;
-  onPinFileTab(path: string): void;
   onCloseFileTab(path: string): void;
-  onReorderFileTab(path: string, toIndex: number): void;
   onPull(): void; onPush(): void;
   repositorySyncOperations: ReadonlyMap<string, ProjectSyncAction>;
   onRepositorySync(repository: RepositoryOption, projectName: string | null, action: ProjectSyncAction): Promise<void>;
@@ -292,6 +288,7 @@ export function Toolbar(props: ToolbarProps) {
       </>,
     };
   };
+  const githubUrl = props.githubInfo?.isGitHub && props.githubInfo.nameWithOwner ? `https://github.com/${props.githubInfo.nameWithOwner}` : null;
   const repositoryControl = (
       <SearchablePicker
         groups={[
@@ -311,13 +308,19 @@ export function Toolbar(props: ToolbarProps) {
         label="Select project or repository"
         triggerLabel={pendingRepository ? `Opening ${pendingRepository.name}…` : props.repository.repositoryName}
         icon={props.repositoryLoadPhase ? <IconLoader4 className="animate-spin" /> : <RepositoryFaviconImage src={favicons.get(currentRepositoryKey)} />}
-        triggerHint={<Kbd className="repo-select-shortcut" aria-hidden="true">{repoSwitcherKey.toUpperCase()}</Kbd>}
+        triggerHint={`Switch repository (${repoSwitcherKey.toUpperCase()})`}
+        triggerIndicator={mobile ? undefined : <IconChevronDown className="toolbar-crumb-chevron" />}
         shortcut={repoSwitcherKey.toUpperCase()}
-        triggerClassName="repo-select max-w-[240px]"
+        triggerClassName={mobile ? 'max-w-[240px]' : 'toolbar-crumb toolbar-crumb-repository'}
         contentClassName="repository-picker"
         align="start"
         placeholder="Search repositories…"
-        management={{ label: 'Manage projects…', onClick: () => { setMobileContextOpen(false); setProjectsOpen(true); } }}
+        management={[
+          // The phone sheet has its own rows for these two.
+          ...(mobile ? [] : [{ label: 'Open repository…', icon: <IconPlus />, shortcut: shortcuts.openRepository, onClick: props.onOpen }]),
+          ...(mobile || !githubUrl ? [] : [{ label: 'Open on GitHub', icon: <IconBrandGithub />, onClick: () => openOnGitHub(githubUrl) }]),
+          { label: 'Manage projects…', onClick: () => { setMobileContextOpen(false); setProjectsOpen(true); } },
+        ]}
       />
   );
   const worktreeControl = (
@@ -336,9 +339,9 @@ export function Toolbar(props: ToolbarProps) {
         label="Select worktree"
         triggerLabel={currentWorktree?.path.split(/[\\/]/).pop() ?? props.repository.name}
         icon={<IconHierarchy2 />}
-        triggerClassName="toolbar-worktree max-w-[190px]"
+        triggerClassName="max-w-[190px]"
         placeholder="Search worktrees…"
-        management={{ label: 'Manage worktrees…', onClick: () => openRefsManager('worktrees') }}
+        management={[{ label: 'Manage worktrees…', onClick: () => openRefsManager('worktrees') }]}
         disabled={refsBusy}
       />
   );
@@ -346,7 +349,16 @@ export function Toolbar(props: ToolbarProps) {
       <BranchCombobox
         branches={props.branches}
         currentLabel={props.status?.branch ?? 'Detached HEAD'}
-        disabled={props.status?.readOnly || refsBusy}
+        disabled={refsBusy}
+        readOnly={props.status?.readOnly}
+        crumb={!mobile}
+        // The phone sheet has its own worktree selector.
+        worktrees={mobile ? undefined : {
+          items: props.worktrees,
+          currentPath: currentWorktree?.path ?? props.repository.path,
+          onSelect: props.onWorktree,
+          onManage: () => openRefsManager('worktrees'),
+        }}
         onBranch={props.onBranch}
         onManage={() => openRefsManager('branches')}
       />
@@ -354,71 +366,37 @@ export function Toolbar(props: ToolbarProps) {
   return (
     <>
     {mobile ? <MobileToolbar props={props} repositoryControl={repositoryControl} worktreeControl={worktreeControl} branchControl={branchControl} favicon={favicons.get(currentRepositoryKey)} pendingRepositoryName={pendingRepository?.name ?? null} loadIndicator={loadIndicator} contextOpen={mobileContextOpen} onContextOpen={(open) => { setMobileContextOpen(open); if (!open) setRepositorySelectOpen(false); }} syncBusy={currentRepositorySyncBusy} /> : <header className="toolbar">
-      <div className="toolbar-brand" aria-label={appDisplayName}>
-        <OpenTigMark />
-        <AppName />
+      <div className="toolbar-crumbs">
+        {repositoryControl}
+        <span className="toolbar-crumb-separator" aria-hidden="true">/</span>
+        {branchControl}
+        {props.branchPullRequest && (
+          <BranchPullRequestMenu repositoryId={props.repository.id} key={props.branchPullRequest.url} pullRequest={props.branchPullRequest} onOpenPullRequest={props.onOpenPullRequest} />
+        )}
       </div>
-      {repositoryControl}
-
-      <Tooltip>
-        <TooltipTrigger render={<Button variant="ghost" size="icon-sm" onClick={props.onOpen} aria-label="Open repository" aria-keyshortcuts="Control+O" />}><IconPlus /></TooltipTrigger>
-        <TooltipContent>Open repository (Ctrl+O)</TooltipContent>
-      </Tooltip>
-      <OpenFilesStrip
-        session={props.openFiles}
-        onActivate={props.onOpenFileTab}
-        onPin={props.onPinFileTab}
-        onClose={props.onCloseFileTab}
-        onReorder={props.onReorderFileTab}
-      />
       <div className="toolbar-spacer" />
-      {props.remoteProblem && <RemoteAccessIndicator problem={props.remoteProblem.access} message={props.remoteProblem.message} onAction={props.onRemoteAccessAction} />}
-      {props.status && (publishBranch || props.status.unborn || props.status.ahead > 0 || props.status.behind > 0 || props.status.insertions > 0 || props.status.deletions > 0 || props.busy === 'push' || props.busy === 'pull') && (
-        <div className="branch-stats" aria-label="Branch and local changes summary">
-          {(props.status.behind > 0 || props.busy === 'pull') && (
-            <Tooltip>
-              <TooltipTrigger render={<button className="branch-sync" disabled={Boolean(props.busy) || currentRepositorySyncBusy} onClick={props.onPull} aria-label={`Pull ${props.status.behind} commits`} />}>
-                {props.busy === 'pull' ? <IconLoader4 className="animate-spin" /> : <span>↓{props.status.behind}</span>}
-              </TooltipTrigger>
-              <TooltipContent>{props.busy === 'pull' ? 'Pulling changes…' : `Pull ${props.status.behind} ${props.status.behind === 1 ? 'commit' : 'commits'}`}</TooltipContent>
-            </Tooltip>
-          )}
-          {(publishBranch || props.status.unborn || props.status.ahead > 0 || props.busy === 'push') && (
-            <Tooltip>
-              <TooltipTrigger render={<button className="branch-push" disabled={Boolean(props.busy) || currentRepositorySyncBusy || props.status.readOnly || props.status.unborn || props.status.detached} onClick={props.onPush} aria-label={publishBranch || props.status.unborn ? 'Publish branch' : `Push ${props.status.ahead} commits`} />}>
-                {props.busy === 'push' ? <IconLoader4 className="animate-spin" /> : <span>{publishBranch || props.status.unborn ? '↑ Publish' : `↑${props.status.ahead}`}</span>}
-              </TooltipTrigger>
-              <TooltipContent>{props.status.unborn ? 'Create the first commit before publishing this branch' : props.busy === 'push' ? 'Pushing…' : publishBranch ? 'Publish branch and set upstream' : `Push ${props.status.ahead} ${props.status.ahead === 1 ? 'commit' : 'commits'}`}</TooltipContent>
-            </Tooltip>
-          )}
-          {(props.status.insertions > 0 || props.status.deletions > 0) && (
-            <Tooltip>
-              <TooltipTrigger render={<span className="line-stats" />}>
-                <strong className="line-additions">+{props.status.insertions}</strong>
-                <span>/</span>
-                <strong className="line-deletions">-{props.status.deletions}</strong>
-              </TooltipTrigger>
-              <TooltipContent>Lines added and removed in the worktree</TooltipContent>
-            </Tooltip>
-          )}
-        </div>
-      )}
-      {worktreeControl}
-      {branchControl}
-      {props.branchPullRequest && (
-        <BranchPullRequestMenu repositoryId={props.repository.id} key={props.branchPullRequest.url} pullRequest={props.branchPullRequest} onOpenPullRequest={props.onOpenPullRequest} />
-      )}
-
-      <Tooltip><TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Refresh" onClick={props.onRefresh} disabled={Boolean(props.busy) || currentRepositorySyncBusy} />}><IconRefresh className={props.busy === 'refresh' ? 'animate-spin' : undefined} /></TooltipTrigger><TooltipContent>Refresh (Ctrl+R)</TooltipContent></Tooltip>
-      {props.githubInfo?.isGitHub && props.githubInfo.nameWithOwner && (
+      {isDevProfile && <AppName />}
+      {props.status && (props.status.behind > 0 || props.busy === 'pull') && (
         <Tooltip>
-          <TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Open repository on GitHub" onClick={() => openOnGitHub(`https://github.com/${props.githubInfo!.nameWithOwner}`)} />}>
-            <IconBrandGithub aria-hidden="true" />
+          <TooltipTrigger render={<Button variant="ghost" size="sm" focusableWhenDisabled disabled={Boolean(props.busy) || currentRepositorySyncBusy} onClick={props.onPull} aria-label={`Pull ${props.status.behind} commits`} />}>
+            {props.busy === 'pull' ? <IconLoader4 data-icon="inline-start" className="animate-spin" /> : <IconArrowDown data-icon="inline-start" />}
+            {props.status.behind > 0 && <span>{props.status.behind}</span>}
           </TooltipTrigger>
-          <TooltipContent>Open on GitHub · {props.githubInfo.nameWithOwner}</TooltipContent>
+          <TooltipContent>{props.busy === 'pull' ? 'Pulling changes…' : `Pull ${props.status.behind} ${props.status.behind === 1 ? 'commit' : 'commits'}`}</TooltipContent>
         </Tooltip>
       )}
+      {props.status && (publishBranch || props.status.unborn || props.status.ahead > 0 || props.busy === 'push') && (
+        <Tooltip>
+          <TooltipTrigger render={<Button variant="ghost" size="sm" focusableWhenDisabled disabled={Boolean(props.busy) || currentRepositorySyncBusy || props.status.readOnly || props.status.unborn || props.status.detached} onClick={props.onPush} aria-label={publishBranch || props.status.unborn ? 'Publish branch' : `Push ${props.status.ahead} commits`} />}>
+            {props.busy === 'push' ? <IconLoader4 data-icon="inline-start" className="animate-spin" /> : <IconArrowUp data-icon="inline-start" />}
+            {publishBranch || props.status.unborn ? <span>Publish</span> : props.status.ahead > 0 && <span>{props.status.ahead}</span>}
+          </TooltipTrigger>
+          <TooltipContent>{props.status.unborn ? 'Create the first commit before publishing this branch' : props.busy === 'push' ? 'Pushing…' : publishBranch ? 'Publish branch and set upstream' : `Push ${props.status.ahead} ${props.status.ahead === 1 ? 'commit' : 'commits'}`}</TooltipContent>
+        </Tooltip>
+      )}
+      <Tooltip><TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Refresh" onClick={props.onRefresh} disabled={Boolean(props.busy) || currentRepositorySyncBusy} />}><IconRefresh className={props.busy === 'refresh' ? 'animate-spin' : undefined} /></TooltipTrigger><TooltipContent>Refresh (Ctrl+R)</TooltipContent></Tooltip>
       <DesktopUpdateIndicator />
+      {props.remoteProblem && <RemoteAccessIndicator problem={props.remoteProblem.access} message={props.remoteProblem.message} onAction={props.onRemoteAccessAction} />}
       <Tooltip>
         <TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Settings" onClick={() => props.onSettingsOpen(true)} />}><IconSettings /></TooltipTrigger>
         <TooltipContent>Settings</TooltipContent>

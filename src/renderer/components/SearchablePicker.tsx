@@ -1,7 +1,8 @@
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from 'react';
 import { defaultRangeExtractor, useVirtualizer } from '@tanstack/react-virtual';
 import { IconSettings } from '@tabler/icons-react';
 import { Combobox, ComboboxContent, ComboboxGroup, ComboboxGroupLabel, ComboboxInput, ComboboxItem, ComboboxList, ComboboxTrigger } from '@/components/ui/combobox';
+import { Kbd } from '@/components/ui/kbd';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
@@ -23,6 +24,15 @@ export interface SearchablePickerGroup {
   items: SearchablePickerItem[];
 }
 
+export interface SearchablePickerAction {
+  label: string;
+  /** Defaults to the settings icon, which suits "Manage…" rows. */
+  icon?: ReactNode;
+  /** The command's key combination, shown at the end of the row. */
+  shortcut?: string;
+  onClick(): void;
+}
+
 interface SearchablePickerProps {
   groups: SearchablePickerGroup[];
   value: string;
@@ -32,12 +42,15 @@ interface SearchablePickerProps {
   icon?: ReactNode;
   triggerId?: string;
   size?: 'sm' | 'default';
-  triggerHint?: ReactNode;
+  /** Tooltip for the trigger, also used when its label fits. */
+  triggerHint?: string;
+  /** Replaces the trigger's default up and down chevrons. */
+  triggerIndicator?: ReactElement | undefined;
   triggerClassName?: string;
   contentClassName?: string;
   shortcut?: string;
   placeholder: string;
-  management?: { label: string; onClick(): void };
+  management?: SearchablePickerAction[];
   disabled?: boolean | undefined;
   align?: 'start' | 'end';
   open?: boolean;
@@ -46,8 +59,8 @@ interface SearchablePickerProps {
   onSearchChange?(): void;
 }
 
-/** Compact selection for toolbars and forms; optional management stays outside the listbox. */
-export function SearchablePicker({ groups, value, onValueChange, label, triggerLabel, icon, triggerHint,
+/** Compact selection for toolbars and forms; optional management actions stay outside the listbox. */
+export function SearchablePicker({ groups, value, onValueChange, label, triggerLabel, icon, triggerHint, triggerIndicator,
   triggerId, size = 'sm', triggerClassName, contentClassName, shortcut, placeholder, management, disabled, align = 'end',
   open: controlledOpen, onOpenChange, focusSearch = true, onSearchChange,
 }: SearchablePickerProps) {
@@ -118,13 +131,12 @@ export function SearchablePicker({ groups, value, onValueChange, label, triggerL
         if (item.value !== value) onValueChange(item.value);
       }}
     >
-      <Tooltip disabled={!triggerTruncated || (controlledOpen ?? internalOpen) || disabled}>
-        <TooltipTrigger id={triggerId} render={<ComboboxTrigger size={size} className={triggerClassName} aria-label={label} aria-keyshortcuts={shortcut} />}>
+      <Tooltip disabled={(!triggerTruncated && !triggerHint) || (controlledOpen ?? internalOpen) || disabled}>
+        <TooltipTrigger id={triggerId} render={<ComboboxTrigger size={size} className={triggerClassName} indicator={triggerIndicator} aria-label={label} aria-keyshortcuts={shortcut} />}>
           {icon}
           <span ref={triggerCopy} className="min-w-0 flex-1 truncate text-left">{triggerLabel}</span>
-          {triggerHint}
         </TooltipTrigger>
-        <TooltipContent className="break-all">{triggerLabel}</TooltipContent>
+        <TooltipContent className="break-all">{triggerTruncated ? [triggerLabel, triggerHint].filter(Boolean).join(' · ') : triggerHint}</TooltipContent>
       </Tooltip>
       <ComboboxContent align={align} className={cn('searchable-picker', contentClassName)} initialFocus={focusSearch}>
         <ComboboxInput placeholder={placeholder} aria-label={placeholder} />
@@ -141,9 +153,12 @@ export function SearchablePicker({ groups, value, onValueChange, label, triggerL
           ))}
         </ComboboxList>}
         {management && <div className="searchable-picker-footer">
-          <button type="button" onClick={() => { changeOpen(false); management.onClick(); }}>
-            <IconSettings /> {management.label}
-          </button>
+          {management.map((action) => (
+            <button key={action.label} type="button" aria-keyshortcuts={action.shortcut?.replace('Ctrl', 'Control')} onClick={() => { changeOpen(false); action.onClick(); }}>
+              {action.icon ?? <IconSettings />} {action.label}
+              {action.shortcut && <Kbd className="ml-auto">{action.shortcut}</Kbd>}
+            </button>
+          ))}
         </div>}
       </ComboboxContent>
     </Combobox>

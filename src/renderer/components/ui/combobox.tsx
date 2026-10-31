@@ -11,10 +11,12 @@ const Combobox = ComboboxPrimitive.Root
 function ComboboxTrigger({
   className,
   size = "default",
+  indicator = <IconSelector className="pointer-events-none size-4 text-muted-foreground" />,
   children,
   ...props
 }: ComboboxPrimitive.Trigger.Props & {
   size?: "sm" | "default"
+  indicator?: React.ReactElement | undefined
 }) {
   return (
     <ComboboxPrimitive.Trigger
@@ -27,9 +29,7 @@ function ComboboxTrigger({
       {...props}
     >
       {children}
-      <ComboboxPrimitive.Icon
-        render={<IconSelector className="pointer-events-none size-4 text-muted-foreground" />}
-      />
+      <ComboboxPrimitive.Icon render={indicator} />
     </ComboboxPrimitive.Trigger>
   )
 }

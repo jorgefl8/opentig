@@ -33,7 +33,7 @@ The start screen offers **Open a folder**, **Clone from URL**, and **Find on thi
 
 **Open a repository**
 
-Press `Ctrl+O`, browse to an existing repository, select it, and open it. The dialog includes recent checkouts, location shortcuts, breadcrumbs, a folder filter, hidden-folder controls, and an editable path. Desktop also offers a native folder picker.
+Press `Ctrl+O` or choose **Open repository…** in the repository menu, browse to an existing repository, select it, and open it. The dialog includes recent checkouts, location shortcuts, breadcrumbs, a folder filter, hidden-folder controls, and an editable path. Desktop also offers a native folder picker.
 
 | In the repository dialog | Action |
 | --- | --- |
@@ -42,7 +42,7 @@ Press `Ctrl+O`, browse to an existing repository, select it, and open it. The di
 | Right arrow | Browse into a folder |
 | `Enter` | Open the selected repository |
 
-Added repositories stay available until you remove them. Opening one preserves its position; new repositories append to their group, keeping numbered shortcuts stable. Switch between repositories, branches, and available worktrees from the selector. The toolbar shows the current branch, ahead/behind counts, and worktree insertion/deletion totals.
+Added repositories stay available until you remove them. Opening one preserves its position; new repositories append to their group, keeping numbered shortcuts stable. The top bar shows the current repository and branch: switch repositories from the first menu, and branches or available worktrees from the second. Commits to pull or push appear on its right as behind and ahead counts.
 
 **Switching repositories** shows the chosen repository in the selector with a spinner straight away. If opening takes more than a moment, a thin progress line appears under the toolbar and the previous repository dims until the new one replaces it. **Changes** shows **Loading changes…** rather than an empty list until the new repository's status arrives, and a notice appears if opening takes more than five seconds. Choosing several repositories in quick succession opens the last choice. Errors keep the current repository and report the problem.
 
@@ -172,13 +172,13 @@ App-authored notification text uses sentence case, preserving product names, acr
 
 **Open and keep files in tabs**
 
-Browse the **Files** tree, then click a file to preview it. The next preview replaces that tab. To keep a file open, edit it, double-click it, or `Ctrl`-click it.
+Browse the **Files** tree, then click a file to preview it. The next preview replaces that tab. To keep a file open, edit it, double-click it, or `Ctrl`-click it. Tabs sit at the top of the viewer while **Files** is active or a file is showing, and step aside for diffs, commits, and pull requests.
 
 | Action | Result |
 | --- | --- |
 | Open from the Files context menu | Open a replaceable preview |
 | **Open to the Side** or `Ctrl`-click | Pin the file beside the current one |
-| Drag a file from the tree onto the header tab strip | Pin it at the drop position |
+| Drag a file from the tree onto the tab strip | Pin it at the drop position |
 | Drag a tab | Reorder it |
 | Middle-click a tab | Close it |
 
@@ -312,7 +312,9 @@ Web links in commit subjects, messages, expanded descriptions, and the PR commit
 
 **Switch branches**
 
-Search local and remote branches, then select one. Selecting a remote branch creates or uses its local tracking branch. You cannot switch to a branch already checked out in another worktree.
+Open the branch menu in the top bar, search local and remote branches, then select one. Selecting a remote branch creates or uses its local tracking branch. You cannot switch to a branch already checked out in another worktree.
+
+When the repository has more than one worktree, the same menu lists them under **Worktrees**. On a phone, worktrees have their own selector in the repository sheet.
 
 If switching would overwrite local changes, OpenTig offers to move all tracked and untracked changes to the destination and leave them unstaged. Conflicts open in **Changes**, with a safety stash kept for recovery.
 

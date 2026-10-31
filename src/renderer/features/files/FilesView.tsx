@@ -198,7 +198,7 @@ function DesktopFilesView({
 
   useEffect(() => { loadedDirectoriesRef.current = loadedDirectories; }, [loadedDirectories]);
 
-  // The tab strip lives above this DndContext. A portal keeps the drop target in
+  // The tab strip lives outside this DndContext. A portal keeps the drop target in
   // this React context while placing its measured DOM rectangle over the strip.
   useEffect(() => {
     setOpenFilesDropHost(document.getElementById(OPEN_FILES_DROP_HOST_ID));

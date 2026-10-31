@@ -118,6 +118,49 @@ it.each([undefined, 'branch-picker'])('keeps a truncated trigger tooltip open un
   } finally { width.mockRestore(); available.mockRestore(); }
 });
 
+it('hints at the trigger even when its label fits, and adds the hint to a truncated label', async () => {
+  const hover = async () => {
+    const trigger = document.querySelector<HTMLButtonElement>('[role="combobox"]')!;
+    await act(async () => {
+      trigger.dispatchEvent(new MouseEvent('mouseenter', { bubbles: false }));
+      trigger.dispatchEvent(new MouseEvent('mousemove', { bubbles: true }));
+      await flushTimers();
+    });
+    return document.querySelector('[data-slot="tooltip-content"][data-open]')?.textContent;
+  };
+  const picker = (key: string) => createElement(TooltipProvider, { delay: 0 }, createElement(SearchablePicker, {
+    key, groups: [{ id: 'repositories', label: 'Repositories', items: [{ value: 'Atlas', label: 'Atlas' }] }],
+    value: 'Atlas', onValueChange, label: 'Repository', triggerLabel: 'Atlas', triggerHint: 'Switch repository (Q)', placeholder: 'Search repositories…',
+  }));
+  await act(async () => root.render(picker('fits')));
+  expect(await hover()).toBe('Switch repository (Q)');
+  const width = vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockReturnValue(240);
+  const available = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(160);
+  try {
+    await act(async () => root.render(picker('truncated')));
+    expect(await hover()).toBe('Atlas · Switch repository (Q)');
+  } finally { width.mockRestore(); available.mockRestore(); }
+});
+
+it('offers every management action outside the listbox and closes before running it', async () => {
+  const open = vi.fn(); const manage = vi.fn();
+  await act(async () => root.render(createElement(TooltipProvider, { delay: 0 }, createElement(SearchablePicker, {
+    key: 'actions', groups: [{ id: 'repositories', label: 'Repositories', items: [{ value: 'Atlas', label: 'Atlas' }] }],
+    value: 'Atlas', onValueChange, label: 'Repository', triggerLabel: 'Atlas', placeholder: 'Search repositories…',
+    management: [{ label: 'Open repository…', shortcut: 'Ctrl+O', onClick: open }, { label: 'Manage projects…', onClick: manage }],
+  }))));
+  const trigger = document.querySelector<HTMLButtonElement>('[role="combobox"]')!;
+  await act(async () => trigger.click());
+  const rows = () => [...document.querySelectorAll<HTMLButtonElement>('.searchable-picker-footer button')];
+  expect(rows().map(row => row.textContent?.trim())).toEqual(['Open repository…Ctrl+O', 'Manage projects…']);
+  expect(rows()[0]!.getAttribute('aria-keyshortcuts')).toBe('Control+O');
+  expect(document.querySelector('[role="listbox"] .searchable-picker-footer')).toBeNull();
+  await act(async () => rows()[1]!.click());
+  expect(manage).toHaveBeenCalledOnce();
+  expect(open).not.toHaveBeenCalled();
+  expect(trigger.getAttribute('aria-expanded')).toBe('false');
+});
+
 function mockListLayout() {
   const height = vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function(this: HTMLElement) {
     if (this.classList.contains('searchable-picker-list')) return 292;

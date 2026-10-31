@@ -34,6 +34,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { ChangesView } from '@/features/changes/ChangesView';
 import { createDeleteAction, createDiscardAction, destructiveActionCopy, dispatchDestructiveAction, type DestructiveAction } from '@/features/files/destructive-action';
 import { fileSnapshotFingerprint, pathContains, selectedFileChanged, snapshotPathPresence } from '@/features/files/file-tree';
+import { OpenFilesStrip } from '@/features/files/OpenFilesStrip';
 import {
   activateTab, applyKeyboardAction, closeTab, dirtyTabs, dirtyTabsUnder, DRAFT_MEMORY_WARNING_BYTES, draftBytes,
   emptyFileSession, type FileSession, markTabsPresent, moveTab, type OpenMode, openTab, removeTabsUnder, renameTabPaths,
@@ -2323,9 +2324,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
           onRefsManaged={handleRefsManaged}
           openFiles={fileSessions.get(repository.id) ?? emptyFileSession}
           onOpenFileTab={activateFileTab}
-          onPinFileTab={(path) => openFile(path, 'pinned')}
           onCloseFileTab={(path) => void closeFileTab(path)}
-          onReorderFileTab={reorderFileTab}
           settingsOpen={settingsOpen}
           settingsSection={settingsSection}
           onSettingsOpen={setSettingsOpen}
@@ -2492,40 +2491,51 @@ export default function App({ initialView, initialSelection, pullRequestCreation
             {!welcomeReplay && (bootstrap.onboardingVersion === 0 || checklistReplay) && <GettingStartedChecklist key={repository.id} repository={repository} onDismiss={dismissChecklist} onSettings={openSettings} />}
           </aside>
           <section className="viewer-pane">
-            <ErrorBoundary
-              resetKey={viewerSelection}
-              fallback={(err) => (
-                <div className="viewer-message flex-col gap-2 text-center text-destructive">
-                  <p>Could not display this content.</p>
-                  <small className="text-muted-foreground">{err.message}</small>
-                </div>
-              )}
-            >
-              <Suspense fallback={<div className="viewer-message"><IconLoader4 className="spinner" /> <ShimmeringText text="Preparing viewer…" /></div>}>
-                <Viewer
-                  repositoryId={repository.id}
-                  selection={viewerSelection}
-                  diffView={diffView}
-                  wrapLines={wrapLines}
-                  theme={theme}
-                  revision={refreshVersion}
-                  readOnly={Boolean(status?.readOnly)}
-                  commits={commits ?? []}
-                  draftFor={(path) => readFileDraft(repository.id, path)}
-                  onSelect={selectViewer}
-                  onOpenFile={openFile}
-                  onDiffViewChange={(value) => { if (mobile) setMobileDiffView(value); else void updatePreference({ diffView: value }); }}
-                  onWrapLinesChange={(value) => void updatePreference({ wrapLines: value })}
-                  onDraftChange={storeFileDraft}
-                  onDraftSaved={(path) => {
-                    dropFileDraft(repository.id, path);
-                    updateFileSession(repository.id, (session) => setTabDirty(session, path, false));
-                  }}
-                  onUpdateConflict={updateConflictFile}
-                  onResolveConflict={resolveConflictFile}
-                />
-              </Suspense>
-            </ErrorBoundary>
+            {!mobile && (view === 'files' || viewerSelection?.type === 'file') && (
+              <OpenFilesStrip
+                session={fileSessions.get(repository.id) ?? emptyFileSession}
+                onActivate={activateFileTab}
+                onPin={(path) => openFile(path, 'pinned')}
+                onClose={(path) => void closeFileTab(path)}
+                onReorder={reorderFileTab}
+              />
+            )}
+            <div className="viewer-pane-body">
+              <ErrorBoundary
+                resetKey={viewerSelection}
+                fallback={(err) => (
+                  <div className="viewer-message flex-col gap-2 text-center text-destructive">
+                    <p>Could not display this content.</p>
+                    <small className="text-muted-foreground">{err.message}</small>
+                  </div>
+                )}
+              >
+                <Suspense fallback={<div className="viewer-message"><IconLoader4 className="spinner" /> <ShimmeringText text="Preparing viewer…" /></div>}>
+                  <Viewer
+                    repositoryId={repository.id}
+                    selection={viewerSelection}
+                    diffView={diffView}
+                    wrapLines={wrapLines}
+                    theme={theme}
+                    revision={refreshVersion}
+                    readOnly={Boolean(status?.readOnly)}
+                    commits={commits ?? []}
+                    draftFor={(path) => readFileDraft(repository.id, path)}
+                    onSelect={selectViewer}
+                    onOpenFile={openFile}
+                    onDiffViewChange={(value) => { if (mobile) setMobileDiffView(value); else void updatePreference({ diffView: value }); }}
+                    onWrapLinesChange={(value) => void updatePreference({ wrapLines: value })}
+                    onDraftChange={storeFileDraft}
+                    onDraftSaved={(path) => {
+                      dropFileDraft(repository.id, path);
+                      updateFileSession(repository.id, (session) => setTabDirty(session, path, false));
+                    }}
+                    onUpdateConflict={updateConflictFile}
+                    onResolveConflict={resolveConflictFile}
+                  />
+                </Suspense>
+              </ErrorBoundary>
+            </div>
           </section>
         </main>
         <CommitComposer
@@ -2592,7 +2602,7 @@ function snapshotPresenceFromIndex(index: { paths: Set<string>; deferred: string
   return index.deferred.some((prefix) => pathContains(prefix, path)) ? 'deferred' : 'missing';
 }
 
-/** Header tab shortcuts. `Ctrl+1`–`Ctrl+9` stays reserved for sidebar sections. */
+/** File tab shortcuts. `Ctrl+1`–`Ctrl+9` stays reserved for sidebar sections. */
 function openFileTabShortcut(event: KeyboardEvent, shortcuts: ShortcutMap): TabKeyboardAction | null {
   if (matchesCombo(event, shortcuts.closeTab)) return 'close';
   if (matchesCombo(event, shortcuts.nextTab)) return 'next';

@@ -18,8 +18,8 @@ export function BranchPullRequestMenu({ repositoryId, pullRequest, onOpenPullReq
     <DropdownMenuTrigger render={<button type="button"
       className={`${mobile ? 'mobile-sheet-action mobile-branch-pr' : 'toolbar-branch-pr'} ${pullRequest.state.toLowerCase()}${draft ? ' draft' : ''}`}
       aria-label={`View ${prStateLabel(pullRequest).toLowerCase()} pull request #${pullRequest.number}`} />}>
-      {merged ? <IconGitMerge aria-hidden="true" /> : <IconGitPullRequest aria-hidden="true" />}
-      <span className={mobile ? undefined : 'toolbar-pr-label'}>{mobile ? `${merged ? 'View merged' : 'Open'} PR #${pullRequest.number}` : `PR #${pullRequest.number}`}</span>
+      {merged ? <IconGitMerge aria-hidden="true" /> : mobile && <IconGitPullRequest aria-hidden="true" />}
+      <span>{mobile ? `${merged ? 'View merged' : 'Open'} PR #${pullRequest.number}` : `#${pullRequest.number}`}</span>
       {draft && !mobile && <span className="toolbar-pr-draft">Draft</span>}
     </DropdownMenuTrigger>
     <DropdownMenuContent aria-label={`Open pull request #${pullRequest.number}`} className="w-72 max-w-[calc(100vw-2rem)]">

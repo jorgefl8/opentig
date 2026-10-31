@@ -87,12 +87,17 @@ Repository, worktree, branch, AI model, project assignment, and PR base selector
 - **Switch repositories by number:** number shortcuts remain active until the search field takes focus.
 - **Read a shortened name:** hover a truncated selected name to see it in full. The hint stays while the pointer remains on the control and hides while the menu is open.
 
-Toolbar selectors keep management actions available. Branch and worktree management rows show information in their details panel; diff headers show the file name and directory directly.
+The top bar reads as a breadcrumb: the repository, the branch, and the branch's pull request number. On the right it shows **Pull** or **Push** counts and **Publish** only when the branch needs them, then **Refresh**, any update or fetch notice, and **Settings**.
+
+- **Repository menu:** repositories, then **Open repository…** (`Ctrl+O`), **Open on GitHub** for GitHub repositories, and **Manage projects…**.
+- **Branch menu:** local and remote branches, a **Worktrees** group when the repository has more than one worktree, and **Manage branches…** and **Manage worktrees…**. While an operation makes the repository read-only, branches can't be chosen but other worktrees can.
+
+Branch and worktree management rows show information in their details panel; diff headers show the file name and directory directly.
 
 <details>
 <summary>Long menus, scrolling, and option hints</summary>
 
-Repository menus can grow to 80% of viewport height while search and management remain visible. Other menus remain compact. Menus use the current theme, with larger touch targets on phones and a gap between hovered and selected options. The desktop app keeps its toolbar on one row at its minimum window width. Paired browsers between 768 and 1100 pixels wrap remaining toolbar controls to the right.
+Repository menus can grow to 80% of viewport height while search and management remain visible. Other menus remain compact. Menus use the current theme, with larger touch targets on phones and a gap between hovered and selected options. Above the phone layout the top bar stays on one row at any width: a long branch name truncates, and hovering it shows the full name.
 
 With 100 or more matching choices, menus render only visible rows and a small buffer. Group labels, disabled choices, keyboard navigation, and scrolling to the selected choice remain available. Filtering below that size restores the ordinary list. Background option refreshes preserve scroll position.
 
@@ -133,14 +138,14 @@ Settings, diagnostics, branch, and worktree controls are also available on touch
 
 ## Desktop and Dev identity
 
-Desktop windows reopen at their previous position and size, including maximized state. They stay wide enough for the toolbar to remain on one row and cannot be resized below that width unless the display itself is narrower. If monitor layout or scaling makes a saved position unavailable, the window moves and, when needed, shrinks to fit a display. New windows and disconnected-monitor positions center on the primary display. The welcome screen follows the selected theme and has a draggable top edge.
+Desktop windows reopen at their previous position and size, including maximized state. They have a minimum width and cannot be resized below it unless the display itself is narrower. If monitor layout or scaling makes a saved position unavailable, the window moves and, when needed, shrinks to fit a display. New windows and disconnected-monitor positions center on the primary display. The welcome screen follows the selected theme and has a draggable top edge.
 
 **OpenTig Dev uses separate data and update behavior.** Its desktop/mobile headers and welcome screen show **OpenTig Dev**, with black/yellow stripes in light mode and white/yellow stripes in dark mode. This identity follows the backend's Dev profile, including in browsers. See [development and packaging](development.md).
 
 <details>
 <summary>Application icons and startup screen</summary>
 
-The toolbar, browser favicon, Windows application, installer, and taskbar use the OpenTig logo. Its toolbar ring follows the theme text color while the T stays blue; application icons use a dark rounded badge.
+The startup screen, browser favicon, Windows application, installer, and taskbar use the OpenTig logo. On the startup screen its ring follows the theme text color while the T stays blue; application icons use a dark rounded badge.
 
 The first painted frame is a splash with shimmering connection status. It stays visible until the workspace restores.
 

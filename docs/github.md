@@ -111,7 +111,7 @@ If GitHub doesn't answer in time, your text stays in the box and sending is held
 
 **Open the current branch's PR**
 
-Beside the branch selector, the PR indicator shows the current branch or worktree's PR number and state. A purple merge icon identifies a merged PR. Click for its full title and status, then choose **Open in OpenTig** or **Open in GitHub**. The mobile repository menu offers the same choices; the toolbar also opens the repository on GitHub.
+Beside the branch in the top bar, the PR indicator shows the current branch or worktree's PR number. A purple merge icon identifies a merged PR, and **Draft** a draft one. Click for its full title and status, then choose **Open in OpenTig** or **Open in GitHub**. The mobile repository menu offers the same choices; the repository menu also opens the repository on GitHub.
 
 <details>
 <summary>How OpenTig matches and refreshes the current PR</summary>

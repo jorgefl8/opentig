@@ -22,23 +22,7 @@
   html [data-slot="context-menu-content"] { min-width: min(280px, calc(100vw - 16px)); }
   html [data-slot="context-menu-item"] > span { white-space: normal; }
 
-  /* Repository identity stays on the first row; refs/actions wrap below it.
-     Open files get their own horizontal strip, never squeezing the controls. */
-  html .toolbar { height: auto; min-height: 48px; flex-wrap: wrap; gap: 4px; padding: 5px 8px; -webkit-app-region: no-drag; }
-  html .toolbar-brand { order: 0; }
-  html .toolbar-brand > span, html .repo-select-shortcut, html .repo-select-index, html .toolbar-spacer { display: none; }
-  html .toolbar .repo-select { flex: 1 1 calc(100% - 76px); max-width: none; width: auto; }
-  html .toolbar > .toolbar-worktree { flex: 1 1 70px; max-width: none; }
-  html .toolbar > [data-slot="combobox-trigger"] { flex: 1 1 70px; max-width: none; }
-  html .toolbar .branch-stats { flex: none; gap: 3px; }
-  html .toolbar .line-stats { display: none; }
-  html .branch-sync, html .branch-push { min-width: 36px; min-height: 40px; }
-  html .open-files-strip { order: 2; flex: 1 0 100%; width: 100%; min-width: 0; border-top: 1px solid var(--border); padding-top: 3px; }
-  html .open-files-strip:empty { display: none; }
-  html .open-file-tab { min-height: 40px; }
-  html .open-file-tab-close { width: 32px; height: 32px; opacity: 1; }
-  html .open-file-tab.dirty .open-file-tab-close-icon { opacity: 1; }
-  html .open-file-tab.dirty .open-file-tab-dot { right: 3px; top: 3px; }
+  html .repo-select-index { display: none; }
 
   html .mobile-navigation { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); flex: none; border-top: 1px solid var(--border); background: var(--sidebar); padding: 4px 5px; }
   html .mobile-navigation button { position: relative; display: flex; min-width: 0; min-height: 52px; flex-direction: column; align-items: center; justify-content: center; gap: 4px; border-radius: var(--radius-md); color: var(--muted-foreground); font-size: var(--text-meta); }
@@ -350,13 +334,6 @@
   .file-touch-actions { display: inline-flex; position: absolute; right: 0; top: 0; height: 100%; width: 36px; align-items: center; justify-content: center; background: var(--sidebar); }
   .file-touch-actions svg { width: 18px; height: 18px; }
   .file-tree-row:not(.files-sticky-row) { padding-right: 40px; }
-}
-
-/* Desktop Electron stays above 1100px (DESKTOP_MIN_WINDOW_WIDTH). Paired
-   browsers in this band wrap remaining toolbar controls to the right. */
-@media (min-width: 768px) and (max-width: 1100px) {
-  html .toolbar { height: auto; min-height: var(--toolbar-height); flex-wrap: wrap; justify-content: flex-end; padding-block: 5px; }
-  html .open-files-strip { order: 2; flex: 1 0 100%; min-width: 0; }
 }
 
 /* Sileo's decorative SVG and header coordinates assume a fixed 350px canvas.

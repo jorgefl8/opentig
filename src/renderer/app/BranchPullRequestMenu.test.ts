@@ -48,7 +48,9 @@ it.each([
   await render({ ...pullRequest, ...state });
   expect(trigger().querySelector('.tabler-icon-external-link')).toBeNull();
   expect(trigger().querySelector('button')).toBeNull();
-  expect(trigger().querySelector(state.state === 'MERGED' ? '.tabler-icon-git-merge' : '.tabler-icon-git-pull-request')).not.toBeNull();
+  expect(trigger().querySelector('.tabler-icon-git-merge') !== null).toBe(state.state === 'MERGED');
+  expect(trigger().querySelector('.tabler-icon-git-pull-request')).toBeNull();
+  expect(trigger().textContent).toBe(state.isDraft ? '#12Draft' : '#12');
   await click(trigger());
   const menu = document.querySelector('[role="menu"]')!;
   expect(menu.textContent).toContain(pullRequest.title);
