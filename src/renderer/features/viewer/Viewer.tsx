@@ -431,6 +431,7 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
       canUndo={!readOnly && !undoBlocked}
       githubRepository={githubRepository}
       onUndo={onUndoCommit}
+      onOpenPullRequest={(number) => onSelect({ type: 'pull-request', number })}
     />
   ) : selection?.type === 'conflict' ? <MobileViewerTitle title={selection.path.split('/').pop()} subtitle="Conflict" /> : null;
   const body = (

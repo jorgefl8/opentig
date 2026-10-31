@@ -37,6 +37,7 @@ import { ChangesView } from '@/features/changes/ChangesView';
 import { createDeleteAction, createDiscardAction, destructiveActionCopy, dispatchDestructiveAction, type DestructiveAction } from '@/features/files/destructive-action';
 import { fileSnapshotFingerprint, pathContains, selectedFileChanged, snapshotPathPresence } from '@/features/files/file-tree';
 import { MobileFileBar } from '@/features/files/MobileFileBar';
+import { FileLineTargetContext, type FileLineTarget } from '@/features/viewer/file-line-target';
 import { OpenFilesStrip } from '@/features/files/OpenFilesStrip';
 import {
   activateTab, applyKeyboardAction, closeTab, dirtyTabs, dirtyTabsUnder, DRAFT_MEMORY_WARNING_BYTES, draftBytes,
@@ -189,6 +190,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   // Repository whose commit authorship editor is open, so a stale toast cannot open it for another repository.
   const [authorshipRepositoryId, setAuthorshipRepositoryId] = useState<string | null>(null);
   const [quickOpen, setQuickOpen] = useState(false);
+  const [fileLineTarget, setFileLineTarget] = useState<FileLineTarget | null>(null);
   // Open-file tabs, one session per worktree. Structural metadata only: the
   // draft text of a dirty tab lives in a ref-backed map, never in React state.
   const [fileSessions, setFileSessions] = useState<ReadonlyMap<string, FileSession>>(() => new Map());
@@ -2473,6 +2475,9 @@ export default function App({ initialView, initialSelection, pullRequestCreation
                     revealAvailable={capabilities?.revealInFileManager === true}
                     onQuickOpen={() => setQuickOpen(true)}
                     historyState={fileHistoryState}
+                    openFiles={fileSessions.get(repository.id) ?? emptyFileSession}
+                    onActivateFile={activateFileTab}
+                    onCloseFile={(path) => void closeFileTab(path)}
                     onUndo={() => performFileHistory('undo')}
                     onRedo={() => performFileHistory('redo')}
                     onOpenFile={openFile}
@@ -2519,7 +2524,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
                   repositoryId={repository.id}
                   active={view === 'search'}
                   revision={searchRevision}
-                  onOpenFile={openFile}
+                  onOpenFile={(path, line) => { setFileLineTarget(line ? { path, line, reached: false } : null); openFile(path); }}
                   unsavedPathsAmong={unsavedTabsUnder}
                   onReplaced={() => { void refresh({ background: true }); }}
                 />
@@ -2591,6 +2596,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
               >
                 <Suspense fallback={<div className="viewer-message"><IconLoader4 className="spinner" /> <ShimmeringText text="Preparing viewer…" /></div>}>
                   <FileViewerToolbarHostContext.Provider value={fileViewerToolbarHost}>
+                    <FileLineTargetContext.Provider value={fileLineTarget}>
                     <Viewer
                       repositoryId={repository.id}
                       selection={viewerSelection}
@@ -2619,6 +2625,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
                       onUpdateConflict={updateConflictFile}
                       onResolveConflict={resolveConflictFile}
                     />
+                    </FileLineTargetContext.Provider>
                     {mobile && viewerSelection?.type === 'file' && (
                       <MobileFileBar
                         path={viewerSelection.path}

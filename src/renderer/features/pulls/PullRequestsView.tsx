@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { useMobileLayout } from '@/lib/use-mobile-layout';
 import { ViewerTabs, ViewerTabsList, ViewerTabsPanel } from '@/components/ui/viewer-tabs';
 import { openOnGitHub } from './gh-utils';
 import { GitHubSectionMenu } from './GitHubSectionMenu';
@@ -22,6 +23,7 @@ export type PullRequestsSection = 'pulls' | 'releases';
 
 /** Two lines of text and the row's padding; rows are measured once rendered. */
 const PULL_ROW_HEIGHT = 49;
+const MOBILE_PULL_ROW_HEIGHT = 60;
 
 interface PullRequestsViewProps {
   repositoryId: string;
@@ -151,6 +153,7 @@ function PullsTools(props: PullRequestsViewProps & { nameWithOwner: string | nul
 
 function PullsList(props: PullRequestsViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const mobile = useMobileLayout();
   const pulls = props.pulls;
   // Never asks GitHub: this only reads what the viewer of the selected PR keeps current.
   const activeLive = useQuery(pullRequestLiveStateQueryOptions(props.repositoryId, props.activeNumber ?? -1, false)).data ?? null;
@@ -158,7 +161,7 @@ function PullsList(props: PullRequestsViewProps) {
   const virtualizer = useVirtualizer({
     count: pulls?.length ?? 0,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => PULL_ROW_HEIGHT,
+    estimateSize: () => mobile ? MOBILE_PULL_ROW_HEIGHT : PULL_ROW_HEIGHT,
     getItemKey: (index) => pulls?.[index]?.number ?? index,
     overscan: 8,
   });
@@ -188,7 +191,7 @@ function PullsList(props: PullRequestsViewProps) {
                   className="virtual-row"
                   style={{ transform: `translateY(${virtualRow.start}px)` }}
                 >
-                  <PullRow repositoryId={props.repositoryId} pr={pr} active={active} live={active ? activeLive : null} onSelect={props.onSelect} />
+                  <PullRow repositoryId={props.repositoryId} pr={pr} active={active} live={active ? activeLive : null} phone={mobile} onSelect={props.onSelect} />
                 </div>
               );
             })}
@@ -199,7 +202,7 @@ function PullsList(props: PullRequestsViewProps) {
   );
 }
 
-function PullRow({ repositoryId, pr, active, live, onSelect }: { repositoryId: string; pr: PullRequestSummary; active: boolean; live: PullRequestLiveState | null; onSelect(number: number): void }) {
+function PullRow({ repositoryId, pr, active, live, phone, onSelect }: { repositoryId: string; pr: PullRequestSummary; active: boolean; live: PullRequestLiveState | null; phone: boolean; onSelect(number: number): void }) {
   // The selected row agrees with the viewer beside it; the others say what the list knows.
   const status = live ? pullRequestStatusLine(live) ?? pullRequestStateLine(live) : pullRequestSummaryStatus(pr);
   return (
@@ -207,10 +210,11 @@ function PullRow({ repositoryId, pr, active, live, onSelect }: { repositoryId: s
       <button className="pull-main" onClick={() => onSelect(pr.number)}>
         <span className={`status-dot tone-${status.tone}`} aria-hidden="true" />
         <span className="pull-title">{pr.title || '(no title)'}</span>
-        <span className="pull-meta">#{pr.number} · {status.label}</span>
+        <span className="pull-meta">#{pr.number} · {status.label}{phone && pr.stack && ` · Layer ${pr.stack.position} of ${pr.stack.size}`}</span>
       </button>
-      {pr.stack && <PullRequestStackMenu repositoryId={repositoryId} number={pr.number} membership={pr.stack} onSelect={onSelect} />}
-      {pr.url && <Tooltip>
+      {/* On a phone the whole row is the target, and the viewer has its stack and link. */}
+      {!phone && pr.stack && <PullRequestStackMenu repositoryId={repositoryId} number={pr.number} membership={pr.stack} onSelect={onSelect} />}
+      {!phone && pr.url && <Tooltip>
         <TooltipTrigger render={<Button variant="ghost" size="icon-xs" className="change-action-button pull-open-external" onClick={() => openOnGitHub(pr.url)} aria-label={`Open #${pr.number} on GitHub`} />}>
           <IconExternalLink />
         </TooltipTrigger>

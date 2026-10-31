@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { act, createElement, type ComponentProps } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -279,5 +281,139 @@ describe('with no changes', () => {
   it('turns the publish action off while it can\'t run', async () => {
     await render([], [], 'list', [], { unpublishedCommits: 1, publishDisabled: true });
     expect(container.querySelector<HTMLButtonElement>('.inline-action')?.disabled).toBe(true);
+  });
+});
+
+describe('on a phone', () => {
+  beforeEach(() => {
+    mobile = true;
+    // Base UI's drawer measures and animates; nothing here depends on it finishing.
+    vi.stubGlobal('PointerEvent', MouseEvent);
+  });
+  const sheetRows = () => [...document.querySelectorAll('.mobile-sheet .mobile-sheet-action')].map((row) => row.textContent);
+  const row = (name: string) => [...container.querySelectorAll<HTMLElement>('.change-row')].find((item) => item.textContent?.includes(name))!;
+  const longPress = async (target: HTMLElement) => {
+    await act(async () => { target.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })); });
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+  };
+
+  it('shows a flat list whatever the saved layout, and leaves that choice alone', async () => {
+    const onPreference = vi.fn();
+    await render([], files('src/app-', 2), 'tree', [], { readOnly: false, ...({ onPreference } as object) });
+    expect(container.querySelector('.tree-folder')).toBeNull();
+    expect(container.querySelector('[role="tree"]')).toBeNull();
+    expect(container.querySelector('.virtual-list')?.getAttribute('role')).toBe('list');
+    expect(row('app-00.ts').querySelector('small')?.textContent).toBe('src');
+    expect(onPreference).not.toHaveBeenCalled();
+    // The same props on a wider screen still show the tree.
+    mobile = false;
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await render([], files('src/app-', 2), 'tree', [], { readOnly: false });
+    expect(container.querySelector('.tree-folder')).not.toBeNull();
+  });
+
+  it('gives a row one visible action, the status letter and no folder line at the root', async () => {
+    await render([], [{ ...changed[0]!, path: 'README.md' }], 'list', [], { readOnly: false });
+    const item = row('README.md');
+    expect(item.querySelector('small')).toBeNull();
+    expect(item.querySelector('.status-code')?.textContent).toBe('M');
+    expect([...item.querySelectorAll('.change-row-actions button')].map((button) => button.getAttribute('aria-label'))).toEqual(['Stage changes']);
+    expect(item.querySelector('[aria-label="Discard changes"]')).toBeNull();
+  });
+
+  it('stages and unstages from the button, without opening the file', async () => {
+    const onStage = vi.fn(); const onUnstage = vi.fn();
+    await render(staged.slice(0, 1), changed.slice(0, 1), 'list', [], { readOnly: false, onStage, onUnstage });
+    await act(async () => row('changed-00.ts').querySelector<HTMLButtonElement>('.change-row-actions button')!.click());
+    expect(onStage).toHaveBeenCalledWith(['changed-00.ts']);
+    await act(async () => row('file-00.ts').querySelector<HTMLButtonElement>('[aria-label="Unstage changes"]')!.click());
+    expect(onUnstage).toHaveBeenCalledWith(['staged/file-00.ts']);
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it('opens the diff on a tap', async () => {
+    await render([], changed.slice(0, 1), 'list', [], { readOnly: false });
+    await act(async () => row('changed-00.ts').querySelector<HTMLButtonElement>('.file-label')!.click());
+    expect(onSelect).toHaveBeenCalledWith('changed-00.ts', 'unstaged');
+    expect(document.querySelector('.mobile-sheet')).toBeNull();
+  });
+
+  it('offers Open file and then Discard changes in a sheet titled with the name', async () => {
+    const onOpenFile = vi.fn(); const onDiscard = vi.fn();
+    await render([], files('src/app-', 1), 'list', [], { readOnly: false, onOpenFile, onDiscard });
+    await longPress(row('app-00.ts').querySelector<HTMLElement>('.file-label')!);
+    expect(document.querySelector('.mobile-sheet-title')?.textContent).toBe('app-00.ts');
+    expect(document.querySelector('.mobile-sheet-description')?.textContent).toBe('src');
+    expect(sheetRows()).toEqual(['Open file', 'Discard changes']);
+    const discard = [...document.querySelectorAll<HTMLButtonElement>('.mobile-sheet-action')].at(-1)!;
+    expect(discard.classList.contains('destructive')).toBe(true);
+    await act(async () => discard.click());
+    expect(onDiscard).toHaveBeenCalledWith(['src/app-00.ts']);
+    expect(onOpenFile).not.toHaveBeenCalled();
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it('leaves discarding out for a staged row, as the row itself does elsewhere', async () => {
+    await render(staged.slice(0, 1), [], 'list', [], { readOnly: false });
+    await longPress(row('file-00.ts'));
+    expect(sheetRows()).toEqual(['Open file']);
+  });
+
+  it('turns discarding off while read-only, and still opens the file', async () => {
+    await render([], changed.slice(0, 1), 'list', [], { readOnly: true });
+    await longPress(row('changed-00.ts'));
+    const [open, discard] = document.querySelectorAll<HTMLButtonElement>('.mobile-sheet-action');
+    expect(open!.disabled).toBe(false);
+    expect(discard!.disabled).toBe(true);
+  });
+
+  it('keeps the diff in reach for a file that opens on its preview', async () => {
+    const image = { ...changed[0]!, path: 'assets/logo.png' };
+    await render([], [image], 'list', [], { readOnly: false });
+    await longPress(row('logo.png'));
+    expect(sheetRows()).toEqual(['View changes', 'Open file', 'Discard changes']);
+    await act(async () => document.querySelector<HTMLButtonElement>('.mobile-sheet-action')!.click());
+    expect(onSelect).toHaveBeenCalledWith('assets/logo.png', 'unstaged');
+  });
+
+  it('offers only discarding for a whole untracked folder, which has no file to open', async () => {
+    await render([], [{ ...changed[0]!, path: 'generated/', kind: 'untracked' }], 'list', [], { readOnly: false });
+    await longPress(row('generated'));
+    expect(sheetRows()).toEqual(['Discard changes']);
+  });
+
+  it('keeps conflicts first, opening the conflict view, with Open file in their sheet', async () => {
+    const onConflict = vi.fn(); const onOpenFile = vi.fn();
+    await render([], changed.slice(0, 1), 'list', files('src/conflict-', 1).map((file) => ({ ...file, conflict: true })), { readOnly: false, onConflict, onOpenFile });
+    expect(groupLabels()).toEqual(['Conflicts1', 'Not staged']);
+    const conflict = row('conflict-00.ts');
+    await act(async () => conflict.querySelector<HTMLButtonElement>('.file-label')!.click());
+    expect(onConflict).toHaveBeenCalledWith('src/conflict-00.ts');
+    expect(conflict.querySelector('.change-row-actions')).toBeNull();
+    await longPress(conflict);
+    expect(sheetRows()).toEqual(['Open file']);
+    await act(async () => document.querySelector<HTMLButtonElement>('.mobile-sheet-action')!.click());
+    expect(onOpenFile).toHaveBeenCalledWith('src/conflict-00.ts');
+  });
+
+  it('reaches the sheet from the keyboard and a screen reader, in row order', async () => {
+    await render([], changed.slice(0, 1), 'list', [], { readOnly: false });
+    expect([...row('changed-00.ts').querySelectorAll('button')].map((button) => button.getAttribute('aria-label'))).toEqual(['View changes for changed-00.ts', 'More actions for changed-00.ts', 'Stage changes']);
+    await act(async () => row('changed-00.ts').querySelector<HTMLButtonElement>('.mobile-row-more')!.click());
+    expect(sheetRows()).toEqual(['Open file', 'Discard changes']);
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it('leaves a held press on the stage button to that button', async () => {
+    await render([], changed.slice(0, 1), 'list', [], { readOnly: false });
+    await longPress(row('changed-00.ts').querySelector<HTMLElement>('.change-row-actions button')!);
+    expect(document.querySelector('.mobile-sheet')).toBeNull();
+  });
+
+  it('spaces rows by the height the stylesheet gives them', async () => {
+    await render([], changed.slice(0, 3), 'list', [], { readOnly: false });
+    expect([...container.querySelectorAll<HTMLElement>('.virtual-row')].map((item) => item.style.transform)).toEqual(['translateY(0px)', 'translateY(52px)', 'translateY(104px)']);
+    expect(readFileSync(path.join(process.cwd(), 'src/renderer/styles/mobile.css'), 'utf8')).toMatch(/html \.change-row \{ height: 52px;/);
   });
 });

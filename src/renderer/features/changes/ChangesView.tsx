@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useLongPress } from '@/lib/use-long-press';
 import { useMobileLayout } from '@/lib/use-mobile-layout';
 import { useTruncatedText } from '@/lib/use-truncated-text';
 import { useVirtualizer } from '@tanstack/react-virtual';
@@ -6,6 +7,8 @@ import { IconChevronRight, IconFileArrowRight, IconGitCompare, IconMinus, IconPl
 import type { ChangesLayoutPreference } from '../../../shared/contracts';
 import type { FileChange } from '../../../shared/git-types';
 import { FolderIcon } from '@/components/FolderIcon';
+import { MobileRowSheetButton } from '@/components/MobileChrome';
+import { MobileSheet } from '@/components/MobileSheet';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { shouldOpenChangePreview } from './change-preview';
@@ -16,7 +19,7 @@ import { getVsCodeFileIconUrl } from '@/lib/vscode-icons';
 
 // Keep in sync with the .change-row and .tree-folder heights in styles/index.css and styles/mobile.css.
 const ROW_HEIGHT = 28;
-const MOBILE_ROW_HEIGHT = 48;
+const MOBILE_ROW_HEIGHT = 52;
 
 /** What the viewer is showing. A diff names its side, so a file staged and also edited marks only that row. */
 export interface ChangeSelection { path: string; kind: 'staged' | 'unstaged' | null }
@@ -33,9 +36,17 @@ interface ChangesViewProps {
   onStage(paths: string[]): void; onUnstage(paths: string[]): void; onStageAll(): void; onUnstageAll(): void;
 }
 
+/** A phone row's sheet: what it isn't worth risking a slip on sits behind a long press. */
+interface ChangeRowMenu { change: FileChange; kind: 'conflict' | 'staged' | 'unstaged' }
+
 export function ChangesView(props: ChangesViewProps) {
-  const displayMode = props.displayMode;
+  const mobile = useMobileLayout();
+  // A phone has no room for a tree; the saved choice stays for the desktop layout.
+  const displayMode = mobile ? 'list' : props.displayMode;
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [menu, setMenu] = useState<ChangeRowMenu | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const openMenu = mobile ? (next: ChangeRowMenu) => { setMenu(next); setMenuOpen(true); } : undefined;
   const bothGroups = props.staged.length > 0 && props.changed.length > 0;
   // With no other group above it the list needs no label. Conflicts count as a
   // group here too, or these files would read as more conflicts.
@@ -46,10 +57,11 @@ export function ChangesView(props: ChangesViewProps) {
         ? <NoChanges unpublishedCommits={props.unpublishedCommits} branchNeedsPublication={props.branchNeedsPublication} publishDisabled={props.publishDisabled} onPublish={props.onPublish} />
         : <ChangesStrip count={props.changeCount} insertions={props.insertions} deletions={props.deletions} staged={props.staged.length} changed={props.changed.length} disabled={props.readOnly} onStageAll={props.onStageAll} onUnstageAll={props.onUnstageAll} />}
       <div ref={scrollRef} className="changes-scroll">
-        <ConflictSection scrollRef={scrollRef} changes={props.conflicts} selection={props.selection} onSelect={props.onConflict} onOpenFile={props.onOpenFile} />
-        <ChangeSection scrollRef={scrollRef} displayMode={displayMode} label="Staged" showCount changes={props.staged} selection={props.selection} onSelect={(path) => props.onSelect(path, 'staged')} onOpenFile={props.onOpenFile} action="unstage" disabled={props.readOnly} onAction={props.onUnstage} onDiscard={props.onDiscard} onUnstageGroup={bothGroups ? props.onUnstageAll : undefined} />
-        <ChangeSection scrollRef={scrollRef} displayMode={displayMode} label={notStagedLabel} changes={props.changed} selection={props.selection} onSelect={(path) => props.onSelect(path, 'unstaged')} onOpenFile={props.onOpenFile} action="stage" disabled={props.readOnly} onAction={props.onStage} onDiscard={props.onDiscard} />
+        <ConflictSection scrollRef={scrollRef} changes={props.conflicts} selection={props.selection} onSelect={props.onConflict} onOpenFile={props.onOpenFile} onMenu={openMenu && ((change) => openMenu({ change, kind: 'conflict' }))} />
+        <ChangeSection scrollRef={scrollRef} displayMode={displayMode} label="Staged" showCount changes={props.staged} selection={props.selection} onSelect={(path) => props.onSelect(path, 'staged')} onOpenFile={props.onOpenFile} action="unstage" disabled={props.readOnly} onAction={props.onUnstage} onDiscard={props.onDiscard} onUnstageGroup={bothGroups ? props.onUnstageAll : undefined} onMenu={openMenu && ((change) => openMenu({ change, kind: 'staged' }))} />
+        <ChangeSection scrollRef={scrollRef} displayMode={displayMode} label={notStagedLabel} changes={props.changed} selection={props.selection} onSelect={(path) => props.onSelect(path, 'unstaged')} onOpenFile={props.onOpenFile} action="stage" disabled={props.readOnly} onAction={props.onStage} onDiscard={props.onDiscard} onMenu={openMenu && ((change) => openMenu({ change, kind: 'unstaged' }))} />
       </div>
+      {mobile && <ChangeRowSheet menu={menu} open={menuOpen} readOnly={props.readOnly} onOpenChange={setMenuOpen} onSelect={props.onSelect} onOpenFile={props.onOpenFile} onDiscard={props.onDiscard} />}
     </div>
   );
 }
@@ -94,7 +106,36 @@ function NoChanges({ unpublishedCommits, branchNeedsPublication, publishDisabled
   );
 }
 
-function ConflictSection({ scrollRef, changes, selection, onSelect, onOpenFile }: { scrollRef: React.RefObject<HTMLDivElement | null>; changes: FileChange[]; selection: ChangeSelection | null; onSelect(path: string): void; onOpenFile(path: string): void }) {
+/** The sheet a long press on a phone row opens. Discarding is here, away from the row's stage button. */
+function ChangeRowSheet({ menu, open, readOnly, onOpenChange, onSelect, onOpenFile, onDiscard }: {
+  menu: ChangeRowMenu | null; open: boolean; readOnly: boolean; onOpenChange(open: boolean): void;
+  onSelect(path: string, kind: 'staged' | 'unstaged'): void; onOpenFile(path: string): void; onDiscard(paths: string[]): void;
+}) {
+  const { change, kind } = menu ?? { change: null, kind: null };
+  const path = change?.path ?? '';
+  const { name, directory, directorySummary } = changePathParts(path);
+  const run = (action: () => void) => { onOpenChange(false); action(); };
+  return (
+    <MobileSheet open={open} onOpenChange={onOpenChange} title={name} description={directory || undefined}>
+      {change && kind !== 'conflict' && shouldOpenChangePreview(path, change.kind) && <button type="button" className="mobile-sheet-action" onClick={() => run(() => onSelect(path, kind!))}><IconGitCompare /><span>View changes</span></button>}
+      {change && !directorySummary && <button type="button" className="mobile-sheet-action" onClick={() => run(() => onOpenFile(path))}><IconFileArrowRight /><span>Open file</span></button>}
+      {kind === 'unstaged' && <button type="button" className="mobile-sheet-action destructive" disabled={readOnly} onClick={() => run(() => onDiscard([path]))}><IconRestore /><span>Discard changes</span></button>}
+    </MobileSheet>
+  );
+}
+
+function changePathParts(path: string) {
+  const normalized = path.replace(/[\\/]+$/, '');
+  const slash = normalized.lastIndexOf('/');
+  return {
+    normalized,
+    name: slash < 0 ? normalized : normalized.slice(slash + 1),
+    directory: slash < 0 ? '' : normalized.slice(0, slash),
+    directorySummary: path.endsWith('/') || path.endsWith('\\'),
+  };
+}
+
+function ConflictSection({ scrollRef, changes, selection, onSelect, onOpenFile, onMenu }: { scrollRef: React.RefObject<HTMLDivElement | null>; changes: FileChange[]; selection: ChangeSelection | null; onSelect(path: string): void; onOpenFile(path: string): void; onMenu?: ((change: FileChange) => void) | undefined }) {
   const mobile = useMobileLayout();
   const sortedChanges = useMemo(() => [...changes].sort((a, b) => a.path.localeCompare(b.path)), [changes]);
   const { listRef, scrollMargin } = useVirtualScrollMargin(scrollRef);
@@ -117,7 +158,7 @@ function ConflictSection({ scrollRef, changes, selection, onSelect, onOpenFile }
           const change = sortedChanges[virtualRow.index]!;
           return (
             <div key={virtualRow.key} className="virtual-row" style={{ height: virtualRow.size, transform: `translateY(${virtualRow.start - scrollMargin}px)` }}>
-              <ConflictRow change={change} current={selection?.path === change.path} onSelect={onSelect} onOpenFile={onOpenFile} />
+              <ConflictRow change={change} current={selection?.path === change.path} onSelect={onSelect} onOpenFile={onOpenFile} onMenu={onMenu} />
             </div>
           );
         })}
@@ -126,28 +167,28 @@ function ConflictSection({ scrollRef, changes, selection, onSelect, onOpenFile }
   );
 }
 
-function ConflictRow({ change, current, onSelect, onOpenFile }: { change: FileChange; current: boolean; onSelect(path: string): void; onOpenFile(path: string): void }) {
+function ConflictRow({ change, current, onSelect, onOpenFile, onMenu }: { change: FileChange; current: boolean; onSelect(path: string): void; onOpenFile(path: string): void; onMenu?: ((change: FileChange) => void) | undefined }) {
   const rowRef = useRef<HTMLDivElement>(null);
   const [textRef, truncated] = useTruncatedText(change.path);
-  const normalized = change.path.replace(/[\\/]+$/, '');
-  const slash = normalized.lastIndexOf('/');
-  const name = slash < 0 ? normalized : normalized.slice(slash + 1);
-  const directory = slash < 0 ? '' : normalized.slice(0, slash);
+  const { normalized, name, directory } = changePathParts(change.path);
+  const longPress = useLongPress(() => onMenu?.(change), { disabled: !onMenu });
   return (
-    <div ref={rowRef} role="listitem" className="change-row" aria-current={current ? 'true' : undefined} onClick={(event) => {
+    <div ref={rowRef} role="listitem" className="change-row" aria-current={current ? 'true' : undefined} {...longPress} onClick={(event) => {
       if (shouldActivateChangeRow(event.target)) onSelect(change.path);
     }}>
       <Tooltip disabled={!truncated}>
-        <TooltipTrigger render={<button className="file-label" onClick={() => onSelect(change.path)} aria-label={`Resolve conflict in ${change.path}`} />}>
+        <TooltipTrigger render={<button className="file-label" data-long-press-target="" onClick={() => onSelect(change.path)} aria-label={`Resolve conflict in ${change.path}`} />}>
           <img className="vscode-tree-icon" src={getVsCodeFileIconUrl(normalized)} alt="" aria-hidden="true" draggable={false} />
           <span ref={textRef} className="change-file-text"><span>{name}</span>{directory && <small>{directory}</small>}</span>
         </TooltipTrigger>
         <TooltipContent anchor={rowRef} side="right" sideOffset={10}>{change.path}</TooltipContent>
       </Tooltip>
       <span className="status-code" data-kind="conflicted">C</span>
-      <span className="change-row-actions">
-        <Tooltip><TooltipTrigger render={<Button variant="ghost" size="icon-xs" className="change-action-button" onClick={() => onOpenFile(change.path)} aria-label="Open file" />}><IconFileArrowRight /></TooltipTrigger><TooltipContent>Open file</TooltipContent></Tooltip>
-      </span>
+      {onMenu
+        ? <MobileRowSheetButton name={name} onPress={() => onMenu(change)} />
+        : <span className="change-row-actions">
+            <Tooltip><TooltipTrigger render={<Button variant="ghost" size="icon-xs" className="change-action-button" onClick={() => onOpenFile(change.path)} aria-label="Open file" />}><IconFileArrowRight /></TooltipTrigger><TooltipContent>Open file</TooltipContent></Tooltip>
+          </span>}
     </div>
   );
 }
@@ -156,9 +197,11 @@ interface ChangeSectionProps {
   scrollRef: React.RefObject<HTMLDivElement | null>;
   displayMode: 'list' | 'tree'; label: string | null; showCount?: boolean | undefined; changes: FileChange[]; selection: ChangeSelection | null; disabled: boolean; action: 'stage' | 'unstage';
   onSelect(path: string): void; onOpenFile(path: string): void; onAction(paths: string[]): void; onDiscard(paths: string[]): void; onUnstageGroup?: (() => void) | undefined;
+  /** Set on a phone: the row shows one action and a long press offers the rest. */
+  onMenu?: ((change: FileChange) => void) | undefined;
 }
 
-function ChangeSection({ scrollRef, displayMode, label, showCount = false, changes, selection, disabled, action, onSelect, onOpenFile, onAction, onDiscard, onUnstageGroup }: ChangeSectionProps) {
+function ChangeSection({ scrollRef, displayMode, label, showCount = false, changes, selection, disabled, action, onSelect, onOpenFile, onAction, onDiscard, onUnstageGroup, onMenu }: ChangeSectionProps) {
   const tree = useMemo(() => buildChangeTree(changes), [changes]);
   const [collapsedPaths, setCollapsedPaths] = useState<Set<string>>(new Set());
   const sortedChanges = useMemo(() => [...changes].sort((a, b) => a.path.localeCompare(b.path)), [changes]);
@@ -220,7 +263,7 @@ function ChangeSection({ scrollRef, displayMode, label, showCount = false, chang
                   onAction={onAction}
                 />
               ) : (
-                <ChangeFileRow change={row.change} current={selection?.path === row.change.path && (selection.kind ?? sectionKind) === sectionKind} disabled={disabled} action={action} depth={row.depth} showDirectory={displayMode === 'list'} onSelect={onSelect} onOpenFile={onOpenFile} onDiscard={onDiscard} onAction={onAction} />
+                <ChangeFileRow change={row.change} current={selection?.path === row.change.path && (selection.kind ?? sectionKind) === sectionKind} disabled={disabled} action={action} depth={row.depth} showDirectory={displayMode === 'list'} onSelect={onSelect} onOpenFile={onOpenFile} onDiscard={onDiscard} onAction={onAction} onMenu={onMenu} />
               )}
             </div>
           );
@@ -282,37 +325,35 @@ function ChangeTreeFolderRow({ node, depth, expanded, disabled, action, onToggle
   );
 }
 
-function ChangeFileRow({ change, current, disabled, action, depth = 0, showDirectory = false, onSelect, onOpenFile, onDiscard, onAction }: {
+function ChangeFileRow({ change, current, disabled, action, depth = 0, showDirectory = false, onSelect, onOpenFile, onDiscard, onAction, onMenu }: {
   change: FileChange; current: boolean; disabled: boolean; action: 'stage' | 'unstage'; depth?: number; showDirectory?: boolean;
-  onSelect(path: string): void; onOpenFile(path: string): void; onDiscard(paths: string[]): void; onAction(paths: string[]): void;
+  onSelect(path: string): void; onOpenFile(path: string): void; onDiscard(paths: string[]): void; onAction(paths: string[]): void; onMenu?: ((change: FileChange) => void) | undefined;
 }) {
   const rowRef = useRef<HTMLDivElement>(null);
   const [textRef, truncated] = useTruncatedText(`${change.path}\u0000${showDirectory}`);
-  const normalizedPath = change.path.replace(/[\\/]+$/, '');
-  const slash = normalizedPath.lastIndexOf('/');
-  const name = slash < 0 ? normalizedPath : normalizedPath.slice(slash + 1);
-  const directory = slash < 0 ? '' : normalizedPath.slice(0, slash);
-  const directorySummary = change.path.endsWith('/') || change.path.endsWith('\\');
+  const { normalized: normalizedPath, name, directory, directorySummary } = changePathParts(change.path);
   const previewable = shouldOpenChangePreview(change.path, change.kind);
+  const longPress = useLongPress(() => onMenu?.(change), { disabled: !onMenu });
   return (
-    <div ref={rowRef} role={showDirectory ? 'listitem' : 'treeitem'} className="change-row" aria-current={current ? 'true' : undefined} style={{ paddingLeft: 12 + depth * 14 }} onClick={(event) => {
+    <div ref={rowRef} role={showDirectory ? 'listitem' : 'treeitem'} className="change-row" aria-current={current ? 'true' : undefined} style={onMenu ? undefined : { paddingLeft: 12 + depth * 14 }} {...longPress} onClick={(event) => {
       if (!shouldActivateChangeRow(event.target)) return;
       if (previewable) onOpenFile(change.path);
       else onSelect(change.path);
     }}>
       {!showDirectory && <span className="tree-spacer" />}
       <Tooltip disabled={!truncated}>
-        <TooltipTrigger render={<button className="file-label" onClick={() => previewable ? onOpenFile(change.path) : onSelect(change.path)} aria-label={`${previewable ? 'Preview' : 'View changes for'} ${change.path}`} />}>
+        <TooltipTrigger render={<button className="file-label" data-long-press-target="" onClick={() => previewable ? onOpenFile(change.path) : onSelect(change.path)} aria-label={`${previewable ? 'Preview' : 'View changes for'} ${change.path}`} />}>
           {directorySummary ? <FolderIcon /> : <img className="vscode-tree-icon" src={getVsCodeFileIconUrl(normalizedPath)} alt="" aria-hidden="true" draggable={false} />}
           <span ref={textRef} className="change-file-text"><span>{name}</span>{showDirectory && directory && <small>{directory}</small>}</span>
         </TooltipTrigger>
         <TooltipContent anchor={rowRef} side="right" sideOffset={10}>{change.path}</TooltipContent>
       </Tooltip>
       <span className="status-code" data-kind={change.kind}>{changeStatusCode(change.kind)}</span>
+      {onMenu && <MobileRowSheetButton name={name} onPress={() => onMenu(change)} />}
       <span className="change-row-actions">
-        {!directorySummary && previewable && <Tooltip><TooltipTrigger render={<Button variant="ghost" size="icon-xs" className="change-action-button" onClick={() => onSelect(change.path)} aria-label="View changes" />}><IconGitCompare /></TooltipTrigger><TooltipContent>View changes</TooltipContent></Tooltip>}
-        {!directorySummary && !previewable && <Tooltip><TooltipTrigger render={<Button variant="ghost" size="icon-xs" className="change-action-button" disabled={disabled} onClick={() => onOpenFile(change.path)} aria-label="Open file" />}><IconFileArrowRight /></TooltipTrigger><TooltipContent>Open file</TooltipContent></Tooltip>}
-        <ChangeActions paths={[change.path]} action={action} disabled={disabled} onDiscard={onDiscard} onAction={onAction} />
+        {!onMenu && !directorySummary && previewable && <Tooltip><TooltipTrigger render={<Button variant="ghost" size="icon-xs" className="change-action-button" onClick={() => onSelect(change.path)} aria-label="View changes" />}><IconGitCompare /></TooltipTrigger><TooltipContent>View changes</TooltipContent></Tooltip>}
+        {!onMenu && !directorySummary && !previewable && <Tooltip><TooltipTrigger render={<Button variant="ghost" size="icon-xs" className="change-action-button" disabled={disabled} onClick={() => onOpenFile(change.path)} aria-label="Open file" />}><IconFileArrowRight /></TooltipTrigger><TooltipContent>Open file</TooltipContent></Tooltip>}
+        <ChangeActions paths={[change.path]} action={action} disabled={disabled} onDiscard={onMenu ? undefined : onDiscard} onAction={onAction} />
       </span>
     </div>
   );
@@ -320,11 +361,12 @@ function ChangeFileRow({ change, current, disabled, action, depth = 0, showDirec
 
 function ChangeActions({ paths, action, disabled, onDiscard, onAction }: {
   paths: string[]; action: 'stage' | 'unstage'; disabled: boolean;
-  onDiscard(paths: string[]): void; onAction(paths: string[]): void;
+  /** Left out on a phone, where discarding isn't beside staging. */
+  onDiscard?: ((paths: string[]) => void) | undefined; onAction(paths: string[]): void;
 }) {
   return (
     <>
-      {action === 'stage' && <Tooltip><TooltipTrigger render={<Button variant="ghost" size="icon-xs" className="change-action-button change-action-discard" disabled={disabled} onClick={() => onDiscard(paths)} aria-label="Discard changes" />}><IconRestore /></TooltipTrigger><TooltipContent>Discard changes</TooltipContent></Tooltip>}
+      {action === 'stage' && onDiscard && <Tooltip><TooltipTrigger render={<Button variant="ghost" size="icon-xs" className="change-action-button change-action-discard" disabled={disabled} onClick={() => onDiscard(paths)} aria-label="Discard changes" />}><IconRestore /></TooltipTrigger><TooltipContent>Discard changes</TooltipContent></Tooltip>}
       <Tooltip><TooltipTrigger render={<Button variant="ghost" size="icon-xs" className="change-action-button" disabled={disabled} onClick={() => onAction(paths)} aria-label={action === 'stage' ? 'Stage changes' : 'Unstage changes'} />}>{action === 'stage' ? <IconPlus /> : <IconMinus />}</TooltipTrigger><TooltipContent>{action === 'stage' ? 'Stage changes' : 'Unstage changes'}</TooltipContent></Tooltip>
     </>
   );

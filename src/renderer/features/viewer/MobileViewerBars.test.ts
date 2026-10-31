@@ -114,6 +114,14 @@ describe('a commit on a phone', () => {
     expect(rows().map((item) => item.textContent)).toEqual(['Copy hash']);
   });
 
+  it('opens the pull request its message refers to, once the row no longer can', async () => {
+    const onOpenPullRequest = vi.fn();
+    await renderCommit({ commit: { ...commit, subject: 'Add a filter (#7)' }, githubRepository: 'sample/demo', onOpenPullRequest });
+    await act(async () => hosts.actions!.querySelector<HTMLButtonElement>('button[aria-label="More commit actions"]')!.click());
+    await act(async () => [...document.querySelectorAll<HTMLButtonElement>('.mobile-sheet-action')].find((row) => row.textContent === 'Open pull request #7')!.click());
+    expect(onOpenPullRequest).toHaveBeenCalledWith(7);
+  });
+
   it('titles one of its files with the hash below', async () => {
     await renderCommit({ path: 'src/a.js' });
     expect(hosts.title!.querySelector('strong')?.textContent).toBe('a.js');

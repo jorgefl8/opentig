@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { IconLoader4, IconZoomIn, IconZoomOut } from '@tabler/icons-react';
 import type { FileResult, ImageFileResult, ThemePreference, WriteFileResult } from '@shared/contracts';
 import { Button } from '@/components/ui/button';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { ViewerTabs, ViewerTabsList, ViewerTabsPanel } from '@/components/ui/viewer-tabs';
 import { FileSaveControls, SourceCodeEditor } from './EditableFileViewer';
+import { useShowCodeForLineTarget } from './file-line-target';
 import { FileViewerToolbar, FileViewerToolbarButton, FileViewerToolbarGroup } from './FileViewerToolbar';
 import { MAX_IMAGE_ZOOM, type ImageSizingMode, zoomIn, zoomOut } from './image-viewer-state';
 import { useEditableFileDraft } from './useEditableFileDraft';
@@ -91,6 +92,7 @@ export function SvgFileViewer({ file, initialContent, themeType, wrapLines, read
   useEffect(() => {
     setTab('preview');
   }, [file.path]);
+  useShowCodeForLineTarget(file.path, useCallback(() => setTab('code'), []));
 
   const tabs = (
     <ViewerTabsList

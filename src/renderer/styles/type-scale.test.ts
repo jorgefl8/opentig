@@ -27,6 +27,8 @@ describe('type scale', () => {
       'features/viewer/pdf-file-viewer.css: font-size: calc(var(--text-scale-factor) * var(--font-height))',
       // Phone inputs stay 16px to avoid iOS focus zoom.
       'styles/mobile.css: font-size: 16px',
+      // Search matches on a phone are code, so they follow its size and Interface size.
+      'styles/mobile.css: font-size: var(--diffs-font-size)',
     ]);
   });
 

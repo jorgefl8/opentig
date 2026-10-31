@@ -4,6 +4,8 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { IconArrowDown, IconChevronRight, IconFilter, IconLoader4, IconRestore, IconSearch } from '@tabler/icons-react';
 import type { CommitFile, CommitInfo } from '../../../shared/git-types';
 import { Button } from '@/components/ui/button';
+import { MobileSwitchRow } from '@/components/MobileChrome';
+import { MobileSheet } from '@/components/MobileSheet';
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { LinkedText } from '@/components/LinkedText';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
@@ -24,8 +26,9 @@ interface HistoryViewProps {
   onSelectCommit(commit: CommitInfo): void; onSelectFile(oid: string, file: CommitFile): void; onUndo(commit: CommitInfo): void; onMore(): void;
 }
 
-// Match .history-more in index.css.
+// Match .history-more in index.css and mobile.css.
 const LOAD_MORE_HEIGHT = 36;
+const MOBILE_LOAD_MORE_HEIGHT = 48;
 
 export function HistoryView({ repositoryId, upstream, readOnly, operation, commits, nextCursor, loading, undoing, baseRef, activeOid, onSelectReference, onSelectCommit, onSelectFile, onUndo, onMore }: HistoryViewProps) {
   const mobile = useMobileLayout();
@@ -33,9 +36,11 @@ export function HistoryView({ repositoryId, upstream, readOnly, operation, commi
   const [expandedCommits, setExpandedCommits] = useState<Set<string>>(new Set());
   const [compact, setCompact] = useState(true);
   const [grouped, setGrouped] = useState(false);
+  const [optionsOpen, setOptionsOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [matchIndex, setMatchIndex] = useState(-1);
-  const rowHeight = mobile ? 52 : compact ? 46 : 56;
+  const rowHeight = mobile ? 60 : compact ? 46 : 56;
+  const loadMoreHeight = mobile ? MOBILE_LOAD_MORE_HEIGHT : LOAD_MORE_HEIGHT;
   const searching = search.trim().length > 0;
   // Search temporarily reveals grouped commits; it never removes graph context.
   const rows = useMemo(() => historyRows(commits ?? [], grouped && !searching), [commits, grouped, searching]);
@@ -62,6 +67,7 @@ export function HistoryView({ repositoryId, upstream, readOnly, operation, commi
     commitVirtualizer.scrollToIndex(matches[next]!, { align: 'center' });
   };
   if (commits === null) return <div className="view-loading" role="status"><IconLoader4 className="spinner" /> <ShimmeringText text="Loading history…" /></div>;
+  const canGroup = grouped || commits.some((commit) => commit.parentCount > 1);
   return (
     <div className="history-list" data-searching={searching || undefined} style={{ '--history-row-height': `${rowHeight}px` } as CSSProperties}>
       <div className="history-toolbar">
@@ -74,25 +80,30 @@ export function HistoryView({ repositoryId, upstream, readOnly, operation, commi
           </Tooltip>}
         </label>
         {searching && <Tooltip><TooltipTrigger render={<Button variant="ghost" size="icon-xs" className="change-action-button" onClick={nextMatch} disabled={!matches.length} aria-label="Next matching commit" />}><IconArrowDown /></TooltipTrigger><TooltipContent>Next match in loaded history (Enter)</TooltipContent></Tooltip>}
-        <DropdownMenu>
+        {mobile ? <>
+          <Button variant={grouped ? 'secondary' : 'ghost'} size="icon" className="mobile-bar-button" aria-label="History options" aria-haspopup="dialog" onClick={() => setOptionsOpen(true)}><IconFilter /></Button>
+          <MobileSheet open={optionsOpen} onOpenChange={setOptionsOpen} title="History">
+            <MobileSwitchRow label="Group merges" checked={grouped} disabled={!canGroup} onChange={setGrouped} />
+          </MobileSheet>
+        </> : <DropdownMenu>
           <Tooltip>
             <TooltipTrigger render={<DropdownMenuTrigger render={<Button variant={grouped ? 'secondary' : 'ghost'} size="icon-xs" className="change-action-button" aria-label="History options" />} />}><IconFilter /></TooltipTrigger>
             <TooltipContent>History options</TooltipContent>
           </Tooltip>
           <DropdownMenuContent>
-            <DropdownMenuCheckboxItem checked={grouped} disabled={!grouped && !commits.some((commit) => commit.parentCount > 1)} onCheckedChange={setGrouped}>Group merges</DropdownMenuCheckboxItem>
-            {!mobile && <DropdownMenuCheckboxItem checked={compact} onCheckedChange={setCompact}>Compact</DropdownMenuCheckboxItem>}
+            <DropdownMenuCheckboxItem checked={grouped} disabled={!canGroup} onCheckedChange={setGrouped}>Group merges</DropdownMenuCheckboxItem>
+            <DropdownMenuCheckboxItem checked={compact} onCheckedChange={setCompact}>Compact</DropdownMenuCheckboxItem>
           </DropdownMenuContent>
-        </DropdownMenu>
+        </DropdownMenu>}
       </div>
       <div ref={scrollRef} className="history-scroll" role="list" aria-label="Commit history">
         {rows.length === 0 ? <p className="empty-list">This repository has no commits yet.</p> : (
-          <div className="virtual-list" style={{ height: commitVirtualizer.getTotalSize() + (nextCursor ? LOAD_MORE_HEIGHT : 0) }}>
+          <div className="virtual-list" style={{ height: commitVirtualizer.getTotalSize() + (nextCursor ? loadMoreHeight : 0) }}>
             {commitVirtualizer.getVirtualItems().map((virtualRow) => {
               const { commit, grouped: groupedCommits } = rows[virtualRow.index]!;
               return (
                 <div key={virtualRow.key} ref={commitVirtualizer.measureElement} data-index={virtualRow.index} className="virtual-row" style={{ transform: `translateY(${virtualRow.start}px)` }}>
-                  <CommitRow repositoryId={repositoryId} upstream={upstream} baseRef={baseRef} commit={commit}
+                  <CommitRow phone={mobile} repositoryId={repositoryId} upstream={upstream} baseRef={baseRef} commit={commit}
                     graphRow={graph.rows[virtualRow.index]!} laneCount={graph.laneCount} graphWidth={graphWidth} rowHeight={rowHeight}
                     active={activeOid === commit.oid || groupedCommits.some((item) => item.oid === activeOid)} match={matchesHistory(commit, search)} currentMatch={matches[currentMatch] === virtualRow.index}
                     groupedCount={groupedCommits.length} onRevealGroup={() => setGrouped(false)} onSelectReference={onSelectReference}
@@ -112,7 +123,9 @@ export function HistoryView({ repositoryId, upstream, readOnly, operation, commi
   );
 }
 
-function CommitRow({ repositoryId, upstream, baseRef, commit, graphRow, laneCount, graphWidth, rowHeight, active, match, currentMatch, groupedCount, onRevealGroup, onSelectReference, expanded, onExpandedChange, canUndo, onSelectCommit, onSelectFile, onUndo }: {
+function CommitRow({ phone, repositoryId, upstream, baseRef, commit, graphRow, laneCount, graphWidth, rowHeight, active, match, currentMatch, groupedCount, onRevealGroup, onSelectReference, expanded, onExpandedChange, canUndo, onSelectCommit, onSelectFile, onUndo }: {
+  /** The whole row is the target there: what's on the row elsewhere is in the commit viewer. */
+  phone: boolean;
   repositoryId: string; upstream: string | null; baseRef?: string | null | undefined; commit: CommitInfo; expanded: boolean; canUndo: boolean;
   graphRow: CommitGraphRow; laneCount: number; graphWidth: number; rowHeight: number; active: boolean; match: boolean; currentMatch: boolean; groupedCount: number;
   onRevealGroup(): void; onSelectReference?: ((number: number) => void) | undefined;
@@ -124,7 +137,7 @@ function CommitRow({ repositoryId, upstream, baseRef, commit, graphRow, laneCoun
   const [filesError, setFilesError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!expanded || files || filesError) return;
+    if (phone || !expanded || files || filesError) return;
     let active = true;
     opentig.commits.files(repositoryId, commit.oid).then((value) => {
       if (!active) return;
@@ -132,7 +145,7 @@ function CommitRow({ repositoryId, upstream, baseRef, commit, graphRow, laneCoun
       setFiles(value);
     }).catch((reason) => { if (active) setFilesError(messageOf(reason)); });
     return () => { active = false; };
-  }, [cacheKey, commit.oid, expanded, files, filesError, repositoryId]);
+  }, [cacheKey, commit.oid, expanded, files, filesError, phone, repositoryId]);
 
   const reference = commitReference(commit);
   const refs = commit.decorations.map((decoration) => decoration.replace(/^(tag: |HEAD -> )/, ''));
@@ -140,7 +153,8 @@ function CommitRow({ repositoryId, upstream, baseRef, commit, graphRow, laneCoun
   const nodeY = graphNodeY(rowHeight);
   const additions = files?.reduce((total, file) => total + file.additions, 0) ?? 0;
   const deletions = files?.reduce((total, file) => total + file.deletions, 0) ?? 0;
-  const className = ['commit-item', active && 'active', expanded && 'expanded', match && 'commit-search-match', currentMatch && 'commit-current-match'].filter(Boolean).join(' ');
+  const open = expanded && !phone;
+  const className = ['commit-item', active && 'active', open && 'expanded', match && 'commit-search-match', currentMatch && 'commit-current-match'].filter(Boolean).join(' ');
 
   return (
     <div className={className} role="listitem">
@@ -155,7 +169,17 @@ function CommitRow({ repositoryId, upstream, baseRef, commit, graphRow, laneCoun
         </span>
         <div className="commit-main">
           <button className="commit-subject" aria-pressed={active} onClick={() => onSelectCommit(commit)}>{commit.subject || '(no subject)'}</button>
-          <span className="commit-meta">
+          {phone ? <span className="commit-meta">
+            <time dateTime={commit.date}>{formatDate(commit.date)}</time>
+            <MetaSeparator />
+            <span className="commit-author">{commit.author}</span>
+            <MetaSeparator />
+            <span className="commit-oid">{commit.shortOid}</span>
+            {commit.upstreamState === 'local-only' && <><MetaSeparator /><span className="commit-local-label">Not published</span></>}
+            {reference && <><MetaSeparator /><span className="commit-pr">#{reference.number}</span></>}
+            {groupedCount > 0 && <><MetaSeparator /><span>{groupedCount} grouped</span></>}
+            {refs.length > 0 && <span className="commit-refs">{refs.join(' ')}</span>}
+          </span> : <span className="commit-meta">
             <Tooltip>
               <TooltipTrigger render={<time dateTime={commit.date} />}>{formatDate(commit.date)}</TooltipTrigger>
               <TooltipContent>{formatDateTime(commit.date)}</TooltipContent>
@@ -179,9 +203,9 @@ function CommitRow({ repositoryId, upstream, baseRef, commit, graphRow, laneCoun
               <Tooltip><TooltipTrigger render={<button className="commit-group-count" onClick={onRevealGroup} />}>{groupedCount} grouped</TooltipTrigger><TooltipContent>Show the {groupedCount} commits in this merge branch</TooltipContent></Tooltip>
             </>}
             {refs.length > 0 && <Tooltip><TooltipTrigger render={<span className="commit-refs" />}>{refs.join(' ')}</TooltipTrigger><TooltipContent>{refs.join(' · ')}</TooltipContent></Tooltip>}
-          </span>
+          </span>}
         </div>
-        <div className="commit-row-actions">
+        {!phone && <div className="commit-row-actions">
           {canUndo && (
             <Tooltip>
               <TooltipTrigger render={<Button variant="ghost" size="icon-xs" className="change-action-button commit-undo size-5" onClick={() => onUndo(commit)} aria-label={`Undo commit ${commit.shortOid}`} />}><IconRestore /></TooltipTrigger>
@@ -192,10 +216,10 @@ function CommitRow({ repositoryId, upstream, baseRef, commit, graphRow, laneCoun
             <TooltipTrigger render={<button className="commit-expand" aria-expanded={expanded} aria-label={expanded ? 'Collapse commit' : 'Expand commit'} onClick={() => onExpandedChange(!expanded)} />}><IconChevronRight className={`folder-chevron ${expanded ? 'open' : ''}`} /></TooltipTrigger>
             <TooltipContent>{expanded ? 'Hide files' : 'Show files'}</TooltipContent>
           </Tooltip>
-        </div>
+        </div>}
       </div>
-      {expanded && laneCount > 1 && graphRow.continuations.length > 0 && <CommitGraphContinuation graph={graphRow} width={graphWidth} />}
-      {expanded && (
+      {open && laneCount > 1 && graphRow.continuations.length > 0 && <CommitGraphContinuation graph={graphRow} width={graphWidth} />}
+      {open && (
         <div className="commit-files" style={{ paddingLeft: graphWidth + COMMIT_TEXT_INSET }}>
           {commit.body && <p className="commit-description"><LinkedText text={commit.body} /></p>}
           {filesError && <div className="commit-files-message error">{filesError}</div>}

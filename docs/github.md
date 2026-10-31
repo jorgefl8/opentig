@@ -133,7 +133,7 @@ Web links open in a new browser tab, or the system browser on desktop. Hover or 
 
 ### Native stacks
 
-Click a layer indicator such as **2/3** to open a native GitHub stack. Indicators appear beside the current branch PR, in PR rows, in the right-hand viewer, and in the mobile repository menu.
+Click a layer indicator such as **2/3** to open a native GitHub stack. Indicators appear beside the current branch PR, in PR rows, in the right-hand viewer, and in the mobile repository menu. On a phone a PR row names its layer in text instead, and the viewer has the indicator.
 
 The menu lists layer states, titles, branches, and bases, including layers outside the current filter. Details load when opened. If a refresh fails, previously loaded layers remain available with a notice and retry.
 

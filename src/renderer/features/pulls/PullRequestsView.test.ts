@@ -26,7 +26,10 @@ const onStateChange = vi.fn();
 let root: Root;
 let container: HTMLDivElement;
 let client: QueryClient;
+let mobile = false;
 beforeEach(() => {
+  mobile = false;
+  vi.stubGlobal('matchMedia', () => ({ matches: mobile, addEventListener() {}, removeEventListener() {} }));
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
   vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
   // Virtual rows only appear in a list with a height.
@@ -125,4 +128,22 @@ it('keeps New off with a reason that can still be reached', async () => {
   expect(button.disabled).toBe(false);
   await act(async () => button.click());
   expect(onCreate).not.toHaveBeenCalled();
+});
+
+it('makes the whole row the target on a phone, with its stack as text and the rest in the viewer', async () => {
+  mobile = true;
+  await render({ pulls: [pull(3, { stack: { number: 9, position: 2, size: 3, base: 'main' }, url: 'https://github.com/sample/demo/pull/3' })] });
+  const [row] = rows();
+  expect([...row!.querySelectorAll('button')].map((button) => button.className)).toEqual(['pull-main']);
+  expect(row!.querySelector('.pull-meta')?.textContent).toContain('Layer 2 of 3');
+  await act(async () => row!.querySelector<HTMLButtonElement>('.pull-main')!.click());
+  expect(onSelect).toHaveBeenCalledWith(3);
+});
+
+it('keeps a row\'s stack and link beside it elsewhere', async () => {
+  await render({ pulls: [pull(3, { stack: { number: 9, position: 2, size: 3, base: 'main' }, url: 'https://github.com/sample/demo/pull/3' })] });
+  const [row] = rows();
+  expect(row!.querySelector('.pr-stack-trigger')).not.toBeNull();
+  expect(row!.querySelector('[aria-label="Open #3 on GitHub"]')).not.toBeNull();
+  expect(row!.querySelector('.pull-meta')?.textContent).not.toContain('Layer');
 });

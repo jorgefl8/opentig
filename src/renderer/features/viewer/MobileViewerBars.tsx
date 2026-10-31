@@ -1,11 +1,11 @@
 import { useMemo } from 'react';
-import { IconBrandGithub, IconCopy, IconFileArrowRight, IconMinus, IconPlus, IconRestore, IconTextWrap } from '@tabler/icons-react';
+import { IconBrandGithub, IconCopy, IconFileArrowRight, IconGitPullRequest, IconMinus, IconPlus, IconRestore, IconTextWrap } from '@tabler/icons-react';
 import type { DiffResult } from '@shared/contracts';
 import type { CommitInfo } from '@shared/git-types';
 import { MobileActionsMenu, MobileViewerActions, MobileViewerTitle, type MobileMenuItem } from '@/components/MobileChrome';
 import { Button } from '@/components/ui/button';
 import { copyCommitHash } from '@/features/history/copy-commit-hash';
-import { canUndoCommit, commitGitHubUrl } from '@/features/history/history-presentation';
+import { canUndoCommit, commitGitHubUrl, commitReference } from '@/features/history/history-presentation';
 import { openExternalUrl } from '@/lib/browser-capabilities';
 import { patchLineStats } from './patch-utils';
 
@@ -52,7 +52,7 @@ export function MobileDiffBar({ path, kind, diff, wrapLines, readOnly, busy, onO
 }
 
 /** A commit's top bar: its short hash, or a file of it with the hash below. */
-export function MobileCommitBar({ oid, path, commit, canUndo, githubRepository, onUndo }: {
+export function MobileCommitBar({ oid, path, commit, canUndo, githubRepository, onUndo, onOpenPullRequest }: {
   oid: string;
   /** Set when one file of the commit is showing. */
   path?: string | undefined;
@@ -60,11 +60,14 @@ export function MobileCommitBar({ oid, path, commit, canUndo, githubRepository, 
   canUndo: boolean;
   githubRepository: string | null | undefined;
   onUndo: ((commit: CommitInfo) => void) | undefined;
+  onOpenPullRequest?: ((number: number) => void) | undefined;
 }) {
   const shortOid = commit?.shortOid ?? oid.slice(0, 7);
   const githubUrl = commitGitHubUrl(githubRepository, oid, commit);
+  const reference = commit && githubRepository && onOpenPullRequest ? commitReference(commit) : null;
   const items: MobileMenuItem[] = [
     { label: 'Copy hash', icon: <IconCopy />, onSelect: () => void copyCommitHash(oid) },
+    ...(reference ? [{ label: `Open pull request #${reference.number}`, icon: <IconGitPullRequest />, onSelect: () => onOpenPullRequest!(reference.number) }] : []),
     ...(githubUrl ? [{ label: 'Open on GitHub', icon: <IconBrandGithub />, onSelect: () => openExternalUrl(githubUrl) }] : []),
     ...(commit && onUndo && canUndo && canUndoCommit(commit) ? [{ label: 'Undo commit…', icon: <IconRestore />, danger: true, onSelect: () => onUndo(commit) }] : []),
   ];

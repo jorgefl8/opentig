@@ -132,6 +132,8 @@ A change row shows the file and a status letter: **M** modified, **A** added, an
 
 Hovering a change or folder row, or moving keyboard focus into it, replaces the letter with its diff, open, stage, unstage, and discard controls without moving the row's text. On touch screens the controls stay visible. The row showing in the viewer stays highlighted.
 
+On a phone, Changes is always a flat list with one **+** or **−** button per row. **Discard changes** and **Open file** are behind a long press on the row; see [phone navigation](interface.md#changes).
+
 Change and folder rows stay aligned as files load, sections empty or refill, conflicts appear, and folders expand or collapse on desktop and phones. Each highlighted row is one continuous click target with a pointer cursor.
 
 </details>
@@ -262,7 +264,7 @@ Press `Ctrl+P`, type part of a path, use the arrow keys to navigate the accessib
 **Find or replace text across the repository**
 
 1. Open **Search** and enter a query. The field's **Aa**, **ab**, and **.\*** toggles turn on case-sensitive, whole-word, and regular-expression matching.
-2. Review matches grouped by file with line numbers. Open a result to jump into the editor.
+2. Review matches grouped by file with line numbers. Open a result to go to its line in the editor; a Markdown, HTML, or SVG file shows its **Code** tab.
 3. To replace, choose **Replace…** in the menu beside the field, which reveals the replacement field. Replace one match or all matches in a file with the buttons that appear when you hover over or focus its row, or all displayed matches with the button beside the field. Replacements check for conflicts and can be undone as one Files operation. The same menu hides the replacement field again once it is empty.
 
 Git-ignored files are excluded unless **Include ignored files** is on in that menu. Their results remain separately identified and folded. Broad searches list tracked files first; very large result sets are marked **truncated**, and **Replace all** stays disabled until results are complete.
@@ -284,7 +286,7 @@ Click a listed file to jump to its diff, or expand a row with its chevron and pi
 
 The commit's **⋯** menu copies the full hash, opens a published commit on GitHub, undoes the commit, and closes the viewer. In the list, click a short hash to copy the full one.
 
-Only the latest commit can be undone, and only when OpenTig can prove it is still local and safe to undo. The undo button appears with the chevron when you hover or focus its row, and both stay visible on touch screens.
+Only the latest commit can be undone, and only when OpenTig can prove it is still local and safe to undo. The undo button appears with the chevron when you hover or focus its row, and both stay visible on touch screens. On a phone the row is a single target: open the commit, and undo it from its **⋯**.
 
 **Find a commit**
 

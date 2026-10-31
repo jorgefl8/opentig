@@ -66,6 +66,14 @@ export function MobileSwitchRow({ label, detail, icon, checked, disabled, onChan
   );
 }
 
+/**
+ * Reaches a phone row's long-press sheet another way: from the keyboard, where it
+ * shows once focused, and from a screen reader. Touch never lands on it.
+ */
+export function MobileRowSheetButton({ name, onPress }: { name: string; onPress(): void }) {
+  return <button type="button" className="mobile-row-more" aria-label={`More actions for ${name}`} aria-haspopup="dialog" onClick={onPress}><IconDots aria-hidden="true" /></button>;
+}
+
 /** The `⋯` in the top bar and the sheet it opens. Dangerous items come last, under a line. */
 export function MobileActionsMenu({ label, title, items, disabled, triggerRef, triggerClassName }: {
   label: string;

@@ -6,6 +6,7 @@ import type { FileResult, ThemePreference, WriteFileResult } from '@shared/contr
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { ViewerTabs, ViewerTabsList, ViewerTabsPanel } from '@/components/ui/viewer-tabs';
 import { FileSaveControls, SourceCodeEditor, type SourceCodeEditorHandle } from '@/features/viewer/EditableFileViewer';
+import { useShowCodeForLineTarget } from '@/features/viewer/file-line-target';
 import { FileViewerToolbar, FileViewerToolbarButton, FileViewerToolbarGroup } from '@/features/viewer/FileViewerToolbar';
 import { syncScrollFraction } from '@/features/viewer/scroll-sync';
 import { useEditableFileDraft } from '@/features/viewer/useEditableFileDraft';
@@ -100,6 +101,7 @@ function MarkdownPreviewContent({ html, repositoryId, markdownPath, onClick, onL
 
 export function MarkdownFileViewer({ repositoryId, file, initialContent, revision, themeType, wrapLines, readOnly, onOpenFile, onDirtyChange, onDraftChange, onSave }: MarkdownFileViewerProps) {
   const [tab, setTab] = useState<'preview' | 'code'>('preview');
+  const showCode = useCallback(() => setTab('code'), []);
   const [contentWidth, setContentWidth] = useState<ContentWidth>(getInitialContentWidth);
   const [html, setHtml] = useState('');
   const [loading, setLoading] = useState(true);
@@ -122,6 +124,7 @@ export function MarkdownFileViewer({ repositoryId, file, initialContent, revisio
     pendingScrollFraction.current = null;
     setTab('preview');
   }, [file.path]);
+  useShowCodeForLineTarget(file.path, showCode);
 
   // Capture the scroll position of the tab being left as a 0-1 fraction so the
   // panel being entered can restore roughly the same reading position instead

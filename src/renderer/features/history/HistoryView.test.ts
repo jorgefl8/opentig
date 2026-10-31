@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CommitFile, CommitInfo } from '@shared/git-types';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { clearCommitFilesCache, COMMIT_FILES_CACHE_MAX_ENTRY_BYTES, readCommitFilesCache } from './commit-files-cache';
@@ -12,6 +12,7 @@ vi.mock('@/lib/opentig-api', () => ({ opentig: { commits: { files: filesRequest 
 let root: Root;
 let container: HTMLDivElement;
 const observers = new Set<TestResizeObserver>();
+let mobile = false;
 
 class TestResizeObserver implements ResizeObserver {
   readonly elements = new Set<Element>();
@@ -38,7 +39,8 @@ beforeEach(() => {
   filesRequest.mockReset().mockResolvedValue([]);
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
   vi.stubGlobal('ResizeObserver', TestResizeObserver);
-  vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
+  mobile = false;
+  vi.stubGlobal('matchMedia', () => ({ matches: mobile, addEventListener() {}, removeEventListener() {} }));
   vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function(this: HTMLElement) { return height(this); });
   vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(500);
   container = document.createElement('div'); document.body.append(container); root = createRoot(container);
@@ -230,4 +232,57 @@ it('displays an oversized response fully and keeps it in the mounted row without
   await mountAndExpand();
   expect(filesRequest).toHaveBeenCalledTimes(2);
   expect(container.querySelectorAll('.commit-file-row')).toHaveLength(count);
+});
+
+describe('on a phone', () => {
+  const localHead = { ...commit('head', ['base'], 'Add a filter (#7)'), upstreamState: 'local-only' as const, isHead: true, decorations: ['HEAD -> main', 'tag: v1'] };
+
+  it('shows a row as a dot, a title and one line, with the row as its only target', async () => {
+    mobile = true;
+    const props = await mount({ commits: [localHead], readOnly: false, onSelectReference: vi.fn() });
+    const row = container.querySelector<HTMLElement>('.commit-item')!;
+    expect(row.querySelector('.commit-dot')).not.toBeNull();
+    expect(row.querySelector('.commit-subject')?.textContent).toBe('Add a filter (#7)');
+    expect(row.querySelector('.commit-meta')?.textContent).toBe('01/01/2026·Sample author·head·Not published·#7main v1');
+    expect([...row.querySelectorAll('button')].map((button) => button.className)).toEqual(['commit-subject']);
+    await act(async () => row.querySelector<HTMLElement>('.commit-meta')!.click());
+    expect(props.onSelectCommit).toHaveBeenCalledWith(localHead);
+    expect(filesRequest).not.toHaveBeenCalled();
+  });
+
+  it('moves undoing and expanding off the row', async () => {
+    mobile = true;
+    await mount({ commits: [localHead], readOnly: false });
+    expect(container.querySelector('[aria-label^="Undo commit"]')).toBeNull();
+    expect(container.querySelector('.commit-expand')).toBeNull();
+    expect(container.querySelector('.commit-row-actions')).toBeNull();
+  });
+
+  it('keeps them on the row elsewhere', async () => {
+    await mount({ commits: [localHead], readOnly: false });
+    expect(container.querySelector('[aria-label^="Undo commit"]')).not.toBeNull();
+    expect(container.querySelector('.commit-expand')).not.toBeNull();
+  });
+
+  it('groups merges from a sheet', async () => {
+    mobile = true;
+    await mount();
+    expect(container.querySelectorAll('.commit-item')).toHaveLength(4);
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="History options"]')!.click());
+    expect(document.querySelector('.mobile-sheet-title')?.textContent).toBe('History');
+    expect(document.querySelector('[role="menuitemcheckbox"]')).toBeNull();
+    const group = document.querySelector<HTMLButtonElement>('.mobile-sheet [role="switch"]')!;
+    expect(group.textContent).toBe('Group merges');
+    await act(async () => group.click());
+    expect(group.getAttribute('aria-checked')).toBe('true');
+    expect(container.querySelectorAll('.commit-item')).toHaveLength(3);
+    expect(container.querySelector('.commit-meta')?.textContent).toContain('1 grouped');
+  });
+
+  it('keeps Group merges off while the loaded history has no merge', async () => {
+    mobile = true;
+    await mount({ commits: commits.slice(1) });
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="History options"]')!.click());
+    expect(document.querySelector<HTMLButtonElement>('.mobile-sheet [role="switch"]')!.disabled).toBe(true);
+  });
 });

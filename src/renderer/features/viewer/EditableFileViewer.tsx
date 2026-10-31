@@ -6,6 +6,7 @@ import type { FileResult, ThemePreference, WriteFileResult } from '@shared/contr
 import { OPENTIG_CODE_THEMES } from './diffThemes';
 import { VIEWER_SCROLLBAR_CSS } from './patch-utils';
 import { EditReadyContext } from './edit-ready-context';
+import { FileLineTargetContext, revealSourceLine } from './file-line-target';
 import { useEditorFileKey } from './editor-file-key';
 import { PierreWorkerPool } from './PierreWorkerPool';
 import { resolvePierreLanguage } from './pierreLanguages';
@@ -126,6 +127,18 @@ export function SourceCodeEditor({ path, cacheKey, value, themeType, wrapLines, 
 
   const cancelScrollSync = useRef<(() => void) | null>(null);
   useEffect(() => () => cancelScrollSync.current?.(), []);
+
+  const lineTarget = useContext(FileLineTargetContext);
+  const revealing = lineTarget?.path === path && !lineTarget.reached ? lineTarget : null;
+  useEffect(() => {
+    if (!revealing) return;
+    return revealSourceLine(() => {
+      const root = virtualizerRef.current?.getRoot() ?? plainScrollRef.current;
+      return root instanceof HTMLElement ? root : null;
+    }, revealing, value.split('\n').length);
+    // Only a new target moves the view: typing changes the value and must not scroll back.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [revealing]);
 
   useImperativeHandle(ref, () => ({
     getScrollFraction() {

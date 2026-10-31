@@ -5,6 +5,8 @@ import { useQuery } from '@tanstack/react-query';
 import { IconChevronDown, IconChevronRight, IconEyeOff, IconLoader4, IconReplace, IconReplaceFilled, IconSearch } from '@tabler/icons-react';
 import { sileo } from 'sileo';
 import { Button } from '@/components/ui/button';
+import { MobileSwitchRow } from '@/components/MobileChrome';
+import { MobileSheet } from '@/components/MobileSheet';
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -17,6 +19,9 @@ const DEBOUNCE_MS = 250;
 // Rows fill these heights; .search-file-heading and .search-match in index.css follow them.
 const FILE_ROW_HEIGHT = 28;
 const MATCH_ROW_HEIGHT = 24;
+// A phone wraps a match to as many as two lines, so its rows are measured from these.
+const MOBILE_FILE_ROW_HEIGHT = 42;
+const MOBILE_MATCH_ROW_HEIGHT = 48;
 
 type SearchRow =
   | { kind: 'file'; file: SearchFileResult; open: boolean }
@@ -27,7 +32,8 @@ interface SearchViewProps {
   active: boolean;
   /** Changes whenever the working tree changed, so results can be refreshed. */
   revision: number;
-  onOpenFile(path: string): void;
+  /** A match's line goes along, for the file to open there. */
+  onOpenFile(path: string, line?: number): void;
   /** Open tabs with unsaved changes among the given paths, which must not be overwritten. */
   unsavedPathsAmong(paths: string[]): string[];
   onReplaced(paths: string[]): void;
@@ -45,6 +51,7 @@ export function SearchView({ repositoryId, active, revision, onOpenFile, unsaved
   const [replaceIgnored, setReplaceIgnored] = useState(false);
   const [replacing, setReplacing] = useState(false);
   const [replaceRevision, setReplaceRevision] = useState(0);
+  const [optionsOpen, setOptionsOpen] = useState(false);
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const inputRef = useRef<HTMLInputElement>(null);
   const replaceInputRef = useRef<HTMLInputElement>(null);
@@ -95,7 +102,7 @@ export function SearchView({ repositoryId, active, revision, onOpenFile, unsaved
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => scrollRef.current,
-    estimateSize: (index) => mobile ? 44 : rows[index]?.kind === 'file' ? FILE_ROW_HEIGHT : MATCH_ROW_HEIGHT,
+    estimateSize: (index) => rows[index]?.kind === 'file' ? mobile ? MOBILE_FILE_ROW_HEIGHT : FILE_ROW_HEIGHT : mobile ? MOBILE_MATCH_ROW_HEIGHT : MATCH_ROW_HEIGHT,
     getItemKey: (index) => {
       const row = rows[index];
       if (!row) return index;
@@ -178,7 +185,19 @@ export function SearchView({ repositoryId, active, revision, onOpenFile, unsaved
               <SearchToggle label="Use regular expression" active={regex} onToggle={() => setRegex((value) => !value)}>.*</SearchToggle>
             </span>
           </div>
-          <DropdownMenu>
+          {mobile ? <>
+            <Button variant={searchIgnored ? 'secondary' : 'ghost'} size="icon-xs" className="change-action-button" aria-label="More search options" aria-haspopup="dialog" onClick={() => setOptionsOpen(true)}><IconChevronDown /></Button>
+            <MobileSheet open={optionsOpen} onOpenChange={setOptionsOpen} title="Search" finalFocus={() => {
+              if (!revealingReplace.current) return null;
+              revealingReplace.current = false;
+              return replaceInputRef.current;
+            }}>
+              <MobileSwitchRow label="Include ignored files" checked={searchIgnored} onChange={setSearchIgnored} />
+              {replaceOpen
+                ? <button type="button" className="mobile-sheet-action" disabled={replacement !== ''} onClick={() => { setOptionsOpen(false); setReplaceOpen(false); }}><IconReplace /><span>{replacement !== '' ? <><strong>Hide replace</strong><small>Clear it first</small></> : 'Hide replace'}</span></button>
+                : <button type="button" className="mobile-sheet-action" onClick={() => { revealingReplace.current = true; setOptionsOpen(false); setReplaceOpen(true); }}><IconReplace /><span>Replace…</span></button>}
+            </MobileSheet>
+          </> : <DropdownMenu>
             <Tooltip>
               <TooltipTrigger render={<DropdownMenuTrigger render={<Button variant={searchIgnored ? 'secondary' : 'ghost'} size="icon-xs" className="change-action-button" aria-label="More search options" />} />}><IconChevronDown /></TooltipTrigger>
               <TooltipContent>More search options</TooltipContent>
@@ -199,7 +218,7 @@ export function SearchView({ repositoryId, active, revision, onOpenFile, unsaved
                 <DropdownMenuItem onClick={() => { revealingReplace.current = true; setReplaceOpen(true); }}>Replace…</DropdownMenuItem>
               )}
             </DropdownMenuContent>
-          </DropdownMenu>
+          </DropdownMenu>}
         </div>
         {replaceOpen && (
           <div className="search-query-row">
@@ -243,7 +262,7 @@ export function SearchView({ repositoryId, active, revision, onOpenFile, unsaved
             const row = rows[virtualRow.index];
             if (!row) return null;
             return (
-              <div key={virtualRow.key} className="virtual-row" style={{ height: virtualRow.size, transform: `translateY(${virtualRow.start}px)` }}>
+              <div key={virtualRow.key} ref={mobile ? virtualizer.measureElement : undefined} data-index={virtualRow.index} className="virtual-row" style={{ height: mobile ? undefined : virtualRow.size, transform: `translateY(${virtualRow.start}px)` }}>
                 {row.kind === 'file' ? (
                   <div className={`search-file-heading ${row.file.ignored ? 'ignored' : ''}`}>
                     <button className="search-file-toggle" onClick={() => toggleFile(row.file.path)} aria-expanded={row.open}>
@@ -267,8 +286,8 @@ export function SearchView({ repositoryId, active, revision, onOpenFile, unsaved
                   </div>
                 ) : (
                   <div className="search-match">
-                    <button className="search-match-open" onClick={() => onOpenFile(row.file.path)}>
-                      <span className="search-match-line">{row.match.line}:{row.match.column ?? 1}</span>
+                    <button className="search-match-open" onClick={() => onOpenFile(row.file.path, row.match.line)}>
+                      <span className="search-match-line">{mobile ? row.match.line : `${row.match.line}:${row.match.column ?? 1}`}</span>
                       <span className="search-match-text">{highlight(row.match.text, highlighter)}</span>
                     </button>
                     {replaceOpen && row.file.revision && row.match.column && (!row.file.ignored || replaceIgnored) && (

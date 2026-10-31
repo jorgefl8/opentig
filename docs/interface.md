@@ -117,7 +117,7 @@ Use the bottom **Changes**, **Files**, **History**, **GitHub**, and **Search** t
 | --- | --- | --- |
 | **Diff** | File name, then folder and lines added and removed | Stage or unstage. **⋯**: **Open file**, **Wrap lines**, **Discard changes** |
 | **File** | File name. Tap it for the sheet of open files, to switch, close, and see which are unsaved or missing | **⋯**: what the file's row in Files offers, such as **Rename**, **Copy path**, **Move to…**, **Delete** |
-| **Commit** | Short hash | **⋯**: **Copy hash**, **Open on GitHub**, **Undo commit…** |
+| **Commit** | Short hash | **⋯**: **Copy hash**, the pull request its message refers to, **Open on GitHub**, **Undo commit…** |
 | **Pull request** | Number, then source and base branch | **⋯**: the pull request menu, plus **Disable auto-merge** when it's on |
 | **Release** | Tag | **⋯**: the release menu |
 
@@ -146,19 +146,48 @@ Sheets slide up from the bottom. Drag one down, press outside it, or press Escap
 
 Notifications appear above the bottom bar and any main action, and leave navigation accessible. Short landscape phones keep the mobile layout with a lower, narrower bar. The bottom bar hides when the software keyboard opens, and dialogs, sheets, and forms fit the keyboard and safe areas.
 
-### Files and search
+### Lists: one visible action, the rest behind a long press
 
-**Files opens one folder at a time.** Use breadcrumbs, the folder filter, action menus, creation controls, and multiple selection to navigate and manage files. Background refreshes preserve the current folder and scroll position.
+Rows show their name and at most one action. **Press and hold a row** for the rest: a sheet opens at about half a second, and a tap, a scroll, or moving your finger leaves it closed. With a mouse, right-click the row; with a keyboard, press the menu key on it or Tab to its **More actions** button, which also lists the actions for screen readers.
+
+When you open something from a list and come back, the list is where you left it.
+
+### Changes
+
+Changes is **always a flat list on a phone**, whichever of **Tree** or **List** you chose. That choice stays saved for the desktop layout. Conflicts come first, then **Staged** and **Not staged**, with **Stage all** or **Unstage all** beside the count.
+
+A row has the file's name, its folder when it isn't at the root, its status letter, and a **+** or **−** button at the far right to stage or unstage it. Tap the row for its diff, or its preview for an image, SVG, or HTML file; the diff has its own stage button and **⋯**. There are no folder rows, so staging a whole folder isn't available on a phone; **Stage all** is.
+
+Press and hold a row for:
+
+| Row | Sheet |
+| --- | --- |
+| **Not staged** | **Open file** and **Discard changes**, which asks first. A file that opens on its preview adds **View changes**. A whole new folder offers only **Discard changes** |
+| **Staged** | **Open file**. A file that opens on its preview adds **View changes** |
+| **Conflict** | **Open file**. Tap the row to resolve it |
+
+### Files
+
+**Files opens one folder at a time.** A row is an icon and a name, and folders have a chevron. Inside a folder, a line with a back arrow and the folder's path takes you up a level. The filter narrows the current folder. Background refreshes preserve the current folder and scroll position.
+
+The **⋯** beside the filter offers **Open files** with their count, **Find a file by name**, **Select**, **New file**, **New folder**, **Paste here** where the clipboard allows it, and **Undo** and **Redo** of file operations.
+
+Press and hold a file or folder for its sheet, with its path and size at the top: **Keep file open** or **Open folder**, **Move to…**, **Rename**, **Copy path**, **Copy contents**, **Delete**, and **Copy**, **Cut**, **Paste here**, and **Reveal in file manager** where they're available.
+
+**Select** puts a checkbox on every row and docks a bar above the bottom bar with **Move to…**, **Copy** or **Copy paths**, **Cut**, and **Delete**. **Cancel** beside the filter ends it.
 
 **Move to…** opens a destination picker with the same folder icons as Files. Touch and pen gestures scroll; desktop mouse dragging remains available.
 
 When adding a repository in a browser, the visual folder picker browses **the backend host**, not the phone's filesystem.
 
-Search keeps its query and matching toggles in one field, with **Include ignored files** and **Replace…** in the menu beside it. The **GitHub** tabs keep their menu and New at a consistent touch-friendly height.
+### Search
 
-### History, diffs, and projects
+Search keeps its query and matching toggles in one field. The chevron beside it opens a sheet with **Include ignored files** and **Replace…**. Results show each file's path with its matches below, wrapped to two lines at most. Tap a match to open the file at that line. **Replace…** adds the replacement field, and a button on each match and file.
 
-- **History:** the find field and filter menu share one row. Commit rows keep their undo and touch-sized expansion controls visible.
+### History, GitHub, diffs, and projects
+
+- **History:** a row is a dot, the commit's title, and one line with its date, author, and short hash. Tap it for the commit, whose **⋯** copies the hash and offers **Undo commit…** and the pull request its message refers to, and whose file list opens each diff. The filter icon beside the find field opens a sheet with **Group merges**.
+- **GitHub:** a row is a status dot, a title, and one line. Tap it for the viewer, which has the row's stack and **Open on GitHub**. **Pull requests** and **Releases** keep their filter, menu, and New as icons beside the tabs.
 - **Diffs and code:** a phone always shows diffs inline and leaves the saved desktop layout as it is. Text is compact, and **Interface size** scales it; that setting scales nothing else on a phone. Long lines wrap by default. Turning that off, from a diff's **⋯** or from Settings, lasts for the session and leaves the saved desktop choice as it is.
 - **Projects:** use the larger up/down buttons and free scrolling in Manage projects. Moving a project or repository preserves focus and scroll, then briefly highlights its new position. Reduced-motion preferences suppress that highlight; desktop dragging remains available.
 

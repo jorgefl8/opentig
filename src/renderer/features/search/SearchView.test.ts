@@ -2,7 +2,7 @@
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { SearchView } from './SearchView';
 
@@ -11,18 +11,26 @@ vi.mock('@/lib/opentig-api', () => ({ opentig: { repository: { search, replaceSe
 
 let root: Root;
 let container: HTMLDivElement;
+let mobile = false;
+const onOpenFile = vi.fn();
+
+function mount() {
+  act(() => root.render(createElement(QueryClientProvider, { client: new QueryClient() },
+    createElement(TooltipProvider, null,
+      createElement(SearchView, { repositoryId: 'sample', active: true, revision: 0, onOpenFile, unsavedPathsAmong: () => [], onReplaced: () => {} })))));
+}
 
 beforeEach(() => {
+  mobile = false;
+  onOpenFile.mockReset();
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
   vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
-  vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
+  vi.stubGlobal('matchMedia', () => ({ matches: mobile, addEventListener() {}, removeEventListener() {} }));
   search.mockReset();
   container = document.createElement('div');
   document.body.append(container);
   root = createRoot(container);
-  act(() => root.render(createElement(QueryClientProvider, { client: new QueryClient() },
-    createElement(TooltipProvider, null,
-      createElement(SearchView, { repositoryId: 'sample', active: true, revision: 0, onOpenFile: () => {}, unsavedPathsAmong: () => [], onReplaced: () => {} })))));
+  mount();
 });
 
 afterEach(() => {
@@ -84,4 +92,46 @@ it('keeps the replace field visible while it holds a value', async () => {
   expect(menuItem('Hide replace')!.getAttribute('aria-disabled')).toBe('true');
   await chooseFromMenu('Hide replace');
   expect(replaceField()?.value).toBe('job');
+});
+
+describe('on a phone', () => {
+  const sheetRow = (text: string) => [...document.querySelectorAll<HTMLElement>('.mobile-sheet .mobile-sheet-action')].find((row) => row.textContent?.startsWith(text));
+  const openSheet = async () => { await act(async () => { button('More search options').click(); }); };
+  beforeEach(() => {
+    act(() => root.unmount());
+    mobile = true;
+    root = createRoot(container);
+    mount();
+  });
+
+  it('keeps the match toggles in the field', () => {
+    expect([...container.querySelectorAll('.search-input .search-toggles button')].map((toggle) => toggle.textContent)).toEqual(['Aa', 'ab', '.*']);
+  });
+
+  it('offers its options in a sheet rather than a menu', async () => {
+    await openSheet();
+    expect(document.querySelector('.mobile-sheet-title')?.textContent).toBe('Search');
+    expect(document.querySelector('[role^="menuitem"]')).toBeNull();
+    expect(sheetRow('Include ignored files')?.getAttribute('aria-checked')).toBe('false');
+    await act(async () => sheetRow('Include ignored files')!.click());
+    expect(sheetRow('Include ignored files')?.getAttribute('aria-checked')).toBe('true');
+  });
+
+  it('reveals the replace field from the sheet and hides it again', async () => {
+    await openSheet();
+    await act(async () => sheetRow('Replace…')!.click());
+    expect(replaceField()).not.toBeNull();
+    await openSheet();
+    await act(async () => sheetRow('Hide replace')!.click());
+    expect(replaceField()).toBeNull();
+  });
+
+  it('keeps the replace field while it holds a value, and says why', async () => {
+    await openSheet();
+    await act(async () => sheetRow('Replace…')!.click());
+    type(replaceField()!, 'job');
+    await openSheet();
+    expect((sheetRow('Hide replace') as HTMLButtonElement).disabled).toBe(true);
+    expect(sheetRow('Hide replace')?.textContent).toContain('Clear it first');
+  });
 });

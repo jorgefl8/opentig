@@ -6,14 +6,13 @@ import {
   useDraggable, useDroppable, useSensor, useSensors, type CollisionDetection, type DragEndEvent, type DragOverEvent, type DragStartEvent,
 } from '@dnd-kit/core';
 import {
-  IconSearch, IconDots, IconArrowBackUp, IconArrowForwardUp, IconChevronRight, IconClipboard, IconColumns2, IconCopy, IconCut, IconEdit,
+  IconDots, IconArrowBackUp, IconArrowForwardUp, IconChevronRight, IconClipboard, IconColumns2, IconCopy, IconCut, IconEdit,
   IconLoader4,
   IconExternalLink, IconFileArrowRight, IconFilePlus, IconFiles, IconFileText, IconFolderPlus, IconTrash,
 } from '@tabler/icons-react';
 import type { FileHistoryState } from '@shared/contracts';
 import type { FileTreeEntry } from '@shared/git-types';
 import { FolderIcon } from '@/components/FolderIcon';
-import { Button } from '@/components/ui/button';
 import {
   ContextMenu,
   ContextMenuContent,
@@ -34,6 +33,7 @@ import {
 
 import { NameDialog, type NameDialogState } from './NameDialog';
 import { MobileFilesView } from './MobileFilesView';
+import type { FileSession } from './open-files-model';
 
 export function FilesView(props: FilesViewProps) {
   const mobile = useMobileLayout();
@@ -63,6 +63,10 @@ export interface FilesViewProps {
   fileClipboardAvailable: boolean;
   revealAvailable: boolean;
   historyState: FileHistoryState;
+  /** A phone reaches the open files from the list too, as there are no tabs to tap. */
+  openFiles: FileSession;
+  onActivateFile(path: string): void;
+  onCloseFile(path: string): void;
   onQuickOpen(): void;
   onUndo(): Promise<void>;
   onRedo(): Promise<void>;
@@ -144,7 +148,6 @@ function DesktopFilesView({
   fileClipboardAvailable,
   revealAvailable,
   historyState,
-  onQuickOpen,
   onUndo,
   onRedo,
   onOpenFile,
@@ -162,9 +165,7 @@ function DesktopFilesView({
   onCreate,
 }: FilesViewProps) {
   const shortcuts = useShortcuts();
-  const mobile = useMobileLayout();
-  const [selecting, setSelecting] = useState(false);
-  const rowHeight = mobile ? 44 : FILE_ROW_HEIGHT;
+  const rowHeight = FILE_ROW_HEIGHT;
   const scrollRef = useRef<HTMLDivElement>(null);
   const revealedPathRef = useRef<string | null>(null);
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
@@ -408,7 +409,7 @@ function DesktopFilesView({
   }
 
   // When nothing is explicitly selected, mirror the open file so it stays highlighted.
-  const highlightedPaths = selecting || selectedPaths.size > 0
+  const highlightedPaths = selectedPaths.size > 0
     ? selectedPaths
     : (activePath ? new Set([activePath]) : new Set<string>());
   const selectionPaths = selectedPaths.size > 0 ? [...selectedPaths] : (activePath ? [activePath] : []);
@@ -435,15 +436,6 @@ function DesktopFilesView({
   };
 
   const handleRowClick = (entry: FileTreeEntry, mods: { ctrl: boolean; shift: boolean }) => {
-    if (mobile && selecting) {
-      setSelectedPaths((current) => {
-        const next = new Set(current);
-        if (next.has(entry.path)) next.delete(entry.path);
-        else next.add(entry.path);
-        return next;
-      });
-      return;
-    }
     if (mods.shift && (anchorPath || leadPath)) {
       const range = pathRange(rows, anchorPath ?? leadPath!, entry.path);
       setSelectedPaths(new Set(range));
@@ -473,7 +465,7 @@ function DesktopFilesView({
   // The preceding single click already previewed the file, so the double click
   // only has to pin it; selection and multi-selection are left untouched.
   const handleRowDoubleClick = (entry: FileTreeEntry) => {
-    if (!(mobile && selecting) && entry.type === 'file') onOpenFile(entry.path, 'pinned');
+    if (entry.type === 'file') onOpenFile(entry.path, 'pinned');
   };
 
   // Right-clicking outside the current selection collapses it to that single row,
@@ -644,13 +636,6 @@ function DesktopFilesView({
       onDragCancel={endDrag}
       onDragEnd={handleDragEnd}
     >
-      <div className="files-mobile-tools">
-        <Button variant="ghost" size="sm" onClick={onQuickOpen}><IconSearch /> Find file</Button>
-        <Button variant="ghost" size="sm" aria-pressed={selecting} onClick={() => { setSelecting(!selecting); setSelectedPaths(new Set()); }}>{selecting ? `Done (${selectedPaths.size})` : 'Select'}</Button>
-        <Button variant="ghost" size="sm" disabled={readOnly} onClick={() => setDialogState({ mode: 'new-file', entry: { type: 'directory', path: '', name: '', children: [] } })}><IconFilePlus /> New file</Button>
-        <Button variant="ghost" size="sm" disabled={readOnly} onClick={() => setDialogState({ mode: 'new-folder', entry: { type: 'directory', path: '', name: '', children: [] } })}><IconFolderPlus /> Folder</Button>
-        {fileClipboardAvailable && <Button variant="ghost" size="sm" disabled={readOnly} onClick={() => void onPaste('')}><IconClipboard /> Paste</Button>}
-      </div>
       <div
         ref={scrollRef}
         className="files-view virtual-scroll"
