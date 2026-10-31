@@ -1738,6 +1738,7 @@ section[data-sileo-viewport] [data-sileo-title] { text-transform: none; }
   .ai-log-table-wrap { min-height: 0; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius-md); }
   .ai-log-table-wrap thead th { position: sticky; top: 0; z-index: 1; background: var(--popover); border-bottom: 1px solid var(--border); }
   .ai-log-model { color: var(--muted-foreground); }
+  .ai-log-first-seen { display: block; color: var(--muted-foreground); font-size: 10px; }
   .ai-log-row-failed { background: color-mix(in oklch, var(--destructive) 6%, transparent); }
   .ai-log-sort-button { display: inline-flex; align-items: center; gap: 3px; color: inherit; font: inherit; cursor: pointer; }
   .ai-log-sort-idle { opacity: .4; }

@@ -3,6 +3,7 @@ import { IPC } from '@shared/contracts';
 import { clientCommandTimeoutMs } from '@shared/protocol';
 import {
   OpenTigWebSocketTransport,
+  isConnectionLoss,
   isUnconfirmedResult,
   ServerAuthenticationError,
   ServerDisconnectedError,
@@ -194,6 +195,7 @@ describe('OpenTigWebSocketTransport', () => {
     const reason = await waiting;
     expect(reason).toBeInstanceOf(ServerRequestTimeoutError);
     expect(isUnconfirmedResult(reason)).toBe(false);
+    expect(isConnectionLoss(reason)).toBe(true);
 
     sockets[0]!.open();
     await Promise.resolve();
@@ -201,15 +203,44 @@ describe('OpenTigWebSocketTransport', () => {
     transport.close();
   });
 
-  it('reports a request interrupted by a disconnect as unconfirmed', async () => {
+  it('reports only a change interrupted by a disconnect as unconfirmed', async () => {
     const { transport, sockets } = fixture();
-    const pending = transport.request(IPC.commitCreate, ['repo-id', 'message']).catch((reason: unknown) => reason);
+    const change = transport.request(IPC.commitCreate, ['repo-id', 'message']).catch((reason: unknown) => reason);
+    const read = transport.request(IPC.capabilities, []).catch((reason: unknown) => reason);
     sockets[0]!.open();
     await Promise.resolve();
+    await Promise.resolve();
+    expect(sockets[0]!.sent).toHaveLength(2);
     sockets[0]!.serverClose(1006);
-    const reason = await pending;
-    expect(reason).toBeInstanceOf(ServerDisconnectedError);
-    expect(isUnconfirmedResult(reason)).toBe(true);
+    expect(await change).toBeInstanceOf(ServerDisconnectedError);
+    expect(isUnconfirmedResult(await change)).toBe(true);
+    expect(isUnconfirmedResult(await read)).toBe(false);
+    expect(isConnectionLoss(await read)).toBe(true);
+    transport.close();
+  });
+
+  it('does not call a read that ran out of time unconfirmed', async () => {
+    vi.useFakeTimers();
+    const { transport, sockets } = fixture({ requestTimeoutMs: 50 });
+    const read = transport.request(IPC.capabilities, []).catch((reason: unknown) => reason);
+    sockets[0]!.open();
+    await vi.advanceTimersByTimeAsync(50);
+    expect(await read).toBeInstanceOf(ServerRequestTimeoutError);
+    expect(isUnconfirmedResult(await read)).toBe(false);
+    transport.close();
+  });
+
+  it.each([
+    [4000, 'stopped responding'],
+    [1001, 'restarted or shut down'],
+    [1006, 'ended unexpectedly'],
+  ])('keeps why the connection closed with code %i', async (code, cause) => {
+    const { transport, sockets } = fixture();
+    const pending = transport.request(IPC.capabilities, []).catch((reason: unknown) => reason);
+    sockets[0]!.open();
+    await Promise.resolve();
+    sockets[0]!.serverClose(code);
+    expect(await pending).toMatchObject({ closeCode: code, message: expect.stringContaining(cause) });
     transport.close();
   });
 

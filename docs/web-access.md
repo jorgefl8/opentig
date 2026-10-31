@@ -276,7 +276,7 @@ To check a CLI service, run `opentig service status` with the same `--home` if a
 - **Browser stuck on Authentication required:** revoke stale sessions if appropriate, create a fresh pairing link, and open that exact link.
 - **Desktop cannot connect:** restart the packaged application and inspect the server log and `/readyz` response.
 
-The rotating log is `logs/server.log` inside Electron's OpenTig user-data directory or the selected CLI home. Authentication material and URL secrets are redacted.
+The rotating log is `logs/server.log` inside Electron's OpenTig user-data directory or the selected CLI home. Authentication material and URL secrets are redacted. Besides startup and errors, it notes commands that took over 10 seconds, connections that closed unexpectedly or with requests in flight, and periods when the server stopped running for over 5 seconds because its event loop was blocked or the machine was suspended. It doesn't include command arguments.
 
 CLI service installation and restart also report known startup failures immediately, with the selected home and recovery instructions. See [command errors and recovery](getting-started.md#command-errors-and-recovery) for port conflicts, startup output, and service recovery.
 

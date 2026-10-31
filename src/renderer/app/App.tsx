@@ -59,7 +59,7 @@ import { useMobileLayout } from '@/lib/use-mobile-layout';
 import { useElapsed } from '@/lib/use-elapsed';
 import { opentig, serverClient } from '@/lib/opentig-api';
 import { startupSplashDetail } from '@/lib/startup-splash';
-import { ServerAuthenticationError, UNCONFIRMED_RESULT_MESSAGE, isUnconfirmedResult } from '@/lib/websocket-transport';
+import { ServerAuthenticationError, ServerDisconnectedError, UNCONFIRMED_RESULT_MESSAGE, isConnectionLoss, isUnconfirmedResult } from '@/lib/websocket-transport';
 import { conflictNotificationAction, conflictToastId } from '@/features/changes/conflict-notification';
 import { fileCutTransferId, writeClipboardText, writeFileTransfer } from '@/lib/browser-capabilities';
 import { needsBranchPublication, projectPullBlockedCopy, projectPullSuccessCopy, projectPushBlockedCopy, projectPushSuccessCopy, pullSuccessCopy, repositorySyncLoadingToast, type ProjectSyncAction } from '@/features/repositories/project-sync';
@@ -590,7 +590,9 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       });
       if (repositoryRef.current?.id === repositoryId) applyFilesSnapshot(nextFiles);
     } catch (reason) {
-      if (repositoryRef.current?.id === repositoryId) reportError('Could not refresh files', reason);
+      if (repositoryRef.current?.id !== repositoryId) return;
+      if (isConnectionLoss(reason)) recordConnectionLoss('Could not refresh files', reason);
+      else reportError('Could not refresh files', reason);
     }
   }, [applyFilesSnapshot, appQueryClient, repository]);
 
@@ -693,7 +695,9 @@ export default function App({ initialView, initialSelection, pullRequestCreation
         void appQueryClient.invalidateQueries({ queryKey: ['repository', repositoryId, 'branch-pull-request'] });
       }
     } catch (reason) {
-      if (repositoryRef.current?.id === repositoryId) reportError('Could not refresh', reason);
+      if (repositoryRef.current?.id !== repositoryId) return;
+      if (background && isConnectionLoss(reason)) recordConnectionLoss('Could not refresh', reason);
+      else reportError('Could not refresh', reason);
     } finally {
       if (!background && repositoryRef.current?.id === repositoryId) { busyRef.current = null; setBusy(null); }
     }
@@ -2627,7 +2631,18 @@ function unconfirmedResultToast(reason: unknown): { title: string; description: 
 function reportError(title: string, reason: unknown): void {
   sileo.error(unconfirmedResultToast(reason) ?? { title, description: messageOf(reason), duration: 10_000 });
   if (serializedErrorFromReason(reason)) return;
-  void opentig.diagnostics.record({ operation: title, message: messageOf(reason) }).catch(() => undefined);
+  void opentig.diagnostics.record({ operation: title, message: messageOf(reason), ...connectionCloseCode(reason) }).catch(() => undefined);
+}
+let lastConnectionLossRecord = 0;
+/** A background refresh repeats when the connection returns, so losing one needs no toast. Its retries are one problem, not several. */
+function recordConnectionLoss(title: string, reason: unknown): void {
+  const now = Date.now();
+  if (now - lastConnectionLossRecord < 60_000) return;
+  lastConnectionLossRecord = now;
+  void opentig.diagnostics.record({ operation: title, level: 'warn', message: messageOf(reason), ...connectionCloseCode(reason) }).catch(() => undefined);
+}
+function connectionCloseCode(reason: unknown): { code: string } | Record<string, never> {
+  return reason instanceof ServerDisconnectedError && reason.closeCode !== undefined ? { code: `WS_CLOSE_${reason.closeCode}` } : {};
 }
 function undoBlockedCopy(result: Exclude<UndoLatestCommitResult, { status: 'success' }>): { title: string; description: string } {
   if (result.status === 'stale-head') return { title: 'History changed', description: 'The view was refreshed without undoing any commit.' };

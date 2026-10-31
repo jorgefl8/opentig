@@ -18,6 +18,7 @@ interface Fixture {
   socket(): Promise<WebSocket>;
   closeRuntime: ReturnType<typeof vi.fn>;
   logger: ReturnType<typeof vi.fn>;
+  registry: CommandRegistry;
 }
 
 const fixtures: Fixture[] = [];
@@ -216,7 +217,33 @@ describe('WebSocket safety limits', () => {
     const response = await sendAndReceive(socket, { type: 'request', id: 'timeout', command: 'app:bootstrap', args: [] });
 
     expect(response).toMatchObject({ result: { ok: false, error: { code: 'TIMEOUT' } } });
+    expect((response as { result: { error: object } }).result.error).not.toHaveProperty('unconfirmed');
     expect(aborted).toBe(true);
+  });
+
+  it('reports a change that ran out of time as unconfirmed', async () => {
+    const fixture = await startFixture(() => emptyBootstrap(), { commandTimeoutMs: 50 });
+    fixture.registry.registerHandler(OPEN_TIG_SERVER_COMMANDS['refs.pull'], () => new Promise(() => {}));
+    const socket = await fixture.socket();
+
+    expect(await sendAndReceive(socket, { type: 'request', id: 'change', command: 'refs:pull', args: ['0123456789abcdef'] }))
+      .toMatchObject({ result: { ok: false, error: { code: 'TIMEOUT', unconfirmed: true } } });
+  });
+
+  it('records a command timeout and the success that arrives after it', async () => {
+    let finish!: () => void;
+    const fixture = await startFixture(() => new Promise((resolve) => { finish = () => resolve(emptyBootstrap()); }), { commandTimeoutMs: 50 });
+    const recordTimeout = vi.spyOn(fixture.registry, 'recordCommandTimeout');
+    const recordLate = vi.spyOn(fixture.registry, 'recordLateSuccess');
+    const socket = await fixture.socket();
+
+    expect(await sendAndReceive(socket, { type: 'request', id: 'late', command: 'app:bootstrap', args: [] }))
+      .toMatchObject({ result: { ok: false, error: { code: 'TIMEOUT' } } });
+    expect(recordTimeout).toHaveBeenCalledOnce();
+    expect(recordLate).not.toHaveBeenCalled();
+
+    finish();
+    await vi.waitFor(() => expect(recordLate).toHaveBeenCalledOnce());
   });
 
   it.each([
@@ -428,6 +455,7 @@ async function startFixture(
     closeRuntime,
     logger,
     socket: () => openWebSocket(address.origin, cookie),
+    registry,
   };
   fixtures.push(fixture);
   return fixture;
