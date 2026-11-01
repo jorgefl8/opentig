@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { PullRequestCheck, PullRequestLiveState } from '@shared/contracts';
-import { pullRequestChecksSentence, releaseStateTone } from './gh-utils';
+import { pullRequestChecksSentence, pullRequestStateTone, releaseStateTone } from './gh-utils';
 
 const check = (result: PullRequestCheck['result']): PullRequestCheck => ({ name: result, workflow: null, result, required: false, url: null });
 const checks = (rollup: PullRequestLiveState['checks']['rollup'], results: PullRequestCheck['result'][], truncated = false): PullRequestLiveState['checks'] => ({ rollup, items: results.map(check), truncated, partial: false });
@@ -22,6 +22,18 @@ describe('pullRequestChecksSentence', () => {
     ['only skipped checks', checks('PASSING', ['skipped']), 'Checks passing'],
   ])('claims no count for %s', (_name, value, sentence) => {
     expect(pullRequestChecksSentence(value)).toBe(sentence);
+  });
+});
+
+describe('pullRequestStateTone', () => {
+  it.each([
+    [{ state: 'OPEN', isDraft: false }, 'open'],
+    [{ state: 'OPEN', isDraft: true }, 'draft'],
+    [{ state: 'MERGED', isDraft: false }, 'merged'],
+    [{ state: 'CLOSED', isDraft: false }, 'closed'],
+    [{ state: 'CLOSED', isDraft: true }, 'closed'],
+  ] as const)('reads %o as %s', (pr, tone) => {
+    expect(pullRequestStateTone(pr)).toBe(tone);
   });
 });
 

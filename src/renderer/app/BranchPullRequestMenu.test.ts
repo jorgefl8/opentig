@@ -44,17 +44,20 @@ const choice = (name: string) => [...document.querySelectorAll<HTMLElement>('[ro
 
 it.each([
   { state: 'OPEN', isDraft: false }, { state: 'OPEN', isDraft: true }, { state: 'MERGED', isDraft: false },
+  { state: 'CLOSED', isDraft: false },
 ] as const)('offers both destinations for $state PRs (draft: $isDraft) without opening GitHub on trigger click', async state => {
   await render({ ...pullRequest, ...state });
   expect(trigger().querySelector('.tabler-icon-external-link')).toBeNull();
   expect(trigger().querySelector('button')).toBeNull();
-  expect(trigger().querySelector('.tabler-icon-git-merge') !== null).toBe(state.state === 'MERGED');
-  expect(trigger().querySelector('.tabler-icon-git-pull-request')).toBeNull();
+  const icon = state.state === 'MERGED' ? 'merge' : state.state === 'CLOSED' ? 'pull-request-closed' : state.isDraft ? 'pull-request-draft' : 'pull-request';
+  expect(trigger().querySelector(`.tabler-icon-git-${icon}`)).not.toBeNull();
+  const tone = state.state === 'MERGED' ? 'merged' : state.state === 'CLOSED' ? 'closed' : state.isDraft ? 'draft' : 'open';
+  expect(trigger().classList.contains(`pr-state-${tone}`)).toBe(true);
   expect(trigger().textContent).toBe(state.isDraft ? '#12Draft' : '#12');
   await click(trigger());
   const menu = document.querySelector('[role="menu"]')!;
   expect(menu.textContent).toContain(pullRequest.title);
-  expect(menu.textContent).toContain(state.state === 'MERGED' ? 'PR #12 · Merged into main' : state.isDraft ? 'PR #12 · Draft' : 'PR #12 · Open');
+  expect(menu.textContent).toContain(state.state === 'MERGED' ? 'PR #12 · Merged into main' : state.state === 'CLOSED' ? 'PR #12 · Closed' : state.isDraft ? 'PR #12 · Draft' : 'PR #12 · Open');
   expect(external).not.toHaveBeenCalled();
   expect(onOpenPullRequest).not.toHaveBeenCalled();
   await click(choice('Open in OpenTig'));

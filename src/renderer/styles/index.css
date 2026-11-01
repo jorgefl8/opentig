@@ -325,7 +325,11 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   .toolbar-branch-pr > svg { width: 13px; height: 13px; flex: none; }
   .toolbar-branch-pr:hover, .toolbar-branch-pr[aria-expanded="true"] { background: var(--row-hover); color: var(--foreground); }
   .toolbar-branch-pr:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
-  .toolbar-branch-pr.merged, .toolbar-branch-pr.merged:hover, .toolbar-branch-pr.merged[aria-expanded="true"] { color: var(--pr-merged); }
+  /* The number stands in for the pull request, so its colour says what state it's in, with GitHub's colours. */
+  :is(.toolbar-branch-pr, .mobile-pr-number).pr-state-open { color: var(--success); }
+  :is(.toolbar-branch-pr, .mobile-pr-number).pr-state-draft { color: var(--muted-foreground); }
+  :is(.toolbar-branch-pr, .mobile-pr-number).pr-state-merged { color: var(--pr-merged); }
+  :is(.toolbar-branch-pr, .mobile-pr-number).pr-state-closed { color: var(--destructive); }
   .repo-select-favicon { width: 16px; height: 16px; flex: none; border-radius: 3px; object-fit: contain; background: color-mix(in oklch, var(--foreground) 8%, transparent); }
   .repository-sync-actions { display: flex; flex: none; gap: 1px; }
   .repository-sync-actions [data-slot="button"] { color: var(--muted-foreground); }

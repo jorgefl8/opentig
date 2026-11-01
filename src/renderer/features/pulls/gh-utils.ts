@@ -40,6 +40,12 @@ export function prStateLabel(pr: Pick<PullRequestSummary, 'state' | 'isDraft'>):
   return pr.state === 'MERGED' ? 'Merged' : 'Closed';
 }
 
+/** What a pull request's number is coloured for, wherever it stands in for the pull request. */
+export function pullRequestStateTone(pr: Pick<PullRequestSummary, 'state' | 'isDraft'>): 'open' | 'draft' | 'merged' | 'closed' {
+  if (pr.state === 'OPEN') return pr.isDraft ? 'draft' : 'open';
+  return pr.state === 'MERGED' ? 'merged' : 'closed';
+}
+
 export function releaseStateLabel(release: Pick<ReleaseSummary, 'isDraft' | 'isPrerelease' | 'isLatest'>): string {
   if (release.isDraft) return 'Draft';
   if (release.isPrerelease) return 'Pre-release';

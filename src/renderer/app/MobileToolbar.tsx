@@ -6,7 +6,7 @@ import { AppName } from '@/components/AppName';
 import { OpenTigMark } from '@/components/OpenTigMark';
 import { MobileSheet } from '@/components/MobileSheet';
 import { DesktopUpdateIndicator } from '@/features/settings/UpdateSettings';
-import { openOnGitHub } from '@/features/pulls/gh-utils';
+import { openOnGitHub, pullRequestStateTone } from '@/features/pulls/gh-utils';
 import { mobileSyncPill, needsBranchPublication } from '@/features/repositories/project-sync';
 import type { ToolbarProps } from './Toolbar';
 import { RemoteAccessIndicator } from './RemoteAccessIndicator';
@@ -68,7 +68,7 @@ export function MobileToolbar({ props, repositoryControl, worktreeControl, branc
         <span className="mobile-toolbar-mark"><OpenTigMark /></span>
         <button className="mobile-repository-context" aria-label="Repository and branch" aria-haspopup="dialog" aria-expanded={contextOpen} onClick={() => onContextOpen(true)}>
           <strong><span>{pendingRepositoryName ? `Opening ${pendingRepositoryName}…` : props.repository.repositoryName}</span>{props.repositoryLoadPhase ? <IconLoader4 className="animate-spin" aria-hidden="true" /> : <IconSelector aria-hidden="true" />}</strong>
-          <small>{status ? status.branch ?? 'Detached HEAD' : 'Loading…'}{props.branchPullRequest && ` · #${props.branchPullRequest.number}`}</small>
+          <small>{status ? status.branch ?? 'Detached HEAD' : 'Loading…'}{props.branchPullRequest && <> · <span className={`mobile-pr-number pr-state-${pullRequestStateTone(props.branchPullRequest)}`}>#{props.branchPullRequest.number}</span></>}</small>
         </button>
         <div className="mobile-toolbar-actions">
           {isDevProfile && <AppName />}

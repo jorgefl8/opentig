@@ -87,7 +87,7 @@ Repository, worktree, branch, AI model, project assignment, and PR base selector
 - **Switch repositories by number:** number shortcuts remain active until the search field takes focus.
 - **Read a shortened name:** hover a truncated selected name to see it in full. The hint stays while the pointer remains on the control and hides while the menu is open.
 
-The top bar starts with the OpenTig logo and name, then reads as a breadcrumb: the repository in a soft box with its icon and switcher key, the branch, and the branch's pull request number. On the right it shows **Pull** or **Push** counts and **Publish** only when the branch needs them, then **Refresh**, any update or fetch notice, and **Settings**.
+The top bar starts with the OpenTig logo and name, then reads as a breadcrumb: the repository in a soft box with its icon and switcher key, the branch, and the branch's pull request number, colored by its state: green when open, gray with **Draft** for a draft, purple when merged, and red when closed. On the right it shows **Pull** or **Push** counts and **Publish** only when the branch needs them, then **Refresh**, any update or fetch notice, and **Settings**.
 
 - **Repository menu:** repositories, then **Open repository…** (`Ctrl+O`), **Open on GitHub** for GitHub repositories, and **Manage projects…**.
 - **Worktrees:** with more than one, a small button with their number sits beside the repository. Its menu lists them and **Manage worktrees…**, and its tooltip names the current one.
@@ -110,7 +110,7 @@ Options show hints only for truncated text or additional information. Scrolling 
 
 Use the bottom **Changes**, **Files**, **History**, **GitHub**, and **Search** tabs to switch sections; **Pull requests** and **Releases** are tabs inside **GitHub**.
 
-**On a list, the top bar says where you are.** Beside the logo, its two lines name the repository and the branch, with the branch's pull request number when it has one. Tap them for the repository sheet: **Repository**, **Branch**, **Worktree** when there are several, then whichever of **Publish this branch** or **Push** and **Pull** applies, **Refresh**, the branch's pull request, **Open on GitHub**, and **Open another repository**. To the right, a pill shows the sync action that applies: **Publish**, **Push** with its count, or **Pull** with its count. When both apply it shows **Pull**, because that has to happen first, and **Push** stays in the sheet. The gear opens Settings. Warnings about the remote and available updates appear here too.
+**On a list, the top bar says where you are.** Beside the logo, its two lines name the repository and the branch, with the branch's pull request number in the same colors when it has one. Tap them for the repository sheet: **Repository**, **Branch**, **Worktree** when there are several, then whichever of **Publish this branch** or **Push** and **Pull** applies, **Refresh**, the branch's pull request, **Open on GitHub**, and **Open another repository**. To the right, a pill shows the sync action that applies: **Publish**, **Push** with its count, or **Pull** with its count. When both apply it shows **Pull**, because that has to happen first, and **Push** stays in the sheet. The gear opens Settings. Warnings about the remote and available updates appear here too.
 
 **Inside a viewer, the top bar is about what you opened:** a back arrow, a title, and that thing's actions. Focus moves to the arrow when a viewer opens.
 
