@@ -333,9 +333,9 @@ Web links in commit subjects, messages, expanded descriptions, and the PR commit
 
 **Switch branches**
 
-Open the branch menu in the top bar, search local and remote branches, then select one. Selecting a remote branch creates or uses its local tracking branch. You cannot switch to a branch already checked out in another worktree.
+Open the branch menu in the top bar, search local and remote branches, then select one. Selecting a remote branch creates or uses its local tracking branch. A branch already checked out in another worktree can't be switched to here, so choosing it opens that worktree instead.
 
-When the repository has more than one worktree, the same menu lists them under **Worktrees**. On a phone, worktrees have their own selector in the repository sheet.
+When the repository has more than one worktree, a small button with their number beside the repository lists them. On a phone, they have their own selector in the repository sheet.
 
 If switching would overwrite local changes, OpenTig offers to move all tracked and untracked changes to the destination and leave them unstaged. Conflicts open in **Changes**, with a safety stash kept for recovery.
 

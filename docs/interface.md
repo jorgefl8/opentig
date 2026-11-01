@@ -90,7 +90,8 @@ Repository, worktree, branch, AI model, project assignment, and PR base selector
 The top bar starts with the OpenTig logo and name, then reads as a breadcrumb: the repository in a soft box with its icon and switcher key, the branch, and the branch's pull request number. On the right it shows **Pull** or **Push** counts and **Publish** only when the branch needs them, then **Refresh**, any update or fetch notice, and **Settings**.
 
 - **Repository menu:** repositories, then **Open repository…** (`Ctrl+O`), **Open on GitHub** for GitHub repositories, and **Manage projects…**.
-- **Branch menu:** local and remote branches, a **Worktrees** group when the repository has more than one worktree, and **Manage branches…** and **Manage worktrees…**. While an operation makes the repository read-only, branches can't be chosen but other worktrees can.
+- **Worktrees:** with more than one, a small button with their number sits beside the repository. Its menu lists them and **Manage worktrees…**, and its tooltip names the current one.
+- **Branch menu:** local and remote branches and **Manage branches…**, plus **Manage worktrees…** while there is only one worktree. A branch checked out in another worktree says **Open**, and choosing it opens that worktree. While an operation makes the repository read-only, branches can't be chosen but other worktrees can.
 
 Branch and worktree management rows show information in their details panel; diff headers show the directory and file name directly.
 

@@ -8,9 +8,9 @@ import { BranchCombobox, type BranchComboboxWorktrees } from './BranchCombobox';
 
 const branchInfo = (name: string, extra: Partial<BranchInfo> = {}) => ({ name, fullName: name, current: false, remote: false, worktreePath: null, ...extra }) as BranchInfo;
 const worktreeInfo = (path: string, branch: string, extra: Partial<WorktreeInfo> = {}) => ({ path, branch, bare: false, locked: null, prunable: null, ...extra }) as WorktreeInfo;
-const branches = [branchInfo('main', { current: true }), branchInfo('feature')];
 const main = worktreeInfo('/sample/app', 'main');
 const hotfix = worktreeInfo('/sample/app-hotfix', 'hotfix');
+const branches = [branchInfo('main', { current: true }), branchInfo('feature'), branchInfo('hotfix', { worktreePath: hotfix.path })];
 
 let root: Root;
 let container: HTMLDivElement;
@@ -27,7 +27,7 @@ beforeEach(() => {
 });
 afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.resetAllMocks(); vi.unstubAllGlobals(); });
 
-const worktreeProps = (items: WorktreeInfo[]): BranchComboboxWorktrees => ({ items, currentPath: main.path, onSelect: onSelectWorktree, onManage: onManageWorktrees });
+const worktreeProps = (items: WorktreeInfo[]): BranchComboboxWorktrees => ({ items, onSelect: onSelectWorktree, onManage: onManageWorktrees });
 const trigger = () => container.querySelector<HTMLButtonElement>('[role="combobox"]')!;
 const option = (name: string) => [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(item => item.querySelector('strong')?.textContent === name);
 const groups = () => [...document.querySelectorAll('.searchable-picker-group')].map(group => group.textContent);
@@ -38,50 +38,51 @@ async function open(props: { worktrees?: BranchComboboxWorktrees; readOnly?: boo
   if (!trigger().disabled) await act(async () => trigger().click());
 }
 
-it('groups worktrees only when there is another one to choose, and always offers to manage them', async () => {
+it('offers to manage worktrees only while there is one, since from two on they have their own selector', async () => {
   await open({ worktrees: worktreeProps([main]) });
   expect(groups()).toEqual(['Local']);
-  expect(option('app')).toBeUndefined();
   expect(footer().map(row => row.textContent?.trim())).toEqual(['Manage branches…', 'Manage worktrees…']);
   await act(async () => footer()[1]!.click());
   expect(onManageWorktrees).toHaveBeenCalledOnce();
-  expect(onManage).not.toHaveBeenCalled();
+  await act(async () => root.unmount());
+  root = createRoot(container);
+  await open({ worktrees: worktreeProps([main, hotfix]) });
+  expect(footer().map(row => row.textContent?.trim())).toEqual(['Manage branches…']);
 });
 
-it('switches to another worktree without treating it as a branch, and ignores the current one', async () => {
+it('opens the worktree of a branch in use there, instead of switching to it', async () => {
   await open({ worktrees: worktreeProps([main, hotfix]) });
-  expect(groups()).toEqual(['Local', 'Worktrees']);
-  expect(option('app')?.textContent).toContain('Current');
-  await act(async () => option('app')!.click());
-  expect(onSelectWorktree).not.toHaveBeenCalled();
-  await act(async () => trigger().click());
-  await act(async () => option('app-hotfix')!.click());
+  expect(option('hotfix')?.textContent).toContain('In app-hotfix');
+  await act(async () => option('hotfix')!.click());
   expect(onSelectWorktree).toHaveBeenCalledExactlyOnceWith(hotfix.path);
   expect(onBranch).not.toHaveBeenCalled();
 });
 
-it('still switches branches from a menu that lists worktrees', async () => {
+it('still switches branches that no worktree holds', async () => {
   await open({ worktrees: worktreeProps([main, hotfix]) });
   await act(async () => option('feature')!.click());
   expect(onBranch).toHaveBeenCalledExactlyOnceWith('feature');
   expect(onSelectWorktree).not.toHaveBeenCalled();
 });
 
-it('keeps worktrees reachable during a read-only operation while branches stay locked', async () => {
+it('refuses a branch whose worktree can not be opened', async () => {
+  await open({ worktrees: worktreeProps([main, { ...hotfix, locked: 'in use' } as WorktreeInfo]) });
+  expect(option('hotfix')?.textContent).toContain('In use');
+  await act(async () => option('hotfix')!.click());
+  expect(onSelectWorktree).not.toHaveBeenCalled();
+  expect(onBranch).not.toHaveBeenCalled();
+});
+
+it('keeps other worktrees reachable during a read-only operation while branches stay locked', async () => {
   await open({ worktrees: worktreeProps([main, hotfix]), readOnly: true });
   expect(trigger().disabled).toBe(false);
   await act(async () => option('feature')!.click());
   expect(onBranch).not.toHaveBeenCalled();
-  await act(async () => option('app-hotfix')!.click());
+  await act(async () => option('hotfix')!.click());
   expect(onSelectWorktree).toHaveBeenCalledExactlyOnceWith(hotfix.path);
 });
 
-it('leaves worktrees to the caller when it has its own selector, as the phone sheet does', async () => {
-  await open({});
-  expect(groups()).toEqual(['Local']);
-  expect(footer().map(row => row.textContent?.trim())).toEqual(['Manage branches…']);
-  await act(async () => root.unmount());
-  root = createRoot(container);
+it('disables the menu in a read-only operation when it can offer no worktree', async () => {
   await open({ readOnly: true });
   expect(trigger().disabled).toBe(true);
 });

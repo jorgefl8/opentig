@@ -1822,6 +1822,8 @@ section[data-sileo-viewport] [data-sileo-title] { text-transform: none; }
 .toolbar-crumb-repository { max-width: 240px; flex-shrink: 0; gap: 6px; background: var(--muted); }
 .toolbar-crumb-repository:hover, .toolbar-crumb-repository[aria-expanded="true"] { background: color-mix(in oklch, var(--foreground) 11%, transparent); }
 .toolbar-crumb:not(.toolbar-crumb-repository) { color: var(--muted-foreground); font-weight: var(--weight-regular); }
+.toolbar-worktree-count { flex: none; gap: 4px; border-color: transparent; background: transparent; padding-inline: 6px; color: var(--muted-foreground); font-size: var(--text-meta); }
+.toolbar-worktree-count:hover, .toolbar-worktree-count[aria-expanded="true"] { background: var(--row-hover); color: var(--foreground); }
 .toolbar-crumb-chevron { width: 12px; height: 12px; color: var(--muted-foreground); }
 /* A select on one line of text, for rows and filters where a box would be noise. */
 .plain-select { width: auto; max-width: 100%; height: 28px; border-color: transparent; background: transparent; padding-inline: 8px; font-weight: var(--weight-regular); }

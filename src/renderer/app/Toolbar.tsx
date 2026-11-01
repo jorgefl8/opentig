@@ -321,6 +321,7 @@ export function Toolbar(props: ToolbarProps) {
         ]}
       />
   );
+  const currentWorktreeName = currentWorktree?.path.split(/[\\/]/).pop() ?? props.repository.name;
   const worktreeControl = (
       <SearchablePicker
         groups={[{ id: 'worktrees', label: 'Worktrees', items: props.worktrees.map((item) => ({
@@ -334,10 +335,11 @@ export function Toolbar(props: ToolbarProps) {
         })) }]}
         value={currentWorktree?.path ?? props.repository.path}
         onValueChange={props.onWorktree}
-        label="Select worktree"
-        triggerLabel={currentWorktree?.path.split(/[\\/]/).pop() ?? props.repository.name}
+        label={mobile ? 'Select worktree' : `Select worktree, in ${currentWorktreeName}`}
+        triggerLabel={mobile ? currentWorktreeName : String(props.worktrees.length)}
+        {...(mobile ? {} : { triggerHint: `Worktree: ${currentWorktreeName}`, triggerIndicator: <span className="hidden" />, align: 'start' as const })}
         icon={<IconHierarchy2 />}
-        triggerClassName="max-w-[190px]"
+        triggerClassName={mobile ? 'max-w-[190px]' : 'toolbar-worktree-count'}
         placeholder="Search worktrees…"
         management={[{ label: 'Manage worktrees…', onClick: () => openRefsManager('worktrees') }]}
         disabled={refsBusy}
@@ -350,13 +352,7 @@ export function Toolbar(props: ToolbarProps) {
         disabled={refsBusy}
         readOnly={props.status?.readOnly}
         crumb={!mobile}
-        // The phone sheet has its own worktree selector.
-        worktrees={mobile ? undefined : {
-          items: props.worktrees,
-          currentPath: currentWorktree?.path ?? props.repository.path,
-          onSelect: props.onWorktree,
-          onManage: () => openRefsManager('worktrees'),
-        }}
+        worktrees={{ items: props.worktrees, onSelect: props.onWorktree, onManage: () => openRefsManager('worktrees') }}
         onBranch={props.onBranch}
         onManage={() => openRefsManager('branches')}
       />
@@ -371,6 +367,7 @@ export function Toolbar(props: ToolbarProps) {
       <span className="toolbar-brand-divider" aria-hidden="true" />
       <div className="toolbar-crumbs">
         {repositoryControl}
+        {props.worktrees.length > 1 && worktreeControl}
         <span className="toolbar-crumb-separator" aria-hidden="true">/</span>
         {branchControl}
         {props.branchPullRequest && (

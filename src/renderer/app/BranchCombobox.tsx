@@ -1,69 +1,62 @@
 import { useMemo } from 'react';
-import { IconChevronDown, IconGitBranch, IconHierarchy2 } from '@tabler/icons-react';
+import { IconChevronDown, IconGitBranch } from '@tabler/icons-react';
 import type { BranchInfo, WorktreeInfo } from '../../shared/git-types';
 import { SearchablePicker, type SearchablePickerItem } from '@/components/SearchablePicker';
 import { samePath } from '@/features/refs/local-refs-model';
 
-const WORKTREE_VALUE_PREFIX = 'worktree:';
-
 export interface BranchComboboxWorktrees {
   items: WorktreeInfo[];
-  currentPath: string;
   onSelect(path: string): void;
   onManage(): void;
 }
 
 /**
- * Branch selection, plus the worktrees when a caller has no selector of its own
- * for them. Their group appears only once there is another worktree to choose,
- * while managing them stays available so a first one can be added.
+ * Branch selection. A branch checked out in another worktree opens that worktree
+ * instead of being refused. Managing worktrees stays here only while there is
+ * one, because from two on they have their own selector.
  */
 export function BranchCombobox({ branches, currentLabel, disabled, readOnly, crumb, worktrees, onBranch, onManage }: {
   branches: BranchInfo[]; currentLabel: string; disabled?: boolean | undefined; readOnly?: boolean | undefined; crumb?: boolean | undefined;
   worktrees?: BranchComboboxWorktrees | undefined; onBranch(name: string | null): void; onManage(): void;
 }) {
   const worktreeItems = worktrees?.items;
-  const currentWorktreePath = worktrees?.currentPath;
-  const { groups, currentValue } = useMemo(() => {
+  const { groups, currentValue, openable } = useMemo(() => {
     const local: SearchablePickerItem[] = [];
     const remote: SearchablePickerItem[] = [];
+    const openable = new Map<string, string>();
     let currentValue = '';
     for (const branch of branches) {
       if (branch.remote && branch.fullName.endsWith('/HEAD')) continue;
-      const otherWorktree = Boolean(!branch.remote && branch.worktreePath && !branch.current);
+      const otherPath = !branch.remote && !branch.current ? branch.worktreePath : null;
+      const other = otherPath ? worktreeItems?.find((item) => samePath(item.path, otherPath)) : undefined;
+      const canOpen = Boolean(other && !other.locked && !other.prunable && !other.bare);
+      const folder = otherPath?.split(/[\\/]/).pop();
+      if (other && canOpen) openable.set(branch.fullName, other.path);
       if (!branch.remote && branch.current) currentValue = branch.fullName;
       (branch.remote ? remote : local).push({
         value: branch.fullName,
         label: branch.name,
+        ...(canOpen ? { description: `In ${folder}` } : {}),
         trailing: branch.current ? <span className="searchable-picker-status">Current</span>
-          : otherWorktree ? <span className="searchable-picker-status">In use</span> : undefined,
+          : canOpen ? <span className="searchable-picker-status">Open</span>
+            : otherPath ? <span className="searchable-picker-status">In use</span> : undefined,
         search: branch.fullName,
-        tooltip: `${branch.fullName}${otherWorktree ? ' · In another worktree' : ''}`,
-        disabled: otherWorktree || Boolean(readOnly),
+        tooltip: `${branch.fullName}${otherPath ? ` · In ${otherPath}` : ''}`,
+        // Opening a worktree changes nothing in this one, so an operation here doesn't stop it.
+        disabled: otherPath ? !canOpen : Boolean(readOnly),
         icon: <IconGitBranch />,
       });
     }
     local.sort((a, b) => (a.value === currentValue ? -1 : b.value === currentValue ? 1 : 0));
-    const worktreeChoices: SearchablePickerItem[] = worktreeItems && worktreeItems.length > 1 ? worktreeItems.map((item) => ({
-      value: `${WORKTREE_VALUE_PREFIX}${item.path}`,
-      label: item.path.split(/[\\/]/).pop() ?? item.path,
-      description: `${item.branch ?? 'Detached HEAD'}${item.locked ? ' · Locked' : item.prunable ? ' · Prunable' : item.bare ? ' · Bare' : ''}`,
-      trailing: currentWorktreePath !== undefined && samePath(item.path, currentWorktreePath) ? <span className="searchable-picker-status">Current</span> : undefined,
-      search: item.path,
-      tooltip: item.path,
-      icon: <IconHierarchy2 />,
-      disabled: Boolean(item.locked || item.prunable || item.bare),
-    })) : [];
-    return { currentValue, groups: [
+    return { currentValue, openable, groups: [
       { id: 'local', label: 'Local', items: local },
-      { id: 'worktrees', label: 'Worktrees', items: worktreeChoices },
       { id: 'remote', label: 'Remote', items: remote },
     ] };
-  }, [branches, currentWorktreePath, readOnly, worktreeItems]);
+  }, [branches, readOnly, worktreeItems]);
   const selectValue = (value: string) => {
-    if (!value.startsWith(WORKTREE_VALUE_PREFIX)) { onBranch(value); return; }
-    const path = value.slice(WORKTREE_VALUE_PREFIX.length);
-    if (worktrees && !samePath(path, worktrees.currentPath)) worktrees.onSelect(path);
+    const path = openable.get(value);
+    if (path && worktrees) worktrees.onSelect(path);
+    else onBranch(value);
   };
 
   return <SearchablePicker
@@ -76,10 +69,10 @@ export function BranchCombobox({ branches, currentLabel, disabled, readOnly, cru
     triggerIndicator={crumb ? <IconChevronDown className="toolbar-crumb-chevron" /> : undefined}
     triggerClassName={crumb ? 'toolbar-crumb' : 'max-w-[220px]'}
     align={crumb ? 'start' : 'end'}
-    placeholder={worktreeItems && worktreeItems.length > 1 ? 'Search branches and worktrees…' : 'Search branches…'}
+    placeholder="Search branches…"
     management={[
       { label: 'Manage branches…', onClick: onManage },
-      ...(worktrees ? [{ label: 'Manage worktrees…', onClick: worktrees.onManage }] : []),
+      ...(worktrees && worktrees.items.length < 2 ? [{ label: 'Manage worktrees…', onClick: worktrees.onManage }] : []),
     ]}
     // A repository in the middle of an operation can't change branch, but its other worktrees stay available.
     disabled={disabled || (readOnly && !worktrees)}
