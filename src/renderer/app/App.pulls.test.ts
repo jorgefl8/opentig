@@ -259,10 +259,10 @@ it.each(['OPEN', 'MERGED'] as const)('passes the current branch’s %s PR to the
   expect(container.querySelector('[aria-label="Viewer selection"]')?.textContent).toBe('PR #13');
 });
 
-it('keeps closed, unmerged PRs out of the current branch toolbar', async () => {
+it('shows a closed, unmerged PR in the current branch toolbar, so it does not read as having none', async () => {
   calls.branchPull.mockResolvedValue({ number: 12, state: 'CLOSED' });
   await mount();
-  expect(container.querySelector('[aria-label="Branch PR"]')?.textContent).toBe('No PR');
+  expect(container.querySelector('[aria-label="Branch PR"]')?.textContent).not.toBe('No PR');
 });
 
 it('clears the toolbar PR when switching to a clone whose branch has no matching PR', async () => {

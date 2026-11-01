@@ -308,8 +308,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     repository !== null && githubInfo?.isGitHub === true && currentBranch !== null && ghStatus?.installed === true,
   ));
   const currentBranchPullRequest = currentBranch && githubInfo?.isGitHub && !branchPullRequestQuery.isError
-    && (branchPullRequestQuery.data?.state === 'OPEN' || branchPullRequestQuery.data?.state === 'MERGED')
-    ? branchPullRequestQuery.data : null;
+    ? branchPullRequestQuery.data ?? null : null;
 
   const openFilesStates = bootstrap?.openFilesStates ?? NO_OPEN_FILES_STATES;
   const connectionState = useSyncExternalStore(
