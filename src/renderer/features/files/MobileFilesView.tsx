@@ -39,7 +39,7 @@ function MobileFileRow({ entry, top, height, selecting, selected, current, onOpe
     <div role="listitem" className={`mobile-file-row ${selected ? 'selected' : ''} ${entry.ignored ? 'ignored' : ''}`} style={{ height, transform: `translateY(${top}px)` }}>
       <button className="mobile-file-open" aria-pressed={selecting ? selected : undefined} aria-current={current ? 'true' : undefined} {...longPress} onClick={selecting ? onToggle : onOpen}>
         {selecting ? <span className={`mobile-file-check ${selected ? 'checked' : ''}`}>{selected && <IconCheck aria-hidden="true" />}</span>
-          : entry.type === 'directory' ? <FolderIcon /> : <img src={getVsCodeFileIconUrl(entry.path)} alt="" aria-hidden="true" draggable={false} />}
+          : entry.type === 'directory' ? <FolderIcon path={entry.path} /> : <img src={getVsCodeFileIconUrl(entry.path)} alt="" aria-hidden="true" draggable={false} />}
         <span className="mobile-file-name">{entry.name}</span>
         {entry.ignored && <small>Ignored</small>}
         {!selecting && entry.type === 'directory' && <IconChevronRight aria-hidden="true" />}

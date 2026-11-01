@@ -40,7 +40,7 @@ export function MoveFilesDialog({ entries, initialDirectory, revision, readOnly,
         {level === null ? <p className="mobile-list-message" role="status"><IconLoader4 className="animate-spin" aria-hidden="true" /><ShimmeringText text="Loading folders…" /></p>
           : failed ? <p className="mobile-list-message" role="alert">Could not read this folder.</p>
           : folders.length === 0 ? <p className="mobile-list-message">No subfolders. You can choose this folder below.</p>
-          : folders.map((folder) => <button key={folder.path} className="mobile-sheet-action" disabled={moving} onClick={() => setDestination(folder.path)}><FolderIcon /><span>{folder.name}</span><IconChevronRight /></button>)}
+          : folders.map((folder) => <button key={folder.path} className="mobile-sheet-action" disabled={moving} onClick={() => setDestination(folder.path)}><FolderIcon path={folder.path} /><span>{folder.name}</span><IconChevronRight /></button>)}
       </div>
       <div className="mobile-sheet-footer">
         <Button variant="ghost" disabled={moving} onClick={onClose}>Cancel</Button>

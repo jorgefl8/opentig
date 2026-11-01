@@ -253,8 +253,7 @@ it('offers folder rows the same actions over everything inside them', async () =
   await render([], files('src/app-', 2), 'tree', [], { readOnly: false, onStage });
   await act(async () => container.querySelector<HTMLButtonElement>('.tree-folder [aria-label="Stage changes"]')!.click());
   expect(onStage).toHaveBeenCalledWith(['src/app-00.ts', 'src/app-01.ts']);
-  expect(container.querySelector('.tree-folder .folder-icon')).not.toBeNull();
-  expect(container.querySelector('.tree-folder img')).toBeNull();
+  expect(container.querySelector<HTMLImageElement>('.tree-folder img.folder-icon')?.getAttribute('src')).toContain('folder_type_src');
 });
 
 describe('with no changes', () => {

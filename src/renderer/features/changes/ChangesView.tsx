@@ -317,7 +317,7 @@ function ChangeTreeFolderRow({ node, depth, expanded, disabled, action, onToggle
       if (shouldActivateChangeRow(event.target)) onToggle();
     }}>
       <button className="folder-toggle" onClick={onToggle} aria-label={expanded ? 'Collapse folder' : 'Expand folder'}><IconChevronRight className={`folder-chevron ${expanded ? 'open' : ''}`} /></button>
-      <FolderIcon />
+      <FolderIcon path={node.path} expanded={expanded} />
       <button className="folder-name" onClick={onToggle}>{node.name}</button>
       <span className="change-row-actions">
         <ChangeActions paths={paths} action={action} disabled={disabled} onDiscard={onDiscard} onAction={onAction} />
@@ -344,7 +344,7 @@ function ChangeFileRow({ change, current, disabled, action, depth = 0, showDirec
       {!showDirectory && <span className="tree-spacer" />}
       <Tooltip disabled={!truncated}>
         <TooltipTrigger render={<button className="file-label" data-long-press-target="" onClick={() => previewable ? onOpenFile(change.path) : onSelect(change.path)} aria-label={`${previewable ? 'Preview' : 'View changes for'} ${change.path}`} />}>
-          {directorySummary ? <FolderIcon /> : <img className="vscode-tree-icon" src={getVsCodeFileIconUrl(normalizedPath)} alt="" aria-hidden="true" draggable={false} />}
+          {directorySummary ? <FolderIcon path={normalizedPath} /> : <img className="vscode-tree-icon" src={getVsCodeFileIconUrl(normalizedPath)} alt="" aria-hidden="true" draggable={false} />}
           <span ref={textRef} className="change-file-text"><span>{name}</span>{showDirectory && directory && <small>{directory}</small>}</span>
         </TooltipTrigger>
         <TooltipContent anchor={rowRef} side="right" sideOffset={10}>{change.path}</TooltipContent>

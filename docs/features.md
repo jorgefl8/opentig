@@ -128,7 +128,7 @@ Diffs use the same One Light/One Dark Pro token palette as the Files editor and 
 
 File headers show the folder path and filename on one line, then the lines added and removed. When space runs short the folder path shortens first and hovering shows the full path; a filename too long for the row wraps. Sticky headers remain opaque on hover so scrolled code does not show through. Dialogs, including Settings and confirmations, stay above diff content and sticky headers.
 
-A change row shows the file and a status letter: **M** modified, **A** added, and **D** deleted are colored, and other statuses stay muted. In a tree, folders use one neutral icon and their chevron shows whether they're open.
+A change row shows the file and a status letter: **M** modified, **A** added, and **D** deleted are colored, and other statuses stay muted. In a tree, a folder's icon reflects its kind, such as source or tests, and changes when it opens.
 
 Hovering a change or folder row, or moving keyboard focus into it, replaces the letter with its diff, open, stage, unstage, and discard controls without moving the row's text. On touch screens the controls stay visible. The row showing in the viewer stays highlighted.
 

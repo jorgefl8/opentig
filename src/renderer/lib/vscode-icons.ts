@@ -4,8 +4,12 @@ import languageMap from '../assets/vscode-language-map.json';
 interface IconThemeManifest {
   iconDefinitions: Record<string, { iconPath: string }>;
   file: string;
+  folder: string;
+  folderExpanded: string;
   fileExtensions: Record<string, string>;
   fileNames: Record<string, string>;
+  folderNames: Record<string, string>;
+  folderNamesExpanded: Record<string, string>;
   languageIds: Record<string, string>;
 }
 
@@ -43,6 +47,12 @@ export function getVsCodeLanguageIconUrl(language: string): string | null {
       ?? (normalizedLanguage === 'text' || normalizedLanguage === 'txt' ? 'plaintext' : undefined);
   const icon = languageId ? theme.languageIds[languageId] : undefined;
   return icon ? getIconUrl(icon) : null;
+}
+
+export function getVsCodeFolderIconUrl(path: string, expanded: boolean): string {
+  const folderName = lastSegment(normalizePath(path));
+  const associations = expanded ? theme.folderNamesExpanded : theme.folderNames;
+  return getIconUrl(associations[folderName] ?? (expanded ? theme.folderExpanded : theme.folder));
 }
 
 function getIconUrl(definitionName: string): string {

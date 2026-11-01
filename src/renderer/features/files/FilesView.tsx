@@ -660,7 +660,7 @@ function DesktopFilesView({
                 onClick={() => handleStickyClick(row.entry)}
               >
                 <IconChevronRight className="folder-chevron open" />
-                <FolderIcon />
+                <FolderIcon path={row.entry.path} expanded />
                 <span>{row.entry.name}</span>
               </button>
             );
@@ -903,7 +903,7 @@ function FileRow({
       {entry.type === 'directory'
         ? <IconChevronRight className={`folder-chevron ${expanded ? 'open' : ''} ${entry.children.length === 0 && !pendingChildren ? 'empty' : ''}`} />
         : <span className="tree-spacer" />}
-      <TreeIcon path={entry.path} type={entry.type} />
+      <TreeIcon path={entry.path} type={entry.type} expanded={expanded} />
       <span>{entry.name}</span>
     </button>
   );
@@ -984,7 +984,7 @@ function FileRow({
 }
 
 
-function TreeIcon({ path, type }: { path: string; type: 'file' | 'directory' }) {
-  if (type === 'directory') return <FolderIcon />;
+function TreeIcon({ path, type, expanded = false }: { path: string; type: 'file' | 'directory'; expanded?: boolean }) {
+  if (type === 'directory') return <FolderIcon path={path} expanded={expanded} />;
   return <img className="vscode-tree-icon" src={getVsCodeFileIconUrl(path)} alt="" aria-hidden="true" />;
 }

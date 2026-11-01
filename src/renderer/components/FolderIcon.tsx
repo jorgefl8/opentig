@@ -1,9 +1,6 @@
-import { IconFolder } from '@tabler/icons-react';
+import { getVsCodeFolderIconUrl } from '@/lib/vscode-icons';
 
-/**
- * Folders stay neutral in file trees, leaving colour to file types and state.
- * The chevron beside one says whether it is open.
- */
-export function FolderIcon() {
-  return <IconFolder className="folder-icon" aria-hidden="true" />;
+/** The icon of a folder's kind, such as src or test, like the one each file has for its type. */
+export function FolderIcon({ path, expanded = false }: { path: string; expanded?: boolean }) {
+  return <img className="vscode-tree-icon folder-icon" src={getVsCodeFolderIconUrl(path, expanded)} alt="" aria-hidden="true" draggable={false} />;
 }
