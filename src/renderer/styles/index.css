@@ -309,6 +309,9 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   .toolbar button, .toolbar input, .toolbar textarea, .toolbar select, .toolbar a, .toolbar [role="button"] { -webkit-app-region: no-drag; }
   .toolbar [data-size^="icon"] { color: var(--muted-foreground); }
   .toolbar .app-name { font-size: var(--text-meta); }
+  .toolbar-brand { display: flex; flex: none; align-items: center; gap: 7px; color: var(--foreground); font-size: var(--text-body); font-weight: var(--weight-strong); }
+  .toolbar-brand svg { width: 17px; height: 18px; flex: none; }
+  .toolbar-brand-divider { width: 1px; height: 18px; flex: none; margin-inline: 4px; background: var(--border); }
   .toolbar-crumbs { display: flex; min-width: 0; flex: 0 1 auto; align-items: center; gap: 2px; }
   .toolbar-crumb-separator { flex: none; color: var(--muted-foreground); font-size: var(--text-ui); }
   .app-name { white-space: nowrap; }
@@ -1500,22 +1503,20 @@ section[data-sileo-viewport] [data-sileo-title] { text-transform: none; }
     flex: 0 1 auto;
     flex-direction: column;
     gap: 8px;
-    border-top: 1px solid var(--sidebar-border);
-    padding: 10px 12px;
+    padding: 8px;
   }
-  .commit-composer-input { flex: none; max-height: 40vh; }
-  .commit-composer > .commit-composer-generate { max-width: calc(100% + 6px); align-self: flex-start; justify-content: flex-start; margin-left: -6px; padding-inline: 6px; font-weight: var(--weight-medium); }
-  .commit-composer-generate-text { display: flex; min-width: 0; }
+  /* One box holds the message, the provider and the action, like a chat's. */
+  .commit-box { display: flex; flex: none; flex-direction: column; gap: 6px; border: 1px solid var(--input); border-radius: 12px; background: var(--background); padding: 8px 6px 6px 10px; }
+  .commit-box:focus-within { border-color: var(--ring); }
+  .commit-box-bar { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 6px; }
+  .commit-composer-input { flex: none; max-height: 40vh; field-sizing: content; }
+  .commit-composer-generate { margin-left: -2px; padding-inline: 4px; font-weight: var(--weight-medium); }
   .commit-composer-generate { color: var(--muted-foreground); }
   .commit-composer-generate:hover:not(:disabled) { background: var(--row-hover); color: var(--foreground); }
   .commit-composer-generate > .ai-provider-icon { width: 16px; height: 16px; }
-  .commit-composer-provider { display: inline-block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .commit-composer-provider > [aria-hidden="true"] { margin-inline: 5px; }
-  .commit-composer-harness, .commit-composer-model { color: var(--foreground); font-weight: var(--weight-medium); }
-  /* The first control in the markup is the main action, drawn at the far right.
-     The shortcut hint is the one thing here that can give way in a narrow sidebar. */
-  .commit-composer-commit { display: flex; flex: none; flex-direction: row-reverse; align-items: center; gap: 4px; }
-  .commit-composer-hint { min-width: 0; margin-right: auto; overflow: hidden; color: var(--muted-foreground); font-size: var(--text-meta); white-space: nowrap; }
+  .commit-composer-commit { display: flex; flex: none; align-items: center; }
+  .commit-action-menu { width: 26px; }
+  .commit-action-hint { margin: 0; padding: 4px 8px 3px; color: var(--muted-foreground); font-size: var(--text-meta); }
   .commit-plan { display: flex; min-height: 0; flex: 0 1 auto; flex-direction: column; gap: 4px; }
   .commit-plan-heading { display: flex; flex: none; align-items: center; justify-content: space-between; gap: 8px; }
   .commit-plan-heading > span { display: inline-flex; align-items: center; gap: 6px; font-size: var(--text-ui); }
@@ -1818,7 +1819,9 @@ section[data-sileo-viewport] [data-sileo-title] { text-transform: none; }
    like the picker rules above, because they replace the trigger's utility classes. */
 .toolbar-crumb { flex: 0 1 auto; gap: 3px; border-color: transparent; background: transparent; font-weight: var(--weight-strong); }
 .toolbar-crumb:hover, .toolbar-crumb[aria-expanded="true"] { background: var(--row-hover); }
-.toolbar-crumb-repository { max-width: 240px; flex-shrink: 0; }
+.toolbar-crumb-repository { max-width: 240px; flex-shrink: 0; gap: 6px; background: var(--muted); }
+.toolbar-crumb-repository:hover, .toolbar-crumb-repository[aria-expanded="true"] { background: color-mix(in oklch, var(--foreground) 11%, transparent); }
+.toolbar-crumb:not(.toolbar-crumb-repository) { color: var(--muted-foreground); font-weight: var(--weight-regular); }
 .toolbar-crumb-chevron { width: 12px; height: 12px; color: var(--muted-foreground); }
 /* A select on one line of text, for rows and filters where a box would be noise. */
 .plain-select { width: auto; max-width: 100%; height: 28px; border-color: transparent; background: transparent; padding-inline: 8px; font-weight: var(--weight-regular); }

@@ -27,7 +27,10 @@
   }
   html:has(.mobile-float:not(:empty)) { --mobile-float-room: 64px; }
   html:has(.mobile-float > .mobile-float-note) { --mobile-float-room: 104px; }
+  html:has(.mobile-float .commit-box) { --mobile-float-room: 120px; }
+  html:has(.mobile-float .commit-plan-body) { --mobile-float-room: calc(120px + 30dvh); }
   html[data-mobile-keyboard="true"] { --mobile-nav-clearance: 0px; }
+  html[data-mobile-keyboard="true"]:has(.mobile-float .commit-box) { --mobile-nav-clearance: calc(var(--mobile-float-room) + 16px); }
   html #root { height: var(--mobile-viewport-height, 100dvh); }
   /* No bottom inset: content runs under the bottom bar, to the screen's edge. */
   html .app-shell {
@@ -172,7 +175,9 @@
     background: linear-gradient(to top, color-mix(in oklab, var(--background) 92%, transparent), color-mix(in oklab, var(--background) 72%, transparent) 60%, transparent);
     pointer-events: none;
   }
-  html .mobile-float:empty, html[data-mobile-keyboard="true"] .mobile-float { display: none; }
+  html .mobile-float:empty, html[data-mobile-keyboard="true"] .mobile-float:not(:has(.commit-composer)) { display: none; }
+  /* The commit box is being typed in, so it stays above the keyboard while the bottom bar steps aside. */
+  html[data-mobile-keyboard="true"] .mobile-float:has(.commit-composer) { bottom: calc(8px + var(--mobile-viewport-gap)); }
   html .mobile-float:has(.mobile-float-note) { background: linear-gradient(to top, color-mix(in oklab, var(--background) 96%, transparent), color-mix(in oklab, var(--background) 92%, transparent) 75%, transparent); }
   html .mobile-float > button { pointer-events: auto; }
   html .mobile-float-note { margin: 0 8px 6px; color: var(--muted-foreground); font-size: var(--text-ui); line-height: 1.35; text-align: center; }
@@ -192,6 +197,7 @@
   html .mobile-bar-button:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
   html .repository-load-slow { flex-wrap: wrap; justify-content: center; border-radius: 14px; white-space: normal; text-align: center; }
   /* Two lines: the name with an end mark, then a quieter line. For the repository and for a viewer. */
+  html .mobile-toolbar-mark { width: 19px; height: 21px; flex: none; margin-right: 9px; }
   html :is(.mobile-repository-context, .mobile-viewer-title) { display: grid; min-width: 0; min-height: 44px; flex: 1; align-content: center; gap: 1px; border-radius: var(--radius-md); text-align: left; }
   html .mobile-viewer-title-slot { display: flex; min-width: 0; flex: 1; }
   html :is(.mobile-repository-context, .mobile-viewer-title) strong { display: flex; min-width: 0; align-items: center; gap: 3px; font-size: var(--text-body); font-weight: var(--weight-strong); }
@@ -262,19 +268,19 @@
   html .search-match-line { min-width: 4ch; text-align: right; }
   html .search-match-text { display: -webkit-box; font-size: var(--diffs-font-size); line-height: 1.45; overflow-wrap: anywhere; white-space: pre-wrap; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 
-  /* The commit form is a sheet on phones. Closing it leaves the draft and suggested plan intact. */
-  html .commit-composer { max-height: none; width: 100%; gap: 8px; border-top: 0; background: none; padding: 0 10px 4px; }
-  html .commit-plan, html .commit-plan-body { flex: none; overflow: visible; }
-  html .commit-composer-hint { display: none; }
-  html .commit-composer-input { min-height: 120px; }
-  html .commit-plan-heading { flex-wrap: wrap; }
-  html .commit-composer-provider { overflow: visible; overflow-wrap: anywhere; white-space: normal; }
-  html .commit-composer-generate { flex-wrap: wrap; height: auto; padding-block: 10px; white-space: normal; }
-  html .commit-composer > .commit-composer-generate { width: calc(100% + 20px); max-width: none; min-height: 48px; justify-content: flex-start; gap: 12px; margin-inline: -10px; border-radius: 12px; padding-inline: 10px; font-size: var(--text-body); }
+  /* The commit box sits over the list and above the bottom bar, like a chat's. A plan scrolls inside it,
+     and going to a diff and back leaves the draft and the plan intact. */
+  html .commit-composer { max-height: none; width: 100%; max-width: 480px; margin-inline: auto; padding: 0; pointer-events: auto; }
+  html .commit-box { border-radius: 18px; background: var(--card); box-shadow: 0 10px 24px -12px rgb(0 0 0 / 50%); padding: 10px 8px 8px 14px; }
+  html .commit-composer-input { min-height: 44px; max-height: 25dvh; }
+  html .commit-composer-generate { min-height: 36px; gap: 6px; font-size: var(--text-body); }
   html .commit-composer-generate > .ai-provider-icon { width: 20px; height: 20px; }
-  html .commit-composer-commit { flex-direction: column; align-items: stretch; }
-  html .commit-composer-commit [data-slot="button"] { height: 44px; font-size: var(--text-body); }
-  html .commit-composer-commit [data-slot="button"][data-variant="default"] { height: 48px; box-shadow: 0 10px 22px -8px color-mix(in oklab, var(--primary) 65%, transparent); }
+  html .commit-composer-commit [data-slot="button"] { min-height: 36px; height: 36px; font-size: var(--text-body); }
+  html .commit-composer-commit [data-slot="button"]:first-child { border-radius: 999px 0 0 999px; padding-inline: 14px; }
+  html .commit-composer-commit .commit-action-menu { width: 34px; min-width: 34px; border-radius: 0 999px 999px 0; }
+  html .commit-plan { flex: none; border-radius: 14px; background: var(--card); padding: 8px 10px; }
+  html .commit-plan-body { max-height: 30dvh; overflow-y: auto; }
+  html .commit-plan-heading { flex-wrap: wrap; }
   html .commit-plan-heading-actions { margin-left: auto; }
 
   html .diff-workspace-toolbar { flex-wrap: wrap; gap: 6px; padding: 6px 8px; }
@@ -560,6 +566,11 @@ html .mobile-picker-rows button[role="combobox"] { width: auto; min-width: 0; ma
   html .mobile-files-tools { padding-block: 3px 4px; }
   html { --mobile-nav-height: 44px; }
   html .mobile-navigation { max-width: 420px; }
+}
+
+/* Beside Commit and push on the narrowest phones, the provider's icon says enough; its name stays for screen readers. */
+@media (max-width: 359px) {
+  html .commit-composer-generate > .truncate { display: none; }
 }
 
 /* A finger leaves :hover on whatever ends up under it after a tap, so on touch only selection and focus mark a row. */

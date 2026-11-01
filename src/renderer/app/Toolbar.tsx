@@ -1,4 +1,4 @@
-import { isDevProfile } from '@/lib/app-identity';
+import { appDisplayName } from '@/lib/app-identity';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   IconArrowDown, IconArrowUp, IconBrandGithub, IconChevronDown, IconHierarchy2, IconLoader4, IconPlus, IconRefresh, IconSettings,
@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Kbd } from '@/components/ui/kbd';
 import { SearchablePicker, type SearchablePickerItem } from '@/components/SearchablePicker';
 import { AppName } from '@/components/AppName';
+import { OpenTigMark } from '@/components/OpenTigMark';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { isEditableTarget } from '@/features/files/file-tree';
 import type { LocalRefsTab } from '@/features/refs/local-refs-model';
@@ -306,9 +307,9 @@ export function Toolbar(props: ToolbarProps) {
         triggerLabel={pendingRepository ? `Opening ${pendingRepository.name}…` : props.repository.repositoryName}
         icon={props.repositoryLoadPhase ? <IconLoader4 className="animate-spin" /> : <RepositoryFaviconImage src={favicons.get(currentRepositoryKey)} />}
         triggerHint={`Switch repository (${repoSwitcherKey.toUpperCase()})`}
-        triggerIndicator={mobile ? undefined : <IconChevronDown className="toolbar-crumb-chevron" />}
         shortcut={repoSwitcherKey.toUpperCase()}
         triggerClassName={mobile ? 'max-w-[240px]' : 'toolbar-crumb toolbar-crumb-repository'}
+        triggerIndicator={mobile ? undefined : <><Kbd aria-hidden="true">{repoSwitcherKey.toUpperCase()}</Kbd><IconChevronDown className="toolbar-crumb-chevron" /></>}
         contentClassName="repository-picker"
         align="start"
         placeholder="Search repositories…"
@@ -363,6 +364,11 @@ export function Toolbar(props: ToolbarProps) {
   return (
     <>
     {mobile ? <MobileToolbar props={props} repositoryControl={repositoryControl} worktreeControl={worktreeControl} branchControl={branchControl} pendingRepositoryName={pendingRepository?.name ?? null} loadIndicator={loadIndicator} contextOpen={mobileContextOpen} onContextOpen={(open) => { setMobileContextOpen(open); if (!open) setRepositorySelectOpen(false); }} syncBusy={currentRepositorySyncBusy} /> : <header className="toolbar">
+      <div className="toolbar-brand" aria-label={appDisplayName}>
+        <OpenTigMark />
+        <AppName />
+      </div>
+      <span className="toolbar-brand-divider" aria-hidden="true" />
       <div className="toolbar-crumbs">
         {repositoryControl}
         <span className="toolbar-crumb-separator" aria-hidden="true">/</span>
@@ -372,7 +378,6 @@ export function Toolbar(props: ToolbarProps) {
         )}
       </div>
       <div className="toolbar-spacer" />
-      {isDevProfile && <AppName />}
       {props.status && (props.status.behind > 0 || props.busy === 'pull') && (
         <Tooltip>
           <TooltipTrigger render={<Button variant="ghost" size="sm" focusableWhenDisabled disabled={Boolean(props.busy) || currentRepositorySyncBusy} onClick={props.onPull} aria-label={`Pull ${props.status.behind} commits`} />}>

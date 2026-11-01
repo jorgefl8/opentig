@@ -109,7 +109,7 @@ Use the built-in conflict editor to accept the current, incoming, or both sides,
 
 **Create or undo a commit**
 
-The commit composer is docked at the bottom of the **Changes** sidebar while something is staged or a commit plan is open. Commit the staged files with an editable message, or press the commit shortcut from the message field. When an upstream exists, you can commit and push in one action. For a branch without an upstream, see [publishing a branch](#safe-pull-and-push).
+The commit box is docked at the bottom of the **Changes** sidebar while something is staged or a commit plan is open. One box holds the message, your AI provider, which generates a message, and the commit button. The arrow beside the button chooses between **Commit** and **Commit and push**: choosing only changes the button, and nothing runs until you press it. The choice lasts until you change it or restart OpenTig. The commit shortcut in the message field runs the button, and adding Shift also pushes. When an upstream exists, you can commit and push in one action. For a branch without an upstream, see [publishing a branch](#safe-pull-and-push).
 
 You can undo the latest unpublished commit and keep its changes staged. OpenTig checks the expected commit and upstream state before rewriting history.
 

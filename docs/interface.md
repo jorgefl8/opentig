@@ -87,7 +87,7 @@ Repository, worktree, branch, AI model, project assignment, and PR base selector
 - **Switch repositories by number:** number shortcuts remain active until the search field takes focus.
 - **Read a shortened name:** hover a truncated selected name to see it in full. The hint stays while the pointer remains on the control and hides while the menu is open.
 
-The top bar reads as a breadcrumb: the repository, the branch, and the branch's pull request number. On the right it shows **Pull** or **Push** counts and **Publish** only when the branch needs them, then **Refresh**, any update or fetch notice, and **Settings**.
+The top bar starts with the OpenTig logo and name, then reads as a breadcrumb: the repository in a soft box with its icon and switcher key, the branch, and the branch's pull request number. On the right it shows **Pull** or **Push** counts and **Publish** only when the branch needs them, then **Refresh**, any update or fetch notice, and **Settings**.
 
 - **Repository menu:** repositories, then **Open repository…** (`Ctrl+O`), **Open on GitHub** for GitHub repositories, and **Manage projects…**.
 - **Branch menu:** local and remote branches, a **Worktrees** group when the repository has more than one worktree, and **Manage branches…** and **Manage worktrees…**. While an operation makes the repository read-only, branches can't be chosen but other worktrees can.
@@ -109,7 +109,7 @@ Options show hints only for truncated text or additional information. Scrolling 
 
 Use the bottom **Changes**, **Files**, **History**, **GitHub**, and **Search** tabs to switch sections; **Pull requests** and **Releases** are tabs inside **GitHub**.
 
-**On a list, the top bar says where you are.** Its two lines name the repository and the branch, with the branch's pull request number when it has one. Tap them for the repository sheet: **Repository**, **Branch**, **Worktree** when there are several, then whichever of **Publish this branch** or **Push** and **Pull** applies, **Refresh**, the branch's pull request, **Open on GitHub**, and **Open another repository**. To the right, a pill shows the sync action that applies: **Publish**, **Push** with its count, or **Pull** with its count. When both apply it shows **Pull**, because that has to happen first, and **Push** stays in the sheet. The gear opens Settings. Warnings about the remote and available updates appear here too.
+**On a list, the top bar says where you are.** Beside the logo, its two lines name the repository and the branch, with the branch's pull request number when it has one. Tap them for the repository sheet: **Repository**, **Branch**, **Worktree** when there are several, then whichever of **Publish this branch** or **Push** and **Pull** applies, **Refresh**, the branch's pull request, **Open on GitHub**, and **Open another repository**. To the right, a pill shows the sync action that applies: **Publish**, **Push** with its count, or **Pull** with its count. When both apply it shows **Pull**, because that has to happen first, and **Push** stays in the sheet. The gear opens Settings. Warnings about the remote and available updates appear here too.
 
 **Inside a viewer, the top bar is about what you opened:** a back arrow, a title, and that thing's actions. Focus moves to the arrow when a viewer opens.
 
@@ -125,14 +125,14 @@ Use the bottom **Changes**, **Files**, **History**, **GitHub**, and **Search** t
 
 | Screen | Main action |
 | --- | --- |
-| **Changes** with staged files | **Commit** with the file count, or **Commit plan** when only a plan is left. Opens the commit sheet |
+| **Changes** with staged files, or a commit plan | The commit box, described below |
 | **Pull request, Summary** | Its primary action, such as **Merge**, **Merge when ready**, **Update branch**, or **Ready for review**. Nothing floats when there's only a reason to give, such as a conflict |
 | **Pull request, Timeline** | A one-line **Write a comment** field that opens the composer in a sheet. A draft stays when the sheet closes, and shows on the field |
 | **Pull request, Code** | None, so the screen goes to the code |
 | **Draft release** | **Publish**. It's disabled with the reason above it when the tag doesn't exist or the account can't publish |
 | **A file with unsaved edits** | **Save** |
 
-The commit sheet has the message, **Generate with** your provider, **Commit**, and **Commit and push**. A suggested plan appears there with its groups, and the sheet takes the full height. Closing the sheet keeps the message and the plan, and generating carries on until it finishes or you cancel it.
+The commit box stays above the bottom bar in **Changes** while something is staged, and above the keyboard while you type. It holds the message, your AI provider, and the commit button, whose arrow chooses **Commit** or **Commit and push** without running anything. A suggested plan appears above it with its groups and scrolls inside. Opening a diff and coming back keeps the message and the plan, and generating carries on until it finishes or you cancel it.
 
 Actions that ask first do so in a sheet with the same checks as on desktop: merging shows **Method** as a picker and **Delete branch** as a switch where they apply, one button, and the account underneath. A sheet can't be dismissed while its answer is being sent. A notification that arrives while a sheet is open appears at the top of the screen, above the sheet.
 

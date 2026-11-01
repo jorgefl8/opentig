@@ -47,12 +47,8 @@ async function mount(current: RepositoryStatus = status) {
   await act(async () => container.querySelector<HTMLButtonElement>('.mobile-navigation button')!.click());
 }
 const lastViewerProps = () => calls.viewer.mock.lastCall![0] as { diffView: string; wrapLines: boolean; onWrapLinesChange(value: boolean): void; onDiffViewChange(value: string): void };
-const pill = () => container.querySelector<HTMLButtonElement>('.mobile-float .mobile-main-action');
-const textarea = () => document.querySelector<HTMLTextAreaElement>('.mobile-sheet textarea');
-const dismiss = async () => {
-  await act(async () => document.querySelector<HTMLButtonElement>('.mobile-sheet-close')!.click());
-  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); });
-};
+const commitBox = () => container.querySelector('.mobile-float .commit-box');
+const textarea = () => container.querySelector<HTMLTextAreaElement>('.mobile-float textarea');
 
 beforeEach(() => {
   localStorage.clear();
@@ -78,31 +74,29 @@ afterEach(async () => {
   vi.resetAllMocks();
 });
 
-it('shows no page title, and floats one commit action that counts the staged files', async () => {
+it('shows no page title, and docks one commit box that counts the staged files', async () => {
   await mount();
   expect(container.querySelector('.mobile-view-heading')).toBeNull();
   expect(container.querySelectorAll('.mobile-float > *')).toHaveLength(1);
-  expect(pill()?.textContent).toBe('Commit 2 files');
-  expect(container.querySelector('.commit-composer')).toBeNull();
+  expect(commitBox()?.querySelector('[data-slot="button"][data-variant="default"]')?.textContent).toBe('Commit 2 files');
 });
 
-it('floats nothing with nothing staged', async () => {
+it('docks nothing with nothing staged', async () => {
   await mount({ ...status, stagedCount: 0, changes: [] });
-  expect(pill()).toBeNull();
+  expect(commitBox()).toBeNull();
 });
 
-it('commits from a sheet, and the message outlives closing it', async () => {
+it('keeps the message when leaving the section and coming back', async () => {
   await mount();
-  await act(async () => pill()!.click());
-  expect(document.querySelector('.mobile-sheet-title')?.textContent).toBe('Commit 2 files');
   await act(async () => {
     const input = textarea()!;
     Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(input, 'Add a filter');
     input.dispatchEvent(new Event('input', { bubbles: true }));
   });
-  await dismiss();
+  const sections = () => container.querySelectorAll<HTMLButtonElement>('.mobile-navigation button');
+  await act(async () => sections()[2]!.click());
   expect(textarea()).toBeNull();
-  await act(async () => pill()!.click());
+  await act(async () => sections()[0]!.click());
   expect(textarea()!.value).toBe('Add a filter');
 });
 

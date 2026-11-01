@@ -3,6 +3,7 @@ import { IconArrowDown, IconArrowLeft, IconArrowUp, IconBrandGithub, IconFolder,
 import { Button } from '@/components/ui/button';
 import { isDevProfile } from '@/lib/app-identity';
 import { AppName } from '@/components/AppName';
+import { OpenTigMark } from '@/components/OpenTigMark';
 import { MobileSheet } from '@/components/MobileSheet';
 import { DesktopUpdateIndicator } from '@/features/settings/UpdateSettings';
 import { openOnGitHub } from '@/features/pulls/gh-utils';
@@ -64,6 +65,7 @@ export function MobileToolbar({ props, repositoryControl, worktreeControl, branc
   return <>
     {viewer ? <MobileViewerBar {...viewer} indicators={indicators} loadIndicator={loadIndicator} /> : (
       <header className="mobile-toolbar">
+        <span className="mobile-toolbar-mark"><OpenTigMark /></span>
         <button className="mobile-repository-context" aria-label="Repository and branch" aria-haspopup="dialog" aria-expanded={contextOpen} onClick={() => onContextOpen(true)}>
           <strong><span>{pendingRepositoryName ? `Opening ${pendingRepositoryName}…` : props.repository.repositoryName}</span>{props.repositoryLoadPhase ? <IconLoader4 className="animate-spin" aria-hidden="true" /> : <IconSelector aria-hidden="true" />}</strong>
           <small>{status ? status.branch ?? 'Detached HEAD' : 'Loading…'}{props.branchPullRequest && ` · #${props.branchPullRequest.number}`}</small>

@@ -1,15 +1,14 @@
-import type { RefObject } from 'react';
-import { IconCheck, IconPlayerStop, IconX } from '@tabler/icons-react';
+import { useState, type RefObject } from 'react';
+import { IconCheck, IconChevronDown, IconPlayerStop, IconX } from '@tabler/icons-react';
 import type { AiHarnessId, CommitSplitProposal } from '@shared/contracts';
 import { normalizeCombo } from '@shared/shortcuts';
 import { Button } from '@/components/ui/button';
+import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useShortcuts } from '@/app/useShortcuts';
-import { useMobileChrome } from '@/components/mobile-chrome-context';
 import { AiProviderIcon } from '@/features/ai/AiProviderIcon';
-import { useTruncatedText } from '@/lib/use-truncated-text';
 
 interface CommitComposerProps {
   open: boolean;
@@ -43,8 +42,8 @@ export function CommitComposer({
   onMessage, onGenerate, onCancelGenerate, onDismissProposal, onToggleCollapsed, onOpenPath, onPrepare, onCommit,
 }: CommitComposerProps) {
   const shortcuts = useShortcuts();
-  // On a phone the sheet's title already counts the files.
-  const phone = useMobileChrome() !== null;
+  // Choosing only changes what the button does, so nothing is pushed by a slip in the menu.
+  const [pushChosen, setPushChosen] = useState(false);
   if (!open) return null;
 
   const commitCombo = shortcuts.commit.replace('Enter', '↵');
@@ -54,6 +53,8 @@ export function CommitComposer({
   // A generation in progress is about to replace the message, so what would be
   // committed isn't settled yet.
   const commitDisabled = blocked || message.trim().length === 0 || generating || Boolean(busy);
+  const push = pushChosen && canPush;
+  const actionLabel = push ? 'Commit and push' : `Commit ${stagedCount} ${stagedCount === 1 ? 'file' : 'files'}`;
 
   return (
     <div className="commit-composer" role="group" aria-label="Create commit">
@@ -120,10 +121,10 @@ export function CommitComposer({
         </section>
       )}
       {stagedCount > 0 && (
-        <>
+        <div className="commit-box">
           <Textarea
             ref={textareaRef}
-            className="commit-composer-input min-h-13 px-2.5 py-1.5"
+            className="commit-composer-input min-h-11 resize-none rounded-none border-0 bg-transparent p-0 shadow-none focus-visible:border-0 focus-visible:ring-0 dark:bg-transparent"
             value={message}
             onChange={(event) => onMessage(event.target.value)}
             onKeyDown={(event) => {
@@ -131,32 +132,38 @@ export function CommitComposer({
               const withoutShift = normalizeCombo({ key: event.key, ctrlKey: event.ctrlKey, altKey: event.altKey, shiftKey: false, metaKey: event.metaKey });
               if (withoutShift === shortcuts.commit && !commitDisabled) {
                 event.preventDefault();
-                onCommit({ push: event.shiftKey && canPush });
+                onCommit({ push: (event.shiftKey || pushChosen) && canPush });
               }
             }}
             placeholder="Commit message"
             aria-label="Commit message"
             disabled={readOnly}
           />
-          <GenerateAction
-            generating={generating}
-            harness={harness}
-            harnessLabel={harnessLabel}
-            modelLabel={modelLabel}
-            disabled={blocked || Boolean(busy && busy !== 'refresh')}
-            onGenerate={onGenerate}
-            onCancelGenerate={onCancelGenerate}
-          />
-          <div className="commit-composer-commit">
-            <Button size="sm" disabled={commitDisabled} onClick={() => onCommit({ push: false })}>
-              {committing ? <ShimmeringText text="Committing…" /> : phone ? 'Commit' : `Commit ${stagedCount} ${stagedCount === 1 ? 'file' : 'files'}`}
-            </Button>
-            <Button variant="ghost" size="sm" className="px-2" disabled={commitDisabled || !canPush} onClick={() => onCommit({ push: true })}>
-              {pushing ? <ShimmeringText text="Pushing…" /> : 'Commit and push'}
-            </Button>
-            <kbd className="commit-composer-hint">{commitCombo}</kbd>
+          <div className="commit-box-bar">
+            <GenerateAction
+              generating={generating}
+              harness={harness}
+              harnessLabel={harnessLabel}
+              modelLabel={modelLabel}
+              disabled={blocked || Boolean(busy && busy !== 'refresh')}
+              onGenerate={onGenerate}
+              onCancelGenerate={onCancelGenerate}
+            />
+            <div className="commit-composer-commit">
+              <Button size="sm" className="rounded-r-none" disabled={commitDisabled} onClick={() => onCommit({ push })}>
+                {committing ? <ShimmeringText text="Committing…" /> : pushing ? <ShimmeringText text="Pushing…" /> : actionLabel}
+              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger render={<Button size="sm" className="commit-action-menu rounded-l-none border-l-primary-foreground/25 px-0" aria-label="Choose the commit action" disabled={blocked || Boolean(busy)} />}><IconChevronDown /></DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuCheckboxItem closeOnClick checked={!push} onCheckedChange={() => setPushChosen(false)}>Commit</DropdownMenuCheckboxItem>
+                  <DropdownMenuCheckboxItem closeOnClick checked={push} disabled={!canPush} onCheckedChange={() => setPushChosen(true)}>Commit and push</DropdownMenuCheckboxItem>
+                  <p className="commit-action-hint">{commitCombo} runs the button</p>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           </div>
-        </>
+        </div>
       )}
     </div>
   );
@@ -166,24 +173,22 @@ function GenerateAction({ generating, harness, harnessLabel, modelLabel, disable
   generating: boolean; harness: AiHarnessId; harnessLabel: string; modelLabel: string; disabled: boolean;
   onGenerate(): void; onCancelGenerate(): void;
 }) {
-  const [textRef, truncated] = useTruncatedText(`${harnessLabel}\u0000${modelLabel}\u0000${generating}`);
-  const label = <span className="commit-composer-provider">Generate with <span className="commit-composer-harness">{harnessLabel}</span><span aria-hidden="true">·</span><span className="commit-composer-model">{modelLabel}</span></span>;
   return (
-    <Tooltip disabled={!truncated}>
+    <Tooltip>
       <TooltipTrigger render={
         <Button
           variant="ghost"
           size="xs"
           className="commit-composer-generate min-w-0 shrink"
-          aria-label={generating ? 'Cancel generation' : undefined}
+          aria-label={generating ? 'Cancel generation' : `Generate with ${harnessLabel} · ${modelLabel}`}
           disabled={disabled}
           onClick={() => generating ? onCancelGenerate() : onGenerate()}
         />
       }>
         {generating ? <IconPlayerStop className="text-destructive" /> : <AiProviderIcon harness={harness} />}
-        {generating ? <ShimmeringText text="Generating message…" /> : <span ref={textRef} className="commit-composer-generate-text">{label}</span>}
+        {generating ? <ShimmeringText text="Generating…" /> : <span className="truncate">{harnessLabel}</span>}
       </TooltipTrigger>
-      <TooltipContent>{harnessLabel} · {modelLabel}</TooltipContent>
+      <TooltipContent>{generating ? 'Cancel generation' : `Generate with ${harnessLabel} · ${modelLabel}`}</TooltipContent>
     </Tooltip>
   );
 }

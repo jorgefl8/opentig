@@ -8,7 +8,7 @@ import { appDisplayName } from '@/lib/app-identity';
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  IconBrandGithub, IconGitCommit, IconFileArrowRight, IconFiles, IconGitCompare, IconHistory,
+  IconBrandGithub, IconFileArrowRight, IconFiles, IconGitCompare, IconHistory,
   IconLoader4, IconRestore, IconSearch, IconTrash,
 } from '@tabler/icons-react';
 import { sileo } from 'sileo';
@@ -26,7 +26,6 @@ import { normalizeRepositoryKey } from '../../shared/repository-projects';
 import { DEFAULT_REMOTE_FETCH_INTERVAL_SECONDS } from '../../shared/remote-fetch';
 import type { RepositoryChangeScope } from '../../shared/repository-change';
 import { Button } from '@/components/ui/button';
-import { MobileSheet } from '@/components/MobileSheet';
 import { MobileChromeContext, NO_MOBILE_CHROME_HOSTS } from '@/components/mobile-chrome-context';
 import { Dialog, DialogDescription, DialogPopup, DialogTitle } from '@/components/ui/dialog';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
@@ -122,7 +121,6 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   const [openRepositoryDialog, setOpenRepositoryDialog] = useState(false);
   const addingRepository = useRef(false);
   const [mobilePane, setMobilePane] = useState<'list' | 'viewer'>('list');
-  const [commitSheetOpen, setCommitSheetOpen] = useState(false);
   // Long lines wrap on a phone unless turned off for the session; the saved desktop choice stays as it is.
   const [mobileWrapLines, setMobileWrapLines] = useState(true);
   const [viewerTitleHost, setViewerTitleHost] = useState<HTMLElement | null>(null);
@@ -290,9 +288,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   const pulls = pullsQuery.data ?? null;
   const pullsLoading = pullsQuery.isFetching || ghStatusQuery.isFetching;
   const pullsError = ghStatusQuery.error ? messageOf(ghStatusQuery.error) : pullsQuery.error ? messageOf(pullsQuery.error) : null;
-  // The commit sheet belongs to the repository it was opened for.
-  useEffect(() => { setMobilePane('list'); setCommitSheetOpen(false); }, [repository?.id]);
-  useEffect(() => { if (!mobile) setCommitSheetOpen(false); }, [mobile]);
+  useEffect(() => { setMobilePane('list'); }, [repository?.id]);
   const mobileViewerBar = useMemo(() => ({ onBack: () => setMobilePane('list'), setTitleHost: setViewerTitleHost, setActionsHost: setViewerActionsHost }), []);
   const mobileChrome = useMemo(() => !mobile ? null
     : mobilePane === 'viewer' ? { title: viewerTitleHost, actions: viewerActionsHost, float: mobileFloatHost } : NO_MOBILE_CHROME_HOSTS,
@@ -1554,7 +1550,6 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       lastAppliedMessageRef.current = '';
       setViewerSelection({ type: 'commit', oid: result.oid, subject });
       setMobilePane('viewer');
-      setCommitSheetOpen(false);
       await refresh({ background: true });
       committed = true;
     } catch (reason) {
@@ -1686,7 +1681,6 @@ export default function App({ initialView, initialSelection, pullRequestCreation
 
   // Nothing is left to show in the commit sheet once the last staged file is gone.
   useEffect(() => {
-    if (!status?.stagedCount && !commitProposal) setCommitSheetOpen(false);
   }, [commitProposal, status?.stagedCount]);
 
   useEffect(() => () => {
@@ -2221,11 +2215,10 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   const staged = status?.changes.filter((change) => change.staged && !change.conflict) ?? [];
   const changed = status?.changes.filter((change) => change.unstaged && !change.conflict) ?? [];
   const stagedCount = status?.stagedCount ?? 0;
-  const commitSheetTitle = stagedCount ? `Commit ${stagedCount} ${stagedCount === 1 ? 'file' : 'files'}` : 'Commit plan';
   // Docked at the bottom of the sidebar on desktop; in a sheet on phones, whose text and plan live here and outlast it.
   const commitComposer = (
     <CommitComposer
-      open={mobile ? commitSheetOpen : view === 'changes' && Boolean(status?.stagedCount || commitProposal)}
+      open={mobile ? mobilePane === 'list' && view === 'changes' && mobileMainAction({ screen: 'changes', stagedCount, hasCommitPlan: commitProposal !== null }) === 'commit' : view === 'changes' && Boolean(status?.stagedCount || commitProposal)}
       stagedCount={status?.stagedCount ?? 0}
       message={commitMessage}
       generating={Boolean(generating)}
@@ -2249,7 +2242,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       onCancelGenerate={() => void cancelCommitMessageGeneration()}
       onDismissProposal={() => { setCommitProposal(null); setPreparedCommitIndex(null); setCompletedCommitIndices(new Set()); }}
       onToggleCollapsed={() => setCommitPlanCollapsed((value) => !value)}
-      onOpenPath={(path) => { setCommitSheetOpen(false); selectViewer({ type: 'diff', path, kind: 'staged' }); }}
+      onOpenPath={(path) => { selectViewer({ type: 'diff', path, kind: 'staged' }); }}
       onPrepare={(index) => void prepareCommitGroup(index)}
       onCommit={(options) => void createCommit(options)}
     />
@@ -2656,14 +2649,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
             </div>
           </section>
         </main>
-        {mobile && <MobileSheet open={commitSheetOpen} onOpenChange={setCommitSheetOpen} title={commitSheetTitle} tall={commitProposal !== null}>{commitComposer}</MobileSheet>}
-        {mobile && (
-          <div ref={setMobileFloatHost} className="mobile-float">
-            {mobilePane === 'list' && view === 'changes' && mobileMainAction({ screen: 'changes', stagedCount, hasCommitPlan: commitProposal !== null }) === 'commit' && (
-              <Button className="mobile-main-action" aria-haspopup="dialog" onClick={() => setCommitSheetOpen(true)}><IconGitCommit />{commitSheetTitle}</Button>
-            )}
-          </div>
-        )}
+        {mobile && <div ref={setMobileFloatHost} className="mobile-float">{commitComposer}</div>}
         <nav className="mobile-navigation" aria-label="Repository views">
           {SIDEBAR_VIEWS.map((item) => (
             <button key={item} aria-current={view === item ? 'page' : undefined} onClick={() => { setView(item); setMobilePane('list'); }}>

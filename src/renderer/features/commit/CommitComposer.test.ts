@@ -45,23 +45,55 @@ it('renders nothing while closed', async () => {
   expect(container.textContent).toBe('');
 });
 
+async function settle() {
+  for (let tick = 0; tick < 4; tick++) await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+}
+const items = () => [...document.querySelectorAll<HTMLElement>('[role="menuitemcheckbox"]')];
+async function choose(name: string) {
+  await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Choose the commit action"]')!.click());
+  await settle();
+  await act(async () => items().find((item) => item.textContent?.startsWith(name))!.click());
+  await settle();
+}
+
 it('names the staged files on the main action, which commits without pushing', async () => {
   await render();
   await act(async () => button('Commit 1 file')!.click());
   expect(onCommit).toHaveBeenCalledWith({ push: false });
   await render({ stagedCount: 3 });
   expect(button('Commit 3 files')).toBeDefined();
-  await act(async () => button('Commit and push')!.click());
-  expect(onCommit).toHaveBeenLastCalledWith({ push: true });
 });
 
-it('keeps the actions in place but off until there is a message', async () => {
+it('choosing commit and push only changes the button, which then has to be pressed', async () => {
+  await render();
+  await choose('Commit and push');
+  expect(onCommit).not.toHaveBeenCalled();
+  expect(button('Commit 1 file')).toBeUndefined();
+  await act(async () => button('Commit and push')!.click());
+  expect(onCommit).toHaveBeenCalledExactlyOnceWith({ push: true });
+  await choose('Commit');
+  expect(onCommit).toHaveBeenCalledOnce();
+  await act(async () => button('Commit 1 file')!.click());
+  expect(onCommit).toHaveBeenLastCalledWith({ push: false });
+});
+
+it('never pushes where pushing is not possible, whatever was chosen', async () => {
+  await render();
+  await choose('Commit and push');
+  await render({ canPush: false });
+  expect(button('Commit and push')).toBeUndefined();
+  await act(async () => button('Commit 1 file')!.click());
+  expect(onCommit).toHaveBeenCalledExactlyOnceWith({ push: false });
+});
+
+it('keeps the action in place but off until there is a message', async () => {
   await render({ message: '   ' });
   expect(button('Commit 1 file')?.disabled).toBe(true);
-  expect(button('Commit and push')?.disabled).toBe(true);
   await render({ message: 'fix: a thing', canPush: false });
   expect(button('Commit 1 file')?.disabled).toBe(false);
-  expect(button('Commit and push')?.disabled).toBe(true);
+  await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Choose the commit action"]')!.click());
+  await settle();
+  expect(items().find((item) => item.textContent?.startsWith('Commit and push'))?.hasAttribute('data-disabled')).toBe(true);
 });
 
 it('holds the commit while a generation can still replace the message, from the buttons and the shortcut', async () => {
@@ -90,15 +122,18 @@ it('exposes the textarea through its ref so the app can focus it', async () => {
   expect(textareaRef.current?.getAttribute('aria-label')).toBe('Commit message');
 });
 
-it('shows the shortcut beside the actions it triggers', async () => {
+it('runs what the button says from the shortcut', async () => {
   await render();
-  expect(container.querySelector('.commit-composer-hint')?.textContent).toBe('Ctrl+↵');
+  await choose('Commit and push');
+  await act(async () => { container.querySelector('textarea')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true })); });
+  expect(onCommit).toHaveBeenCalledExactlyOnceWith({ push: true });
 });
 
-it('shows the provider and model on the generate action', async () => {
+it('shows the provider on the generate action, with its model in the name', async () => {
   await render({ harnessLabel: 'Codex', modelLabel: 'GPT-5' });
   const generate = container.querySelector<HTMLButtonElement>('.commit-composer-generate')!;
-  expect(generate.textContent).toBe('Generate with Codex·GPT-5');
+  expect(generate.textContent).toBe('Codex');
+  expect(generate.getAttribute('aria-label')).toBe('Generate with Codex · GPT-5');
   await act(async () => generate.click());
   expect(onGenerate).toHaveBeenCalledOnce();
 });
