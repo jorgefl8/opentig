@@ -98,7 +98,7 @@ Branch and worktree management rows show information in their details panel; dif
 <details>
 <summary>Long menus, scrolling, and option hints</summary>
 
-Repository menus can grow to 80% of viewport height while search and management remain visible. Other menus remain compact. Menus use the current theme, with larger touch targets on phones and a gap between hovered and selected options. Above the phone layout the top bar stays on one row at any width: a long branch name truncates, and hovering it shows the full name.
+Repository menus can grow to 80% of viewport height while search and management remain visible. Other menus remain compact. On phones, the keyboard only opens when you tap a menu's search field, so the list keeps its room. Menus use the current theme, with larger touch targets on phones and a gap between hovered and selected options. Above the phone layout the top bar stays on one row at any width: a long branch name truncates, and hovering it shows the full name.
 
 With 100 or more matching choices, menus render only visible rows and a small buffer. Group labels, disabled choices, keyboard navigation, and scrolling to the selected choice remain available. Filtering below that size restores the ordinary list. Background option refreshes preserve scroll position.
 

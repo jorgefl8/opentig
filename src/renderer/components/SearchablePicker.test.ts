@@ -298,6 +298,41 @@ it('preserves user scrolling when live groups refresh without a query or highlig
   } finally { restore(); }
 });
 
+it('focuses the search on opening, except on a phone, where that would open the keyboard', async () => {
+  const input = () => document.querySelector<HTMLInputElement>('input[role="combobox"]');
+  await act(flushTimers);
+  expect(document.activeElement).toBe(input());
+  await act(async () => document.querySelector<HTMLButtonElement>('button[role="combobox"]')!.click());
+  await act(async () => root.unmount());
+  root = createRoot(container);
+  vi.stubGlobal('matchMedia', () => ({ matches: true, addEventListener() {}, removeEventListener() {} }));
+  await act(async () => root.render(createElement(TooltipProvider, { delay: 0 }, createElement(SearchablePicker, {
+    groups: [{ id: 'branches', label: 'Branches', items: [{ value: 'main', label: 'main' }] }],
+    value: 'main', onValueChange, label: 'Branch', triggerLabel: 'main', placeholder: 'Search branches',
+  }))));
+  await act(async () => document.querySelector<HTMLButtonElement>('button[role="combobox"]')!.click());
+  await act(flushTimers);
+  expect(input()).not.toBeNull();
+  expect(document.activeElement).not.toBe(input());
+});
+
+it('does not pull the list back to the selection when the pointer leaves a row while scrolling', async () => {
+  const restore = mockListLayout();
+  try {
+    await showLargePicker(1000);
+    await act(flushTimers);
+    const list = document.querySelector<HTMLElement>('.searchable-picker-list')!;
+    const row = list.querySelector<HTMLElement>('[role="option"]')!;
+    const pointer = (type: string, relatedTarget: EventTarget | null = null) => new MouseEvent(type, { bubbles: true, relatedTarget });
+    await act(async () => { for (const type of ['pointerover', 'pointermove', 'mouseover', 'mousemove']) row.dispatchEvent(pointer(type)); });
+    await act(flushTimers);
+    await act(async () => { list.scrollTop = 500; list.dispatchEvent(new Event('scroll')); });
+    await act(async () => { for (const type of ['pointerout', 'pointerleave', 'mouseout', 'mouseleave']) row.dispatchEvent(pointer(type, document.body)); });
+    await act(flushTimers);
+    expect(list.scrollTop).toBe(500);
+  } finally { restore(); }
+});
+
 it('keeps a distant highlighted row fully inside the padded list viewport', async () => {
   const restore = mockListLayout();
   try {

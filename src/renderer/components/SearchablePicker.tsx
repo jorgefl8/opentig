@@ -4,6 +4,7 @@ import { IconSettings } from '@tabler/icons-react';
 import { Combobox, ComboboxContent, ComboboxGroup, ComboboxGroupLabel, ComboboxInput, ComboboxItem, ComboboxList, ComboboxTrigger } from '@/components/ui/combobox';
 import { Kbd } from '@/components/ui/kbd';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { useMobileLayout } from '@/lib/use-mobile-layout';
 import { cn } from '@/lib/utils';
 
 export interface SearchablePickerItem {
@@ -65,6 +66,8 @@ export function SearchablePicker({ groups, value, onValueChange, label, triggerL
   open: controlledOpen, onOpenChange, focusSearch = true, onSearchChange,
 }: SearchablePickerProps) {
   const comboboxId = useId();
+  // Focusing the search on a phone opens the keyboard, which leaves the list almost no room to scroll.
+  const mobile = useMobileLayout();
   const [internalOpen, setInternalOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [scrolling, setScrolling] = useState(false);
@@ -138,7 +141,7 @@ export function SearchablePicker({ groups, value, onValueChange, label, triggerL
         </TooltipTrigger>
         <TooltipContent className="break-all">{triggerTruncated ? [triggerLabel, triggerHint].filter(Boolean).join(' · ') : triggerHint}</TooltipContent>
       </Tooltip>
-      <ComboboxContent align={align} className={cn('searchable-picker', contentClassName)} initialFocus={focusSearch}>
+      <ComboboxContent align={align} className={cn('searchable-picker', contentClassName)} initialFocus={focusSearch && !mobile}>
         <ComboboxInput placeholder={placeholder} aria-label={placeholder} />
         {virtualized ? <VirtualPickerList query={needle} groups={filtered} selectedIndex={selected ? filteredItems.indexOf(selected) : -1} highlight={highlight} scrolling={scrolling} label={label} comboboxId={comboboxId} onScroll={dismissScrollingTooltips} /> : <ComboboxList className="searchable-picker-list" aria-label={label} onScroll={dismissScrollingTooltips} onWheelCapture={dismissScrollingTooltips}>
           {filtered.length === 0 && <div className="searchable-picker-empty" role="status">No matches</div>}
@@ -201,8 +204,14 @@ function VirtualPickerList({ query, groups, selectedIndex, highlight, scrolling,
   });
   // Search changes reset the viewport; live group refreshes preserve the user's scroll.
   useLayoutEffect(() => { virtualizer.scrollToOffset(0); }, [query, virtualizer]);
+  // The selection is revealed once, on opening. Doing it whenever the pointer leaves a row would
+  // pull the list back while it's being scrolled, because rows move out from under the pointer.
+  const openingSelection = useRef(selectedIndex);
   useLayoutEffect(() => {
-    if (activeIndex >= 0 && (highlight.scroll || highlight.index < 0)) virtualizer.scrollToIndex(activeIndex, { align: 'auto' });
+    if (openingSelection.current >= 0) virtualizer.scrollToIndex(openingSelection.current, { align: 'auto' });
+  }, [virtualizer]);
+  useLayoutEffect(() => {
+    if (highlight.scroll && activeIndex >= 0) virtualizer.scrollToIndex(activeIndex, { align: 'auto' });
   }, [activeIndex, highlight, virtualizer]);
   const visibleGroups = new Map<string, ReturnType<typeof virtualizer.getVirtualItems>>();
   for (const row of virtualizer.getVirtualItems()) {
