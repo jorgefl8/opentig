@@ -24,8 +24,8 @@ const ReleasesTools = lazy(() => import('./ReleasesView').then((module) => ({ de
 export type PullRequestsSection = 'pulls' | 'releases';
 
 /** Two lines of text and the row's padding; rows are measured once rendered. */
-const PULL_ROW_HEIGHT = 66;
-const MOBILE_PULL_ROW_HEIGHT = 79;
+const PULL_ROW_HEIGHT = 49;
+const MOBILE_PULL_ROW_HEIGHT = 60;
 
 interface PullRequestsViewProps {
   repositoryId: string;
@@ -210,14 +210,18 @@ function PullRow({ repositoryId, pr, active, live, phone, onSelect }: { reposito
   return (
     <div className={`pull-item ${active ? 'active' : ''}`} role="listitem">
       <button className="pull-main" onClick={() => onSelect(pr.number)}>
-        <span className={`status-dot tone-${status.tone}`} aria-hidden="true" />
-        <span className="pull-title">{pr.title || '(no title)'}</span>
-        <span className="pull-meta">#{pr.number} · {status.label}{phone && pr.stack && ` · Layer ${pr.stack.position} of ${pr.stack.size}`}</span>
-        <span className="pull-facts">
+        <span className="pull-avatar-status">
           <GitHubAvatar key={pr.authorAvatarUrl} src={pr.authorAvatarUrl} className="pull-avatar" />
-          <span className="pull-author">{pr.author}</span>
+          <span className={`status-dot tone-${status.tone}`} aria-hidden="true" />
+        </span>
+        <span className="pull-line">
+          <span className="pull-title">{pr.title || '(no title)'}</span>
+          <time className="pull-age" dateTime={pr.updatedAt}>{formatTimeAgo(pr.updatedAt)}</time>
+        </span>
+        <span className="pull-line">
+          <span className="pull-meta">#{pr.number} · {status.label}{phone && pr.stack && ` · Layer ${pr.stack.position} of ${pr.stack.size}`}</span>
+          <span className="pull-author">· {pr.author}</span>
           <span className="pull-lines"><span className="add">+{pr.additions}</span> <span className="del">−{pr.deletions}</span></span>
-          <time dateTime={pr.updatedAt}>{formatTimeAgo(pr.updatedAt)}</time>
         </span>
       </button>
       {/* On a phone the whole row is the target, and the viewer has its stack and link. */}

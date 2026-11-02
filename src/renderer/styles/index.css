@@ -915,9 +915,14 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   .tone-progress, .tone-neutral { color: var(--muted-foreground); }
   .pull-item { position: relative; display: flex; align-items: center; gap: 3px; padding-right: 6px; transition: background-color .12s ease; }
   .pull-item:focus-within { background: var(--row-hover); }
-  .pull-main { display: grid; min-width: 0; flex: 1; grid-template-columns: 7px minmax(0, 1fr); align-items: center; gap: 1px 9px; padding: 8px 0 8px 12px; line-height: 1.4; text-align: left; }
-  .pull-title { overflow: hidden; font-size: var(--text-ui); font-weight: var(--weight-medium); text-overflow: ellipsis; white-space: nowrap; }
-  .pull-meta { grid-column: 2; overflow: hidden; color: var(--muted-foreground); font-size: var(--text-meta); font-weight: var(--weight-regular); text-overflow: ellipsis; white-space: nowrap; }
+  .pull-main { display: grid; min-width: 0; flex: 1; grid-template-columns: 26px minmax(0, 1fr); align-items: center; gap: 1px 9px; padding: 8px 6px 8px 12px; line-height: 1.4; text-align: left; }
+  .pull-avatar-status { position: relative; display: block; width: 26px; height: 26px; grid-row: span 2; }
+  .pull-avatar-status .status-dot { position: absolute; right: -2px; bottom: -2px; box-sizing: content-box; border: 2px solid var(--background); }
+  .pull-line { display: flex; min-width: 0; grid-column: 2; align-items: baseline; gap: 5px; color: var(--muted-foreground); font-size: var(--text-meta); font-weight: var(--weight-regular); white-space: nowrap; }
+  .pull-title { overflow: hidden; min-width: 0; flex: 1; color: var(--foreground); font-size: var(--text-ui); font-weight: var(--weight-medium); text-overflow: ellipsis; }
+  /* The author gives way first: where a PR stands is what the row is read for. */
+  .pull-meta { overflow: hidden; min-width: 0; flex: 0 1 auto; text-overflow: ellipsis; }
+  .pull-author { overflow: hidden; min-width: 0; flex: 0 1000 auto; text-overflow: ellipsis; }
   .pulls-menu-popup { display: grid; width: min(250px, calc(100vw - 24px)); transform-origin: var(--transform-origin); border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--popover); padding: 6px; color: var(--popover-foreground); box-shadow: 0 10px 25px rgb(0 0 0 / 18%); outline: none; }
   .pulls-menu-popup[data-open] { animation: fade-rise var(--motion-fast) var(--ease-out); }
   .pulls-menu-separator { height: 1px; margin: 5px 2px; background: var(--border); }
@@ -979,13 +984,10 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   .pr-stack-notice { padding: 6px 7px; }
   .pr-stack-notice:has(.animate-spin) { display: flex; align-items: center; gap: 6px; }
   .pr-stack-notice svg { width: 13px; height: 13px; flex: none; color: var(--primary); }
-  .pull-facts { display: flex; min-width: 0; grid-column: 2; align-items: center; gap: 6px; color: var(--muted-foreground); font-size: var(--text-meta); font-weight: var(--weight-regular); white-space: nowrap; }
-  .pull-avatar { display: inline-grid; width: 14px; height: 14px; flex: none; place-items: center; overflow: hidden; border-radius: 50%; background: var(--muted); }
+  .pull-avatar { display: grid; width: 100%; height: 100%; place-items: center; overflow: hidden; border-radius: 50%; background: var(--muted); }
   .pull-avatar img { width: 100%; height: 100%; object-fit: cover; }
   .pull-avatar svg { width: 100%; height: 100%; color: var(--muted-foreground); }
-  /* The author gives way first: the size and age are what a row is compared by. */
-  .pull-author { overflow: hidden; min-width: 24px; text-overflow: ellipsis; }
-  .pull-lines, .pull-facts time { flex: none; font-variant-numeric: tabular-nums; }
+  .pull-age, .pull-lines { flex: none; margin-left: auto; font-variant-numeric: tabular-nums; }
   .pull-lines .add { color: var(--diff-added); }
   .pull-lines .del { color: var(--diff-deleted); }
   .pull-open-external { flex: none; opacity: 0; transition: opacity .12s ease; }
@@ -1845,6 +1847,11 @@ section[data-sileo-viewport] [data-sileo-title] { text-transform: none; }
 :is(.pr-action-bar, .confirm-popover-actions) [data-slot="button"][data-size="xs"] svg { width: 14px; height: 14px; }
 .pr-action-bar [data-slot="button"][data-size="icon-xs"] { width: 28px; height: 28px; }
 .pr-action-bar .pr-split-button > [data-slot="button"]:last-child { width: 26px; padding-inline: 0; }
+
+/* With a mouse the row's link covers its right edge while hovered, so the time and lines reach that edge the rest of the time. Unlayered and solid because it replaces the button's see-through hover. */
+@media (hover: hover) and (pointer: fine) and (min-width: 768px) {
+  .pull-item .pull-open-external, .pull-item .pull-open-external:hover { position: absolute; top: 50%; right: 6px; background: var(--secondary); translate: 0 -50%; }
+}
 
 /* Breadcrumb triggers in the top bar are text with a hover background. Unlayered
    like the picker rules above, because they replace the trigger's utility classes. */
