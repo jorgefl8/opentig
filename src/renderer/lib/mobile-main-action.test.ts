@@ -14,17 +14,17 @@ describe('the one floating action on a phone', () => {
     expect(mobileMainAction({ screen: 'file', dirty: false, saving: false })).toBeNull();
   });
 
-  it('follows the pull request tab, and floats nothing over code', () => {
+  it('follows the pull request tab, and floats nothing over what is only read', () => {
     expect(mobileMainAction({ screen: 'pull-request', tab: 'summary', primary: 'action' })).toBe('pull-request-primary');
     expect(mobileMainAction({ screen: 'pull-request', tab: 'summary', primary: 'github' })).toBe('pull-request-primary');
-    expect(mobileMainAction({ screen: 'pull-request', tab: 'timeline', primary: 'action' })).toBe('comment');
-    expect(mobileMainAction({ screen: 'pull-request', tab: 'diff', primary: 'action' })).toBeNull();
+    expect(mobileMainAction({ screen: 'pull-request', tab: 'comments', primary: 'action' })).toBe('comment');
+    for (const tab of ['checks', 'timeline', 'diff'] as const) expect(mobileMainAction({ screen: 'pull-request', tab, primary: 'action' })).toBeNull();
   });
 
   it('has nothing to press when the pull request only has a reason to give', () => {
     for (const primary of ['none', 'text', 'retry'] as const) {
       expect(mobileMainAction({ screen: 'pull-request', tab: 'summary', primary })).toBeNull();
-      expect(mobileMainAction({ screen: 'pull-request', tab: 'timeline', primary })).toBe('comment');
+      expect(mobileMainAction({ screen: 'pull-request', tab: 'comments', primary })).toBe('comment');
     }
   });
 

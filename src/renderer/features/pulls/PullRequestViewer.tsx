@@ -13,12 +13,13 @@ import { LinkedMarkdown } from '@/features/markdown/LinkedMarkdown';
 import { LinkedText } from '@/components/LinkedText';
 import { MobileViewerActions, MobileViewerTitle } from '@/components/MobileChrome';
 import { useMobileChrome } from '@/components/mobile-chrome-context';
+import type { PullRequestTab } from '@/lib/mobile-main-action';
 
 import { ghDetail, MERGE_METHOD_LABELS, openOnGitHub, reviewDecisionLabel } from './gh-utils';
 import { GitHubAvatar } from './GitHubAvatar';
 import { PullRequestActionBar } from './PullRequestActionBar';
 import { PullRequestConversationView } from './PullRequestConversationView';
-import { PullRequestChecksMenu, PullRequestChecksSummary } from './PullRequestChecksMenu';
+import { PullRequestChecksLink, PullRequestChecksPanel, PullRequestChecksSummary } from './PullRequestChecks';
 import { PullRequestEditor } from './PullRequestEditor';
 import { hasViewerDraft, pullRequestCommentDraft, pullRequestEditDraft, useViewerDraft } from './viewer-drafts';
 import { pullRequestLiveStateQueryOptions, queriesOutdatedByLiveState } from './pull-request-live-state-query';
@@ -41,7 +42,7 @@ interface PullRequestViewerProps {
 }
 
 export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType, wrapLines, onDiffViewChange, onWrapLinesChange, onClose, onSelectPullRequest }: PullRequestViewerProps) {
-  const [tab, setTab] = useState<'summary' | 'timeline' | 'diff'>('summary');
+  const [tab, setTab] = useState<PullRequestTab>('summary');
   const [editing, setEditing] = useState(() => hasViewerDraft(pullRequestEditDraft(repositoryId, prNumber)));
   const [commentDraft, setCommentDraft] = useViewerDraft(pullRequestCommentDraft(repositoryId, prNumber), () => '');
   const header = useRef<HTMLElement>(null);
@@ -83,7 +84,7 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
   const commitsQuery = useQuery<PullRequestCommitList>({
     queryKey: queryKeys.pullRequestCommits(repositoryId, prNumber),
     queryFn: () => opentig.github.getPullRequestCommits(repositoryId, prNumber),
-    enabled: firstPageOnly && tab !== 'summary',
+    enabled: firstPageOnly && (tab === 'timeline' || tab === 'diff'),
   });
   const commits = commitsQuery.data?.commits ?? details?.commits ?? [];
   const commitsIncomplete = firstPageOnly && commitsQuery.data?.complete !== true;
@@ -161,7 +162,7 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
               ? <span className="pr-status tone-progress" role="status"><span className="status-dot" aria-hidden="true" /> <ShimmeringText text="Checking status…" /></span>
               : <span className={`pr-status tone-${status.tone}`} role="status"><span className="status-dot" aria-hidden="true" /> {status.label}</span>}
             {status.detail && <span>{status.detail}</span>}
-            {live ? <PullRequestChecksMenu checks={live.checks} url={details.url} /> : <PullRequestChecksSummary state={details.checksState} />}
+            {live ? <PullRequestChecksLink checks={live.checks} onOpen={() => setTab('checks')} /> : <PullRequestChecksSummary state={details.checksState} />}
             {review && review !== status.label && !reviewers.some((reviewer) => verdictLabel(reviewer) === review) && <span className="pr-review">{review}</span>}
             {reviewers.map((reviewer) => <span key={reviewer.author.login} className="pr-reviewer">{verdictLabel(reviewer)} by {reviewer.author.login}{reviewer.outdated ? ', before the latest commit' : ''}</span>)}
             {live?.autoMerge && <span className="pr-auto-merge">Auto-merge · {MERGE_METHOD_LABELS[live.autoMerge.method]}</span>}
@@ -179,6 +180,8 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
           className="pr-viewer-tabs"
           items={[
             { value: 'summary', label: 'Summary' },
+            { value: 'comments', label: 'Comments' },
+            { value: 'checks', label: 'Checks' },
             { value: 'timeline', label: 'Timeline' },
             { value: 'diff', label: 'Code' },
           ]}
@@ -191,8 +194,13 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
               : <p className="pr-empty-description">This pull request has no description.</p>}
           </section>
       </ViewerTabsPanel>
-      <ViewerTabsPanel value="timeline" className="markdown-preview-scroll pr-description-scroll">
+      <ViewerTabsPanel value="comments" className="markdown-preview-scroll pr-description-scroll">
           <PullRequestConversationView repositoryId={repositoryId} number={details.number} url={details.url} live={live} draft={commentDraft} onDraftChange={setCommentDraft} />
+      </ViewerTabsPanel>
+      <ViewerTabsPanel value="checks" className="markdown-preview-scroll pr-description-scroll">
+          <PullRequestChecksPanel checks={live?.checks ?? null} loading={liveQuery.isPending} url={details.url} />
+      </ViewerTabsPanel>
+      <ViewerTabsPanel value="timeline" className="markdown-preview-scroll pr-description-scroll">
           <section className="pr-timeline standalone" aria-label="Commit timeline">
             <h3>Commits <span className="plain-count">{commits.length}{commitsIncomplete ? '+' : ''}</span></h3>
             {commitsIncomplete && !commitsQuery.isFetching && (

@@ -1000,7 +1000,7 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   .pr-status { display: inline-flex; min-width: 0; align-items: center; gap: 6px; font-weight: var(--weight-strong); }
   .pr-viewer-status > .pr-status:not(:first-child)::before { margin-right: 0; }
   .pr-checks-trigger { border-radius: var(--radius-sm); text-decoration: underline; text-decoration-color: var(--border); text-underline-offset: 3px; cursor: pointer; }
-  .pr-checks-trigger:hover, .pr-checks-trigger[data-popup-open] { color: var(--foreground); text-decoration-color: currentColor; }
+  .pr-checks-trigger:hover { color: var(--foreground); text-decoration-color: currentColor; }
   .pr-checks-trigger:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
   .pr-action-bar { display: inline-flex; flex: none; max-width: 55%; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 4px; }
   .pr-action-reason { color: var(--muted-foreground); font-size: var(--text-meta); }
@@ -1048,7 +1048,9 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   .pr-commit-content b { font-weight: var(--weight-regular); }
   .pr-timeline-item { display: grid; min-width: 0; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; gap: 9px; padding: 5px 0; }
   .pr-timeline-item code { color: var(--muted-foreground); font-size: var(--text-meta); }
-  .pr-checks-popup { display: grid; gap: 3px; }
+  /* Rows keep room for their hover, while their text lines up with the other tabs. */
+  .pr-checks-panel { display: grid; max-width: 760px; gap: 3px; padding: 11px 9px 24px; }
+  .pr-checks-panel > .pr-empty-description { padding-inline: 7px; }
   .pr-checks-group h4 { display: flex; align-items: center; gap: 5px; margin: 0; padding: 6px 7px 3px; color: var(--muted-foreground); font-size: var(--text-meta); font-weight: var(--weight-strong); }
   .pr-check-row { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 44px; padding: 5px 7px; border-radius: var(--radius-sm); text-align: left; }
   button.pr-check-row:hover, button.pr-check-row:focus-visible { background: var(--row-hover); }

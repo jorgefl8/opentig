@@ -98,7 +98,8 @@ it('says how the checks stand, and opens them from there', async () => {
   await render();
   expect(container.querySelector('.pr-checks-trigger')?.textContent).toBe('1 of 3 checks failing');
   await act(async () => container.querySelector<HTMLButtonElement>('.pr-checks-trigger')!.click());
-  expect(document.querySelector('.pr-checks-popup')).not.toBeNull();
+  expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe('Checks');
+  expect(container.querySelector('.pr-checks-panel')).not.toBeNull();
 });
 
 it.each([
@@ -195,7 +196,7 @@ it('does not repeat a decision that a reviewer\'s verdict already gives', async 
   expect(container.querySelector('.pr-reviewer')?.textContent).toBe('Approved by ana');
 });
 
-it('does not read the conversation until Timeline is open', async () => {
+it('does not read the conversation until Comments is open', async () => {
   await render();
   expect(api.getPullRequestConversation).not.toHaveBeenCalled();
 });
@@ -224,8 +225,12 @@ it('on a phone puts its number and branches in the top bar, and floats one thing
     await settle();
   };
   expect(floating()).toEqual(['Merge']);
-  await open('Timeline');
+  await open('Comments');
   expect(floating()).toEqual(['Write a comment']);
+  await open('Checks');
+  expect(floating()).toEqual([]);
+  await open('Timeline');
+  expect(floating()).toEqual([]);
   await open('Code');
   expect(floating()).toEqual([]);
   expect(container.querySelector('.pr-viewer')?.getAttribute('data-tab')).toBe('diff');

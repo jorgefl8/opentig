@@ -371,7 +371,7 @@ describe('on a phone', () => {
     hosts = { title: document.createElement('div'), actions: document.createElement('div'), float: document.createElement('div') };
     document.body.append(hosts.title!, hosts.actions!, hosts.float!);
   });
-  async function renderPhone(state: PullRequestLiveState = live(), tab: 'summary' | 'timeline' | 'diff' = 'summary') {
+  async function renderPhone(state: PullRequestLiveState = live(), tab: 'summary' | 'comments' | 'diff' = 'summary') {
     await act(async () => root.render(createElement(QueryClientProvider, { client }, createElement(TooltipProvider, null, createElement(MobileChromeContext.Provider, { value: hosts }, createElement(PullRequestActionBar, {
       repositoryId: 'repo', details, live: state, refreshing: false, statusLabel: null, tab, onRefresh, onEdit, onSelectPullRequest,
     }))))));
@@ -396,7 +396,7 @@ describe('on a phone', () => {
     await renderPhone(live(), 'summary');
     expect(floating()).toEqual(['Merge']);
     expect(container.querySelector('.pr-action-bar button')).toBeNull();
-    await renderPhone(live(), 'timeline');
+    await renderPhone(live(), 'comments');
     expect(floating()).toEqual([]);
     await renderPhone(live(), 'diff');
     expect(floating()).toEqual([]);

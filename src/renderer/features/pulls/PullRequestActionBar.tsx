@@ -13,7 +13,7 @@ import { MobileActionsMenu, MobileMainAction, MobileSwitchRow, MobileViewerActio
 import { useMobileChrome } from '@/components/mobile-chrome-context';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
-import { mobileMainAction } from '@/lib/mobile-main-action';
+import { mobileMainAction, type PullRequestTab } from '@/lib/mobile-main-action';
 import { opentig } from '@/lib/opentig-api';
 import { queryKeys } from '@/lib/query-client';
 import { ConfirmPopover } from './ConfirmPopover';
@@ -78,7 +78,7 @@ export function PullRequestActionBar({ repositoryId, details, live, refreshing, 
   /** Already on screen, so a primary that would only repeat it stays out. */
   statusLabel: string | null;
   /** On a phone the primary action floats, only where it's what the screen is for. */
-  tab?: 'summary' | 'timeline' | 'diff';
+  tab?: PullRequestTab;
   onRefresh(): void;
   onEdit(): void;
   onSelectPullRequest(number: number): void;

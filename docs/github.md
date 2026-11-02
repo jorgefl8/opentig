@@ -75,7 +75,7 @@ The filter button beside the tabs chooses which states appear. Its menu also has
 
 While a PR is open in the viewer, a line under its title shows where it stands according to GitHub: **Ready to merge**, **Review required**, **Required checks failing**, **2 commits behind main**, **Conflicts with main**, **In merge queue**, or **A branch rule blocks merging** when GitHub blocks it for a reason OpenTig can't see; otherwise its state, such as **Draft**, **Merged into main**, or **Closed**. Armed auto-merge appears there as text with its method. Reading this status never changes anything on GitHub.
 
-Click the checks summary on that line, such as **2 checks passed**, to list individual checks, with what needs attention first, then what's in progress and what has completed. Required checks are marked, and a row opens that check on GitHub. A check that ran more than once shows its newest run. Past GitHub's first 100 checks, the list says so and links to the rest. If GitHub withholds details from your account, the list says some checks may be missing.
+**Checks** lists the individual checks, and the summary on that line, such as **2 checks passed**, takes you there. What needs attention comes first, then what's in progress and what has completed. Required checks are marked, and a row opens that check on GitHub. A check that ran more than once shows its newest run. Past GitHub's first 100 checks, the list says so and links to the rest. If GitHub withholds details from your account, the list says some checks may be missing.
 
 The latest verdict of each reviewer also appears on that line, marked if it was given before the latest commit. The author, last update, and labels are in the muted line above it.
 
@@ -101,7 +101,7 @@ The list's menu shows the effective GitHub account. When a repository can't be r
 
 **Read the conversation**
 
-**Timeline** shows the PR's comments and reviews above its commits, with Markdown rendered and links that open in a new tab. Choose **Hide bots** to leave out comments from bots. Comments hidden on GitHub stay collapsed until you open them. Past the most recent 100 comments and 100 reviews, the list says so and links to the rest. They load when you open **Timeline**. Inline code comments stay on GitHub.
+**Comments** shows the PR's comments and reviews, with Markdown rendered and links that open in a new tab. Choose **Hide bots** to leave out comments from bots. Comments hidden on GitHub stay collapsed until you open them. Past the most recent 100 comments and 100 reviews, the list says so and links to the rest. They load when you open **Comments**. Inline code comments stay on GitHub. **Timeline** lists the PR's commits.
 
 **Comment and review**
 

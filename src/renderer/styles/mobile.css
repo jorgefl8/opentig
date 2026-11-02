@@ -323,12 +323,13 @@
   html .pr-editor-title + .pr-action-bar { margin-left: auto; }
   html .pr-editor-body { flex: none; padding: 0 14px var(--mobile-nav-clearance); }
   html .tab-list > button { min-height: 44px; }
-  html .pr-viewer-tabs { --tab-height: 44px; position: sticky; top: 0; z-index: 5; flex: none; align-self: stretch; gap: 18px; margin: 0; border-bottom: 1px solid var(--border); background: var(--background); padding: 0 14px; }
+  html .pr-viewer-tabs { --tab-height: 44px; position: sticky; top: 0; z-index: 5; flex: none; align-self: stretch; gap: 14px; margin: 0; overflow-x: auto; scrollbar-width: none; border-bottom: 1px solid var(--border); background: var(--background); padding: 0 14px; }
   html .pr-description-scroll { min-height: auto; flex: none; overflow: visible; }
   html .pr-viewer[data-tab="diff"] { overflow: hidden; }
   html .pr-viewer[data-tab="diff"] .pr-viewer-overview { display: none; }
   html .pr-viewer[data-tab="diff"] .pr-viewer-tabs { position: static; }
   html .pr-summary-section, html .pr-timeline, html .pr-conversation { padding-inline: 14px; }
+  html .pr-checks-panel { padding-inline: 7px; }
   /* Big enough to touch, without making the line taller. */
   html .pr-conversation-actions { margin-block: -10px; }
   html .pr-summary-section { padding-block: 14px; }
