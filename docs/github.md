@@ -109,6 +109,12 @@ The list's menu shows the effective GitHub account. When a repository can't be r
 
 If GitHub doesn't answer in time, your text stays in the box and sending is held back until you've checked the conversation, because sending again could post it twice.
 
+**Edit or delete what you wrote**
+
+Your own comments and reviews have a **...** menu, shown only when GitHub allows what it offers. **Edit** opens the text where it is, or in a sheet on a phone, and doesn't change a review's verdict. **Delete** only appears on comments, because GitHub doesn't allow deleting a review once it's submitted. It asks first and can't be undone. Neither touches other people's comments, even when you're a maintainer: use GitHub for those.
+
+Both stop if the text changed on GitHub after you last saw it, and saving again after that warning replaces that version.
+
 **Open the current branch's PR**
 
 Beside the branch in the top bar, the PR indicator shows the current branch or worktree's PR number. A purple merge icon identifies a merged PR, and **Draft** a draft one. Click for its full title and status, then choose **Open in OpenTig** or **Open in GitHub**. The mobile repository menu offers the same choices; the repository menu also opens the repository on GitHub.

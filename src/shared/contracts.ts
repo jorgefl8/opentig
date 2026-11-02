@@ -474,6 +474,13 @@ export interface PullRequestConversationEntry {
   verdict: PullRequestReviewVerdict | null;
   /** Hidden by a maintainer on GitHub. */
   minimized: boolean;
+  /** The version the viewer has seen, which editing or deleting it must still match. */
+  updatedAt: string;
+  edited: boolean;
+  /** The viewer's own text, when GitHub allows changing it. */
+  canEdit: boolean;
+  /** Never for a review: GitHub refuses once it's submitted, even while reporting `viewerCanDelete`. */
+  canDelete: boolean;
 }
 
 export interface PullRequestConversation {
@@ -562,6 +569,10 @@ export type CommentOnPullRequestInput = PullRequestMutationBase & { body: string
 
 /** The head is the commit the verdict is about: a push in the meantime stops it. */
 export type ReviewPullRequestInput = PullRequestMutationBase & { expectedHeadOid: string; verdict: 'approve' | 'request-changes' | 'comment'; body: string };
+
+/** Stops if the comment or review changed after `expectedUpdatedAt`. */
+export type DeletePullRequestEntryInput = PullRequestMutationBase & { entryId: string; expectedUpdatedAt: string };
+export type EditPullRequestEntryInput = DeletePullRequestEntryInput & { body: string };
 
 export interface ReleaseSummary {
   tagName: string;
@@ -847,6 +858,8 @@ export interface OpenTigApi {
     updatePullRequest(input: UpdatePullRequestInput): Promise<void>;
     commentOnPullRequest(input: CommentOnPullRequestInput): Promise<void>;
     reviewPullRequest(input: ReviewPullRequestInput): Promise<void>;
+    editPullRequestEntry(input: EditPullRequestEntryInput): Promise<void>;
+    deletePullRequestEntry(input: DeletePullRequestEntryInput): Promise<void>;
     getPullRequestStack(repositoryId: string, number: number): Promise<PullRequestStack | null>;
     getPullRequestDiff(repositoryId: string, number: number): Promise<DiffResult>;
     getPullRequestCommitDiff(repositoryId: string, oid: string): Promise<DiffResult>;
@@ -909,6 +922,6 @@ export const IPC = {
   aiStatuses: 'ai:statuses', aiGenerateCommitMessage: 'ai:generate-commit-message', aiCancelGeneration: 'ai:cancel-generation', aiLog: 'ai:log', aiClearLog: 'ai:clear-log',
   diagnosticsList: 'diagnostics:list', diagnosticsClear: 'diagnostics:clear', diagnosticsRecord: 'diagnostics:record',
   githubAccountsStatus: 'github:accounts-status', githubSetDefaultAccount: 'github:set-default-account', githubRepositoryAccount: 'github:repository-account', githubSetRepositoryAccount: 'github:set-repository-account',
-  githubStatus: 'github:status', githubRepositoryInfo: 'github:repository-info', githubPrForBranch: 'github:pr-for-branch', githubPrList: 'github:pr-list', githubPrView: 'github:pr-view', githubPrLiveState: 'github:pr-live-state', githubPrConversation: 'github:pr-conversation', githubPrAction: 'github:pr-action', githubPrUpdate: 'github:pr-update', githubPrComment: 'github:pr-comment', githubPrReview: 'github:pr-review',
+  githubStatus: 'github:status', githubRepositoryInfo: 'github:repository-info', githubPrForBranch: 'github:pr-for-branch', githubPrList: 'github:pr-list', githubPrView: 'github:pr-view', githubPrLiveState: 'github:pr-live-state', githubPrConversation: 'github:pr-conversation', githubPrAction: 'github:pr-action', githubPrUpdate: 'github:pr-update', githubPrComment: 'github:pr-comment', githubPrReview: 'github:pr-review', githubPrEntryEdit: 'github:pr-entry-edit', githubPrEntryDelete: 'github:pr-entry-delete',
   githubPrStack: 'github:pr-stack', githubPrDiff: 'github:pr-diff', githubPrCommitDiff: 'github:pr-commit-diff', githubPrCommits: 'github:pr-commits', githubPrCreate: 'github:pr-create', githubReleaseList: 'github:release-list', githubReleaseView: 'github:release-view', githubReleaseCreate: 'github:release-create', githubReleaseUpdate: 'github:release-update', githubReleaseDelete: 'github:release-delete', githubReleasePublish: 'github:release-publish', githubWorkflowList: 'github:workflow-list', githubWorkflowRuns: 'github:workflow-runs', githubWorkflowRun: 'github:workflow-run', githubPrDraft: 'github:pr-draft', githubPrDraftCancel: 'github:pr-draft-cancel',
 } as const;

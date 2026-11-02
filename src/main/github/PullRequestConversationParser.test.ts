@@ -29,6 +29,34 @@ describe('parsePullRequestConversation', () => {
     expect(parsed?.entries[0]).toMatchObject({ author: null, minimized: true });
   });
 
+  describe('what the viewer can change', () => {
+    const allowed = { viewerDidAuthor: true, viewerCanUpdate: true, viewerCanDelete: true };
+    const reviewEntry = (state: string, overrides: object) => parsePullRequestConversation(response([], [review('r1', state, '2026-01-01T00:00:00Z', { body: 'Text', ...allowed, ...overrides })]))?.entries[0];
+
+    it('lets the viewer edit and delete their own comment, and reads its version', () => {
+      const parsed = parsePullRequestConversation(response([comment('c1', '2026-01-01T00:00:00Z', { updatedAt: '2026-01-02T00:00:00Z', lastEditedAt: '2026-01-02T00:00:00Z', ...allowed })], []));
+      expect(parsed?.entries[0]).toMatchObject({ canEdit: true, canDelete: true, edited: true, updatedAt: '2026-01-02T00:00:00Z' });
+    });
+
+    it("doesn't offer other people's text, even when GitHub allows a maintainer to change it", () => {
+      const parsed = parsePullRequestConversation(response([comment('c1', '2026-01-01T00:00:00Z', { ...allowed, viewerDidAuthor: false })], []));
+      expect(parsed?.entries[0]).toMatchObject({ canEdit: false, canDelete: false });
+    });
+
+    it('respects what GitHub refuses, and treats missing permissions as refused', () => {
+      expect(reviewEntry('COMMENTED', { viewerCanUpdate: false, viewerCanDelete: false })).toMatchObject({ canEdit: false, canDelete: false });
+      expect(parsePullRequestConversation(response([comment('c1', '2026-01-01T00:00:00Z')], []))?.entries[0]).toMatchObject({ canEdit: false, canDelete: false, edited: false, updatedAt: '2026-01-01T00:00:00Z' });
+    });
+
+    it("never deletes a review, because GitHub refuses even while reporting that it can", () => {
+      for (const state of ['COMMENTED', 'APPROVED', 'CHANGES_REQUESTED']) expect(reviewEntry(state, {})).toMatchObject({ canEdit: true, canDelete: false });
+    });
+
+    it('has nothing to edit in a review without text', () => {
+      expect(reviewEntry('APPROVED', { body: '' })).toMatchObject({ canEdit: false, canDelete: false });
+    });
+  });
+
   it('says when GitHub has more than one page', () => {
     const truncated = JSON.stringify({ data: { repository: { pullRequest: { comments: page([], true), reviews: page([]) } } } });
     expect(parsePullRequestConversation(truncated)?.truncated).toBe(true);

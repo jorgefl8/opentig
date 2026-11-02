@@ -1067,12 +1067,14 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   .pr-checks-all svg { width: 11px; height: 11px; }
   .pr-live-notice { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
   .pr-conversation-filter { display: inline-flex; align-items: center; gap: 7px; color: var(--muted-foreground); font-size: var(--text-ui); cursor: pointer; }
-  .pr-conversation-meta { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: 2px 6px; color: var(--muted-foreground); font-size: var(--text-meta); }
+  .pr-conversation-meta { display: flex; min-width: 0; align-items: center; gap: 6px; color: var(--muted-foreground); font-size: var(--text-meta); }
+  .pr-conversation-who { display: flex; min-width: 0; flex: 1; flex-wrap: wrap; align-items: center; gap: 2px 6px; }
   .pr-conversation-meta strong { color: var(--foreground); font-weight: var(--weight-strong); }
   .pr-conversation-meta svg { width: 13px; height: 13px; }
   .pr-conversation-meta .verdict-approved { color: var(--diff-added); font-weight: var(--weight-strong); }
   .pr-conversation-meta .verdict-changes { color: var(--destructive); font-weight: var(--weight-strong); }
-  .pr-conversation-link { margin-left: auto; }
+  .pr-conversation-actions { display: inline-flex; flex: none; align-items: center; gap: 2px; }
+  .pr-entry-editor { grid-column: 2; min-width: 0; margin: 4px 0 0; }
   /* Inline styles survive for math, so third-party text is kept from painting outside its box. */
   .pr-conversation-body, .pr-summary-section, .release-notes { contain: layout paint; }
   .pr-conversation-body { grid-column: 2; min-width: 0; margin-top: 4px; font-size: var(--text-ui); }

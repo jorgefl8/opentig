@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { generateCommitMessageArg, generatePullRequestDraftArg, booleanArg, branchDetailsArg, deleteBranchArg, filesTreeStateArg, nullableProjectIdArg, openFilesStateArg, prepareCommitGroupArg, projectIdArg, projectNameArg, publishBranchArg, pullRequestStatesArg, removeWorktreeArg, repositoryKeyArg, searchOptionsArg, searchReplaceArg, worktreeDetailsArg, commentOnPullRequestArg, createReleaseArg, deleteDraftReleaseArg, publishReleaseArg, pullRequestActionArg, reviewPullRequestArg, runWorkflowArg, tagNameArg, updatePullRequestArg, updateReleaseArg, workflowPathArg } from './validators';
+import { deletePullRequestEntryArg, editPullRequestEntryArg, generateCommitMessageArg, generatePullRequestDraftArg, booleanArg, branchDetailsArg, deleteBranchArg, filesTreeStateArg, nullableProjectIdArg, openFilesStateArg, prepareCommitGroupArg, projectIdArg, projectNameArg, publishBranchArg, pullRequestStatesArg, removeWorktreeArg, repositoryKeyArg, searchOptionsArg, searchReplaceArg, worktreeDetailsArg, commentOnPullRequestArg, createReleaseArg, deleteDraftReleaseArg, publishReleaseArg, pullRequestActionArg, reviewPullRequestArg, runWorkflowArg, tagNameArg, updatePullRequestArg, updateReleaseArg, workflowPathArg } from './validators';
 import { GitOperationError } from '../../shared/errors';
 import { createTrackingBranchArg, deleteRemoteBranchArg } from './validators';
 
@@ -294,6 +294,17 @@ describe('updatePullRequestArg', () => {
 describe('comment and review text', () => {
   const pull = { repositoryId: 'repo', number: 7, expectedAccount: { login: 'sample', revision: 1 } };
   const head = { ...pull, expectedHeadOid: 'a'.repeat(40) };
+  it('checks the comment or review being changed', () => {
+    const entry = { ...pull, entryId: 'PRR_kwDO-a_1=', expectedUpdatedAt: '2026-01-01T00:00:00Z' };
+    expect(deletePullRequestEntryArg(entry)).toMatchObject({ entryId: 'PRR_kwDO-a_1=' });
+    expect(editPullRequestEntryArg({ ...entry, body: 'Hi' })).toMatchObject({ body: 'Hi' });
+    expect(() => editPullRequestEntryArg({ ...entry, body: '  ' })).toThrow('Invalid pull request data.');
+    expect(() => deletePullRequestEntryArg({ ...entry, entryId: 'a b' })).toThrow('Invalid pull request data.');
+    expect(() => deletePullRequestEntryArg({ ...entry, entryId: '' })).toThrow('Invalid pull request data.');
+    expect(() => deletePullRequestEntryArg({ ...entry, expectedUpdatedAt: '' })).toThrow('Invalid pull request data.');
+    expect(() => deletePullRequestEntryArg({ ...entry, expectedAccount: undefined })).toThrow('Invalid pull request data.');
+  });
+
   it('requires text in a comment', () => {
     expect(commentOnPullRequestArg({ ...pull, body: 'Hi' })).toMatchObject({ body: 'Hi' });
     expect(() => commentOnPullRequestArg({ ...pull, body: '  ' })).toThrow('Invalid pull request data.');

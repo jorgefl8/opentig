@@ -7,11 +7,11 @@ import type { PullRequestConversation, PullRequestConversationEntry } from '@sha
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { PullRequestConversationView } from './PullRequestConversationView';
 
-const api = vi.hoisted(() => ({ getPullRequestConversation: vi.fn() }));
+const api = vi.hoisted(() => ({ getPullRequestConversation: vi.fn(), repositoryAccount: vi.fn() }));
 vi.mock('@/lib/opentig-api', () => ({ opentig: { github: api } }));
 
 const entry = (overrides: Partial<PullRequestConversationEntry>): PullRequestConversationEntry => ({
-  id: 'c1', kind: 'comment', author: { login: 'ana', avatarUrl: null, isBot: false }, body: 'Hello **there**', createdAt: '2026-01-01T00:00:00Z', url: 'https://github.com/sample/demo/pull/1#c1', verdict: null, minimized: false, ...overrides,
+  id: 'c1', kind: 'comment', author: { login: 'ana', avatarUrl: null, isBot: false }, body: 'Hello **there**', createdAt: '2026-01-01T00:00:00Z', url: 'https://github.com/sample/demo/pull/1#c1', verdict: null, minimized: false, updatedAt: '2026-01-01T00:00:00Z', edited: false, canEdit: false, canDelete: false, ...overrides,
 });
 const conversation = (entries: PullRequestConversationEntry[], overrides: Partial<PullRequestConversation> = {}): PullRequestConversation => ({ entries, truncated: false, partial: false, ...overrides });
 
@@ -98,4 +98,15 @@ it('offers a retry when it cannot load', async () => {
   await act(async () => [...container.querySelectorAll('button')].find(button => button.textContent?.includes('Retry'))!.click());
   for (let tick = 0; tick < 10; tick++) await act(async () => { await new Promise(resolve => setTimeout(resolve, 5)); });
   expect(container.textContent).toContain('Nobody has commented yet.');
+});
+
+it('offers changes only on what the viewer can change, and says what was edited', async () => {
+  api.repositoryAccount.mockResolvedValue({ state: 'ready', login: 'ana', revision: 1 });
+  api.getPullRequestConversation.mockResolvedValue(conversation([entry({ id: 'own', canEdit: true, canDelete: true, edited: true }), entry({ id: 'other' })]));
+  await render();
+  const [own, other] = [...container.querySelectorAll('.pr-conversation-entry')];
+  expect(own!.querySelector('[aria-label="More actions for this comment"]')).not.toBeNull();
+  expect(own!.querySelector('.pr-conversation-meta')?.textContent).toContain('edited');
+  expect(other!.querySelector('[aria-label^="More actions"]')).toBeNull();
+  expect(other!.querySelector('.pr-conversation-meta')?.textContent).not.toContain('edited');
 });

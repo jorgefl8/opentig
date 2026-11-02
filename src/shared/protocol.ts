@@ -157,6 +157,8 @@ export const OPEN_TIG_SERVER_COMMANDS = {
   'github.updatePullRequest': command(IPC.githubPrUpdate, 'gh-pr-update', true, { timeoutMs: GITHUB_ACTION_TIMEOUT_MS }),
   'github.commentOnPullRequest': command(IPC.githubPrComment, 'gh-pr-comment', true, { timeoutMs: GITHUB_ACTION_TIMEOUT_MS }),
   'github.reviewPullRequest': command(IPC.githubPrReview, 'gh-pr-review', true, { timeoutMs: GITHUB_ACTION_TIMEOUT_MS }),
+  'github.editPullRequestEntry': command(IPC.githubPrEntryEdit, 'gh-pr-entry-edit', true, { timeoutMs: GITHUB_ACTION_TIMEOUT_MS }),
+  'github.deletePullRequestEntry': command(IPC.githubPrEntryDelete, 'gh-pr-entry-delete', true, { timeoutMs: GITHUB_ACTION_TIMEOUT_MS }),
   'github.getPullRequestStack': command(IPC.githubPrStack, 'gh-pr-stack', false, { timeoutMs: GITHUB_READ_TIMEOUT_MS }),
   'github.getPullRequestDiff': command(IPC.githubPrDiff, 'gh-pr-diff', false, { timeoutMs: PULL_REQUEST_DIFF_TIMEOUT_MS }),
   'github.getPullRequestCommitDiff': command(IPC.githubPrCommitDiff, 'gh-pr-commit-diff', false, { timeoutMs: GITHUB_READ_TIMEOUT_MS }),

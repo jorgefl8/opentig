@@ -329,6 +329,8 @@
   html .pr-viewer[data-tab="diff"] .pr-viewer-overview { display: none; }
   html .pr-viewer[data-tab="diff"] .pr-viewer-tabs { position: static; }
   html .pr-summary-section, html .pr-timeline, html .pr-conversation { padding-inline: 14px; }
+  /* Big enough to touch, without making the line taller. */
+  html .pr-conversation-actions { margin-block: -10px; }
   html .pr-summary-section { padding-block: 14px; }
   html .pr-branches { max-width: 100%; }
   html .pr-checks-trigger { min-height: 32px; }

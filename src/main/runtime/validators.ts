@@ -1,6 +1,6 @@
 import { GitOperationError } from '../../shared/errors';
 import { AiOperationError, GhOperationError } from '../../shared/errors';
-import type { AiHarnessId, BranchDetailsRequest, CommentOnPullRequestInput, CreatePullRequestInput, CreateReleaseInput, DeleteDraftReleaseInput, PublishReleaseInput, RunWorkflowInput, UpdateReleaseInput, PullRequestActionInput, ReviewPullRequestInput, UpdatePullRequestInput, DeleteBranchRequest, GenerateCommitMessageInput, GeneratePullRequestDraftInput, PrepareCommitGroupInput, PublishBranchOptions, PullRequestState, RemoveWorktreeRequest, WorktreeDetailsRequest } from '../../shared/contracts';
+import type { AiHarnessId, BranchDetailsRequest, CommentOnPullRequestInput, CreatePullRequestInput, CreateReleaseInput, DeleteDraftReleaseInput, DeletePullRequestEntryInput, EditPullRequestEntryInput, PublishReleaseInput, RunWorkflowInput, UpdateReleaseInput, PullRequestActionInput, ReviewPullRequestInput, UpdatePullRequestInput, DeleteBranchRequest, GenerateCommitMessageInput, GeneratePullRequestDraftInput, PrepareCommitGroupInput, PublishBranchOptions, PullRequestState, RemoveWorktreeRequest, WorktreeDetailsRequest } from '../../shared/contracts';
 import { MAX_PROJECT_NAME_LENGTH, MAX_REPOSITORY_KEY_LENGTH, normalizeRepositoryKey } from '../../shared/repository-projects';
 import { isFilesTreeRepositoryId, MAX_FILES_TREE_PATHS, normalizeExpandedPaths, normalizeFilesTreePath } from '../../shared/files-tree-state';
 import { isOpenFilesRepositoryId, MAX_OPEN_FILE_TABS, normalizeOpenFilePath, type OpenFileTab } from '../../shared/open-files-state';
@@ -372,6 +372,23 @@ export function reviewPullRequestArg(value: unknown): ReviewPullRequestInput {
   const parsed = pullRequestActionBaseSchema.extend({ verdict: z.enum(['approve', 'request-changes', 'comment']), body: pullRequestTextSchema })
     .refine((input) => input.verdict === 'approve' || Boolean(input.body.trim())).safeParse(value);
   if (!parsed.success) throw invalidGh('gh-pr-review');
+  return parsed.data;
+}
+
+const pullRequestEntrySchema = pullRequestActionBaseSchema.omit({ expectedHeadOid: true }).extend({
+  entryId: z.string().regex(/^[\w=+/-]{1,200}$/),
+  expectedUpdatedAt: z.string().min(1).max(64),
+});
+
+export function editPullRequestEntryArg(value: unknown): EditPullRequestEntryInput {
+  const parsed = pullRequestEntrySchema.extend({ body: pullRequestTextSchema.refine((body) => Boolean(body.trim())) }).safeParse(value);
+  if (!parsed.success) throw invalidGh('gh-pr-entry-edit');
+  return parsed.data;
+}
+
+export function deletePullRequestEntryArg(value: unknown): DeletePullRequestEntryInput {
+  const parsed = pullRequestEntrySchema.safeParse(value);
+  if (!parsed.success) throw invalidGh('gh-pr-entry-delete');
   return parsed.data;
 }
 

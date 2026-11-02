@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import type { CliProcessRunner, CliRunResult } from '../ai/CliProcessRunner';
 import type { CliResolver } from '../ai/CliResolver';
@@ -356,5 +357,111 @@ describe('reviewPullRequest', () => {
     const { service, mutations } = fixture({ reads: [liveResponse({ state: 'MERGED' })] });
     await expect(service.reviewPullRequest(review)).rejects.toMatchObject({ detail: { code: 'GH_PR_ACTION_NOT_ALLOWED' } });
     expect(mutations).toEqual([]);
+  });
+});
+
+describe('editing and deleting comments and reviews', () => {
+  const { expectedHeadOid: _unused, ...withoutHead } = base;
+  const version = '2026-01-02T00:00:00Z';
+  const target = { ...withoutHead, entryId: 'IC_1', expectedUpdatedAt: version };
+  const node = (overrides: object = {}) => ({ __typename: 'IssueComment', updatedAt: version, body: 'Old', viewerDidAuthor: true, viewerCanUpdate: true, viewerCanDelete: true, pullRequest: { number: 12 }, repository: { nameWithOwner: 'Example/Demo' }, ...overrides });
+  const review = (overrides: object = {}) => node({ __typename: 'PullRequestReview', ...overrides });
+  const queryOf = (args: string[]) => args.find(arg => arg.startsWith('query='))!;
+  function entry(read: CliRunResult, onWrite: (args: string[]) => CliRunResult = () => ok({ data: {} })) {
+    const made = fixture({ reads: [], mutate: (args) => queryOf(args).startsWith('query=query') ? read : onWrite(args) });
+    return { service: made.service, writes: () => made.mutations.filter(args => queryOf(args).startsWith('query=mutation')) };
+  }
+  const found = (value: object) => ok({ data: { node: value } });
+  const gone: CliRunResult = { exitCode: 1, stdout: JSON.stringify({ data: { node: null }, errors: [{ type: 'NOT_FOUND', path: ['node'] }] }), stderr: 'gh: Could not resolve to a node' };
+
+  it('edits a comment with text sent through a file, read as a string whatever it looks like', async () => {
+    let sent = '';
+    const { service, writes } = entry(found(node()), (args) => { sent = readFileSync(args.find(arg => arg.startsWith('body=@'))!.slice('body=@'.length), 'utf8'); return ok({ data: {} }); });
+    await service.editPullRequestEntry({ ...target, body: '123' });
+    expect(sent).toBe('123');
+    expect(queryOf(writes()[0]!)).toContain('updateIssueComment(input:{id:$id,body:$body})');
+    expect(writes()[0]).toContain('id=IC_1');
+    expect(writes()[0]).toContain('-F');
+    expect(writes()[0]).not.toContain('123');
+  });
+
+  it('edits a review with its own mutation, even one with a verdict, whose verdict stays', async () => {
+    const { service, writes } = entry(found(review()));
+    await service.editPullRequestEntry({ ...target, body: 'New' });
+    expect(queryOf(writes()[0]!)).toContain('updatePullRequestReview(input:{pullRequestReviewId:$id,body:$body})');
+  });
+
+  it('deletes a comment', async () => {
+    const { service, writes } = entry(found(node()));
+    await service.deletePullRequestEntry(target);
+    expect(writes()).toHaveLength(1);
+    expect(queryOf(writes()[0]!)).toContain('deleteIssueComment(input:{id:$id})');
+  });
+
+  it("refuses to delete a review before asking GitHub, which says it can't be done", async () => {
+    const { service, writes } = entry(found(review()));
+    await expect(service.deletePullRequestEntry(target)).rejects.toMatchObject({ detail: { code: 'GH_PR_ACTION_NOT_ALLOWED', message: expect.stringContaining('You can edit its text') } });
+    expect(writes()).toEqual([]);
+  });
+
+  it.each([
+    ["someone else's comment, though GitHub would allow it", node({ viewerDidAuthor: false })],
+    ['what GitHub refuses', node({ viewerCanDelete: false })],
+  ])('refuses to delete %s', async (_name, value) => {
+    const { service, writes } = entry(found(value));
+    await expect(service.deletePullRequestEntry(target)).rejects.toMatchObject({ detail: { code: 'GH_PR_ACTION_NOT_ALLOWED' } });
+    expect(writes()).toEqual([]);
+  });
+
+  it.each([
+    ["someone else's comment", node({ viewerDidAuthor: false })],
+    ['what GitHub refuses', node({ viewerCanUpdate: false })],
+    ['a review without text', review({ body: '' })],
+  ])('refuses to edit %s', async (_name, value) => {
+    const { service, writes } = entry(found(value));
+    await expect(service.editPullRequestEntry({ ...target, body: 'New' })).rejects.toMatchObject({ detail: { code: 'GH_PR_ACTION_NOT_ALLOWED' } });
+    expect(writes()).toEqual([]);
+  });
+
+  it.each([
+    ['another pull request', node({ pullRequest: { number: 13 } })],
+    ['another repository', node({ repository: { nameWithOwner: 'example/other' } })],
+    ['another kind of object', node({ __typename: 'Issue' })],
+  ])('refuses an id that belongs to %s', async (_name, value) => {
+    const { service, writes } = entry(found(value));
+    await expect(service.deletePullRequestEntry(target)).rejects.toMatchObject({ detail: { code: 'GH_PR_ACTION_NOT_ALLOWED' } });
+    await expect(service.editPullRequestEntry({ ...target, body: 'New' })).rejects.toMatchObject({ detail: { code: 'GH_PR_ACTION_NOT_ALLOWED' } });
+    expect(writes()).toEqual([]);
+  });
+
+  it('stops if the text changed on GitHub since it was read', async () => {
+    const { service, writes } = entry(found(node({ updatedAt: '2026-01-03T00:00:00Z' })));
+    await expect(service.editPullRequestEntry({ ...target, body: 'New' })).rejects.toMatchObject({ detail: { code: 'GH_PR_STATE_CHANGED' } });
+    await expect(service.deletePullRequestEntry(target)).rejects.toMatchObject({ detail: { code: 'GH_PR_STATE_CHANGED' } });
+    expect(writes()).toEqual([]);
+  });
+
+  it('treats deleting what is already gone as done, and editing it as stopped', async () => {
+    const { service, writes } = entry(gone);
+    await expect(service.deletePullRequestEntry(target)).resolves.toBeUndefined();
+    await expect(service.editPullRequestEntry({ ...target, body: 'New' })).rejects.toMatchObject({ detail: { code: 'GH_PR_STATE_CHANGED' } });
+    expect(writes()).toEqual([]);
+  });
+
+  it('reports a failed read as a failure, not as already gone', async () => {
+    const { service, writes } = entry(fail('gh: Bad credentials (HTTP 401)'));
+    await expect(service.deletePullRequestEntry(target)).rejects.toMatchObject({ detail: { code: 'GH_AUTH_REQUIRED' } });
+    expect(writes()).toEqual([]);
+  });
+
+  it('stops with another account before reading or writing', async () => {
+    const { service, writes } = entry(found(node()));
+    await expect(service.deletePullRequestEntry({ ...target, expectedAccount: { login: 'other', revision: 3 } })).rejects.toMatchObject({ detail: { code: 'GH_ACCOUNT_UNRESOLVED' } });
+    expect(writes()).toEqual([]);
+  });
+
+  it("keeps GitHub's own message when it refuses the write", async () => {
+    const { service } = entry(found(node()), () => fail("gh: Can't delete this comment"));
+    await expect(service.deletePullRequestEntry(target)).rejects.toThrow("Can't delete this comment");
   });
 });

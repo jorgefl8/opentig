@@ -9,6 +9,7 @@ const drafts = new Map<string, unknown>();
 export const pullRequestEditDraft = (repositoryId: string, number: number) => `${repositoryId}:pull-request:${number}:edit`;
 export const pullRequestCommentDraft = (repositoryId: string, number: number) => `${repositoryId}:pull-request:${number}:comment`;
 export const pullRequestCommentUncertain = (repositoryId: string, number: number) => `${repositoryId}:pull-request:${number}:comment-uncertain`;
+export const pullRequestEntryEditDraft = (repositoryId: string, number: number, entryId: string) => `${repositoryId}:pull-request:${number}:entry:${entryId}:edit`;
 export const pullRequestRevertUncertain = (repositoryId: string, number: number) => `${repositoryId}:pull-request:${number}:revert-uncertain`;
 export const releaseEditDraft = (repositoryId: string, tagName: string) => `${repositoryId}:release:${tagName}:edit`;
 

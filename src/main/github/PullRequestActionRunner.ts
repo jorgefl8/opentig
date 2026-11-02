@@ -1,11 +1,12 @@
 import { GhOperationError } from '../../shared/errors';
 import { z } from 'zod';
-import type { CommentOnPullRequestInput, PullRequestActionInput, PullRequestActionResult, PullRequestLiveState, ReviewPullRequestInput, UpdatePullRequestInput } from '../../shared/contracts';
+import type { CommentOnPullRequestInput, DeletePullRequestEntryInput, EditPullRequestEntryInput, PullRequestActionInput, PullRequestActionResult, PullRequestLiveState, ReviewPullRequestInput, UpdatePullRequestInput } from '../../shared/contracts';
 import { GITHUB_ACTION_STEP_TIMEOUT_MS, WORKFLOW_APPROVAL_WINDOW_MS } from '../../shared/operation-timeouts';
 import { pullRequestActionBlocked } from '../../shared/pull-request-actions';
 import { redactCommandToken } from './GitHubAccountAuth';
 import { classifyActionFailure } from './GitHubActionErrors';
 import { beginGitHubMutation, withPrivateTextFile, type GitHubAccess, type GitHubTarget } from './GitHubAccess';
+import { entryChanges } from './PullRequestConversationParser';
 import { parseCreatedPullRequestUrl } from './PullRequestParser';
 
 const OPERATION = 'gh-pr-action';
@@ -16,6 +17,28 @@ const ENABLE_AUTO_MERGE = 'mutation($id:ID!,$method:PullRequestMergeMethod!,$hea
 const DISABLE_AUTO_MERGE = 'mutation($id:ID!){disablePullRequestAutoMerge(input:{pullRequestId:$id}){clientMutationId}}';
 const UPDATE_BRANCH = 'mutation($id:ID!,$head:GitObjectID!,$method:PullRequestBranchUpdateMethod!){updatePullRequestBranch(input:{pullRequestId:$id,expectedHeadOid:$head,updateMethod:$method}){clientMutationId}}';
 const DELETE_BRANCH = 'mutation($repository:ID!,$ref:GitRefname!,$before:GitObjectID!,$after:GitObjectID!){updateRefs(input:{repositoryId:$repository,refUpdates:[{name:$ref,beforeOid:$before,afterOid:$after}]}){clientMutationId}}';
+
+const ENTRY_FIELDS = 'updatedAt viewerDidAuthor viewerCanUpdate viewerCanDelete body pullRequest{number} repository{nameWithOwner}';
+const READ_ENTRY = `query($id:ID!){node(id:$id){__typename ... on IssueComment{${ENTRY_FIELDS}} ... on PullRequestReview{${ENTRY_FIELDS}}}}`;
+const entrySchema = z.object({
+  data: z.object({ node: z.object({
+    __typename: z.string(), updatedAt: z.string().nullish(), body: z.string().nullish(),
+    viewerDidAuthor: z.boolean().nullish(), viewerCanUpdate: z.boolean().nullish(), viewerCanDelete: z.boolean().nullish(),
+    pullRequest: z.object({ number: z.number() }).nullish(), repository: z.object({ nameWithOwner: z.string() }).nullish(),
+  }).nullable() }).nullable(),
+  errors: z.array(z.object({ type: z.string().nullish() })).optional(),
+});
+const ENTRY_MUTATIONS = {
+  IssueComment: {
+    noun: 'comment',
+    edit: 'mutation($id:ID!,$body:String!){updateIssueComment(input:{id:$id,body:$body}){clientMutationId}}',
+  },
+  PullRequestReview: {
+    noun: 'review',
+    edit: 'mutation($id:ID!,$body:String!){updatePullRequestReview(input:{pullRequestReviewId:$id,body:$body}){clientMutationId}}',
+  },
+} as const;
+const DELETE_COMMENT = 'mutation($id:ID!){deleteIssueComment(input:{id:$id}){clientMutationId}}';
 
 const OPEN_HEADS = `query($owner:String!,$name:String!,$head:String!){repository(owner:$owner,name:$name){pullRequests(headRefName:$head,states:[OPEN],first:100){pageInfo{hasNextPage} nodes{number headRefOid isCrossRepository headRepositoryOwner{login}}}}}`;
 const openHeadsSchema = z.object({ data: z.object({ repository: z.object({ pullRequests: z.object({
@@ -70,6 +93,52 @@ export class PullRequestActionRunner {
     } finally {
       this.github.invalidate(input.repositoryId);
     }
+  }
+
+  async editEntry(input: EditPullRequestEntryInput): Promise<void> {
+    const operation = 'gh-pr-entry-edit';
+    const { target, verifyAccount } = await beginGitHubMutation(this.github, input, operation);
+    const entry = await this.readEntry(input, target, operation);
+    if (!entry) throw new GhOperationError({ code: 'GH_PR_STATE_CHANGED', operation, message: "It's no longer on GitHub, so your changes were not saved." });
+    if (entry.updatedAt !== input.expectedUpdatedAt) throw new GhOperationError({ code: 'GH_PR_STATE_CHANGED', operation, message: `This ${entry.mutations.noun} changed on GitHub after you started editing. Your changes were not saved.` });
+    if (!entry.canEdit) throw new GhOperationError({ code: 'GH_PR_ACTION_NOT_ALLOWED', operation, message: `This GitHub account can't edit this ${entry.mutations.noun}.` });
+    verifyAccount();
+    try {
+      await withPrivateTextFile(input.body, (bodyFile) => this.gh(target, ['api', 'graphql', '-f', `id=${input.entryId}`, '-F', `body=@${bodyFile}`, '-f', `query=${entry.mutations.edit}`], operation));
+    } finally {
+      this.github.invalidate(input.repositoryId);
+    }
+  }
+
+  async deleteEntry(input: DeletePullRequestEntryInput): Promise<void> {
+    const operation = 'gh-pr-entry-delete';
+    const { target, verifyAccount } = await beginGitHubMutation(this.github, input, operation);
+    const entry = await this.readEntry(input, target, operation);
+    // Already gone, which is also what trying again finds after a request that got no answer.
+    if (!entry) { this.github.invalidate(input.repositoryId); return; }
+    if (entry.updatedAt !== input.expectedUpdatedAt) throw new GhOperationError({ code: 'GH_PR_STATE_CHANGED', operation, message: `This ${entry.mutations.noun} changed on GitHub. Read it and try again.` });
+    if (!entry.canDelete) throw new GhOperationError({ code: 'GH_PR_ACTION_NOT_ALLOWED', operation, message: entry.mutations.noun === 'review' ? "GitHub doesn't allow deleting a submitted review. You can edit its text." : "This GitHub account can't delete this comment." });
+    verifyAccount();
+    try {
+      await this.gh(target, ['api', 'graphql', '-f', `id=${input.entryId}`, '-f', `query=${DELETE_COMMENT}`], operation);
+    } finally {
+      this.github.invalidate(input.repositoryId);
+    }
+  }
+
+  /** Null when it no longer exists. The id comes from the client, so it must belong to this pull request. */
+  private async readEntry(input: DeletePullRequestEntryInput, target: GitHubTarget, operation: string) {
+    const result = await this.github.run(target.executable, ['api', 'graphql', '-f', `id=${input.entryId}`, '-f', `query=${READ_ENTRY}`], { auth: target.auth, executable: target.executable, cwd: target.repository.path, operation, timeoutMs: GITHUB_ACTION_STEP_TIMEOUT_MS, maxOutputBytes: 4 * 1024 * 1024 });
+    const parsed = entrySchema.safeParse(parseJson(result.stdout));
+    if (parsed.success && !parsed.data.data?.node && parsed.data.errors?.some((error) => error.type === 'NOT_FOUND')) return null;
+    if (result.exitCode !== 0) throw classifyActionFailure({ ...result, stderr: redactCommandToken(result.stderr, target.auth) }, operation);
+    const node = parsed.success ? parsed.data.data?.node : null;
+    if (!node) throw new GhOperationError({ code: 'GH_INVALID_OUTPUT', operation, message: 'GitHub returned an unreadable comment.' });
+    const mutations = node.__typename === 'IssueComment' || node.__typename === 'PullRequestReview' ? ENTRY_MUTATIONS[node.__typename] : null;
+    if (!mutations || node.pullRequest?.number !== input.number || node.repository?.nameWithOwner.toLowerCase() !== target.nameWithOwner.toLowerCase()) {
+      throw new GhOperationError({ code: 'GH_PR_ACTION_NOT_ALLOWED', operation, message: "This isn't part of this pull request." });
+    }
+    return { mutations, updatedAt: node.updatedAt, ...entryChanges(mutations.noun, node) };
   }
 
   async run(input: PullRequestActionInput): Promise<PullRequestActionResult> {

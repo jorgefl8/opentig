@@ -18,8 +18,8 @@ const person = (login: string, isBot = false): PullRequestParticipant => ({ logi
 const maya = person('maya-reviews');
 const leo = person('leo-builds');
 const bot = person('release-bot', true);
-const comment = (id: string, author: PullRequestParticipant, body: string): PullRequestConversationEntry => ({ id, kind: 'comment', author, body, createdAt: sampleDate, url: null, verdict: null, minimized: false });
-const review = (id: string, author: PullRequestParticipant, verdict: NonNullable<PullRequestConversationEntry['verdict']>, body = ''): PullRequestConversationEntry => ({ id, kind: 'review', author, body, createdAt: sampleDate, url: null, verdict, minimized: false });
+const comment = (id: string, author: PullRequestParticipant, body: string): PullRequestConversationEntry => ({ id, kind: 'comment', author, body, createdAt: sampleDate, url: null, verdict: null, minimized: false, updatedAt: sampleDate, edited: false, canEdit: false, canDelete: false });
+const review = (id: string, author: PullRequestParticipant, verdict: NonNullable<PullRequestConversationEntry['verdict']>, body = ''): PullRequestConversationEntry => ({ id, kind: 'review', author, body, createdAt: sampleDate, url: null, verdict, minimized: false, updatedAt: sampleDate, edited: false, canEdit: false, canDelete: false });
 const conversations: Record<number, PullRequestConversationEntry[]> = {
   21: [
     comment('c1', bot, 'Preview ready. All sample tests passed on this commit.'),
