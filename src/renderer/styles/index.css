@@ -48,6 +48,7 @@
     --color-secondary: var(--secondary);
     --color-primary-foreground: var(--primary-foreground);
     --color-primary: var(--primary);
+    --color-primary-fill: var(--primary-fill);
     --color-popover-foreground: var(--popover-foreground);
     --color-popover: var(--popover);
     --color-card-foreground: var(--card-foreground);
@@ -84,6 +85,7 @@
     --popover: oklch(1 0 0);
     --popover-foreground: oklch(0.18 0 0);
     --primary: oklch(0.55 0.212 262);
+    --primary-fill: var(--primary);
     --primary-foreground: oklch(0.99 0 0);
     --primary-ink: oklch(0.5 0.2 262);
     --secondary: oklch(0.955 0 0);
@@ -214,6 +216,8 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
     --popover: oklch(0.185 0 0);
     --popover-foreground: oklch(0.92 0 0);
     --primary: oklch(0.63 0.2 262);
+    /* Lighter blue reads on a dark page, but white text on it doesn't. */
+    --primary-fill: oklch(0.55 0.212 262);
     --primary-foreground: oklch(0.99 0 0);
     --primary-ink: oklch(0.76 0.13 262);
     --secondary: oklch(0.205 0 0);
@@ -1825,6 +1829,12 @@ section[data-sileo-viewport] [data-sileo-title] { text-transform: none; }
 .searchable-picker-footer button:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
 .searchable-picker-footer svg { width: 14px; height: 14px; flex: none; }
 .ai-model-picker { width: min(420px, calc(100vw - 24px)); }
+/* A viewer's main actions, and the questions they ask, are what the screen is for. Unlayered because they replace the small button's utility classes. */
+:is(.pr-action-bar, .confirm-popover-actions) [data-slot="button"][data-size="xs"] { height: 28px; padding-inline: 12px; font-size: var(--text-body); }
+:is(.pr-action-bar, .confirm-popover-actions) [data-slot="button"][data-size="xs"] svg { width: 14px; height: 14px; }
+.pr-action-bar [data-slot="button"][data-size="icon-xs"] { width: 28px; height: 28px; }
+.pr-action-bar .pr-split-button > [data-slot="button"]:last-child { width: 26px; padding-inline: 0; }
+
 /* Breadcrumb triggers in the top bar are text with a hover background. Unlayered
    like the picker rules above, because they replace the trigger's utility classes. */
 .toolbar-crumb { flex: 0 1 auto; gap: 3px; border-color: transparent; background: transparent; font-weight: var(--weight-strong); }
