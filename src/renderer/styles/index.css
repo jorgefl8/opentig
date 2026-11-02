@@ -1688,7 +1688,7 @@ section[data-sileo-viewport] [data-sileo-title] { text-transform: none; }
   .external-text-link:hover { opacity: .8; }
   .diff-file-list { display: grid; min-width: 0; padding: 0 16px 12px; }
   .diff-file-list .diff-file-count { padding-bottom: 4px; }
-  .diff-file-list-row { display: flex; min-width: 0; align-items: baseline; gap: 12px; padding: 2px 0; text-align: left; }
+  .diff-file-list-row { display: flex; min-width: 0; align-items: center; gap: 8px; padding: 2px 0; text-align: left; }
   .diff-file-list-row:hover .diff-file-name { text-decoration: underline; text-underline-offset: 2px; }
   .diff-file-list-row:focus-visible { border-radius: var(--radius-sm); outline: 2px solid var(--ring); outline-offset: 1px; }
 

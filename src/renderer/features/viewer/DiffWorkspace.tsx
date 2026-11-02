@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useMobileChrome } from '@/components/mobile-chrome-context';
 import { useTruncatedText } from '@/lib/use-truncated-text';
+import { getVsCodeFileIconUrl } from '@/lib/vscode-icons';
 import { useParsedDiff } from './useParsedDiff';
 import { OPENTIG_CODE_THEMES } from './diffThemes';
 import { type DiffFileEntry, VIEWER_SCROLLBAR_CSS } from './patch-utils';
@@ -184,6 +185,10 @@ function diffPathParts(path: string): { name: string; directory: string } {
     : { name: normalized.slice(slash + 1), directory: normalized.slice(0, slash) };
 }
 
+function DiffFileIcon({ path }: { path: string }) {
+  return <img className="vscode-tree-icon" src={getVsCodeFileIconUrl(path)} alt="" aria-hidden="true" draggable={false} />;
+}
+
 function DiffFilePathLabel({ path }: { path: string }) {
   const { name, directory } = diffPathParts(path);
   return (
@@ -199,6 +204,7 @@ function DiffFileListRow({ file, onOpen }: { file: DiffFileEntry; onOpen(): void
   return (
     <Tooltip disabled={!truncated}>
       <TooltipTrigger render={<button type="button" className="diff-file-list-row" onClick={onOpen} />}>
+        <DiffFileIcon path={file.path} />
         <span ref={pathRef} className="diff-file-path"><DiffFilePathLabel path={file.path} /></span>
         <span className="plain-count">+{file.additions} −{file.deletions}</span>
       </TooltipTrigger>
@@ -225,6 +231,7 @@ function CompactFileHeader({ file, actions }: { file: DiffFileEntry; actions: Re
   const [pathRef, truncated] = useTruncatedText(file.path);
   return (
     <div className="diff-file-header diff-file-header-compact">
+      <DiffFileIcon path={file.path} />
       <Tooltip disabled={!truncated}>
         <TooltipTrigger render={<span ref={pathRef} className="diff-file-path" />}><DiffFilePathLabel path={file.path} /></TooltipTrigger>
         <TooltipContent>{file.path}</TooltipContent>
@@ -241,6 +248,7 @@ function CollapsibleFileHeader({ file, collapsed, onToggle }: { file: DiffFileEn
     <Tooltip disabled={!truncated}>
       <TooltipTrigger render={<button type="button" className="diff-file-header" aria-expanded={!collapsed} onClick={onToggle} />}>
         {collapsed ? <IconChevronRight className="diff-file-chevron" /> : <IconChevronDown className="diff-file-chevron" />}
+        <DiffFileIcon path={file.path} />
         <span ref={pathRef} className="diff-file-path"><DiffFilePathLabel path={file.path} /></span>
         <FileHeaderFacts file={file} />
       </TooltipTrigger>

@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { MobileChromeContext, NO_MOBILE_CHROME_HOSTS } from '@/components/mobile-chrome-context';
 import { DiffWorkspace } from './DiffWorkspace';
+import { getVsCodeFileIconUrl } from '@/lib/vscode-icons';
 import { largePatch, MIXED_PATCH } from './diff-parser.fixtures';
 import { buildDiffFileEntries } from './patch-utils';
 import { DiffParser, type DiffParseRequest, type DiffParseResponse } from './diff-parser';
@@ -161,6 +162,15 @@ it('shows the directory and name on one line with the file\'s line counts', asyn
   expect(header.querySelector('.diff-file-name')?.textContent).toBe('first.ts');
   expect(header.querySelector('.diff-file-stats')?.textContent).toMatch(/^\+\d+−\d+$/);
   expect(header.querySelector('.diff-file-path')?.firstElementChild).toBe(header.querySelector('.diff-file-directory'));
+});
+
+it('shows an icon for the kind of file, without reading it out', async () => {
+  const patch = largePatch(10_001, 24, 'src/deep/first.ts');
+  await render(patch);
+  await finish(0, patch);
+  const icon = container.querySelector<HTMLImageElement>('.diff-file-header img')!;
+  expect(icon.getAttribute('src')).toBe(getVsCodeFileIconUrl('src/deep/first.ts'));
+  expect(icon.getAttribute('alt')).toBe('');
 });
 
 // Hovers on fake timers rather than waiting out the tooltip delay in real time.
