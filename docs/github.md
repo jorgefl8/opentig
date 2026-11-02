@@ -105,7 +105,7 @@ The list's menu shows the effective GitHub account. When a repository can't be r
 
 **Comment and review**
 
-**Write a comment** at the end of the conversation is one line until you focus it. It then opens with the same Markdown preview as creating a PR, **Comment**, and **Review**. Leaving an empty box folds it, and Escape folds it without losing what you wrote. **Review** adds **Approve**, **Request changes**, and **Comment as a review**. Only **Approve** can go without text. On your own PR, GitHub only allows the comment, so that's all the menu offers. A review stops if the PR has received new commits since you read it, so a verdict is never applied to code you haven't seen.
+**Write a comment** at the end of the conversation is one line until you focus it. It then opens with the same Markdown preview as creating a PR, **Comment**, and **Review**. Leaving an empty box folds it, and Escape folds it without losing what you wrote. **Review** adds **Approve**, **Request changes**, and **Comment as a review**. Only **Approve** can go without text. **Review** doesn't appear on your own PR, where GitHub wouldn't allow a verdict. A review can't be deleted once it's submitted, so use **Comment** for text you may want to remove. A review stops if the PR has received new commits since you read it, so a verdict is never applied to code you haven't seen.
 
 If GitHub doesn't answer in time, your text stays in the box and sending is held back until you've checked the conversation, because sending again could post it twice.
 

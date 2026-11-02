@@ -80,7 +80,8 @@ export function PullRequestComposer({ repositoryId, number, live, draft, onDraft
   const busy = send.isPending;
   const hasText = Boolean(draft.trim());
   const blocked = busy || uncertain || account?.state !== 'ready';
-  const canReview = live.state === 'OPEN';
+  // On your own PR GitHub only allows a review without a verdict, which here would just be a comment you can't delete.
+  const canReview = live.state === 'OPEN' && !live.viewer.didAuthor;
   // A notice about what may have been posted must stay on screen.
   const collapsed = !expanded && !uncertain;
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -91,8 +92,8 @@ export function PullRequestComposer({ repositoryId, number, live, draft, onDraft
     <DropdownMenu>
       <DropdownMenuTrigger render={<Button variant={phone ? 'ghost' : 'outline'} size="xs" disabled={blocked} />}>Review <IconChevronDown /></DropdownMenuTrigger>
       <DropdownMenuContent>
-        {!live.viewer.didAuthor && <DropdownMenuItem onClick={() => send.mutate({ kind: 'review', verdict: 'approve' })}>Approve</DropdownMenuItem>}
-        {!live.viewer.didAuthor && <DropdownMenuItem disabled={!hasText} onClick={() => send.mutate({ kind: 'review', verdict: 'request-changes' })}>Request changes</DropdownMenuItem>}
+        <DropdownMenuItem onClick={() => send.mutate({ kind: 'review', verdict: 'approve' })}>Approve</DropdownMenuItem>
+        <DropdownMenuItem disabled={!hasText} onClick={() => send.mutate({ kind: 'review', verdict: 'request-changes' })}>Request changes</DropdownMenuItem>
         <DropdownMenuItem disabled={!hasText} onClick={() => send.mutate({ kind: 'review', verdict: 'comment' })}>Comment as a review</DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

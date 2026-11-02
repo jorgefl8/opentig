@@ -156,10 +156,12 @@ it('needs text to request changes or comment as a review', async () => {
   expect(item('Approve').hasAttribute('data-disabled')).toBe(false);
 });
 
-it('lets an author only comment on their own PR', async () => {
+it('only offers a plain comment on your own PR', async () => {
   await render(live({ didAuthor: true }));
-  await openReview();
-  expect(items().map(entry => entry.textContent)).toEqual(['Comment as a review']);
+  await expand();
+  await type('A note');
+  expect(button('Comment')).toBeDefined();
+  expect([...container.querySelectorAll('button')].some(item => item.textContent?.trim().startsWith('Review'))).toBe(false);
 });
 
 it('offers no review once the PR is finished, and still takes comments', async () => {
