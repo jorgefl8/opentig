@@ -1031,7 +1031,7 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   .pr-conversation-head h3 { margin: 0; font-size: var(--text-ui); font-weight: var(--weight-strong); }
   .pr-conversation-entry { display: grid; min-width: 0; grid-template-columns: 24px minmax(0, 1fr); gap: 2px 9px; padding: 8px 0; }
   .pr-conversation-avatar { width: 24px; height: 24px; }
-  .pr-composer { display: grid; gap: 8px; margin: 6px 0 0 33px; }
+  .pr-composer { display: grid; gap: 8px; margin: 6px 0 0; }
   .pr-composer .create-pr-body-field { min-height: 0; }
   .pr-composer-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; }
   .pr-composer-account { margin-right: auto; color: var(--muted-foreground); font-size: var(--text-meta); }
