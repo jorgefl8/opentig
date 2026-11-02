@@ -325,8 +325,10 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   .toolbar-branch-pr-group.is-mobile { display: flex; width: 100%; }
   .toolbar-branch-pr-group.is-mobile .mobile-branch-pr { flex: 1; min-width: 0; }
   .toolbar-branch-pr-group.is-mobile .pr-stack-trigger { min-height: 44px; min-width: 44px; justify-content: center; }
-  .toolbar-branch-pr { display: inline-flex; height: 28px; flex: none; align-items: center; gap: 4px; border-radius: var(--radius-md); padding: 0 6px; color: var(--muted-foreground); font-size: var(--text-meta); font-variant-numeric: tabular-nums; }
+  .toolbar-branch-pr { display: inline-flex; height: 28px; flex: none; align-items: center; gap: 4px; border-radius: var(--radius-md); padding: 0 6px; color: var(--muted-foreground); font-size: var(--text-ui); font-variant-numeric: tabular-nums; }
   .toolbar-branch-pr > svg { width: 13px; height: 13px; flex: none; }
+  /* The icon's height, so the number's baseline rounds with it at fractional zooms such as 125%. */
+  .toolbar-branch-pr > span { line-height: 13px; }
   .toolbar-branch-pr:hover, .toolbar-branch-pr[aria-expanded="true"] { background: var(--row-hover); color: var(--foreground); }
   .toolbar-branch-pr:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
   /* The number stands in for the pull request, so its colour says what state it's in, with GitHub's colours. */
