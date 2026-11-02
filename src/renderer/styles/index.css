@@ -1081,6 +1081,8 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   .pr-diff-panel { display: flex; min-height: 0; flex: 1; flex-direction: column; }
   .pr-description-scroll { min-height: 0; flex: 1; overflow: auto; }
   .pr-empty-description { margin: 0; color: var(--muted-foreground); font-size: var(--text-meta); }
+  .pr-empty-description:has(> svg) { display: flex; align-items: center; gap: 7px; }
+  .pr-empty-description > svg { width: 15px; height: 15px; flex: none; color: var(--primary); }
   .create-pr-content { display: flex; min-height: 0; flex: 1; flex-direction: column; gap: 12px; overflow: hidden; padding: 20px 22px 18px; }
   .create-pr-content [data-slot="dialog-description"] code { color: var(--foreground); }
   .create-pr-field { display: grid; gap: 6px; }
