@@ -1,4 +1,5 @@
 import type { GitHubRepositoryAccount } from '@shared/github-accounts';
+import { formatTimeAgo } from '@shared/date-format';
 import { PullRequestStackMenu } from './PullRequestStackMenu';
 import { lazy, Suspense, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
@@ -13,6 +14,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { useMobileLayout } from '@/lib/use-mobile-layout';
 import { ViewerTabs, ViewerTabsList, ViewerTabsPanel } from '@/components/ui/viewer-tabs';
 import { openOnGitHub } from './gh-utils';
+import { GitHubAvatar } from './GitHubAvatar';
 import { GitHubSectionMenu } from './GitHubSectionMenu';
 import { pullRequestLiveStateQueryOptions } from './pull-request-live-state-query';
 
@@ -22,8 +24,8 @@ const ReleasesTools = lazy(() => import('./ReleasesView').then((module) => ({ de
 export type PullRequestsSection = 'pulls' | 'releases';
 
 /** Two lines of text and the row's padding; rows are measured once rendered. */
-const PULL_ROW_HEIGHT = 49;
-const MOBILE_PULL_ROW_HEIGHT = 60;
+const PULL_ROW_HEIGHT = 66;
+const MOBILE_PULL_ROW_HEIGHT = 79;
 
 interface PullRequestsViewProps {
   repositoryId: string;
@@ -211,6 +213,12 @@ function PullRow({ repositoryId, pr, active, live, phone, onSelect }: { reposito
         <span className={`status-dot tone-${status.tone}`} aria-hidden="true" />
         <span className="pull-title">{pr.title || '(no title)'}</span>
         <span className="pull-meta">#{pr.number} · {status.label}{phone && pr.stack && ` · Layer ${pr.stack.position} of ${pr.stack.size}`}</span>
+        <span className="pull-facts">
+          <GitHubAvatar key={pr.authorAvatarUrl} src={pr.authorAvatarUrl} className="pull-avatar" />
+          <span className="pull-author">{pr.author}</span>
+          <span className="pull-lines"><span className="add">+{pr.additions}</span> <span className="del">−{pr.deletions}</span></span>
+          <time dateTime={pr.updatedAt}>{formatTimeAgo(pr.updatedAt)}</time>
+        </span>
       </button>
       {/* On a phone the whole row is the target, and the viewer has its stack and link. */}
       {!phone && pr.stack && <PullRequestStackMenu repositoryId={repositoryId} number={pr.number} membership={pr.stack} onSelect={onSelect} />}

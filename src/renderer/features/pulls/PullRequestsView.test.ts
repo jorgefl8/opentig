@@ -61,12 +61,16 @@ async function openMenu() {
 }
 const action = (label: string) => [...document.querySelectorAll<HTMLButtonElement>('.pulls-menu-action')].find(item => item.textContent?.includes(label))!;
 
-it('shows a dot, the title and one line per row, leaving the rest to the viewer', async () => {
+it('shows a dot, the title, where it stands, and who changed how much and when', async () => {
   await render();
   expect(meta()).toEqual(['#2 · Review required', '#1 · Checks passing']);
   expect(rows()[0]?.querySelector('.status-dot')?.classList.contains('tone-attention')).toBe(true);
-  expect(container.querySelector('.pull-item img')).toBeNull();
-  expect(container.textContent).not.toContain('+3');
+  const facts = rows()[0]!.querySelector('.pull-facts')!;
+  expect(facts.querySelector('img')?.getAttribute('src')).toBe('https://example.invalid/a.png');
+  expect(facts.querySelector('.pull-author')?.textContent).toBe('sample');
+  expect(facts.querySelector('.pull-lines .add')?.textContent).toMatch(/^\+\d+$/);
+  expect(facts.querySelector('.pull-lines .del')?.textContent).toMatch(/^−\d+$/);
+  expect(facts.querySelector('time')?.textContent).toMatch(/ ago$/);
   await act(async () => rows()[1]!.querySelector<HTMLButtonElement>('.pull-main')!.click());
   expect(onSelect).toHaveBeenCalledWith(1);
 });

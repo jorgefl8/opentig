@@ -979,6 +979,15 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   .pr-stack-notice { padding: 6px 7px; }
   .pr-stack-notice:has(.animate-spin) { display: flex; align-items: center; gap: 6px; }
   .pr-stack-notice svg { width: 13px; height: 13px; flex: none; color: var(--primary); }
+  .pull-facts { display: flex; min-width: 0; grid-column: 2; align-items: center; gap: 6px; color: var(--muted-foreground); font-size: var(--text-meta); font-weight: var(--weight-regular); white-space: nowrap; }
+  .pull-avatar { display: inline-grid; width: 14px; height: 14px; flex: none; place-items: center; overflow: hidden; border-radius: 50%; background: var(--muted); }
+  .pull-avatar img { width: 100%; height: 100%; object-fit: cover; }
+  .pull-avatar svg { width: 100%; height: 100%; color: var(--muted-foreground); }
+  /* The author gives way first: the size and age are what a row is compared by. */
+  .pull-author { overflow: hidden; min-width: 24px; text-overflow: ellipsis; }
+  .pull-lines, .pull-facts time { flex: none; font-variant-numeric: tabular-nums; }
+  .pull-lines .add { color: var(--diff-added); }
+  .pull-lines .del { color: var(--diff-deleted); }
   .pull-open-external { flex: none; opacity: 0; transition: opacity .12s ease; }
   .pull-item:hover .pull-open-external, .pull-item:focus-within .pull-open-external { opacity: 1; }
   .pulls-notice { display: flex; height: 100%; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 24px 20px; text-align: center; }

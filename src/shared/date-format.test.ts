@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { formatDate, formatDateTime } from './date-format';
+import { formatDate, formatDateTime, formatTimeAgo } from './date-format';
 
 afterEach(() => { vi.unstubAllEnvs(); });
 
@@ -27,5 +27,31 @@ describe('display dates', () => {
   it.each(['', 'invalid-date'])('handles invalid dates (%s) without throwing', (value) => {
     expect(formatDate(value)).toBe('—');
     expect(formatDateTime(value)).toBe('—');
+  });
+});
+
+describe('formatTimeAgo', () => {
+  const now = Date.parse('2026-06-15T12:00:00Z');
+  const ago = (seconds: number) => formatTimeAgo(new Date(now - seconds * 1000).toISOString(), now);
+
+  it.each([
+    [0, 'just now'],
+    [59, 'just now'],
+    [60, '1m ago'],
+    [3_599, '59m ago'],
+    [3_600, '1h ago'],
+    [86_399, '23h ago'],
+    [86_400, '1d ago'],
+    [2_591_999, '29d ago'],
+    [2_592_000, '1mo ago'],
+    [31_535_999, '12mo ago'],
+    [31_536_000, '1y ago'],
+    [-120, 'just now'],
+  ])('reads %i seconds as %s', (seconds, text) => {
+    expect(ago(seconds)).toBe(text);
+  });
+
+  it('says nothing about a date it cannot read', () => {
+    expect(formatTimeAgo('not a date', now)).toBe('—');
   });
 });
