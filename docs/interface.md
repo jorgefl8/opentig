@@ -130,7 +130,7 @@ Use the bottom **Changes**, **Files**, **History**, **GitHub**, and **Search** t
 | **Pull request, Summary** | Its primary action, such as **Merge**, **Merge when ready**, **Update branch**, or **Ready for review**. Nothing floats when there's only a reason to give, such as a conflict |
 | **Pull request, Comments** | A one-line **Write a comment** field that opens the composer in a sheet. A draft stays when the sheet closes, and shows on the field |
 | **Pull request, Checks, Timeline, Code** | None, so the screen goes to what you're reading |
-| **Draft release** | **Publish**. It's disabled with the reason above it when the tag doesn't exist or the account can't publish |
+| **Draft release** | **Publish**. It's disabled with the reason above it when the tag doesn't exist or the account can't publish. Without the tag, the top bar's menu has **Run a workflow** |
 | **A file with unsaved edits** | **Save** |
 
 The commit box stays above the bottom bar in **Changes** while something is staged, and above the keyboard while you type. It holds the message, your AI provider, and the commit button, whose arrow chooses **Commit** or **Commit and push** without running anything. A suggested plan appears above it with its groups and scrolls inside. Opening a diff and coming back keeps the message and the plan, and generating carries on until it finishes or you cancel it.

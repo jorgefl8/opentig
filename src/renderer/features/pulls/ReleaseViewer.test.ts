@@ -9,7 +9,7 @@ import { MobileChromeContext, type MobileChromeHosts } from '@/components/mobile
 import { ServerRequestTimeoutError } from '@/lib/websocket-transport';
 import { ReleaseViewer } from './ReleaseViewer';
 
-const api = vi.hoisted(() => ({ getRelease: vi.fn(), deleteDraftRelease: vi.fn(), publishRelease: vi.fn(), updateRelease: vi.fn(), repositoryAccount: vi.fn() }));
+const api = vi.hoisted(() => ({ getRelease: vi.fn(), deleteDraftRelease: vi.fn(), publishRelease: vi.fn(), updateRelease: vi.fn(), repositoryAccount: vi.fn(), listWorkflows: vi.fn(() => new Promise(() => {})) }));
 const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn(), info: vi.fn() }));
 vi.mock('@/lib/opentig-api', () => ({ opentig: { github: api } }));
 vi.mock('sileo', () => ({ sileo: toast }));
@@ -154,9 +154,19 @@ it('offers nothing to change without write access', async () => {
   expect(api.repositoryAccount).not.toHaveBeenCalled();
 });
 
-it('says when the tag does not exist', async () => {
+it('says why a draft without its tag cannot be published, and offers the way forward', async () => {
   await render(release({ tagExists: false }));
-  expect(container.textContent).toContain("This tag doesn't exist yet");
+  expect(container.textContent).toContain("Can't publish yet: no tag on GitHub");
+  api.listWorkflows.mockClear();
+  await act(async () => button('Run a workflow…')!.click());
+  await settle();
+  expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+  expect(api.listWorkflows).toHaveBeenCalledWith('repo');
+});
+
+it('only offers a workflow when the tag is what is missing', async () => {
+  await render();
+  expect(button('Run a workflow…')).toBeUndefined();
 });
 
 it('says the deletion may have worked when there is no answer', async () => {
@@ -254,7 +264,7 @@ describe('on a phone', () => {
   it('keeps Publish off and says why when the tag is missing', async () => {
     await renderPhone(release({ tagExists: false }));
     expect(publishPill()!.disabled).toBe(true);
-    expect(hosts.float!.querySelector('.mobile-float-note')?.textContent).toBe("This tag doesn't exist yet. Create and push it to publish.");
+    expect(hosts.float!.querySelector('.mobile-float-note')?.textContent).toBe("The tag v1.0.0 isn't on GitHub yet. Run a workflow that creates it, or push it yourself.");
     await act(async () => publishPill()!.click());
     expect(sheet()).toBeNull();
   });

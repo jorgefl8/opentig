@@ -55,10 +55,11 @@ export function ReleasesTools({ repositoryId, nameWithOwner, account, onOpenGitH
   );
 }
 
-/** The list only knows the state, tag and dates: assets and whether the tag exists come with the viewer. */
+/** Published is what most releases are, so only the others name their state and the dates line up. */
 function releaseNote(release: ReleaseSummary): string {
+  const date = formatDate(release.publishedAt ?? release.createdAt);
   const label = releaseStateLabel(release);
-  return `${label} · ${release.isDraft ? release.tagName : formatDate(release.publishedAt ?? release.createdAt)}`;
+  return label === 'Published' ? date : `${label} · ${date}`;
 }
 
 export function ReleasesView({ repositoryId, activeTag, onSelect }: { repositoryId: string; activeTag: string | null; onSelect(tagName: string): void }) {
@@ -75,8 +76,7 @@ export function ReleasesView({ repositoryId, activeTag, onSelect }: { repository
           <div key={release.tagName} className={`pull-item ${activeTag === release.tagName ? 'active' : ''}`} role="listitem">
             <button className="pull-main release-row" onClick={() => onSelect(release.tagName)}>
               <span className={`status-dot tone-${releaseStateTone(release)}`} aria-hidden="true" />
-              <span className="pull-line"><span className="pull-title">{release.name}</span></span>
-              <span className="pull-line"><span className="pull-meta">{releaseNote(release)}</span></span>
+              <span className="pull-line"><span className="pull-title">{release.name}</span><span className="pull-age">{releaseNote(release)}</span></span>
             </button>
           </div>
         ))}

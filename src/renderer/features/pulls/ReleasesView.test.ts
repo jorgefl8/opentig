@@ -60,9 +60,10 @@ it('labels each state, marks the active one and selects on click', async () => {
   api.listReleases.mockResolvedValue([release({ tagName: 'v3', name: 'Three', isDraft: true, publishedAt: null }), release({ tagName: 'v2', name: 'Two', isLatest: true }), release({ tagName: 'v2-rc', name: 'RC', isPrerelease: true }), release({ tagName: 'v1', name: 'One' })]);
   await render();
   const items = [...container.querySelectorAll('.pull-item')];
-  // A release has no author, so its row has its own narrow first column rather than the pull request's avatar.
-  expect(items.every(item => item.querySelector('.pull-main.release-row > .pull-line .pull-meta'))).toBe(true);
-  expect(items.map(item => item.querySelector('.pull-meta')?.textContent)).toEqual(['Draft · v3', 'Latest · 01/01/2026', 'Pre-release · 01/01/2026', 'Published · 01/01/2026']);
+  // A release has no author, so its row has its own narrow first column rather than the pull request's avatar, and one line.
+  expect(items.every(item => item.querySelectorAll('.pull-main.release-row > .pull-line').length === 1)).toBe(true);
+  expect(items.map(item => item.querySelector('.pull-title')?.textContent)).toEqual(['Three', 'Two', 'RC', 'One']);
+  expect(items.map(item => item.querySelector('.pull-age')?.textContent)).toEqual(['Draft · 01/01/2026', 'Latest · 01/01/2026', 'Pre-release · 01/01/2026', '01/01/2026']);
   expect(items.map(item => [...item.querySelector('.status-dot')!.classList].find(name => name.startsWith('tone-')))).toEqual(['tone-attention', 'tone-ready', 'tone-neutral', 'tone-neutral']);
   expect(items[1]?.classList.contains('active')).toBe(true);
   await act(async () => items[2]!.querySelector('button')!.click());

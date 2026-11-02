@@ -200,7 +200,7 @@ Optional AI generation, with its provider and model, is in the dialog footer. Lo
 
 ## Manage releases
 
-In **GitHub**, switch to **Releases** to list the repository's releases, including drafts if your account can see them. Select one to read its notes and assets in the viewer; the line under its title gives its state and tag. The tools beside the tabs run a workflow and create a draft, and the menu next to them has **Refresh**, **Open on GitHub**, and the account.
+In **GitHub**, switch to **Releases** to list the repository's releases, including drafts if your account can see them. Each row has the title and, at the right, the date, after the state unless it's simply published. Select one to read its notes and assets in the viewer; the line under its title gives its state and tag. The tools beside the tabs run a workflow and create a draft, and the menu next to them has **Refresh**, **Open on GitHub**, and the account.
 
 **OpenTig never creates or moves a tag.** A release only ever points at a tag that already exists on GitHub. Assets are managed outside OpenTig.
 
@@ -208,7 +208,7 @@ In **GitHub**, switch to **Releases** to list the repository's releases, includi
 | --- | --- |
 | **New** | Creates a draft from an existing tag, with a title and notes, optionally adding GitHub's generated notes or marking it as a pre-release. It stops if the tag doesn't exist or already has a release |
 | **Edit title and notes** | In the viewer's menu. Changes the title and notes of a draft or a published release in place, with **Save changes** and **Cancel**. Notes are edited raw, so any comment markers that automation keeps in them stay as they are. Saving stops if the notes changed on GitHub first, because workflows also write to them |
-| **Publish** | Asks first beside the button, showing the tag, commit, whether it's a pre-release, and the assets. Publishing can start workflows that run on publication. Off while the tag doesn't exist, with **This tag doesn't exist yet** and the reason in its tooltip, and the server refuses it too, because GitHub would otherwise create the tag |
+| **Publish** | Asks first beside the button, showing the tag, commit, whether it's a pre-release, and the assets. Publishing can start workflows that run on publication. Off while the tag doesn't exist, as in a draft that only has notes, and the server refuses it too, because GitHub would otherwise create the tag. The viewer says so and offers **Run a workflow**, for the one that prepares the release |
 | **Delete draft** | In the viewer's menu. Asks first, lists what's lost, and keeps the tag. Published releases are only deleted on GitHub |
 | **Run a workflow** | Runs a workflow on the default branch, after naming the workflow and branch. Workflows about releases come first, with their latest runs and links. It can't pass inputs, so GitHub's message explains when a workflow needs them or can't be started manually |
 
