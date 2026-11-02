@@ -73,10 +73,10 @@ export function ReleasesView({ repositoryId, activeTag, onSelect }: { repository
         {releases?.length === 0 && <p className="empty-list">No releases yet.</p>}
         {releases?.map((release) => (
           <div key={release.tagName} className={`pull-item ${activeTag === release.tagName ? 'active' : ''}`} role="listitem">
-            <button className="pull-main" onClick={() => onSelect(release.tagName)}>
+            <button className="pull-main release-row" onClick={() => onSelect(release.tagName)}>
               <span className={`status-dot tone-${releaseStateTone(release)}`} aria-hidden="true" />
-              <span className="pull-title">{release.name}</span>
-              <span className="pull-meta">{releaseNote(release)}</span>
+              <span className="pull-line"><span className="pull-title">{release.name}</span></span>
+              <span className="pull-line"><span className="pull-meta">{releaseNote(release)}</span></span>
             </button>
           </div>
         ))}

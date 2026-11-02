@@ -916,6 +916,7 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   .pull-item { position: relative; display: flex; align-items: center; gap: 3px; padding-right: 6px; transition: background-color .12s ease; }
   .pull-item:focus-within { background: var(--row-hover); }
   .pull-main { display: grid; min-width: 0; flex: 1; grid-template-columns: 26px minmax(0, 1fr); align-items: center; gap: 1px 9px; padding: 8px 6px 8px 12px; line-height: 1.4; text-align: left; }
+  .pull-main.release-row { grid-template-columns: 7px minmax(0, 1fr); }
   .pull-avatar-status { position: relative; display: block; width: 26px; height: 26px; grid-row: span 2; }
   .pull-avatar-status .status-dot { position: absolute; right: -2px; bottom: -2px; box-sizing: content-box; border: 2px solid var(--background); }
   .pull-line { display: flex; min-width: 0; grid-column: 2; align-items: baseline; gap: 5px; color: var(--muted-foreground); font-size: var(--text-meta); font-weight: var(--weight-regular); white-space: nowrap; }
