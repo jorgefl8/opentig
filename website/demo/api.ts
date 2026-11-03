@@ -296,6 +296,7 @@ export const opentig: OpenTigApi = {
     getPullRequestCommits: async (_id, number) => ({ commits: demoPulls.get(number).commits, complete: true }),
     listReleases: async () => demoReleases.list(),
     getRelease: async (_id, tagName) => demoReleases.get(tagName),
+    checkReleaseTag: async (_id, tagName) => demoReleases.checkTag(tagName),
     listWorkflows: async () => demoReleases.workflows(),
     listWorkflowRuns: async (_id, path) => demoReleases.workflowRuns(path),
     repositoryAccount: async () => ({

@@ -8,7 +8,7 @@ import type { GitHubRepositoryAccount } from '@shared/github-accounts';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { ReleasesTools, ReleasesView } from './ReleasesView';
 
-const api = vi.hoisted(() => ({ listReleases: vi.fn(), createRelease: vi.fn(), repositoryAccount: vi.fn() }));
+const api = vi.hoisted(() => ({ listReleases: vi.fn(), createRelease: vi.fn(), checkReleaseTag: vi.fn(), repositoryAccount: vi.fn() }));
 const browser = vi.hoisted(() => ({ openExternalUrl: vi.fn() }));
 vi.mock('@/lib/browser-capabilities', async (original) => ({ ...await original<object>(), openExternalUrl: browser.openExternalUrl }));
 const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn(), info: vi.fn() }));
@@ -54,6 +54,12 @@ async function type(selector: string, value: string) {
     input.dispatchEvent(new Event('input', { bubbles: true }));
   });
 }
+// The dialog looks the tag up once typing pauses.
+async function waitForTagCheck() {
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 450)); });
+  await settle();
+}
+const status = () => container.querySelector('.release-tag-status')?.textContent;
 const button = (label: string) => [...container.querySelectorAll('button')].find(item => item.textContent?.trim() === label);
 
 it('labels each state, marks the active one and selects on click', async () => {
@@ -105,20 +111,62 @@ it('offers a retry when it cannot load', async () => {
 it('creates a draft for a tag and opens it', async () => {
   api.listReleases.mockResolvedValue([]);
   api.createRelease.mockResolvedValue(undefined);
+  api.checkReleaseTag.mockResolvedValue({ exists: true, hasRelease: false, defaultBranch: 'main' });
   await render();
   await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Create a draft release"]')!.click());
   await settle();
   expect(button('Create draft')?.disabled).toBe(true);
   await type('#release-tag', ' v2.0.0 ');
   await type('#release-title', ' Two ');
+  expect(status()).toContain('Checking v2.0.0');
+  expect(button('Create draft')?.disabled).toBe(true);
+  await waitForTagCheck();
+  expect(api.checkReleaseTag).toHaveBeenCalledTimes(1);
+  expect(api.checkReleaseTag).toHaveBeenCalledWith('repo', 'v2.0.0');
+  expect(status()).toContain('v2.0.0 exists on GitHub');
+  expect(container.querySelector('#release-target')).toBeNull();
   await act(async () => button('Create draft')!.click());
   await settle();
-  expect(api.createRelease).toHaveBeenCalledWith({ repositoryId: 'repo', tagName: 'v2.0.0', title: 'Two', notes: '', generateNotes: false, prerelease: false, expectedAccount: { login: 'sample', revision: 3 } });
+  expect(api.createRelease).toHaveBeenCalledWith({ repositoryId: 'repo', tagName: 'v2.0.0', title: 'Two', notes: '', generateNotes: false, prerelease: false, expectedTagExists: true, target: null, expectedAccount: { login: 'sample', revision: 3 } });
   expect(onSelect).toHaveBeenCalledWith('v2.0.0');
   expect(container.querySelector('[role="dialog"]')).toBeNull();
 });
 
+it('leaves a new tag to GitHub, from the default branch unless another target is given', async () => {
+  api.listReleases.mockResolvedValue([]);
+  api.createRelease.mockResolvedValue(undefined);
+  api.checkReleaseTag.mockResolvedValue({ exists: false, hasRelease: false, defaultBranch: 'main' });
+  await render();
+  await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Create a draft release"]')!.click());
+  await settle();
+  await type('#release-tag', 'v3.0.0');
+  await type('#release-title', 'Three');
+  await waitForTagCheck();
+  expect(status()).toContain('v3.0.0 is a new tag. GitHub creates it');
+  expect(container.querySelector<HTMLInputElement>('#release-target')?.value).toBe('main');
+  await type('#release-target', ' ');
+  expect(button('Create draft')?.disabled).toBe(true);
+  await type('#release-target', 'release/3.0');
+  await act(async () => button('Create draft')!.click());
+  await settle();
+  expect(api.createRelease).toHaveBeenCalledWith(expect.objectContaining({ tagName: 'v3.0.0', expectedTagExists: false, target: 'release/3.0' }));
+});
+
+it('says before creating when the tag already has a release', async () => {
+  api.listReleases.mockResolvedValue([]);
+  api.checkReleaseTag.mockResolvedValue({ exists: true, hasRelease: true, defaultBranch: 'main' });
+  await render();
+  await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Create a draft release"]')!.click());
+  await settle();
+  await type('#release-tag', 'v1');
+  await type('#release-title', 'One');
+  await waitForTagCheck();
+  expect(status()).toContain('v1 already has a release');
+  expect(button('Create draft')?.disabled).toBe(true);
+});
+
 it('keeps the dialog and its text when GitHub refuses', async () => {
+  api.checkReleaseTag.mockResolvedValue({ exists: true, hasRelease: false, defaultBranch: 'main' });
   api.listReleases.mockResolvedValue([]);
   api.createRelease.mockRejectedValue(Object.assign(new Error('no'), { detail: { code: 'GH_PR_ACTION_NOT_ALLOWED', operation: 'gh-release-create', message: "The tag v2.0.0 doesn't exist on GitHub." } }));
   await render();
@@ -126,6 +174,7 @@ it('keeps the dialog and its text when GitHub refuses', async () => {
   await settle();
   await type('#release-tag', 'v2.0.0');
   await type('#release-title', 'Two');
+  await waitForTagCheck();
   await act(async () => button('Create draft')!.click());
   await settle();
   expect(toast.error).toHaveBeenCalledWith(expect.objectContaining({ description: expect.stringContaining("doesn't exist") }));

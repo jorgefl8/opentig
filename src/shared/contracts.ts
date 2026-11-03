@@ -599,7 +599,10 @@ export interface ReleaseDetails extends ReleaseSummary {
   viewerCanWrite: boolean;
 }
 
-export type CreateReleaseInput = GitHubMutationBase & { tagName: string; title: string; notes: string; generateNotes: boolean; prerelease: boolean };
+/** Without the tag, `target` is the branch or commit GitHub creates it from when the draft is published. */
+export type CreateReleaseInput = GitHubMutationBase & { tagName: string; title: string; notes: string; generateNotes: boolean; prerelease: boolean; expectedTagExists: boolean; target: string | null };
+/** What the new draft dialog says about a tag before anything is created. */
+export interface ReleaseTagCheck { exists: boolean; hasRelease: boolean; defaultBranch: string | null }
 export type UpdateReleaseInput = GitHubMutationBase & { tagName: string; expectedDatabaseId: number; expectedBodyHash: string; title: string; notes: string };
 export type DeleteDraftReleaseInput = GitHubMutationBase & { tagName: string; expectedDatabaseId: number };
 /** `expectedTagExists` is what the confirmation said: publishing without the tag makes GitHub create it. */
@@ -868,6 +871,7 @@ export interface OpenTigApi {
     createPullRequest(input: CreatePullRequestInput): Promise<CreatePullRequestResult>;
     listReleases(repositoryId: string): Promise<ReleaseSummary[]>;
     getRelease(repositoryId: string, tagName: string): Promise<ReleaseDetails>;
+    checkReleaseTag(repositoryId: string, tagName: string): Promise<ReleaseTagCheck>;
     createRelease(input: CreateReleaseInput): Promise<void>;
     updateRelease(input: UpdateReleaseInput): Promise<void>;
     deleteDraftRelease(input: DeleteDraftReleaseInput): Promise<void>;
@@ -924,5 +928,5 @@ export const IPC = {
   diagnosticsList: 'diagnostics:list', diagnosticsClear: 'diagnostics:clear', diagnosticsRecord: 'diagnostics:record',
   githubAccountsStatus: 'github:accounts-status', githubSetDefaultAccount: 'github:set-default-account', githubRepositoryAccount: 'github:repository-account', githubSetRepositoryAccount: 'github:set-repository-account',
   githubStatus: 'github:status', githubRepositoryInfo: 'github:repository-info', githubPrForBranch: 'github:pr-for-branch', githubPrList: 'github:pr-list', githubPrView: 'github:pr-view', githubPrLiveState: 'github:pr-live-state', githubPrConversation: 'github:pr-conversation', githubPrAction: 'github:pr-action', githubPrUpdate: 'github:pr-update', githubPrComment: 'github:pr-comment', githubPrReview: 'github:pr-review', githubPrEntryEdit: 'github:pr-entry-edit', githubPrEntryDelete: 'github:pr-entry-delete',
-  githubPrStack: 'github:pr-stack', githubPrDiff: 'github:pr-diff', githubPrCommitDiff: 'github:pr-commit-diff', githubPrCommits: 'github:pr-commits', githubPrCreate: 'github:pr-create', githubReleaseList: 'github:release-list', githubReleaseView: 'github:release-view', githubReleaseCreate: 'github:release-create', githubReleaseUpdate: 'github:release-update', githubReleaseDelete: 'github:release-delete', githubReleasePublish: 'github:release-publish', githubWorkflowList: 'github:workflow-list', githubWorkflowRuns: 'github:workflow-runs', githubWorkflowRun: 'github:workflow-run', githubPrDraft: 'github:pr-draft', githubPrDraftCancel: 'github:pr-draft-cancel',
+  githubPrStack: 'github:pr-stack', githubPrDiff: 'github:pr-diff', githubPrCommitDiff: 'github:pr-commit-diff', githubPrCommits: 'github:pr-commits', githubPrCreate: 'github:pr-create', githubReleaseList: 'github:release-list', githubReleaseView: 'github:release-view', githubReleaseTag: 'github:release-tag', githubReleaseCreate: 'github:release-create', githubReleaseUpdate: 'github:release-update', githubReleaseDelete: 'github:release-delete', githubReleasePublish: 'github:release-publish', githubWorkflowList: 'github:workflow-list', githubWorkflowRuns: 'github:workflow-runs', githubWorkflowRun: 'github:workflow-run', githubPrDraft: 'github:pr-draft', githubPrDraftCancel: 'github:pr-draft-cancel',
 } as const;

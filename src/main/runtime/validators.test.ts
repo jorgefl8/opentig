@@ -327,9 +327,13 @@ describe('release arguments', () => {
     expect(() => tagNameArg(tag, 'gh-release-view')).toThrow('Invalid release data.');
   });
   it('checks each mutation', () => {
-    expect(createReleaseArg({ ...base, title: ' Title ', notes: '', generateNotes: true, prerelease: false })).toMatchObject({ title: 'Title', generateNotes: true });
-    expect(() => createReleaseArg({ ...base, title: ' ', notes: '', generateNotes: false, prerelease: false })).toThrow('Invalid release data.');
-    expect(() => createReleaseArg({ ...base, title: 'T', notes: 'x'.repeat(125_001), generateNotes: false, prerelease: false })).toThrow('Invalid release data.');
+    const tag = { expectedTagExists: true, target: null };
+    expect(createReleaseArg({ ...base, ...tag, title: ' Title ', notes: '', generateNotes: true, prerelease: false })).toMatchObject({ title: 'Title', generateNotes: true });
+    expect(() => createReleaseArg({ ...base, ...tag, title: ' ', notes: '', generateNotes: false, prerelease: false })).toThrow('Invalid release data.');
+    expect(() => createReleaseArg({ ...base, ...tag, title: 'T', notes: 'x'.repeat(125_001), generateNotes: false, prerelease: false })).toThrow('Invalid release data.');
+    expect(createReleaseArg({ ...base, title: 'T', notes: '', generateNotes: false, prerelease: false, expectedTagExists: false, target: 'feature/x' })).toMatchObject({ target: 'feature/x' });
+    expect(() => createReleaseArg({ ...base, title: 'T', notes: '', generateNotes: false, prerelease: false, expectedTagExists: false, target: '--draft=false' })).toThrow('Invalid release data.');
+    expect(() => createReleaseArg({ ...base, title: 'T', notes: '', generateNotes: false, prerelease: false })).toThrow('Invalid release data.');
     expect(updateReleaseArg({ ...base, expectedDatabaseId: 1, expectedBodyHash: 'a'.repeat(64), title: 'T', notes: '<!-- opentig:release-notes:start -->' })).toMatchObject({ notes: '<!-- opentig:release-notes:start -->' });
     expect(() => updateReleaseArg({ ...base, expectedDatabaseId: 1, expectedBodyHash: 'short', title: 'T', notes: '' })).toThrow('Invalid release data.');
     expect(deleteDraftReleaseArg({ ...base, expectedDatabaseId: 1 })).toMatchObject({ expectedDatabaseId: 1 });

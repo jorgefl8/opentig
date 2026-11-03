@@ -47,7 +47,7 @@ export function ReleasesTools({ repositoryId, nameWithOwner, account, onOpenGitH
       </Tooltip>
       <Tooltip>
         <TooltipTrigger render={<Button variant="ghost" size="icon-xs" className="change-action-button" onClick={() => setCreating(true)} aria-label="Create a draft release" />}><IconPlus /></TooltipTrigger>
-        <TooltipContent>Create a draft release for an existing tag</TooltipContent>
+        <TooltipContent>Create a draft release</TooltipContent>
       </Tooltip>
       {running && <RunWorkflowDialog repositoryId={repositoryId} onClose={() => setRunning(false)} />}
       {creating && <CreateReleaseDialog repositoryId={repositoryId} onClose={() => setCreating(false)} onCreated={onSelect} />}

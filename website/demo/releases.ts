@@ -35,6 +35,10 @@ const runs: Record<string, WorkflowRunSummary[]> = {
 };
 export const demoReleases = {
   workflows() { return structuredClone(workflows); },
+  checkTag(tagName: string) {
+    const release = samples.find((sample) => sample.tagName === tagName);
+    return { exists: release?.tagExists === true, hasRelease: release !== undefined, defaultBranch: 'main' };
+  },
   workflowRuns(path: string) { return structuredClone(runs[path] ?? []); },
   list() {
     return samples.map(({ tagName, name, isDraft, isPrerelease, isLatest, isImmutable, createdAt, publishedAt }) => ({ tagName, name, isDraft, isPrerelease, isLatest, isImmutable, createdAt, publishedAt }));

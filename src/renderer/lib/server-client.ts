@@ -170,6 +170,7 @@ export function createOpenTigServerClient(options: ServerClientOptions = {}): Op
       createPullRequest: (input) => invoke(IPC.githubPrCreate, input),
       listReleases: (repositoryId) => invoke(IPC.githubReleaseList, repositoryId),
       getRelease: (repositoryId, tagName) => invoke(IPC.githubReleaseView, repositoryId, tagName),
+      checkReleaseTag: (repositoryId, tagName) => invoke(IPC.githubReleaseTag, repositoryId, tagName),
       createRelease: (input) => invoke(IPC.githubReleaseCreate, input),
       updateRelease: (input) => invoke(IPC.githubReleaseUpdate, input),
       deleteDraftRelease: (input) => invoke(IPC.githubReleaseDelete, input),

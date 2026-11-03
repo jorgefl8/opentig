@@ -166,6 +166,7 @@ export const OPEN_TIG_SERVER_COMMANDS = {
   'github.createPullRequest': command(IPC.githubPrCreate, 'gh-pr-create', true, { timeoutMs: PULL_REQUEST_CREATE_TIMEOUT_MS }),
   'github.listReleases': command(IPC.githubReleaseList, 'gh-release-list', false, { timeoutMs: GITHUB_READ_TIMEOUT_MS }),
   'github.getRelease': command(IPC.githubReleaseView, 'gh-release-view', false, { timeoutMs: GITHUB_READ_TIMEOUT_MS }),
+  'github.checkReleaseTag': command(IPC.githubReleaseTag, 'gh-release-tag', false, { timeoutMs: GITHUB_READ_TIMEOUT_MS }),
   'github.createRelease': command(IPC.githubReleaseCreate, 'gh-release-create', true, { timeoutMs: GITHUB_ACTION_TIMEOUT_MS }),
   'github.updateRelease': command(IPC.githubReleaseUpdate, 'gh-release-update', true, { timeoutMs: GITHUB_ACTION_TIMEOUT_MS }),
   'github.deleteDraftRelease': command(IPC.githubReleaseDelete, 'gh-release-delete', true, { timeoutMs: GITHUB_ACTION_TIMEOUT_MS }),

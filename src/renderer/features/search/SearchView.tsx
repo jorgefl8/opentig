@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { useMobileLayout } from '@/lib/use-mobile-layout';
+import { useDebouncedValue } from '@/lib/use-debounced-value';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useQuery } from '@tanstack/react-query';
 import { IconChevronDown, IconChevronRight, IconEyeOff, IconLoader4, IconReplace, IconReplaceFilled, IconSearch } from '@tabler/icons-react';
@@ -306,15 +307,6 @@ export function SearchView({ repositoryId, active, revision, onOpenFile, unsaved
       </div>
     </div>
   );
-}
-
-function useDebouncedValue<T>(value: T, delay: number): T {
-  const [debounced, setDebounced] = useState(value);
-  useEffect(() => {
-    const timer = window.setTimeout(() => setDebounced(value), delay);
-    return () => window.clearTimeout(timer);
-  }, [delay, value]);
-  return debounced;
 }
 
 function SearchToggle({ label, active, onToggle, children }: { label: string; active: boolean; onToggle(): void; children: React.ReactNode }) {

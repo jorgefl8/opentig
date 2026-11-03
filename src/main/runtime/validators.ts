@@ -409,7 +409,8 @@ export function tagNameArg(value: unknown, operation: string): string {
 }
 
 export function createReleaseArg(value: unknown): CreateReleaseInput {
-  return parsedRelease(releaseBaseSchema.extend({ title: releaseTitleSchema, notes: releaseNotesSchema, generateNotes: z.boolean(), prerelease: z.boolean() }).safeParse(value), 'gh-release-create');
+  // A branch or commit follows the same rules as a tag, so it can't pass for an option either.
+  return parsedRelease(releaseBaseSchema.extend({ title: releaseTitleSchema, notes: releaseNotesSchema, generateNotes: z.boolean(), prerelease: z.boolean(), expectedTagExists: z.boolean(), target: tagNameSchema.nullable() }).safeParse(value), 'gh-release-create');
 }
 
 export function updateReleaseArg(value: unknown): UpdateReleaseInput {

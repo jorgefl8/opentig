@@ -518,6 +518,7 @@ export function registerServerCommands(
   ));
   handle(IPC.githubReleaseList, 'gh-release-list', (id) => services.github.listReleases(stringArg(id, 'gh-release-list', 64)));
   handle(IPC.githubReleaseView, 'gh-release-view', (id, tagName) => services.github.getRelease(stringArg(id, 'gh-release-view', 64), tagNameArg(tagName, 'gh-release-view')));
+  handle(IPC.githubReleaseTag, 'gh-release-tag', (id, tagName) => services.github.checkReleaseTag(stringArg(id, 'gh-release-tag', 64), tagNameArg(tagName, 'gh-release-tag')));
   handle(IPC.githubReleaseCreate, 'gh-release-create', (input) => services.github.createRelease(createReleaseArg(input)));
   handle(IPC.githubReleaseUpdate, 'gh-release-update', (input) => services.github.updateRelease(updateReleaseArg(input)));
   handle(IPC.githubReleaseDelete, 'gh-release-delete', (input) => services.github.deleteDraftRelease(deleteDraftReleaseArg(input)));

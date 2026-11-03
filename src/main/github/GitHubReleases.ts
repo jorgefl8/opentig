@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { CreateReleaseInput, DeleteDraftReleaseInput, PublishReleaseInput, ReleaseDetails, ReleaseSummary, RepositoryWorkflowList, RunWorkflowInput, UpdateReleaseInput, WorkflowRunSummary } from '../../shared/contracts';
+import type { CreateReleaseInput, DeleteDraftReleaseInput, PublishReleaseInput, ReleaseDetails, ReleaseSummary, ReleaseTagCheck, RepositoryWorkflowList, RunWorkflowInput, UpdateReleaseInput, WorkflowRunSummary } from '../../shared/contracts';
 import { GhOperationError } from '../../shared/errors';
 import { GITHUB_ACTION_STEP_TIMEOUT_MS, GITHUB_LIVE_READ_TIMEOUT_MS } from '../../shared/operation-timeouts';
 import { redactCommandToken } from './GitHubAccountAuth';
@@ -9,7 +9,7 @@ import { parseReleaseDetails, parseReleaseList, parseWorkflowList, parseWorkflow
 
 const repositoryFactsSchema = z.object({ default_branch: z.string().nullish(), permissions: z.object({ push: z.boolean().nullish() }).nullish() });
 
-/** OpenTig never creates or moves a tag: a release only ever points at one that already exists. */
+/** OpenTig never creates or moves a tag itself. Without one, GitHub creates it from the draft's target when it's published. */
 export class GitHubReleases {
   constructor(private readonly github: GitHubAccess) {}
 
@@ -82,19 +82,45 @@ export class GitHubReleases {
     if (result.exitCode !== 0) throw classifyActionFailure({ ...result, stderr: redactCommandToken(result.stderr, target.auth) }, operation);
   }
 
+  async checkTag(repositoryId: string, tagName: string): Promise<ReleaseTagCheck> {
+    const operation = 'gh-release-tag';
+    const target = await this.github.requireGitHub(repositoryId, operation);
+    const [exists, releases, facts] = await Promise.all([this.tagExists(target, tagName, operation), this.listFor(target, operation), this.repositoryFacts(target, operation)]);
+    return { exists, hasRelease: releases.some((release) => release.tagName === tagName), defaultBranch: facts.defaultBranch };
+  }
+
+  /** Only a 404 or 422 says there's no such branch or commit; anything else leaves the question open. */
+  private async requireCommit(target: GitHubTarget, ref: string, operation: string): Promise<void> {
+    const path = ref.split('/').map(encodeURIComponent).join('/');
+    const result = await this.github.run(target.executable, ['api', `repos/${target.nameWithOwner}/commits/${path}`, '--jq', '.sha'], this.readOptions(target, operation));
+    if (result.exitCode === 0) return;
+    if (/\(HTTP (404|422)\)\s*$/im.test(result.stderr)) throw this.notAllowed(operation, `${ref} isn't a branch or commit on GitHub, so GitHub couldn't create the tag from it.`);
+    throw classifyActionFailure({ ...result, stderr: redactCommandToken(result.stderr, target.auth) }, operation);
+  }
+
+  /**
+   * With the tag, `--verify-tag` keeps it so. Without it, the draft keeps a target,
+   * and GitHub creates the tag from it when the draft is published, as on its own page.
+   * The dialog said which of the two happens, so creation stops if that changed.
+   */
   async create(input: CreateReleaseInput): Promise<void> {
     const operation = 'gh-release-create';
     const { target, verifyAccount } = await beginGitHubMutation(this.github, input, operation);
     this.github.invalidate(input.repositoryId);
     const [facts, tagExists, releases] = await Promise.all([this.repositoryFacts(target, operation), this.tagExists(target, input.tagName, operation), this.listFor(target, operation)]);
     if (!facts.canWrite) throw this.notAllowed(operation, "This GitHub account doesn't have write access to this repository.");
-    if (!tagExists) throw this.notAllowed(operation, `The tag ${input.tagName} doesn't exist on GitHub. OpenTig doesn't create tags, so create and push it first.`);
+    if (tagExists !== input.expectedTagExists) {
+      throw this.changed(operation, tagExists ? `The tag ${input.tagName} now exists on GitHub. Review it and try again.` : `The tag ${input.tagName} is no longer on GitHub. Review it and try again.`);
+    }
     // `gh` doesn't check this for drafts, and would then pick whichever release it finds first.
     if (releases.some((release) => release.tagName === input.tagName)) throw this.notAllowed(operation, `A release for ${input.tagName} already exists. Edit that one instead.`);
+    if (!tagExists && !input.target) throw this.notAllowed(operation, `Choose the branch or commit GitHub creates ${input.tagName} from.`);
+    if (!tagExists) await this.requireCommit(target, input.target!, operation);
     verifyAccount();
+    const tag = tagExists ? ['--verify-tag'] : ['--target', input.target!];
     try {
       await withPrivateTextFile(input.notes, (notesFile) => this.act(target, [
-        'release', 'create', input.tagName, '-R', target.nameWithOwner, '--draft', '--verify-tag', '--title', input.title, '--notes-file', notesFile,
+        'release', 'create', input.tagName, '-R', target.nameWithOwner, '--draft', ...tag, '--title', input.title, '--notes-file', notesFile,
         ...(input.generateNotes ? ['--generate-notes'] : []), ...(input.prerelease ? ['--prerelease'] : []),
       ], operation));
     } finally {

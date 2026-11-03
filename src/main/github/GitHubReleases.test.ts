@@ -20,7 +20,7 @@ const workflows = [
   { id: 4, name: 'Build', path: '.github/workflows/build.yml', state: 'active' },
 ];
 
-function fixture(overrides: { view?: CliRunResult; list?: CliRunResult; tag?: CliRunResult; repository?: CliRunResult; workflows?: CliRunResult; runs?: CliRunResult; mutate?: (args: string[]) => CliRunResult } = {}) {
+function fixture(overrides: { view?: CliRunResult; list?: CliRunResult; tag?: CliRunResult; commit?: CliRunResult; repository?: CliRunResult; workflows?: CliRunResult; runs?: CliRunResult; mutate?: (args: string[]) => CliRunResult } = {}) {
   const mutations: string[][] = [];
   const run = vi.fn(async (_exe: string, args: string[]): Promise<CliRunResult> => {
     if (args[0] === 'release' && args[1] === 'view') return overrides.view ?? ok(details);
@@ -28,6 +28,7 @@ function fixture(overrides: { view?: CliRunResult; list?: CliRunResult; tag?: Cl
     if (args[0] === 'workflow' && args[1] === 'list') return overrides.workflows ?? ok(workflows);
     if (args[0] === 'run' && args[1] === 'list') return overrides.runs ?? ok([{ databaseId: 1, status: 'completed', conclusion: 'success', url: 'https://github.com/example/demo/actions/runs/1', createdAt: '2026-01-01T00:00:00Z', displayTitle: 'Prepare release' }]);
     if (args[0] === 'api' && args[1]?.includes('/git/ref/tags/')) return overrides.tag ?? ok({ ref: 'refs/tags/v1.0.0' });
+    if (args[0] === 'api' && args[1]?.includes('/commits/')) return overrides.commit ?? { exitCode: 0, stdout: 'a'.repeat(40), stderr: '' };
     if (args[0] === 'api') return overrides.repository ?? ok({ default_branch: 'main', permissions: { push: true } });
     mutations.push(args);
     return overrides.mutate?.(args) ?? { exitCode: 0, stdout: '', stderr: '' };
@@ -46,7 +47,8 @@ const base = { repositoryId: 'repo', tagName: 'v1.0.0', expectedAccount: { login
 const identity = { ...base, expectedDatabaseId: 42 };
 const publication = { ...identity, expectedTagExists: true };
 const edit = { ...identity, expectedBodyHash: releaseBodyHash(body), title: 'New title', notes: body };
-const create = { ...base, tagName: 'v2.0.0', title: 'Two', notes: 'Notes', generateNotes: false, prerelease: false };
+const create = { ...base, tagName: 'v2.0.0', title: 'Two', notes: 'Notes', generateNotes: false, prerelease: false, expectedTagExists: true, target: null };
+const newTag = { ...create, expectedTagExists: false, target: 'main' };
 const notFound = fail('gh: Not Found (HTTP 404)');
 
 describe('reading releases', () => {
@@ -84,7 +86,7 @@ describe('reading releases', () => {
 });
 
 describe('creating a draft', () => {
-  it('requires the tag on GitHub, and never creates one', async () => {
+  it('verifies an existing tag, so it stays the one the draft names', async () => {
     const { service, mutations } = fixture();
     await service.createRelease({ ...create, generateNotes: true, prerelease: true });
     expect(mutations[0]!.slice(0, 11)).toEqual(['release', 'create', 'v2.0.0', '-R', 'example/demo', '--draft', '--verify-tag', '--title', 'Two', '--notes-file', mutations[0]![10]]);
@@ -99,14 +101,30 @@ describe('creating a draft', () => {
     expect(mutations[0]).not.toContain('--prerelease');
   });
 
+  it('leaves a new tag to GitHub, created from the target when the draft is published', async () => {
+    const { service, mutations, run } = fixture({ tag: notFound });
+    await service.createRelease(newTag);
+    expect(mutations[0]!.slice(0, 11)).toEqual(['release', 'create', 'v2.0.0', '-R', 'example/demo', '--draft', '--target', 'main', '--title', 'Two', '--notes-file']);
+    expect(mutations[0]).not.toContain('--verify-tag');
+    expect(run).toHaveBeenCalledWith('gh', ['api', 'repos/example/demo/commits/main', '--jq', '.sha'], expect.anything());
+  });
+
   it.each([
-    ['the tag is missing', { tag: notFound }, 'create and push it first'],
-    ['a release already uses the tag', { list: ok([{ ...summary, tagName: 'v2.0.0' }]) }, 'already exists'],
-    ['the viewer cannot write', { repository: ok({ permissions: { push: false } }) }, 'write access'],
-  ])('refuses when %s', async (_name, overrides, message) => {
+    ['a release already uses the tag', { list: ok([{ ...summary, tagName: 'v2.0.0' }]) }, create, 'already exists'],
+    ['the viewer cannot write', { repository: ok({ permissions: { push: false } }) }, create, 'write access'],
+    ['the tag went away after the check', { tag: notFound }, create, 'no longer on GitHub'],
+    ['the tag appeared after the check', {}, newTag, 'now exists'],
+    ['a new tag has no target', { tag: notFound }, { ...newTag, target: null }, 'Choose the branch or commit'],
+    ['the target is not on GitHub', { tag: notFound, commit: fail('gh: No commit found for SHA: nope (HTTP 422)') }, newTag, "isn't a branch or commit"],
+  ])('refuses when %s', async (_name, overrides, input, message) => {
     const { service, mutations } = fixture(overrides);
-    await expect(service.createRelease(create)).rejects.toThrow(message);
+    await expect(service.createRelease(input)).rejects.toThrow(message);
     expect(mutations).toEqual([]);
+  });
+
+  it('says what the dialog needs about a tag', async () => {
+    expect(await fixture().service.checkReleaseTag('repo', 'v2.0.0')).toEqual({ exists: true, hasRelease: false, defaultBranch: 'main' });
+    expect(await fixture({ tag: notFound }).service.checkReleaseTag('repo', 'v1.0.0')).toEqual({ exists: false, hasRelease: true, defaultBranch: 'main' });
   });
 
   it('stops with another account', async () => {
