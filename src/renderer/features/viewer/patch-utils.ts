@@ -21,9 +21,10 @@ export const VIEWER_SCROLLBAR_CSS = `
   }
 
   /* Editor widgets live in Pierre's shadow tree and cannot inherit the app's
-     input rules. Keep keyboard focus from triggering iOS viewport zoom. */
+     input rules. Keep keyboard focus from triggering iOS viewport zoom. The code
+     itself keeps the diffs' size: on iOS the viewport stops that zoom instead. */
   @media (max-width: 767px) {
-    input, textarea, [contenteditable="true"] { font-size: 16px; }
+    input, textarea { font-size: 16px; }
     button { min-height: 40px; touch-action: manipulation; }
   }
 `;

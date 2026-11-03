@@ -1,7 +1,8 @@
 import type { GitHubRepositoryAccount } from '@shared/github-accounts';
 import { formatTimeAgo } from '@shared/date-format';
 import { PullRequestStackMenu } from './PullRequestStackMenu';
-import { lazy, Suspense, useRef } from 'react';
+import { Suspense, useRef } from 'react';
+import { lazyWithRetry } from '@/lib/lazy-with-retry';
 import { useQuery } from '@tanstack/react-query';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { IconBrandGithub, IconCopy, IconExternalLink, IconFilter, IconLoader4, IconPlus, IconRefresh } from '@tabler/icons-react';
@@ -18,8 +19,8 @@ import { GitHubAvatar } from './GitHubAvatar';
 import { GitHubSectionMenu } from './GitHubSectionMenu';
 import { pullRequestLiveStateQueryOptions } from './pull-request-live-state-query';
 
-const ReleasesView = lazy(() => import('./ReleasesView').then((module) => ({ default: module.ReleasesView })));
-const ReleasesTools = lazy(() => import('./ReleasesView').then((module) => ({ default: module.ReleasesTools })));
+const ReleasesView = lazyWithRetry(() => import('./ReleasesView').then((module) => ({ default: module.ReleasesView })));
+const ReleasesTools = lazyWithRetry(() => import('./ReleasesView').then((module) => ({ default: module.ReleasesTools })));
 
 export type PullRequestsSection = 'pulls' | 'releases';
 

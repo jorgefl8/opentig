@@ -1,4 +1,5 @@
-import { lazy, Suspense } from 'react';
+import { Suspense } from 'react';
+import { lazyWithRetry } from '@/lib/lazy-with-retry';
 import { Toaster } from 'sileo';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { LowEndDevice } from './LowEndDevice';
@@ -6,8 +7,8 @@ import { MobileViewport } from './MobileViewport';
 import { ServerConnectionBoundary } from './ServerConnectionBoundary';
 import { queryClient } from '../lib/query-client';
 
-const App = lazy(() => import('../app/App'));
-const PairingPage = lazy(() => import('../features/auth/PairingPage'));
+const App = lazyWithRetry(() => import('../app/App'));
+const PairingPage = lazyWithRetry(() => import('../features/auth/PairingPage'));
 
 export function RendererRoot() {
   const application = window.location.pathname === '/pair'

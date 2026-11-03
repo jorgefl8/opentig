@@ -1,5 +1,6 @@
 import { appDisplayName } from '@/lib/app-identity';
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazyWithRetry } from '@/lib/lazy-with-retry';
 import {
   IconArrowDown, IconArrowUp, IconBrandGithub, IconChevronDown, IconHierarchy2, IconLoader4, IconPlus, IconRefresh, IconSettings,
 } from '@tabler/icons-react';
@@ -63,9 +64,9 @@ export interface ToolbarProps {
   onSettingsOpen(open: boolean): void; onSettingsSection(section: SettingsSection): void;
 }
 
-const SettingsDialog = lazy(() => import('@/features/settings/SettingsDialog').then((module) => ({ default: module.SettingsDialog })));
-const LocalRefsDialog = lazy(() => import('@/features/refs/LocalRefsDialog').then((module) => ({ default: module.LocalRefsDialog })));
-const RepositoryProjectsDialog = lazy(() => import('@/features/repositories/RepositoryProjectsDialog').then((module) => ({ default: module.RepositoryProjectsDialog })));
+const SettingsDialog = lazyWithRetry(() => import('@/features/settings/SettingsDialog').then((module) => ({ default: module.SettingsDialog })));
+const LocalRefsDialog = lazyWithRetry(() => import('@/features/refs/LocalRefsDialog').then((module) => ({ default: module.LocalRefsDialog })));
+const RepositoryProjectsDialog = lazyWithRetry(() => import('@/features/repositories/RepositoryProjectsDialog').then((module) => ({ default: module.RepositoryProjectsDialog })));
 
 export function Toolbar(props: ToolbarProps) {
   const { onRecent } = props;

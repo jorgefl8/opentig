@@ -5,11 +5,12 @@ import { lastCloneParent, resumeBackgroundClone } from '@/features/onboarding/cl
 import { useGitHubAccount } from '@/features/pulls/useGitHubAccount';
 import { branchPullRequestQueryOptions } from '@/features/pulls/branch-pull-request-query';
 import { appDisplayName } from '@/lib/app-identity';
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { isModuleLoadError, lazyWithRetry } from '@/lib/lazy-with-retry';
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   IconBrandGithub, IconFileArrowRight, IconFiles, IconGitCompare, IconHistory,
-  IconLoader4, IconRestore, IconSearch, IconTrash,
+  IconLoader4, IconRefresh, IconRestore, IconSearch, IconTrash,
 } from '@tabler/icons-react';
 import { sileo } from 'sileo';
 import type { BootstrapData, CommitSplitProposal, FetchResult, FileHistoryPathChange, FileHistoryState, GhCliStatus, GitHubRepositoryInfo, OpenTigCapabilities, Preferences, PullRequestState, PullRequestSummary, PullResult, PushResult, RecentRepository, RepositoryInfo, UndoLatestCommitResult } from '../../shared/contracts';
@@ -77,13 +78,13 @@ import type { SettingsSection } from '@/features/settings/SettingsDialog';
 import { CommitAuthorshipDialog } from '@/features/settings/CommitAuthorshipDialog';
 import { RepositoryLinksContext, type RepositoryLinks } from '@/components/repository-links';
 
-const Viewer = lazy(() => import('@/features/viewer/Viewer'));
-const FilesView = lazy(() => import('@/features/files/FilesView').then((module) => ({ default: module.FilesView })));
-const HistoryView = lazy(() => import('@/features/history/HistoryView').then((module) => ({ default: module.HistoryView })));
-const SearchView = lazy(() => import('@/features/search/SearchView').then((module) => ({ default: module.SearchView })));
-const PullRequestsView = lazy(() => import('@/features/pulls/PullRequestsView').then((module) => ({ default: module.PullRequestsView })));
-const QuickOpenDialog = lazy(() => import('@/features/files/QuickOpenDialog').then((module) => ({ default: module.QuickOpenDialog })));
-const CreatePullRequestDialog = lazy(() => import('@/features/pulls/CreatePullRequestDialog').then((module) => ({ default: module.CreatePullRequestDialog })));
+const Viewer = lazyWithRetry(() => import('@/features/viewer/Viewer'));
+const FilesView = lazyWithRetry(() => import('@/features/files/FilesView').then((module) => ({ default: module.FilesView })));
+const HistoryView = lazyWithRetry(() => import('@/features/history/HistoryView').then((module) => ({ default: module.HistoryView })));
+const SearchView = lazyWithRetry(() => import('@/features/search/SearchView').then((module) => ({ default: module.SearchView })));
+const PullRequestsView = lazyWithRetry(() => import('@/features/pulls/PullRequestsView').then((module) => ({ default: module.PullRequestsView })));
+const QuickOpenDialog = lazyWithRetry(() => import('@/features/files/QuickOpenDialog').then((module) => ({ default: module.QuickOpenDialog })));
+const CreatePullRequestDialog = lazyWithRetry(() => import('@/features/pulls/CreatePullRequestDialog').then((module) => ({ default: module.CreatePullRequestDialog })));
 const sidebarFallback = <div className="view-loading" role="status"><IconLoader4 className="spinner" /> <ShimmeringText text="Loading…" /></div>;
 const NO_OPEN_FILES_STATES: OpenFilesState[] = [];
 type DirtyCloseChoice = 'save' | 'discard' | 'cancel';
@@ -111,9 +112,9 @@ class PushBlocked extends Error {
   }
 }
 
-const CloneRepositoryDialog = lazy(() => import('@/features/onboarding/CloneRepositoryDialog').then(module => ({ default: module.CloneRepositoryDialog })));
-const FindRepositoriesDialog = lazy(() => import('@/features/onboarding/FindRepositoriesDialog').then(module => ({ default: module.FindRepositoriesDialog })));
-const WelcomeSettings = lazy(() => import('@/features/settings/SettingsDialog').then(module => ({ default: module.SettingsDialog })));
+const CloneRepositoryDialog = lazyWithRetry(() => import('@/features/onboarding/CloneRepositoryDialog').then(module => ({ default: module.CloneRepositoryDialog })));
+const FindRepositoriesDialog = lazyWithRetry(() => import('@/features/onboarding/FindRepositoriesDialog').then(module => ({ default: module.FindRepositoriesDialog })));
+const WelcomeSettings = lazyWithRetry(() => import('@/features/settings/SettingsDialog').then(module => ({ default: module.SettingsDialog })));
 
 export default function App({ initialView, initialSelection, pullRequestCreationDisabledReason }: { initialView?: SidebarView; initialSelection?: ViewerSelection; pullRequestCreationDisabledReason?: string } = {}) {
   const appQueryClient = useQueryClient();
@@ -2599,7 +2600,14 @@ export default function App({ initialView, initialSelection, pullRequestCreation
             <div className="viewer-pane-body">
               <ErrorBoundary
                 resetKey={viewerSelection}
-                fallback={(err) => (
+                fallback={(err) => isModuleLoadError(err) ? (
+                  // Retrying already failed, so the part is gone (OpenTig was updated) or the connection is down.
+                  <div className="viewer-message flex-col gap-3 text-center">
+                    <p>This part of OpenTig couldn't be loaded.</p>
+                    <small className="text-muted-foreground">OpenTig may have been updated, or the connection dropped. Reload the page to continue.</small>
+                    <Button variant="outline" size="sm" onClick={() => window.location.reload()}><IconRefresh /> Reload</Button>
+                  </div>
+                ) : (
                   <div className="viewer-message flex-col gap-2 text-center text-destructive">
                     <p>Could not display this content.</p>
                     <small className="text-muted-foreground">{err.message}</small>

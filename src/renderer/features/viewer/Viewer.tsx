@@ -1,5 +1,6 @@
 import { formatDateTime } from '@shared/date-format';
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { lazyWithRetry } from '@/lib/lazy-with-retry';
 import { IconDots, IconLoader4 } from '@tabler/icons-react';
 import type { DiffResult, DiffViewPreference, FileResult, ImageFileResult, ThemePreference, WriteFileResult } from '../../../shared/contracts';
 import type { CommitInfo } from '../../../shared/git-types';
@@ -18,16 +19,16 @@ import { openExternalUrl } from '@/lib/browser-capabilities';
 import { ByteBudgetLru } from '@/lib/ByteBudgetLru';
 import { opentig } from '@/lib/opentig-api';
 import { MobileCommitBar, MobileDiffBar } from './MobileViewerBars';
-const PierreDiffViewer = lazy(() => import('./PierreDiffViewer'));
-const PierreEditBoundary = lazy(() => import('./PierreEditBoundary').then((module) => ({ default: module.PierreEditBoundary })));
-const MarkdownFileViewer = lazy(() => import('@/features/markdown/MarkdownFileViewer').then((module) => ({ default: module.MarkdownFileViewer })));
-const PullRequestViewer = lazy(() => import('@/features/pulls/PullRequestViewer').then((module) => ({ default: module.PullRequestViewer })));
-const EditableFileViewer = lazy(() => import('./EditableFileViewer').then((module) => ({ default: module.EditableFileViewer })));
-const HtmlFileViewer = lazy(() => import('./HtmlFileViewer').then((module) => ({ default: module.HtmlFileViewer })));
-const ReleaseViewer = lazy(() => import('@/features/pulls/ReleaseViewer').then((module) => ({ default: module.ReleaseViewer })));
-const PdfFileViewer = lazy(() => import('./PdfFileViewer').then((module) => ({ default: module.PdfFileViewer })));
-const ImageFileViewer = lazy(() => import('./ImageFileViewer').then((module) => ({ default: module.ImageFileViewer })));
-const SvgFileViewer = lazy(() => import('./ImageFileViewer').then((module) => ({ default: module.SvgFileViewer })));
+const PierreDiffViewer = lazyWithRetry(() => import('./PierreDiffViewer'));
+const PierreEditBoundary = lazyWithRetry(() => import('./PierreEditBoundary').then((module) => ({ default: module.PierreEditBoundary })));
+const MarkdownFileViewer = lazyWithRetry(() => import('@/features/markdown/MarkdownFileViewer').then((module) => ({ default: module.MarkdownFileViewer })));
+const PullRequestViewer = lazyWithRetry(() => import('@/features/pulls/PullRequestViewer').then((module) => ({ default: module.PullRequestViewer })));
+const EditableFileViewer = lazyWithRetry(() => import('./EditableFileViewer').then((module) => ({ default: module.EditableFileViewer })));
+const HtmlFileViewer = lazyWithRetry(() => import('./HtmlFileViewer').then((module) => ({ default: module.HtmlFileViewer })));
+const ReleaseViewer = lazyWithRetry(() => import('@/features/pulls/ReleaseViewer').then((module) => ({ default: module.ReleaseViewer })));
+const PdfFileViewer = lazyWithRetry(() => import('./PdfFileViewer').then((module) => ({ default: module.PdfFileViewer })));
+const ImageFileViewer = lazyWithRetry(() => import('./ImageFileViewer').then((module) => ({ default: module.ImageFileViewer })));
+const SvgFileViewer = lazyWithRetry(() => import('./ImageFileViewer').then((module) => ({ default: module.SvgFileViewer })));
 
 export type ViewerSelection =
   | { type: 'diff'; path: string; kind: 'staged' | 'unstaged' }

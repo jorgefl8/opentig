@@ -1,6 +1,7 @@
 import { formatDateTime } from '@shared/date-format';
 import { PullRequestStackMenu } from './PullRequestStackMenu';
-import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { lazyWithRetry } from '@/lib/lazy-with-retry';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { IconExternalLink, IconLoader4, IconRefresh } from '@tabler/icons-react';
 import { GITHUB_PR_COMMIT_PAGE, type DiffResult, type DiffViewPreference, type PullRequestCommitList, type PullRequestDetails, type PullRequestLatestReview, type PullRequestLiveState, type ThemePreference } from '../../../shared/contracts';
@@ -27,7 +28,7 @@ import { opentig } from '@/lib/opentig-api';
 import { queryKeys } from '@/lib/query-client';
 import '@/features/markdown/markdown.css';
 
-const PullRequestDiff = lazy(() => import('./PullRequestDiff'));
+const PullRequestDiff = lazyWithRetry(() => import('./PullRequestDiff'));
 
 interface PullRequestViewerProps {
   repositoryId: string;
