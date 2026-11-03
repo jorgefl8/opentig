@@ -8,6 +8,7 @@ import { MobileSwitchRow } from '@/components/MobileChrome';
 import { MobileSheet } from '@/components/MobileSheet';
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { LinkedText } from '@/components/LinkedText';
+import { RepositoryLink } from '@/components/RepositoryLink';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { changeStatusCode } from '@/features/changes/change-status';
@@ -22,7 +23,7 @@ import { opentig } from '@/lib/opentig-api';
 interface HistoryViewProps {
   repositoryId: string; upstream: string | null; readOnly: boolean; operation: string | null;
   commits: CommitInfo[] | null; nextCursor: string | null; loading: boolean; undoing: boolean;
-  baseRef?: string | null | undefined; activeOid?: string | null; onSelectReference?: ((number: number) => void) | undefined;
+  baseRef?: string | null | undefined; activeOid?: string | null;
   onSelectCommit(commit: CommitInfo): void; onSelectFile(oid: string, file: CommitFile): void; onUndo(commit: CommitInfo): void; onMore(): void;
 }
 
@@ -30,7 +31,7 @@ interface HistoryViewProps {
 const LOAD_MORE_HEIGHT = 36;
 const MOBILE_LOAD_MORE_HEIGHT = 48;
 
-export function HistoryView({ repositoryId, upstream, readOnly, operation, commits, nextCursor, loading, undoing, baseRef, activeOid, onSelectReference, onSelectCommit, onSelectFile, onUndo, onMore }: HistoryViewProps) {
+export function HistoryView({ repositoryId, upstream, readOnly, operation, commits, nextCursor, loading, undoing, baseRef, activeOid, onSelectCommit, onSelectFile, onUndo, onMore }: HistoryViewProps) {
   const mobile = useMobileLayout();
   const scrollRef = useRef<HTMLDivElement>(null);
   const [expandedCommits, setExpandedCommits] = useState<Set<string>>(new Set());
@@ -107,7 +108,7 @@ export function HistoryView({ repositoryId, upstream, readOnly, operation, commi
                   <CommitRow phone={mobile} repositoryId={repositoryId} upstream={upstream} baseRef={baseRef} commit={commit}
                     graphRow={graph.rows[virtualRow.index]!} laneCount={graph.laneCount} graphWidth={graphWidth} rowHeight={rowHeight}
                     active={activeOid === commit.oid || groupedCommits.some((item) => item.oid === activeOid)} match={matchesHistory(commit, search)} currentMatch={matches[currentMatch] === virtualRow.index}
-                    groupedCount={groupedCommits.length} onRevealGroup={() => setGrouped(false)} onSelectReference={onSelectReference}
+                    groupedCount={groupedCommits.length} onRevealGroup={() => setGrouped(false)}
                     expanded={expandedCommits.has(commit.oid)}
                     onExpandedChange={(expanded) => setExpandedCommits((current) => { const next = new Set(current); if (expanded) next.add(commit.oid); else next.delete(commit.oid); return next; })}
                     canUndo={!readOnly && !operation && !undoing && canUndoCommit(commit)}
@@ -124,12 +125,12 @@ export function HistoryView({ repositoryId, upstream, readOnly, operation, commi
   );
 }
 
-function CommitRow({ phone, repositoryId, upstream, baseRef, commit, graphRow, laneCount, graphWidth, rowHeight, active, match, currentMatch, groupedCount, onRevealGroup, onSelectReference, expanded, onExpandedChange, canUndo, onSelectCommit, onSelectFile, onUndo }: {
+function CommitRow({ phone, repositoryId, upstream, baseRef, commit, graphRow, laneCount, graphWidth, rowHeight, active, match, currentMatch, groupedCount, onRevealGroup, expanded, onExpandedChange, canUndo, onSelectCommit, onSelectFile, onUndo }: {
   /** The whole row is the target there: what's on the row elsewhere is in the commit viewer. */
   phone: boolean;
   repositoryId: string; upstream: string | null; baseRef?: string | null | undefined; commit: CommitInfo; expanded: boolean; canUndo: boolean;
   graphRow: CommitGraphRow; laneCount: number; graphWidth: number; rowHeight: number; active: boolean; match: boolean; currentMatch: boolean; groupedCount: number;
-  onRevealGroup(): void; onSelectReference?: ((number: number) => void) | undefined;
+  onRevealGroup(): void;
   onExpandedChange(expanded: boolean): void;
   onSelectCommit(commit: CommitInfo): void; onSelectFile(oid: string, file: CommitFile): void; onUndo(commit: CommitInfo): void;
 }) {
@@ -194,10 +195,13 @@ function CommitRow({ phone, repositoryId, upstream, baseRef, commit, graphRow, l
             </Tooltip>
             {reference && <>
               <MetaSeparator />
-              <Tooltip>
-                <TooltipTrigger render={onSelectReference ? <button className="commit-pr" onClick={() => onSelectReference(reference.number)} aria-label={`Open pull request #${reference.number}`} /> : <span className="commit-pr" />}>#{reference.number}</TooltipTrigger>
-                <TooltipContent>{reference.source === 'merge' ? 'Pull request reference from the merge message.' : 'Reference from the commit subject; it may identify a pull request or issue.'}{onSelectReference ? ' Open as a pull request in the right-hand viewer.' : ''} No merge method is inferred from the number.</TooltipContent>
-              </Tooltip>
+              <RepositoryLink
+                target={{ kind: 'pull', number: reference.number }}
+                className="commit-pr"
+                label={`Open pull request #${reference.number}`}
+                note={reference.source === 'merge' ? 'From the merge message.' : 'From the commit subject, so it may be an issue rather than a pull request.'}
+                fallback={<span className="commit-pr">#{reference.number}</span>}
+              >#{reference.number}</RepositoryLink>
             </>}
             {groupedCount > 0 && <>
               <MetaSeparator />

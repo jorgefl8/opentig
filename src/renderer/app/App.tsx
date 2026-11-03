@@ -75,6 +75,7 @@ import { DesktopUpdateIndicator } from '@/features/settings/UpdateSettings';
 import { updatesApi } from '@/features/settings/update-api';
 import type { SettingsSection } from '@/features/settings/SettingsDialog';
 import { CommitAuthorshipDialog } from '@/features/settings/CommitAuthorshipDialog';
+import { RepositoryLinksContext, type RepositoryLinks } from '@/components/repository-links';
 
 const Viewer = lazy(() => import('@/features/viewer/Viewer'));
 const FilesView = lazy(() => import('@/features/files/FilesView').then((module) => ({ default: module.FilesView })));
@@ -1044,6 +1045,16 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     if (selection) setMobilePane('viewer');
     return true;
   }, []);
+  const githubNameWithOwner = githubInfo?.isGitHub ? githubInfo.nameWithOwner : null;
+  // Links into this repository, wherever they're shown, can open here as well as on GitHub.
+  const repositoryLinks = useMemo<RepositoryLinks | null>(() => githubNameWithOwner ? {
+    nameWithOwner: githubNameWithOwner,
+    open: (target) => {
+      if (target.kind === 'pull') selectViewer({ type: 'pull-request', number: target.number });
+      else if (target.kind === 'release') selectViewer({ type: 'release', tag: target.tag });
+      else selectViewer({ type: 'commit', oid: target.oid, subject: target.oid.slice(0, 8) });
+    },
+  } : null, [githubNameWithOwner, selectViewer]);
 
   /** From a diff's own top bar: the same file stays on screen, showing the side it moved to. */
   const moveDiffAcrossIndex = async (path: string, kind: 'staged' | 'unstaged') => {
@@ -2410,6 +2421,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
         />
         {status?.readOnly && <div className="operation-banner">Repository is read-only: {status.operation} is in progress.</div>}
 
+        <RepositoryLinksContext.Provider value={repositoryLinks}>
         <main className={`workspace${pendingRepositoryId && repositoryLoadVisible ? ' workspace-switching' : ''}`} aria-busy={repositoryLoadPhase ? true : undefined}>
           <aside className="sidebar" style={{ width: bootstrap.preferences.sidebarWidth }}>
             <nav className="sidebar-tabs tab-list" data-shortcuts={ctrlHeld ? 'visible' : undefined} aria-label="Repository views">
@@ -2504,7 +2516,6 @@ export default function App({ initialView, initialSelection, pullRequestCreation
                   repositoryId={repository.id}
                   baseRef={historyQuery.data?.pages[0]?.baseRef}
                   activeOid={viewerSelection?.type === 'commit' || viewerSelection?.type === 'commit-file' ? viewerSelection.oid : null}
-                  onSelectReference={githubInfo?.isGitHub ? (number) => { selectViewer({ type: 'pull-request', number }); } : undefined}
                   upstream={status?.upstream ?? null}
                   readOnly={Boolean(status?.readOnly)}
                   operation={status?.operation ?? null}
@@ -2648,6 +2659,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
             </div>
           </section>
         </main>
+        </RepositoryLinksContext.Provider>
         {mobile && <div ref={setMobileFloatHost} className="mobile-float">{commitComposer}</div>}
         <nav className="mobile-navigation" aria-label="Repository views">
           {SIDEBAR_VIEWS.map((item) => (

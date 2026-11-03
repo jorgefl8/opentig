@@ -3,6 +3,7 @@ import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { RepositoryLinksContext } from '@/components/repository-links';
 import { LinkedMarkdown } from './LinkedMarkdown';
 import { renderMarkdown } from './render-markdown';
 
@@ -55,4 +56,22 @@ it('never makes unsafe links interactive', async () => {
   await render('[Unsafe](javascript:alert%281%29)');
   expect(container.querySelector('[target="_blank"]')).toBeNull();
   expect(container.innerHTML).not.toContain('javascript:');
+});
+
+it("asks where to open links into the open repository, and leaves the rest as links", async () => {
+  const open = vi.fn();
+  const openExternal = vi.spyOn(window, 'open').mockReturnValue(null);
+  const html = await renderMarkdown('[**#65**](https://github.com/sample/demo/pull/65) [v1](https://github.com/sample/demo/releases/tag/v1) [other](https://github.com/other/demo/pull/1)');
+  await act(async () => root.render(createElement(RepositoryLinksContext.Provider, { value: { nameWithOwner: 'sample/demo', open } }, createElement(TooltipProvider, { delay: 0 }, createElement(LinkedMarkdown, { html })))));
+  const references = container.querySelectorAll<HTMLButtonElement>('button.repository-link');
+  expect(references).toHaveLength(2);
+  expect(references[0]!.querySelector('strong')?.textContent).toBe('#65');
+  expect(container.querySelectorAll('a')).toHaveLength(1);
+  await act(async () => references[1]!.click());
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+  const item = (label: string) => [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(element => element.textContent?.includes(label))!;
+  expect(document.body.textContent).toContain('Release v1');
+  await act(async () => item('Open in OpenTig').click());
+  expect(open).toHaveBeenCalledWith({ kind: 'release', tag: 'v1' });
+  openExternal.mockRestore();
 });

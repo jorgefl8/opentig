@@ -1705,6 +1705,8 @@ section[data-sileo-viewport] [data-sileo-title] { text-transform: none; }
   .commit-diff-empty > .viewer-message { min-height: 80px; flex: 1; }
   .external-text-link { color: var(--primary); text-decoration: underline; text-underline-offset: 2px; }
   .external-text-link:hover { opacity: .8; }
+  /* A link that asks where to open: a button, so it reads as the link it stands for. */
+  .repository-link { display: inline; padding: 0; border: 0; background: none; font: inherit; text-align: inherit; cursor: pointer; }
   .diff-file-list { display: grid; min-width: 0; padding: 0 16px 12px; }
   .diff-file-list .diff-file-count { padding-bottom: 4px; }
   .diff-file-list-row { display: flex; min-width: 0; align-items: center; gap: 8px; padding: 2px 0; text-align: left; }

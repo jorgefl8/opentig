@@ -4,6 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CommitFile, CommitInfo } from '@shared/git-types';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { RepositoryLinksContext } from '@/components/repository-links';
 import { clearCommitFilesCache, COMMIT_FILES_CACHE_MAX_ENTRY_BYTES, readCommitFilesCache } from './commit-files-cache';
 import { HistoryView } from './HistoryView';
 
@@ -49,6 +50,7 @@ afterEach(async () => {
   await act(async () => root.unmount()); container.remove(); observers.clear(); clearCommitFilesCache(); vi.restoreAllMocks(); vi.unstubAllGlobals();
 });
 
+const links = { nameWithOwner: 'sample/demo', open: vi.fn() };
 async function mount(overrides: Partial<Parameters<typeof HistoryView>[0]> = {}) {
   const props = {
     repositoryId: 'history-measure-test', upstream: 'origin/main', readOnly: true, operation: null,
@@ -56,7 +58,7 @@ async function mount(overrides: Partial<Parameters<typeof HistoryView>[0]> = {})
     onSelectCommit: vi.fn(), onSelectFile: vi.fn(), onUndo: vi.fn(), onMore: vi.fn(),
     ...overrides,
   };
-  await act(async () => root.render(createElement(TooltipProvider, null, createElement(HistoryView, props))));
+  await act(async () => root.render(createElement(RepositoryLinksContext.Provider, { value: links }, createElement(TooltipProvider, null, createElement(HistoryView, props)))));
   await act(async () => {
     for (const observer of [...observers]) {
       const entries = [...observer.elements].map(element => ({ target: element, borderBoxSize: [{ inlineSize: 500, blockSize: height(element as HTMLElement) }] } as unknown as ResizeObserverEntry));
@@ -154,7 +156,8 @@ it('reads as one muted line ending in plain reference names, with no legend, cou
 });
 
 it('selects a commit from anywhere in its row except the controls inside it', async () => {
-  const props = await mount({ commits: [{ ...commit('head', ['base'], 'Fix the thing (#87)') }, commit('base', [], 'Base')], onSelectReference: vi.fn() });
+  links.open.mockClear();
+  const props = await mount({ commits: [{ ...commit('head', ['base'], 'Fix the thing (#87)') }, commit('base', [], 'Base')] });
   const row = container.querySelector('.commit-item')!;
   await act(async () => row.querySelector<HTMLElement>('.commit-subject')!.click());
   expect(props.onSelectCommit).toHaveBeenCalledTimes(1);
@@ -163,8 +166,13 @@ it('selects a commit from anywhere in its row except the controls inside it', as
   await act(async () => row.querySelector<HTMLElement>('[aria-label="Expand commit"]')!.click());
   await act(async () => row.querySelector<HTMLElement>('[aria-label="Copy hash head"]')!.click());
   expect(props.onSelectCommit).toHaveBeenCalledTimes(2);
+  // Like the branch's pull request, the reference asks where to open it.
   await act(async () => row.querySelector<HTMLElement>('[aria-label="Open pull request #87"]')!.click());
-  expect(props.onSelectReference).toHaveBeenCalledWith(87);
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+  const item = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(element => element.textContent?.includes('Open in OpenTig'));
+  expect([...document.querySelectorAll('[role="menuitem"]')].map(element => element.textContent?.trim())).toEqual(['Open in OpenTig', 'Open in GitHub']);
+  await act(async () => item!.click());
+  expect(links.open).toHaveBeenCalledWith({ kind: 'pull', number: 87 });
   expect(props.onSelectCommit).toHaveBeenCalledTimes(2);
 });
 
@@ -239,7 +247,7 @@ describe('on a phone', () => {
 
   it('shows a row as a dot, a title and one line, with the row as its only target', async () => {
     mobile = true;
-    const props = await mount({ commits: [localHead], readOnly: false, onSelectReference: vi.fn() });
+    const props = await mount({ commits: [localHead], readOnly: false });
     const row = container.querySelector<HTMLElement>('.commit-item')!;
     expect(row.querySelector('.commit-dot')).not.toBeNull();
     expect(row.querySelector('.commit-subject')?.textContent).toBe('Add a filter (#7)');
