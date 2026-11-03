@@ -38,10 +38,11 @@ interface PullRequestViewerProps {
   onDiffViewChange(value: DiffViewPreference): void;
   onWrapLinesChange(value: boolean): void;
   onClose(): void;
+  onOpenFile?: ((path: string) => void) | undefined;
   onSelectPullRequest(number: number): void;
 }
 
-export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType, wrapLines, onDiffViewChange, onWrapLinesChange, onClose, onSelectPullRequest }: PullRequestViewerProps) {
+export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType, wrapLines, onDiffViewChange, onWrapLinesChange, onClose, onOpenFile, onSelectPullRequest }: PullRequestViewerProps) {
   const [tab, setTab] = useState<PullRequestTab>('summary');
   const [editing, setEditing] = useState(() => hasViewerDraft(pullRequestEditDraft(repositoryId, prNumber)));
   const [commentDraft, setCommentDraft] = useViewerDraft(pullRequestCommentDraft(repositoryId, prNumber), () => '');
@@ -231,7 +232,7 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
           <div className="viewer-message"><IconLoader4 className="spinner" /> <ShimmeringText text="Loading diff…" /></div>
         ) : (
           <Suspense fallback={<div className="viewer-message"><IconLoader4 className="spinner" /> <ShimmeringText text="Loading diff viewer…" /></div>}>
-            <PullRequestDiff diff={diff} prNumber={details.number} repositoryId={repositoryId} commits={commits} diffView={diffView} themeType={themeType} wrapLines={wrapLines} onDiffViewChange={onDiffViewChange} onWrapLinesChange={onWrapLinesChange} onClose={onClose} />
+            <PullRequestDiff diff={diff} prNumber={details.number} repositoryId={repositoryId} commits={commits} diffView={diffView} themeType={themeType} wrapLines={wrapLines} onDiffViewChange={onDiffViewChange} onWrapLinesChange={onWrapLinesChange} onClose={onClose} onOpenFile={onOpenFile} />
           </Suspense>
         )}
       </ViewerTabsPanel>

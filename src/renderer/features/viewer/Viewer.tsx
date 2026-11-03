@@ -242,6 +242,7 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
           onDiffViewChange={onDiffViewChange}
           onWrapLinesChange={onWrapLinesChange}
           onClose={() => onSelect(null)}
+          onOpenFile={onOpenFile}
         />
       </Suspense>
     );
