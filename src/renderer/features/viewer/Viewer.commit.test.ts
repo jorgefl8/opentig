@@ -54,7 +54,13 @@ it.each([2, 1, 0])('opens a commit with %i parents and no patch with its full he
   expect(container.querySelector('h2')?.textContent).toBe(selectedCommit.subject);
   expect(container.querySelector('.commit-diff-meta')?.textContent).toContain('Sample author');
   expect(container.querySelector('.commit-diff-description')?.textContent).toBe(description);
+  // A long message starts folded, and opens in full on request.
+  expect(container.querySelector('.commit-diff-description')?.classList.contains('collapsed')).toBe(true);
+  const toggle = container.querySelector<HTMLButtonElement>('.commit-description-toggle')!;
+  expect(toggle.textContent).toBe('Show full description');
+  await act(async () => toggle.click());
   expect(container.querySelector('.commit-diff-description')?.classList.contains('collapsed')).toBe(false);
+  expect(toggle.textContent).toBe('Show less');
   expect(container.textContent).toContain(parentCount > 1 ? 'This merge commit has no changes of its own.' : 'No differences to show.');
   expect(container.querySelector('[data-testid="diff"]')).toBeNull();
 });

@@ -547,8 +547,9 @@ function CommitDiffHeader({ oid, commit, fallbackSubject, canUndo, githubReposit
   );
 }
 
+/** A long message starts folded to three lines, so the diffs come first. */
 function CommitMessage({ body }: { body: string }) {
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(false);
   if (!body) return null;
   const long = body.length > 240 || body.split('\n').length > 3;
   return (
