@@ -74,7 +74,7 @@ export function MobileToolbar({ props, repositoryControl, worktreeControl, branc
           {isDevProfile && <AppName />}
           {indicators}
           {pill && runPill && (
-            <button type="button" className="mobile-sync-pill" disabled={Boolean(props.busy) || syncBusy} aria-label={pill.action === 'publish' ? 'Publish branch' : `${pill.action === 'pull' ? 'Pull' : 'Push'} ${commitCount(pill.count)}`} onClick={runPill}>
+            <button type="button" className="mobile-sync-pill" data-sync={pill.action} disabled={Boolean(props.busy) || syncBusy} aria-label={pill.action === 'publish' ? 'Publish branch' : `${pill.action === 'pull' ? 'Pull' : 'Push'} ${commitCount(pill.count)}`} onClick={runPill}>
               {pillRunning ? <IconLoader4 className="animate-spin" aria-hidden="true" /> : pill.action === 'pull' ? <IconArrowDown aria-hidden="true" /> : <IconArrowUp aria-hidden="true" />}
               <span>{pill.action === 'publish' ? 'Publish' : `${pill.action === 'pull' ? 'Pull' : 'Push'} ${pill.count}`}</span>
             </button>

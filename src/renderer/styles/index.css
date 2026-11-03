@@ -152,6 +152,8 @@
     --diff-token-punctuation: var(--muted-foreground);
     --diff-token-link: var(--primary);
     --git-push: oklch(0.58 0.13 78);
+    /* Text on the push and publish buttons' tint, darker than --git-push to stay legible. */
+    --git-push-ink: oklch(0.5 0.12 75);
     --pr-merged: oklch(0.55 0.19 300);
     --opentig-font-sans: 'Plus Jakarta Sans Variable', sans-serif;
     --opentig-font-mono: 'JetBrains Mono Variable', ui-monospace, monospace;
@@ -263,6 +265,7 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
     --diff-token-punctuation: color-mix(in oklch, var(--foreground) 72%, var(--background));
     --diff-token-link: var(--primary);
     --git-push: oklch(0.8 0.15 85);
+    --git-push-ink: oklch(0.84 0.15 85);
     --pr-merged: oklch(0.74 0.17 300);
 }
 
@@ -1858,6 +1861,13 @@ section[data-sileo-viewport] [data-sileo-title] { text-transform: none; }
 .searchable-picker-footer svg { width: 14px; height: 14px; flex: none; }
 .ai-model-picker { width: min(420px, calc(100vw - 24px)); }
 /* A viewer's main actions, and the questions they ask, are what the screen is for. Unlayered because they replace the small button's utility classes. */
+/* Syncing with the remote: amber for what's yours and not on it yet, as History's
+   unpublished dots, and blue for what's coming in. :root outweighs the phone pill's
+   own background. */
+:root [data-sync] { background: color-mix(in oklch, var(--git-push) 15%, transparent); color: var(--git-push-ink); }
+:root [data-sync]:hover:not(:disabled) { background: color-mix(in oklch, var(--git-push) 24%, transparent); color: var(--git-push-ink); }
+:root [data-sync="pull"] { background: color-mix(in oklch, var(--primary) 16%, transparent); color: var(--primary-ink); }
+:root [data-sync="pull"]:hover:not(:disabled) { background: color-mix(in oklch, var(--primary) 25%, transparent); color: var(--primary-ink); }
 :is(.pr-action-bar, .confirm-popover-actions) [data-slot="button"][data-size="xs"] { height: 28px; padding-inline: 12px; font-size: var(--text-body); }
 :is(.pr-action-bar, .confirm-popover-actions) [data-slot="button"][data-size="xs"] svg { width: 14px; height: 14px; }
 .pr-action-bar [data-slot="button"][data-size="icon-xs"] { width: 28px; height: 28px; }

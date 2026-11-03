@@ -263,6 +263,7 @@ export function Toolbar(props: ToolbarProps) {
                   type="button"
                   variant="ghost"
                   size="xs"
+                  data-sync={action === 'pull' ? 'pull' : publishing ? 'publish' : 'push'}
                   disabled={disabled}
                   aria-label={`${label} ${group.name}`}
                   onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); }}
@@ -377,7 +378,7 @@ export function Toolbar(props: ToolbarProps) {
       <div className="toolbar-spacer" />
       {props.status && (props.status.behind > 0 || props.busy === 'pull') && (
         <Tooltip>
-          <TooltipTrigger render={<Button variant="ghost" size="sm" focusableWhenDisabled disabled={Boolean(props.busy) || currentRepositorySyncBusy} onClick={props.onPull} aria-label={`Pull ${props.status.behind} commits`} />}>
+          <TooltipTrigger render={<Button variant="ghost" size="sm" data-sync="pull" focusableWhenDisabled disabled={Boolean(props.busy) || currentRepositorySyncBusy} onClick={props.onPull} aria-label={`Pull ${props.status.behind} commits`} />}>
             {props.busy === 'pull' ? <IconLoader4 data-icon="inline-start" className="animate-spin" /> : <IconArrowDown data-icon="inline-start" />}
             {props.status.behind > 0 && <span>{props.status.behind}</span>}
           </TooltipTrigger>
@@ -386,7 +387,7 @@ export function Toolbar(props: ToolbarProps) {
       )}
       {props.status && (publishBranch || props.status.unborn || props.status.ahead > 0 || props.busy === 'push') && (
         <Tooltip>
-          <TooltipTrigger render={<Button variant="ghost" size="sm" focusableWhenDisabled disabled={Boolean(props.busy) || currentRepositorySyncBusy || props.status.readOnly || props.status.unborn || props.status.detached} onClick={props.onPush} aria-label={publishBranch || props.status.unborn ? 'Publish branch' : `Push ${props.status.ahead} commits`} />}>
+          <TooltipTrigger render={<Button variant="ghost" size="sm" data-sync={publishBranch || props.status.unborn ? 'publish' : 'push'} focusableWhenDisabled disabled={Boolean(props.busy) || currentRepositorySyncBusy || props.status.readOnly || props.status.unborn || props.status.detached} onClick={props.onPush} aria-label={publishBranch || props.status.unborn ? 'Publish branch' : `Push ${props.status.ahead} commits`} />}>
             {props.busy === 'push' ? <IconLoader4 data-icon="inline-start" className="animate-spin" /> : <IconArrowUp data-icon="inline-start" />}
             {publishBranch || props.status.unborn ? <span>Publish</span> : props.status.ahead > 0 && <span>{props.status.ahead}</span>}
           </TooltipTrigger>

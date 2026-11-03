@@ -63,13 +63,17 @@ it('shows one sync pill in the bar, pulling before pushing', async () => {
   expect(pill()).toBeNull();
   await render({ ...initialStatus, upstream: null });
   expect(pill()!.textContent).toBe('Publish');
+  // Its colour says which way: amber for what isn't on the remote yet, blue for what's coming in.
+  expect(pill()!.dataset.sync).toBe('publish');
   await act(async () => pill()!.click());
   expect(push).toHaveBeenCalledOnce();
   await render({ ...initialStatus, ahead: 2 });
   expect(pill()!.textContent).toBe('Push 2');
   expect(pill()!.getAttribute('aria-label')).toBe('Push 2 commits');
+  expect(pill()!.dataset.sync).toBe('push');
   await render({ ...initialStatus, behind: 3, ahead: 2 });
   expect(pill()!.textContent).toBe('Pull 3');
+  expect(pill()!.dataset.sync).toBe('pull');
   await act(async () => pill()!.click());
   expect(pull).toHaveBeenCalledOnce();
   expect(push).toHaveBeenCalledOnce();
