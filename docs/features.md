@@ -66,7 +66,7 @@ Choose periodic remote checks, or turn them off, in **Settings → General**. Ma
 
 The folder dialog shows branches for repositories and linked worktrees, including unborn branches and detached HEAD. Pending or failed navigation clears the previous selection. Mobile keeps the current folder and confirmation visible; the welcome screen scrolls when repositories exceed the available height.
 
-Picker rows show the repository name and the branch used for pull/push. Linked worktrees also show their checkout folder; a styled hover tooltip shows the filesystem path. A repository favicon or app icon appears in the toolbar picker and welcome screen when available, with a folder fallback. Supported sources include `favicon.svg`/`favicon.ico` at the root or under `public/`, `app/`, and similar locations, or a `<link rel="icon">` in `index.html`.
+Picker rows show the repository name and the branch used for pull/push. Linked worktrees also show their checkout folder. Menu rows have a tooltip only when their text is cut short, and then it gives the full detail, such as the filesystem path. A repository favicon or app icon appears in the toolbar picker and welcome screen when available, with a folder fallback. Supported sources include `favicon.svg`/`favicon.ico` at the root or under `public/`, `app/`, and similar locations, or a `<link rel="icon">` in `index.html`.
 
 The repository dropdown can use up to 80% of the viewport height while keeping search and management visible; other dropdowns stay compact. Mobile reordering preserves scroll and focus and briefly highlights the moved row. Reduced-motion preferences disable that highlight.
 

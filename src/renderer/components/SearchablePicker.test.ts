@@ -20,10 +20,21 @@ beforeEach(async () => {
   }))));
   await act(async () => document.querySelector<HTMLButtonElement>('[role="combobox"]')!.click());
 });
-afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.resetAllMocks(); vi.unstubAllGlobals(); });
+afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.resetAllMocks(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 /** Lets pending tooltip and virtualizer timers run, in fake or real time. */
 const flushTimers = () => vi.isFakeTimers() ? vi.advanceTimersByTimeAsync(0) : new Promise(resolve => setTimeout(resolve, 0));
+
+/** Re-renders the repository rows as cut short, the only case with a tooltip. */
+async function truncateRows() {
+  vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockReturnValue(200);
+  vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(100);
+  await act(async () => root.render(createElement(TooltipProvider, { delay: 0 }, createElement(SearchablePicker, {
+    key: 'truncated',
+    groups: [{ id: 'repositories', label: 'Repositories', items: ['Atlas', 'Beacon'].map(name => ({ value: name, label: name, tooltip: `/sample/${name.toLowerCase()}` })) }],
+    value: 'Atlas', onValueChange, label: 'Repository', triggerLabel: 'Atlas', placeholder: 'Search repositories…', open: true,
+  }))));
+}
 
 async function hover(name: string) {
   await act(async () => {
@@ -33,7 +44,13 @@ async function hover(name: string) {
   });
 }
 
+it('has no tooltip on a row that shows all its text, however much more the tooltip would say', async () => {
+  await hover('Beacon');
+  expect(document.querySelector('[data-slot="tooltip-content"][data-open]')).toBeNull();
+});
+
 it('dismisses a hovered row tooltip on wheel input while keeping repository selection available', async () => {
+  await truncateRows();
   await hover('Beacon');
   expect(document.querySelector('[data-slot="tooltip-content"]')?.textContent).toContain('/sample/beacon');
   await act(async () => document.querySelector('.searchable-picker-list')!.dispatchEvent(new WheelEvent('wheel', { deltaY: -100, bubbles: true })));
@@ -44,6 +61,7 @@ it('dismisses a hovered row tooltip on wheel input while keeping repository sele
 });
 
 it('suppresses tooltips during scrolling and allows them again after scrolling stops', async () => {
+  await truncateRows();
   vi.useFakeTimers();
   try {
     await act(async () => document.querySelector('.searchable-picker-list')!.dispatchEvent(new Event('scroll')));

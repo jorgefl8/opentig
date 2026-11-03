@@ -254,14 +254,15 @@ function PickerOption({ item, scrolling, index, id, setSize }: { item: Searchabl
     return () => observer.disconnect();
   }, [item.label, item.description]);
   const visibleText = [item.label, item.description].filter(Boolean).join(' · ');
-  const extraHint = item.tooltip && item.tooltip !== visibleText && item.tooltip !== item.label && item.tooltip !== item.description;
+  // Only a row cut short has a tooltip, and then it says the most it can, such as a full path.
+  // On every row it got in the way of reading the menu, for detail rarely needed.
   // TooltipTrigger also supplies an ID; it must agree with the combobox's active descendant.
-  return <Tooltip disabled={scrolling || (!truncated && !extraHint)}>
+  return <Tooltip disabled={scrolling || !truncated}>
     <TooltipTrigger id={id} render={<ComboboxItem value={item} index={index} aria-posinset={setSize === undefined ? undefined : index + 1} aria-setsize={setSize} disabled={item.disabled} className={cn('searchable-picker-item', item.description && 'searchable-picker-item-detailed')} />}>
       {item.icon && <span className="searchable-picker-icon">{item.icon}</span>}
       <span ref={copy} className="searchable-picker-copy"><strong>{item.label}</strong>{item.description && <small>{item.description}</small>}</span>
       {item.trailing && <span className="searchable-picker-trailing">{item.trailing}</span>}
     </TooltipTrigger>
-    <TooltipContent>{extraHint ? item.tooltip : visibleText}</TooltipContent>
+    <TooltipContent>{item.tooltip || visibleText}</TooltipContent>
   </Tooltip>;
 }
