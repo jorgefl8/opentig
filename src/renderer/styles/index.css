@@ -1709,9 +1709,6 @@ section[data-sileo-viewport] [data-sileo-title] { text-transform: none; }
   .repository-link { display: inline; padding: 0; border: 0; background: none; font: inherit; text-align: inherit; cursor: pointer; }
   .diff-file-list { display: grid; min-width: 0; padding: 0 16px 12px; }
   .diff-file-list .diff-file-count { padding-bottom: 4px; }
-  .diff-file-list-row { display: flex; min-width: 0; align-items: center; gap: 8px; padding: 2px 0; text-align: left; }
-  .diff-file-list-row:hover .diff-file-name { text-decoration: underline; text-underline-offset: 2px; }
-  .diff-file-list-row:focus-visible { border-radius: var(--radius-sm); outline: 2px solid var(--ring); outline-offset: 1px; }
 
   .diff-workspace {
     display: flex;
@@ -1754,7 +1751,7 @@ section[data-sileo-viewport] [data-sileo-title] { text-transform: none; }
   /* The rule after a file's code closes it before the next header. A collapsed
      file has no code, so its header's own rule is the only one it needs. */
   .diff-file-section { min-width: 100%; border-bottom: 1px solid var(--border); }
-  .diff-file-section:last-child, .diff-file-section:has(> .diff-file-header[aria-expanded="false"]) { border-bottom: 0; }
+  .diff-file-section:last-child, .diff-file-section:has(> .diff-file-header > .diff-file-toggle[aria-expanded="false"]) { border-bottom: 0; }
   /* Sticky, so it stays opaque while code scrolls under it. */
   .diff-file-header {
     position: sticky;
@@ -1774,7 +1771,15 @@ section[data-sileo-viewport] [data-sileo-title] { text-transform: none; }
     cursor: pointer;
   }
   .diff-file-header:hover { background: color-mix(in oklch, var(--foreground) 5%, var(--background)); }
-  .diff-file-header:focus-visible { z-index: 4; outline: 2px solid var(--ring); outline-offset: -2px; }
+  .diff-file-header:has(> .diff-file-toggle:focus-visible) { z-index: 4; outline: 2px solid var(--ring); outline-offset: -2px; }
+  /* The name and its Open file button sit together; the counts keep to the right edge. */
+  .diff-file-toggle { display: flex; min-width: 0; flex: 0 1 auto; align-items: center; gap: 8px; border: 0; background: none; padding: 0; color: inherit; text-align: left; cursor: pointer; }
+  .diff-file-toggle:focus-visible { outline: none; }
+  .diff-file-toggle .diff-file-path { flex: 0 1 auto; }
+  .diff-file-header-gap { flex: 1; }
+  .diff-file-header [data-slot="button"].diff-file-open { width: 24px; height: 24px; flex: none; margin-block: -4px; color: var(--muted-foreground); }
+  .diff-file-header [data-slot="button"].diff-file-open:hover { color: var(--foreground); }
+  .diff-file-header [data-slot="button"].diff-file-open svg { width: 15px; height: 15px; }
   .diff-file-header-compact { cursor: default; padding-right: 8px; }
   .diff-file-header-compact:hover { background: var(--background); }
   .diff-file-header-compact .diff-workspace-actions { margin-left: 4px; }

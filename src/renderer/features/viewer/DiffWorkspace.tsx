@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { FileDiff, Virtualizer } from '@pierre/diffs/react';
 import {
-  IconArrowsMaximize, IconArrowsMinimize, IconChevronDown, IconChevronRight,
+  IconArrowsMaximize, IconArrowsMinimize, IconChevronDown, IconChevronRight, IconFileArrowRight,
   IconLayoutColumns, IconLayoutRows, IconTextWrap, IconX,
 } from '@tabler/icons-react';
 import type { DiffResult, DiffViewPreference, ThemePreference } from '@shared/contracts';
@@ -21,7 +21,7 @@ export interface DiffCommitLayout {
   tools: HTMLElement | null;
   /** Scrolls away above the diffs. */
   lead: React.ReactNode;
-  /** The whole commit is showing, so list its files first. */
+  /** The whole commit is showing, so its file count and totals lead into the diffs. */
   listFiles: boolean;
 }
 
@@ -43,6 +43,8 @@ interface DiffWorkspaceProps {
   onDiffViewChange?: ((value: DiffViewPreference) => void) | undefined;
   onWrapLinesChange?: ((value: boolean) => void) | undefined;
   onClose?: (() => void) | undefined;
+  /** Offers each file's current version in Files, from its header. */
+  onOpenFile?: ((path: string) => void) | undefined;
 }
 
 export function DiffWorkspace(props: DiffWorkspaceProps) {
@@ -75,7 +77,7 @@ function DiffDocument(props: DiffWorkspaceProps) {
   );
 }
 
-function ParsedDiffWorkspace({ contentKey, diff, diffView, themeType, wrapLines, initiallyCollapsed = false, compact = false, scopeControl, commitLayout, onDiffViewChange, onWrapLinesChange, onClose, files, message }: DiffWorkspaceProps & { files: DiffFileEntry[]; message: ParseMessage }) {
+function ParsedDiffWorkspace({ contentKey, diff, diffView, themeType, wrapLines, initiallyCollapsed = false, compact = false, scopeControl, commitLayout, onDiffViewChange, onWrapLinesChange, onClose, onOpenFile, files, message }: DiffWorkspaceProps & { files: DiffFileEntry[]; message: ParseMessage }) {
   const largeCommit = Boolean(commitLayout?.listFiles) && (files.length > LARGE_COMMIT_FILES || diff.lineCount > LARGE_COMMIT_LINES);
   const [collapsed, setCollapsed] = useState<Set<string>>(
     () => new Set(initiallyCollapsed || largeCommit ? files.map((file) => file.key) : []),
@@ -96,14 +98,6 @@ function ParsedDiffWorkspace({ contentKey, diff, diffView, themeType, wrapLines,
     });
   };
   const toggleAll = () => setCollapsed(allCollapsed ? new Set() : new Set(files.map((file) => file.key)));
-  const openFile = (key: string) => {
-    setCollapsed((current) => {
-      const next = new Set(current);
-      next.delete(key);
-      return next;
-    });
-    sections.current.get(key)?.scrollIntoView({ block: 'start' });
-  };
   const diffActions = (includeCollapse: boolean) => (
     <div className="diff-workspace-actions">
       {includeCollapse && (
@@ -144,10 +138,10 @@ function ParsedDiffWorkspace({ contentKey, diff, diffView, themeType, wrapLines,
         <Virtualizer className="diff-workspace-scroll" contentClassName="diff-workspace-content" style={{ visibility: message ? 'hidden' : undefined }}>
           {toolbarScrollsAway && toolbar}
           {commitLayout && <div className="diff-workspace-lead">{commitLayout.lead}</div>}
+          {/* Only the totals: each file's header follows, so a list of them would say it twice. */}
           {commitLayout?.listFiles && files.length > 1 && (
             <div className="diff-file-list">
               <div className="diff-file-count">{files.length} files · +{additions} −{deletions}</div>
-              {!largeCommit && files.map((file) => <DiffFileListRow key={file.key} file={file} onOpen={() => openFile(file.key)} />)}
             </div>
           )}
           {files.map((file) => {
@@ -159,7 +153,7 @@ function ParsedDiffWorkspace({ contentKey, diff, diffView, themeType, wrapLines,
                     // The top bar already names a lone file and counts its lines, so all that's left to say is a rename.
                     ? files.length === 1 ? <RenamedFrom file={file} /> : <CompactFileHeader file={file} actions={null} />
                     : <CompactFileHeader file={file} actions={diffActions(false)} />
-                  : <CollapsibleFileHeader file={file} collapsed={isCollapsed} onToggle={() => toggleFile(file.key)} />}
+                  : <CollapsibleFileHeader file={file} collapsed={isCollapsed} onToggle={() => toggleFile(file.key)} onOpenFile={onOpenFile} />}
                 {!isCollapsed && (
                   <FileDiff
                     key={`${contentKey}:${file.key}:${diffView}:${wrapLines}`}
@@ -199,20 +193,6 @@ function DiffFilePathLabel({ path }: { path: string }) {
   );
 }
 
-function DiffFileListRow({ file, onOpen }: { file: DiffFileEntry; onOpen(): void }) {
-  const [pathRef, truncated] = useTruncatedText(file.path);
-  return (
-    <Tooltip disabled={!truncated}>
-      <TooltipTrigger render={<button type="button" className="diff-file-list-row" onClick={onOpen} />}>
-        <DiffFileIcon path={file.path} />
-        <span ref={pathRef} className="diff-file-path"><DiffFilePathLabel path={file.path} /></span>
-        <span className="plain-count">+{file.additions} −{file.deletions}</span>
-      </TooltipTrigger>
-      <TooltipContent anchor={pathRef}>{file.path}</TooltipContent>
-    </Tooltip>
-  );
-}
-
 function FileHeaderFacts({ file }: { file: DiffFileEntry }) {
   return (
     <>
@@ -242,25 +222,35 @@ function CompactFileHeader({ file, actions }: { file: DiffFileEntry; actions: Re
   );
 }
 
-function CollapsibleFileHeader({ file, collapsed, onToggle }: { file: DiffFileEntry; collapsed: boolean; onToggle(): void }) {
+/**
+ * The row toggles the file, and its button is what keyboards and screen readers
+ * reach. Opening the file is a button of its own beside the name.
+ */
+function CollapsibleFileHeader({ file, collapsed, onToggle, onOpenFile }: { file: DiffFileEntry; collapsed: boolean; onToggle(): void; onOpenFile?: ((path: string) => void) | undefined }) {
   const [pathRef, truncated] = useTruncatedText(file.path);
+  // A deleted file has nothing left to open.
+  const canOpen = onOpenFile && file.changeType !== 'deleted';
   return (
-    <Tooltip disabled={!truncated}>
-      <TooltipTrigger render={<button type="button" className="diff-file-header" aria-expanded={!collapsed} onClick={onToggle} />}>
-        {collapsed ? <IconChevronRight className="diff-file-chevron" /> : <IconChevronDown className="diff-file-chevron" />}
-        <DiffFileIcon path={file.path} />
-        <span ref={pathRef} className="diff-file-path"><DiffFilePathLabel path={file.path} /></span>
-        <FileHeaderFacts file={file} />
-      </TooltipTrigger>
-      <TooltipContent anchor={pathRef}>{file.path}</TooltipContent>
-    </Tooltip>
+    <div className="diff-file-header" onClick={(event) => { if (!(event.target as Element).closest('button')) onToggle(); }}>
+      <Tooltip disabled={!truncated}>
+        <TooltipTrigger render={<button type="button" className="diff-file-toggle" aria-expanded={!collapsed} onClick={onToggle} />}>
+          {collapsed ? <IconChevronRight className="diff-file-chevron" /> : <IconChevronDown className="diff-file-chevron" />}
+          <DiffFileIcon path={file.path} />
+          <span ref={pathRef} className="diff-file-path"><DiffFilePathLabel path={file.path} /></span>
+        </TooltipTrigger>
+        <TooltipContent anchor={pathRef}>{file.path}</TooltipContent>
+      </Tooltip>
+      {canOpen && <DiffAction label="Open file" className="diff-file-open" onClick={() => onOpenFile(file.path)}><IconFileArrowRight /></DiffAction>}
+      <span className="diff-file-header-gap" />
+      <FileHeaderFacts file={file} />
+    </div>
   );
 }
 
-function DiffAction({ label, pressed, onClick, children }: { label: string; pressed?: boolean; onClick(): void; children: React.ReactNode }) {
+function DiffAction({ label, pressed, className, onClick, children }: { label: string; pressed?: boolean; className?: string; onClick(): void; children: React.ReactNode }) {
   return (
     <Tooltip>
-      <TooltipTrigger render={<Button type="button" variant="ghost" size="icon-sm" aria-label={label} aria-pressed={pressed} onClick={onClick} />}>
+      <TooltipTrigger render={<Button type="button" variant="ghost" size="icon-sm" className={className} aria-label={label} aria-pressed={pressed} onClick={onClick} />}>
         {children}
       </TooltipTrigger>
       <TooltipContent>{label}</TooltipContent>

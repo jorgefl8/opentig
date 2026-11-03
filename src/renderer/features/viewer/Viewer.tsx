@@ -384,6 +384,7 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
         githubRepository={githubRepository}
         onUndo={onUndoCommit}
         onSelect={onSelect}
+        onOpenFile={onOpenFile}
         onDiffViewChange={onDiffViewChange}
         onWrapLinesChange={onWrapLinesChange}
       />
@@ -451,10 +452,10 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
 
 type CommitSelection = Extract<NonNullable<ViewerSelection>, { type: 'commit' | 'commit-file' }>;
 
-function CommitDiffViewer({ contentKey, selection, commit, value, diffView, themeType, wrapLines, canUndo, githubRepository, onUndo, onSelect, onDiffViewChange, onWrapLinesChange }: {
+function CommitDiffViewer({ contentKey, selection, commit, value, diffView, themeType, wrapLines, canUndo, githubRepository, onUndo, onSelect, onOpenFile, onDiffViewChange, onWrapLinesChange }: {
   contentKey: string; selection: CommitSelection; commit: CommitInfo | undefined; value: DiffResult;
   diffView: DiffViewPreference; themeType: ThemePreference; wrapLines: boolean; canUndo: boolean; githubRepository: string | null | undefined;
-  onUndo: ((commit: CommitInfo) => void) | undefined; onSelect(selection: ViewerSelection): void;
+  onUndo: ((commit: CommitInfo) => void) | undefined; onSelect(selection: ViewerSelection): void; onOpenFile(path: string): void;
   onDiffViewChange(value: DiffViewPreference): void; onWrapLinesChange(value: boolean): void;
 }) {
   const [tools, setTools] = useState<HTMLElement | null>(null);
@@ -492,6 +493,7 @@ function CommitDiffViewer({ contentKey, selection, commit, value, diffView, them
             : undefined}
           onDiffViewChange={onDiffViewChange}
           onWrapLinesChange={onWrapLinesChange}
+          onOpenFile={onOpenFile}
         />
       </Suspense> : <div className="commit-diff-empty">
         {message}

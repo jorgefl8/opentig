@@ -28,6 +28,7 @@ type PierreDiffViewerProps =
       onDiffViewChange?(value: DiffViewPreference): void;
       onWrapLinesChange?(value: boolean): void;
       onClose?(): void;
+      onOpenFile?(path: string): void;
     }
   | {
       kind: 'conflict';
@@ -60,7 +61,7 @@ export default function PierreDiffViewer(props: PierreDiffViewerProps) {
   );
 }
 
-function DiffContent({ contentKey, value, diffView, themeType, wrapLines, initiallyCollapsed, compact, scopeControl, commitLayout, onDiffViewChange, onWrapLinesChange, onClose }: Extract<PierreDiffViewerProps, { kind: 'diff' }>) {
+function DiffContent({ contentKey, value, diffView, themeType, wrapLines, initiallyCollapsed, compact, scopeControl, commitLayout, onDiffViewChange, onWrapLinesChange, onClose, onOpenFile }: Extract<PierreDiffViewerProps, { kind: 'diff' }>) {
   return (
     <DiffWorkspace
       key={contentKey}
@@ -76,6 +77,7 @@ function DiffContent({ contentKey, value, diffView, themeType, wrapLines, initia
       onDiffViewChange={onDiffViewChange}
       onWrapLinesChange={onWrapLinesChange}
       onClose={onClose}
+      onOpenFile={onOpenFile}
     />
   );
 }

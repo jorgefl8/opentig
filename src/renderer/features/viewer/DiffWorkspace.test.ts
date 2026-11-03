@@ -85,12 +85,13 @@ it('hides superseded content immediately and ignores a late revision after switc
 });
 
 describe('as a commit', () => {
-  async function renderCommit(patch: string, { listFiles = true, lineCount = 10, tools = document.createElement('div') }: { listFiles?: boolean; lineCount?: number; tools?: HTMLElement | null } = {}) {
+  async function renderCommit(patch: string, { listFiles = true, lineCount = 10, tools = document.createElement('div'), onOpenFile }: { listFiles?: boolean; lineCount?: number; tools?: HTMLElement | null; onOpenFile?: (path: string) => void } = {}) {
     await act(async () => root.render(createElement(TooltipProvider, null, createElement(DiffWorkspace, {
       contentKey: 'commit', diff: { path: '', patch, binary: false, truncated: false, lineCount },
       diffView: 'unified', themeType: 'light', wrapLines: false,
       commitLayout: { tools, lead: createElement('p', { className: 'lead' }, 'Commit message'), listFiles },
       scopeControl: createElement('button', { className: 'scope' }, 'All files'),
+      onOpenFile,
     }))));
     await vi.waitFor(async () => {
       await act(async () => { await Promise.resolve(); });
@@ -100,35 +101,31 @@ describe('as a commit', () => {
   }
   const twoFiles = () => largePatch(1, 2, 'src/first.ts') + largePatch(1, 3, 'src/second.ts');
 
-  it('lists the files after the message and opens with their diffs showing', async () => {
+  it('gives the totals after the message, and leaves naming the files to their headers', async () => {
     await renderCommit(twoFiles());
     const scroll = container.querySelector('.diff-workspace-scroll')!;
     expect([...scroll.children].map((child) => child.className.split(' ')[0])).toEqual(['diff-workspace-lead', 'diff-file-list', 'diff-file-section', 'diff-file-section']);
-    expect(scroll.querySelector('.diff-file-count')?.textContent).toMatch(/^2 files · \+\d+ −\d+$/);
-    expect([...scroll.querySelectorAll('.diff-file-list-row .diff-file-name')].map((name) => name.textContent)).toEqual(['first.ts', 'second.ts']);
-    expect(scroll.querySelector('.diff-file-list-row .plain-count')?.textContent).toMatch(/^\+\d+ −\d+$/);
+    expect(scroll.querySelector('.diff-file-list')?.textContent).toMatch(/^2 files · \+\d+ −\d+$/);
+    expect([...scroll.querySelectorAll('.diff-file-header .diff-file-name')].map((name) => name.textContent)).toEqual(['first.ts', 'second.ts']);
     expect(container.querySelectorAll('[data-code-file]')).toHaveLength(2);
   });
 
-  it('jumps to a listed file and opens it if it was collapsed', async () => {
-    const scrollIntoView = vi.fn();
-    HTMLElement.prototype.scrollIntoView = scrollIntoView;
-    await renderCommit(twoFiles());
-    await act(async () => container.querySelectorAll<HTMLElement>('.diff-file-header')[1]!.click());
-    expect(container.querySelectorAll('[data-code-file]')).toHaveLength(1);
-    await act(async () => container.querySelectorAll<HTMLElement>('.diff-file-list-row')[1]!.click());
-    expect(container.querySelectorAll('[data-code-file]')).toHaveLength(2);
-    expect(scrollIntoView).toHaveBeenCalledWith({ block: 'start' });
-    expect(scrollIntoView.mock.contexts[0]).toBe(container.querySelectorAll('.diff-file-section')[1]);
-    delete (HTMLElement.prototype as Partial<HTMLElement>).scrollIntoView;
+  it('opens a file from its header, without toggling it, and not one the commit deleted', async () => {
+    const onOpenFile = vi.fn();
+    const deleted = 'diff --git a/src/gone.ts b/src/gone.ts\ndeleted file mode 100644\nindex 1111111..0000000\n--- a/src/gone.ts\n+++ /dev/null\n@@ -1 +0,0 @@\n-gone\n';
+    await renderCommit(twoFiles() + deleted, { onOpenFile });
+    const opens = [...container.querySelectorAll<HTMLButtonElement>('[aria-label="Open file"]')];
+    expect(opens).toHaveLength(2);
+    await act(async () => opens[1]!.click());
+    expect(onOpenFile).toHaveBeenCalledWith('src/second.ts');
+    expect(container.querySelectorAll('[data-code-file]')).toHaveLength(3);
   });
 
   it('opens a large commit as collapsed rows with only its totals above them', async () => {
     await renderCommit(twoFiles(), { lineCount: 5_001 });
     expect(container.querySelectorAll('[data-code-file]')).toHaveLength(0);
-    expect(container.querySelectorAll('.diff-file-header[aria-expanded="false"]')).toHaveLength(2);
+    expect(container.querySelectorAll('.diff-file-toggle[aria-expanded="false"]')).toHaveLength(2);
     expect(container.querySelector('.diff-file-count')).not.toBeNull();
-    expect(container.querySelector('.diff-file-list-row')).toBeNull();
   });
 
   it('has no list for one file, and puts the scope and tools beside the title instead of a toolbar', async () => {
@@ -189,7 +186,7 @@ async function tooltipAfterHovering(selector: string) {
 }
 
 it.each([
-  ['collapsible', false, '.diff-file-header'],
+  ['collapsible', false, '.diff-file-toggle'],
   ['compact', true, '.diff-file-path'],
 ])('offers the full path on a %s header only when it is cut off', async (_name, compact, trigger) => {
   const patch = largePatch(10_001, 24, 'src/deep/first.ts');
@@ -245,7 +242,7 @@ it('preserves collapse choices and the scroll container across background patch 
   const second = MIXED_PATCH + largePatch(10_002);
   await render(first);
   await finish(0, first);
-  const header = container.querySelector<HTMLButtonElement>('.diff-file-header')!;
+  const header = container.querySelector<HTMLButtonElement>('.diff-file-toggle')!;
   await act(async () => header.click());
   expect(header.getAttribute('aria-expanded')).toBe('false');
   const scroll = container.querySelector<HTMLElement>('.diff-workspace-scroll')!;
@@ -259,11 +256,11 @@ it('preserves collapse choices and the scroll container across background patch 
   expect(scroll.closest('[inert]')).toBeNull();
   expect(container.querySelector('.diff-workspace-scroll')).toBe(scroll);
   expect(scroll.scrollTop).toBe(600);
-  expect(container.querySelector('.diff-file-header')?.getAttribute('aria-expanded')).toBe('false');
+  expect(container.querySelector('.diff-file-toggle')?.getAttribute('aria-expanded')).toBe('false');
   await render(second, false, 'other-document');
   await finish(2, second);
   expect(container.querySelector('.diff-workspace-scroll')).not.toBe(scroll);
-  expect(container.querySelector('.diff-file-header')?.getAttribute('aria-expanded')).toBe('true');
+  expect(container.querySelector('.diff-file-toggle')?.getAttribute('aria-expanded')).toBe('true');
 });
 
 it('keeps the previous revision hidden through a failed refresh and restores state on recovery', async () => {
@@ -282,7 +279,7 @@ it('keeps the previous revision hidden through a failed refresh and restores sta
   await render(first, true);
   expect(container.querySelector('.diff-workspace-scroll')).toBe(scroll);
   expect(scroll.style.visibility).toBe('');
-  expect(container.querySelector('.diff-file-header')?.getAttribute('aria-expanded')).toBe('true');
+  expect(container.querySelector('.diff-file-toggle')?.getAttribute('aria-expanded')).toBe('true');
   expect(container.querySelector('[role="alert"]')).toBeNull();
 });
 
@@ -335,12 +332,14 @@ rename to src/new.ts
   it('lists files with their counts inside the scroller, so the code gets the screen', async () => {
     await renderPhone(MIXED_PATCH, { initiallyCollapsed: true });
     expect(container.querySelector('.diff-workspace-scroll .diff-workspace-toolbar')).not.toBeNull();
-    const rows = [...container.querySelectorAll<HTMLButtonElement>('.diff-file-header')];
+    const rows = [...container.querySelectorAll<HTMLElement>('.diff-file-header')];
     expect(rows.length).toBeGreaterThan(1);
-    expect(rows[0]!.getAttribute('aria-expanded')).toBe('false');
+    const toggle = rows[0]!.querySelector<HTMLButtonElement>('.diff-file-toggle')!;
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
     expect(rows[0]!.querySelector('.diff-file-stats')).not.toBeNull();
+    // The whole row toggles, not only its button.
     await act(async () => rows[0]!.click());
-    expect(rows[0]!.getAttribute('aria-expanded')).toBe('true');
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
   });
 
   it('does not repeat the name of a lone file, since the top bar has it', async () => {
