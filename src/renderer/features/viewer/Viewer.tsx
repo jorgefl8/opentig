@@ -488,6 +488,8 @@ function CommitDiffViewer({ contentKey, selection, commit, value, diffView, them
           themeType={themeType}
           wrapLines={wrapLines}
           commitLayout={{ tools, lead: message, listFiles: selection.type === 'commit' }}
+          // The whole commit opens as a list of its files, each unfolding on request; one picked file shows its diff.
+          initiallyCollapsed={selection.type === 'commit'}
           scopeControl={selection.type === 'commit-file'
             ? <Button type="button" variant="ghost" size="xs" onClick={() => onSelect({ type: 'commit', oid: selection.oid, subject: commit?.subject ?? selection.oid.slice(0, 8) })}>All files</Button>
             : undefined}

@@ -8,7 +8,8 @@ import Viewer, { type ViewerSelection } from './Viewer';
 
 const calls = vi.hoisted(() => ({ getCommit: vi.fn(), getCommitFile: vi.fn(), get: vi.fn() }));
 vi.mock('@/lib/opentig-api', () => ({ opentig: { diff: calls } }));
-vi.mock('./PierreDiffViewer', () => ({ default: () => createElement('div', { 'data-testid': 'diff' }, 'Rendered diff') }));
+const diffProps = vi.hoisted(() => ({ last: null as null | { initiallyCollapsed?: boolean } }));
+vi.mock('./PierreDiffViewer', () => ({ default: (props: { initiallyCollapsed?: boolean }) => { diffProps.last = props; return createElement('div', { 'data-testid': 'diff' }, 'Rendered diff'); } }));
 let root: Root;
 let container: HTMLDivElement;
 const description = Array.from({ length: 30 }, (_, index) => `Description line ${index}`).join('\n');
@@ -145,4 +146,20 @@ it('opens web links from the full commit subject and body in another tab while p
   }
   expect(container.querySelector('.commit-diff-description')?.textContent).toBe(linkedCommit.body);
   expect(container.querySelector('script')).toBeNull();
+});
+
+it('opens a whole commit with its files folded, and a file picked from it unfolded', async () => {
+  const patch = 'diff --git a/file.txt b/file.txt\n--- a/file.txt\n+++ b/file.txt\n@@ -1 +1 @@\n-a\n+b\n';
+  // A commit of its own, since the viewer keeps what earlier tests loaded.
+  const folded = { ...commit, oid: 'd'.repeat(40) };
+  calls.getCommit.mockResolvedValue({ path: folded.oid, patch, binary: false, tooLarge: false, lineCount: 4 });
+  calls.getCommitFile.mockResolvedValue({ path: 'file.txt', patch, binary: false, tooLarge: false, lineCount: 4 });
+  await render({ type: 'commit', oid: folded.oid, subject: folded.subject }, [folded]);
+  // The diff viewer loads lazily, so the test lets React settle until it's there.
+  const settle = async (done: () => boolean) => { for (let tick = 0; tick < 40 && !done(); tick++) await act(async () => { await new Promise(resolve => setTimeout(resolve, 5)); }); };
+  await settle(() => container.querySelector('[data-testid="diff"]') !== null);
+  expect(diffProps.last?.initiallyCollapsed).toBe(true);
+  await render({ type: 'commit-file', oid: folded.oid, path: 'file.txt' }, [folded]);
+  await settle(() => diffProps.last?.initiallyCollapsed === false);
+  expect(diffProps.last?.initiallyCollapsed).toBe(false);
 });

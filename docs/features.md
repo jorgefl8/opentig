@@ -282,7 +282,7 @@ Search data is prepared when Quick Open opens and reused until the file list cha
 
 Open **History** and click a commit's row for its title, hash, author, date, publication state, message, its file count and line totals, and each file's diff. A long message starts folded to three lines; **Show full description** opens it. Merge and empty commits also open with complete metadata.
 
-Click a file's header to fold or unfold its diff, and its **Open file** button to open the file as it is now in your worktree; a file the commit deleted has none. In the list, expand a row with its chevron and pick a file to see only that file's diff, including renamed paths; **All files** returns to the whole commit. A commit with more than 30 files or 5,000 patch lines opens with its files collapsed.
+Click a file's header to fold or unfold its diff, and its **Open file** button to open the file as it is now in your worktree; a file the commit deleted has none. In the list, expand a row with its chevron and pick a file to see only that file's diff, including renamed paths; **All files** returns to the whole commit. A commit opens with its files folded, so it reads as a list first; a single file picked from the list opens unfolded.
 
 The commit's **⋯** menu copies the full hash, opens a published commit on GitHub, undoes the commit, and closes the viewer. In the list, click a short hash to copy the full one.
 
