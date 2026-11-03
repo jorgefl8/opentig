@@ -294,3 +294,9 @@ describe('on a phone', () => {
     expect(document.querySelector<HTMLButtonElement>('.mobile-sheet [role="switch"]')!.disabled).toBe(true);
   });
 });
+
+it('centres the dot between the title and the line under it', async () => {
+  await mount();
+  const rowHeight = parseFloat(container.querySelector<HTMLElement>('.history-list')!.style.getPropertyValue('--history-row-height'));
+  expect(parseFloat(container.querySelector<HTMLElement>('.commit-dot')!.style.top)).toBe(rowHeight / 2);
+});

@@ -263,9 +263,9 @@ function graphX(lane: number): number {
   return 7 + lane * GRAPH_LANE_GAP;
 }
 
-/** The node sits beside the title, the first of a row's two centred lines. */
+/** The node sits in the middle of the row, between its title and the line under it. */
 function graphNodeY(rowHeight: number): number {
-  return rowHeight / 2 - 8;
+  return rowHeight / 2;
 }
 
 function CommitGraph({ graph, width, height }: { graph: CommitGraphRow; width: number; height: number }) {
