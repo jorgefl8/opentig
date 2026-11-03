@@ -27,7 +27,8 @@ export function BranchPullRequestMenu({ repositoryId, pullRequest, onOpenPullReq
     <DropdownMenuContent aria-label={`Open pull request #${pullRequest.number}`} className="w-72 max-w-[calc(100vw-2rem)]">
       <div className="mb-1 space-y-1 border-b border-border px-2 pt-1.5 pb-2">
         <p className="text-xs leading-relaxed font-medium wrap-anywhere">{pullRequest.title}</p>
-        <p className="text-(length:--text-meta) leading-relaxed text-muted-foreground wrap-anywhere">PR #{pullRequest.number} · {merged ? `Merged into ${pullRequest.baseRefName}` : prStateLabel(pullRequest)}</p>
+        <p className="text-(length:--text-meta) leading-relaxed text-muted-foreground wrap-anywhere">PR #{pullRequest.number} · {merged ? `Merged into ${pullRequest.baseRefName}` : prStateLabel(pullRequest)}
+          {' · '}<span className="tabular-nums"><span className="text-(--diff-added)">+{pullRequest.additions}</span> <span className="text-(--diff-deleted)">−{pullRequest.deletions}</span></span></p>
       </div>
       <DropdownMenuItem onClick={() => { onNavigate?.(); onOpenPullRequest(pullRequest.number); }}>
         <OpenTigMark /> Open in OpenTig

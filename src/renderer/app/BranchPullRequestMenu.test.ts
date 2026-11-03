@@ -58,6 +58,8 @@ it.each([
   const menu = document.querySelector('[role="menu"]')!;
   expect(menu.textContent).toContain(pullRequest.title);
   expect(menu.textContent).toContain(state.state === 'MERGED' ? 'PR #12 · Merged into main' : state.state === 'CLOSED' ? 'PR #12 · Closed' : state.isDraft ? 'PR #12 · Draft' : 'PR #12 · Open');
+  // The pull request's own size, as in its row in the GitHub list.
+  expect(menu.textContent).toContain(' · +1 −0');
   expect(external).not.toHaveBeenCalled();
   expect(onOpenPullRequest).not.toHaveBeenCalled();
   await click(choice('Open in OpenTig'));
