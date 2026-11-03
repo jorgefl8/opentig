@@ -44,6 +44,7 @@ function fixture(overrides: { view?: CliRunResult; list?: CliRunResult; tag?: Cl
 }
 const base = { repositoryId: 'repo', tagName: 'v1.0.0', expectedAccount: { login: 'sample', revision: 3 } };
 const identity = { ...base, expectedDatabaseId: 42 };
+const publication = { ...identity, expectedTagExists: true };
 const edit = { ...identity, expectedBodyHash: releaseBodyHash(body), title: 'New title', notes: body };
 const create = { ...base, tagName: 'v2.0.0', title: 'Two', notes: 'Notes', generateNotes: false, prerelease: false };
 const notFound = fail('gh: Not Found (HTTP 404)');
@@ -160,15 +161,22 @@ describe('deleting a draft', () => {
 describe('publishing', () => {
   it('passes both the tag and the check that it exists, because gh ignores one without the other', async () => {
     const { service, mutations } = fixture();
-    await service.publishRelease(identity);
+    await service.publishRelease(publication);
     expect(mutations).toEqual([['release', 'edit', 'v1.0.0', '-R', 'example/demo', '--tag', 'v1.0.0', '--verify-tag', '--draft=false']]);
   });
 
+  it("lets GitHub create a missing tag at the draft's target, as its own page does", async () => {
+    const { service, mutations } = fixture({ tag: notFound });
+    await service.publishRelease({ ...publication, expectedTagExists: false });
+    expect(mutations).toEqual([['release', 'edit', 'v1.0.0', '-R', 'example/demo', '--draft=false']]);
+  });
+
   it.each([
-    ['the tag does not exist', { tag: notFound }, identity, 'GH_PR_ACTION_NOT_ALLOWED', "doesn't exist yet"],
-    ['it is already published', { view: ok({ ...details, isDraft: false }) }, identity, 'GH_PR_ACTION_NOT_ALLOWED', 'already published'],
-    ['it is another release', {}, { ...identity, expectedDatabaseId: 7 }, 'GH_PR_STATE_CHANGED', 'changed'],
-    ['the viewer cannot write', { repository: ok({ permissions: { push: false } }) }, identity, 'GH_PR_ACTION_NOT_ALLOWED', 'write access'],
+    ['the tag went away after the confirmation', { tag: notFound }, publication, 'GH_PR_STATE_CHANGED', 'no longer on GitHub'],
+    ['the tag appeared after the confirmation', {}, { ...publication, expectedTagExists: false }, 'GH_PR_STATE_CHANGED', 'now exists'],
+    ['it is already published', { view: ok({ ...details, isDraft: false }) }, publication, 'GH_PR_ACTION_NOT_ALLOWED', 'already published'],
+    ['it is another release', {}, { ...publication, expectedDatabaseId: 7 }, 'GH_PR_STATE_CHANGED', 'changed'],
+    ['the viewer cannot write', { repository: ok({ permissions: { push: false } }) }, publication, 'GH_PR_ACTION_NOT_ALLOWED', 'write access'],
   ])('refuses when %s', async (_name, overrides, input, code, message) => {
     const { service, mutations } = fixture(overrides);
     const failure = service.publishRelease(input);
@@ -179,13 +187,13 @@ describe('publishing', () => {
 
   it('does not publish when it cannot tell whether the tag exists', async () => {
     const { service, mutations } = fixture({ tag: fail('gh: Server Error (HTTP 502)') });
-    await expect(service.publishRelease(identity)).rejects.toThrow('Server Error');
+    await expect(service.publishRelease(publication)).rejects.toThrow('Server Error');
     expect(mutations).toEqual([]);
   });
 
   it('stops with another account', async () => {
     const { service, mutations } = fixture();
-    await expect(service.publishRelease({ ...identity, expectedAccount: { login: 'other', revision: 3 } })).rejects.toMatchObject({ detail: { code: 'GH_ACCOUNT_UNRESOLVED' } });
+    await expect(service.publishRelease({ ...publication, expectedAccount: { login: 'other', revision: 3 } })).rejects.toMatchObject({ detail: { code: 'GH_ACCOUNT_UNRESOLVED' } });
     expect(mutations).toEqual([]);
   });
 });

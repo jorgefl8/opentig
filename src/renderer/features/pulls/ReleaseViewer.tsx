@@ -16,7 +16,6 @@ import { queryKeys } from '@/lib/query-client';
 import { ConfirmPopover } from './ConfirmPopover';
 import { ghDetail, ghErrorTitle, isUncertainFailure, openOnGitHub, releaseStateLabel, releaseStateTone } from './gh-utils';
 import { ReleaseEditor } from './ReleaseEditor';
-import { RunWorkflowDialog } from './RunWorkflowDialog';
 import { hasViewerDraft, releaseEditDraft } from './viewer-drafts';
 import { useGitHubAccount } from './useGitHubAccount';
 import '@/features/markdown/markdown.css';
@@ -45,7 +44,6 @@ export function ReleaseViewer({ repositoryId, tagName, onClose }: { repositoryId
   const account = accountQuery.data;
   const [editing, setEditing] = useState(() => hasViewerDraft(releaseEditDraft(repositoryId, tagName)));
   const [confirming, setConfirming] = useState<{ action: 'delete' | 'publish'; anchor: HTMLElement } | null>(null);
-  const [running, setRunning] = useState(false);
   const header = useRef<HTMLElement>(null);
   const [moreButton, setMoreButton] = useState<HTMLButtonElement | null>(null);
   const stateKey = release ? [release.databaseId, release.isDraft, release.tagExists, release.bodyHash].join('|') : '';
@@ -75,7 +73,7 @@ export function ReleaseViewer({ repositoryId, tagName, onClose }: { repositoryId
     onSettled: refresh,
   });
   const publish = useMutation({
-    mutationFn: () => opentig.github.publishRelease(expected()),
+    mutationFn: () => opentig.github.publishRelease({ ...expected(), expectedTagExists: release!.tagExists }),
     onSuccess: () => { setConfirming(null); sileo.success({ title: 'Release published', description: tagName }); },
     onError,
     onSettled: refresh,
@@ -108,12 +106,12 @@ export function ReleaseViewer({ repositoryId, tagName, onClose }: { repositoryId
   const asViewer = account?.login && !phone ? <> as <strong>@{account.login}</strong></> : null;
   const footnote = account?.login ? `as @${account.login}` : undefined;
   const canOpen = Boolean(release.url) && !release.isDraft;
-  const publishBlocked = !release.tagExists ? `The tag ${release.tagName} isn't on GitHub yet. Run a workflow that creates it, or push it yourself.` : !canAct ? 'Check the GitHub account in Settings.' : null;
-  // Publishing a draft without its tag would make GitHub create one, so this is the way forward instead.
-  const canPrepare = release.viewerCanWrite && release.isDraft && !release.tagExists;
+  const publishBlocked = !canAct ? 'Check the GitHub account in Settings.' : null;
+  // A full hash is a fixed commit; anything else is a branch, whose latest commit GitHub tags when publishing.
+  const target = /^[0-9a-f]{40}$/i.test(release.targetCommitish) ? release.targetCommitish.slice(0, 12) : release.targetCommitish;
+  const targetIsBranch = target === release.targetCommitish;
   const askToDelete = () => { if (moreButton) setConfirming({ action: 'delete', anchor: moreButton }); };
   const menu: MobileMenuItem[] = [
-    ...(phone && canPrepare ? [{ label: 'Run a workflow…', onSelect: () => setRunning(true) }] : []),
     ...(canOpen ? [{ label: 'Open on GitHub', onSelect: () => openOnGitHub(release.url) }] : []),
     ...(release.viewerCanWrite ? [{ label: 'Edit title and notes…', disabled: !canAct, onSelect: () => setEditing(true) }] : []),
     ...(release.viewerCanWrite && release.isDraft ? [{ label: 'Delete draft…', danger: true, disabled: !canAct, onSelect: askToDelete }] : []),
@@ -135,7 +133,6 @@ export function ReleaseViewer({ repositoryId, tagName, onClose }: { repositoryId
             <div className="pr-viewer-heading"><h2>{release.name}</h2></div>
             <span className="pr-action-bar">
               {!release.viewerCanWrite && <span className="pr-action-reason">Changing releases requires write access</span>}
-              {!phone && canPrepare && <Button variant="outline" size="xs" disabled={busy} onClick={() => setRunning(true)}>Run a workflow…</Button>}
               {!phone && release.viewerCanWrite && release.isDraft && <Tooltip>
                 <TooltipTrigger render={<Button size="xs" disabled={Boolean(publishBlocked) || busy} focusableWhenDisabled onClick={(event) => setConfirming({ action: 'publish', anchor: event.currentTarget })} />}>Publish</TooltipTrigger>
                 {publishBlocked && <TooltipContent>{publishBlocked}</TooltipContent>}
@@ -153,11 +150,11 @@ export function ReleaseViewer({ repositoryId, tagName, onClose }: { repositoryId
           <div className="pr-viewer-status">
             <span className={`pr-status tone-${releaseStateTone(release)}`}><span className="status-dot" aria-hidden="true" /> {releaseStateLabel(release)}</span>
             <span className="pr-branches">{release.tagName}</span>
-            <span className="pr-branches">{release.targetCommitish.slice(0, 12)}</span>
+            <span className="pr-branches">{target}</span>
             <span>{release.publishedAt ? <>published <time dateTime={release.publishedAt}>{formatDateTime(release.publishedAt)}</time></> : <>created <time dateTime={release.createdAt}>{formatDateTime(release.createdAt)}</time></>}</span>
             {release.isImmutable && <span>Immutable</span>}
             {release.isDraft && release.isPrerelease && <span>Pre-release</span>}
-            {!release.tagExists && <span className="pr-status tone-attention" role="status">Can't publish yet: no tag on GitHub</span>}
+            {release.isDraft && !release.tagExists && <span>Publishing creates the tag</span>}
           </div>
         </div>
       </header>
@@ -172,7 +169,6 @@ export function ReleaseViewer({ repositoryId, tagName, onClose }: { repositoryId
           </section>
         )}
       </div>
-      {running && <RunWorkflowDialog repositoryId={repositoryId} onClose={() => setRunning(false)} />}
       {confirming?.action === 'publish' && <ConfirmPopover
         anchor={confirming.anchor}
         label="Confirm publication"
@@ -183,9 +179,10 @@ export function ReleaseViewer({ repositoryId, tagName, onClose }: { repositoryId
         confirm={<Button size="xs" disabled={busy} onClick={() => publish.mutate()}>{publish.isPending ? <><IconLoader4 className="animate-spin" /> <ShimmeringText text="Publishing…" /></> : 'Publish release'}</Button>}
       >
         <p>Publish <strong>{release.name}</strong>{asViewer}? Anyone with access to the repository sees it, and any workflow that runs on publication starts.</p>
+        {!release.tagExists && <p>The tag <code>{release.tagName}</code> doesn't exist yet, so GitHub creates it at {targetIsBranch ? <>the latest commit of <code>{target}</code></> : <code>{target}</code>}.</p>}
         <dl className="release-publish-facts">
-          <div><dt>Tag</dt><dd><code>{release.tagName}</code></dd></div>
-          <div><dt>Commit</dt><dd><code>{release.targetCommitish.slice(0, 12)}</code></dd></div>
+          <div><dt>Tag</dt><dd><code>{release.tagName}</code>{release.tagExists ? null : ' (new)'}</dd></div>
+          <div><dt>{targetIsBranch ? 'Branch' : 'Commit'}</dt><dd><code>{target}</code></dd></div>
           <div><dt>Pre-release</dt><dd>{release.isPrerelease ? 'Yes' : 'No'}</dd></div>
           <div><dt>Assets</dt><dd>{release.assets.length ? release.assets.map((asset) => asset.name).join(', ') : 'None. Check that nothing is missing.'}</dd></div>
         </dl>

@@ -136,8 +136,9 @@ export class GitHubReleases {
 
   /**
    * Publishing a draft whose tag doesn't exist makes GitHub create the tag at the
-   * target commit, so the tag is checked here, and `--verify-tag` only acts in
-   * `gh release edit` together with `--tag`.
+   * draft's target, as GitHub's own page does. The confirmation says which of the
+   * two happens, so publishing stops if that changed. With the tag, `--verify-tag`
+   * keeps it so, and it only acts in `gh release edit` together with `--tag`.
    */
   async publish(input: PublishReleaseInput): Promise<void> {
     const operation = 'gh-release-publish';
@@ -146,11 +147,14 @@ export class GitHubReleases {
     const release = await this.viewFor(target, input.tagName, operation);
     if (release.databaseId !== input.expectedDatabaseId) throw this.changed(operation, 'This release changed. Review it and try again.');
     if (!release.isDraft) throw this.notAllowed(operation, 'This release is already published.');
-    if (!release.tagExists) throw this.notAllowed(operation, `The tag ${input.tagName} doesn't exist yet. OpenTig doesn't create tags, so this draft can't be published until it does.`);
+    if (release.tagExists !== input.expectedTagExists) {
+      throw this.changed(operation, release.tagExists ? `The tag ${input.tagName} now exists on GitHub. Review the release and try again.` : `The tag ${input.tagName} is no longer on GitHub. Review the release and try again.`);
+    }
     if (!release.viewerCanWrite) throw this.notAllowed(operation, "This GitHub account doesn't have write access to this repository.");
     verifyAccount();
     try {
-      await this.act(target, ['release', 'edit', input.tagName, '-R', target.nameWithOwner, '--tag', input.tagName, '--verify-tag', '--draft=false'], operation);
+      const tag = release.tagExists ? ['--tag', input.tagName, '--verify-tag'] : [];
+      await this.act(target, ['release', 'edit', input.tagName, '-R', target.nameWithOwner, ...tag, '--draft=false'], operation);
     } finally {
       this.github.invalidate(input.repositoryId);
     }

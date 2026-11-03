@@ -350,7 +350,8 @@ describe('workflow arguments', () => {
     expect(() => runWorkflowArg({ ...run, ref: '--foo' })).toThrow('Invalid release data.');
   });
   it('checks a publication', () => {
-    expect(publishReleaseArg({ repositoryId: 'repo', tagName: 'v1', expectedDatabaseId: 1, expectedAccount: run.expectedAccount })).toMatchObject({ tagName: 'v1' });
-    expect(() => publishReleaseArg({ repositoryId: 'repo', tagName: '--draft=false', expectedDatabaseId: 1, expectedAccount: run.expectedAccount })).toThrow('Invalid release data.');
+    expect(publishReleaseArg({ repositoryId: 'repo', tagName: 'v1', expectedDatabaseId: 1, expectedTagExists: false, expectedAccount: run.expectedAccount })).toMatchObject({ tagName: 'v1', expectedTagExists: false });
+    expect(() => publishReleaseArg({ repositoryId: 'repo', tagName: '--draft=false', expectedDatabaseId: 1, expectedTagExists: true, expectedAccount: run.expectedAccount })).toThrow('Invalid release data.');
+    expect(() => publishReleaseArg({ repositoryId: 'repo', tagName: 'v1', expectedDatabaseId: 1, expectedAccount: run.expectedAccount })).toThrow('Invalid release data.');
   });
 });

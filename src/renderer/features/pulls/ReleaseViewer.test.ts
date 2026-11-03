@@ -9,7 +9,7 @@ import { MobileChromeContext, type MobileChromeHosts } from '@/components/mobile
 import { ServerRequestTimeoutError } from '@/lib/websocket-transport';
 import { ReleaseViewer } from './ReleaseViewer';
 
-const api = vi.hoisted(() => ({ getRelease: vi.fn(), deleteDraftRelease: vi.fn(), publishRelease: vi.fn(), updateRelease: vi.fn(), repositoryAccount: vi.fn(), listWorkflows: vi.fn(() => new Promise(() => {})) }));
+const api = vi.hoisted(() => ({ getRelease: vi.fn(), deleteDraftRelease: vi.fn(), publishRelease: vi.fn(), updateRelease: vi.fn(), repositoryAccount: vi.fn() }));
 const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn(), info: vi.fn() }));
 vi.mock('@/lib/opentig-api', () => ({ opentig: { github: api } }));
 vi.mock('sileo', () => ({ sileo: toast }));
@@ -154,19 +154,23 @@ it('offers nothing to change without write access', async () => {
   expect(api.repositoryAccount).not.toHaveBeenCalled();
 });
 
-it('says why a draft without its tag cannot be published, and offers the way forward', async () => {
+it('publishes a draft without its tag, as GitHub does, after saying GitHub creates it', async () => {
+  api.publishRelease.mockResolvedValue(undefined);
   await render(release({ tagExists: false }));
-  expect(container.textContent).toContain("Can't publish yet: no tag on GitHub");
-  api.listWorkflows.mockClear();
-  await act(async () => button('Run a workflow…')!.click());
+  expect(container.querySelector('.pr-viewer-status')?.textContent).toContain('Publishing creates the tag');
+  await act(async () => button('Publish')!.click());
+  expect(panel()?.textContent).toContain("The tag v1.0.0 doesn't exist yet, so GitHub creates it at bbbbbbbbbbbb.");
+  expect(panel()?.textContent).toContain('v1.0.0 (new)');
+  await act(async () => button('Publish release')!.click());
   await settle();
-  expect(document.querySelector('[role="dialog"]')).not.toBeNull();
-  expect(api.listWorkflows).toHaveBeenCalledWith('repo');
+  expect(api.publishRelease).toHaveBeenCalledWith(expect.objectContaining({ tagName: 'v1.0.0', expectedTagExists: false }));
 });
 
-it('only offers a workflow when the tag is what is missing', async () => {
-  await render();
-  expect(button('Run a workflow…')).toBeUndefined();
+it('names a branch target as one, since GitHub tags its latest commit', async () => {
+  await render(release({ tagExists: false, targetCommitish: 'main' }));
+  await act(async () => button('Publish')!.click());
+  expect(panel()?.textContent).toContain('GitHub creates it at the latest commit of main.');
+  expect([...panel()!.querySelectorAll('dt')].map((term) => term.textContent)).toContain('Branch');
 });
 
 it('says the deletion may have worked when there is no answer', async () => {
@@ -203,7 +207,8 @@ it('asks before publishing, listing what will go out', async () => {
   expect(question).toContain('any workflow that runs on publication starts');
   await act(async () => button('Publish release')!.click());
   await settle();
-  expect(api.publishRelease).toHaveBeenCalledWith({ repositoryId: 'repo', tagName: 'v1.0.0', expectedDatabaseId: 42, expectedAccount: { login: 'sample', revision: 3 } });
+  expect(api.publishRelease).toHaveBeenCalledWith({ repositoryId: 'repo', tagName: 'v1.0.0', expectedDatabaseId: 42, expectedTagExists: true, expectedAccount: { login: 'sample', revision: 3 } });
+  expect(question).not.toContain("doesn't exist yet");
   expect(toast.success).toHaveBeenCalledWith(expect.objectContaining({ title: 'Release published' }));
 });
 
@@ -213,17 +218,7 @@ it('warns when a draft has no assets', async () => {
   expect(panel()?.textContent).toContain('Check that nothing is missing');
 });
 
-it('keeps Publish off without a tag, and off for what is already published', async () => {
-  await render(release({ tagExists: false }));
-  // Still focusable, so its reason can be read from the tooltip.
-  expect(button('Publish')?.getAttribute('aria-disabled')).toBe('true');
-  await act(async () => button('Publish')!.click());
-  await settle();
-  expect(panel()).toBeNull();
-  expect(api.publishRelease).not.toHaveBeenCalled();
-  await act(async () => root.unmount());
-  root = createRoot(container);
-  client.clear();
+it('offers no Publish for what is already published', async () => {
   await render(release({ isDraft: false, publishedAt: '2026-01-02T00:00:00Z' }));
   expect(button('Publish')).toBeUndefined();
 });
@@ -261,12 +256,12 @@ describe('on a phone', () => {
     expect(api.publishRelease).toHaveBeenCalledTimes(1);
   });
 
-  it('keeps Publish off and says why when the tag is missing', async () => {
+  it('offers Publish without the tag too, and says in the sheet that GitHub creates it', async () => {
     await renderPhone(release({ tagExists: false }));
-    expect(publishPill()!.disabled).toBe(true);
-    expect(hosts.float!.querySelector('.mobile-float-note')?.textContent).toBe("The tag v1.0.0 isn't on GitHub yet. Run a workflow that creates it, or push it yourself.");
+    expect(publishPill()!.disabled).toBe(false);
+    expect(hosts.float!.querySelector('.mobile-float-note')).toBeNull();
     await act(async () => publishPill()!.click());
-    expect(sheet()).toBeNull();
+    expect(sheet()?.textContent).toContain('GitHub creates it at bbbbbbbbbbbb');
   });
 
   it('floats nothing for what is published or out of reach', async () => {

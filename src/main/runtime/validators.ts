@@ -421,7 +421,7 @@ export function deleteDraftReleaseArg(value: unknown): DeleteDraftReleaseInput {
 }
 
 export function publishReleaseArg(value: unknown): PublishReleaseInput {
-  return parsedRelease(releaseIdentitySchema.safeParse(value), 'gh-release-publish');
+  return parsedRelease(releaseIdentitySchema.extend({ expectedTagExists: z.boolean() }).safeParse(value), 'gh-release-publish');
 }
 
 const workflowPathSchema = z.string().max(300).regex(/^\.github\/workflows\/[A-Za-z0-9._ -]+\.ya?ml$/);

@@ -602,7 +602,8 @@ export interface ReleaseDetails extends ReleaseSummary {
 export type CreateReleaseInput = GitHubMutationBase & { tagName: string; title: string; notes: string; generateNotes: boolean; prerelease: boolean };
 export type UpdateReleaseInput = GitHubMutationBase & { tagName: string; expectedDatabaseId: number; expectedBodyHash: string; title: string; notes: string };
 export type DeleteDraftReleaseInput = GitHubMutationBase & { tagName: string; expectedDatabaseId: number };
-export type PublishReleaseInput = GitHubMutationBase & { tagName: string; expectedDatabaseId: number };
+/** `expectedTagExists` is what the confirmation said: publishing without the tag makes GitHub create it. */
+export type PublishReleaseInput = GitHubMutationBase & { tagName: string; expectedDatabaseId: number; expectedTagExists: boolean };
 
 export interface RepositoryWorkflow {
   id: number;
