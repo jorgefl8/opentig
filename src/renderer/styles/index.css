@@ -1868,6 +1868,9 @@ section[data-sileo-viewport] [data-sileo-title] { text-transform: none; }
 :root [data-sync]:hover:not(:disabled) { background: color-mix(in oklch, var(--git-push) 24%, transparent); color: var(--git-push-ink); }
 :root [data-sync="pull"] { background: color-mix(in oklch, var(--primary) 16%, transparent); color: var(--primary-ink); }
 :root [data-sync="pull"]:hover:not(:disabled) { background: color-mix(in oklch, var(--primary) 25%, transparent); color: var(--primary-ink); }
+/* A tinted box shows its size, so the bar's are compact: a count, not a call to action. */
+.toolbar [data-sync] { height: 24px; gap: 3px; padding-inline: 6px 7px; border-radius: 6px; font-size: var(--text-ui); }
+.toolbar [data-sync] svg { width: 13px; height: 13px; }
 :is(.pr-action-bar, .confirm-popover-actions) [data-slot="button"][data-size="xs"] { height: 28px; padding-inline: 12px; font-size: var(--text-body); }
 :is(.pr-action-bar, .confirm-popover-actions) [data-slot="button"][data-size="xs"] svg { width: 14px; height: 14px; }
 .pr-action-bar [data-slot="button"][data-size="icon-xs"] { width: 28px; height: 28px; }
