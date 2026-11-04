@@ -47,6 +47,7 @@ let preferences: Preferences = {
   changesLayout: "tree",
   wrapLines: true,
   sidebarWidth: 280,
+  sidebarCollapsed: false,
   showDotEnvFiles: false,
   uiZoom: 100,
   uiFont: "plus-jakarta-sans",

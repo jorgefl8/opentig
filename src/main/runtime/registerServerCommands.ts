@@ -12,6 +12,7 @@ import { OPEN_TIG_SERVER_COMMANDS, type OpenTigServerCommandDefinition } from '.
 import { repositoryRootFromCommonDir } from '../../shared/repository-favicon';
 import { readRepositoryFavicon } from '../files/RepositoryFavicon';
 import { browseServerDirectories } from '../files/ServerDirectoryBrowser';
+import { planUntrackedTrash, readUntrackedTrashLayout, removeEmptyParents } from '../git/untracked-trash';
 import { CommandRegistry, type CommandExecutionContext } from './CommandRegistry';
 import type { OpenTigHost } from './OpenTigHost';
 import type { OpenTigRuntimeServices } from './OpenTigRuntime';
@@ -358,10 +359,16 @@ export function registerServerCommands(
     const validPaths = services.repositories.validatePaths(repositoryId, pathsArg(paths, 'discard'));
     const selected = new Set(validPaths);
     const status = await services.repositories.status(repositoryId, false);
-    const untracked = status.changes.filter((change) => selected.has(change.path) && change.kind === 'untracked').map((change) => change.path);
-    const tracked = validPaths.filter((filePath) => !untracked.includes(filePath));
+    const allUntracked = status.changes.filter((change) => change.kind === 'untracked').map((change) => change.path);
+    const untracked = allUntracked.filter((filePath) => selected.has(filePath));
+    const untrackedSet = new Set(untracked);
+    const tracked = validPaths.filter((filePath) => !untrackedSet.has(filePath));
     await services.operations.discard(repositoryId, tracked);
-    for (const filePath of untracked) await services.trash.trashItem(services.repositories.resolvePath(repositoryId, filePath));
+    if (untracked.length === 0) return { ok: true };
+    const root = services.repositories.get(repositoryId).path;
+    const plan = planUntrackedTrash({ selected: untracked, untracked: allUntracked, layout: await readUntrackedTrashLayout(services.git, root) });
+    for (const target of plan.targets) await services.trash.trashItem(services.repositories.resolvePath(repositoryId, target));
+    await removeEmptyParents(root, plan.targets);
     return { ok: true };
   });
   handle(IPC.indexStageAll, 'stage-all', (id) => services.operations.stageAll(stringArg(id, 'stage-all', 64)));

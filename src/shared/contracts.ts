@@ -673,6 +673,8 @@ export interface Preferences {
   changesLayout: ChangesLayoutPreference;
   wrapLines: boolean;
   sidebarWidth: number;
+  /** Desktop only: the sidebar shows as a narrow rail of section icons. */
+  sidebarCollapsed: boolean;
   showDotEnvFiles: boolean;
   uiZoom: number;
   uiFont: UiFontPreference;

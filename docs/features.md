@@ -101,7 +101,7 @@ With no changes, the section says so and, when the branch has commits that aren'
 
 Changed Markdown files open their staged or unstaged diff; use **Open file** for the rendered preview. HTML, SVG, and image files open a rich preview and have a separate diff action.
 
-To discard selected unstaged changes, review the affected paths in the confirmation dialog. Untracked files go to system Trash (the Recycle Bin on Windows).
+To discard selected unstaged changes, review the affected paths in the confirmation dialog. Untracked files go to system Trash (the Recycle Bin on Windows). A folder whose untracked files are all being discarded goes to Trash as one item, unless it also holds tracked or Git-ignored files. Folders the discard leaves empty are removed.
 
 **Resolve conflicts**
 
@@ -394,6 +394,7 @@ These are the defaults. Rebind most shortcuts in **Settings → Shortcuts**. Sho
 | `Ctrl+P` | Quick-open a file |
 | `Ctrl+R` | Refresh repository state |
 | `Ctrl+1` … `Ctrl+5` (fixed) | Open Changes, Files, History, GitHub, or Search |
+| `Ctrl+B` | Collapse or expand the desktop sidebar |
 | `Ctrl+S` | Save the open editable file |
 | `Ctrl+W` | Close the active file tab |
 | `Ctrl+Tab`, `Ctrl+Shift+Tab` | Move to the next or previous file tab |

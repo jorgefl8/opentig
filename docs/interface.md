@@ -6,6 +6,12 @@ Use **Settings → General** to change themes, fonts, file views, and remote che
 
 On desktop, navigation, file lists, and the commit composer sit in a resizable sidebar; editors, diffs, commits, PRs, and releases open in the viewer. Phone browsers show one pane at a time. Both clients connect to the same repository backend. Native desktop controls are available only in the desktop app.
 
+## Sidebar width and collapsing
+
+Drag the sidebar's right edge to resize it between 300 px and 680 px, or focus the edge and use the arrow keys, `Home`, and `End`. Double-click the edge to return to the default 400 px.
+
+To give the viewer more room, collapse the sidebar with the button at the end of its tab bar or `Ctrl+B`, which you can rebind in **Settings → Shortcuts**. Dragging the edge well past its minimum width also collapses it. The collapsed sidebar is a narrow rail of section icons that still shows how many files are staged, or how many have changed when none are staged, and marks unsaved files. Click an icon or press `Ctrl+1` … `Ctrl+5` to open the sidebar on that section. The commit box, filters, and scroll positions are kept while collapsed. Phone layouts don't collapse the sidebar, since they show one pane at a time.
+
 ## Appearance and settings
 
 General settings groups controls under **Appearance**, **Files & viewer**, and **Repository sync**. Changes apply immediately and preserve your existing selections.
@@ -48,7 +54,7 @@ OpenTig starts in **Files** on first use, then reopens your last active section:
 | Remembered item | Behavior |
 | --- | --- |
 | **Last active section** | Stored in the client. Clearing site data or unavailable local storage returns it to Files; a selected PR or search query is not restored |
-| **Workspace preferences** | Sidebar width, viewer preferences, fonts, shortcut customizations, repositories, and projects are remembered |
+| **Workspace preferences** | Sidebar width and whether it is collapsed, viewer preferences, fonts, shortcut customizations, repositories, and projects are remembered |
 | **File navigation** | Expanded tree paths and open file tabs are remembered for each worktree |
 | **AI model** | Selection is saved per provider |
 

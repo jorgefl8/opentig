@@ -140,6 +140,22 @@ describe('SettingsStore AI preferences', () => {
     expect(custom.preferences.sidebarWidth).toBe(360);
   });
 
+  it('keeps the sidebar layout chosen in the app across restarts', async () => {
+    const file = await settingsFile({ version: SETTINGS_SCHEMA_VERSION, preferences: { theme: 'system', diffView: 'unified', sidebarWidth: 400, showDotEnvFiles: true, uiZoom: 100 } });
+    const store = new SettingsStore(file);
+    await store.load();
+    expect(store.preferences.sidebarCollapsed).toBe(false);
+    await store.setPreferences({ sidebarCollapsed: true, sidebarWidth: 340 });
+    await store.setPreferences({ sidebarCollapsed: 'yes' as unknown as boolean });
+    const restarted = new SettingsStore(file);
+    await restarted.load();
+    expect(restarted.preferences).toMatchObject({ sidebarCollapsed: false, sidebarWidth: 340 });
+    await restarted.setPreferences({ sidebarCollapsed: true, sidebarWidth: 1200 });
+    const again = new SettingsStore(file);
+    await again.load();
+    expect(again.preferences).toMatchObject({ sidebarCollapsed: true, sidebarWidth: 680 });
+  });
+
   it('repairs corrupt fields without losing valid sibling preferences', async () => {
     const store = new SettingsStore(await settingsFile({
       preferences: { theme: 'dark', diffView: 'future', wrapLines: true, sidebarWidth: 'wide', showDotEnvFiles: false, uiZoom: 999, unknown: true },
