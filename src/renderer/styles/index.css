@@ -1027,6 +1027,18 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   .pr-action-reason { color: var(--muted-foreground); font-size: var(--text-meta); }
   .pr-split-button { display: inline-flex; }
   .pr-viewer-tabs { --tab-height: 30px; flex: none; justify-self: start; margin-bottom: -1px; }
+  /* While a PR's details load: the shapes of what is coming, so nothing jumps in from a spinner. */
+  .pr-skeleton-line, .pr-description-skeleton > span { display: block; height: 10px; border-radius: var(--radius-sm); background: var(--muted); animation: repository-loading-pulse 1.4s ease-in-out infinite; }
+  .pr-skeleton-line.title { width: min(420px, 70%); height: 18px; margin-block: 2px 4px; }
+  .pr-skeleton-line.meta { width: min(320px, 55%); }
+  .pr-skeleton-line.status { width: min(200px, 35%); }
+  .pr-description-skeleton { display: grid; gap: 10px; padding: 4px 0; }
+  .pr-viewer-skeleton > .pr-description-skeleton { padding: 18px 16px; }
+  .pr-description-skeleton > span:nth-child(1) { width: 92%; }
+  .pr-description-skeleton > span:nth-child(2) { width: 78%; }
+  .pr-description-skeleton > span:nth-child(3) { width: 54%; }
+  .pr-loading-line { margin: 0; padding: 16px; color: var(--muted-foreground); font-size: var(--text-ui); }
+  @media (prefers-reduced-motion: reduce) { .pr-skeleton-line, .pr-description-skeleton > span { animation: none; } }
   /* A question beside the button that asked it, sized for its words rather than the header's width. */
   .confirm-popover { display: grid; width: min(310px, calc(100vw - 24px)); max-height: var(--available-height); gap: 10px; overflow: auto; transform-origin: var(--transform-origin); border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--popover); padding: 12px; color: var(--popover-foreground); font-size: var(--text-ui); line-height: 1.5; box-shadow: 0 10px 25px rgb(0 0 0 / 18%); outline: none; }
   .confirm-popover[data-open] { animation: fade-rise var(--motion-fast) var(--ease-out); }

@@ -196,6 +196,31 @@ it('does not repeat a decision that a reviewer\'s verdict already gives', async 
   expect(container.querySelector('.pr-reviewer')?.textContent).toBe('Approved by ana');
 });
 
+it('shows the header from the list at once, and fills in the rest when the details arrive', async () => {
+  const { body: _body, changedFiles: _files, labels: _labels, commits: _commits, baseRefOid: _base, ...summary } = details;
+  client.setQueryData(queryKeys.pulls('repo', ['OPEN']), [{ ...summary, title: 'From the list' }]);
+  let resolve!: (value: PullRequestDetails) => void;
+  api.getPullRequest.mockReturnValue(new Promise((done) => { resolve = done; }));
+  await render();
+  expect(container.querySelector('.pr-viewer-heading h2')?.textContent).toBe('From the list #7');
+  expect(container.querySelector('.pr-viewer-meta')?.textContent).toContain('feature → main');
+  expect(container.querySelector('.pr-counters')?.textContent).toBe('+1 −0');
+  expect(container.querySelector('.pr-description-skeleton')).not.toBeNull();
+  expect(container.textContent).not.toContain('Loading pull request');
+  await act(async () => resolve(details));
+  await settle();
+  expect(container.querySelector('.pr-viewer-heading h2')?.textContent).toBe('Sample change #7');
+  expect(container.querySelector('.pr-counters')?.textContent).toBe('1 file +1 −0');
+  expect(container.querySelector('.pr-description-skeleton')).toBeNull();
+});
+
+it('shows the shape of a PR it knows nothing about yet, instead of a spinner', async () => {
+  api.getPullRequest.mockReturnValue(new Promise(() => {}));
+  await render();
+  expect(container.querySelector('.pr-viewer-skeleton')?.getAttribute('aria-label')).toBe('Loading pull request #7');
+  expect(container.querySelector('.spinner')).toBeNull();
+});
+
 it('does not read the conversation until Comments is open', async () => {
   await render();
   expect(api.getPullRequestConversation).not.toHaveBeenCalled();

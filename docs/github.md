@@ -62,7 +62,7 @@ Your CLI must support multi-account `auth token --user` and `auth status --json 
 ## Review pull requests
 
 1. Open **GitHub** for the current repository. **Pull requests** lists them, each with its author's avatar and a status dot, its number, where it stands, the lines it adds and removes, and how long ago it was updated.
-2. Select a PR to inspect its metadata and Markdown description.
+2. Select a PR to inspect its metadata and Markdown description. What the list already knows, such as its title, branches, line counts, and state, appears at once; the description, labels, file count, and status fill in as GitHub answers. A PR opened from a link before the list has loaded shows the shape of its header until then.
 3. In **Code**, review the cumulative diff or use **By commit** to inspect changes from one commit. The selector supports keyboard navigation, readable subjects, and scrollable options. Each file's **Open file** button opens it in Files as it is in your worktree, which may be on another branch than the PR's.
 
 **The list**
