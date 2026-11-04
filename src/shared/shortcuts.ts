@@ -3,6 +3,7 @@ export type ShortcutId =
   | 'refresh'
   | 'quickOpen'
   | 'repoSwitcher'
+  | 'toggleSidebar'
   | 'commit'
   | 'saveFile'
   | 'editorSearch'
@@ -32,6 +33,7 @@ export const SHORTCUT_DEFINITIONS: readonly ShortcutDefinition[] = [
   { id: 'refresh', label: 'Refresh', category: 'General', defaultCombo: 'Ctrl+R', allowBare: false },
   { id: 'quickOpen', label: 'Quick open', category: 'General', defaultCombo: 'Ctrl+P', allowBare: false },
   { id: 'repoSwitcher', label: 'Repository switcher', description: 'Type a number to switch, or press again to close.', category: 'General', defaultCombo: 'Q', allowBare: true },
+  { id: 'toggleSidebar', label: 'Collapse or expand the sidebar', category: 'General', defaultCombo: 'Ctrl+B', allowBare: false },
   { id: 'commit', label: 'Commit', category: 'Commit', defaultCombo: 'Ctrl+Enter', allowBare: false },
   { id: 'saveFile', label: 'Save file', category: 'Editor', defaultCombo: 'Ctrl+S', allowBare: false },
   { id: 'editorSearch', label: 'Find and replace', description: 'Ctrl+Alt+F always works too, as a built-in alternative.', category: 'Editor', defaultCombo: 'Ctrl+F', allowBare: false },

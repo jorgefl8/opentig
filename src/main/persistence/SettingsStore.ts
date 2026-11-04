@@ -49,7 +49,7 @@ const defaults: SettingsData = {
   openFilesStates: [],
   activeRepositoryId: null,
   preferences: {
-    theme: 'system', diffView: 'unified', changesLayout: 'tree', wrapLines: false, sidebarWidth: 400, showDotEnvFiles: true, uiZoom: 100,
+    theme: 'system', diffView: 'unified', changesLayout: 'tree', wrapLines: false, sidebarWidth: 400, sidebarCollapsed: false, showDotEnvFiles: true, uiZoom: 100,
     uiFont: 'plus-jakarta-sans', monoFont: 'jetbrains-mono',
     commitMessageHarness: 'codex', commitMessageModels: { codex: 'default', claude: 'default', opencode: 'default', grok: 'default' },
     aiExecutablePaths: {},
@@ -382,6 +382,7 @@ export class SettingsStore {
     if (!['tree', 'list'].includes(next.changesLayout)) next.changesLayout = 'tree';
     next.wrapLines = typeof next.wrapLines === 'boolean' ? next.wrapLines : false;
     next.sidebarWidth = normalizeSidebarWidth(next.sidebarWidth);
+    next.sidebarCollapsed = next.sidebarCollapsed === true;
     next.showDotEnvFiles = typeof next.showDotEnvFiles === 'boolean' ? next.showDotEnvFiles : true;
     next.uiZoom = Math.max(80, Math.min(130, Math.round(Number(next.uiZoom) || 100)));
     next.uiFont = normalizeUiFont(next.uiFont);
@@ -537,7 +538,8 @@ function validate(value: unknown, defaultDoubleControlShortcutEnabled: boolean):
         diffView: ['unified', 'split'].includes(parsedPreferences.data.diffView as string) ? parsedPreferences.data.diffView : 'unified',
         changesLayout: ['tree', 'list'].includes(parsedPreferences.data.changesLayout as string) ? parsedPreferences.data.changesLayout : 'tree',
         wrapLines: typeof parsedPreferences.data.wrapLines === 'boolean' ? parsedPreferences.data.wrapLines : false,
-        sidebarWidth: normalizeSidebarWidth(parsedPreferences.data.sidebarWidth),
+        sidebarWidth: normalizeSidebarWidth(parsedPreferences.data.sidebarWidth, input.version !== SETTINGS_SCHEMA_VERSION),
+        sidebarCollapsed: parsedPreferences.data.sidebarCollapsed === true,
         showDotEnvFiles: typeof parsedPreferences.data.showDotEnvFiles === 'boolean' ? parsedPreferences.data.showDotEnvFiles : true,
         uiZoom: Math.max(80, Math.min(130, Math.round(Number(parsedPreferences.data.uiZoom) || 100))),
         uiFont: normalizeUiFont(parsedPreferences.data.uiFont),
@@ -661,10 +663,11 @@ function isMonoFont(value: unknown): value is MonoFontPreference {
   return value === 'geist-mono' || value === 'jetbrains-mono' || value === 'inconsolata' || value === 'departure' || value === 'space-grotesk';
 }
 
-function normalizeSidebarWidth(value: unknown): number {
+/** `legacyDefault` widens the 340px default of settings written before they were versioned; a width dragged to 340 stays. */
+function normalizeSidebarWidth(value: unknown, legacyDefault = false): number {
   const width = Number(value);
-  if (!Number.isFinite(width) || width === 340) return 400;
-  return Math.max(300, Math.min(680, width));
+  if (!Number.isFinite(width) || (legacyDefault && width === 340)) return 400;
+  return Math.round(Math.max(300, Math.min(680, width)));
 }
 
 function modelPreferences(value: unknown): Partial<Record<AiHarnessId, string>> {

@@ -1476,7 +1476,7 @@ section[data-sileo-viewport] [data-sileo-title] { text-transform: none; }
   .sidebar-tabs button > svg { width: 14px; height: 14px; stroke-width: 1.7; }
   /* Holding Ctrl turns the tab bar into its own legend: each section shows the
      digit that jumps to it. */
-  .sidebar-tabs button .sidebar-tab-shortcut {
+  .sidebar-tabs button .sidebar-tab-shortcut, .sidebar-rail-button .sidebar-rail-shortcut {
     display: inline-grid;
     min-width: 16px;
     flex: none;
@@ -1498,6 +1498,98 @@ section[data-sileo-viewport] [data-sileo-title] { text-transform: none; }
   }
   @container (max-width: 470px) {
     .sidebar-tabs .sidebar-tab-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  }
+
+  /* Collapsing: the sidebar folds into a rail of section icons. Its views,
+     commit box and checklist stay mounted but hidden, so drafts, scroll and
+     filters are where they were when it opens again. */
+  .sidebar { transition: width var(--motion-fast) var(--ease-out); }
+  /* While the edge is dragged toward the rail, the content keeps its minimum width and is clipped rather than squeezed. */
+  .sidebar[data-resizing] { min-width: 0; overflow: hidden; transition: none; }
+  .sidebar[data-resizing] > * { min-width: 300px; }
+  .sidebar[data-collapsed] { width: 44px; min-width: 0; }
+  .sidebar[data-collapsed] > :not(.sidebar-rail) { display: none; }
+  .sidebar-tabs .sidebar-collapse-button {
+    flex: none;
+    width: 26px;
+    height: 26px;
+    align-self: center;
+    margin-left: 2px;
+    border-radius: var(--radius-md);
+    padding: 0;
+  }
+  .sidebar-tabs .sidebar-collapse-button:hover { background: var(--row-hover); }
+  .sidebar-tabs .sidebar-collapse-button > svg { width: 15px; height: 15px; }
+  .sidebar-rail { display: flex; height: 100%; flex-direction: column; align-items: center; gap: 2px; padding: 6px 0; }
+  .sidebar-rail-button {
+    position: relative;
+    display: grid;
+    width: 32px;
+    height: 32px;
+    flex: none;
+    place-items: center;
+    border-radius: var(--radius-md);
+    color: var(--muted-foreground);
+    transition: color var(--motion-fast) ease, background-color var(--motion-fast) ease;
+  }
+  .sidebar-rail-button:hover { background: var(--row-hover); color: var(--foreground); }
+  .sidebar-rail-button[aria-current="page"] { background: var(--row-selected); color: var(--foreground); }
+  .sidebar-rail[data-shortcuts="visible"] .sidebar-rail-button { color: var(--foreground); }
+  .sidebar-rail-button:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
+  .sidebar-rail-button > svg { width: 16px; height: 16px; stroke-width: 1.7; }
+  .sidebar-rail-separator { width: 20px; height: 1px; flex: none; margin: 4px 0 6px; background: var(--sidebar-border); }
+  .sidebar-rail-badge {
+    position: absolute;
+    top: 0;
+    right: -2px;
+    min-width: 16px;
+    height: 15px;
+    border: 1px solid var(--sidebar);
+    border-radius: 8px;
+    background: var(--muted);
+    padding: 0 3px;
+    color: var(--foreground);
+    font-size: var(--text-meta);
+    font-weight: var(--weight-strong);
+    font-variant-numeric: tabular-nums;
+    line-height: 13px;
+    text-align: center;
+  }
+  .sidebar-rail-badge[data-staged] { background: var(--primary-fill); color: var(--primary-foreground); }
+  .sidebar-rail-dot { position: absolute; top: 5px; right: 5px; width: 6px; height: 6px; border-radius: 50%; background: var(--warning); box-shadow: 0 0 0 2px var(--sidebar); }
+  .sidebar-rail-button .sidebar-rail-shortcut { position: absolute; right: -3px; bottom: -2px; min-width: 14px; padding: 0 3px; line-height: 14px; }
+
+  /* The edge between sidebar and viewer: a wide invisible grip over a hairline that lights up while used. */
+  .sidebar-resize-handle {
+    position: relative;
+    z-index: 5;
+    width: 8px;
+    flex: none;
+    margin-inline: -4px;
+    cursor: col-resize;
+    touch-action: none;
+  }
+  .sidebar-resize-handle::after { position: absolute; top: 0; bottom: 0; left: 3px; width: 2px; background: transparent; content: ""; transition: background-color var(--motion-fast) ease; }
+  .sidebar-resize-handle:hover::after, .sidebar-resize-handle[data-dragging]::after, .sidebar-resize-handle:focus-visible::after { background: var(--primary); }
+  .sidebar-resize-handle:focus-visible { outline: none; }
+  .workspace:has(.sidebar-resize-handle[data-dragging]) { cursor: col-resize; user-select: none; }
+  .sidebar-resize-hint {
+    position: absolute;
+    top: 50%;
+    left: 12px;
+    translate: 0 -50%;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--popover);
+    padding: 4px 8px;
+    color: var(--muted-foreground);
+    font-size: var(--text-ui);
+    white-space: nowrap;
+    box-shadow: 0 4px 14px oklch(0 0 0 / 12%);
+    pointer-events: none;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .sidebar, .sidebar-rail-button { transition: none; }
   }
 
 

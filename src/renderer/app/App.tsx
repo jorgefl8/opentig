@@ -19,6 +19,8 @@ import type { BootstrapData, CommitSplitProposal, FetchResult, FileHistoryPathCh
 import { matchesCombo, resolveShortcuts, type ShortcutMap } from '../../shared/shortcuts';
 import { ShortcutsProvider } from './ShortcutsContext';
 import { Toolbar } from './Toolbar';
+import { SidebarCollapseButton, SidebarRail, type SidebarRailSection } from './SidebarRail';
+import { SidebarResizeHandle } from './SidebarResizeHandle';
 import { useBranchPush } from '@/features/refs/useBranchPush';
 import { PublishRemoteDialog } from '@/features/refs/PublishRemoteDialog';
 import { normalizeOpenFilesStates, type OpenFilesState } from '../../shared/open-files-state';
@@ -94,6 +96,8 @@ const SIDEBAR_VIEWS = ['changes', 'files', 'history', 'prs', 'search'] as const;
 const VIEW_STORAGE_KEY = 'opentig.lastView';
 const BACKGROUND_REFRESH_RETRY_MS = 1_000;
 type SidebarView = (typeof SIDEBAR_VIEWS)[number];
+/** Matches `.sidebar[data-collapsed]` in index.css. */
+const SIDEBAR_RAIL_WIDTH = 44;
 interface AppRefreshOptions {
   manual?: boolean;
   background?: boolean;
@@ -171,6 +175,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   const [preparedCommitIndex, setPreparedCommitIndex] = useState<number | null>(null);
   const [completedCommitIndices, setCompletedCommitIndices] = useState<ReadonlySet<number>>(() => new Set());
   const [commitPlanCollapsed, setCommitPlanCollapsed] = useState(false);
+  /** The sidebar width painted while its edge is being dragged. */
+  const [sidebarDragWidth, setSidebarDragWidth] = useState<number | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [repositorySyncOperations, setRepositorySyncOperations] = useState<ReadonlyMap<string, ProjectSyncAction>>(() => new Map());
 
@@ -1022,6 +1028,20 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       return true;
     } catch (reason) { reportError('Could not save settings', reason); return false; }
   };
+  /** Applies a sidebar layout change at once, then saves it; the saved preferences win when they return. */
+  const setSidebarLayout = useCallback((partial: Pick<Partial<Preferences>, 'sidebarCollapsed' | 'sidebarWidth'>) => {
+    setBootstrap((current) => current ? { ...current, preferences: { ...current.preferences, ...partial } } : current);
+    void opentig.app.setPreferences(partial).then(
+      (preferences) => setBootstrap((current) => current ? { ...current, preferences } : current),
+      (reason) => reportError('Could not save the sidebar layout', reason),
+    );
+  }, []);
+  const sidebarCollapsed = !mobile && Boolean(bootstrap?.preferences.sidebarCollapsed);
+  /** Opens a section from the rail or its shortcut, unfolding a collapsed sidebar so the section shows. */
+  const showSidebarView = useCallback((section: SidebarView) => {
+    setView(section);
+    if (sidebarCollapsed) setSidebarLayout({ sidebarCollapsed: false });
+  }, [setSidebarLayout, sidebarCollapsed]);
   const changeWrapLines = (value: boolean) => {
     if (mobile) setMobileWrapLines(value);
     else void updatePreference({ wrapLines: value });
@@ -1199,7 +1219,11 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       }
       if (repository && event.ctrlKey && !event.altKey && !event.metaKey) {
         const section = SIDEBAR_VIEWS[Number(event.key) - 1];
-        if (section) { event.preventDefault(); setView(section); }
+        if (section) { event.preventDefault(); showSidebarView(section); }
+      }
+      if (repository && !mobile && !event.repeat && matchesCombo(event, shortcuts.toggleSidebar)) {
+        event.preventDefault();
+        setSidebarLayout({ sidebarCollapsed: !sidebarCollapsed });
       }
       // Deliberately reachable from inside an editor: none of these produce
       // text, and VS Code binds them the same way while typing.
@@ -1217,7 +1241,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [welcomeReplay, openRepository, quickOpen, refresh, refreshFilesOnly, repository, runTabKeyboardAction, shortcuts]);
+  }, [welcomeReplay, openRepository, quickOpen, refresh, refreshFilesOnly, repository, runTabKeyboardAction, shortcuts, mobile, sidebarCollapsed, setSidebarLayout, showSidebarView]);
 
   // One guard for every worktree's drafts. Per-editor listeners could only see
   // the file currently on screen, so switching tabs would drop the warning.
@@ -1848,7 +1872,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
         setUndoCommit(null);
         setViewerSelection(null);
         setMobilePane('list');
-        setView('changes');
+        // The draft lands in the commit box, which a collapsed sidebar hides.
+        showSidebarView('changes');
         if (!commitMessage.trim()) {
           setCommitMessage(result.message);
         } else {
@@ -2250,6 +2275,21 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   const staged = status?.changes.filter((change) => change.staged && !change.conflict) ?? [];
   const changed = status?.changes.filter((change) => change.unstaged && !change.conflict) ?? [];
   const stagedCount = status?.stagedCount ?? 0;
+  const changeCount = status?.changes.length ?? 0;
+  const sidebarSections: SidebarRailSection<SidebarView>[] = SIDEBAR_VIEWS.map((item) => {
+    if (item === 'changes') {
+      return {
+        id: item, icon: <IconGitCompare />,
+        label: stagedCount > 0 ? `Changes · ${stagedCount} staged of ${changeCount}` : changeCount > 0 ? `Changes · ${changeCount}` : 'Changes',
+        badge: stagedCount > 0 ? { value: stagedCount, staged: true } : { value: changeCount, staged: false },
+      };
+    }
+    if (item === 'files') return { id: item, icon: <IconFiles />, label: hasUnsavedFiles ? 'Files · unsaved changes' : 'Files', unsaved: hasUnsavedFiles };
+    if (item === 'history') return { id: item, icon: <IconHistory />, label: 'History' };
+    if (item === 'prs') return { id: item, icon: <IconBrandGithub />, label: pulls?.length ? `GitHub · ${pulls.length} pull ${pulls.length === 1 ? 'request' : 'requests'}` : 'GitHub' };
+    return { id: item, icon: <IconSearch />, label: 'Search' };
+  });
+  const sidebarWidth = sidebarDragWidth ?? bootstrap.preferences.sidebarWidth;
   // Docked at the bottom of the sidebar on desktop; in a sheet on phones, whose text and plan live here and outlast it.
   const commitComposer = (
     <CommitComposer
@@ -2448,7 +2488,22 @@ export default function App({ initialView, initialSelection, pullRequestCreation
 
         <RepositoryLinksContext.Provider value={repositoryLinks}>
         <main className={`workspace${pendingRepositoryId && repositoryLoadVisible ? ' workspace-switching' : ''}`} aria-busy={repositoryLoadPhase ? true : undefined}>
-          <aside className="sidebar" style={{ width: bootstrap.preferences.sidebarWidth }}>
+          <aside
+            className="sidebar"
+            data-collapsed={sidebarCollapsed ? '' : undefined}
+            data-resizing={sidebarDragWidth !== null ? '' : undefined}
+            style={{ width: sidebarCollapsed && sidebarDragWidth === null ? undefined : sidebarWidth }}
+          >
+            {sidebarCollapsed && (
+              <SidebarRail
+                sections={sidebarSections}
+                active={view}
+                ctrlHeld={ctrlHeld}
+                toggleCombo={shortcuts.toggleSidebar}
+                onSelect={showSidebarView}
+                onExpand={() => setSidebarLayout({ sidebarCollapsed: false })}
+              />
+            )}
             <nav className="sidebar-tabs tab-list" data-shortcuts={ctrlHeld ? 'visible' : undefined} aria-label="Repository views">
               {SIDEBAR_VIEWS.map((item, index) => (
                 <button
@@ -2465,6 +2520,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
                   {ctrlHeld && <span className="sidebar-tab-shortcut" aria-hidden="true">{index + 1}</span>}
                 </button>
               ))}
+              {!mobile && <SidebarCollapseButton toggleCombo={shortcuts.toggleSidebar} onCollapse={() => setSidebarLayout({ sidebarCollapsed: true })} />}
             </nav>
             <div className="sidebar-body">
               <div className="view-fade">
@@ -2610,6 +2666,15 @@ export default function App({ initialView, initialSelection, pullRequestCreation
             {!mobile && commitComposer}
             {!welcomeReplay && (bootstrap.onboardingVersion === 0 || checklistReplay) && <GettingStartedChecklist key={repository.id} repository={repository} onDismiss={dismissChecklist} onSettings={openSettings} />}
           </aside>
+          {!mobile && !sidebarCollapsed && (
+            <SidebarResizeHandle
+              width={bootstrap.preferences.sidebarWidth}
+              railWidth={SIDEBAR_RAIL_WIDTH}
+              onPreview={setSidebarDragWidth}
+              onResize={(width) => setSidebarLayout({ sidebarWidth: width })}
+              onCollapse={() => setSidebarLayout({ sidebarCollapsed: true })}
+            />
+          )}
           <section className="viewer-pane">
             {!mobile && (view === 'files' || viewerSelection?.type === 'file') && (
               <OpenFilesStrip
