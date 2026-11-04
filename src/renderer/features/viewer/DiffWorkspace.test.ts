@@ -358,3 +358,12 @@ rename to src/new.ts
     expect(container.querySelector('.diff-file-header .diff-workspace-actions')).toBeNull();
   });
 });
+
+describe('file fold animation', () => {
+  it('animates ordinary files and folds large ones immediately', async () => {
+    const { animatesFileToggle } = await import('./patch-utils');
+    expect(animatesFileToggle({ additions: 120, deletions: 30 }, 6)).toBe(true);
+    expect(animatesFileToggle({ additions: 380, deletions: 40 }, 6)).toBe(false);
+    expect(animatesFileToggle({ additions: 3, deletions: 1 }, 41)).toBe(false);
+  });
+});

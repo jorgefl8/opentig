@@ -2,18 +2,19 @@ import { useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { FileDiff, Virtualizer } from '@pierre/diffs/react';
 import {
-  IconArrowsMaximize, IconArrowsMinimize, IconChevronDown, IconChevronRight, IconFileArrowRight,
+  IconArrowsMaximize, IconArrowsMinimize, IconChevronRight, IconFileArrowRight,
   IconLayoutColumns, IconLayoutRows, IconTextWrap, IconX,
 } from '@tabler/icons-react';
 import type { DiffResult, DiffViewPreference, ThemePreference } from '@shared/contracts';
 import { Button } from '@/components/ui/button';
+import { Reveal } from '@/components/Reveal';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useMobileChrome } from '@/components/mobile-chrome-context';
 import { useTruncatedText } from '@/lib/use-truncated-text';
 import { getVsCodeFileIconUrl } from '@/lib/vscode-icons';
 import { useParsedDiff } from './useParsedDiff';
 import { OPENTIG_CODE_THEMES } from './diffThemes';
-import { type DiffFileEntry, VIEWER_SCROLLBAR_CSS } from './patch-utils';
+import { animatesFileToggle, type DiffFileEntry, VIEWER_SCROLLBAR_CSS } from './patch-utils';
 
 /** A commit reads as one document: its message and files lead into its diffs. */
 export interface DiffCommitLayout {
@@ -154,14 +155,14 @@ function ParsedDiffWorkspace({ contentKey, diff, diffView, themeType, wrapLines,
                     ? files.length === 1 ? <RenamedFrom file={file} /> : <CompactFileHeader file={file} actions={null} />
                     : <CompactFileHeader file={file} actions={diffActions(false)} />
                   : <CollapsibleFileHeader file={file} collapsed={isCollapsed} onToggle={() => toggleFile(file.key)} onOpenFile={onOpenFile} />}
-                {!isCollapsed && (
+                <Reveal open={!isCollapsed} animate={animatesFileToggle(file, files.length)}>
                   <FileDiff
                     key={`${contentKey}:${file.key}:${diffView}:${wrapLines}`}
                     fileDiff={file.fileDiff}
                     disableWorkerPool={diff.lineCount > 10_000}
                     options={{ diffStyle: diffView, diffIndicators: 'classic', themeType, theme: OPENTIG_CODE_THEMES, overflow: wrapLines ? 'wrap' : 'scroll', disableFileHeader: true, hunkSeparators: 'line-info-basic', unsafeCSS: VIEWER_SCROLLBAR_CSS }}
                   />
-                )}
+                </Reveal>
               </section>
             );
           })}
@@ -234,7 +235,7 @@ function CollapsibleFileHeader({ file, collapsed, onToggle, onOpenFile }: { file
     <div className="diff-file-header" onClick={(event) => { if (!(event.target as Element).closest('button')) onToggle(); }}>
       <Tooltip disabled={!truncated}>
         <TooltipTrigger render={<button type="button" className="diff-file-toggle" aria-expanded={!collapsed} onClick={onToggle} />}>
-          {collapsed ? <IconChevronRight className="diff-file-chevron" /> : <IconChevronDown className="diff-file-chevron" />}
+          <IconChevronRight className={`diff-file-chevron folder-chevron${collapsed ? '' : ' open'}`} />
           <DiffFileIcon path={file.path} />
           <span ref={pathRef} className="diff-file-path"><DiffFilePathLabel path={file.path} /></span>
         </TooltipTrigger>

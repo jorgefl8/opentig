@@ -86,3 +86,12 @@ export function buildDiffFileEntry(filePatch: string, index: number): DiffFileEn
     changeType: parsed.type,
   };
 }
+
+// Animating a long diff's height means laying out every line for each frame. Past these
+// sizes a file folds and unfolds immediately, as it does with reduced motion.
+const ANIMATED_FILE_LINES = 400;
+const ANIMATED_FILE_COUNT = 40;
+
+export function animatesFileToggle(file: Pick<DiffFileEntry, 'additions' | 'deletions'>, fileCount: number): boolean {
+  return fileCount <= ANIMATED_FILE_COUNT && file.additions + file.deletions <= ANIMATED_FILE_LINES;
+}

@@ -1763,7 +1763,7 @@ section[data-sileo-viewport] [data-sileo-title] { text-transform: none; }
   .commit-expand:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
   /* An open row keeps its chevron, so it takes its place in the row. */
   .commit-item.expanded .commit-row-actions { position: static; height: auto; padding: 0; background: none; mask-image: none; opacity: 1; pointer-events: auto; }
-  .commit-files { position: relative; z-index: 1; display: grid; gap: 1px; padding: 2px 8px 10px 0; animation: fade-rise var(--motion-med) var(--ease-out); }
+  .commit-files { position: relative; z-index: 1; display: grid; gap: 1px; padding: 2px 8px 10px 0; }
   .commit-description { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 3; margin: 0 0 6px; color: var(--muted-foreground); font-size: var(--text-meta); line-height: 1.5; overflow-wrap: anywhere; white-space: pre-wrap; }
   .commit-files-summary { padding-bottom: 3px; color: var(--muted-foreground); font-size: var(--text-meta); }
   .commit-files-message { display: flex; align-items: center; gap: 7px; padding-block: 2px; color: var(--muted-foreground); font-size: var(--text-meta); }
