@@ -157,7 +157,7 @@ When you open something from a list and come back, the list is where you left it
 
 Changes is **always a flat list on a phone**, whichever of **Tree** or **List** you chose. That choice stays saved for the desktop layout. Conflicts come first, then **Staged** and **Not staged**, with **Stage all** or **Unstage all** beside the count.
 
-A row has the file's name, its folder when it isn't at the root, its status letter, and a **+** or **−** button at the far right to stage or unstage it. Tap the row for its diff, or its preview for an image, SVG, or HTML file; the diff has its own stage button and **⋯**. There are no folder rows, so staging a whole folder isn't available on a phone; **Stage all** is.
+A row has the file's name, its folder when it isn't at the root, its status letter, and a **+** or **−** button at the far right to stage or unstage it. Tap the row for its diff, or its preview for an image, SVG, or HTML file; the diff's top bar has **⋯** for opening the file, wrapping lines, or discarding a working-tree change. There are no folder rows, so staging a whole folder isn't available on a phone; **Stage all** is.
 
 Press and hold a row for:
 

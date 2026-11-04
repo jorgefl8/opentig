@@ -25,10 +25,10 @@ beforeEach(() => {
 afterEach(async () => { await act(async () => root.unmount()); document.body.innerHTML = ''; vi.unstubAllGlobals(); vi.clearAllMocks(); });
 
 const patch = 'diff --git a/src/a.js b/src/a.js\n--- a/src/a.js\n+++ b/src/a.js\n@@ -1 +1,2 @@\n-one\n+uno\n+dos\n';
-const handlers = { onOpenFile: vi.fn(), onWrapLinesChange: vi.fn(), onMoveAcrossIndex: vi.fn(), onDiscard: vi.fn() };
+const handlers = { onOpenFile: vi.fn(), onWrapLinesChange: vi.fn(), onDiscard: vi.fn() };
 async function renderDiff(overrides: Partial<Parameters<typeof MobileDiffBar>[0]> = {}) {
   await act(async () => root.render(createElement(MobileChromeContext.Provider, { value: hosts }, createElement(MobileDiffBar, {
-    path: 'src/a.js', kind: 'unstaged', diff: { path: 'src/a.js', patch, binary: false, truncated: false, lineCount: 3 }, wrapLines: true, readOnly: false, busy: false, ...handlers, ...overrides,
+    path: 'src/a.js', kind: 'unstaged', diff: { path: 'src/a.js', patch, binary: false, truncated: false, lineCount: 3 }, wrapLines: true, readOnly: false, ...handlers, ...overrides,
   }))));
 }
 const rows = () => [...document.querySelectorAll<HTMLButtonElement>('.mobile-sheet-action')];
@@ -47,22 +47,6 @@ describe('a diff on a phone', () => {
     expect(hosts.title!.querySelector('small')?.textContent).toBe('+2 −1');
     await renderDiff({ path: 'a.js', diff: null });
     expect(hosts.title!.querySelector('small')).toBeNull();
-  });
-
-  it('stages a working-tree change and unstages a staged one', async () => {
-    await renderDiff();
-    await act(async () => hosts.actions!.querySelector<HTMLButtonElement>('button[aria-label="Stage this file"]')!.click());
-    expect(handlers.onMoveAcrossIndex).toHaveBeenCalledWith('src/a.js', 'unstaged');
-    await renderDiff({ kind: 'staged' });
-    await act(async () => hosts.actions!.querySelector<HTMLButtonElement>('button[aria-label="Unstage this file"]')!.click());
-    expect(handlers.onMoveAcrossIndex).toHaveBeenLastCalledWith('src/a.js', 'staged');
-  });
-
-  it('holds staging while the repository is busy or read-only', async () => {
-    await renderDiff({ busy: true });
-    expect(hosts.actions!.querySelector<HTMLButtonElement>('button[aria-label="Stage this file"]')!.disabled).toBe(true);
-    await renderDiff({ readOnly: true });
-    expect(hosts.actions!.querySelector<HTMLButtonElement>('button[aria-label="Stage this file"]')!.disabled).toBe(true);
   });
 
   it('opens the file, switches wrapping without closing, and only asks to discard a working-tree change', async () => {

@@ -65,8 +65,6 @@ interface ViewerProps {
   githubRepository?: string | null | undefined;
   /** The repository is busy with something an undo can't run alongside. */
   undoBlocked?: boolean | undefined;
-  /** The repository is running something that staging can't run alongside. */
-  busy?: boolean | undefined;
   onUndoCommit?: ((commit: CommitInfo) => void) | undefined;
   draftFor(path: string): RuntimeFileDraft | null;
   onSelect(selection: ViewerSelection): void;
@@ -78,8 +76,7 @@ interface ViewerProps {
   onDraftSaved(path: string): void;
   onUpdateConflict(path: string, content: string): Promise<boolean>;
   onResolveConflict(path: string, content: string): Promise<boolean>;
-  /** A phone's diff bar stages, unstages and discards the change it shows. */
-  onMoveDiffAcrossIndex?: ((path: string, kind: 'staged' | 'unstaged') => void) | undefined;
+  /** A phone's diff bar discards the change it shows. */
   onDiscardDiff?: ((path: string) => void) | undefined;
 }
 
@@ -98,7 +95,7 @@ const diffCache = new ByteBudgetLru<string, DiffResult>({
 });
 let diffCacheRepositoryId: string | null = null;
 
-export default function Viewer({ repositoryId, selection, diffView, wrapLines, theme, revision, readOnly, commits, githubRepository, undoBlocked, busy, onUndoCommit, draftFor, onSelect, onOpenFile, onDiffViewChange, onWrapLinesChange, onDraftChange, onDraftSaved, onUpdateConflict, onResolveConflict, onMoveDiffAcrossIndex, onDiscardDiff }: ViewerProps) {
+export default function Viewer({ repositoryId, selection, diffView, wrapLines, theme, revision, readOnly, commits, githubRepository, undoBlocked, onUndoCommit, draftFor, onSelect, onOpenFile, onDiffViewChange, onWrapLinesChange, onDraftChange, onDraftSaved, onUpdateConflict, onResolveConflict, onDiscardDiff }: ViewerProps) {
   const [data, setData] = useState<ViewerData>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -426,10 +423,8 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
       diff={data?.docKey === docKey && data.type === 'diff' ? data.value : null}
       wrapLines={wrapLines}
       readOnly={readOnly}
-      busy={Boolean(busy)}
       onOpenFile={onOpenFile}
       onWrapLinesChange={onWrapLinesChange}
-      onMoveAcrossIndex={onMoveDiffAcrossIndex}
       onDiscard={onDiscardDiff}
     />
   ) : selection?.type === 'commit' || selection?.type === 'commit-file' ? (

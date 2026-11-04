@@ -1057,13 +1057,6 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     },
   } : null, [githubNameWithOwner, selectViewer]);
 
-  /** From a diff's own top bar: the same file stays on screen, showing the side it moved to. */
-  const moveDiffAcrossIndex = async (path: string, kind: 'staged' | 'unstaged') => {
-    if (!await runIndexOperation(kind === 'unstaged' ? 'stage' : 'unstage', [path])) return;
-    const current = viewerSelectionRef.current;
-    if (current?.type === 'diff' && current.path === path && current.kind === kind) selectViewer({ type: 'diff', path, kind: kind === 'unstaged' ? 'staged' : 'unstaged' });
-  };
-
   /** The single entry point for every `type: 'file'` selection in the app. */
   const openFile = useCallback((path: string, mode: OpenMode = 'preview'): boolean => {
     const repositoryId = repositoryRef.current?.id;
@@ -2628,14 +2621,12 @@ export default function App({ initialView, initialSelection, pullRequestCreation
                       commits={commits ?? []}
                       githubRepository={githubInfo?.isGitHub ? githubInfo.nameWithOwner : null}
                       undoBlocked={Boolean(status?.operation) || undoingCommit}
-                      busy={Boolean(busy)}
                       onUndoCommit={setUndoCommit}
                       draftFor={(path) => readFileDraft(repository.id, path)}
                       onSelect={selectViewer}
                       onOpenFile={openFile}
                       onDiffViewChange={(value) => void updatePreference({ diffView: value })}
                       onWrapLinesChange={changeWrapLines}
-                      onMoveDiffAcrossIndex={(path, kind) => void moveDiffAcrossIndex(path, kind)}
                       onDiscardDiff={(path) => discardChanges([path])}
                       onDraftChange={storeFileDraft}
                       onDraftSaved={(path) => {

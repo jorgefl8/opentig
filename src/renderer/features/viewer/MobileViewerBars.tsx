@@ -1,9 +1,8 @@
 import { useMemo } from 'react';
-import { IconBrandGithub, IconCopy, IconFileArrowRight, IconGitPullRequest, IconMinus, IconPlus, IconRestore, IconTextWrap } from '@tabler/icons-react';
+import { IconBrandGithub, IconCopy, IconFileArrowRight, IconGitPullRequest, IconRestore, IconTextWrap } from '@tabler/icons-react';
 import type { DiffResult } from '@shared/contracts';
 import type { CommitInfo } from '@shared/git-types';
 import { MobileActionsMenu, MobileViewerActions, MobileViewerTitle, type MobileMenuItem } from '@/components/MobileChrome';
-import { Button } from '@/components/ui/button';
 import { copyCommitHash } from '@/features/history/copy-commit-hash';
 import { canUndoCommit, commitGitHubUrl, commitReference } from '@/features/history/history-presentation';
 import { openExternalUrl } from '@/lib/browser-capabilities';
@@ -15,16 +14,14 @@ const nameAndFolder = (path: string) => {
 };
 
 /** A diff's top bar: which file and how much changed, then what can be done with this change. */
-export function MobileDiffBar({ path, kind, diff, wrapLines, readOnly, busy, onOpenFile, onWrapLinesChange, onMoveAcrossIndex, onDiscard }: {
+export function MobileDiffBar({ path, kind, diff, wrapLines, readOnly, onOpenFile, onWrapLinesChange, onDiscard }: {
   path: string;
   kind: 'staged' | 'unstaged';
   diff: DiffResult | null;
   wrapLines: boolean;
   readOnly: boolean;
-  busy: boolean;
   onOpenFile(path: string): void;
   onWrapLinesChange(value: boolean): void;
-  onMoveAcrossIndex?: ((path: string, kind: 'staged' | 'unstaged') => void) | undefined;
   onDiscard?: ((path: string) => void) | undefined;
 }) {
   const { name, folder } = nameAndFolder(path);
@@ -41,11 +38,6 @@ export function MobileDiffBar({ path, kind, diff, wrapLines, readOnly, busy, onO
       {stats && <span className="mobile-viewer-stats"><span className="add">+{stats.additions}</span> <span className="del">−{stats.deletions}</span></span>}
     </>} />
     <MobileViewerActions>
-      {onMoveAcrossIndex && (
-        <Button variant="ghost" size="icon" className="mobile-bar-button" disabled={readOnly || busy} aria-label={kind === 'unstaged' ? 'Stage this file' : 'Unstage this file'} onClick={() => onMoveAcrossIndex(path, kind)}>
-          {kind === 'unstaged' ? <IconPlus /> : <IconMinus />}
-        </Button>
-      )}
       <MobileActionsMenu label="More actions for this change" title={name} items={items} />
     </MobileViewerActions>
   </>;
