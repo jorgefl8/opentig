@@ -75,3 +75,19 @@ it("asks where to open links into the open repository, and leaves the rest as li
   expect(open).toHaveBeenCalledWith({ kind: 'release', tag: 'v1' });
   openExternal.mockRestore();
 });
+
+it('scrolls a `#section` link\'s pane to its heading instead of changing the page address', async () => {
+  await render('[Jump](#later-section)\n\n## Later section');
+  const pane = container.querySelector<HTMLElement>('.markdown-prose')!;
+  // jsdom has no layout, so the text's box stands in for a scrolled pane.
+  pane.style.overflowY = 'auto';
+  Object.defineProperty(pane, 'scrollHeight', { value: 2000 });
+  Object.defineProperty(pane, 'clientHeight', { value: 400 });
+  const scrollTo = vi.fn();
+  pane.scrollTo = scrollTo;
+  const link = container.querySelector<HTMLAnchorElement>('a[href="#later-section"]')!;
+  const click = new MouseEvent('click', { bubbles: true, cancelable: true });
+  await act(async () => { link.dispatchEvent(click); });
+  expect(click.defaultPrevented).toBe(true);
+  expect(scrollTo).toHaveBeenCalledOnce();
+});

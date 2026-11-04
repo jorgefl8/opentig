@@ -5,6 +5,7 @@ import markedFootnote from 'marked-footnote';
 import markedKatex from 'marked-katex-extension';
 import { getVsCodeFileIconUrl, getVsCodeLanguageIconUrl } from '../../lib/vscode-icons';
 import { highlightCode } from './highlight';
+import { HEADING_ID_PREFIX } from './markdown-links';
 
 const TABLER_COPY_ICON = [
   '<svg class="copy-button-icon tabler-icon tabler-icon-copy" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">',
@@ -13,8 +14,26 @@ const TABLER_COPY_ICON = [
   '</svg>',
 ].join('');
 
+/**
+ * GitHub's anchor for a heading's text: lowercase, punctuation dropped, spaces as hyphens, and a
+ * repeated heading numbered from -1, so `#section` links written for GitHub land in the same place.
+ */
+export function createHeadingSlugger(): (text: string) => string {
+  const seen = new Map<string, number>();
+  return (text) => {
+    const base = text.toLowerCase().replace(/[^\p{L}\p{M}\p{N}\p{Pc} -]/gu, '').replaceAll(' ', '-');
+    let slug = base;
+    let count = seen.get(base) ?? 0;
+    while (seen.has(slug)) slug = `${base}-${++count}`;
+    seen.set(base, count);
+    seen.set(slug, 0);
+    return slug;
+  };
+}
+
 export async function renderMarkdown(content: string): Promise<string> {
   const highlights = new Map<string, string>();
+  const slug = createHeadingSlugger();
   const markdown = new Marked(
     markedAlert(),
     markedFootnote(),
@@ -23,6 +42,10 @@ export async function renderMarkdown(content: string): Promise<string> {
       async: true,
       gfm: true,
       renderer: {
+        heading({ tokens, depth }: Tokens.Heading) {
+          const plain = decodeEntities(this.parser.parseInline(tokens, this.parser.textRenderer));
+          return `<h${depth} id="${escapeAttribute(HEADING_ID_PREFIX + slug(plain))}">${this.parser.parseInline(tokens)}</h${depth}>\n`;
+        },
         code({ text, lang }: Tokens.Code) {
           const descriptor = parseLanguageDescriptor(lang);
           if (descriptor.language === 'mermaid') {
@@ -88,6 +111,10 @@ function escapeHtml(value: string): string {
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#39;');
+}
+
+function decodeEntities(value: string): string {
+  return value.replace(/&(amp|lt|gt|quot|#39);/g, (_match, name: string) => ({ amp: '&', lt: '<', gt: '>', quot: '"', '#39': "'" })[name] ?? '');
 }
 
 function escapeAttribute(value: string): string {

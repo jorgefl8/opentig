@@ -106,11 +106,16 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
   const requestToken = useRef(0);
   const fileDirty = useRef(false);
   const docKey = documentKey(repositoryId, selection);
+  // A link to a section of another HTML or Markdown file opens the file and then scrolls to that section.
   const [htmlAnchor, setHtmlAnchor] = useState<{ repositoryId: string; path: string; hash: string; id: string } | null>(null);
   const navigateHtml = useCallback((path: string, hash: string) => {
     setHtmlAnchor({ repositoryId, path, hash, id: crypto.randomUUID() });
     onOpenFile(path);
   }, [onOpenFile, repositoryId]);
+  const openMarkdownLink = useCallback((path: string, hash?: string) => {
+    if (hash && hash !== '#') navigateHtml(path, hash);
+    else onOpenFile(path);
+  }, [navigateHtml, onOpenFile]);
   useEffect(() => {
     if (htmlAnchor && (htmlAnchor.repositoryId !== repositoryId || selection?.type !== 'file' || htmlAnchor.path !== selection.path)) setHtmlAnchor(null);
   }, [htmlAnchor, repositoryId, selection]);
@@ -308,7 +313,8 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
           themeType={themeType}
           wrapLines={wrapLines}
           readOnly={readOnly || file.tooLarge}
-          onOpenFile={onOpenFile}
+          onOpenFile={openMarkdownLink}
+          anchor={htmlAnchor?.repositoryId === repositoryId && htmlAnchor.path === file.path ? htmlAnchor : null}
           onDirtyChange={handleFileDirtyChange}
           onDraftChange={reportDraft(file)}
           onSave={saveFile}

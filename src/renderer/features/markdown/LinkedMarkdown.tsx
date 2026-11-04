@@ -1,7 +1,8 @@
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useLayoutEffect, useRef, useState, type MouseEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { normalizeExternalUrl } from '@shared/external-url';
 import { ExternalLink } from '@/components/ExternalLink';
+import { scrollToMarkdownAnchor } from './markdown-links';
 
 interface MarkdownLink {
   mount: HTMLSpanElement;
@@ -31,8 +32,15 @@ export function LinkedMarkdown({ html, className = 'markdown-prose' }: { html: s
     }
     setLinks(nextLinks);
   }, [html]);
+  // A `#section` link scrolls to its heading in this text, not to the page's address.
+  const followAnchor = (event: MouseEvent<HTMLDivElement>) => {
+    const link = (event.target as HTMLElement).closest<HTMLAnchorElement>('a[href^="#"]');
+    if (!link) return;
+    event.preventDefault();
+    scrollToMarkdownAnchor(event.currentTarget, link.getAttribute('href') ?? '');
+  };
   return <>
-    <div ref={ref} className={className} />
+    <div ref={ref} className={className} onClick={followAnchor} />
     {links.map((link, index) => createPortal(
       <ExternalLink href={link.href} className={link.className} id={link.id} dangerouslySetInnerHTML={{ __html: link.html }} />,
       link.mount, String(index),

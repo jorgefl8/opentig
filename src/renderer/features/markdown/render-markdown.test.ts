@@ -20,7 +20,7 @@ describe('renderMarkdown', () => {
       '```',
     ].join('\n'));
 
-    expect(html).toContain('<h1>Title</h1>');
+    expect(html).toContain('<h1 id="user-content-title">Title</h1>');
     expect(html).toContain('type="checkbox"');
     expect(html).toContain('markdown-alert');
     expect(html).toContain('footnote');
@@ -108,4 +108,15 @@ describe('renderMarkdown', () => {
     const html = await renderMarkdown('```totally-unknown\nvalue\n```');
     expect(html).not.toContain('class="markdown-code-icon"');
   });
+
+  it('gives headings GitHub\'s anchors, so `#section` links land on them', async () => {
+    const html = await renderMarkdown(['### Optional AI assistance', '## Repositories and **projects**', '## `npm run` & friends!', '## Setup', '## Setup', '## Ñandú 2.0'].join('\n\n'));
+    expect(html).toContain('id="user-content-optional-ai-assistance"');
+    expect(html).toContain('id="user-content-repositories-and-projects"');
+    expect(html).toContain('id="user-content-npm-run--friends"');
+    expect(html).toContain('id="user-content-setup"');
+    expect(html).toContain('id="user-content-setup-1"');
+    expect(html).toContain('id="user-content-ñandú-20"');
+  });
 });
+

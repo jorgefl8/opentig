@@ -219,7 +219,7 @@ Preview/Code switches restore roughly the same scroll position in the destinatio
 <details>
 <summary>Links in Markdown previews</summary>
 
-External links (`http(s)://` and protocol-relative URLs) open in the system browser; `mailto:` opens the mail client. Relative repository links open the file in a new tab, and `#anchor` links scroll within the preview.
+External links (`http(s)://` and protocol-relative URLs) open in the system browser; `mailto:` opens the mail client. Relative repository links open the file in a new tab. `#section` links scroll the preview to that heading, with the same anchors GitHub gives headings, and a link such as `guide.md#setup` opens the file at that section. The same `#section` links work in PR descriptions, comments and release notes.
 
 Hovering a link shows a styled tooltip with its destination, truncated when long, and the action: open in browser, open in mail app, or open file.
 
