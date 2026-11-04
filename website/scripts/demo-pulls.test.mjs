@@ -146,3 +146,14 @@ test('PR actions, comments, and reviews are simulated in memory', () => {
   demoPulls.update({ ...base, number: 25, title: 'Group tasks by owner and team', body: 'Updated.', expectedUpdatedAt: demoPulls.get(25).updatedAt });
   assert.equal(demoPulls.get(25).title, 'Group tasks by owner and team');
 });
+
+test('sample AI responses describe the staged files and split code from documentation', async () => {
+  const { sampleCommitMessage, samplePullRequestDraft } = await import('../demo/sample-ai.ts');
+  const mixed = sampleCommitMessage(['src/filter-tasks.js', 'test/filter-tasks.test.js', 'README.md']);
+  assert.equal(mixed.subject, 'feat(filters): hide completed tasks by default');
+  assert.deepEqual(mixed.proposal.commits.map(c => c.paths), [['src/filter-tasks.js', 'test/filter-tasks.test.js'], ['README.md']]);
+  assert.equal(sampleCommitMessage(['CHANGELOG.md']).proposal, null);
+  assert.match(sampleCommitMessage(['CHANGELOG.md']).subject, /^docs:/);
+  assert.throws(() => sampleCommitMessage([]), /Stage the changes/);
+  assert.equal(samplePullRequestDraft().model, 'sample');
+});

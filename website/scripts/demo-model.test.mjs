@@ -132,15 +132,112 @@ test("an untracked file can be staged as added, unstaged, committed, or discarde
   assert.equal(fresh.files().some((f) => f.path === "CHANGELOG.md"), false);
 });
 
-test("the branch tracks its remote, and pushing sends the commits made since", () => {
+test("publishing tracks the remote branch, and pushing sends the commits made since", () => {
   const repo = new DemoRepository();
-  assert.deepEqual([repo.status().upstream, repo.status().ahead], ["origin/feature/task-filters", 0]);
-  assert.equal(repo.push(), 0);
+  assert.deepEqual([repo.status().upstream, repo.status().ahead], [null, 0]);
+  assert.deepEqual(repo.undoLatest(repo.commits[0].info.oid), { status: "no-upstream" });
+  assert.deepEqual(repo.push(), { published: true });
+  assert.equal(repo.status().upstream, "origin/feature/task-filters");
   repo.stage([filter]);
   repo.commit("Hide completed tasks");
   repo.stage([tests]);
   repo.commit("Cover completed tasks");
   assert.equal(repo.status().ahead, 2);
-  assert.equal(repo.push(), 2);
+  assert.deepEqual(repo.push(), { published: false, commits: 2 });
   assert.equal(repo.status().ahead, 0);
+  assert.equal(repo.commits[0].info.upstreamState, "published");
+});
+
+test("undoing the latest unpushed commit keeps its changes staged", () => {
+  const repo = new DemoRepository();
+  repo.push();
+  repo.stage([filter, tests]);
+  const { oid } = repo.commit("Hide completed tasks");
+  assert.deepEqual(repo.undoLatest("stale"), { status: "stale-head" });
+  const undone = repo.undoLatest(oid);
+  assert.deepEqual([undone.status, undone.undoneOid, undone.stagedCount], ["success", oid, 2]);
+  assert.equal(repo.commits.length, 1);
+  assert.equal(repo.commits[0].info.isHead, true);
+  const again = repo.commit("Hide completed tasks again");
+  assert.notEqual(again.oid, oid);
+  repo.push();
+  assert.deepEqual(repo.undoLatest(again.oid), { status: "not-local" });
+});
+
+test("files can be created, renamed, and deleted, and deletions are staged and committed", () => {
+  const repo = new DemoRepository();
+  assert.equal(repo.createFile("src", "board.ts").status, "created");
+  assert.equal(repo.createFile("src", "board.ts").status, "conflict");
+  assert.deepEqual(repo.rename("src/board.ts", "columns.ts"), { status: "renamed", from: "src/board.ts", to: "src/columns.ts" });
+  assert.equal(repo.status().changes.find((f) => f.path === "src/columns.ts").kind, "untracked");
+
+  assert.equal(repo.remove(["data"]), 1);
+  const deleted = () => repo.status().changes.find((f) => f.path === "data/tasks.json");
+  assert.deepEqual([deleted().kind, deleted().worktreeStatus], ["deleted", "D"]);
+  assert.match(repo.diff("data/tasks.json", "unstaged").patch, /deleted file mode 100644/);
+  repo.stage(["data/tasks.json"]);
+  assert.deepEqual([deleted().indexStatus, deleted().staged], ["D", true]);
+  const { oid } = repo.commit("Remove the sample task data");
+  assert.deepEqual(repo.commitFiles(oid).map((f) => [f.path, f.kind]), [["data/tasks.json", "deleted"]]);
+
+  const restored = new DemoRepository();
+  restored.remove(["README.md"]);
+  restored.discard(["README.md"]);
+  assert.equal(restored.files().some((f) => f.path === "README.md"), true);
+});
+
+test("search replacements change one match, one file, or every listed file", () => {
+  const repo = new DemoRepository();
+  const options = { query: "tasks", matchCase: true, wholeWord: true, regex: false, includeIgnored: false };
+  const before = repo.read(filter);
+  const one = repo.replace({ options, replacement: "items", scope: { kind: "match", path: filter, revision: "", line: 2, column: 29 } });
+  assert.equal(one.status, "replaced");
+  assert.equal(one.replacements, 1);
+  assert.notEqual(repo.read(filter), before);
+  assert.deepEqual(repo.replace({ options: { ...options, query: "missing" }, replacement: "x", scope: { kind: "file", path: filter, revision: "" } }), { status: "no-match" });
+});
+
+test("preparing a commit group leaves exactly its files staged", () => {
+  const repo = new DemoRepository();
+  const all = repo.status().changes.map((f) => f.path);
+  repo.stage(all);
+  repo.prepareGroup([filter, tests], all);
+  assert.deepEqual(repo.status().changes.filter((f) => f.staged).map((f) => f.path).sort(), [filter, tests].sort());
+});
+
+test("files and folders can be copied, cut and pasted, moved, and created empty", () => {
+  const repo = new DemoRepository();
+  repo.copy(["package.json"]);
+  assert.deepEqual(repo.paste("", []), { status: "pasted", source: "files", created: ["package copy.json"] });
+  assert.deepEqual(repo.paste("", ["package.json"]).created, ["package copy 2.json"]);
+  const { transferId } = repo.cut(["tsconfig.json"]);
+  assert.deepEqual(repo.paste("src", ["tsconfig.json"], transferId), { status: "pasted", source: "cut", created: ["src/tsconfig.json"] });
+  assert.equal(Object.hasOwn(repo.working, "tsconfig.json"), false);
+
+  assert.equal(repo.track("Create folder", () => repo.createEntry("", "docs", "directory")).status, "created");
+  assert.ok(repo.files().some((entry) => entry.path === "docs" && entry.type === "directory"));
+  assert.deepEqual(repo.track("Move 2 items", () => repo.move(["CHANGELOG.md", "README.md"], "docs")).moved.map((m) => m.to), ["docs/CHANGELOG.md", "docs/README.md"]);
+  assert.deepEqual(repo.move(["src"], "src/types").conflicts, ["src"]);
+  assert.deepEqual(repo.rename("docs", "notes"), { status: "renamed", from: "docs", to: "notes" });
+  assert.deepEqual(repo.directoryEntries("notes").map((entry) => entry.path), ["notes/CHANGELOG.md", "notes/README.md"]);
+  assert.equal(repo.remove(["notes"]), 2);
+  assert.equal(repo.files().some((entry) => entry.path === "notes"), false);
+});
+
+test("file operations can be undone and redone", () => {
+  const repo = new DemoRepository();
+  assert.deepEqual(repo.fileHistoryState(), { canUndo: false, undoLabel: null, canRedo: false, redoLabel: null });
+  repo.track("Delete item", () => repo.remove(["README.md"]));
+  repo.track("Rename item", () => repo.rename("package.json", "manifest.json"));
+  assert.equal(repo.fileHistoryState().undoLabel, "Rename item");
+  const undone = repo.undoFileOperation("undo");
+  assert.deepEqual([undone.status, undone.label, undone.restoredPaths, undone.removedPaths], ["applied", "Rename item", ["package.json"], ["manifest.json"]]);
+  repo.undoFileOperation("undo");
+  assert.ok(Object.hasOwn(repo.working, "README.md"));
+  assert.equal(repo.fileHistoryState().redoLabel, "Delete item");
+  repo.undoFileOperation("redo");
+  assert.equal(Object.hasOwn(repo.working, "README.md"), false);
+  repo.track("Create file", () => repo.createFile("", "NOTES.md"));
+  assert.equal(repo.fileHistoryState().canRedo, false);
+  assert.equal(repo.undoFileOperation("redo").status, "empty");
 });
