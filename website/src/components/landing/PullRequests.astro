@@ -1,0 +1,33 @@
+---
+import SectionHeading from './SectionHeading.astro';
+import Shot from './Shot.astro';
+---
+
+<section id="pull-requests" class="px-4 sm:px-6 py-20" aria-labelledby="pull-requests-heading">
+  <div class="max-w-5xl mx-auto">
+    <SectionHeading id="pull-requests-heading" lead="Pull requests, next to your code." detail="Review, create, and follow stacks without leaving the repository." />
+
+    <div class="tile-grid tile-grid-split mt-12">
+      <article class="tile">
+        <div class="tile-stage has-shot">
+          <Shot name="pulls" alt="The pull request list with check status, changed lines, and stack layer indicators such as 2/3." />
+        </div>
+        <div class="tile-copy">
+          <h3>Review without switching apps.</h3>
+          <p>Read descriptions, checks, commits, and full or per-commit diffs. Create a pull request from your branch.</p>
+        </div>
+      </article>
+
+      <article class="tile">
+        <div class="tile-stage has-shot">
+          <Shot name="stack" alt="Pull request #24 with its stack indicator open, listing the three layers of stack #3 above main." />
+        </div>
+        <div class="tile-copy">
+          <h3>Follow native stacks.</h3>
+          <p>A layer indicator such as 2/3 shows where a pull request sits in its GitHub stack. Open it to reach the other layers.</p>
+        </div>
+      </article>
+    </div>
+    <p class="mt-5 text-sm text-muted-foreground">Uses the GitHub CLI (<code class="font-mono text-foreground">gh</code>), signed in on the machine running OpenTig. <a href="/docs/github/" class="underline underline-offset-4 hover:text-foreground">GitHub and pull requests guide</a></p>
+  </div>
+</section>

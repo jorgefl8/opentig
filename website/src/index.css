@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "./styles/landing-effects.css";
+@import "./styles/landing-mocks.css";
 
 @font-face {
   font-family: 'Geist';
@@ -47,6 +48,11 @@
   --action-top: #2863d8;
   --action-bottom: #2459c4;
   --action-hover-top: #2d6ae0;
+  /* Second tone of section headings and hairlines between landing tiles. */
+  --heading-detail: oklch(0.64 0 0);
+  --tile-line: oklch(1 0 0 / 9%);
+  /* The desktop dark theme's success green, for the host diagram's return traffic. */
+  --mock-add: oklch(0.76 0.17 152);
   --accent: oklch(0.225 0 0);
   --accent-foreground: oklch(0.93 0 0);
   --destructive: oklch(0.71 0.17 24);

@@ -1,0 +1,18 @@
+---
+import type { ImageMetadata } from 'astro';
+
+// A crop of the real OpenTig interface, captured from the demo at 2x and shown at its natural CSS size.
+// Importing the files gives each version a hashed URL, so caches never serve an outdated capture.
+const files = import.meta.glob<{ default: ImageMetadata }>('../../assets/landing/*.webp', { eager: true });
+
+interface Props {
+  name: 'changes' | 'diff' | 'preview' | 'pulls' | 'stack' | 'split';
+  alt: string;
+}
+
+const { name, alt } = Astro.props;
+const image = files[`../../assets/landing/${name}.webp`]?.default;
+if (!image) throw new Error(`Missing landing capture: ${name}.webp`);
+---
+
+<img src={image.src} {alt} width={image.width / 2} height={image.height / 2} loading="lazy" decoding="async" class="shot" />

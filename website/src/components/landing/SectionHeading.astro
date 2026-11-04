@@ -1,0 +1,16 @@
+---
+interface Props {
+  id?: string;
+  /** Short claim shown at full contrast. */
+  lead: string;
+  /** Explanation that continues the same sentence in a quieter tone. */
+  detail?: string;
+  class?: string;
+}
+
+const { id, lead, detail, class: className } = Astro.props;
+---
+
+<h2 id={id} class:list={['section-heading', className]}>
+  <span class="text-foreground">{lead}</span>{detail && <> <span class="section-heading-detail">{detail}</span></>}
+</h2>

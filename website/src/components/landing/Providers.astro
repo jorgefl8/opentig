@@ -6,61 +6,45 @@ import GitSvg from '@tabler/icons/outline/brand-git.svg';
 import GithubSvg from '@tabler/icons/outline/brand-github.svg';
 import OpenCodeSvg from '@/assets/icons/opencode.svg';
 import GrokSvg from '@/assets/icons/grok.svg';
-import SplitIcon from '@tabler/icons/outline/git-fork.svg';
-import MessageIcon from '@tabler/icons/outline/message.svg';
-import PullRequestIcon from '@tabler/icons/outline/git-pull-request.svg';
+import SectionHeading from './SectionHeading.astro';
+import Shot from './Shot.astro';
+
 ---
 
-<section id="tools" class="pt-24 pb-12">
-  <div class="max-w-7xl mx-auto px-6">
-    <div class="text-center mb-10">
-      <h2 class="font-['GeistPixelTriangle'] text-3xl md:text-4xl font-bold tracking-tight">
-        Prepare better commits with optional AI
-      </h2>
-      <p class="text-muted-foreground mt-4 max-w-2xl mx-auto leading-relaxed">
-        Turn staged changes into focused commits and help reviewers understand your work.
-        You review each proposal and confirm every commit and pull request.
-      </p>
+<section id="tools" class="pt-20 pb-12" aria-labelledby="tools-heading">
+  <div class="px-4 sm:px-6"><div class="max-w-5xl mx-auto">
+    <SectionHeading id="tools-heading" lead="Optional AI. You confirm every commit." detail="Bring the AI CLI you already use." />
+
+    <div class="tile-grid tile-grid-ai mt-12">
+      <div class="tile ai-points">
+        <article class="ai-point">
+          <h3><span>Commit splitting.</span> <span class="section-heading-detail">Mixed several tasks into your staged changes? Get groups of complete files, each with a message and a reason.</span></h3>
+          <ol class="ai-steps">
+            <li><span aria-hidden="true">01</span>Review the proposed groups and their diffs.</li>
+            <li><span aria-hidden="true">02</span>Prepare one group in the staging area.</li>
+            <li><span aria-hidden="true">03</span>Create its commit, then continue with the next.</li>
+          </ol>
+        </article>
+        <article class="ai-point">
+          <h3><span>Commit messages.</span> <span class="section-heading-detail">Draft a subject and body from your staged changes, then edit the wording.</span></h3>
+        </article>
+        <article class="ai-point">
+          <h3><span>Pull request descriptions.</span> <span class="section-heading-detail">Draft a title and description from your branch changes. You decide when to publish.</span></h3>
+        </article>
+      </div>
+      <div class="tile">
+        <div class="tile-stage has-shot flex-1">
+          <Shot name="split" alt="A suggested commit plan with two commits, each with its message, reason, and files, above the generated commit message." />
+        </div>
+      </div>
     </div>
 
-    <div class="grid md:grid-cols-2 gap-5 max-w-5xl mx-auto">
-      <article class="md:row-span-2 rounded-xl border border-primary/35 bg-card/90 p-6 sm:p-8 backdrop-blur-sm">
-        <SplitIcon width={28} height={28} class="text-primary" aria-hidden="true" />
-        <h3 class="mt-5 text-xl sm:text-2xl font-semibold">Commit splitting</h3>
-        <p class="mt-3 text-muted-foreground leading-relaxed">
-          Mixed several tasks into your staged changes? Get a proposal that groups complete files
-          into focused commits, each with its own message and reason.
-        </p>
-        <ol class="mt-6 space-y-3 text-sm leading-relaxed">
-          <li class="flex gap-3"><span class="font-mono text-primary" aria-hidden="true">01</span><span>Review the proposed groups and their diffs.</span></li>
-          <li class="flex gap-3"><span class="font-mono text-primary" aria-hidden="true">02</span><span>Prepare one group in the staging area.</span></li>
-          <li class="flex gap-3"><span class="font-mono text-primary" aria-hidden="true">03</span><span>Create its commit, then continue with the next group.</span></li>
-        </ol>
-      </article>
-
-      <article class="rounded-xl border border-border/60 bg-card/90 p-6 backdrop-blur-sm">
-        <MessageIcon width={24} height={24} class="text-primary" aria-hidden="true" />
-        <h3 class="mt-3 text-lg font-semibold">Commit messages</h3>
-        <p class="mt-2 text-sm text-muted-foreground leading-relaxed">
-          Draft a subject and body from your staged changes. Review and edit the wording before creating the commit.
-        </p>
-      </article>
-
-      <article class="rounded-xl border border-border/60 bg-card/90 p-6 backdrop-blur-sm">
-        <PullRequestIcon width={24} height={24} class="text-primary" aria-hidden="true" />
-        <h3 class="mt-3 text-lg font-semibold">Pull request descriptions</h3>
-        <p class="mt-2 text-sm text-muted-foreground leading-relaxed">
-          Draft a title and description from your branch changes. Refine the explanation and confirm when to publish.
-        </p>
-      </article>
-    </div>
-
-    <p class="mt-8 text-center text-sm text-muted-foreground leading-relaxed">
-      Use a supported, authenticated CLI for AI assistance. Everyday Git work needs no AI account.
+    <p class="mt-5 text-sm text-muted-foreground leading-relaxed">
+      Uses a supported, signed-in AI CLI on the host. Everyday Git work needs no AI account.
       <a href="/docs/ai-assistance/" class="inline-block underline underline-offset-4 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary">Explore AI assistance</a>
     </p>
-    <h3 class="mt-12 mb-4 text-center text-xl md:text-2xl font-semibold tracking-tight text-foreground">Your Git tools. Your choice of AI.</h3>
-  </div>
+    <h3 class="mt-16 mb-4 text-center text-xl md:text-2xl font-semibold tracking-tight text-foreground">Your Git tools. Your choice of AI.</h3>
+  </div></div>
 
   <div class="h-12 relative overflow-hidden text-white">
     <LogoLoop
