@@ -1749,7 +1749,9 @@ section[data-sileo-viewport] [data-sileo-title] { text-transform: none; }
   /* Plain tools: an active one is simply brighter than the rest. */
   .diff-workspace-actions button { color: var(--muted-foreground); }
   .diff-workspace-actions button[aria-pressed="true"] { color: var(--foreground); }
-  .diff-workspace-scroll { min-height: 0; flex: 1; overflow: auto; }
+  /* Its own stacking context, so the sticky file headers stay under its scrollbar:
+     otherwise WebKit paints them over the overlay scrollbar, cutting it in two. */
+  .diff-workspace-scroll { min-height: 0; flex: 1; overflow: auto; isolation: isolate; }
   .diff-workspace-content { display: grid; min-width: 100%; align-content: start; }
   /* The rule after a file's code closes it before the next header. A collapsed
      file has no code, so its header's own rule is the only one it needs. */
