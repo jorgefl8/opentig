@@ -1622,6 +1622,9 @@ section[data-sileo-viewport] [data-sileo-title] { text-transform: none; }
   .commit-lane { position: relative; flex: none; align-self: stretch; }
   .commit-graph { position: absolute; top: 0; left: 0; display: block; overflow: visible; }
   .commit-graph path, .commit-graph-continuation line { fill: none; stroke: var(--history-lane); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+  /* The branch's own line, down to where its base starts. The dot keeps saying only whether it is published. */
+  .commit-graph [data-branch], .commit-graph-continuation [data-branch] { stroke: var(--primary); }
+  .commit-refs .commit-ref-branch { color: var(--primary-ink); }
   .commit-graph-continuation { position: absolute; top: var(--history-row-height); bottom: 0; left: 8px; height: calc(100% - var(--history-row-height)); pointer-events: none; }
   /* A wider target than the dot, for its tooltip. A hollow dot repeats the row's surface so no lane shows through. */
   .commit-dot { position: absolute; display: grid; width: 14px; height: 14px; place-items: center; color: var(--muted-foreground); transform: translate(-50%, -50%); }

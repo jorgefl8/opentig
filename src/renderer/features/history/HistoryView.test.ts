@@ -155,6 +155,27 @@ it('reads as one muted line ending in plain reference names, with no legend, cou
   expect(container.textContent).not.toMatch(/Publish|loaded|Local\b/);
 });
 
+it('draws the branch line in its own color down to where its base starts, and names the branch alike', async () => {
+  const branchCommits = [
+    { ...commit('two', ['one'], 'Two'), baseState: 'outside' as const, decorations: ['HEAD -> topic', 'origin/topic'] },
+    { ...commit('one', ['main'], 'One'), baseState: 'outside' as const },
+    { ...commit('main', ['old'], 'Main'), baseState: 'included' as const, decorations: ['origin/main'] },
+    { ...commit('old', [], 'Old'), baseState: 'included' as const },
+  ];
+  await mount({ upstream: 'origin/topic', baseRef: 'origin/main', commits: branchCommits });
+  const rows = [...container.querySelectorAll('.commit-item')];
+  const branchPaths = (row: Element) => [...row.querySelectorAll('.commit-graph path')].map((path) => path.hasAttribute('data-branch'));
+  expect(rows.map(branchPaths)).toEqual([[true], [true, true], [true, false], [false]]);
+  expect([...container.querySelectorAll('.commit-ref-branch')].map((ref) => ref.textContent)).toEqual(['topic']);
+
+  // On the base itself, or without one, it stays one plain line with no graph.
+  await mount({ upstream: 'origin/main', baseRef: 'origin/main', commits: branchCommits });
+  expect(container.querySelector('.commit-graph')).toBeNull();
+  expect(container.querySelector('.commit-ref-branch')).toBeNull();
+  await mount({ upstream: 'origin/topic', baseRef: null, commits: branchCommits });
+  expect(container.querySelector('.commit-graph')).toBeNull();
+});
+
 it('selects a commit from anywhere in its row except the controls inside it', async () => {
   links.open.mockClear();
   const props = await mount({ commits: [{ ...commit('head', ['base'], 'Fix the thing (#87)') }, commit('base', [], 'Base')] });

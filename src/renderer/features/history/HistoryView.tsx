@@ -13,7 +13,7 @@ import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { changeStatusCode } from '@/features/changes/change-status';
 import { buildCommitGraph, type CommitGraphRow } from './commit-graph';
-import { canUndoCommit, commitPublication, commitReference, historyRows, matchesHistory } from './history-presentation';
+import { canUndoCommit, commitPublication, commitReference, historyRows, matchesHistory, showsBranchLine } from './history-presentation';
 import { readCommitFilesCache, writeCommitFilesCache } from './commit-files-cache';
 import { copyCommitHash } from './copy-commit-hash';
 import { getVsCodeFileIconUrl } from '@/lib/vscode-icons';
@@ -46,7 +46,10 @@ export function HistoryView({ repositoryId, upstream, readOnly, operation, commi
   const searching = search.trim().length > 0;
   // Search temporarily reveals grouped commits; it never removes graph context.
   const rows = useMemo(() => historyRows(commits ?? [], grouped && !searching), [commits, grouped, searching]);
-  const graph = useMemo(() => buildCommitGraph(rows.map(({ commit, parentOids }) => ({ oid: commit.oid, parentOids }))), [rows]);
+  const branchLine = showsBranchLine(upstream, baseRef);
+  const graph = useMemo(() => buildCommitGraph(rows.map(({ commit, parentOids }) => ({ oid: commit.oid, parentOids, branch: branchLine && commit.baseState === 'outside' }))), [rows, branchLine]);
+  // One plain lane says nothing, but a branch line marks where the base starts.
+  const showGraph = graph.laneCount > 1 || graph.hasBranch;
   const matches = useMemo(() => rows.flatMap(({ commit }, index) => matchesHistory(commit, search) ? [index] : []), [rows, search]);
   const graphWidth = graphWidthForLanes(graph.laneCount);
   // oxlint-disable-next-line react/incompatible-library -- TanStack Virtual is intentionally imperative.
@@ -106,7 +109,7 @@ export function HistoryView({ repositoryId, upstream, readOnly, operation, commi
               return (
                 <div key={virtualRow.key} ref={commitVirtualizer.measureElement} data-index={virtualRow.index} className="virtual-row" style={{ transform: `translateY(${virtualRow.start}px)` }}>
                   <CommitRow phone={mobile} repositoryId={repositoryId} upstream={upstream} baseRef={baseRef} commit={commit}
-                    graphRow={graph.rows[virtualRow.index]!} laneCount={graph.laneCount} graphWidth={graphWidth} rowHeight={rowHeight}
+                    graphRow={graph.rows[virtualRow.index]!} showGraph={showGraph} branchRefs={graph.hasBranch} graphWidth={graphWidth} rowHeight={rowHeight}
                     active={activeOid === commit.oid || groupedCommits.some((item) => item.oid === activeOid)} match={matchesHistory(commit, search)} currentMatch={matches[currentMatch] === virtualRow.index}
                     groupedCount={groupedCommits.length} onRevealGroup={() => setGrouped(false)}
                     expanded={expandedCommits.has(commit.oid)}
@@ -125,11 +128,14 @@ export function HistoryView({ repositoryId, upstream, readOnly, operation, commi
   );
 }
 
-function CommitRow({ phone, repositoryId, upstream, baseRef, commit, graphRow, laneCount, graphWidth, rowHeight, active, match, currentMatch, groupedCount, onRevealGroup, expanded, onExpandedChange, canUndo, onSelectCommit, onSelectFile, onUndo }: {
+function CommitRow({ phone, repositoryId, upstream, baseRef, commit, graphRow, showGraph, branchRefs, graphWidth, rowHeight, active, match, currentMatch, groupedCount, onRevealGroup, expanded, onExpandedChange, canUndo, onSelectCommit, onSelectFile, onUndo }: {
   /** The whole row is the target there: what's on the row elsewhere is in the commit viewer. */
   phone: boolean;
   repositoryId: string; upstream: string | null; baseRef?: string | null | undefined; commit: CommitInfo; expanded: boolean; canUndo: boolean;
-  graphRow: CommitGraphRow; laneCount: number; graphWidth: number; rowHeight: number; active: boolean; match: boolean; currentMatch: boolean; groupedCount: number;
+  graphRow: CommitGraphRow; showGraph: boolean;
+  /** The current branch's name takes the branch line's color. */
+  branchRefs: boolean;
+  graphWidth: number; rowHeight: number; active: boolean; match: boolean; currentMatch: boolean; groupedCount: number;
   onRevealGroup(): void;
   onExpandedChange(expanded: boolean): void;
   onSelectCommit(commit: CommitInfo): void; onSelectFile(oid: string, file: CommitFile): void; onUndo(commit: CommitInfo): void;
@@ -150,7 +156,9 @@ function CommitRow({ phone, repositoryId, upstream, baseRef, commit, graphRow, l
   }, [cacheKey, commit.oid, expanded, files, filesError, phone, repositoryId]);
 
   const reference = commitReference(commit);
-  const refs = commit.decorations.map((decoration) => decoration.replace(/^(tag: |HEAD -> )/, ''));
+  const refs = commit.decorations.map((decoration) => ({ name: decoration.replace(/^(tag: |HEAD -> )/, ''), current: decoration.startsWith('HEAD -> ') }));
+  const refNames = refs.map((ref) => ref.name);
+  const refLabels = refs.map((ref, index) => <span key={`${index}:${ref.name}`} className={branchRefs && ref.current ? 'commit-ref-branch' : undefined}>{index > 0 && ' '}{ref.name}</span>);
   const publication = commitPublication(commit, upstream, baseRef);
   const nodeY = graphNodeY(rowHeight);
   const additions = files?.reduce((total, file) => total + file.additions, 0) ?? 0;
@@ -163,7 +171,7 @@ function CommitRow({ phone, repositoryId, upstream, baseRef, commit, graphRow, l
       {/* The whole row selects the commit for the pointer; the subject is what the keyboard reaches. */}
       <div className="commit-header" onClick={(event) => { if (!(event.target as Element).closest('button, a')) onSelectCommit(commit); }}>
         <span className="commit-lane" style={{ width: graphWidth }}>
-          {laneCount > 1 && <CommitGraph graph={graphRow} width={graphWidth} height={rowHeight} />}
+          {showGraph && <CommitGraph graph={graphRow} width={graphWidth} height={rowHeight} />}
           <Tooltip>
             <TooltipTrigger render={<span className="commit-dot" role="img" aria-label={publication.label} data-publication={commit.upstreamState} data-merge={commit.parentCount > 1 || undefined} style={{ left: graphX(graphRow.lane), top: nodeY }} />} />
             <TooltipContent>{publication.hint}</TooltipContent>
@@ -180,7 +188,7 @@ function CommitRow({ phone, repositoryId, upstream, baseRef, commit, graphRow, l
             {commit.upstreamState === 'local-only' && <><MetaSeparator /><span className="commit-local-label">Not published</span></>}
             {reference && <><MetaSeparator /><span className="commit-pr">#{reference.number}</span></>}
             {groupedCount > 0 && <><MetaSeparator /><span>{groupedCount} grouped</span></>}
-            {refs.length > 0 && <span className="commit-refs">{refs.join(' ')}</span>}
+            {refs.length > 0 && <span className="commit-refs">{refLabels}</span>}
           </span> : <span className="commit-meta">
             <Tooltip>
               <TooltipTrigger render={<time dateTime={commit.date} />}>{formatDate(commit.date)}</TooltipTrigger>
@@ -207,7 +215,7 @@ function CommitRow({ phone, repositoryId, upstream, baseRef, commit, graphRow, l
               <MetaSeparator />
               <Tooltip><TooltipTrigger render={<button className="commit-group-count" onClick={onRevealGroup} />}>{groupedCount} grouped</TooltipTrigger><TooltipContent>Show the {groupedCount} commits in this merge branch</TooltipContent></Tooltip>
             </>}
-            {refs.length > 0 && <Tooltip><TooltipTrigger render={<span className="commit-refs" />}>{refs.join(' ')}</TooltipTrigger><TooltipContent>{refs.join(' · ')}</TooltipContent></Tooltip>}
+            {refs.length > 0 && <Tooltip><TooltipTrigger render={<span className="commit-refs" />}>{refLabels}</TooltipTrigger><TooltipContent>{refNames.join(' · ')}</TooltipContent></Tooltip>}
           </span>}
         </div>
         {!phone && <div className="commit-row-actions">
@@ -223,7 +231,7 @@ function CommitRow({ phone, repositoryId, upstream, baseRef, commit, graphRow, l
           </Tooltip>
         </div>}
       </div>
-      {open && laneCount > 1 && graphRow.continuations.length > 0 && <CommitGraphContinuation graph={graphRow} width={graphWidth} />}
+      {open && showGraph && graphRow.continuations.length > 0 && <CommitGraphContinuation graph={graphRow} width={graphWidth} />}
       {open && (
         <div className="commit-files" style={{ paddingLeft: graphWidth + COMMIT_TEXT_INSET }}>
           {commit.body && <p className="commit-description"><LinkedText text={commit.body} /></p>}
@@ -281,7 +289,7 @@ function CommitGraph({ graph, width, height }: { graph: CommitGraphRow; width: n
         const d = fromX === toX
           ? `M ${fromX} ${fromY} L ${toX} ${toY}`
           : `M ${fromX} ${fromY} C ${fromX} ${middleY}, ${toX} ${middleY}, ${toX} ${toY}`;
-        return <path key={`${index}:${d}`} d={d} />;
+        return <path key={`${index}:${d}`} d={d} data-branch={segment.branch} />;
       })}
     </svg>
   );
@@ -291,7 +299,7 @@ function CommitGraphContinuation({ graph, width }: { graph: CommitGraphRow; widt
   return (
     <svg className="commit-graph-continuation" width={width} viewBox={`0 0 ${width} 100`} preserveAspectRatio="none" aria-hidden="true">
       {graph.continuations.map((lane) => (
-        <line key={lane} x1={graphX(lane)} y1="0" x2={graphX(lane)} y2="100" />
+        <line key={lane} x1={graphX(lane)} y1="0" x2={graphX(lane)} y2="100" data-branch={graph.branchLanes.includes(lane) || undefined} />
       ))}
     </svg>
   );

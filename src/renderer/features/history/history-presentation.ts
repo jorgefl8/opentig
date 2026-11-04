@@ -25,10 +25,16 @@ export function commitPublication(
     : commit.upstreamState === 'published'
       ? commit.baseState === 'included' && baseRef ? `Reachable from ${baseRef}, using the latest known local refs.` : ''
       : 'There is no upstream to compare with.';
+  const branchOnly = commit.baseState === 'outside' && showsBranchLine(upstream, baseRef) ? `Only on this branch, not in ${baseRef} yet.` : '';
   return {
     label: merge ? `Merge commit, ${label.toLocaleLowerCase()}` : label,
-    hint: [merge ? 'Merge commit.' : '', `${label}.`, detail].filter(Boolean).join(' '),
+    hint: [merge ? 'Merge commit.' : '', `${label}.`, detail, branchOnly].filter(Boolean).join(' '),
   };
+}
+
+/** A branch's own commits stand out from its base, except on the base itself, where they are only unpublished. */
+export function showsBranchLine(upstream: string | null, baseRef: string | null | undefined): baseRef is string {
+  return Boolean(baseRef) && upstream !== baseRef;
 }
 
 /** Whether the commit itself can be undone; the repository may still be too busy to do it now. */

@@ -38,6 +38,8 @@ describe('history presentation', () => {
     expect(commitPublication(commit('older', [], { upstreamState: 'local-only' }), 'origin/main').hint).toContain('only the latest can be undone');
     expect(commitPublication(commit('published', [], { baseState: 'outside' }), 'origin/main', 'origin/main')).toEqual({ label: 'Published', hint: 'Published.' });
     expect(commitPublication(commit('main', [], { baseState: 'included' }), 'origin/main', 'origin/main').hint).toBe('Published. Reachable from origin/main, using the latest known local refs.');
+    expect(commitPublication(commit('mine', [], { baseState: 'outside' }), 'origin/topic', 'origin/main').hint).toBe('Published. Only on this branch, not in origin/main yet.');
+    expect(commitPublication(commit('mine', [], { baseState: 'outside', upstreamState: 'unknown' }), null, 'origin/main').hint).toBe('Publication unknown. There is no upstream to compare with. Only on this branch, not in origin/main yet.');
     expect(commitPublication(commit('main', [], { baseState: 'included' }), 'origin/main', null).hint).toBe('Published.');
     expect(commitPublication(commit('unknown', [], { upstreamState: 'unknown' }), null)).toEqual({ label: 'Publication unknown', hint: 'Publication unknown. There is no upstream to compare with.' });
     expect(commitPublication(commit('merge', ['a', 'b']), 'origin/main')).toEqual({ label: 'Merge commit, published', hint: 'Merge commit. Published.' });

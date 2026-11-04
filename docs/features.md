@@ -305,6 +305,8 @@ Each row has a dot, the title, and one line with the date, author, short hash, a
 
 When the loaded commits branch and rejoin, quiet lanes connect the dots; a linear history shows only the dots. The lanes follow current-branch history and actual parent relationships. OpenTig does not fetch in the background or include unmerged branches outside HEAD.
 
+On a branch other than its base, the line through the branch's own commits is drawn in the accent color, down to the commit where the base starts, and the branch's name takes the same color; from there the line is gray. This applies even to a linear history, so you can see what the branch adds. A base merged into the branch keeps its gray line, and a commit's dot hint says when it is only on this branch. The dots keep meaning only publication. On the base branch itself, or when no base is known, the history looks as described above. The base is the locally known default branch of the upstream's remote, usually `origin/main`.
+
 GitHub-style merge messages and trailing `(#123)` references are hints, not verified PR status or proof of squash/rebase. On GitHub repositories, the reference opens the PR viewer on the right; that viewer handles issue numbers or unavailable PRs. Squash/rebase histories remain linear.
 
 <details>
