@@ -67,7 +67,7 @@ describe('GitHub pending reads', () => {
     expect(await f.service.getPullRequest('alice', 12)).toMatchObject({ number: 12 });
   });
 
-  it('four readers share routing, credentials and detail, with no settled cache', async () => {
+  it('four readers share routing, credentials and detail, then reuse it until a change through OpenTig', async () => {
     const started = deferred<void>();
     const gate = deferred<CliRunResult>();
     const f = await fixture(async args => {
@@ -77,14 +77,20 @@ describe('GitHub pending reads', () => {
     const readers = Array.from({ length: 4 }, () => f.service.getPullRequest('alice', 12));
     await started.promise;
     expect(views(f.run)).toHaveLength(1);
-    // One routing probe: the `gh repo set-default` choice and the remote URL.
-    expect(f.gitRun).toHaveBeenCalledTimes(2);
+    // Two routing probes, each the `gh repo set-default` choice and the remote URL:
+    // one to look for a kept detail, and the read's own.
+    expect(f.gitRun).toHaveBeenCalledTimes(4);
     expect(f.run.mock.calls.filter(([, args]) => args[1] === 'token')).toHaveLength(1);
     gate.resolve(result('{"number":12,"state":"OPEN","title":"Initial"}'));
     const values = await Promise.all(readers);
     expect(f.run.mock.calls.filter(([, args]) => args[1] === 'graphql')).toHaveLength(0);
     values[0]!.title = 'consumer edit';
     expect(values[1]!.title).toBe('Initial');
+    const again = await f.service.getPullRequest('alice', 12);
+    expect(views(f.run)).toHaveLength(1);
+    again.title = 'another edit';
+    expect((await f.service.getPullRequest('alice', 12)).title).toBe('Initial');
+    f.service.invalidate('alice');
     await f.service.getPullRequest('alice', 12);
     expect(views(f.run)).toHaveLength(2);
   });
@@ -120,7 +126,8 @@ describe('GitHub pending reads', () => {
     });
     const pending = [f.service.getPullRequest('alice', 12), f.service.getPullRequest('alice', 13), f.service.getPullRequest('bob', 12)];
     await started.promise;
-    expect(f.gitRun).toHaveBeenCalledTimes(4);
+    // Per repository: one probe to look for a kept detail and one inside the reads, each shared by that repository's readers.
+    expect(f.gitRun).toHaveBeenCalledTimes(8);
     gate.resolve();
     expect((await Promise.all(pending)).map(value => [value.number, value.title])).toEqual([[12, 'alice'], [13, 'alice'], [12, 'bob']]);
     expect(views(f.run)).toHaveLength(3);

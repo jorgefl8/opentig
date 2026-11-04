@@ -93,6 +93,8 @@ The status refreshes only while the PR is open in the viewer and the window is v
 
 Returning to the window, reconnecting, changing the repository account, or manually refreshing checks immediately. If a refresh fails, the last status stays visible with a notice and **Retry**. Periodic refresh stops at GitHub's rate limit and resumes when you return to the window. A new head commit also refreshes the PR's details, commits, and code.
 
+The status is read from GitHub every time. A PR's details and conversation are reused for up to a minute, or ten for a merged or closed PR, so going back to a PR doesn't wait for GitHub; they are read again sooner when the status shows the PR changed on GitHub, and right away after you change anything through OpenTig.
+
 </details>
 
 **Code is computed by Git in your clone**, so pull requests larger than GitHub's 300-file diff limit open normally. The first time you open a PR's code, OpenTig downloads its commits from the remote that holds the pull requests (`refs/pull/<number>/head`, plus the base commit if it is missing) without creating or moving any branch, tag, or remote-tracking ref, and then compares them the same way GitHub's **Files changed** does. Later views and **By commit** read locally. GitHub CLI returns at most 100 commits per PR, so for longer PRs the **Timeline** and **By commit** lists are completed from the downloaded history; GitHub avatars appear only for the commits GitHub returned. If the commits can't be downloaded, OpenTig asks GitHub for the diff instead, which only works within GitHub's limits. A diff too large for one server response (4 MiB) shows the complete files that fit, with a notice that some are missing.

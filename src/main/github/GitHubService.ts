@@ -26,10 +26,18 @@ import { GITHUB_LIVE_READ_TIMEOUT_MS, GITHUB_NETWORK_TIMEOUT_MS as NETWORK_TIMEO
 import { classifyFailure } from './GitHubFailure';
 
 const ACCOUNT_USED = 'Account used:';
+/** How long a PR's details and conversation are reused. Its live state, read every time, drops them sooner when GitHub reports a change. */
+const OPEN_PULL_REQUEST_MS = 60_000;
+/** A merged or closed PR rarely changes. */
+const FINISHED_PULL_REQUEST_MS = 10 * 60_000;
 
 export class GitHubService {
   private readonly reads = new ReadSingleFlight();
   private readonly downloads = new Map<string, Promise<{ available: boolean; failure: string }>>();
+  /** Finished reads of a PR's details and conversation, per repository path, so reopening a PR doesn't wait for GitHub. */
+  private readonly settled = new Map<string, Map<string, { expires: number; value: unknown }>>();
+  /** Bumped by every explicit invalidation, so a read that started before one isn't kept. */
+  private settledEpoch = 0;
   private readonly localGit: PullRequestLocalGit;
   private readonly actions: PullRequestActionRunner;
   private readonly releases: GitHubReleases;
@@ -58,16 +66,66 @@ export class GitHubService {
     this.releases = new GitHubReleases(access);
   }
 
+  /** After a change made through OpenTig: nothing read before it is reused. */
   invalidate(repositoryId?: string): void {
+    this.settledEpoch++;
+    if (repositoryId) this.settled.delete(this.repositories.get(repositoryId).path);
+    else this.settled.clear();
+    this.invalidatePending(repositoryId);
+  }
+
+  /** Reads still running start again; finished ones stay, since they are keyed by account. */
+  private invalidatePending(repositoryId?: string): void {
     if (repositoryId) this.reads.invalidate(this.git.readScope(this.repositories.get(repositoryId).path));
     else this.reads.clear();
+  }
+
+  private readKey(repository: ReturnType<RepositoryService['get']>, resource: unknown[]): string {
+    return JSON.stringify([repository.path, repository.commonDir, this.accounts.authRevision, this.accounts.revisionFor(repository), ...resource]);
+  }
+
+  /**
+   * A shared read whose result is also kept for `ttl(value)` milliseconds. Only
+   * used for what the live state can tell is outdated: see `forgetOutdated`.
+   */
+  private async settledRead<T>(repositoryId: string, resource: unknown[], ttl: (value: T) => number, read: () => Promise<T>): Promise<T> {
+    const repository = this.repositories.get(repositoryId);
+    // Kept per GitHub repository too, so pointing the remote elsewhere doesn't show the old one's PR.
+    const { remote } = await this.routing(repositoryId);
+    const settledResource = [remote.url, ...resource];
+    const key = this.readKey(repository, settledResource);
+    const hit = this.settled.get(repository.path)?.get(key);
+    if (hit && hit.expires > Date.now()) return structuredClone(hit.value as T);
+    const epoch = this.settledEpoch;
+    const value = await this.shareRead(repositoryId, resource, read);
+    // An account change gives the read a new key; a change made meanwhile means it may predate it.
+    if (epoch === this.settledEpoch && key === this.readKey(this.repositories.get(repositoryId), settledResource)) {
+      let entries = this.settled.get(repository.path);
+      if (!entries) this.settled.set(repository.path, entries = new Map());
+      entries.set(key, { expires: Date.now() + ttl(value), value: structuredClone(value) });
+    }
+    return value;
+  }
+
+  /** A newer live state than the kept details means GitHub has changed the PR: its details and conversation are read again. */
+  private async forgetOutdated(repositoryId: string, state: PullRequestLiveState): Promise<void> {
+    const repository = this.repositories.get(repositoryId);
+    const entries = this.settled.get(repository.path);
+    if (!entries) return;
+    const { remote } = await this.routing(repositoryId);
+    const detailsKey = this.readKey(repository, [remote.url, 'details', state.number]);
+    const details = entries.get(detailsKey)?.value as PullRequestDetails | undefined;
+    if (!details) return;
+    if (details.updatedAt === state.updatedAt && details.headRefOid === state.headRefOid && details.state === state.state && details.isDraft === state.isDraft) return;
+    entries.delete(detailsKey);
+    entries.delete(this.readKey(repository, [remote.url, 'conversation', state.number]));
   }
 
   private async shareRead<T>(repositoryId: string, resource: unknown[], read: () => Promise<T>): Promise<T> {
     for (let attempt = 0; attempt < 3; attempt++) {
       const repository = this.repositories.get(repositoryId);
       const revision = this.accounts.authRevision;
-      const key = JSON.stringify([repository.path, repository.commonDir, revision, this.accounts.revisionFor(repository), ...resource]);
+      const key = this.readKey(repository, resource);
       try {
         const value = await this.reads.run(this.git.readScope(repository.path), key, read);
         if (revision === this.accounts.authRevision) return structuredClone(value);
@@ -104,7 +162,7 @@ export class GitHubService {
   }
 
   async repositoryAccount(repositoryId: string, forceRefresh = false) {
-    if (forceRefresh) this.invalidate(repositoryId);
+    if (forceRefresh) this.invalidatePending(repositoryId);
     const repository = this.repositories.get(repositoryId);
     const { remote: { url: remote }, info } = await this.routing(repositoryId);
     if (forceRefresh && info.nameWithOwner && !this.gitAccess) {
@@ -230,7 +288,8 @@ export class GitHubService {
   }
 
   getPullRequest(repositoryId: string, prNumber: number): Promise<PullRequestDetails> {
-    return this.shareRead(repositoryId, ['details', prNumber], () => this.readGetPullRequest(repositoryId, prNumber));
+    return this.settledRead(repositoryId, ['details', prNumber], details => details.state === 'OPEN' ? OPEN_PULL_REQUEST_MS : FINISHED_PULL_REQUEST_MS,
+      () => this.readGetPullRequest(repositoryId, prNumber));
   }
 
   private async readGetPullRequest(repositoryId: string, prNumber: number): Promise<PullRequestDetails> {
@@ -244,7 +303,8 @@ export class GitHubService {
   }
 
   getPullRequestLiveState(repositoryId: string, prNumber: number): Promise<PullRequestLiveState> {
-    return this.shareRead(repositoryId, ['live-state', prNumber], () => this.readGetPullRequestLiveState(repositoryId, prNumber));
+    return this.shareRead(repositoryId, ['live-state', prNumber], () => this.readGetPullRequestLiveState(repositoryId, prNumber))
+      .then(async state => { await this.forgetOutdated(repositoryId, state).catch(() => undefined); return state; });
   }
 
   runPullRequestAction(input: PullRequestActionInput): Promise<PullRequestActionResult> {
@@ -290,7 +350,7 @@ export class GitHubService {
   }
 
   getPullRequestConversation(repositoryId: string, prNumber: number): Promise<PullRequestConversation> {
-    return this.shareRead(repositoryId, ['conversation', prNumber], () => this.readGetPullRequestConversation(repositoryId, prNumber));
+    return this.settledRead(repositoryId, ['conversation', prNumber], () => OPEN_PULL_REQUEST_MS, () => this.readGetPullRequestConversation(repositoryId, prNumber));
   }
 
   private async readGetPullRequestConversation(repositoryId: string, prNumber: number): Promise<PullRequestConversation> {

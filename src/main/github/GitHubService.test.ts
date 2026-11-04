@@ -352,6 +352,27 @@ describe('pull request live state', () => {
     await expect(service.getPullRequestLiveState('repo', 12)).rejects.toMatchObject({ detail: { code: 'GH_INVALID_OUTPUT' } });
   });
 
+  it('reuses a PR\'s details until its live state shows GitHub changed it', async () => {
+    let updatedAt = pull.updatedAt;
+    const { service, run } = fixture(withStack(ok({ data: { repository: { ...repository, pullRequest: pull } } })));
+    run.mockImplementation(async (_exe: string, args: string[]) => {
+      if (args[0] === 'auth' && args[1] === 'token') return { exitCode: 0, stdout: 'gho_test_0000000000000000000000000', stderr: '' };
+      if (args[0] === 'api' && args[1] === 'user') return { exitCode: 0, stdout: 'tester', stderr: '' };
+      if (args[0] === '--version' || args[0] === 'auth') return ok('ready');
+      if (args[0] === 'pr') return ok({ number: 12, state: 'OPEN', updatedAt, headRefOid: pull.headRefOid });
+      return isStackRead(args) ? ok({ data: { repository: { pr12: { stack: null, stackEntry: null } } } }) : ok({ data: { repository: { ...repository, pullRequest: { ...pull, updatedAt } } } });
+    });
+    const views = () => run.mock.calls.filter(([, args]) => args[0] === 'pr' && args[1] === 'view').length;
+    await service.getPullRequest('repo', 12);
+    await service.getPullRequestLiveState('repo', 12);
+    await service.getPullRequest('repo', 12);
+    expect(views()).toBe(1);
+    updatedAt = '2026-01-02T00:00:00Z';
+    await service.getPullRequestLiveState('repo', 12);
+    expect((await service.getPullRequest('repo', 12)).updatedAt).toBe(updatedAt);
+    expect(views()).toBe(2);
+  });
+
   it('separates stack membership, its absence, and a failed membership read', async () => {
     const main = ok({ data: { repository: { ...repository, pullRequest: pull } } });
     const member = ok({ data: { repository: { pr12: { stack: { number: 7, size: 3, baseRefName: 'main' }, stackEntry: { position: 2 } } } } });
