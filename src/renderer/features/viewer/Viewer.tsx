@@ -1,6 +1,7 @@
 import { formatDateTime } from '@shared/date-format';
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { lazyWithRetry } from '@/lib/lazy-with-retry';
+import { LazyPullRequestViewer as PullRequestViewer } from '@/features/pulls/pull-request-viewer-chunks';
 import { IconDots, IconLoader4 } from '@tabler/icons-react';
 import type { DiffResult, DiffViewPreference, FileResult, ImageFileResult, ThemePreference, WriteFileResult } from '../../../shared/contracts';
 import type { CommitInfo } from '../../../shared/git-types';
@@ -22,7 +23,6 @@ import { MobileCommitBar, MobileDiffBar } from './MobileViewerBars';
 const PierreDiffViewer = lazyWithRetry(() => import('./PierreDiffViewer'));
 const PierreEditBoundary = lazyWithRetry(() => import('./PierreEditBoundary').then((module) => ({ default: module.PierreEditBoundary })));
 const MarkdownFileViewer = lazyWithRetry(() => import('@/features/markdown/MarkdownFileViewer').then((module) => ({ default: module.MarkdownFileViewer })));
-const PullRequestViewer = lazyWithRetry(() => import('@/features/pulls/PullRequestViewer').then((module) => ({ default: module.PullRequestViewer })));
 const EditableFileViewer = lazyWithRetry(() => import('./EditableFileViewer').then((module) => ({ default: module.EditableFileViewer })));
 const HtmlFileViewer = lazyWithRetry(() => import('./HtmlFileViewer').then((module) => ({ default: module.HtmlFileViewer })));
 const ReleaseViewer = lazyWithRetry(() => import('@/features/pulls/ReleaseViewer').then((module) => ({ default: module.ReleaseViewer })));

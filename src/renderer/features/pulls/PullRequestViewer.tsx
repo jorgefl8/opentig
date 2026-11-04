@@ -1,7 +1,6 @@
 import { formatDateTime } from '@shared/date-format';
 import { PullRequestStackMenu } from './PullRequestStackMenu';
 import { Suspense, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import { lazyWithRetry } from '@/lib/lazy-with-retry';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { IconExternalLink, IconLoader4, IconRefresh } from '@tabler/icons-react';
 import { GITHUB_PR_COMMIT_PAGE, type DiffResult, type DiffViewPreference, type PullRequestCommitList, type PullRequestDetails, type PullRequestLatestReview, type PullRequestLiveState, type ThemePreference } from '../../../shared/contracts';
@@ -25,11 +24,11 @@ import { PullRequestEditor } from './PullRequestEditor';
 import { hasViewerDraft, pullRequestCommentDraft, pullRequestEditDraft, useViewerDraft } from './viewer-drafts';
 import { pullRequestLiveStateQueryOptions, queriesOutdatedByLiveState } from './pull-request-live-state-query';
 import { cachedPullRequestSummary } from './pull-request-summary-cache';
+import { LazyPullRequestDiff as PullRequestDiff } from './pull-request-viewer-chunks';
 import { opentig } from '@/lib/opentig-api';
 import { queryKeys } from '@/lib/query-client';
 import '@/features/markdown/markdown.css';
 
-const PullRequestDiff = lazyWithRetry(() => import('./PullRequestDiff'));
 /** How long a PR's details are taken as current without asking again. */
 const PULL_REQUEST_STALE_MS = 60_000;
 
@@ -87,6 +86,8 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
     },
   });
   const details = detailsQuery.data?.details ?? null;
+  const loaded = details !== null;
+  useEffect(() => { if (loaded) PullRequestDiff.preload(); }, [loaded]);
   const bodyHtml = detailsQuery.data?.bodyHtml ?? '';
   const detailsError = detailsQuery.error instanceof Error ? detailsQuery.error.message : detailsQuery.error ? 'Could not load the pull request.' : null;
   const diffQuery = useQuery<DiffResult>({

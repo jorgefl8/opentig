@@ -1,4 +1,4 @@
-import { lazy, type ComponentType } from 'react';
+import { createElement, lazy, useState, type ComponentType } from 'react';
 
 // Browsers word a failed module load differently: Chromium, WebKit (Safari and every
 // iOS browser), Firefox, and Vite's own CSS preloading.
@@ -31,4 +31,31 @@ export async function importWithRetry<T>(load: () => Promise<T>, delays: readonl
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function lazyWithRetry<T extends ComponentType<any>>(load: () => Promise<{ default: T }>) {
   return lazy(() => importWithRetry(load));
+}
+
+/**
+ * `lazyWithRetry` that can start downloading before it is shown. Once the code is
+ * in, a new instance renders it directly: React keeps a lazy component's fallback
+ * on screen for at least 300 ms the first time it suspends, even when the code
+ * arrives sooner. An instance keeps the type it mounted with, so one shown while
+ * loading isn't remounted when the code lands.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function lazyWithPreload<T extends ComponentType<any>>(load: () => Promise<{ default: T }>) {
+  let loaded: T | null = null;
+  let pending: Promise<{ default: T }> | null = null;
+  const start = () => pending ??= importWithRetry(load).then(
+    (module) => { loaded = module.default; return module; },
+    (error: unknown) => { pending = null; throw error; },
+  );
+  const Lazy = lazy(start);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function Preloadable(props: any) {
+    const [Component] = useState<ComponentType<unknown>>(() => (loaded ?? Lazy) as ComponentType<unknown>);
+    return createElement(Component, props);
+  }
+  return Object.assign(Preloadable as unknown as T, {
+    /** Starts the download; a failure is left for rendering, which retries and reports it. */
+    preload: () => { void start().catch(() => undefined); },
+  });
 }

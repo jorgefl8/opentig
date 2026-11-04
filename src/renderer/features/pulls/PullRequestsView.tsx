@@ -1,7 +1,7 @@
 import type { GitHubRepositoryAccount } from '@shared/github-accounts';
 import { formatTimeAgo } from '@shared/date-format';
 import { PullRequestStackMenu } from './PullRequestStackMenu';
-import { Suspense, useRef } from 'react';
+import { Suspense, useEffect, useRef } from 'react';
 import { lazyWithRetry } from '@/lib/lazy-with-retry';
 import { useQuery } from '@tanstack/react-query';
 import { useVirtualizer } from '@tanstack/react-virtual';
@@ -18,6 +18,7 @@ import { openOnGitHub } from './gh-utils';
 import { GitHubAvatar } from './GitHubAvatar';
 import { GitHubSectionMenu } from './GitHubSectionMenu';
 import { pullRequestLiveStateQueryOptions } from './pull-request-live-state-query';
+import { LazyPullRequestViewer } from './pull-request-viewer-chunks';
 
 const ReleasesView = lazyWithRetry(() => import('./ReleasesView').then((module) => ({ default: module.ReleasesView })));
 const ReleasesTools = lazyWithRetry(() => import('./ReleasesView').then((module) => ({ default: module.ReleasesTools })));
@@ -52,6 +53,7 @@ interface PullRequestsViewProps {
 }
 
 export function PullRequestsView(props: PullRequestsViewProps) {
+  useEffect(() => { LazyPullRequestViewer.preload(); }, []);
   if (props.info === null) {
     return <div className="view-loading" role="status"><IconLoader4 className="spinner" /> <ShimmeringText text="Checking repository…" /></div>;
   }
