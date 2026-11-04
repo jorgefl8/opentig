@@ -132,9 +132,11 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
       <span className="add">+{pr.additions}</span> <span className="del">−{pr.deletions}</span>
     </span>
   );
+  // The status reads membership afresh; until it arrives, the list's is the best known.
+  const stack = live ? live.stackMembership : pr.stack;
   const labelsAndStack = <>
     {details && details.labels.length > 0 && <span className="pr-labels" aria-label="Pull request labels">{details.labels.map((label) => label.name).join(', ')}</span>}
-    {pr.stack && <PullRequestStackMenu repositoryId={repositoryId} number={prNumber} membership={pr.stack} onSelect={onSelectPullRequest} />}
+    {stack && <PullRequestStackMenu repositoryId={repositoryId} number={prNumber} membership={stack} onSelect={onSelectPullRequest} />}
   </>;
   const updated = <span>updated <time dateTime={pr.updatedAt}>{formatDateTime(pr.updatedAt)}</time></span>;
   const loadingLine = (text: string) => <p className="pr-loading-line" role="status"><ShimmeringText text={text} /></p>;

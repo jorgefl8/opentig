@@ -340,7 +340,7 @@ describe('pull request live state', () => {
   it('separates stack membership, its absence, and a failed membership read', async () => {
     const main = ok({ data: { repository: { ...repository, pullRequest: pull } } });
     const member = ok({ data: { repository: { pr12: { stack: { number: 7, size: 3, baseRefName: 'main' }, stackEntry: { position: 2 } } } } });
-    expect(await fixture(withStack(main, member)).service.getPullRequestLiveState('repo', 12)).toMatchObject({ stack: 'member' });
+    expect(await fixture(withStack(main, member)).service.getPullRequestLiveState('repo', 12)).toMatchObject({ stack: 'member', stackMembership: { number: 7, size: 3, position: 2, base: 'main' } });
     expect(await fixture(withStack(main)).service.getPullRequestLiveState('repo', 12)).toMatchObject({ stack: 'none' });
     expect(await fixture(withStack(main, fail('HTTP 403: forbidden'))).service.getPullRequestLiveState('repo', 12)).toMatchObject({ stack: 'unknown' });
   });
@@ -364,6 +364,11 @@ describe('GitHub native stacks', () => {
     const details = await service.getPullRequest('repo', 101);
     expect(details.body).toBe('Description');
     expect(details.stack).toBeUndefined();
+  });
+  it('reads a PR\'s details with one request, leaving its stack to the live state', async () => {
+    const { service, run } = fixture(() => ok({ number: 101, state: 'OPEN', body: 'Description' }));
+    await service.getPullRequest('repo', 101);
+    expect(run.mock.calls.filter(([, args]) => args[0] === 'api' && args[1] !== 'user')).toEqual([]);
   });
   it('fetches full layers only through the explicit stack read', async () => {
     const { service, run } = fixture((args) => ok(args[1]?.includes('?') ? [stack] : stack));

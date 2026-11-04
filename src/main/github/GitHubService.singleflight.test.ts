@@ -67,7 +67,7 @@ describe('GitHub pending reads', () => {
     expect(await f.service.getPullRequest('alice', 12)).toMatchObject({ number: 12 });
   });
 
-  it('four readers share routing, credentials, detail and stack membership, with no settled cache', async () => {
+  it('four readers share routing, credentials and detail, with no settled cache', async () => {
     const started = deferred<void>();
     const gate = deferred<CliRunResult>();
     const f = await fixture(async args => {
@@ -82,7 +82,7 @@ describe('GitHub pending reads', () => {
     expect(f.run.mock.calls.filter(([, args]) => args[1] === 'token')).toHaveLength(1);
     gate.resolve(result('{"number":12,"state":"OPEN","title":"Initial"}'));
     const values = await Promise.all(readers);
-    expect(f.run.mock.calls.filter(([, args]) => args[1] === 'graphql')).toHaveLength(1);
+    expect(f.run.mock.calls.filter(([, args]) => args[1] === 'graphql')).toHaveLength(0);
     values[0]!.title = 'consumer edit';
     expect(values[1]!.title).toBe('Initial');
     await f.service.getPullRequest('alice', 12);

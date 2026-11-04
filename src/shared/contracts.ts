@@ -509,6 +509,8 @@ export interface PullRequestLiveState {
   isCrossRepository: boolean;
   /** `unknown` means the membership could not be read, which is different from not being in a stack. */
   stack: 'none' | 'member' | 'unknown';
+  /** Where it sits in its stack, when it is a member. */
+  stackMembership?: PullRequestStackMembership;
   autoMerge: { method: PullRequestMergeMethod } | null;
   mergeQueue: { enabled: boolean; queued: boolean };
   behindBy: number | null;
