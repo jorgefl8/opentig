@@ -101,7 +101,7 @@ With no changes, the section says so and, when the branch has commits that aren'
 
 Changed Markdown files open their staged or unstaged diff; use **Open file** for the rendered preview. HTML, SVG, and image files open a rich preview and have a separate diff action.
 
-To discard selected unstaged changes, review the affected paths in the confirmation dialog. Untracked files go to system Trash (the Recycle Bin on Windows).
+To discard selected unstaged changes, review the affected paths in the confirmation dialog. Untracked files go to system Trash (the Recycle Bin on Windows). A folder whose untracked files are all being discarded goes to Trash as one item, unless it also holds tracked or Git-ignored files. Folders the discard leaves empty are removed.
 
 **Resolve conflicts**
 
