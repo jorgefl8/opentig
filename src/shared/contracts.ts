@@ -867,7 +867,8 @@ export interface OpenTigApi {
     editPullRequestEntry(input: EditPullRequestEntryInput): Promise<void>;
     deletePullRequestEntry(input: DeletePullRequestEntryInput): Promise<void>;
     getPullRequestStack(repositoryId: string, number: number): Promise<PullRequestStack | null>;
-    getPullRequestDiff(repositoryId: string, number: number): Promise<DiffResult>;
+    /** `range` is the base and head from the PR's details, which spares asking GitHub for them again. */
+    getPullRequestDiff(repositoryId: string, number: number, range?: { baseOid: string; headOid: string }): Promise<DiffResult>;
     getPullRequestCommitDiff(repositoryId: string, oid: string): Promise<DiffResult>;
     getPullRequestCommits(repositoryId: string, number: number): Promise<PullRequestCommitList>;
     createPullRequest(input: CreatePullRequestInput): Promise<CreatePullRequestResult>;

@@ -15,7 +15,7 @@ import { browseServerDirectories } from '../files/ServerDirectoryBrowser';
 import { CommandRegistry, type CommandExecutionContext } from './CommandRegistry';
 import type { OpenTigHost } from './OpenTigHost';
 import type { OpenTigRuntimeServices } from './OpenTigRuntime';
-import { aiString, booleanArg, branchDetailsArg, commentOnPullRequestArg, createPullRequestArg, createReleaseArg, deleteBranchArg, deleteDraftReleaseArg, deletePullRequestEntryArg, editPullRequestEntryArg, filesTreeStateArg, generateCommitMessageArg, generatePullRequestDraftArg, nullableProjectIdArg, oidArg, openFilesStateArg, pathsArg, prepareCommitGroupArg, prNumberArg, publishBranchArg, projectIdArg, projectNameArg, publishReleaseArg, pullRequestActionArg, pullRequestStatesArg, reviewPullRequestArg, runWorkflowArg, updatePullRequestArg, workflowPathArg, removeWorktreeArg, repositoryKeyArg, searchOptionsArg, searchReplaceArg, stringArg, tagNameArg, textArg, updateReleaseArg, worktreeDetailsArg } from './validators';
+import { aiString, booleanArg, branchDetailsArg, commentOnPullRequestArg, createPullRequestArg, createReleaseArg, deleteBranchArg, deleteDraftReleaseArg, deletePullRequestEntryArg, editPullRequestEntryArg, filesTreeStateArg, generateCommitMessageArg, generatePullRequestDraftArg, nullableProjectIdArg, oidArg, openFilesStateArg, pathsArg, prepareCommitGroupArg, prNumberArg, publishBranchArg, projectIdArg, projectNameArg, publishReleaseArg, pullRequestActionArg, pullRequestRangeArg, pullRequestStatesArg, reviewPullRequestArg, runWorkflowArg, updatePullRequestArg, workflowPathArg, removeWorktreeArg, repositoryKeyArg, searchOptionsArg, searchReplaceArg, stringArg, tagNameArg, textArg, updateReleaseArg, worktreeDetailsArg } from './validators';
 import { createTrackingBranchArg, deleteRemoteBranchArg, orderingIndexArg } from './validators';
 
 export function registerServerCommands(
@@ -509,7 +509,7 @@ export function registerServerCommands(
   handle(IPC.githubPrEntryEdit, 'gh-pr-entry-edit', (input) => services.github.editPullRequestEntry(editPullRequestEntryArg(input)));
   handle(IPC.githubPrEntryDelete, 'gh-pr-entry-delete', (input) => services.github.deletePullRequestEntry(deletePullRequestEntryArg(input)));
   handle(IPC.githubPrStack, 'gh-pr-stack', (id, prNumber) => services.github.getPullRequestStack(stringArg(id, 'gh-pr-stack', 64), prNumberArg(prNumber, 'gh-pr-stack')));
-  handle(IPC.githubPrDiff, 'gh-pr-diff', (id, prNumber) => services.github.getPullRequestDiff(stringArg(id, 'gh-pr-diff', 64), prNumberArg(prNumber, 'gh-pr-diff')));
+  handle(IPC.githubPrDiff, 'gh-pr-diff', (id, prNumber, range) => services.github.getPullRequestDiff(stringArg(id, 'gh-pr-diff', 64), prNumberArg(prNumber, 'gh-pr-diff'), pullRequestRangeArg(range, 'gh-pr-diff')));
   handle(IPC.githubPrCommitDiff, 'gh-pr-commit-diff', (id, oid) => services.github.getPullRequestCommitDiff(stringArg(id, 'gh-pr-commit-diff', 64), oidArg(oid, 'gh-pr-commit-diff')));
   handle(IPC.githubPrCommits, 'gh-pr-commits', (id, prNumber) => services.github.getPullRequestCommits(stringArg(id, 'gh-pr-commits', 64), prNumberArg(prNumber, 'gh-pr-commits')));
   handle(IPC.githubPrCreate, 'gh-pr-create', (input) => services.github.createPullRequest(createPullRequestArg(input)));

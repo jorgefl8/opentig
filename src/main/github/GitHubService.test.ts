@@ -191,6 +191,21 @@ describe('pull request code', () => {
     expect(fetches).toEqual([expect.arrayContaining(['--no-write-fetch-head', 'origin', 'refs/pull/12/head'])]);
   });
 
+  it('takes the range the viewer already has instead of asking GitHub for it, and downloads it once for concurrent readers', async () => {
+    let fetched = false;
+    const fetches: string[][] = [];
+    const { service, run } = fixture(view, undefined, undefined, (args, stdin = '') => {
+      if (args[0] === 'cat-file') return stdin.split('\n').filter(Boolean).map(line => fetched || line.startsWith(base) ? 'commit' : 'missing').join('\n');
+      if (args[0] === 'fetch') { fetches.push(args); fetched = true; return ''; }
+      if (args[0] === 'diff') return 'diff --git a/one b/one\n';
+      return undefined;
+    });
+    const results = await Promise.all([1, 2].map(() => service.getPullRequestDiff('repo', 12, { baseOid: base, headOid: head })));
+    expect(results.map(result => result.patch)).toEqual(['diff --git a/one b/one\n', 'diff --git a/one b/one\n']);
+    expect(fetches).toHaveLength(1);
+    expect(run.mock.calls.some(([, args]) => args[0] === 'pr')).toBe(false);
+  });
+
   it('completes the commit list from the local clone only when GitHub returns a full first page', async () => {
     const ghCommit = (index: number) => ({ oid: index.toString(16).padStart(40, '0'), messageHeadline: `GitHub ${index}`, authors: [{ login: 'octo', name: 'Octo' }] });
     const reply = (count: number) => (args: string[]) => args[1] === 'graphql' ? fail('unavailable')

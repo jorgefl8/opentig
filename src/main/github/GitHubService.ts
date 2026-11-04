@@ -29,6 +29,7 @@ const ACCOUNT_USED = 'Account used:';
 
 export class GitHubService {
   private readonly reads = new ReadSingleFlight();
+  private readonly downloads = new Map<string, Promise<{ available: boolean; failure: string }>>();
   private readonly localGit: PullRequestLocalGit;
   private readonly actions: PullRequestActionRunner;
   private readonly releases: GitHubReleases;
@@ -404,16 +405,25 @@ export class GitHubService {
     return complete;
   }
 
-  getPullRequestDiff(repositoryId: string, prNumber: number): Promise<DiffResult> {
-    return this.shareRead(repositoryId, ['diff', prNumber], () => this.readGetPullRequestDiff(repositoryId, prNumber));
+  /**
+   * `known` is the base and head the viewer already has from the PR's details, so
+   * showing the code doesn't ask GitHub for them a second time.
+   */
+  async getPullRequestDiff(repositoryId: string, prNumber: number, known?: { baseOid: string; headOid: string }): Promise<DiffResult> {
+    const range = known
+      ? { number: prNumber, ...known }
+      : await this.getPullRequest(repositoryId, prNumber).then(details => ({ number: prNumber, baseOid: details.baseRefOid, headOid: details.headRefOid }));
+    // Downloading the commits writes to the clone, which restarts any shared read
+    // still waiting on it, so it happens before the diff is read rather than inside it.
+    let fetchFailure = '';
+    const local = await this.localRange(repositoryId, range, (message) => { fetchFailure = message; });
+    return this.shareRead(repositoryId, ['diff', range], () => local
+      ? this.localGit.rangeDiff(local.cwd, local)
+      : this.readGitHubDiff(repositoryId, prNumber, fetchFailure));
   }
 
-  private async readGetPullRequestDiff(repositoryId: string, prNumber: number): Promise<DiffResult> {
-    let fetchFailure = '';
-    const range = await this.localRange(repositoryId, prNumber, (message) => { fetchFailure = message; });
-    if (range) return this.localGit.rangeDiff(range.cwd, range);
-    // Without the commits locally (offline remote, shallow history, an unusual
-    // remote layout) GitHub's own diff still covers PRs within its limits.
+  /** Without the commits locally (offline remote, shallow history, an unusual remote layout) GitHub's own diff still covers PRs within its limits. */
+  private async readGitHubDiff(repositoryId: string, prNumber: number, fetchFailure: string): Promise<DiffResult> {
     const { repository, nameWithOwner, auth, executable } = await this.requireGitHub(repositoryId, 'gh-pr-diff');
     const result = await this.runGhRead(
       ['pr', 'diff', String(prNumber), '-R', nameWithOwner],
@@ -428,13 +438,23 @@ export class GitHubService {
   }
 
   /** The PR's base and head commits, downloaded into the local clone when needed. Null when Git cannot provide them. */
-  private async localRange(repositoryId: string, prNumber: number, onFetchFailure?: (message: string) => void): Promise<(PullRequestRange & { cwd: string }) | null> {
-    const details = await this.getPullRequest(repositoryId, prNumber);
+  private async localRange(repositoryId: string, range: PullRequestRange, onFetchFailure?: (message: string) => void): Promise<(PullRequestRange & { cwd: string }) | null> {
     const repository = this.repositories.get(repositoryId);
-    const range = { number: prNumber, baseOid: details.baseRefOid, headOid: details.headRefOid };
     try {
       const { remote } = await this.routing(repositoryId);
-      return await this.localGit.ensureRange(repository.path, remote.name, range, onFetchFailure) ? { ...range, cwd: repository.path } : null;
+      // Readers of the same PR share one download.
+      const key = JSON.stringify([repository.path, remote.name, range]);
+      let pending = this.downloads.get(key);
+      if (!pending) {
+        const failures: string[] = [];
+        pending = this.localGit.ensureRange(repository.path, remote.name, range, (message) => failures.push(message))
+          .then(available => ({ available, failure: failures[0] ?? '' }))
+          .finally(() => this.downloads.delete(key));
+        this.downloads.set(key, pending);
+      }
+      const { available, failure } = await pending;
+      if (failure) onFetchFailure?.(failure);
+      return available ? { ...range, cwd: repository.path } : null;
     } catch { return null; }
   }
 
@@ -443,7 +463,7 @@ export class GitHubService {
     return this.shareRead(repositoryId, ['commits', prNumber], async () => {
       const details = await this.getPullRequest(repositoryId, prNumber);
       if (details.commits.length < GITHUB_PR_COMMIT_PAGE) return { commits: details.commits, complete: true };
-      const range = await this.localRange(repositoryId, prNumber);
+      const range = await this.localRange(repositoryId, { number: prNumber, baseOid: details.baseRefOid, headOid: details.headRefOid });
       const local = range ? await this.localGit.commits(range.cwd, range).catch(() => null) : null;
       if (!local?.length) return { commits: details.commits, complete: false };
       // Keep GitHub's account names and avatars where it provided them.

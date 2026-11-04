@@ -80,8 +80,9 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
   const bodyHtml = detailsQuery.data?.bodyHtml ?? '';
   const detailsError = detailsQuery.error instanceof Error ? detailsQuery.error.message : detailsQuery.error ? 'Could not load the pull request.' : null;
   const diffQuery = useQuery<DiffResult>({
-    queryKey: queryKeys.pullRequestDiff(repositoryId, prNumber),
-    queryFn: () => opentig.github.getPullRequestDiff(repositoryId, prNumber),
+    // Keyed by the range too, so a new head shows its own code rather than the one read before the details caught up.
+    queryKey: [...queryKeys.pullRequestDiff(repositoryId, prNumber), details?.baseRefOid, details?.headRefOid],
+    queryFn: () => opentig.github.getPullRequestDiff(repositoryId, prNumber, details ? { baseOid: details.baseRefOid, headOid: details.headRefOid } : undefined),
     enabled: tab === 'diff' && details !== null,
   });
   const diff = diffQuery.data ?? null;

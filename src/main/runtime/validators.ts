@@ -151,6 +151,14 @@ export function oidArg(value: unknown, operation: string): string {
   return oid;
 }
 
+/** A pull request's base and head commits, when the caller already knows them. */
+export function pullRequestRangeArg(value: unknown, operation: string): { baseOid: string; headOid: string } | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== 'object') throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation, message: 'Invalid commit range.' });
+  const range = value as Record<string, unknown>;
+  return { baseOid: oidArg(range.baseOid, operation), headOid: oidArg(range.headOid, operation) };
+}
+
 const MAX_BRANCH_REF_LENGTH = 512;
 const MAX_WORKTREE_PATH_LENGTH = 4_096;
 
