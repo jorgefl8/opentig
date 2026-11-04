@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { ReadSingleFlight } from '../git/ReadSingleFlight';
 import type { CliCandidate } from '../ai/CliResolver';
+import type { CliDetection } from '../ai/cli-selection';
 import { parsePullRequestStack, parseStackMemberships, stackMembershipQuery } from './PullRequestStackParser';
 import os from 'node:os';
 import { GITHUB_PR_COMMIT_PAGE } from '../../shared/contracts';
@@ -158,8 +159,11 @@ export class GitHubService {
   }
 
   async status(forceRefresh = false): Promise<GhCliStatus> {
-    if (forceRefresh) { this.invalidate(); this.accounts.refreshAuthentication(); }
+    const previous = forceRefresh ? await this.accounts.lastDetection?.catch(() => null) ?? null : null;
     const detected = await this.accounts.detect(forceRefresh);
+    // Every app load checks the CLI again. Only a different CLI makes what was read with
+    // the old one doubtful; dropping it every time made each load start GitHub from scratch.
+    if (forceRefresh && !sameCli(previous, detected)) { this.invalidate(); this.accounts.refreshAuthentication(); }
     return { installed: !!detected.candidate, availability: detected.state === 'available' ? 'ready' : 'error',
       authStatus: 'unknown', ...(detected.version ? { version: detected.version } : {}), checkedAt: new Date().toISOString() };
   }
@@ -657,6 +661,11 @@ export class GitHubService {
       throw new GhOperationError({ ...mapped.detail, message: redactCommandToken(mapped.message, options.auth ?? {}) });
     }
   }
+}
+
+function sameCli(previous: CliDetection | null, next: CliDetection): boolean {
+  return previous !== null && previous.state === next.state && previous.version === next.version
+    && previous.candidate?.executable === next.candidate?.executable;
 }
 
 function validateRef(value: string, operation: string): string {

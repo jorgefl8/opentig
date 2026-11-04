@@ -373,6 +373,16 @@ describe('pull request live state', () => {
     expect(views()).toBe(2);
   });
 
+  it('keeps what it read when the app checks the same CLI again on load', async () => {
+    const { service, run } = fixture(() => ok({ number: 12, state: 'OPEN', updatedAt: pull.updatedAt }));
+    const views = () => run.mock.calls.filter(([, args]) => args[0] === 'pr' && args[1] === 'view').length;
+    await service.status(true);
+    await service.getPullRequest('repo', 12);
+    await service.status(true);
+    await service.getPullRequest('repo', 12);
+    expect(views()).toBe(1);
+  });
+
   it('separates stack membership, its absence, and a failed membership read', async () => {
     const main = ok({ data: { repository: { ...repository, pullRequest: pull } } });
     const member = ok({ data: { repository: { pr12: { stack: { number: 7, size: 3, baseRefName: 'main' }, stackEntry: { position: 2 } } } } });
