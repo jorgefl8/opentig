@@ -66,11 +66,14 @@ export function SidebarRail<V extends string>({ sections, active, ctrlHeld, togg
 /** Sits at the end of the expanded sidebar's tab bar. */
 export function SidebarCollapseButton({ toggleCombo, onCollapse }: { toggleCombo: string; onCollapse: () => void }) {
   return (
-    <Tooltip>
-      <TooltipTrigger render={<button type="button" className="sidebar-collapse-button" aria-label="Collapse sidebar" aria-keyshortcuts={ariaKeyShortcut(toggleCombo)} onClick={onCollapse} />}>
-        <IconLayoutSidebarLeftCollapse aria-hidden="true" />
-      </TooltipTrigger>
-      <TooltipContent side="bottom">Collapse sidebar <Kbd>{toggleCombo}</Kbd></TooltipContent>
-    </Tooltip>
+    <>
+      <span className="sidebar-tabs-separator" aria-hidden="true" />
+      <Tooltip>
+        <TooltipTrigger render={<button type="button" className="sidebar-collapse-button" aria-label="Collapse sidebar" aria-keyshortcuts={ariaKeyShortcut(toggleCombo)} onClick={onCollapse} />}>
+          <IconLayoutSidebarLeftCollapse aria-hidden="true" />
+        </TooltipTrigger>
+        <TooltipContent side="bottom">Collapse sidebar <Kbd>{toggleCombo}</Kbd></TooltipContent>
+      </Tooltip>
+    </>
   );
 }

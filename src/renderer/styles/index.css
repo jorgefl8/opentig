@@ -1509,12 +1509,15 @@ section[data-sileo-viewport] [data-sileo-title] { text-transform: none; }
   .sidebar[data-resizing] > * { min-width: 300px; }
   .sidebar[data-collapsed] { width: 44px; min-width: 0; }
   .sidebar[data-collapsed] > :not(.sidebar-rail) { display: none; }
+  /* Sets the collapse button apart from the sections, as the rail's line does when collapsed. */
+  /* The tabs are 38px over a 37px bar so their rule lands on its border; these offsets centre on the tab icons, not the bar. */
+  .sidebar-tabs .sidebar-tabs-separator { width: 1px; height: 16px; flex: none; align-self: flex-start; margin: 11px 4px 0 6px; background: var(--sidebar-border); }
   .sidebar-tabs .sidebar-collapse-button {
     flex: none;
     width: 26px;
     height: 26px;
-    align-self: center;
-    margin-left: 2px;
+    align-self: flex-start;
+    margin-top: 6px;
     border-radius: var(--radius-md);
     padding: 0;
   }
