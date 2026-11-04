@@ -95,7 +95,8 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
   const commits = commitsQuery.data?.commits ?? details?.commits ?? [];
   const commitsIncomplete = firstPageOnly && commitsQuery.data?.complete !== true;
   const diffError = diffQuery.error instanceof Error ? diffQuery.error.message : diffQuery.error ? 'Could not load the diff.' : null;
-  const liveQuery = useQuery(pullRequestLiveStateQueryOptions(repositoryId, prNumber, details !== null));
+  // Needs nothing from the details, so the status and actions don't wait for them.
+  const liveQuery = useQuery(pullRequestLiveStateQueryOptions(repositoryId, prNumber));
   const live = liveQuery.data ?? null;
   const previousLive = useRef<PullRequestLiveState | null>(null);
   useEffect(() => {

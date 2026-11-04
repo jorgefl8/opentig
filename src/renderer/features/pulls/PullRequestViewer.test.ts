@@ -48,7 +48,7 @@ afterEach(async () => {
   await act(async () => root.unmount());
   container.remove(); client.clear(); document.body.innerHTML = ''; vi.unstubAllGlobals(); vi.resetAllMocks();
 });
-// The live state starts once the details arrive, and a new head reloads them, so reads settle over several ticks.
+// A new head reloads the details, so reads settle over several ticks.
 async function settle() {
   for (let tick = 0; tick < 6; tick++) await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
 }
@@ -226,10 +226,10 @@ it('does not read the conversation until Comments is open', async () => {
   expect(api.getPullRequestConversation).not.toHaveBeenCalled();
 });
 
-it('does not read the live state of a PR that failed to load', async () => {
-  api.getPullRequest.mockRejectedValue(new Error('Not found'));
+it('reads the status alongside the details rather than after them', async () => {
+  api.getPullRequest.mockReturnValue(new Promise(() => {}));
   await render();
-  expect(api.getPullRequestLiveState).not.toHaveBeenCalled();
+  expect(api.getPullRequestLiveState).toHaveBeenCalledWith('repo', 7);
 });
 
 it('on a phone puts its number and branches in the top bar, and floats one thing per tab', async () => {
