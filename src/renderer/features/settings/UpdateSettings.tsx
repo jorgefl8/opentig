@@ -7,6 +7,7 @@ import { summarizeUpdateReleaseNotes } from './update-release-notes';
 import { Button } from '@/components/ui/button';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { appDisplayName, isDevProfile } from '@/lib/app-identity';
+import { SettingRow } from './SettingRows';
 import { updatesApi } from './update-api';
 
 function useUpdateStatus(interval: number) {
@@ -44,24 +45,24 @@ export function UpdateSettings() {
     ? 'When developing from source, rebuild and relaunch OpenTig Dev. For a downloaded build, replace it with a new Dev ZIP.'
     : 'Rebuild and restart the Dev server to apply source changes.';
   const liveCopy = error ?? (isDevProfile ? devUpdateCopy : status.message ?? updateCopy(status));
-  return <div className="settings-field">
-    <div className="settings-field-label">
-      <strong>{appDisplayName}{isDevProfile ? ' · Base version ' : ' '}{status.currentVersion}</strong>
-      <span>{isDevProfile ? 'Development build. Automatic updates to stable releases are disabled.' : status.phase === 'unavailable' ? 'This build does not check for automatic updates.' : window.opentigDesktop
-        ? 'Stable releases are checked at startup, every 5 minutes, and when returning to the app if a check is due. Download and restart when you are ready.'
-        : 'The server checks for stable releases at startup and every 5 minutes. Download and restart when you are ready.'}</span>
-    </div>
-    <p className="text-sm" role="status" aria-live="polite">{!error && busy ? <ShimmeringText text={liveCopy} /> : liveCopy}</p>
+  const label = `${appDisplayName}${isDevProfile ? ' · Base version ' : ' '}${status.currentVersion}`;
+  const description = isDevProfile ? 'Development build. Automatic updates to stable releases are disabled.' : status.phase === 'unavailable' ? 'This build does not check for automatic updates.' : window.opentigDesktop
+    ? 'Stable releases are checked at startup, every 5 minutes, and when returning to the app if a check is due. Download and restart when you are ready.'
+    : 'The server checks for stable releases at startup and every 5 minutes. Download and restart when you are ready.';
+  return <div className="settings-update">
+    <SettingRow label={label} description={description}>
+      {['idle', 'error', 'checking'].includes(status.phase) && <Button variant="ghost" size="sm" disabled={busy} onClick={() => void action('check')}>{status.phase === 'checking' ? <ShimmeringText text="Checking…" /> : 'Check for updates'}</Button>}
+      {status.phase === 'available' && <Button size="sm" disabled={busy} onClick={() => void action('download')}>Download {status.availableVersion}</Button>}
+      {status.phase === 'ready' && <Button size="sm" disabled={busy} onClick={() => void action('install')}>{status.reloadRequired ? 'Reload app' : 'Restart and install'}</Button>}
+    </SettingRow>
+    <p className="settings-update-status" role="status" aria-live="polite">{!error && busy ? <ShimmeringText text={liveCopy} /> : liveCopy}</p>
     {status.phase === 'downloading' && <progress className="w-full" aria-label="Update download" max={100} value={status.progress ?? 0} />}
-    <div className="flex flex-wrap items-center gap-2">
-      {['idle', 'error', 'checking'].includes(status.phase) && <Button variant="outline" disabled={busy} onClick={() => void action('check')}>{status.phase === 'checking' ? <ShimmeringText text="Checking…" /> : 'Check for updates'}</Button>}
-      {status.phase === 'available' && <Button disabled={busy} onClick={() => void action('download')}>Download {status.availableVersion}</Button>}
-      {status.phase === 'ready' && <Button disabled={busy} onClick={() => void action('install')}>{status.reloadRequired ? 'Reload app' : 'Restart and install'}</Button>}
-      {installedReleaseUrl && <a className="text-sm underline" href={installedReleaseUrl} target="_blank" rel="noreferrer">Release notes · {status.currentVersion} (installed)</a>}
-      {status.releaseUrl && <a className="text-sm underline" href={status.releaseUrl} target="_blank" rel="noreferrer">Release notes · {status.availableVersion} (update)</a>}
-    </div>
-    {status.checkedAt && <p className="text-xs text-muted-foreground">Last checked: {formatDateTime(status.checkedAt, { seconds: true })}</p>}
-    {status.phase === 'ready' && !status.reloadRequired && <p className="text-xs text-muted-foreground">Save your edits and finish Git operations before restarting. Closing normally will not install the update.</p>}
+    {(installedReleaseUrl || status.releaseUrl) && <p className="settings-update-links">
+      {installedReleaseUrl && <a href={installedReleaseUrl} target="_blank" rel="noreferrer">Release notes · {status.currentVersion} (installed)</a>}
+      {status.releaseUrl && <a href={status.releaseUrl} target="_blank" rel="noreferrer">Release notes · {status.availableVersion} (update)</a>}
+    </p>}
+    {status.checkedAt && <p className="settings-note">Last checked: {formatDateTime(status.checkedAt, { seconds: true })}</p>}
+    {status.phase === 'ready' && !status.reloadRequired && <p className="settings-note">Save your edits and finish Git operations before restarting. Closing normally will not install the update.</p>}
   </div>;
 }
 

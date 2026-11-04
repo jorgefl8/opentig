@@ -37,7 +37,7 @@ export function EnvironmentStrip({ checks, assistant, onAssistant, onSettings }:
       : <span className="onboarding-ai">
         <Select value={selected ?? null} onValueChange={value => { if (value) onAssistant(value as AiHarnessId); }}>
           {/* The whole chip is the trigger; utilities override the default field look. */}
-          <SelectTrigger aria-label="AI assistant" size="sm" className="onboarding-chip gap-1.5 rounded-full bg-card px-2.5 text-[11.5px] font-normal hover:bg-muted aria-expanded:bg-muted dark:bg-card dark:hover:bg-muted dark:aria-expanded:bg-muted [&_svg:not([class*='size-'])]:size-3.5">
+          <SelectTrigger aria-label="AI assistant" size="sm" className="onboarding-chip gap-1.5 rounded-full bg-card px-2.5 text-xs font-normal hover:bg-muted aria-expanded:bg-muted dark:bg-card dark:hover:bg-muted dark:aria-expanded:bg-muted [&_svg:not([class*='size-'])]:size-3.5">
             <Dot state={selected ? 'ready' : 'none'} />AI
             <SelectValue>{selected ? <span className="onboarding-ai-value"><AiProviderIcon harness={selected} />{harnessLabel(selected)}</span> : <em>none found</em>}</SelectValue>
           </SelectTrigger>

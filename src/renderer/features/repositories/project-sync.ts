@@ -35,6 +35,19 @@ export function visibleRepositorySyncActions(counts: RepositorySyncCounts | unde
   ];
 }
 
+export type SyncPill = { action: 'pull' | 'push'; count: number } | { action: 'publish' };
+
+/**
+ * The single sync action a phone's top bar offers, when it can run. Pulling comes first
+ * because a push would be refused until it's done; the other one stays in the repository sheet.
+ */
+export function mobileSyncPill(status: RepositorySyncCounts | null | undefined): SyncPill | null {
+  if (!status || status.readOnly || status.detached || status.unborn) return null;
+  if (status.upstream && status.behind > 0) return { action: 'pull', count: status.behind };
+  if (needsBranchPublication(status)) return { action: 'publish' };
+  return status.ahead > 0 ? { action: 'push', count: status.ahead } : null;
+}
+
 export interface ProjectSyncToastCopy {
   title: string;
   description?: string;

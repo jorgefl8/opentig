@@ -44,15 +44,22 @@ const choice = (name: string) => [...document.querySelectorAll<HTMLElement>('[ro
 
 it.each([
   { state: 'OPEN', isDraft: false }, { state: 'OPEN', isDraft: true }, { state: 'MERGED', isDraft: false },
+  { state: 'CLOSED', isDraft: false },
 ] as const)('offers both destinations for $state PRs (draft: $isDraft) without opening GitHub on trigger click', async state => {
   await render({ ...pullRequest, ...state });
   expect(trigger().querySelector('.tabler-icon-external-link')).toBeNull();
   expect(trigger().querySelector('button')).toBeNull();
-  expect(trigger().querySelector(state.state === 'MERGED' ? '.tabler-icon-git-merge' : '.tabler-icon-git-pull-request')).not.toBeNull();
+  const icon = state.state === 'MERGED' ? 'merge' : state.state === 'CLOSED' ? 'pull-request-closed' : state.isDraft ? 'pull-request-draft' : 'pull-request';
+  expect(trigger().querySelector(`.tabler-icon-git-${icon}`)).not.toBeNull();
+  const tone = state.state === 'MERGED' ? 'merged' : state.state === 'CLOSED' ? 'closed' : state.isDraft ? 'draft' : 'open';
+  expect(trigger().classList.contains(`pr-state-${tone}`)).toBe(true);
+  expect(trigger().textContent).toBe(state.isDraft ? '#12Draft' : '#12');
   await click(trigger());
   const menu = document.querySelector('[role="menu"]')!;
   expect(menu.textContent).toContain(pullRequest.title);
-  expect(menu.textContent).toContain(state.state === 'MERGED' ? 'PR #12 · Merged into main' : state.isDraft ? 'PR #12 · Draft' : 'PR #12 · Open');
+  expect(menu.textContent).toContain(state.state === 'MERGED' ? 'PR #12 · Merged into main' : state.state === 'CLOSED' ? 'PR #12 · Closed' : state.isDraft ? 'PR #12 · Draft' : 'PR #12 · Open');
+  // The pull request's own size, as in its row in the GitHub list.
+  expect(menu.textContent).toContain(' · +1 −0');
   expect(external).not.toHaveBeenCalled();
   expect(onOpenPullRequest).not.toHaveBeenCalled();
   await click(choice('Open in OpenTig'));
@@ -68,7 +75,7 @@ it.each([
 
 it('offers the same destinations in the mobile repository menu and closes it only after a choice', async () => {
   await render({ ...pullRequest, state: 'MERGED' }, true);
-  expect(trigger().textContent).toBe('View merged PR #12');
+  expect(trigger().textContent).toBe('View merged pull request #12');
   await click(trigger());
   expect(onNavigate).not.toHaveBeenCalled();
   await click(choice('Open in OpenTig'));

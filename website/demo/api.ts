@@ -5,6 +5,7 @@ import type {
 } from "../../src/shared/contracts";
 import { DemoRepository, repository, sampleDate } from "./model";
 import { demoPulls } from "./pulls";
+import { demoReleases } from "./releases";
 import { findSearchMatches } from "../../src/shared/search";
 
 // The shared app recognizes this error type; the demo has no authentication transport.
@@ -177,7 +178,7 @@ export const opentig: OpenTigApi = {
             line: m.line,
             column: m.column,
             length: m.end - m.start,
-            text: m.text,
+            text: content.split("\n")[m.line - 1]!.slice(0, 500),
           })),
         }))
         .filter((f) => f.matches.length);
@@ -287,14 +288,21 @@ export const opentig: OpenTigApi = {
     findPullRequestForBranch: async (_id, branch) => demoPulls.forBranch(branch),
     listPullRequests: async (_id, states) => demoPulls.list(states),
     getPullRequest: async (_id, number) => demoPulls.get(number),
+    getPullRequestLiveState: async (_id, number) => demoPulls.liveState(number),
+    getPullRequestConversation: async (_id, number) => demoPulls.conversation(number),
     getPullRequestStack: async () => null,
     getPullRequestDiff: async (_id, number) => demoPulls.diff(number),
     getPullRequestCommitDiff: async (_id, oid) => demoPulls.commitDiff(oid),
     getPullRequestCommits: async (_id, number) => ({ commits: demoPulls.get(number).commits, complete: true }),
+    listReleases: async () => demoReleases.list(),
+    getRelease: async (_id, tagName) => demoReleases.get(tagName),
+    checkReleaseTag: async (_id, tagName) => demoReleases.checkTag(tagName),
+    listWorkflows: async () => demoReleases.workflows(),
+    listWorkflowRuns: async (_id, path) => demoReleases.workflowRuns(path),
     repositoryAccount: async () => ({
       selection: { mode: "default" },
       nameWithOwner: "demo/launchpad",
-      login: null,
+      login: "opentig-demo",
       source: null,
       state: "ready",
       checkedAt: sampleDate,

@@ -1,8 +1,10 @@
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from 'react';
 import { defaultRangeExtractor, useVirtualizer } from '@tanstack/react-virtual';
 import { IconSettings } from '@tabler/icons-react';
 import { Combobox, ComboboxContent, ComboboxGroup, ComboboxGroupLabel, ComboboxInput, ComboboxItem, ComboboxList, ComboboxTrigger } from '@/components/ui/combobox';
+import { Kbd } from '@/components/ui/kbd';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { useMobileLayout } from '@/lib/use-mobile-layout';
 import { cn } from '@/lib/utils';
 
 export interface SearchablePickerItem {
@@ -23,6 +25,15 @@ export interface SearchablePickerGroup {
   items: SearchablePickerItem[];
 }
 
+export interface SearchablePickerAction {
+  label: string;
+  /** Defaults to the settings icon, which suits "Manage…" rows. */
+  icon?: ReactNode;
+  /** The command's key combination, shown at the end of the row. */
+  shortcut?: string;
+  onClick(): void;
+}
+
 interface SearchablePickerProps {
   groups: SearchablePickerGroup[];
   value: string;
@@ -32,12 +43,15 @@ interface SearchablePickerProps {
   icon?: ReactNode;
   triggerId?: string;
   size?: 'sm' | 'default';
-  triggerHint?: ReactNode;
+  /** Tooltip for the trigger, also used when its label fits. */
+  triggerHint?: string;
+  /** Replaces the trigger's default up and down chevrons. */
+  triggerIndicator?: ReactElement | undefined;
   triggerClassName?: string;
   contentClassName?: string;
   shortcut?: string;
   placeholder: string;
-  management?: { label: string; onClick(): void };
+  management?: SearchablePickerAction[];
   disabled?: boolean | undefined;
   align?: 'start' | 'end';
   open?: boolean;
@@ -46,12 +60,14 @@ interface SearchablePickerProps {
   onSearchChange?(): void;
 }
 
-/** Compact selection for toolbars and forms; optional management stays outside the listbox. */
-export function SearchablePicker({ groups, value, onValueChange, label, triggerLabel, icon, triggerHint,
+/** Compact selection for toolbars and forms; optional management actions stay outside the listbox. */
+export function SearchablePicker({ groups, value, onValueChange, label, triggerLabel, icon, triggerHint, triggerIndicator,
   triggerId, size = 'sm', triggerClassName, contentClassName, shortcut, placeholder, management, disabled, align = 'end',
   open: controlledOpen, onOpenChange, focusSearch = true, onSearchChange,
 }: SearchablePickerProps) {
   const comboboxId = useId();
+  // Focusing the search on a phone opens the keyboard, which leaves the list almost no room to scroll.
+  const mobile = useMobileLayout();
   const [internalOpen, setInternalOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [scrolling, setScrolling] = useState(false);
@@ -118,15 +134,14 @@ export function SearchablePicker({ groups, value, onValueChange, label, triggerL
         if (item.value !== value) onValueChange(item.value);
       }}
     >
-      <Tooltip disabled={!triggerTruncated || (controlledOpen ?? internalOpen) || disabled}>
-        <TooltipTrigger id={triggerId} render={<ComboboxTrigger size={size} className={triggerClassName} aria-label={label} aria-keyshortcuts={shortcut} />}>
+      <Tooltip disabled={(!triggerTruncated && !triggerHint) || (controlledOpen ?? internalOpen) || disabled}>
+        <TooltipTrigger id={triggerId} render={<ComboboxTrigger size={size} className={triggerClassName} indicator={triggerIndicator} aria-label={label} aria-keyshortcuts={shortcut} />}>
           {icon}
           <span ref={triggerCopy} className="min-w-0 flex-1 truncate text-left">{triggerLabel}</span>
-          {triggerHint}
         </TooltipTrigger>
-        <TooltipContent className="break-all">{triggerLabel}</TooltipContent>
+        <TooltipContent className="break-all">{triggerTruncated ? [triggerLabel, triggerHint].filter(Boolean).join(' · ') : triggerHint}</TooltipContent>
       </Tooltip>
-      <ComboboxContent align={align} className={cn('searchable-picker', contentClassName)} initialFocus={focusSearch}>
+      <ComboboxContent align={align} className={cn('searchable-picker', contentClassName)} initialFocus={focusSearch && !mobile}>
         <ComboboxInput placeholder={placeholder} aria-label={placeholder} />
         {virtualized ? <VirtualPickerList query={needle} groups={filtered} selectedIndex={selected ? filteredItems.indexOf(selected) : -1} highlight={highlight} scrolling={scrolling} label={label} comboboxId={comboboxId} onScroll={dismissScrollingTooltips} /> : <ComboboxList className="searchable-picker-list" aria-label={label} onScroll={dismissScrollingTooltips} onWheelCapture={dismissScrollingTooltips}>
           {filtered.length === 0 && <div className="searchable-picker-empty" role="status">No matches</div>}
@@ -141,9 +156,12 @@ export function SearchablePicker({ groups, value, onValueChange, label, triggerL
           ))}
         </ComboboxList>}
         {management && <div className="searchable-picker-footer">
-          <button type="button" onClick={() => { changeOpen(false); management.onClick(); }}>
-            <IconSettings /> {management.label}
-          </button>
+          {management.map((action) => (
+            <button key={action.label} type="button" aria-keyshortcuts={action.shortcut?.replace('Ctrl', 'Control')} onClick={() => { changeOpen(false); action.onClick(); }}>
+              {action.icon ?? <IconSettings />} {action.label}
+              {action.shortcut && <Kbd className="ml-auto">{action.shortcut}</Kbd>}
+            </button>
+          ))}
         </div>}
       </ComboboxContent>
     </Combobox>
@@ -186,8 +204,14 @@ function VirtualPickerList({ query, groups, selectedIndex, highlight, scrolling,
   });
   // Search changes reset the viewport; live group refreshes preserve the user's scroll.
   useLayoutEffect(() => { virtualizer.scrollToOffset(0); }, [query, virtualizer]);
+  // The selection is revealed once, on opening. Doing it whenever the pointer leaves a row would
+  // pull the list back while it's being scrolled, because rows move out from under the pointer.
+  const openingSelection = useRef(selectedIndex);
   useLayoutEffect(() => {
-    if (activeIndex >= 0 && (highlight.scroll || highlight.index < 0)) virtualizer.scrollToIndex(activeIndex, { align: 'auto' });
+    if (openingSelection.current >= 0) virtualizer.scrollToIndex(openingSelection.current, { align: 'auto' });
+  }, [virtualizer]);
+  useLayoutEffect(() => {
+    if (highlight.scroll && activeIndex >= 0) virtualizer.scrollToIndex(activeIndex, { align: 'auto' });
   }, [activeIndex, highlight, virtualizer]);
   const visibleGroups = new Map<string, ReturnType<typeof virtualizer.getVirtualItems>>();
   for (const row of virtualizer.getVirtualItems()) {
@@ -230,14 +254,15 @@ function PickerOption({ item, scrolling, index, id, setSize }: { item: Searchabl
     return () => observer.disconnect();
   }, [item.label, item.description]);
   const visibleText = [item.label, item.description].filter(Boolean).join(' · ');
-  const extraHint = item.tooltip && item.tooltip !== visibleText && item.tooltip !== item.label && item.tooltip !== item.description;
+  // Only a row cut short has a tooltip, and then it says the most it can, such as a full path.
+  // On every row it got in the way of reading the menu, for detail rarely needed.
   // TooltipTrigger also supplies an ID; it must agree with the combobox's active descendant.
-  return <Tooltip disabled={scrolling || (!truncated && !extraHint)}>
+  return <Tooltip disabled={scrolling || !truncated}>
     <TooltipTrigger id={id} render={<ComboboxItem value={item} index={index} aria-posinset={setSize === undefined ? undefined : index + 1} aria-setsize={setSize} disabled={item.disabled} className={cn('searchable-picker-item', item.description && 'searchable-picker-item-detailed')} />}>
       {item.icon && <span className="searchable-picker-icon">{item.icon}</span>}
       <span ref={copy} className="searchable-picker-copy"><strong>{item.label}</strong>{item.description && <small>{item.description}</small>}</span>
       {item.trailing && <span className="searchable-picker-trailing">{item.trailing}</span>}
     </TooltipTrigger>
-    <TooltipContent>{extraHint ? item.tooltip : visibleText}</TooltipContent>
+    <TooltipContent>{item.tooltip || visibleText}</TooltipContent>
   </Tooltip>;
 }

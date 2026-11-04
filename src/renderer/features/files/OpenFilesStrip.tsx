@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type Ref } from 'react';
 import { IconX } from '@tabler/icons-react';
 import { closestCenter, DndContext, DragOverlay, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { horizontalListSortingStrategy, SortableContext, useSortable } from '@dnd-kit/sortable';
@@ -16,6 +16,8 @@ interface OpenFilesStripProps {
   onPin(path: string): void;
   onClose(path: string): void;
   onReorder(path: string, toIndex: number): void;
+  /** Receives the element at the end of the bar where the viewer puts its tools. */
+  toolsRef?: Ref<HTMLDivElement>;
 }
 
 /**
@@ -23,7 +25,7 @@ interface OpenFilesStripProps {
  * no files; every calculation comes from the pure helpers in
  * `open-files-model.ts` so the behaviour is testable without a DOM.
  */
-export function OpenFilesStrip({ session, onActivate, onPin, onClose, onReorder }: OpenFilesStripProps) {
+export function OpenFilesStrip({ session, onActivate, onPin, onClose, onReorder, toolsRef }: OpenFilesStripProps) {
   const stripRef = useRef<HTMLDivElement>(null);
   const tabRefs = useRef(new Map<string, HTMLDivElement>());
   const [fades, setFades] = useState({ start: false, end: false });
@@ -32,6 +34,8 @@ export function OpenFilesStrip({ session, onActivate, onPin, onClose, onReorder 
   const labels = useMemo(() => tabLabels(session.tabs), [session.tabs]);
   const sensors = useSensors(useSensor(MouseDragSensor, { activationConstraint: { distance: 5 } }));
   const draggingTab = draggingPath ? session.tabs.find((tab) => tab.path === draggingPath) ?? null : null;
+  // With no tabs there is no element yet, so effects that attach to it re-run when it appears.
+  const hasTabs = session.tabs.length > 0;
 
   const measure = useCallback(() => {
     const strip = stripRef.current;
@@ -48,15 +52,15 @@ export function OpenFilesStrip({ session, onActivate, onPin, onClose, onReorder 
     const observer = new ResizeObserver(measure);
     observer.observe(strip);
     return () => observer.disconnect();
-  }, [measure]);
+  }, [measure, hasTabs]);
 
   useEffect(() => {
     if (!session.activePath) return;
     tabRefs.current.get(session.activePath)?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }, [session.activePath]);
 
-  // The toolbar is a window drag region and the scrollbar is hidden, so vertical
-  // wheel movement is translated by hand while the strip actually overflows.
+  // The scrollbar is hidden, so vertical wheel movement is translated by hand
+  // while the strip actually overflows.
   useEffect(() => {
     const strip = stripRef.current;
     if (!strip) return;
@@ -72,7 +76,7 @@ export function OpenFilesStrip({ session, onActivate, onPin, onClose, onReorder 
     };
     strip.addEventListener('wheel', onWheel, { passive: false });
     return () => strip.removeEventListener('wheel', onWheel);
-  }, []);
+  }, [hasTabs]);
 
   useEffect(() => {
     const query = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -82,7 +86,7 @@ export function OpenFilesStrip({ session, onActivate, onPin, onClose, onReorder 
     return () => query.removeEventListener('change', update);
   }, []);
 
-  if (session.tabs.length === 0) return null;
+  if (!hasTabs) return null;
 
   const finishDrag = ({ active, over }: DragEndEvent) => {
     setDraggingPath(null);
@@ -100,31 +104,34 @@ export function OpenFilesStrip({ session, onActivate, onPin, onClose, onReorder 
       onDragEnd={finishDrag}
     >
       <SortableContext items={session.tabs.map((tab) => tab.path)} strategy={horizontalListSortingStrategy}>
-        <div
-          id={OPEN_FILES_DROP_HOST_ID}
-          ref={stripRef}
-          className={['open-files-strip', draggingPath ? 'sorting' : '', fades.start ? 'fade-start' : '', fades.end ? 'fade-end' : ''].filter(Boolean).join(' ')}
-          role="tablist"
-          aria-label="Open files"
-          aria-orientation="horizontal"
-          onScroll={measure}
-        >
-          {session.tabs.map((tab) => (
-            <SortableFileTab
-              key={tab.path}
-              tab={tab}
-              label={labels.get(tab.path)}
-              active={session.activePath === tab.path}
-              preview={session.previewPath === tab.path}
-              register={(element) => {
-                if (element) tabRefs.current.set(tab.path, element);
-                else tabRefs.current.delete(tab.path);
-              }}
-              onActivate={onActivate}
-              onPin={onPin}
-              onClose={onClose}
-            />
-          ))}
+        <div className="open-files-bar">
+          <div
+            id={OPEN_FILES_DROP_HOST_ID}
+            ref={stripRef}
+            className={['open-files-strip tab-list', draggingPath ? 'sorting' : '', fades.start ? 'fade-start' : '', fades.end ? 'fade-end' : ''].filter(Boolean).join(' ')}
+            role="tablist"
+            aria-label="Open files"
+            aria-orientation="horizontal"
+            onScroll={measure}
+          >
+            {session.tabs.map((tab) => (
+              <SortableFileTab
+                key={tab.path}
+                tab={tab}
+                label={labels.get(tab.path)}
+                active={session.activePath === tab.path}
+                preview={session.previewPath === tab.path}
+                register={(element) => {
+                  if (element) tabRefs.current.set(tab.path, element);
+                  else tabRefs.current.delete(tab.path);
+                }}
+                onActivate={onActivate}
+                onPin={onPin}
+                onClose={onClose}
+              />
+            ))}
+          </div>
+          <div ref={toolsRef} className="open-files-tools" />
         </div>
       </SortableContext>
       <DragOverlay dropAnimation={reducedMotion ? null : TAB_MOTION}>
@@ -182,6 +189,9 @@ function SortableFileTab({ tab, label, active, preview, register, onActivate, on
           {...listeners}
           onClick={() => onActivate(tab.path)}
           onDoubleClick={() => onPin(tab.path)}
+          // The browser starts middle-click autoscroll on press, in an overflowing strip, before the
+          // click that closes the tab. Declining the press keeps the wheel button for closing.
+          onMouseDown={(event) => { if (event.button === 1) event.preventDefault(); }}
           onAuxClick={(event) => {
             if (event.button !== 1) return;
             event.preventDefault();

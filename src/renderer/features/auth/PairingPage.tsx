@@ -87,7 +87,7 @@ export default function PairingPage() {
             <span className="font-medium">Pairing code</span>
             <input
               id="pairing-code"
-              className="h-10 w-full min-w-0 rounded-md border border-input bg-background px-3 font-mono text-base outline-none focus:border-ring focus:ring-2 focus:ring-ring/20"
+              className="h-10 w-full min-w-0 rounded-md border border-input bg-background px-3 font-mono text-base md:text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/20"
               value={token}
               onChange={(event) => setToken(event.target.value)}
               autoComplete="off"
@@ -99,7 +99,7 @@ export default function PairingPage() {
             <span className="font-medium">Device name</span>
             <input
               id="device-name"
-              className="h-10 w-full min-w-0 rounded-md border border-input bg-background px-3 text-base outline-none focus:border-ring focus:ring-2 focus:ring-ring/20"
+              className="h-10 w-full min-w-0 rounded-md border border-input bg-background px-3 text-base md:text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/20"
               value={clientName}
               onChange={(event) => setClientName(event.target.value)}
               maxLength={64}

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { CommitInfo } from '@shared/git-types';
-import { commitReference, historyColor, historyRows, matchesHistory } from './history-presentation';
+import { canUndoCommit, commitPublication, commitReference, historyRows, matchesHistory } from './history-presentation';
 
 function commit(oid: string, parentOids: string[] = [], overrides: Partial<CommitInfo> = {}): CommitInfo {
   return { oid, parentOids, parentCount: parentOids.length, shortOid: oid, subject: oid, body: '', author: 'Jorge', email: '', date: '', decorations: [], upstreamState: 'published', isHead: false, ...overrides };
@@ -33,11 +33,21 @@ describe('history presentation', () => {
     const nested = merged(); nested[1]!.parentOids.push('side');
     expect(historyRows(nested, true)).toHaveLength(5);
   });
-  it('distinguishes local, published, base, and unknown states', () => {
-    expect(historyColor(commit('local', [], { baseState: 'included', upstreamState: 'local-only' }))).toBe(0);
-    expect(historyColor(commit('published', [], { baseState: 'outside' }))).toBe(1);
-    expect(historyColor(commit('main', [], { baseState: 'included' }))).toBe(2);
-    expect(historyColor(commit('unknown', [], { upstreamState: 'unknown' }))).toBeUndefined();
+  it('says what the dot means for local, published, base, unknown, and merge commits', () => {
+    expect(commitPublication(commit('head', [], { upstreamState: 'local-only', isHead: true }), 'origin/main')).toEqual({ label: 'Not published', hint: 'Not published. Not in origin/main according to the latest known remote state.' });
+    expect(commitPublication(commit('older', [], { upstreamState: 'local-only' }), 'origin/main').hint).toContain('only the latest can be undone');
+    expect(commitPublication(commit('published', [], { baseState: 'outside' }), 'origin/main', 'origin/main')).toEqual({ label: 'Published', hint: 'Published.' });
+    expect(commitPublication(commit('main', [], { baseState: 'included' }), 'origin/main', 'origin/main').hint).toBe('Published. Reachable from origin/main, using the latest known local refs.');
+    expect(commitPublication(commit('main', [], { baseState: 'included' }), 'origin/main', null).hint).toBe('Published.');
+    expect(commitPublication(commit('unknown', [], { upstreamState: 'unknown' }), null)).toEqual({ label: 'Publication unknown', hint: 'Publication unknown. There is no upstream to compare with.' });
+    expect(commitPublication(commit('merge', ['a', 'b']), 'origin/main')).toEqual({ label: 'Merge commit, published', hint: 'Merge commit. Published.' });
+  });
+  it('offers undo only for a local, single-parent HEAD', () => {
+    const head = { upstreamState: 'local-only' as const, isHead: true };
+    expect(canUndoCommit(commit('head', ['base'], head))).toBe(true);
+    expect(canUndoCommit(commit('older', ['base'], { ...head, isHead: false }))).toBe(false);
+    expect(canUndoCommit(commit('published', ['base'], { ...head, upstreamState: 'published' }))).toBe(false);
+    expect(canUndoCommit(commit('merge', ['a', 'b'], head))).toBe(false);
   });
   it('finds commits by reference, author and hash without filtering graph rows', () => {
     const item = commit('abcdef', [], { subject: 'feat: spaces (#87)', decorations: ['origin/feature'] });

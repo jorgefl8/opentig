@@ -1,17 +1,32 @@
 import type { GitHubRepositoryAccount } from '@shared/github-accounts';
-import { formatDate } from '@shared/date-format';
+import { formatTimeAgo } from '@shared/date-format';
 import { PullRequestStackMenu } from './PullRequestStackMenu';
-import { useRef } from 'react';
-import { Popover } from '@base-ui/react/popover';
+import { Suspense, useRef } from 'react';
+import { lazyWithRetry } from '@/lib/lazy-with-retry';
+import { useQuery } from '@tanstack/react-query';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { IconBrandGithub, IconCircleCheck, IconCircleX, IconClock, IconCopy, IconExternalLink, IconFilter, IconGitMerge, IconGitPullRequest, IconLoader4, IconPlus, IconRefresh } from '@tabler/icons-react';
-import type { GhCliStatus, GitHubRepositoryInfo, PullRequestCheckState, PullRequestState, PullRequestSummary } from '../../../shared/contracts';
+import { IconBrandGithub, IconCopy, IconExternalLink, IconFilter, IconLoader4, IconPlus, IconRefresh } from '@tabler/icons-react';
+import type { GhCliStatus, GitHubRepositoryInfo, PullRequestLiveState, PullRequestState, PullRequestSummary } from '../../../shared/contracts';
+import { pullRequestStateLine, pullRequestStatusLine, pullRequestSummaryStatus } from '../../../shared/pull-request-actions';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { useMobileLayout } from '@/lib/use-mobile-layout';
+import { ViewerTabs, ViewerTabsList, ViewerTabsPanel } from '@/components/ui/viewer-tabs';
 import { openOnGitHub } from './gh-utils';
 import { GitHubAvatar } from './GitHubAvatar';
+import { GitHubSectionMenu } from './GitHubSectionMenu';
+import { pullRequestLiveStateQueryOptions } from './pull-request-live-state-query';
+
+const ReleasesView = lazyWithRetry(() => import('./ReleasesView').then((module) => ({ default: module.ReleasesView })));
+const ReleasesTools = lazyWithRetry(() => import('./ReleasesView').then((module) => ({ default: module.ReleasesTools })));
+
+export type PullRequestsSection = 'pulls' | 'releases';
+
+/** Two lines of text and the row's padding; rows are measured once rendered. */
+const PULL_ROW_HEIGHT = 49;
+const MOBILE_PULL_ROW_HEIGHT = 60;
 
 interface PullRequestsViewProps {
   repositoryId: string;
@@ -30,6 +45,10 @@ interface PullRequestsViewProps {
   onSelect(number: number): void;
   onCreate(): void;
   onCopyCommand(command: string): void;
+  section: PullRequestsSection;
+  onSectionChange(section: PullRequestsSection): void;
+  activeRelease: string | null;
+  onSelectRelease(tagName: string): void;
 }
 
 export function PullRequestsView(props: PullRequestsViewProps) {
@@ -75,68 +94,82 @@ export function PullRequestsView(props: PullRequestsViewProps) {
       </PullsNotice>
     );
   }
-  return <PullsList {...props} nameWithOwner={props.info.nameWithOwner ?? 'Pull requests'} />;
+  return (
+    <ViewerTabs value={props.section} onValueChange={props.onSectionChange} className="pulls-section">
+      <div className="pulls-section-head">
+        <ViewerTabsList label="GitHub" items={[{ value: 'pulls', label: 'Pull requests' }, { value: 'releases', label: 'Releases' }]} />
+        <span className="pulls-section-tools">
+          {props.section === 'pulls'
+            ? <PullsTools {...props} nameWithOwner={props.info.nameWithOwner} />
+            : <Suspense fallback={null}><ReleasesTools repositoryId={props.repositoryId} nameWithOwner={props.info.nameWithOwner} account={props.account} onOpenGitHubSettings={props.onOpenGitHubSettings} onSelect={props.onSelectRelease} /></Suspense>}
+        </span>
+      </div>
+      <ViewerTabsPanel value="pulls" className="pulls-section-panel" tabIndex={-1}><PullsList {...props} /></ViewerTabsPanel>
+      <ViewerTabsPanel value="releases" className="pulls-section-panel" tabIndex={-1}>
+        <Suspense fallback={<div className="view-loading" role="status"><IconLoader4 className="spinner" /> <ShimmeringText text="Loading releases…" /></div>}>
+          <ReleasesView repositoryId={props.repositoryId} activeTag={props.activeRelease} onSelect={props.onSelectRelease} />
+        </Suspense>
+      </ViewerTabsPanel>
+    </ViewerTabs>
+  );
 }
 
-function PullsList(props: PullRequestsViewProps & { nameWithOwner: string }) {
+function PullsTools(props: PullRequestsViewProps & { nameWithOwner: string | null }) {
+  return (
+    <>
+      <GitHubSectionMenu
+        label="Filter pull requests"
+        icon={<IconFilter />}
+        filtered={!isDefaultStateFilter(props.states)}
+        refreshing={props.loading}
+        refreshLabel="Refresh pull requests"
+        onRefresh={props.onRefresh}
+        nameWithOwner={props.nameWithOwner}
+        githubPath="pulls"
+        account={props.account}
+        onOpenGitHubSettings={props.onOpenGitHubSettings}
+      >
+        <span className="pulls-filter-title">State</span>
+        {(['OPEN', 'CLOSED', 'MERGED'] as PullRequestState[]).map((state) => (
+          <label key={state} htmlFor={`pulls-state-${state.toLowerCase()}`} className="pulls-filter-option">
+            <Checkbox
+              id={`pulls-state-${state.toLowerCase()}`}
+              checked={props.states.includes(state)}
+              onCheckedChange={(checked) => props.onStateChange(state, checked === true)}
+            />
+            <span>{stateLabel(state)}</span>
+          </label>
+        ))}
+        <span className="pulls-menu-separator" />
+      </GitHubSectionMenu>
+      <Tooltip>
+        <TooltipTrigger render={
+          <Button variant="ghost" size="icon-xs" className="change-action-button" disabled={Boolean(props.createDisabledReason) || props.loading} focusableWhenDisabled onClick={props.onCreate} aria-label="Create pull request" />
+        }>
+          <IconPlus />
+        </TooltipTrigger>
+        <TooltipContent>{props.createDisabledReason ?? 'Create a pull request from the current branch'}</TooltipContent>
+      </Tooltip>
+    </>
+  );
+}
+
+function PullsList(props: PullRequestsViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const mobile = useMobileLayout();
   const pulls = props.pulls;
+  // Never asks GitHub: this only reads what the viewer of the selected PR keeps current.
+  const activeLive = useQuery(pullRequestLiveStateQueryOptions(props.repositoryId, props.activeNumber ?? -1, false)).data ?? null;
   // oxlint-disable-next-line react/incompatible-library -- TanStack Virtual is intentionally imperative.
   const virtualizer = useVirtualizer({
     count: pulls?.length ?? 0,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => 68,
+    estimateSize: () => mobile ? MOBILE_PULL_ROW_HEIGHT : PULL_ROW_HEIGHT,
     getItemKey: (index) => pulls?.[index]?.number ?? index,
     overscan: 8,
   });
   return (
     <div className="pulls-view">
-      <div className="pulls-toolbar">
-        <Tooltip>
-          <TooltipTrigger render={<span className="pulls-repo" />}><IconBrandGithub aria-hidden="true" /> {props.nameWithOwner}</TooltipTrigger>
-          <TooltipContent>{props.nameWithOwner}</TooltipContent>
-        </Tooltip>
-        <Tooltip>
-          <TooltipTrigger render={<Button variant="ghost" size="icon-xs" className="change-action-button" disabled={props.loading} onClick={props.onRefresh} aria-label="Refresh pull requests" />}>
-            {props.loading ? <IconLoader4 className="animate-spin" /> : <IconRefresh />}
-          </TooltipTrigger>
-          <TooltipContent>Refresh pull requests</TooltipContent>
-        </Tooltip>
-        {props.account?.login && <Tooltip><TooltipTrigger render={<Button variant="ghost" size="xs" className="github-pulls-account" onClick={props.onOpenGitHubSettings} />}><IconBrandGithub /> @{props.account.login}</TooltipTrigger><TooltipContent>Account used for this repository · open GitHub settings</TooltipContent></Tooltip>}
-        <Popover.Root>
-          <Popover.Trigger
-            render={<Button variant={isDefaultStateFilter(props.states) ? 'ghost' : 'secondary'} size="icon-xs" className="change-action-button" aria-label="Filter pull requests" aria-pressed={!isDefaultStateFilter(props.states)} />}
-          >
-            <IconFilter />
-          </Popover.Trigger>
-          <Popover.Portal>
-            <Popover.Positioner side="bottom" align="end" sideOffset={4} className="isolate z-50 outline-none">
-              <Popover.Popup className="pulls-filter-popup">
-                <span className="pulls-filter-title">State</span>
-                {(['OPEN', 'CLOSED', 'MERGED'] as PullRequestState[]).map((state) => (
-                  <label key={state} htmlFor={`pulls-state-${state.toLowerCase()}`} className="pulls-filter-option">
-                    <Checkbox
-                      id={`pulls-state-${state.toLowerCase()}`}
-                      checked={props.states.includes(state)}
-                      onCheckedChange={(checked) => props.onStateChange(state, checked === true)}
-                    />
-                    <PullStateIcon state={state} className={state.toLowerCase()} />
-                    <span>{state === 'OPEN' ? 'Open' : state === 'CLOSED' ? 'Closed' : 'Merged'}</span>
-                  </label>
-                ))}
-              </Popover.Popup>
-            </Popover.Positioner>
-          </Popover.Portal>
-        </Popover.Root>
-        <Tooltip>
-          <TooltipTrigger render={
-            <Button variant="outline" size="xs" disabled={Boolean(props.createDisabledReason) || props.loading} onClick={props.onCreate} aria-label="Create pull request" />
-          }>
-            <IconPlus /> New
-          </TooltipTrigger>
-          <TooltipContent>{props.createDisabledReason ?? 'Create a pull request from the current branch'}</TooltipContent>
-        </Tooltip>
-      </div>
       {props.error && (
         <div className="pulls-error" role="alert">
           <span>{props.error}</span>
@@ -152,6 +185,7 @@ function PullsList(props: PullRequestsViewProps & { nameWithOwner: string }) {
           <div className="virtual-list" style={{ height: virtualizer.getTotalSize() }}>
             {virtualizer.getVirtualItems().map((virtualRow) => {
               const pr = pulls[virtualRow.index]!;
+              const active = props.activeNumber === pr.number;
               return (
                 <div
                   key={virtualRow.key}
@@ -160,7 +194,7 @@ function PullsList(props: PullRequestsViewProps & { nameWithOwner: string }) {
                   className="virtual-row"
                   style={{ transform: `translateY(${virtualRow.start}px)` }}
                 >
-                  <PullRow repositoryId={props.repositoryId} pr={pr} active={props.activeNumber === pr.number} onSelect={props.onSelect} />
+                  <PullRow repositoryId={props.repositoryId} pr={pr} active={active} live={active ? activeLive : null} phone={mobile} onSelect={props.onSelect} />
                 </div>
               );
             })}
@@ -171,29 +205,29 @@ function PullsList(props: PullRequestsViewProps & { nameWithOwner: string }) {
   );
 }
 
-function PullRow({ repositoryId, pr, active, onSelect }: { repositoryId: string; pr: PullRequestSummary; active: boolean; onSelect(number: number): void }) {
-  const stateClass = pr.state.toLowerCase();
+function PullRow({ repositoryId, pr, active, live, phone, onSelect }: { repositoryId: string; pr: PullRequestSummary; active: boolean; live: PullRequestLiveState | null; phone: boolean; onSelect(number: number): void }) {
+  // The selected row agrees with the viewer beside it; the others say what the list knows.
+  const status = live ? pullRequestStatusLine(live) ?? pullRequestStateLine(live) : pullRequestSummaryStatus(pr);
   return (
     <div className={`pull-item ${active ? 'active' : ''}`} role="listitem">
-      <button className="pull-main" onClick={() => onSelect(pr.number)} aria-label={`View pull request #${pr.number}`}>
-        <span className={`pull-state-icon ${stateClass}${pr.isDraft ? ' draft' : ''}`} aria-label={pr.isDraft ? 'Draft' : stateLabel(pr.state)}><PullStateIcon state={pr.state} /></span>
-        <span className="pull-content">
-          <span className="pull-title">{pr.title || '(no title)'}</span>
-          <span className="pull-meta">
-            <span className="pull-number">#{pr.number}</span>
-            <GitHubAvatar src={pr.authorAvatarUrl} className="pull-avatar" />
-            <span className="pull-author">{pr.author}</span>
-            <ChecksIcon state={pr.checksState} />
-            {pr.isDraft && <span className="pull-draft-label">Draft</span>}
-          </span>
+      <button className="pull-main" onClick={() => onSelect(pr.number)}>
+        <span className="pull-avatar-status">
+          <GitHubAvatar key={pr.authorAvatarUrl} src={pr.authorAvatarUrl} className="pull-avatar" />
+          <span className={`status-dot tone-${status.tone}`} aria-hidden="true" />
         </span>
-        <span className="pull-row-aside">
-          <time dateTime={pr.updatedAt}>{formatDate(pr.updatedAt)}</time>
-          <span className="pull-line-stats"><span className="add">+{pr.additions}</span> <span className="del">−{pr.deletions}</span></span>
+        <span className="pull-line">
+          <span className="pull-title">{pr.title || '(no title)'}</span>
+          <time className="pull-age" dateTime={pr.updatedAt}>{formatTimeAgo(pr.updatedAt)}</time>
+        </span>
+        <span className="pull-line">
+          <span className="pull-meta">#{pr.number} · {status.label}{phone && pr.stack && ` · Layer ${pr.stack.position} of ${pr.stack.size}`}</span>
+          <span className="pull-author">· {pr.author}</span>
+          <span className="pull-lines"><span className="add">+{pr.additions}</span> <span className="del">−{pr.deletions}</span></span>
         </span>
       </button>
-      {pr.stack && <PullRequestStackMenu repositoryId={repositoryId} number={pr.number} membership={pr.stack} onSelect={onSelect} />}
-      {pr.url && <Tooltip>
+      {/* On a phone the whole row is the target, and the viewer has its stack and link. */}
+      {!phone && pr.stack && <PullRequestStackMenu repositoryId={repositoryId} number={pr.number} membership={pr.stack} onSelect={onSelect} />}
+      {!phone && pr.url && <Tooltip>
         <TooltipTrigger render={<Button variant="ghost" size="icon-xs" className="change-action-button pull-open-external" onClick={() => openOnGitHub(pr.url)} aria-label={`Open #${pr.number} on GitHub`} />}>
           <IconExternalLink />
         </TooltipTrigger>
@@ -201,17 +235,6 @@ function PullRow({ repositoryId, pr, active, onSelect }: { repositoryId: string;
       </Tooltip>}
     </div>
   );
-}
-
-function PullStateIcon({ state, className }: { state: PullRequestState; className?: string }) {
-  return state === 'MERGED' ? <IconGitMerge aria-hidden="true" className={className} /> : <IconGitPullRequest aria-hidden="true" className={className} />;
-}
-
-function ChecksIcon({ state }: { state: PullRequestCheckState }) {
-  if (state === 'NONE') return null;
-  const label = state === 'PASSING' ? 'Checks passing' : state === 'FAILING' ? 'Checks failing' : 'Checks pending';
-  const Icon = state === 'PASSING' ? IconCircleCheck : state === 'FAILING' ? IconCircleX : IconClock;
-  return <span className={`pull-checks ${state.toLowerCase()}`} aria-label={label}><Icon aria-hidden="true" /></span>;
 }
 
 function stateLabel(state: PullRequestState): string {

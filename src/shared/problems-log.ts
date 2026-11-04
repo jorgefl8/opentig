@@ -97,6 +97,8 @@ export function shouldRecordCommandProblem(input: {
   if (isAbortError(input.error)) return false;
   // A file deleted while it was being opened is ordinary, not a failure.
   if (input.code === 'AI_CANCELLED' || input.code === 'INVALID_ARGUMENT' || input.code === 'FILE_NOT_FOUND') return false;
+  // The safety checks of a GitHub action working: the user already sees why it stopped.
+  if (input.code === 'GH_PR_STATE_CHANGED' || input.code === 'GH_PR_ACTION_NOT_ALLOWED') return false;
   return true;
 }
 

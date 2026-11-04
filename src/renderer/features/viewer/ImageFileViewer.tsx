@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { IconLoader4, IconZoomIn, IconZoomOut } from '@tabler/icons-react';
 import type { FileResult, ImageFileResult, ThemePreference, WriteFileResult } from '@shared/contracts';
 import { Button } from '@/components/ui/button';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { ViewerTabs, ViewerTabsList, ViewerTabsPanel } from '@/components/ui/viewer-tabs';
 import { FileSaveControls, SourceCodeEditor } from './EditableFileViewer';
+import { useShowCodeForLineTarget } from './file-line-target';
 import { FileViewerToolbar, FileViewerToolbarButton, FileViewerToolbarGroup } from './FileViewerToolbar';
 import { MAX_IMAGE_ZOOM, type ImageSizingMode, zoomIn, zoomOut } from './image-viewer-state';
 import { useEditableFileDraft } from './useEditableFileDraft';
@@ -91,6 +92,7 @@ export function SvgFileViewer({ file, initialContent, themeType, wrapLines, read
   useEffect(() => {
     setTab('preview');
   }, [file.path]);
+  useShowCodeForLineTarget(file.path, useCallback(() => setTab('code'), []));
 
   const tabs = (
     <ViewerTabsList
@@ -111,12 +113,12 @@ export function SvgFileViewer({ file, initialContent, themeType, wrapLines, read
           objectUrl={objectUrl}
           path={file.path}
           size={new TextEncoder().encode(draft).byteLength}
-          toolbarStart={tabs}
+          toolbarView={tabs}
           toolbarEnd={saveControls}
         />
       </ViewerTabsPanel>
       <ViewerTabsPanel value="code" className="svg-file-panel">
-          <FileViewerToolbar start={tabs} end={saveControls} />
+          <FileViewerToolbar view={tabs} end={saveControls} />
           <div className="svg-code-view">
             <SourceCodeEditor
               path={file.path}
@@ -133,11 +135,11 @@ export function SvgFileViewer({ file, initialContent, themeType, wrapLines, read
   );
 }
 
-function ImagePreviewWorkspace({ objectUrl, path, size, toolbarStart, toolbarEnd }: {
+function ImagePreviewWorkspace({ objectUrl, path, size, toolbarView, toolbarEnd }: {
   objectUrl: string | null;
   path: string;
   size: number;
-  toolbarStart?: ReactNode;
+  toolbarView?: ReactNode;
   toolbarEnd?: ReactNode;
 }) {
   const [mode, setMode] = useState<ImageSizingMode>('fit');
@@ -185,15 +187,16 @@ function ImagePreviewWorkspace({ objectUrl, path, size, toolbarStart, toolbarEnd
   return (
     <div className="image-preview-workspace">
       <FileViewerToolbar
-        start={<>{toolbarStart}<span className="file-viewer-toolbar-detail">{details}</span></>}
+        view={toolbarView}
         controls={<>
+          <span className="file-viewer-toolbar-detail">{details}</span>
           <FileViewerToolbarGroup label="Image size">
-            <Button type="button" size="sm" variant="ghost" aria-pressed={mode === 'fit'} onClick={() => setMode('fit')}>Fit</Button>
-            <Button type="button" size="sm" variant="ghost" aria-pressed={mode === 'actual' && zoom === 1} onClick={() => { setMode('actual'); setZoom(1); }}>1:1</Button>
+            <Button type="button" size="xs" variant="ghost" aria-pressed={mode === 'fit'} onClick={() => setMode('fit')}>Fit</Button>
+            <Button type="button" size="xs" variant="ghost" aria-pressed={mode === 'actual' && zoom === 1} onClick={() => { setMode('actual'); setZoom(1); }}>1:1</Button>
           </FileViewerToolbarGroup>
           <FileViewerToolbarGroup label="Zoom">
             <FileViewerToolbarButton label="Zoom out" onClick={() => changeZoom('out')}><IconZoomOut /></FileViewerToolbarButton>
-            <Button type="button" variant="ghost" size="sm" className="file-viewer-toolbar-value" aria-label="Reset zoom to 100%" onClick={() => { setMode('actual'); setZoom(1); }}>
+            <Button type="button" variant="ghost" size="xs" className="file-viewer-toolbar-value" aria-label="Reset zoom to 100%" onClick={() => { setMode('actual'); setZoom(1); }}>
               {Math.round(zoom * 100)}%
             </Button>
             <FileViewerToolbarButton label="Zoom in" onClick={() => changeZoom('in')}><IconZoomIn /></FileViewerToolbarButton>

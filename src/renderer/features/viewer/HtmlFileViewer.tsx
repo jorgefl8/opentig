@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { FileResult, ThemePreference, WriteFileResult } from '@shared/contracts';
 import { ViewerTabs, ViewerTabsList, ViewerTabsPanel } from '@/components/ui/viewer-tabs';
 import { FileSaveControls, SourceCodeEditor } from './EditableFileViewer';
+import { useShowCodeForLineTarget } from './file-line-target';
 import { FileViewerToolbar } from './FileViewerToolbar';
 import { useEditableFileDraft } from './useEditableFileDraft';
 import './html-file-viewer.css';
@@ -37,11 +38,12 @@ export function HtmlFileViewer({ repositoryId, anchor, onNavigate, file, initial
   useEffect(() => {
     setTab('preview');
   }, [file.path]);
+  useShowCodeForLineTarget(file.path, useCallback(() => setTab('code'), []));
 
   return (
     <ViewerTabs value={tab} onValueChange={(value) => setTab(value as typeof tab)} className="markdown-viewer html-file-viewer">
       <FileViewerToolbar
-        start={
+        view={
           <ViewerTabsList
             label="HTML view"
             className="file-viewer-tabs"

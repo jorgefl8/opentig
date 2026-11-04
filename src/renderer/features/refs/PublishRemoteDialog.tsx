@@ -35,10 +35,10 @@ export function PublishRemoteDialog({ choice, onSelect }: { choice: RemoteChoice
         </fieldset>
         {context?.data && <div className="repository-access-status">
           <p>Push using <strong>{gitHttpsModeLabel(context.data.mode, context.data.login)}</strong></p>
-          {context.data.mode === 'external' && <p className="github-settings-note">Git uses credentials on {gitCredentialsLocation()}. OpenTig has not verified their account.</p>}
-          {publishing && <p className="github-settings-note">Publishing sets a tracking branch in Git on the server, shared by all connected clients.</p>}
+          {context.data.mode === 'external' && <p className="settings-note">Git uses credentials on {gitCredentialsLocation()}. OpenTig has not verified their account.</p>}
+          {publishing && <p className="settings-note">Publishing sets a tracking branch in Git on the server, shared by all connected clients.</p>}
         </div>}
-        {destinations.some(query => query.isError) && <Button variant="outline" onClick={() => void Promise.all(destinations.map(query => query.refetch()))}>Retry destinations</Button>}
+        {destinations.some(query => query.isError) && <Button variant="ghost" onClick={() => void Promise.all(destinations.map(query => query.refetch()))}>Retry destinations</Button>}
       </div>
       <div className="undo-commit-actions">
         <Button variant="ghost" onClick={() => onSelect(null)}>Cancel</Button>

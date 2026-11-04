@@ -19,7 +19,8 @@ export type ShortcutCategory = 'General' | 'Commit' | 'Editor' | 'Tabs';
 export interface ShortcutDefinition {
   id: ShortcutId;
   label: string;
-  description: string;
+  /** Only what the label doesn't already say. */
+  description?: string;
   category: ShortcutCategory;
   defaultCombo: string;
   /** Only `repoSwitcher` may bind to an unmodified key; every other command requires a modifier. */
@@ -27,20 +28,20 @@ export interface ShortcutDefinition {
 }
 
 export const SHORTCUT_DEFINITIONS: readonly ShortcutDefinition[] = [
-  { id: 'openRepository', label: 'Open repository', description: 'Open a repository from disk.', category: 'General', defaultCombo: 'Ctrl+O', allowBare: false },
-  { id: 'refresh', label: 'Refresh', description: 'Refresh the current repository.', category: 'General', defaultCombo: 'Ctrl+R', allowBare: false },
-  { id: 'quickOpen', label: 'Quick open', description: 'Search and open a file by name.', category: 'General', defaultCombo: 'Ctrl+P', allowBare: false },
-  { id: 'repoSwitcher', label: 'Repository switcher', description: 'Open the repository switcher. Type a number, or press again to close.', category: 'General', defaultCombo: 'Q', allowBare: true },
-  { id: 'commit', label: 'Commit', description: 'Commit the staged changes.', category: 'Commit', defaultCombo: 'Ctrl+Enter', allowBare: false },
-  { id: 'saveFile', label: 'Save file', description: 'Save the active file draft.', category: 'Editor', defaultCombo: 'Ctrl+S', allowBare: false },
-  { id: 'editorSearch', label: 'Find and replace', description: 'Open find and replace in the file editor. Ctrl+Alt+F always works too, as a built-in alternative.', category: 'Editor', defaultCombo: 'Ctrl+F', allowBare: false },
-  { id: 'undoFileChange', label: 'Undo file operation', description: 'Undo the last file create, rename, move, or delete.', category: 'Editor', defaultCombo: 'Ctrl+Z', allowBare: false },
-  { id: 'redoFileChange', label: 'Redo file operation', description: 'Redo the last undone file operation.', category: 'Editor', defaultCombo: 'Ctrl+Shift+Z', allowBare: false },
-  { id: 'closeTab', label: 'Close tab', description: 'Close the active file tab.', category: 'Tabs', defaultCombo: 'Ctrl+W', allowBare: false },
-  { id: 'nextTab', label: 'Next tab', description: 'Switch to the next file tab.', category: 'Tabs', defaultCombo: 'Ctrl+Tab', allowBare: false },
-  { id: 'prevTab', label: 'Previous tab', description: 'Switch to the previous file tab.', category: 'Tabs', defaultCombo: 'Ctrl+Shift+Tab', allowBare: false },
-  { id: 'moveTabLeft', label: 'Move tab left', description: 'Move the active tab one position left.', category: 'Tabs', defaultCombo: 'Ctrl+Shift+PageUp', allowBare: false },
-  { id: 'moveTabRight', label: 'Move tab right', description: 'Move the active tab one position right.', category: 'Tabs', defaultCombo: 'Ctrl+Shift+PageDown', allowBare: false },
+  { id: 'openRepository', label: 'Open repository', category: 'General', defaultCombo: 'Ctrl+O', allowBare: false },
+  { id: 'refresh', label: 'Refresh', category: 'General', defaultCombo: 'Ctrl+R', allowBare: false },
+  { id: 'quickOpen', label: 'Quick open', category: 'General', defaultCombo: 'Ctrl+P', allowBare: false },
+  { id: 'repoSwitcher', label: 'Repository switcher', description: 'Type a number to switch, or press again to close.', category: 'General', defaultCombo: 'Q', allowBare: true },
+  { id: 'commit', label: 'Commit', category: 'Commit', defaultCombo: 'Ctrl+Enter', allowBare: false },
+  { id: 'saveFile', label: 'Save file', category: 'Editor', defaultCombo: 'Ctrl+S', allowBare: false },
+  { id: 'editorSearch', label: 'Find and replace', description: 'Ctrl+Alt+F always works too, as a built-in alternative.', category: 'Editor', defaultCombo: 'Ctrl+F', allowBare: false },
+  { id: 'undoFileChange', label: 'Undo file operation', description: 'The last file create, rename, move, or delete.', category: 'Editor', defaultCombo: 'Ctrl+Z', allowBare: false },
+  { id: 'redoFileChange', label: 'Redo file operation', category: 'Editor', defaultCombo: 'Ctrl+Shift+Z', allowBare: false },
+  { id: 'closeTab', label: 'Close tab', category: 'Tabs', defaultCombo: 'Ctrl+W', allowBare: false },
+  { id: 'nextTab', label: 'Next tab', category: 'Tabs', defaultCombo: 'Ctrl+Tab', allowBare: false },
+  { id: 'prevTab', label: 'Previous tab', category: 'Tabs', defaultCombo: 'Ctrl+Shift+Tab', allowBare: false },
+  { id: 'moveTabLeft', label: 'Move tab left', category: 'Tabs', defaultCombo: 'Ctrl+Shift+PageUp', allowBare: false },
+  { id: 'moveTabRight', label: 'Move tab right', category: 'Tabs', defaultCombo: 'Ctrl+Shift+PageDown', allowBare: false },
 ];
 
 export type ShortcutOverrides = Partial<Record<ShortcutId, string>>;

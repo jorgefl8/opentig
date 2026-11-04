@@ -5,6 +5,7 @@ import { Suspense, lazy, useEffect } from "react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "sileo";
 import { queryClient } from "@/lib/query-client";
+import { LowEndDevice } from "@/components/LowEndDevice";
 import { MobileViewport } from "@/components/MobileViewport";
 const App = lazy(() => import("@/app/App"));
 const initialSelection = {
@@ -27,6 +28,7 @@ if (root)
   createRoot(root).render(
     <QueryClientProvider client={queryClient}>
       <MobileViewport />
+      <LowEndDevice />
       <Toaster theme="light" position="bottom-right" />
       <Suspense
         fallback={

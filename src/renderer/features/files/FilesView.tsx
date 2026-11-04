@@ -6,13 +6,13 @@ import {
   useDraggable, useDroppable, useSensor, useSensors, type CollisionDetection, type DragEndEvent, type DragOverEvent, type DragStartEvent,
 } from '@dnd-kit/core';
 import {
-  IconSearch, IconDots, IconArrowBackUp, IconArrowForwardUp, IconChevronRight, IconClipboard, IconColumns2, IconCopy, IconCut, IconEdit,
+  IconDots, IconArrowBackUp, IconArrowForwardUp, IconChevronRight, IconClipboard, IconColumns2, IconCopy, IconCut, IconEdit,
   IconLoader4,
   IconExternalLink, IconFileArrowRight, IconFilePlus, IconFiles, IconFileText, IconFolderPlus, IconTrash,
 } from '@tabler/icons-react';
 import type { FileHistoryState } from '@shared/contracts';
 import type { FileTreeEntry } from '@shared/git-types';
-import { Button } from '@/components/ui/button';
+import { FolderIcon } from '@/components/FolderIcon';
 import {
   ContextMenu,
   ContextMenuContent,
@@ -21,7 +21,8 @@ import {
   ContextMenuTrigger,
 } from '@/components/ui/context-menu';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
-import { getVsCodeFileIconUrl, getVsCodeFolderIconUrl } from '@/lib/vscode-icons';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { getVsCodeFileIconUrl } from '@/lib/vscode-icons';
 import { useMobileLayout } from '@/lib/use-mobile-layout';
 import { MouseDragSensor } from '@/lib/mouse-drag-sensor';
 import { useShortcuts } from '@/app/useShortcuts';
@@ -32,13 +33,15 @@ import {
 
 import { NameDialog, type NameDialogState } from './NameDialog';
 import { MobileFilesView } from './MobileFilesView';
+import type { FileSession } from './open-files-model';
 
 export function FilesView(props: FilesViewProps) {
   const mobile = useMobileLayout();
   return mobile ? <MobileFilesView {...props} /> : <DesktopFilesView {...props} />;
 }
 
-const FILE_ROW_HEIGHT = 29;
+// Match this height to .file-tree-row in index.css.
+const FILE_ROW_HEIGHT = 28;
 const TREE_PADDING_START = 6;
 const ROOT_DROP_ID = 'files-tree-root-drop';
 const HOVER_EXPAND_DELAY_MS = 550;
@@ -60,6 +63,10 @@ export interface FilesViewProps {
   fileClipboardAvailable: boolean;
   revealAvailable: boolean;
   historyState: FileHistoryState;
+  /** A phone reaches the open files from the list too, as there are no tabs to tap. */
+  openFiles: FileSession;
+  onActivateFile(path: string): void;
+  onCloseFile(path: string): void;
   onQuickOpen(): void;
   onUndo(): Promise<void>;
   onRedo(): Promise<void>;
@@ -141,7 +148,6 @@ function DesktopFilesView({
   fileClipboardAvailable,
   revealAvailable,
   historyState,
-  onQuickOpen,
   onUndo,
   onRedo,
   onOpenFile,
@@ -159,9 +165,7 @@ function DesktopFilesView({
   onCreate,
 }: FilesViewProps) {
   const shortcuts = useShortcuts();
-  const mobile = useMobileLayout();
-  const [selecting, setSelecting] = useState(false);
-  const rowHeight = mobile ? 44 : FILE_ROW_HEIGHT;
+  const rowHeight = FILE_ROW_HEIGHT;
   const scrollRef = useRef<HTMLDivElement>(null);
   const revealedPathRef = useRef<string | null>(null);
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
@@ -198,7 +202,7 @@ function DesktopFilesView({
 
   useEffect(() => { loadedDirectoriesRef.current = loadedDirectories; }, [loadedDirectories]);
 
-  // The tab strip lives above this DndContext. A portal keeps the drop target in
+  // The tab strip lives outside this DndContext. A portal keeps the drop target in
   // this React context while placing its measured DOM rectangle over the strip.
   useEffect(() => {
     setOpenFilesDropHost(document.getElementById(OPEN_FILES_DROP_HOST_ID));
@@ -405,7 +409,7 @@ function DesktopFilesView({
   }
 
   // When nothing is explicitly selected, mirror the open file so it stays highlighted.
-  const highlightedPaths = selecting || selectedPaths.size > 0
+  const highlightedPaths = selectedPaths.size > 0
     ? selectedPaths
     : (activePath ? new Set([activePath]) : new Set<string>());
   const selectionPaths = selectedPaths.size > 0 ? [...selectedPaths] : (activePath ? [activePath] : []);
@@ -432,15 +436,6 @@ function DesktopFilesView({
   };
 
   const handleRowClick = (entry: FileTreeEntry, mods: { ctrl: boolean; shift: boolean }) => {
-    if (mobile && selecting) {
-      setSelectedPaths((current) => {
-        const next = new Set(current);
-        if (next.has(entry.path)) next.delete(entry.path);
-        else next.add(entry.path);
-        return next;
-      });
-      return;
-    }
     if (mods.shift && (anchorPath || leadPath)) {
       const range = pathRange(rows, anchorPath ?? leadPath!, entry.path);
       setSelectedPaths(new Set(range));
@@ -470,7 +465,7 @@ function DesktopFilesView({
   // The preceding single click already previewed the file, so the double click
   // only has to pin it; selection and multi-selection are left untouched.
   const handleRowDoubleClick = (entry: FileTreeEntry) => {
-    if (!(mobile && selecting) && entry.type === 'file') onOpenFile(entry.path, 'pinned');
+    if (entry.type === 'file') onOpenFile(entry.path, 'pinned');
   };
 
   // Right-clicking outside the current selection collapses it to that single row,
@@ -641,13 +636,6 @@ function DesktopFilesView({
       onDragCancel={endDrag}
       onDragEnd={handleDragEnd}
     >
-      <div className="files-mobile-tools">
-        <Button variant="ghost" size="sm" onClick={onQuickOpen}><IconSearch /> Find file</Button>
-        <Button variant="ghost" size="sm" aria-pressed={selecting} onClick={() => { setSelecting(!selecting); setSelectedPaths(new Set()); }}>{selecting ? `Done (${selectedPaths.size})` : 'Select'}</Button>
-        <Button variant="ghost" size="sm" disabled={readOnly} onClick={() => setDialogState({ mode: 'new-file', entry: { type: 'directory', path: '', name: '', children: [] } })}><IconFilePlus /> New file</Button>
-        <Button variant="ghost" size="sm" disabled={readOnly} onClick={() => setDialogState({ mode: 'new-folder', entry: { type: 'directory', path: '', name: '', children: [] } })}><IconFolderPlus /> Folder</Button>
-        {fileClipboardAvailable && <Button variant="ghost" size="sm" disabled={readOnly} onClick={() => void onPaste('')}><IconClipboard /> Paste</Button>}
-      </div>
       <div
         ref={scrollRef}
         className="files-view virtual-scroll"
@@ -662,7 +650,7 @@ function DesktopFilesView({
               <button
                 key={row.entry.path}
                 type="button"
-                className="file-tree-row files-sticky-row"
+                className="file-tree-row folder-row files-sticky-row"
                 aria-label={`Scroll to ${row.entry.path}`}
                 style={{
                   top: index * rowHeight - (isDeepest ? stickyScroll.push : 0),
@@ -672,7 +660,7 @@ function DesktopFilesView({
                 onClick={() => handleStickyClick(row.entry)}
               >
                 <IconChevronRight className="folder-chevron open" />
-                <VsCodeTreeIcon path={row.entry.path} type="directory" expanded />
+                <FolderIcon path={row.entry.path} expanded />
                 <span>{row.entry.name}</span>
               </button>
             );
@@ -684,11 +672,12 @@ function DesktopFilesView({
           role="tree"
           aria-label="Files"
           className={`files-tree ${dropTargetPath === '' && draggedPaths.length > 0 ? 'root-drop-target' : ''}`}
+          data-dragging={draggedPaths.length > 0 || undefined}
           style={{ height: virtualizer.getTotalSize() }}
           tabIndex={0}
           onKeyDown={handleKeyDown}
           onPointerDown={(event) => {
-            if ((event.target as HTMLElement).closest('.file-tree-row, .file-touch-actions')) return;
+            if ((event.target as HTMLElement).closest('.file-tree-row, .file-row-actions')) return;
             setSelectedPaths(new Set());
             setAnchorPath(null);
             setLeadPath(null);
@@ -782,7 +771,7 @@ function OpenFilesDropTarget({ visible }: { visible: boolean }) {
 function FileDragOverlay({ preview }: { preview: FileDragPreview }) {
   return (
     <div className="file-drag-overlay">
-      <VsCodeTreeIcon path={preview.entry.path} type={preview.entry.type} expanded={false} />
+      <TreeIcon path={preview.entry.path} type={preview.entry.type} />
       <span>{preview.entry.name}</span>
       {preview.count > 1 && <strong>{preview.count}</strong>}
     </div>
@@ -898,6 +887,7 @@ function FileRow({
       aria-expanded={entry.type === 'directory' ? expanded : undefined}
       className={[
         'file-tree-row',
+        entry.type === 'directory' ? 'folder-row' : '',
         entry.ignored ? 'ignored-file' : '',
         draggedPaths.includes(entry.path) || isDragging ? 'dragging' : '',
         isDropTarget ? 'drop-target' : '',
@@ -913,7 +903,7 @@ function FileRow({
       {entry.type === 'directory'
         ? <IconChevronRight className={`folder-chevron ${expanded ? 'open' : ''} ${entry.children.length === 0 && !pendingChildren ? 'empty' : ''}`} />
         : <span className="tree-spacer" />}
-      <VsCodeTreeIcon path={entry.path} type={entry.type} expanded={expanded} />
+      <TreeIcon path={entry.path} type={entry.type} expanded={expanded} />
       <span>{entry.name}</span>
     </button>
   );
@@ -921,12 +911,17 @@ function FileRow({
   return (
     <ContextMenu>
       <ContextMenuTrigger render={row} />
-      <button type="button" className="file-touch-actions" aria-label={`Actions for ${entry.name}`} aria-haspopup="menu" onClick={(event) => {
-        event.stopPropagation();
-        const rect = event.currentTarget.getBoundingClientRect();
-        // Reuse the row's context menu, selection handling and focus restoration.
-        rowElement.current?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: rect.left, clientY: rect.bottom }));
-      }}><IconDots /></button>
+      <Tooltip>
+        <TooltipTrigger render={
+          <button type="button" className="file-row-actions" aria-label={`Actions for ${entry.name}`} aria-haspopup="menu" onClick={(event) => {
+            event.stopPropagation();
+            const rect = event.currentTarget.getBoundingClientRect();
+            // Reuse the row's context menu, selection handling and focus restoration.
+            rowElement.current?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: rect.left, clientY: rect.bottom }));
+          }} />
+        }><IconDots /></TooltipTrigger>
+        <TooltipContent>More actions</TooltipContent>
+      </Tooltip>
       <ContextMenuContent>
         {entry.type === 'file' && (
           <>
@@ -934,32 +929,32 @@ function FileRow({
               <IconFileArrowRight aria-hidden="true" /> Open
             </ContextMenuItem>
             <ContextMenuItem onClick={() => onOpenPinned(entry)}>
-              <IconColumns2 aria-hidden="true" /> Open to the Side <span className="ml-auto text-[10px] text-muted-foreground">Ctrl+Click</span>
+              <IconColumns2 aria-hidden="true" /> Open to the Side <span className="ml-auto text-(length:--text-meta) text-muted-foreground">Ctrl+Click</span>
             </ContextMenuItem>
             <ContextMenuSeparator />
           </>
         )}
         <ContextMenuItem disabled={readOnly || !historyState.canUndo} onClick={() => void onUndo()}>
-          <IconArrowBackUp aria-hidden="true" /> {historyState.undoLabel ? `Undo ${historyState.undoLabel}` : 'Undo'} <span className="ml-auto text-[10px] text-muted-foreground">Ctrl+Z</span>
+          <IconArrowBackUp aria-hidden="true" /> {historyState.undoLabel ? `Undo ${historyState.undoLabel}` : 'Undo'} <span className="ml-auto text-(length:--text-meta) text-muted-foreground">Ctrl+Z</span>
         </ContextMenuItem>
         <ContextMenuItem disabled={readOnly || !historyState.canRedo} onClick={() => void onRedo()}>
-          <IconArrowForwardUp aria-hidden="true" /> {historyState.redoLabel ? `Redo ${historyState.redoLabel}` : 'Redo'} <span className="ml-auto text-[10px] text-muted-foreground">Ctrl+Shift+Z</span>
+          <IconArrowForwardUp aria-hidden="true" /> {historyState.redoLabel ? `Redo ${historyState.redoLabel}` : 'Redo'} <span className="ml-auto text-(length:--text-meta) text-muted-foreground">Ctrl+Shift+Z</span>
         </ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem onClick={() => onCopy(entry)}>
-          <IconFiles aria-hidden="true" /> Copy <span className="ml-auto text-[10px] text-muted-foreground">Ctrl+C</span>
+          <IconFiles aria-hidden="true" /> Copy <span className="ml-auto text-(length:--text-meta) text-muted-foreground">Ctrl+C</span>
         </ContextMenuItem>
         <ContextMenuItem disabled={readOnly} onClick={() => onCut(entry)}>
-          <IconCut aria-hidden="true" /> Cut <span className="ml-auto text-[10px] text-muted-foreground">Ctrl+X</span>
+          <IconCut aria-hidden="true" /> Cut <span className="ml-auto text-(length:--text-meta) text-muted-foreground">Ctrl+X</span>
         </ContextMenuItem>
         {fileClipboardAvailable && (
           <ContextMenuItem disabled={readOnly} onClick={() => onPasteInto(entry)}>
-            <IconClipboard aria-hidden="true" /> Paste <span className="ml-auto text-[10px] text-muted-foreground">Ctrl+V</span>
+            <IconClipboard aria-hidden="true" /> Paste <span className="ml-auto text-(length:--text-meta) text-muted-foreground">Ctrl+V</span>
           </ContextMenuItem>
         )}
         <ContextMenuSeparator />
         <ContextMenuItem disabled={readOnly || multiSelected} onClick={() => onRename(entry)}>
-          <IconEdit aria-hidden="true" /> Rename <span className="ml-auto text-[10px] text-muted-foreground">F2</span>
+          <IconEdit aria-hidden="true" /> Rename <span className="ml-auto text-(length:--text-meta) text-muted-foreground">F2</span>
         </ContextMenuItem>
         <ContextMenuItem disabled={readOnly || multiSelected} onClick={() => onNewFile(entry)}>
           <IconFilePlus aria-hidden="true" /> New File…
@@ -981,7 +976,7 @@ function FileRow({
         )}
         <ContextMenuSeparator />
         <ContextMenuItem className="text-destructive data-highlighted:text-destructive" disabled={readOnly} onClick={() => onDelete(entry)}>
-          <IconTrash aria-hidden="true" /> Delete <span className="ml-auto text-[10px] text-muted-foreground">Del</span>
+          <IconTrash aria-hidden="true" /> Delete <span className="ml-auto text-(length:--text-meta) text-muted-foreground">Del</span>
         </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>
@@ -989,7 +984,7 @@ function FileRow({
 }
 
 
-function VsCodeTreeIcon({ path, type, expanded = false }: { path: string; type: 'file' | 'directory'; expanded?: boolean }) {
-  const src = type === 'file' ? getVsCodeFileIconUrl(path) : getVsCodeFolderIconUrl(path, expanded);
-  return <img className="vscode-tree-icon" src={src} alt="" aria-hidden="true" />;
+function TreeIcon({ path, type, expanded = false }: { path: string; type: 'file' | 'directory'; expanded?: boolean }) {
+  if (type === 'directory') return <FolderIcon path={path} expanded={expanded} />;
+  return <img className="vscode-tree-icon" src={getVsCodeFileIconUrl(path)} alt="" aria-hidden="true" />;
 }

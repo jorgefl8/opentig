@@ -6,6 +6,7 @@ import type { FileResult, ThemePreference, WriteFileResult } from '@shared/contr
 import { OPENTIG_CODE_THEMES } from './diffThemes';
 import { VIEWER_SCROLLBAR_CSS } from './patch-utils';
 import { EditReadyContext } from './edit-ready-context';
+import { FileLineTargetContext, revealSourceLine } from './file-line-target';
 import { useEditorFileKey } from './editor-file-key';
 import { PierreWorkerPool } from './PierreWorkerPool';
 import { resolvePierreLanguage } from './pierreLanguages';
@@ -15,6 +16,11 @@ import { shouldVirtualizeSourceEditor } from './source-editor-virtualization';
 import { useEditableFileDraft } from './useEditableFileDraft';
 import { useShortcuts } from '@/app/useShortcuts';
 import { Button } from '@/components/ui/button';
+import { MobileMainAction } from '@/components/MobileChrome';
+import { useMobileChrome } from '@/components/mobile-chrome-context';
+import { mobileMainAction } from '@/lib/mobile-main-action';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { FileViewerToolbar } from './FileViewerToolbar';
 import './source-editor.css';
 
 interface FileSaveControlsProps {
@@ -26,25 +32,29 @@ interface FileSaveControlsProps {
 
 export function FileSaveControls({ dirty, saving, readOnly, onSave }: FileSaveControlsProps) {
   const shortcuts = useShortcuts();
-  if (!dirty && !saving) return null;
+  const phone = useMobileChrome() !== null;
+  if (mobileMainAction({ screen: 'file', dirty, saving }) !== 'save') return null;
 
   const label = readOnly ? 'Read only' : saving ? 'Saving…' : 'Save';
+  if (phone) {
+    return <MobileMainAction><Button className="mobile-main-action file-save-button" data-state={readOnly ? 'readonly' : saving ? 'saving' : 'dirty'} disabled={saving || readOnly} onClick={onSave}>{label}</Button></MobileMainAction>;
+  }
   const ariaLabel = readOnly ? 'Read only' : saving ? 'Saving' : `Save file (${shortcuts.saveFile})`;
   return (
-    <span className="file-save-controls">
-      <Button
-        type="button"
-        size="sm"
-        className="file-save-button"
-        data-state={readOnly ? 'readonly' : saving ? 'saving' : 'dirty'}
-        disabled={saving || readOnly}
-        onClick={onSave}
-        aria-label={ariaLabel}
-      >
-        {label}
-      </Button>
-      {!readOnly && !saving && <kbd className="file-save-shortcut">{shortcuts.saveFile}</kbd>}
-    </span>
+    <Tooltip>
+      <TooltipTrigger render={
+        <Button
+          type="button"
+          size="xs"
+          className="file-save-button"
+          data-state={readOnly ? 'readonly' : saving ? 'saving' : 'dirty'}
+          disabled={saving || readOnly}
+          onClick={onSave}
+          aria-label={ariaLabel}
+        />
+      }>{label}</TooltipTrigger>
+      <TooltipContent>{`Save file (${shortcuts.saveFile})`}</TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -117,6 +127,18 @@ export function SourceCodeEditor({ path, cacheKey, value, themeType, wrapLines, 
 
   const cancelScrollSync = useRef<(() => void) | null>(null);
   useEffect(() => () => cancelScrollSync.current?.(), []);
+
+  const lineTarget = useContext(FileLineTargetContext);
+  const revealing = lineTarget?.path === path && !lineTarget.reached ? lineTarget : null;
+  useEffect(() => {
+    if (!revealing) return;
+    return revealSourceLine(() => {
+      const root = virtualizerRef.current?.getRoot() ?? plainScrollRef.current;
+      return root instanceof HTMLElement ? root : null;
+    }, revealing, value.split('\n').length);
+    // Only a new target moves the view: typing changes the value and must not scroll back.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [revealing]);
 
   useImperativeHandle(ref, () => ({
     getScrollFraction() {
@@ -199,14 +221,13 @@ export function EditableFileViewer({ file, initialContent, themeType, wrapLines,
   const { draft, updateDraft, dirty, saving, save } = useEditableFileDraft({
     file, initialContent, readOnly, messages: FILE_SAVE_MESSAGES, onDirtyChange, onDraftChange, onSave,
   });
+  const phone = useMobileChrome() !== null;
+  const saveControls = <FileSaveControls dirty={dirty} saving={saving} readOnly={readOnly} onSave={() => void save()} />;
 
   return (
     <div className="source-file-viewer">
-      {(dirty || saving) && (
-        <div className="file-save-toolbar">
-          <FileSaveControls dirty={dirty} saving={saving} readOnly={readOnly} onSave={() => void save()} />
-        </div>
-      )}
+      {/* On a phone Save floats, so a plain file needs no toolbar row of its own. */}
+      {phone ? saveControls : (dirty || saving) && <FileViewerToolbar end={saveControls} />}
       <div className="source-editor-scroll">
         <SourceCodeEditor
           path={file.path}

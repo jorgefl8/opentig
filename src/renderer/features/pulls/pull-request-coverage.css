@@ -4,7 +4,7 @@
   border-radius: var(--radius-md);
   background: var(--muted);
   padding: 10px 12px;
-  font-size: 11px;
+  font-size: var(--text-meta);
   line-height: 1.5;
 }
 .pr-context-coverage[data-warning] { border-color: var(--warning); }

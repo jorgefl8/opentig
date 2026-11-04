@@ -22,3 +22,16 @@ export function formatDateTime(value: string, { seconds = false }: { seconds?: b
   const time = `${pad(date.getHours())}:${pad(date.getMinutes())}${seconds ? `:${pad(date.getSeconds())}` : ''}`;
   return `${dateText(date)} ${time}`;
 }
+
+const RELATIVE_UNITS: readonly (readonly [string, number])[] = [['y', 31_536_000], ['mo', 2_592_000], ['d', 86_400], ['h', 3_600], ['m', 60]];
+
+/** How long ago something happened, compactly. A time ahead of the clock, as clocks drift apart, reads as now. */
+export function formatTimeAgo(value: string, now = Date.now()): string {
+  const date = localDate(value);
+  if (Number.isNaN(date.getTime())) return '—';
+  const seconds = (now - date.getTime()) / 1000;
+  for (const [unit, length] of RELATIVE_UNITS) {
+    if (seconds >= length) return `${Math.floor(seconds / length)}${unit} ago`;
+  }
+  return 'just now';
+}

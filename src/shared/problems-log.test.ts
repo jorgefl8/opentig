@@ -42,6 +42,9 @@ describe('problem log model', () => {
   it('skips diagnostics commands, cancels, and invalid arguments', () => {
     expect(shouldRecordCommandProblem({ command: 'diagnostics:list', code: 'UNKNOWN' })).toBe(false);
     expect(shouldRecordCommandProblem({ command: 'refs:pull', code: 'AI_CANCELLED' })).toBe(false);
+    expect(shouldRecordCommandProblem({ command: 'github:pr-action', code: 'GH_PR_STATE_CHANGED' })).toBe(false);
+    expect(shouldRecordCommandProblem({ command: 'github:pr-action', code: 'GH_PR_ACTION_NOT_ALLOWED' })).toBe(false);
+    expect(shouldRecordCommandProblem({ command: 'github:pr-action', code: 'GH_PROCESS_FAILED' })).toBe(true);
     expect(shouldRecordCommandProblem({ command: 'refs:pull', code: 'INVALID_ARGUMENT' })).toBe(false);
     expect(shouldRecordCommandProblem({ command: 'refs:pull', code: 'FILE_NOT_FOUND' })).toBe(false);
     expect(shouldRecordCommandProblem({ command: 'refs:pull', code: 'TIMEOUT', error: { name: 'AbortError' } })).toBe(false);

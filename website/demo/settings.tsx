@@ -10,6 +10,8 @@ import {
 } from "@/components/ui/dialog";
 import { GeneralSettings } from "@/features/settings/GeneralSettings";
 import { Button } from "@/components/ui/button";
+import { MobileSheet } from "@/components/MobileSheet";
+import { useMobileLayout } from "@/lib/use-mobile-layout";
 export type SettingsSection =
   | "general"
   | "updates"
@@ -29,6 +31,16 @@ export function SettingsDialog({
   preferences: Preferences;
   onPreference(partial: Partial<Preferences>): void | Promise<boolean>;
 }) {
+  const phone = useMobileLayout();
+  if (phone) {
+    return (
+      <MobileSheet open={open} onOpenChange={onOpenChange} title="Settings" tall>
+        <div className="settings-sheet">
+          <GeneralSettings preferences={preferences} onPreference={onPreference} showRepositoryOptions={false} />
+        </div>
+      </MobileSheet>
+    );
+  }
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogPopup className="demo-settings" style={{

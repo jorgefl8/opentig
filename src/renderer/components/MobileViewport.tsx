@@ -1,6 +1,8 @@
 import { useEffect } from 'react';
+import { preventIosFocusZoom } from '@/lib/ios-focus-zoom';
 
 export function MobileViewport() {
+  useEffect(() => { preventIosFocusZoom(); }, []);
   useEffect(() => {
     const viewport = window.visualViewport;
     if (!viewport) return;

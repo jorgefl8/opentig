@@ -1,19 +1,28 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { useMobileLayout } from '@/lib/use-mobile-layout';
+import { useDebouncedValue } from '@/lib/use-debounced-value';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useQuery } from '@tanstack/react-query';
-import { IconChevronDown, IconChevronRight, IconEyeOff, IconLetterCase, IconLoader4, IconRegex, IconReplace, IconReplaceFilled, IconSearch, IconTextWrapDisabled } from '@tabler/icons-react';
+import { IconChevronDown, IconChevronRight, IconEyeOff, IconLoader4, IconReplace, IconReplaceFilled, IconSearch } from '@tabler/icons-react';
 import { sileo } from 'sileo';
 import { Button } from '@/components/ui/button';
+import { MobileSwitchRow } from '@/components/MobileChrome';
+import { MobileSheet } from '@/components/MobileSheet';
+import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { buildSearchRegex, type SearchFileResult, type SearchMatch, type SearchOptions, type SearchResult } from '../../../shared/search';
 import { queryKeys } from '@/lib/query-client';
 import { opentig } from '@/lib/opentig-api';
+import { getVsCodeFileIconUrl } from '@/lib/vscode-icons';
 
 const DEBOUNCE_MS = 250;
+// Rows fill these heights; .search-file-heading and .search-match in index.css follow them.
 const FILE_ROW_HEIGHT = 28;
 const MATCH_ROW_HEIGHT = 24;
+// A phone wraps a match to as many as two lines, so its rows are measured from these.
+const MOBILE_FILE_ROW_HEIGHT = 42;
+const MOBILE_MATCH_ROW_HEIGHT = 48;
 
 type SearchRow =
   | { kind: 'file'; file: SearchFileResult; open: boolean }
@@ -24,7 +33,8 @@ interface SearchViewProps {
   active: boolean;
   /** Changes whenever the working tree changed, so results can be refreshed. */
   revision: number;
-  onOpenFile(path: string): void;
+  /** A match's line goes along, for the file to open there. */
+  onOpenFile(path: string, line?: number): void;
   /** Open tabs with unsaved changes among the given paths, which must not be overwritten. */
   unsavedPathsAmong(paths: string[]): string[];
   onReplaced(paths: string[]): void;
@@ -42,8 +52,12 @@ export function SearchView({ repositoryId, active, revision, onOpenFile, unsaved
   const [replaceIgnored, setReplaceIgnored] = useState(false);
   const [replacing, setReplacing] = useState(false);
   const [replaceRevision, setReplaceRevision] = useState(0);
+  const [optionsOpen, setOptionsOpen] = useState(false);
+  useEffect(() => { if (!mobile) setOptionsOpen(false); }, [mobile]);
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const inputRef = useRef<HTMLInputElement>(null);
+  const replaceInputRef = useRef<HTMLInputElement>(null);
+  const revealingReplace = useRef(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const options = useMemo<SearchOptions>(
@@ -90,7 +104,7 @@ export function SearchView({ repositoryId, active, revision, onOpenFile, unsaved
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => scrollRef.current,
-    estimateSize: (index) => mobile ? 44 : rows[index]?.kind === 'file' ? FILE_ROW_HEIGHT : MATCH_ROW_HEIGHT,
+    estimateSize: (index) => rows[index]?.kind === 'file' ? mobile ? MOBILE_FILE_ROW_HEIGHT : FILE_ROW_HEIGHT : mobile ? MOBILE_MATCH_ROW_HEIGHT : MATCH_ROW_HEIGHT,
     getItemKey: (index) => {
       const row = rows[index];
       if (!row) return index;
@@ -156,9 +170,6 @@ export function SearchView({ repositoryId, active, revision, onOpenFile, unsaved
     <div className="search-view">
       <div className="search-controls">
         <div className="search-query-row">
-          <Button variant="ghost" size="icon-xs" className="search-replace-toggle" aria-label={replaceOpen ? 'Hide replace' : 'Show replace'} aria-expanded={replaceOpen} onClick={() => setReplaceOpen((value) => !value)}>
-            {replaceOpen ? <IconChevronDown /> : <IconChevronRight />}
-          </Button>
           <div className="search-input">
             <IconSearch aria-hidden="true" />
             <input
@@ -171,19 +182,54 @@ export function SearchView({ repositoryId, active, revision, onOpenFile, unsaved
               onChange={(event) => setQuery(event.target.value)}
             />
             <span className="search-toggles">
-              <SearchToggle label="Match case" active={matchCase} onToggle={() => setMatchCase((value) => !value)}><IconLetterCase /></SearchToggle>
-              <SearchToggle label="Match whole word" active={wholeWord} onToggle={() => setWholeWord((value) => !value)}><IconTextWrapDisabled /></SearchToggle>
-              <SearchToggle label="Use regular expression" active={regex} onToggle={() => setRegex((value) => !value)}><IconRegex /></SearchToggle>
-              <SearchToggle label="Search Git-ignored files" active={searchIgnored} onToggle={() => setSearchIgnored((value) => !value)}><IconEyeOff /></SearchToggle>
+              <SearchToggle label="Match case" active={matchCase} onToggle={() => setMatchCase((value) => !value)}>Aa</SearchToggle>
+              <SearchToggle label="Match whole word" active={wholeWord} onToggle={() => setWholeWord((value) => !value)}>ab</SearchToggle>
+              <SearchToggle label="Use regular expression" active={regex} onToggle={() => setRegex((value) => !value)}>.*</SearchToggle>
             </span>
           </div>
+          {mobile ? <>
+            <Button variant={searchIgnored ? 'secondary' : 'ghost'} size="icon-xs" className="change-action-button" aria-label="More search options" aria-haspopup="dialog" onClick={() => setOptionsOpen(true)}><IconChevronDown /></Button>
+            <MobileSheet open={optionsOpen} onOpenChange={setOptionsOpen} title="Search" finalFocus={() => {
+              if (!revealingReplace.current) return null;
+              revealingReplace.current = false;
+              return replaceInputRef.current;
+            }}>
+              <MobileSwitchRow label="Include ignored files" checked={searchIgnored} onChange={setSearchIgnored} />
+              {replaceOpen
+                ? <button type="button" className="mobile-sheet-action" disabled={replacement !== ''} onClick={() => { setOptionsOpen(false); setReplaceOpen(false); }}><IconReplace /><span>{replacement !== '' ? <><strong>Hide replace</strong><small>Clear it first</small></> : 'Hide replace'}</span></button>
+                : <button type="button" className="mobile-sheet-action" onClick={() => { revealingReplace.current = true; setOptionsOpen(false); setReplaceOpen(true); }}><IconReplace /><span>Replace…</span></button>}
+            </MobileSheet>
+          </> : <DropdownMenu>
+            <Tooltip>
+              <TooltipTrigger render={<DropdownMenuTrigger render={<Button variant={searchIgnored ? 'secondary' : 'ghost'} size="icon-xs" className="change-action-button" aria-label="More search options" />} />}><IconChevronDown /></TooltipTrigger>
+              <TooltipContent>More search options</TooltipContent>
+            </Tooltip>
+            <DropdownMenuContent finalFocus={() => {
+              if (!revealingReplace.current) return true;
+              revealingReplace.current = false;
+              return replaceInputRef.current ?? true;
+            }}>
+              <DropdownMenuCheckboxItem checked={searchIgnored} onCheckedChange={setSearchIgnored}>Include ignored files</DropdownMenuCheckboxItem>
+              <DropdownMenuSeparator />
+              {replaceOpen ? (
+                // Hiding the field must not hide a replacement that is still in effect.
+                <DropdownMenuItem disabled={replacement !== ''} className="justify-between" onClick={() => setReplaceOpen(false)}>
+                  Hide replace {replacement !== '' && <span className="text-(length:--text-meta) text-muted-foreground">Clear it first</span>}
+                </DropdownMenuItem>
+              ) : (
+                <DropdownMenuItem onClick={() => { revealingReplace.current = true; setReplaceOpen(true); }}>Replace…</DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>}
         </div>
         {replaceOpen && (
-          <div className="search-replace-row">
-            <IconReplace aria-hidden="true" />
-            <input value={replacement} spellCheck={false} placeholder="Replace" aria-label="Replace with" onChange={(event) => setReplacement(event.target.value)} />
+          <div className="search-query-row">
+            <div className="search-input">
+              <IconReplace aria-hidden="true" />
+              <input ref={replaceInputRef} value={replacement} spellCheck={false} placeholder="Replace" aria-label="Replace with" onChange={(event) => setReplacement(event.target.value)} />
+            </div>
             <Tooltip>
-              <TooltipTrigger render={<Button variant="ghost" size="icon-xs" disabled={replacing || replaceableFiles.length === 0 || Boolean(result?.truncated)} aria-label="Replace all search results" onClick={() => void replace('all')} />}><IconReplaceFilled /></TooltipTrigger>
+              <TooltipTrigger render={<Button variant="ghost" size="icon-xs" className="change-action-button" disabled={replacing || replaceableFiles.length === 0 || Boolean(result?.truncated)} aria-label="Replace all search results" onClick={() => void replace('all')} />}><IconReplaceFilled /></TooltipTrigger>
               <TooltipContent>{result?.truncated ? 'Narrow the search to replace all' : 'Replace all'}</TooltipContent>
             </Tooltip>
           </div>
@@ -203,7 +249,7 @@ export function SearchView({ repositoryId, active, revision, onOpenFile, unsaved
                     : `${result.totalMatches - result.ignoredMatches}${result.truncated ? '+' : ''} ${result.totalMatches - result.ignoredMatches === 1 ? 'result' : 'results'} in ${result.files.length - ignoredFiles} ${result.files.length - ignoredFiles === 1 ? 'file' : 'files'}`}
                 </span>
                 {result.ignoredMatches > 0 && (
-                  <span className="search-summary-ignored">· {result.ignoredMatches} in {ignoredFiles} ignored {ignoredFiles === 1 ? 'file' : 'files'}</span>
+                  <span> · {result.ignoredMatches} in {ignoredFiles} ignored {ignoredFiles === 1 ? 'file' : 'files'}</span>
                 )}
               </>
             )}
@@ -211,38 +257,46 @@ export function SearchView({ repositoryId, active, revision, onOpenFile, unsaved
         )}
       </div>
       <div ref={scrollRef} className="search-results">
+        {!trimmedQuery && <p className="empty-list">Type to search every file.</p>}
         {searching && !result && <div className="view-loading" role="status"><IconLoader4 className="spinner" /> <ShimmeringText text="Searching…" /></div>}
         <div className="search-rows virtual-list" style={{ height: virtualizer.getTotalSize() }}>
           {virtualizer.getVirtualItems().map((virtualRow) => {
             const row = rows[virtualRow.index];
             if (!row) return null;
             return (
-              <div key={virtualRow.key} className="virtual-row" style={{ height: virtualRow.size, transform: `translateY(${virtualRow.start}px)` }}>
+              <div key={virtualRow.key} ref={mobile ? virtualizer.measureElement : undefined} data-index={virtualRow.index} className="virtual-row" style={{ height: mobile ? undefined : virtualRow.size, transform: `translateY(${virtualRow.start}px)` }}>
                 {row.kind === 'file' ? (
                   <div className={`search-file-heading ${row.file.ignored ? 'ignored' : ''}`}>
                     <button className="search-file-toggle" onClick={() => toggleFile(row.file.path)} aria-expanded={row.open}>
                       {row.open ? <IconChevronDown /> : <IconChevronRight />}
-                      <span className="search-file-name">{row.file.path}</span>
+                      <img className="vscode-tree-icon" src={getVsCodeFileIconUrl(row.file.path)} alt="" aria-hidden="true" draggable={false} />
+                      <span className="search-file-name"><bdi>{row.file.path}</bdi></span>
                       {row.file.ignored && (
                         <Tooltip>
                           <TooltipTrigger render={<span className="search-file-ignored-badge" />}><IconEyeOff /></TooltipTrigger>
                           <TooltipContent>Ignored by Git</TooltipContent>
                         </Tooltip>
                       )}
-                      <span className="search-file-count">{row.file.matches.length}</span>
+                      <span className="plain-count">{row.file.matches.length}</span>
                     </button>
                     {replaceOpen && row.file.revision && (!row.file.ignored || replaceIgnored) && (
-                      <Button variant="ghost" size="icon-xs" className="search-replace-action" disabled={replacing} aria-label={`Replace all in ${row.file.path}`} onClick={() => void replace(row.file)}><IconReplaceFilled /></Button>
+                      <Tooltip>
+                        <TooltipTrigger render={<Button variant="ghost" size="icon-xs" className="search-replace-action change-action-button" disabled={replacing} aria-label={`Replace all in ${row.file.path}`} onClick={() => void replace(row.file)} />}><IconReplaceFilled /></TooltipTrigger>
+                        <TooltipContent>Replace all in this file</TooltipContent>
+                      </Tooltip>
                     )}
                   </div>
                 ) : (
                   <div className="search-match">
-                    <button className="search-match-open" onClick={() => onOpenFile(row.file.path)}>
-                      <span className="search-match-line">{row.match.line}:{row.match.column ?? 1}</span>
+                    <button className="search-match-open" onClick={() => onOpenFile(row.file.path, row.match.line)}>
+                      <span className="search-match-line">{mobile ? row.match.line : `${row.match.line}:${row.match.column ?? 1}`}</span>
                       <span className="search-match-text">{highlight(row.match.text, highlighter)}</span>
                     </button>
                     {replaceOpen && row.file.revision && row.match.column && (!row.file.ignored || replaceIgnored) && (
-                      <Button variant="ghost" size="icon-xs" className="search-replace-action" disabled={replacing} aria-label={`Replace match on line ${row.match.line}`} onClick={() => void replace({ file: row.file, match: row.match })}><IconReplace /></Button>
+                      <Tooltip>
+                        <TooltipTrigger render={<Button variant="ghost" size="icon-xs" className="search-replace-action change-action-button" disabled={replacing} aria-label={`Replace match on line ${row.match.line}`} onClick={() => void replace({ file: row.file, match: row.match })} />}><IconReplace /></TooltipTrigger>
+                        <TooltipContent>Replace this match</TooltipContent>
+                      </Tooltip>
                     )}
                   </div>
                 )}
@@ -255,20 +309,11 @@ export function SearchView({ repositoryId, active, revision, onOpenFile, unsaved
   );
 }
 
-function useDebouncedValue<T>(value: T, delay: number): T {
-  const [debounced, setDebounced] = useState(value);
-  useEffect(() => {
-    const timer = window.setTimeout(() => setDebounced(value), delay);
-    return () => window.clearTimeout(timer);
-  }, [delay, value]);
-  return debounced;
-}
-
 function SearchToggle({ label, active, onToggle, children }: { label: string; active: boolean; onToggle(): void; children: React.ReactNode }) {
   return (
     <Tooltip>
       <TooltipTrigger render={
-        <Button variant="ghost" size="icon-xs" className="search-toggle" aria-label={label} aria-pressed={active} onClick={onToggle} />
+        <Button variant="ghost" size="icon-xs" className="size-5.5 rounded-sm font-mono text-(length:--text-meta) font-medium text-muted-foreground aria-pressed:bg-primary/20 aria-pressed:text-primary aria-pressed:hover:bg-primary/25 aria-pressed:hover:text-primary" aria-label={label} aria-pressed={active} onClick={onToggle} />
       }>{children}</TooltipTrigger>
       <TooltipContent>{label}</TooltipContent>
     </Tooltip>

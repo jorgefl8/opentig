@@ -23,8 +23,10 @@ html .demo-settings {
   overflow: hidden;
 }
 .demo-settings > .settings-general {
+  min-height: 0;
   flex: 1;
-  overflow: hidden;
+  overflow: auto;
+  padding: 4px 24px 24px;
 }
 .demo-settings .settings-panel-header {
   align-items: center;

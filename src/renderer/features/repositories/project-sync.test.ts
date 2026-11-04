@@ -1,5 +1,31 @@
 import { describe, expect, it } from 'vitest';
-import { projectPullBlockedCopy, projectPullSuccessCopy, projectPushBlockedCopy, projectPushSuccessCopy, repositorySyncLoadingToast, visibleRepositorySyncActions } from './project-sync';
+import { mobileSyncPill, projectPullBlockedCopy, projectPullSuccessCopy, projectPushBlockedCopy, projectPushSuccessCopy, repositorySyncLoadingToast, visibleRepositorySyncActions } from './project-sync';
+
+describe('the sync pill in a phone top bar', () => {
+  const status = { branch: 'feature', upstream: 'origin/feature', ahead: 0, behind: 0 };
+
+  it('offers nothing when the branch is up to date', () => {
+    expect(mobileSyncPill(status)).toBeNull();
+    expect(mobileSyncPill(null)).toBeNull();
+  });
+
+  it('offers pushing with its count, and publishing a branch with no upstream', () => {
+    expect(mobileSyncPill({ ...status, ahead: 2 })).toEqual({ action: 'push', count: 2 });
+    expect(mobileSyncPill({ ...status, upstream: null })).toEqual({ action: 'publish' });
+    expect(mobileSyncPill({ ...status, upstream: null, ahead: 4 })).toEqual({ action: 'publish' });
+  });
+
+  it('pulls first when both apply, because the push would be refused', () => {
+    expect(mobileSyncPill({ ...status, behind: 3 })).toEqual({ action: 'pull', count: 3 });
+    expect(mobileSyncPill({ ...status, ahead: 2, behind: 3 })).toEqual({ action: 'pull', count: 3 });
+  });
+
+  it('stays out while syncing could not run', () => {
+    for (const blocked of [{ readOnly: true }, { detached: true }, { unborn: true }]) {
+      expect(mobileSyncPill({ ...status, ahead: 2, behind: 3, ...blocked })).toBeNull();
+    }
+  });
+});
 
 describe('project sync toast copy', () => {
   it('shows only pending repository operations', () => {

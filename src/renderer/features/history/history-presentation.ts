@@ -12,11 +12,32 @@ export function commitReference(commit: Pick<CommitInfo, 'subject' | 'parentCoun
   return Number.isSafeInteger(number) && number > 0 ? { number, source: merge ? 'merge' : 'subject' } : null;
 }
 
-export function historyColor(commit: CommitInfo): number | undefined {
-  if (commit.upstreamState === 'local-only') return 0;
-  if (commit.baseState === 'included') return 2;
-  if (commit.upstreamState === 'published') return 1;
-  return undefined;
+/** What a row's dot means. The list has no legend, so the hint is where a sighted user reads it. */
+export function commitPublication(
+  commit: Pick<CommitInfo, 'upstreamState' | 'baseState' | 'isHead' | 'parentCount'>,
+  upstream: string | null,
+  baseRef?: string | null,
+): { label: string; hint: string } {
+  const merge = commit.parentCount > 1;
+  const label = commit.upstreamState === 'local-only' ? 'Not published' : commit.upstreamState === 'published' ? 'Published' : 'Publication unknown';
+  const detail = commit.upstreamState === 'local-only'
+    ? commit.isHead ? `Not in ${upstream ?? 'the upstream'} according to the latest known remote state.` : 'To avoid rewriting multiple commits, only the latest can be undone.'
+    : commit.upstreamState === 'published'
+      ? commit.baseState === 'included' && baseRef ? `Reachable from ${baseRef}, using the latest known local refs.` : ''
+      : 'There is no upstream to compare with.';
+  return {
+    label: merge ? `Merge commit, ${label.toLocaleLowerCase()}` : label,
+    hint: [merge ? 'Merge commit.' : '', `${label}.`, detail].filter(Boolean).join(' '),
+  };
+}
+
+/** Whether the commit itself can be undone; the repository may still be too busy to do it now. */
+export function canUndoCommit(commit: Pick<CommitInfo, 'upstreamState' | 'isHead' | 'parentCount'>): boolean {
+  return commit.upstreamState === 'local-only' && commit.isHead && commit.parentCount === 1;
+}
+
+export function commitGitHubUrl(githubRepository: string | null | undefined, oid: string, commit: Pick<CommitInfo, 'upstreamState'> | undefined): string | null {
+  return githubRepository && commit?.upstreamState === 'published' ? `https://github.com/${githubRepository}/commit/${oid}` : null;
 }
 
 export interface HistoryRow { commit: CommitInfo; parentOids: string[]; grouped: CommitInfo[]; }

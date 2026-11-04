@@ -20,7 +20,7 @@ describe('renderMarkdown', () => {
       '```',
     ].join('\n'));
 
-    expect(html).toContain('<h1>Title</h1>');
+    expect(html).toContain('<h1 id="user-content-title">Title</h1>');
     expect(html).toContain('type="checkbox"');
     expect(html).toContain('markdown-alert');
     expect(html).toContain('footnote');
@@ -42,6 +42,27 @@ describe('renderMarkdown', () => {
     expect(html).toContain('class="mermaid"');
     expect(html).toContain('data-mermaid-source=');
     expect(html).toContain('graph TD');
+  });
+
+  it.each([
+    ['a markdown link to a script', '[click](javascript:alert(1))', ['javascript:']],
+    ['an uppercase script URL', '<a href="JaVaScRiPt:alert(1)">x</a>', ['alert(1)']],
+    ['an encoded script URL', '<a href="java&#x73;cript:alert(1)">x</a>', ['alert(1)']],
+    ['a vbscript link', '<a href="vbscript:msgbox(1)">x</a>', ['vbscript:']],
+    ['a data URL document', '<a href="data:text/html,<script>alert(1)</script>">x</a>', ['data:text/html', '<script']],
+    ['a frame', '<iframe src="https://example.invalid"></iframe>', ['<iframe']],
+    ['an embedded object', '<object data="https://example.invalid/x"></object><embed src="https://example.invalid/x">', ['<object', '<embed']],
+    ['a form', '<form action="https://example.invalid"><input name="token"><button>Send</button></form>', ['<form', 'action=']],
+    ['a form action on a button', '<button formaction="https://example.invalid">Send</button>', ['formaction']],
+    ['a style block', '<style>body { display: none }</style>', ['<style']],
+    ['an inline handler on an image', '![x](https://example.invalid/x.png "t") <img src=x onload=alert(1)>', ['onload']],
+    ['a script inside SVG', '<svg onload="alert(1)"><script>alert(1)</script></svg>', ['onload', '<script']],
+    ['a base override', '<base href="https://example.invalid/">', ['<base']],
+    ['a refresh', '<meta http-equiv="refresh" content="0;url=https://example.invalid">', ['<meta']],
+    ['a handler in a link', '<a href="https://example.invalid" onclick="alert(1)" onmouseover="alert(1)">x</a>', ['onclick', 'onmouseover']],
+  ])('neutralizes %s from third-party text', async (_name, content, forbidden) => {
+    const html = (await renderMarkdown(content)).toLowerCase();
+    for (const text of forbidden) expect(html).not.toContain(text.toLowerCase());
   });
 
   it('sanitizes scripts, event handlers and unsafe URLs', async () => {
@@ -87,4 +108,15 @@ describe('renderMarkdown', () => {
     const html = await renderMarkdown('```totally-unknown\nvalue\n```');
     expect(html).not.toContain('class="markdown-code-icon"');
   });
+
+  it('gives headings GitHub\'s anchors, so `#section` links land on them', async () => {
+    const html = await renderMarkdown(['### Optional AI assistance', '## Repositories and **projects**', '## `npm run` & friends!', '## Setup', '## Setup', '## Ñandú 2.0'].join('\n\n'));
+    expect(html).toContain('id="user-content-optional-ai-assistance"');
+    expect(html).toContain('id="user-content-repositories-and-projects"');
+    expect(html).toContain('id="user-content-npm-run--friends"');
+    expect(html).toContain('id="user-content-setup"');
+    expect(html).toContain('id="user-content-setup-1"');
+    expect(html).toContain('id="user-content-ñandú-20"');
+  });
 });
+

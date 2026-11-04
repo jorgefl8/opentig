@@ -6,11 +6,11 @@ import { queryKeys } from '@/lib/query-client';
 /** Asking again can't fix these: they wait for a change of account or an explicit refresh. */
 const NEEDS_USER_ACTION = new Set(['GH_ACCESS_DENIED', 'GH_AUTH_REQUIRED', 'GH_ACCOUNT_MISSING', 'GH_ACCOUNT_UNRESOLVED']);
 
-function failureCode(query: Pick<Query, 'state'>): string | null {
+export function failureCode(query: Pick<Query, 'state'>): string | null {
   return query.state.status === 'error' ? serializedErrorFromReason(query.state.error)?.code ?? null : null;
 }
 
-function needsUserAction(query: Pick<Query, 'state'>): boolean {
+export function needsUserAction(query: Pick<Query, 'state'>): boolean {
   return NEEDS_USER_ACTION.has(failureCode(query) ?? '');
 }
 

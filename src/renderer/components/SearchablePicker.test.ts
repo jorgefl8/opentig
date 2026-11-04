@@ -20,10 +20,21 @@ beforeEach(async () => {
   }))));
   await act(async () => document.querySelector<HTMLButtonElement>('[role="combobox"]')!.click());
 });
-afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.resetAllMocks(); vi.unstubAllGlobals(); });
+afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.resetAllMocks(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 /** Lets pending tooltip and virtualizer timers run, in fake or real time. */
 const flushTimers = () => vi.isFakeTimers() ? vi.advanceTimersByTimeAsync(0) : new Promise(resolve => setTimeout(resolve, 0));
+
+/** Re-renders the repository rows as cut short, the only case with a tooltip. */
+async function truncateRows() {
+  vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockReturnValue(200);
+  vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(100);
+  await act(async () => root.render(createElement(TooltipProvider, { delay: 0 }, createElement(SearchablePicker, {
+    key: 'truncated',
+    groups: [{ id: 'repositories', label: 'Repositories', items: ['Atlas', 'Beacon'].map(name => ({ value: name, label: name, tooltip: `/sample/${name.toLowerCase()}` })) }],
+    value: 'Atlas', onValueChange, label: 'Repository', triggerLabel: 'Atlas', placeholder: 'Search repositories…', open: true,
+  }))));
+}
 
 async function hover(name: string) {
   await act(async () => {
@@ -33,7 +44,13 @@ async function hover(name: string) {
   });
 }
 
+it('has no tooltip on a row that shows all its text, however much more the tooltip would say', async () => {
+  await hover('Beacon');
+  expect(document.querySelector('[data-slot="tooltip-content"][data-open]')).toBeNull();
+});
+
 it('dismisses a hovered row tooltip on wheel input while keeping repository selection available', async () => {
+  await truncateRows();
   await hover('Beacon');
   expect(document.querySelector('[data-slot="tooltip-content"]')?.textContent).toContain('/sample/beacon');
   await act(async () => document.querySelector('.searchable-picker-list')!.dispatchEvent(new WheelEvent('wheel', { deltaY: -100, bubbles: true })));
@@ -44,6 +61,7 @@ it('dismisses a hovered row tooltip on wheel input while keeping repository sele
 });
 
 it('suppresses tooltips during scrolling and allows them again after scrolling stops', async () => {
+  await truncateRows();
   vi.useFakeTimers();
   try {
     await act(async () => document.querySelector('.searchable-picker-list')!.dispatchEvent(new Event('scroll')));
@@ -116,6 +134,49 @@ it.each([undefined, 'branch-picker'])('keeps a truncated trigger tooltip open un
     expect(document.querySelector('[data-slot="tooltip-content"][data-open]')).toBeNull();
     expect(option(label)).toBeDefined();
   } finally { width.mockRestore(); available.mockRestore(); }
+});
+
+it('hints at the trigger even when its label fits, and adds the hint to a truncated label', async () => {
+  const hover = async () => {
+    const trigger = document.querySelector<HTMLButtonElement>('[role="combobox"]')!;
+    await act(async () => {
+      trigger.dispatchEvent(new MouseEvent('mouseenter', { bubbles: false }));
+      trigger.dispatchEvent(new MouseEvent('mousemove', { bubbles: true }));
+      await flushTimers();
+    });
+    return document.querySelector('[data-slot="tooltip-content"][data-open]')?.textContent;
+  };
+  const picker = (key: string) => createElement(TooltipProvider, { delay: 0 }, createElement(SearchablePicker, {
+    key, groups: [{ id: 'repositories', label: 'Repositories', items: [{ value: 'Atlas', label: 'Atlas' }] }],
+    value: 'Atlas', onValueChange, label: 'Repository', triggerLabel: 'Atlas', triggerHint: 'Switch repository (Q)', placeholder: 'Search repositories…',
+  }));
+  await act(async () => root.render(picker('fits')));
+  expect(await hover()).toBe('Switch repository (Q)');
+  const width = vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockReturnValue(240);
+  const available = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(160);
+  try {
+    await act(async () => root.render(picker('truncated')));
+    expect(await hover()).toBe('Atlas · Switch repository (Q)');
+  } finally { width.mockRestore(); available.mockRestore(); }
+});
+
+it('offers every management action outside the listbox and closes before running it', async () => {
+  const open = vi.fn(); const manage = vi.fn();
+  await act(async () => root.render(createElement(TooltipProvider, { delay: 0 }, createElement(SearchablePicker, {
+    key: 'actions', groups: [{ id: 'repositories', label: 'Repositories', items: [{ value: 'Atlas', label: 'Atlas' }] }],
+    value: 'Atlas', onValueChange, label: 'Repository', triggerLabel: 'Atlas', placeholder: 'Search repositories…',
+    management: [{ label: 'Open repository…', shortcut: 'Ctrl+O', onClick: open }, { label: 'Manage projects…', onClick: manage }],
+  }))));
+  const trigger = document.querySelector<HTMLButtonElement>('[role="combobox"]')!;
+  await act(async () => trigger.click());
+  const rows = () => [...document.querySelectorAll<HTMLButtonElement>('.searchable-picker-footer button')];
+  expect(rows().map(row => row.textContent?.trim())).toEqual(['Open repository…Ctrl+O', 'Manage projects…']);
+  expect(rows()[0]!.getAttribute('aria-keyshortcuts')).toBe('Control+O');
+  expect(document.querySelector('[role="listbox"] .searchable-picker-footer')).toBeNull();
+  await act(async () => rows()[1]!.click());
+  expect(manage).toHaveBeenCalledOnce();
+  expect(open).not.toHaveBeenCalled();
+  expect(trigger.getAttribute('aria-expanded')).toBe('false');
 });
 
 function mockListLayout() {
@@ -252,6 +313,41 @@ it('preserves user scrolling when live groups refresh without a query or highlig
     expect(document.querySelector<HTMLElement>('.searchable-picker-list')!.scrollTop).toBe(before);
     const input = document.querySelector<HTMLInputElement>('input[role="combobox"]')!;
     expect(document.getElementById(input.getAttribute('aria-activedescendant')!)?.textContent).toContain('Option 900');
+  } finally { restore(); }
+});
+
+it('focuses the search on opening, except on a phone, where that would open the keyboard', async () => {
+  const input = () => document.querySelector<HTMLInputElement>('input[role="combobox"]');
+  await act(flushTimers);
+  expect(document.activeElement).toBe(input());
+  await act(async () => document.querySelector<HTMLButtonElement>('button[role="combobox"]')!.click());
+  await act(async () => root.unmount());
+  root = createRoot(container);
+  vi.stubGlobal('matchMedia', () => ({ matches: true, addEventListener() {}, removeEventListener() {} }));
+  await act(async () => root.render(createElement(TooltipProvider, { delay: 0 }, createElement(SearchablePicker, {
+    groups: [{ id: 'branches', label: 'Branches', items: [{ value: 'main', label: 'main' }] }],
+    value: 'main', onValueChange, label: 'Branch', triggerLabel: 'main', placeholder: 'Search branches',
+  }))));
+  await act(async () => document.querySelector<HTMLButtonElement>('button[role="combobox"]')!.click());
+  await act(flushTimers);
+  expect(input()).not.toBeNull();
+  expect(document.activeElement).not.toBe(input());
+});
+
+it('does not pull the list back to the selection when the pointer leaves a row while scrolling', async () => {
+  const restore = mockListLayout();
+  try {
+    await showLargePicker(1000);
+    await act(flushTimers);
+    const list = document.querySelector<HTMLElement>('.searchable-picker-list')!;
+    const row = list.querySelector<HTMLElement>('[role="option"]')!;
+    const pointer = (type: string, relatedTarget: EventTarget | null = null) => new MouseEvent(type, { bubbles: true, relatedTarget });
+    await act(async () => { for (const type of ['pointerover', 'pointermove', 'mouseover', 'mousemove']) row.dispatchEvent(pointer(type)); });
+    await act(flushTimers);
+    await act(async () => { list.scrollTop = 500; list.dispatchEvent(new Event('scroll')); });
+    await act(async () => { for (const type of ['pointerout', 'pointerleave', 'mouseout', 'mouseleave']) row.dispatchEvent(pointer(type, document.body)); });
+    await act(flushTimers);
+    expect(list.scrollTop).toBe(500);
   } finally { restore(); }
 });
 

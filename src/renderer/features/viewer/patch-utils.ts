@@ -21,9 +21,10 @@ export const VIEWER_SCROLLBAR_CSS = `
   }
 
   /* Editor widgets live in Pierre's shadow tree and cannot inherit the app's
-     input rules. Keep keyboard focus from triggering iOS viewport zoom. */
+     input rules. Keep keyboard focus from triggering iOS viewport zoom. The code
+     itself keeps the diffs' size: on iOS the viewport stops that zoom instead. */
   @media (max-width: 767px) {
-    input, textarea, [contenteditable="true"] { font-size: 16px; }
+    input, textarea { font-size: 16px; }
     button { min-height: 40px; touch-action: manipulation; }
   }
 `;
@@ -36,6 +37,24 @@ export function splitPatchFiles(patch: string): string[] {
   const headers = [...patch.matchAll(/^diff --git .*$/gm)];
   if (headers.length <= 1) return patch.trim() ? [patch] : [];
   return headers.map((header, index) => patch.slice(header.index, headers[index + 1]?.index ?? patch.length));
+}
+
+/** Lines added and removed in a unified patch. A `+++` or `---` counts as a line only inside a hunk. */
+export function patchLineStats(patch: string): { additions: number; deletions: number } {
+  let additions = 0;
+  let deletions = 0;
+  let inHunk = false;
+  for (let start = 0; start < patch.length;) {
+    const end = patch.indexOf('\n', start);
+    const next = end < 0 ? patch.length : end + 1;
+    const first = patch[start];
+    if (first === 'd' && patch.startsWith('diff --git ', start)) inHunk = false;
+    else if (first === '@' && patch.startsWith('@@', start)) inHunk = true;
+    else if (inHunk && first === '+') additions++;
+    else if (inHunk && first === '-') deletions++;
+    start = next;
+  }
+  return { additions, deletions };
 }
 
 export interface DiffFileEntry {

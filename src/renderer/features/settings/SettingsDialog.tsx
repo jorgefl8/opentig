@@ -5,16 +5,14 @@ import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import { aiExecutablePathsKey } from '@shared/ai-status';
 import { formatDateTime } from '@shared/date-format';
-import {
-  IconAlertTriangle, IconBrandGithub, IconHistory, IconKeyboard,
-  IconLoader4, IconNetwork, IconRefresh, IconSettings, IconSparkles, IconX,
-} from '@tabler/icons-react';
+import { IconArrowLeft, IconChevronRight, IconLoader4, IconRefresh, IconSparkles, IconX } from '@tabler/icons-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { sileo } from 'sileo';
 import type { AiHarnessId, AiHarnessStatus, Preferences, RepositoryInfo } from '../../../shared/contracts';
-import { Badge } from '@/components/ui/badge';
+import { StatusWord, type StatusTone } from '@/components/StatusWord';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogClose, DialogDescription, DialogPopup, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogClose, DialogPopup, DialogTitle } from '@/components/ui/dialog';
+import { MobileSheet } from '@/components/MobileSheet';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { SearchablePicker, type SearchablePickerGroup } from '@/components/SearchablePicker';
 import { AiLogDialog } from '@/features/ai/AiLogDialog';
@@ -25,28 +23,21 @@ import { queryKeys } from '@/lib/query-client';
 import { useMobileLayout } from '@/lib/use-mobile-layout';
 import { GeneralSettings } from './GeneralSettings';
 import { ProblemsLogDialog } from './ProblemsLogDialog';
+import { SettingRow } from './SettingRows';
 import { ShortcutsSettings } from './ShortcutsSettings';
 import { UpdateSettings } from './UpdateSettings';
 import { WebAccessSettings } from './WebAccessSettings';
 
 const SETTINGS_SECTIONS = [
-  { id: 'general', label: 'General', icon: IconSettings },
-  { id: 'updates', label: 'Updates', icon: IconRefresh },
-  { id: 'shortcuts', label: 'Shortcuts', icon: IconKeyboard },
-  { id: 'github', label: 'GitHub', icon: IconBrandGithub },
-  { id: 'ai', label: 'AI assistance', icon: IconSparkles },
-  { id: 'diagnostics', label: 'Diagnostics', icon: IconAlertTriangle },
-  { id: 'webAccess', label: 'Web access', icon: IconNetwork },
+  { id: 'general', label: 'General' },
+  { id: 'updates', label: 'Updates' },
+  { id: 'shortcuts', label: 'Shortcuts' },
+  { id: 'github', label: 'GitHub' },
+  { id: 'ai', label: 'AI assistance' },
+  { id: 'diagnostics', label: 'Diagnostics' },
+  { id: 'webAccess', label: 'Web access' },
 ] as const;
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number]['id'];
-const SETTINGS_COPY: Record<Exclude<SettingsSection, 'webAccess'>, { title: string; description: string }> = {
-  github: { title: 'GitHub', description: 'Separate settings for this repository and the OpenTig instance.' },
-  updates: { title: 'Updates', description: 'Check, download, and install new OpenTig releases.' },
-  general: { title: 'General', description: 'Appearance, files and repository behavior.' },
-  shortcuts: { title: 'Shortcuts', description: 'Rebind commands or review the shortcuts that stay fixed.' },
-  ai: { title: 'AI assistance', description: 'Local harness and model used to suggest commit messages and pull-request drafts.' },
-  diagnostics: { title: 'Diagnostics', description: 'Recent local failures on this machine. Prompts and file contents are never recorded.' },
-};
 export function SettingsDialog({ preferences, onPreference, open, onOpenChange, section: requestedSection, onSectionChange, repository = null, onOnboarding }: {
   repository?: RepositoryInfo | null;
   onOnboarding?: (() => void) | undefined;
@@ -58,7 +49,8 @@ export function SettingsDialog({ preferences, onPreference, open, onOpenChange, 
   onSectionChange(section: SettingsSection): void;
 }) {
   // Phone browsers have no hardware keyboard to configure.
-  const phoneBrowser = useMobileLayout() && !window.opentigDesktop;
+  const phone = useMobileLayout();
+  const phoneBrowser = phone && !window.opentigDesktop;
   const sections = phoneBrowser ? SETTINGS_SECTIONS.filter(({ id }) => id !== 'shortcuts') : SETTINGS_SECTIONS;
   const section = phoneBrowser && requestedSection === 'shortcuts' ? 'general' : requestedSection;
   const queryClient = useQueryClient();
@@ -129,25 +121,99 @@ export function SettingsDialog({ preferences, onPreference, open, onOpenChange, 
     });
   }
   const selectedModelLabel = visibleModels.find((model) => model.id === selectedModel)?.label ?? selectedModel;
-  const { title, description } = section === 'webAccess'
-    ? {
-        title: 'Web access',
-        description: window.opentigDesktop
-          ? 'Connect trusted browsers locally, over your LAN, or through an HTTPS tunnel.'
-          : 'Configure server access, create pairing links, and manage connected browsers.',
-      }
-    : SETTINGS_COPY[section];
+  const title = SETTINGS_SECTIONS.find(({ id }) => id === section)?.label;
+  const panel = section === 'github' ? <GitHubSettings key={repository?.id} repository={repository} /> : section === 'general' ? <GeneralSettings preferences={preferences} onPreference={onPreference} {...(onOnboarding ? { onOnboarding } : {})} /> : section === 'updates' ? <UpdateSettings /> : section === 'shortcuts' ? <ShortcutsSettings preferences={preferences} onPreference={onPreference} /> : section === 'webAccess' ? <WebAccessSettings /> : section === 'diagnostics' ? <>
+                <SettingRow label="Problem history" description="Failed Git, file, and network operations recorded locally. Prompts and file contents are never stored.">
+                  <Button variant="ghost" size="sm" onClick={() => setProblemsOpen(true)}>View problems</Button>
+                </SettingRow>
+                <ProblemsLogDialog open={problemsOpen} onOpenChange={setProblemsOpen} />
+              </> : <>
+                <SettingRow label="Local harness" description={<>OpenTig uses the selected CLI session. It does not copy or store credentials.{selectedStatus && <> Last checked: {formatDateTime(selectedStatus.checkedAt, { seconds: true })}</>}</>}>
+                  <Button variant="ghost" size="sm" onClick={() => void checkStatuses()} disabled={loadingStatuses}>
+                    {loadingStatuses ? <IconLoader4 className="animate-spin" /> : <IconRefresh />} {loadingStatuses ? <ShimmeringText text={statuses.length ? 'Checking…' : 'Loading…'} /> : 'Check again'}
+                  </Button>
+                </SettingRow>
+                <div className="ai-harness-list" role="radiogroup" aria-label="Harness for AI assistance">
+                  {(['codex', 'claude', 'opencode', 'grok'] as const).map((harness) => {
+                    const harnessStatus = statuses.find((status) => status.id === harness);
+                    return (
+                      <button key={harness} type="button" role="radio" aria-checked={selectedHarness === harness} className="ai-harness-row" onClick={() => onPreference({ commitMessageHarness: harness })}>
+                        <AiProviderIcon harness={harness} />
+                        <span className="ai-harness-copy">
+                          <strong>{harnessLabel(harness)}</strong>
+                          <small>{harnessStatus?.version || (harnessStatus ? (harnessStatus.installationStatus === 'inspection-failed' ? 'Inspection unavailable' : harnessStatus.installed ? 'Version unavailable' : 'Executable not found') : loadingStatuses ? <ShimmeringText text="Loading…" /> : 'Status not checked')}</small>
+                          {harnessStatus?.message && <small>{harnessStatus.message}</small>}
+                        </span>
+                        <StatusWord tone={availabilityTone(harnessStatus)}>{availabilityLabel(harnessStatus)}</StatusWord>
+                      </button>
+                    );
+                  })}
+                </div>
+                <SettingRow label={`${harnessLabel(selectedHarness)} model`} description={'Default uses the harness’s built-in default. OpenTig remembers a separate selection for each harness; custom CLI configuration is excluded during generation.'}>
+                  <SearchablePicker
+                    key={selectedHarness}
+                    groups={modelGroups}
+                    value={selectedModel}
+                    onValueChange={(model) => onPreference({ commitMessageModels: { ...preferences.commitMessageModels, [selectedHarness]: model } })}
+                    label={`${harnessLabel(selectedHarness)} model`}
+                    triggerLabel={selectedModelLabel}
+                    triggerClassName="plain-select"
+                    contentClassName="ai-model-picker"
+                    size="default"
+                    align="end"
+                    placeholder="Search models…"
+                  />
+                </SettingRow>
+                {selectedStatus?.authStatus === 'unauthenticated' && <p className="settings-note">Sign in from a terminal with <code>{loginCommand(selectedHarness, selectedStatus.cliName)}</code> and check again.</p>}
+                {selectedStatus && !selectedStatus.installed && selectedStatus.installationStatus !== 'inspection-failed' && <p className="settings-note">Install {harnessLabel(selectedHarness)} and check its availability again.</p>}
+                <AiExecutableSettings key={selectedHarness} harness={selectedHarness} preferences={preferences} status={selectedStatus} onPreference={onPreference} />
+                <RepositoryAiSettings key={repository?.id} repository={repository} />
+                <div className="settings-group">
+                  <SettingRow label="Generation history" description="Outcome, duration, tokens, and cost of recent runs, kept locally for diagnostics.">
+                    <Button variant="ghost" size="sm" onClick={() => setAiLogOpen(true)}>View history</Button>
+                  </SettingRow>
+                  <p className="settings-note">OpenTig sends the relevant diff, summary and commit subjects to the selected harness, plus supported repository instruction text when enabled. Generated content remains pending your review; history records metadata only.</p>
+                </div>
+                <AiLogDialog open={aiLogOpen} onOpenChange={setAiLogOpen} />
+              </>;
+  if (phone) {
+    // General is the sheet's first level; every other section is a row that drills in, and back returns to it.
+    const atRoot = section === 'general';
+    return (
+      <MobileSheet
+        open={open}
+        onOpenChange={onOpenChange}
+        title={atRoot ? 'Settings' : title ?? 'Settings'}
+        tall
+        bodyRef={settingsBodyRef}
+        leading={atRoot ? undefined : <Button variant="ghost" size="icon" className="mobile-bar-button" aria-label="Back to Settings" autoFocus onClick={() => onSectionChange('general')}><IconArrowLeft /></Button>}
+      >
+        <div className="settings-sheet">
+          {panel}
+          {atRoot && <nav className="settings-sheet-sections" aria-label="Settings sections">
+            {sections.filter(({ id }) => id !== 'general').map(({ id, label }) => (
+              <button key={id} type="button" className="mobile-sheet-action settings-nav-item" onClick={() => onSectionChange(id)}>
+                <span>{label}</span>
+                {id === 'ai' && <small className="mobile-sheet-value">{harnessLabel(selectedHarness)}</small>}
+                <IconChevronRight aria-hidden="true" />
+              </button>
+            ))}
+          </nav>}
+        </div>
+      </MobileSheet>
+    );
+  }
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogPopup className="settings-dialog w-[min(860px,calc((100vw-48px)/var(--settings-ui-scale,1)))]" style={{
+      <DialogPopup className="settings-dialog w-[min(800px,calc((100vw-48px)/var(--settings-ui-scale,1)))]" style={{
         '--settings-ui-scale': window.opentigDesktop || window.matchMedia('(max-width: 767px)').matches ? 1 : preferences.uiZoom / 100,
       } as CSSProperties}>
         <div className="settings-shell">
           <aside className="settings-nav">
             <div className="settings-nav-title">Settings</div>
-            {sections.map(({ id, label, icon: Icon }) => (
+            {sections.map(({ id, label }) => (
               <button key={id} className={`settings-nav-item ${section === id ? 'active' : ''}`} onClick={() => onSectionChange(id)} aria-current={section === id}>
-                <Icon /> {label}
+                {label}
               </button>
             ))}
           </aside>
@@ -162,95 +228,21 @@ export function SettingsDialog({ preferences, onPreference, open, onOpenChange, 
                   transition={settingsTransition}
                 >
                   <DialogTitle>{title}</DialogTitle>
-                  <DialogDescription>{description}</DialogDescription>
                 </motion.div>
               </AnimatePresence>
               <DialogClose render={<Button variant="ghost" size="icon-sm" aria-label="Close settings" />}><IconX /></DialogClose>
             </header>
-            <div ref={settingsBodyRef} className={`settings-panel-body${section === 'general' || section === 'github' ? ' settings-panel-body-general' : ''}`}>
+            <div ref={settingsBodyRef} className="settings-panel-body">
               <AnimatePresence initial={false} mode="wait">
                 <motion.div
                   key={section}
-                  className={`settings-panel-section${section === 'general' || section === 'github' ? ' settings-panel-section-general' : ''}${section === 'ai' ? ' settings-panel-section-ai' : ''}`}
+                  className="settings-panel-section"
                   initial={reduceMotion ? false : { opacity: 0, y: 7 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={reduceMotion ? { opacity: 1 } : { opacity: 0, y: -5 }}
                   transition={settingsTransition}
                 >
-              {section === 'github' ? <GitHubSettings key={repository?.id} repository={repository} /> : section === 'general' ? <GeneralSettings preferences={preferences} onPreference={onPreference} {...(onOnboarding ? { onOnboarding } : {})} /> : section === 'updates' ? <UpdateSettings /> : section === 'shortcuts' ? <ShortcutsSettings preferences={preferences} onPreference={onPreference} /> : section === 'webAccess' ? <WebAccessSettings /> : section === 'diagnostics' ? <>
-                <div className="settings-field">
-                  <div className="settings-field-label">
-                    <strong>Problem history</strong>
-                    <span>Failed Git, file, and network operations recorded locally. Prompts and file contents are never stored.</span>
-                  </div>
-                  <Button variant="outline" size="sm" onClick={() => setProblemsOpen(true)}><IconAlertTriangle /> View problems</Button>
-                </div>
-                <ProblemsLogDialog open={problemsOpen} onOpenChange={setProblemsOpen} />
-              </> : <>
-                <div className="ai-settings-heading">
-                  <div className="settings-field-label">
-                    <strong>Local harness</strong>
-                    <span>OpenTig uses the selected CLI session. It does not copy or store credentials.</span>
-                    {selectedStatus && <span>Last checked: {formatDateTime(selectedStatus.checkedAt, { seconds: true })}</span>}
-                  </div>
-                  <Button variant="outline" size="sm" onClick={() => void checkStatuses()} disabled={loadingStatuses}>
-                    {loadingStatuses ? <IconLoader4 className="animate-spin" /> : <IconRefresh />} {loadingStatuses ? <ShimmeringText text={statuses.length ? 'Checking…' : 'Loading…'} /> : 'Check again'}
-                  </Button>
-                </div>
-                <div className="ai-harness-list" role="radiogroup" aria-label="Harness for AI assistance">
-                  {(['codex', 'claude', 'opencode', 'grok'] as const).map((harness) => {
-                    const harnessStatus = statuses.find((status) => status.id === harness);
-                    const selected = selectedHarness === harness;
-                    return (
-                      <button key={harness} type="button" role="radio" aria-checked={selected} className={`ai-harness-card ${selected ? 'active' : ''}`} onClick={() => onPreference({ commitMessageHarness: harness })}>
-                        <span className="ai-harness-card-main">
-                          <AiProviderIcon harness={harness} />
-                          <span className="ai-harness-card-copy">
-                            <strong>{harnessLabel(harness)}</strong>
-                            <small>{harnessStatus?.version || (harnessStatus ? (harnessStatus.installationStatus === 'inspection-failed' ? 'Inspection unavailable' : harnessStatus.installed ? 'Version unavailable' : 'Executable not found') : loadingStatuses ? <ShimmeringText text="Loading…" /> : 'Status not checked')}</small>
-                          </span>
-                        </span>
-                        <Badge variant={availabilityBadgeVariant(harnessStatus)} className={`ai-status-badge ${harnessStatus?.availability ?? 'unknown'}`}>
-                          {availabilityLabel(harnessStatus)}
-                        </Badge>
-                        {harnessStatus?.message && <span className="ai-harness-message">{harnessStatus.message}</span>}
-                      </button>
-                    );
-                  })}
-                </div>
-                <div className="settings-field settings-field-separated ai-model-field">
-                  <div className="settings-field-label">
-                    <strong>{harnessLabel(selectedHarness)} model</strong>
-                    <span>{'Default uses the harness’s built-in default. OpenTig remembers a separate selection for each harness; custom CLI configuration is excluded during generation.'}</span>
-                  </div>
-                  <SearchablePicker
-                    key={selectedHarness}
-                    groups={modelGroups}
-                    value={selectedModel}
-                    onValueChange={(model) => onPreference({ commitMessageModels: { ...preferences.commitMessageModels, [selectedHarness]: model } })}
-                    label={`${harnessLabel(selectedHarness)} model`}
-                    triggerLabel={selectedModelLabel}
-                    triggerClassName="ai-model-select"
-                    contentClassName="ai-model-picker"
-                    size="default"
-                    align="end"
-                    placeholder="Search models…"
-                  />
-                  {selectedStatus?.authStatus === 'unauthenticated' && <p className="ai-login-hint">Sign in from a terminal with <code>{loginCommand(selectedHarness, selectedStatus.cliName)}</code> and check again.</p>}
-                  {selectedStatus && !selectedStatus.installed && selectedStatus.installationStatus !== 'inspection-failed' && <p className="ai-login-hint">Install {harnessLabel(selectedHarness)} and check its availability again.</p>}
-                </div>
-                <AiExecutableSettings key={selectedHarness} harness={selectedHarness} preferences={preferences} status={selectedStatus} onPreference={onPreference} />
-                <RepositoryAiSettings key={repository?.id} repository={repository} />
-                <div className="settings-field settings-field-separated ai-history-field">
-                  <div className="settings-field-label">
-                    <strong>Generation history</strong>
-                    <span>Outcome, duration, tokens, and cost of recent runs, kept locally for diagnostics.</span>
-                  </div>
-                  <Button variant="outline" size="sm" onClick={() => setAiLogOpen(true)}><IconHistory /> View history</Button>
-                </div>
-                <p className="ai-privacy-note">OpenTig sends the relevant diff, summary and commit subjects to the selected harness, plus supported repository instruction text when enabled. Generated content remains pending your review; history records metadata only.</p>
-                <AiLogDialog open={aiLogOpen} onOpenChange={setAiLogOpen} />
-              </>}
+              {panel}
                 </motion.div>
               </AnimatePresence>
             </div>
@@ -272,10 +264,10 @@ function availabilityLabel(status: AiHarnessStatus | undefined): string {
   return 'Check';
 }
 
-function availabilityBadgeVariant(status: AiHarnessStatus | undefined): 'default' | 'secondary' | 'destructive' | 'outline' {
-  if (!status) return 'outline';
-  if (!status.installed || status.authStatus === 'unauthenticated' || status.availability === 'error') return 'destructive';
-  return status.availability === 'ready' ? 'default' : 'secondary';
+function availabilityTone(status: AiHarnessStatus | undefined): StatusTone {
+  if (!status) return 'neutral';
+  if (!status.installed || status.authStatus === 'unauthenticated' || status.availability === 'error') return 'danger';
+  return status.availability === 'ready' ? 'ready' : 'attention';
 }
 
 function loginCommand(harness: AiHarnessId, cliName?: string): string {

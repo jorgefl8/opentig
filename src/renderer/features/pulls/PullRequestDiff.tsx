@@ -22,11 +22,13 @@ interface PullRequestDiffProps {
   onDiffViewChange(value: DiffViewPreference): void;
   onWrapLinesChange(value: boolean): void;
   onClose(): void;
+  /** Opens a changed file as it is in the local worktree, which may be on another branch. */
+  onOpenFile?: ((path: string) => void) | undefined;
 }
 
 type CodeMode = 'all' | 'commit';
 
-export default function PullRequestDiff({ diff, prNumber, repositoryId, commits, diffView, themeType, wrapLines, onDiffViewChange, onWrapLinesChange, onClose }: PullRequestDiffProps) {
+export default function PullRequestDiff({ diff, prNumber, repositoryId, commits, diffView, themeType, wrapLines, onDiffViewChange, onWrapLinesChange, onClose, onOpenFile }: PullRequestDiffProps) {
   const [mode, setMode] = useState<CodeMode>('all');
   const [selectedOid, setSelectedOid] = useState(commits[0]?.oid ?? '');
   const selectedCommit = useMemo(() => commits.find((commit) => commit.oid === selectedOid) ?? commits[0] ?? null, [commits, selectedOid]);
@@ -90,6 +92,7 @@ export default function PullRequestDiff({ diff, prNumber, repositoryId, commits,
         onDiffViewChange={onDiffViewChange}
         onWrapLinesChange={onWrapLinesChange}
         onClose={onClose}
+        onOpenFile={onOpenFile}
       />
     </PierreWorkerPool>
   );

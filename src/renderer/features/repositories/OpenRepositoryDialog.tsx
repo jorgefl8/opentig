@@ -173,7 +173,7 @@ export function OpenRepositoryDialog({ directory = false, onClone, open, onOpenC
           </section>
           {recentFolders.length > 0 && <section className="repository-browser-recents"><h3>Recent repositories</h3>{recentFolders.map(item => <Tooltip key={item.id}><TooltipTrigger render={<button type="button" className="repository-place" disabled={busy} onClick={() => void browse(item.path)} />}><IconClock aria-hidden="true" /><span>{item.name}</span></TooltipTrigger><TooltipContent>{item.path}</TooltipContent></Tooltip>)}</section>}
           <div className="repository-browser-source">{onPick ? <IconDeviceDesktop aria-hidden="true" /> : <IconServer aria-hidden="true" />}<span>{onPick ? 'Folders on this computer' : 'Folders on your server'}</span></div>
-          {onPick && <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => void pickFolder()}>Choose a folder…</Button>}
+          {onPick && <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={() => void pickFolder()}>Choose a folder…</Button>}
           {onClone && <Button type="button" variant="ghost" size="sm" className="repository-browser-clone" disabled={busy} onClick={onClone}><IconDownload aria-hidden="true" />Clone from URL…</Button>}
         </nav>
         <section className="repository-browser-main" aria-label="Folder browser">

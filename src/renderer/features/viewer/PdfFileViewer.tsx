@@ -141,7 +141,7 @@ export function PdfFileViewer({ repositoryId, path, revision }: { repositoryId: 
 
   return <div className="pdf-file-viewer">
     <FileViewerToolbar
-      start={
+      controls={<>
         <FileViewerToolbarGroup label="Page">
           <FileViewerToolbarButton label="Previous page" disabled={!pdf || page === 1} onClick={() => goToPage(page - 1)}><IconChevronLeft /></FileViewerToolbarButton>
           <label className="pdf-page-number">
@@ -151,17 +151,15 @@ export function PdfFileViewer({ repositoryId, path, revision }: { repositoryId: 
           </label>
           <FileViewerToolbarButton label="Next page" disabled={!pdf || page === pdf.numPages} onClick={() => goToPage(page + 1)}><IconChevronRight /></FileViewerToolbarButton>
         </FileViewerToolbarGroup>
-      }
-      controls={
         <FileViewerToolbarGroup label="Zoom">
           <FileViewerToolbarButton label="Zoom out" disabled={!pdf || relativeZoom <= MIN_ZOOM} onClick={zoomOut}><IconMinus /></FileViewerToolbarButton>
-          <Button type="button" variant="ghost" size="sm" className="file-viewer-toolbar-value" aria-label="Show the whole page (100%)" disabled={!pdf} onClick={() => setZoom(1)}>
+          <Button type="button" variant="ghost" size="xs" className="file-viewer-toolbar-value" aria-label="Show the whole page (100%)" disabled={!pdf} onClick={() => setZoom(1)}>
             {Math.round(relativeZoom * 100)}%
           </Button>
           <FileViewerToolbarButton label="Zoom in" disabled={!pdf || relativeZoom >= MAX_ZOOM} onClick={zoomIn}><IconPlus /></FileViewerToolbarButton>
-          <Button type="button" size="sm" variant="ghost" disabled={!pdf} aria-pressed={zoom === 'fit'} onClick={() => setZoom('fit')}>Fit width</Button>
+          <Button type="button" size="xs" variant="ghost" disabled={!pdf} aria-pressed={zoom === 'fit'} onClick={() => setZoom('fit')}>Fit width</Button>
         </FileViewerToolbarGroup>
-      }
+      </>}
     />
     {(fetchError || error) && <div className="viewer-message text-destructive" role="alert">{fetchError || error}</div>}
     <div className="pdf-scroll" ref={scroller} tabIndex={0} aria-label={`PDF: ${path}`} onScroll={updateCurrentPage}

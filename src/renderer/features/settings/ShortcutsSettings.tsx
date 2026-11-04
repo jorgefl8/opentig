@@ -8,6 +8,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Kbd, KbdGroup } from '@/components/ui/kbd';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { SettingGroup, SettingRow } from './SettingRows';
 
 const IGNORED_LISTENING_KEYS = new Set(['Control', 'Shift', 'Alt', 'Meta']);
 
@@ -67,12 +68,8 @@ export function ShortcutsSettings({ preferences, onPreference }: ShortcutsSettin
   };
 
   return (
-    <>
-      {!inBrowser && <div className="settings-field settings-toggle-row">
-        <div className="settings-field-label">
-          <strong>Show and focus from anywhere</strong>
-          <span>Double-tap Control to bring OpenTig to the front, even while another app is focused.</span>
-        </div>
+    <div className="settings-shortcuts">
+      {!inBrowser && <SettingRow label="Show and focus from anywhere" description="Double-tap Control to bring OpenTig to the front, even while another app is focused.">
         <button
           type="button"
           role="switch"
@@ -81,68 +78,59 @@ export function ShortcutsSettings({ preferences, onPreference }: ShortcutsSettin
           className="settings-switch"
           onClick={() => onPreference({ doubleControlShortcutEnabled: !preferences.doubleControlShortcutEnabled })}
         ><span /></button>
-      </div>}
+      </SettingRow>}
 
-      <div className={`settings-field${inBrowser ? '' : ' settings-field-separated'}`}>
-        <div className="settings-field-label">
-          <strong>Keyboard shortcuts</strong>
-          <span>Click a shortcut, then press a new key combination. Press Escape to cancel.{inBrowser && ' Changes also apply to the desktop app.'}</span>
-        </div>
+      <SettingRow label="Keyboard shortcuts" description={<>Click a shortcut, then press a new key combination. Press Escape to cancel.{inBrowser && ' Changes also apply to the desktop app.'}</>}>
         {hasOverrides && (
           <Button
-            variant="outline"
+            variant="ghost"
             size="sm"
-            className="shortcuts-reset-all"
             onClick={() => { setCaptureError(null); onPreference({ shortcutOverrides: {} }); }}
           ><IconRestore /> Reset all to defaults</Button>
         )}
-        {categories.map(({ category, definitions }) => (
-          <div className="shortcuts-group" key={category}>
-            <div className="shortcuts-group-heading">{category}</div>
-            {definitions.map((def) => (
-              <div className="shortcuts-row" key={def.id}>
-                <div className="settings-field-label">
-                  <strong>{def.label}</strong>
-                  <span>{def.description}</span>
-                  {inBrowser && BROWSER_RESERVED_COMBOS.has(resolved[def.id]) && (
-                    <span className="shortcuts-browser-note">Your browser keeps {formatCombo(resolved[def.id])}. Choose another shortcut to use this command here.</span>
-                  )}
-                </div>
-                <ShortcutRecorder
-                  combo={resolved[def.id]}
-                  allowBare={def.allowBare}
-                  isCustom={preferences.shortcutOverrides[def.id] !== undefined}
-                  error={captureError?.id === def.id ? captureError.message : null}
-                  onCapture={(combo) => capture(def.id, combo)}
-                  onReset={() => reset(def.id)}
-                />
+      </SettingRow>
+      {categories.map(({ category, definitions }) => (
+        <SettingGroup title={category} key={category}>
+          {definitions.map((def) => (
+            <div className="settings-row shortcuts-row" key={def.id}>
+              <div className="settings-field-label">
+                <strong>{def.label}</strong>
+                {def.description && <span>{def.description}</span>}
+                {inBrowser && BROWSER_RESERVED_COMBOS.has(resolved[def.id]) && (
+                  <span className="shortcuts-browser-note">Your browser keeps {formatCombo(resolved[def.id])}. Choose another shortcut to use this command here.</span>
+                )}
               </div>
-            ))}
-          </div>
-        ))}
-      </div>
+              <ShortcutRecorder
+                combo={resolved[def.id]}
+                allowBare={def.allowBare}
+                isCustom={preferences.shortcutOverrides[def.id] !== undefined}
+                error={captureError?.id === def.id ? captureError.message : null}
+                onCapture={(combo) => capture(def.id, combo)}
+                onReset={() => reset(def.id)}
+              />
+            </div>
+          ))}
+        </SettingGroup>
+      ))}
 
-      <div className="settings-field settings-field-separated">
-        <div className="settings-field-label">
-          <strong>Fixed shortcuts</strong>
-          <span>These follow platform and file-manager conventions and cannot be changed.</span>
-        </div>
-        {fixedByCategory.map(({ category, items }) => (
-          <div className="shortcuts-group" key={category}>
-            <div className="shortcuts-group-heading">{category}</div>
-            {items.map((item) => (
-              <div className="shortcuts-fixed-row" key={item.combo + item.label}>
-                <span>{item.label}</span>
-                <KbdGroup>{item.combo.split(' / ').flatMap((variant, variantIndex) => [
-                  ...(variantIndex > 0 ? [<span key={`sep-${variant}`} className="shortcuts-fixed-sep"> / </span>] : []),
-                  ...variant.split(' + ').map((token, tokenIndex) => <Kbd key={`${variant}-${tokenIndex}`}>{token}</Kbd>),
-                ])}</KbdGroup>
-              </div>
-            ))}
-          </div>
-        ))}
+      <div className="settings-field-label shortcuts-fixed-heading">
+        <strong>Fixed shortcuts</strong>
+        <span>These follow platform and file-manager conventions and cannot be changed.</span>
       </div>
-    </>
+      {fixedByCategory.map(({ category, items }) => (
+        <SettingGroup title={category} key={category}>
+          {items.map((item) => (
+            <div className="settings-row" key={item.combo + item.label}>
+              <div className="settings-field-label"><strong>{item.label}</strong></div>
+              <KbdGroup>{item.combo.split(' / ').flatMap((variant, variantIndex) => [
+                ...(variantIndex > 0 ? [<span key={`sep-${variant}`} className="shortcuts-fixed-sep"> / </span>] : []),
+                ...variant.split(' + ').map((token, tokenIndex) => <Kbd key={`${variant}-${tokenIndex}`}>{token}</Kbd>),
+              ])}</KbdGroup>
+            </div>
+          ))}
+        </SettingGroup>
+      ))}
+    </div>
   );
 }
 

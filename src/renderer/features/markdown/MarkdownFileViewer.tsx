@@ -6,10 +6,11 @@ import type { FileResult, ThemePreference, WriteFileResult } from '@shared/contr
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { ViewerTabs, ViewerTabsList, ViewerTabsPanel } from '@/components/ui/viewer-tabs';
 import { FileSaveControls, SourceCodeEditor, type SourceCodeEditorHandle } from '@/features/viewer/EditableFileViewer';
+import { useShowCodeForLineTarget } from '@/features/viewer/file-line-target';
 import { FileViewerToolbar, FileViewerToolbarButton, FileViewerToolbarGroup } from '@/features/viewer/FileViewerToolbar';
 import { syncScrollFraction } from '@/features/viewer/scroll-sync';
 import { useEditableFileDraft } from '@/features/viewer/useEditableFileDraft';
-import { resolveMarkdownRepositoryPath } from './markdown-links';
+import { resolveMarkdownRepositoryPath, scrollToMarkdownAnchor } from './markdown-links';
 import { renderMarkdown } from './render-markdown';
 import { mountMarkdownImages } from './markdown-images';
 import { opentig } from '@/lib/opentig-api';
@@ -26,7 +27,10 @@ interface MarkdownFileViewerProps {
   themeType: ThemePreference;
   wrapLines: boolean;
   readOnly: boolean;
-  onOpenFile(path: string): void;
+  /** A link such as `guide.md#setup` passes its `#setup` along, so the file opens at that section. */
+  onOpenFile(path: string, hash?: string): void;
+  /** A section to scroll to once the preview has rendered, asked for by a link from another file. */
+  anchor?: { hash: string; id: string } | null;
   onDirtyChange(dirty: boolean): void;
   onDraftChange(content: string): void;
   onSave(path: string, content: string, expectedContent: string): Promise<WriteFileResult>;
@@ -98,8 +102,9 @@ function MarkdownPreviewContent({ html, repositoryId, markdownPath, onClick, onL
   return <div ref={previewRef} className="markdown-prose" onClick={onClick} onMouseOver={handleMouseOver} onMouseOut={handleMouseOut} />;
 }
 
-export function MarkdownFileViewer({ repositoryId, file, initialContent, revision, themeType, wrapLines, readOnly, onOpenFile, onDirtyChange, onDraftChange, onSave }: MarkdownFileViewerProps) {
+export function MarkdownFileViewer({ repositoryId, file, initialContent, revision, themeType, wrapLines, readOnly, onOpenFile, anchor = null, onDirtyChange, onDraftChange, onSave }: MarkdownFileViewerProps) {
   const [tab, setTab] = useState<'preview' | 'code'>('preview');
+  const showCode = useCallback(() => setTab('code'), []);
   const [contentWidth, setContentWidth] = useState<ContentWidth>(getInitialContentWidth);
   const [html, setHtml] = useState('');
   const [loading, setLoading] = useState(true);
@@ -122,6 +127,7 @@ export function MarkdownFileViewer({ repositoryId, file, initialContent, revisio
     pendingScrollFraction.current = null;
     setTab('preview');
   }, [file.path]);
+  useShowCodeForLineTarget(file.path, showCode);
 
   // Capture the scroll position of the tab being left as a 0-1 fraction so the
   // panel being entered can restore roughly the same reading position instead
@@ -165,6 +171,16 @@ export function MarkdownFileViewer({ repositoryId, file, initialContent, revisio
   }, [html, loading, tab]);
 
   useEffect(() => () => cancelScrollSync.current?.(), []);
+
+  // A link from another file lands on its section once, after the preview first shows the text.
+  const reachedAnchor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!anchor || reachedAnchor.current === anchor.id || tab !== 'preview' || loading || !html) return;
+    const prose = previewPanelRef.current?.querySelector<HTMLElement>('.markdown-prose');
+    if (!prose) return;
+    reachedAnchor.current = anchor.id;
+    scrollToMarkdownAnchor(prose, anchor.hash);
+  }, [anchor, html, loading, tab]);
 
   useEffect(() => {
     const token = ++requestToken.current;
@@ -231,8 +247,7 @@ export function MarkdownFileViewer({ repositoryId, file, initialContent, revisio
     if (!link || !href) return;
     event.preventDefault();
     if (href.startsWith('#')) {
-      const element = event.currentTarget.querySelector<HTMLElement>(`#${CSS.escape(href.slice(1))}`);
-      element?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      scrollToMarkdownAnchor(event.currentTarget, href);
       return;
     }
     if (EXTERNAL_LINK_RE.test(href) || href.startsWith('mailto:')) {
@@ -240,7 +255,8 @@ export function MarkdownFileViewer({ repositoryId, file, initialContent, revisio
       return;
     }
     const repositoryPath = resolveMarkdownRepositoryPath(file.path, href);
-    if (repositoryPath) onOpenFile(repositoryPath);
+    const hashIndex = href.indexOf('#');
+    if (repositoryPath) onOpenFile(repositoryPath, hashIndex < 0 ? undefined : href.slice(hashIndex));
   }, [file.path, onOpenFile]);
 
   const handleLinkHover = useCallback((link: HTMLAnchorElement | null) => {
@@ -282,7 +298,7 @@ export function MarkdownFileViewer({ repositoryId, file, initialContent, revisio
   return (
     <ViewerTabs value={tab} onValueChange={(value) => handleTabChange(value as typeof tab)} className="markdown-viewer" data-content-width={contentWidth}>
       <FileViewerToolbar
-        start={
+        view={
           <ViewerTabsList
             label="Markdown view"
             className="file-viewer-tabs"
