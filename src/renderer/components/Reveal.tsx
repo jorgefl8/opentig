@@ -63,3 +63,19 @@ function RevealBody({ instant, follow, className, style, children }: {
     </motion.div>
   );
 }
+
+/** --motion-med, but only opacity: moving the whole viewer would shift its sticky headers. */
+const FADE_TRANSITION = { duration: 0.2, ease: [0.32, 0.72, 0, 1] as const };
+
+/**
+ * Fades new content in when its key changes, such as the viewer opening another diff.
+ * Reduced-motion preferences show it immediately.
+ */
+export function ContentFade({ className, children }: { className?: string | undefined; children: ReactNode }) {
+  const reduceMotion = useReducedMotion();
+  return (
+    <motion.div className={className} initial={reduceMotion ? false : { opacity: 0 }} animate={{ opacity: 1 }} transition={FADE_TRANSITION}>
+      {children}
+    </motion.div>
+  );
+}

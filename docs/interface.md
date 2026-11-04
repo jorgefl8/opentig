@@ -34,7 +34,7 @@ Diffs, Files editors, merge conflicts, and Markdown code blocks share syntax col
 
 Loading status uses shimmering text and a primary-colored spinner. Busy buttons retain their spinner and shimmer their label. Text shimmer pauses outside the viewport or while the document is hidden, resumes from the same point when visible, and respects reduced-motion preferences.
 
-Expanding a commit in History, and unfolding or folding a file in commit and pull request diffs, briefly animates its height and fades the content in or out; the rows below move with it. A commit's file list also grows smoothly when it finishes loading. Files with more than 400 changed lines, and diffs of more than 40 files, fold and unfold immediately. Reduced-motion preferences turn these animations off.
+Opening another file or diff fades the viewer in without moving it. Expanding a commit in History, and unfolding or folding a file in commit and pull request diffs, briefly animates its height and fades the content in or out; the rows below move with it. A commit's file list also grows smoothly when it finishes loading. Files with more than 400 changed lines, and diffs of more than 40 files, fold and unfold immediately. Reduced-motion preferences turn these animations off.
 
 </details>
 
