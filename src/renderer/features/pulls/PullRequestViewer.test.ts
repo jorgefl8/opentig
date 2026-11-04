@@ -48,7 +48,7 @@ afterEach(async () => {
   await act(async () => root.unmount());
   container.remove(); client.clear(); document.body.innerHTML = ''; vi.unstubAllGlobals(); vi.resetAllMocks();
 });
-// The live state starts once the details arrive, and a new head reloads them, so reads settle over several ticks.
+// A new head reloads the details, so reads settle over several ticks.
 async function settle() {
   for (let tick = 0; tick < 6; tick++) await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
 }
@@ -196,15 +196,55 @@ it('does not repeat a decision that a reviewer\'s verdict already gives', async 
   expect(container.querySelector('.pr-reviewer')?.textContent).toBe('Approved by ana');
 });
 
+it('shows the header from the list at once, and fills in the rest when the details arrive', async () => {
+  const { body: _body, changedFiles: _files, labels: _labels, commits: _commits, baseRefOid: _base, ...summary } = details;
+  client.setQueryData(queryKeys.pulls('repo', ['OPEN']), [{ ...summary, title: 'From the list' }]);
+  let resolve!: (value: PullRequestDetails) => void;
+  api.getPullRequest.mockReturnValue(new Promise((done) => { resolve = done; }));
+  await render();
+  expect(container.querySelector('.pr-viewer-heading h2')?.textContent).toBe('From the list #7');
+  expect(container.querySelector('.pr-viewer-meta')?.textContent).toContain('feature → main');
+  expect(container.querySelector('.pr-counters')?.textContent).toBe('+1 −0');
+  expect(container.querySelector('.pr-description-skeleton')).not.toBeNull();
+  expect(container.textContent).not.toContain('Loading pull request');
+  await act(async () => resolve(details));
+  await settle();
+  expect(container.querySelector('.pr-viewer-heading h2')?.textContent).toBe('Sample change #7');
+  expect(container.querySelector('.pr-counters')?.textContent).toBe('1 file +1 −0');
+  expect(container.querySelector('.pr-description-skeleton')).toBeNull();
+});
+
+it('shows the shape of a PR it knows nothing about yet, instead of a spinner', async () => {
+  api.getPullRequest.mockReturnValue(new Promise(() => {}));
+  await render();
+  expect(container.querySelector('.pr-viewer-skeleton')?.getAttribute('aria-label')).toBe('Loading pull request #7');
+  expect(container.querySelector('.spinner')).toBeNull();
+});
+
+it('keeps a visited tab as it was, instead of reading it again on return', async () => {
+  api.getPullRequestConversation.mockResolvedValue({ entries: [], truncated: false, partial: false });
+  api.getPullRequestDiff.mockResolvedValue({ path: 'pull/7', patch: '', binary: false, truncated: false, lineCount: 0 });
+  await render();
+  const open = async (name: string) => {
+    await act(async () => [...container.querySelectorAll<HTMLElement>('[role="tab"]')].find((tab) => tab.textContent === name)!.click());
+    await settle();
+  };
+  for (const name of ['Comments', 'Code', 'Summary', 'Comments', 'Code']) await open(name);
+  expect(api.getPullRequestConversation).toHaveBeenCalledTimes(1);
+  expect(api.getPullRequestDiff).toHaveBeenCalledTimes(1);
+  expect(api.getPullRequestDiff).toHaveBeenCalledWith('repo', 7, { baseOid: details.baseRefOid, headOid: details.headRefOid });
+  expect(container.querySelectorAll('[role="tabpanel"]:not([hidden])')).toHaveLength(1);
+});
+
 it('does not read the conversation until Comments is open', async () => {
   await render();
   expect(api.getPullRequestConversation).not.toHaveBeenCalled();
 });
 
-it('does not read the live state of a PR that failed to load', async () => {
-  api.getPullRequest.mockRejectedValue(new Error('Not found'));
+it('reads the status alongside the details rather than after them', async () => {
+  api.getPullRequest.mockReturnValue(new Promise(() => {}));
   await render();
-  expect(api.getPullRequestLiveState).not.toHaveBeenCalled();
+  expect(api.getPullRequestLiveState).toHaveBeenCalledWith('repo', 7);
 });
 
 it('on a phone puts its number and branches in the top bar, and floats one thing per tab', async () => {

@@ -151,6 +151,14 @@ export function oidArg(value: unknown, operation: string): string {
   return oid;
 }
 
+/** A pull request's base and head commits, when the caller already knows them. */
+export function pullRequestRangeArg(value: unknown, operation: string): { baseOid: string; headOid: string } | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== 'object') throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation, message: 'Invalid commit range.' });
+  const range = value as Record<string, unknown>;
+  return { baseOid: oidArg(range.baseOid, operation), headOid: oidArg(range.headOid, operation) };
+}
+
 const MAX_BRANCH_REF_LENGTH = 512;
 const MAX_WORKTREE_PATH_LENGTH = 4_096;
 
@@ -299,6 +307,12 @@ export function prNumberArg(value: unknown, operation: string): number {
     throw new GhOperationError({ code: 'GH_PROCESS_FAILED', operation, message: 'Invalid pull request number.' });
   }
   return parsed.data;
+}
+
+/** The PRs a list shows, at most a few pages of them. */
+export function prNumbersArg(value: unknown, operation: string): number[] {
+  if (!Array.isArray(value) || value.length > 200) throw new GhOperationError({ code: 'GH_PROCESS_FAILED', operation, message: 'Invalid pull request numbers.' });
+  return [...new Set(value.map((number) => prNumberArg(number, operation)))];
 }
 
 export function pullRequestStatesArg(value: unknown, operation: string): PullRequestState[] {

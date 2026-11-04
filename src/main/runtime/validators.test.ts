@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { deletePullRequestEntryArg, editPullRequestEntryArg, generateCommitMessageArg, generatePullRequestDraftArg, booleanArg, branchDetailsArg, deleteBranchArg, filesTreeStateArg, nullableProjectIdArg, openFilesStateArg, prepareCommitGroupArg, projectIdArg, projectNameArg, publishBranchArg, pullRequestStatesArg, removeWorktreeArg, repositoryKeyArg, searchOptionsArg, searchReplaceArg, worktreeDetailsArg, commentOnPullRequestArg, createReleaseArg, deleteDraftReleaseArg, publishReleaseArg, pullRequestActionArg, reviewPullRequestArg, runWorkflowArg, tagNameArg, updatePullRequestArg, updateReleaseArg, workflowPathArg } from './validators';
 import { GitOperationError } from '../../shared/errors';
-import { createTrackingBranchArg, deleteRemoteBranchArg } from './validators';
+import { createTrackingBranchArg, deleteRemoteBranchArg, prNumbersArg, pullRequestRangeArg } from './validators';
 
 const OID = 'a'.repeat(40);
 const REVISION = 'b'.repeat(64);
@@ -44,6 +44,26 @@ describe('search replacement validator', () => {
     expect(() => searchReplaceArg({ options, replacement: 'bar', scope: { kind: 'file', path: 'a', revision: 'bad' } }, 'test')).toThrow();
     expect(() => searchReplaceArg({ options, replacement: 'bar', scope: { kind: 'all', files: [] } }, 'test')).toThrow();
     expect(() => searchReplaceArg({ options, replacement: 'bar', scope: { kind: 'match', path: 'a', revision: REVISION, line: 0, column: 1 } }, 'test')).toThrow();
+  });
+});
+
+describe('pull request numbers validator', () => {
+  it('takes a list of PR numbers once each, and refuses anything else or too many', () => {
+    expect(prNumbersArg([3, 1, 3], 'gh-pr-list-stacks')).toEqual([3, 1]);
+    for (const value of [3, ['3'], [0], Array.from({ length: 201 }, (_, index) => index + 1)]) {
+      expect(() => prNumbersArg(value, 'gh-pr-list-stacks')).toThrow();
+    }
+  });
+});
+
+describe('pull request range validator', () => {
+  it('is optional, and otherwise needs two commit ids', () => {
+    expect(pullRequestRangeArg(undefined, 'gh-pr-diff')).toBeUndefined();
+    expect(pullRequestRangeArg(null, 'gh-pr-diff')).toBeUndefined();
+    expect(pullRequestRangeArg({ baseOid: OID, headOid: REVISION, extra: 'ignored' }, 'gh-pr-diff')).toEqual({ baseOid: OID, headOid: REVISION });
+    for (const value of ['range', { baseOid: OID }, { baseOid: OID, headOid: '--upload-pack=evil' }]) {
+      expect(() => pullRequestRangeArg(value, 'gh-pr-diff')).toThrow(GitOperationError);
+    }
   });
 });
 

@@ -205,6 +205,9 @@ export class GitHubAccountsService {
     this.access.clear();
   }
 
+  /** The last detection, however old, without starting one. */
+  get lastDetection(): Promise<CliDetection> | null { return this.detection?.promise ?? null; }
+
   async detect(force = false): Promise<CliDetection> {
     if (force || !this.detection || Date.now() - this.detection.at > CACHE_MS) {
       this.detection = { at: Date.now(), promise: selectCli(this.resolver, this.runner, 'gh', { forceRefresh: force,

@@ -1,8 +1,8 @@
 import type { GitHubRepositoryAccount } from '@shared/github-accounts';
 import { formatTimeAgo } from '@shared/date-format';
 import { PullRequestStackMenu } from './PullRequestStackMenu';
-import { Suspense, useRef } from 'react';
-import { lazyWithRetry } from '@/lib/lazy-with-retry';
+import { Suspense, useEffect, useRef } from 'react';
+import { lazyWithPreload } from '@/lib/lazy-with-retry';
 import { useQuery } from '@tanstack/react-query';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { IconBrandGithub, IconCopy, IconExternalLink, IconFilter, IconLoader4, IconPlus, IconRefresh } from '@tabler/icons-react';
@@ -18,9 +18,10 @@ import { openOnGitHub } from './gh-utils';
 import { GitHubAvatar } from './GitHubAvatar';
 import { GitHubSectionMenu } from './GitHubSectionMenu';
 import { pullRequestLiveStateQueryOptions } from './pull-request-live-state-query';
+import { LazyPullRequestViewer } from './pull-request-viewer-chunks';
 
-const ReleasesView = lazyWithRetry(() => import('./ReleasesView').then((module) => ({ default: module.ReleasesView })));
-const ReleasesTools = lazyWithRetry(() => import('./ReleasesView').then((module) => ({ default: module.ReleasesTools })));
+const ReleasesView = lazyWithPreload(() => import('./ReleasesView').then((module) => ({ default: module.ReleasesView })));
+const ReleasesTools = lazyWithPreload(() => import('./ReleasesView').then((module) => ({ default: module.ReleasesTools })));
 
 export type PullRequestsSection = 'pulls' | 'releases';
 
@@ -52,6 +53,8 @@ interface PullRequestsViewProps {
 }
 
 export function PullRequestsView(props: PullRequestsViewProps) {
+  // So opening a PR or the Releases tab doesn't wait for its code.
+  useEffect(() => { LazyPullRequestViewer.preload(); ReleasesView.preload(); ReleasesTools.preload(); }, []);
   if (props.info === null) {
     return <div className="view-loading" role="status"><IconLoader4 className="spinner" /> <ShimmeringText text="Checking repository…" /></div>;
   }

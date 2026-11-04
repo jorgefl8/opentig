@@ -1,5 +1,8 @@
+// @vitest-environment jsdom
+import { act, createElement, Suspense } from 'react';
+import { createRoot } from 'react-dom/client';
 import { describe, expect, it, vi } from 'vitest';
-import { importWithRetry, isModuleLoadError } from './lazy-with-retry';
+import { importWithRetry, isModuleLoadError, lazyWithPreload } from './lazy-with-retry';
 
 describe('isModuleLoadError', () => {
   it.each([
@@ -35,5 +38,23 @@ describe('importWithRetry', () => {
     const load = vi.fn().mockRejectedValue(new Error('boom'));
     await expect(importWithRetry(load, [0, 0])).rejects.toThrow('boom');
     expect(load).toHaveBeenCalledOnce();
+  });
+});
+
+describe('lazyWithPreload', () => {
+  it('renders preloaded code straight away, without its fallback, and loads it once', async () => {
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    const load = vi.fn(async () => ({ default: ({ name }: { name: string }) => createElement('p', null, `Hello ${name}`) }));
+    const Greeting = lazyWithPreload(load);
+    Greeting.preload();
+    Greeting.preload();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const container = document.createElement('div');
+    const root = createRoot(container);
+    act(() => root.render(createElement(Suspense, { fallback: createElement('p', null, 'Loading') }, createElement(Greeting, { name: 'there' }))));
+    expect(container.textContent).toBe('Hello there');
+    expect(load).toHaveBeenCalledTimes(1);
+    act(() => root.unmount());
+    vi.unstubAllGlobals();
   });
 });

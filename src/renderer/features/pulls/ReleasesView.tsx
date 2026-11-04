@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { queryOptions, useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { IconDots, IconLoader4, IconPlayerPlay, IconPlus } from '@tabler/icons-react';
 import { formatDate } from '@shared/date-format';
 import type { GitHubRepositoryAccount } from '@shared/github-accounts';
@@ -7,16 +7,13 @@ import type { ReleaseSummary } from '../../../shared/contracts';
 import { Button } from '@/components/ui/button';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { opentig } from '@/lib/opentig-api';
-import { queryKeys } from '@/lib/query-client';
 import { CreateReleaseDialog } from './CreateReleaseDialog';
 import { releaseStateLabel, releaseStateTone } from './gh-utils';
 import { GitHubSectionMenu } from './GitHubSectionMenu';
+import { releasesQueryOptions } from './releases-query';
+import { opentig } from '@/lib/opentig-api';
 import { RunWorkflowDialog } from './RunWorkflowDialog';
 
-function releasesQueryOptions(repositoryId: string) {
-  return queryOptions({ queryKey: queryKeys.releases(repositoryId), queryFn: () => opentig.github.listReleases(repositoryId) });
-}
 
 export function ReleasesTools({ repositoryId, nameWithOwner, account, onOpenGitHubSettings, onSelect }: {
   repositoryId: string;
@@ -28,6 +25,7 @@ export function ReleasesTools({ repositoryId, nameWithOwner, account, onOpenGitH
   const [creating, setCreating] = useState(false);
   const [running, setRunning] = useState(false);
   const query = useQuery(releasesQueryOptions(repositoryId));
+  const queryClient = useQueryClient();
   return (
     <>
       <GitHubSectionMenu
@@ -35,7 +33,7 @@ export function ReleasesTools({ repositoryId, nameWithOwner, account, onOpenGitH
         icon={<IconDots />}
         refreshing={query.isFetching}
         refreshLabel="Refresh releases"
-        onRefresh={() => void query.refetch()}
+        onRefresh={() => void queryClient.fetchQuery({ ...releasesQueryOptions(repositoryId), queryFn: () => opentig.github.listReleases(repositoryId, true), staleTime: 0 }).catch(() => undefined)}
         nameWithOwner={nameWithOwner}
         githubPath="releases"
         account={account}

@@ -1,7 +1,6 @@
 import { formatDateTime } from '@shared/date-format';
 import { PullRequestStackMenu } from './PullRequestStackMenu';
-import { Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { lazyWithRetry } from '@/lib/lazy-with-retry';
+import { Suspense, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { IconExternalLink, IconLoader4, IconRefresh } from '@tabler/icons-react';
 import { GITHUB_PR_COMMIT_PAGE, type DiffResult, type DiffViewPreference, type PullRequestCommitList, type PullRequestDetails, type PullRequestLatestReview, type PullRequestLiveState, type ThemePreference } from '../../../shared/contracts';
@@ -24,11 +23,14 @@ import { PullRequestChecksLink, PullRequestChecksPanel, PullRequestChecksSummary
 import { PullRequestEditor } from './PullRequestEditor';
 import { hasViewerDraft, pullRequestCommentDraft, pullRequestEditDraft, useViewerDraft } from './viewer-drafts';
 import { pullRequestLiveStateQueryOptions, queriesOutdatedByLiveState } from './pull-request-live-state-query';
+import { cachedPullRequestSummary } from './pull-request-summary-cache';
+import { LazyPullRequestDiff as PullRequestDiff } from './pull-request-viewer-chunks';
 import { opentig } from '@/lib/opentig-api';
 import { queryKeys } from '@/lib/query-client';
 import '@/features/markdown/markdown.css';
 
-const PullRequestDiff = lazyWithRetry(() => import('./PullRequestDiff'));
+/** How long a PR's details are taken as current without asking again. */
+const PULL_REQUEST_STALE_MS = 60_000;
 
 interface PullRequestViewerProps {
   repositoryId: string;
@@ -44,7 +46,13 @@ interface PullRequestViewerProps {
 }
 
 export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType, wrapLines, onDiffViewChange, onWrapLinesChange, onClose, onOpenFile, onSelectPullRequest }: PullRequestViewerProps) {
-  const [tab, setTab] = useState<PullRequestTab>('summary');
+  const [tab, setTabState] = useState<PullRequestTab>('summary');
+  // A tab stays mounted once visited, so going back to it shows what it had instead of loading again.
+  const [visited, setVisited] = useState<ReadonlySet<PullRequestTab>>(() => new Set(['summary']));
+  const setTab = (next: PullRequestTab) => {
+    setTabState(next);
+    setVisited((current) => current.has(next) ? current : new Set([...current, next]));
+  };
   const [editing, setEditing] = useState(() => hasViewerDraft(pullRequestEditDraft(repositoryId, prNumber)));
   const [commentDraft, setCommentDraft] = useViewerDraft(pullRequestCommentDraft(repositoryId, prNumber), () => '');
   const header = useRef<HTMLElement>(null);
@@ -60,8 +68,13 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
   useLayoutEffect(() => {
     if (phone && scroller.current && overview.current) scroller.current.scrollTop = Math.min(scroller.current.scrollTop, overview.current.offsetHeight);
   }, [phone, tab]);
+  const queryClient = useQueryClient();
+  // The list row already has the header's facts, so the PR shows at once and the rest fills in.
+  const [summary] = useState(() => cachedPullRequestSummary(queryClient, repositoryId, prNumber));
   const detailsQuery = useQuery<{ details: PullRequestDetails; bodyHtml: string }>({
     queryKey: queryKeys.pullRequest(repositoryId, prNumber),
+    // The live state reloads them as soon as GitHub reports a change.
+    staleTime: PULL_REQUEST_STALE_MS,
     queryFn: async () => {
       const details = await opentig.github.getPullRequest(repositoryId, prNumber);
       const bodyHtml = details.body.trim()
@@ -73,12 +86,17 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
     },
   });
   const details = detailsQuery.data?.details ?? null;
+  const loaded = details !== null;
+  useEffect(() => { if (loaded) PullRequestDiff.preload(); }, [loaded]);
   const bodyHtml = detailsQuery.data?.bodyHtml ?? '';
   const detailsError = detailsQuery.error instanceof Error ? detailsQuery.error.message : detailsQuery.error ? 'Could not load the pull request.' : null;
   const diffQuery = useQuery<DiffResult>({
-    queryKey: queryKeys.pullRequestDiff(repositoryId, prNumber),
-    queryFn: () => opentig.github.getPullRequestDiff(repositoryId, prNumber),
-    enabled: tab === 'diff' && details !== null,
+    // Keyed by the range too, so a new head shows its own code rather than the one read before the details caught up.
+    queryKey: [...queryKeys.pullRequestDiff(repositoryId, prNumber), details?.baseRefOid, details?.headRefOid],
+    queryFn: () => opentig.github.getPullRequestDiff(repositoryId, prNumber, details ? { baseOid: details.baseRefOid, headOid: details.headRefOid } : undefined),
+    // The same two commits always give the same code.
+    staleTime: Infinity,
+    enabled: visited.has('diff') && details !== null,
   });
   const diff = diffQuery.data ?? null;
   // GitHub CLI returns one page of commits; past it, the local clone lists them all.
@@ -86,14 +104,15 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
   const commitsQuery = useQuery<PullRequestCommitList>({
     queryKey: queryKeys.pullRequestCommits(repositoryId, prNumber),
     queryFn: () => opentig.github.getPullRequestCommits(repositoryId, prNumber),
-    enabled: firstPageOnly && (tab === 'timeline' || tab === 'diff'),
+    staleTime: PULL_REQUEST_STALE_MS,
+    enabled: firstPageOnly && (visited.has('timeline') || visited.has('diff')),
   });
   const commits = commitsQuery.data?.commits ?? details?.commits ?? [];
   const commitsIncomplete = firstPageOnly && commitsQuery.data?.complete !== true;
   const diffError = diffQuery.error instanceof Error ? diffQuery.error.message : diffQuery.error ? 'Could not load the diff.' : null;
-  const liveQuery = useQuery(pullRequestLiveStateQueryOptions(repositoryId, prNumber, details !== null));
+  // Needs nothing from the details, so the status and actions don't wait for them.
+  const liveQuery = useQuery(pullRequestLiveStateQueryOptions(repositoryId, prNumber));
   const live = liveQuery.data ?? null;
-  const queryClient = useQueryClient();
   const previousLive = useRef<PullRequestLiveState | null>(null);
   useEffect(() => {
     const previous = previousLive.current;
@@ -102,7 +121,8 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
     for (const queryKey of queriesOutdatedByLiveState(repositoryId, previous, live)) void queryClient.invalidateQueries({ queryKey });
   }, [live, queryClient, repositoryId]);
 
-  const bar = <MobileViewerTitle title={`#${prNumber}`} subtitle={details && <span className="mobile-viewer-mono">{details.headRefName} → {details.baseRefName}</span>} />;
+  const pr = details ?? summary;
+  const bar = <MobileViewerTitle title={`#${prNumber}`} subtitle={pr && <span className="mobile-viewer-mono">{pr.headRefName} → {pr.baseRefName}</span>} />;
   if (detailsError) {
     return (
       <div className="viewer-message flex-col gap-3">
@@ -112,66 +132,67 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
       </div>
     );
   }
-  if (!details) {
-    return <div className="viewer-message">{bar}<IconLoader4 className="spinner" /> <ShimmeringText text={`Loading pull request #${prNumber}…`} /></div>;
-  }
+  if (!pr) return <PullRequestSkeleton bar={bar} number={prNumber} />;
 
-  if (editing && live) {
+  if (editing && live && details) {
     return <>{bar}<PullRequestEditor repositoryId={repositoryId} details={details} onClose={closeEditor} /></>;
   }
 
-  const review = reviewDecisionLabel(live ? live.reviewDecision : details.reviewDecision);
-  const status = live ? pullRequestStatusLine(live) ?? pullRequestStateLine(live) : pullRequestStateLine(details);
+  const review = reviewDecisionLabel(live ? live.reviewDecision : pr.reviewDecision);
+  const status = live ? pullRequestStatusLine(live) ?? pullRequestStateLine(live) : pullRequestStateLine(pr);
   const reviewers = live?.latestReviews ?? [];
   const counters = (
     <span className="pr-counters">
-      {details.changedFiles} {details.changedFiles === 1 ? 'file' : 'files'}
-      {' '}<span className="add">+{details.additions}</span> <span className="del">−{details.deletions}</span>
+      {details && <>{details.changedFiles} {details.changedFiles === 1 ? 'file' : 'files'}{' '}</>}
+      <span className="add">+{pr.additions}</span> <span className="del">−{pr.deletions}</span>
     </span>
   );
+  // The status reads membership afresh; until it arrives, the list's is the best known.
+  const stack = live ? live.stackMembership : pr.stack;
   const labelsAndStack = <>
-    {details.labels.length > 0 && <span className="pr-labels" aria-label="Pull request labels">{details.labels.map((label) => label.name).join(', ')}</span>}
-    {details.stack && <PullRequestStackMenu repositoryId={repositoryId} number={prNumber} membership={details.stack} onSelect={onSelectPullRequest} />}
+    {details && details.labels.length > 0 && <span className="pr-labels" aria-label="Pull request labels">{details.labels.map((label) => label.name).join(', ')}</span>}
+    {stack && <PullRequestStackMenu repositoryId={repositoryId} number={prNumber} membership={stack} onSelect={onSelectPullRequest} />}
   </>;
-  const updated = <span>updated <time dateTime={details.updatedAt}>{formatDateTime(details.updatedAt)}</time></span>;
+  const updated = <span>updated <time dateTime={pr.updatedAt}>{formatDateTime(pr.updatedAt)}</time></span>;
+  const loadingLine = (text: string) => <p className="pr-loading-line" role="status"><ShimmeringText text={text} /></p>;
   return (
-    <ViewerTabs ref={scroller} value={tab} onValueChange={(value) => setTab(value as typeof tab)} className="pr-viewer" data-tab={tab}>
+    <ViewerTabs ref={scroller} value={tab} onValueChange={(value) => setTab(value)} className="pr-viewer" data-tab={tab}>
       {bar}
       <header ref={header} className="pr-viewer-header">
         <div ref={overview} className="pr-viewer-overview">
           <div className="pr-viewer-top">
             <div className="pr-viewer-heading">
-              <h2><LinkedText text={details.title || '(no title)'} />{!phone && <> <span className="pr-number">#{details.number}</span></>}</h2>
+              <h2><LinkedText text={pr.title || '(no title)'} />{!phone && <> <span className="pr-number">#{pr.number}</span></>}</h2>
               {!phone && <div className="pr-viewer-meta">
-                <span className="pr-branches">{details.headRefName} → {details.baseRefName}</span>
+                <span className="pr-branches">{pr.headRefName} → {pr.baseRefName}</span>
                 {counters}
-                <span>{details.author}</span>
+                <span>{pr.author}</span>
                 {updated}
                 {labelsAndStack}
               </div>}
             </div>
-            {live
+            {live && details
               ? <PullRequestActionBar repositoryId={repositoryId} details={details} live={live} refreshing={liveQuery.isFetching} statusLabel={status.label} tab={tab} onRefresh={() => void liveQuery.refetch()} onEdit={() => setEditing(true)} onSelectPullRequest={onSelectPullRequest} />
-              : details.url && (phone
-                ? <MobileViewerActions><Button variant="ghost" size="icon" className="mobile-bar-button" onClick={() => openOnGitHub(details.url)} aria-label="Open on GitHub"><IconExternalLink /></Button></MobileViewerActions>
+              : pr.url && (phone
+                ? <MobileViewerActions><Button variant="ghost" size="icon" className="mobile-bar-button" onClick={() => openOnGitHub(pr.url)} aria-label="Open on GitHub"><IconExternalLink /></Button></MobileViewerActions>
                 : <Tooltip>
-                  <TooltipTrigger render={<Button variant="ghost" size="icon-xs" className="change-action-button" onClick={() => openOnGitHub(details.url)} aria-label="Open on GitHub" />}><IconExternalLink /></TooltipTrigger>
+                  <TooltipTrigger render={<Button variant="ghost" size="icon-xs" className="change-action-button" onClick={() => openOnGitHub(pr.url)} aria-label="Open on GitHub" />}><IconExternalLink /></TooltipTrigger>
                   <TooltipContent>Open on GitHub</TooltipContent>
                 </Tooltip>)}
           </div>
           <div className="pr-viewer-status">
-            {liveQuery.isPending && details.state === 'OPEN'
+            {liveQuery.isPending && pr.state === 'OPEN'
               ? <span className="pr-status tone-progress" role="status"><span className="status-dot" aria-hidden="true" /> <ShimmeringText text="Checking status…" /></span>
               : <span className={`pr-status tone-${status.tone}`} role="status"><span className="status-dot" aria-hidden="true" /> {status.label}</span>}
             {status.detail && <span>{status.detail}</span>}
-            {live ? <PullRequestChecksLink checks={live.checks} onOpen={() => setTab('checks')} /> : <PullRequestChecksSummary state={details.checksState} />}
+            {live ? <PullRequestChecksLink checks={live.checks} onOpen={() => setTab('checks')} /> : <PullRequestChecksSummary state={pr.checksState} />}
             {review && review !== status.label && !reviewers.some((reviewer) => verdictLabel(reviewer) === review) && <span className="pr-review">{review}</span>}
             {reviewers.map((reviewer) => <span key={reviewer.author.login} className="pr-reviewer">{verdictLabel(reviewer)} by {reviewer.author.login}{reviewer.outdated ? ', before the latest commit' : ''}</span>)}
             {live?.autoMerge && <span className="pr-auto-merge">Auto-merge · {MERGE_METHOD_LABELS[live.autoMerge.method]}</span>}
-            {liveQuery.isError && <PullRequestLiveNotice error={liveQuery.error} hasState={live !== null} open={details.state === 'OPEN'} retrying={liveQuery.isFetching} onRetry={() => void liveQuery.refetch()} />}
+            {liveQuery.isError && <PullRequestLiveNotice error={liveQuery.error} hasState={live !== null} open={pr.state === 'OPEN'} retrying={liveQuery.isFetching} onRetry={() => void liveQuery.refetch()} />}
           </div>
           {phone && <div className="pr-viewer-meta">
-            <span>{details.author}</span>
+            <span>{pr.author}</span>
             {updated}
             {counters}
             {labelsAndStack}
@@ -189,21 +210,23 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
           ]}
         />
       </header>
-      <ViewerTabsPanel value="summary" className="markdown-preview-scroll pr-description-scroll">
+      <ViewerTabsPanel value="summary" keepMounted className="markdown-preview-scroll pr-description-scroll">
           <section className="pr-summary-section">
-            {bodyHtml
-              ? <LinkedMarkdown html={bodyHtml} />
-              : <p className="pr-empty-description">This pull request has no description.</p>}
+            {!details
+              ? <div className="pr-description-skeleton" role="status" aria-label="Loading the description"><span /><span /><span /></div>
+              : bodyHtml
+                ? <LinkedMarkdown html={bodyHtml} />
+                : <p className="pr-empty-description">This pull request has no description.</p>}
           </section>
       </ViewerTabsPanel>
-      <ViewerTabsPanel value="comments" className="markdown-preview-scroll pr-description-scroll">
-          <PullRequestConversationView repositoryId={repositoryId} number={details.number} url={details.url} live={live} draft={commentDraft} onDraftChange={setCommentDraft} />
+      <ViewerTabsPanel value="comments" keepMounted className="markdown-preview-scroll pr-description-scroll">
+          {visited.has('comments') && <PullRequestConversationView repositoryId={repositoryId} number={pr.number} url={pr.url} live={live} active={tab === 'comments'} draft={commentDraft} onDraftChange={setCommentDraft} />}
       </ViewerTabsPanel>
       <ViewerTabsPanel value="checks" className="markdown-preview-scroll pr-description-scroll">
-          <PullRequestChecksPanel checks={live?.checks ?? null} loading={liveQuery.isPending} url={details.url} />
+          <PullRequestChecksPanel checks={live?.checks ?? null} loading={liveQuery.isPending} url={pr.url} />
       </ViewerTabsPanel>
-      <ViewerTabsPanel value="timeline" className="markdown-preview-scroll pr-description-scroll">
-          <section className="pr-timeline standalone" aria-label="Commit timeline">
+      <ViewerTabsPanel value="timeline" keepMounted className="markdown-preview-scroll pr-description-scroll">
+          {!visited.has('timeline') ? null : !details ? loadingLine('Loading commits…') : <section className="pr-timeline standalone" aria-label="Commit timeline">
             <h3>Commits <span className="plain-count">{commits.length}{commitsIncomplete ? '+' : ''}</span></h3>
             {commitsIncomplete && !commitsQuery.isFetching && (
               <p className="pr-empty-description">Showing the first {commits.length} commits from GitHub. The rest could not be read from the local clone.</p>
@@ -221,23 +244,38 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
                 </Tooltip>
               </article>
             )) : <p className="pr-empty-description">No commits were returned by GitHub.</p>}
-          </section>
+          </section>}
       </ViewerTabsPanel>
-      <ViewerTabsPanel value="diff" className="pr-diff-panel">
-        {diffError ? (
+      <ViewerTabsPanel value="diff" keepMounted className="pr-diff-panel">
+        {!visited.has('diff') ? null : diffError ? (
           <div className="viewer-message flex-col gap-3">
             <p className="pr-diff-error text-destructive">{diffError}</p>
             <Button variant="outline" size="sm" onClick={() => void diffQuery.refetch()}><IconRefresh /> Try again</Button>
           </div>
-        ) : !diff ? (
+        ) : !diff || !details ? (
           <div className="viewer-message"><IconLoader4 className="spinner" /> <ShimmeringText text="Loading diff…" /></div>
         ) : (
           <Suspense fallback={<div className="viewer-message"><IconLoader4 className="spinner" /> <ShimmeringText text="Loading diff viewer…" /></div>}>
-            <PullRequestDiff diff={diff} prNumber={details.number} repositoryId={repositoryId} commits={commits} diffView={diffView} themeType={themeType} wrapLines={wrapLines} onDiffViewChange={onDiffViewChange} onWrapLinesChange={onWrapLinesChange} onClose={onClose} onOpenFile={onOpenFile} />
+            <PullRequestDiff diff={diff} prNumber={pr.number} repositoryId={repositoryId} commits={commits} diffView={diffView} themeType={themeType} wrapLines={wrapLines} onDiffViewChange={onDiffViewChange} onWrapLinesChange={onWrapLinesChange} onClose={onClose} onOpenFile={onOpenFile} />
           </Suspense>
         )}
       </ViewerTabsPanel>
     </ViewerTabs>
+  );
+}
+
+/** Opened from a link with nothing known yet: the header's shape, so the PR doesn't jump in from a spinner. */
+function PullRequestSkeleton({ bar, number }: { bar: ReactNode; number: number }) {
+  return (
+    <div className="pr-viewer pr-viewer-skeleton" role="status" aria-label={`Loading pull request #${number}`}>
+      {bar}
+      <header className="pr-viewer-header no-tabs">
+        <span className="pr-skeleton-line title" />
+        <span className="pr-skeleton-line meta" />
+        <span className="pr-skeleton-line status" />
+      </header>
+      <div className="pr-description-skeleton"><span /><span /><span /></div>
+    </div>
   );
 }
 

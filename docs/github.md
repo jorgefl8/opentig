@@ -62,12 +62,14 @@ Your CLI must support multi-account `auth token --user` and `auth status --json 
 ## Review pull requests
 
 1. Open **GitHub** for the current repository. **Pull requests** lists them, each with its author's avatar and a status dot, its number, where it stands, the lines it adds and removes, and how long ago it was updated.
-2. Select a PR to inspect its metadata and Markdown description.
+2. Select a PR to inspect its metadata and Markdown description. What the list already knows, such as its title, branches, line counts, and state, appears at once; the description, labels, file count, and status fill in as GitHub answers. A PR opened from a link before the list has loaded shows the shape of its header until then.
 3. In **Code**, review the cumulative diff or use **By commit** to inspect changes from one commit. The selector supports keyboard navigation, readable subjects, and scrollable options. Each file's **Open file** button opens it in Files as it is in your worktree, which may be on another branch than the PR's.
 
 **The list**
 
 The list reads one request for all PRs, which carries their reviews and checks but not whether each one can merge. A row therefore says **Review required**, **Changes requested**, **Checks failing**, **Checks pending**, **Approved**, **Checks passing**, or its state, such as **Draft** or **Merged into main**, and only the selected row shows the full status below. Number, title, and state are in the row; author, line counts, and time are in the viewer.
+
+OpenTig reads the list and the releases as soon as a GitHub repository opens, so the section shows them straight away; opening it refreshes a list read more than 30 seconds earlier, and keeps showing the old one meanwhile. The backend also reuses a list it read in the last 30 seconds, or a minute for releases, so reloading the app doesn't wait for GitHub; **Refresh** always asks GitHub, and so does the first read after a change made through OpenTig. Stack indicators fill in a moment after the rows.
 
 The filter button beside the tabs chooses which states appear. Its menu also has **Refresh**, **Open on GitHub** with the repository's name, and the effective account, which opens GitHub settings. **New** creates a PR from the current branch; while it's unavailable, its tooltip says why.
 
@@ -92,6 +94,8 @@ The status refreshes only while the PR is open in the viewer and the window is v
 | Merged or closed PR | No periodic refresh |
 
 Returning to the window, reconnecting, changing the repository account, or manually refreshing checks immediately. If a refresh fails, the last status stays visible with a notice and **Retry**. Periodic refresh stops at GitHub's rate limit and resumes when you return to the window. A new head commit also refreshes the PR's details, commits, and code.
+
+The status is read from GitHub every time. A PR's details and conversation are reused for up to a minute, or ten for a merged or closed PR, so going back to a PR doesn't wait for GitHub; they are read again sooner when the status shows the PR changed on GitHub, and right away after you change anything through OpenTig. In the viewer, a tab you have already opened keeps what it showed, so switching back to **Comments** or **Code** doesn't load them again.
 
 </details>
 
@@ -139,7 +143,7 @@ Web links open in a new browser tab, or the system browser on desktop. Hover or 
 
 ### Native stacks
 
-Click a layer indicator such as **2/3** to open a native GitHub stack. Indicators appear beside the current branch PR, in PR rows, in the right-hand viewer, and in the mobile repository menu. On a phone a PR row names its layer in text instead, and the viewer has the indicator.
+Click a layer indicator such as **2/3** to open a native GitHub stack. Indicators appear beside the current branch PR, in PR rows, in the right-hand viewer, and in the mobile repository menu. On a phone a PR row names its layer in text instead, and the viewer has the indicator. The viewer confirms membership with the PR's status, so for a PR the list didn't show, its indicator appears with the status rather than with the title.
 
 The menu lists layer states, titles, branches, and bases, including layers outside the current filter. Details load when opened. If a refresh fails, previously loaded layers remain available with a notice and retry.
 

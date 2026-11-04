@@ -67,7 +67,7 @@ describe('GitHub pending reads', () => {
     expect(await f.service.getPullRequest('alice', 12)).toMatchObject({ number: 12 });
   });
 
-  it('four readers share routing, credentials, detail and stack membership, with no settled cache', async () => {
+  it('four readers share routing, credentials and detail, then reuse it until a change through OpenTig', async () => {
     const started = deferred<void>();
     const gate = deferred<CliRunResult>();
     const f = await fixture(async args => {
@@ -77,14 +77,20 @@ describe('GitHub pending reads', () => {
     const readers = Array.from({ length: 4 }, () => f.service.getPullRequest('alice', 12));
     await started.promise;
     expect(views(f.run)).toHaveLength(1);
-    // One routing probe: the `gh repo set-default` choice and the remote URL.
-    expect(f.gitRun).toHaveBeenCalledTimes(2);
+    // Two routing probes, each the `gh repo set-default` choice and the remote URL:
+    // one to look for a kept detail, and the read's own.
+    expect(f.gitRun).toHaveBeenCalledTimes(4);
     expect(f.run.mock.calls.filter(([, args]) => args[1] === 'token')).toHaveLength(1);
     gate.resolve(result('{"number":12,"state":"OPEN","title":"Initial"}'));
     const values = await Promise.all(readers);
-    expect(f.run.mock.calls.filter(([, args]) => args[1] === 'graphql')).toHaveLength(1);
+    expect(f.run.mock.calls.filter(([, args]) => args[1] === 'graphql')).toHaveLength(0);
     values[0]!.title = 'consumer edit';
     expect(values[1]!.title).toBe('Initial');
+    const again = await f.service.getPullRequest('alice', 12);
+    expect(views(f.run)).toHaveLength(1);
+    again.title = 'another edit';
+    expect((await f.service.getPullRequest('alice', 12)).title).toBe('Initial');
+    f.service.invalidate('alice');
     await f.service.getPullRequest('alice', 12);
     expect(views(f.run)).toHaveLength(2);
   });
@@ -120,7 +126,8 @@ describe('GitHub pending reads', () => {
     });
     const pending = [f.service.getPullRequest('alice', 12), f.service.getPullRequest('alice', 13), f.service.getPullRequest('bob', 12)];
     await started.promise;
-    expect(f.gitRun).toHaveBeenCalledTimes(4);
+    // Per repository: one probe to look for a kept detail and one inside the reads, each shared by that repository's readers.
+    expect(f.gitRun).toHaveBeenCalledTimes(8);
     gate.resolve();
     expect((await Promise.all(pending)).map(value => [value.number, value.title])).toEqual([[12, 'alice'], [13, 'alice'], [12, 'bob']]);
     expect(views(f.run)).toHaveLength(3);
@@ -160,6 +167,36 @@ describe('GitHub pending reads', () => {
     expect(views(f.run)).toHaveLength(2);
     f.setRemote('https://github.com/example/later.git');
     expect(await f.service.getPullRequest('alice', 12)).toMatchObject({ title: 'example/later' });
+  });
+
+  it('lets a pending read finish across a fetch, but starts it again after any other write', async () => {
+    const started = deferred<void>();
+    const gate = deferred<CliRunResult>();
+    let first = true;
+    const f = await fixture(async args => {
+      if (args[0] !== 'pr') return result('{}');
+      if (first) { first = false; started.resolve(); return gate.promise; }
+      return result('{"number":12,"state":"OPEN","title":"again"}');
+    });
+    const pending = f.service.listPullRequests('alice', ['OPEN']);
+    await started.promise;
+    f.git.invalidate(f.repos[0]!.path, 'fetch');
+    gate.resolve(result('[{"number":12,"state":"OPEN","title":"first"}]'));
+    expect(await pending).toEqual([expect.objectContaining({ title: 'first' })]);
+    expect(f.run.mock.calls.filter(([, args]) => args[0] === 'pr')).toHaveLength(1);
+
+    const later = deferred<CliRunResult>();
+    let waiting = true;
+    const g = await fixture(async args => {
+      if (args[0] !== 'pr') return result('{}');
+      if (waiting) { waiting = false; return later.promise; }
+      return result('[{"number":12,"state":"OPEN","title":"after the write"}]');
+    });
+    const restarted = g.service.listPullRequests('alice', ['OPEN']);
+    await vi.waitFor(() => expect(g.run.mock.calls.some(([, args]) => args[0] === 'pr')).toBe(true));
+    g.git.invalidate(g.repos[0]!.path, 'commit');
+    later.resolve(result('[{"number":12,"state":"OPEN","title":"before the write"}]'));
+    expect(await restarted).toEqual([expect.objectContaining({ title: 'after the write' })]);
   });
 
   it('never shares PR creation and invalidates a pending read after the mutation', async () => {

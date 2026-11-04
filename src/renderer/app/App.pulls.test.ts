@@ -138,12 +138,13 @@ it('keeps navigation working when client storage is unavailable', async () => {
   expect(container.textContent).toContain('No open pull requests');
 });
 
-it('detects the CLI before opening PRs and shows PR loading while the network request is pending', async () => {
+it('detects the CLI, reads the PRs ahead of opening them, and shows PR loading while the network request is pending', async () => {
   calls.listPulls.mockReturnValue(new Promise(() => {}));
   await mount();
   expect(calls.cliStatus).toHaveBeenCalledExactlyOnceWith(true);
-  expect(calls.listPulls).not.toHaveBeenCalled();
+  expect(calls.listPulls).toHaveBeenCalledExactlyOnceWith('repo', ['OPEN'], false);
   await openPulls();
+  expect(calls.listPulls).toHaveBeenCalledOnce();
   expect(container.textContent).toContain('Loading pull requests');
   expect(container.textContent).not.toContain('Checking GitHub CLI');
   expect(calls.cliStatus).toHaveBeenCalledOnce();
@@ -156,13 +157,14 @@ it('keeps cached PR results visible on return and shares CLI detection across re
   await click('[aria-keyshortcuts="Control+1"]');
   calls.listPulls.mockReturnValue(new Promise<PullRequestSummary[]>(() => {}));
   await openPulls();
-  expect(calls.listPulls).toHaveBeenCalledTimes(2);
+  // Read moments ago, so going back shows it without asking again.
+  expect(calls.listPulls).toHaveBeenCalledOnce();
   expect(container.textContent).toContain('No open pull requests');
   expect(container.textContent).not.toMatch(/Checking GitHub CLI|Loading pull requests/);
   await click('[aria-label="Switch repository"]');
   expect(container.textContent).toContain('Loading pull requests');
   expect(calls.cliStatus).toHaveBeenCalledOnce();
-  expect(calls.listPulls).toHaveBeenLastCalledWith('repo-b', ['OPEN']);
+  expect(calls.listPulls).toHaveBeenLastCalledWith('repo-b', ['OPEN'], false);
 });
 
 it('changes PR filters without checking CLI availability again', async () => {
@@ -171,7 +173,7 @@ it('changes PR filters without checking CLI availability again', async () => {
   await click('[aria-label="Filter pull requests"]');
   await act(async () => document.querySelector<HTMLButtonElement>('#pulls-state-closed')!.click());
   await settle();
-  expect(calls.listPulls).toHaveBeenLastCalledWith('repo', ['OPEN', 'CLOSED']);
+  expect(calls.listPulls).toHaveBeenLastCalledWith('repo', ['OPEN', 'CLOSED'], false);
   expect(calls.cliStatus).toHaveBeenCalledOnce();
   expect(container.textContent).not.toContain('Checking GitHub CLI');
 });
@@ -205,9 +207,9 @@ it('shows detection failures and allows a manual retry', async () => {
 });
 
 it('rechecks availability when a PR operation reports that gh has disappeared', async () => {
-  await mount();
-  calls.cliStatus.mockResolvedValue({ ...available, installed: false, availability: 'error' });
+  calls.cliStatus.mockResolvedValueOnce(available).mockResolvedValue({ ...available, installed: false, availability: 'error' });
   calls.listPulls.mockRejectedValue(new GhOperationError({ code: 'GH_CLI_NOT_FOUND', operation: 'gh-pr-list', message: 'CLI missing' }));
+  await mount();
   await openPulls();
   expect(calls.cliStatus).toHaveBeenCalledTimes(2);
   expect(container.textContent).toContain('GitHub CLI is required');
@@ -251,7 +253,8 @@ it.each(['OPEN', 'MERGED'] as const)('passes the current branch’s %s PR to the
   expect(container.querySelector('[aria-label="Branch PR"]')?.textContent).toBe(`#12 ${state}`);
   await click('[aria-label="Open branch PR in OpenTig"]');
   expect(container.querySelector('[aria-label="Viewer selection"]')?.textContent).toBe('PR #12');
-  expect(calls.listPulls).not.toHaveBeenCalled();
+  // Only the list read ahead for the GitHub section: opening the branch's PR doesn't need it.
+  expect(calls.listPulls).toHaveBeenCalledOnce();
   await click('[aria-label="Switch repository"]');
   expect(calls.branchPull).toHaveBeenLastCalledWith('repo-b', 'main');
   expect(container.querySelector('[aria-label="Branch PR"]')?.textContent).toBe(`#13 ${state}`);

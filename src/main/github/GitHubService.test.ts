@@ -191,6 +191,21 @@ describe('pull request code', () => {
     expect(fetches).toEqual([expect.arrayContaining(['--no-write-fetch-head', 'origin', 'refs/pull/12/head'])]);
   });
 
+  it('takes the range the viewer already has instead of asking GitHub for it, and downloads it once for concurrent readers', async () => {
+    let fetched = false;
+    const fetches: string[][] = [];
+    const { service, run } = fixture(view, undefined, undefined, (args, stdin = '') => {
+      if (args[0] === 'cat-file') return stdin.split('\n').filter(Boolean).map(line => fetched || line.startsWith(base) ? 'commit' : 'missing').join('\n');
+      if (args[0] === 'fetch') { fetches.push(args); fetched = true; return ''; }
+      if (args[0] === 'diff') return 'diff --git a/one b/one\n';
+      return undefined;
+    });
+    const results = await Promise.all([1, 2].map(() => service.getPullRequestDiff('repo', 12, { baseOid: base, headOid: head })));
+    expect(results.map(result => result.patch)).toEqual(['diff --git a/one b/one\n', 'diff --git a/one b/one\n']);
+    expect(fetches).toHaveLength(1);
+    expect(run.mock.calls.some(([, args]) => args[0] === 'pr')).toBe(false);
+  });
+
   it('completes the commit list from the local clone only when GitHub returns a full first page', async () => {
     const ghCommit = (index: number) => ({ oid: index.toString(16).padStart(40, '0'), messageHeadline: `GitHub ${index}`, authors: [{ login: 'octo', name: 'Octo' }] });
     const reply = (count: number) => (args: string[]) => args[1] === 'graphql' ? fail('unavailable')
@@ -337,26 +352,77 @@ describe('pull request live state', () => {
     await expect(service.getPullRequestLiveState('repo', 12)).rejects.toMatchObject({ detail: { code: 'GH_INVALID_OUTPUT' } });
   });
 
+  it('reuses a PR\'s details until its live state shows GitHub changed it', async () => {
+    let updatedAt = pull.updatedAt;
+    const { service, run } = fixture(withStack(ok({ data: { repository: { ...repository, pullRequest: pull } } })));
+    run.mockImplementation(async (_exe: string, args: string[]) => {
+      if (args[0] === 'auth' && args[1] === 'token') return { exitCode: 0, stdout: 'gho_test_0000000000000000000000000', stderr: '' };
+      if (args[0] === 'api' && args[1] === 'user') return { exitCode: 0, stdout: 'tester', stderr: '' };
+      if (args[0] === '--version' || args[0] === 'auth') return ok('ready');
+      if (args[0] === 'pr') return ok({ number: 12, state: 'OPEN', updatedAt, headRefOid: pull.headRefOid });
+      return isStackRead(args) ? ok({ data: { repository: { pr12: { stack: null, stackEntry: null } } } }) : ok({ data: { repository: { ...repository, pullRequest: { ...pull, updatedAt } } } });
+    });
+    const views = () => run.mock.calls.filter(([, args]) => args[0] === 'pr' && args[1] === 'view').length;
+    await service.getPullRequest('repo', 12);
+    await service.getPullRequestLiveState('repo', 12);
+    await service.getPullRequest('repo', 12);
+    expect(views()).toBe(1);
+    updatedAt = '2026-01-02T00:00:00Z';
+    await service.getPullRequestLiveState('repo', 12);
+    expect((await service.getPullRequest('repo', 12)).updatedAt).toBe(updatedAt);
+    expect(views()).toBe(2);
+  });
+
+  it('reuses the PR list briefly, except for a manual refresh or after a change through OpenTig', async () => {
+    const { service, run } = fixture(() => ok([{ number: 12, state: 'OPEN' }]));
+    const lists = () => run.mock.calls.filter(([, args]) => args[0] === 'pr' && args[1] === 'list').length;
+    await service.listPullRequests('repo', ['OPEN']);
+    await service.listPullRequests('repo', ['OPEN']);
+    expect(lists()).toBe(1);
+    await service.listPullRequests('repo', ['OPEN'], true);
+    expect(lists()).toBe(2);
+    await service.listPullRequests('repo', ['OPEN']);
+    expect(lists()).toBe(2);
+    service.invalidate('repo');
+    await service.listPullRequests('repo', ['OPEN']);
+    expect(lists()).toBe(3);
+  });
+
+  it('keeps what it read when the app checks the same CLI again on load', async () => {
+    const { service, run } = fixture(() => ok({ number: 12, state: 'OPEN', updatedAt: pull.updatedAt }));
+    const views = () => run.mock.calls.filter(([, args]) => args[0] === 'pr' && args[1] === 'view').length;
+    await service.status(true);
+    await service.getPullRequest('repo', 12);
+    await service.status(true);
+    await service.getPullRequest('repo', 12);
+    expect(views()).toBe(1);
+  });
+
   it('separates stack membership, its absence, and a failed membership read', async () => {
     const main = ok({ data: { repository: { ...repository, pullRequest: pull } } });
     const member = ok({ data: { repository: { pr12: { stack: { number: 7, size: 3, baseRefName: 'main' }, stackEntry: { position: 2 } } } } });
-    expect(await fixture(withStack(main, member)).service.getPullRequestLiveState('repo', 12)).toMatchObject({ stack: 'member' });
+    expect(await fixture(withStack(main, member)).service.getPullRequestLiveState('repo', 12)).toMatchObject({ stack: 'member', stackMembership: { number: 7, size: 3, position: 2, base: 'main' } });
     expect(await fixture(withStack(main)).service.getPullRequestLiveState('repo', 12)).toMatchObject({ stack: 'none' });
     expect(await fixture(withStack(main, fail('HTTP 403: forbidden'))).service.getPullRequestLiveState('repo', 12)).toMatchObject({ stack: 'unknown' });
   });
 });
 
 describe('GitHub native stacks', () => {
-  it('enriches visible PRs in bounded batches and preserves list ordering', async () => {
+  it('lists PRs without waiting for membership, then reads it for the shown PRs in bounded batches', async () => {
     const { service, run } = fixture((args) => {
       if (args[0] === 'pr') return ok(Array.from({ length: 27 }, (_, i) => ({ number: i + 1, state: 'OPEN', updatedAt: '2026-09-01' })));
       const numbers = [...args.join(' ').matchAll(/pr(\d+):pullRequest/g)].map((m) => Number(m[1]));
-      return ok({ data: { repository: Object.fromEntries(numbers.map((n) => [`pr${n}`, { stack: { number: 7, size: 27, baseRefName: 'main' }, stackEntry: { position: n } }])) } });
+      return ok({ data: { repository: Object.fromEntries(numbers.map((n) => [`pr${n}`, n % 2 ? { stack: { number: 7, size: 27, baseRefName: 'main' }, stackEntry: { position: n } } : { stack: null, stackEntry: null }])) } });
     });
+    const graphql = () => run.mock.calls.filter(([, args]) => args[0] === 'api' && args[1] !== 'user');
     const list = await service.listPullRequests('repo', ['OPEN']);
     expect(list.map((p) => p.number)).toEqual(Array.from({ length: 27 }, (_, i) => 27 - i));
-    expect(list[0]?.stack?.position).toBe(27);
-    expect(run.mock.calls.filter(([, args]) => args[0] === 'api' && args[1] !== 'user')).toHaveLength(2);
+    expect(list[0]?.stack).toBeUndefined();
+    expect(graphql()).toHaveLength(0);
+    const stacks = await service.listPullRequestStacks('repo', list.map((p) => p.number));
+    expect(stacks[0]).toEqual({ number: 27, stack: { number: 7, size: 27, position: 27, base: 'main' } });
+    expect(stacks.map((entry) => entry.number)).not.toContain(26);
+    expect(graphql()).toHaveLength(2);
   });
   it('keeps normal PRs and details usable when optional metadata fails', async () => {
     const { service } = fixture((args) => args[0] === 'pr' ? ok(args[1] === 'list' ? [{ number: 101, state: 'OPEN' }] : { number: 101, state: 'OPEN', body: 'Description' }) : fail('HTTP 403: rate limit'));
@@ -364,6 +430,11 @@ describe('GitHub native stacks', () => {
     const details = await service.getPullRequest('repo', 101);
     expect(details.body).toBe('Description');
     expect(details.stack).toBeUndefined();
+  });
+  it('reads a PR\'s details with one request, leaving its stack to the live state', async () => {
+    const { service, run } = fixture(() => ok({ number: 101, state: 'OPEN', body: 'Description' }));
+    await service.getPullRequest('repo', 101);
+    expect(run.mock.calls.filter(([, args]) => args[0] === 'api' && args[1] !== 'user')).toEqual([]);
   });
   it('fetches full layers only through the explicit stack read', async () => {
     const { service, run } = fixture((args) => ok(args[1]?.includes('?') ? [stack] : stack));
