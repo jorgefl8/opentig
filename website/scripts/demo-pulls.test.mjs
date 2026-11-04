@@ -9,17 +9,27 @@ test('HTML is a tracked sample file that can be edited, staged and committed', (
   const repo = new DemoRepository();
   assert.ok(repo.files().some(f => f.path === 'index.html'));
   assert.deepEqual(repo.directoryEntries(''), repo.files());
-  assert.deepEqual(repo.directoryEntries('src').map(f => f.path), ['src/filter-tasks.js']);
+  assert.deepEqual(repo.directoryEntries('src').map(f => f.path), ['src/filter-tasks.js', 'src/progress.ts', 'src/types.ts']);
+  assert.deepEqual(repo.directoryEntries('.github/workflows').map(f => f.path), ['.github/workflows/ci.yml']);
+  assert.deepEqual(repo.files().filter(f => f.type === 'directory').map(f => f.name), ['.github', 'assets', 'data', 'src', 'test']);
   assert.deepEqual(repo.directoryEntries('missing'), []);
   const original = repo.read('index.html');
   const edited = original.replace('A small team. A big launch.', 'Ready for launch.');
   repo.write('index.html', edited);
-  assert.equal(applyPatch(original, repo.diff('index.html', 'unstaged').patch), edited);
+  assert.equal(applyPatch(repo.index['index.html'], repo.diff('index.html', 'unstaged').patch), edited);
   repo.stage(['index.html']);
   const { oid } = repo.commit('Update release board headline');
   assert.deepEqual(repo.commitFiles(oid).map(f => f.path), ['index.html']);
   assert.equal(repo.head['index.html'], edited);
-  assert.equal(repo.status().unstagedCount, 3);
+  assert.equal(repo.status().unstagedCount, 5);
+});
+
+test('PRs 23, 24, and 25 form one native stack, from bottom to top', () => {
+  assert.deepEqual(demoPulls.stacks([21, 23, 24, 25]).map(entry => [entry.number, entry.stack.position, entry.stack.size]), [[23, 1, 3], [24, 2, 3], [25, 3, 3]]);
+  assert.deepEqual(demoPulls.stack(24).layers.map(layer => layer.number), [23, 24, 25]);
+  assert.equal(demoPulls.stack(21), null);
+  assert.equal(demoPulls.liveState(24).stack, 'member');
+  assert.equal(demoPulls.get(24).baseRefName, 'docs/task-filters');
 });
 
 test('PR states filter correctly and returned data cannot mutate fixtures', () => {
@@ -109,4 +119,30 @@ test('per-commit patches apply to the sample files and compose the full PR diff'
   repo.stage(['src/filter-tasks.js']);
   repo.commit('Sample edit');
   assert.deepEqual(demoPulls.diff(21), before);
+});
+
+test('PR actions, comments, and reviews are simulated in memory', () => {
+  const base = { repositoryId: 'launchpad', expectedAccount: { login: 'opentig-demo', revision: 1 } };
+  const draft = demoPulls.act({ ...base, number: 20, expectedHeadOid: '', action: 'ready' });
+  assert.equal(draft.outcome, 'updated');
+  assert.equal(demoPulls.get(20).isDraft, false);
+  assert.equal(demoPulls.act({ ...base, number: 22, expectedHeadOid: '', action: 'close' }).state.state, 'CLOSED');
+  assert.equal(demoPulls.act({ ...base, number: 22, expectedHeadOid: '', action: 'reopen' }).state.state, 'OPEN');
+  const merged = demoPulls.act({ ...base, number: 21, expectedHeadOid: '', action: 'merge', method: 'SQUASH', deleteBranch: true });
+  assert.deepEqual([merged.outcome, merged.state.state, merged.branchDeleted], ['merged', 'MERGED', true]);
+  assert.ok(demoPulls.list(['MERGED']).some(p => p.number === 21));
+  assert.throws(() => demoPulls.act({ ...base, number: 24, expectedHeadOid: '', action: 'revert' }), /real GitHub repository/);
+
+  demoPulls.comment({ ...base, number: 23, body: 'Looks good.' });
+  const [own] = demoPulls.conversation(23).entries.slice(-1);
+  assert.deepEqual([own.author.login, own.body, own.canEdit], ['opentig-demo', 'Looks good.', true]);
+  demoPulls.editEntry({ ...base, number: 23, entryId: own.id, expectedUpdatedAt: own.updatedAt, body: 'Looks great.' });
+  assert.equal(demoPulls.conversation(23).entries.at(-1).body, 'Looks great.');
+  demoPulls.deleteEntry({ ...base, number: 23, entryId: own.id, expectedUpdatedAt: own.updatedAt });
+  assert.equal(demoPulls.conversation(23).entries.length, 0);
+
+  demoPulls.review({ ...base, number: 25, expectedHeadOid: '', verdict: 'request-changes', body: 'Group unassigned tasks last.' });
+  assert.equal(demoPulls.liveState(25).reviewDecision, 'CHANGES_REQUESTED');
+  demoPulls.update({ ...base, number: 25, title: 'Group tasks by owner and team', body: 'Updated.', expectedUpdatedAt: demoPulls.get(25).updatedAt });
+  assert.equal(demoPulls.get(25).title, 'Group tasks by owner and team');
 });

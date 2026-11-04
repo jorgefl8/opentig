@@ -1,4 +1,5 @@
 import { sampleHtml } from "./sample-html.ts";
+import { sampleLogo, samplePackage, sampleProgress, sampleReadme, sampleTasks, sampleTsconfig, sampleTypes, sampleWorkflow } from "./sample-files.ts";
 import { createTwoFilesPatch, diffLines } from "diff";
 import type {
   CommitFile,
@@ -17,6 +18,9 @@ export const repository = {
 };
 export const sampleDate = "2026-01-15T12:00:00.000Z";
 export const initialFiles: Record<string, string> = {
+  ".github/workflows/ci.yml": sampleWorkflow,
+  "assets/logo.svg": sampleLogo,
+  "data/tasks.json": sampleTasks,
   "index.html": sampleHtml,
   "src/filter-tasks.js": `/** Return tasks whose titles match the search query. */
 export function filterTasks(tasks, query = '') {
@@ -40,10 +44,11 @@ test('search is case insensitive', () => {
   assert.deepEqual(filterTasks(tasks, 'LANDING'), [tasks[0]]);
 });
 `,
-  "README.md":
-    "# Launchpad\n\nA small task list for planning a project launch.\n",
-  "package.json":
-    '{\n  "name": "launchpad",\n  "private": true,\n  "type": "module",\n  "scripts": { "test": "node --test" }\n}\n',
+  "src/progress.ts": sampleProgress,
+  "src/types.ts": sampleTypes,
+  "README.md": sampleReadme,
+  "package.json": samplePackage,
+  "tsconfig.json": sampleTsconfig,
 };
 export const modifiedFilter = `/** Search tasks and hide completed work by default. */
 export function filterTasks(tasks, query = '', options = {}) {
@@ -62,8 +67,12 @@ const lines = (text: string) =>
   text ? text.replace(/\n$/, "").split("\n") : [];
 
 /** Unified diffs from sample snapshots, with a bounded fallback for large edits. */
-export function patch(path: string, before: string, after: string): string {
+export function patch(path: string, before: string, after: string, added = false): string {
   if (before === after) return "";
+  if (added) {
+    const body = patch(path, "", after);
+    return body.replace(`diff --git a/${path} b/${path}\n--- a/${path}`, `diff --git a/${path} b/${path}\nnew file mode 100644\n--- /dev/null`);
+  }
   const computed = createTwoFilesPatch(
     `a/${path}`,
     `b/${path}`,
@@ -106,11 +115,32 @@ export class DemoRepository {
     "test/filter-tasks.test.js":
       initialFiles["test/filter-tasks.test.js"]! +
       "\ntest('hides completed tasks by default', () => {\n  assert.deepEqual(filterTasks(tasks), [tasks[0]]);\n});\n",
+    // The branch finishes the filter task, so its checklist item is ticked, and a note plans the next release.
     "README.md":
-      initialFiles["README.md"]! +
+      initialFiles["README.md"]!.replace("- [ ] Filter tasks by status", "- [x] Filter tasks by status") +
       "\n## Next release\n\n- Add a compact view for small screens.\n",
+    "src/types.ts": initialFiles["src/types.ts"]!.replace(
+      "export const STATUS_LABELS",
+      "/** Options for filterTasks. Completed tasks stay hidden unless asked for. */\nexport interface FilterOptions {\n  includeCompleted?: boolean;\n}\n\nexport const STATUS_LABELS",
+    ),
+    "index.html": initialFiles["index.html"]!
+      .replace(
+        "    @media (max-width: 560px)",
+        "    .filters { display: flex; gap: 18px; align-items: center; padding: 14px 0; border-bottom: 1px solid var(--rule); font: 11.5px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--soft); }\n    .filters .on { color: var(--ink); }\n    .filters .on::before { content: \"\\2611  \"; color: var(--accent); }\n    .shipped .task { display: none; }\n    .shipped::after { content: \"2 completed tasks hidden\"; display: block; margin-top: 10px; padding-top: 16px; border-top: 1px solid var(--rule); color: var(--soft); font: 11.5px var(--mono); letter-spacing: .08em; text-transform: uppercase; }\n    @media (max-width: 560px)",
+      )
+      .replace(
+        '    <div class="board">',
+        '    <div class="filters"><span>Search tasks</span><span class="on">Hide completed</span></div>\n\n    <div class="board">',
+      ),
+    // A new file that Git does not track yet.
+    "CHANGELOG.md":
+      "# Changelog\n\n## Unreleased\n\n- Search hides completed tasks by default. Pass `includeCompleted: true` to show them.\n- The board has a **Hide completed** filter.\n",
   };
   revision = 1;
+  /** PR #21 is open from this branch, so it already tracks its remote branch. */
+  upstream = "origin/feature/task-filters";
+  /** The newest commit the simulated remote has; later commits are ahead of it. */
+  pushedOid = "";
   commits: Array<{
     info: CommitInfo;
     before: Record<string, string>;
@@ -122,6 +152,7 @@ export class DemoRepository {
       before: {},
       after: { ...initialFiles },
     });
+    this.pushedOid = this.commits[0]!.info.oid;
   }
   private info(oid: string, message: string, parents: string[]): CommitInfo {
     const [subject = "", ...body] = message.split("\n");
@@ -173,12 +204,20 @@ export class DemoRepository {
   }
   unstage(paths: string[]) {
     for (const path of paths) this.requireFile(path);
-    for (const path of paths) this.index[path] = this.head[path]!;
+    for (const path of paths) {
+      // Unstaging a new file makes it untracked again.
+      if (this.head[path] === undefined) delete this.index[path];
+      else this.index[path] = this.head[path]!;
+    }
     this.revision++;
   }
   discard(paths: string[]) {
     for (const path of paths) this.requireFile(path);
-    for (const path of paths) this.working[path] = this.index[path]!;
+    for (const path of paths) {
+      // Discarding an untracked file deletes it, as Git clean would.
+      if (this.index[path] === undefined) delete this.working[path];
+      else this.working[path] = this.index[path]!;
+    }
     this.revision++;
   }
   status(): RepositoryStatus {
@@ -191,11 +230,13 @@ export class DemoRepository {
       .map((path) => {
         const staged = this.head[path] !== this.index[path],
           unstaged = this.index[path] !== this.working[path];
+        const untracked = this.index[path] === undefined,
+          added = !untracked && this.head[path] === undefined;
         return {
           path,
-          indexStatus: staged ? "M" : ".",
-          worktreeStatus: unstaged ? "M" : ".",
-          kind: "modified" as const,
+          indexStatus: untracked ? "?" : staged ? (added ? "A" : "M") : ".",
+          worktreeStatus: untracked ? "?" : unstaged ? "M" : ".",
+          kind: untracked ? ("untracked" as const) : added ? ("added" as const) : ("modified" as const),
           staged,
           unstaged,
           conflict: false,
@@ -205,17 +246,17 @@ export class DemoRepository {
     return {
       branch: "feature/task-filters",
       oid: this.commits[0]!.info.oid,
-      upstream: null,
-      ahead: 0,
+      upstream: this.upstream,
+      ahead: this.ahead(),
       behind: 0,
       insertions: changes.reduce(
         (n, f) =>
-          n + counts(this.head[f.path]!, this.working[f.path]!).additions,
+          n + counts(this.head[f.path] ?? "", this.working[f.path]!).additions,
         0,
       ),
       deletions: changes.reduce(
         (n, f) =>
-          n + counts(this.head[f.path]!, this.working[f.path]!).deletions,
+          n + counts(this.head[f.path] ?? "", this.working[f.path]!).deletions,
         0,
       ),
       detached: false,
@@ -229,10 +270,12 @@ export class DemoRepository {
   }
   diff(path: string, kind: "staged" | "unstaged"): DiffResult {
     this.requireFile(path);
+    const before = (kind === "staged" ? this.head : this.index)[path];
     const text = patch(
       path,
-      (kind === "staged" ? this.head : this.index)[path]!,
-      (kind === "staged" ? this.index : this.working)[path]!,
+      before ?? "",
+      (kind === "staged" ? this.index : this.working)[path] ?? "",
+      before === undefined,
     );
     return {
       path,
@@ -241,6 +284,18 @@ export class DemoRepository {
       truncated: false,
       lineCount: text.split("\n").length,
     };
+  }
+  /** Commits made in this page that the simulated remote does not have yet. */
+  ahead() {
+    const index = this.commits.findIndex((c) => c.info.oid === this.pushedOid);
+    return index < 0 ? 0 : index;
+  }
+  /** Push every local commit to the simulated remote. */
+  push() {
+    const commits = this.ahead();
+    this.pushedOid = this.commits[0]!.info.oid;
+    this.revision++;
+    return commits;
   }
   commit(message: string) {
     if (!message.trim()) throw new Error("Write a commit message first.");
@@ -281,7 +336,7 @@ export class DemoRepository {
     if (path && !Object.hasOwn(after, path))
       throw new Error("File is not in this commit.");
     const text = paths
-      .map((p) => patch(p, before[p] ?? "", after[p] ?? ""))
+      .map((p) => patch(p, before[p] ?? "", after[p] ?? "", before[p] === undefined))
       .join("");
     return {
       path: path ?? "",
@@ -293,25 +348,26 @@ export class DemoRepository {
   }
   directoryEntries(path: string): FileTreeEntry[] {
     if (!path || path === ".") return this.files();
-    const folder = this.files().find((entry) => entry.path === path);
-    return folder?.type === "directory" ? folder.children ?? [] : [];
+    let level = this.files();
+    let folder: FileTreeEntry | undefined;
+    for (const part of path.split("/")) {
+      folder = level.find((entry) => entry.name === part && entry.type === "directory");
+      if (folder?.type !== "directory") return [];
+      level = folder.children;
+    }
+    return level;
   }
+  /** Nested tree of working files: folders first, then files, each sorted by name. */
   files(): FileTreeEntry[] {
-    const entries = Object.entries(this.working).map(([path, content]) => ({
-      path,
-      name: path.split("/").at(-1)!,
-      type: "file" as const,
-      size: content.length,
-      mtimeMs: this.revision,
-    }));
-    return [
-      ...["src", "test"].map((path) => ({
-        path,
-        name: path,
-        type: "directory" as const,
-        children: entries.filter((f) => f.path.startsWith(path + "/")),
-      })),
-      ...entries.filter((f) => !f.path.includes("/")),
-    ];
+    const tree = (prefix: string): FileTreeEntry[] => {
+      const paths = Object.keys(this.working).filter((path) => path.startsWith(prefix));
+      const folders = [...new Set(paths.map((path) => path.slice(prefix.length)).filter((rest) => rest.includes("/")).map((rest) => rest.split("/")[0]!))].sort();
+      const files = paths.filter((path) => !path.slice(prefix.length).includes("/")).sort((a, b) => a.localeCompare(b));
+      return [
+        ...folders.map((name) => ({ path: prefix + name, name, type: "directory" as const, children: tree(`${prefix}${name}/`) })),
+        ...files.map((path) => ({ path, name: path.slice(prefix.length), type: "file" as const, size: this.working[path]!.length, mtimeMs: this.revision })),
+      ];
+    };
+    return tree("");
   }
 }

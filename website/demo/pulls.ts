@@ -1,4 +1,4 @@
-import type { DiffResult, PullRequestCheck, PullRequestCheckState, PullRequestConversationEntry, PullRequestDetails, PullRequestLiveState, PullRequestParticipant, PullRequestState } from '../../src/shared/contracts';
+import type { CommentOnPullRequestInput, DeletePullRequestEntryInput, DiffResult, EditPullRequestEntryInput, PullRequestActionInput, PullRequestActionResult, PullRequestCheck, PullRequestCheckState, PullRequestConversationEntry, PullRequestDetails, PullRequestLiveState, PullRequestParticipant, PullRequestStack, PullRequestStackMembership, PullRequestState, ReviewPullRequestInput, UpdatePullRequestInput } from '../../src/shared/contracts';
 import { counts, initialFiles, modifiedFilter, patch, sampleDate } from './model.ts';
 
 type Change = { path: string; before: string; after: string };
@@ -10,6 +10,8 @@ type SampleStatus = {
   review?: string;
   behindBy?: number;
   checks?: PullRequestCheck[];
+  /** Base branch, when the PR is a layer stacked on another one. */
+  base?: string;
 };
 const filter = 'src/filter-tasks.js';
 const tests = 'test/filter-tasks.test.js';
@@ -49,7 +51,7 @@ function sample(number: number, title: string, state: PullRequestState, branch: 
   return {
     details: {
       number, title, state, isDraft: draft, author: 'OpenTig Demo', authorAvatarUrl: null,
-      headRefName: branch, baseRefName: 'main', updatedAt: sampleDate,
+      headRefName: branch, baseRefName: status.base ?? 'main', updatedAt: sampleDate,
       // Sample PRs have no corresponding GitHub URL.
       url: '', reviewDecision,
       ...totals, checksState: rollup(checks), body,
@@ -59,7 +61,7 @@ function sample(number: number, title: string, state: PullRequestState, branch: 
       baseRefOid: 'a'.repeat(40), headRefOid: oids.at(-1) ?? '',
     },
     live: {
-      id: `demo-pr-${number}`, number, state, isDraft: draft, headRefOid: oids.at(-1) ?? '', headRefName: branch, baseRefName: 'main', updatedAt: sampleDate,
+      id: `demo-pr-${number}`, number, state, isDraft: draft, headRefOid: oids.at(-1) ?? '', headRefName: branch, baseRefName: status.base ?? 'main', updatedAt: sampleDate,
       // GitHub stops computing mergeability once a PR is finished.
       mergeable: state === 'OPEN' ? status.mergeable ?? 'MERGEABLE' : 'UNKNOWN',
       mergeStateStatus: state === 'OPEN' ? status.mergeState ?? (draft ? 'DRAFT' : 'CLEAN') : 'UNKNOWN',
@@ -78,11 +80,11 @@ const samples = [
   sample(25, 'Group tasks by owner', 'OPEN', 'feature/group-by-owner',
     '## What changes\n\nDescribe how the task list can group work by owner.\n', [
       { title: 'Describe owner groups', changes: [{ path: 'README.md', before: readme, after: `${readme}\n## Owners\n\nGroup tasks by owner to see who is working on what.\n` }] },
-    ], { mergeState: 'BLOCKED', review: 'REVIEW_REQUIRED', checks: [check('test', 'pending', true), check('lint', 'pass'), check('preview', 'pending')] }),
+    ], { mergeState: 'BLOCKED', review: 'REVIEW_REQUIRED', checks: [check('test', 'pending', true), check('lint', 'pass'), check('preview', 'pending')], base: 'feature/overdue-first' }),
   sample(24, 'Show overdue tasks first', 'OPEN', 'feature/overdue-first',
     '## What changes\n\nMove overdue work to the top of the release board.\n', [
       { title: 'Lead the board with overdue work', changes: [{ path: 'index.html', before: html, after: html.replace('A small team. A big launch.', 'Overdue work comes first.') }] },
-    ], { mergeState: 'BLOCKED', review: 'APPROVED', checks: [check('test', 'fail', true), check('lint', 'pass'), check('preview', 'action-required')] }),
+    ], { mergeState: 'BLOCKED', review: 'APPROVED', checks: [check('test', 'fail', true), check('lint', 'pass'), check('preview', 'action-required')], base: 'docs/task-filters' }),
   sample(23, 'Explain the task filters', 'OPEN', 'docs/task-filters',
     '## What changes\n\nDocument the options for filtering tasks.\n', [
       { title: 'Document the task filters', changes: [{ path: 'README.md', before: readme, after: `${readme}\n## Filters\n\nSearch by title, and include completed tasks when you need them.\n` }] },
@@ -109,6 +111,19 @@ const samples = [
       { title: 'Try amber for release progress', changes: [{ path: 'index.html', before: html, after: html.replaceAll('#9da8ff', '#f0bc70') }] },
     ]),
 ];
+// One native GitHub stack, from bottom to top, so visitors can open its layer indicator.
+const stackNumber = 3;
+const stackLayers = [23, 24, 25];
+function stackMembership(number: number): PullRequestStackMembership | undefined {
+  const position = stackLayers.indexOf(number) + 1;
+  return position ? { number: stackNumber, size: stackLayers.length, position, base: 'main' } : undefined;
+}
+for (const sample of samples) {
+  const membership = stackMembership(sample.details.number);
+  if (!membership) continue;
+  sample.live.stack = 'member';
+  sample.live.stackMembership = membership;
+}
 function requireSample(number: number) {
   const result = samples.find(s => s.details.number === number);
   if (!result) throw new Error('Choose a pull request from the sample repository.');
@@ -118,12 +133,127 @@ function result(changes: Change[]): DiffResult {
   const text = changes.map(c => patch(c.path, c.before, c.after)).join('');
   return { path: '', patch: text, binary: false, truncated: false, lineCount: text.split('\n').length };
 }
+/** The demo's signed-in GitHub account, which authors simulated comments and reviews. */
+const viewer = person('opentig-demo');
+const unsupported = (what: string): never => {
+  throw new Error(`${what} needs a real GitHub repository. In this demo, try merging, closing, commenting on, or reviewing a sample pull request.`);
+};
+/** Record a change on both the PR and its live state, so later edits and reviews compare against it. */
+function touch(sample: Sample) {
+  const now = new Date().toISOString();
+  sample.details.updatedAt = now;
+  sample.live.updatedAt = now;
+}
+function setState(sample: Sample, state: PullRequestState) {
+  sample.details.state = state;
+  sample.live.state = state;
+  sample.live.mergeable = state === 'OPEN' ? 'MERGEABLE' : 'UNKNOWN';
+  sample.live.mergeStateStatus = state === 'OPEN' ? (sample.live.isDraft ? 'DRAFT' : 'CLEAN') : 'UNKNOWN';
+  if (state !== 'OPEN') sample.live.autoMerge = null;
+}
+function conversationOf(number: number) {
+  return (conversations[number] ??= []);
+}
+
 export const demoPulls = {
   list(states: PullRequestState[]) { return samples.filter(s => states.includes(s.details.state)).map(s => structuredClone(s.details)); },
   get(number: number) { return structuredClone(requireSample(number).details); },
   liveState(number: number) { return structuredClone(requireSample(number).live); },
   conversation(number: number) { requireSample(number); return { entries: structuredClone(conversations[number] ?? []), truncated: false, partial: false }; },
   forBranch(branch: string) { return structuredClone(samples.find(s => s.details.headRefName === branch)?.details ?? null); },
+  /** Merge, close, reopen, draft, and auto-merge change the sample in memory, for this page only. */
+  act(input: PullRequestActionInput): PullRequestActionResult {
+    const sample = requireSample(input.number);
+    const { live } = sample;
+    let outcome: PullRequestActionResult['outcome'] = 'done';
+    let branchDeleted = false;
+    switch (input.action) {
+      case 'merge':
+        setState(sample, 'MERGED');
+        branchDeleted = Boolean(input.deleteBranch);
+        outcome = 'merged';
+        break;
+      case 'close': setState(sample, 'CLOSED'); break;
+      case 'reopen': setState(sample, 'OPEN'); break;
+      case 'draft':
+      case 'ready':
+        sample.details.isDraft = live.isDraft = input.action === 'draft';
+        live.mergeStateStatus = live.isDraft ? 'DRAFT' : 'CLEAN';
+        outcome = 'updated';
+        break;
+      case 'enable-auto-merge':
+        live.autoMerge = { method: input.method };
+        outcome = 'auto-merge-enabled';
+        break;
+      case 'disable-auto-merge':
+        live.autoMerge = null;
+        outcome = 'auto-merge-disabled';
+        break;
+      case 'update-branch':
+        live.behindBy = 0;
+        if (live.mergeStateStatus === 'BEHIND') live.mergeStateStatus = 'CLEAN';
+        outcome = 'updated';
+        break;
+      case 'delete-branch':
+        branchDeleted = true;
+        break;
+      case 'revert': return unsupported('Reverting a pull request');
+      case 'approve-workflows': return unsupported('Approving workflow runs');
+    }
+    touch(sample);
+    return { outcome, state: structuredClone(live), ...(branchDeleted ? { branchDeleted } : {}) };
+  },
+  update(input: UpdatePullRequestInput) {
+    const sample = requireSample(input.number);
+    sample.details.title = input.title;
+    sample.details.body = input.body;
+    touch(sample);
+  },
+  comment(input: CommentOnPullRequestInput) {
+    const sample = requireSample(input.number);
+    conversationOf(input.number).push({ ...comment(`demo-${Date.now()}`, viewer, input.body), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), canEdit: true, canDelete: true });
+    touch(sample);
+  },
+  review(input: ReviewPullRequestInput) {
+    const sample = requireSample(input.number);
+    const verdict = ({ approve: 'APPROVED', 'request-changes': 'CHANGES_REQUESTED', comment: 'COMMENTED' } as const)[input.verdict];
+    conversationOf(input.number).push({ ...review(`demo-${Date.now()}`, viewer, verdict, input.body), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+    if (verdict !== 'COMMENTED') {
+      sample.details.reviewDecision = sample.live.reviewDecision = verdict;
+      sample.live.latestReviews = [...sample.live.latestReviews.filter(r => r.author?.login !== viewer.login), { author: viewer, verdict, outdated: false }];
+    }
+    touch(sample);
+  },
+  editEntry(input: EditPullRequestEntryInput) {
+    const entry = conversationOf(input.number).find(e => e.id === input.entryId && e.canEdit);
+    if (!entry) return unsupported('Editing another person\'s comment');
+    entry.body = input.body;
+    entry.edited = true;
+    entry.updatedAt = new Date().toISOString();
+  },
+  deleteEntry(input: DeletePullRequestEntryInput) {
+    const entries = conversationOf(input.number);
+    const index = entries.findIndex(e => e.id === input.entryId && e.canDelete);
+    if (index < 0) return unsupported('Deleting another person\'s comment');
+    entries.splice(index, 1);
+  },
+  stacks(numbers: number[]) {
+    return numbers.flatMap(number => {
+      const stack = stackMembership(number);
+      return stack ? [{ number, stack }] : [];
+    });
+  },
+  stack(number: number): PullRequestStack | null {
+    if (!stackMembership(number)) return null;
+    return {
+      number: stackNumber,
+      base: 'main',
+      layers: stackLayers.map(layer => {
+        const { title, headRefName, state, isDraft } = requireSample(layer).details;
+        return { number: layer, title, headRefName, state, isDraft };
+      }),
+    };
+  },
   diff(number: number) { return result(requireSample(number).changes.flat()); },
   commitDiff(oid: string) {
     for (const sample of samples) {

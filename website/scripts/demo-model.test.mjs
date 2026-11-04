@@ -3,6 +3,8 @@ import { test } from "node:test";
 import { DemoRepository, patch } from "../demo/model.ts";
 const filter = "src/filter-tasks.js";
 const tests = "test/filter-tasks.test.js";
+/** Working changes the sample workflow leaves for later, including the untracked changelog. */
+const others = ["CHANGELOG.md", "README.md", "index.html", "src/types.ts"];
 
 test("commits exactly the staged versions and leaves unrelated and later edits outside", () => {
   const repo = new DemoRepository();
@@ -13,7 +15,7 @@ test("commits exactly the staged versions and leaves unrelated and later edits o
   repo.stage([filter, tests]);
   repo.write(filter, chosen + "// Later edit\n");
   assert.equal(repo.status().stagedCount, 2);
-  assert.equal(repo.status().unstagedCount, 2);
+  assert.equal(repo.status().unstagedCount, 1 + others.length);
   assert.match(repo.diff(filter, "unstaged").patch, /Later edit/);
   assert.doesNotMatch(repo.diff(filter, "staged").patch, /Later edit/);
   const { oid } = repo.commit("Trim the task filter query");
@@ -32,7 +34,7 @@ test("commits exactly the staged versions and leaves unrelated and later edits o
       .status()
       .changes.map((f) => f.path)
       .sort(),
-    ["README.md", filter],
+    [...others, filter].sort(),
   );
   assert.equal(repo.commits[1].info.isHead, false);
   assert.equal(repo.commits[0].info.parentOids[0], repo.commits[1].info.oid);
@@ -62,7 +64,7 @@ test("new sessions restore the sample independently of edits and commits elsewhe
   const second = new DemoRepository();
   assert.equal(second.read(filter), original);
   assert.equal(second.commits.length, 1);
-  assert.equal(second.status().unstagedCount, 3);
+  assert.equal(second.status().unstagedCount, 2 + others.length);
   assert.equal(second.status().stagedCount, 0);
 });
 
@@ -108,5 +110,37 @@ test('supports repeated editing and commits beyond the former session limit', ()
   assert.equal(repo.commits.length, 41);
   assert.equal(repo.getCommit(firstOid).info.subject, 'Add the Launchpad task filter');
   assert.equal(repo.status().stagedCount, 0);
-  assert.deepEqual(repo.status().changes.map(f => f.path).sort(), ['README.md', tests]);
+  assert.deepEqual(repo.status().changes.map(f => f.path).sort(), [...others, tests].sort());
+});
+
+test("an untracked file can be staged as added, unstaged, committed, or discarded", () => {
+  const repo = new DemoRepository();
+  const changelog = () => repo.status().changes.find((f) => f.path === "CHANGELOG.md");
+  assert.deepEqual([changelog().kind, changelog().indexStatus, changelog().staged], ["untracked", "?", false]);
+  assert.match(repo.diff("CHANGELOG.md", "unstaged").patch, /new file mode 100644\n--- \/dev\/null/);
+  repo.stage(["CHANGELOG.md"]);
+  assert.deepEqual([changelog().kind, changelog().indexStatus, changelog().staged], ["added", "A", true]);
+  repo.unstage(["CHANGELOG.md"]);
+  assert.equal(changelog().kind, "untracked");
+  repo.stage(["CHANGELOG.md"]);
+  const { oid } = repo.commit("Start a changelog");
+  assert.deepEqual(repo.commitFiles(oid).map((f) => [f.path, f.kind]), [["CHANGELOG.md", "added"]]);
+  assert.equal(changelog(), undefined);
+
+  const fresh = new DemoRepository();
+  fresh.discard(["CHANGELOG.md"]);
+  assert.equal(fresh.files().some((f) => f.path === "CHANGELOG.md"), false);
+});
+
+test("the branch tracks its remote, and pushing sends the commits made since", () => {
+  const repo = new DemoRepository();
+  assert.deepEqual([repo.status().upstream, repo.status().ahead], ["origin/feature/task-filters", 0]);
+  assert.equal(repo.push(), 0);
+  repo.stage([filter]);
+  repo.commit("Hide completed tasks");
+  repo.stage([tests]);
+  repo.commit("Cover completed tasks");
+  assert.equal(repo.status().ahead, 2);
+  assert.equal(repo.push(), 2);
+  assert.equal(repo.status().ahead, 0);
 });

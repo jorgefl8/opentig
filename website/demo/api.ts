@@ -64,8 +64,8 @@ const branch = () => ({
   fullName: "refs/heads/feature/task-filters",
   current: true,
   remote: false,
-  upstream: null,
-  ahead: 0,
+  upstream: model.upstream,
+  ahead: model.ahead(),
   behind: 0,
   worktreePath: repository.path,
   oid: model.commits[0]!.info.oid,
@@ -145,7 +145,11 @@ export const opentig: OpenTigApi = {
       if (result.status === "saved") changed();
       return result;
     },
-    getFavicon: async () => null,
+    // The real app finds assets/logo.svg the same way, so the sample repository shows its own icon.
+    getFavicon: async () => {
+      const logo = model.read("assets/logo.svg");
+      return logo ? { mimeType: "image/svg+xml", dataUrl: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(logo)}` } : null;
+    },
     fileHistoryState: async () => ({
       canUndo: false,
       undoLabel: null,
@@ -245,6 +249,25 @@ export const opentig: OpenTigApi = {
     }),
   }),
   refs: group<OpenTigApi["refs"]>({
+    // Pushing is simulated: the sample remote takes every local commit, with no network access.
+    pushContext: async (repositoryId) => ({
+      id: `demo-push-${model.commits[0]!.info.oid}`,
+      repositoryId,
+      branch: "feature/task-filters",
+      oid: model.commits[0]!.info.oid,
+      targetRef: "refs/heads/feature/task-filters",
+      remote: "origin",
+      urls: ["https://github.com/opentig-demo/launchpad.git"],
+      remotes: ["origin"],
+      mode: "managed",
+      login: "opentig-demo",
+      hasUpstream: true,
+    }),
+    push: async () => {
+      const commits = model.push();
+      changed();
+      return commits ? { status: "success", commits } : { status: "up-to-date" };
+    },
     listBranches: async () => [branch()],
     listWorktrees: async () => [worktree()],
     localRefsSnapshot: async () => ({
@@ -291,7 +314,14 @@ export const opentig: OpenTigApi = {
     getPullRequest: async (_id, number) => demoPulls.get(number),
     getPullRequestLiveState: async (_id, number) => demoPulls.liveState(number),
     getPullRequestConversation: async (_id, number) => demoPulls.conversation(number),
-    getPullRequestStack: async () => null,
+    listPullRequestStacks: async (_id, numbers) => demoPulls.stacks(numbers),
+    getPullRequestStack: async (_id, number) => demoPulls.stack(number),
+    runPullRequestAction: async (input) => demoPulls.act(input),
+    updatePullRequest: async (input) => demoPulls.update(input),
+    commentOnPullRequest: async (input) => demoPulls.comment(input),
+    reviewPullRequest: async (input) => demoPulls.review(input),
+    editPullRequestEntry: async (input) => demoPulls.editEntry(input),
+    deletePullRequestEntry: async (input) => demoPulls.deleteEntry(input),
     getPullRequestDiff: async (_id, number) => demoPulls.diff(number),
     getPullRequestCommitDiff: async (_id, oid) => demoPulls.commitDiff(oid),
     getPullRequestCommits: async (_id, number) => ({ commits: demoPulls.get(number).commits, complete: true }),

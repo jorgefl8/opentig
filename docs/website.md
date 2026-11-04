@@ -172,12 +172,14 @@ Git operations are simulated in memory, independently in each page. There is no 
 
 The Launchpad sample supports file browsing, editing and saving, diff review, staging and unstaging, discarding edits, sample commits, history, text search, HTML preview, sample pull request review, and appearance settings.
 
-- **Staging and commits:** staging saves the chosen version. Later edits remain outside a commit until staged again.
-- **HTML:** `Files → index.html` opens a self-contained release board with Preview and Code tabs. Edits can be previewed, saved, staged, and committed.
-- **Pull requests:** examples include open, draft, merged, and closed PRs, Markdown summaries, commit timelines, full diffs, and per-commit diffs. Fixtures stay independent of working-tree edits. Sample PRs have no GitHub links; PR creation is disabled.
+- **Staging and commits:** staging saves the chosen version. Later edits remain outside a commit until staged again. The branch already tracks `origin/feature/task-filters`, as the open PR #21 implies, so each sample commit adds to the **Push** count and pushing sends them to a simulated remote without network access.
+- **HTML:** `Files → index.html` opens a self-contained release manifest, set in serif and monospaced type on a paper background, with Preview and Code tabs. The working change adds a **Hide completed** filter that hides the shipped tasks. Edits can be previewed, saved, staged, and committed.
+- **Working changes:** the sample starts with six changes on `feature/task-filters`: the JavaScript filter, its test, a TypeScript option type, a filter bar in `index.html`, a ticked README checklist item, and an untracked `CHANGELOG.md`. The changelog can be staged as a new file, unstaged back to untracked, committed, or discarded, which deletes it.
+- **Sample files:** each file shows a different viewer. `README.md` renders the repository logo, a GitHub alert, a Mermaid flowchart, code blocks, a table, a task list, and inline math. `src/types.ts` and `src/progress.ts` show TypeScript beside the JavaScript filter; `data/tasks.json`, `tsconfig.json`, and `.github/workflows/ci.yml` cover JSON and YAML, and the workflow's `test`, `lint`, and `preview` jobs match the sample PR checks. `assets/logo.svg` opens in the SVG viewer and is also the repository icon, which the installed app discovers from the same path. Folders nest to any depth.
+- **Pull requests:** examples include open, draft, merged, and closed PRs, Markdown summaries, commit timelines, full diffs, and per-commit diffs. PRs #23, #24, and #25 form a native stack, so their layer indicators open the stack. Fixtures stay independent of working-tree edits. Sample PRs have no GitHub links; PR creation is disabled.
 - **Settings:** appearance, changes layout, and line wrapping are available. The heading and close control stay visible while the list scrolls. Repository sync and ignored-file controls are omitted.
 
-Live GitHub connections, AI, native file operations, and unsupported actions require an installed instance and return an explanation in the demo.
+Merging, closing, reopening, draft changes, auto-merge, branch updates, title and description edits, comments, and reviews change the sample pull requests in memory, for the current page only; comments and reviews are posted as `opentig-demo`, which can edit and delete its own. Reverts, workflow approvals, releases, live GitHub connections, AI, native file operations, and other unsupported actions require an installed instance and return an explanation in the demo.
 
 </details>
 
