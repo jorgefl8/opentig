@@ -169,6 +169,36 @@ describe('GitHub pending reads', () => {
     expect(await f.service.getPullRequest('alice', 12)).toMatchObject({ title: 'example/later' });
   });
 
+  it('lets a pending read finish across a fetch, but starts it again after any other write', async () => {
+    const started = deferred<void>();
+    const gate = deferred<CliRunResult>();
+    let first = true;
+    const f = await fixture(async args => {
+      if (args[0] !== 'pr') return result('{}');
+      if (first) { first = false; started.resolve(); return gate.promise; }
+      return result('{"number":12,"state":"OPEN","title":"again"}');
+    });
+    const pending = f.service.listPullRequests('alice', ['OPEN']);
+    await started.promise;
+    f.git.invalidate(f.repos[0]!.path, 'fetch');
+    gate.resolve(result('[{"number":12,"state":"OPEN","title":"first"}]'));
+    expect(await pending).toEqual([expect.objectContaining({ title: 'first' })]);
+    expect(f.run.mock.calls.filter(([, args]) => args[0] === 'pr')).toHaveLength(1);
+
+    const later = deferred<CliRunResult>();
+    let waiting = true;
+    const g = await fixture(async args => {
+      if (args[0] !== 'pr') return result('{}');
+      if (waiting) { waiting = false; return later.promise; }
+      return result('[{"number":12,"state":"OPEN","title":"after the write"}]');
+    });
+    const restarted = g.service.listPullRequests('alice', ['OPEN']);
+    await vi.waitFor(() => expect(g.run.mock.calls.some(([, args]) => args[0] === 'pr')).toBe(true));
+    g.git.invalidate(g.repos[0]!.path, 'commit');
+    later.resolve(result('[{"number":12,"state":"OPEN","title":"before the write"}]'));
+    expect(await restarted).toEqual([expect.objectContaining({ title: 'after the write' })]);
+  });
+
   it('never shares PR creation and invalidates a pending read after the mutation', async () => {
     const started = deferred<void>();
     const gate = deferred<CliRunResult>();

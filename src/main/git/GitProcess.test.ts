@@ -42,6 +42,17 @@ describe('GitProcess', () => {
     expect((await git.run(process.cwd(), args, options)).stdout.toString()).not.toBe(pid);
   });
 
+  it('names the command that wrote when it invalidates reads, past any -c options', async () => {
+    const git = new GitProcess();
+    const listener = vi.fn();
+    git.onInvalidate(listener);
+    await git.runWrite(process.cwd(), ['-c', 'color.ui=false', 'status', '--short'], { operation: 'status-write', timeoutMs: 5_000 });
+    // The write lock also invalidates, without a command of its own.
+    expect(listener.mock.calls.map(([, command]) => command).filter(Boolean)).toEqual(['status', 'status']);
+    git.invalidate(process.cwd());
+    expect(listener).toHaveBeenLastCalledWith(expect.any(String), undefined);
+  });
+
   it('does not share writers or reads with different stdin', async () => {
     const git = new GitProcess();
     const args = node('process.stdout.write(String(process.pid))');

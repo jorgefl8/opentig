@@ -49,7 +49,7 @@ function normalizeLockKey(value: string): string {
 export class GitProcess {
   private readonly reads = new ReadSingleFlight();
   private readonly repositoryScopes = new Map<string, string>();
-  private readonly invalidationListeners = new Set<(scope: string) => void>();
+  private readonly invalidationListeners = new Set<(scope: string, command?: string) => void>();
   private refreshedPath: string | undefined;
 
   async status(): Promise<GitToolStatus> {
@@ -100,12 +100,13 @@ export class GitProcess {
     return this.repositoryScopes.get(key) ?? key;
   }
 
-  onInvalidate(listener: (scope: string) => void): void { this.invalidationListeners.add(listener); }
+  /** `command` is the Git command that wrote, such as `fetch`, when a write caused it; otherwise the cause is unknown. */
+  onInvalidate(listener: (scope: string, command?: string) => void): void { this.invalidationListeners.add(listener); }
 
-  invalidate(cwd: string): void {
+  invalidate(cwd: string, command?: string): void {
     const scope = this.readScope(cwd);
     this.reads.invalidate(scope);
-    for (const listener of this.invalidationListeners) listener(scope);
+    for (const listener of this.invalidationListeners) listener(scope, command);
   }
 
   shareRead<T>(cwd: string, key: string, read: () => Promise<T>, retryInvalidated = true): Promise<T> {
@@ -114,9 +115,7 @@ export class GitProcess {
   }
 
   run(cwd: string, args: string[], options: RunOptions): Promise<GitOutput> {
-    let index = 0;
-    while (args[index] === '-c') index += 2;
-    if (this.network && ['fetch', 'push', 'ls-remote'].includes(args[index] ?? '')) {
+    if (this.network && ['fetch', 'push', 'ls-remote'].includes(gitCommand(args) ?? '')) {
       // Routing owns the account session and credential broker. A raw retry
       // would replay its old credentials/destination instead of opening a new
       // session. Let the complete operation decide whether to refresh/retry.
@@ -139,8 +138,9 @@ export class GitProcess {
       return this.shareRead(cwd, `git:${key}`, execute, retryInvalidated).then(output => ({ ...output,
         stdout: Buffer.from(output.stdout), stderr: Buffer.from(output.stderr) }));
     }
-    this.invalidate(cwd);
-    return execute().finally(() => this.invalidate(cwd));
+    const command = gitCommand(args);
+    this.invalidate(cwd, command);
+    return execute().finally(() => this.invalidate(cwd, command));
   }
 
   /**
@@ -318,4 +318,11 @@ export class GitProcess {
       exitCode,
     });
   }
+}
+
+/** The Git command in `args`, past any leading `-c name=value` options. */
+function gitCommand(args: readonly string[]): string | undefined {
+  let index = 0;
+  while (args[index] === '-c') index += 2;
+  return args[index];
 }

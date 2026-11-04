@@ -53,7 +53,10 @@ export class GitHubService {
   ) {
     this.accounts = accounts ?? new GitHubAccountsService(resolver, runner, git);
     this.localGit = new PullRequestLocalGit(git);
-    this.git.onInvalidate(scope => this.reads.invalidate(scope));
+    // A fetch only downloads objects and moves remote-tracking refs, which no GitHub
+    // read depends on. Restarting them made the GitHub section, which fetches as it
+    // opens, wait for its pull requests twice.
+    this.git.onInvalidate((scope, command) => { if (command !== 'fetch') this.reads.invalidate(scope); });
     const access = {
       requireGitHub: (repositoryId: string, operation: string) => this.requireGitHub(repositoryId, operation),
       run: (executable: CliCandidate, args: string[], options: GhRunOptions) => this.run(executable, args, options),
