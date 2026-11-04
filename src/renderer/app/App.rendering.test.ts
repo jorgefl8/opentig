@@ -8,11 +8,11 @@ import type { ToolbarProps } from './Toolbar';
 import { SettingsStore } from '../../main/persistence/SettingsStore';
 
 const calls = vi.hoisted(() => ({
-  bootstrap: vi.fn(), status: vi.fn(), fetch: vi.fn(), checkUpdates: vi.fn(), error: vi.fn(), renders: vi.fn(), history: vi.fn(),
+  bootstrap: vi.fn(), setPreferences: vi.fn(), status: vi.fn(), fetch: vi.fn(), checkUpdates: vi.fn(), error: vi.fn(), renders: vi.fn(), history: vi.fn(),
 }));
 vi.mock('@/lib/opentig-api', () => ({
   opentig: {
-    app: { bootstrap: calls.bootstrap, capabilities: async () => null, setZoomFactor: () => {}, setTitleBarTheme: async () => {} },
+    app: { bootstrap: calls.bootstrap, setPreferences: calls.setPreferences, capabilities: async () => null, setZoomFactor: () => {}, setTitleBarTheme: async () => {} },
     repository: { getStatus: calls.status, fileHistoryState: async () => ({ canUndo: false, canRedo: false }), getFiles: async () => [] },
     refs: { fetch: calls.fetch, listBranches: async () => [], listWorktrees: async () => [] },
     github: { status: async () => ({ installed: false }), repositoryInfo: async () => ({ isGitHub: false, nameWithOwner: null }) },
@@ -57,6 +57,7 @@ beforeEach(async () => {
     preferences: { ...new SettingsStore('unused-settings.json').preferences, remoteFetchIntervalSeconds: 0 },
   });
   calls.status.mockResolvedValue(initialStatus);
+  calls.setPreferences.mockImplementation(async (partial: object) => ({ ...new SettingsStore('unused-settings.json').preferences, remoteFetchIntervalSeconds: 0, ...partial }));
   calls.fetch.mockResolvedValue({ status: 'success', ahead: 0, behind: 2 });
   calls.checkUpdates.mockResolvedValue({ phase: 'idle' });
   client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
@@ -137,4 +138,39 @@ it('keeps 5,000 loaded commits identical across UI renders and invalidates on pa
     for (let hop = 0; hop < 5; hop++) await new Promise((resolve) => setTimeout(resolve, 0));
   });
   expect(calls.history.mock.lastCall![0]).toEqual([expect.objectContaining({ subject: 'External update' })]);
+});
+
+it('collapses the sidebar to a rail and opens it again on a section', async () => {
+  const sidebar = () => container.querySelector('aside.sidebar')!;
+  const rail = () => container.querySelector('.sidebar-rail');
+  expect(sidebar().hasAttribute('data-collapsed')).toBe(false);
+  expect(container.querySelector('[role="separator"][aria-label="Resize sidebar"]')).not.toBeNull();
+
+  const toggle = await key('keydown', { key: 'b', ctrlKey: true });
+  expect(toggle.defaultPrevented).toBe(true);
+  expect(sidebar().hasAttribute('data-collapsed')).toBe(true);
+  expect(rail()).not.toBeNull();
+  expect(container.querySelector('[role="separator"][aria-label="Resize sidebar"]')).toBeNull();
+  expect(calls.setPreferences).toHaveBeenLastCalledWith({ sidebarCollapsed: true });
+
+  await act(async () => { rail()!.querySelector<HTMLButtonElement>('[aria-keyshortcuts="Control+3"]')!.click(); });
+  expect(sidebar().hasAttribute('data-collapsed')).toBe(false);
+  expect(calls.setPreferences).toHaveBeenLastCalledWith({ sidebarCollapsed: false });
+  expect(container.querySelector('.sidebar-tabs [aria-keyshortcuts="Control+3"]')?.getAttribute('aria-current')).toBe('page');
+
+  await act(async () => { container.querySelector<HTMLButtonElement>('button[aria-label="Collapse sidebar"]')!.click(); });
+  expect(sidebar().hasAttribute('data-collapsed')).toBe(true);
+  await key('keydown', { key: '1', ctrlKey: true });
+  expect(sidebar().hasAttribute('data-collapsed')).toBe(false);
+  expect(container.querySelector('.sidebar-tabs [aria-keyshortcuts="Control+1"]')?.getAttribute('aria-current')).toBe('page');
+});
+
+it('resizes the sidebar from its edge with the keyboard', async () => {
+  const handle = container.querySelector<HTMLElement>('[role="separator"][aria-label="Resize sidebar"]')!;
+  expect(handle.getAttribute('aria-valuenow')).toBe('400');
+  await act(async () => { handle.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })); });
+  expect(calls.setPreferences).toHaveBeenLastCalledWith({ sidebarWidth: 416 });
+  expect((container.querySelector('aside.sidebar') as HTMLElement).style.width).toBe('416px');
+  await act(async () => { handle.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true })); });
+  expect(calls.setPreferences).toHaveBeenLastCalledWith({ sidebarWidth: 300 });
 });
