@@ -857,7 +857,8 @@ export interface OpenTigApi {
     repositoryInfo(repositoryId: string): Promise<GitHubRepositoryInfo>;
     findPullRequestForBranch(repositoryId: string, branchName: string): Promise<PullRequestSummary | null>;
     /** Without stack membership, which `listPullRequestStacks` reads separately so the list doesn't wait for it. */
-    listPullRequests(repositoryId: string, states: PullRequestState[]): Promise<PullRequestSummary[]>;
+    /** `fresh` asks GitHub even when the backend read the list moments ago, as a manual refresh should. */
+    listPullRequests(repositoryId: string, states: PullRequestState[], fresh?: boolean): Promise<PullRequestSummary[]>;
     /** Which of these PRs belong to a native stack. Optional metadata: a failed read is an empty list. */
     listPullRequestStacks(repositoryId: string, numbers: number[]): Promise<Array<{ number: number; stack: PullRequestStackMembership }>>;
     getPullRequest(repositoryId: string, number: number): Promise<PullRequestDetails>;
@@ -875,7 +876,7 @@ export interface OpenTigApi {
     getPullRequestCommitDiff(repositoryId: string, oid: string): Promise<DiffResult>;
     getPullRequestCommits(repositoryId: string, number: number): Promise<PullRequestCommitList>;
     createPullRequest(input: CreatePullRequestInput): Promise<CreatePullRequestResult>;
-    listReleases(repositoryId: string): Promise<ReleaseSummary[]>;
+    listReleases(repositoryId: string, fresh?: boolean): Promise<ReleaseSummary[]>;
     getRelease(repositoryId: string, tagName: string): Promise<ReleaseDetails>;
     checkReleaseTag(repositoryId: string, tagName: string): Promise<ReleaseTagCheck>;
     createRelease(input: CreateReleaseInput): Promise<void>;

@@ -273,10 +273,14 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     });
   }), [appQueryClient]);
   const githubReady = repository !== null && githubInfo?.isGitHub === true && ghStatus?.installed === true;
+  // Set by an explicit refresh, so the next read skips the list the backend keeps for a few seconds.
+  const freshPulls = useRef(false);
   const pullsQuery = useQuery<PullRequestSummary[]>({
     queryKey: queryKeys.pulls(repository?.id ?? '', pullRequestStates),
     queryFn: async () => {
-      try { return pullRequestStates.length ? await opentig.github.listPullRequests(repository!.id, pullRequestStates) : []; }
+      const fresh = freshPulls.current;
+      freshPulls.current = false;
+      try { return pullRequestStates.length ? await opentig.github.listPullRequests(repository!.id, pullRequestStates, fresh) : []; }
       catch (error) {
         if (serializedErrorFromReason(error)?.code === 'GH_CLI_NOT_FOUND') {
           void appQueryClient.invalidateQueries({ queryKey: queryKeys.githubCliStatus });
@@ -853,6 +857,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       }
     }
     if (repository) void appQueryClient.invalidateQueries({ queryKey: ['repository', repository.id, 'branch-pull-request'] });
+    freshPulls.current = true;
     await pullsQuery.refetch();
   }, [appQueryClient, ghStatusQuery, pullsQuery, repository]);
 

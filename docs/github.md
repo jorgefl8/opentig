@@ -69,7 +69,7 @@ Your CLI must support multi-account `auth token --user` and `auth status --json 
 
 The list reads one request for all PRs, which carries their reviews and checks but not whether each one can merge. A row therefore says **Review required**, **Changes requested**, **Checks failing**, **Checks pending**, **Approved**, **Checks passing**, or its state, such as **Draft** or **Merged into main**, and only the selected row shows the full status below. Number, title, and state are in the row; author, line counts, and time are in the viewer.
 
-OpenTig reads the list and the releases as soon as a GitHub repository opens, so the section shows them straight away; opening it refreshes a list read more than 30 seconds earlier, and keeps showing the old one meanwhile. Stack indicators fill in a moment after the rows.
+OpenTig reads the list and the releases as soon as a GitHub repository opens, so the section shows them straight away; opening it refreshes a list read more than 30 seconds earlier, and keeps showing the old one meanwhile. The backend also reuses a list it read in the last 30 seconds, or a minute for releases, so reloading the app doesn't wait for GitHub; **Refresh** always asks GitHub, and so does the first read after a change made through OpenTig. Stack indicators fill in a moment after the rows.
 
 The filter button beside the tabs chooses which states appear. Its menu also has **Refresh**, **Open on GitHub** with the repository's name, and the effective account, which opens GitHub settings. **New** creates a PR from the current branch; while it's unavailable, its tooltip says why.
 

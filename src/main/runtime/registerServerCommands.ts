@@ -495,9 +495,10 @@ export function registerServerCommands(
     const input = searchReplaceArg(request, 'replace-search');
     return services.fileHistory.serialize(repositoryId, () => services.search.replace(repositoryId, input));
   });
-  handle(IPC.githubPrList, 'gh-pr-list', (id, states) => services.github.listPullRequests(
+  handle(IPC.githubPrList, 'gh-pr-list', (id, states, fresh) => services.github.listPullRequests(
     stringArg(id, 'gh-pr-list', 64),
     pullRequestStatesArg(states, 'gh-pr-list'),
+    fresh == null ? false : booleanArg(fresh, 'gh-pr-list'),
   ));
   handle(IPC.githubPrView, 'gh-pr-view', (id, prNumber) => services.github.getPullRequest(stringArg(id, 'gh-pr-view', 64), prNumberArg(prNumber, 'gh-pr-view')));
   handle(IPC.githubPrLiveState, 'gh-pr-live-state', (id, prNumber) => services.github.getPullRequestLiveState(stringArg(id, 'gh-pr-live-state', 64), prNumberArg(prNumber, 'gh-pr-live-state')));
@@ -517,7 +518,7 @@ export function registerServerCommands(
   handleWithContext(IPC.githubPrDraft, 'ai-pr-draft', (context, input) => (
     services.prDrafts.generate(generatePullRequestDraftArg(input), context.signal)
   ));
-  handle(IPC.githubReleaseList, 'gh-release-list', (id) => services.github.listReleases(stringArg(id, 'gh-release-list', 64)));
+  handle(IPC.githubReleaseList, 'gh-release-list', (id, fresh) => services.github.listReleases(stringArg(id, 'gh-release-list', 64), fresh == null ? false : booleanArg(fresh, 'gh-release-list')));
   handle(IPC.githubReleaseView, 'gh-release-view', (id, tagName) => services.github.getRelease(stringArg(id, 'gh-release-view', 64), tagNameArg(tagName, 'gh-release-view')));
   handle(IPC.githubReleaseTag, 'gh-release-tag', (id, tagName) => services.github.checkReleaseTag(stringArg(id, 'gh-release-tag', 64), tagNameArg(tagName, 'gh-release-tag')));
   handle(IPC.githubReleaseCreate, 'gh-release-create', (input) => services.github.createRelease(createReleaseArg(input)));

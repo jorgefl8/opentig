@@ -142,7 +142,7 @@ it('detects the CLI, reads the PRs ahead of opening them, and shows PR loading w
   calls.listPulls.mockReturnValue(new Promise(() => {}));
   await mount();
   expect(calls.cliStatus).toHaveBeenCalledExactlyOnceWith(true);
-  expect(calls.listPulls).toHaveBeenCalledExactlyOnceWith('repo', ['OPEN']);
+  expect(calls.listPulls).toHaveBeenCalledExactlyOnceWith('repo', ['OPEN'], false);
   await openPulls();
   expect(calls.listPulls).toHaveBeenCalledOnce();
   expect(container.textContent).toContain('Loading pull requests');
@@ -164,7 +164,7 @@ it('keeps cached PR results visible on return and shares CLI detection across re
   await click('[aria-label="Switch repository"]');
   expect(container.textContent).toContain('Loading pull requests');
   expect(calls.cliStatus).toHaveBeenCalledOnce();
-  expect(calls.listPulls).toHaveBeenLastCalledWith('repo-b', ['OPEN']);
+  expect(calls.listPulls).toHaveBeenLastCalledWith('repo-b', ['OPEN'], false);
 });
 
 it('changes PR filters without checking CLI availability again', async () => {
@@ -173,7 +173,7 @@ it('changes PR filters without checking CLI availability again', async () => {
   await click('[aria-label="Filter pull requests"]');
   await act(async () => document.querySelector<HTMLButtonElement>('#pulls-state-closed')!.click());
   await settle();
-  expect(calls.listPulls).toHaveBeenLastCalledWith('repo', ['OPEN', 'CLOSED']);
+  expect(calls.listPulls).toHaveBeenLastCalledWith('repo', ['OPEN', 'CLOSED'], false);
   expect(calls.cliStatus).toHaveBeenCalledOnce();
   expect(container.textContent).not.toContain('Checking GitHub CLI');
 });

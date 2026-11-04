@@ -31,6 +31,9 @@ const ACCOUNT_USED = 'Account used:';
 const OPEN_PULL_REQUEST_MS = 60_000;
 /** A merged or closed PR rarely changes. */
 const FINISHED_PULL_REQUEST_MS = 10 * 60_000;
+/** Lists are reused briefly, so reloading the app doesn't wait for GitHub; a change made through OpenTig drops them at once. */
+const LIST_MS = 30_000;
+const RELEASES_MS = 60_000;
 
 export class GitHubService {
   private readonly reads = new ReadSingleFlight();
@@ -89,16 +92,17 @@ export class GitHubService {
   }
 
   /**
-   * A shared read whose result is also kept for `ttl(value)` milliseconds. Only
-   * used for what the live state can tell is outdated: see `forgetOutdated`.
+   * A shared read whose result is also kept for `ttl(value)` milliseconds: a PR's
+   * details and conversation, which the live state drops sooner when outdated
+   * (see `forgetOutdated`), and the PR and release lists, briefly.
    */
-  private async settledRead<T>(repositoryId: string, resource: unknown[], ttl: (value: T) => number, read: () => Promise<T>): Promise<T> {
+  private async settledRead<T>(repositoryId: string, resource: unknown[], ttl: (value: T) => number, read: () => Promise<T>, fresh = false): Promise<T> {
     const repository = this.repositories.get(repositoryId);
     // Kept per GitHub repository too, so pointing the remote elsewhere doesn't show the old one's PR.
     const { remote } = await this.routing(repositoryId);
     const settledResource = [remote.url, ...resource];
     const key = this.readKey(repository, settledResource);
-    const hit = this.settled.get(repository.path)?.get(key);
+    const hit = fresh ? undefined : this.settled.get(repository.path)?.get(key);
     if (hit && hit.expires > Date.now()) return structuredClone(hit.value as T);
     const epoch = this.settledEpoch;
     const value = await this.shareRead(repositoryId, resource, read);
@@ -256,8 +260,8 @@ export class GitHubService {
     }
   }
 
-  listPullRequests(repositoryId: string, states: PullRequestState[]): Promise<PullRequestSummary[]> {
-    return this.shareRead(repositoryId, ['list', [...states].sort()], () => this.readListPullRequests(repositoryId, states));
+  listPullRequests(repositoryId: string, states: PullRequestState[], fresh = false): Promise<PullRequestSummary[]> {
+    return this.settledRead(repositoryId, ['list', [...states].sort()], () => LIST_MS, () => this.readListPullRequests(repositoryId, states), fresh);
   }
 
   private async readListPullRequests(repositoryId: string, states: PullRequestState[]): Promise<PullRequestSummary[]> {
@@ -394,8 +398,8 @@ export class GitHubService {
     } catch { return { status: 'unknown' }; }
   }
 
-  listReleases(repositoryId: string): Promise<ReleaseSummary[]> {
-    return this.shareRead(repositoryId, ['releases'], () => this.releases.list(repositoryId));
+  listReleases(repositoryId: string, fresh = false): Promise<ReleaseSummary[]> {
+    return this.settledRead(repositoryId, ['releases'], () => RELEASES_MS, () => this.releases.list(repositoryId), fresh);
   }
 
   getRelease(repositoryId: string, tagName: string): Promise<ReleaseDetails> {

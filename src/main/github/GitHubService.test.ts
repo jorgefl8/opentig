@@ -373,6 +373,21 @@ describe('pull request live state', () => {
     expect(views()).toBe(2);
   });
 
+  it('reuses the PR list briefly, except for a manual refresh or after a change through OpenTig', async () => {
+    const { service, run } = fixture(() => ok([{ number: 12, state: 'OPEN' }]));
+    const lists = () => run.mock.calls.filter(([, args]) => args[0] === 'pr' && args[1] === 'list').length;
+    await service.listPullRequests('repo', ['OPEN']);
+    await service.listPullRequests('repo', ['OPEN']);
+    expect(lists()).toBe(1);
+    await service.listPullRequests('repo', ['OPEN'], true);
+    expect(lists()).toBe(2);
+    await service.listPullRequests('repo', ['OPEN']);
+    expect(lists()).toBe(2);
+    service.invalidate('repo');
+    await service.listPullRequests('repo', ['OPEN']);
+    expect(lists()).toBe(3);
+  });
+
   it('keeps what it read when the app checks the same CLI again on load', async () => {
     const { service, run } = fixture(() => ok({ number: 12, state: 'OPEN', updatedAt: pull.updatedAt }));
     const views = () => run.mock.calls.filter(([, args]) => args[0] === 'pr' && args[1] === 'view').length;
