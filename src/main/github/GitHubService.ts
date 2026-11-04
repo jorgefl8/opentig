@@ -262,7 +262,16 @@ export class GitHubService {
       ['pr', 'list', '-R', nameWithOwner, '--state', state.toLowerCase(), '--json', PR_SUMMARY_FIELDS, '--limit', '50'],
       { auth, executable, cwd: repository.path, operation: 'gh-pr-list', timeoutMs: NETWORK_TIMEOUT_MS, maxOutputBytes: 4 * 1024 * 1024 },
     )));
-    return this.withStackMembership(repository.path, nameWithOwner, auth, executable, selectPullRequestsNewestFirst(results.flatMap((result) => parsePullRequestList(result.stdout)), states));
+    return selectPullRequestsNewestFirst(results.flatMap((result) => parsePullRequestList(result.stdout)), states);
+  }
+
+  listPullRequestStacks(repositoryId: string, numbers: number[]): Promise<Array<{ number: number; stack: PullRequestStackMembership }>> {
+    return this.shareRead(repositoryId, ['list-stacks', [...numbers].sort((a, b) => a - b)], async () => {
+      if (!numbers.length) return [];
+      const { repository, nameWithOwner, auth, executable } = await this.requireGitHub(repositoryId, 'gh-pr-stack-membership');
+      const memberships = await this.stackMemberships(repository.path, nameWithOwner, auth, executable, numbers);
+      return numbers.flatMap((number) => { const stack = memberships.get(number); return stack ? [{ number, stack }] : []; });
+    });
   }
 
   findPullRequestForBranch(repositoryId: string, branchName: string): Promise<PullRequestSummary | null> {
@@ -422,25 +431,24 @@ export class GitHubService {
   }
 
   private async withStackMembership<T extends PullRequestSummary>(cwd: string, nameWithOwner: string, auth: GitHubCommandAuth, executable: CliCandidate, pulls: T[]): Promise<T[]> {
+    const memberships = await this.stackMemberships(cwd, nameWithOwner, auth, executable, pulls.map((pr) => pr.number));
+    return pulls.map((pr) => { const stack = memberships.get(pr.number); return stack ? { ...pr, stack } : pr; });
+  }
+
+  private async stackMemberships(cwd: string, nameWithOwner: string, auth: GitHubCommandAuth, executable: CliCandidate, numbers: number[]): Promise<Map<number, PullRequestStackMembership>> {
     const [owner, name] = nameWithOwner.split('/');
-    const enriched: T[] = [];
     // Bound query size and avoid one request per PR. Metadata is optional: normal PRs
     // remain readable on older hosts, rate limits, or unavailable stack previews.
-    for (let start = 0; start < pulls.length; start += 25) {
-      const batch = pulls.slice(start, start + 25);
+    const batches = Array.from({ length: Math.ceil(numbers.length / 25) }, (_, index) => numbers.slice(index * 25, index * 25 + 25));
+    const results = await Promise.all(batches.map(async (batch) => {
       try {
-        const numbers = batch.map((pr) => pr.number);
-        const result = await this.runGhRead(['api', 'graphql', '-f', `owner=${owner}`, '-f', `name=${name}`, '-f', `query=${stackMembershipQuery(numbers)}`], {
+        const result = await this.runGhRead(['api', 'graphql', '-f', `owner=${owner}`, '-f', `name=${name}`, '-f', `query=${stackMembershipQuery(batch)}`], {
           auth, executable, cwd, operation: 'gh-pr-stack-membership', timeoutMs: 10_000, maxOutputBytes: 1024 * 1024,
         });
-        const memberships = parseStackMemberships(result.stdout, numbers);
-        enriched.push(...batch.map((pr) => {
-          const stack = memberships.get(pr.number);
-          return stack ? { ...pr, stack } : pr;
-        }));
-      } catch { enriched.push(...batch); }
-    }
-    return enriched;
+        return [...parseStackMemberships(result.stdout, batch)];
+      } catch { return []; }
+    }));
+    return new Map(results.flat());
   }
 
   getPullRequestStack(repositoryId: string, prNumber: number): Promise<PullRequestStack | null> {

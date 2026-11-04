@@ -4,6 +4,7 @@ import { ONBOARDING_VERSION } from '../../shared/onboarding';
 import { lastCloneParent, resumeBackgroundClone } from '@/features/onboarding/clone-jobs';
 import { useGitHubAccount } from '@/features/pulls/useGitHubAccount';
 import { branchPullRequestQueryOptions } from '@/features/pulls/branch-pull-request-query';
+import { withStackMemberships } from '@/features/pulls/pull-request-list';
 import { appDisplayName } from '@/lib/app-identity';
 import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { isModuleLoadError, lazyWithRetry } from '@/lib/lazy-with-retry';
@@ -281,13 +282,24 @@ export default function App({ initialView, initialSelection, pullRequestCreation
         throw error;
       }
       finally {
-        const context = await opentig.github.repositoryAccount(repository!.id, false);
-        appQueryClient.setQueryData(queryKeys.githubAccount(repository!.id), context);
+        // The read may have switched to an account with access; the list doesn't wait to say so.
+        const repositoryId = repository!.id;
+        void opentig.github.repositoryAccount(repositoryId, false)
+          .then((context) => appQueryClient.setQueryData(queryKeys.githubAccount(repositoryId), context))
+          .catch(() => undefined);
       }
     },
     enabled: view === 'prs' && repository !== null && githubInfo?.isGitHub === true && ghStatus?.installed === true,
   });
-  const pulls = pullsQuery.data ?? null;
+  const pullNumbers = useMemo(() => pullsQuery.data?.map((pull) => pull.number) ?? [], [pullsQuery.data]);
+  // Stack membership comes after the list, so the rows don't wait for it.
+  const pullStacksQuery = useQuery({
+    queryKey: queryKeys.pullStacks(repository?.id ?? '', pullNumbers),
+    queryFn: () => opentig.github.listPullRequestStacks(repository!.id, pullNumbers),
+    enabled: repository !== null && pullNumbers.length > 0,
+    staleTime: 60_000,
+  });
+  const pulls = useMemo(() => withStackMemberships(pullsQuery.data, pullStacksQuery.data), [pullsQuery.data, pullStacksQuery.data]);
   const pullsLoading = pullsQuery.isFetching || ghStatusQuery.isFetching;
   const pullsError = ghStatusQuery.error ? messageOf(ghStatusQuery.error) : pullsQuery.error ? messageOf(pullsQuery.error) : null;
   useEffect(() => { setMobilePane('list'); }, [repository?.id]);

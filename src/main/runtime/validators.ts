@@ -309,6 +309,12 @@ export function prNumberArg(value: unknown, operation: string): number {
   return parsed.data;
 }
 
+/** The PRs a list shows, at most a few pages of them. */
+export function prNumbersArg(value: unknown, operation: string): number[] {
+  if (!Array.isArray(value) || value.length > 200) throw new GhOperationError({ code: 'GH_PROCESS_FAILED', operation, message: 'Invalid pull request numbers.' });
+  return [...new Set(value.map((number) => prNumberArg(number, operation)))];
+}
+
 export function pullRequestStatesArg(value: unknown, operation: string): PullRequestState[] {
   if (!Array.isArray(value) || value.length > 3 || new Set(value).size !== value.length) throw invalidGh(operation);
   const allowed: PullRequestState[] = pullRequestStateSchema.options;

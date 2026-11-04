@@ -383,16 +383,21 @@ describe('pull request live state', () => {
 });
 
 describe('GitHub native stacks', () => {
-  it('enriches visible PRs in bounded batches and preserves list ordering', async () => {
+  it('lists PRs without waiting for membership, then reads it for the shown PRs in bounded batches', async () => {
     const { service, run } = fixture((args) => {
       if (args[0] === 'pr') return ok(Array.from({ length: 27 }, (_, i) => ({ number: i + 1, state: 'OPEN', updatedAt: '2026-09-01' })));
       const numbers = [...args.join(' ').matchAll(/pr(\d+):pullRequest/g)].map((m) => Number(m[1]));
-      return ok({ data: { repository: Object.fromEntries(numbers.map((n) => [`pr${n}`, { stack: { number: 7, size: 27, baseRefName: 'main' }, stackEntry: { position: n } }])) } });
+      return ok({ data: { repository: Object.fromEntries(numbers.map((n) => [`pr${n}`, n % 2 ? { stack: { number: 7, size: 27, baseRefName: 'main' }, stackEntry: { position: n } } : { stack: null, stackEntry: null }])) } });
     });
+    const graphql = () => run.mock.calls.filter(([, args]) => args[0] === 'api' && args[1] !== 'user');
     const list = await service.listPullRequests('repo', ['OPEN']);
     expect(list.map((p) => p.number)).toEqual(Array.from({ length: 27 }, (_, i) => 27 - i));
-    expect(list[0]?.stack?.position).toBe(27);
-    expect(run.mock.calls.filter(([, args]) => args[0] === 'api' && args[1] !== 'user')).toHaveLength(2);
+    expect(list[0]?.stack).toBeUndefined();
+    expect(graphql()).toHaveLength(0);
+    const stacks = await service.listPullRequestStacks('repo', list.map((p) => p.number));
+    expect(stacks[0]).toEqual({ number: 27, stack: { number: 7, size: 27, position: 27, base: 'main' } });
+    expect(stacks.map((entry) => entry.number)).not.toContain(26);
+    expect(graphql()).toHaveLength(2);
   });
   it('keeps normal PRs and details usable when optional metadata fails', async () => {
     const { service } = fixture((args) => args[0] === 'pr' ? ok(args[1] === 'list' ? [{ number: 101, state: 'OPEN' }] : { number: 101, state: 'OPEN', body: 'Description' }) : fail('HTTP 403: rate limit'));

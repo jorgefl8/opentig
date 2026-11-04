@@ -32,6 +32,7 @@ export const queryKeys = {
   history: (repositoryId: string) => ['repository', repositoryId, 'history'] as const,
   githubInfo: (repositoryId: string) => ['repository', repositoryId, 'github-info'] as const,
   pulls: (repositoryId: string, states: readonly PullRequestState[]) => ['repository', repositoryId, 'pulls', ...states] as const,
+  pullStacks: (repositoryId: string, numbers: readonly number[]) => ['repository', repositoryId, 'pull-stacks', ...numbers] as const,
   pullRequest: (repositoryId: string, number: number) => ['repository', repositoryId, 'pull-request', number] as const,
   pullRequestLiveState: (repositoryId: string, number: number) => ['repository', repositoryId, 'pull-request-state', number] as const,
   pullRequestConversation: (repositoryId: string, number: number) => ['repository', repositoryId, 'pull-request-conversation', number] as const,
@@ -59,7 +60,7 @@ export function queryResourcesForScope(scope: RepositoryChangeScope, view: Refre
 
 /** Reset only GitHub reads, cancelling old results before another identity loads. */
 export async function resetGitHubQueries(client: QueryClient, repositoryIds?: string[], inventoryChanged = false): Promise<void> {
-  const resources = new Set(['push-context', 'github-account', 'pulls', 'pull-request', 'pull-request-state', 'pull-request-conversation', 'pull-request-stack', 'pull-request-diff', 'pull-request-commits', 'pull-request-commit-diff', 'branch-pull-request', 'releases', 'release', 'release-tag', 'workflows', 'workflow-runs']);
+  const resources = new Set(['push-context', 'github-account', 'pulls', 'pull-stacks', 'pull-request', 'pull-request-state', 'pull-request-conversation', 'pull-request-stack', 'pull-request-diff', 'pull-request-commits', 'pull-request-commit-diff', 'branch-pull-request', 'releases', 'release', 'release-tag', 'workflows', 'workflow-runs']);
   const predicate = (query: { queryKey: readonly unknown[] }) => ((!repositoryIds || inventoryChanged && query.queryKey[1] === 'accounts') && query.queryKey[0] === 'github')
     || (query.queryKey[0] === 'repository' && (!repositoryIds || repositoryIds.includes(String(query.queryKey[1]))) && resources.has(String(query.queryKey[2])));
   await client.cancelQueries({ predicate });
