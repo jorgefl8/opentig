@@ -67,6 +67,7 @@ import { resolveWindowControlsInset } from './window-controls';
 import { queryKeys, queryResourcesForScope, resetGitHubQueries } from '@/lib/query-client';
 import { persistTheme } from '@/lib/boot-theme';
 import { useMobileLayout } from '@/lib/use-mobile-layout';
+import { installZoomAwarePositioning } from '@/lib/zoom-aware-positioning';
 import { mobileMainAction } from '@/lib/mobile-main-action';
 import { useElapsed } from '@/lib/use-elapsed';
 import { opentig, serverClient } from '@/lib/opentig-api';
@@ -89,6 +90,9 @@ const SearchView = lazyWithRetry(() => import('@/features/search/SearchView').th
 const PullRequestsView = lazyWithPreload(() => import('@/features/pulls/PullRequestsView').then((module) => ({ default: module.PullRequestsView })));
 const QuickOpenDialog = lazyWithRetry(() => import('@/features/files/QuickOpenDialog').then((module) => ({ default: module.QuickOpenDialog })));
 const CreatePullRequestDialog = lazyWithRetry(() => import('@/features/pulls/CreatePullRequestDialog').then((module) => ({ default: module.CreatePullRequestDialog })));
+// Tooltips and menus must land on their anchors under the browser's Interface size zoom.
+installZoomAwarePositioning();
+
 const sidebarFallback = <div className="view-loading" role="status"><IconLoader4 className="spinner" /> <ShimmeringText text="Loading…" /></div>;
 const NO_OPEN_FILES_STATES: OpenFilesState[] = [];
 type DirtyCloseChoice = 'save' | 'discard' | 'cancel';
