@@ -30,6 +30,8 @@ import { queryKeys } from '@/lib/query-client';
 import '@/features/markdown/markdown.css';
 
 const PullRequestDiff = lazyWithRetry(() => import('./PullRequestDiff'));
+/** How long a PR's details are taken as current without asking again. */
+const PULL_REQUEST_STALE_MS = 60_000;
 
 interface PullRequestViewerProps {
   repositoryId: string;
@@ -45,7 +47,13 @@ interface PullRequestViewerProps {
 }
 
 export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType, wrapLines, onDiffViewChange, onWrapLinesChange, onClose, onOpenFile, onSelectPullRequest }: PullRequestViewerProps) {
-  const [tab, setTab] = useState<PullRequestTab>('summary');
+  const [tab, setTabState] = useState<PullRequestTab>('summary');
+  // A tab stays mounted once visited, so going back to it shows what it had instead of loading again.
+  const [visited, setVisited] = useState<ReadonlySet<PullRequestTab>>(() => new Set(['summary']));
+  const setTab = (next: PullRequestTab) => {
+    setTabState(next);
+    setVisited((current) => current.has(next) ? current : new Set([...current, next]));
+  };
   const [editing, setEditing] = useState(() => hasViewerDraft(pullRequestEditDraft(repositoryId, prNumber)));
   const [commentDraft, setCommentDraft] = useViewerDraft(pullRequestCommentDraft(repositoryId, prNumber), () => '');
   const header = useRef<HTMLElement>(null);
@@ -66,6 +74,8 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
   const [summary] = useState(() => cachedPullRequestSummary(queryClient, repositoryId, prNumber));
   const detailsQuery = useQuery<{ details: PullRequestDetails; bodyHtml: string }>({
     queryKey: queryKeys.pullRequest(repositoryId, prNumber),
+    // The live state reloads them as soon as GitHub reports a change.
+    staleTime: PULL_REQUEST_STALE_MS,
     queryFn: async () => {
       const details = await opentig.github.getPullRequest(repositoryId, prNumber);
       const bodyHtml = details.body.trim()
@@ -83,7 +93,9 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
     // Keyed by the range too, so a new head shows its own code rather than the one read before the details caught up.
     queryKey: [...queryKeys.pullRequestDiff(repositoryId, prNumber), details?.baseRefOid, details?.headRefOid],
     queryFn: () => opentig.github.getPullRequestDiff(repositoryId, prNumber, details ? { baseOid: details.baseRefOid, headOid: details.headRefOid } : undefined),
-    enabled: tab === 'diff' && details !== null,
+    // The same two commits always give the same code.
+    staleTime: Infinity,
+    enabled: visited.has('diff') && details !== null,
   });
   const diff = diffQuery.data ?? null;
   // GitHub CLI returns one page of commits; past it, the local clone lists them all.
@@ -91,7 +103,8 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
   const commitsQuery = useQuery<PullRequestCommitList>({
     queryKey: queryKeys.pullRequestCommits(repositoryId, prNumber),
     queryFn: () => opentig.github.getPullRequestCommits(repositoryId, prNumber),
-    enabled: firstPageOnly && (tab === 'timeline' || tab === 'diff'),
+    staleTime: PULL_REQUEST_STALE_MS,
+    enabled: firstPageOnly && (visited.has('timeline') || visited.has('diff')),
   });
   const commits = commitsQuery.data?.commits ?? details?.commits ?? [];
   const commitsIncomplete = firstPageOnly && commitsQuery.data?.complete !== true;
@@ -142,7 +155,7 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
   const updated = <span>updated <time dateTime={pr.updatedAt}>{formatDateTime(pr.updatedAt)}</time></span>;
   const loadingLine = (text: string) => <p className="pr-loading-line" role="status"><ShimmeringText text={text} /></p>;
   return (
-    <ViewerTabs ref={scroller} value={tab} onValueChange={(value) => setTab(value as typeof tab)} className="pr-viewer" data-tab={tab}>
+    <ViewerTabs ref={scroller} value={tab} onValueChange={(value) => setTab(value)} className="pr-viewer" data-tab={tab}>
       {bar}
       <header ref={header} className="pr-viewer-header">
         <div ref={overview} className="pr-viewer-overview">
@@ -196,7 +209,7 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
           ]}
         />
       </header>
-      <ViewerTabsPanel value="summary" className="markdown-preview-scroll pr-description-scroll">
+      <ViewerTabsPanel value="summary" keepMounted className="markdown-preview-scroll pr-description-scroll">
           <section className="pr-summary-section">
             {!details
               ? <div className="pr-description-skeleton" role="status" aria-label="Loading the description"><span /><span /><span /></div>
@@ -205,14 +218,14 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
                 : <p className="pr-empty-description">This pull request has no description.</p>}
           </section>
       </ViewerTabsPanel>
-      <ViewerTabsPanel value="comments" className="markdown-preview-scroll pr-description-scroll">
-          <PullRequestConversationView repositoryId={repositoryId} number={pr.number} url={pr.url} live={live} draft={commentDraft} onDraftChange={setCommentDraft} />
+      <ViewerTabsPanel value="comments" keepMounted className="markdown-preview-scroll pr-description-scroll">
+          {visited.has('comments') && <PullRequestConversationView repositoryId={repositoryId} number={pr.number} url={pr.url} live={live} active={tab === 'comments'} draft={commentDraft} onDraftChange={setCommentDraft} />}
       </ViewerTabsPanel>
       <ViewerTabsPanel value="checks" className="markdown-preview-scroll pr-description-scroll">
           <PullRequestChecksPanel checks={live?.checks ?? null} loading={liveQuery.isPending} url={pr.url} />
       </ViewerTabsPanel>
-      <ViewerTabsPanel value="timeline" className="markdown-preview-scroll pr-description-scroll">
-          {!details ? loadingLine('Loading commits…') : <section className="pr-timeline standalone" aria-label="Commit timeline">
+      <ViewerTabsPanel value="timeline" keepMounted className="markdown-preview-scroll pr-description-scroll">
+          {!visited.has('timeline') ? null : !details ? loadingLine('Loading commits…') : <section className="pr-timeline standalone" aria-label="Commit timeline">
             <h3>Commits <span className="plain-count">{commits.length}{commitsIncomplete ? '+' : ''}</span></h3>
             {commitsIncomplete && !commitsQuery.isFetching && (
               <p className="pr-empty-description">Showing the first {commits.length} commits from GitHub. The rest could not be read from the local clone.</p>
@@ -232,8 +245,8 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
             )) : <p className="pr-empty-description">No commits were returned by GitHub.</p>}
           </section>}
       </ViewerTabsPanel>
-      <ViewerTabsPanel value="diff" className="pr-diff-panel">
-        {diffError ? (
+      <ViewerTabsPanel value="diff" keepMounted className="pr-diff-panel">
+        {!visited.has('diff') ? null : diffError ? (
           <div className="viewer-message flex-col gap-3">
             <p className="pr-diff-error text-destructive">{diffError}</p>
             <Button variant="outline" size="sm" onClick={() => void diffQuery.refetch()}><IconRefresh /> Try again</Button>

@@ -93,7 +93,7 @@ The status refreshes only while the PR is open in the viewer and the window is v
 
 Returning to the window, reconnecting, changing the repository account, or manually refreshing checks immediately. If a refresh fails, the last status stays visible with a notice and **Retry**. Periodic refresh stops at GitHub's rate limit and resumes when you return to the window. A new head commit also refreshes the PR's details, commits, and code.
 
-The status is read from GitHub every time. A PR's details and conversation are reused for up to a minute, or ten for a merged or closed PR, so going back to a PR doesn't wait for GitHub; they are read again sooner when the status shows the PR changed on GitHub, and right away after you change anything through OpenTig.
+The status is read from GitHub every time. A PR's details and conversation are reused for up to a minute, or ten for a merged or closed PR, so going back to a PR doesn't wait for GitHub; they are read again sooner when the status shows the PR changed on GitHub, and right away after you change anything through OpenTig. In the viewer, a tab you have already opened keeps what it showed, so switching back to **Comments** or **Code** doesn't load them again.
 
 </details>
 

@@ -221,6 +221,21 @@ it('shows the shape of a PR it knows nothing about yet, instead of a spinner', a
   expect(container.querySelector('.spinner')).toBeNull();
 });
 
+it('keeps a visited tab as it was, instead of reading it again on return', async () => {
+  api.getPullRequestConversation.mockResolvedValue({ entries: [], truncated: false, partial: false });
+  api.getPullRequestDiff.mockResolvedValue({ path: 'pull/7', patch: '', binary: false, truncated: false, lineCount: 0 });
+  await render();
+  const open = async (name: string) => {
+    await act(async () => [...container.querySelectorAll<HTMLElement>('[role="tab"]')].find((tab) => tab.textContent === name)!.click());
+    await settle();
+  };
+  for (const name of ['Comments', 'Code', 'Summary', 'Comments', 'Code']) await open(name);
+  expect(api.getPullRequestConversation).toHaveBeenCalledTimes(1);
+  expect(api.getPullRequestDiff).toHaveBeenCalledTimes(1);
+  expect(api.getPullRequestDiff).toHaveBeenCalledWith('repo', 7, { baseOid: details.baseRefOid, headOid: details.headRefOid });
+  expect(container.querySelectorAll('[role="tabpanel"]:not([hidden])')).toHaveLength(1);
+});
+
 it('does not read the conversation until Comments is open', async () => {
   await render();
   expect(api.getPullRequestConversation).not.toHaveBeenCalled();

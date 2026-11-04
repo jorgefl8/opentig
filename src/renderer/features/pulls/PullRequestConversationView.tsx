@@ -37,11 +37,13 @@ async function readConversation(repositoryId: string, number: number) {
 }
 
 /** Comments and reviews come from third parties: they only reach the page through the sanitizing Markdown pipeline. */
-export function PullRequestConversationView({ repositoryId, number, url, live, draft, onDraftChange }: {
+export function PullRequestConversationView({ repositoryId, number, url, live, active = true, draft, onDraftChange }: {
   repositoryId: string;
   number: number;
   url: string;
   live: PullRequestLiveState | null;
+  /** The tab is showing. It stays mounted when it isn't, but its composer, floated on a phone, mustn't. */
+  active?: boolean;
   /** Kept by the viewer, so it survives switching tabs. */
   draft: string;
   onDraftChange(value: string): void;
@@ -50,6 +52,8 @@ export function PullRequestConversationView({ repositoryId, number, url, live, d
   const query = useQuery({
     queryKey: queryKeys.pullRequestConversation(repositoryId, number),
     queryFn: () => readConversation(repositoryId, number),
+    // The PR's live state reloads it as soon as GitHub reports a change.
+    staleTime: 60_000,
   });
   const conversation = query.data;
   const entries = conversation?.entries ?? [];
@@ -72,7 +76,7 @@ export function PullRequestConversationView({ repositoryId, number, url, live, d
       {shown.map((entry) => <ConversationEntry key={entry.id} entry={entry} repositoryId={repositoryId} number={number} />)}
       {conversation?.partial && <p className="pr-empty-description">GitHub didn't share every detail with this account, so some of the conversation may be missing.</p>}
       {conversation?.truncated && <p className="pr-empty-description">Showing the most recent comments and reviews. {url && <button className="pr-checks-all" onClick={() => openOnGitHub(url)}>Read the rest on GitHub <IconExternalLink aria-hidden="true" /></button>}</p>}
-      {live && <PullRequestComposer repositoryId={repositoryId} number={number} live={live} draft={draft} onDraftChange={onDraftChange} onRefresh={() => void query.refetch()} />}
+      {live && active && <PullRequestComposer repositoryId={repositoryId} number={number} live={live} draft={draft} onDraftChange={onDraftChange} onRefresh={() => void query.refetch()} />}
     </section>
   );
 }
