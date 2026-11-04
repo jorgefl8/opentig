@@ -69,6 +69,8 @@ Your CLI must support multi-account `auth token --user` and `auth status --json 
 
 The list reads one request for all PRs, which carries their reviews and checks but not whether each one can merge. A row therefore says **Review required**, **Changes requested**, **Checks failing**, **Checks pending**, **Approved**, **Checks passing**, or its state, such as **Draft** or **Merged into main**, and only the selected row shows the full status below. Number, title, and state are in the row; author, line counts, and time are in the viewer.
 
+OpenTig reads the list and the releases as soon as a GitHub repository opens, so the section shows them straight away; opening it refreshes a list read more than 30 seconds earlier, and keeps showing the old one meanwhile. Stack indicators fill in a moment after the rows.
+
 The filter button beside the tabs chooses which states appear. Its menu also has **Refresh**, **Open on GitHub** with the repository's name, and the effective account, which opens GitHub settings. **New** creates a PR from the current branch; while it's unavailable, its tooltip says why.
 
 **Current status**
@@ -141,7 +143,7 @@ Web links open in a new browser tab, or the system browser on desktop. Hover or 
 
 ### Native stacks
 
-Click a layer indicator such as **2/3** to open a native GitHub stack. Indicators appear beside the current branch PR, in PR rows, in the right-hand viewer, and in the mobile repository menu. On a phone a PR row names its layer in text instead, and the viewer has the indicator. Membership is read after the rows, so in the list the indicators appear a moment after the PRs. The viewer confirms membership with the PR's status, so for a PR the list didn't show, its indicator appears with the status rather than with the title.
+Click a layer indicator such as **2/3** to open a native GitHub stack. Indicators appear beside the current branch PR, in PR rows, in the right-hand viewer, and in the mobile repository menu. On a phone a PR row names its layer in text instead, and the viewer has the indicator. The viewer confirms membership with the PR's status, so for a PR the list didn't show, its indicator appears with the status rather than with the title.
 
 The menu lists layer states, titles, branches, and bases, including layers outside the current filter. Details load when opened. If a refresh fails, previously loaded layers remain available with a notice and retry.
 

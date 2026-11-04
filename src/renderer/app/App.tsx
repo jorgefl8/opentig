@@ -5,9 +5,10 @@ import { lastCloneParent, resumeBackgroundClone } from '@/features/onboarding/cl
 import { useGitHubAccount } from '@/features/pulls/useGitHubAccount';
 import { branchPullRequestQueryOptions } from '@/features/pulls/branch-pull-request-query';
 import { withStackMemberships } from '@/features/pulls/pull-request-list';
+import { releasesQueryOptions } from '@/features/pulls/releases-query';
 import { appDisplayName } from '@/lib/app-identity';
 import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { isModuleLoadError, lazyWithRetry } from '@/lib/lazy-with-retry';
+import { isModuleLoadError, lazyWithPreload, lazyWithRetry } from '@/lib/lazy-with-retry';
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   IconBrandGithub, IconFileArrowRight, IconFiles, IconGitCompare, IconHistory,
@@ -83,7 +84,7 @@ const Viewer = lazyWithRetry(() => import('@/features/viewer/Viewer'));
 const FilesView = lazyWithRetry(() => import('@/features/files/FilesView').then((module) => ({ default: module.FilesView })));
 const HistoryView = lazyWithRetry(() => import('@/features/history/HistoryView').then((module) => ({ default: module.HistoryView })));
 const SearchView = lazyWithRetry(() => import('@/features/search/SearchView').then((module) => ({ default: module.SearchView })));
-const PullRequestsView = lazyWithRetry(() => import('@/features/pulls/PullRequestsView').then((module) => ({ default: module.PullRequestsView })));
+const PullRequestsView = lazyWithPreload(() => import('@/features/pulls/PullRequestsView').then((module) => ({ default: module.PullRequestsView })));
 const QuickOpenDialog = lazyWithRetry(() => import('@/features/files/QuickOpenDialog').then((module) => ({ default: module.QuickOpenDialog })));
 const CreatePullRequestDialog = lazyWithRetry(() => import('@/features/pulls/CreatePullRequestDialog').then((module) => ({ default: module.CreatePullRequestDialog })));
 const sidebarFallback = <div className="view-loading" role="status"><IconLoader4 className="spinner" /> <ShimmeringText text="Loading…" /></div>;
@@ -271,6 +272,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       button: { title: 'Change', onClick: () => { setSettingsSection('github'); setSettingsOpen(true); } },
     });
   }), [appQueryClient]);
+  const githubReady = repository !== null && githubInfo?.isGitHub === true && ghStatus?.installed === true;
   const pullsQuery = useQuery<PullRequestSummary[]>({
     queryKey: queryKeys.pulls(repository?.id ?? '', pullRequestStates),
     queryFn: async () => {
@@ -289,8 +291,20 @@ export default function App({ initialView, initialSelection, pullRequestCreation
           .catch(() => undefined);
       }
     },
-    enabled: view === 'prs' && repository !== null && githubInfo?.isGitHub === true && ghStatus?.installed === true,
+    // Read before the GitHub section is opened, so it shows its list straight away; refreshed when it opens.
+    enabled: githubReady,
+    staleTime: 30_000,
+    gcTime: 30 * 60_000,
   });
+  // Opening the section refreshes a list read more than 30 seconds ago, while still showing it.
+  useEffect(() => {
+    if (view === 'prs' && repository) void appQueryClient.refetchQueries({ queryKey: queryKeys.pulls(repository.id, pullRequestStates), stale: true });
+  }, [appQueryClient, view, repository, pullRequestStates]);
+  useEffect(() => {
+    if (!githubReady || !repository) return;
+    PullRequestsView.preload();
+    void appQueryClient.prefetchQuery(releasesQueryOptions(repository.id));
+  }, [appQueryClient, githubReady, repository]);
   const pullNumbers = useMemo(() => pullsQuery.data?.map((pull) => pull.number) ?? [], [pullsQuery.data]);
   // Stack membership comes after the list, so the rows don't wait for it.
   const pullStacksQuery = useQuery({
