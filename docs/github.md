@@ -164,6 +164,8 @@ The viewer's header offers the next step for the PR, and **⋯** lists everythin
 
 Closing, deleting a branch, enabling auto-merge, adding to a queue, and rebasing a branch also ask first, in a popover beside the button or **⋯** that led there. Rebasing warns that it rewrites commits. Marking as ready or draft, reopening, disabling auto-merge, and updating a branch by merge run straight away, because they're easy to undo or keep commits as they are.
 
+Once you answer for the main button, its question closes and the button tells how it's going, such as **Merging…** and then **✓ Squashed and merged** once GitHub confirms it, before it gives way to the PR's new state. If GitHub refuses, the button comes back and the reason appears in a notice. With no answer it says **Checking…** while the PR is read again, and it never shows a tick for a result GitHub didn't confirm. A question asked from **⋯** stays open until its answer arrives.
+
 **Merge** only ever merges, and **Merge when ready** only arms auto-merge. Armed auto-merge shows its method in the status line and **Disable auto-merge**, even if the PR later conflicts. A PR in a queue shows **Manage on GitHub**, because it's taken out of the queue there.
 
 <details>

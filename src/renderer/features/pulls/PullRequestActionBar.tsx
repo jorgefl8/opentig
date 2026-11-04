@@ -1,11 +1,12 @@
-import { useEffect, useState, type MouseEvent, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Radio } from '@base-ui/react/radio';
 import { RadioGroup } from '@base-ui/react/radio-group';
-import { IconChevronDown, IconDots, IconExternalLink, IconGitBranch, IconGitMerge, IconLoader4, IconRefresh } from '@tabler/icons-react';
+import { IconCheck, IconChevronDown, IconDots, IconExternalLink, IconGitBranch, IconGitMerge, IconLoader4, IconRefresh } from '@tabler/icons-react';
 import { sileo } from 'sileo';
 import type { PullRequestAction, PullRequestActionInput, PullRequestActionResult, PullRequestDetails, PullRequestLiveState, PullRequestMergeMethod } from '../../../shared/contracts';
 import { allowedPullRequestActions, canDeleteBranchWithMerge, resolvePullRequestPrimary } from '../../../shared/pull-request-actions';
+import { AnimatedWidth } from '@/components/ui/animated-width';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -16,6 +17,7 @@ import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { mobileMainAction, type PullRequestTab } from '@/lib/mobile-main-action';
 import { opentig } from '@/lib/opentig-api';
 import { queryKeys } from '@/lib/query-client';
+import { cn } from '@/lib/utils';
 import { ConfirmPopover } from './ConfirmPopover';
 import { ghDetail, ghErrorTitle, isUncertainFailure, openOnGitHub } from './gh-utils';
 import { useGitHubAccount } from './useGitHubAccount';
@@ -23,6 +25,36 @@ import { pullRequestRevertUncertain, useViewerDraft } from './viewer-drafts';
 
 const MERGE_VERBS: Record<PullRequestMergeMethod, string> = { MERGE: 'Merge', SQUASH: 'Squash and merge', REBASE: 'Rebase and merge' };
 const MERGE_HELP: Record<PullRequestMergeMethod, string> = { MERGE: 'Keeps every commit and adds a merge commit', SQUASH: 'Combines the commits into one', REBASE: 'Replays the commits on the base branch' };
+const MERGED: Record<PullRequestMergeMethod, string> = { MERGE: 'Merged', SQUASH: 'Squashed and merged', REBASE: 'Rebased and merged' };
+
+/**
+ * What the main button says while its own action runs and once GitHub confirms it. A tick only follows
+ * a confirmed outcome: an unconfirmed one, a failure or no answer never shows one.
+ */
+type Progress = { phase: 'pending' | 'checking' | 'done' | 'leaving'; label: string; merged?: boolean };
+const DONE_FOR = 1_400;
+const LEAVE_FOR = 200;
+
+function pendingLabel(action: PullRequestAction, live: PullRequestLiveState): string {
+  switch (action) {
+    case 'merge': return live.mergeQueue.enabled ? 'Adding to queue…' : 'Merging…';
+    case 'enable-auto-merge': return 'Enabling auto-merge…';
+    case 'update-branch': return 'Updating branch…';
+    case 'ready': return 'Marking ready…';
+    default: return 'Working…';
+  }
+}
+
+function doneProgress(request: ActionRequest, result: PullRequestActionResult): Progress | null {
+  switch (result.outcome) {
+    case 'merged': return { phase: 'done', label: request.action === 'merge' ? MERGED[request.method] : 'Merged', merged: true };
+    case 'queued': return { phase: 'done', label: 'Added to queue' };
+    case 'auto-merge-enabled': return { phase: 'done', label: 'Auto-merge on' };
+    case 'updated': return { phase: 'done', label: 'Update requested' };
+    case 'done': return request.action === 'ready' ? { phase: 'done', label: 'Ready for review' } : null;
+    default: return null;
+  }
+}
 
 type ActionRequest = { action: 'merge'; method: PullRequestMergeMethod; deleteBranch?: boolean }
   | { action: 'enable-auto-merge'; method: PullRequestMergeMethod }
@@ -93,10 +125,35 @@ export function PullRequestActionBar({ repositoryId, details, live, refreshing, 
   const [deleteBranch, setDeleteBranch] = useState(false);
   // A revert with no answer may already exist. Offering it again could open a second one.
   const [revertUncertain, setRevertUncertain] = useViewerDraft(pullRequestRevertUncertain(repositoryId, details.number), () => false);
+  const [progress, setProgress] = useState<Progress | null>(null);
+  // Bumped when the main button's action fails, so the button gives a small shake.
+  const [nudge, setNudge] = useState(0);
+  const sawRefresh = useRef(false);
 
   // A question about a state that no longer holds would mislead, so it goes away with that state.
   const stateKey = [live.state, live.isDraft, live.headRefOid, live.mergeable, live.mergeStateStatus, live.autoMerge?.method, live.mergeQueue.queued].join('|');
   useEffect(() => { setQuestion(null); }, [stateKey]);
+
+  // A confirmed result stays on the button for a moment, then gives way to what the new state offers.
+  useEffect(() => {
+    if (progress?.phase !== 'done' && progress?.phase !== 'leaving') return;
+    const timer = window.setTimeout(() => setProgress((current) => current?.phase === 'done' ? { ...current, phase: 'leaving' } : null), progress.phase === 'done' ? DONE_FOR : LEAVE_FOR);
+    return () => window.clearTimeout(timer);
+  }, [progress]);
+  // With no answer, the button waits for the reread that follows, and never longer than a few seconds.
+  useEffect(() => {
+    if (progress?.phase !== 'checking') { sawRefresh.current = false; return; }
+    if (refreshing) sawRefresh.current = true;
+    else if (sawRefresh.current) setProgress(null);
+  }, [progress?.phase, refreshing]);
+  useEffect(() => {
+    if (progress?.phase !== 'checking') return;
+    const timer = window.setTimeout(() => setProgress(null), 8_000);
+    return () => window.clearTimeout(timer);
+  }, [progress?.phase]);
+
+  const primary = resolvePullRequestPrimary(live);
+  const primaryAction = primary.kind === 'action' ? primary.action : null;
 
   const mutation = useMutation({
     mutationFn: (request: ActionRequest) => {
@@ -105,6 +162,7 @@ export function PullRequestActionBar({ repositoryId, details, live, refreshing, 
     },
     onSuccess: (result, request) => {
       setQuestion(null);
+      setProgress((current) => current ? doneProgress(request, result) : null);
       if (result.state) queryClient.setQueryData(queryKeys.pullRequestLiveState(repositoryId, details.number), result.state);
       successToast(request, result, details);
       // Merging or removing a branch changes the remote refs even when periodic fetches are off.
@@ -116,9 +174,12 @@ export function PullRequestActionBar({ repositoryId, details, live, refreshing, 
       if (isUncertainFailure(reason)) {
         // It may be done already, so the question goes and what's on screen says how things stand.
         setQuestion(null);
+        setProgress((current) => current ? { phase: 'checking', label: 'Checking…' } : null);
         if (request.action === 'revert') setRevertUncertain(true);
         sileo.info({ title: 'No answer from GitHub yet', description: 'The action may have completed. OpenTig is checking the current status.', duration: 10_000 });
       } else {
+        if (progress) setNudge((count) => count + 1);
+        setProgress(null);
         sileo.error({ title: ghErrorTitle(detail), description: detail?.message ?? (reason instanceof Error ? reason.message : 'An unexpected error occurred.'), duration: 10_000 });
       }
       if (detail?.code === 'GH_ACCOUNT_UNRESOLVED') void accountQuery.refetch();
@@ -131,8 +192,14 @@ export function PullRequestActionBar({ repositoryId, details, live, refreshing, 
   });
   const busy = mutation.isPending;
   // A sheet's rows stay pressable while it slides away, so a second tap must not send a second request.
+  // The main button's own action is told on that button, so its question goes as soon as it's answered.
   const run = (request: ActionRequest) => {
-    if (!mutation.isPending) mutation.mutate(request);
+    if (mutation.isPending) return;
+    if (request.action === primaryAction) {
+      setQuestion(null);
+      setProgress({ phase: 'pending', label: pendingLabel(request.action, live) });
+    }
+    mutation.mutate(request);
   };
 
   /** A question asked from the menu hangs from the menu's button, because the item that asked it is gone. */
@@ -151,8 +218,6 @@ export function PullRequestActionBar({ repositoryId, details, live, refreshing, 
   };
   const fromPrimary = (action: PullRequestAction) => (event: MouseEvent<HTMLElement>) => start(action, event.currentTarget);
 
-  const primary = resolvePullRequestPrimary(live);
-  const primaryAction = primary.kind === 'action' ? primary.action : null;
   const allowed = allowedPullRequestActions(live);
   const menuActions = allowed.filter((action) => action !== primaryAction && action !== 'update-branch' && action !== 'disable-auto-merge' && !(action === 'revert' && revertUncertain));
   const canUpdateBranch = allowed.includes('update-branch');
@@ -169,6 +234,15 @@ export function PullRequestActionBar({ repositoryId, details, live, refreshing, 
     ...menuActions.map((action) => ({ label: MENU_LABELS[action] ?? action, disabled: !accountReady, danger: action === 'close' || action === 'delete-branch', onSelect: () => start(action, moreButton) })),
   ];
 
+  const progressContent = progress && <>
+    {progress.phase === 'done' || progress.phase === 'leaving' ? <IconCheck className="pr-primary-check" aria-hidden="true" /> : <IconLoader4 className="animate-spin" aria-hidden="true" />}
+    {progress.phase === 'done' || progress.phase === 'leaving'
+      ? <span className="pr-primary-label">{progress.label}</span>
+      : <ShimmeringText key={progress.label} className="pr-primary-label" text={progress.label} color="color-mix(in oklab, var(--primary-foreground) 60%, transparent)" shimmerColor="var(--primary-foreground)" />}
+  </>;
+  const progressClass = progress && cn('pr-primary-progress', progress.merged && 'pr-primary-merged');
+  const announcement = <span className="sr-only" role="status" aria-live="polite">{progress?.label ?? ''}</span>;
+
   const reasons = <>
     {primary.kind === 'text' && primary.label !== statusLabel && primary.label !== 'Draft' && <span className="pr-action-reason">{primary.label}</span>}
     {primary.kind === 'retry' && <>
@@ -179,7 +253,7 @@ export function PullRequestActionBar({ repositoryId, details, live, refreshing, 
   </>;
 
   if (phone) {
-    const floating = mobileMainAction({ screen: 'pull-request', tab, primary: primary.kind }) === 'pull-request-primary';
+    const floating = mobileMainAction({ screen: 'pull-request', tab, primary: progress ? 'action' : primary.kind }) === 'pull-request-primary';
     return (
       <span className="pr-action-bar">
         {reasons}
@@ -193,14 +267,19 @@ export function PullRequestActionBar({ repositoryId, details, live, refreshing, 
             items={canDisableAutoMerge ? [...menu, { label: 'Disable auto-merge', disabled: !accountReady, onSelect: () => run({ action: 'disable-auto-merge' }) }] : menu}
           />}
         </MobileViewerActions>
+        {announcement}
         {floating && <MobileMainAction>
-          {primary.kind === 'github' && <Button className="mobile-main-action" disabled={!details.url} onClick={() => openOnGitHub(details.url)}><IconExternalLink /> {primary.label}</Button>}
-          {primary.kind === 'action' && (
-            <Button className="mobile-main-action" disabled={busy || !accountReady} onClick={fromPrimary(primary.action)}>
-              {busy ? <IconLoader4 className="animate-spin" /> : primary.action === 'merge' || primary.action === 'enable-auto-merge' ? <IconGitMerge /> : null}
-              {busy ? <ShimmeringText text="Working…" /> : primary.label}
-            </Button>
-          )}
+          {progress
+            ? <Button className={cn('mobile-main-action', progressClass)} data-phase={progress.phase} disabled>{progressContent}</Button>
+            : <>
+              {primary.kind === 'github' && <Button className="mobile-main-action" disabled={!details.url} onClick={() => openOnGitHub(details.url)}><IconExternalLink /> {primary.label}</Button>}
+              {primary.kind === 'action' && (
+                <Button key={nudge} className={cn('mobile-main-action', nudge > 0 && 'pr-primary-nudge')} disabled={busy || !accountReady} onClick={fromPrimary(primary.action)}>
+                  {primary.action === 'merge' || primary.action === 'enable-auto-merge' ? <IconGitMerge /> : null}
+                  {primary.label}
+                </Button>
+              )}
+            </>}
         </MobileMainAction>}
         {question && <Confirmation question={question} live={live} details={details} login={account?.login ?? ''} busy={busy} method={method} deleteBranch={deleteBranch} phone onMethodChange={setMethod} onDeleteBranchChange={setDeleteBranch} onCancel={() => setQuestion(null)} onConfirm={run} />}
       </span>
@@ -212,14 +291,24 @@ export function PullRequestActionBar({ repositoryId, details, live, refreshing, 
       {reasons}
       {canDisableAutoMerge && <Button variant="ghost" size="xs" disabled={busy || !accountReady} onClick={() => run({ action: 'disable-auto-merge' })}>Disable auto-merge</Button>}
       {primary.kind === 'github' && details.url && <Button size="xs" onClick={() => openOnGitHub(details.url)}><IconExternalLink /> {primary.label}</Button>}
-      {primary.kind === 'action' && (
-        <span className={splitMerge ? 'pr-split-button' : 'contents'}>
-          <Button size="xs" className={splitMerge ? 'rounded-r-none' : undefined} disabled={busy || !accountReady} onClick={fromPrimary(primary.action)}>
-            {busy ? <IconLoader4 className="animate-spin" /> : primary.action === 'merge' || primary.action === 'enable-auto-merge' ? <IconGitMerge /> : null}
-            {busy ? <ShimmeringText text="Working…" /> : primary.label}
-          </Button>
-          {splitMerge && <Button size="xs" className="w-5.5 rounded-l-none border-l-primary-foreground/25 px-0" aria-label="Merge options" disabled={busy || !accountReady} onClick={fromPrimary(primary.action)}><IconChevronDown /></Button>}
-        </span>
+      {announcement}
+      {(progress || primary.kind === 'action') && (
+        <AnimatedWidth
+          key={nudge}
+          contentKey={progress ? `${progress.phase === 'leaving' ? 'done' : progress.phase}:${progress.label}` : `idle:${primaryAction}:${splitMerge}`}
+          className={cn('pr-primary', !progress && splitMerge && 'pr-split-button', !progress && nudge > 0 && 'pr-primary-nudge')}
+          data-phase={progress?.phase}
+        >
+          {progress
+            ? <Button size="xs" className={progressClass ?? undefined} disabled>{progressContent}</Button>
+            : primary.kind === 'action' && <>
+              <Button size="xs" className={splitMerge ? 'rounded-r-none' : undefined} disabled={busy || !accountReady} onClick={fromPrimary(primary.action)}>
+                {primary.action === 'merge' || primary.action === 'enable-auto-merge' ? <IconGitMerge /> : null}
+                {primary.label}
+              </Button>
+              {splitMerge && <Button size="xs" className="w-5.5 rounded-l-none border-l-primary-foreground/25 px-0" aria-label="Merge options" disabled={busy || !accountReady} onClick={fromPrimary(primary.action)}><IconChevronDown /></Button>}
+            </>}
+        </AnimatedWidth>
       )}
       {hasMenu && (
         <DropdownMenu>

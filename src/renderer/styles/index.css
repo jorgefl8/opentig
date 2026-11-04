@@ -1875,6 +1875,18 @@ section[data-sileo-viewport] [data-sileo-title] { text-transform: none; }
 :is(.pr-action-bar, .confirm-popover-actions) [data-slot="button"][data-size="xs"] svg { width: 14px; height: 14px; }
 .pr-action-bar [data-slot="button"][data-size="icon-xs"] { width: 28px; height: 28px; }
 .pr-action-bar .pr-split-button > [data-slot="button"]:last-child { width: 26px; padding-inline: 0; }
+.animated-width { display: inline-flex; flex: none; transition: width var(--motion-med) var(--ease-out), opacity var(--motion-med) var(--ease-out); }
+/* The main PR button telling its own action: Merging… while it runs, a tick once GitHub confirms it. */
+.pr-primary[data-phase="leaving"] { opacity: 0; }
+.pr-primary-nudge { animation: pr-primary-nudge .32s var(--ease-out); }
+:is(.pr-action-bar, .mobile-float) [data-slot="button"].pr-primary-progress:disabled { opacity: 1; }
+html .mobile-float .mobile-main-action.pr-primary-progress:disabled { background: var(--primary-fill); color: var(--primary-foreground); }
+:is(.pr-action-bar, .mobile-float) [data-slot="button"].pr-primary-merged:disabled { background: color-mix(in oklab, var(--pr-merged) 18%, transparent); color: var(--pr-merged); }
+.pr-primary-progress .pr-primary-label { animation: fade-rise var(--motion-fast) var(--ease-out); }
+.pr-primary-check path { stroke-dasharray: 24; stroke-dashoffset: 24; animation: pr-primary-check .35s .05s ease-out forwards; }
+@keyframes pr-primary-check { to { stroke-dashoffset: 0; } }
+@keyframes pr-primary-nudge { 25% { transform: translateX(-3px); } 50% { transform: translateX(3px); } 75% { transform: translateX(-2px); } }
+@media (prefers-reduced-motion: reduce) { .pr-primary-check path { stroke-dashoffset: 0; } }
 
 /* With a mouse the row's link covers its right edge while hovered, so the time and lines reach that edge the rest of the time. Unlayered and solid because it replaces the button's see-through hover. */
 @media (hover: hover) and (pointer: fine) and (min-width: 768px) {

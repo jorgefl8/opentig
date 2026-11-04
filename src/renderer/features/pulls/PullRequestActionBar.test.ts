@@ -109,15 +109,46 @@ describe('merging', () => {
     expect(api.runPullRequestAction).toHaveBeenCalledWith({ ...expectedRequest, action: 'merge', method: 'MERGE' });
   });
 
-  it('stays while the answer is being sent', async () => {
+  it('tells the merge on its button once the question is answered', async () => {
     api.runPullRequestAction.mockReturnValue(new Promise(() => undefined));
     await render();
     await click('Merge');
     await click('Squash and merge');
-    await act(async () => { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); });
-    await settle();
-    expect(panel()).not.toBeNull();
-    expect([...panel()!.querySelectorAll('button')].every(item => item.disabled)).toBe(true);
+    expect(panel()).toBeNull();
+    const pending = container.querySelector<HTMLButtonElement>('.pr-primary button')!;
+    expect(pending.textContent).toBe('Merging…');
+    expect(pending.disabled).toBe(true);
+    expect(container.querySelector('[aria-label="Merge options"]')).toBeNull();
+    expect(container.querySelector('[role="status"]')?.textContent).toBe('Merging…');
+  });
+
+  it('shows a tick once GitHub confirms the merge, then gives way to the new state', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      api.runPullRequestAction.mockResolvedValue({ outcome: 'merged', state: live({ state: 'MERGED' }) });
+      await render();
+      await click('Merge');
+      await click('Squash and merge');
+      expect(container.querySelector('.pr-primary button')?.textContent).toBe('Squashed and merged');
+      expect(container.querySelector('.pr-primary-merged .pr-primary-check')).not.toBeNull();
+      await render(live({ state: 'MERGED' }));
+      expect(container.querySelector('.pr-primary button')?.textContent).toBe('Squashed and merged');
+      await act(async () => { vi.advanceTimersByTime(1_400); });
+      expect(container.querySelector('.pr-primary')?.getAttribute('data-phase')).toBe('leaving');
+      await act(async () => { vi.advanceTimersByTime(200); });
+      expect(container.querySelector('.pr-primary')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('shows no tick when GitHub accepted but the result is unconfirmed', async () => {
+    api.runPullRequestAction.mockResolvedValue({ outcome: 'unconfirmed', state: null });
+    await render();
+    await click('Merge');
+    await click('Squash and merge');
+    expect(container.querySelector('.pr-primary-check')).toBeNull();
+    expect(button('Merge')?.disabled).toBe(false);
   });
 
   it('withdraws the question when the state it asked about changes', async () => {
@@ -161,14 +192,17 @@ describe('merging', () => {
 });
 
 describe('failures', () => {
-  it('shows GitHub\'s rejection, keeps the question and rereads the state', async () => {
+  it('shows GitHub\'s rejection, puts the button back and rereads the state', async () => {
     const invalidate = vi.spyOn(client, 'invalidateQueries');
     api.runPullRequestAction.mockRejectedValue(Object.assign(new Error('nope'), { detail: { code: 'GH_PROCESS_FAILED', operation: 'gh-pr-action', message: 'Pull Request is not mergeable' } }));
     await render();
     await click('Merge');
     await click('Squash and merge');
     expect(toast.error).toHaveBeenCalledWith(expect.objectContaining({ description: 'Pull Request is not mergeable' }));
-    expect(panel()).not.toBeNull();
+    expect(panel()).toBeNull();
+    expect(button('Merge')?.disabled).toBe(false);
+    expect(container.querySelector('.pr-primary-nudge')).not.toBeNull();
+    expect(container.querySelector('.pr-primary-check')).toBeNull();
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['repository', 'repo', 'pull-request-state'] });
   });
 
@@ -185,6 +219,8 @@ describe('failures', () => {
     expect(toast.error).not.toHaveBeenCalled();
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['repository', 'repo', 'pull-request-state'] });
     expect(panel()).toBeNull();
+    expect(container.querySelector('.pr-primary button')?.textContent).toBe('Checking…');
+    expect(container.querySelector('.pr-primary-check')).toBeNull();
   });
 
   it('asks for the account again when it changed', async () => {
@@ -461,11 +497,13 @@ describe('on a phone', () => {
     expect(sheet()).toBeNull();
   });
 
-  it('keeps the sheet open while the answer is on its way', async () => {
+  it('keeps a menu action\'s sheet open while the answer is on its way', async () => {
     let finish!: (value: unknown) => void;
     api.runPullRequestAction.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
     await renderPhone();
-    await act(async () => hosts.float!.querySelector('button')!.click());
+    await act(async () => hosts.actions!.querySelector<HTMLButtonElement>('.pr-more-actions')!.click());
+    await settle();
+    await act(async () => [...sheet()!.querySelectorAll('button')].find((row) => row.textContent === 'Close pull request…')!.click());
     await settle();
     await act(async () => sheet()!.querySelector<HTMLButtonElement>('.confirm-sheet-actions button')!.click());
     await settle();
@@ -473,9 +511,21 @@ describe('on a phone', () => {
     await settle();
     expect(sheet()).not.toBeNull();
     expect(sheet()!.hasAttribute('data-base-ui-swipe-ignore')).toBe(true);
-    await act(async () => { finish({ outcome: 'merged', state: live({ state: 'MERGED' }) }); });
+    await act(async () => { finish({ outcome: 'done', state: live({ state: 'CLOSED' }) }); });
     await settle();
     expect(sheet()).toBeNull();
+  });
+
+  it('closes the merge sheet once answered and tells the merge on the floating button', async () => {
+    api.runPullRequestAction.mockImplementation(() => new Promise(() => undefined));
+    await renderPhone();
+    await act(async () => hosts.float!.querySelector('button')!.click());
+    await settle();
+    await act(async () => sheet()!.querySelector<HTMLButtonElement>('.confirm-sheet-actions button')!.click());
+    await settle();
+    expect(sheet()).toBeNull();
+    expect(floating()).toEqual(['Merging…']);
+    expect(hosts.float!.querySelector('button')?.disabled).toBe(true);
   });
 
   it('offers the same menu from the top bar, with a dangerous item last and auto-merge among them', async () => {
