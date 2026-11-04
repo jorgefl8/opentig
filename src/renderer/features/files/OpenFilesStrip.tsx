@@ -189,6 +189,9 @@ function SortableFileTab({ tab, label, active, preview, register, onActivate, on
           {...listeners}
           onClick={() => onActivate(tab.path)}
           onDoubleClick={() => onPin(tab.path)}
+          // The browser starts middle-click autoscroll on press, in an overflowing strip, before the
+          // click that closes the tab. Declining the press keeps the wheel button for closing.
+          onMouseDown={(event) => { if (event.button === 1) event.preventDefault(); }}
           onAuxClick={(event) => {
             if (event.button !== 1) return;
             event.preventDefault();
