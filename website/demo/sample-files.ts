@@ -186,8 +186,10 @@ jobs:
       - run: npm ci
       - run: npm run lint
 
+  # Publishes the board from main; pull requests skip it.
   preview:
     needs: test
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -195,6 +197,65 @@ jobs:
         with:
           name: board-preview
           path: index.html
+`;
+
+export const sampleReleaseWorkflow = `name: Prepare release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version without the leading v, such as 0.5.0
+        required: true
+        type: string
+      prerelease:
+        description: Mark the draft as a pre-release
+        type: boolean
+        default: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+      - name: Install dependencies
+        run: npm ci
+      - name: Update the version
+        run: npm version "\${{ inputs.version }}" --no-git-tag-version
+      - name: Create the draft release
+        env:
+          GH_TOKEN: \${{ github.token }}
+        run: >
+          gh release create "v\${{ inputs.version }}" --draft --generate-notes
+          \${{ inputs.prerelease && '--prerelease' || '' }}
+`;
+
+export const sampleNightlyWorkflow = `name: Nightly checks
+
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: Which tests to run
+        type: choice
+        default: full
+        options: [full, smoke]
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+      - name: Install dependencies
+        run: npm ci
+      - name: Run the \${{ inputs.suite || 'full' }} suite
+        run: npm test
 `;
 
 export const samplePackage = `{

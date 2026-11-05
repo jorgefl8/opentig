@@ -7,7 +7,7 @@ import SmartScreenNotice from './SmartScreenNotice.astro';
 import InstallerScan from './InstallerScan.astro';
 import SectionHeading from './SectionHeading.astro';
 
-import { downloadUrl, downloadVersion, npmUrl } from '@/site';
+import { downloadUrl, downloadVersion, npmUrl, repositoryUrl } from '@/site';
 ---
 
 <section id="install" data-install class="px-4 sm:px-6 py-28 scroll-mt-20" aria-labelledby="install-heading">
@@ -44,7 +44,8 @@ import { downloadUrl, downloadVersion, npmUrl } from '@/site';
       <a href="/docs/web-access/" class="underline underline-offset-4 hover:text-foreground">Browser access guide</a>
       {' · '}
       <a href={installationPath} class="underline underline-offset-4 hover:text-foreground">Full installation guide</a>
-      {' · '}Pre-1.0, actively developed
+      {' · '}
+      <a href={`${repositoryUrl}/releases`} class="underline underline-offset-4 hover:text-foreground">Release notes</a>
     </p>
   </div>
 </section>

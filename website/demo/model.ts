@@ -1,5 +1,5 @@
 import { sampleHtml } from "./sample-html.ts";
-import { sampleLogo, samplePackage, sampleProgress, sampleReadme, sampleTasks, sampleTsconfig, sampleTypes, sampleWorkflow } from "./sample-files.ts";
+import { sampleLogo, sampleNightlyWorkflow, samplePackage, sampleProgress, sampleReadme, sampleReleaseWorkflow, sampleTasks, sampleTsconfig, sampleTypes, sampleWorkflow } from "./sample-files.ts";
 import { createTwoFilesPatch, diffLines } from "diff";
 import { findSearchMatches, type SearchReplaceRequest } from "../../src/shared/search.ts";
 import type {
@@ -20,6 +20,8 @@ export const repository = {
 export const sampleDate = "2026-01-15T12:00:00.000Z";
 export const initialFiles: Record<string, string> = {
   ".github/workflows/ci.yml": sampleWorkflow,
+  ".github/workflows/nightly.yml": sampleNightlyWorkflow,
+  ".github/workflows/prepare-release.yml": sampleReleaseWorkflow,
   "assets/logo.svg": sampleLogo,
   "data/tasks.json": sampleTasks,
   "index.html": sampleHtml,
