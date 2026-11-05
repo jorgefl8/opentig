@@ -1,4 +1,4 @@
-import type { ReleaseDetails, RepositoryWorkflowList, WorkflowRunSummary } from '../../src/shared/contracts';
+import type { ReleaseDetails, RepositoryWorkflowList } from '../../src/shared/contracts';
 import { sampleDate } from './model.ts';
 
 const notes = (headline: string, items: string[]) => `## ${headline}\n\n${items.map((item) => `- ${item}`).join('\n')}\n`;
@@ -28,18 +28,12 @@ const workflows: RepositoryWorkflowList = {
     { id: 3, name: 'Nightly checks', path: '.github/workflows/nightly.yml' },
   ],
 };
-const run = (databaseId: number, displayTitle: string, conclusion: string | null): WorkflowRunSummary => ({ databaseId, status: conclusion ? 'completed' : 'in_progress', conclusion, url: '', createdAt: sampleDate, displayTitle });
-const runs: Record<string, WorkflowRunSummary[]> = {
-  '.github/workflows/prepare-release.yml': [run(30, 'Prepare release', 'success'), run(29, 'Prepare release', 'failure')],
-  '.github/workflows/ci.yml': [run(40, 'Hide completed tasks from search results', null), run(39, 'Document the local test command', 'success')],
-};
 export const demoReleases = {
   workflows() { return structuredClone(workflows); },
   checkTag(tagName: string) {
     const release = samples.find((sample) => sample.tagName === tagName);
     return { exists: release?.tagExists === true, hasRelease: release !== undefined, defaultBranch: 'main' };
   },
-  workflowRuns(path: string) { return structuredClone(runs[path] ?? []); },
   list() {
     return samples.map(({ tagName, name, isDraft, isPrerelease, isLatest, isImmutable, createdAt, publishedAt }) => ({ tagName, name, isDraft, isPrerelease, isLatest, isImmutable, createdAt, publishedAt }));
   },

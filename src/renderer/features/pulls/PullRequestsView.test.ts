@@ -49,7 +49,7 @@ async function render(overrides: Partial<Parameters<typeof PullRequestsView>[0]>
   await act(async () => root.render(createElement(QueryClientProvider, { client }, createElement(TooltipProvider, null, createElement(PullRequestsView, {
     repositoryId: 'repo', account: { state: 'ready', login: 'sample' } as GitHubRepositoryAccount, onOpenGitHubSettings, info: { isGitHub: true, nameWithOwner: 'sample/demo' },
     ghStatus: { installed: true, authStatus: 'authenticated' } as never, pulls: [pull(2, { reviewDecision: 'REVIEW_REQUIRED' }), pull(1)], loading: false, error: null, states: ['OPEN'], activeNumber: null, createDisabledReason: null,
-    onRefresh, onStateChange, onSelect, onCreate: vi.fn(), onCopyCommand: vi.fn(), section: 'pulls', onSectionChange, activeRelease: null, onSelectRelease: vi.fn(), ...overrides,
+    onRefresh, onStateChange, onSelect, onCreate: vi.fn(), onCopyCommand: vi.fn(), section: 'pulls', onSectionChange, activeRelease: null, onSelectRelease: vi.fn(), activeRun: null, onSelectRun: vi.fn(), actionsWorkflowId: null, onActionsWorkflowChange: vi.fn(), ...overrides,
   })))));
   await settle();
 }
@@ -90,9 +90,11 @@ it('agrees with the viewer on the selected row, without asking GitHub for any ro
 it('switches sections with plain tabs', async () => {
   await render();
   const tabs = [...container.querySelectorAll('[role="tab"]')];
-  expect(tabs.map(tab => tab.textContent)).toEqual(['Pull requests', 'Releases']);
+  expect(tabs.map(tab => tab.textContent)).toEqual(['Pull requests', 'Actions', 'Releases']);
   expect(tabs[0]?.getAttribute('aria-selected')).toBe('true');
   await act(async () => (tabs[1] as HTMLElement).click());
+  expect(onSectionChange).toHaveBeenCalledWith('actions');
+  await act(async () => (tabs[2] as HTMLElement).click());
   expect(onSectionChange).toHaveBeenCalledWith('releases');
 });
 

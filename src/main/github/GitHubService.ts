@@ -5,7 +5,7 @@ import type { CliDetection } from '../ai/cli-selection';
 import { parsePullRequestStack, parseStackMemberships, stackMembershipQuery } from './PullRequestStackParser';
 import os from 'node:os';
 import { GITHUB_PR_COMMIT_PAGE } from '../../shared/contracts';
-import type { RepositoryInfo, CreatePullRequestInput, CreatePullRequestResult, CommentOnPullRequestInput, CreateReleaseInput, DeleteDraftReleaseInput, DeletePullRequestEntryInput, EditPullRequestEntryInput, PublishReleaseInput, ReleaseDetails, ReleaseTagCheck, ReleaseSummary, RepositoryWorkflowList, RunWorkflowInput, UpdateReleaseInput, WorkflowRunSummary, DiffResult, ReviewPullRequestInput, UpdatePullRequestInput, PullRequestActionInput, PullRequestActionResult, PullRequestConversation, PullRequestCommitList, GhCliStatus, GitHubRepositoryInfo, PullRequestDetails, PullRequestLiveState, PullRequestStack, PullRequestStackMembership, PullRequestState, PullRequestSummary } from '../../shared/contracts';
+import type { ActionRunDetails, ActionRunPage, RunnableWorkflowList, WorkflowTriggers, RepositoryInfo, CreatePullRequestInput, CreatePullRequestResult, CommentOnPullRequestInput, CreateReleaseInput, DeleteDraftReleaseInput, DeletePullRequestEntryInput, EditPullRequestEntryInput, PublishReleaseInput, ReleaseDetails, ReleaseTagCheck, ReleaseSummary, RepositoryWorkflowList, RunWorkflowInput, UpdateReleaseInput, DiffResult, ReviewPullRequestInput, UpdatePullRequestInput, PullRequestActionInput, PullRequestActionResult, PullRequestConversation, PullRequestCommitList, GhCliStatus, GitHubRepositoryInfo, PullRequestDetails, PullRequestLiveState, PullRequestStack, PullRequestStackMembership, PullRequestState, PullRequestSummary } from '../../shared/contracts';
 import { AiOperationError, GhOperationError } from '../../shared/errors';
 import type { CliProcessRunner, CliRunResult } from '../ai/CliProcessRunner';
 import type { CliResolver } from '../ai/CliResolver';
@@ -17,6 +17,7 @@ import { parsePullRequestLiveState, PR_LIVE_STATE_QUERY } from './PullRequestLiv
 import { PR_CONVERSATION_QUERY, parsePullRequestConversation } from './PullRequestConversationParser';
 import { PullRequestActionRunner } from './PullRequestActionRunner';
 import { GitHubReleases } from './GitHubReleases';
+import { GitHubActions } from './GitHubActions';
 import { withPrivateTextFile, type GhRunOptions } from './GitHubAccess';
 import { parseBranchPullRequestList, parseCreatedPullRequestUrl, parsePullRequestDetails, parsePullRequestList, PR_DETAIL_FIELDS, PR_SUMMARY_FIELDS, selectPullRequestsNewestFirst, sortPullRequestsNewestFirst } from './PullRequestParser';
 
@@ -34,6 +35,7 @@ const FINISHED_PULL_REQUEST_MS = 10 * 60_000;
 /** Lists are reused briefly, so reloading the app doesn't wait for GitHub; a change made through OpenTig drops them at once. */
 const LIST_MS = 30_000;
 const RELEASES_MS = 60_000;
+const WORKFLOW_TRIGGERS_MS = 30_000;
 
 export class GitHubService {
   private readonly reads = new ReadSingleFlight();
@@ -45,6 +47,7 @@ export class GitHubService {
   private readonly localGit: PullRequestLocalGit;
   private readonly actions: PullRequestActionRunner;
   private readonly releases: GitHubReleases;
+  private readonly actionRuns: GitHubActions;
   gitAccess?: import('../git/RepositoryGitAccess').RepositoryGitAccess;
   readonly accounts: GitHubAccountsService;
 
@@ -71,6 +74,7 @@ export class GitHubService {
     };
     this.actions = new PullRequestActionRunner(access);
     this.releases = new GitHubReleases(access);
+    this.actionRuns = new GitHubActions(access);
   }
 
   /** After a change made through OpenTig: nothing read before it is reused. */
@@ -430,8 +434,32 @@ export class GitHubService {
     return this.shareRead(repositoryId, ['workflows'], () => this.releases.listWorkflows(repositoryId));
   }
 
-  listWorkflowRuns(repositoryId: string, path: string): Promise<WorkflowRunSummary[]> {
-    return this.shareRead(repositoryId, ['workflow-runs', path], () => this.releases.listWorkflowRuns(repositoryId, path));
+  /** Each workflow with its triggers on the default branch, so the dialog knows which can run and what they ask for. */
+  async listRunnableWorkflows(repositoryId: string): Promise<RunnableWorkflowList> {
+    const [list, branches] = await Promise.all([
+      this.listWorkflows(repositoryId),
+      this.settledRead(repositoryId, ['branches'], () => WORKFLOW_TRIGGERS_MS, () => this.actionRuns.listBranches(repositoryId)),
+    ]);
+    const branch = list.defaultBranch;
+    const triggers = await Promise.all(list.workflows.map((workflow) => branch ? this.getWorkflowTriggers(repositoryId, workflow.path, branch).catch(() => null) : null));
+    return {
+      ...list,
+      workflows: list.workflows.map((workflow, index) => ({ ...workflow, triggers: triggers[index] ?? null })),
+      branches: branch ? [branch, ...branches.filter((name) => name !== branch)] : branches,
+    };
+  }
+
+  /** A branch's file can change at any time, so it's only kept briefly. */
+  getWorkflowTriggers(repositoryId: string, path: string, ref: string): Promise<WorkflowTriggers | null> {
+    return this.settledRead(repositoryId, ['workflow-triggers', path, ref], () => WORKFLOW_TRIGGERS_MS, () => this.actionRuns.workflowTriggers(repositoryId, path, ref));
+  }
+
+  listActionRuns(repositoryId: string, workflowId: number | null, page = 1): Promise<ActionRunPage> {
+    return this.shareRead(repositoryId, ['action-runs', workflowId, page], () => this.actionRuns.listRuns(repositoryId, workflowId, page));
+  }
+
+  getActionRun(repositoryId: string, runId: number): Promise<ActionRunDetails> {
+    return this.shareRead(repositoryId, ['action-run', runId], () => this.actionRuns.viewRun(repositoryId, runId));
   }
 
   runWorkflow(input: RunWorkflowInput): Promise<void> {

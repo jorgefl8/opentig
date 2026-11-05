@@ -27,6 +27,7 @@ const MarkdownFileViewer = lazyWithRetry(() => import('@/features/markdown/Markd
 const EditableFileViewer = lazyWithRetry(() => import('./EditableFileViewer').then((module) => ({ default: module.EditableFileViewer })));
 const HtmlFileViewer = lazyWithRetry(() => import('./HtmlFileViewer').then((module) => ({ default: module.HtmlFileViewer })));
 const ReleaseViewer = lazyWithRetry(() => import('@/features/pulls/ReleaseViewer').then((module) => ({ default: module.ReleaseViewer })));
+const WorkflowRunViewer = lazyWithRetry(() => import('@/features/actions/WorkflowRunViewer').then((module) => ({ default: module.WorkflowRunViewer })));
 const PdfFileViewer = lazyWithRetry(() => import('./PdfFileViewer').then((module) => ({ default: module.PdfFileViewer })));
 const ImageFileViewer = lazyWithRetry(() => import('./ImageFileViewer').then((module) => ({ default: module.ImageFileViewer })));
 const SvgFileViewer = lazyWithRetry(() => import('./ImageFileViewer').then((module) => ({ default: module.SvgFileViewer })));
@@ -39,6 +40,7 @@ export type ViewerSelection =
   | { type: 'commit-file'; oid: string; path: string; oldPath?: string | undefined }
   | { type: 'pull-request'; number: number }
   | { type: 'release'; tag: string }
+  | { type: 'workflow-run'; runId: number; jobId?: number | undefined }
   | null;
 
 /**
@@ -131,7 +133,7 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
     const token = ++requestToken.current;
     setError(null);
     // Pull request selections fetch their own data inside PullRequestViewer.
-    if (!selection || selection.type === 'pull-request' || selection.type === 'release' || (selection.type === 'file' && /\.pdf$/i.test(selection.path))) { setData(null); setLoading(false); return; }
+    if (!selection || selection.type === 'pull-request' || selection.type === 'release' || selection.type === 'workflow-run' || (selection.type === 'file' && /\.pdf$/i.test(selection.path))) { setData(null); setLoading(false); return; }
     setLoading(true);
     const run = async () => {
       try {
@@ -254,6 +256,12 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
     content = (
       <Suspense fallback={<><MobileViewerTitle title={selection.tag} /><ViewerLoading /></>}>
         <ReleaseViewer key={`${repositoryId}:${selection.tag}`} repositoryId={repositoryId} tagName={selection.tag} onClose={() => onSelect(null)} />
+      </Suspense>
+    );
+  } else if (selection.type === 'workflow-run') {
+    content = (
+      <Suspense fallback={<><MobileViewerTitle title={`Run ${selection.runId}`} /><ViewerLoading /></>}>
+        <WorkflowRunViewer key={`${repositoryId}:${selection.runId}`} repositoryId={repositoryId} runId={selection.runId} jobId={selection.jobId ?? null} />
       </Suspense>
     );
   } else if (selection.type === 'file' && /\.pdf$/i.test(selection.path)) {
@@ -574,6 +582,7 @@ function documentKey(repositoryId: string, selection: ViewerSelection): string {
   if (!selection) return `${repositoryId}:empty`;
   if (selection.type === 'pull-request') return `${repositoryId}:pull:${selection.number}`;
   if (selection.type === 'release') return `${repositoryId}:release:${selection.tag}`;
+  if (selection.type === 'workflow-run') return `${repositoryId}:workflow-run:${selection.runId}`;
   if (selection.type === 'commit') return `${repositoryId}:commit:${selection.oid}`;
   if (selection.type === 'commit-file') return `${repositoryId}:commit-file:${selection.oid}:${selection.oldPath ?? ''}:${selection.path}`;
   if (selection.type === 'diff') return `${repositoryId}:diff:${selection.kind}:${selection.path}`;

@@ -835,7 +835,8 @@ export class GitRepositoryOperations {
       throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'select-worktree', message: 'This worktree is being removed.' });
     }
     const worktree = await this.findWorktree(repositoryId, targetPath);
-    if (!worktree || worktree.locked || worktree.prunable || worktree.bare) {
+    // A lock only stops pruning, moving and removing; tools such as Claude Code lock the worktrees they work in.
+    if (!worktree || worktree.prunable || worktree.bare) {
       throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'select-worktree', message: 'The worktree is unavailable.' });
     }
     return this.repositories.openPath(worktree.path);
@@ -1318,6 +1319,22 @@ export class GitRepositoryOperations {
     if (selector) {
       await run(['stash', 'drop', selector], { operation, maxOutputBytes: 4 * 1024 * 1024 });
     }
+  }
+
+  /**
+   * Links name commits the history hasn't listed yet. A full hash that Git
+   * knows as a commit here can then open in the commit viewer like a listed one.
+   */
+  async recognizeCommit(repositoryId: string, oid: string): Promise<boolean> {
+    if (!/^([0-9a-f]{40}|[0-9a-f]{64})$/i.test(oid)) return false;
+    const normalized = oid.toLowerCase();
+    if (this.knownOids.get(repositoryId)?.has(normalized)) return true;
+    const repository = this.repositories.get(repositoryId);
+    const type = await this.git.run(repository.path, ['cat-file', '-t', normalized], { operation: 'commit-recognize', readOnly: true })
+      .then((output) => output.stdout.toString('utf8').trim(), () => null);
+    if (type !== 'commit') return false;
+    this.rememberOid(repositoryId, normalized);
+    return true;
   }
 
   private rememberOid(repositoryId: string, oid: string): void {

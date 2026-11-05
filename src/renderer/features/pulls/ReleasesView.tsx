@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { IconDots, IconLoader4, IconPlayerPlay, IconPlus } from '@tabler/icons-react';
+import { IconDots, IconLoader4, IconPlus } from '@tabler/icons-react';
 import { formatDate } from '@shared/date-format';
 import type { GitHubRepositoryAccount } from '@shared/github-accounts';
 import type { ReleaseSummary } from '../../../shared/contracts';
@@ -12,7 +12,6 @@ import { releaseStateLabel, releaseStateTone } from './gh-utils';
 import { GitHubSectionMenu } from './GitHubSectionMenu';
 import { releasesQueryOptions } from './releases-query';
 import { opentig } from '@/lib/opentig-api';
-import { RunWorkflowDialog } from './RunWorkflowDialog';
 
 
 export function ReleasesTools({ repositoryId, nameWithOwner, account, onOpenGitHubSettings, onSelect }: {
@@ -23,7 +22,6 @@ export function ReleasesTools({ repositoryId, nameWithOwner, account, onOpenGitH
   onSelect(tagName: string): void;
 }) {
   const [creating, setCreating] = useState(false);
-  const [running, setRunning] = useState(false);
   const query = useQuery(releasesQueryOptions(repositoryId));
   const queryClient = useQueryClient();
   return (
@@ -40,14 +38,9 @@ export function ReleasesTools({ repositoryId, nameWithOwner, account, onOpenGitH
         onOpenGitHubSettings={onOpenGitHubSettings}
       />
       <Tooltip>
-        <TooltipTrigger render={<Button variant="ghost" size="icon-xs" className="change-action-button" onClick={() => setRunning(true)} aria-label="Run a workflow" />}><IconPlayerPlay /></TooltipTrigger>
-        <TooltipContent>Run a workflow, such as the one that prepares a release</TooltipContent>
-      </Tooltip>
-      <Tooltip>
         <TooltipTrigger render={<Button variant="ghost" size="icon-xs" className="change-action-button" onClick={() => setCreating(true)} aria-label="Create a draft release" />}><IconPlus /></TooltipTrigger>
         <TooltipContent>Create a draft release</TooltipContent>
       </Tooltip>
-      {running && <RunWorkflowDialog repositoryId={repositoryId} onClose={() => setRunning(false)} />}
       {creating && <CreateReleaseDialog repositoryId={repositoryId} onClose={() => setCreating(false)} onCreated={onSelect} />}
     </>
   );

@@ -114,3 +114,18 @@ describe('GitRepositoryOperations commit diffs', () => {
     expect(buildDiffFileEntries(diff.patch)).toHaveLength(1);
   });
 });
+
+describe('GitRepositoryOperations linked commits', () => {
+  it('opens a commit a link names before the history has listed it, and only commits this repository has', async () => {
+    const fixture = await standaloneRepository();
+    const oid = (await git(fixture.work, ['rev-parse', 'HEAD'])).trim();
+    const tree = (await git(fixture.work, ['rev-parse', 'HEAD^{tree}'])).trim();
+    await expect(fixture.operations.commitFiles(fixture.repositoryId, oid)).rejects.toThrow('Commit not recognized.');
+
+    expect(await fixture.operations.recognizeCommit(fixture.repositoryId, oid.toUpperCase())).toBe(true);
+    await expect(fixture.operations.commitFiles(fixture.repositoryId, oid)).resolves.toBeInstanceOf(Array);
+    expect(await fixture.operations.recognizeCommit(fixture.repositoryId, tree)).toBe(false);
+    expect(await fixture.operations.recognizeCommit(fixture.repositoryId, 'f'.repeat(40))).toBe(false);
+    expect(await fixture.operations.recognizeCommit(fixture.repositoryId, '--all')).toBe(false);
+  });
+});

@@ -118,6 +118,7 @@ export const OPEN_TIG_SERVER_COMMANDS = {
   'commits.undoLatest': command(IPC.commitUndoLatest, 'undo-latest-commit', true),
   'commits.list': command(IPC.commitsList, 'history', false),
   'commits.files': command(IPC.commitsFiles, 'commit-files', false),
+  'commits.recognize': command(IPC.commitsRecognize, 'commit-recognize', false),
 
   'refs.listBranches': command(IPC.branchesList, 'branches', false),
   'refs.switchBranch': command(IPC.branchSwitch, 'switch-branch', true, { timeoutMs: SWITCH_BRANCH_TIMEOUT_MS }),
@@ -176,8 +177,11 @@ export const OPEN_TIG_SERVER_COMMANDS = {
   'github.deleteDraftRelease': command(IPC.githubReleaseDelete, 'gh-release-delete', true, { timeoutMs: GITHUB_ACTION_TIMEOUT_MS }),
   'github.publishRelease': command(IPC.githubReleasePublish, 'gh-release-publish', true, { timeoutMs: GITHUB_ACTION_TIMEOUT_MS }),
   'github.listWorkflows': command(IPC.githubWorkflowList, 'gh-workflow-list', false, { timeoutMs: GITHUB_READ_TIMEOUT_MS }),
-  'github.listWorkflowRuns': command(IPC.githubWorkflowRuns, 'gh-workflow-runs', false, { timeoutMs: GITHUB_READ_TIMEOUT_MS }),
+  'github.listRunnableWorkflows': command(IPC.githubWorkflowRunnable, 'gh-workflow-runnable', false, { timeoutMs: GITHUB_READ_TIMEOUT_MS }),
+  'github.getWorkflowTriggers': command(IPC.githubWorkflowTriggers, 'gh-workflow-triggers', false, { timeoutMs: GITHUB_READ_TIMEOUT_MS }),
   'github.runWorkflow': command(IPC.githubWorkflowRun, 'gh-workflow-run', true, { timeoutMs: GITHUB_ACTION_TIMEOUT_MS }),
+  'github.listActionRuns': command(IPC.githubActionRunList, 'gh-action-run-list', false, { timeoutMs: GITHUB_READ_TIMEOUT_MS }),
+  'github.getActionRun': command(IPC.githubActionRunView, 'gh-action-run-view', false, { timeoutMs: GITHUB_READ_TIMEOUT_MS }),
   'github.generateDraft': command(IPC.githubPrDraft, 'ai-pr-draft', true, { timeoutMs: AI_SERVER_TIMEOUT_MS }),
   'github.cancelDraft': command(IPC.githubPrDraftCancel, 'ai-pr-draft-cancel', true),
 

@@ -22,8 +22,10 @@ import { LazyPullRequestViewer } from './pull-request-viewer-chunks';
 
 const ReleasesView = lazyWithPreload(() => import('./ReleasesView').then((module) => ({ default: module.ReleasesView })));
 const ReleasesTools = lazyWithPreload(() => import('./ReleasesView').then((module) => ({ default: module.ReleasesTools })));
+const ActionsView = lazyWithPreload(() => import('@/features/actions/ActionsView').then((module) => ({ default: module.ActionsView })));
+const ActionsTools = lazyWithPreload(() => import('@/features/actions/ActionsView').then((module) => ({ default: module.ActionsTools })));
 
-export type PullRequestsSection = 'pulls' | 'releases';
+export type PullRequestsSection = 'pulls' | 'actions' | 'releases';
 
 /** Two lines of text and the row's padding; rows are measured once rendered. */
 const PULL_ROW_HEIGHT = 49;
@@ -50,11 +52,16 @@ interface PullRequestsViewProps {
   onSectionChange(section: PullRequestsSection): void;
   activeRelease: string | null;
   onSelectRelease(tagName: string): void;
+  activeRun: number | null;
+  onSelectRun(runId: number): void;
+  /** The workflow the Actions list shows, or all of them. */
+  actionsWorkflowId: number | null;
+  onActionsWorkflowChange(workflowId: number | null): void;
 }
 
 export function PullRequestsView(props: PullRequestsViewProps) {
   // So opening a PR or the Releases tab doesn't wait for its code.
-  useEffect(() => { LazyPullRequestViewer.preload(); ReleasesView.preload(); ReleasesTools.preload(); }, []);
+  useEffect(() => { LazyPullRequestViewer.preload(); ReleasesView.preload(); ReleasesTools.preload(); ActionsView.preload(); ActionsTools.preload(); }, []);
   if (props.info === null) {
     return <div className="view-loading" role="status"><IconLoader4 className="spinner" /> <ShimmeringText text="Checking repository…" /></div>;
   }
@@ -100,14 +107,21 @@ export function PullRequestsView(props: PullRequestsViewProps) {
   return (
     <ViewerTabs value={props.section} onValueChange={props.onSectionChange} className="pulls-section">
       <div className="pulls-section-head">
-        <ViewerTabsList label="GitHub" items={[{ value: 'pulls', label: 'Pull requests' }, { value: 'releases', label: 'Releases' }]} />
+        <ViewerTabsList label="GitHub" items={[{ value: 'pulls', label: 'Pull requests' }, { value: 'actions', label: 'Actions' }, { value: 'releases', label: 'Releases' }]} />
         <span className="pulls-section-tools">
           {props.section === 'pulls'
             ? <PullsTools {...props} nameWithOwner={props.info.nameWithOwner} />
+            : props.section === 'actions'
+            ? <Suspense fallback={null}><ActionsTools repositoryId={props.repositoryId} nameWithOwner={props.info.nameWithOwner} account={props.account} onOpenGitHubSettings={props.onOpenGitHubSettings} workflowId={props.actionsWorkflowId} onWorkflowChange={props.onActionsWorkflowChange} onSelect={props.onSelectRun} /></Suspense>
             : <Suspense fallback={null}><ReleasesTools repositoryId={props.repositoryId} nameWithOwner={props.info.nameWithOwner} account={props.account} onOpenGitHubSettings={props.onOpenGitHubSettings} onSelect={props.onSelectRelease} /></Suspense>}
         </span>
       </div>
       <ViewerTabsPanel value="pulls" className="pulls-section-panel" tabIndex={-1}><PullsList {...props} /></ViewerTabsPanel>
+      <ViewerTabsPanel value="actions" className="pulls-section-panel" tabIndex={-1}>
+        <Suspense fallback={<div className="view-loading" role="status"><IconLoader4 className="spinner" /> <ShimmeringText text="Loading workflow runs…" /></div>}>
+          <ActionsView repositoryId={props.repositoryId} workflowId={props.actionsWorkflowId} activeRunId={props.activeRun} onSelect={props.onSelectRun} />
+        </Suspense>
+      </ViewerTabsPanel>
       <ViewerTabsPanel value="releases" className="pulls-section-panel" tabIndex={-1}>
         <Suspense fallback={<div className="view-loading" role="status"><IconLoader4 className="spinner" /> <ShimmeringText text="Loading releases…" /></div>}>
           <ReleasesView repositoryId={props.repositoryId} activeTag={props.activeRelease} onSelect={props.onSelectRelease} />

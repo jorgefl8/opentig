@@ -66,11 +66,18 @@ it('still switches branches that no worktree holds', async () => {
 });
 
 it('refuses a branch whose worktree can not be opened', async () => {
-  await open({ worktrees: worktreeProps([main, { ...hotfix, locked: 'in use' } as WorktreeInfo]) });
+  await open({ worktrees: worktreeProps([main, { ...hotfix, prunable: 'gitdir file points to non-existent location' } as WorktreeInfo]) });
   expect(option('hotfix')?.textContent).toContain('In use');
   await act(async () => option('hotfix')!.click());
   expect(onSelectWorktree).not.toHaveBeenCalled();
   expect(onBranch).not.toHaveBeenCalled();
+});
+
+it('opens the worktree of a branch even when a tool has locked it', async () => {
+  await open({ worktrees: worktreeProps([main, { ...hotfix, locked: 'claude session hotfix (pid 3692)' } as WorktreeInfo]) });
+  expect(option('hotfix')?.textContent).toContain('Open');
+  await act(async () => option('hotfix')!.click());
+  expect(onSelectWorktree).toHaveBeenCalledExactlyOnceWith(hotfix.path);
 });
 
 it('keeps other worktrees reachable during a read-only operation while branches stay locked', async () => {

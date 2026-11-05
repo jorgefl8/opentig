@@ -362,9 +362,9 @@ describe('release arguments', () => {
 });
 
 describe('workflow arguments', () => {
-  const run = { repositoryId: 'repo', path: '.github/workflows/release.yml', ref: 'main', expectedAccount: { login: 'sample', revision: 1 } };
-  it('accepts a workflow file on a branch', () => {
-    expect(runWorkflowArg(run)).toMatchObject({ path: '.github/workflows/release.yml', ref: 'main' });
+  const run = { repositoryId: 'repo', path: '.github/workflows/release.yml', ref: 'main', inputs: { version: '0.3.0' }, expectedAccount: { login: 'sample', revision: 1 } };
+  it('accepts a workflow file on a branch, with its inputs', () => {
+    expect(runWorkflowArg(run)).toMatchObject({ path: '.github/workflows/release.yml', ref: 'main', inputs: { version: '0.3.0' } });
     expect(workflowPathArg('.github/workflows/ci.yaml', 'gh-workflow-runs')).toBe('.github/workflows/ci.yaml');
   });
   it.each(['--help', 'release.yml', '.github/workflows/../../evil.yml', '.github/workflows/a/b.yml', '.github/workflows/release.txt'])('rejects the path %s', (path) => {
@@ -372,6 +372,14 @@ describe('workflow arguments', () => {
   });
   it('rejects a ref that could be read as a flag', () => {
     expect(() => runWorkflowArg({ ...run, ref: '--foo' })).toThrow('Invalid release data.');
+  });
+  it.each([
+    ['a name that could be read as a flag', { '--repo': 'x' }],
+    ['a name with a space', { 'a b': 'x' }],
+    ['a value that is not text', { version: 3 }],
+    ['more than GitHub allows', Object.fromEntries(Array.from({ length: 26 }, (_, index) => [`input${index}`, 'x']))],
+  ])('rejects inputs with %s', (_name, inputs) => {
+    expect(() => runWorkflowArg({ ...run, inputs })).toThrow('Invalid release data.');
   });
   it('checks a publication', () => {
     expect(publishReleaseArg({ repositoryId: 'repo', tagName: 'v1', expectedDatabaseId: 1, expectedTagExists: false, expectedAccount: run.expectedAccount })).toMatchObject({ tagName: 'v1', expectedTagExists: false });

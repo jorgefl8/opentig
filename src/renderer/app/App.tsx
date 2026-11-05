@@ -207,6 +207,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   const [undoingCommit, setUndoingCommit] = useState(false);
   const [pullRequestStates, setPullRequestStates] = useState<PullRequestState[]>(['OPEN']);
   const [pullRequestsSection, setPullRequestsSection] = useState<PullRequestsSection>('pulls');
+  const [actionsWorkflowId, setActionsWorkflowId] = useState<number | null>(null);
   const [createPrOpen, setCreatePrOpen] = useState(false);
   // Repository whose commit authorship editor is open, so a stale toast cannot open it for another repository.
   const [authorshipRepositoryId, setAuthorshipRepositoryId] = useState<string | null>(null);
@@ -1092,6 +1093,20 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     if (selection) setMobilePane('viewer');
     return true;
   }, []);
+  // A linked commit may not be among the history's listed ones, or not fetched yet.
+  const openLinkedCommit = useCallback(async (oid: string) => {
+    const repositoryId = repositoryRef.current?.id;
+    if (!repositoryId) return;
+    try {
+      if (!await opentig.commits.recognize(repositoryId, oid)) {
+        sileo.error({ title: 'Commit not in this repository yet', description: `${oid.slice(0, 7)} isn't in your local copy. Fetch or pull to get it, or open it on GitHub.`, duration: 10_000 });
+        return;
+      }
+      if (repositoryRef.current?.id === repositoryId) selectViewer({ type: 'commit', oid, subject: oid.slice(0, 8) });
+    } catch (reason) {
+      reportError('Could not open the commit', reason);
+    }
+  }, [selectViewer]);
   const githubNameWithOwner = githubInfo?.isGitHub ? githubInfo.nameWithOwner : null;
   // Links into this repository, wherever they're shown, can open here as well as on GitHub.
   const repositoryLinks = useMemo<RepositoryLinks | null>(() => githubNameWithOwner ? {
@@ -1099,9 +1114,10 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     open: (target) => {
       if (target.kind === 'pull') selectViewer({ type: 'pull-request', number: target.number });
       else if (target.kind === 'release') selectViewer({ type: 'release', tag: target.tag });
-      else selectViewer({ type: 'commit', oid: target.oid, subject: target.oid.slice(0, 8) });
+      else if (target.kind === 'workflow-run') selectViewer({ type: 'workflow-run', runId: target.runId, ...(target.jobId ? { jobId: target.jobId } : {}) });
+      else void openLinkedCommit(target.oid);
     },
-  } : null, [githubNameWithOwner, selectViewer]);
+  } : null, [githubNameWithOwner, openLinkedCommit, selectViewer]);
 
   /** The single entry point for every `type: 'file'` selection in the app. */
   const openFile = useCallback((path: string, mode: OpenMode = 'preview'): boolean => {
@@ -2771,6 +2787,10 @@ export default function App({ initialView, initialSelection, pullRequestCreation
                   onSectionChange={setPullRequestsSection}
                   activeRelease={viewerSelection?.type === 'release' ? viewerSelection.tag : null}
                   onSelectRelease={(tag) => { selectViewer({ type: 'release', tag }); }}
+                  activeRun={viewerSelection?.type === 'workflow-run' ? viewerSelection.runId : null}
+                  onSelectRun={(runId) => { selectViewer({ type: 'workflow-run', runId }); }}
+                  actionsWorkflowId={actionsWorkflowId}
+                  onActionsWorkflowChange={setActionsWorkflowId}
                   onCreate={() => setCreatePrOpen(true)}
                   onCopyCommand={(command) => {
                     void writeClipboardText(command)
@@ -2946,6 +2966,9 @@ function isPerformanceSelection(value: unknown): value is ViewerSelection {
       && (selection.oldPath === undefined || typeof selection.oldPath === 'string');
   }
   if (selection.type === 'release') return typeof selection.tag === 'string';
+  if (selection.type === 'workflow-run') {
+    return typeof selection.runId === 'number' && (selection.jobId === undefined || typeof selection.jobId === 'number');
+  }
   return selection.type === 'pull-request' && typeof selection.number === 'number';
 }
 

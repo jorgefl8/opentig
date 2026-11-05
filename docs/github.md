@@ -77,7 +77,7 @@ The filter button beside the tabs chooses which states appear. Its menu also has
 
 While a PR is open in the viewer, a line under its title shows where it stands according to GitHub: **Ready to merge**, **Review required**, **Required checks failing**, **2 commits behind main**, **Conflicts with main**, **In merge queue**, or **A branch rule blocks merging** when GitHub blocks it for a reason OpenTig can't see; otherwise its state, such as **Draft**, **Merged into main**, or **Closed**. Armed auto-merge appears there as text with its method. Reading this status never changes anything on GitHub.
 
-**Checks** lists the individual checks, and the summary on that line, such as **2 checks passed**, takes you there. What needs attention comes first, then what's in progress and what has completed. Required checks are marked, and a row opens that check on GitHub. A check that ran more than once shows its newest run. Past GitHub's first 100 checks, the list says so and links to the rest. If GitHub withholds details from your account, the list says some checks may be missing.
+**Checks** lists the individual checks, and the summary on that line, such as **2 checks passed**, takes you there. What needs attention comes first, then what's in progress and what has completed. Required checks are marked. A GitHub Actions check of this repository opens its run in OpenTig, at that job; other checks open on GitHub. A check that ran more than once shows its newest run. Past GitHub's first 100 checks, the list says so and links to the rest. If GitHub withholds details from your account, the list says some checks may be missing.
 
 The latest verdict of each reviewer also appears on that line, marked if it was given before the latest commit. The author, last update, and labels are in the muted line above it.
 
@@ -206,7 +206,7 @@ Optional AI generation, with its provider and model, is in the dialog footer. Lo
 
 ## Manage releases
 
-In **GitHub**, switch to **Releases** to list the repository's releases, including drafts if your account can see them. Each row has the title and, at the right, the date, after the state unless it's simply published. Select one to read its notes and assets in the viewer; the line under its title gives its state and tag. The tools beside the tabs run a workflow and create a draft, and the menu next to them has **Refresh**, **Open on GitHub**, and the account.
+In **GitHub**, switch to **Releases** to list the repository's releases, including drafts if your account can see them. Each row has the title and, at the right, the date, after the state unless it's simply published. Select one to read its notes and assets in the viewer; the line under its title gives its state and tag. The tool beside the tabs creates a draft, and the menu next to it has **Refresh**, **Open on GitHub**, and the account. Running workflows is in [Actions](#follow-workflow-runs).
 
 **OpenTig never creates or moves a tag itself.** A draft can name a tag that doesn't exist yet: GitHub creates it from the draft's branch or commit when the release is published, as on GitHub's own page. Assets are managed outside OpenTig.
 
@@ -216,11 +216,32 @@ In **GitHub**, switch to **Releases** to list the repository's releases, includi
 | **Edit title and notes** | In the viewer's menu. Changes the title and notes of a draft or a published release in place, with **Save changes** and **Cancel**. Notes are edited raw, so any comment markers that automation keeps in them stay as they are. Saving stops if the notes changed on GitHub first, because workflows also write to them |
 | **Publish** | Asks first beside the button, showing the tag, commit, whether it's a pre-release, and the assets. Publishing can start workflows that run on publication. When the tag doesn't exist yet, the line under the title says **Publishing creates the tag**, and the question says where GitHub creates it: the draft's commit, or the latest commit of its branch. Publishing stops if the tag appeared or went away after you were asked |
 | **Delete draft** | In the viewer's menu. Asks first, lists what's lost, and keeps the tag. Published releases are only deleted on GitHub |
-| **Run a workflow** | Runs a workflow on the default branch, after naming the workflow and branch. Workflows about releases come first, with their latest runs and links. It can't pass inputs, so GitHub's message explains when a workflow needs them or can't be started manually |
 
-Assets aren't checked for completeness: **review them before publishing**. If GitHub doesn't answer in time while running a workflow, **Run workflow** stays off until you've refreshed its runs, because trying again could start it twice.
+Assets aren't checked for completeness: **review them before publishing**.
 
 These actions use the repository's account, stop if that account changed since you reviewed it, and only appear with write access.
+
+## Follow workflow runs
+
+In **GitHub**, switch to **Actions** to list the repository's GitHub Actions runs, newest first, 50 at a time; **Load more** at the end of the list adds the next 50, up to GitHub's limit of 1,000. Each row shows the avatar of whoever started the run, with its result as a badge where a pull request shows its status, then the run's title and age. Under them are the workflow, an icon for what started the run with its reference, who started it, and how long it took. A run's commit, pull request, or release opens the same menu as other GitHub references, with **Open in OpenTig** and **Open in GitHub**; the rest of the row opens the run. A manual or scheduled run shows its branch as plain text, and a fork's pull request, which GitHub doesn't name, shows its branch. Runs that appear while the list is open fade in at the top. The filter menu beside the tabs shows the runs of one workflow and has **Refresh**, **Open on GitHub**, and the account. While the tab is open, the list is read again every 30 seconds, or every 10 seconds while a listed run hasn't finished, so runs started on GitHub or from a terminal appear by themselves.
+
+Select a run to see it in the viewer as a graph of its jobs. The line under its title sums it up, such as **In progress · 3 of 12 jobs done** or **Failed · 2 jobs failed**, followed by the workflow, branch, commit, what started it, and its duration. Each job of the workflow file is a box, connected to the jobs it needs, and a matrix lists its jobs inside its box, folding past six. A job that hasn't started yet shows **Waiting**, and once the run ends, **Not run**. While the run is going, it's read again every 5 seconds and durations count up.
+
+| On the graph | Action |
+| --- | --- |
+| Drag, or the wheel | Move it |
+| `Ctrl`/`⌘` + wheel, or pinch | Zoom |
+| `+`, `-`, `0`, arrow keys | Zoom in, zoom out, fit, and move, with the graph focused |
+| Click a job | Show its steps, with their state and duration, and **Logs on GitHub** |
+
+The dependencies come from the run's workflow file at the run's commit. If OpenTig can't read that file, the jobs are shown unconnected and a note says so. Runs with more than 100 jobs show the first 100. Logs, re-runs, and cancelling stay on GitHub.
+
+**Run a workflow**, beside the filter, opens a dialog with two panes, starting on the filtered workflow:
+
+- **Workflows** on the left: those whose file on the default branch can be run manually (`workflow_dispatch`), each with dots for its latest results, and a search box. Workflows that only run automatically, including GitHub's own such as Dependabot's, are folded under **N automatic**, with what starts them. A workflow whose file OpenTig can't read is offered anyway.
+- **The chosen workflow** on the right: the **Branch** to run on, picked and searched like the top bar's branch selector from the repository's branches on GitHub, with the default first, then the workflow's inputs as its file on that branch declares them: text, numbers, switches, and lists of choices, with their descriptions and defaults. Below them are its three latest runs, which open in the viewer.
+
+**Run workflow** says why it's off, such as a required input that's empty or a branch whose file can't be run manually. It asks first beside the button, listing the branch and each input's value. Once GitHub accepts the request, the dialog closes and the button beside the filter spins until GitHub lists the new run, usually within seconds, which then opens in the viewer; if that takes longer than 45 seconds, the run still appears in the list. GitHub checks the inputs against the file and explains any problem. If GitHub doesn't answer in time, **Run workflow** stays off until you've refreshed the workflow's runs, because trying again could start it twice. Running needs write access and uses the repository's account, like release actions.
 
 ## Settings scopes
 

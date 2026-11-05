@@ -1,4 +1,4 @@
-import { chmod, mkdir, rename, rm, symlink, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, realpath, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { GitOperationError } from '../../shared/errors';
@@ -398,13 +398,16 @@ describe('GitRepositoryOperations safe worktree removal', () => {
     expect(await git(fixture.work, ['for-each-ref', '--format=%(refname)', 'refs/heads/temporary'])).toBe('');
   });
 
-  it('refuses a locked worktree', async () => {
+  it('refuses to remove a locked worktree, but opens it', async () => {
     const fixture = await managementRepository();
     const locked = await addWorktree(fixture, 'locked', 'locked');
-    await git(fixture.work, ['worktree', 'lock', '--reason', 'in use elsewhere', locked]);
+    // How Claude Code marks the worktrees of its sessions.
+    await git(fixture.work, ['worktree', 'lock', '--reason', 'claude session locked (pid 3692)', locked]);
     expect(await fixture.operations.removeWorktree(fixture.repositoryId, locked, await git(locked, ['rev-parse', 'HEAD'])))
-      .toEqual({ status: 'locked', reason: 'in use elsewhere' });
+      .toEqual({ status: 'locked', reason: 'claude session locked (pid 3692)' });
     expect(await exists(locked)).toBe(true);
+    const opened = await fixture.operations.selectWorktree(fixture.repositoryId, locked);
+    expect(opened.path).toBe(await realpath(locked));
   });
 
   it('refuses a prunable worktree whose directory disappeared', async () => {

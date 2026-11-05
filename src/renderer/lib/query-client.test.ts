@@ -16,7 +16,7 @@ describe('renderer query policy', () => {
     client.setQueryData(queryKeys.releases('repo-b'), 'old releases');
     client.setQueryData(queryKeys.release('repo-b', 'v1'), 'old release');
     client.setQueryData(queryKeys.workflows('repo-b'), 'old workflows');
-    client.setQueryData(queryKeys.workflowRuns('repo-b', 'ci.yml'), 'old runs');
+    client.setQueryData(queryKeys.runnableWorkflows('repo-b'), 'old runs');
     client.setQueryData(queryKeys.githubAccount('repo-a'), 'old account');
     client.setQueryData(queryKeys.githubAccounts, 'old inventory');
     client.setQueryData(queryKeys.githubCliStatus, 'old CLI status');
@@ -33,7 +33,7 @@ describe('renderer query policy', () => {
     expect(client.getQueryData(queryKeys.releases('repo-b'))).toBeUndefined();
     expect(client.getQueryData(queryKeys.release('repo-b', 'v1'))).toBeUndefined();
     expect(client.getQueryData(queryKeys.workflows('repo-b'))).toBeUndefined();
-    expect(client.getQueryData(queryKeys.workflowRuns('repo-b', 'ci.yml'))).toBeUndefined();
+    expect(client.getQueryData(queryKeys.runnableWorkflows('repo-b'))).toBeUndefined();
     expect(client.getQueryData(queryKeys.githubAccount('repo-a'))).toBeUndefined();
     expect(client.getQueryData(queryKeys.githubAccounts)).toBeUndefined();
     expect(client.getQueryData(queryKeys.githubCliStatus)).toBeUndefined();
