@@ -26,7 +26,8 @@ it('validates and builds before upload, keeps deploy credentials out of build st
   for (const step of steps) {
     if (step.uses) expect(step.uses).toMatch(/@[a-f0-9]{40}$/);
     if (step.run?.startsWith('pnpm ') && step.run !== 'pnpm exec wrangler deploy') {
-      expect(step.env).toBeUndefined();
+      // The build only reads the latest release that an earlier step saved; nothing secret reaches it.
+      expect(step.env).toEqual(step.run === 'pnpm run build:website' ? { WEBSITE_RELEASE_FILE: '${{ runner.temp }}/latest-release.json' } : undefined);
     }
   }
   const deploy = steps[indexOf('pnpm exec wrangler deploy')];
