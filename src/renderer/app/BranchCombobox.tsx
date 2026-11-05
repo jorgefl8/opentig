@@ -29,7 +29,8 @@ export function BranchCombobox({ branches, currentLabel, disabled, readOnly, cru
       if (branch.remote && branch.fullName.endsWith('/HEAD')) continue;
       const otherPath = !branch.remote && !branch.current ? branch.worktreePath : null;
       const other = otherPath ? worktreeItems?.find((item) => samePath(item.path, otherPath)) : undefined;
-      const canOpen = Boolean(other && !other.locked && !other.prunable && !other.bare);
+      // A lock only protects the worktree from removal, so it still opens.
+      const canOpen = Boolean(other && !other.prunable && !other.bare);
       const folder = otherPath?.split(/[\\/]/).pop();
       if (other && canOpen) openable.set(branch.fullName, other.path);
       if (!branch.remote && branch.current) currentValue = branch.fullName;

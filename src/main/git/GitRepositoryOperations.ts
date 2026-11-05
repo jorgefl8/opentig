@@ -835,7 +835,8 @@ export class GitRepositoryOperations {
       throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'select-worktree', message: 'This worktree is being removed.' });
     }
     const worktree = await this.findWorktree(repositoryId, targetPath);
-    if (!worktree || worktree.locked || worktree.prunable || worktree.bare) {
+    // A lock only stops pruning, moving and removing; tools such as Claude Code lock the worktrees they work in.
+    if (!worktree || worktree.prunable || worktree.bare) {
       throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'select-worktree', message: 'The worktree is unavailable.' });
     }
     return this.repositories.openPath(worktree.path);

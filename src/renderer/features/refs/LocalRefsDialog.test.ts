@@ -155,6 +155,19 @@ describe('worktree removal', () => {
     await settle();
   }
 
+  it('opens a locked worktree, while its lock still stops removal', async () => {
+    snapshot = { branches: [local], worktrees: [{ ...worktree, locked: 'claude session review (pid 3692)' }], remotes: [] };
+    calls.worktreeDetails.mockResolvedValue({ ...details, locked: 'claude session review (pid 3692)' });
+    tab = 'worktrees';
+    client.clear();
+    await render();
+    await act(async () => document.querySelector<HTMLButtonElement>('.local-refs-row')!.click());
+    await settle();
+    await vi.waitFor(async () => { await settle(); button('Open worktree'); });
+    expect(button('Open worktree').disabled).toBe(false);
+    expect(document.querySelector('.local-refs-detail')?.textContent).toContain('Locked: claude session review (pid 3692). Unlock it in Git before removing it.');
+  });
+
   it('keeps the dialog usable while a removal runs and follows the server state', async () => {
     await openWorktrees();
     calls.removeWorktree.mockReturnValue(new Promise(() => {}));

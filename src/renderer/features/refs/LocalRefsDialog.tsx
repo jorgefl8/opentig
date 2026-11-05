@@ -532,7 +532,7 @@ function WorktreeDetailPanel({ details, removing, anyBusy, confirming, actionErr
         <Button variant="ghost" size="sm" onClick={onCopyPath} disabled={anyBusy}>
           {copied ? <IconCheck /> : <IconCopy />} {copied ? 'Copied' : 'Copy path'}
         </Button>
-        {!removing && !details.current && details.available && !details.locked && (
+        {!removing && !details.current && details.available && (
           <Button variant="ghost" size="sm" onClick={onOpen} disabled={anyBusy}><IconExternalLink /> Open worktree</Button>
         )}
         {details.branch && (

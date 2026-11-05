@@ -356,9 +356,10 @@ export function Toolbar(props: ToolbarProps) {
           label: item.path.split(/[\\/]/).pop() ?? item.path,
           description: `${item.branch ?? 'Detached HEAD'}${item.locked ? ' · Locked' : item.prunable ? ' · Prunable' : item.bare ? ' · Bare' : ''}`,
           search: item.path,
-          tooltip: item.path,
+          // A locked worktree opens like any other; the lock says why it can't be removed, often a tool's session using it.
+          tooltip: item.locked && item.locked !== 'locked' ? `${item.path} · Locked: ${item.locked}` : item.path,
           icon: <IconHierarchy2 />,
-          disabled: Boolean(item.locked || item.prunable || item.bare),
+          disabled: Boolean(item.prunable || item.bare),
         })) }]}
         value={currentWorktree?.path ?? props.repository.path}
         onValueChange={props.onWorktree}
