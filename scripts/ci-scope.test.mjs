@@ -122,10 +122,18 @@ it('fails safe for unavailable bases, initial pushes, empty diffs, and unknown e
   expect(needsValidation('unknown', {}, base, root)).toBe(true);
 });
 
-it('keeps every published source prose-only while validating the website', async () => {
-  for (const source of publishedSources) await writeFile(path.join(root, source), '# Updated guide\n');
+it('keeps published prose sources prose-only while validating the website', async () => {
+  for (const source of publishedSources) {
+    if (source !== 'docs/ai-writing-policy.md') await writeFile(path.join(root, source), '# Updated guide\n');
+  }
   const head = commit();
   expect(validationScope('push', { before: base }, head, root)).toEqual({ required: false, website: true });
+});
+
+it('validates the application when the AI writing policy compiled into its prompts changes', async () => {
+  expect(publishedSources.has('docs/ai-writing-policy.md')).toBe(true);
+  await writeFile(path.join(root, 'docs', 'ai-writing-policy.md'), '# Updated policy\n');
+  expect(validationScope('push', { before: base }, commit(), root)).toEqual({ required: true, website: true });
 });
 
 it.each(['docs/getting-started.md', 'CONTRIBUTING.md'])('validates the website when the published source %s changes', async (source) => {

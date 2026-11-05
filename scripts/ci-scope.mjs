@@ -6,7 +6,10 @@ import { isWebsitePath } from './change-scope.mjs';
 
 // Prose and the separately validated public site are exempt. Application docs
 // assets, examples, configuration, and scripts still require the complete CI.
-const isDocumentation = (file) => /^(?:README\.md|CONTRIBUTING\.md|SECURITY\.md|AGENTS\.md|THIRD_PARTY_NOTICES\.md|docs\/.+\.md)$/.test(file);
+// The AI writing policy is compiled into the application's prompts.
+const applicationMarkdown = new Set(['docs/ai-writing-policy.md']);
+const isDocumentation = (file) => !applicationMarkdown.has(file)
+  && /^(?:README\.md|CONTRIBUTING\.md|SECURITY\.md|AGENTS\.md|THIRD_PARTY_NOTICES\.md|docs\/.+\.md)$/.test(file);
 
 export function validationScope(eventName, event, head, cwd = process.cwd()) {
   const both = { required: true, website: true };
