@@ -22,7 +22,7 @@ export function overviewMarkdown(site: URL) {
     details: [
       'OpenTig is a free, open-source (MIT) Git client. Repositories and Git commands stay on the machine running OpenTig.',
       '',
-      `- Windows desktop: download the ${downloadVersion} installer from ${downloadUrl} (Windows 10 or later, x64, with Git installed). Every release: ${repositoryUrl}/releases`,
+      `- Windows desktop: download the installer (${downloadVersion}) from ${downloadUrl} (Windows 10 or later, x64, with Git installed). Every release: ${repositoryUrl}/releases`,
       `- CLI with browser access on Linux, macOS, or Windows (Node.js 24+ and Git 2.31+): \`${cliInstallCommand}\``,
       `- Source code: ${repositoryUrl}`,
       `- npm package: ${npmUrl}`,

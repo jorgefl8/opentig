@@ -18,10 +18,11 @@ export type WindowsDownload = {
   scan?: InstallerScan;
 };
 
-// Used when a build cannot reach GitHub. No scan identity is inferred from its version or filename.
-export const staticDownload: WindowsDownload = {
-  version: 'v0.2.9',
-  url: 'https://github.com/jorgefl8/opentig/releases/download/v0.2.9/OpenTig-0.2.9-win32-x64-Setup.exe',
+// Used when a build cannot reach GitHub: GitHub's latest-release page, so it never goes stale.
+// It names no version or installer, so no scan identity applies to it.
+export const latestReleasePage: WindowsDownload = {
+  version: 'Latest release',
+  url: 'https://github.com/jorgefl8/opentig/releases/latest',
 };
 
 // Production builds replace this with the latest release resolved at build time (scripts/release-download.mjs).
@@ -29,7 +30,7 @@ declare const __OPENTIG_BUILD_DOWNLOAD__: WindowsDownload | undefined;
 
 /** The installer rendered into HTML, and the browser's fallback when GitHub is unavailable. */
 export const fallbackDownload: WindowsDownload = typeof __OPENTIG_BUILD_DOWNLOAD__ === 'object'
-  ? __OPENTIG_BUILD_DOWNLOAD__ : staticDownload;
+  ? __OPENTIG_BUILD_DOWNLOAD__ : latestReleasePage;
 
 export function windowsInstaller(release: unknown): WindowsDownload | undefined {
   if (!release || typeof release !== 'object' || Array.isArray(release)) return;
