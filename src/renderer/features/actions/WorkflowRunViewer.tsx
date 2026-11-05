@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { useQuery } from '@tanstack/react-query';
 import { IconExternalLink, IconLoader4, IconRefresh, IconX } from '@tabler/icons-react';
 import { formatDateTime } from '@shared/date-format';
@@ -15,6 +16,9 @@ import { ActionStatusIcon } from './ActionStatusIcon';
 import { actionStatusLabel, actionTone, elapsed, eventLabel, formatDuration, runDuration, runSentence } from './action-status';
 import { WorkflowCanvas } from './WorkflowCanvas';
 import './actions.css';
+
+/** --motion-med and --ease-out. */
+const PANEL_TRANSITION = { duration: 0.2, ease: [0.32, 0.72, 0, 1] as const };
 
 /** How often a run that hasn't finished is read again. */
 export const ACTIVE_RUN_REFRESH_MS = 5_000;
@@ -33,6 +37,7 @@ function useNow(active: boolean): number {
 
 export function WorkflowRunViewer({ repositoryId, runId, jobId = null }: { repositoryId: string; runId: number; jobId?: number | null }) {
   const phone = useMobileChrome() !== null;
+  const reduceMotion = useReducedMotion();
   const query = useQuery({
     queryKey: queryKeys.actionRun(repositoryId, runId),
     queryFn: () => opentig.github.getActionRun(repositoryId, runId),
@@ -81,7 +86,7 @@ export function WorkflowRunViewer({ repositoryId, runId, jobId = null }: { repos
             <span>{run.workflowName} #{run.number}{run.attempt > 1 ? ` · attempt ${run.attempt}` : ''}</span>
             {run.branch && <span className="pr-branches">{run.branch}</span>}
             <span className="pr-branches">{run.headSha.slice(0, 7)}</span>
-            <span>{eventLabel(run.event)}{run.actor ? ` by @${run.actor}` : ''}</span>
+            <span>{eventLabel(run.event)}{run.actor ? ` by @${run.actor.login}` : ''}</span>
             <span><time dateTime={run.startedAt ?? run.createdAt}>{formatDateTime(run.startedAt ?? run.createdAt)}</time>{duration !== null ? ` · ${formatDuration(duration)}` : ''}</span>
           </div>
         </div>
@@ -91,7 +96,9 @@ export function WorkflowRunViewer({ repositoryId, runId, jobId = null }: { repos
         {run.graph.length
           ? <WorkflowCanvas graph={run.graph} jobs={jobs} runCompleted={!active} selectedJobId={selectedJobId} onSelectJob={setSelectedJobId} now={now} />
           : <div className="viewer-message">{active ? 'Waiting for the first job to start…' : 'This run has no jobs.'}</div>}
-        {selectedJob && <JobPanel job={selectedJob} now={now} onClose={() => setSelectedJobId(null)} />}
+        <AnimatePresence initial={false}>
+          {selectedJob && <JobPanel key="job" job={selectedJob} now={now} reduceMotion={Boolean(reduceMotion)} onClose={() => setSelectedJobId(null)} />}
+        </AnimatePresence>
       </div>
     </div>
   );
@@ -106,11 +113,18 @@ function RunNotes({ run }: { run: ActionRunDetails }) {
   return <div className="workflow-run-notes">{notes.map((note) => <p key={note}>{note}</p>)}</div>;
 }
 
-function JobPanel({ job, now, onClose }: { job: ActionRunJob; now: number; onClose(): void }) {
+function JobPanel({ job, now, reduceMotion, onClose }: { job: ActionRunJob; now: number; reduceMotion: boolean; onClose(): void }) {
   const tone = actionTone(job.status, job.conclusion);
   const duration = elapsed(job.startedAt, job.completedAt, now);
   return (
-    <aside className="workflow-job-panel" aria-label={`Job ${job.name}`}>
+    <motion.aside
+      className="workflow-job-panel"
+      aria-label={`Job ${job.name}`}
+      initial={reduceMotion ? false : { opacity: 0, x: 16 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={reduceMotion ? { opacity: 0, transition: { duration: 0 } } : { opacity: 0, x: 16 }}
+      transition={PANEL_TRANSITION}
+    >
       <header>
         <ActionStatusIcon tone={tone} />
         <h3>{job.name}</h3>
@@ -139,6 +153,6 @@ function JobPanel({ job, now, onClose }: { job: ActionRunJob; now: number; onClo
           );
         })}
       </ol>
-    </aside>
+    </motion.aside>
   );
 }

@@ -6,6 +6,7 @@ import type {
 import { DemoRepository, repository, sampleDate } from "./model";
 import { demoPulls } from "./pulls";
 import { demoReleases } from "./releases";
+import { demoActions } from "./actions";
 import { findSearchMatches } from "../../src/shared/search";
 import { sampleCommitMessage, sampleHarness, samplePullRequestDraft } from "./sample-ai.ts";
 
@@ -405,7 +406,10 @@ export const opentig: OpenTigApi = {
     getRelease: async (_id, tagName) => demoReleases.get(tagName),
     checkReleaseTag: async (_id, tagName) => demoReleases.checkTag(tagName),
     listWorkflows: async () => demoReleases.workflows(),
-    listWorkflowRuns: async (_id, path) => demoReleases.workflowRuns(path),
+    listRunnableWorkflows: async () => demoActions.runnable(),
+    getWorkflowTriggers: async (_id, path) => demoActions.triggers(path),
+    listActionRuns: async (_id, workflowId) => demoActions.list(workflowId),
+    getActionRun: async (_id, runId) => demoActions.get(runId),
     repositoryAccount: async () => ({
       selection: { mode: "default" },
       nameWithOwner: "demo/launchpad",

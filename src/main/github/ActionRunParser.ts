@@ -1,8 +1,7 @@
 import { z } from 'zod';
-import type { ActionRunJob, ActionRunSummary } from '../../shared/contracts';
+import type { ActionRunJob, ActionRunPage, ActionRunSummary } from '../../shared/contracts';
 import { GhOperationError } from '../../shared/errors';
 
-export const ACTION_RUN_FIELDS = 'databaseId,number,attempt,displayTitle,workflowDatabaseId,workflowName,status,conclusion,event,headBranch,headSha,url,createdAt,startedAt,updatedAt';
 
 function invalid(operation: string): GhOperationError {
   return new GhOperationError({ code: 'GH_INVALID_OUTPUT', operation, message: 'GitHub CLI returned an unexpected response.' });
@@ -16,46 +15,7 @@ function parseJson(raw: string, operation: string): unknown {
 const optionalText = z.string().nullish().transform((value) => value || null);
 const optionalTime = optionalText.transform((value) => value && !value.startsWith('0001-') ? value : null);
 
-const runListSchema = z.array(z.object({
-  databaseId: z.number().int().positive(),
-  number: z.number().int().nonnegative(),
-  attempt: z.number().int().nonnegative().nullish(),
-  displayTitle: z.string(),
-  workflowDatabaseId: z.number().int().nonnegative(),
-  workflowName: z.string(),
-  status: z.string(),
-  conclusion: optionalText,
-  event: z.string(),
-  headBranch: optionalText,
-  headSha: z.string(),
-  url: z.string(),
-  createdAt: z.string(),
-  startedAt: optionalTime,
-  updatedAt: z.string(),
-}));
-
-export function parseActionRunList(raw: string): ActionRunSummary[] {
-  const operation = 'gh-action-run-list';
-  const parsed = runListSchema.safeParse(parseJson(raw, operation));
-  if (!parsed.success) throw invalid(operation);
-  return parsed.data.map((run) => ({
-    id: run.databaseId,
-    number: run.number,
-    attempt: run.attempt || 1,
-    title: run.displayTitle,
-    workflowId: run.workflowDatabaseId,
-    workflowName: run.workflowName,
-    status: run.status,
-    conclusion: run.conclusion,
-    event: run.event,
-    branch: run.headBranch,
-    headSha: run.headSha,
-    url: run.url,
-    createdAt: run.createdAt,
-    startedAt: run.startedAt,
-    updatedAt: run.updatedAt,
-  }));
-}
+const actorSchema = z.object({ login: z.string(), avatar_url: z.string().nullish() });
 
 const restRunSchema = z.object({
   id: z.number().int().positive(),
@@ -74,16 +34,32 @@ const restRunSchema = z.object({
   created_at: z.string(),
   run_started_at: optionalTime,
   updated_at: z.string(),
-  actor: z.object({ login: z.string() }).nullish(),
-  triggering_actor: z.object({ login: z.string() }).nullish(),
+  actor: actorSchema.nullish(),
+  triggering_actor: actorSchema.nullish(),
+  pull_requests: z.array(z.object({ number: z.number().int().positive() })).nullish(),
 });
 
 /** The REST view of a run, which also names its workflow file. */
-export function parseActionRun(raw: string): ActionRunSummary & { path: string | null; actor: string | null } {
+export function parseActionRun(raw: string): ActionRunSummary & { path: string | null } {
   const operation = 'gh-action-run-view';
   const parsed = restRunSchema.safeParse(parseJson(raw, operation));
   if (!parsed.success) throw invalid(operation);
-  const run = parsed.data;
+  return runFromRest(parsed.data);
+}
+
+/** One page of a repository's or a workflow's runs, newest first. */
+export function parseActionRunPage(raw: string, page: number, perPage: number): ActionRunPage {
+  const operation = 'gh-action-run-list';
+  const parsed = z.object({ total_count: z.number().int().nonnegative(), workflow_runs: z.array(restRunSchema) }).safeParse(parseJson(raw, operation));
+  if (!parsed.success) throw invalid(operation);
+  return {
+    runs: parsed.data.workflow_runs.map((run) => { const { path: _path, ...summary } = runFromRest(run); return summary; }),
+    hasMore: parsed.data.workflow_runs.length === perPage && page * perPage < parsed.data.total_count,
+  };
+}
+
+function runFromRest(run: z.infer<typeof restRunSchema>): ActionRunSummary & { path: string | null } {
+  const actor = run.triggering_actor ?? run.actor ?? null;
   return {
     id: run.id,
     number: run.run_number,
@@ -102,7 +78,9 @@ export function parseActionRun(raw: string): ActionRunSummary & { path: string |
     updatedAt: run.updated_at,
     // A reusable workflow's path can carry the ref it was called at.
     path: run.path ? run.path.replace(/@.*$/, '') : null,
-    actor: run.triggering_actor?.login ?? run.actor?.login ?? null,
+    actor: actor ? { login: actor.login, avatarUrl: actor.avatar_url ?? null } : null,
+    // A pull_request run lists the pull requests of its head branch; GitHub leaves the list empty for a fork's.
+    pullRequestNumber: run.event.startsWith('pull_request') ? run.pull_requests?.[0]?.number ?? null : null,
   };
 }
 
@@ -160,4 +138,10 @@ export function parseContentsFile(raw: string): string | null {
   const parsed = z.object({ content: z.string(), encoding: z.string() }).safeParse(parseJson(raw, 'gh-action-run-view'));
   if (!parsed.success || parsed.data.encoding !== 'base64') return null;
   return Buffer.from(parsed.data.content.replace(/\s+/g, ''), 'base64').toString('utf8');
+}
+
+export function parseBranchNames(raw: string): string[] {
+  const parsed = z.array(z.object({ name: z.string() })).safeParse(parseJson(raw, 'gh-workflow-runnable'));
+  if (!parsed.success) throw invalid('gh-workflow-runnable');
+  return parsed.data.map((branch) => branch.name);
 }

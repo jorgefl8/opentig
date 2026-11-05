@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import { IconFocusCentered, IconZoomIn, IconZoomOut } from '@tabler/icons-react';
+import { animate, useReducedMotion, type AnimationPlaybackControls } from 'motion/react';
 import type { ActionRunGraphNode, ActionRunJob } from '../../../shared/contracts';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -14,6 +15,9 @@ const KEY_PAN = 48;
 const WHEEL_ZOOM_SPEED = 0.002;
 
 interface View { x: number; y: number; scale: number }
+
+/** --motion-med and --ease-out: buttons and keys glide the graph; dragging, the wheel and pinching follow the hand. */
+const GLIDE = { duration: 0.22, ease: [0.32, 0.72, 0, 1] as const };
 
 function clampScale(scale: number): number {
   return Math.min(MAX_SCALE, Math.max(MIN_SCALE, scale));
@@ -45,6 +49,22 @@ export function WorkflowCanvas({ graph, jobs, runCompleted, selectedJobId, onSel
   const viewport = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [view, setView] = useState<View>({ x: 0, y: 0, scale: 1 });
+  const viewRef = useRef(view);
+  useLayoutEffect(() => { viewRef.current = view; }, [view]);
+  const reduceMotion = useReducedMotion();
+  const glide = useRef<AnimationPlaybackControls | null>(null);
+  const stopGlide = useCallback(() => { glide.current?.stop(); glide.current = null; }, []);
+  useEffect(() => stopGlide, [stopGlide]);
+  /** Moves to a view, gliding there unless motion is reduced. */
+  const glideTo = useCallback((target: View) => {
+    stopGlide();
+    const from = viewRef.current;
+    if (reduceMotion) { setView(target); return; }
+    glide.current = animate(0, 1, {
+      ...GLIDE,
+      onUpdate: (t) => setView({ x: from.x + (target.x - from.x) * t, y: from.y + (target.y - from.y) * t, scale: from.scale + (target.scale - from.scale) * t }),
+    });
+  }, [reduceMotion, stopGlide]);
   // Until someone moves the graph, it keeps fitting the space as the panel or the graph changes size.
   const touched = useRef(false);
   const [hovered, setHovered] = useState<string | null>(null);
@@ -59,27 +79,38 @@ export function WorkflowCanvas({ graph, jobs, runCompleted, selectedJobId, onSel
     return () => observer.disconnect();
   }, []);
 
-  const fit = useCallback(() => {
-    setView(fitView(size.width, size.height, layout.width, layout.height));
-  }, [layout.height, layout.width, size.height, size.width]);
+  const fitted = useCallback(() => fitView(size.width, size.height, layout.width, layout.height), [layout.height, layout.width, size.height, size.width]);
+  const fit = useCallback(() => { touched.current = false; glideTo(fitted()); }, [fitted, glideTo]);
 
-  useLayoutEffect(() => { if (!touched.current) fit(); }, [fit]);
+  // Resizing the pane or the graph refits at once, until someone moves it.
+  useLayoutEffect(() => { if (!touched.current) { stopGlide(); setView(fitted()); } }, [fitted, stopGlide]);
 
+  const zoomed = useCallback((current: View, factor: number, originX?: number, originY?: number): View => {
+    const scale = clampScale(current.scale * factor);
+    const x = originX ?? size.width / 2;
+    const y = originY ?? size.height / 2;
+    const ratio = scale / current.scale;
+    return { scale, x: x - (x - current.x) * ratio, y: y - (y - current.y) * ratio };
+  }, [size.height, size.width]);
+
+  /** Wheel and pinch: immediate, so the graph stays under the fingers. */
   const zoomAt = useCallback((factor: number, originX?: number, originY?: number) => {
     touched.current = true;
-    setView((current) => {
-      const scale = clampScale(current.scale * factor);
-      const x = originX ?? size.width / 2;
-      const y = originY ?? size.height / 2;
-      const ratio = scale / current.scale;
-      return { scale, x: x - (x - current.x) * ratio, y: y - (y - current.y) * ratio };
-    });
-  }, [size.height, size.width]);
+    stopGlide();
+    setView((current) => zoomed(current, factor, originX, originY));
+  }, [stopGlide, zoomed]);
+
+  /** Buttons and keys: a step that glides. */
+  const zoomStep = useCallback((factor: number) => {
+    touched.current = true;
+    glideTo(zoomed(viewRef.current, factor));
+  }, [glideTo, zoomed]);
 
   const panBy = useCallback((dx: number, dy: number) => {
     touched.current = true;
+    stopGlide();
     setView((current) => ({ ...current, x: current.x + dx, y: current.y + dy }));
-  }, []);
+  }, [stopGlide]);
 
   // Wheel scrolls the graph; Ctrl or ⌘ with the wheel, and trackpad pinches, zoom. React's wheel listener is passive.
   useEffect(() => {
@@ -100,6 +131,7 @@ export function WorkflowCanvas({ graph, jobs, runCompleted, selectedJobId, onSel
   const pinch = useRef<{ distance: number } | null>(null);
   const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if ((event.target as Element).closest('button') || event.button !== 0) return;
+    stopGlide();
     event.currentTarget.setPointerCapture(event.pointerId);
     pointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
     if (pointers.current.size === 2) {
@@ -130,7 +162,7 @@ export function WorkflowCanvas({ graph, jobs, runCompleted, selectedJobId, onSel
   const onKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     if (event.target !== event.currentTarget || event.altKey || event.ctrlKey || event.metaKey) return;
     const actions: Record<string, () => void> = {
-      '+': () => zoomAt(1.2), '=': () => zoomAt(1.2), '-': () => zoomAt(1 / 1.2), '0': () => { touched.current = false; fit(); },
+      '+': () => zoomStep(1.2), '=': () => zoomStep(1.2), '-': () => zoomStep(1 / 1.2), '0': fit,
       ArrowLeft: () => panBy(KEY_PAN, 0), ArrowRight: () => panBy(-KEY_PAN, 0), ArrowUp: () => panBy(0, KEY_PAN), ArrowDown: () => panBy(0, -KEY_PAN),
     };
     const action = actions[event.key];
@@ -188,13 +220,13 @@ export function WorkflowCanvas({ graph, jobs, runCompleted, selectedJobId, onSel
         </div>
       </div>
       <div className="workflow-canvas-controls">
-        <CanvasButton label="Zoom out" disabled={view.scale <= MIN_SCALE} onClick={() => zoomAt(1 / 1.2)}><IconZoomOut /></CanvasButton>
+        <CanvasButton label="Zoom out" disabled={view.scale <= MIN_SCALE} onClick={() => zoomStep(1 / 1.2)}><IconZoomOut /></CanvasButton>
         <Tooltip>
-          <TooltipTrigger render={<button type="button" className="workflow-canvas-scale" onClick={() => zoomAt(1 / view.scale)} />}>{Math.round(view.scale * 100)}%</TooltipTrigger>
+          <TooltipTrigger render={<button type="button" className="workflow-canvas-scale" onClick={() => zoomStep(1 / viewRef.current.scale)} />}>{Math.round(view.scale * 100)}%</TooltipTrigger>
           <TooltipContent>Actual size</TooltipContent>
         </Tooltip>
-        <CanvasButton label="Zoom in" disabled={view.scale >= MAX_SCALE} onClick={() => zoomAt(1.2)}><IconZoomIn /></CanvasButton>
-        <CanvasButton label="Fit to view" onClick={() => { touched.current = false; fit(); }}><IconFocusCentered /></CanvasButton>
+        <CanvasButton label="Zoom in" disabled={view.scale >= MAX_SCALE} onClick={() => zoomStep(1.2)}><IconZoomIn /></CanvasButton>
+        <CanvasButton label="Fit to view" onClick={fit}><IconFocusCentered /></CanvasButton>
       </div>
     </div>
   );

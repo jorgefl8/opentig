@@ -20,13 +20,13 @@ const workflows = [
   { id: 4, name: 'Build', path: '.github/workflows/build.yml', state: 'active' },
 ];
 
-function fixture(overrides: { view?: CliRunResult; list?: CliRunResult; tag?: CliRunResult; commit?: CliRunResult; repository?: CliRunResult; workflows?: CliRunResult; runs?: CliRunResult; mutate?: (args: string[]) => CliRunResult } = {}) {
+function fixture(overrides: { view?: CliRunResult; list?: CliRunResult; tag?: CliRunResult; commit?: CliRunResult; repository?: CliRunResult; workflows?: CliRunResult; branch?: CliRunResult; mutate?: (args: string[]) => CliRunResult } = {}) {
   const mutations: string[][] = [];
   const run = vi.fn(async (_exe: string, args: string[]): Promise<CliRunResult> => {
     if (args[0] === 'release' && args[1] === 'view') return overrides.view ?? ok(details);
     if (args[0] === 'release' && args[1] === 'list') return overrides.list ?? ok([summary]);
     if (args[0] === 'workflow' && args[1] === 'list') return overrides.workflows ?? ok(workflows);
-    if (args[0] === 'run' && args[1] === 'list') return overrides.runs ?? ok([{ databaseId: 1, status: 'completed', conclusion: 'success', url: 'https://github.com/example/demo/actions/runs/1', createdAt: '2026-01-01T00:00:00Z', displayTitle: 'Prepare release' }]);
+    if (args[0] === 'api' && args[1]?.includes('/branches/')) return overrides.branch ?? { exitCode: 0, stdout: 'main', stderr: '' };
     if (args[0] === 'api' && args[1]?.includes('/git/ref/tags/')) return overrides.tag ?? ok({ ref: 'refs/tags/v1.0.0' });
     if (args[0] === 'api' && args[1]?.includes('/commits/')) return overrides.commit ?? { exitCode: 0, stdout: 'a'.repeat(40), stderr: '' };
     if (args[0] === 'api') return overrides.repository ?? ok({ default_branch: 'main', permissions: { push: true } });
@@ -217,7 +217,7 @@ describe('publishing', () => {
 });
 
 describe('workflows', () => {
-  const run = { repositoryId: 'repo', path: '.github/workflows/prepare-release.yml', ref: 'main', expectedAccount: { login: 'sample', revision: 3 } };
+  const run = { repositoryId: 'repo', path: '.github/workflows/prepare-release.yml', ref: 'main', inputs: {}, expectedAccount: { login: 'sample', revision: 3 } };
 
   it('lists active ones, those about releases first', async () => {
     expect(await fixture().service.listWorkflows('repo')).toEqual({
@@ -226,20 +226,21 @@ describe('workflows', () => {
     });
   });
 
-  it('reads the latest runs of one', async () => {
-    const { service, run: calls } = fixture();
-    expect(await service.listWorkflowRuns('repo', run.path)).toEqual([expect.objectContaining({ databaseId: 1, conclusion: 'success' })]);
-    expect(calls.mock.calls.at(-1)?.[1]).toEqual(expect.arrayContaining(['--workflow', run.path, '--limit', '3']));
-  });
-
   it('runs one on the default branch, without inputs', async () => {
     const { service, mutations } = fixture();
     await service.runWorkflow(run);
     expect(mutations).toEqual([['workflow', 'run', run.path, '-R', 'example/demo', '--ref', 'main']]);
   });
 
+  it('runs one on another branch that exists on GitHub, passing each input as a raw field', async () => {
+    const { service, mutations, run: calls } = fixture();
+    await service.runWorkflow({ ...run, ref: 'feature/x', inputs: { version: '0.3.0', notes: 'a=b; $(nothing)' } });
+    expect(calls.mock.calls.some(([, args]) => args[1] === 'repos/example/demo/branches/feature/x')).toBe(true);
+    expect(mutations).toEqual([['workflow', 'run', run.path, '-R', 'example/demo', '--ref', 'feature/x', '-f', 'version=0.3.0', '-f', 'notes=a=b; $(nothing)']]);
+  });
+
   it.each([
-    ['another branch', { ...run, ref: 'feature' }, {}, 'GH_PR_STATE_CHANGED'],
+    ['a branch that isn\'t on GitHub', { ...run, ref: 'local-only' }, { branch: notFound }, 'GH_PR_STATE_CHANGED'],
     ['a disabled workflow', { ...run, path: '.github/workflows/old.yml' }, {}, 'GH_PR_ACTION_NOT_ALLOWED'],
     ['an unknown workflow', { ...run, path: '.github/workflows/other.yml' }, {}, 'GH_PR_ACTION_NOT_ALLOWED'],
     ['no write access', run, { repository: ok({ default_branch: 'main', permissions: { push: false } }) }, 'GH_PR_ACTION_NOT_ALLOWED'],

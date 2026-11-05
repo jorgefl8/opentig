@@ -70,7 +70,7 @@ describe('action status', () => {
 describe('following new runs', () => {
   const run = (id: number, overrides: Partial<ActionRunSummary> = {}): ActionRunSummary => ({
     id, number: id, attempt: 1, title: `run ${id}`, workflowId: 7, workflowName: 'Deploy website', status: 'queued', conclusion: null,
-    event: 'workflow_dispatch', branch: 'main', headSha: 'a'.repeat(40), url: '', createdAt: '2026-11-05T15:00:10Z', startedAt: null, updatedAt: '2026-11-05T15:00:10Z',
+    event: 'workflow_dispatch', branch: 'main', headSha: 'a'.repeat(40), url: '', createdAt: '2026-11-05T15:00:10Z', startedAt: null, updatedAt: '2026-11-05T15:00:10Z', actor: null, pullRequestNumber: null,
     ...overrides,
   });
 

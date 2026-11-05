@@ -622,16 +622,39 @@ export interface RepositoryWorkflowList {
   viewerCanWrite: boolean;
 }
 
-export interface WorkflowRunSummary {
-  databaseId: number;
-  status: string;
-  conclusion: string | null;
-  url: string;
-  createdAt: string;
-  displayTitle: string;
+
+/** One input of a workflow's manual run, as its file declares it. */
+export interface WorkflowInput {
+  name: string;
+  description: string | null;
+  required: boolean;
+  default: string | null;
+  type: 'string' | 'boolean' | 'choice' | 'number' | 'environment';
+  /** The choices of a `choice` input. */
+  options: string[];
 }
 
-export type RunWorkflowInput = GitHubMutationBase & { path: string; ref: string };
+/** What starts a workflow. `inputs` is null when it can't be run manually. */
+export interface WorkflowTriggers {
+  events: string[];
+  inputs: WorkflowInput[] | null;
+}
+
+export interface RunnableWorkflow extends RepositoryWorkflow {
+  /** From the workflow file on the default branch; null when it couldn't be read. */
+  triggers: WorkflowTriggers | null;
+}
+
+export interface RunnableWorkflowList {
+  workflows: RunnableWorkflow[];
+  defaultBranch: string | null;
+  viewerCanWrite: boolean;
+  /** Branches on GitHub a run can use, the default first; at most 100. */
+  branches: string[];
+}
+
+/** Runs on `ref`, a branch on GitHub, with the inputs by name; GitHub checks them against the workflow file there. */
+export type RunWorkflowInput = GitHubMutationBase & { path: string; ref: string; inputs: Record<string, string> };
 
 /** One GitHub Actions workflow run. `status` and `conclusion` are GitHub's own values. */
 export interface ActionRunSummary {
@@ -650,6 +673,15 @@ export interface ActionRunSummary {
   createdAt: string;
   startedAt: string | null;
   updatedAt: string;
+  /** Who started the run, or started it again. */
+  actor: { login: string; avatarUrl: string | null } | null;
+  /** The pull request a `pull_request` run belongs to, when GitHub names it (not for a fork's). */
+  pullRequestNumber: number | null;
+}
+
+export interface ActionRunPage {
+  runs: ActionRunSummary[];
+  hasMore: boolean;
 }
 
 export interface ActionRunStep {
@@ -683,7 +715,6 @@ export interface ActionRunGraphNode {
 
 export interface ActionRunDetails extends ActionRunSummary {
   path: string | null;
-  actor: string | null;
   jobs: ActionRunJob[];
   /** GitHub listed more jobs than OpenTig reads. */
   jobsTruncated: boolean;
@@ -978,10 +1009,13 @@ export interface OpenTigApi {
     deleteDraftRelease(input: DeleteDraftReleaseInput): Promise<void>;
     publishRelease(input: PublishReleaseInput): Promise<void>;
     listWorkflows(repositoryId: string): Promise<RepositoryWorkflowList>;
-    listWorkflowRuns(repositoryId: string, path: string): Promise<WorkflowRunSummary[]>;
+    /** Active workflows, with what starts each one and the inputs of a manual run. */
+    listRunnableWorkflows(repositoryId: string): Promise<RunnableWorkflowList>;
+    /** The workflow file's triggers on another branch, whose inputs can differ. */
+    getWorkflowTriggers(repositoryId: string, path: string, ref: string): Promise<WorkflowTriggers | null>;
     runWorkflow(input: RunWorkflowInput): Promise<void>;
     /** The latest workflow runs, optionally of one workflow. */
-    listActionRuns(repositoryId: string, workflowId: number | null): Promise<ActionRunSummary[]>;
+    listActionRuns(repositoryId: string, workflowId: number | null, page?: number): Promise<ActionRunPage>;
     /** A run with its jobs, steps and the dependency graph of its workflow. */
     getActionRun(repositoryId: string, runId: number): Promise<ActionRunDetails>;
     generateDraft(input: GeneratePullRequestDraftInput): Promise<GeneratedPullRequestDraft>;
@@ -1033,5 +1067,5 @@ export const IPC = {
   diagnosticsList: 'diagnostics:list', diagnosticsClear: 'diagnostics:clear', diagnosticsRecord: 'diagnostics:record',
   githubAccountsStatus: 'github:accounts-status', githubSetDefaultAccount: 'github:set-default-account', githubRepositoryAccount: 'github:repository-account', githubSetRepositoryAccount: 'github:set-repository-account',
   githubStatus: 'github:status', githubRepositoryInfo: 'github:repository-info', githubPrForBranch: 'github:pr-for-branch', githubPrList: 'github:pr-list', githubPrView: 'github:pr-view', githubPrLiveState: 'github:pr-live-state', githubPrConversation: 'github:pr-conversation', githubPrAction: 'github:pr-action', githubPrUpdate: 'github:pr-update', githubPrComment: 'github:pr-comment', githubPrReview: 'github:pr-review', githubPrEntryEdit: 'github:pr-entry-edit', githubPrEntryDelete: 'github:pr-entry-delete',
-  githubPrStack: 'github:pr-stack', githubPrListStacks: 'github:pr-list-stacks', githubPrDiff: 'github:pr-diff', githubPrCommitDiff: 'github:pr-commit-diff', githubPrCommits: 'github:pr-commits', githubPrCreate: 'github:pr-create', githubReleaseList: 'github:release-list', githubReleaseView: 'github:release-view', githubReleaseTag: 'github:release-tag', githubReleaseCreate: 'github:release-create', githubReleaseUpdate: 'github:release-update', githubReleaseDelete: 'github:release-delete', githubReleasePublish: 'github:release-publish', githubWorkflowList: 'github:workflow-list', githubWorkflowRuns: 'github:workflow-runs', githubWorkflowRun: 'github:workflow-run', githubActionRunList: 'github:action-run-list', githubActionRunView: 'github:action-run-view', githubPrDraft: 'github:pr-draft', githubPrDraftCancel: 'github:pr-draft-cancel',
+  githubPrStack: 'github:pr-stack', githubPrListStacks: 'github:pr-list-stacks', githubPrDiff: 'github:pr-diff', githubPrCommitDiff: 'github:pr-commit-diff', githubPrCommits: 'github:pr-commits', githubPrCreate: 'github:pr-create', githubReleaseList: 'github:release-list', githubReleaseView: 'github:release-view', githubReleaseTag: 'github:release-tag', githubReleaseCreate: 'github:release-create', githubReleaseUpdate: 'github:release-update', githubReleaseDelete: 'github:release-delete', githubReleasePublish: 'github:release-publish', githubWorkflowList: 'github:workflow-list', githubWorkflowRunnable: 'github:workflow-runnable', githubWorkflowTriggers: 'github:workflow-triggers', githubWorkflowRun: 'github:workflow-run', githubActionRunList: 'github:action-run-list', githubActionRunView: 'github:action-run-view', githubPrDraft: 'github:pr-draft', githubPrDraftCancel: 'github:pr-draft-cancel',
 } as const;

@@ -1,11 +1,11 @@
 import { z } from 'zod';
-import type { CreateReleaseInput, DeleteDraftReleaseInput, PublishReleaseInput, ReleaseDetails, ReleaseSummary, ReleaseTagCheck, RepositoryWorkflowList, RunWorkflowInput, UpdateReleaseInput, WorkflowRunSummary } from '../../shared/contracts';
+import type { CreateReleaseInput, DeleteDraftReleaseInput, PublishReleaseInput, ReleaseDetails, ReleaseSummary, ReleaseTagCheck, RepositoryWorkflowList, RunWorkflowInput, UpdateReleaseInput } from '../../shared/contracts';
 import { GhOperationError } from '../../shared/errors';
 import { GITHUB_ACTION_STEP_TIMEOUT_MS, GITHUB_LIVE_READ_TIMEOUT_MS } from '../../shared/operation-timeouts';
 import { redactCommandToken } from './GitHubAccountAuth';
 import { classifyActionFailure } from './GitHubActionErrors';
 import { beginGitHubMutation, withPrivateTextFile, type GitHubAccess, type GitHubTarget } from './GitHubAccess';
-import { parseReleaseDetails, parseReleaseList, parseWorkflowList, parseWorkflowRuns, RELEASE_DETAIL_FIELDS, RELEASE_SUMMARY_FIELDS, WORKFLOW_FIELDS, WORKFLOW_RUN_FIELDS } from './ReleaseParser';
+import { parseReleaseDetails, parseReleaseList, parseWorkflowList, RELEASE_DETAIL_FIELDS, RELEASE_SUMMARY_FIELDS, WORKFLOW_FIELDS } from './ReleaseParser';
 
 const repositoryFactsSchema = z.object({ default_branch: z.string().nullish(), permissions: z.object({ push: z.boolean().nullish() }).nullish() });
 
@@ -87,6 +87,15 @@ export class GitHubReleases {
     const target = await this.github.requireGitHub(repositoryId, operation);
     const [exists, releases, facts] = await Promise.all([this.tagExists(target, tagName, operation), this.listFor(target, operation), this.repositoryFacts(target, operation)]);
     return { exists, hasRelease: releases.some((release) => release.tagName === tagName), defaultBranch: facts.defaultBranch };
+  }
+
+  /** Only a 404 says there's no such branch; anything else leaves the question open. */
+  private async branchExists(target: GitHubTarget, branch: string, operation: string): Promise<boolean> {
+    const path = branch.split('/').map(encodeURIComponent).join('/');
+    const result = await this.github.run(target.executable, ['api', `repos/${target.nameWithOwner}/branches/${path}`, '--jq', '.name'], this.readOptions(target, operation));
+    if (result.exitCode === 0) return true;
+    if (/\(HTTP 404\)\s*$/im.test(result.stderr)) return false;
+    throw classifyActionFailure({ ...result, stderr: redactCommandToken(result.stderr, target.auth) }, operation);
   }
 
   /** Only a 404 or 422 says there's no such branch or commit; anything else leaves the question open. */
@@ -199,24 +208,22 @@ export class GitHubReleases {
     return { workflows: parseWorkflowList(raw), defaultBranch: facts.defaultBranch, viewerCanWrite: facts.canWrite };
   }
 
-  async listWorkflowRuns(repositoryId: string, path: string): Promise<WorkflowRunSummary[]> {
-    const operation = 'gh-workflow-runs';
-    const target = await this.github.requireGitHub(repositoryId, operation);
-    return parseWorkflowRuns(await this.read(target, ['run', 'list', '-R', target.nameWithOwner, '--workflow', path, '--limit', '3', '--json', WORKFLOW_RUN_FIELDS], operation));
-  }
-
-  /** Always on the default branch and without inputs, which GitHub rejects with its own message when a workflow needs them. */
+  /**
+   * On a branch that exists on GitHub, with the inputs by name. GitHub checks
+   * them against the workflow file on that branch and explains what's wrong.
+   */
   async runWorkflow(input: RunWorkflowInput): Promise<void> {
     const operation = 'gh-workflow-run';
     const { target, verifyAccount } = await beginGitHubMutation(this.github, input, operation);
     this.github.invalidate(input.repositoryId);
-    const list = await this.workflowsFor(target, operation);
+    const [list, branchExists] = await Promise.all([this.workflowsFor(target, operation), this.branchExists(target, input.ref, operation)]);
     if (!list.viewerCanWrite) throw this.notAllowed(operation, "This GitHub account doesn't have write access to this repository.");
     if (!list.workflows.some((workflow) => workflow.path === input.path)) throw this.notAllowed(operation, 'This workflow is no longer active. Review the list and try again.');
-    if (input.ref !== list.defaultBranch) throw this.changed(operation, "The repository's default branch changed. Review it and try again.");
+    if (!branchExists) throw this.changed(operation, `${input.ref} isn't a branch on GitHub. Push it first, or choose another branch.`);
     verifyAccount();
     try {
-      await this.act(target, ['workflow', 'run', input.path, '-R', target.nameWithOwner, '--ref', input.ref], operation);
+      const fields = Object.entries(input.inputs).flatMap(([name, value]) => ['-f', `${name}=${value}`]);
+      await this.act(target, ['workflow', 'run', input.path, '-R', target.nameWithOwner, '--ref', input.ref, ...fields], operation);
     } finally {
       this.github.invalidate(input.repositoryId);
     }

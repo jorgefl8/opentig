@@ -447,12 +447,20 @@ export function githubIdArg(value: unknown, operation: string): number {
   return value;
 }
 
+/** A page of a GitHub list, within what its API serves. */
+export function runPageArg(value: unknown, operation: string): number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 1 || value > 20) throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation, message: 'Invalid page.' });
+  return value;
+}
+
 export function workflowPathArg(value: unknown, operation: string): string {
   return parsedRelease(workflowPathSchema.safeParse(value), operation);
 }
 
 export function runWorkflowArg(value: unknown): RunWorkflowInput {
-  return parsedRelease(z.object({ repositoryId: z.string().min(1).max(64), expectedAccount: expectedAccountSchema, path: workflowPathSchema, ref: tagNameSchema }).safeParse(value), 'gh-workflow-run');
+  // GitHub allows 25 inputs; names follow its identifier rules, so none can pass for an option.
+  const inputs = z.record(z.string().regex(/^[A-Za-z_][A-Za-z0-9_-]{0,99}$/), z.string().max(65_536)).refine((record) => Object.keys(record).length <= 25);
+  return parsedRelease(z.object({ repositoryId: z.string().min(1).max(64), expectedAccount: expectedAccountSchema, path: workflowPathSchema, ref: tagNameSchema, inputs }).safeParse(value), 'gh-workflow-run');
 }
 
 export function generatePullRequestDraftArg(value: unknown): GeneratePullRequestDraftInput {

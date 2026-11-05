@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { applyPatch } from 'diff';
 import { demoPulls } from '../demo/pulls.ts';
 import { demoReleases } from '../demo/releases.ts';
+import { demoActions } from '../demo/actions.ts';
 import { DemoRepository, initialFiles } from '../demo/model.ts';
 
 test('HTML is a tracked sample file that can be edited, staged and committed', () => {
@@ -88,12 +89,26 @@ test('sample releases cover each state and cannot mutate fixtures', () => {
   assert.throws(() => demoReleases.get('missing'), /sample repository/);
 });
 
-test('sample workflows list a release workflow first, with its recent runs', () => {
+test('sample workflows list a release workflow first', () => {
   const { workflows, defaultBranch } = demoReleases.workflows();
   assert.equal(defaultBranch, 'main');
   assert.match(workflows[0].name, /release/i);
-  assert.ok(demoReleases.workflowRuns(workflows[0].path).length > 0);
-  assert.deepEqual(demoReleases.workflowRuns('missing'), []);
+});
+
+test('sample Actions runs open as graphs, and the run dialog can tell manual workflows apart', () => {
+  const { workflows, branches } = demoActions.runnable();
+  assert.equal(branches[0], 'main');
+  assert.deepEqual(workflows.filter((workflow) => workflow.triggers?.inputs !== null).map((workflow) => workflow.name), ['Prepare release', 'Nightly checks']);
+  const { runs, hasMore } = demoActions.list(null);
+  assert.equal(hasMore, false);
+  assert.ok(runs.some((run) => run.status !== 'completed'), 'one run is still going');
+  for (const run of runs) {
+    const details = demoActions.get(run.id);
+    const ids = new Set(details.jobs.map((job) => job.id));
+    for (const node of details.graph) for (const id of node.jobIds) assert.ok(ids.has(id), `${run.title}: ${node.id} lists a known job`);
+  }
+  assert.deepEqual(demoActions.list(1).runs.map((run) => run.workflowId), [1, 1]);
+  assert.throws(() => demoActions.get(1), /sample repository/);
 });
 
 test('per-commit patches apply to the sample files and compose the full PR diff', () => {

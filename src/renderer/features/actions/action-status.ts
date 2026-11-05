@@ -60,7 +60,7 @@ export function runDuration(run: Pick<ActionRunSummary, 'status' | 'startedAt' |
 
 const EVENT_LABELS: Record<string, string> = {
   push: 'Push', pull_request: 'Pull request', pull_request_target: 'Pull request', workflow_dispatch: 'Manual', schedule: 'Schedule',
-  release: 'Release', workflow_run: 'After another workflow', workflow_call: 'Called', merge_group: 'Merge queue', repository_dispatch: 'Repository dispatch',
+  release: 'Release', dynamic: 'GitHub', workflow_run: 'After another workflow', workflow_call: 'Called', merge_group: 'Merge queue', repository_dispatch: 'Repository dispatch',
 };
 
 export function eventLabel(event: string): string {
