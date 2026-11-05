@@ -22,25 +22,39 @@
         font-family: Geist, sans-serif;
       }
       main {
+        position: relative;
         height: 100%;
-        padding: 28px 48px 0;
-        background: radial-gradient(ellipse at 50% 100%, #2266ea33, transparent 70%);
+        background: radial-gradient(ellipse 60% 70% at 50% 110%, #2266ea4d, transparent 70%);
       }
-      header { display: flex; align-items: center; gap: 14px; }
-      .logo { width: 44px; height: 44px; }
-      .brand { font-size: 32px; font-weight: 700; letter-spacing: -1px; }
-      .descriptor { margin-left: 20px; font-size: 22px; color: #b8c9eb; }
-      .domain { margin-left: auto; font-size: 20px; color: #b3b3b3; }
-      h1 { margin: 20px 0 28px; font-size: 40px; line-height: 1.1; font-weight: 600; letter-spacing: -1.3px; }
+      header { position: absolute; left: 56px; right: 56px; top: 40px; display: flex; align-items: center; gap: 14px; }
+      .logo { width: 52px; height: 52px; }
+      .brand { font-size: 36px; font-weight: 700; letter-spacing: -1px; }
+      .domain { margin-left: auto; font-size: 24px; color: #a6a6ad; }
+      h1 { position: absolute; left: 56px; top: 112px; margin: 0; font-size: 46px; line-height: 1.08; font-weight: 650; letter-spacing: -1.5px; }
+      h1 em { font-style: normal; color: #6f9dff; }
       .workspace {
-        display: block;
-        width: 980px;
+        position: absolute;
+        left: 56px;
+        top: 236px;
+        width: 880px;
         height: auto;
-        margin: 0 auto;
-        border: 1px solid #394960;
-        border-radius: 8px;
-        box-shadow: 0 10px 60px #0009;
+        border: 1px solid #3a4a63;
+        border-radius: 12px;
+        box-shadow: 0 20px 70px #000c;
       }
+      /* The phone screen is 228 x 488, the aspect ratio of the 390 x 835 capture. */
+      .phone {
+        position: absolute;
+        right: 70px;
+        top: 104px;
+        width: 246px;
+        height: 506px;
+        padding: 9px;
+        border-radius: 40px;
+        background: #1a1a1d;
+        box-shadow: 0 0 0 1px #3a3a42, 0 30px 80px #000e, 0 0 90px #2266ea40;
+      }
+      .phone img { display: block; width: 228px; height: 488px; border-radius: 32px; }
     </style>
   </head>
   <body>
@@ -48,11 +62,13 @@
       <header>
         <img class="logo" src="../public/favicon.svg" alt="" />
         <span class="brand">OpenTig</span>
-        <span class="descriptor">Free, open-source Git client</span>
         <span class="domain">opentig.com</span>
       </header>
-      <h1>A focused workspace for your Git repositories.</h1>
-      <img class="workspace" src="../../docs/images/workspace.png" width="1280" height="587" alt="OpenTig showing an open pull request and its side-by-side JavaScript diff in the Launchpad sample repository" />
+      <h1>Your Git workspace,<br /><em>on desktop and phone.</em></h1>
+      <img class="workspace" src="../../docs/images/workspace.png" width="2880" height="1320" alt="OpenTig showing an open pull request and its side-by-side JavaScript diff in the Launchpad sample repository" />
+      <div class="phone">
+        <img src="../../docs/images/workspace-phone.png" width="780" height="1670" alt="The same pull request on a phone, ready to merge" />
+      </div>
     </main>
   </body>
 </html>
