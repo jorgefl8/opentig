@@ -40,6 +40,7 @@ for (const name of ['react', 'react-dom', 'mermaid', 'shiki']) {
 }
 await access(path.join(modules, 'uiohook-napi', 'prebuilds', `${platform}-${arch}`, 'uiohook-napi.node'));
 await access(path.join(resources, 'opentig.ico'));
+for (const notice of ['LICENSE', 'THIRD_PARTY_NOTICES.md']) await access(path.join(resources, notice));
 const trash = await import(pathToFileURL(path.join(modules, 'trash/index.js')).href);
 assert.equal(typeof trash.default, 'function', 'Packaged trash dependency closure must load independently');
 if (platform === 'win32') await access(path.join(modules, 'trash/lib/windows-trash.exe'));

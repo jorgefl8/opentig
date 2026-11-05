@@ -2,6 +2,7 @@ import path from 'node:path';
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig, type Plugin } from 'vite';
+import { clientLicenses } from './scripts/client-licenses.mts';
 import { pdfjsAssets } from './scripts/pdfjs-assets.mts';
 
 /** Intercept only Pierre's `import { bundledLanguages } from "shiki"` so Vite
@@ -20,7 +21,7 @@ function pierreBundledLanguages(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [react(), tailwindcss(), pierreBundledLanguages(), pdfjsAssets()],
+  plugins: [react(), tailwindcss(), pierreBundledLanguages(), pdfjsAssets(), clientLicenses()],
   publicDir: path.resolve(import.meta.dirname, 'public'),
   worker: { format: 'es' },
   resolve: {

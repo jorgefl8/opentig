@@ -6,13 +6,28 @@ The browser client bundles [PDF.js](https://github.com/mozilla/pdf.js) under Apa
 
 The server bundles [parse5](https://github.com/inikulin/parse5) under the MIT License to embed local assets in HTML previews.
 
-## vscode-icons
+## Fonts and KaTeX
 
-Files bundled into the production client originate from the [vscode-icons project](https://github.com/vscode-icons/vscode-icons).
+The browser client bundles these fonts under the SIL Open Font License 1.1. Their copyright notices and license texts are included under `dist/client/licenses/`.
+
+- [Geist and Geist Mono](https://vercel.com/font): The Geist Project Authors
+- [Inconsolata](https://fonts.google.com/specimen/Inconsolata): The Inconsolata Project Authors
+- [JetBrains Mono](https://www.jetbrains.com/lp/mono/): The JetBrains Mono Project Authors
+- [Plus Jakarta Sans](https://github.com/tokotype/PlusJakartaSans): The Plus Jakarta Sans Project Authors
+- [Space Grotesk](https://floriankarsten.github.io/space-grotesk/): The Space Grotesk Project Authors
+- [Departure Mono](https://departuremono.com/) v1.500: Helena Zhang
+
+[KaTeX](https://github.com/KaTeX/KaTeX) and its fonts render Markdown math under the MIT License, copyright Khan Academy and other contributors. Its license is `dist/client/licenses/katex-LICENSE.txt`.
+
+## vscode-icons and Tabler Icons
+
+Files bundled into the production client originate from the [vscode-icons project](https://github.com/vscode-icons/vscode-icons). Its license file is included as `dist/client/vscode-icons/LICENSE.txt`.
 
 - Project source code: MIT License
 - Icons: Creative Commons Attribution-ShareAlike 4.0 International
 - Branded icons remain subject to their respective owners' copyright and trademark terms
+
+Interface icons come from [Tabler Icons](https://github.com/tabler/tabler-icons) under the MIT License.
 
 ## trash
 
@@ -22,7 +37,7 @@ The version is pinned to avoid the unpatched `braces` dependency in 10.x ([GHSA-
 
 ## ws
 
-OpenTig uses [`ws`](https://github.com/websockets/ws) 8.21.3 under the MIT License for its authenticated WebSocket transport.
+OpenTig uses [`ws`](https://github.com/websockets/ws) 8.22.0 under the MIT License for its authenticated WebSocket transport.
 
 ## uqr
 

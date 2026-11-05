@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { builtinModules } from 'node:module';
 import { parseSync } from 'oxc-parser';
+import { clientLicenseFiles } from '../../../scripts/client-licenses.mts';
 
 const FORBIDDEN_PACKAGES = [
   'electron',
@@ -18,6 +19,8 @@ export async function verifyServerBuild(serverDist) {
   await access(path.join(serverDist, 'server.mjs'));
   await access(path.join(serverDist, 'utility.mjs'));
   await access(path.join(serverDist, 'client', 'index.html'));
+  // Bundled fonts, KaTeX, PDF.js, and file icons must ship with their license texts.
+  for (const file of [...clientLicenseFiles, 'pdfjs/LICENSE', 'vscode-icons/LICENSE.txt']) await access(path.join(serverDist, 'client', file));
   const manifest = JSON.parse(await readFile(path.join(serverDist, 'manifest.json'), 'utf8'));
   if (manifest.packageName !== '@opentig/cli'
     || typeof manifest.appVersion !== 'string'
