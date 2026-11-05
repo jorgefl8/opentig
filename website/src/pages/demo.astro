@@ -3,7 +3,7 @@ import bundle from '../../.demo-manifest.json';
 const title = 'Try OpenTig | Interactive Git workflow demo';
 const description = 'Explore OpenTig with a sample repository. Review diffs, edit files, stage changes, and create simulated commits in your browser.';
 const canonical = new URL('/demo/', Astro.site!);
-const image = new URL('/opentig-social.png', Astro.site!);
+const image = new URL('/opentig-social.jpg', Astro.site!);
 const imageAlt = 'OpenTig, a free, open-source Git client, showing a pull request with a side-by-side code diff on desktop and ready to merge on a phone.';
 ---
 <!doctype html>
@@ -23,7 +23,7 @@ const imageAlt = 'OpenTig, a free, open-source Git client, showing a pull reques
     <meta name="twitter:card" content="summary_large_image" />
     <meta property="og:image" content={image} /><meta name="twitter:image" content={image} />
     <meta property="og:image:alt" content={imageAlt} /><meta name="twitter:image:alt" content={imageAlt} />
-    <meta property="og:image:type" content="image/png" /><meta property="og:image:width" content="1200" /><meta property="og:image:height" content="630" />
+    <meta property="og:image:type" content="image/jpeg" /><meta property="og:image:width" content="2400" /><meta property="og:image:height" content="1260" />
     {bundle.styles.map(href => <link rel="stylesheet" href={href} />)}
     <script is:inline type="module" src={bundle.script}></script>
   </head>

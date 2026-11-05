@@ -6,6 +6,23 @@ import { documentationRoutes } from '../docs.config.mjs';
 import { contentSignals, markdownPath } from './agent-access.mjs';
 import { SaxesParser } from 'saxes';
 
+/** Read the type and pixel size of a PNG or baseline/progressive JPEG, or undefined for anything else. */
+export function imageSize(bytes) {
+  if (bytes.length >= 24 && bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) {
+    return { type: 'image/png', width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) };
+  }
+  if (bytes.length < 4 || bytes[0] !== 0xff || bytes[1] !== 0xd8) return;
+  for (let offset = 2; offset + 9 <= bytes.length;) {
+    if (bytes[offset] !== 0xff) return;
+    const marker = bytes[offset + 1];
+    // Start-of-frame markers carry the size; DHT (C4), JPG (C8) and DAC (CC) share the range but don't.
+    if (marker >= 0xc0 && marker <= 0xcf && ![0xc4, 0xc8, 0xcc].includes(marker)) {
+      return { type: 'image/jpeg', width: bytes.readUInt16BE(offset + 7), height: bytes.readUInt16BE(offset + 5) };
+    }
+    offset += 2 + bytes.readUInt16BE(offset + 2);
+  }
+}
+
 const attr = (node, name) => node.attrs?.find((item) => item.name === name)?.value;
 const text = (node) => node.nodeName === '#text' ? node.value : (node.childNodes ?? []).map(text).join('');
 const walk = (node) => [node, ...(node.childNodes ?? []).flatMap(walk)];
@@ -170,10 +187,10 @@ export function validateBuild({ directory, site, indexable }) {
     const image = publicUrl(meta('og:image'));
     check(image.origin === origin.origin && image.protocol === 'https:', `${label} social image must use the public origin`);
     check(meta('twitter:image') === image.href && meta('twitter:image:alt') === meta('og:image:alt'), `${label} social images or alternatives differ`);
-    const png = readFileSync(join(root, targetFile(image)));
-    check(png.length >= 24 && png.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])), `${label} social image is not PNG`);
-    check(meta('og:image:type') === 'image/png' && Number(meta('og:image:width')) === png.readUInt32BE(16)
-      && Number(meta('og:image:height')) === png.readUInt32BE(20), `${label} social image dimensions or type differ`);
+    const social = imageSize(readFileSync(join(root, targetFile(image))));
+    check(social, `${label} social image is not a PNG or JPEG`);
+    check(meta('og:image:type') === social?.type && Number(meta('og:image:width')) === social?.width
+      && Number(meta('og:image:height')) === social?.height, `${label} social image dimensions or type differ`);
     for (const node of nodes) {
       for (const attribute of ['href', 'src', 'poster']) {
         const value = attr(node, attribute);

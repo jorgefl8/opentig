@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, copyFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { validateBuild } from './validate-build.mjs';
+import { imageSize, validateBuild } from './validate-build.mjs';
 
 function fixture(t, { indexable = true, site = 'https://opentig.com/' } = {}) {
   const directory = mkdtempSync(join(tmpdir(), 'opentig-seo-'));
@@ -30,9 +30,9 @@ function fixture(t, { indexable = true, site = 'https://opentig.com/' } = {}) {
     <meta property="og:description" content="Review &amp; commit."><meta name="twitter:description" content="Review &amp; commit.">
     <meta property="og:type" content="website"><meta property="og:site_name" content="OpenTig">
     <meta name="twitter:card" content="summary_large_image">
-    <meta property="og:image" content="${site}card.png"><meta name="twitter:image" content="${site}card.png">
+    <meta property="og:image" content="${site}card.jpg"><meta name="twitter:image" content="${site}card.jpg">
     <meta property="og:image:alt" content="OpenTig screenshot"><meta name="twitter:image:alt" content="OpenTig screenshot">
-    <meta property="og:image:type" content="image/png"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+    <meta property="og:image:type" content="image/jpeg"><meta property="og:image:width" content="2400"><meta property="og:image:height" content="1260">
     <link rel="stylesheet" href="/assets/main.css">
     ${indexable && !error ? `<script type="application/ld+json">${JSON.stringify(schema)}</script>` : ''}
     </head><body><h1>OpenTig</h1><div id="features&amp;more">Features</div><a href="/#features%26more">Features</a></body></html>`;
@@ -44,7 +44,7 @@ function fixture(t, { indexable = true, site = 'https://opentig.com/' } = {}) {
   write('sitemap.xml', `<?xml version="1.0"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${indexable ? `<url><loc>${site}</loc></url>` : ''}</urlset>`);
   mkdirSync(join(directory, 'assets'));
   write('assets/main.css', '@font-face{src:url("./font.woff2")}'); write('assets/font.woff2', 'fixture');
-  copyFileSync(new URL('../public/opentig-social.png', import.meta.url), join(directory, 'card.png'));
+  copyFileSync(new URL('../public/opentig-social.jpg', import.meta.url), join(directory, 'card.jpg'));
   return { write, change, directory, validate: () => validateBuild({ directory, site, indexable }) };
 }
 
@@ -68,7 +68,8 @@ const regressions = [
   ['localhost link', 'index.html', '/#features%26more', 'http://localhost:4321/', /local or private URL/],
   ['IPv6 loopback link', 'index.html', '/#features%26more', 'http://[::1]/', /local or private URL/],
   ['missing CSS font', 'assets/main.css', './font.woff2', './missing.woff2', /missing local target/],
-  ['incorrect image dimensions', 'index.html', 'og:image:width" content="1200', 'og:image:width" content="999', /image dimensions/],
+  ['incorrect image dimensions', 'index.html', 'og:image:width" content="2400', 'og:image:width" content="999', /image dimensions/],
+  ['incorrect image type', 'index.html', 'og:image:type" content="image/jpeg', 'og:image:type" content="image/png', /image dimensions or type/],
   ['malformed JSON-LD', 'index.html', '"@context":"https://schema.org"', '"@context":', /JSON/],
   ['broken schema identity', 'index.html', '"about":{"@id":"https://opentig.com/#application"}', '"about":{"@id":"https://opentig.com/#missing"}', /schema entity links/],
   ['local schema link', 'index.html', '"sameAs":["https://github.com/jorgefl8/opentig"', '"sameAs":["http://127.0.0.1/"', /local or private URL/],
@@ -164,4 +165,10 @@ test('published guide reading links stay on site while explicit editing links ma
   assert.throws(output.validate, /published documentation links to GitHub/);
   output.change('index.html', `<a href="${destination}">Read guide</a>`, `<a data-docs-source="true" href="${destination}">Edit on GitHub</a>`);
   assert.equal(output.validate(), 2);
+});
+
+test('reads the social image type and size from PNG and JPEG headers', () => {
+  assert.deepEqual(imageSize(readFileSync(new URL('../public/opentig-social.jpg', import.meta.url))), { type: 'image/jpeg', width: 2400, height: 1260 });
+  assert.deepEqual(imageSize(readFileSync(new URL('../public/opentig-social.png', import.meta.url))), { type: 'image/png', width: 1200, height: 630 });
+  for (const bytes of [Buffer.alloc(0), Buffer.from('GIF89a'), Buffer.from([0xff, 0xd8, 0x00, 0x00, 0, 0, 0, 0, 0, 0])]) assert.equal(imageSize(bytes), undefined);
 });
