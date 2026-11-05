@@ -4,15 +4,18 @@ import ExternalLinkIcon from '@tabler/icons/outline/external-link.svg';
 const steps = [
   { title: 'Review the diff', text: 'Select a changed file to compare the working copy with the last commit.' },
   { title: 'Make an edit', text: 'Open filter-tasks.js, add .trim() before .toLowerCase(), and save your change.' },
-  { title: 'Stage what belongs', text: 'Stage the filter and its tests. Leave the unrelated README change for later.' },
+  { title: 'Stage what belongs', text: 'Stage the filter and its tests. Leave the changelog and README for a separate commit.' },
   { title: 'Create a sample commit', text: 'Write a message, commit the staged files, and inspect the result in history.' },
 ];
 ---
-<section id="workflow" class="px-4 sm:px-6 pt-4 pb-24 scroll-mt-20" aria-labelledby="workflow-heading">
+<section id="workflow" class="px-4 sm:px-6 pt-2 pb-16 scroll-mt-20" aria-labelledby="workflow-heading">
   <div class="max-w-7xl mx-auto">
-    <div class="text-center mb-8">
-      <h2 id="workflow-heading" class="font-['GeistPixelTriangle'] text-3xl md:text-4xl font-bold tracking-tight">Try OpenTig</h2>
-      <p class="text-muted-foreground mt-4 max-w-2xl mx-auto">Explore a sample repository. Edit a file, stage your changes, and make a commit.</p>
+    <div class="mb-3 flex items-end justify-between gap-4">
+      <h2 id="workflow-heading" class="eyebrow">Try it live · sample repository</h2>
+      <a href="/demo/" target="_blank" rel="noopener noreferrer" class="demo-expand">
+        Open in a new tab
+        <ExternalLinkIcon width={16} height={16} aria-hidden="true" />
+      </a>
     </div>
     <a href="#features" class="skip-link">Skip interactive demo</a>
     <div data-live-demo class="demo-shell">
@@ -22,13 +25,7 @@ const steps = [
         <iframe data-demo-frame data-src="/demo/" title="Interactive OpenTig demo with a sample repository" sandbox="allow-scripts allow-same-origin allow-modals allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation" class="demo-frame" hidden></iframe>
       </div>
     </div>
-    <div class="mt-2 flex justify-end">
-      <a href="/demo/" target="_blank" rel="noopener noreferrer" class="demo-expand">
-        Open in a new tab
-        <ExternalLinkIcon width={16} height={16} aria-hidden="true" />
-      </a>
-    </div>
-    <ol class="grid sm:grid-cols-2 lg:grid-cols-4 gap-6 mt-10">
+    <ol class="grid sm:grid-cols-2 lg:grid-cols-4 gap-6 mt-8">
       {steps.map((step,index) => <li class="border-l border-primary/40 pl-4">
         <span class="font-mono text-xs text-primary-text">0{index+1}</span>
         <h3 class="font-semibold mt-2">{step.title}</h3>
@@ -44,12 +41,13 @@ const steps = [
     border: 1px solid #ffffff24;
     border-radius: 12px;
     background: #080808;
+    box-shadow: 0 0 0 1px #000, 0 30px 80px -20px #000, 0 0 120px -40px color-mix(in oklch, var(--primary) 55%, transparent);
   }
   .demo-expand {
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    min-height: 44px;
+    min-height: 32px;
     color: var(--muted-foreground);
     font-size: 13px;
     font-weight: 500;

@@ -12,6 +12,7 @@ import { resolvePierreLanguage } from './pierreLanguages';
 import {
   applyConflictDraft, createConflictDraft, markConflictDraftPersisted, reconcileConflictDraft,
 } from './conflict-draft';
+import { ContentFade } from '@/components/Reveal';
 
 type PierreDiffViewerProps =
   | {
@@ -43,7 +44,7 @@ type PierreDiffViewerProps =
 export default function PierreDiffViewer(props: PierreDiffViewerProps) {
   return (
     <PierreWorkerPool>
-      <div key={props.contentKey} className="viewer-transition">
+      <ContentFade key={props.contentKey} className="viewer-transition">
         {props.kind === 'diff'
           ? <DiffContent {...props} />
           : (
@@ -56,7 +57,7 @@ export default function PierreDiffViewer(props: PierreDiffViewerProps) {
               onResolve={props.onResolve}
             />
           )}
-      </div>
+      </ContentFade>
     </PierreWorkerPool>
   );
 }

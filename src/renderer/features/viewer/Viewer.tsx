@@ -20,6 +20,7 @@ import { openExternalUrl } from '@/lib/browser-capabilities';
 import { ByteBudgetLru } from '@/lib/ByteBudgetLru';
 import { opentig } from '@/lib/opentig-api';
 import { MobileCommitBar, MobileDiffBar } from './MobileViewerBars';
+import { ContentFade } from '@/components/Reveal';
 const PierreDiffViewer = lazyWithRetry(() => import('./PierreDiffViewer'));
 const PierreEditBoundary = lazyWithRetry(() => import('./PierreEditBoundary').then((module) => ({ default: module.PierreEditBoundary })));
 const MarkdownFileViewer = lazyWithRetry(() => import('@/features/markdown/MarkdownFileViewer').then((module) => ({ default: module.MarkdownFileViewer })));
@@ -441,7 +442,7 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
   const body = (
     <>
       {bar}
-      {pierreContent ?? <div key={data ? data.docKey : docKey} className="viewer-transition">{content}</div>}
+      {pierreContent ?? <ContentFade key={data ? data.docKey : docKey} className="viewer-transition">{content}</ContentFade>}
       {reloading && <span className="viewer-reloading" aria-hidden="true"><IconLoader4 className="spinner" /></span>}
     </>
   );

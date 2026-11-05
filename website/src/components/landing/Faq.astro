@@ -1,6 +1,7 @@
 ---
 import { installationPath } from '@/docs';
 import { repositoryUrl } from '@/site';
+import SectionHeading from './SectionHeading.astro';
 
 const questions = [
   {
@@ -48,12 +49,10 @@ const questions = [
 ];
 ---
 
-<section id="faq" aria-labelledby="faq-heading" class="py-24 px-6">
-  <div class="max-w-3xl mx-auto">
-    <h2 id="faq-heading" class="font-['GeistPixelTriangle'] text-3xl md:text-4xl font-bold tracking-tight text-center mb-12">
-      Questions about OpenTig
-    </h2>
-    <div class="faq-list rounded-2xl border border-border bg-background/80 backdrop-blur-sm">
+<section id="faq" aria-labelledby="faq-heading" class="py-20 px-4 sm:px-6">
+  <div class="max-w-5xl mx-auto grid gap-10 md:grid-cols-[minmax(0,1fr)_minmax(0,1.7fr)]">
+    <SectionHeading id="faq-heading" lead="Questions?" detail="Short answers, linked to the full guides." class="md:sticky md:top-28 md:self-start" />
+    <div class="faq-list rounded-[14px] border border-[var(--tile-line)] bg-card">
       {questions.map((item, index) => (
         <details open={index === 0}>
           <summary>

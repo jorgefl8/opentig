@@ -15,6 +15,7 @@ import { changeStatusCode } from '@/features/changes/change-status';
 import { buildCommitGraph, type CommitGraphRow } from './commit-graph';
 import { canUndoCommit, commitPublication, commitReference, historyRows, matchesHistory, showsBranchLine } from './history-presentation';
 import { readCommitFilesCache, writeCommitFilesCache } from './commit-files-cache';
+import { Reveal } from '@/components/Reveal';
 import { copyCommitHash } from './copy-commit-hash';
 import { getVsCodeFileIconUrl } from '@/lib/vscode-icons';
 import { useMobileLayout } from '@/lib/use-mobile-layout';
@@ -231,26 +232,25 @@ function CommitRow({ phone, repositoryId, upstream, baseRef, commit, graphRow, s
           </Tooltip>
         </div>}
       </div>
-      {open && showGraph && graphRow.continuations.length > 0 && <CommitGraphContinuation graph={graphRow} width={graphWidth} />}
-      {open && (
-        <div className="commit-files" style={{ paddingLeft: graphWidth + COMMIT_TEXT_INSET }}>
-          {commit.body && <p className="commit-description"><LinkedText text={commit.body} /></p>}
-          {filesError && <div className="commit-files-message error">{filesError}</div>}
-          {!files && !filesError && <div className="commit-files-message"><IconLoader4 className="spinner" /> <ShimmeringText text="Loading files…" /></div>}
-          {files && files.length === 0 && <div className="commit-files-message">{commit.parentCount > 1 ? 'This merge commit has no changes of its own.' : 'This commit has no file changes.'}</div>}
-          {files && files.length > 0 && (
-            <>
-              <div className="commit-files-summary">
-                {files.length} {files.length === 1 ? 'file' : 'files'}
-                {(additions > 0 || deletions > 0) && ` · +${additions} −${deletions}`}
-              </div>
-              {files.map((file) => (
-                <CommitFileRow key={file.path} file={file} onSelect={() => onSelectFile(commit.oid, file)} />
-              ))}
-            </>
-          )}
-        </div>
-      )}
+      {/* Sized by the item's height, so the lanes follow the files as they open and close. */}
+      {showGraph && graphRow.continuations.length > 0 && <CommitGraphContinuation graph={graphRow} width={graphWidth} />}
+      <Reveal open={open} follow className="commit-files" style={{ paddingLeft: graphWidth + COMMIT_TEXT_INSET }}>
+        {commit.body && <p className="commit-description"><LinkedText text={commit.body} /></p>}
+        {filesError && <div className="commit-files-message error">{filesError}</div>}
+        {!files && !filesError && <div className="commit-files-message"><IconLoader4 className="spinner" /> <ShimmeringText text="Loading files…" /></div>}
+        {files && files.length === 0 && <div className="commit-files-message">{commit.parentCount > 1 ? 'This merge commit has no changes of its own.' : 'This commit has no file changes.'}</div>}
+        {files && files.length > 0 && (
+          <>
+            <div className="commit-files-summary">
+              {files.length} {files.length === 1 ? 'file' : 'files'}
+              {(additions > 0 || deletions > 0) && ` · +${additions} −${deletions}`}
+            </div>
+            {files.map((file) => (
+              <CommitFileRow key={file.path} file={file} onSelect={() => onSelectFile(commit.oid, file)} />
+            ))}
+          </>
+        )}
+      </Reveal>
     </div>
   );
 }

@@ -7,6 +7,7 @@ import { DemoRepository, repository, sampleDate } from "./model";
 import { demoPulls } from "./pulls";
 import { demoReleases } from "./releases";
 import { findSearchMatches } from "../../src/shared/search";
+import { sampleCommitMessage, sampleHarness, samplePullRequestDraft } from "./sample-ai.ts";
 
 // The shared app recognizes this error type; the demo has no authentication transport.
 export class ServerAuthenticationError extends Error {}
@@ -15,15 +16,16 @@ export const UNCONFIRMED_RESULT_MESSAGE = '';
 export const isConnectionLoss = (_reason: unknown) => false;
 export const isUnconfirmedResult = (_reason: unknown) => false;
 export const model = new DemoRepository();
-const disabled = async (): Promise<never> => {
-  throw new Error(
-    "This action needs an installed OpenTig instance. In this demo, try editing files, staging changes, and making a sample commit.",
-  );
+const unavailable = (what: string) => async (): Promise<never> => {
+  throw new Error(`${what} needs an installed OpenTig instance. This demo simulates editing, staging, committing, pushing, and sample pull requests.`);
 };
-function group<T extends object>(methods: Partial<T>): T {
+const disabled = unavailable("This action");
+/** Methods the demo leaves out explain, for their area, that they need an installed instance. */
+function group<T extends object>(methods: Partial<T>, what = "This action"): T {
+  const explain = unavailable(what);
   return new Proxy(methods as T, {
     get(target, key) {
-      return Reflect.get(target, key) ?? disabled;
+      return Reflect.get(target, key) ?? explain;
     },
   });
 }
@@ -64,8 +66,8 @@ const branch = () => ({
   fullName: "refs/heads/feature/task-filters",
   current: true,
   remote: false,
-  upstream: null,
-  ahead: 0,
+  upstream: model.upstream,
+  ahead: model.ahead(),
   behind: 0,
   worktreePath: repository.path,
   oid: model.commits[0]!.info.oid,
@@ -106,7 +108,8 @@ export const opentig: OpenTigApi = {
       platform: "other",
       systemTrash: false,
       nativePicker: false,
-      fileClipboard: false,
+      // Copy, cut, and paste work on the sample files through an in-memory clipboard.
+      fileClipboard: true,
       revealInFileManager: false,
       githubCli: githubStatus,
       aiProviders: [],
@@ -126,8 +129,8 @@ export const opentig: OpenTigApi = {
     setGlobalGitIdentity: disabled,
     completeOnboarding: async () => 1,
   },
-  clipboard: { readFilePaths: async () => [], readImagePng: async () => null },
-  projects: group<OpenTigApi["projects"]>({}),
+  clipboard: { readFilePaths: async () => model.clipboardPaths(), readImagePng: async () => null },
+  projects: group<OpenTigApi["projects"]>({}, "Organizing repositories into projects"),
   repository: group<OpenTigApi["repository"]>({
     getStatus: async () => model.status(),
     getFiles: async () => model.files(),
@@ -140,18 +143,67 @@ export const opentig: OpenTigApi = {
       size: model.read(path).length,
       mtimeMs: model.revision,
     }),
+    createEntry: async (_id, directory, name, kind) => {
+      const result = model.track(kind === "file" ? "Create file" : "Create folder", () => model.createEntry(directory, name, kind));
+      if (result.status === "created") changed();
+      return result;
+    },
+    renameEntry: async (_id, path, name) => {
+      const result = model.track("Rename item", () => model.rename(path, name));
+      if (result.status === "renamed") changed();
+      return result;
+    },
+    deleteEntries: async (_id, paths) => {
+      const deleted = model.track(paths.length === 1 ? "Delete item" : `Delete ${paths.length} items`, () => model.remove(paths));
+      changed();
+      return { deleted, recovery: "undo" };
+    },
+    copyEntries: async (_id, paths) => model.copy(paths),
+    cutEntries: async (_id, paths) => model.cut(paths),
+    pasteEntries: async (_id, directory, sources, cutTransferId) => {
+      const result = model.track("Paste", () => model.paste(directory, sources, cutTransferId));
+      if (result.status === "pasted") changed();
+      return result;
+    },
+    moveEntries: async (_id, paths, directory) => {
+      const result = model.track(paths.length === 1 ? "Move item" : `Move ${paths.length} items`, () => model.move(paths, directory));
+      changed();
+      return result;
+    },
+    moveEntry: async (_id, path, directory) => {
+      const { moved, conflicts } = model.track("Move item", () => model.move([path], directory));
+      changed();
+      if (moved[0]) return { status: "moved", ...moved[0] };
+      return conflicts.length ? { status: "conflict", path } : { status: "noop", path };
+    },
+    replaceSearch: async (_id, request) => {
+      if (request.options.regex) throw new Error("Regular-expression search is not included in this demo. Try a text search.");
+      const result = model.replace(request);
+      if (result.status === "replaced") changed();
+      return result;
+    },
+    getAbsolutePath: async (_id, path) => `${repository.path}/${path}`,
     writeFile: async (_id, path, content, expected) => {
       const result = model.write(path, content, expected);
       if (result.status === "saved") changed();
       return result;
     },
-    getFavicon: async () => null,
-    fileHistoryState: async () => ({
-      canUndo: false,
-      undoLabel: null,
-      canRedo: false,
-      redoLabel: null,
-    }),
+    // The real app finds assets/logo.svg the same way, so the sample repository shows its own icon.
+    getFavicon: async () => {
+      const logo = model.read("assets/logo.svg");
+      return logo ? { mimeType: "image/svg+xml", dataUrl: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(logo)}` } : null;
+    },
+    fileHistoryState: async () => model.fileHistoryState(),
+    undoFileOperation: async () => {
+      const result = model.undoFileOperation("undo");
+      changed();
+      return result;
+    },
+    redoFileOperation: async () => {
+      const result = model.undoFileOperation("redo");
+      changed();
+      return result;
+    },
     openRecent: async () => repository,
     browseDirectories: async () => ({
       path: "/demo",
@@ -190,7 +242,7 @@ export const opentig: OpenTigApi = {
         truncated: false,
       };
     },
-  }),
+  }, "Opening, cloning, and revealing files outside the sample"),
   diff: {
     get: async (request) => model.diff(request.path, request.kind),
     getCommit: async (_id, oid) => model.commitDiff(oid),
@@ -208,12 +260,12 @@ export const opentig: OpenTigApi = {
       return { ok: true };
     },
     stageAll: async () => {
-      model.stage(Object.keys(model.working));
+      model.stage(model.status().changes.map((change) => change.path));
       changed();
       return { ok: true };
     },
     unstageAll: async () => {
-      model.unstage(Object.keys(model.working));
+      model.unstage(model.status().changes.map((change) => change.path));
       changed();
       return { ok: true };
     },
@@ -222,8 +274,18 @@ export const opentig: OpenTigApi = {
       changed();
       return { ok: true };
     },
-  }),
+    prepareCommitGroup: async (input) => {
+      model.prepareGroup(input.paths, input.expectedStagedPaths);
+      changed();
+      return { ok: true };
+    },
+  }, "Resolving conflicts"),
   commits: group<OpenTigApi["commits"]>({
+    undoLatest: async (_id, expectedOid) => {
+      const result = model.undoLatest(expectedOid);
+      if (result.status === "success") changed();
+      return result;
+    },
     create: async (_id, message) => {
       const result = model.commit(message);
       changed();
@@ -243,8 +305,32 @@ export const opentig: OpenTigApi = {
       blockers: [],
       revision: "0".repeat(64),
     }),
-  }),
+  }, "Changing commit authorship"),
   refs: group<OpenTigApi["refs"]>({
+    // Pushing is simulated: the sample remote takes every local commit, with no network access.
+    pushContext: async (repositoryId) => ({
+      id: `demo-push-${model.commits[0]!.info.oid}`,
+      repositoryId,
+      branch: "feature/task-filters",
+      oid: model.commits[0]!.info.oid,
+      targetRef: "refs/heads/feature/task-filters",
+      remote: "origin",
+      urls: ["https://github.com/opentig-demo/launchpad.git"],
+      remotes: ["origin"],
+      mode: "managed",
+      login: "opentig-demo",
+      hasUpstream: Boolean(model.upstream),
+    }),
+    push: async () => {
+      const result = model.push();
+      changed();
+      if (result.published) return { status: "published", branch: "feature/task-filters", remote: "origin" };
+      return result.commits ? { status: "success", commits: result.commits } : { status: "up-to-date" };
+    },
+    // The simulated remote never has commits the sample lacks.
+    fetch: async () => ({ status: "success", ahead: model.ahead(), behind: 0 }),
+    fetchBranches: async () => ({ status: "success", ahead: model.ahead(), behind: 0 }),
+    pull: async () => (model.upstream ? { status: "up-to-date" } : { status: "no-upstream" }),
     listBranches: async () => [branch()],
     listWorktrees: async () => [worktree()],
     localRefsSnapshot: async () => ({
@@ -276,11 +362,18 @@ export const opentig: OpenTigApi = {
       return { status: "switched", movedChanges: false };
     },
     selectWorktree: async () => repository,
-  }),
+  }, "Managing branches, remotes, and worktrees"),
   ai: group<OpenTigApi["ai"]>({
-    statuses: async () => [],
+    statuses: async () => [sampleHarness],
     repositoryInstructions: async () => ({ enabled: false, files: [] }),
+    setRepositoryInstructions: async (_id, enabled) => ({ enabled, files: [] }),
+    // A short pause, so the generating state is visible as it is with a real CLI.
+    generateCommitMessage: async () => {
+      await new Promise((resolve) => setTimeout(resolve, 900));
+      return sampleCommitMessage(model.status().changes.filter((change) => change.staged).map((change) => change.path));
+    },
     log: async () => [],
+    clearLog: noop,
     cancelGeneration: noop,
   }),
   github: group<OpenTigApi["github"]>({
@@ -291,7 +384,19 @@ export const opentig: OpenTigApi = {
     getPullRequest: async (_id, number) => demoPulls.get(number),
     getPullRequestLiveState: async (_id, number) => demoPulls.liveState(number),
     getPullRequestConversation: async (_id, number) => demoPulls.conversation(number),
-    getPullRequestStack: async () => null,
+    listPullRequestStacks: async (_id, numbers) => demoPulls.stacks(numbers),
+    getPullRequestStack: async (_id, number) => demoPulls.stack(number),
+    runPullRequestAction: async (input) => demoPulls.act(input),
+    generateDraft: async () => {
+      await new Promise((resolve) => setTimeout(resolve, 900));
+      return samplePullRequestDraft();
+    },
+    cancelDraft: noop,
+    updatePullRequest: async (input) => demoPulls.update(input),
+    commentOnPullRequest: async (input) => demoPulls.comment(input),
+    reviewPullRequest: async (input) => demoPulls.review(input),
+    editPullRequestEntry: async (input) => demoPulls.editEntry(input),
+    deletePullRequestEntry: async (input) => demoPulls.deleteEntry(input),
     getPullRequestDiff: async (_id, number) => demoPulls.diff(number),
     getPullRequestCommitDiff: async (_id, oid) => demoPulls.commitDiff(oid),
     getPullRequestCommits: async (_id, number) => ({ commits: demoPulls.get(number).commits, complete: true }),
@@ -317,7 +422,7 @@ export const opentig: OpenTigApi = {
       checkedAt: null,
       message: githubStatus.message!,
     }),
-  }),
+  }, "Releases, workflow runs, new pull requests, and GitHub accounts"),
   diagnostics: { list: async () => [], clear: noop, record: noop },
   events: {
     onRepositoryChanged: (listener) => {

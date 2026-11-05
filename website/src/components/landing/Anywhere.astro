@@ -1,0 +1,206 @@
+---
+import SectionHeading from './SectionHeading.astro';
+
+// Two layouts of one diagram: wide for tablets and desktops, stacked for phones.
+// Each link is drawn once as a quiet track and once as a flowing dashed line; dots travel along the same path.
+const wide = {
+  viewBox: '0 0 960 380',
+  host: { x: 40, y: 76, width: 300, height: 212 },
+  rows: [
+    { y: 166, label: '~/code/launchpad', kind: 'files' },
+    { y: 208, label: 'Git and credentials', kind: 'git' },
+    { y: 250, label: 'OpenTig app or CLI', kind: 'opentig' },
+  ],
+  rowX: 60, rowWidth: 260,
+  tunnel: { x: 480, y: 190 },
+  devices: [
+    { kind: 'laptop', x: 650, y: 20, width: 220, height: 112, label: 'Laptop' },
+    { kind: 'tablet', x: 650, y: 206, width: 112, height: 136, label: 'Tablet' },
+    { kind: 'phone', x: 800, y: 226, width: 62, height: 116, label: 'Phone' },
+  ],
+  links: [
+    'M320,251 C372,251 366,190 405,190',
+    'M555,190 C600,190 604,76 650,76',
+    'M555,190 C600,190 606,274 650,274',
+    'M555,190 C640,192 770,188 831,226',
+  ],
+};
+const tall = {
+  viewBox: '0 0 360 560',
+  host: { x: 20, y: 16, width: 320, height: 210 },
+  rows: [
+    { y: 106, label: '~/code/launchpad', kind: 'files' },
+    { y: 146, label: 'Git and credentials', kind: 'git' },
+    { y: 186, label: 'OpenTig app or CLI', kind: 'opentig' },
+  ],
+  rowX: 36, rowWidth: 288,
+  tunnel: { x: 180, y: 284 },
+  devices: [
+    { kind: 'laptop', x: 20, y: 392, width: 170, height: 92, label: 'Laptop' },
+    { kind: 'tablet', x: 208, y: 380, width: 72, height: 118, label: 'Tablet' },
+    { kind: 'phone', x: 294, y: 400, width: 46, height: 98, label: 'Phone' },
+  ],
+  links: [
+    'M180,226 C180,244 180,252 180,266',
+    'M180,302 C180,340 105,352 105,392',
+    'M180,302 C180,340 244,346 244,380',
+    'M180,302 C180,344 317,360 317,400',
+  ],
+};
+const layouts = [{ name: 'wide', ...wide }, { name: 'tall', ...tall }];
+---
+
+<section id="anywhere" class="px-4 sm:px-6 py-20" aria-labelledby="anywhere-heading">
+  <div class="max-w-5xl mx-auto">
+    <SectionHeading id="anywhere-heading" lead="Runs where your repositories live." detail="Open them from any paired browser." />
+
+    <figure class="anywhere-figure mt-12">
+      {layouts.map(layout => (
+        <svg class={`anywhere-svg anywhere-${layout.name}`} viewBox={layout.viewBox} role="img" aria-label="Your repositories, Git, and OpenTig run on one host. A laptop, tablet, and phone connect to it through SSH, a VPN, or an HTTPS tunnel, each from a paired browser.">
+          <defs>
+            <radialGradient id={`glow-${layout.name}`}>
+              <stop offset="0" stop-color="var(--primary)" stop-opacity="0.35" />
+              <stop offset="1" stop-color="var(--primary)" stop-opacity="0" />
+            </radialGradient>
+          </defs>
+
+          {layout.links.map((d, index) => <>
+            <path d={d} class="link-track" />
+            <path d={d} class="link-flow" style={`animation-delay: ${index * -0.4}s`} />
+          </>)}
+
+          <g class="host">
+            <rect x={layout.host.x} y={layout.host.y} width={layout.host.width} height={layout.host.height} rx="16" class="frame" />
+            <text x={layout.host.x + 20} y={layout.host.y + 32} class="title">Your host</text>
+            <text x={layout.host.x + 20} y={layout.host.y + 52} class="mono muted">Windows · Linux · macOS</text>
+            {layout.rows.map(row => {
+              // Icon and label share the row's vertical center.
+              const cy = row.y - 2;
+              const ix = layout.rowX + 23;
+              return <g class={`row row-${row.kind}`}>
+                <rect x={layout.rowX} y={cy - 16} width={layout.rowWidth} height="32" rx="8" />
+                {row.kind === 'files' && <path d={`M${ix - 9},${cy - 6} h6 l2.5,2.5 h9.5 v9.5 h-18 z`} class="glyph" />}
+                {row.kind === 'git' && <g class="glyph"><circle cx={ix - 4} cy={cy - 5.5} r="2.4" /><circle cx={ix - 4} cy={cy + 5.5} r="2.4" /><circle cx={ix + 5} cy={cy - 2.5} r="2.4" /><path d={`M${ix - 4},${cy - 3.1} v6.2 M${ix + 5},${cy - 0.1} c0,3.5 -4,4.5 -6.8,5`} /></g>}
+                {row.kind === 'opentig' && <g><circle cx={ix} cy={cy} r="9" class="pulse" /><circle cx={ix} cy={cy} r="4" class="core" /></g>}
+                <text x={layout.rowX + 42} y={cy} dominant-baseline="central" class="mono">{row.label}</text>
+              </g>;
+            })}
+          </g>
+
+          <g class="tunnel">
+            <circle cx={layout.tunnel.x} cy={layout.tunnel.y} r="70" fill={`url(#glow-${layout.name})`} />
+            <rect x={layout.tunnel.x - 75} y={layout.tunnel.y - 18} width="150" height="36" rx="18" class="pill" />
+            <text x={layout.tunnel.x} y={layout.tunnel.y + 4} text-anchor="middle" class="mono accent">SSH · VPN · HTTPS</text>
+            <text x={layout.tunnel.x} y={layout.tunnel.y + 40} text-anchor="middle" class="mono muted">paired browsers only</text>
+          </g>
+
+          {layout.devices.map((device, index) => {
+            const { x, y, width, height } = device;
+            const inset = device.kind === 'laptop' ? 8 : 6;
+            const screen = { x: x + inset, y: y + inset + (device.kind === 'phone' ? 6 : 0), width: width - inset * 2, height: height - inset * 2 - (device.kind === 'phone' ? 12 : 0) };
+            const sidebar = Math.max(14, Math.round(screen.width * 0.26));
+            return <g class="device">
+              <rect x={x} y={y} width={width} height={height} rx={device.kind === 'laptop' ? 8 : 12} class="frame" />
+              {device.kind === 'laptop' && <path d={`M${x - 18},${y + height} h${width + 36} l-8,9 h${-(width + 20)} z`} class="frame" />}
+              <rect x={screen.x} y={screen.y} width={screen.width} height={screen.height} rx="4" class="screen" />
+              {device.kind !== 'phone' && <rect x={screen.x} y={screen.y} width={sidebar} height={screen.height} rx="4" class="sidebar" />}
+              {[0, 1, 2, 3].map(line => {
+                const left = screen.x + (device.kind === 'phone' ? 6 : sidebar + 8);
+                const room = screen.x + screen.width - left - 8;
+                return <rect x={left} y={screen.y + 10 + line * 11} width={room * [0.8, 0.55, 0.7, 0.4][line]} height="4" rx="2" class:list={['line', line === 1 && 'line-live']} style={`animation-delay: ${index * 0.7}s`} />;
+              })}
+              <text x={x + width / 2} y={y + height + (device.kind === 'laptop' ? 30 : 20)} text-anchor="middle" class="mono muted">{device.label}</text>
+            </g>;
+          })}
+
+          {layout.links.map((d, index) => <>
+            <circle r="3.5" class="packet" style={`offset-path: path('${d}'); animation-delay: ${index * 0.55}s`} />
+            {index > 0 && <circle r="2.5" class="packet packet-back" style={`offset-path: path('${d}'); animation-delay: ${index * 0.55 + 1.4}s`} />}
+          </>)}
+        </svg>
+      ))}
+    </figure>
+
+    <div class="mt-10 grid gap-8 sm:grid-cols-3">
+      <div>
+        <h3 class="font-semibold">Files never leave the host.</h3>
+        <p class="mt-2 text-sm leading-relaxed text-muted-foreground">Git and file operations run on the machine with your repositories, using its Git and credentials.</p>
+      </div>
+      <div>
+        <h3 class="font-semibold">Pair, then connect.</h3>
+        <p class="mt-2 text-sm leading-relaxed text-muted-foreground">Enable web access in the app, or use the link the CLI prints. A pairing code lets a browser in.</p>
+      </div>
+      <div>
+        <h3 class="font-semibold">Bring your own network.</h3>
+        <p class="mt-2 text-sm leading-relaxed text-muted-foreground">Reach another machine through SSH, a private network, or an HTTPS tunnel you control. <a href="/docs/web-access/" class="underline underline-offset-4 hover:text-foreground">Browser access guide</a></p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .anywhere-figure {
+    margin-inline: 0;
+    padding: 20px;
+    border: 1px solid var(--tile-line);
+    border-radius: 14px;
+    background:
+      radial-gradient(60% 80% at 50% 50%, color-mix(in oklch, var(--primary) 7%, transparent), transparent 70%),
+      var(--card);
+  }
+  .anywhere-svg { display: block; width: 100%; height: auto; overflow: visible; }
+  .anywhere-tall { display: none; max-width: 360px; margin-inline: auto; }
+  @media (max-width: 639px) {
+    .anywhere-figure { padding: 16px 8px; }
+    .anywhere-wide { display: none; }
+    .anywhere-tall { display: block; }
+  }
+
+  .anywhere-svg text { fill: var(--foreground); font-family: var(--font-sans); font-size: 13px; }
+  .anywhere-svg .title { font-size: 15px; font-weight: 600; }
+  .anywhere-svg .mono { font-family: var(--font-mono); font-size: 12.5px; }
+  .anywhere-svg .muted { fill: var(--muted-foreground); font-size: 11.5px; }
+  .anywhere-svg .accent { fill: var(--primary-text); }
+
+  .frame { fill: oklch(0.165 0 0); stroke: #ffffff2e; stroke-width: 1; }
+  .row rect { fill: #ffffff06; stroke: #ffffff1a; }
+  .row-opentig rect { fill: color-mix(in oklch, var(--primary) 14%, transparent); stroke: color-mix(in oklch, var(--primary) 60%, transparent); }
+  .glyph { fill: none; stroke: var(--muted-foreground); stroke-width: 1.3; stroke-linejoin: round; }
+  .core { fill: var(--primary-heading); }
+  .pulse { fill: none; stroke: var(--primary-heading); transform-box: fill-box; transform-origin: center; animation: anywhere-pulse 2.4s ease-out infinite; }
+  .pill { fill: var(--background); stroke: color-mix(in oklch, var(--primary) 65%, transparent); }
+
+  .screen { fill: #0b0b0c; stroke: #ffffff14; }
+  .sidebar { fill: #ffffff08; }
+  .line { fill: #ffffff1f; }
+  .line-live { fill: color-mix(in oklch, var(--primary) 70%, transparent); transform-box: fill-box; transform-origin: left; animation: anywhere-type 3.2s ease-in-out infinite; }
+
+  .link-track { fill: none; stroke: #ffffff1c; stroke-width: 1.5; }
+  .link-flow { fill: none; stroke: color-mix(in oklch, var(--primary) 75%, transparent); stroke-width: 1.5; stroke-dasharray: 3 9; stroke-linecap: round; animation: anywhere-flow 1.6s linear infinite; }
+  .packet { fill: var(--primary-text); offset-rotate: 0deg; opacity: 0; filter: drop-shadow(0 0 4px var(--primary)); animation: anywhere-packet 2.8s cubic-bezier(.45, 0, .55, 1) infinite; }
+  .packet-back { fill: var(--mock-add); filter: drop-shadow(0 0 3px var(--mock-add)); animation-name: anywhere-packet-back; }
+
+  @keyframes anywhere-flow { to { stroke-dashoffset: -24; } }
+  @keyframes anywhere-packet {
+    0% { offset-distance: 0%; opacity: 0; }
+    12%, 82% { opacity: 1; }
+    100% { offset-distance: 100%; opacity: 0; }
+  }
+  @keyframes anywhere-packet-back {
+    0% { offset-distance: 100%; opacity: 0; }
+    12%, 82% { opacity: 1; }
+    100% { offset-distance: 0%; opacity: 0; }
+  }
+  @keyframes anywhere-pulse {
+    0% { transform: scale(0.6); opacity: 0.9; }
+    100% { transform: scale(1.6); opacity: 0; }
+  }
+  @keyframes anywhere-type {
+    0%, 15% { transform: scaleX(0.15); }
+    55%, 100% { transform: scaleX(1); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .link-flow, .pulse, .line-live { animation: none; }
+    .packet { display: none; }
+  }
+</style>
