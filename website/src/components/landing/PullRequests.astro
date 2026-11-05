@@ -5,7 +5,7 @@ import Shot from './Shot.astro';
 
 <section id="pull-requests" class="px-4 sm:px-6 py-20" aria-labelledby="pull-requests-heading">
   <div class="max-w-5xl mx-auto">
-    <SectionHeading id="pull-requests-heading" lead="Pull requests, next to your code." detail="Review, create, and follow stacks without leaving the repository." />
+    <SectionHeading id="pull-requests-heading" lead="GitHub, next to your code." detail="Merge pull requests, follow workflow runs, and publish releases without leaving the repository." />
 
     <div class="tile-grid tile-grid-split mt-12">
       <article class="tile">
@@ -13,8 +13,8 @@ import Shot from './Shot.astro';
           <Shot name="pulls" alt="The pull request list with check status, changed lines, and stack layer indicators such as 2/3." />
         </div>
         <div class="tile-copy">
-          <h3>Review without switching apps.</h3>
-          <p>Read descriptions, checks, commits, and full or per-commit diffs. Create a pull request from your branch.</p>
+          <h3>Review, then merge.</h3>
+          <p>Read descriptions, checks, commits, and full or per-commit diffs. Comment, approve, or request changes, then merge, enable auto-merge, or add to a merge queue.</p>
         </div>
       </article>
 
@@ -27,7 +27,28 @@ import Shot from './Shot.astro';
           <p>A layer indicator such as 2/3 shows where a pull request sits in its GitHub stack. Open it to reach the other layers.</p>
         </div>
       </article>
+
+      <article class="tile">
+        <div class="tile-stage has-shot">
+          <Shot name="releases" alt="The Releases tab listing two drafts, the latest release, and a pre-release with their dates." />
+        </div>
+        <div class="tile-copy">
+          <h3>Draft and publish releases.</h3>
+          <p>Create a draft with GitHub's generated notes, edit its title and notes, and publish it after reviewing the assets. If its tag doesn't exist yet, GitHub creates it on publish.</p>
+          <a href="/docs/github/#manage-releases" class="mt-3 inline-block text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground">Manage releases</a>
+        </div>
+      </article>
+
+      <article class="tile">
+        <div class="tile-stage has-shot">
+          <Shot name="actions" alt="A CI workflow run in progress, shown as a graph of its jobs: lint has passed, test is running, and preview waits for it." />
+        </div>
+        <div class="tile-copy">
+          <h3>Follow workflow runs.</h3>
+          <p>See each run as a graph of its jobs, with their steps, updated while it runs. Run a manual workflow on the branch you choose, with its inputs. Logs, re-runs, and cancelling stay on GitHub.</p>
+        </div>
+      </article>
     </div>
-    <p class="mt-5 text-sm text-muted-foreground">Uses the GitHub CLI (<code class="font-mono text-foreground">gh</code>), signed in on the machine running OpenTig. <a href="/docs/github/" class="underline underline-offset-4 hover:text-foreground">GitHub and pull requests guide</a></p>
+    <p class="mt-5 text-sm text-muted-foreground">Create pull requests from your branch, too. Uses the GitHub CLI (<code class="font-mono text-foreground">gh</code>), signed in on the machine running OpenTig. <a href="/docs/github/" class="underline underline-offset-4 hover:text-foreground">GitHub guide</a></p>
   </div>
 </section>

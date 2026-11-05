@@ -1,5 +1,4 @@
 ---
-import { downloadVersion } from '@/site';
 interface Props { id: string }
 const { id } = Astro.props;
 ---
@@ -12,7 +11,7 @@ const { id } = Astro.props;
   </button>
   <div id={id} class="scan-popover" popover="auto" role="region" aria-label="VirusTotal installer analysis">
     <div class="scan-details" data-scan-details>
-      <p>Scan information for {downloadVersion} requires JavaScript and an available release response.</p>
+      <p>Scan information for this installer requires JavaScript and an available release response.</p>
     </div>
     <p class="scan-caution">An antivirus scan is not a guarantee of safety.</p>
   </div>

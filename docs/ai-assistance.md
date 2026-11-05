@@ -21,11 +21,11 @@ Install and authenticate at least one supported CLI on the OpenTig host. The [op
 | Provider | Requirements |
 | --- | --- |
 | **Codex** | Installed and authenticated CLI with accessible file-based credential storage for generation |
-| **Claude Code** | Installed and authenticated CLI; administrator-managed Claude policy still applies |
+| **Claude Code** | Installed CLI signed in with `claude auth login`, or `CLAUDE_CODE_OAUTH_TOKEN` in the host process. API-key and Bedrock/Vertex configurations are not used for generation. Administrator-managed Claude policy still applies |
 | **OpenCode** | Version 2.x, using `opencode` or `opencode2`. Version 1 and legacy beta builds are incompatible |
 | **Grok Build** | Official `grok` CLI, version 1.0.46 or later in the 1.x series, with headless JSON and tool-control flags. Authenticate with `grok login` or `XAI_API_KEY` in the host process |
 
-Custom CLI configuration and custom models are excluded from the isolated generation profiles. OpenCode models retain provider/model identifiers and optional `#variant` suffixes. Grok's built-in models are discovered dynamically; choosing one in OpenTig does not change the CLI default.
+Custom CLI configuration and custom models are excluded from the isolated generation profiles. Codex offers the models in its bundled catalog and runs with low reasoning effort. Claude Code offers Default, Sonnet, Opus, and Haiku. OpenCode models retain provider/model identifiers and optional `#variant` suffixes. Grok's built-in models are discovered dynamically; choosing one in OpenTig does not change the CLI default.
 
 ## Detection and models
 
@@ -61,7 +61,7 @@ OpenCode discovery tries a private server first. If the catalog is empty or unav
 
 </details>
 
-Generation always validates the CLI's current availability and authentication. Large commit and PR analyses can run for up to ten minutes. You can cancel in the interface; disconnecting the requesting client or reaching the execution time limit also cancels the run.
+Generation always validates the CLI's current availability and authentication. Large commit and PR analyses can run for up to nine minutes. You can cancel in the interface; disconnecting the requesting client or reaching the execution time limit also cancels the run.
 
 ## Commit messages and split proposals
 
@@ -136,7 +136,7 @@ Harmless trailing periods are removed from generated commit subjects instead of 
 
 To supply repository writing conventions, enable **Settings → AI assistance → This repository → Use repository instructions**. It is **off by default** and shared across worktrees and connected clients.
 
-When enabled, OpenTig includes the current worktree's root `AGENTS.md`, `CLAUDE.md`, and `GROK.md`: regular UTF-8 files only, no symlinks, up to **32 KiB combined**.
+When enabled, OpenTig includes the current worktree's root `AGENTS.md`, `CLAUDE.md`, and `GROK.md`: regular UTF-8 files only, no symlinks, up to **32 KiB combined**. Files that break these rules stop generation instead of being truncated.
 
 Conventions can refine terminology and structure. They cannot override English, Conventional Commits, schema/output limits, accuracy, privacy, or complete staged-file coverage.
 
@@ -148,9 +148,9 @@ Instruction contents are not stored in settings or diagnostic history. See [AI p
 
 | Where to look | What it records |
 | --- | --- |
-| **Settings → AI assistance → View history** | Provider, model, outcome, duration, reported tokens/cost, split refusal reason, and failure details |
+| **Settings → AI assistance → View history** | Provider, model, outcome, duration, reported tokens/cost (OpenCode reports none), split refusal reason, and failure details |
 | **Settings → Diagnostics → View problems** | Failed Git, file, and network operations, with the operation, error code, and redacted message. Repeats of one failure share a row with their count and first and last time. Commands that ran past their time limit are listed too, and so is the result if they finish later |
 
-In AI history, sort by a column header and inspect totals for runs, failures, tokens, and reported cost. On mobile, tap to open history details. You can clear either history.
+In AI history, sort by a column header and inspect totals for runs, failures, tokens, and reported cost. On mobile, tap to open history details. Each history keeps its latest 500 entries, and you can clear either one.
 
 AI history stores metadata, **not prompts or file contents**.

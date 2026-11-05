@@ -159,7 +159,7 @@ PRs and pushes to `main` use the same CI scope rules:
 | **Prose-only documentation** | Application validation jobs retain their scope checks but skip dependency installs, tests, and smoke checks. Published guides still trigger website validation |
 | **Manual CI run** | Full validation regardless of changed paths |
 
-The prose exemption covers the root README, contribution guide, security policy, agent instructions, third-party notices, and Markdown under `docs/`. A new push to a PR cancels its superseded CI run; main and manual runs remain independent.
+The prose exemption covers the root README, contribution guide, security policy, agent instructions, third-party notices, and Markdown under `docs/`, except `docs/ai-writing-policy.md`, which is compiled into the application's AI prompts. A new push to a PR cancels its superseded CI run; main and manual runs remain independent.
 
 **Automatic CI does not package the desktop app or run its packaged server/utility checks.** Windows releases also run the test suite on the Windows builder before packaging.
 
@@ -174,6 +174,8 @@ The workflow reuses CI validation instead of repeating typecheck, lint, audit, a
 ## Build desktop packages
 
 Desktop packages use **electron-builder**; Vite remains the compiler. The web client is built once and served by the included server in both Electron and browser sessions. Only the Electron runtime dependencies are shipped, with native N-API binaries and platform Trash executables unpacked from ASAR.
+
+Desktop packages include `LICENSE` and `THIRD_PARTY_NOTICES.md` in their resources; the CLI package has them at its root. The client carries the license texts for its bundled fonts and KaTeX under `licenses/`, next to those of PDF.js and the file icons; package verification fails if any is missing.
 
 ### Dev application and portable ZIP
 
@@ -242,9 +244,9 @@ docker run --rm --init --user "$(id -u):$(id -g)" \
 
 ### Build metadata, signing, and publication
 
-Each package includes `opentig-build.json` with its profile, target and distribution (`directory`, `zip`, or `installer`), plus release provenance, signing status and the update repository. The updater also checks the NSIS per-user installation registration against the current executable directory.
+Each package includes `opentig-build.json` with its version, profile, target and distribution (`directory`, `zip`, or `installer`), plus whether it is a release build, its signing status and the update repository. The updater also checks the NSIS per-user installation registration against the current executable directory.
 
-**Local commands never publish artifacts.** Unsigned local installers are candidates without an update feed; `make -- --release` enables the release feed without signing. Add `--signed` to require code signing; a missing certificate then fails the build.
+**Local commands never publish artifacts.** Unsigned local installers are candidates without an update feed; `make -- --release` enables the release feed without signing. Add `--signed` to `--release` to require code signing; it needs `CSC_LINK` (or `WIN_CSC_LINK`) and `OPENTIG_PUBLISHER_NAME`, and fails the build when either is missing.
 
 Unsigned builds explicitly disable executable signing and publisher-signature verification, even if signing credentials are present in the environment.
 
@@ -252,13 +254,13 @@ See [release automation](releases.md) for GitHub and npm publication.
 
 ## Dependency maintenance
 
-Dependency install scripts are reviewed and pinned in `package.json` (`allowScripts`). Review the relevant script again when updating one of those versions.
+Dependency install scripts run only for the packages allowed in `pnpm-workspace.yaml` (`allowBuilds`). Review the relevant script again when updating one of those packages.
 
 <details>
 <summary>Pinned compatibility ranges and the Mermaid/KaTeX override</summary>
 
-Keep Node type definitions on the Node 24 line. Dependabot defers Trash major updates until its glob dependencies have a patched version, and KaTeX 0.19+ until `marked-katex-extension` supports it. Revisit these exclusions when updating the corresponding integrations.
+Keep the application's Node type definitions on the Node 24 line; the website pins its own. Dependabot defers Trash major updates until its glob dependencies have a patched version, and KaTeX 0.19+ until `marked-katex-extension` supports it. Revisit these exclusions when updating the corresponding integrations.
 
-Mermaid's KaTeX dependency is overridden to use the same patched version as Markdown math (`$katex` in `package.json`). Mermaid 12.1 still requests the vulnerable 0.16 line; the override addresses [GHSA-238p-pmpm-9mq7](https://github.com/advisories/GHSA-238p-pmpm-9mq7) without downgrading Mermaid. Remove the override once Mermaid accepts a patched KaTeX version. `scripts/mermaid-katex.test.mjs` resolves KaTeX from Mermaid and checks display math in both output modes and rejection of inherited `trust` options.
+Mermaid's KaTeX dependency is overridden to use the same patched version as Markdown math: the `katex` entry of the pnpm `catalog` and the `mermaid>katex` override, both in `pnpm-workspace.yaml`. Mermaid 12.1 still requests the vulnerable 0.16 line; the override addresses [GHSA-238p-pmpm-9mq7](https://github.com/advisories/GHSA-238p-pmpm-9mq7) without downgrading Mermaid. Remove the override once Mermaid accepts a patched KaTeX version. `scripts/mermaid-katex.test.mjs` resolves KaTeX from Mermaid and checks display math in both output modes and rejection of inherited `trust` options.
 
 </details>

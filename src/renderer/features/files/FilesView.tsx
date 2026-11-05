@@ -854,6 +854,7 @@ function FileRow({
   onDelete,
   dragPaths,
 }: FileRowProps) {
+  const shortcuts = useShortcuts();
   const rowElement = useRef<HTMLButtonElement | null>(null);
   const targetDirectory = targetDirectoryFor(entry);
   const { attributes, listeners, setNodeRef: setDraggableRef, isDragging } = useDraggable({
@@ -935,10 +936,10 @@ function FileRow({
           </>
         )}
         <ContextMenuItem disabled={readOnly || !historyState.canUndo} onClick={() => void onUndo()}>
-          <IconArrowBackUp aria-hidden="true" /> {historyState.undoLabel ? `Undo ${historyState.undoLabel}` : 'Undo'} <span className="ml-auto text-(length:--text-meta) text-muted-foreground">Ctrl+Z</span>
+          <IconArrowBackUp aria-hidden="true" /> {historyState.undoLabel ? `Undo ${historyState.undoLabel}` : 'Undo'} <span className="ml-auto text-(length:--text-meta) text-muted-foreground">{shortcuts.undoFileChange}</span>
         </ContextMenuItem>
         <ContextMenuItem disabled={readOnly || !historyState.canRedo} onClick={() => void onRedo()}>
-          <IconArrowForwardUp aria-hidden="true" /> {historyState.redoLabel ? `Redo ${historyState.redoLabel}` : 'Redo'} <span className="ml-auto text-(length:--text-meta) text-muted-foreground">Ctrl+Shift+Z</span>
+          <IconArrowForwardUp aria-hidden="true" /> {historyState.redoLabel ? `Redo ${historyState.redoLabel}` : 'Redo'} <span className="ml-auto text-(length:--text-meta) text-muted-foreground">{shortcuts.redoFileChange}</span>
         </ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem onClick={() => onCopy(entry)}>

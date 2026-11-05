@@ -6,11 +6,11 @@ OpenTig uses [PDF.js](https://github.com/mozilla/pdf.js) (`pdfjs-dist`) to rende
 
 [parse5](https://github.com/inikulin/parse5), licensed under MIT, parses HTML when embedding repository assets into isolated document previews.
 
-## Geist, Inconsolata, JetBrains Mono, Plus Jakarta Sans, and Space Grotesk
+## Geist, Geist Mono, Inconsolata, JetBrains Mono, Plus Jakarta Sans, and Space Grotesk
 
-OpenTig bundles these variable fonts via Fontsource.
+OpenTig bundles these variable fonts via Fontsource. Their copyright notices and license texts, with those of Departure Mono and KaTeX, ship in the client's `licenses/` folder.
 
-- [Geist](https://vercel.com/font): SIL Open Font License 1.1, Vercel
+- [Geist and Geist Mono](https://vercel.com/font): SIL Open Font License 1.1, Vercel
 - [Inconsolata](https://fonts.google.com/specimen/Inconsolata): SIL Open Font License 1.1, Raph Levien
 - [JetBrains Mono](https://www.jetbrains.com/lp/mono/): SIL Open Font License 1.1, JetBrains
 - [Plus Jakarta Sans](https://github.com/tokotype/PlusJakartaSans): SIL Open Font License 1.1, Tokotype / Gumpita Rahayu
@@ -24,6 +24,12 @@ OpenTig vendors [Departure Mono](https://departuremono.com/) (v1.500) as a selec
 - License: SIL Open Font License 1.1
 - Files: `src/renderer/assets/fonts/departure-mono/`
 
+## KaTeX
+
+OpenTig uses [KaTeX](https://github.com/KaTeX/KaTeX) and its bundled fonts to render math in Markdown previews.
+
+- License: MIT, copyright Khan Academy and other contributors
+
 ## vscode-icons
 
 Files under `public/vscode-icons/`, the website OpenCode mark adapted from that set, and the derived mapping in `src/renderer/assets/vscode-icons-theme.json` originate from the [vscode-icons project](https://github.com/vscode-icons/vscode-icons).
@@ -34,6 +40,10 @@ Files under `public/vscode-icons/`, the website OpenCode mark adapted from that 
 
 The assets are bundled for file-type identification. OpenTig does not claim ownership of third-party marks and does not imply endorsement by their owners.
 
+## Tabler Icons
+
+The application's interface icons come from [Tabler Icons](https://github.com/tabler/tabler-icons) (`@tabler/icons-react`) under the MIT License.
+
 ## trash
 
 OpenTig uses the [`trash`](https://github.com/sindresorhus/trash) package to move files and folders to system Trash on Windows, macOS, and Linux.
@@ -42,13 +52,13 @@ OpenTig uses the [`trash`](https://github.com/sindresorhus/trash) package to mov
 - License: MIT
 - Pinned to 9.0.0 because 10.x pulls in `braces` affected by [GHSA-vfj7-8cjw-p6xm](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm), which has no patched release. OpenTig disables glob expansion and tests literal file and directory paths against the native Trash. Revisit this pin when the upstream dependency chain is fixed.
 - Under WSL, this version uses Linux Trash rather than the Windows Recycle Bin integration introduced in 10.x.
-- Linux support follows the XDG Trash specification; upstream documents it as weakly maintained, so OpenTig runs an Ubuntu Trash smoke test as a release gate.
+- Linux support follows the XDG Trash specification; upstream documents it as weakly maintained, so CI runs an Ubuntu Trash smoke test.
 
 ## ws
 
 OpenTig uses [`ws`](https://github.com/websockets/ws) for its authenticated server WebSocket transport.
 
-- Version: 8.21.3
+- Version: 8.22.0
 - License: MIT
 
 ## uqr
@@ -90,7 +100,7 @@ The Astro landing page in `website/` includes MIT-licensed landing-page code, co
 
 The website bundles Geist, Inconsolata, and [Geist Pixel Triangle](https://github.com/vercel/geist-pixel-font) under SIL Open Font License 1.1. The font copyright and license texts are included in `website/public/fonts/*-OFL.txt`. The website's Inconsolata WOFF2 fixes the width axis at its normal value (100), retaining the full character set and variable weights. Asset regeneration is documented in [the website guide](docs/website.md).
 
-Tabler SVG icons are provided by `@tabler/icons` under MIT. OGL is MIT-licensed. The copied Claude Code, Codex, OpenCode, Grok, and Windows marks identify tools or platforms; their respective owners retain trademark rights, and their display does not imply endorsement.
+Tabler SVG icons are provided by `@tabler/icons` under MIT. OGL is MIT-licensed. The copied Claude Code, Codex, OpenCode, Grok, npm, and Windows marks identify tools or platforms; their respective owners retain trademark rights, and their display does not imply endorsement.
 
 The website adapts [Gooey Nav from React Bits](https://github.com/DavidHDev/react-bits/tree/main/src/ts-default/Components/GooeyNav), copyright (c) 2026 David Haz, under its MIT + Commons Clause license. The full upstream notice is preserved in `website/public/licenses/react-bits.txt`; this component is incorporated into the OpenTig website, not distributed as a standalone component library.
 

@@ -27,7 +27,7 @@ Desktop and browser clients use the same typed, validated WebSocket command boun
 
 Requests have correlation IDs, cancellation, and timeouts. Git commands use argument arrays with `shell: false`, bounded output, timeouts, path validation, and per-repository write serialisation.
 
-The narrow preload bridge provides only desktop capabilities such as folder selection/relocation, file clipboard import, Explorer reveal, title-bar theming, and zoom. Text clipboard access uses the renderer's browser API.
+The narrow preload bridge provides only desktop capabilities: folder selection/relocation, clipboard file and image import, Explorer reveal, title-bar theming, zoom, preference changes, Web access settings, and desktop updates. Text clipboard access uses the renderer's browser API.
 
 External links are allowlisted to `http(s)://` and `mailto:` before Electron's window-navigation interception opens them in the system browser.
 
@@ -55,7 +55,7 @@ Enabling access again lets browsers reconnect if their credentials have not expi
 
 ### Pairing, renewal, and revocation
 
-New browsers pair through a **five-minute, one-use URL fragment**, displayed as a link and local QR code. The fragment is cleared before exchange. Pairing secrets stay in memory and appear only in deliberate one-time terminal output or the URL fragment, never in arguments, environment variables, routine logs, query strings, or persisted state.
+New browsers pair through a **five-minute, one-use URL fragment**, displayed as a link and local QR code. The fragment is cleared before exchange. Pairing secrets stay in memory and appear only in deliberate one-time terminal output, the **Pair a browser** display, or the URL fragment, never in arguments, environment variables, routine logs, query strings, or persisted state.
 
 Browser cookies and server sessions last **30 days**. Renewal runs when the app connects, resumes in the foreground, and hourly while visible. It extends both lifetimes without another code or interrupting connected tabs; temporary network failures retry.
 
@@ -150,7 +150,9 @@ Both temporary directories are removed on completion, error, and cancellation.
 
 **Claude Code**
 
-Generation uses safe mode with no built-in or MCP tools, no user/project setting sources, disabled hooks, and no session persistence. Native authentication remains available. **Administrator-managed Claude policy still applies.**
+Generation uses safe mode with no built-in or MCP tools, no user/project setting sources, disabled hooks, and no session persistence. **Administrator-managed Claude policy still applies.**
+
+**Only a `claude auth login` session or `CLAUDE_CODE_OAUTH_TOKEN` can authenticate generation.** OpenTig removes `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, and `CLAUDE_*` variables other than `CLAUDE_CONFIG_DIR` and `CLAUDE_CODE_OAUTH_TOKEN` from its environment, so API-key and Bedrock/Vertex configurations are not used.
 
 **OpenCode**
 
@@ -164,7 +166,7 @@ Generation uses a private temporary directory and isolated profile, retaining th
 
 OpenTig first checks `grok inspect --json` and refuses profiles with hooks, plugins, MCP servers, or project instructions. Custom CLI models and user configuration are excluded.
 
-Prompt files and temporary sessions are removed after generation, errors, and cancellation. **Grok may make an auxiliary session-title request** in addition to the requested generation.
+Prompt files and temporary sessions are removed after generation, errors, and cancellation. **Grok Build also sends the prompt in a separate session-title request** in addition to the requested generation.
 
 ### Repository writing conventions
 

@@ -1,4 +1,5 @@
 import { containsPersonalPath } from '../packages/server/scripts/verify-build.mjs';
+import { clientLicenseFiles } from './client-licenses.mts';
 import { isDeepStrictEqual } from 'node:util';
 import { execFile } from 'node:child_process';
 import { Buffer } from 'node:buffer';
@@ -36,6 +37,7 @@ if (sha256 !== metadata.sha256) throw new Error('Headless tarball SHA-256 does n
 const required = new Set([
   'LICENSE', 'README.md', 'THIRD_PARTY_NOTICES.md', 'package.json',
   'dist/bin.mjs', 'dist/service-update.mjs', 'dist/server.mjs', 'dist/utility.mjs', 'dist/manifest.json', 'dist/client/index.html',
+  ...[...clientLicenseFiles, 'pdfjs/LICENSE', 'vscode-icons/LICENSE.txt'].map((file) => `dist/client/${file}`),
 ]);
 for (const file of metadata.files) {
   required.delete(file.path);

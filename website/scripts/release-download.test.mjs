@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { buildDownload, latestReleaseUrl } from './release-download.mjs';
-import { fallbackDownload, staticDownload } from '../src/lib/downloads.ts';
+import { fallbackDownload, latestReleasePage } from '../src/lib/downloads.ts';
 
 const name = 'OpenTig-1.2.3-win32-x64-Setup.exe';
 const url = `https://github.com/jorgefl8/opentig/releases/download/v1.2.3/${name}`;
@@ -13,10 +13,9 @@ const release = {
   assets: [{ id: 2, size: 3, digest: `sha256:${'a'.repeat(64)}`, name, state: 'uploaded', browser_download_url: url }],
 };
 
-test('renders the static installer outside production builds', () => {
-  assert.deepEqual(fallbackDownload, staticDownload);
-  assert.match(staticDownload.url, /\/releases\/download\/(v\d+\.\d+\.\d+)\/OpenTig-\d+\.\d+\.\d+-win32-x64-Setup\.exe$/);
-  assert.ok(staticDownload.url.includes(`/${staticDownload.version}/OpenTig-${staticDownload.version.slice(1)}-`));
+test('links to the latest release page, with no fixed version, outside production builds', () => {
+  assert.deepEqual(fallbackDownload, latestReleasePage);
+  assert.deepEqual(latestReleasePage, { version: 'Latest release', url: 'https://github.com/jorgefl8/opentig/releases/latest' });
 });
 
 test('bakes only the version and URL of the latest release into the build', async () => {
@@ -26,16 +25,16 @@ test('bakes only the version and URL of the latest release into the build', asyn
   assert.deepEqual(requested, [latestReleaseUrl, 'application/vnd.github+json']);
 });
 
-test('keeps the static installer and warns when GitHub cannot provide one', async () => {
+test('links to the latest release page and warns when GitHub cannot provide an installer', async () => {
   for (const fetcher of [
     async () => { throw new Error('offline'); },
     async () => ({ ok: false, status: 403 }),
     async () => ({ ok: true, json: async () => ({ ...release, assets: [] }) }),
   ]) {
     const warnings = [];
-    assert.deepEqual(await buildDownload({ fetcher, warn: message => warnings.push(message) }), staticDownload);
+    assert.deepEqual(await buildDownload({ fetcher, warn: message => warnings.push(message) }), latestReleasePage);
     assert.equal(warnings.length, 1);
-    assert.match(warnings[0], new RegExp(`static installer ${staticDownload.version}`));
+    assert.match(warnings[0], /^Linking to the latest release page: /);
   }
 });
 

@@ -2,25 +2,23 @@
 
 **A focused workspace for your Git repositories.**
 
-Browse files, review diffs, make edits, and commit changes. Work with branches, worktrees, and GitHub pull requests from the same interface. The CLI runs the OpenTig server on the machine with your repositories and serves its UI to a paired browser, without Electron.
+Browse files, review diffs, make edits, and commit changes. Work with branches, worktrees, and GitHub pull requests, Actions, and releases from the same interface. The CLI runs the OpenTig server on the machine with your repositories and serves its UI to a paired browser, without Electron.
 
 [Website](https://opentig.com/) · [Installation](https://opentig.com/docs/getting-started/#run-the-headless-cli) · [Documentation](https://opentig.com/docs/) · [Source](https://github.com/jorgefl8/opentig) · [Report a bug](https://github.com/jorgefl8/opentig/issues)
 
-![OpenTig reviewing a TypeScript split diff in a demo repository](https://raw.githubusercontent.com/jorgefl8/opentig/main/docs/images/workspace.png)
+![OpenTig reviewing an open pull request and its side-by-side JavaScript diff in the Launchpad sample repository](https://raw.githubusercontent.com/jorgefl8/opentig/main/docs/images/workspace.png)
 
-*The browser UI in the Dev build, reviewing a small demo repository.*
-
-> **Pre-1.0 and actively developed.** OpenTig is used daily and ships frequent releases, but settings and behavior can still change between versions; see the [release notes](https://github.com/jorgefl8/opentig/releases). As with any Git tool, review operations before confirming them.
+*OpenTig reviewing a sample pull request in the interactive demo.*
 
 ## Start locally
 
-Works on **macOS, Linux, and Windows** with **Node.js 24+** and **Git** installed.
+Works on **macOS, Linux, and Windows** with **Node.js 24+** and **Git 2.31+** installed.
 
 ```bash
 npx --yes @opentig/cli@latest
 ```
 
-This starts OpenTig at `127.0.0.1:6767` and opens a one-use browser pairing link. Choose an existing repository in the visual folder picker and start reviewing. Repositories are managed in the UI; you do not need to start a separate server for each one.
+This starts OpenTig at `127.0.0.1:6767` and opens a one-use browser pairing link. Open, clone, or find a repository from the start screen and start reviewing. Repositories are managed in the UI; you do not need to start a separate server for each one.
 
 Prefer Bun's package runner?
 
@@ -45,7 +43,7 @@ opentig
 | **Browse and edit** | File tree, tabs, quick edits, find and replace, repository search, and Markdown, image, HTML, and SVG previews. [Details](https://opentig.com/docs/features/#files-and-editing) |
 | **Work with Git** | Stage files, commit, pull and push, inspect history, and switch branches and worktrees. [Details](https://opentig.com/docs/features/#safe-pull-and-push) |
 | **Organize repositories** | Recent repositories, project groups, and manual relocation without moving files. [Details](https://opentig.com/docs/features/#repositories-and-projects) |
-| **Review GitHub PRs** | Browse pull requests, inspect changes, and prepare new PRs through your authenticated `gh` CLI. [Details](https://opentig.com/docs/features/#github-pull-requests) |
+| **Work with GitHub** | Create, review, and merge pull requests, follow Actions runs and start workflows, and manage releases through your authenticated `gh` CLI. [Details](https://opentig.com/docs/github/) |
 | **Use a remote server** | Pair a browser on your laptop or phone and work with repositories on the server. [Details](https://opentig.com/docs/web-access/) |
 
 **AI is optional.** Normal Git work needs no AI account or OpenTig account. If you choose to use AI assistance, a supported CLI installed and authenticated on the host can draft commit messages and pull-request descriptions for you to review. The selected CLI may send the supplied context to its provider. OpenTig does not run an autonomous coding agent or create commits on its own. See the [feature guide](https://opentig.com/docs/features/) and [privacy details](https://opentig.com/docs/security-and-privacy/).
@@ -84,7 +82,7 @@ Managed services on all three platforms can **download updates and restart from 
 
 Run `opentig --help` for commands and options. Configure `--host`, `--port`, and `--home`, or their `OPENTIG_HOST`, `OPENTIG_PORT`, and `OPENTIG_HOME` environment equivalents. Data is stored under `~/.opentig` by default. An occupied port fails clearly instead of silently changing the address.
 
-OpenTig opens existing repositories. Cloning and initial remote setup remain Git CLI tasks. Built-in TLS, multi-user roles, and automatic SSH or tunnel setup are not included.
+OpenTig opens existing repositories and clones HTTPS or SSH repository URLs. Initializing a new repository remains a Git CLI task. Built-in TLS, multi-user roles, and automatic SSH or tunnel setup are not included.
 
 The separate [desktop installer](https://github.com/jorgefl8/opentig/releases/latest) is currently available for Windows x64 only. **macOS and Linux users can use this CLI and the browser UI today.**
 

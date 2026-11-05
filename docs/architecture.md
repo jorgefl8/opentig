@@ -71,7 +71,8 @@ limits.
 
 ## Desktop server lifecycle
 
-Electron starts `packages/server/dist/utility.mjs` with
+Electron starts `utility.mjs` from the bundled `opentig-server` resource
+(`packages/server/.resource/opentig-server/` when run from source) with
 `utilityProcess.fork`. The bootstrap configuration and one-use desktop secret
 cross the private parent/utility message port; they are not placed in process
 arguments or environment variables.
@@ -205,7 +206,7 @@ boundary tests live under `src/main/runtime`; supervisor tests live under
 `pnpm run release:pack:headless` builds the web client and server once, then emits
 one tarball plus JSON metadata containing its version, SHA-256, npm integrity,
 and exact file list. `pnpm run release:inspect:headless` rejects version drift,
-checkout paths, source/tests/state, Electron/native imports, and undeclared
-artifacts. Release automation consumes that tested tarball rather than rebuilding it.
+checkout paths, source/tests/state, Electron/native imports, undeclared
+artifacts, and missing license notices. Release automation consumes that tested tarball rather than rebuilding it.
 
 For Dev builds, platform requirements, and website/documentation checks, see [development and packaging](development.md).

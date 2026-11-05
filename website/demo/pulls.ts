@@ -24,7 +24,7 @@ const comment = (id: string, author: PullRequestParticipant, body: string): Pull
 const review = (id: string, author: PullRequestParticipant, verdict: NonNullable<PullRequestConversationEntry['verdict']>, body = ''): PullRequestConversationEntry => ({ id, kind: 'review', author, body, createdAt: sampleDate, url: null, verdict, minimized: false, updatedAt: sampleDate, edited: false, canEdit: false, canDelete: false });
 const conversations: Record<number, PullRequestConversationEntry[]> = {
   21: [
-    comment('c1', bot, 'Preview ready. All sample tests passed on this commit.'),
+    comment('c1', bot, 'All sample checks passed on this commit. The board preview is built once this is merged.'),
     review('r1', maya, 'APPROVED', 'Reads well. Completed tasks staying hidden by default is what we discussed.'),
   ],
   24: [
@@ -84,7 +84,7 @@ const samples = [
   sample(24, 'Show overdue tasks first', 'OPEN', 'feature/overdue-first',
     '## What changes\n\nMove overdue work to the top of the release board.\n', [
       { title: 'Lead the board with overdue work', changes: [{ path: 'index.html', before: html, after: html.replace('A small team. A big launch.', 'Overdue work comes first.') }] },
-    ], { mergeState: 'BLOCKED', review: 'APPROVED', checks: [check('test', 'fail', true), check('lint', 'pass'), check('preview', 'action-required')], base: 'docs/task-filters' }),
+    ], { mergeState: 'BLOCKED', review: 'APPROVED', checks: [check('test', 'fail', true), check('lint', 'pass'), check('preview', 'skipped')], base: 'docs/task-filters' }),
   sample(23, 'Explain the task filters', 'OPEN', 'docs/task-filters',
     '## What changes\n\nDocument the options for filtering tasks.\n', [
       { title: 'Document the task filters', changes: [{ path: 'README.md', before: readme, after: `${readme}\n## Filters\n\nSearch by title, and include completed tasks when you need them.\n` }] },

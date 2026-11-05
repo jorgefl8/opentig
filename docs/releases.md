@@ -34,6 +34,13 @@ Mixed commits and changes to shared manifests, lockfiles, or tooling remain appl
 
 The proposed version defaults to a patch increment (`0.1.0` → `0.1.1`). A higher version in `package.json`, or a higher version chosen on the managed draft, takes precedence without creating another draft. This proposal does not change package files or create a Git tag.
 
+To release a minor or major version, do one of the following before **Prepare release**:
+
+- **Bump the package version on `main`**, for example with a PR titled `chore(release): prepare vX.Y.0` that sets the root `package.json` version; preparation aligns the CLI package. Merged with a merge commit, that title keeps the PR out of the notes. The next push renames the draft's tag and its default title.
+- **Change the managed draft's tag** to the new `vX.Y.Z` on GitHub. **Edit its title too**: automation updates only a title that still reads `OpenTig <previous tag>`. OpenTig's Releases cannot change a draft's tag.
+
+Run **Prepare release** with `dry_run` first to confirm the version it reports.
+
 Edit the release title or add prose outside the `opentig:release-notes` comment markers, on GitHub or in [OpenTig's Releases](github.md#manage-releases), which edits the notes raw and keeps the markers. Refreshes preserve those edits and replace only the generated block.
 
 <details>
@@ -68,7 +75,7 @@ The prepared draft must contain:
 | `opentig-cli-<version>.tgz` | The prepared CLI package |
 | `opentig-headless.json` | Integrity hashes and source tag/commit |
 
-[OpenTig's Releases](github.md#manage-releases) can run **Prepare release** and publish the reviewed draft instead of GitHub's pages. Running it there uses `main` and leaves `dry_run` unchecked, so it creates the version commit and tag. The steps stay the same, including reviewing the assets and completing Windows validation before publishing.
+OpenTig can replace GitHub's pages for both steps. Start **Prepare release** from **GitHub → Actions → [Run a workflow](github.md#follow-workflow-runs)** with **Branch** `main` and `dry_run` off; that run creates the version commit and tag. Publish the reviewed draft from [Releases](github.md#manage-releases). The steps stay the same, including reviewing the assets and completing Windows validation before publishing.
 
 **Publishing a notes-only draft does not prepare its binaries.** Publishing the completed release makes the Windows update available and starts npm publication without rebuilding the CLI.
 
@@ -231,4 +238,4 @@ This integration supports a certificate-based signer; a hardware/cloud signing s
 
 The update destination is the public `jorgefl8/opentig` repository, recorded in `release.config.json`. Public, unauthenticated GitHub Releases allow updates without a user token. No GitHub token is embedded in the application, and browser/server credentials are unrelated to release access. Drafts and prereleases are not offered by the stable updater.
 
-Before the first public release, validate installation and coexistence with Dev on Windows, perform an actual upgrade between two versions, and verify data preservation. These workflows do not change repository visibility.
+Before each major release, validate installation and coexistence with Dev on Windows, perform an actual upgrade from the previous published version, and verify data preservation. These workflows do not change repository visibility.

@@ -11,7 +11,7 @@ test('HTML is a tracked sample file that can be edited, staged and committed', (
   assert.ok(repo.files().some(f => f.path === 'index.html'));
   assert.deepEqual(repo.directoryEntries(''), repo.files());
   assert.deepEqual(repo.directoryEntries('src').map(f => f.path), ['src/filter-tasks.js', 'src/progress.ts', 'src/types.ts']);
-  assert.deepEqual(repo.directoryEntries('.github/workflows').map(f => f.path), ['.github/workflows/ci.yml']);
+  assert.deepEqual(repo.directoryEntries('.github/workflows').map(f => f.path), ['.github/workflows/ci.yml', '.github/workflows/nightly.yml', '.github/workflows/prepare-release.yml']);
   assert.deepEqual(repo.files().filter(f => f.type === 'directory').map(f => f.name), ['.github', 'assets', 'data', 'src', 'test']);
   assert.deepEqual(repo.directoryEntries('missing'), []);
   const original = repo.read('index.html');
@@ -109,6 +109,47 @@ test('sample Actions runs open as graphs, and the run dialog can tell manual wor
   }
   assert.deepEqual(demoActions.list(1).runs.map((run) => run.workflowId), [1, 1]);
   assert.throws(() => demoActions.get(1), /sample repository/);
+});
+
+test('sample Actions runs agree with the sample workflow files, branches, and pull requests', () => {
+  const { workflows, branches } = demoActions.runnable();
+  for (const workflow of workflows) assert.equal(typeof initialFiles[workflow.path], 'string', `${workflow.path} is in the sample`);
+  assert.deepEqual(demoReleases.workflows().workflows.map(({ id, name, path }) => ({ id, name, path })), workflows.map(({ id, name, path }) => ({ id, name, path })));
+  const open = demoPulls.list(['OPEN']);
+  assert.deepEqual(new Set(branches), new Set(['main', ...open.map((pr) => pr.headRefName)]));
+
+  const { runs } = demoActions.list(null);
+  assert.equal(new Set(runs.map((run) => run.id)).size, runs.length);
+  const ci = initialFiles['.github/workflows/ci.yml'];
+  const toJob = { pass: 'success', fail: 'failure', skipped: 'skipped', pending: null };
+  const ciRuns = runs.filter((run) => run.workflowName === 'CI');
+  for (const run of ciRuns) {
+    const details = demoActions.get(run.id);
+    // The graph is ci.yml's: test and lint side by side, preview after test.
+    assert.deepEqual(details.graph.map(({ id, needs }) => [id, needs]), [['test', []], ['lint', []], ['preview', ['test']]]);
+    for (const node of details.graph) assert.match(ci, new RegExp(`^  ${node.id}:$`, 'm'));
+    if (run.event === 'push') {
+      assert.equal(run.branch, 'main');
+      continue;
+    }
+    // A pull request's run is on its branch and head commit, with the results of its checks.
+    const pr = demoPulls.get(run.pullRequestNumber);
+    assert.equal(run.title, pr.title);
+    assert.equal(run.branch, pr.headRefName);
+    assert.equal(run.headSha, pr.headRefOid);
+    for (const check of demoPulls.liveState(pr.number).checks.items) {
+      const node = details.graph.find((item) => item.id === check.name);
+      const jobs = details.jobs.filter((job) => node.jobIds.includes(job.id));
+      if (check.result === 'pending' && !jobs.length) continue; // Still waiting for the jobs it needs.
+      assert.equal(jobs.length, 1, `#${pr.number} ${check.name}`);
+      assert.equal(jobs[0].conclusion, toJob[check.result], `#${pr.number} ${check.name}`);
+    }
+  }
+  assert.ok(ciRuns.some((run) => run.event === 'push') && ciRuns.some((run) => run.event === 'pull_request'));
+
+  // The running run started minutes ago, so its duration doesn't count from the sample date.
+  const running = runs.find((run) => run.status !== 'completed');
+  assert.ok(Date.now() - Date.parse(running.startedAt) < 60 * 60_000);
 });
 
 test('per-commit patches apply to the sample files and compose the full PR diff', () => {

@@ -35,6 +35,8 @@ export function desktopPackageConfig(options: DesktopPackageOptions): Configurat
     files: ['.vite/build/**', 'package.json', 'opentig-build.json'],
     extraResources: [
       { from: path.join(options.root, 'assets', 'opentig.ico'), to: 'opentig.ico' },
+      { from: path.join(options.root, 'LICENSE'), to: 'LICENSE' },
+      { from: path.join(options.root, 'THIRD_PARTY_NOTICES.md'), to: 'THIRD_PARTY_NOTICES.md' },
       { from: path.join(options.root, 'packages/server/.resource/opentig-server'), to: 'opentig-server' },
       // Builder excludes a source root's node_modules even for extraResources.
       { from: path.join(options.root, 'packages/server/.resource/opentig-server/node_modules'), to: 'opentig-server/node_modules' },

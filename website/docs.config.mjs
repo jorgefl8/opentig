@@ -12,8 +12,8 @@ export const publishedGuides = {
     source: 'docs/features.md',
   },
   github: {
-    title: 'GitHub and pull requests',
-    description: 'Review and create GitHub pull requests in OpenTig. Configure accounts, Git credentials, native stacks, and commit authorship.',
+    title: 'GitHub: pull requests, Actions, and releases',
+    description: 'Review, merge, and create GitHub pull requests, follow Actions runs, and manage releases in OpenTig. Configure accounts, Git credentials, native stacks, and commit authorship.',
     source: 'docs/github.md',
   },
   'ai-assistance': {
