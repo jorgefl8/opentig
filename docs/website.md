@@ -176,7 +176,7 @@ FAQ answers use native `details` controls that work with keyboard, touch, and Ja
 
 ### Interactive demo
 
-The `#workflow` section follows the hero and loads the demo automatically as it approaches the viewport. No activation click or account is required. A small monospaced label and the **Open in a new tab** link sit above the frame; the link opens `/demo/` separately. A rounded border and soft shadow surround the fixed-height app viewport, with a real OpenTig screenshot shown while loading. A quiet loading strip disappears when the app signals readiness. Four short steps below the frame suggest what to try.
+The `#workflow` section follows the hero and, on screens 768 CSS pixels and wider, loads the demo automatically as it approaches the viewport. No activation click or account is required. Narrower screens show the poster with an **Open the interactive demo** button that opens `/demo/` full screen instead of embedding it: the app disables overscroll chaining for its phone layout, so an embedded frame would capture swipes and stop the page from scrolling. A small monospaced label and the **Open in a new tab** link sit above the frame; the link opens `/demo/` separately. A rounded border and soft shadow surround the fixed-height app viewport, with a real OpenTig screenshot shown while loading. A quiet loading strip disappears when the app signals readiness. Four short steps below the frame suggest what to try.
 
 **The demo uses sample data only.** It compiles the actual React renderer with a browser-only API adapter in `website/demo/`. Nothing accesses visitors' repositories or connects to an OpenTig server. The site has no hosted accounts or real repository operations.
 
@@ -203,7 +203,7 @@ Merging, closing, reopening, draft changes, auto-merge, branch updates, title an
 <details>
 <summary>Demo assets, accessibility, and build</summary>
 
-The frame and separate demo link adapt to narrow screens, and the link has visible keyboard focus. Without JavaScript, the poster and workflow instructions remain available without a loading indicator. The poster at `website/public/images/workflow-review.webp` is an intentional product asset with normal OpenTig branding and sample data; source captures and tooling stay untracked.
+The separate demo link adapts to narrow screens, and the link has visible keyboard focus. Without JavaScript, the poster and workflow instructions remain available without a loading indicator. The poster at `website/public/images/workflow-review.webp` is an intentional product asset with normal OpenTig branding and sample data; source captures and tooling stay untracked.
 
 `website/scripts/build-demo.mjs` builds the shared UI before website development, checks, and builds. Build aliases replace the server API, update transport, connection settings, and the HTML preview transport with demo implementations. HTML uses a sandboxed `srcdoc` frame without script permissions in the static demo; the installed app retains its server-backed preview transport. Generated assets in `website/public/demo/` and the generated bundle manifest are ignored. The separate demo TypeScript config checks the adapter against the actual application contract. Regression tests cover staged snapshots, commits, conflicts, independent sample sessions, HTML edits, and sample PR filtering and diffs. The demo route always emits `noindex` and stays out of the sitemap and homepage structured data.
 
