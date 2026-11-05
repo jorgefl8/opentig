@@ -43,7 +43,7 @@ button.workflow-node-header:focus-visible, .workflow-job:focus-visible { outline
 .workflow-node-meta { flex: none; color: var(--muted-foreground); font-size: var(--text-meta); font-variant-numeric: tabular-nums; font-weight: var(--weight-regular); }
 .workflow-job { display: flex; height: 30px; align-items: center; gap: 8px; border-radius: var(--radius-md); padding: 0 6px; color: var(--foreground); font-size: var(--text-ui); text-align: left; cursor: pointer; }
 .workflow-job:hover { background: var(--row-hover); }
-.workflow-job.selected { background: var(--row-selected); box-shadow: inset 2px 0 0 var(--primary); }
+.workflow-job.selected { background: var(--row-selected); }
 .workflow-job.more { justify-content: center; color: var(--muted-foreground); font-size: var(--text-meta); }
 
 .workflow-canvas-controls { position: absolute; right: 12px; bottom: 12px; display: flex; align-items: center; gap: 2px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--popover); padding: 3px; box-shadow: 0 4px 16px color-mix(in oklch, var(--foreground) 10%, transparent); }
