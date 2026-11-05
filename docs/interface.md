@@ -4,17 +4,19 @@
 
 Use **Settings → General** to change themes, fonts, file views, and remote checks. Use **Settings → Shortcuts** to customize keyboard controls.
 
-On desktop, navigation, file lists, and the commit composer sit in a resizable sidebar; editors, diffs, commits, PRs, and releases open in the viewer. Phone browsers show one pane at a time. Both clients connect to the same repository backend. Native desktop controls are available only in the desktop app.
+On desktop, navigation, file lists, and the commit composer sit in a resizable sidebar; editors, diffs, commits, PRs, releases, and workflow runs open in the viewer. Phone browsers show one pane at a time. Both clients connect to the same repository backend. Native desktop controls are available only in the desktop app.
 
 ## Sidebar width and collapsing
 
 Drag the sidebar's right edge to resize it between 300 px and 680 px, or focus the edge and use the arrow keys, `Home`, and `End`. Double-click the edge to return to the default 400 px.
 
-To give the viewer more room, collapse the sidebar with the button at the end of its tab bar or `Ctrl+B`, which you can rebind in **Settings → Shortcuts**. Dragging the edge well past its minimum width also collapses it. The collapsed sidebar is a narrow rail of section icons that still shows how many files are staged, or how many have changed when none are staged, and marks unsaved files. Click an icon or press `Ctrl+1` … `Ctrl+5` to open the sidebar on that section. The commit box, filters, and scroll positions are kept while collapsed. Phone layouts don't collapse the sidebar, since they show one pane at a time.
+To give the viewer more room, collapse the sidebar with the button at the end of its tab bar or `Ctrl+B`, which you can rebind in **Settings → Shortcuts**. Releasing a drag below 220 px also collapses it, and the edge says **Release to collapse** once a drag passes that point. The collapsed sidebar is a narrow rail of section icons that still shows how many files are staged, or how many have changed when none are staged, and marks unsaved files. Click an icon or press `Ctrl+1` … `Ctrl+5` to open the sidebar on that section. The commit box, filters, and scroll positions are kept while collapsed. Phone layouts don't collapse the sidebar, since they show one pane at a time.
+
+The expanded tabs count the changed files and the listed pull requests and mark unsaved files. Holding `Ctrl` shows each section's number on the tabs and the rail.
 
 ## Appearance and settings
 
-General settings groups controls under **Appearance**, **Files & viewer**, and **Repository sync**. Changes apply immediately and preserve your existing selections.
+General settings start with **Getting started**, whose **Repeat onboarding** shows the [start screen and checklist](getting-started.md#first-launch) again, then group controls under **Appearance**, **Files & viewer**, and **Repository sync**. Changes apply immediately and preserve your existing selections.
 
 | Control | Choices |
 | --- | --- |
@@ -25,7 +27,7 @@ General settings groups controls under **Appearance**, **Files & viewer**, and *
 
 Each font selector previews its own typeface. Open **Text preview** to see the current interface and code fonts together.
 
-**Dates use DD/MM/YYYY and local, 24-hour time.** This applies to history, commits, branches, worktrees, PRs, logs, updates, browser sessions, and CLI pairing expiry dates.
+**Dates use DD/MM/YYYY and local, 24-hour time.** This applies to history, commits, branches, worktrees, PRs, logs, updates, browser sessions, and CLI pairing expiry dates. Pull request and workflow run lists show ages instead, such as **3h ago**.
 
 <details>
 <summary>Syntax colors, loading indicators, and motion</summary>
@@ -49,7 +51,7 @@ The frame fits smaller windows. Browser revocation, LAN confirmation, device ren
 
 ### Viewer and saved preferences
 
-Choose a **tree or list** for Changes, enable **line wrapping**, and decide whether to **show Git-ignored files** in General settings.
+Choose a **tree or list** for Changes, enable **line wrapping**, and decide whether to **show Git-ignored files**, on by default, in General settings. Diffs remember the split or unified layout chosen with their own button.
 
 OpenTig starts in **Files** on first use, then reopens your last active section: Changes, Files, History, GitHub, or Search. This choice applies across repositories but is independent for each browser profile or desktop client.
 
@@ -95,7 +97,7 @@ Repository, worktree, branch, AI model, project assignment, and PR base selector
 - **Switch repositories by number:** number shortcuts remain active until the search field takes focus.
 - **Read a shortened name:** hover a truncated selected name to see it in full. The hint stays while the pointer remains on the control and hides while the menu is open.
 
-The top bar starts with the OpenTig logo and name, then reads as a breadcrumb: the repository in a soft box with its icon and switcher key, the branch, and the branch's pull request number, colored by its state: green when open, gray with **Draft** for a draft, purple when merged, and red when closed. On the right it shows **Pull** or **Push** counts and **Publish** only when the branch needs them, then **Refresh**, any update or fetch notice, and **Settings**. Push and Publish are tinted amber, like History's unpublished commits, and Pull blue, for what's coming in; the repository menu's sync buttons and the phone's pill use the same colors.
+The top bar starts with the OpenTig logo and name, then reads as a breadcrumb: the repository in a soft box with its icon and switcher key, the branch, and the branch's pull request number, colored by its state: green when open, gray with **Draft** for a draft, purple when merged, and red when closed. When that pull request belongs to a native stack, a button beside it lists the stack's layers. On the right it shows **Pull** or **Push** counts and **Publish** only when the branch needs them, then **Refresh**, any update or fetch notice, and **Settings**. Push and Publish are tinted amber, like History's unpublished commits, and Pull blue, for what's coming in; the repository menu's sync buttons and the phone's pill use the same colors.
 
 - **Repository menu:** repositories, then **Open repository…** (`Ctrl+O`), **Open on GitHub** for GitHub repositories, and **Manage projects…**.
 - **Worktrees:** with more than one, a small button with their number sits beside the repository. Its menu lists them and **Manage worktrees…**, and its tooltip names the current one.
@@ -124,11 +126,12 @@ Use the bottom **Changes**, **Files**, **History**, **GitHub**, and **Search** t
 
 | Viewer | Title | Actions |
 | --- | --- | --- |
-| **Diff** | File name, then folder and lines added and removed | Stage or unstage. **⋯**: **Open file**, **Wrap lines**, **Discard changes** |
+| **Diff** | File name, then folder and lines added and removed | **⋯**: **Open file**, **Wrap lines**, **Discard changes** |
 | **File** | File name. Tap it for the sheet of open files, to switch, close, and see which are unsaved or missing | **⋯**: what the file's row in Files offers, such as **Rename**, **Copy path**, **Move to…**, **Delete** |
 | **Commit** | Short hash | **⋯**: **Copy hash**, the pull request its message refers to, **Open on GitHub**, **Undo commit…** |
 | **Pull request** | Number, then source and base branch | **⋯**: the pull request menu, plus **Disable auto-merge** when it's on |
 | **Release** | Tag | **⋯**: the release menu |
+| **Workflow run** | Run title, then the workflow and run number | **⋯**: **Open on GitHub** |
 
 **Each screen has at most one main action,** floating above the bottom bar on a fade. Lists and viewers leave extra room at their end while it shows, and it hides while the software keyboard is open.
 
@@ -196,7 +199,7 @@ Search keeps its query and matching toggles in one field. The chevron beside it 
 ### History, GitHub, diffs, and projects
 
 - **History:** a row is a dot, the commit's title, and one line with its date, author, and short hash. Tap it for the commit, whose **⋯** copies the hash and offers **Undo commit…** and the pull request its message refers to, and whose file list opens each diff. The filter icon beside the find field opens a sheet with **Group merges**.
-- **GitHub:** a pull request's row is its author's avatar with a status dot, a title and age, then where it stands, its author and size. Tap it for the viewer, which has the row's stack and **Open on GitHub**. **Pull requests**, **Actions**, and **Releases** keep their filter, menu, New, and Run a workflow as icons beside the tabs.
+- **GitHub:** a pull request's row is its author's avatar with a status dot, a title and age, then where it stands, its author and size. Tap it for the viewer, which has the row's stack and **Open on GitHub**. **Pull requests**, **Actions**, and **Releases** keep their tools as icons beside the tabs: the filter, **⋯**, **+** to create, and **▶** to run a workflow.
 - **Diffs and code:** a phone always shows diffs inline and leaves the saved desktop layout as it is. Text is compact, the same size in a file you edit as in a diff, and **Interface size** scales it; that setting scales nothing else on a phone. On iOS, tapping into code doesn't zoom the page, and pinch zoom still works. Long lines wrap by default. Turning that off, from a diff's **⋯** or from Settings, lasts for the session and leaves the saved desktop choice as it is.
 - **Projects:** use the larger up/down buttons and free scrolling in Manage projects. Moving a project or repository preserves focus and scroll, then briefly highlights its new position. Reduced-motion preferences suppress that highlight; desktop dragging remains available.
 
