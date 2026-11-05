@@ -53,3 +53,7 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      - name: Tell search engines which pages changed
+        # A refused or unreachable IndexNow ping must not fail an already finished deployment.
+        continue-on-error: true
+        run: node website/scripts/indexnow.mjs website/dist/sitemap.xml

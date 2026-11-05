@@ -35,3 +35,11 @@ it('validates and builds before upload, keeps deploy credentials out of build st
   expect(deploy.env.CLOUDFLARE_API_TOKEN).toBe('${{ secrets.CLOUDFLARE_API_TOKEN }}');
   expect(deploy.env.CLOUDFLARE_ACCOUNT_ID).toBe('${{ secrets.CLOUDFLARE_ACCOUNT_ID }}');
 });
+
+it('submits the deployed pages to IndexNow without credentials or failing the deployment', () => {
+  const steps = workflow.jobs.deploy.steps;
+  const indexNow = steps.findIndex(step => step.run === 'node website/scripts/indexnow.mjs website/dist/sitemap.xml');
+  expect(indexNow).toBeGreaterThan(steps.findIndex(step => step.run === 'pnpm exec wrangler deploy'));
+  expect(steps[indexNow]['continue-on-error']).toBe(true);
+  expect(steps[indexNow].env).toBeUndefined();
+});
