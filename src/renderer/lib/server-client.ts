@@ -182,6 +182,8 @@ export function createOpenTigServerClient(options: ServerClientOptions = {}): Op
       listWorkflows: (repositoryId) => invoke(IPC.githubWorkflowList, repositoryId),
       listWorkflowRuns: (repositoryId, path) => invoke(IPC.githubWorkflowRuns, repositoryId, path),
       runWorkflow: (input) => invoke(IPC.githubWorkflowRun, input),
+      listActionRuns: (repositoryId, workflowId) => invoke(IPC.githubActionRunList, repositoryId, workflowId),
+      getActionRun: (repositoryId, runId) => invoke(IPC.githubActionRunView, repositoryId, runId),
       generateDraft: (input) => transport.request(IPC.githubPrDraft, [input], { timeoutMs: AI_CLIENT_TIMEOUT_MS }),
       cancelDraft: (requestId) => invoke(IPC.githubPrDraftCancel, requestId),
     },

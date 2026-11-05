@@ -441,6 +441,12 @@ export function publishReleaseArg(value: unknown): PublishReleaseInput {
 
 const workflowPathSchema = z.string().max(300).regex(/^\.github\/workflows\/[A-Za-z0-9._ -]+\.ya?ml$/);
 
+/** A GitHub database id, such as a workflow or a workflow run. */
+export function githubIdArg(value: unknown, operation: string): number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0) throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation, message: 'Invalid GitHub id.' });
+  return value;
+}
+
 export function workflowPathArg(value: unknown, operation: string): string {
   return parsedRelease(workflowPathSchema.safeParse(value), operation);
 }

@@ -178,6 +178,8 @@ export const OPEN_TIG_SERVER_COMMANDS = {
   'github.listWorkflows': command(IPC.githubWorkflowList, 'gh-workflow-list', false, { timeoutMs: GITHUB_READ_TIMEOUT_MS }),
   'github.listWorkflowRuns': command(IPC.githubWorkflowRuns, 'gh-workflow-runs', false, { timeoutMs: GITHUB_READ_TIMEOUT_MS }),
   'github.runWorkflow': command(IPC.githubWorkflowRun, 'gh-workflow-run', true, { timeoutMs: GITHUB_ACTION_TIMEOUT_MS }),
+  'github.listActionRuns': command(IPC.githubActionRunList, 'gh-action-run-list', false, { timeoutMs: GITHUB_READ_TIMEOUT_MS }),
+  'github.getActionRun': command(IPC.githubActionRunView, 'gh-action-run-view', false, { timeoutMs: GITHUB_READ_TIMEOUT_MS }),
   'github.generateDraft': command(IPC.githubPrDraft, 'ai-pr-draft', true, { timeoutMs: AI_SERVER_TIMEOUT_MS }),
   'github.cancelDraft': command(IPC.githubPrDraftCancel, 'ai-pr-draft-cancel', true),
 

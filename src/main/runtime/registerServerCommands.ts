@@ -16,7 +16,7 @@ import { planUntrackedTrash, readUntrackedTrashLayout, removeEmptyParents } from
 import { CommandRegistry, type CommandExecutionContext } from './CommandRegistry';
 import type { OpenTigHost } from './OpenTigHost';
 import type { OpenTigRuntimeServices } from './OpenTigRuntime';
-import { aiString, booleanArg, branchDetailsArg, commentOnPullRequestArg, createPullRequestArg, createReleaseArg, deleteBranchArg, deleteDraftReleaseArg, deletePullRequestEntryArg, editPullRequestEntryArg, filesTreeStateArg, generateCommitMessageArg, generatePullRequestDraftArg, nullableProjectIdArg, oidArg, openFilesStateArg, prNumbersArg, pathsArg, prepareCommitGroupArg, prNumberArg, publishBranchArg, projectIdArg, projectNameArg, publishReleaseArg, pullRequestActionArg, pullRequestRangeArg, pullRequestStatesArg, reviewPullRequestArg, runWorkflowArg, updatePullRequestArg, workflowPathArg, removeWorktreeArg, repositoryKeyArg, searchOptionsArg, searchReplaceArg, stringArg, tagNameArg, textArg, updateReleaseArg, worktreeDetailsArg } from './validators';
+import { aiString, booleanArg, branchDetailsArg, commentOnPullRequestArg, createPullRequestArg, createReleaseArg, deleteBranchArg, deleteDraftReleaseArg, deletePullRequestEntryArg, editPullRequestEntryArg, filesTreeStateArg, generateCommitMessageArg, generatePullRequestDraftArg, nullableProjectIdArg, oidArg, openFilesStateArg, prNumbersArg, pathsArg, prepareCommitGroupArg, prNumberArg, publishBranchArg, projectIdArg, projectNameArg, publishReleaseArg, pullRequestActionArg, pullRequestRangeArg, pullRequestStatesArg, reviewPullRequestArg, runWorkflowArg, updatePullRequestArg, workflowPathArg, githubIdArg, removeWorktreeArg, repositoryKeyArg, searchOptionsArg, searchReplaceArg, stringArg, tagNameArg, textArg, updateReleaseArg, worktreeDetailsArg } from './validators';
 import { createTrackingBranchArg, deleteRemoteBranchArg, orderingIndexArg } from './validators';
 
 export function registerServerCommands(
@@ -551,6 +551,11 @@ export function registerServerCommands(
   handle(IPC.githubWorkflowList, 'gh-workflow-list', (id) => services.github.listWorkflows(stringArg(id, 'gh-workflow-list', 64)));
   handle(IPC.githubWorkflowRuns, 'gh-workflow-runs', (id, path) => services.github.listWorkflowRuns(stringArg(id, 'gh-workflow-runs', 64), workflowPathArg(path, 'gh-workflow-runs')));
   handle(IPC.githubWorkflowRun, 'gh-workflow-run', (input) => services.github.runWorkflow(runWorkflowArg(input)));
+  handle(IPC.githubActionRunList, 'gh-action-run-list', (id, workflowId) => services.github.listActionRuns(
+    stringArg(id, 'gh-action-run-list', 64),
+    workflowId === null || workflowId === undefined ? null : githubIdArg(workflowId, 'gh-action-run-list'),
+  ));
+  handle(IPC.githubActionRunView, 'gh-action-run-view', (id, runId) => services.github.getActionRun(stringArg(id, 'gh-action-run-view', 64), githubIdArg(runId, 'gh-action-run-view')));
   handle(IPC.githubPrDraftCancel, 'ai-pr-draft-cancel', (requestId) => {
     services.prDrafts.cancel(aiString(requestId, 'ai-pr-draft-cancel', 100, true));
   });

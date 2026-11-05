@@ -633,6 +633,65 @@ export interface WorkflowRunSummary {
 
 export type RunWorkflowInput = GitHubMutationBase & { path: string; ref: string };
 
+/** One GitHub Actions workflow run. `status` and `conclusion` are GitHub's own values. */
+export interface ActionRunSummary {
+  id: number;
+  number: number;
+  attempt: number;
+  title: string;
+  workflowId: number;
+  workflowName: string;
+  status: string;
+  conclusion: string | null;
+  event: string;
+  branch: string | null;
+  headSha: string;
+  url: string;
+  createdAt: string;
+  startedAt: string | null;
+  updatedAt: string;
+}
+
+export interface ActionRunStep {
+  number: number;
+  name: string;
+  status: string;
+  conclusion: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+}
+
+export interface ActionRunJob {
+  id: number;
+  name: string;
+  status: string;
+  conclusion: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  url: string | null;
+  runnerName: string | null;
+  steps: ActionRunStep[];
+}
+
+/** A job of the workflow file, with the run's jobs it produced: several for a matrix, none yet while it waits. */
+export interface ActionRunGraphNode {
+  id: string;
+  name: string;
+  needs: string[];
+  jobIds: number[];
+}
+
+export interface ActionRunDetails extends ActionRunSummary {
+  path: string | null;
+  actor: string | null;
+  jobs: ActionRunJob[];
+  /** GitHub listed more jobs than OpenTig reads. */
+  jobsTruncated: boolean;
+  graph: ActionRunGraphNode[];
+  /** `workflow` when the dependencies come from the run's workflow file; `jobs` when it couldn't be read. */
+  graphSource: 'workflow' | 'jobs';
+}
+
 export interface CreatePullRequestInput {
   expectedAccount?: { login: string; revision: number };
   repositoryId: string;
@@ -919,6 +978,10 @@ export interface OpenTigApi {
     listWorkflows(repositoryId: string): Promise<RepositoryWorkflowList>;
     listWorkflowRuns(repositoryId: string, path: string): Promise<WorkflowRunSummary[]>;
     runWorkflow(input: RunWorkflowInput): Promise<void>;
+    /** The latest workflow runs, optionally of one workflow. */
+    listActionRuns(repositoryId: string, workflowId: number | null): Promise<ActionRunSummary[]>;
+    /** A run with its jobs, steps and the dependency graph of its workflow. */
+    getActionRun(repositoryId: string, runId: number): Promise<ActionRunDetails>;
     generateDraft(input: GeneratePullRequestDraftInput): Promise<GeneratedPullRequestDraft>;
     cancelDraft(requestId: string): Promise<void>;
   };
@@ -968,5 +1031,5 @@ export const IPC = {
   diagnosticsList: 'diagnostics:list', diagnosticsClear: 'diagnostics:clear', diagnosticsRecord: 'diagnostics:record',
   githubAccountsStatus: 'github:accounts-status', githubSetDefaultAccount: 'github:set-default-account', githubRepositoryAccount: 'github:repository-account', githubSetRepositoryAccount: 'github:set-repository-account',
   githubStatus: 'github:status', githubRepositoryInfo: 'github:repository-info', githubPrForBranch: 'github:pr-for-branch', githubPrList: 'github:pr-list', githubPrView: 'github:pr-view', githubPrLiveState: 'github:pr-live-state', githubPrConversation: 'github:pr-conversation', githubPrAction: 'github:pr-action', githubPrUpdate: 'github:pr-update', githubPrComment: 'github:pr-comment', githubPrReview: 'github:pr-review', githubPrEntryEdit: 'github:pr-entry-edit', githubPrEntryDelete: 'github:pr-entry-delete',
-  githubPrStack: 'github:pr-stack', githubPrListStacks: 'github:pr-list-stacks', githubPrDiff: 'github:pr-diff', githubPrCommitDiff: 'github:pr-commit-diff', githubPrCommits: 'github:pr-commits', githubPrCreate: 'github:pr-create', githubReleaseList: 'github:release-list', githubReleaseView: 'github:release-view', githubReleaseTag: 'github:release-tag', githubReleaseCreate: 'github:release-create', githubReleaseUpdate: 'github:release-update', githubReleaseDelete: 'github:release-delete', githubReleasePublish: 'github:release-publish', githubWorkflowList: 'github:workflow-list', githubWorkflowRuns: 'github:workflow-runs', githubWorkflowRun: 'github:workflow-run', githubPrDraft: 'github:pr-draft', githubPrDraftCancel: 'github:pr-draft-cancel',
+  githubPrStack: 'github:pr-stack', githubPrListStacks: 'github:pr-list-stacks', githubPrDiff: 'github:pr-diff', githubPrCommitDiff: 'github:pr-commit-diff', githubPrCommits: 'github:pr-commits', githubPrCreate: 'github:pr-create', githubReleaseList: 'github:release-list', githubReleaseView: 'github:release-view', githubReleaseTag: 'github:release-tag', githubReleaseCreate: 'github:release-create', githubReleaseUpdate: 'github:release-update', githubReleaseDelete: 'github:release-delete', githubReleasePublish: 'github:release-publish', githubWorkflowList: 'github:workflow-list', githubWorkflowRuns: 'github:workflow-runs', githubWorkflowRun: 'github:workflow-run', githubActionRunList: 'github:action-run-list', githubActionRunView: 'github:action-run-view', githubPrDraft: 'github:pr-draft', githubPrDraftCancel: 'github:pr-draft-cancel',
 } as const;
