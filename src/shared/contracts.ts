@@ -712,8 +712,33 @@ export interface BootstrapData {
   activeRepository: RepositoryInfo | null;
   preferences: Preferences;
   performanceAutomation: boolean;
+  /** Saved repositories whose folder no longer exists on the server. */
+  unavailableRepositoryIds?: string[];
+  /** The repository that was active last time, when it could not be restored because its folder is gone. */
+  unavailableActiveRepositoryId?: string | null;
   /** Present when bootstrap arrived through the authoritative server transport. */
   server?: OpenTigServerIdentity;
+}
+
+/** Another saved repository found in the folder a moved repository now lives in. */
+export interface RepositoryRelocationCandidate {
+  id: string;
+  name: string;
+  previousPath: string;
+  path: string;
+}
+
+export interface RepositoryRelocationSearch {
+  /** The folder that was searched, shown so the user knows where OpenTig looked. */
+  searchedPath: string;
+  candidates: RepositoryRelocationCandidate[];
+  /** Repositories that are still missing and were not found there. */
+  unresolved: { id: string; name: string; previousPath: string }[];
+}
+
+export interface RepositoryRelocationResult {
+  relocated: { previousId: string; repository: RepositoryInfo }[];
+  failed: { id: string; name: string; message: string }[];
 }
 
 export interface ServerDirectoryListing {
@@ -766,6 +791,12 @@ export interface OpenTigApi {
     browseDirectories(path?: string): Promise<ServerDirectoryListing>;
     openRecent(id: string): Promise<RepositoryInfo>;
     relocateRecent(id: string, path: string): Promise<RepositoryInfo>;
+    /** Saved repositories whose folder no longer exists. */
+    unavailableRecent(): Promise<string[]>;
+    /** After one repository moved from previousPath to path, find the other missing repositories near its new folder. */
+    findRelocations(previousPath: string, path: string): Promise<RepositoryRelocationSearch>;
+    /** Updates several saved locations at once without changing the active repository. */
+    relocateRecents(entries: { id: string; path: string }[]): Promise<RepositoryRelocationResult>;
     forget(repositoryKey: string): Promise<RepositoryOrganization>;
     getStatus(id: string, includeStats?: boolean): Promise<RepositoryStatus>;
     getFiles(id: string): Promise<FileTreeEntry[]>;
@@ -919,7 +950,7 @@ export const IPC = {
   gitStatus: 'app:git-status', gitSetGlobalIdentity: 'app:git-set-global-identity', completeOnboarding: 'app:complete-onboarding',
   repositoryClone: 'repository:clone', repositoryCloneStatus: 'repository:clone-status', repositoryCancelClone: 'repository:cancel-clone',
   bootstrap: 'app:bootstrap', capabilities: 'app:capabilities', preferences: 'app:preferences', filesTreeStateUpdate: 'app:files-tree-state', openFilesStateUpdate: 'app:open-files-state', projectCreate: 'projects:create', projectRename: 'projects:rename', projectRemove: 'projects:remove', projectAssign: 'projects:assign', projectMove: 'projects:move', projectMoveRepository: 'projects:move-repository',
-  repositoryPreparePath: 'repository:prepare-path', repositoryCompleteSetup: 'repository:complete-setup', repositoryOpenPath: 'repository:open-path', repositoryBrowseDirectories: 'repository:browse-directories', repositoryOpenRecent: 'repository:open-recent', repositoryRelocateRecent: 'repository:relocate-recent', repositoryForget: 'repository:forget', repositoryStatus: 'repository:status', repositoryFiles: 'repository:files', repositoryDirectoryEntries: 'repository:directory-entries',
+  repositoryPreparePath: 'repository:prepare-path', repositoryCompleteSetup: 'repository:complete-setup', repositoryOpenPath: 'repository:open-path', repositoryBrowseDirectories: 'repository:browse-directories', repositoryOpenRecent: 'repository:open-recent', repositoryRelocateRecent: 'repository:relocate-recent', repositoryUnavailableRecent: 'repository:unavailable-recent', repositoryFindRelocations: 'repository:find-relocations', repositoryRelocateRecents: 'repository:relocate-recents', repositoryForget: 'repository:forget', repositoryStatus: 'repository:status', repositoryFiles: 'repository:files', repositoryDirectoryEntries: 'repository:directory-entries',
   repositoryReadFile: 'repository:read-file', repositoryReadImage: 'repository:read-image', repositoryGetFavicon: 'repository:favicon', repositoryWriteFile: 'repository:write-file', repositoryAbsolutePath: 'repository:absolute-path',
   repositoryCopyEntries: 'repository:copy-entries', repositoryCutEntries: 'repository:cut-entries', repositoryPasteEntries: 'repository:paste-entries', repositoryMoveEntry: 'repository:move-entry', repositoryDeleteEntry: 'repository:delete-entry',
   repositoryMoveEntries: 'repository:move-entries', repositoryDeleteEntries: 'repository:delete-entries', repositoryRenameEntry: 'repository:rename-entry', repositoryCreateEntry: 'repository:create-entry',

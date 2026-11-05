@@ -14,8 +14,10 @@ import { groupRecentRepositories } from './repository-select-model';
 import '@/features/onboarding/onboarding.css';
 
 /** The start screen doubles as onboarding: one step to a repository, tools at a glance. */
-export function Welcome({ recent, preferences, onPreference, onOpen, onClone, onFind, onRecent, onSettings, onBack }: {
+export function Welcome({ recent, unavailableRepositoryIds, preferences, onPreference, onOpen, onClone, onFind, onRecent, onSettings, onBack }: {
   recent: BootstrapData['recentRepositories'];
+  /** Saved repositories whose folder no longer exists; choosing one asks for its new folder. */
+  unavailableRepositoryIds?: ReadonlySet<string> | undefined;
   preferences: Preferences;
   onPreference(partial: Partial<Preferences>): unknown;
   onOpen(): void;
@@ -51,7 +53,7 @@ export function Welcome({ recent, preferences, onPreference, onOpen, onClone, on
       </div>}
       <EnvironmentStrip checks={checks} assistant={preferences.commitMessageHarness} onAssistant={(id: AiHarnessId) => void onPreference({ commitMessageHarness: id })} onSettings={onSettings} />
       {!gitBlocked && <p className="welcome-note">Optional tools never block you. Change them anytime in Settings.</p>}
-      {repositories.length > 0 && <section><h2>Repositories</h2>{repositories.map((item) => <button key={item.key} disabled={gitBlocked} onClick={() => onRecent(item.recent.id)}><RepositoryFaviconImage src={favicons.get(item.key)} fallback={<IconFolder aria-hidden="true" />} /><span><strong>{item.name}</strong><small>{item.rootPath}</small></span></button>)}</section>}
+      {repositories.length > 0 && <section><h2>Repositories</h2>{repositories.map((item) => <button key={item.key} disabled={gitBlocked} onClick={() => onRecent(item.recent.id)}><RepositoryFaviconImage src={favicons.get(item.key)} fallback={<IconFolder aria-hidden="true" />} /><span><strong>{item.name}</strong>{unavailableRepositoryIds?.has(item.recent.id) ? <small className="repository-missing">Not found · {item.rootPath}</small> : <small>{item.rootPath}</small>}</span></button>)}</section>}
     </div>
   );
 }

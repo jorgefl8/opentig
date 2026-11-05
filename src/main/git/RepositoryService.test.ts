@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { cp, mkdtemp, readFile, realpath, rename, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, realpath, rename, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
@@ -209,6 +209,74 @@ describe('RepositoryService change stats', () => {
     expect(relocated.id).not.toBe(previousId);
     expect(fixture.repositories.recents()).toEqual([expect.objectContaining({ id: relocated.id, path: relocated.path })]);
     expect(await fixture.repositories.openRecent(relocated.id)).toMatchObject({ id: relocated.id, path: relocated.path });
+  });
+});
+
+describe('RepositoryService moved repositories', () => {
+  it('reports a moved repository folder as missing instead of a missing Git', async () => {
+    const fixture = await repository();
+    await rename(fixture.work, path.join(fixture.root, 'moved'));
+    const missing = { detail: expect.objectContaining({ code: 'REPOSITORY_MISSING' }) };
+    await expect(fixture.repositories.openRecent(fixture.repositoryId)).rejects.toMatchObject(missing);
+    await expect(fixture.repositories.status(fixture.repositoryId)).rejects.toMatchObject(missing);
+    expect(await fixture.repositories.unavailableIds()).toEqual([fixture.repositoryId]);
+  });
+
+  it('finds the other moved repositories near the one located first and relocates them together', async () => {
+    const fixture = await repository();
+    const open = async (name: string) => {
+      const folder = path.join(fixture.root, name);
+      await execFileAsync('git', ['init', folder], { windowsHide: true });
+      return (await fixture.repositories.openPath(folder)).id;
+    };
+    const [alpha, beta, gamma] = [await open('alpha'), await open('beta'), await open('gamma')];
+    const platform = path.join(fixture.root, 'repos', 'platform');
+    const personal = path.join(fixture.root, 'repos', 'personal');
+    await mkdir(platform, { recursive: true });
+    await mkdir(personal, { recursive: true });
+    await rename(fixture.work, path.join(platform, 'work'));
+    await rename(path.join(fixture.root, 'alpha'), path.join(platform, 'alpha'));
+    await rename(path.join(fixture.root, 'beta'), path.join(personal, 'beta'));
+    await rm(path.join(fixture.root, 'gamma'), { recursive: true, force: true });
+    // A folder with a matching name that is not a Git repository is never offered.
+    await mkdir(path.join(platform, 'gamma'));
+
+    const previousPath = fixture.repositories.recent(fixture.repositoryId)!.path;
+    const located = await fixture.repositories.relocateRecent(fixture.repositoryId, path.join(platform, 'work'));
+    const search = await fixture.repositories.findRelocations(previousPath, located.path);
+
+    expect(search.searchedPath).toBe(path.dirname(path.dirname(located.path)));
+    expect(search.candidates).toEqual([
+      expect.objectContaining({ id: alpha, name: 'alpha', path: await realpath(path.join(platform, 'alpha')) }),
+      expect.objectContaining({ id: beta, name: 'beta', path: await realpath(path.join(personal, 'beta')) }),
+    ]);
+    expect(search.unresolved).toEqual([expect.objectContaining({ id: gamma, name: 'gamma' })]);
+
+    const result = await fixture.repositories.relocateMany(search.candidates.map(({ id, path: folder }) => ({ id, path: folder })));
+    expect(result.failed).toEqual([]);
+    expect(result.relocated.map((item) => item.previousId)).toEqual([alpha, beta]);
+    expect(await fixture.repositories.unavailableIds()).toEqual([gamma]);
+    expect(fixture.settings.activeRepositoryId).toBe(located.id);
+  });
+
+  it('leaves a repository for the user when two folders nearby could be it', async () => {
+    const fixture = await repository();
+    const folder = path.join(fixture.root, 'alpha');
+    await execFileAsync('git', ['init', folder], { windowsHide: true });
+    const alpha = (await fixture.repositories.openPath(folder)).id;
+    const first = path.join(fixture.root, 'repos', 'one');
+    const second = path.join(fixture.root, 'repos', 'two');
+    await mkdir(first, { recursive: true });
+    await rename(fixture.work, path.join(first, 'work'));
+    await rm(folder, { recursive: true, force: true });
+    await execFileAsync('git', ['init', path.join(second, 'alpha')], { windowsHide: true });
+    await execFileAsync('git', ['init', path.join(fixture.root, 'repos', 'alpha')], { windowsHide: true });
+
+    const previousPath = fixture.repositories.recent(fixture.repositoryId)!.path;
+    const located = await fixture.repositories.relocateRecent(fixture.repositoryId, path.join(first, 'work'));
+    const search = await fixture.repositories.findRelocations(previousPath, located.path);
+    expect(search.candidates).toEqual([]);
+    expect(search.unresolved).toEqual([expect.objectContaining({ id: alpha })]);
   });
 });
 

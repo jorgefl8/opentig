@@ -17,7 +17,7 @@ import type { LocalRefsTab } from '@/features/refs/local-refs-model';
 import { samePath } from '@/features/refs/local-refs-model';
 import { RepositoryFaviconImage } from '@/features/repositories/RepositoryFavicon';
 import { useRepositoryFavicons } from '@/features/repositories/useRepositoryFavicons';
-import { buildRepositoryPickerModel, formatRepositoryCheckout, getRepositoryPickerDisplayOrder, type RepositoryOption } from '@/features/repositories/repository-select-model';
+import { buildRepositoryPickerModel, formatRepositoryCheckout, getRepositoryPickerDisplayOrder, shortenRepositoryPath, type RepositoryOption } from '@/features/repositories/repository-select-model';
 import { needsBranchPublication, visibleRepositorySyncActions, type ProjectSyncAction, type RepositorySyncCounts } from '@/features/repositories/project-sync';
 import { DesktopUpdateIndicator } from '@/features/settings/UpdateSettings';
 import type { SettingsSection } from '@/features/settings/SettingsDialog';
@@ -55,6 +55,10 @@ export interface ToolbarProps {
   onRefresh(): void; onPreference(partial: Partial<Preferences>): void;
   onForgetRepository(repository: RepositoryOption): Promise<RepositoryOrganization>;
   onRelocateRepository(repository: RepositoryOption, path: string): Promise<void>;
+  /** Saved repositories whose folder no longer exists; picking one asks for its new folder. */
+  unavailableRepositoryIds: ReadonlySet<string>;
+  /** The picker opened, a good moment to recheck which saved folders still exist. */
+  onRepositoryPickerOpen(): void;
   onOrganizationChange(organization: RepositoryOrganization): void;
   onRefsManaged(recentRepositories: RecentRepository[] | null): void;
   onPull(): void; onPush(): void;
@@ -104,8 +108,11 @@ export function Toolbar(props: ToolbarProps) {
   );
   const favicons = useRepositoryFavicons(faviconSources);
 
+  // A ref, so the availability check that runs as the picker opens does not fetch every repository twice.
+  const unavailableRepositoryIds = useRef(props.unavailableRepositoryIds);
+  useEffect(() => { unavailableRepositoryIds.current = props.unavailableRepositoryIds; }, [props.unavailableRepositoryIds]);
   const refreshRepositorySyncCounts = useCallback(async (repositories: RepositoryOption[]) => {
-    await Promise.all(repositories.map(async (item) => {
+    await Promise.all(repositories.filter((item) => !unavailableRepositoryIds.current.has(item.recent.id)).map(async (item) => {
       const repositoryId = item.recent.id;
       const version = (repositoryStatusVersions.current.get(repositoryId) ?? 0) + 1;
       repositoryStatusVersions.current.set(repositoryId, version);
@@ -157,6 +164,10 @@ export function Toolbar(props: ToolbarProps) {
   useEffect(() => {
     if (repositorySelectOpen) void refreshRepositorySyncCounts(picker.repositories);
   }, [picker.repositories, refreshRepositorySyncCounts, repositorySelectOpen]);
+  const { onRepositoryPickerOpen } = props;
+  useEffect(() => {
+    if (repositorySelectOpen) onRepositoryPickerOpen();
+  }, [onRepositoryPickerOpen, repositorySelectOpen]);
 
   const clearRepositoryNumberShortcut = useCallback(() => {
     repositoryNumberBuffer.current = '';
@@ -242,6 +253,20 @@ export function Toolbar(props: ToolbarProps) {
         ? { branch: props.status.branch, detached: props.status.detached }
         : undefined;
     const checkoutLabel = formatRepositoryCheckout(group, checkout);
+    if (props.unavailableRepositoryIds.has(group.recent.id)) {
+      return {
+        value: group.key,
+        label: group.name,
+        description: shortenRepositoryPath(group.recent.path),
+        search: group.recent.path,
+        tooltip: `Not found at ${group.recent.path}. Choose it to locate its new folder.`,
+        icon: <RepositoryFaviconImage src={favicons.get(group.key)} />,
+        trailing: <>
+          <span className="repository-missing-badge">Not found</span>
+          <Kbd className="repo-select-index">{repositoryIndex.get(group.key)}</Kbd>
+        </>,
+      };
+    }
     return {
       value: group.key,
       label: group.name,

@@ -341,6 +341,7 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   :is(.toolbar-branch-pr, .mobile-pr-number).pr-state-closed { color: var(--destructive); }
   .repo-select-favicon { width: 16px; height: 16px; flex: none; border-radius: 3px; object-fit: contain; background: color-mix(in oklch, var(--foreground) 8%, transparent); }
   .repository-sync-actions { display: flex; flex: none; gap: 1px; }
+  .repository-missing-badge { flex: none; padding: 1px 6px; border-radius: 999px; background: color-mix(in oklch, var(--warning) 16%, transparent); color: var(--warning); font-size: var(--text-meta); white-space: nowrap; }
   .repository-sync-actions [data-slot="button"] { color: var(--muted-foreground); }
   .repository-sync-actions [data-slot="button"]:hover { background: color-mix(in oklch, var(--foreground) 14%, transparent); color: var(--foreground); }
   /* A background fetch refused by GitHub stays visible until access works again. */
@@ -617,6 +618,31 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   .welcome section button span { display: grid; min-width: 0; flex: 1; gap: 2px; }
   .welcome section strong { font-size: var(--text-body); }
   .welcome section small { overflow: hidden; color: var(--muted-foreground); font-size: var(--text-meta); text-overflow: ellipsis; white-space: nowrap; }
+  .welcome section small.repository-missing { color: var(--warning); }
+
+  /* A saved repository whose folder is gone, and the moved repositories found next to it. */
+  .welcome.repository-unavailable h1 { margin-top: 14px; font-size: var(--text-title); }
+  .welcome.repository-unavailable > p { max-width: 460px; margin-bottom: 14px; }
+  .repository-unavailable-icon { display: grid; width: 44px; height: 44px; place-items: center; border-radius: var(--radius-lg); background: color-mix(in oklch, var(--warning) 16%, transparent); color: var(--warning); }
+  .repository-unavailable-icon svg { width: 22px; height: 22px; }
+  .repository-unavailable-path { max-width: min(560px, 100%); padding: 4px 8px; border-radius: var(--radius-md); background: var(--muted); font-family: var(--font-mono); font-size: var(--text-meta); overflow-wrap: anywhere; }
+  .welcome.repository-unavailable > .repository-unavailable-note { margin: 14px 0 0; font-size: var(--text-meta); }
+  .repository-unavailable-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 20px; }
+  .repository-unavailable-error { margin-top: 12px; color: var(--destructive); font-size: var(--text-meta); }
+  .repository-relocations-dialog { width: min(560px, calc(100vw - 2rem)); }
+  .repository-relocations-dialog code { font-family: var(--font-mono); font-size: var(--text-meta); overflow-wrap: anywhere; }
+  .repository-relocations-list { max-height: min(340px, 50vh); overflow-y: auto; margin: 4px 0 0; padding: 0; border: 1px solid var(--border); border-radius: var(--radius-lg); list-style: none; }
+  .repository-relocations-list li + li { border-top: 1px solid var(--border); }
+  .repository-relocations-list label, .repository-relocations-unresolved > span { display: flex; align-items: flex-start; gap: 10px; padding: 8px 12px; }
+  .repository-relocations-list label { cursor: pointer; }
+  .repository-relocations-list label > [data-slot="checkbox"] { margin-top: 3px; }
+  .repository-relocations-list span { display: grid; min-width: 0; gap: 2px; }
+  .repository-relocations-list small { color: var(--muted-foreground); font-family: var(--font-mono); font-size: var(--text-meta); overflow-wrap: anywhere; }
+  .repository-relocations-old { text-decoration: line-through; text-decoration-color: color-mix(in oklch, var(--muted-foreground) 60%, transparent); }
+  .repository-relocations-unresolved > span { display: grid; padding-left: 36px; }
+  .repository-relocations-unresolved strong { color: var(--muted-foreground); }
+  .repository-relocations-unresolved small { color: var(--warning); font-family: var(--font-sans); }
+  .repository-relocations-error { color: var(--destructive); font-size: var(--text-meta); }
 
   .shortcut { position: fixed; bottom: 22px; color: var(--muted-foreground); }
   .spinner { display: inline-block; width: 15px; height: 15px; margin-right: 8px; animation: spin 1s linear infinite; color: var(--primary); }

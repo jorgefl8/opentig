@@ -51,7 +51,8 @@ export function OpenRepositoryDialog({ directory = false, onClone, open, onOpenC
   }, [recent]);
   const workspacePath = recentFolders[0] ? parentFolderPath(recentFolders[0].path) : null;
   const startPath = initialPath ?? workspacePath ?? undefined;
-  const browse = useCallback(async (nextPath?: string) => {
+  const startFromSavedPath = initialPath !== undefined;
+  const browse = useCallback(async (nextPath?: string, fallBackToParent = false): Promise<void> => {
     if (opening.current) return;
     restoreFocus.current = document.activeElement === pathInput.current ? 'path' : list.current?.contains(document.activeElement) ? 'folders' : null;
     const current = ++request.current;
@@ -64,7 +65,7 @@ export function OpenRepositoryDialog({ directory = false, onClone, open, onOpenC
     setLocation(nextPath ?? '');
     setDraftPath(nextPath ?? '');
     try {
-      const result = await onBrowse(nextPath);
+      const result = await browseClosest(onBrowse, nextPath, fallBackToParent, () => current === request.current);
       if (current !== request.current) return;
       setListing(result);
       setLocation(result.path);
@@ -81,11 +82,11 @@ export function OpenRepositoryDialog({ directory = false, onClone, open, onOpenC
     if (open) {
       setListing(null);
       setShowHidden(false);
-      void browse(startPath);
+      void browse(startPath, startFromSavedPath);
     }
     const requests = request;
     return () => { requests.current++; };
-  }, [open, browse, startPath]);
+  }, [open, browse, startPath, startFromSavedPath]);
 
   useEffect(() => { if (editingPath) { pathInput.current?.focus(); pathInput.current?.select(); } }, [editingPath]);
   useEffect(() => {
@@ -214,3 +215,21 @@ function FolderIconButton({ label, disabled, onClick, children, type = 'button',
   return <Tooltip><TooltipTrigger render={<button ref={buttonRef} type={type} className="repository-browser-icon-button" aria-label={label} disabled={disabled} onClick={onClick} />}>{children}</TooltipTrigger><TooltipContent>{label}</TooltipContent></Tooltip>;
 }
 function messageOf(reason: unknown, fallback: string): string { return reason instanceof Error ? reason.message : fallback; }
+
+/** A starting folder that was moved or deleted opens at the closest folder that still exists. */
+async function browseClosest(
+  onBrowse: (path?: string) => Promise<ServerDirectoryListing>,
+  path: string | undefined,
+  fallBackToParent: boolean,
+  stillWanted: () => boolean,
+): Promise<ServerDirectoryListing> {
+  let target = path;
+  for (;;) {
+    try { return await onBrowse(target); }
+    catch (reason) {
+      const parent = fallBackToParent && target ? parentFolderPath(target) : null;
+      if (!parent || parent === target || !stillWanted()) throw reason;
+      target = parent;
+    }
+  }
+}

@@ -4,6 +4,8 @@ export type GitErrorCode =
   | 'HOOK_REJECTED'
   | 'IDENTITY_UNKNOWN'
   | 'GIT_NOT_FOUND'
+  /** The saved folder of a repository is gone: it was moved, renamed or deleted. */
+  | 'REPOSITORY_MISSING'
   | 'LOCKED_INDEX'
   | 'INVALID_ARGUMENT'
   | 'OUTPUT_LIMIT'

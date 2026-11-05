@@ -79,7 +79,11 @@ export function registerServerCommands(
   handle(IPC.bootstrap, 'bootstrap', async () => {
     const activeRepository = await services.repositories.restore();
     if (activeRepository) services.watcher.start(activeRepository);
+    const unavailableRepositoryIds = await services.repositories.unavailableIds();
+    const activeId = services.settings.activeRepositoryId;
     return {
+      unavailableRepositoryIds,
+      unavailableActiveRepositoryId: !activeRepository && activeId && unavailableRepositoryIds.includes(activeId) ? activeId : null,
       onboardingVersion: services.settings.onboardingVersion,
       recentRepositories: services.repositories.recents(),
       repositoryProjects: services.settings.repositoryProjects,
@@ -170,6 +174,18 @@ export function registerServerCommands(
     services.watcher.start(repository);
     services.events.activeRepositoryChanged(repository);
     return repository;
+  });
+  handle(IPC.repositoryUnavailableRecent, 'unavailable-recent', () => services.repositories.unavailableIds());
+  handle(IPC.repositoryFindRelocations, 'find-relocations', (previousPath, selectedPath) => services.repositories.findRelocations(
+    stringArg(previousPath, 'find-relocations', 32_768),
+    stringArg(selectedPath, 'find-relocations', 32_768),
+  ));
+  handle(IPC.repositoryRelocateRecents, 'relocate-recents', (raw) => {
+    if (!Array.isArray(raw) || raw.length > 500) throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'relocate-recents', message: 'Invalid relocation list.' });
+    return services.repositories.relocateMany(raw.map((entry: unknown) => {
+      const value = (entry && typeof entry === 'object' ? entry : {}) as Record<string, unknown>;
+      return { id: stringArg(value.id, 'relocate-recents', 64), path: stringArg(value.path, 'relocate-recents', 32_768) };
+    }));
   });
   handle(IPC.repositoryStatus, 'status', (id, includeStats) => services.repositories.status(
     stringArg(id, 'status', 64),

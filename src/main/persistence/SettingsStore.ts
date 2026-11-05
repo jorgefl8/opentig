@@ -215,7 +215,7 @@ export class SettingsStore {
    * validated by RepositoryService before this method runs, so every persisted
    * reference can move in one atomic settings write.
    */
-  async relocateRepository(previousId: string, repository: RepositoryInfo): Promise<void> {
+  async relocateRepository(previousId: string, repository: RepositoryInfo, activate = true): Promise<void> {
     const previous = this.data.recentRepositories.find((item) => item.id === previousId);
     if (!previous) throw projectError('Unknown repository.');
 
@@ -251,9 +251,10 @@ export class SettingsStore {
       state.repositoryId === previousId ? { ...state, repositoryId: repository.id } : state
     )));
     this.data.recentRepositories = this.data.recentRepositories.flatMap((item) => item.id === previousId
-      ? [{ ...repository, lastOpenedAt: new Date().toISOString() }]
+      ? [{ ...repository, lastOpenedAt: activate ? new Date().toISOString() : item.lastOpenedAt }]
       : item.id === repository.id ? [] : [item]);
-    this.data.activeRepositoryId = repository.id;
+    // Relocating several at once keeps the open repository, following it only when it is one of them.
+    if (activate || this.data.activeRepositoryId === previousId) this.data.activeRepositoryId = repository.id;
     await this.save();
   }
 

@@ -15,7 +15,7 @@ import {
   IconLoader4, IconRefresh, IconRestore, IconSearch, IconTrash,
 } from '@tabler/icons-react';
 import { sileo } from 'sileo';
-import type { BootstrapData, CommitSplitProposal, FetchResult, FileHistoryPathChange, FileHistoryState, GhCliStatus, GitHubRepositoryInfo, OpenTigCapabilities, Preferences, PullRequestState, PullRequestSummary, PullResult, PushResult, RecentRepository, RepositoryInfo, UndoLatestCommitResult } from '../../shared/contracts';
+import type { BootstrapData, CommitSplitProposal, FetchResult, FileHistoryPathChange, FileHistoryState, GhCliStatus, GitHubRepositoryInfo, OpenTigCapabilities, Preferences, PullRequestState, PullRequestSummary, PullResult, PushResult, RecentRepository, RepositoryInfo, RepositoryRelocationSearch, UndoLatestCommitResult } from '../../shared/contracts';
 import { matchesCombo, resolveShortcuts, type ShortcutMap } from '../../shared/shortcuts';
 import { ShortcutsProvider } from './ShortcutsContext';
 import { Toolbar } from './Toolbar';
@@ -52,6 +52,8 @@ import { CommitComposer } from '@/features/commit/CommitComposer';
 import { clearCommitFilesCache } from '@/features/history/commit-files-cache';
 import { OpenRepositoryDialog } from '@/features/repositories/OpenRepositoryDialog';
 import { Welcome } from '@/features/repositories/Welcome';
+import { RepositoryUnavailable } from '@/features/repositories/RepositoryUnavailable';
+import { RepositoryRelocationsDialog } from '@/features/repositories/RepositoryRelocationsDialog';
 import { touchRecentRepositories, type RepositoryOption } from '@/features/repositories/repository-select-model';
 import { createRepositorySwitcher } from '@/features/repositories/repository-switch';
 import { remoteAccessActionLabel, remoteAccessCopy, type RemoteAccessAction } from '@/features/repositories/remote-access';
@@ -152,6 +154,13 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   const [worktreesState, setWorktrees] = useState<WorktreeInfo[]>([]);
   const [snapshotRepositoryId, setSnapshotRepositoryId] = useState<string | null>(null);
   const [pendingRepositoryId, setPendingRepositoryId] = useState<string | null>(null);
+  // Saved repositories whose folder is gone, and the active one when that happened to it.
+  const [unavailableRepositoryIds, setUnavailableRepositoryIds] = useState<ReadonlySet<string>>(() => new Set());
+  const [unavailableRepository, setUnavailableRepository] = useState<RecentRepository | null>(null);
+  // The server folder browser for locating a moved repository (the desktop app uses its native picker).
+  const [relocatingRepository, setRelocatingRepository] = useState<RecentRepository | null>(null);
+  const [relocationSearch, setRelocationSearch] = useState<RepositoryRelocationSearch | null>(null);
+  const lastRelocationParentRef = useRef<string | null>(null);
   const [remoteProblem, setRemoteProblem] = useState<{ repositoryId: string; access: RemoteAccessProblem; message: string } | null>(null);
   /** Keeps the toolbar warning in step with the latest fetch of each repository. */
   const noteFetchResult = useCallback((repositoryId: string, result: FetchResult) => {
@@ -375,6 +384,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       for (const state of data.filesTreeStates) filesTreeStates.set(state.repositoryId, [...state.expandedPaths]);
       setBootstrap(data);
       setRepository(data.activeRepository);
+      setUnavailableRepositoryIds(new Set(data.unavailableRepositoryIds ?? []));
+      setUnavailableRepository(data.recentRepositories.find((item) => item.id === data.unavailableActiveRepositoryId) ?? null);
     }).catch((reason) => {
       // The connection boundary owns the pairing screen, including a session
       // rejected while bootstrap is already in flight.
@@ -484,6 +495,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   useEffect(() => {
     repositoryRef.current = repository;
   }, [repository]);
+  const bootstrapRef = useRef(bootstrap);
+  useEffect(() => { bootstrapRef.current = bootstrap; }, [bootstrap]);
 
   /**
    * Replaces one worktree's tab session and persists its metadata. Only
@@ -937,66 +950,44 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     };
   }, [refreshFilesOnly, repository, view]);
 
-  const recordOpenedRepository = useCallback((selected: RepositoryInfo, previousId?: string) => {
-    if (previousId && previousId !== selected.id) {
-      const expandedPaths = filesTreeStates.get(previousId);
-      filesTreeStates.delete(previousId);
-      if (expandedPaths) filesTreeStates.set(selected.id, expandedPaths);
+  // Moves everything kept per repository (tabs, drafts, expanded folders,
+  // project membership) from a moved repository's old id to its new one.
+  const rebindRelocatedRepository = useCallback((previousId: string, selected: RepositoryInfo) => {
+    if (previousId === selected.id) return;
+    const expandedPaths = filesTreeStates.get(previousId);
+    filesTreeStates.delete(previousId);
+    if (expandedPaths) filesTreeStates.set(selected.id, expandedPaths);
 
-      const previousSession = fileSessionsRef.current.get(previousId);
-      if (previousSession) {
-        const sessions = new Map(fileSessionsRef.current);
-        sessions.delete(previousId);
-        sessions.set(selected.id, previousSession);
-        fileSessionsRef.current = sessions;
-        setFileSessions(sessions);
-      }
-      const drafts = fileDraftsRef.current.get(previousId);
-      if (drafts) {
-        fileDraftsRef.current.delete(previousId);
-        fileDraftsRef.current.set(selected.id, drafts);
-      }
-      const persisted = persistedSessionsRef.current.get(previousId);
-      if (persisted) {
-        persistedSessionsRef.current.delete(previousId);
-        persistedSessionsRef.current.set(selected.id, persisted);
-      }
+    const previousSession = fileSessionsRef.current.get(previousId);
+    if (previousSession) {
+      const sessions = new Map(fileSessionsRef.current);
+      sessions.delete(previousId);
+      sessions.set(selected.id, previousSession);
+      fileSessionsRef.current = sessions;
+      setFileSessions(sessions);
     }
-    setRepository(selected);
-    setBootstrap((current) => {
-      if (!current) return current;
-      const previous = previousId && previousId !== selected.id
-        ? current.recentRepositories.find((item) => item.id === previousId)
-        : null;
-      let repositoryProjects = current.repositoryProjects;
-      if (previous) {
-        const previousKey = normalizeRepositoryKey(previous.commonDir);
-        const nextKey = normalizeRepositoryKey(selected.commonDir);
-        const destinationAlreadyAssigned = repositoryProjects.some((project) => (
-          project.repositoryKeys.some((key) => key === nextKey && key !== previousKey)
-        ));
-        repositoryProjects = repositoryProjects.map((project) => ({
-          ...project,
-          repositoryKeys: [...new Set(project.repositoryKeys.flatMap((key) => (
-            key !== previousKey ? [key] : destinationAlreadyAssigned ? [] : [nextKey]
-          )))],
-        }));
-      }
-      return {
-        ...current,
-        activeRepository: selected,
-        repositoryProjects,
-        recentRepositories: touchRecentRepositories(current.recentRepositories.flatMap((item) => item.id === previousId
-          ? [{ ...selected, lastOpenedAt: item.lastOpenedAt }] : previous && item.id === selected.id ? [] : [item]), selected),
-        filesTreeStates: previous ? normalizeFilesTreeStates(current.filesTreeStates.map((state) => (
-          state.repositoryId === previousId ? { ...state, repositoryId: selected.id } : state
-        ))) : current.filesTreeStates,
-        openFilesStates: previous ? normalizeOpenFilesStates(current.openFilesStates.map((state) => (
-          state.repositoryId === previousId ? { ...state, repositoryId: selected.id } : state
-        ))) : current.openFilesStates,
-      };
-    });
+    const drafts = fileDraftsRef.current.get(previousId);
+    if (drafts) {
+      fileDraftsRef.current.delete(previousId);
+      fileDraftsRef.current.set(selected.id, drafts);
+    }
+    const persisted = persistedSessionsRef.current.get(previousId);
+    if (persisted) {
+      persistedSessionsRef.current.delete(previousId);
+      persistedSessionsRef.current.set(selected.id, persisted);
+    }
+    setBootstrap((current) => current ? rebindBootstrapRepository(current, previousId, selected) : current);
   }, [filesTreeStates]);
+
+  const recordOpenedRepository = useCallback((selected: RepositoryInfo, previousId?: string) => {
+    if (previousId) rebindRelocatedRepository(previousId, selected);
+    setRepository(selected);
+    setBootstrap((current) => current ? {
+      ...current,
+      activeRepository: selected,
+      recentRepositories: touchRecentRepositories(current.recentRepositories, selected),
+    } : current);
+  }, [rebindRelocatedRepository]);
 
   const openRepository = useCallback(async () => {
     setOpenRepositoryDialog(true);
@@ -1760,6 +1751,11 @@ export default function App({ initialView, initialSelection, pullRequestCreation
         } catch (reason) {
           const recent = recentRepositories?.find((candidate) => candidate.id === id);
           if (!recent) throw reason;
+          if (isRepositoryMissing(reason)) {
+            setUnavailableRepositoryIds((current) => new Set(current).add(id));
+            void locateRepositoryRef.current(recent);
+            return null;
+          }
           const selectedPath = await opentig.repository.selectRelocation(recent.repositoryName, recent.path);
           return selectedPath ? opentig.repository.relocateRecent(id, selectedPath) : null;
         }
@@ -1771,7 +1767,10 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   }, [recentRepositories, recordOpenedRepository, repositorySwitcher]);
 
   const selectRecent = async (id: string | null) => {
-    if (id) await repositorySwitcher.select(id, repository?.id ?? null);
+    if (!id) return;
+    const missing = unavailableRepositoryIds.has(id) ? bootstrap?.recentRepositories.find((item) => item.id === id) : null;
+    if (missing) { await locateRepository(missing); return; }
+    await repositorySwitcher.select(id, repository?.id ?? null);
   };
 
   const switchBranch = async (name: string | null) => {
@@ -2210,8 +2209,86 @@ export default function App({ initialView, initialSelection, pullRequestCreation
 
   const relocateRepository = async (option: RepositoryOption, path: string) => {
     ensureRepositoryCanBeManaged(option);
-    recordOpenedRepository(await opentig.repository.relocateRecent(option.recent.id, path), option.recent.id);
+    await completeRelocation(option.recent, path);
   };
+
+  // Locating a moved repository opens it, then offers to update the others found next to it.
+  async function completeRelocation(recent: RecentRepository, path: string) {
+    const relocated = await opentig.repository.relocateRecent(recent.id, path);
+    recordOpenedRepository(relocated, recent.id);
+    setUnavailableRepository(null);
+    setUnavailableRepositoryIds((current) => { const next = new Set(current); next.delete(recent.id); return next; });
+    lastRelocationParentRef.current = parentFolderPath(relocated.path);
+    void offerRelatedRelocations(recent.path, relocated.path);
+  }
+  async function offerRelatedRelocations(previousPath: string, path: string) {
+    try {
+      const missing = await opentig.repository.unavailableRecent();
+      setUnavailableRepositoryIds(new Set(missing));
+      if (missing.length === 0) return;
+      const search = await opentig.repository.findRelocations(previousPath, path);
+      if (search.candidates.length > 0) setRelocationSearch(search);
+    } catch {
+      // The picker still marks the others; each can be located on its own.
+    }
+  }
+  async function locateRepository(recent: RecentRepository) {
+    if (!window.opentigDesktop) { setRelocatingRepository(recent); return; }
+    const path = await opentig.repository.select(`Locate ${recent.name}`);
+    if (!path) return;
+    try { await completeRelocation(recent, path); }
+    catch (reason) { reportError('Could not relocate repository', reason); }
+  }
+  const locateRepositoryRef = useRef(locateRepository);
+  useEffect(() => { locateRepositoryRef.current = locateRepository; });
+
+  const relocateFoundRepositories = async (entries: { id: string; path: string }[]) => {
+    const result = await opentig.repository.relocateRecents(entries);
+    for (const item of result.relocated) rebindRelocatedRepository(item.previousId, item.repository);
+    const missing = await opentig.repository.unavailableRecent().catch(() => null);
+    if (missing) setUnavailableRepositoryIds(new Set(missing));
+    // The repository that was open when its folder disappeared opens again from its new place.
+    const reopened = unavailableRepository && result.relocated.find((item) => item.previousId === unavailableRepository.id);
+    if (reopened) { setUnavailableRepository(null); void repositorySwitcher.select(reopened.repository.id, null); }
+    if (result.relocated.length > 0) {
+      sileo.success({ title: `Relocated ${result.relocated.length} ${result.relocated.length === 1 ? 'repository' : 'repositories'}` });
+    }
+    if (result.failed.length > 0) {
+      setRelocationSearch((current) => current && {
+        ...current,
+        candidates: current.candidates.filter((item) => result.failed.some((failed) => failed.id === item.id)),
+      });
+      throw new Error(result.failed.map((item) => `${item.name}: ${item.message}`).join(' '));
+    }
+  };
+
+  // Every failure caused by a vanished folder lands here instead of in a toast.
+  const checkingMissingRepositoryRef = useRef(false);
+  useEffect(() => {
+    repositoryMissingHandler = (title, reason) => {
+      if (checkingMissingRepositoryRef.current) return;
+      checkingMissingRepositoryRef.current = true;
+      void opentig.repository.unavailableRecent().then((missing) => {
+        setUnavailableRepositoryIds(new Set(missing));
+        const current = repositoryRef.current;
+        const recent = current && missing.includes(current.id) ? bootstrapRef.current?.recentRepositories.find((item) => item.id === current.id) : null;
+        if (recent) {
+          setUnavailableRepository(recent);
+          setRepository(null);
+        } else {
+          sileo.error({ title, description: messageOf(reason), duration: 10_000 });
+        }
+      }, () => sileo.error({ title, description: messageOf(reason), duration: 10_000 })).finally(() => {
+        checkingMissingRepositoryRef.current = false;
+      });
+    };
+    return () => { repositoryMissingHandler = null; };
+  }, []);
+  const refreshUnavailableRepositories = useCallback(() => {
+    void opentig.repository.unavailableRecent().then((missing) => setUnavailableRepositoryIds((current) => (
+      current.size === missing.length && missing.every((id) => current.has(id)) ? current : new Set(missing)
+    )), () => undefined);
+  }, []);
 
   // A clone keeps running on the server across reloads; offer its result again.
   const bootstrapped = Boolean(bootstrap);
@@ -2247,7 +2324,22 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     {findOpen && <Suspense fallback={null}><FindRepositoriesDialog open onOpenChange={setFindOpen} known={knownRepositoryPaths} onBrowse={opentig.repository.browseDirectories}
       onAdd={addRepositoryPath} onOpenFolder={() => setOpenRepositoryDialog(true)} /></Suspense>}
   </>;
-  const welcome = bootstrap && <Welcome recent={bootstrap.recentRepositories} preferences={bootstrap.preferences} onPreference={updatePreference}
+  const availableRecentRepositories = (bootstrap?.recentRepositories ?? []).filter((item) => !unavailableRepositoryIds.has(item.id));
+  const relocationDialogs = <>
+    <OpenRepositoryDialog
+      open={relocatingRepository !== null}
+      onOpenChange={(next) => { if (!next) setRelocatingRepository(null); }}
+      title={`Locate ${relocatingRepository?.name ?? 'repository'}`}
+      description={`OpenTig could not find ${relocatingRepository?.name ?? 'this repository'} at ${relocatingRepository?.path ?? 'its saved folder'}. Choose its folder on the server; this updates the saved location and does not move files.`}
+      confirmLabel="Use this folder"
+      initialPath={lastRelocationParentRef.current ?? (relocatingRepository ? parentFolderPath(relocatingRepository.path) ?? undefined : undefined)}
+      recent={availableRecentRepositories}
+      onBrowse={opentig.repository.browseDirectories}
+      onOpen={async (path) => { if (relocatingRepository) await completeRelocation(relocatingRepository, path); }}
+    />
+    {relocationSearch && <RepositoryRelocationsDialog search={relocationSearch} onConfirm={relocateFoundRepositories} onClose={() => setRelocationSearch(null)} />}
+  </>;
+  const welcome = bootstrap && <Welcome recent={bootstrap.recentRepositories} unavailableRepositoryIds={unavailableRepositoryIds} preferences={bootstrap.preferences} onPreference={updatePreference}
     onOpen={openRepository} onClone={() => setCloneOpen(true)} onFind={() => setFindOpen(true)} onRecent={(id) => { setWelcomeReplay(false); void selectRecent(id); }}
     onSettings={openSettings} onBack={repository ? () => setWelcomeReplay(false) : undefined} />;
 
@@ -2260,10 +2352,30 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     return <SplashScreen heading={appDisplayName} detail={startupSplashDetail(connectionState)} />;
   }
   const settingsPreferences = mobile ? { ...bootstrap.preferences, wrapLines: mobileWrapLines } : bootstrap.preferences;
+  if (!repository && unavailableRepository && !welcomeReplay) {
+    const missing = unavailableRepository;
+    return (
+      <TooltipProvider>
+        {relocationDialogs}
+        <div className="fixed right-4 top-4 z-40"><DesktopUpdateIndicator /></div>
+        <RepositoryUnavailable
+          repository={missing}
+          otherMissing={[...unavailableRepositoryIds].filter((id) => id !== missing.id).length}
+          onLocate={() => locateRepository(missing)}
+          onRemove={async () => {
+            await forgetRepository({ key: normalizeRepositoryKey(missing.commonDir), name: missing.name, rootPath: missing.path, recent: missing });
+            setUnavailableRepository(null);
+          }}
+          onOpenAnother={() => setUnavailableRepository(null)}
+        />
+      </TooltipProvider>
+    );
+  }
   if (!repository) {
     return (
       <TooltipProvider>
         {browserRepositoryDialog}
+        {relocationDialogs}
         {onboardingDialogs}
         {settingsOpen && <Suspense fallback={null}><WelcomeSettings preferences={settingsPreferences} onPreference={updateSettingsPreference} open onOpenChange={setSettingsOpen} section={settingsSection} onSectionChange={setSettingsSection} onOnboarding={showOnboarding} /></Suspense>}
         <div className="fixed right-4 top-4 z-40"><DesktopUpdateIndicator /></div>
@@ -2331,6 +2443,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     <ShortcutsProvider shortcuts={shortcuts}>
     <TooltipProvider>
       {browserRepositoryDialog}
+      {relocationDialogs}
       {onboardingDialogs}
       {welcomeReplay && <div className="welcome-overlay">{welcome}</div>}
       {quickOpen && (
@@ -2481,6 +2594,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
           onPreference={updateSettingsPreference}
           onForgetRepository={forgetRepository}
           onRelocateRepository={relocateRepository}
+          unavailableRepositoryIds={unavailableRepositoryIds}
+          onRepositoryPickerOpen={refreshUnavailableRepositories}
           onOrganizationChange={(organization) => setBootstrap((current) => current ? { ...current, ...organization } : current)}
           onRefsManaged={handleRefsManaged}
           settingsOpen={settingsOpen}
@@ -2841,7 +2956,41 @@ function sentenceCaseLabel(label: string): string {
 function unconfirmedResultToast(reason: unknown): { title: string; description: string; duration: number } | null {
   return isUnconfirmedResult(reason) ? { title: 'Result not confirmed', description: UNCONFIRMED_RESULT_MESSAGE, duration: 10_000 } : null;
 }
+/** The repository state of a moved repository, carried from its old id to the new one. */
+function rebindBootstrapRepository(current: BootstrapData, previousId: string, selected: RepositoryInfo): BootstrapData {
+  const previous = current.recentRepositories.find((item) => item.id === previousId);
+  if (!previous) return current;
+  const previousKey = normalizeRepositoryKey(previous.commonDir);
+  const nextKey = normalizeRepositoryKey(selected.commonDir);
+  const destinationAlreadyAssigned = current.repositoryProjects.some((project) => (
+    project.repositoryKeys.some((key) => key === nextKey && key !== previousKey)
+  ));
+  return {
+    ...current,
+    activeRepository: current.activeRepository?.id === previousId ? selected : current.activeRepository,
+    repositoryProjects: current.repositoryProjects.map((project) => ({
+      ...project,
+      repositoryKeys: [...new Set(project.repositoryKeys.flatMap((key) => (
+        key !== previousKey ? [key] : destinationAlreadyAssigned ? [] : [nextKey]
+      )))],
+    })),
+    recentRepositories: current.recentRepositories.flatMap((item) => item.id === previousId
+      ? [{ ...selected, lastOpenedAt: item.lastOpenedAt }] : item.id === selected.id ? [] : [item]),
+    filesTreeStates: normalizeFilesTreeStates(current.filesTreeStates.map((state) => (
+      state.repositoryId === previousId ? { ...state, repositoryId: selected.id } : state
+    ))),
+    openFilesStates: normalizeOpenFilesStates(current.openFilesStates.map((state) => (
+      state.repositoryId === previousId ? { ...state, repositoryId: selected.id } : state
+    ))),
+  };
+}
+/** Set while App is mounted: a missing repository folder gets the relocation screen instead of a toast. */
+let repositoryMissingHandler: ((title: string, reason: unknown) => void) | null = null;
+function isRepositoryMissing(reason: unknown): boolean {
+  return serializedErrorFromReason(reason)?.code === 'REPOSITORY_MISSING';
+}
 function reportError(title: string, reason: unknown): void {
+  if (repositoryMissingHandler && isRepositoryMissing(reason)) { repositoryMissingHandler(title, reason); return; }
   sileo.error(unconfirmedResultToast(reason) ?? { title, description: messageOf(reason), duration: 10_000 });
   if (serializedErrorFromReason(reason)) return;
   void opentig.diagnostics.record({ operation: title, message: messageOf(reason), ...connectionCloseCode(reason) }).catch(() => undefined);

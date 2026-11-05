@@ -1,3 +1,4 @@
+import { stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { delimiter } from 'node:path';
 import { CliEnvironment } from '../ai/CliEnvironment';
@@ -262,12 +263,15 @@ export class GitProcess {
         throw new GitOperationError({ code: 'TIMEOUT', operation: options.operation, message: `Git took too long during ${options.operation}.` });
       }
       if (result.exitCode === undefined || !resolvedCommand.found) {
+        if (await directoryMissing(cwd)) throw repositoryMissing(options.operation);
         throw this.mapError(options.operation, Object.assign(new Error('Git was not found in PATH.'), { code: 'ENOENT' }));
       }
       if (result.exitCode !== 0) throw this.fromExit(options.operation, result.exitCode, sanitize(`${stderr.toString('utf8')}${options.operation.includes('push') || options.operation === 'publish-branch' ? '\n' + stdout.toString('utf8') : ''}`));
       return { stdout, stderr, exitCode: result.exitCode };
     } catch (error) {
       if (error instanceof GitOperationError) throw error;
+      // Spawning in a folder that no longer exists fails with the same ENOENT as a missing Git.
+      if ((error as NodeJS.ErrnoException)?.code === 'ENOENT' && await directoryMissing(cwd)) throw repositoryMissing(options.operation);
       throw this.mapError(options.operation, Object.assign(new Error(sanitize(error instanceof Error ? error.message : 'Could not start Git.')), { code: (error as NodeJS.ErrnoException)?.code }));
     } finally {
       if (childPid) this.activeChildren.delete(childPid);
@@ -325,4 +329,12 @@ function gitCommand(args: readonly string[]): string | undefined {
   let index = 0;
   while (args[index] === '-c') index += 2;
   return args[index];
+}
+
+async function directoryMissing(directory: string): Promise<boolean> {
+  return stat(directory).then((value) => !value.isDirectory(), (error: NodeJS.ErrnoException) => error.code === 'ENOENT' || error.code === 'ENOTDIR');
+}
+
+function repositoryMissing(operation: string): GitOperationError {
+  return new GitOperationError({ code: 'REPOSITORY_MISSING', operation, message: 'The repository folder no longer exists. It may have been moved or deleted.' });
 }

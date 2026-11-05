@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
-import { access, open, stat } from 'node:fs/promises';
+import { access, open, readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
-import type { RepositoryInfo, RecentRepository, RepositoryOrganization } from '../../shared/contracts';
+import type { RepositoryInfo, RecentRepository, RepositoryOrganization, RepositoryRelocationResult, RepositoryRelocationSearch } from '../../shared/contracts';
 import type { RepositoryStatus } from '../../shared/git-types';
 import { normalizeRepositoryKey } from '../../shared/repository-projects';
 import { GitOperationError } from '../../shared/errors';
@@ -52,7 +52,7 @@ export class RepositoryService {
     return repository;
   }
 
-  async relocateRecent(id: string, selectedPath: string): Promise<RepositoryInfo> {
+  async relocateRecent(id: string, selectedPath: string, activate = true): Promise<RepositoryInfo> {
     if (!this.settings.recentRepositories.some((item) => item.id === id)) {
       throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'relocate-repository', message: 'The recent repository no longer exists.' });
     }
@@ -61,12 +61,75 @@ export class RepositoryService {
     if (repository.id !== id && this.settings.recentRepositories.some((item) => item.id === repository.id)) {
       throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'relocate-repository', message: 'That folder is already in OpenTig. Remove the old entry instead, or choose a different location.' });
     }
-    await this.settings.relocateRepository(id, repository);
+    await this.settings.relocateRepository(id, repository, activate);
     this.git.unregisterRepository(previous.path);
     this.repositories.delete(id);
     this.repositories.set(repository.id, repository);
     this.git.registerRepository(repository.path, repository.commonDir);
     return repository;
+  }
+
+  /** Saved repositories whose folder is gone. Other access errors are left to the open attempt to report. */
+  async unavailableIds(): Promise<string[]> {
+    const recents = this.settings.recentRepositories;
+    const missing = await Promise.all(recents.map((item) => folderMissing(item.path)));
+    return recents.filter((_, index) => missing[index]).map((item) => item.id);
+  }
+
+  /**
+   * After one repository moved, looks for the other missing ones in the same
+   * place: first at the same relative path from the new parent folder, then by
+   * folder name up to two levels below the new parent's parent. A match must be
+   * the root of a Git worktree with the same folder and repository names.
+   */
+  async findRelocations(previousPath: string, newPath: string): Promise<RepositoryRelocationSearch> {
+    const previousParent = path.dirname(path.resolve(previousPath));
+    const newParent = path.dirname(path.resolve(newPath));
+    const searchedPath = path.dirname(newParent);
+    const missingIds = new Set(await this.unavailableIds());
+    const missing = this.settings.recentRepositories.filter((item) => missingIds.has(item.id));
+    const knownPaths = new Set(this.settings.recentRepositories.filter((item) => !missingIds.has(item.id)).map((item) => normalizeFolder(item.path)));
+    let index: Promise<Map<string, string[]>> | null = null;
+    const candidates: RepositoryRelocationSearch['candidates'] = [];
+    const unresolved: RepositoryRelocationSearch['unresolved'] = [];
+    const matching = async (recent: RecentRepository, option: string): Promise<string | null> => {
+      if (knownPaths.has(normalizeFolder(option))) return null;
+      const repository = await this.inspectPath(option).catch(() => null);
+      if (!repository || normalizeFolder(repository.path) !== normalizeFolder(option)) return null;
+      return repository.name === recent.name && repository.repositoryName === recent.repositoryName ? repository.path : null;
+    };
+    for (const recent of missing) {
+      const relative = path.relative(previousParent, recent.path);
+      const rebased = relative && !relative.startsWith('..') && !path.isAbsolute(relative) ? path.join(newParent, relative) : null;
+      let found = rebased ? await matching(recent, rebased) : null;
+      if (!found) {
+        index ??= indexFolders(searchedPath);
+        const byName = [...new Set((await index).get(path.basename(recent.path).toLocaleLowerCase()) ?? [])];
+        const matches = (await Promise.all(byName.map((option) => matching(recent, option)))).filter((item): item is string => item !== null);
+        // Two folders that both look like this repository are left for the user to choose.
+        if (matches.length === 1) found = matches[0]!;
+      }
+      if (found) {
+        knownPaths.add(normalizeFolder(found));
+        candidates.push({ id: recent.id, name: recent.name, previousPath: recent.path, path: found });
+      } else {
+        unresolved.push({ id: recent.id, name: recent.name, previousPath: recent.path });
+      }
+    }
+    return { searchedPath, candidates, unresolved };
+  }
+
+  async relocateMany(entries: { id: string; path: string }[]): Promise<RepositoryRelocationResult> {
+    const result: RepositoryRelocationResult = { relocated: [], failed: [] };
+    for (const entry of entries) {
+      const name = this.recent(entry.id)?.name ?? path.basename(entry.path);
+      try {
+        result.relocated.push({ previousId: entry.id, repository: await this.relocateRecent(entry.id, entry.path, false) });
+      } catch (error) {
+        result.failed.push({ id: entry.id, name, message: error instanceof Error ? error.message : 'Could not relocate this repository.' });
+      }
+    }
+    return result;
   }
 
   async forget(repositoryKey: string): Promise<RepositoryOrganization> {
@@ -286,4 +349,41 @@ async function countTextLines(filePath: string): Promise<number> {
     await handle.close();
   }
   return lastByte >= 0 && lastByte !== 10 ? lines + 1 : lines;
+}
+
+async function folderMissing(folder: string): Promise<boolean> {
+  return stat(folder).then((value) => !value.isDirectory(), (error: NodeJS.ErrnoException) => error.code === 'ENOENT' || error.code === 'ENOTDIR');
+}
+
+function normalizeFolder(folder: string): string {
+  const resolved = path.resolve(folder);
+  return process.platform === 'win32' || process.platform === 'darwin' ? resolved.toLocaleLowerCase() : resolved;
+}
+
+const RELOCATION_SEARCH_DEPTH = 2;
+const RELOCATION_SEARCH_LIMIT = 5_000;
+const RELOCATION_SKIPPED_FOLDERS = new Set(['node_modules', '$recycle.bin', 'system volume information']);
+
+/** Folder names (lower case) to paths, two levels deep, skipping hidden and dependency folders. */
+async function indexFolders(root: string): Promise<Map<string, string[]>> {
+  const index = new Map<string, string[]>();
+  let visited = 0;
+  let level = [root];
+  for (let depth = 0; depth < RELOCATION_SEARCH_DEPTH && level.length > 0 && visited < RELOCATION_SEARCH_LIMIT; depth += 1) {
+    const next: string[] = [];
+    for (const folder of level) {
+      const entries = await readdir(folder, { withFileTypes: true }).catch(() => []);
+      for (const entry of entries) {
+        if (!entry.isDirectory() || entry.name.startsWith('.') || RELOCATION_SKIPPED_FOLDERS.has(entry.name.toLocaleLowerCase())) continue;
+        if (++visited > RELOCATION_SEARCH_LIMIT) break;
+        const child = path.join(folder, entry.name);
+        const key = entry.name.toLocaleLowerCase();
+        index.set(key, [...(index.get(key) ?? []), child]);
+        next.push(child);
+      }
+      if (visited > RELOCATION_SEARCH_LIMIT) break;
+    }
+    level = next;
+  }
+  return index;
 }
