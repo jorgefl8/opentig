@@ -209,6 +209,11 @@ describe('worktreeRemoveEligibility', () => {
     }
   });
 
+  it('offers force for a clean worktree with submodules, after any local changes', () => {
+    expect(worktreeRemoveEligibility(worktreeDetails({ submodules: true }))).toMatchObject({ allowed: false, forceAllowed: true, reason: expect.stringContaining('submodules') });
+    expect(worktreeRemoveEligibility(worktreeDetails({ submodules: true, stagedCount: 1 })).reason).toContain('1 staged change');
+  });
+
   it('ranks main above every other blocker so the copy never misleads', () => {
     const eligibility = worktreeRemoveEligibility(worktreeDetails({ main: true, current: true, stagedCount: 3 }));
     expect(eligibility.reason).toContain('main worktree');

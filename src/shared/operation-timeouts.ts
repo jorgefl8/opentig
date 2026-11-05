@@ -16,9 +16,13 @@ export const PULL_TIMEOUT_MS = 120_000 + 120_000 + 120_000 + 60_000 + 120_000 + 
 /** Stash, switch, restore the stash, then unstage what it restored. */
 export const SWITCH_BRANCH_TIMEOUT_MS = 120_000 + 60_000 + 120_000 + 60_000 + STEP_MARGIN_MS;
 
-/** Killing `git worktree remove` leaves a half-deleted folder, so this only stops a hung process. */
+/**
+ * Deleting the folder, by `git worktree remove` or, on Windows, Node's `rm`. Stopping
+ * either midway leaves a half-deleted folder: this only stops a hung Git process, and
+ * Node's `rm` can't be stopped at all, so the same allowance covers how long it may take.
+ */
 export const REMOVE_WORKTREE_GIT_TIMEOUT_MS = 10 * 60_000;
-/** Change counts, the removal, then deleting the branch. */
+/** Change counts and the submodule check, deleting the folder, dropping Git's record, then deleting the branch. */
 export const REMOVE_WORKTREE_TIMEOUT_MS = 30_000 + REMOVE_WORKTREE_GIT_TIMEOUT_MS + 30_000 + 2 * STEP_MARGIN_MS;
 
 export const GITHUB_NETWORK_TIMEOUT_MS = 60_000;

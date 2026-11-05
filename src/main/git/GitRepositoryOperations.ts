@@ -27,6 +27,7 @@ import type { SetCommitAuthorshipInput } from '../../shared/commit-authorship';
 import { GitRemoteBranches } from './GitRemoteBranches';
 import { WorktreeRemovalTracker } from './WorktreeRemovalTracker';
 import { REMOVE_WORKTREE_GIT_TIMEOUT_MS } from '../../shared/operation-timeouts';
+import { deleteWorktreeFolder, type RemoveEntry, type WorktreeFolderDeletion } from './worktreeDeletion';
 import type { CreateTrackingBranchRequest, DeleteRemoteBranchRequest } from '../../shared/contracts';
 
 /**
@@ -41,6 +42,19 @@ type GitTaskRunner = (
   options: { operation: string; readOnly?: boolean; timeoutMs?: number; maxOutputBytes?: number; stdin?: string | Buffer; truncateOverflow?: boolean },
 ) => Promise<{ stdout: Buffer }>;
 
+export interface GitRepositoryOperationsOptions {
+  /**
+   * How a linked worktree's folder is deleted. On Windows a file another program has
+   * open can't be deleted, and Git then forgets the worktree anyway, leaving an
+   * orphaned folder. `node` deletes the folder first and keeps the worktree
+   * registered until it is gone. Elsewhere open files don't block deletion, so Git
+   * does it all.
+   */
+  worktreeDeletion?: 'node' | 'git';
+  /** Replaces how `node` deletion removes each entry, for tests. */
+  removeWorktreeEntry?: RemoveEntry | undefined;
+}
+
 export class GitRepositoryOperations {
   access?: import('./RepositoryGitAccess').RepositoryGitAccess;
   publicationContext(repositoryId: string, remote?: string) {
@@ -51,12 +65,20 @@ export class GitRepositoryOperations {
   private readonly authorship: GitCommitAuthorship;
   private readonly remoteBranches: GitRemoteBranches;
   private readonly worktreeRemovals = new WorktreeRemovalTracker();
+  private readonly worktreeDeletion: 'node' | 'git';
+  private readonly removeWorktreeEntry: RemoveEntry | undefined;
 
   constructor(
     private readonly git: GitProcess,
     private readonly repositories: RepositoryService,
     private readonly files: FileService,
-  ) { this.authorship = new GitCommitAuthorship(git, repositories); this.remoteBranches = new GitRemoteBranches(git, repositories); }
+    options: GitRepositoryOperationsOptions = {},
+  ) {
+    this.authorship = new GitCommitAuthorship(git, repositories);
+    this.remoteBranches = new GitRemoteBranches(git, repositories);
+    this.worktreeDeletion = options.worktreeDeletion ?? (process.platform === 'win32' ? 'node' : 'git');
+    this.removeWorktreeEntry = options.removeWorktreeEntry;
+  }
 
   remoteBranchDetails(repositoryId: string, fullName: string) { return this.remoteBranches.details(repositoryId, fullName); }
   createTrackingBranch(request: CreateTrackingBranchRequest) { return this.remoteBranches.create(request); }
@@ -889,12 +911,13 @@ export class GitRepositoryOperations {
     // Never run Git inside a directory Git already reports as missing or bare.
     if (!details.available) return { ...details, ...(details.prunable && await pathExists(details.path) ? { leftoverFiles: true } : {}) };
 
-    const [counts, operation, lastCommit] = await Promise.all([
+    const [counts, operation, lastCommit, submodules] = await Promise.all([
       this.worktreeChangeCounts(worktree.path),
       this.repositories.operationAt(worktree.path).catch(() => null),
       this.lastCommit(repository.path, worktree.oid),
+      worktree.main ? false : this.linkedWorktreeAdmin(repository.commonDir, worktree.path).then((admin) => this.hasSubmodules(worktree.path, admin)),
     ]);
-    return { ...details, ...counts, operation, readOnly: operation !== null, lastCommit };
+    return { ...details, ...counts, operation, readOnly: operation !== null, lastCommit, ...(submodules ? { submodules } : {}) };
   }
 
   /** Re-resolves every branch under the common write lock before safe or forced deletion. */
@@ -921,10 +944,10 @@ export class GitRepositoryOperations {
   }
 
   /**
-   * Removes an unlocked, non-current linked worktree. Dirty state requires an
-   * explicit force flag; its branch is preserved unless separately requested.
+   * Removes an unlocked, non-current linked worktree. Dirty state or submodules
+   * require an explicit force flag; its branch is preserved unless separately requested.
    * `cleanupOnly` instead drops the record of a worktree Git lost track of.
-   * `signal` only stops a removal that has not started: killing Git mid-way would
+   * `signal` only stops a removal that has not started: stopping mid-way would
    * leave a half-deleted folder, so once started it runs to its end unless the
    * server itself stops.
    */
@@ -934,7 +957,7 @@ export class GitRepositoryOperations {
     return this.worktreeRemovals.track(key, await normalizePath(repository.commonDir), targetPath, async () => {
       // Deleting can take minutes, and commands in sibling worktrees wait on this lock,
       // so it only covers deciding to remove and recording what happened.
-      const decision = await this.git.runWriteTask(repository.path, async (): Promise<WorktreeRemovalBlocked | WorktreeInfo> => {
+      const decision = await this.git.runWriteTask(repository.path, async (): Promise<WorktreeRemovalBlocked | { worktree: WorktreeInfo; linked: boolean }> => {
         const worktree = await this.findWorktree(repositoryId, targetPath);
         if (!worktree) return { status: 'missing' };
         if (worktree.oid !== expectedOid) return { status: 'stale' };
@@ -942,29 +965,54 @@ export class GitRepositoryOperations {
         if (await samePath(worktree.path, repository.path)) return { status: 'current' };
         if (worktree.bare) return { status: 'bare' };
         if (worktree.locked) return { status: 'locked', reason: worktree.locked };
+        let linked = false;
         if (options.cleanupOnly) {
           // Its folder may have returned, and then only a real removal could touch it.
           if (!worktree.prunable) return { status: 'stale' };
         } else {
           if (worktree.prunable) return { status: 'prunable', reason: worktree.prunable };
-          const [counts, operation] = await Promise.all([
+          const [counts, operation, admin] = await Promise.all([
             this.worktreeChangeCounts(worktree.path),
             this.repositories.operationAt(worktree.path).catch(() => null),
+            this.linkedWorktreeAdmin(repository.commonDir, worktree.path),
           ]);
+          linked = admin !== null;
           const dirty = counts.stagedCount + counts.unstagedCount + counts.untrackedCount + counts.conflictCount > 0;
           if ((dirty || operation) && !force) return { status: 'dirty', ...counts, operation };
+          // Git refuses these without force too; deleting the folder ourselves must not skip that.
+          if (!force && await this.hasSubmodules(worktree.path, admin)) return { status: 'submodules' };
         }
-        return options.signal?.aborted ? { status: 'cancelled' } : worktree;
+        return options.signal?.aborted ? { status: 'cancelled' } : { worktree, linked };
       }, repository.commonDir);
       if ('status' in decision) return decision;
-      const worktree = decision;
+      const { worktree, linked } = decision;
 
-      const failure = options.cleanupOnly ? null : await this.git.run(repository.path, ['-c', 'core.longpaths=true', 'worktree', 'remove', ...(force ? ['--force'] : []), '--', worktree.path], {
-        operation: 'remove-worktree', timeoutMs: REMOVE_WORKTREE_GIT_TIMEOUT_MS, maxOutputBytes: 4 * 1024 * 1024,
-      }).then(() => null, (error: unknown) => error);
+      let deletion: WorktreeFolderDeletion | null = null;
+      let failure: unknown = null;
+      if (!options.cleanupOnly) {
+        // Only a folder whose `.git` file and Git's record point at each other is deleted
+        // here; anything else goes through Git and its own checks.
+        if (this.worktreeDeletion === 'node' && linked) {
+          deletion = await deleteWorktreeFolder(worktree.path, this.removeWorktreeEntry ? { remove: this.removeWorktreeEntry } : {});
+          if (!deletion.deleted && deletion.notLinked) deletion = null;
+        }
+        if (!deletion) {
+          failure = await this.git.run(repository.path, ['-c', 'core.longpaths=true', 'worktree', 'remove', ...(force ? ['--force'] : []), '--', worktree.path], {
+            operation: 'remove-worktree', timeoutMs: REMOVE_WORKTREE_GIT_TIMEOUT_MS, maxOutputBytes: 4 * 1024 * 1024,
+          }).then(() => null, (error: unknown) => error);
+        }
+      }
+      // Git's record is untouched, so the worktree stays listed and can be removed again.
+      if (deletion && !deletion.deleted && !deletion.notLinked) throw blockedDeletionError(deletion);
 
       return this.git.runWriteTask(repository.path, async (run): Promise<WorktreeRemovalResult> => {
-        if (options.cleanupOnly) await this.dropWorktreeRecord(repository.commonDir, worktree.path);
+        if (options.cleanupOnly) {
+          if (!await this.dropWorktreeRecord(repository.commonDir, worktree.path)) {
+            throw new GitOperationError({ code: 'UNKNOWN', operation: 'clean-up-worktree', message: 'Git has no record of this worktree.' });
+          }
+        }
+        // The folder is gone, so only Git's record remains; another command may have dropped it already.
+        if (deletion?.deleted) await this.dropWorktreeRecord(repository.commonDir, worktree.path);
         // Git can fail after dropping its record, or succeed and leave files behind,
         // so what remains decides the result rather than the exit code.
         if (failure && await this.findWorktree(repositoryId, worktree.path)) throw failure;
@@ -988,11 +1036,45 @@ export class GitRepositoryOperations {
   }
 
   /**
+   * The admin folder of a linked worktree whose `.git` file points at a record in
+   * this repository that points back at it, or null for anything else, including
+   * the main worktree, whose `.git` is a folder.
+   */
+  private async linkedWorktreeAdmin(commonDir: string, worktreePath: string): Promise<string | null> {
+    const gitPath = path.join(worktreePath, '.git');
+    if (!(await lstat(gitPath).catch(() => null))?.isFile()) return null;
+    const pointer = /^gitdir:[ \t]*(.+?)\s*$/m.exec(await readFile(gitPath, 'utf8').catch(() => ''))?.[1];
+    if (!pointer) return null;
+    const admin = path.resolve(worktreePath, pointer);
+    if (await normalizePath(path.dirname(admin)) !== await normalizePath(path.join(commonDir, 'worktrees'))) return null;
+    const back = await readFile(path.join(admin, 'gitdir'), 'utf8').catch(() => null);
+    if (back === null || await normalizePath(path.resolve(admin, back.trim())) !== await normalizePath(gitPath)) return null;
+    return admin;
+  }
+
+  /** Git's own test before removing a worktree: initialized submodules, in its record or its checkout. */
+  private async hasSubmodules(worktreePath: string, admin: string | null): Promise<boolean> {
+    if (admin && await pathExists(path.join(admin, 'modules'))) return true;
+    let index: string;
+    try {
+      index = (await this.git.run(worktreePath, ['ls-files', '--stage', '-z'], { operation: 'worktree-submodules', readOnly: true, maxOutputBytes: 64 * 1024 * 1024 })).stdout.toString('utf8');
+    } catch {
+      // An unreadable worktree must never look safe to delete.
+      return true;
+    }
+    for (const entry of index.split('\0')) {
+      const tab = entry.indexOf('\t');
+      if (entry.startsWith('160000 ') && tab >= 0 && await pathExists(path.join(worktreePath, entry.slice(tab + 1), '.git'))) return true;
+    }
+    return false;
+  }
+
+  /**
    * Forgets one worktree without touching its folder. `git worktree prune` would also
    * forget any other worktree that is only missing for now, such as one on a removable
    * drive, and Git can't remove a worktree whose folder exists without its `.git`.
    */
-  private async dropWorktreeRecord(commonDir: string, worktreePath: string): Promise<void> {
+  private async dropWorktreeRecord(commonDir: string, worktreePath: string): Promise<boolean> {
     const records = path.join(commonDir, 'worktrees');
     const target = await normalizePath(path.join(worktreePath, '.git'));
     for (const id of await readdir(records)) {
@@ -1000,10 +1082,10 @@ export class GitRepositoryOperations {
       const gitFile = await readFile(path.join(record, 'gitdir'), 'utf8').catch(() => null);
       if (gitFile !== null && await normalizePath(path.resolve(record, gitFile.trim())) === target) {
         await rm(record, { recursive: true, force: true });
-        return;
+        return true;
       }
     }
-    throw new GitOperationError({ code: 'UNKNOWN', operation: 'clean-up-worktree', message: 'Git has no record of this worktree.' });
+    return false;
   }
 
   /**
@@ -1286,6 +1368,17 @@ async function normalizePath(value: string): Promise<string> {
       existing = parent;
     }
   }
+}
+
+/** Why a worktree whose files could not all be deleted was kept, and what to do next. */
+function blockedDeletionError(deletion: Extract<WorktreeFolderDeletion, { blockedPath: string }>): GitOperationError {
+  const code = (deletion.error as NodeJS.ErrnoException).code ?? '';
+  const inUse = ['EBUSY', 'EPERM', 'EACCES', 'ENOTEMPTY'].includes(code);
+  const reason = inUse ? `${deletion.blockedPath} is in use by another program` : `${deletion.blockedPath} could not be deleted (${deletion.error.message})`;
+  const message = !deletion.gitFileIntact
+    ? `${reason}, and its .git file could not be put back, so Git can no longer use this worktree. Refresh, select it (it shows as Incomplete), use Clean up entry, then delete the remaining folder yourself.`
+    : `${reason}. The worktree was kept: ${inUse ? 'close that program, then remove it again' : 'fix that, then remove it again'}.${deletion.removedSomething ? ' Some of its files were already deleted, so it may now show local changes and need Force.' : ''}`;
+  return new GitOperationError({ code: 'UNKNOWN', operation: 'remove-worktree', message });
 }
 
 function conflictPaths(status: Awaited<ReturnType<RepositoryService['status']>>): string[] {

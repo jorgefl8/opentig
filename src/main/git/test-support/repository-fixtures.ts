@@ -7,7 +7,7 @@ import { afterAll, afterEach } from 'vitest';
 import { FileService } from '../../files/FileService';
 import { SettingsStore } from '../../persistence/SettingsStore';
 import { GitProcess } from '../GitProcess';
-import { GitRepositoryOperations } from '../GitRepositoryOperations';
+import { GitRepositoryOperations, type GitRepositoryOperationsOptions } from '../GitRepositoryOperations';
 import { RepositoryService } from '../RepositoryService';
 
 const execFileAsync = promisify(execFile);
@@ -37,7 +37,7 @@ async function copyRepository(kind: string, prepare: (root: string, work: string
   return { root, work: path.join(root, 'work') };
 }
 
-export async function managementRepository() {
+export async function managementRepository(options: GitRepositoryOperationsOptions = {}) {
   const { root, work } = await copyRepository('management', async (root, work) => {
     await git(root, ['init', '-b', 'main', work]);
     await configure(work);
@@ -45,7 +45,7 @@ export async function managementRepository() {
     await git(work, ['add', '.']);
     await git(work, ['commit', '-m', 'Base commit']);
   });
-  return { root, ...await createOperations(root, work) };
+  return { root, ...await createOperations(root, work, options) };
 }
 
 export async function addRemote(fixture: { root: string; work: string }): Promise<string> {
@@ -128,13 +128,13 @@ export async function standaloneRepository() {
   return createOperations(root, work);
 }
 
-async function createOperations(root: string, work: string) {
+async function createOperations(root: string, work: string, options: GitRepositoryOperationsOptions = {}) {
   const settings = new SettingsStore(path.join(root, 'settings.json'));
   await settings.load();
   const process = new GitProcess();
   const repositories = new RepositoryService(process, settings);
   const files = new FileService(process, repositories);
-  const operations = new GitRepositoryOperations(process, repositories, files);
+  const operations = new GitRepositoryOperations(process, repositories, files, options);
   const repository = await repositories.openPath(work);
   return { work, operations, repositoryId: repository.id, settings, repositories, gitProcess: process };
 }

@@ -212,6 +212,8 @@ export interface WorktreeDetails {
   prunable: string | null;
   /** Git lost track of this worktree, but its folder is still on disk. */
   leftoverFiles?: boolean;
+  /** It has initialized submodules, which Git removes only with force. */
+  submodules?: boolean;
   /** False when the worktree is missing, prunable, or bare, so no status ran. */
   available: boolean;
   stagedCount: number;
@@ -245,6 +247,8 @@ export type WorktreeRemovalBlocked =
   | { status: 'current' }
   | { status: 'dirty'; stagedCount: number; unstagedCount: number; untrackedCount: number; conflictCount: number; operation: string | null }
   | { status: 'locked'; reason: string }
+  /** It has initialized submodules, which only a forced removal deletes. */
+  | { status: 'submodules' }
   | { status: 'prunable'; reason: string }
   | { status: 'bare' }
   | { status: 'missing' }

@@ -12,7 +12,7 @@ async function reportedPath(fixture: Fixture, branch: string): Promise<string> {
   return (await fixture.operations.worktrees(fixture.repositoryId)).find((worktree) => worktree.branch === branch)!.path;
 }
 
-/** Wraps only the `git worktree remove` step, keeping every other command real. */
+/** Wraps only the `git worktree remove` step, keeping every other command real. Needs `worktreeDeletion: 'git'`. */
 function aroundRemoval(fixture: Fixture, around: (remove: () => Promise<GitOutput>) => Promise<GitOutput>) {
   const original = fixture.gitProcess.run.bind(fixture.gitProcess);
   vi.spyOn(fixture.gitProcess, 'run').mockImplementation((cwd, args, options) => args.includes('remove') ? around(() => original(cwd, args, options)) : original(cwd, args, options));
@@ -40,7 +40,7 @@ describe('GitRepositoryOperations worktree removal outcome', () => {
   }, process.platform === 'win32' ? 60_000 : 20_000);
 
   it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)('reports files left behind when Git fails after dropping its record', async () => {
-    const fixture = await managementRepository();
+    const fixture = await managementRepository({ worktreeDeletion: 'git' });
     const review = await addWorktree(fixture, 'review', 'review');
     const stuck = path.join(review, 'stuck');
     await mkdir(stuck);
@@ -60,7 +60,7 @@ describe('GitRepositoryOperations worktree removal outcome', () => {
   });
 
   it('reports files left behind even when Git says it succeeded', async () => {
-    const fixture = await managementRepository();
+    const fixture = await managementRepository({ worktreeDeletion: 'git' });
     const review = await addWorktree(fixture, 'review', 'review');
     const oid = await git(review, ['rev-parse', 'HEAD']);
     const reported = await reportedPath(fixture, 'review');
@@ -77,7 +77,7 @@ describe('GitRepositoryOperations worktree removal outcome', () => {
   });
 
   it('still fails when Git refuses and keeps the worktree', async () => {
-    const fixture = await managementRepository();
+    const fixture = await managementRepository({ worktreeDeletion: 'git' });
     const review = await addWorktree(fixture, 'review', 'review');
     const oid = await git(review, ['rev-parse', 'HEAD']);
     aroundRemoval(fixture, async () => { throw new GitOperationError({ code: 'UNKNOWN', operation: 'remove-worktree', message: 'Refused.' }); });
@@ -92,7 +92,7 @@ describe('GitRepositoryOperations worktree removal outcome', () => {
   });
 
   it('keeps the worktree listed as incomplete when Git dies after deleting .git', async () => {
-    const fixture = await managementRepository();
+    const fixture = await managementRepository({ worktreeDeletion: 'git' });
     const review = await addWorktree(fixture, 'review', 'review');
     const oid = await git(review, ['rev-parse', 'HEAD']);
     const reported = await reportedPath(fixture, 'review');
@@ -190,7 +190,7 @@ describe('GitRepositoryOperations worktree removal outcome', () => {
   });
 
   it('lets other commands use the lock while Git is deleting', async () => {
-    const fixture = await managementRepository();
+    const fixture = await managementRepository({ worktreeDeletion: 'git' });
     const review = await addWorktree(fixture, 'review', 'review');
     const oid = await git(review, ['rev-parse', 'HEAD']);
     let finishDeleting!: () => void;
@@ -259,7 +259,7 @@ describe('GitRepositoryOperations worktree removal outcome', () => {
   });
 
   it('finishes a removal that already started when its request ends', async () => {
-    const fixture = await managementRepository();
+    const fixture = await managementRepository({ worktreeDeletion: 'git' });
     const review = await addWorktree(fixture, 'review', 'review');
     const oid = await git(review, ['rev-parse', 'HEAD']);
     const controller = new AbortController();
@@ -470,5 +470,171 @@ describe('GitRepositoryOperations worktree details', () => {
     const fixture = await managementRepository();
     expect(await fixture.operations.worktreeDetails(fixture.repositoryId, fixture.work))
       .toMatchObject({ main: true, current: true, branch: 'main', available: true });
+  });
+});
+
+describe('GitRepositoryOperations worktree removal that deletes the folder first', () => {
+  afterEach(() => { vi.restoreAllMocks(); });
+
+  /** Deletes like the default, but fails on `.next` the way a file another program holds open does on Windows. */
+  function blockingNext(blockedFile: () => string) {
+    const state = { blocked: true };
+    const remove = async (target: string) => {
+      if (state.blocked && path.basename(target) === '.next') {
+        throw Object.assign(new Error(`EBUSY: resource busy or locked, unlink '${blockedFile()}'`), { code: 'EBUSY', path: blockedFile() });
+      }
+      await rm(target, { recursive: true, force: true });
+    };
+    return { state, remove };
+  }
+
+  it('removes a clean worktree without Git deleting it, and deletes its branch when asked', async () => {
+    const fixture = await managementRepository({ worktreeDeletion: 'node' });
+    const review = await addWorktree(fixture, 'review', 'review');
+    const reported = await reportedPath(fixture, 'review');
+    const oid = await git(review, ['rev-parse', 'HEAD']);
+    const run = vi.spyOn(fixture.gitProcess, 'run');
+
+    expect(await fixture.operations.removeWorktree(fixture.repositoryId, review, oid, false, true)).toMatchObject({ status: 'removed', branch: 'review' });
+
+    expect(run.mock.calls.some(([, args]) => args.includes('worktree') && args.includes('remove'))).toBe(false);
+    expect(await exists(review)).toBe(false);
+    expect(await git(fixture.work, ['worktree', 'list', '--porcelain'])).not.toContain(reported);
+    expect(await git(fixture.work, ['branch', '--list', 'review'])).toBe('');
+    expect((await fixture.operations.localRefsSnapshot(fixture.repositoryId)).worktreeRemovals).toBeUndefined();
+  });
+
+  it('keeps the worktree registered when a file is in use, then removes it with force', async () => {
+    let review = '';
+    const trace = () => path.join(review, '.next', 'trace');
+    const blocking = blockingNext(trace);
+    const fixture = await managementRepository({ worktreeDeletion: 'node', removeWorktreeEntry: blocking.remove });
+    review = await addWorktree(fixture, 'review', 'review');
+    await writeFile(path.join(fixture.work, '.git', 'info', 'exclude'), '.next/\n');
+    await mkdir(path.join(review, '.next'));
+    await writeFile(trace(), 'held open\n');
+    const reported = await reportedPath(fixture, 'review');
+    const oid = await git(review, ['rev-parse', 'HEAD']);
+
+    const failure = fixture.operations.removeWorktree(fixture.repositoryId, review, oid, false, true);
+
+    await expect(failure).rejects.toThrow(trace());
+    await expect(failure).rejects.toThrow('in use by another program');
+    expect(await exists(path.join(review, '.git'))).toBe(true);
+    expect(await git(fixture.work, ['worktree', 'list', '--porcelain'])).toContain(reported);
+    expect(await git(review, ['status', '--porcelain'])).toBe('');
+    expect(await git(fixture.work, ['branch', '--list', 'review'])).toContain('review');
+    const snapshot = await fixture.operations.localRefsSnapshot(fixture.repositoryId);
+    expect(snapshot.worktreeRemovals).toMatchObject([{ path: review, state: 'failed', message: expect.stringContaining(trace()) }]);
+    expect(snapshot.worktrees.find((worktree) => worktree.branch === 'review')).toMatchObject({ prunable: null });
+    expect(await fixture.operations.worktreeDetails(fixture.repositoryId, review)).toMatchObject({ available: true });
+
+    blocking.state.blocked = false;
+    expect(await fixture.operations.removeWorktree(fixture.repositoryId, review, oid, true, true)).toMatchObject({ status: 'removed', branch: 'review' });
+    expect(await exists(review)).toBe(false);
+    expect(await git(fixture.work, ['worktree', 'list', '--porcelain'])).not.toContain(reported);
+    expect(await git(fixture.work, ['branch', '--list', 'review'])).toBe('');
+  });
+
+  it('says removing again needs force once some files were deleted', async () => {
+    const fixture = await managementRepository({ worktreeDeletion: 'node', removeWorktreeEntry: async (target) => {
+      if (path.basename(target) === 'z-held.txt') throw Object.assign(new Error('EBUSY: resource busy or locked'), { code: 'EBUSY', path: target });
+      await rm(target, { recursive: true, force: true });
+    } });
+    const review = await addWorktree(fixture, 'review', 'review');
+    await writeFile(path.join(fixture.work, '.git', 'info', 'exclude'), 'z-held.txt\n');
+    await writeFile(path.join(review, 'z-held.txt'), 'held open\n');
+    const oid = await git(review, ['rev-parse', 'HEAD']);
+
+    await expect(fixture.operations.removeWorktree(fixture.repositoryId, review, oid)).rejects.toThrow('need Force');
+
+    // The tracked file went first, so the worktree now reports it as deleted.
+    expect(await fixture.operations.worktreeDetails(fixture.repositoryId, review)).toMatchObject({ available: true, unstagedCount: 1 });
+    expect(await fixture.operations.removeWorktree(fixture.repositoryId, review, oid)).toMatchObject({ status: 'dirty', unstagedCount: 1 });
+  });
+
+  it('puts .git back when the folder cannot be deleted at the end', async () => {
+    let review = '';
+    const fixture = await managementRepository({ worktreeDeletion: 'node', removeWorktreeEntry: async (target) => {
+      // Another program writes a file just as the folder empties.
+      if (path.basename(target) === '.git') await writeFile(path.join(review, 'late.log'), 'written meanwhile\n');
+      await rm(target, { recursive: true, force: true });
+    } });
+    review = await addWorktree(fixture, 'review', 'review');
+    const reported = await reportedPath(fixture, 'review');
+    const oid = await git(review, ['rev-parse', 'HEAD']);
+
+    await expect(fixture.operations.removeWorktree(fixture.repositoryId, review, oid)).rejects.toThrow('The worktree was kept');
+
+    expect(await exists(path.join(review, '.git'))).toBe(true);
+    expect(await git(fixture.work, ['worktree', 'list', '--porcelain'])).toContain(reported);
+    expect(await git(review, ['rev-parse', '--abbrev-ref', 'HEAD'])).toBe('review');
+    expect(await fixture.operations.worktreeDetails(fixture.repositoryId, review)).toMatchObject({ available: true, prunable: null });
+  });
+
+  it('deletes a link to a folder outside the worktree without touching that folder', async () => {
+    const fixture = await managementRepository({ worktreeDeletion: 'node' });
+    const review = await addWorktree(fixture, 'review', 'review');
+    const outside = path.join(fixture.root, 'shared-cache');
+    await mkdir(outside);
+    await writeFile(path.join(outside, 'keep.txt'), 'outside the worktree\n');
+    await symlink(outside, path.join(review, 'linked-cache'), process.platform === 'win32' ? 'junction' : 'dir');
+    const oid = await git(review, ['rev-parse', 'HEAD']);
+
+    expect(await fixture.operations.removeWorktree(fixture.repositoryId, review, oid, true)).toMatchObject({ status: 'removed' });
+
+    expect(await exists(review)).toBe(false);
+    expect(await exists(path.join(outside, 'keep.txt'))).toBe(true);
+  });
+
+  it('removes a read-only file', async () => {
+    const fixture = await managementRepository({ worktreeDeletion: 'node' });
+    const review = await addWorktree(fixture, 'review', 'review');
+    await chmod(path.join(review, 'file.txt'), 0o444);
+    const oid = await git(review, ['rev-parse', 'HEAD']);
+
+    expect(await fixture.operations.removeWorktree(fixture.repositoryId, review, oid)).toMatchObject({ status: 'removed' });
+
+    expect(await exists(review)).toBe(false);
+  });
+
+  it.each(['node', 'git'] as const)('refuses a worktree with submodules unless forced (%s)', async (worktreeDeletion) => {
+    const fixture = await managementRepository({ worktreeDeletion });
+    const library = path.join(fixture.root, 'library');
+    await git(fixture.root, ['init', '-q', '-b', 'main', library]);
+    await git(library, ['-c', 'user.name=OpenTig Test', '-c', 'user.email=opentig@example.invalid', 'commit', '-q', '--allow-empty', '-m', 'Library']);
+    const review = await addWorktree(fixture, 'review', 'review');
+    await git(review, ['-c', 'protocol.file.allow=always', 'submodule', 'add', '-q', library, 'library']);
+    await git(review, ['commit', '-qm', 'Add the library']);
+    const oid = await git(review, ['rev-parse', 'HEAD']);
+
+    expect(await fixture.operations.worktreeDetails(fixture.repositoryId, review)).toMatchObject({ submodules: true, stagedCount: 0, unstagedCount: 0, untrackedCount: 0 });
+    expect(await fixture.operations.removeWorktree(fixture.repositoryId, review, oid)).toEqual({ status: 'submodules' });
+    expect(await exists(path.join(review, 'library', '.git'))).toBe(true);
+
+    expect(await fixture.operations.removeWorktree(fixture.repositoryId, review, oid, true)).toMatchObject({ status: 'removed' });
+    expect(await exists(review)).toBe(false);
+    expect(await git(fixture.work, ['worktree', 'list', '--porcelain'])).not.toContain('trees');
+    expect(await exists(path.join(library, '.git'))).toBe(true);
+  }, process.platform === 'win32' ? 60_000 : 20_000);
+
+  it('falls back to Git when the folder is not a linked worktree with a .git file', async () => {
+    const fixture = await managementRepository({ worktreeDeletion: 'node', removeWorktreeEntry: async () => { throw new Error('Node deletion must not run.'); } });
+    const review = await addWorktree(fixture, 'review', 'review');
+    const oid = await git(review, ['rev-parse', 'HEAD']);
+    // Its `.git` file no longer points at Git's record, so only Git may decide what to delete.
+    await writeFile(path.join(review, '.git'), `gitdir: ${path.join(fixture.root, 'elsewhere')}\n`);
+    const run = vi.spyOn(fixture.gitProcess, 'run');
+
+    await fixture.operations.removeWorktree(fixture.repositoryId, review, oid, true).catch(() => undefined);
+
+    expect(run.mock.calls.some(([, args]) => args.includes('worktree') && args.includes('remove'))).toBe(true);
+  });
+
+  it('never deletes the main worktree', async () => {
+    const fixture = await managementRepository({ worktreeDeletion: 'node', removeWorktreeEntry: async () => { throw new Error('Node deletion must not run.'); } });
+    const oid = await git(fixture.work, ['rev-parse', 'HEAD']);
+    expect(await fixture.operations.removeWorktree(fixture.repositoryId, fixture.work, oid, true)).toEqual({ status: 'main' });
+    expect(await exists(path.join(fixture.work, 'file.txt'))).toBe(true);
   });
 });

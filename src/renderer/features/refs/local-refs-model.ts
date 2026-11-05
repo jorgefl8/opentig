@@ -168,6 +168,7 @@ export function worktreeRemoveEligibility(details: WorktreeDetails): DeleteEligi
   if (details.operation) return { allowed: false, forceAllowed: true, reason: `A ${details.operation} is in progress here. Force removal permanently discards it and every local change.` };
   const pending = localChangeSummary(details);
   if (pending) return { allowed: false, forceAllowed: true, reason: `${pending} would be permanently lost by force removal.` };
+  if (details.submodules) return { allowed: false, forceAllowed: true, reason: 'It contains submodules, which Git removes only with force. Force removal deletes them and everything inside them.' };
   return { allowed: true, reason: 'No local changes. Removing it deletes the folder from disk and leaves its branch intact.' };
 }
 

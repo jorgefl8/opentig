@@ -565,7 +565,7 @@ function WorktreeDetailPanel({ details, removing, anyBusy, confirming, actionErr
           {details.prunable
             ? <>Remove Git's entry for this worktree? {details.leftoverFiles ? <>The files in <strong className="local-refs-path">{details.path}</strong> stay on disk, so delete that folder yourself. </> : null}</>
             : force
-            ? <>Permanently remove the worktree at <strong className="local-refs-path">{details.path}</strong>? <strong>{changes ?? `The ${details.operation ?? 'current Git operation'}`}</strong> and every uncommitted file will be lost. The folder is deleted from disk and is <strong>not</strong> moved to system Trash. </>
+            ? <>Permanently remove the worktree at <strong className="local-refs-path">{details.path}</strong>? <strong>{changes ?? (details.operation ? `The ${details.operation}` : details.submodules ? 'Its submodules' : 'The current Git operation')}</strong> and every uncommitted file will be lost. The folder is deleted from disk and is <strong>not</strong> moved to system Trash. </>
             : <>Remove the worktree at <strong className="local-refs-path">{details.path}</strong>? The folder is deleted from disk and is <strong>not</strong> moved to system Trash. </>}
           {deleteBranch && details.branch
             ? <>The branch <strong>{details.branch}</strong> will also be force-deleted. Commits found only on that branch may become inaccessible.</>
@@ -659,6 +659,7 @@ function worktreeFailure(status: string): string {
     case 'current': return 'OpenTig has this worktree open. Switch to another one first.';
     case 'dirty': return 'The worktree has local changes or an operation in progress, so it was kept.';
     case 'locked': return 'The worktree is locked. Unlock it in Git first.';
+    case 'submodules': return 'The worktree contains submodules, so it was kept. Force removal deletes them too.';
     case 'prunable': return 'Git can no longer use this worktree. Refresh to see how to clean it up.';
     case 'bare': return 'This entry is a bare repository, not a removable worktree.';
     case 'cancelled': return 'The removal was cancelled before it started, so nothing changed.';
