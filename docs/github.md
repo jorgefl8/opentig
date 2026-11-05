@@ -137,7 +137,7 @@ CLI availability is checked at startup and reused across repositories and list f
 <details>
 <summary>Links in PR titles, descriptions, and previews</summary>
 
-Web links open in a new browser tab, or the system browser on desktop. Hover or focus a link to see its destination and **Open in new tab**. Email links show **Open in mail app** and use the mail client. This also applies to the creation dialog's Markdown preview.
+Web links open in a new browser tab, or the system browser on desktop. Hover or focus a link to see its destination and **Open in new tab** (**Open in browser** on desktop). Email links show **Open in mail app** and use the mail client. This also applies to the creation dialog's Markdown preview.
 
 </details>
 

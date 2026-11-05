@@ -52,6 +52,14 @@ it('shows the action and destination on keyboard focus and updates links when th
   await act(async () => { await vi.waitFor(() => expect(document.querySelector('[role="tooltip"]')?.textContent).toContain('Open in mail app')); });
 });
 
+it('says the desktop app opens web links in the system browser', async () => {
+  vi.stubGlobal('opentigDesktop', {});
+  await render('[Docs](https://example.com/docs)');
+  await act(async () => container.querySelector<HTMLAnchorElement>('a')!.focus());
+  await act(async () => { await vi.waitFor(() => expect(document.querySelector('[role="tooltip"]')?.textContent).toContain('Open in browser')); });
+  expect(document.querySelector('[role="tooltip"]')?.textContent).not.toContain('new tab');
+});
+
 it('never makes unsafe links interactive', async () => {
   await render('[Unsafe](javascript:alert%281%29)');
   expect(container.querySelector('[target="_blank"]')).toBeNull();
