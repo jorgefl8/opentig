@@ -22,7 +22,7 @@
   },
   "dependencies": {
     "trash": "9.0.0",
-    "ws": "8.22.0"
+    "ws": "8.22.1"
   },
   "engines": {
     "node": ">=24"
