@@ -5,11 +5,17 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { ActionRunDetails, ActionRunSummary } from '@shared/contracts';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { ActionsView } from './ActionsView';
+import { ActionsTools, ActionsView } from './ActionsView';
 import { WorkflowRunViewer } from './WorkflowRunViewer';
 
 const api = vi.hoisted(() => ({ listActionRuns: vi.fn(), getActionRun: vi.fn(), listWorkflows: vi.fn() }));
 vi.mock('@/lib/opentig-api', () => ({ opentig: { github: api } }));
+// The dialog's own behaviour is tested on its own; here it only reports that GitHub accepted a run.
+vi.mock('@/features/pulls/RunWorkflowDialog', () => ({
+  RunWorkflowDialog: ({ onStarted }: { onStarted(workflow: { id: number; name: string; path: string }): void }) => createElement('button', {
+    'data-testid': 'start', onClick: () => onStarted({ id: 9, name: 'Deploy website', path: '.github/workflows/website.yml' }),
+  }),
+}));
 
 const summary: ActionRunSummary = {
   id: 42, number: 340, attempt: 1, title: 'fix: links', workflowId: 7, workflowName: 'CI', status: 'completed', conclusion: 'failure',
@@ -88,4 +94,22 @@ it('opens at the job a link points to', async () => {
   await render(createElement(WorkflowRunViewer, { repositoryId: 'repo', runId: 42, jobId: 1 }));
   expect(container.querySelector('.workflow-job-panel h3')?.textContent).toBe('changes');
   expect(container.querySelector('.workflow-node-header[aria-pressed="true"]')?.textContent).toContain('changes');
+});
+
+it('opens the run of a workflow started from OpenTig once GitHub lists it', async () => {
+  const onSelect = vi.fn();
+  const onWorkflowChange = vi.fn();
+  api.listWorkflows.mockResolvedValue({ workflows: [], defaultBranch: 'main', viewerCanWrite: true });
+  await render(createElement(ActionsTools, { repositoryId: 'repo', nameWithOwner: 'sample/demo', account: null, onOpenGitHubSettings: vi.fn(), workflowId: 7, onWorkflowChange, onSelect }));
+  const started = { ...summary, id: 99, workflowId: 9, event: 'workflow_dispatch', status: 'queued', conclusion: null, createdAt: new Date().toISOString() };
+  api.listActionRuns.mockImplementation(async (_repository: string, workflowId: number | null) => workflowId === 9 ? [started, { ...summary, workflowId: 9 }] : [summary]);
+
+  await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Run a workflow"]')!.click());
+  await act(async () => container.querySelector<HTMLButtonElement>('[data-testid="start"]')!.click());
+  for (let tick = 0; tick < 6; tick++) await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+
+  expect(api.listActionRuns).toHaveBeenCalledWith('repo', 9);
+  expect(onWorkflowChange).toHaveBeenCalledWith(9);
+  expect(onSelect).toHaveBeenCalledExactlyOnceWith(99);
+  expect(container.querySelector('[aria-label="Run a workflow"]')).not.toBeNull();
 });

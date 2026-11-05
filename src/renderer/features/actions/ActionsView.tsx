@@ -1,9 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { IconCheck, IconExternalLink, IconFilter, IconLoader4, IconPlayerPlay } from '@tabler/icons-react';
 import { formatTimeAgo } from '@shared/date-format';
 import type { GitHubRepositoryAccount } from '@shared/github-accounts';
-import type { ActionRunSummary } from '../../../shared/contracts';
+import type { ActionRunSummary, RepositoryWorkflow } from '../../../shared/contracts';
 import { Button } from '@/components/ui/button';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -14,17 +14,15 @@ import { GitHubSectionMenu } from '@/features/pulls/GitHubSectionMenu';
 import { RunWorkflowDialog } from '@/features/pulls/RunWorkflowDialog';
 import { openOnGitHub } from '@/features/pulls/gh-utils';
 import { ActionStatusIcon } from './ActionStatusIcon';
-import { actionStatusLabel, actionTone, formatDuration, isActive, runDuration } from './action-status';
+import { actionStatusLabel, actionTone, findStartedRun, formatDuration, runDuration, runListRefreshInterval, STARTED_RUN_REFRESH_MS, STARTED_RUN_WINDOW_MS, type StartedWorkflow } from './action-status';
 import './actions.css';
-
-/** While a listed run hasn't finished, the list is read again this often. */
-export const ACTIVE_RUNS_REFRESH_MS = 10_000;
 
 function actionRunsQueryOptions(repositoryId: string, workflowId: number | null) {
   return {
     queryKey: queryKeys.actionRuns(repositoryId, workflowId),
     queryFn: () => opentig.github.listActionRuns(repositoryId, workflowId),
-    refetchInterval: (query: { state: { data?: ActionRunSummary[] | undefined } }) => query.state.data?.some(isActive) ? ACTIVE_RUNS_REFRESH_MS : false as const,
+    // Only while the tab is showing and the window is visible: the tab unmounts the list, and hidden windows don't poll.
+    refetchInterval: (query: { state: { data?: ActionRunSummary[] | undefined } }) => runListRefreshInterval(query.state.data),
   };
 }
 
@@ -40,6 +38,28 @@ export function ActionsTools({ repositoryId, nameWithOwner, account, onOpenGitHu
   const [running, setRunning] = useState(false);
   const queryClient = useQueryClient();
   const runs = useQuery(actionRunsQueryOptions(repositoryId, workflowId));
+  // A workflow OpenTig just started: its runs are read every few seconds until the new one appears, which then opens.
+  const [started, setStarted] = useState<StartedWorkflow | null>(null);
+  const startedRuns = useQuery({ ...actionRunsQueryOptions(repositoryId, started?.workflowId ?? null), enabled: started !== null, refetchInterval: STARTED_RUN_REFRESH_MS });
+  useEffect(() => {
+    if (!started) return;
+    const run = startedRuns.data ? findStartedRun(startedRuns.data, started) : null;
+    if (run) {
+      setStarted(null);
+      onSelect(run.id);
+      return;
+    }
+    // Past the window the usual refresh still lists it; it just doesn't open by itself.
+    const timer = window.setTimeout(() => setStarted(null), Math.max(0, started.requestedAt + STARTED_RUN_WINDOW_MS - Date.now()));
+    return () => window.clearTimeout(timer);
+  }, [onSelect, started, startedRuns.data]);
+  const onStarted = (workflow: RepositoryWorkflow) => {
+    const listed = queryClient.getQueriesData<ActionRunSummary[]>({ queryKey: ['repository', repositoryId, 'action-runs'] });
+    setStarted({ workflowId: workflow.id, requestedAt: Date.now(), knownIds: new Set(listed.flatMap(([, data]) => data?.map((run) => run.id) ?? [])) });
+    setRunning(false);
+    // Keep the new run in the list when another workflow was filtered.
+    if (workflowId !== null && workflowId !== workflow.id) onWorkflowChange(workflow.id);
+  };
   const workflows = useQuery({ queryKey: queryKeys.workflows(repositoryId), queryFn: () => opentig.github.listWorkflows(repositoryId) });
   const sorted = [...(workflows.data?.workflows ?? [])].sort((left, right) => left.name.localeCompare(right.name));
   const choose = (next: number | null) => onWorkflowChange(next);
@@ -74,10 +94,12 @@ export function ActionsTools({ repositoryId, nameWithOwner, account, onOpenGitHu
         </div>
       </GitHubSectionMenu>
       <Tooltip>
-        <TooltipTrigger render={<Button variant="ghost" size="icon-xs" className="change-action-button" onClick={() => setRunning(true)} aria-label="Run a workflow" />}><IconPlayerPlay /></TooltipTrigger>
-        <TooltipContent>Run a workflow</TooltipContent>
+        <TooltipTrigger render={<Button variant="ghost" size="icon-xs" className="change-action-button" onClick={() => setRunning(true)} aria-label={started ? 'Run a workflow (waiting for the started run to appear)' : 'Run a workflow'} />}>
+          {started ? <IconLoader4 className="animate-spin" /> : <IconPlayerPlay />}
+        </TooltipTrigger>
+        <TooltipContent>{started ? 'Waiting for the run GitHub is starting…' : 'Run a workflow'}</TooltipContent>
       </Tooltip>
-      {running && <RunWorkflowDialog repositoryId={repositoryId} initialWorkflowId={workflowId} onOpenRun={onSelect} onClose={() => setRunning(false)} />}
+      {running && <RunWorkflowDialog repositoryId={repositoryId} initialWorkflowId={workflowId} onOpenRun={onSelect} onStarted={onStarted} onClose={() => setRunning(false)} />}
     </>
   );
 }

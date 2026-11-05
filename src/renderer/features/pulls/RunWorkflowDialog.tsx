@@ -18,12 +18,14 @@ function RunIcon({ run }: { run: WorkflowRunSummary }) {
   return <IconClock className="text-[var(--git-push)]" aria-label="In progress" />;
 }
 
-export function RunWorkflowDialog({ repositoryId, initialWorkflowId = null, onOpenRun, onClose }: {
+export function RunWorkflowDialog({ repositoryId, initialWorkflowId = null, onOpenRun, onStarted, onClose }: {
   repositoryId: string;
   /** The workflow to start with, such as the one the list is filtered by. */
   initialWorkflowId?: number | null;
   /** Opens a run in OpenTig; without it, runs open on GitHub. */
   onOpenRun?: ((runId: number) => void) | undefined;
+  /** GitHub accepted the request; its run appears a few seconds later. */
+  onStarted?: ((workflow: RepositoryWorkflow) => void) | undefined;
   onClose(): void;
 }) {
   const queryClient = useQueryClient();
@@ -49,6 +51,7 @@ export function RunWorkflowDialog({ repositoryId, initialWorkflowId = null, onOp
     onSuccess: () => {
       setConfirming(false);
       sileo.success({ title: 'Workflow started', description: `${workflow?.name} on ${list?.defaultBranch}. It can take a moment to appear.` });
+      if (workflow) onStarted?.(workflow);
     },
     onError: (reason) => {
       const detail = ghDetail(reason);

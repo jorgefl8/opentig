@@ -223,7 +223,7 @@ These actions use the repository's account, stop if that account changed since y
 
 ## Follow workflow runs
 
-In **GitHub**, switch to **Actions** to list the repository's 50 latest GitHub Actions runs, newest first. Each row has the run's title, its workflow and number, how long it took or its state, the branch, and when it started. The filter menu beside the tabs shows the runs of one workflow and has **Refresh**, **Open on GitHub**, and the account. While a listed run hasn't finished, the list is read again every 10 seconds.
+In **GitHub**, switch to **Actions** to list the repository's 50 latest GitHub Actions runs, newest first. Each row has the run's title, its workflow and number, how long it took or its state, the branch, and when it started. The filter menu beside the tabs shows the runs of one workflow and has **Refresh**, **Open on GitHub**, and the account. While the tab is open, the list is read again every 30 seconds, or every 10 seconds while a listed run hasn't finished, so runs started on GitHub or from a terminal appear by themselves.
 
 Select a run to see it in the viewer as a graph of its jobs. The line under its title sums it up, such as **In progress · 3 of 12 jobs done** or **Failed · 2 jobs failed**, followed by the workflow, branch, commit, what started it, and its duration. Each job of the workflow file is a box, connected to the jobs it needs, and a matrix lists its jobs inside its box, folding past six. A job that hasn't started yet shows **Waiting**, and once the run ends, **Not run**. While the run is going, it's read again every 5 seconds and durations count up.
 
@@ -236,7 +236,7 @@ Select a run to see it in the viewer as a graph of its jobs. The line under its 
 
 The dependencies come from the run's workflow file at the run's commit. If OpenTig can't read that file, the jobs are shown unconnected and a note says so. Runs with more than 100 jobs show the first 100. Logs, re-runs, and cancelling stay on GitHub.
 
-**Run a workflow**, beside the filter, runs a workflow on the default branch after naming the workflow and branch, starting from the filtered one. It lists the workflow's latest runs, which open in the viewer. It can't pass inputs, so GitHub's message explains when a workflow needs them or can't be started manually. If GitHub doesn't answer in time, **Run workflow** stays off until you've refreshed its runs, because trying again could start it twice. Running needs write access and uses the repository's account, like release actions.
+**Run a workflow**, beside the filter, runs a workflow on the default branch after naming the workflow and branch, starting from the filtered one. It lists the workflow's latest runs, which open in the viewer. Once GitHub accepts the request, the dialog closes and its button spins until GitHub lists the new run, usually within seconds, which then opens in the viewer; if it takes longer than 45 seconds, it still appears in the list. It can't pass inputs, so GitHub's message explains when a workflow needs them or can't be started manually. If GitHub doesn't answer in time, **Run workflow** stays off until you've refreshed its runs, because trying again could start it twice. Running needs write access and uses the repository's account, like release actions.
 
 ## Settings scopes
 

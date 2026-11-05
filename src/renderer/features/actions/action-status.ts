@@ -87,3 +87,33 @@ export function jobLabel(jobName: string, nodeName: string): string {
   if (jobName.startsWith(`${nodeName} / `)) return jobName.slice(nodeName.length + 3);
   return jobName;
 }
+
+/** How often the run list is read: often while something runs, and still now and then to catch runs started elsewhere. */
+export const ACTIVE_RUNS_REFRESH_MS = 10_000;
+export const IDLE_RUNS_REFRESH_MS = 30_000;
+/** After OpenTig starts a workflow, the list is read this often until its run appears, for at most the window below. */
+export const STARTED_RUN_REFRESH_MS = 3_000;
+export const STARTED_RUN_WINDOW_MS = 45_000;
+
+export function runListRefreshInterval(runs: Pick<ActionRunSummary, 'status'>[] | undefined): number {
+  return runs?.some(isActive) ? ACTIVE_RUNS_REFRESH_MS : IDLE_RUNS_REFRESH_MS;
+}
+
+export interface StartedWorkflow {
+  workflowId: number;
+  requestedAt: number;
+  /** Runs already listed when it was started, which can't be the new one. */
+  knownIds: ReadonlySet<number>;
+}
+
+/**
+ * The run GitHub created for a workflow OpenTig just started: a manual run of
+ * that workflow, not listed before, created about when it was requested. The
+ * margin allows for the difference between this clock and GitHub's.
+ */
+export function findStartedRun(runs: ActionRunSummary[], started: StartedWorkflow): ActionRunSummary | null {
+  return runs.find((run) => run.workflowId === started.workflowId
+    && run.event === 'workflow_dispatch'
+    && !started.knownIds.has(run.id)
+    && Date.parse(run.createdAt) >= started.requestedAt - 60_000) ?? null;
+}

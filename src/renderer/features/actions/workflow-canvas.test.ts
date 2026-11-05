@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { ActionRunGraphNode, ActionRunJob } from '../../../shared/contracts';
-import { actionStatusLabel, actionTone, combinedTone, formatDuration, jobLabel, runSentence } from './action-status';
+import type { ActionRunGraphNode, ActionRunJob, ActionRunSummary } from '../../../shared/contracts';
+import { ACTIVE_RUNS_REFRESH_MS, IDLE_RUNS_REFRESH_MS, actionStatusLabel, actionTone, combinedTone, findStartedRun, formatDuration, jobLabel, runListRefreshInterval, runSentence } from './action-status';
 import { JOB_ROW_HEIGHT, MAX_VISIBLE_JOBS, NODE_HEADER_HEIGHT, NODE_WIDTH, layoutWorkflowGraph } from './workflow-canvas-layout';
 
 const node = (id: string, needs: string[] = [], jobIds: number[] = [1]): ActionRunGraphNode => ({ id, name: id, needs, jobIds });
@@ -64,5 +64,25 @@ describe('action status', () => {
     expect(jobLabel('validate (ubuntu-24.04)', 'validate')).toBe('ubuntu-24.04');
     expect(jobLabel('deploy / publish', 'deploy')).toBe('publish');
     expect(jobLabel('other', 'validate')).toBe('other');
+  });
+});
+
+describe('following new runs', () => {
+  const run = (id: number, overrides: Partial<ActionRunSummary> = {}): ActionRunSummary => ({
+    id, number: id, attempt: 1, title: `run ${id}`, workflowId: 7, workflowName: 'Deploy website', status: 'queued', conclusion: null,
+    event: 'workflow_dispatch', branch: 'main', headSha: 'a'.repeat(40), url: '', createdAt: '2026-11-05T15:00:10Z', startedAt: null, updatedAt: '2026-11-05T15:00:10Z',
+    ...overrides,
+  });
+
+  it('keeps checking for runs started elsewhere, faster while one is going', () => {
+    expect(runListRefreshInterval(undefined)).toBe(IDLE_RUNS_REFRESH_MS);
+    expect(runListRefreshInterval([{ status: 'completed' }])).toBe(IDLE_RUNS_REFRESH_MS);
+    expect(runListRefreshInterval([{ status: 'completed' }, { status: 'queued' }])).toBe(ACTIVE_RUNS_REFRESH_MS);
+  });
+
+  it('recognises the run of a workflow OpenTig just started', () => {
+    const started = { workflowId: 7, requestedAt: Date.parse('2026-11-05T15:00:00Z'), knownIds: new Set([1]) };
+    expect(findStartedRun([run(1), run(2, { workflowId: 8 }), run(3, { event: 'push' }), run(4, { createdAt: '2026-11-05T14:50:00Z' })], started)).toBeNull();
+    expect(findStartedRun([run(5), run(1)], started)?.id).toBe(5);
   });
 });
