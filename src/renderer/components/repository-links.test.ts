@@ -11,6 +11,8 @@ describe('parseRepositoryLink', () => {
     [`https://github.com/sample/demo/commit/${sha.toUpperCase()}`, { kind: 'commit', oid: sha }],
     ['https://github.com/sample/demo/releases/tag/v1.2.3', { kind: 'release', tag: 'v1.2.3' }],
     ['https://github.com/sample/demo/releases/tag/app%2Fv1', { kind: 'release', tag: 'app/v1' }],
+    ['https://github.com/sample/demo/actions/runs/42036421998', { kind: 'workflow-run', runId: 42036421998 }],
+    ['https://github.com/sample/demo/actions/runs/42/job/127275655913?pr=7', { kind: 'workflow-run', runId: 42, jobId: 127275655913 }],
   ])('opens %s in OpenTig', (href, target) => {
     expect(parseRepositoryLink(href, 'sample/demo')).toEqual(target);
   });
@@ -23,6 +25,8 @@ describe('parseRepositoryLink', () => {
     ['a compare view', 'https://github.com/sample/demo/compare/v1...v2'],
     ['an issue', 'https://github.com/sample/demo/issues/3'],
     ['the release list', 'https://github.com/sample/demo/releases'],
+    ['the Actions list', 'https://github.com/sample/demo/actions'],
+    ['a workflow page', 'https://github.com/sample/demo/actions/workflows/ci.yml'],
     ['a pull request number that is not one', 'https://github.com/sample/demo/pull/0'],
     ['broken escapes', 'https://github.com/sample/demo/releases/tag/%E0%A4%A'],
     ['not a URL', 'pull/65'],
@@ -34,5 +38,7 @@ describe('parseRepositoryLink', () => {
     expect(repositoryLinkUrl('sample/demo', { kind: 'pull', number: 87 })).toBe('https://github.com/sample/demo/pull/87');
     expect(repositoryLinkUrl('sample/demo', { kind: 'release', tag: 'app/v1 beta' })).toBe('https://github.com/sample/demo/releases/tag/app/v1%20beta');
     expect(repositoryLinkLabel({ kind: 'commit', oid: sha })).toBe('Commit aaaaaaa');
+    expect(repositoryLinkUrl('sample/demo', { kind: 'workflow-run', runId: 42, jobId: 9 })).toBe('https://github.com/sample/demo/actions/runs/42/job/9');
+    expect(repositoryLinkLabel({ kind: 'workflow-run', runId: 42 })).toBe('Workflow run 42');
   });
 });

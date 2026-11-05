@@ -16,7 +16,7 @@ export function GitHubSectionMenu({ label, icon, filtered = false, refreshing, r
   refreshLabel: string;
   onRefresh(): void;
   nameWithOwner: string | null;
-  githubPath: 'pulls' | 'releases';
+  githubPath: 'pulls' | 'releases' | 'actions';
   account: GitHubRepositoryAccount | null;
   onOpenGitHubSettings(): void;
   children?: ReactNode;

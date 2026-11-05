@@ -207,6 +207,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   const [undoingCommit, setUndoingCommit] = useState(false);
   const [pullRequestStates, setPullRequestStates] = useState<PullRequestState[]>(['OPEN']);
   const [pullRequestsSection, setPullRequestsSection] = useState<PullRequestsSection>('pulls');
+  const [actionsWorkflowId, setActionsWorkflowId] = useState<number | null>(null);
   const [createPrOpen, setCreatePrOpen] = useState(false);
   // Repository whose commit authorship editor is open, so a stale toast cannot open it for another repository.
   const [authorshipRepositoryId, setAuthorshipRepositoryId] = useState<string | null>(null);
@@ -1099,6 +1100,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     open: (target) => {
       if (target.kind === 'pull') selectViewer({ type: 'pull-request', number: target.number });
       else if (target.kind === 'release') selectViewer({ type: 'release', tag: target.tag });
+      else if (target.kind === 'workflow-run') selectViewer({ type: 'workflow-run', runId: target.runId, ...(target.jobId ? { jobId: target.jobId } : {}) });
       else selectViewer({ type: 'commit', oid: target.oid, subject: target.oid.slice(0, 8) });
     },
   } : null, [githubNameWithOwner, selectViewer]);
@@ -2771,6 +2773,10 @@ export default function App({ initialView, initialSelection, pullRequestCreation
                   onSectionChange={setPullRequestsSection}
                   activeRelease={viewerSelection?.type === 'release' ? viewerSelection.tag : null}
                   onSelectRelease={(tag) => { selectViewer({ type: 'release', tag }); }}
+                  activeRun={viewerSelection?.type === 'workflow-run' ? viewerSelection.runId : null}
+                  onSelectRun={(runId) => { selectViewer({ type: 'workflow-run', runId }); }}
+                  actionsWorkflowId={actionsWorkflowId}
+                  onActionsWorkflowChange={setActionsWorkflowId}
                   onCreate={() => setCreatePrOpen(true)}
                   onCopyCommand={(command) => {
                     void writeClipboardText(command)
@@ -2946,6 +2952,9 @@ function isPerformanceSelection(value: unknown): value is ViewerSelection {
       && (selection.oldPath === undefined || typeof selection.oldPath === 'string');
   }
   if (selection.type === 'release') return typeof selection.tag === 'string';
+  if (selection.type === 'workflow-run') {
+    return typeof selection.runId === 'number' && (selection.jobId === undefined || typeof selection.jobId === 'number');
+  }
   return selection.type === 'pull-request' && typeof selection.number === 'number';
 }
 

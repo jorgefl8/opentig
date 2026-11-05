@@ -1,0 +1,70 @@
+/* GitHub Actions: the run list and a run's graph. Colours follow the checks in a pull request. */
+.action-status-icon { width: 15px; height: 15px; flex: none; }
+.action-success { color: var(--diff-added); }
+.action-failure { color: var(--destructive); }
+.action-running, .action-queued { color: var(--git-push); }
+.action-cancelled, .action-skipped, .action-neutral { color: var(--muted-foreground); }
+
+.action-run-row .action-run-icon { display: grid; width: 26px; height: 26px; grid-row: span 2; place-items: center; }
+.action-run-row .action-run-icon .action-status-icon { width: 17px; height: 17px; }
+.action-run-branch { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.actions-workflow-filter { display: grid; max-height: min(320px, 50vh); overflow-y: auto; }
+.actions-workflow-filter .pulls-filter-option { width: 100%; text-align: left; }
+.actions-workflow-filter svg { width: 14px; height: 14px; flex: none; }
+
+.workflow-run-state { display: inline-flex; align-items: center; gap: 5px; font-weight: var(--weight-strong); }
+.workflow-run-refreshing { width: 14px; height: 14px; color: var(--muted-foreground); }
+.workflow-run-notes { flex: none; border-bottom: 1px solid var(--border); padding: 6px 16px; color: var(--muted-foreground); font-size: var(--text-meta); }
+.workflow-run-body { position: relative; display: flex; flex: 1; min-height: 0; }
+
+.workflow-canvas { position: relative; flex: 1; min-width: 0; min-height: 0; overflow: hidden;
+  background-color: var(--background);
+  background-image: radial-gradient(circle, color-mix(in oklch, var(--foreground) 14%, transparent) 1px, transparent 1.2px);
+  background-size: 18px 18px; }
+.workflow-canvas-viewport { position: absolute; inset: 0; overflow: hidden; cursor: grab; touch-action: none; outline: none; }
+.workflow-canvas-viewport:active { cursor: grabbing; }
+.workflow-canvas-viewport:focus-visible { box-shadow: inset 0 0 0 2px var(--ring); }
+.workflow-canvas-layer { position: absolute; top: 0; left: 0; transform-origin: 0 0; will-change: transform; }
+.workflow-canvas-edges { position: absolute; inset: 0; overflow: visible; pointer-events: none; }
+.workflow-edge { fill: none; stroke: color-mix(in oklch, var(--foreground) 22%, transparent); stroke-width: 1.5; stroke-dasharray: 4 4; transition: stroke .15s; }
+.workflow-edge.done { stroke-dasharray: none; }
+.workflow-edge.active { stroke: var(--primary); stroke-width: 2; }
+
+.workflow-node { position: absolute; display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--card); box-shadow: 0 1px 2px color-mix(in oklch, var(--foreground) 8%, transparent); cursor: default; }
+.workflow-node.tone-failure { border-color: color-mix(in oklch, var(--destructive) 55%, var(--border)); }
+.workflow-node.tone-running { border-color: color-mix(in oklch, var(--git-push) 55%, var(--border)); }
+.workflow-node.selected { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary); }
+.workflow-node-header { display: flex; height: 38px; flex: none; align-items: center; gap: 8px; padding: 0 10px; color: var(--foreground); font-size: var(--text-ui); font-weight: var(--weight-strong); text-align: left; }
+button.workflow-node-header { width: 100%; cursor: pointer; }
+button.workflow-node-header:hover { background: var(--row-hover); }
+button.workflow-node-header:focus-visible, .workflow-job:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
+.workflow-node-jobs { display: grid; border-top: 1px solid var(--border); padding: 6px; }
+.workflow-node-name, .workflow-job-name, .workflow-step-name { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.workflow-node-meta { flex: none; color: var(--muted-foreground); font-size: var(--text-meta); font-variant-numeric: tabular-nums; font-weight: var(--weight-regular); }
+.workflow-job { display: flex; height: 30px; align-items: center; gap: 8px; border-radius: var(--radius-md); padding: 0 6px; color: var(--foreground); font-size: var(--text-ui); text-align: left; cursor: pointer; }
+.workflow-job:hover { background: var(--row-hover); }
+.workflow-job.selected { background: var(--row-selected); box-shadow: inset 2px 0 0 var(--primary); }
+.workflow-job.more { justify-content: center; color: var(--muted-foreground); font-size: var(--text-meta); }
+
+.workflow-canvas-controls { position: absolute; right: 12px; bottom: 12px; display: flex; align-items: center; gap: 2px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--popover); padding: 3px; box-shadow: 0 4px 16px color-mix(in oklch, var(--foreground) 10%, transparent); }
+.workflow-canvas-scale { min-width: 44px; border-radius: var(--radius-md); padding: 3px 4px; color: var(--muted-foreground); font-size: var(--text-meta); font-variant-numeric: tabular-nums; }
+.workflow-canvas-scale:hover { background: var(--row-hover); color: var(--foreground); }
+
+.workflow-job-panel { display: flex; width: min(340px, 42%); flex: none; flex-direction: column; min-height: 0; overflow-y: auto; border-left: 1px solid var(--border); background: var(--background); padding: 12px 12px 16px; animation: fade-rise var(--motion-med) var(--ease-out); }
+.workflow-job-panel > header { display: flex; align-items: center; gap: 8px; }
+.workflow-job-panel h3 { min-width: 0; flex: 1; overflow-wrap: anywhere; font-size: var(--text-body); font-weight: var(--weight-strong); }
+.workflow-job-facts { margin: 4px 0 10px 23px; color: var(--muted-foreground); font-size: var(--text-meta); }
+.workflow-job-open { align-self: flex-start; margin: 0 0 12px 23px; }
+.workflow-steps { display: grid; grid-template-columns: minmax(0, 1fr); margin: 0; padding: 0; list-style: none; }
+.workflow-step { display: flex; min-width: 0; min-height: 28px; align-items: center; gap: 8px; border-radius: var(--radius-md); padding: 2px 6px; font-size: var(--text-ui); }
+.workflow-step.tone-failure { background: color-mix(in oklch, var(--destructive) 9%, transparent); }
+.workflow-step.tone-skipped .workflow-step-name { color: var(--muted-foreground); }
+.workflow-step.empty { color: var(--muted-foreground); }
+.workflow-step .workflow-step-name { overflow-wrap: anywhere; white-space: normal; }
+.workflow-step .action-status-icon { align-self: flex-start; margin-top: 4px; }
+
+/* Narrow windows put the job under the graph. */
+@media (max-width: 760px) {
+  .workflow-run-body.with-job { flex-direction: column; }
+  .workflow-job-panel { width: auto; max-height: 45%; border-top: 1px solid var(--border); border-left: 0; }
+}

@@ -116,7 +116,7 @@ Options show hints only for truncated text or additional information. Scrolling 
 
 ## Phone navigation
 
-Use the bottom **Changes**, **Files**, **History**, **GitHub**, and **Search** tabs to switch sections; **Pull requests** and **Releases** are tabs inside **GitHub**.
+Use the bottom **Changes**, **Files**, **History**, **GitHub**, and **Search** tabs to switch sections; **Pull requests**, **Actions**, and **Releases** are tabs inside **GitHub**.
 
 **On a list, the top bar says where you are.** Beside the logo, its two lines name the repository and the branch, with the branch's pull request number in the same colors when it has one. Tap them for the repository sheet: **Repository**, **Branch**, **Worktree** when there are several, then whichever of **Publish this branch** or **Push** and **Pull** applies, **Refresh**, the branch's pull request, **Open on GitHub**, and **Open another repository**. To the right, a pill shows the sync action that applies: **Publish**, **Push** with its count, or **Pull** with its count. When both apply it shows **Pull**, because that has to happen first, and **Push** stays in the sheet. The gear opens Settings. Warnings about the remote and available updates appear here too.
 
@@ -196,7 +196,7 @@ Search keeps its query and matching toggles in one field. The chevron beside it 
 ### History, GitHub, diffs, and projects
 
 - **History:** a row is a dot, the commit's title, and one line with its date, author, and short hash. Tap it for the commit, whose **⋯** copies the hash and offers **Undo commit…** and the pull request its message refers to, and whose file list opens each diff. The filter icon beside the find field opens a sheet with **Group merges**.
-- **GitHub:** a pull request's row is its author's avatar with a status dot, a title and age, then where it stands, its author and size. Tap it for the viewer, which has the row's stack and **Open on GitHub**. **Pull requests** and **Releases** keep their filter, menu, and New as icons beside the tabs.
+- **GitHub:** a pull request's row is its author's avatar with a status dot, a title and age, then where it stands, its author and size. Tap it for the viewer, which has the row's stack and **Open on GitHub**. **Pull requests**, **Actions**, and **Releases** keep their filter, menu, New, and Run a workflow as icons beside the tabs.
 - **Diffs and code:** a phone always shows diffs inline and leaves the saved desktop layout as it is. Text is compact, the same size in a file you edit as in a diff, and **Interface size** scales it; that setting scales nothing else on a phone. On iOS, tapping into code doesn't zoom the page, and pinch zoom still works. Long lines wrap by default. Turning that off, from a diff's **⋯** or from Settings, lasts for the session and leaves the saved desktop choice as it is.
 - **Projects:** use the larger up/down buttons and free scrolling in Manage projects. Moving a project or repository preserves focus and scroll, then briefly highlights its new position. Reduced-motion preferences suppress that highlight; desktop dragging remains available.
 

@@ -18,14 +18,21 @@ function RunIcon({ run }: { run: WorkflowRunSummary }) {
   return <IconClock className="text-[var(--git-push)]" aria-label="In progress" />;
 }
 
-export function RunWorkflowDialog({ repositoryId, onClose }: { repositoryId: string; onClose(): void }) {
+export function RunWorkflowDialog({ repositoryId, initialWorkflowId = null, onOpenRun, onClose }: {
+  repositoryId: string;
+  /** The workflow to start with, such as the one the list is filtered by. */
+  initialWorkflowId?: number | null;
+  /** Opens a run in OpenTig; without it, runs open on GitHub. */
+  onOpenRun?: ((runId: number) => void) | undefined;
+  onClose(): void;
+}) {
   const queryClient = useQueryClient();
   const accountQuery = useGitHubAccount(repositoryId);
   const account = accountQuery.data;
   const listQuery = useQuery({ queryKey: queryKeys.workflows(repositoryId), queryFn: () => opentig.github.listWorkflows(repositoryId) });
   const list = listQuery.data;
   const [selected, setSelected] = useState<RepositoryWorkflow | null>(null);
-  const workflow = selected ?? list?.workflows[0] ?? null;
+  const workflow = selected ?? list?.workflows.find((item) => item.id === initialWorkflowId) ?? list?.workflows[0] ?? null;
   const [confirming, setConfirming] = useState(false);
   // A run with no answer may have started. Repeating it could start it twice, so the runs come first.
   const [uncertain, setUncertain] = useState(false);
@@ -54,7 +61,10 @@ export function RunWorkflowDialog({ repositoryId, onClose }: { repositoryId: str
       }
       if (detail?.code === 'GH_ACCOUNT_UNRESOLVED') void accountQuery.refetch();
     },
-    onSettled: () => { void queryClient.invalidateQueries({ queryKey: ['repository', repositoryId, 'workflow-runs'] }); },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: ['repository', repositoryId, 'workflow-runs'] });
+      void queryClient.invalidateQueries({ queryKey: ['repository', repositoryId, 'action-runs'] });
+    },
   });
   const busy = run.isPending;
   const refreshRuns = () => {
@@ -87,7 +97,7 @@ export function RunWorkflowDialog({ repositoryId, onClose }: { repositoryId: str
               {runsQuery.isError && <div className="pr-live-notice" role="status">Couldn't load the runs.<Button variant="ghost" size="xs" onClick={refreshRuns}>Retry</Button></div>}
               {runsQuery.data?.length === 0 && <p className="pr-empty-description">No runs yet.</p>}
               {runsQuery.data?.map((item) => (
-                <button key={item.databaseId} className="workflow-run" disabled={!item.url} onClick={() => openOnGitHub(item.url)}>
+                <button key={item.databaseId} className="workflow-run" disabled={!onOpenRun && !item.url} onClick={() => { if (onOpenRun) { onOpenRun(item.databaseId); onClose(); } else openOnGitHub(item.url); }}>
                   <RunIcon run={item} />
                   <span>{item.displayTitle}</span>
                   <small>{formatDateTime(item.createdAt)}</small>

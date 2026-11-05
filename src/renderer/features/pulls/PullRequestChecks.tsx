@@ -1,7 +1,9 @@
-import { IconAlertTriangle, IconCircleCheck, IconCircleMinus, IconCircleX, IconClock, IconExternalLink, IconLoader4 } from '@tabler/icons-react';
+import { useContext } from 'react';
+import { IconAlertTriangle, IconChevronRight, IconCircleCheck, IconCircleMinus, IconCircleX, IconClock, IconExternalLink, IconLoader4 } from '@tabler/icons-react';
 import type { PullRequestCheck, PullRequestCheckState, PullRequestLiveState } from '../../../shared/contracts';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { parseRepositoryLink, RepositoryLinksContext } from '@/components/repository-links';
 import { groupPullRequestChecks, openOnGitHub, pullRequestChecksSentence } from './gh-utils';
 
 const RESULTS: Record<PullRequestCheck['result'], { Icon: typeof IconClock; label: string; tone: string }> = {
@@ -58,18 +60,22 @@ function CheckRow({ check }: { check: PullRequestCheck }) {
   const { Icon, label, tone } = RESULTS[check.result];
   const name = check.workflow ? `${check.workflow} · ${check.name}` : check.name;
   const url = check.url;
+  const links = useContext(RepositoryLinksContext);
+  // A GitHub Actions check of this repository opens its run here, at its job.
+  const run = url && links ? parseRepositoryLink(url, links.nameWithOwner) : null;
+  const openRun = run?.kind === 'workflow-run' ? () => links!.open(run) : null;
   return (
     <Tooltip>
-      <TooltipTrigger render={url ? <button className="pr-check-row" onClick={() => openOnGitHub(url)} /> : <div className="pr-check-row" />}>
+      <TooltipTrigger render={openRun ? <button className="pr-check-row" onClick={openRun} /> : url ? <button className="pr-check-row" onClick={() => openOnGitHub(url)} /> : <div className="pr-check-row" />}>
         <Icon className={`pr-check-result ${tone}`} aria-hidden="true" />
         <span className="pr-check-text">
           <strong>{check.name}</strong>
           <small>{check.workflow ? `${check.workflow} · ` : ''}{label}</small>
         </span>
         {check.required && <span className="pr-check-required">Required</span>}
-        {url && <IconExternalLink className="pr-check-link" aria-hidden="true" />}
+        {openRun ? <IconChevronRight className="pr-check-link" aria-hidden="true" /> : url && <IconExternalLink className="pr-check-link" aria-hidden="true" />}
       </TooltipTrigger>
-      <TooltipContent>{name}{url ? ' · Open on GitHub' : ''}</TooltipContent>
+      <TooltipContent>{name}{openRun ? ' · Open the run' : url ? ' · Open on GitHub' : ''}</TooltipContent>
     </Tooltip>
   );
 }
