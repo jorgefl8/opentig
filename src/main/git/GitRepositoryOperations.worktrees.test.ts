@@ -623,6 +623,8 @@ describe('GitRepositoryOperations worktree removal that deletes the folder first
     const review = await addWorktree(fixture, 'review', 'review');
     const oid = await git(review, ['rev-parse', 'HEAD']);
     // Its `.git` file no longer points at Git's record, so only Git may decide what to delete.
+    // Git for Windows hides `.git`, and Windows refuses to overwrite a hidden file, so replace it.
+    await rm(path.join(review, '.git'));
     await writeFile(path.join(review, '.git'), `gitdir: ${path.join(fixture.root, 'elsewhere')}\n`);
     const run = vi.spyOn(fixture.gitProcess, 'run');
 
