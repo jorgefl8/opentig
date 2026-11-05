@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-OpenTig is pre-release software. Security fixes target the latest code on `main`; older builds are not supported.
+Security fixes ship in new releases of the desktop app and `@opentig/cli`. Only the latest release is supported; update before reporting a problem found in an older version.
 
 ## Reporting a vulnerability
 

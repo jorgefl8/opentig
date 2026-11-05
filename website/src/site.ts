@@ -5,4 +5,4 @@ export const npmUrl = 'https://www.npmjs.com/package/@opentig/cli';
 export const cliInstallCommand = 'npx --yes @opentig/cli@latest service install';
 export const downloadUrl = fallbackDownload.url;
 export const downloadVersion = fallbackDownload.version;
-export const siteDescription = 'Browse files, review diffs, edit code, and commit changes. OpenTig brings branches, worktrees, and GitHub pull requests into one focused Git workspace.';
+export const siteDescription = 'Browse files, review diffs, edit code, and commit changes. OpenTig brings branches, worktrees, and GitHub pull requests, Actions, and releases into one focused Git workspace.';

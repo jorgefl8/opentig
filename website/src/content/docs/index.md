@@ -10,12 +10,12 @@ Set up OpenTig where your Git repositories live. Use the Windows desktop app, or
 <div class="docs-start-grid">
 <a class="docs-start-card" href="/docs/getting-started/#windows-desktop">
 <strong>Windows desktop</strong>
-<span>Install the app on Windows 10 or later. Git is required on your machine.</span>
+<span>Install the app on Windows 10 or later. Git 2.31 or later is required on your machine.</span>
 <small>Install for Windows →</small>
 </a>
 <a class="docs-start-card" href="/docs/getting-started/#run-the-headless-cli">
 <strong>OpenTig CLI</strong>
-<span>Run on Linux, macOS, or Windows with Node.js 24+ and Git.</span>
+<span>Run on Linux, macOS, or Windows with Node.js 24+ and Git 2.31+.</span>
 <small>Set up the CLI →</small>
 </a>
 </div>
@@ -29,7 +29,7 @@ To keep the CLI running after closing your terminal, set up a [background servic
 ## Explore OpenTig
 
 - [Git workflows](/docs/features/): files, diffs, commits, branches, and worktrees.
-- [GitHub and pull requests](/docs/github/): review changes, create PRs, and choose accounts.
+- [GitHub: pull requests, Actions, and releases](/docs/github/): review and merge PRs, follow Actions runs, manage releases, and choose accounts.
 - [Optional AI assistance](/docs/ai-assistance/): commit messages, split proposals, and PR drafts.
 - [Interface and preferences](/docs/interface/): appearance, shortcuts, and mobile navigation.
 

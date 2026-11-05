@@ -14,9 +14,6 @@ Browse files, inspect diffs, edit, stage, and commit on your computer or a remot
 
 *OpenTig reviewing a sample pull request in the interactive demo.*
 
-> [!NOTE]
-> **Pre-1.0 and actively developed.** OpenTig is used daily and ships frequent releases, but settings and behavior can still change between versions; see the [release notes](https://github.com/jorgefl8/opentig/releases). As with any Git tool, review operations before confirming them.
-
 ## A small workspace for the Git loop
 
 Open a repository, understand what changed, make a quick edit, and commit the work you meant to commit. OpenTig brings the file browser, editor, diffs, and Git controls together in one compact interface.
@@ -42,19 +39,19 @@ Use the Windows desktop app or run the CLI on another machine and reach the same
 | Option | Available today |
 | --- | --- |
 | **Desktop app** | Windows x64 installer, with in-app updates. Linux and macOS desktop installers are not published yet. |
-| **CLI + browser** | Linux, macOS, and Windows with Node.js 24+ and Git. |
+| **CLI + browser** | Linux, macOS, and Windows with Node.js 24+ and Git 2.31+. |
 | **Background server** | Linux (systemd), macOS (launchd), and Windows (Task Scheduler), with browser-based updates. |
 
 ### Windows desktop
 
-Download the `OpenTig-…-win32-x64-Setup.exe` installer from the [latest release](https://github.com/jorgefl8/opentig/releases/latest). Git must be available on your machine.
+Download the `OpenTig-…-win32-x64-Setup.exe` installer from the [latest release](https://github.com/jorgefl8/opentig/releases/latest). Git 2.31 or later must be installed on your machine.
 
 > [!WARNING]
 > The Windows installer is currently **unsigned**, so Windows may show an unknown-publisher or SmartScreen warning.
 
 ### Run in your browser
 
-With **Node.js 24+** and **Git** installed:
+With **Node.js 24+** and **Git 2.31+** installed:
 
 ```bash
 npx --yes @opentig/cli@latest
@@ -77,7 +74,7 @@ Use `npx --yes @opentig/cli@latest service install` to keep the CLI running afte
 
 OpenTig opens existing repositories and clones HTTPS or SSH repository URLs into a folder you choose. Initializing a new repository remains a Git CLI task. GitHub features require `gh` on the host. Normal Git work needs no OpenTig account or hosted backend; optional AI can send the supplied context to its provider.
 
-- [Website documentation](https://opentig.com/docs/): installation and CLI setup.
+- [Website documentation](https://opentig.com/docs/): every guide below, with navigation and search.
 - [Feature guide](docs/features.md): daily workflows, history, branches, editing, and shortcuts.
 - [Interface and mobile use](docs/interface.md): themes, settings, touch controls, and navigation.
 - [Security and privacy](docs/security-and-privacy.md): permissions, browser authority, and AI context.
