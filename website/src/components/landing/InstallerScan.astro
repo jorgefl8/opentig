@@ -22,8 +22,12 @@ const { id } = Astro.props;
   document.querySelectorAll<HTMLElement>('[data-installer-scan]').forEach(host => {
     const trigger = host.querySelector<HTMLButtonElement>('.scan-trigger')!;
     const panel = host.querySelector<HTMLElement>('[popover]')!;
+    // Hover opens only after the pointer rests on the trigger, so scrolling past it doesn't flash the panel.
+    const HOVER_OPEN_DELAY = 2000;
     let closeTimer: ReturnType<typeof setTimeout>;
+    let openTimer: ReturnType<typeof setTimeout>;
     const cancelClose = () => clearTimeout(closeTimer);
+    const cancelOpen = () => clearTimeout(openTimer);
     const position = () => {
       if (!panel.matches(':popover-open')) return;
       const rect = trigger.getBoundingClientRect();
@@ -35,17 +39,24 @@ const { id } = Astro.props;
       panel.style.top = `${Math.max(16, Math.min(top, innerHeight - height - 16))}px`;
     };
     const open = () => {
+      cancelOpen();
       cancelClose();
       if (!panel.matches(':popover-open')) panel.showPopover();
       position();
     };
+    const scheduleOpen = () => {
+      cancelOpen();
+      openTimer = setTimeout(() => { if (trigger.matches(':hover')) open(); }, HOVER_OPEN_DELAY);
+    };
     const scheduleClose = () => {
+      cancelOpen();
       cancelClose();
       closeTimer = setTimeout(() => {
         if (!host.matches(':hover') && !panel.matches(':hover') && !host.contains(document.activeElement)) panel.hidePopover();
       }, 180);
     };
-    trigger.addEventListener('pointerenter', event => { if (event.pointerType !== 'touch') open(); });
+    trigger.addEventListener('pointerenter', event => { if (event.pointerType !== 'touch') scheduleOpen(); });
+    trigger.addEventListener('pointerleave', cancelOpen);
     trigger.addEventListener('focus', open);
     // Focus/hover may already have opened it before the click, including on touch.
     trigger.addEventListener('click', event => { event.preventDefault(); open(); });
@@ -58,7 +69,7 @@ const { id } = Astro.props;
       position();
     });
     window.addEventListener('resize', position);
-    window.addEventListener('scroll', position, { capture: true, passive: true });
+    window.addEventListener('scroll', () => { cancelOpen(); position(); }, { capture: true, passive: true });
     new ResizeObserver(position).observe(panel);
   });
 </script>
