@@ -40,7 +40,13 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm run check:website
+      - name: Record the latest stable release for the build
+        run: gh api "repos/$GITHUB_REPOSITORY/releases/latest" > "$RUNNER_TEMP/latest-release.json"
+        env:
+          GH_TOKEN: ${{ github.token }}
       - run: pnpm run build:website
+        env:
+          WEBSITE_RELEASE_FILE: ${{ runner.temp }}/latest-release.json
       - name: Deploy the validated build with the pinned Wrangler CLI
         working-directory: website
         run: pnpm exec wrangler deploy

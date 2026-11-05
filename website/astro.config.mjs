@@ -6,6 +6,7 @@ import tailwindcss from '@tailwindcss/vite';
 import { fileURLToPath } from 'node:url';
 import { loadEnv } from 'vite';
 import { validateBuild } from './scripts/validate-build.mjs';
+import { buildDownload } from './scripts/release-download.mjs';
 
 let buildSite;
 let buildIndexable;
@@ -23,13 +24,25 @@ const seoValidation = {
   },
 };
 
+const releaseDownload = {
+  name: 'opentig-release-download',
+  hooks: {
+    'astro:config:setup': async ({ command, updateConfig, logger }) => {
+      if (command !== 'build') return;
+      const download = await buildDownload({ releaseFile: process.env.WEBSITE_RELEASE_FILE, warn: message => logger.warn(message) });
+      logger.info(`Windows installer ${download.version}`);
+      updateConfig({ vite: { define: { __OPENTIG_BUILD_DOWNLOAD__: JSON.stringify(download) } } });
+    },
+  },
+};
+
 export default defineConfig({
   output: 'static',
   trailingSlash: 'always',
   site: process.env.WEBSITE_URL || 'https://opentig.com',
   compressHTML: true,
   devToolbar: { enabled: false },
-  integrations: [react(), seoValidation],
+  integrations: [react(), releaseDownload, seoValidation],
   markdown: { processor: unified({ smartypants: false, remarkPlugins: [guideMarkdown], rehypePlugins: [guideTables] }) },
   vite: {
     plugins: [tailwindcss(), {

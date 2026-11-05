@@ -1,6 +1,6 @@
 import { documentationSections } from '@/docs';
 import { source } from '@/lib/docs-source';
-import { cliInstallCommand, npmUrl, repositoryUrl, siteDescription } from '@/site';
+import { cliInstallCommand, downloadUrl, downloadVersion, npmUrl, repositoryUrl, siteDescription } from '@/site';
 import { markdownPath } from '../../scripts/agent-access.mjs';
 import { pageMarkdown, siteMarkdown } from '../../scripts/agent-markdown.mjs';
 
@@ -22,7 +22,7 @@ export function overviewMarkdown(site: URL) {
     details: [
       'OpenTig is a free, open-source (MIT) Git client. Repositories and Git commands stay on the machine running OpenTig.',
       '',
-      `- Windows desktop: download the installer from ${repositoryUrl}/releases/latest (Windows 10 or later, x64, with Git installed).`,
+      `- Windows desktop: download the ${downloadVersion} installer from ${downloadUrl} (Windows 10 or later, x64, with Git installed). Every release: ${repositoryUrl}/releases`,
       `- CLI with browser access on Linux, macOS, or Windows (Node.js 24+ and Git): \`${cliInstallCommand}\``,
       `- Source code: ${repositoryUrl}`,
       `- npm package: ${npmUrl}`,
