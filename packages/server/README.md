@@ -10,7 +10,7 @@ Browse files, review diffs, make edits, and commit changes. Work with branches, 
 
 *The browser UI in the Dev build, reviewing a small demo repository.*
 
-> **Early development.** I'm building OpenTig for my own daily workflow and sharing it as it takes shape. Expect bugs, rough edges, and changes. Keep important work backed up and review Git and file operations before confirming them.
+> **Pre-1.0 and actively developed.** OpenTig is used daily and ships frequent releases, but settings and behavior can still change between versions; see the [release notes](https://github.com/jorgefl8/opentig/releases). As with any Git tool, review operations before confirming them.
 
 ## Start locally
 
