@@ -297,6 +297,7 @@ export const opentig: OpenTigApi = {
       baseRef: null,
     }),
     files: async (_id, oid) => model.commitFiles(oid),
+    recognize: async (_id, oid) => model.commits.some((commit) => commit.info.oid === oid),
     authorship: async () => ({
       author: { name: "OpenTig Demo", email: "demo@example.com" },
       committer: { name: "OpenTig Demo", email: "demo@example.com" },

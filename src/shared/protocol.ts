@@ -118,6 +118,7 @@ export const OPEN_TIG_SERVER_COMMANDS = {
   'commits.undoLatest': command(IPC.commitUndoLatest, 'undo-latest-commit', true),
   'commits.list': command(IPC.commitsList, 'history', false),
   'commits.files': command(IPC.commitsFiles, 'commit-files', false),
+  'commits.recognize': command(IPC.commitsRecognize, 'commit-recognize', false),
 
   'refs.listBranches': command(IPC.branchesList, 'branches', false),
   'refs.switchBranch': command(IPC.branchSwitch, 'switch-branch', true, { timeoutMs: SWITCH_BRANCH_TIMEOUT_MS }),

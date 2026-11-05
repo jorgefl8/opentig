@@ -335,7 +335,7 @@ Refreshes retain loaded pages without duplicating commits. Expanded file lists u
 
 Web links in commit subjects, messages, expanded descriptions, and the PR commit timeline show their destination and **Open in new tab** (**Open in browser** on desktop) on hover or keyboard focus. They open a browser tab, or the system browser on desktop; email links open the mail client. Other commit-message text keeps its plain-text formatting.
 
-In a GitHub repository, a link to one of its pull requests, commits (by full hash) or releases asks instead, with **Open in OpenTig** or **Open in GitHub**, as the branch's PR number does. So does a row's `#123` reference, which may also be an issue. This applies wherever such links appear, including PR descriptions, comments and release notes.
+In a GitHub repository, a link to one of its pull requests, commits (by full hash) or releases asks instead, with **Open in OpenTig** or **Open in GitHub**, as the branch's PR number does. So does a row's `#123` reference, which may also be an issue. This applies wherever such links appear, including PR descriptions, comments and release notes. A commit opens in OpenTig even when History hasn't listed it yet; one that isn't in the local repository says so, and fetching or pulling brings it, or it can be opened on GitHub.
 
 </details>
 

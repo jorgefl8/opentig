@@ -119,6 +119,7 @@ export function createOpenTigServerClient(options: ServerClientOptions = {}): Op
       undoLatest: (repositoryId, expectedOid) => invoke(IPC.commitUndoLatest, repositoryId, expectedOid),
       list: (repositoryId, cursor) => invoke(IPC.commitsList, repositoryId, cursor),
       files: (repositoryId, oid) => invoke(IPC.commitsFiles, repositoryId, oid),
+      recognize: (repositoryId, oid) => invoke(IPC.commitsRecognize, repositoryId, oid),
     },
     refs: {
       listBranches: (repositoryId) => invoke(IPC.branchesList, repositoryId),

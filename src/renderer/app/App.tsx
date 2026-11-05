@@ -1093,6 +1093,20 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     if (selection) setMobilePane('viewer');
     return true;
   }, []);
+  // A linked commit may not be among the history's listed ones, or not fetched yet.
+  const openLinkedCommit = useCallback(async (oid: string) => {
+    const repositoryId = repositoryRef.current?.id;
+    if (!repositoryId) return;
+    try {
+      if (!await opentig.commits.recognize(repositoryId, oid)) {
+        sileo.error({ title: 'Commit not in this repository yet', description: `${oid.slice(0, 7)} isn't in your local copy. Fetch or pull to get it, or open it on GitHub.`, duration: 10_000 });
+        return;
+      }
+      if (repositoryRef.current?.id === repositoryId) selectViewer({ type: 'commit', oid, subject: oid.slice(0, 8) });
+    } catch (reason) {
+      reportError('Could not open the commit', reason);
+    }
+  }, [selectViewer]);
   const githubNameWithOwner = githubInfo?.isGitHub ? githubInfo.nameWithOwner : null;
   // Links into this repository, wherever they're shown, can open here as well as on GitHub.
   const repositoryLinks = useMemo<RepositoryLinks | null>(() => githubNameWithOwner ? {
@@ -1101,9 +1115,9 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       if (target.kind === 'pull') selectViewer({ type: 'pull-request', number: target.number });
       else if (target.kind === 'release') selectViewer({ type: 'release', tag: target.tag });
       else if (target.kind === 'workflow-run') selectViewer({ type: 'workflow-run', runId: target.runId, ...(target.jobId ? { jobId: target.jobId } : {}) });
-      else selectViewer({ type: 'commit', oid: target.oid, subject: target.oid.slice(0, 8) });
+      else void openLinkedCommit(target.oid);
     },
-  } : null, [githubNameWithOwner, selectViewer]);
+  } : null, [githubNameWithOwner, openLinkedCommit, selectViewer]);
 
   /** The single entry point for every `type: 'file'` selection in the app. */
   const openFile = useCallback((path: string, mode: OpenMode = 'preview'): boolean => {

@@ -1320,6 +1320,22 @@ export class GitRepositoryOperations {
     }
   }
 
+  /**
+   * Links name commits the history hasn't listed yet. A full hash that Git
+   * knows as a commit here can then open in the commit viewer like a listed one.
+   */
+  async recognizeCommit(repositoryId: string, oid: string): Promise<boolean> {
+    if (!/^([0-9a-f]{40}|[0-9a-f]{64})$/i.test(oid)) return false;
+    const normalized = oid.toLowerCase();
+    if (this.knownOids.get(repositoryId)?.has(normalized)) return true;
+    const repository = this.repositories.get(repositoryId);
+    const type = await this.git.run(repository.path, ['cat-file', '-t', normalized], { operation: 'commit-recognize', readOnly: true })
+      .then((output) => output.stdout.toString('utf8').trim(), () => null);
+    if (type !== 'commit') return false;
+    this.rememberOid(repositoryId, normalized);
+    return true;
+  }
+
   private rememberOid(repositoryId: string, oid: string): void {
     const known = this.knownOids.get(repositoryId) ?? new Set<string>();
     known.add(oid);
