@@ -2,7 +2,7 @@ import { test as base, expect, type Page } from '@playwright/test';
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
 import { existsSync } from 'node:fs';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
@@ -21,6 +21,11 @@ export interface GitRepository {
   name: string;
   git(...args: string[]): Promise<string>;
   commit(file: string, content: string, message: string): Promise<void>;
+  /**
+   * Adds a local bare `origin`, pushes `main` with upstream tracking, and
+   * returns a second clone of it so a test can create remote-only commits.
+   */
+  addRemote(): Promise<{ bare: string; other: GitRepository }>;
 }
 
 async function freePort(): Promise<number> {
@@ -50,6 +55,34 @@ function waitForOutput(child: ChildProcess, pattern: RegExp, output: { text: str
   });
 }
 
+async function gitRepository(root: string, work: string): Promise<GitRepository> {
+  const git = async (...args: string[]) => (await execFileAsync('git', args, { cwd: work })).stdout.trim();
+  await git('config', 'user.name', 'E2E Tester');
+  await git('config', 'user.email', 'e2e@example.com');
+  await git('config', 'commit.gpgsign', 'false');
+  const repository: GitRepository = {
+    path: work,
+    name: path.basename(work),
+    git,
+    commit: async (file, content, message) => {
+      await mkdir(path.dirname(path.join(work, file)), { recursive: true });
+      await writeFile(path.join(work, file), content);
+      await git('add', file);
+      await git('commit', '-q', '-m', message);
+    },
+    addRemote: async () => {
+      const bare = path.join(root, 'origin.git');
+      await execFileAsync('git', ['init', '-q', '--bare', '-b', 'main', bare]);
+      await git('remote', 'add', 'origin', bare);
+      await git('push', '-q', '-u', 'origin', 'main');
+      const otherPath = path.join(root, 'other-clone');
+      await execFileAsync('git', ['clone', '-q', bare, otherPath]);
+      return { bare, other: await gitRepository(root, otherPath) };
+    },
+  };
+  return repository;
+}
+
 async function pair(page: Page, server: OpenTigServer): Promise<void> {
   await page.goto(server.pairingLink);
   await expect(page.getByRole('textbox', { name: 'Pairing code' })).not.toBeEmpty();
@@ -70,7 +103,9 @@ export const test = base.extend<{ server: OpenTigServer; repository: GitReposito
     const port = await freePort();
     const output = { text: '' };
     const child = spawn(process.execPath, [serverEntry, 'serve', '--home', home, '--host', '127.0.0.1', '--port', String(port)], {
-      env: { ...process.env, NO_COLOR: '1' },
+      // A private HOME keeps the system Trash, CLI logins, and global Git
+      // config of the developer's account out of the tests.
+      env: { ...process.env, NO_COLOR: '1', HOME: home, XDG_CONFIG_HOME: path.join(home, 'config'), XDG_DATA_HOME: path.join(home, 'data'), XDG_CACHE_HOME: path.join(home, 'cache') },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     child.stdout.setEncoding('utf8');
@@ -100,19 +135,11 @@ export const test = base.extend<{ server: OpenTigServer; repository: GitReposito
   repository: async ({}, use) => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'opentig-e2e-repo-'));
     const work = path.join(root, 'sample-project');
-    const git = async (...args: string[]) => (await execFileAsync('git', args, { cwd: work })).stdout.trim();
     await execFileAsync('git', ['init', '-q', '-b', 'main', work]);
-    await git('config', 'user.name', 'E2E Tester');
-    await git('config', 'user.email', 'e2e@example.com');
-    await git('config', 'commit.gpgsign', 'false');
-    const commit = async (file: string, content: string, message: string) => {
-      await writeFile(path.join(work, file), content);
-      await git('add', file);
-      await git('commit', '-q', '-m', message);
-    };
-    await commit('README.md', '# Sample project\n', 'Initial commit');
+    const repository = await gitRepository(root, work);
+    await repository.commit('README.md', '# Sample project\n', 'Initial commit');
     try {
-      await use({ path: work, name: 'sample-project', git, commit });
+      await use(repository);
     } finally {
       await rm(root, { recursive: true, force: true, maxRetries: 3 });
     }

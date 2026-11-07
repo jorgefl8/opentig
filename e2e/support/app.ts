@@ -11,5 +11,7 @@ export async function openRepository(page: Page, repository: GitRepository): Pro
   await folderPath.press('Enter');
   await expect(dialog.getByText('This folder is a Git repository')).toBeVisible();
   await dialog.getByRole('button', { name: 'Add repository' }).click();
+  // Shortcuts are ignored while any dialog is open, so wait for it to close.
+  await expect(dialog).toBeHidden();
   await expect(page.getByRole('combobox', { name: 'Select project or repository' })).toContainText(repository.name);
 }

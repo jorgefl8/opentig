@@ -158,6 +158,8 @@ pnpm exec playwright install chromium
 pnpm run test:e2e
 ```
 
+Each feature area has its own spec, such as `changes`, `sync`, `branches`, `history`, `files`, `search`, `projects`, `interface`, and `access`; shared fixtures and helpers live in `e2e/support/`. The server runs with a private home, so tests never touch your system Trash, CLI logins, or global Git configuration. GitHub, AI, and other networked features are not covered.
+
 Rebuild the server after changing application code; the tests use `packages/server/dist`. Find elements by role and accessible name, assert what the user sees, and check the repository with Git when the outcome is on disk. Keep end-to-end tests for complete user journeys; edge cases and error branches stay in Vitest. Failed runs keep a screenshot and a trace under `test-results/`; open a trace with `pnpm exec playwright show-trace <trace.zip>`. `pnpm run check` does not run them; CI does.
 
 ### What CI validates
