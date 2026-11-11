@@ -175,7 +175,7 @@ OpenTig uses the configured push remote or the only available remote. If several
 
 **Read progress and errors**
 
-Each pull or push has its own progress and result notification. Remote rejections, branch protection, authentication, configuration errors, pending conflicts, and other one-shot failures appear there. **Changes** remains the place to inspect unresolved work.
+Each pull or push has its own progress and result notification. Remote rejections, branch protection, authentication, configuration errors, pending conflicts, and other one-shot failures appear there. When a push is rejected because the remote has commits the branch lacks, the notification offers **Pull**; push again afterwards. **Changes** remains the place to inspect unresolved work.
 
 <details>
 <summary>Notification behavior</summary>
