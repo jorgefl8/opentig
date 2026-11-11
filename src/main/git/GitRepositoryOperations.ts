@@ -25,6 +25,8 @@ import { parseWorktrees } from './WorktreeParser';
 import { GitCommitAuthorship } from './GitCommitAuthorship';
 import type { SetCommitAuthorshipInput } from '../../shared/commit-authorship';
 import { GitRemoteBranches } from './GitRemoteBranches';
+import { LineBlameReader } from './LineBlame';
+import type { LineBlameResult } from '../../shared/line-blame';
 import { WorktreeRemovalTracker } from './WorktreeRemovalTracker';
 import { REMOVE_WORKTREE_GIT_TIMEOUT_MS } from '../../shared/operation-timeouts';
 import { deleteWorktreeFolder, type RemoveEntry, type WorktreeFolderDeletion } from './worktreeDeletion';
@@ -64,6 +66,7 @@ export class GitRepositoryOperations {
   private readonly knownOids = new Map<string, Set<string>>();
   private readonly authorship: GitCommitAuthorship;
   private readonly remoteBranches: GitRemoteBranches;
+  private readonly lineBlames: LineBlameReader;
   private readonly worktreeRemovals = new WorktreeRemovalTracker();
   private readonly worktreeDeletion: 'node' | 'git';
   private readonly removeWorktreeEntry: RemoveEntry | undefined;
@@ -76,6 +79,7 @@ export class GitRepositoryOperations {
   ) {
     this.authorship = new GitCommitAuthorship(git, repositories);
     this.remoteBranches = new GitRemoteBranches(git, repositories);
+    this.lineBlames = new LineBlameReader(git, repositories);
     this.worktreeDeletion = options.worktreeDeletion ?? (process.platform === 'win32' ? 'node' : 'git');
     this.removeWorktreeEntry = options.removeWorktreeEntry;
   }
@@ -84,6 +88,14 @@ export class GitRepositoryOperations {
   createTrackingBranch(request: CreateTrackingBranchRequest) { return this.remoteBranches.create(request); }
   deleteRemoteBranch(request: DeleteRemoteBranchRequest) { return this.git.withNetworkContext(this.repositories.get(request.repositoryId).path, () => this.remoteBranches.delete(request)); }
   fetchBranches(repositoryId: string) { return this.git.withNetworkContext(this.repositories.get(repositoryId).path, () => this.remoteBranches.fetch(repositoryId)); }
+
+  /** Who last changed each line of a working-tree file, or of `draft` when the editor holds unsaved text. */
+  async lineBlame(repositoryId: string, filePath: string, draft?: string): Promise<LineBlameResult> {
+    const result = await this.lineBlames.read(repositoryId, filePath, draft);
+    // Blamed commits can open in the commit viewer like listed ones.
+    if (result.status === 'ready') for (const commit of result.commits) if (!commit.uncommitted) this.rememberOid(repositoryId, commit.oid);
+    return result;
+  }
 
   getCommitAuthorship(repositoryId: string) { return this.authorship.get(repositoryId); }
 

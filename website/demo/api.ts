@@ -52,6 +52,7 @@ let preferences: Preferences = {
   sidebarWidth: 280,
   sidebarCollapsed: false,
   showDotEnvFiles: false,
+  lineBlame: false,
   uiZoom: 100,
   uiFont: "plus-jakarta-sans",
   monoFont: "jetbrains-mono",
@@ -144,6 +145,8 @@ export const opentig: OpenTigApi = {
       size: model.read(path).length,
       mtimeMs: model.revision,
     }),
+    // The sample repository has no Git history to blame.
+    lineBlame: async () => ({ status: "untracked" }),
     createEntry: async (_id, directory, name, kind) => {
       const result = model.track(kind === "file" ? "Create file" : "Create folder", () => model.createEntry(directory, name, kind));
       if (result.status === "created") changed();
