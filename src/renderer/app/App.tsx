@@ -2385,6 +2385,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
         <RepositoryUnavailable
           repository={missing}
           otherMissing={[...unavailableRepositoryIds].filter((id) => id !== missing.id).length}
+          waiting={Boolean(busy)}
           onLocate={() => locateRepository(missing)}
           onRemove={async () => {
             await forgetRepository({ key: normalizeRepositoryKey(missing.commonDir), name: missing.name, rootPath: missing.path, recent: missing });
