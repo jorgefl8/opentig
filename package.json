@@ -74,6 +74,7 @@
     "electron-updater": "6.8.9",
     "execa": "^10.0.1",
     "isomorphic-dompurify": "^4.4.0",
+    "jsonc-parser": "3.3.1",
     "katex": "catalog:",
     "marked": "^18.0.14",
     "marked-alert": "^2.1.2",
