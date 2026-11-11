@@ -1,4 +1,4 @@
-import { useContext, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { MutableRefObject, Ref } from 'react';
 import { File, Virtualizer, useVirtualizer } from '@pierre/diffs/react';
 import type { EditorOptions } from '@pierre/diffs/edit';
@@ -21,6 +21,7 @@ import { useMobileChrome } from '@/components/mobile-chrome-context';
 import { mobileMainAction } from '@/lib/mobile-main-action';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { FileViewerToolbar } from './FileViewerToolbar';
+import { ColorHoverPreview } from './ColorHoverPreview';
 import './source-editor.css';
 
 interface FileSaveControlsProps {
@@ -174,6 +175,11 @@ export function SourceCodeEditor({ path, cacheKey, value, themeType, wrapLines, 
     },
   }), []);
 
+  const getEditorRoot = useCallback(() => {
+    const root = virtualizerRef.current?.getRoot() ?? plainScrollRef.current;
+    return root instanceof HTMLElement ? root : null;
+  }, []);
+
   const fileSurface = (
     <File
       file={file}
@@ -195,6 +201,7 @@ export function SourceCodeEditor({ path, cacheKey, value, themeType, wrapLines, 
           <div className="source-code-editor-content">{fileSurface}</div>
         </div>
       )}
+      <ColorHoverPreview getRoot={getEditorRoot} language={file.lang} />
     </PierreWorkerPool>
   );
 }
