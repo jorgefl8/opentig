@@ -67,27 +67,44 @@ function ruleMatch(pattern, route) {
   return match && Object.fromEntries(names.map((name, index) => [name, match[index + 1]]));
 }
 
-function sitemapLocations(xml) {
+// W3C datetime as the sitemap protocol accepts it: a date, or a date and time with a time zone.
+const w3cDate = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2}))?$/;
+
+function sitemapEntries(xml) {
   const parser = new SaxesParser({ xmlns: true });
   const stack = [];
-  const locations = [];
-  let urlCount = 0;
-  let location = '';
+  const entries = [];
+  let content = '';
   parser.on('error', (error) => { throw new Error(`SEO: invalid sitemap XML: ${error.message}`, { cause: error }); });
   parser.on('opentag', (tag) => {
     check(tag.uri === 'http://www.sitemaps.org/schemas/sitemap/0.9', 'incorrect sitemap namespace');
     const parent = stack.at(-1);
     check((!parent && tag.local === 'urlset') || (parent === 'urlset' && tag.local === 'url')
-      || (parent === 'url' && tag.local === 'loc'), `unexpected sitemap element: ${tag.local}`);
+      || (parent === 'url' && ['loc', 'lastmod'].includes(tag.local)), `unexpected sitemap element: ${tag.local}`);
     stack.push(tag.local);
-    if (tag.local === 'url') urlCount++;
-    if (tag.local === 'loc') location = '';
+    if (tag.local === 'url') entries.push({});
+    content = '';
   });
-  parser.on('text', (value) => { if (stack.at(-1) === 'loc') location += value; });
-  parser.on('closetag', () => { if (stack.pop() === 'loc') locations.push(location.trim()); });
+  parser.on('text', (value) => { content += value; });
+  parser.on('closetag', () => {
+    const element = stack.pop();
+    if (element !== 'loc' && element !== 'lastmod') return;
+    const entry = entries.at(-1);
+    check(!(element in entry), `each sitemap URL must have one ${element === 'loc' ? 'location' : 'modification date'}`);
+    entry[element] = content.trim();
+  });
   parser.write(xml).close();
-  check(urlCount === locations.length, 'each sitemap URL must have one location');
-  return locations;
+  for (const { loc, lastmod } of entries) {
+    check(loc, 'each sitemap URL must have one location');
+    if (lastmod !== undefined) {
+      check(w3cDate.test(lastmod) && Date.parse(lastmod) <= Date.now(), `invalid or future sitemap date for ${loc}: ${lastmod}`);
+    }
+  }
+  return entries;
+}
+
+function checkAuthor(person, home, label) {
+  check(person['@id'] === `${home}#author` && person.name?.trim() && publicUrl(person.url).protocol === 'https:', `${label} schema author is incomplete`);
 }
 
 /** Validate final static output without making network requests. */
@@ -182,7 +199,8 @@ export function validateBuild({ directory, site, indexable }) {
       check(markdownLinks.length === 1 && attr(markdownLinks[0], 'href') === markdownPath(route), `${label} missing or incorrect Markdown alternate`);
       markdownPages.set(route, markdownPath(route));
     }
-    check(meta('og:type') === 'website' && meta('og:site_name') === 'OpenTig', `${label} incorrect website identity`);
+    const guide = route.startsWith('/docs/');
+    check(meta('og:type') === (guide ? 'article' : 'website') && meta('og:site_name') === 'OpenTig', `${label} incorrect website identity`);
     check(meta('twitter:card') === 'summary_large_image', `${label} expected large social card`);
     const image = publicUrl(meta('og:image'));
     check(image.origin === origin.origin && image.protocol === 'https:', `${label} social image must use the public origin`);
@@ -213,14 +231,23 @@ export function validateBuild({ directory, site, indexable }) {
       const graph = schema['@graph'];
       const websites = graph.filter((item) => item['@type'] === 'WebSite');
       const apps = graph.filter((item) => item['@type'] === 'SoftwareApplication');
-      check(websites.length === 1 && apps.length === 1, `${label} missing or duplicate schema entities`);
+      const people = graph.filter((item) => item['@type'] === 'Person');
+      check(websites.length === 1 && apps.length === 1 && people.length === 1, `${label} missing or duplicate schema entities`);
       const [web] = websites; const [app] = apps;
+      checkAuthor(people[0], url, label);
+      check(app.author?.['@id'] === `${url}#author`, `${label} schema entity links differ`);
       check(web.name === 'OpenTig' && app.name === web.name && web.url === url && app.url === url, `${label} schema identity differs`);
       check(web['@id'] === `${url}#website` && app['@id'] === `${url}#application` && web.about?.['@id'] === app['@id'], `${label} schema entity links differ`);
       check(web.inLanguage === 'en' && app.description === description, `${label} schema language or description differs`);
       check(app.applicationCategory === 'DeveloperApplication' && app.applicationSubCategory === 'Git client', `${label} schema category differs`);
       check(app.isAccessibleForFree === true && app.offers?.['@type'] === 'Offer' && [0, '0'].includes(app.offers.price) && app.offers.priceCurrency === 'USD', `${label} schema free availability differs`);
-      for (const key of ['aggregateRating', 'review', 'softwareVersion']) check(!(key in app), `${label} ${key} requires verified data and updated checks`);
+      for (const key of ['aggregateRating', 'review']) check(!(key in app), `${label} ${key} requires verified data and updated checks`);
+      // A version is only stated alongside the installer of that exact release.
+      if ('softwareVersion' in app || 'downloadUrl' in app) {
+        check(/^\d+\.\d+\.\d+$/.test(app.softwareVersion) && app.downloadUrl === app.offers?.url
+          && app.downloadUrl === `https://github.com/jorgefl8/opentig/releases/download/v${app.softwareVersion}/OpenTig-${app.softwareVersion}-win32-x64-Setup.exe`,
+        `${label} schema version must match its installer`);
+      }
       check(Array.isArray(app.operatingSystem) && app.operatingSystem.length > 0 && app.softwareRequirements?.trim(), `${label} missing platforms or requirements`);
       const sameAs = Array.isArray(app.sameAs) ? app.sameAs : [app.sameAs];
       for (const value of [app.license, ...sameAs, app.installUrl, app.offers.url]) {
@@ -231,9 +258,44 @@ export function validateBuild({ directory, site, indexable }) {
         else if (value && typeof value === 'object') Object.values(value).forEach(inspect);
       };
       inspect(schema);
+    } else if (guide) {
+      check(scripts.length === 1 && headNodes.includes(scripts[0]), `${label} expected one JSON-LD script in head`);
+      const schema = JSON.parse(text(scripts[0]));
+      check(schema['@context'] === 'https://schema.org' && Array.isArray(schema['@graph']), `${label} invalid schema graph`);
+      const graph = schema['@graph'];
+      const articles = graph.filter((item) => item['@type'] === 'TechArticle');
+      const trails = graph.filter((item) => item['@type'] === 'BreadcrumbList');
+      const people = graph.filter((item) => item['@type'] === 'Person');
+      check(articles.length === 1 && trails.length === 1 && people.length === 1, `${label} missing or duplicate schema entities`);
+      const [article] = articles; const [trail] = trails;
+      const home = origin.href;
+      checkAuthor(people[0], home, label);
+      const heading = nodes.find((node) => node.tagName === 'h1');
+      check(article['@id'] === `${url}#article` && article.url === url && article.headline === text(heading).trim(), `${label} article identity differs`);
+      check(article.description === description && article.inLanguage === 'en' && article.image === meta('og:image'), `${label} article metadata differs`);
+      check(article.isPartOf?.['@id'] === `${home}#website` && article.about?.['@id'] === `${home}#application`
+        && article.author?.['@id'] === `${home}#author` && article.breadcrumb?.['@id'] === trail['@id'] && trail['@id'] === `${url}#breadcrumb`,
+      `${label} schema entity links differ`);
+      if ('dateModified' in article) check(w3cDate.test(article.dateModified), `${label} invalid article date`);
+      page.dateModified = article.dateModified;
+      const items = trail.itemListElement;
+      check(Array.isArray(items) && items.length >= 2, `${label} breadcrumbs are incomplete`);
+      items.forEach((item, index) => {
+        check(item['@type'] === 'ListItem' && item.position === index + 1 && item.name?.trim(), `${label} breadcrumb ${index + 1} is malformed`);
+        checkReference(item.item, url, `${label} breadcrumb`);
+      });
+      check(items[0].item === home && items.at(-1).item === url, `${label} breadcrumbs must lead from the homepage to this page`);
     }
   }
-  const locations = sitemapLocations(readFileSync(join(root, 'sitemap.xml'), 'utf8'));
+  const entries = sitemapEntries(readFileSync(join(root, 'sitemap.xml'), 'utf8'));
+  const locations = entries.map((entry) => entry.loc);
+  // An article's modification date and its sitemap date describe the same change.
+  const dated = new Map(entries.map((entry) => [entry.loc, entry.lastmod]));
+  for (const page of pages.values()) {
+    if (page.route.startsWith('/docs/') && dated.has(new URL(page.route, origin).href)) {
+      check(page.dateModified === dated.get(new URL(page.route, origin).href), `${page.route} article and sitemap dates differ`);
+    }
+  }
   check(new Set(locations).size === locations.length, 'duplicate sitemap URLs');
   check(JSON.stringify([...locations].sort()) === JSON.stringify(expectedLocations.sort()), 'sitemap does not match indexable canonical pages');
   const robots = readFileSync(join(root, 'robots.txt'), 'utf8');

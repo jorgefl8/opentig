@@ -4,6 +4,9 @@ import Layout from '@/layouts/Layout.astro';
 import { Docs } from '@/components/docs/Docs';
 import { source } from '@/lib/docs-source';
 import { markdownPath } from '../../../scripts/agent-access.mjs';
+import { pageDates } from '../../../scripts/page-dates.mjs';
+import { indexable } from '@/indexing';
+import { documentationGraph, jsonLd } from '@/lib/structured-data';
 import '@/styles/docs.css';
 
 export function getStaticPaths() {
@@ -11,9 +14,19 @@ export function getStaticPaths() {
 }
 const { page } = Astro.props;
 const { Content, headings } = await render(page.data.entry);
+const title = page.slugs.length ? page.data.title : 'Documentation';
+const structuredData = Astro.site && indexable ? documentationGraph({
+  home: new URL('/', Astro.site).href,
+  url: new URL(Astro.url.pathname, Astro.site).href,
+  title: page.data.title,
+  description: page.data.description,
+  image: new URL('/opentig-social.jpg', Astro.site).href,
+  dateModified: pageDates().get(Astro.url.pathname),
+}) : undefined;
 const toc = headings.filter(heading => heading.depth > 1).map(heading => ({ depth: heading.depth, title: heading.text, url: `#${heading.slug}` }));
 ---
-<Layout title={`${page.slugs.length ? page.data.title : 'Documentation'} | OpenTig Docs`} description={page.data.description} pixelFont={false} markdown={markdownPath(Astro.url.pathname)}>
+<Layout title={`${title} | OpenTig Docs`} ogType="article" description={page.data.description} pixelFont={false} markdown={markdownPath(Astro.url.pathname)}>
+  {structuredData && <script slot="head" type="application/ld+json" set:html={jsonLd(structuredData)} />}
   <a class="skip-link" href="#main-content">Skip to content</a>
   <Docs tree={source.getPageTree()} pathname={Astro.url.pathname} title={page.data.title} source={page.data.source} toc={toc} client:load>
     <Content />

@@ -6,3 +6,6 @@ export const cliInstallCommand = 'npx --yes @opentig/cli@latest service install'
 export const downloadUrl = fallbackDownload.url;
 export const downloadVersion = fallbackDownload.version;
 export const siteDescription = 'Browse files, review diffs, edit code, and commit changes. OpenTig brings branches, worktrees, and GitHub pull requests, Actions, and releases into one focused Git workspace.';
+// The maintainer as already credited in the footer; structured data names the same public profile.
+export const authorName = 'jorgefl8';
+export const authorUrl = 'https://github.com/jorgefl8';
