@@ -60,6 +60,7 @@ import { remoteAccessActionLabel, remoteAccessCopy, type RemoteAccessAction } fr
 import { openOnGitHub } from '@/features/pulls/gh-utils';
 import type { RemoteAccessProblem } from '../../shared/repository-access';
 import { FileViewerToolbarHostContext } from '@/features/viewer/file-viewer-toolbar-host';
+import { LineBlameContext, type LineBlameSettings } from '@/features/viewer/line-blame-context';
 import type { RuntimeFileDraft, ViewerSelection } from '@/features/viewer/Viewer';
 import type { PullRequestsSection } from '@/features/pulls/PullRequestsView';
 import {
@@ -228,6 +229,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   // A path we just created/renamed/moved the viewer onto; it may be missing from
   // an in-flight (stale) file snapshot, so don't declare it deleted until it appears.
   const pendingViewerPathRef = useRef<string | null>(null);
+  /** Shown instead of the section's own selection once a requested section switch lands. */
+  const pendingSectionSelectionRef = useRef<ViewerSelection>(null);
   const generationRequest = useRef<{ id: string; repositoryId: string } | null>(null);
   const repositorySyncOperationsRef = useRef<Map<string, ProjectSyncAction>>(new Map());
   const busyRef = useRef<string | null>(null);
@@ -911,6 +914,11 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       initialSelectionApplied.current = true;
       viewerSelectionRef.current = initialSelection;
       setViewerSelection(initialSelection);
+    } else if (pendingSectionSelectionRef.current) {
+      const selection = pendingSectionSelectionRef.current;
+      pendingSectionSelectionRef.current = null;
+      viewerSelectionRef.current = selection;
+      setViewerSelection(selection);
     } else selectFilePath(view === 'files' ? session.activePath : null);
   }, [openFilesStates, repository?.id, selectFilePath, view, initialSelection]);
 
@@ -1107,6 +1115,40 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       reportError('Could not open the commit', reason);
     }
   }, [selectViewer]);
+  // Line blame in the Files editor: a saved preference, applied at once.
+  const lineBlameEnabled = bootstrap?.preferences.lineBlame ?? true;
+  const setLineBlameEnabled = useCallback((enabled: boolean) => {
+    setBootstrap((current) => current ? { ...current, preferences: { ...current.preferences, lineBlame: enabled } } : current);
+    void opentig.app.setPreferences({ lineBlame: enabled }).then(
+      (preferences) => setBootstrap((current) => current ? { ...current, preferences } : current),
+      (reason) => reportError('Could not save settings', reason),
+    );
+  }, []);
+  const openBlamedCommit = useCallback(async (oid: string, subject: string) => {
+    const repositoryId = repositoryRef.current?.id;
+    if (!repositoryId) return;
+    try {
+      if (!await opentig.commits.recognize(repositoryId, oid)) {
+        sileo.error({ title: 'Commit not in this repository', description: `${oid.slice(0, 7)} could not be found in your local copy.` });
+        return;
+      }
+      if (repositoryRef.current?.id !== repositoryId) return;
+      const selection: ViewerSelection = { type: 'commit', oid, subject };
+      // Changing section resets the viewer, so the commit is shown once History is.
+      if (view === 'history') selectViewer(selection);
+      else pendingSectionSelectionRef.current = selection;
+      showSidebarView('history');
+    } catch (reason) {
+      reportError('Could not open the commit', reason);
+    }
+  }, [selectViewer, showSidebarView, view]);
+  const lineBlameSettings = useMemo<LineBlameSettings | null>(() => repository ? {
+    repositoryId: repository.id,
+    revision: refreshVersion,
+    enabled: lineBlameEnabled,
+    setEnabled: setLineBlameEnabled,
+    openCommit: (oid, subject) => void openBlamedCommit(oid, subject),
+  } : null, [lineBlameEnabled, openBlamedCommit, refreshVersion, repository, setLineBlameEnabled]);
   const githubNameWithOwner = githubInfo?.isGitHub ? githubInfo.nameWithOwner : null;
   // Links into this repository, wherever they're shown, can open here as well as on GitHub.
   const repositoryLinks = useMemo<RepositoryLinks | null>(() => githubNameWithOwner ? {
@@ -2845,6 +2887,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
                 <Suspense fallback={<div className="viewer-message"><IconLoader4 className="spinner" /> <ShimmeringText text="Preparing viewer…" /></div>}>
                   <FileViewerToolbarHostContext.Provider value={fileViewerToolbarHost}>
                     <FileLineTargetContext.Provider value={fileLineTarget}>
+                    <LineBlameContext.Provider value={lineBlameSettings}>
                     <Viewer
                       repositoryId={repository.id}
                       selection={viewerSelection}
@@ -2871,6 +2914,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
                       onUpdateConflict={updateConflictFile}
                       onResolveConflict={resolveConflictFile}
                     />
+                    </LineBlameContext.Provider>
                     </FileLineTargetContext.Provider>
                     {mobile && viewerSelection?.type === 'file' && (
                       <MobileFileBar
