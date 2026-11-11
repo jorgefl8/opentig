@@ -29,9 +29,6 @@ async function openChanges(page: Page, count: number): Promise<void> {
   const views = page.getByRole('navigation', { name: 'Repository views' });
   await views.getByRole('button', { name: /^Changes/ }).click();
   await expect(views.getByRole('button', { name: `Changes ${count}` })).toBeVisible();
-  // The list shows before the first refresh ends, and until it does a click on
-  // Discard changes is silently ignored; Refresh is enabled again once it's done.
-  await expect(page.getByRole('button', { name: 'Refresh' })).toBeEnabled();
 }
 
 async function write(repository: GitRepository, file: string, content: string): Promise<void> {

@@ -2669,6 +2669,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
                   changed={changed}
                   displayMode={bootstrap.preferences.changesLayout}
                   readOnly={Boolean(status?.readOnly)}
+                  discardDisabled={Boolean(busy)}
                   changeCount={status?.changes.length ?? 0}
                   insertions={status?.insertions ?? 0}
                   deletions={status?.deletions ?? 0}
