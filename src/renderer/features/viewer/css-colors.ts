@@ -137,6 +137,29 @@ export function browserColorValidator(): ColorValidator {
   return cachedColorValidator((value) => globalThis.CSS.supports('color', value));
 }
 
+/** Remembers each line's colors, since the same lines are scanned on every pointer move and render. */
+export function createColorRangeCache(isValid: ColorValidator, limit = 1_000): (line: string, stylesheet: boolean) => ColorRange[] {
+  const cache = new Map<string, ColorRange[]>();
+  return (line, stylesheet) => {
+    const key = `${stylesheet ? 's' : 'c'}${line}`;
+    let ranges = cache.get(key);
+    if (!ranges) {
+      ranges = findColorRanges(line, { stylesheet, isValid });
+      if (cache.size >= limit) cache.delete(cache.keys().next().value!);
+      cache.set(key, ranges);
+    }
+    return ranges;
+  };
+}
+
+let sharedLineColors: ((line: string, stylesheet: boolean) => ColorRange[]) | undefined;
+
+/** The colors in a rendered line, validated by the browser and shared by the hover and the swatches. */
+export function lineColors(line: string, stylesheet: boolean): ColorRange[] {
+  sharedLineColors ??= createColorRangeCache(browserColorValidator());
+  return sharedLineColors(line, stylesheet);
+}
+
 function mayContainColor(line: string, stylesheet: boolean): boolean {
   return stylesheet || line.includes('#') || line.includes('(');
 }

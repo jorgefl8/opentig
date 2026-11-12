@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { cachedColorValidator, colorRangeAt, findColorRanges, isStylesheetLanguage, type ColorValidator } from './css-colors';
+import { cachedColorValidator, colorRangeAt, createColorRangeCache, findColorRanges, isStylesheetLanguage, type ColorValidator } from './css-colors';
 
 // Stands in for CSS.supports('color', value): accepts the shapes these tests use.
 const isValid: ColorValidator = (value) =>
@@ -112,5 +112,20 @@ describe('cachedColorValidator', () => {
     validate('third');
     validate('red');
     expect(supports).toHaveBeenCalledTimes(4);
+  });
+});
+
+describe('createColorRangeCache', () => {
+  it('scans each line once per language kind', () => {
+    const validator = vi.fn(isValid);
+    const colors = createColorRangeCache(validator, 2);
+    expect(colors('a: red;', true).map((range) => range.value)).toEqual(['red']);
+    expect(colors('a: red;', false)).toEqual([]);
+    const calls = validator.mock.calls.length;
+    colors('a: red;', true);
+    expect(validator.mock.calls.length).toBe(calls);
+    colors('b: #fff;', true);
+    colors('a: red;', true);
+    expect(validator.mock.calls.length).toBeGreaterThan(calls);
   });
 });

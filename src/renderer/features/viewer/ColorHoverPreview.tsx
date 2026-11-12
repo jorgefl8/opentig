@@ -2,14 +2,11 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Tooltip, TooltipContent } from '@/components/ui/tooltip';
 import { attributeFromPath, columnFromPoint, findLineElement, lineText, rangeForColumns } from './color-hover-dom';
 import { createColorHoverController, type ColorHoverTarget } from './color-hover-controller';
-import { browserColorValidator, colorRangeAt, findColorRanges, isStylesheetLanguage, type ColorRange } from './css-colors';
+import { colorRangeAt, isStylesheetLanguage, lineColors, type ColorRange } from './css-colors';
+import { COLOR_LANGUAGE_ATTRIBUTE, type ColorSwatchRegistry } from './color-swatch-registry';
 import './color-preview.css';
 
-/** Set on an ancestor of a rendered file when one viewer shows several languages, as a diff does. */
-export const COLOR_LANGUAGE_ATTRIBUTE = 'data-color-language';
-
 const SHOW_DELAY_MS = 300;
-const LINE_CACHE_SIZE = 200;
 
 interface HoveredColor extends ColorHoverTarget, ColorRange {
   line: Element;
@@ -20,6 +17,8 @@ interface ColorHoverPreviewProps {
   getRoot(): Element | null;
   /** The file's language; without it, the closest `data-color-language` above the hovered line decides. */
   language?: string | undefined;
+  /** The swatches drawn in front of colors; hovering one previews its color too. */
+  swatches?: ColorSwatchRegistry | undefined;
 }
 
 /**
@@ -27,40 +26,34 @@ interface ColorHoverPreviewProps {
  * It only listens and measures: nothing is added to Pierre's rendered lines,
  * which the editor owns while editing.
  */
-export function ColorHoverPreview({ getRoot, language }: ColorHoverPreviewProps) {
+export function ColorHoverPreview({ getRoot, language, swatches }: ColorHoverPreviewProps) {
   const [hovered, setHovered] = useState<HoveredColor | null>(null);
   const getRootRef = useRef(getRoot);
   const languageRef = useRef(language);
+  const swatchesRef = useRef(swatches);
   const hideRef = useRef<() => void>(() => setHovered(null));
   useEffect(() => {
     getRootRef.current = getRoot;
     languageRef.current = language;
-  }, [getRoot, language]);
+    swatchesRef.current = swatches;
+  }, [getRoot, language, swatches]);
 
   useEffect(() => {
     const document = globalThis.document;
-    const isValid = browserColorValidator();
-    const lines = new Map<string, ColorRange[]>();
     const controller = createColorHoverController<HoveredColor>({ delayMs: SHOW_DELAY_MS, onChange: setHovered });
     let frame = 0;
     let latest: { path: EventTarget[]; x: number; y: number } | null = null;
-
-    const rangesFor = (text: string, stylesheet: boolean) => {
-      const key = `${stylesheet ? 's' : 'c'}${text}`;
-      let ranges = lines.get(key);
-      if (!ranges) {
-        ranges = findColorRanges(text, { stylesheet, isValid });
-        if (lines.size >= LINE_CACHE_SIZE) lines.delete(lines.keys().next().value!);
-        lines.set(key, ranges);
-      }
-      return ranges;
-    };
 
     const resolve = () => {
       frame = 0;
       const pointer = latest;
       latest = null;
       if (!pointer) return;
+      const swatch = swatchesRef.current?.hit(pointer.x, pointer.y);
+      if (swatch) {
+        controller.update({ value: swatch.value, start: swatch.start, end: swatch.end, line: swatch.line, key: hoverKey(swatch.line, swatch.start, swatch.value) });
+        return;
+      }
       const line = findLineElement(pointer.path);
       const column = line && columnFromPoint(line, pointer.x, pointer.y);
       if (!line || column === null) {
@@ -68,8 +61,8 @@ export function ColorHoverPreview({ getRoot, language }: ColorHoverPreviewProps)
         return;
       }
       const stylesheet = isStylesheetLanguage(languageRef.current ?? attributeFromPath(pointer.path, COLOR_LANGUAGE_ATTRIBUTE));
-      const range = colorRangeAt(rangesFor(lineText(line), stylesheet), column);
-      controller.update(range ? { ...range, line, key: `${line.getAttribute('data-line')}:${range.start}:${range.value}` } : null);
+      const range = colorRangeAt(lineColors(lineText(line), stylesheet), column);
+      controller.update(range ? { ...range, line, key: hoverKey(line, range.start, range.value) } : null);
     };
 
     const hide = () => {
@@ -125,4 +118,9 @@ export function ColorHoverPreview({ getRoot, language }: ColorHoverPreviewProps)
       )}
     </Tooltip>
   );
+}
+
+/** The same color at the same place, whether reached through its text or its swatch. */
+function hoverKey(line: Element, start: number, value: string): string {
+  return `${line.getAttribute('data-line')}:${start}:${value}`;
 }

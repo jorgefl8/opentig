@@ -22,6 +22,8 @@ import { mobileMainAction } from '@/lib/mobile-main-action';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { FileViewerToolbar } from './FileViewerToolbar';
 import { ColorHoverPreview } from './ColorHoverPreview';
+import { ColorSwatchLayer } from './ColorSwatchLayer';
+import { createColorSwatchRegistry } from './color-swatch-registry';
 import './source-editor.css';
 
 interface FileSaveControlsProps {
@@ -175,18 +177,22 @@ export function SourceCodeEditor({ path, cacheKey, value, themeType, wrapLines, 
     },
   }), []);
 
+  const [colorSwatches] = useState(createColorSwatchRegistry);
   const getEditorRoot = useCallback(() => {
     const root = virtualizerRef.current?.getRoot() ?? plainScrollRef.current;
     return root instanceof HTMLElement ? root : null;
   }, []);
 
   const fileSurface = (
-    <File
-      file={file}
-      options={options}
-      editorOptions={editorOptions}
-      edit={editing}
-    />
+    <>
+      <ColorSwatchLayer registry={colorSwatches} language={file.lang} />
+      <File
+        file={file}
+        options={options}
+        editorOptions={editorOptions}
+        edit={editing}
+      />
+    </>
   );
 
   return (
@@ -201,7 +207,7 @@ export function SourceCodeEditor({ path, cacheKey, value, themeType, wrapLines, 
           <div className="source-code-editor-content">{fileSurface}</div>
         </div>
       )}
-      <ColorHoverPreview getRoot={getEditorRoot} language={file.lang} />
+      <ColorHoverPreview getRoot={getEditorRoot} language={file.lang} swatches={colorSwatches} />
     </PierreWorkerPool>
   );
 }

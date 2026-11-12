@@ -104,7 +104,9 @@ describe('as a commit', () => {
   it('gives the totals after the message, and leaves naming the files to their headers', async () => {
     await renderCommit(twoFiles());
     const scroll = container.querySelector('.diff-workspace-scroll')!;
-    expect([...scroll.children].map((child) => child.className.split(' ')[0])).toEqual(['diff-workspace-lead', 'diff-file-list', 'diff-file-section', 'diff-file-section']);
+    // The color swatch layer is zero-height and draws over the files, so it is not part of the reading order.
+    expect([...scroll.children].filter((child) => !child.classList.contains('color-swatch-layer')).map((child) => child.className.split(' ')[0]))
+      .toEqual(['diff-workspace-lead', 'diff-file-list', 'diff-file-section', 'diff-file-section']);
     expect(scroll.querySelector('.diff-file-list')?.textContent).toMatch(/^2 files · \+\d+ −\d+$/);
     expect([...scroll.querySelectorAll('.diff-file-header .diff-file-name')].map((name) => name.textContent)).toEqual(['first.ts', 'second.ts']);
     expect(container.querySelectorAll('[data-code-file]')).toHaveLength(2);
