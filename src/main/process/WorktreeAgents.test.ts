@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { WorktreeAgentsDetector, agentName, claudeLockPid, parseLsofWorkingDirectories } from './WorktreeAgents';
-import { startFakeAgent } from './test-support/fake-agent';
+import { startFakeAgent, startIdleProcess } from './test-support/fake-agent';
 
 const folders: string[] = [];
 afterEach(() => Promise.all(folders.splice(0).map((folder) => rm(folder, { recursive: true, force: true }))));
@@ -60,7 +60,7 @@ describe('parseLsofWorkingDirectories', () => {
 describe('WorktreeAgentsDetector locks', () => {
   it('counts a Claude Code lock while its process runs, where processes can\'t be listed', async () => {
     const repository = await folder();
-    const agent = await startFakeAgent('claude', repository);
+    const agent = await startIdleProcess(repository);
     const detector = new WorktreeAgentsDetector({ scan: async () => null });
     const worktrees = [{ path: repository, locked: `claude agent agent-1 (pid ${agent.pid} start 99)` }];
 
@@ -71,7 +71,7 @@ describe('WorktreeAgentsDetector locks', () => {
 
   it('ignores a lock whose process id now belongs to a program that is not an agent', async () => {
     const repository = await folder();
-    const other = await startFakeAgent('sleeper', repository);
+    const other = await startIdleProcess(repository);
     const detector = new WorktreeAgentsDetector({ scan: async () => [] });
 
     expect(await detector.find([{ path: repository, locked: `claude agent agent-1 (pid ${other.pid})` }])).toEqual([]);

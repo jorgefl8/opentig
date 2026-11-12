@@ -17,6 +17,15 @@ export async function startFakeAgent(name: string, cwd: string): Promise<{ pid: 
   const bin = await mkdtemp(path.join(os.tmpdir(), 'opentig-fake-agent-'));
   const executable = path.join(bin, name);
   await symlink(process.execPath, executable);
+  return startIdle(executable, cwd, bin);
+}
+
+/** Starts an idle Node process, for checks that need a live process id and nothing else, on any platform. */
+export function startIdleProcess(cwd: string): Promise<{ pid: number; stop(): Promise<void> }> {
+  return startIdle(process.execPath, cwd, null);
+}
+
+async function startIdle(executable: string, cwd: string, bin: string | null): Promise<{ pid: number; stop(): Promise<void> }> {
   const child = spawn(executable, ['-e', 'setInterval(() => {}, 60_000)'], { cwd, stdio: 'ignore' });
   await once(child, 'spawn');
   const exited = once(child, 'exit');
@@ -26,7 +35,7 @@ export async function startFakeAgent(name: string, cwd: string): Promise<{ pid: 
     stopped = true;
     child.kill('SIGKILL');
     await exited;
-    await rm(bin, { recursive: true, force: true });
+    if (bin) await rm(bin, { recursive: true, force: true });
   };
   running.push(stop);
   return { pid: child.pid!, stop };
