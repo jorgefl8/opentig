@@ -3,7 +3,7 @@ import type { CloneJob, CloneRepositoryInput, GitIdentityInput, GitToolStatus } 
 import type { RemoteAccessProblem } from './repository-access';
 import type { CommitAuthorship, SetCommitAuthorshipInput } from './commit-authorship';
 import type { SerializedOperationError } from './errors';
-import type { BranchDeletionResult, BranchDetails, BranchInfo, CommitFile, CommitPage, FileTreeEntry, LocalRefsSnapshot, RemoteBranchDetails, RemoteBranchDeletionResult, TrackingBranchCreationResult, RepositoryStatus, WorktreeDetails, WorktreeInfo, WorktreeRemovalBlocked } from './git-types';
+import type { BranchDeletionResult, BranchDetails, BranchInfo, CommitFile, CommitPage, FileTreeEntry, LocalRefsSnapshot, RemoteBranchDetails, RemoteBranchDeletionResult, TrackingBranchCreationResult, RepositoryStatus, WorktreeAgents, WorktreeDetails, WorktreeInfo, WorktreeRemovalBlocked } from './git-types';
 import type { RasterImageMime } from './image-types';
 import type { OpenTigServerIdentity } from './server-protocol';
 import type { RepositoryChangeScope } from './repository-change';
@@ -97,6 +97,8 @@ export interface GitResult {
 
 export type BranchSwitchResult =
   | { status: 'switched'; movedChanges: boolean }
+  /** Nothing changed: these agents work in this folder and would end up on the other branch. */
+  | { status: 'agents-working'; agents: string[] }
   | { status: 'blocked-local-changes'; files: string[] }
   | { status: 'moved-with-conflicts'; files: string[]; stashOid: string }
   | { status: 'move-restore-failed'; stashOid: string; recoveredChanges: boolean };
@@ -942,8 +944,11 @@ export interface OpenTigApi {
   };
   refs: {
     listBranches(repositoryId: string): Promise<BranchInfo[]>;
-    switchBranch(repositoryId: string, branch: string, moveChanges: boolean): Promise<BranchSwitchResult>;
+    /** Refuses with `agents-working` while an agent works in the folder, unless `allowAgents` confirms it. */
+    switchBranch(repositoryId: string, branch: string, moveChanges: boolean, allowAgents?: boolean): Promise<BranchSwitchResult>;
     listWorktrees(repositoryId: string): Promise<WorktreeInfo[]>;
+    /** Worktrees in which a coding agent is working; the others are left out. */
+    worktreeAgents(repositoryId: string): Promise<WorktreeAgents[]>;
     selectWorktree(repositoryId: string, path: string): Promise<RepositoryInfo>;
     pull(repositoryId: string): Promise<PullResult>;
     pushContext(repositoryId: string, remote?: string): Promise<import('./repository-access').PublicationContext>;
@@ -1057,7 +1062,7 @@ export const IPC = {
   repositorySearch: 'repository:search', repositoryReplaceSearch: 'repository:replace-search',
   diffGet: 'diff:get', diffCommit: 'diff:commit', diffCommitFile: 'diff:commit-file', indexStage: 'index:stage',
   indexUnstage: 'index:unstage', indexDiscard: 'index:discard', indexStageAll: 'index:stage-all', indexUnstageAll: 'index:unstage-all', indexPrepareCommitGroup: 'index:prepare-commit-group', indexUpdateConflict: 'index:update-conflict', indexResolveConflict: 'index:resolve-conflict', commitCreate: 'commit:create', commitUndoLatest: 'commit:undo-latest',
-  commitsList: 'commits:list', commitsFiles: 'commits:files', commitsRecognize: 'commits:recognize', commitAuthorship: 'commits:authorship', commitSetAuthorship: 'commits:set-authorship', branchesList: 'refs:branches', branchSwitch: 'refs:switch', worktreesList: 'refs:worktrees',
+  commitsList: 'commits:list', commitsFiles: 'commits:files', commitsRecognize: 'commits:recognize', commitAuthorship: 'commits:authorship', commitSetAuthorship: 'commits:set-authorship', branchesList: 'refs:branches', branchSwitch: 'refs:switch', worktreesList: 'refs:worktrees', worktreeAgents: 'refs:worktree-agents',
   worktreeSelect: 'refs:select-worktree', refsPull: 'refs:pull', refsPush: 'refs:push', refsPushContext: 'refs:push-context', refsFetch: 'refs:fetch',
   localRefsSnapshot: 'refs:local-snapshot', branchDetails: 'refs:branch-details', worktreeDetails: 'refs:worktree-details',
   branchDelete: 'refs:delete-branch', worktreeRemove: 'refs:remove-worktree',

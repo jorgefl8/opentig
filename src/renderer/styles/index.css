@@ -1994,6 +1994,9 @@ section[data-sileo-viewport] [data-sileo-title] { text-transform: none; }
 .searchable-picker-copy small { color: var(--muted-foreground); font-size: var(--text-meta); line-height: 15px; font-weight: var(--weight-regular); }
 .searchable-picker-trailing { display: flex; flex: none; align-items: center; gap: 6px; }
 .searchable-picker-status { color: var(--muted-foreground); font-size: var(--text-meta); }
+/* Where a coding agent is working. */
+.agent-label { display: inline-flex; align-items: center; gap: 4px; color: var(--primary-ink); font-size: var(--text-meta); font-weight: var(--weight-medium); white-space: nowrap; }
+.agent-label svg { width: 13px; height: 13px; flex: none; }
 .searchable-picker-empty { padding: 22px 8px; text-align: center; color: var(--muted-foreground); font-size: var(--text-ui); }
 .searchable-picker-footer { border-top: 1px solid var(--border); padding: 4px; }
 .searchable-picker-footer button { display: flex; width: 100%; min-height: 30px; align-items: center; gap: 7px; padding: 5px 8px; border-radius: 6px; color: var(--muted-foreground); font-size: var(--text-ui); text-align: left; cursor: pointer; }

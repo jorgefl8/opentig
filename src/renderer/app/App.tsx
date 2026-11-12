@@ -11,7 +11,7 @@ import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, use
 import { isModuleLoadError, lazyWithPreload, lazyWithRetry } from '@/lib/lazy-with-retry';
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  IconBrandGithub, IconFileArrowRight, IconFiles, IconGitCompare, IconHistory,
+  IconBrandGithub, IconFileArrowRight, IconFiles, IconGitBranch, IconGitCompare, IconHistory,
   IconLoader4, IconRefresh, IconRestore, IconSearch, IconTrash,
 } from '@tabler/icons-react';
 import { sileo } from 'sileo';
@@ -67,6 +67,7 @@ import {
 } from './refresh-policy';
 import { resolveWindowControlsInset } from './window-controls';
 import { queryKeys, queryResourcesForScope, resetGitHubQueries } from '@/lib/query-client';
+import { listAgents } from '@/features/refs/local-refs-model';
 import { persistTheme } from '@/lib/boot-theme';
 import { useMobileLayout } from '@/lib/use-mobile-layout';
 import { installZoomAwarePositioning } from '@/lib/zoom-aware-positioning';
@@ -101,6 +102,9 @@ type DirtyCloseChoice = 'save' | 'discard' | 'cancel';
 const SIDEBAR_VIEWS = ['changes', 'files', 'history', 'prs', 'search'] as const;
 const VIEW_STORAGE_KEY = 'opentig.lastView';
 const BACKGROUND_REFRESH_RETRY_MS = 1_000;
+const WORKTREE_AGENTS_REFRESH_MS = 10_000;
+/** A branch switch Git refused over local changes; `allowAgents` keeps a confirmed agent warning confirmed. */
+interface BlockedBranchSwitch { ref: string; label: string; files: string[]; allowAgents?: boolean }
 type SidebarView = (typeof SIDEBAR_VIEWS)[number];
 /** Matches `.sidebar[data-collapsed]` in index.css. */
 const SIDEBAR_RAIL_WIDTH = 44;
@@ -218,7 +222,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   const [fileSessions, setFileSessions] = useState<ReadonlyMap<string, FileSession>>(() => new Map());
   const [dirtyClosePath, setDirtyClosePath] = useState<string | null>(null);
   const [destructiveAction, setDestructiveAction] = useState<DestructiveAction | null>(null);
-  const [blockedBranchSwitch, setBlockedBranchSwitch] = useState<{ ref: string; label: string; files: string[] } | null>(null);
+  const [blockedBranchSwitch, setBlockedBranchSwitch] = useState<BlockedBranchSwitch | null>(null);
+  const [agentBranchSwitch, setAgentBranchSwitch] = useState<{ ref: string; label: string; agents: string[]; moveChanges: boolean } | null>(null);
   // Holding Ctrl reveals the section numbers, so the shortcut is discoverable
   // without a cheat sheet.
   const [ctrlHeld, setCtrlHeld] = useState(false);
@@ -354,6 +359,14 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   const files = currentSnapshot ? filesState : null;
   const branches = currentSnapshot ? branchesState : [];
   const worktrees = currentSnapshot ? worktreesState : [];
+  // Agents start and stop without touching Git, so they are looked for on their own and kept fresh.
+  const worktreeAgentsQuery = useQuery({
+    queryKey: queryKeys.worktreeAgents(repository?.id ?? ''),
+    queryFn: () => opentig.refs.worktreeAgents(repository?.id ?? ''),
+    enabled: repository !== null && currentSnapshot,
+    refetchInterval: WORKTREE_AGENTS_REFRESH_MS,
+  });
+  const worktreeAgents = currentSnapshot ? worktreeAgentsQuery.data ?? [] : [];
   const currentBranch = status && !status.detached && !status.unborn ? status.branch : null;
   const branchPullRequestQuery = useQuery(branchPullRequestQueryOptions(
     repository?.id ?? '', currentBranch ?? '',
@@ -1789,14 +1802,20 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     await repositorySwitcher.select(id, repository?.id ?? null);
   };
 
-  const switchBranch = async (name: string | null) => {
+  const branchLabel = (name: string) => branches.find((branch) => branch.fullName === name)?.name ?? name.replace(/^refs\/(?:heads|remotes)\//, '');
+
+  const switchBranch = async (name: string | null, allowAgents = false) => {
     if (!repository || !name || name === status?.branch) return;
     setBusy('branch');
     try {
-      const result = await opentig.refs.switchBranch(repository.id, name, false);
+      const result = await opentig.refs.switchBranch(repository.id, name, false, allowAgents);
+      if (result.status === 'agents-working') {
+        setAgentBranchSwitch({ ref: name, label: branchLabel(name), agents: result.agents, moveChanges: false });
+        return;
+      }
+      setAgentBranchSwitch(null);
       if (result.status === 'blocked-local-changes') {
-        const label = branches.find((branch) => branch.fullName === name)?.name ?? name.replace(/^refs\/(?:heads|remotes)\//, '');
-        setBlockedBranchSwitch({ ref: name, label, files: result.files });
+        setBlockedBranchSwitch({ ref: name, label: branchLabel(name), files: result.files, allowAgents });
         return;
       }
       await refresh({ background: true });
@@ -1808,12 +1827,17 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     finally { setBusy(null); }
   };
 
-  const moveChangesAndSwitchBranch = async () => {
-    const pending = blockedBranchSwitch;
+  const moveChangesAndSwitchBranch = async (pending = blockedBranchSwitch) => {
     if (!repository || !pending) return;
     setBusy('branch');
     try {
-      const result = await opentig.refs.switchBranch(repository.id, pending.ref, true);
+      const result = await opentig.refs.switchBranch(repository.id, pending.ref, true, pending.allowAgents);
+      if (result.status === 'agents-working') {
+        setBlockedBranchSwitch(null);
+        setAgentBranchSwitch({ ref: pending.ref, label: pending.label, agents: result.agents, moveChanges: true });
+        return;
+      }
+      setAgentBranchSwitch(null);
       if (result.status === 'blocked-local-changes') {
         setBlockedBranchSwitch({ ...pending, files: result.files });
         return;
@@ -1850,6 +1874,13 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     } finally {
       setBusy(null);
     }
+  };
+
+  const switchBranchDespiteAgents = () => {
+    const pending = agentBranchSwitch;
+    if (!pending) return;
+    if (pending.moveChanges) void moveChangesAndSwitchBranch({ ref: pending.ref, label: pending.label, files: [], allowAgents: true });
+    else void switchBranch(pending.ref, true);
   };
 
   const switchWorktree = async (targetPath: string | null) => {
@@ -2536,6 +2567,28 @@ export default function App({ initialView, initialSelection, pullRequestCreation
           </div>
         </DialogPopup>
       </Dialog>
+      <Dialog
+        open={agentBranchSwitch !== null}
+        onOpenChange={(open) => { if (!open && busy !== 'branch') setAgentBranchSwitch(null); }}
+      >
+        <DialogPopup className="undo-commit-dialog">
+          <div className="undo-commit-content">
+            <DialogTitle>
+              {agentBranchSwitch ? `${listAgents(agentBranchSwitch.agents)} ${agentBranchSwitch.agents.length === 1 ? 'is' : 'are'} working in this folder` : 'An agent is working in this folder'}
+            </DialogTitle>
+            <DialogDescription>
+              The branch belongs to the folder, so switching to {agentBranchSwitch?.label} here also switches it for {agentBranchSwitch?.agents.length === 1 ? 'that agent' : 'those agents'}: {agentBranchSwitch?.agents.length === 1 ? 'it keeps' : 'they keep'} working, but on {agentBranchSwitch?.label}, and uncommitted changes go along. To leave {agentBranchSwitch?.agents.length === 1 ? 'it' : 'them'} on {status?.branch ?? 'the current branch'}, cancel and run agents in their own worktrees.
+            </DialogDescription>
+            {repository && <div className="destructive-confirmation-detail">{repository.path}</div>}
+          </div>
+          <div className="undo-commit-actions">
+            <Button variant="ghost" onClick={() => setAgentBranchSwitch(null)} disabled={busy === 'branch'}>Cancel</Button>
+            <Button onClick={switchBranchDespiteAgents} disabled={busy === 'branch'}>
+              <IconGitBranch /> {busy === 'branch' ? 'Switching…' : `Switch to ${agentBranchSwitch?.label ?? 'branch'} anyway`}
+            </Button>
+          </div>
+        </DialogPopup>
+      </Dialog>
       <Dialog open={Boolean(undoCommit)} onOpenChange={(open) => { if (!open && !undoingCommit) setUndoCommit(null); }}>
         <DialogPopup className="undo-commit-dialog">
           <div className="undo-commit-content">
@@ -2590,6 +2643,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
           onOpenPullRequest={(number) => { selectViewer({ type: 'pull-request', number }); }}
           branches={branches}
           worktrees={worktrees}
+          worktreeAgents={worktreeAgents}
           preferences={settingsPreferences}
           busy={busy}
           repositorySyncOperations={repositorySyncOperations}

@@ -1,7 +1,7 @@
 import type { BranchSwitchResult, CommitResult, DiffRequest, DiffResult, FetchResult, GitResult, PrepareCommitGroupInput, PublishBranchOptions, PullResult, PushResult, UndoLatestCommitResult, WorktreeRemovalResult } from '../../shared/contracts';
 import type {
   BranchComparisonKind, BranchDeletionResult, BranchDetails, BranchInfo, CommitFile, CommitPage, CommitSummary,
-  FileChange, LocalRefsSnapshot, WorktreeDetails, WorktreeInfo, WorktreeRemovalBlocked,
+  FileChange, LocalRefsSnapshot, WorktreeAgents, WorktreeDetails, WorktreeInfo, WorktreeRemovalBlocked,
 } from '../../shared/git-types';
 import { AiOperationError, GitOperationError } from '../../shared/errors';
 import { redactSensitiveText } from '../../shared/redaction';
@@ -28,6 +28,7 @@ import { GitRemoteBranches } from './GitRemoteBranches';
 import { WorktreeRemovalTracker } from './WorktreeRemovalTracker';
 import { REMOVE_WORKTREE_GIT_TIMEOUT_MS } from '../../shared/operation-timeouts';
 import { deleteWorktreeFolder, type RemoveEntry, type WorktreeFolderDeletion } from './worktreeDeletion';
+import { WorktreeAgentsDetector } from '../process/WorktreeAgents';
 import type { CreateTrackingBranchRequest, DeleteRemoteBranchRequest } from '../../shared/contracts';
 
 /**
@@ -53,6 +54,8 @@ export interface GitRepositoryOperationsOptions {
   worktreeDeletion?: 'node' | 'git';
   /** Replaces how `node` deletion removes each entry, for tests. */
   removeWorktreeEntry?: RemoveEntry | undefined;
+  /** Finds the coding agents working in each worktree. */
+  worktreeAgents?: WorktreeAgentsDetector | undefined;
 }
 
 export class GitRepositoryOperations {
@@ -67,6 +70,7 @@ export class GitRepositoryOperations {
   private readonly worktreeRemovals = new WorktreeRemovalTracker();
   private readonly worktreeDeletion: 'node' | 'git';
   private readonly removeWorktreeEntry: RemoveEntry | undefined;
+  private readonly agents: WorktreeAgentsDetector;
 
   constructor(
     private readonly git: GitProcess,
@@ -78,6 +82,7 @@ export class GitRepositoryOperations {
     this.remoteBranches = new GitRemoteBranches(git, repositories);
     this.worktreeDeletion = options.worktreeDeletion ?? (process.platform === 'win32' ? 'node' : 'git');
     this.removeWorktreeEntry = options.removeWorktreeEntry;
+    this.agents = options.worktreeAgents ?? new WorktreeAgentsDetector();
   }
 
   remoteBranchDetails(repositoryId: string, fullName: string) { return this.remoteBranches.details(repositoryId, fullName); }
@@ -502,9 +507,14 @@ export class GitRepositoryOperations {
     return parseRefs(output.stdout);
   }
 
-  async switchBranch(repositoryId: string, branch: string, moveChanges = false): Promise<BranchSwitchResult> {
+  async switchBranch(repositoryId: string, branch: string, moveChanges = false, allowAgents = false): Promise<BranchSwitchResult> {
     await this.ensureWritable(repositoryId);
     const repository = this.repositories.get(repositoryId);
+    if (!allowAgents) {
+      // The branch belongs to the folder, so switching it here switches it for an agent working here too.
+      const agents = await this.agentsInFolder(repositoryId);
+      if (agents.length > 0) return { status: 'agents-working', agents };
+    }
     return this.git.runWriteTask(repository.path, async (run) => {
       const branches = await this.branches(repositoryId);
       const selected = branches.find((item) => item.fullName === branch)
@@ -820,6 +830,18 @@ export class GitRepositoryOperations {
     const repository = this.repositories.get(repositoryId);
     const output = await this.git.run(repository.path, ['worktree', 'list', '--porcelain', '-z'], { operation: 'worktrees', readOnly: true });
     return parseWorktrees(output.stdout);
+  }
+
+  async worktreeAgents(repositoryId: string): Promise<WorktreeAgents[]> {
+    return this.agents.find(await this.worktrees(repositoryId));
+  }
+
+  private async agentsInFolder(repositoryId: string): Promise<string[]> {
+    const repository = this.repositories.get(repositoryId);
+    for (const entry of await this.worktreeAgents(repositoryId)) {
+      if (await samePath(entry.path, repository.path)) return entry.agents;
+    }
+    return [];
   }
 
   private async findWorktree(repositoryId: string, targetPath: string): Promise<WorktreeInfo | undefined> {

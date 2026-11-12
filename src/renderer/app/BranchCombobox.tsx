@@ -1,11 +1,14 @@
 import { useMemo } from 'react';
 import { IconChevronDown, IconGitBranch } from '@tabler/icons-react';
-import type { BranchInfo, WorktreeInfo } from '../../shared/git-types';
+import type { BranchInfo, WorktreeAgents, WorktreeInfo } from '../../shared/git-types';
 import { SearchablePicker, type SearchablePickerItem } from '@/components/SearchablePicker';
-import { samePath } from '@/features/refs/local-refs-model';
+import { AgentLabel } from '@/features/refs/AgentLabel';
+import { agentsAt, listAgents, samePath } from '@/features/refs/local-refs-model';
 
 export interface BranchComboboxWorktrees {
   items: WorktreeInfo[];
+  /** Where coding agents are working, so a branch shows who is on it. */
+  agents?: readonly WorktreeAgents[] | undefined;
   onSelect(path: string): void;
   onManage(): void;
 }
@@ -20,6 +23,7 @@ export function BranchCombobox({ branches, currentLabel, disabled, readOnly, cru
   worktrees?: BranchComboboxWorktrees | undefined; onBranch(name: string | null): void; onManage(): void;
 }) {
   const worktreeItems = worktrees?.items;
+  const worktreeAgents = worktrees?.agents;
   const { groups, currentValue, openable } = useMemo(() => {
     const local: SearchablePickerItem[] = [];
     const remote: SearchablePickerItem[] = [];
@@ -34,15 +38,17 @@ export function BranchCombobox({ branches, currentLabel, disabled, readOnly, cru
       const folder = otherPath?.split(/[\\/]/).pop();
       if (other && canOpen) openable.set(branch.fullName, other.path);
       if (!branch.remote && branch.current) currentValue = branch.fullName;
+      const agents = !branch.remote && branch.worktreePath && (branch.current || canOpen) ? agentsAt(worktreeAgents, branch.worktreePath) : [];
+      const state = branch.current ? <span className="searchable-picker-status">Current</span>
+        : canOpen ? <span className="searchable-picker-status">Open</span>
+          : otherPath ? <span className="searchable-picker-status">In use</span> : undefined;
       (branch.remote ? remote : local).push({
         value: branch.fullName,
         label: branch.name,
         ...(canOpen ? { description: `In ${folder}` } : {}),
-        trailing: branch.current ? <span className="searchable-picker-status">Current</span>
-          : canOpen ? <span className="searchable-picker-status">Open</span>
-            : otherPath ? <span className="searchable-picker-status">In use</span> : undefined,
+        trailing: agents.length > 0 ? <><AgentLabel agents={agents} compact />{state}</> : state,
         search: branch.fullName,
-        tooltip: `${branch.fullName}${otherPath ? ` · In ${otherPath}` : ''}`,
+        tooltip: `${branch.fullName}${otherPath ? ` · In ${otherPath}` : ''}${agents.length > 0 ? ` · ${listAgents(agents)} working there` : ''}`,
         // Opening a worktree changes nothing in this one, so an operation here doesn't stop it.
         disabled: otherPath ? !canOpen : Boolean(readOnly),
         icon: <IconGitBranch />,
@@ -53,7 +59,7 @@ export function BranchCombobox({ branches, currentLabel, disabled, readOnly, cru
       { id: 'local', label: 'Local', items: local },
       { id: 'remote', label: 'Remote', items: remote },
     ] };
-  }, [branches, readOnly, worktreeItems]);
+  }, [branches, readOnly, worktreeItems, worktreeAgents]);
   const selectValue = (value: string) => {
     const path = openable.get(value);
     if (path && worktrees) worktrees.onSelect(path);

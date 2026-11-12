@@ -123,6 +123,7 @@ export const OPEN_TIG_SERVER_COMMANDS = {
   'refs.listBranches': command(IPC.branchesList, 'branches', false),
   'refs.switchBranch': command(IPC.branchSwitch, 'switch-branch', true, { timeoutMs: SWITCH_BRANCH_TIMEOUT_MS }),
   'refs.listWorktrees': command(IPC.worktreesList, 'worktrees', false),
+  'refs.worktreeAgents': command(IPC.worktreeAgents, 'worktree-agents', false),
   'refs.selectWorktree': command(IPC.worktreeSelect, 'select-worktree', true),
   'refs.pull': command(IPC.refsPull, 'pull', true, { timeoutMs: PULL_TIMEOUT_MS }),
   'refs.pushContext': command(IPC.refsPushContext, 'push-context', false),

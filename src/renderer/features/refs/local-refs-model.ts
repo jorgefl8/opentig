@@ -1,4 +1,4 @@
-import type { BranchDetails, BranchInfo, ManagedWorktree, WorktreeDetails } from '../../../shared/git-types';
+import type { BranchDetails, BranchInfo, ManagedWorktree, WorktreeAgents, WorktreeDetails } from '../../../shared/git-types';
 import type { PullRequestSummary } from '../../../shared/contracts';
 
 export type LocalRefsTab = 'branches' | 'worktrees';
@@ -10,6 +10,17 @@ export function normalizeWorktreePath(value: string): string {
 
 export function samePath(left: string, right: string): boolean {
   return normalizeWorktreePath(left) === normalizeWorktreePath(right);
+}
+
+/** The agents working in a worktree, by name. */
+export function agentsAt(entries: readonly WorktreeAgents[] | undefined, worktreePath: string): string[] {
+  return entries?.find((entry) => samePath(entry.path, worktreePath))?.agents ?? [];
+}
+
+/** "Claude Code", "Claude Code and Codex", "Aider, Claude Code and Codex". */
+export function listAgents(names: readonly string[]): string {
+  if (names.length < 2) return names[0] ?? '';
+  return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
 }
 
 /** The trailing folder name, which is what identifies a worktree at a glance. */

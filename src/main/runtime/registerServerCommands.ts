@@ -420,12 +420,14 @@ export function registerServerCommands(
   handle(IPC.commitsFiles, 'commit-files', (id, oid) => services.operations.commitFiles(stringArg(id, 'commit-files', 64), stringArg(oid, 'commit-files', 128)));
   handle(IPC.commitsRecognize, 'commit-recognize', (id, oid) => services.operations.recognizeCommit(stringArg(id, 'commit-recognize', 64), stringArg(oid, 'commit-recognize', 128)));
   handle(IPC.branchesList, 'branches', (id) => services.operations.branches(stringArg(id, 'branches', 64)));
-  handle(IPC.branchSwitch, 'switch-branch', (id, branch, moveChanges) => services.operations.switchBranch(
+  handle(IPC.branchSwitch, 'switch-branch', (id, branch, moveChanges, allowAgents) => services.operations.switchBranch(
     stringArg(id, 'switch-branch', 64),
     stringArg(branch, 'switch-branch', 512),
     booleanArg(moveChanges, 'switch-branch'),
+    allowAgents === undefined ? false : booleanArg(allowAgents, 'switch-branch'),
   ));
   handle(IPC.worktreesList, 'worktrees', (id) => services.operations.worktrees(stringArg(id, 'worktrees', 64)));
+  handle(IPC.worktreeAgents, 'worktree-agents', (id) => services.operations.worktreeAgents(stringArg(id, 'worktree-agents', 64)));
   handle(IPC.worktreeSelect, 'select-worktree', async (id, targetPath) => {
     const repository = await services.operations.selectWorktree(stringArg(id, 'select-worktree', 64), stringArg(targetPath, 'select-worktree'));
     services.watcher.start(repository);
