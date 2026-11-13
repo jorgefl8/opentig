@@ -62,7 +62,7 @@ const handlers = { onPublish: vi.fn(), onStageAll: vi.fn(), onUnstageAll: vi.fn(
 
 async function render(stagedFiles: FileChange[], changedFiles: FileChange[], displayMode: DisplayMode = 'list', conflicts: FileChange[] = [], overrides: Partial<ComponentProps<typeof ChangesView>> = {}) {
   await act(async () => root.render(createElement(TooltipProvider, null, createElement(ChangesView, {
-    conflicts, staged: stagedFiles, changed: changedFiles, displayMode, readOnly: true, onSelect,
+    conflicts, staged: stagedFiles, changed: changedFiles, displayMode, readOnly: true, discardDisabled: false, onSelect,
     changeCount: conflicts.length + stagedFiles.length + changedFiles.length, insertions: 0, deletions: 0, selection: null,
     unpublishedCommits: 0, branchNeedsPublication: false, publishDisabled: false, ...handlers,
     onOpenFile: vi.fn(), onDiscard: vi.fn(), onConflict: vi.fn(), onStage: vi.fn(), onUnstage: vi.fn(),
@@ -246,6 +246,14 @@ it('reaches every row action through the row, in the order they appear', async (
   expect([...row.querySelectorAll('button')].map((button) => button.getAttribute('aria-label'))).toEqual(['View changes for changed-00.ts', 'Open file', 'Discard changes', 'Stage changes']);
   await render([], changed.slice(0, 1), 'tree', [], { readOnly: false });
   expect(container.querySelector('.change-row-actions [aria-label="Stage changes"]')).not.toBeNull();
+});
+
+it('shows discarding as unavailable while another operation runs, without blocking staging', async () => {
+  await render([], files('src/changed-', 1), 'tree', [], { readOnly: false, discardDisabled: true });
+  const discard = [...container.querySelectorAll<HTMLButtonElement>('[aria-label="Discard changes"]')];
+  expect(discard.length).toBeGreaterThan(1);
+  expect(discard.every((button) => button.disabled)).toBe(true);
+  expect([...container.querySelectorAll<HTMLButtonElement>('[aria-label="Stage changes"]')].every((button) => !button.disabled)).toBe(true);
 });
 
 it('offers folder rows the same actions over everything inside them', async () => {

@@ -114,5 +114,6 @@ export function projectPushBlockedCopy(repository: string, result: Exclude<PushR
   if (result.status === 'blocked-operation') return { title: `Could not push ${repository}`, description: `Finish or cancel ${result.operation} first.`, duration: 10_000 };
   if (result.status === 'no-upstream') return { title: `Could not push ${repository}`, description: 'Current branch has no upstream configured.', duration: 10_000 };
   if (result.status === 'diverged') return { title: `Could not push ${repository}`, description: `Remote has new changes; branch is ${result.ahead} ahead and ${result.behind} behind. Pull first — OpenTig rebases your local commits on top when there are no conflicts.`, duration: 10_000 };
+  if (result.status === 'rejected' && result.reason === 'remote-changed') return { title: `Could not push ${repository}`, description: 'Remote has new changes. Pull first — OpenTig rebases your local commits on top when there are no conflicts.', duration: 10_000 };
   return { title: `Could not push ${repository}`, description: result.message, duration: 10_000 };
 }

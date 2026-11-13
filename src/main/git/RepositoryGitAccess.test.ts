@@ -226,6 +226,8 @@ describe('credential broker', () => {
 it.each([
   ['Repository not found', 'inaccessible'], ['Authentication failed', 'authentication'], ['Write access to repository not granted', 'permission'],
   ['GH013: repository rule violations\nfailed to push some refs', 'hook'], ['[rejected] (fetch first)\nfailed to push some refs', 'remote-changed'],
+  ["error: failed to push some refs to 'origin'\nhint: Updates were rejected because the remote contains work that you do not\nhint: have locally.", 'remote-changed'],
+  ["error: failed to push some refs to 'origin'\nhint: Updates were rejected because the tip of your current branch is behind\nhint: its remote counterpart.", 'remote-changed'],
   ['Could not resolve host', 'network'], ['failed to push some refs', 'unknown'],
 ])('preserves and classifies push errors: %s', (message, reason) => {
   expect(pushFailure(new GitOperationError({ code: 'UNKNOWN', operation: 'push', message }))).toMatchObject({ reason, message: expect.stringContaining(message) });
