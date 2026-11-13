@@ -159,7 +159,8 @@ test('a JSON syntax error is shown inline and clears once the file is fixed', as
   const editor = page.getByRole('textbox', { name: 'config/settings.json' });
   await expect(editor).toContainText('assa');
 
-  const problem = page.getByText('End of file expected.', { exact: true });
+  // The message after the line; its tooltip repeats the text while it is open.
+  const problem = page.getByText('End of file expected.', { exact: true }).first();
   await expect(problem).toBeVisible();
   await problem.hover();
   await expect(page.getByText('JSON error · Line 4, column 1')).toBeVisible();
@@ -315,4 +316,23 @@ test('an edited line reads "Not committed yet" and line blame can be turned off'
   await page.reload();
   await fileTree(page).getByRole('treeitem', { name: 'notes.txt' }).click();
   await expect(page.getByRole('button', { name: 'Show line blame' })).toHaveAttribute('aria-pressed', 'false');
+});
+
+test('line blame is written after a syntax problem on the same line', async ({ pairedPage: page, repository }) => {
+  await repository.commit('settings.json', '{\n  "name": "demo",\n}\n', 'Add settings');
+  await openFiles(page, repository);
+
+  await fileTree(page).getByRole('treeitem', { name: 'settings.json' }).click();
+  await expect(page.getByRole('textbox', { name: 'settings.json' })).toContainText('demo');
+  const problem = page.getByText('Trailing comma.', { exact: true });
+  await expect(problem).toBeVisible();
+
+  await editorLine(page, 2).hover();
+  const ghost = page.locator('.line-blame-ghost');
+  await expect(ghost).toHaveText(/^E2E Tester, .+ • Add settings$/);
+  // Both stay readable: the blame starts where the problem's message ends.
+  await expect.poll(async () => {
+    const [message, blame] = await Promise.all([problem.boundingBox(), ghost.boundingBox()]);
+    return message !== null && blame !== null && blame.x >= message.x + message.width;
+  }).toBe(true);
 });

@@ -23,9 +23,15 @@ interface GhostPosition {
   fontSize: string;
 }
 
+/** The syntax problem written after a line's text by the layer next to this one, if any. */
+function syntaxProblemMessage(container: HTMLElement, line: number): HTMLElement | null {
+  return container.querySelector<HTMLElement>(`.syntax-diagnostic-message[data-syntax-diagnostic-line="${line}"]`);
+}
+
 /**
- * Where the ghost text goes: after the end of the line's text, measured from
- * Pierre's rendered row. Nothing is added to the editor's own DOM.
+ * Where the ghost text goes: after the end of the line's text, or after the
+ * syntax problem written there, measured from Pierre's rendered row. Nothing
+ * is added to the editor's own DOM.
  */
 function measureGhost(container: HTMLElement, root: ShadowRoot, line: number): GhostPosition | null {
   const row = root.querySelector<HTMLElement>(`[data-content] > [data-line="${line}"]`);
@@ -44,7 +50,8 @@ function measureGhost(container: HTMLElement, root: ShadowRoot, line: number): G
   const box = container.getBoundingClientRect();
   const viewport = container.parentElement?.getBoundingClientRect() ?? box;
   const gutterRight = root.querySelector('[data-gutter]')?.getBoundingClientRect().right ?? rowRect.left;
-  const start = textEnd + fontSize * 2.5;
+  const problemEnd = syntaxProblemMessage(container, line)?.getBoundingClientRect().right;
+  const start = Math.max(textEnd + fontSize * 2.5, problemEnd === undefined ? 0 : problemEnd + fontSize * 1.5);
   const maxWidth = Math.min(box.right, viewport.right) - start - 12;
   // Hidden when the line's end is scrolled out of view or there is no room left.
   if (start < gutterRight || maxWidth < 64) return null;
@@ -182,9 +189,14 @@ export function LineBlameLayer({ path, text, savedText, layoutKey }: { path: str
     resize.observe(container);
     // Pierre scrolls long lines sideways inside its own element.
     root?.addEventListener('scroll', update, { capture: true, passive: true });
+    // A syntax problem's message appears, changes or leaves a moment after the text does.
+    const problems = new MutationObserver(update);
+    const problemsLayer = container.querySelector('.syntax-diagnostics-layer');
+    if (problemsLayer) problems.observe(problemsLayer, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['style'] });
     return () => {
       window.cancelAnimationFrame(frame);
       resize.disconnect();
+      problems.disconnect();
       root?.removeEventListener('scroll', update, { capture: true });
     };
   }, [layoutKey, target, text, visible]);
