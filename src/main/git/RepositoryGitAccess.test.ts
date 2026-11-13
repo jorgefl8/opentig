@@ -515,3 +515,101 @@ describe('clone credentials', () => {
     expect(attempts).toHaveLength(1);
   });
 });
+
+describe('a branch that tracks an upstream with another name', () => {
+  // `git checkout -b fix/login origin/dev` sets origin/dev as the upstream.
+  async function branchFromDev(commit = true) {
+    const f = await fixture(true); await f.select('alice', 'git');
+    await git(f.work, ['push', 'origin', 'main:refs/heads/dev']);
+    await git(f.work, ['fetch', 'origin']);
+    await git(f.work, ['checkout', '-b', 'fix/login', 'origin/dev']);
+    if (commit) await git(f.work, ['commit', '--allow-empty', '-m', 'Fix login']);
+    const remote = path.join(f.root, 'remote.git');
+    const remoteRef = (ref: string) => git(remote, ['rev-parse', '--verify', '--quiet', ref]).catch(() => null);
+    return { ...f, remote, remoteRef, dev: (await remoteRef('refs/heads/dev'))! };
+  }
+
+  it('is recognized and refused as a plain push, so the commit never reaches dev', async () => {
+    const f = await branchFromDev();
+    const context = await f.service.publication(f.repositoryId);
+    expect(context).toMatchObject({ blockedReason: 'upstream-name', upstreamMismatch: { remote: 'origin', branch: 'dev', ahead: 1 }, targetRef: 'refs/heads/dev' });
+    expect(context.blocked).toContain('origin/dev');
+    expect(await f.operations.push(f.repositoryId, undefined, context.id)).toMatchObject({ status: 'rejected', reason: 'configuration' });
+    expect(await f.remoteRef('refs/heads/dev')).toBe(f.dev);
+  });
+
+  it('publishes under its own name, tracks it and leaves dev alone', async () => {
+    const f = await branchFromDev();
+    const context = await f.service.publication(f.repositoryId);
+    const head = await git(f.work, ['rev-parse', 'HEAD']);
+    expect(await f.operations.push(f.repositoryId, { remote: 'origin', expectedBranch: 'fix/login', expectedOid: head, asNewBranch: true }, context.id))
+      .toEqual({ status: 'published', branch: 'fix/login', remote: 'origin', previousUpstream: 'origin/dev' });
+    expect(await f.remoteRef('refs/heads/fix/login')).toBe(head);
+    expect(await f.remoteRef('refs/heads/dev')).toBe(f.dev);
+    expect(await git(f.work, ['rev-parse', '--abbrev-ref', '@{upstream}'])).toBe('origin/fix/login');
+    const after = await f.service.publication(f.repositoryId);
+    expect(after).toMatchObject({ hasUpstream: true, targetRef: 'refs/heads/fix/login' });
+    expect(after.blocked).toBeUndefined(); expect(after.upstreamMismatch).toBeUndefined();
+  });
+
+  it('stops without forcing when a branch with that name already has other commits', async () => {
+    const f = await branchFromDev();
+    const other = path.join(f.root, 'other');
+    await git(f.root, ['clone', f.remote, other]);
+    await git(other, ['-c', 'user.name=Other', '-c', 'user.email=other@example.com', 'commit', '--allow-empty', '-m', 'Someone else']);
+    await git(other, ['push', 'origin', 'HEAD:refs/heads/fix/login']);
+    const theirs = await f.remoteRef('refs/heads/fix/login');
+    const context = await f.service.publication(f.repositoryId);
+    const result = await f.operations.push(f.repositoryId, { remote: 'origin', expectedBranch: 'fix/login', expectedOid: context.oid!, asNewBranch: true }, context.id);
+    expect(result).toMatchObject({ status: 'rejected', reason: 'remote-changed' });
+    expect(result.status === 'rejected' && result.message).toMatch(/^origin\/fix\/login already exists .* still tracks origin\/dev/);
+    expect(await f.remoteRef('refs/heads/fix/login')).toBe(theirs);
+    expect(await git(f.work, ['rev-parse', '--abbrev-ref', '@{upstream}'])).toBe('origin/dev');
+  });
+
+  it('is still recognized with nothing to push yet', async () => {
+    const f = await branchFromDev(false);
+    expect((await f.service.publication(f.repositoryId)).upstreamMismatch).toEqual({ remote: 'origin', branch: 'dev', ahead: 0 });
+  });
+
+  it('refuses a publication as a new branch for any other configuration', async () => {
+    const f = await fixture(true); await f.select('alice', 'git');
+    await git(f.work, ['commit', '--allow-empty', '-m', 'Local']);
+    const context = await f.service.publication(f.repositoryId);
+    expect(await f.operations.push(f.repositoryId, { remote: 'origin', expectedBranch: 'main', expectedOid: context.oid!, asNewBranch: true }, context.id))
+      .toMatchObject({ status: 'rejected', reason: 'configuration', message: expect.stringContaining('no longer tracks') });
+  });
+
+  it.each([
+    ['upstream', 'refs/heads/dev'],
+    ['current', 'refs/heads/fix/login'],
+  ])('keeps push.default=%s as Git defines it', async (pushDefault, targetRef) => {
+    const f = await branchFromDev();
+    await git(f.work, ['config', 'push.default', pushDefault]);
+    const context = await f.service.publication(f.repositoryId);
+    expect(context).toMatchObject({ targetRef });
+    expect(context.blocked).toBeUndefined(); expect(context.upstreamMismatch).toBeUndefined();
+  });
+
+  it('pushes to a separately configured push remote under the branch name without guessing', async () => {
+    const f = await branchFromDev();
+    await git(f.root, ['init', '--bare', path.join(f.root, 'fork.git')]);
+    await git(f.work, ['remote', 'add', 'fork', path.join(f.root, 'fork.git')]);
+    await git(f.work, ['config', 'remote.pushDefault', 'fork']);
+    const context = await f.service.publication(f.repositoryId);
+    expect(context).toMatchObject({ remote: 'fork', targetRef: 'refs/heads/fix/login' });
+    expect(context.blocked).toBeUndefined(); expect(context.upstreamMismatch).toBeUndefined();
+  });
+
+  it.each([
+    ['push.default', 'matching', 'push-default', 'push.default is set to "matching"'],
+    ['remote.origin.push', 'refs/heads/*:refs/heads/review/*', 'push-refspec', 'remote.origin.push'],
+    ['remote.origin.mirror', 'true', 'mirror', 'remote.origin.mirror'],
+  ])('names %s as the cause instead of offering a new branch', async (key, value, reason, message) => {
+    const f = await branchFromDev();
+    await git(f.work, ['config', key, value]);
+    const context = await f.service.publication(f.repositoryId);
+    expect(context).toMatchObject({ blockedReason: reason, blocked: expect.stringContaining(message) });
+    await expect(f.service.assertPublication(f.repositoryId, context.id, undefined, { asNewBranch: true })).rejects.toThrow(message);
+  });
+});

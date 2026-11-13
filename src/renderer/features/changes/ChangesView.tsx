@@ -3,9 +3,10 @@ import { useLongPress } from '@/lib/use-long-press';
 import { useMobileLayout } from '@/lib/use-mobile-layout';
 import { useTruncatedText } from '@/lib/use-truncated-text';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { IconChevronRight, IconFileArrowRight, IconGitCompare, IconMinus, IconPlus, IconRestore } from '@tabler/icons-react';
+import { IconAlertTriangle, IconChevronRight, IconFileArrowRight, IconGitCompare, IconMinus, IconPlus, IconRestore } from '@tabler/icons-react';
 import type { ChangesLayoutPreference } from '../../../shared/contracts';
 import type { FileChange } from '../../../shared/git-types';
+import type { UpstreamNameMismatch } from '../../../shared/repository-access';
 import { FolderIcon } from '@/components/FolderIcon';
 import { MobileRowSheetButton } from '@/components/MobileChrome';
 import { MobileSheet } from '@/components/MobileSheet';
@@ -31,6 +32,8 @@ interface ChangesViewProps {
   changeCount: number; insertions: number; deletions: number;
   selection: ChangeSelection | null;
   unpublishedCommits: number; branchNeedsPublication: boolean; publishDisabled: boolean; onPublish(): void;
+  /** The branch tracks a branch with another name, so its commits are published as a new branch instead of pushed. */
+  upstreamMismatch?: UpstreamNameMismatch | null | undefined;
   onSelect(path: string, kind: 'staged' | 'unstaged'): void; onOpenFile(path: string): void; onDiscard(paths: string[]): void;
   onConflict(path: string): void;
   onStage(paths: string[]): void; onUnstage(paths: string[]): void; onStageAll(): void; onUnstageAll(): void;
@@ -55,7 +58,7 @@ export function ChangesView(props: ChangesViewProps) {
   return (
     <div className="changes-view">
       {props.changeCount === 0
-        ? <NoChanges unpublishedCommits={props.unpublishedCommits} branchNeedsPublication={props.branchNeedsPublication} publishDisabled={props.publishDisabled} onPublish={props.onPublish} />
+        ? <NoChanges unpublishedCommits={props.unpublishedCommits} branchNeedsPublication={props.branchNeedsPublication} upstreamMismatch={props.upstreamMismatch ?? null} publishDisabled={props.publishDisabled} onPublish={props.onPublish} />
         : <ChangesStrip count={props.changeCount} insertions={props.insertions} deletions={props.deletions} staged={props.staged.length} changed={props.changed.length} disabled={props.readOnly} onStageAll={props.onStageAll} onUnstageAll={props.onUnstageAll} />}
       <div ref={scrollRef} className="changes-scroll">
         <ConflictSection scrollRef={scrollRef} changes={props.conflicts} selection={props.selection} onSelect={props.onConflict} onOpenFile={props.onOpenFile} onMenu={openMenu && ((change) => openMenu({ change, kind: 'conflict' }))} />
@@ -89,10 +92,28 @@ function ChangesStrip({ count, insertions, deletions, staged, changed, disabled,
   );
 }
 
-function NoChanges({ unpublishedCommits, branchNeedsPublication, publishDisabled, onPublish }: {
-  unpublishedCommits: number; branchNeedsPublication: boolean; publishDisabled: boolean; onPublish(): void;
+function NoChanges({ unpublishedCommits, branchNeedsPublication, upstreamMismatch, publishDisabled, onPublish }: {
+  unpublishedCommits: number; branchNeedsPublication: boolean; upstreamMismatch: UpstreamNameMismatch | null; publishDisabled: boolean; onPublish(): void;
 }) {
   const publish = (label: string) => <button type="button" className="inline-action" disabled={publishDisabled} onClick={onPublish}>{label}</button>;
+  const waiting = unpublishedCommits === 1 ? '1 commit isn\'t' : `${unpublishedCommits} commits aren't`;
+  if (upstreamMismatch && unpublishedCommits > 0 && !branchNeedsPublication) {
+    const upstream = `${upstreamMismatch.remote}/${upstreamMismatch.branch}`;
+    return (
+      <div className="changes-empty">
+        <div className="changes-strip">No changes</div>
+        <p>{waiting} published yet.</p>
+        <div className="upstream-mismatch-notice" role="note">
+          <IconAlertTriangle aria-hidden="true" />
+          <div>
+            <strong>This branch tracks <code>{upstream}</code></strong>
+            <p>Pushing would send {unpublishedCommits === 1 ? 'your commit' : 'your commits'} straight to <code>{upstreamMismatch.branch}</code>. Publish {unpublishedCommits === 1 ? 'it' : 'the branch'} under its own name to open a pull request later.</p>
+            <button type="button" className="upstream-mismatch-action" disabled={publishDisabled} onClick={onPublish}>Publish as new branch</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="changes-empty">
       <div className="changes-strip">No changes</div>
@@ -100,7 +121,7 @@ function NoChanges({ unpublishedCommits, branchNeedsPublication, publishDisabled
         {branchNeedsPublication
           ? <>This branch isn&apos;t published yet. {publish('Publish it')} when you&apos;re ready.</>
           : unpublishedCommits > 0
-            ? <>{unpublishedCommits === 1 ? '1 commit isn\'t' : `${unpublishedCommits} commits aren't`} pushed yet. {publish(unpublishedCommits === 1 ? 'Push it' : 'Push them')} when you&apos;re ready.</>
+            ? <>{waiting} pushed yet. {publish(unpublishedCommits === 1 ? 'Push it' : 'Push them')} when you&apos;re ready.</>
             : 'Nothing to review or commit.'}
       </p>
     </div>

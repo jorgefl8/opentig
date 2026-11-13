@@ -714,10 +714,13 @@ export class GitRepositoryOperations {
 
   private async pushWithContext(repositoryId: string, publish?: PublishBranchOptions, expectedContext?: string): Promise<PushResult> {
     const repository = this.repositories.get(repositoryId);
+    const asNewBranch = publish?.asNewBranch === true;
+    let previousUpstream: string | undefined;
+    let destination = '';
     try {
-      const reviewed = await this.access!.assertPublication(repositoryId, expectedContext, publish?.remote);
+      const reviewed = await this.access!.assertPublication(repositoryId, expectedContext, publish?.remote, { asNewBranch });
       return await this.git.withNetworkContext(repository.path, () => this.git.runWriteTask(repository.path, async run => {
-        const context = await this.access!.assertPublication(repositoryId, reviewed.id, publish?.remote);
+        const context = await this.access!.assertPublication(repositoryId, reviewed.id, publish?.remote, { asNewBranch });
         const status = await this.repositories.status(repositoryId, false);
         const conflicts = conflictPaths(status);
         if (conflicts.length) return { status: 'blocked-conflicts', files: conflicts };
@@ -726,15 +729,26 @@ export class GitRepositoryOperations {
         if (publish && (publish.expectedBranch !== context.branch || publish.expectedOid !== context.oid)) return { status: 'rejected', reason: 'configuration', message: 'The branch changed. Review and try again.' };
         if (!context.remote) return context.remotes.length ? { status: 'remote-required', branch: context.branch, oid: context.oid, remotes: context.remotes }
           : { status: 'rejected', reason: 'configuration', message: 'No remote is configured.' };
+        if (asNewBranch && context.upstreamMismatch) {
+          previousUpstream = `${context.upstreamMismatch.remote}/${context.upstreamMismatch.branch}`;
+          destination = `${context.remote}/${context.branch}`;
+        }
+        // A branch published under its own name tracks it from now on, instead of the upstream it was created from.
         const result = await run(['-c', `remote.${context.remote}.mirror=false`, 'push', '--porcelain', '--no-follow-tags',
-          ...(!status.upstream ? ['--set-upstream'] : []), '--', context.remote, `refs/heads/${context.branch}:${context.targetRef}`], {
+          ...(!status.upstream || asNewBranch ? ['--set-upstream'] : []), '--', context.remote, `refs/heads/${context.branch}:${context.targetRef}`], {
           operation: 'push', timeoutMs: 120_000, maxOutputBytes: 4 * 1024 * 1024,
-          publication: { repositoryId, id: context.id, ...(publish?.remote ? { remote: publish.remote } : {}) },
+          publication: { repositoryId, id: context.id, ...(publish?.remote ? { remote: publish.remote } : {}), ...(asNewBranch ? { asNewBranch } : {}) },
         });
-        if (!status.upstream) return { status: 'published', branch: context.branch, remote: context.remote };
+        if (!status.upstream || previousUpstream) return { status: 'published', branch: context.branch, remote: context.remote, ...(previousUpstream ? { previousUpstream } : {}) };
         return result.stdout.toString('utf8').includes('[up to date]') ? { status: 'up-to-date' } : { status: 'success', commits: status.ahead };
       }, repository.commonDir));
-    } catch (error) { return pushFailure(error); }
+    } catch (error) {
+      const failure = pushFailure(error);
+      if (previousUpstream && failure.reason === 'remote-changed') {
+        return { ...failure, message: `${destination} already exists and has commits this branch doesn't. OpenTig won't overwrite it, and the branch still tracks ${previousUpstream}. Rename the branch, or bring those commits in with Git, then publish again.` };
+      }
+      return failure;
+    }
   }
 
   private async legacyPush(repositoryId: string, publish?: PublishBranchOptions): Promise<PushResult> {

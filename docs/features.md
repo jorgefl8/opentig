@@ -173,6 +173,14 @@ Publish from the toolbar, repository selector, the empty **Changes** section, **
 
 OpenTig uses the configured push remote or the only available remote. If several exist without a preference, choose one. Publishing sets upstream tracking and leaves uncommitted files untouched.
 
+**Publish a branch that tracks another branch**
+
+A branch created from another remote branch, for example with `git checkout -b fix/login origin/dev`, tracks `origin/dev`. A push would add its commits straight to `dev`, so OpenTig doesn't offer one. The top bar shows `→ origin/dev` beside the branch name, and with commits waiting, the empty **Changes** section says they aren't published yet and offers **Publish as new branch**.
+
+That button, the toolbar's push count, and **Commit and push** open **Publish as a new branch?**. It shows the commits, the destination (`origin/fix/login`), the upstream change, and the equivalent `git push -u origin HEAD:refs/heads/fix/login`. Confirming pushes to the same remote under the branch's own name and makes that the upstream. There is no way to push to `dev` from here. If `origin/fix/login` already exists with commits the branch doesn't have, publishing stops without forcing, and the branch keeps tracking `origin/dev`.
+
+This applies when the branch pushes to its upstream's remote and `push.default` is `simple`, Git's default. With `push.default` set to `upstream` or `current`, or a separate push remote (`remote.pushDefault` or `branch.<name>.pushRemote`), pushes follow Git as usual. Configurations OpenTig can't publish safely stay blocked, and the notification names the setting to review: other `push.default` values, a `remote.<name>.push` refspec, `remote.<name>.mirror`, or several `branch.<name>.merge` entries.
+
 **Read progress and errors**
 
 Each pull or push has its own progress and result notification. Remote rejections, branch protection, authentication, configuration errors, pending conflicts, and other one-shot failures appear there. **Changes** remains the place to inspect unresolved work.

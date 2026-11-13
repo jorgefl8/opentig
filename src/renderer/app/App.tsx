@@ -23,6 +23,8 @@ import { SidebarCollapseButton, SidebarRail, type SidebarRailSection } from './S
 import { SidebarResizeHandle } from './SidebarResizeHandle';
 import { useBranchPush } from '@/features/refs/useBranchPush';
 import { PublishRemoteDialog } from '@/features/refs/PublishRemoteDialog';
+import { PublishNewBranchDialog } from '@/features/refs/PublishNewBranchDialog';
+import { publicationKey } from '@/features/refs/publication-context';
 import { normalizeOpenFilesStates, type OpenFilesState } from '../../shared/open-files-state';
 import { normalizeFilesTreeStates } from '../../shared/files-tree-state';
 import { serializedErrorFromReason, type SerializedAiError } from '../../shared/errors';
@@ -77,7 +79,7 @@ import { startupSplashDetail } from '@/lib/startup-splash';
 import { ServerAuthenticationError, ServerDisconnectedError, UNCONFIRMED_RESULT_MESSAGE, isConnectionLoss, isUnconfirmedResult } from '@/lib/websocket-transport';
 import { conflictNotificationAction, conflictToastId } from '@/features/changes/conflict-notification';
 import { fileCutTransferId, writeClipboardText, writeFileTransfer } from '@/lib/browser-capabilities';
-import { needsBranchPublication, projectPullBlockedCopy, projectPullSuccessCopy, projectPushBlockedCopy, projectPushSuccessCopy, pullSuccessCopy, repositorySyncLoadingToast, type ProjectSyncAction } from '@/features/repositories/project-sync';
+import { needsBranchPublication, newBranchPublishedCopy, projectPullBlockedCopy, projectPullSuccessCopy, projectPushBlockedCopy, projectPushSuccessCopy, pullSuccessCopy, repositorySyncLoadingToast, type ProjectSyncAction } from '@/features/repositories/project-sync';
 import { aiModelLabel, harnessLabel } from '@/features/ai/harness-copy';
 import { DesktopUpdateIndicator } from '@/features/settings/UpdateSettings';
 import { updatesApi } from '@/features/settings/update-api';
@@ -361,6 +363,15 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   ));
   const currentBranchPullRequest = currentBranch && githubInfo?.isGitHub && !branchPullRequestQuery.isError
     ? branchPullRequestQuery.data ?? null : null;
+  // Only a branch whose upstream has another name needs the server's push review up front.
+  const trackedUnderOtherName = Boolean(currentBranch && status?.upstream && !status.upstream.endsWith(`/${currentBranch}`));
+  const publicationQuery = useQuery({
+    queryKey: [...publicationKey(repository?.id ?? ''), currentBranch, status?.upstream, status?.oid],
+    queryFn: () => opentig.refs.pushContext(repository!.id),
+    enabled: repository !== null && trackedUnderOtherName,
+  });
+  const upstreamMismatch = trackedUnderOtherName ? publicationQuery.data?.upstreamMismatch ?? null : null;
+  const offersNewBranch = upstreamMismatch !== null && publicationQuery.data?.blockedReason === 'upstream-name';
 
   const openFilesStates = bootstrap?.openFilesStates ?? NO_OPEN_FILES_STATES;
   const connectionState = useSyncExternalStore(
@@ -2083,8 +2094,9 @@ export default function App({ initialView, initialSelection, pullRequestCreation
         if (!result || result.status === 'success' || result.status === 'up-to-date' || result.status === 'published') return result;
         throw new PushBlocked(result);
       }, {
-        loading: repositorySyncLoadingToast(repositoryId, 'push', status?.upstream ? 'Pushing commits…' : 'Publishing branch…'),
+        loading: repositorySyncLoadingToast(repositoryId, 'push', status?.upstream && !offersNewBranch ? 'Pushing commits…' : 'Publishing branch…'),
         success: (result) => !result ? { title: `${repository.name}: publication canceled` }
+          : result.status === 'published' && result.previousUpstream ? newBranchPublishedCopy(result)
           : result.status === 'published' ? { title: `${repository.name}: branch published`, description: `${result.remote}/${result.branch}` }
           : result.status === 'success'
           ? { title: `${repository.name}: ${result.commits} ${result.commits === 1 ? 'commit pushed' : 'commits pushed'}` }
@@ -2576,6 +2588,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
         <CommitAuthorshipDialog key={repository.id} repository={repository} open onOpenChange={(open) => { if (!open) setAuthorshipRepositoryId(null); }} />
       )}
       {branchPush.remoteChoice && <PublishRemoteDialog key={branchPush.remoteChoice.id} choice={branchPush.remoteChoice} onSelect={branchPush.selectRemote} />}
+      {branchPush.newBranchChoice && <PublishNewBranchDialog key={branchPush.newBranchChoice.id} choice={branchPush.newBranchChoice} onConfirm={branchPush.confirmNewBranch} />}
       <MobileChromeContext.Provider value={mobileChrome}>
       <div className="app-shell" data-mobile-pane={mobilePane} inert={welcomeReplay || undefined}>
         <Toolbar
@@ -2587,6 +2600,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
           status={status}
           githubInfo={githubInfo}
           branchPullRequest={currentBranchPullRequest}
+          upstreamMismatch={upstreamMismatch}
           onOpenPullRequest={(number) => { selectViewer({ type: 'pull-request', number }); }}
           branches={branches}
           worktrees={worktrees}
@@ -2679,6 +2693,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
                   branchNeedsPublication={needsBranchPublication(status)}
                   publishDisabled={Boolean(busy) || Boolean(status?.readOnly) || repositorySyncOperations.has(repository.id)}
                   onPublish={() => void pushUpdates()}
+                  upstreamMismatch={offersNewBranch ? upstreamMismatch : null}
                   onSelect={(path, kind) => { selectViewer({ type: 'diff', path, kind }); }}
                   onConflict={(path) => { selectViewer({ type: 'conflict', path }); }}
                   onOpenFile={openFile}
