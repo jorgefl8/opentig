@@ -49,6 +49,7 @@ export function ColorSwatchLayer({ registry, language }: ColorSwatchLayerProps) 
     if (!layer || !scope) return;
     const viewport = scope.parentElement ?? scope;
     let frame = 0;
+    let waits = 0;
     let current: readonly PlacedSwatch[] = [];
 
     const schedule = () => { frame ||= requestAnimationFrame(compute); };
@@ -78,7 +79,16 @@ export function ColorSwatchLayer({ registry, language }: ColorSwatchLayerProps) 
       const next: PlacedSwatch[] = [];
       for (const host of scope!.querySelectorAll('diffs-container')) {
         const shadow = host.shadowRoot;
-        if (!shadow) continue;
+        if (!shadow) {
+          // Pierre attaches its shadow root a moment after the file mounts,
+          // which no observer here sees. Look again on the next frame, for at
+          // most about ten seconds.
+          if (waits < 600) {
+            waits += 1;
+            schedule();
+          }
+          continue;
+        }
         watch(shadow);
         const stylesheet = isStylesheetLanguage(languageRef.current ?? host.closest(`[${COLOR_LANGUAGE_ATTRIBUTE}]`)?.getAttribute(COLOR_LANGUAGE_ATTRIBUTE) ?? undefined);
         const clips = new Map<Element, Bounds>();

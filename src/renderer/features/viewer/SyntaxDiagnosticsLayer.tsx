@@ -123,11 +123,19 @@ export function SyntaxDiagnosticsLayer({ diagnostics, onActivateLine }: SyntaxDi
     }
     let frame = 0;
     let observed: ShadowRoot | null = null;
+    let waits = 0;
     const update = () => {
       frame = 0;
       const next = measure(layer, lines);
       setPlacements((current) => samePlacements(current, next) ? current : next);
       observe();
+      // Pierre renders its code a moment after the file mounts, and nothing
+      // outside its shadow root announces that. Look again each frame until it
+      // is there, for at most about ten seconds.
+      if (!observed && waits < 600) {
+        waits += 1;
+        schedule();
+      }
     };
     const schedule = () => { if (!frame) frame = requestAnimationFrame(update); };
     // Pierre rewrites lines while highlighting and editing, scrolls code
