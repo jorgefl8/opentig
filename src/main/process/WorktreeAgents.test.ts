@@ -61,7 +61,7 @@ describe('parseLsofWorkingDirectories', () => {
 describe('WorktreeAgentsDetector locks', () => {
   it('counts a Claude Code lock while its process runs, where processes can\'t be listed', async () => {
     const repository = await folder();
-    const agent = await startIdleProcess(repository);
+    const agent = await startIdleProcess();
     const detector = new WorktreeAgentsDetector({ scan: async () => null });
     const worktrees = [{ path: repository, locked: `claude agent agent-1 (pid ${agent.pid} start 99)` }];
 
@@ -72,7 +72,7 @@ describe('WorktreeAgentsDetector locks', () => {
 
   it('ignores a lock whose process id now belongs to a program that is not an agent', async () => {
     const repository = await folder();
-    const other = await startIdleProcess(repository);
+    const other = await startIdleProcess();
     const detector = new WorktreeAgentsDetector({ scan: async () => [] });
 
     expect(await detector.find([{ path: repository, locked: `claude agent agent-1 (pid ${other.pid})` }])).toEqual([]);

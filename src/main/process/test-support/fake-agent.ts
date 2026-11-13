@@ -20,9 +20,12 @@ export async function startFakeAgent(name: string, cwd: string): Promise<{ pid: 
   return startIdle(executable, cwd, bin);
 }
 
-/** Starts an idle Node process, for checks that need a live process id and nothing else, on any platform. */
-export function startIdleProcess(cwd: string): Promise<{ pid: number; stop(): Promise<void> }> {
-  return startIdle(process.execPath, cwd, null);
+/**
+ * Starts an idle Node process, for checks that need a live process id and nothing else, on any platform.
+ * It works outside the test's folders, because Windows can't delete a folder a process is working in.
+ */
+export function startIdleProcess(): Promise<{ pid: number; stop(): Promise<void> }> {
+  return startIdle(process.execPath, os.tmpdir(), null);
 }
 
 async function startIdle(executable: string, cwd: string, bin: string | null): Promise<{ pid: number; stop(): Promise<void> }> {
