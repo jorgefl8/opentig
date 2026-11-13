@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Tooltip, TooltipContent } from '@/components/ui/tooltip';
-import { attributeFromPath, columnFromPoint, findLineElement, lineText, rangeForColumns } from './color-hover-dom';
+import { attributeFromPath, columnFromPoint, findLineElement, lineText, pathFromPoint, rangeForColumns } from './color-hover-dom';
 import { createColorHoverController, type ColorHoverTarget } from './color-hover-controller';
 import { colorRangeAt, isStylesheetLanguage, lineColors, type ColorRange } from './css-colors';
 import { COLOR_LANGUAGE_ATTRIBUTE, type ColorSwatchRegistry } from './color-swatch-registry';
@@ -44,30 +44,63 @@ export function ColorHoverPreview({ getRoot, language, swatches }: ColorHoverPre
     let frame = 0;
     let latest: { path: EventTarget[]; x: number; y: number } | null = null;
 
+    // The line last handed to the controller, and where the pointer rests over it.
+    let target: Element | null = null;
+    let resting: { x: number; y: number } | null = null;
+    const update = (next: HoveredColor | null) => {
+      target = next?.line ?? null;
+      if (target) watchLines(target);
+      controller.update(next);
+    };
+
     const resolve = () => {
       frame = 0;
       const pointer = latest;
       latest = null;
       if (!pointer) return;
       const swatch = swatchesRef.current?.hit(pointer.x, pointer.y);
+      if (swatch && !swatch.line.isConnected) {
+        // The swatch layer redraws on the next frame after Pierre replaces its lines.
+        latest = pointer;
+        frame = requestAnimationFrame(resolve);
+        return;
+      }
       if (swatch) {
-        controller.update({ value: swatch.value, start: swatch.start, end: swatch.end, line: swatch.line, key: hoverKey(swatch.line, swatch.start, swatch.value) });
+        update({ value: swatch.value, start: swatch.start, end: swatch.end, line: swatch.line, key: hoverKey(swatch.line, swatch.start, swatch.value) });
         return;
       }
       const line = findLineElement(pointer.path);
       const column = line && columnFromPoint(line, pointer.x, pointer.y);
       if (!line || column === null) {
-        controller.update(null);
+        update(null);
         return;
       }
       const stylesheet = isStylesheetLanguage(languageRef.current ?? attributeFromPath(pointer.path, COLOR_LANGUAGE_ATTRIBUTE));
       const range = colorRangeAt(lineColors(lineText(line), stylesheet), column);
-      controller.update(range ? { ...range, line, key: hoverKey(line, range.start, range.value) } : null);
+      update(range ? { ...range, line, key: hoverKey(line, range.start, range.value) } : null);
     };
+
+    // Pierre replaces its line elements when highlighting arrives or the file
+    // reloads. A preview anchored to a removed line would measure as nothing,
+    // so look again at the resting pointer, without waiting for it to move.
+    let watchedRoot: Node | null = null;
+    const lineObserver = new MutationObserver(() => {
+      if (!target || target.isConnected || !resting) return;
+      latest = { path: pathFromPoint(document, resting.x, resting.y), ...resting };
+      frame ||= requestAnimationFrame(resolve);
+    });
+    function watchLines(line: Element) {
+      const root = line.getRootNode();
+      if (root === watchedRoot) return;
+      lineObserver.disconnect();
+      lineObserver.observe(root, { childList: true, subtree: true });
+      watchedRoot = root;
+    }
 
     const hide = () => {
       latest = null;
-      controller.update(null);
+      resting = null;
+      update(null);
     };
     hideRef.current = hide;
 
@@ -79,7 +112,8 @@ export function ColorHoverPreview({ getRoot, language, swatches }: ColorHoverPre
         hide();
         return;
       }
-      latest = { path, x: event.clientX, y: event.clientY };
+      resting = { x: event.clientX, y: event.clientY };
+      latest = { path, ...resting };
       frame ||= requestAnimationFrame(resolve);
     };
 
@@ -91,6 +125,7 @@ export function ColorHoverPreview({ getRoot, language, swatches }: ColorHoverPre
     window.addEventListener('blur', hide);
     return () => {
       if (frame) cancelAnimationFrame(frame);
+      lineObserver.disconnect();
       controller.dispose();
       document.removeEventListener('pointermove', onPointerMove);
       document.removeEventListener('pointerdown', hide, true);
@@ -120,7 +155,20 @@ export function ColorHoverPreview({ getRoot, language, swatches }: ColorHoverPre
   );
 }
 
-/** The same color at the same place, whether reached through its text or its swatch. */
+const lineIds = new WeakMap<Element, number>();
+let nextLineId = 0;
+
+/**
+ * The same color at the same place, whether reached through its text or its
+ * swatch. A line element Pierre re-rendered counts as a new place, so the
+ * preview moves to it.
+ */
 function hoverKey(line: Element, start: number, value: string): string {
-  return `${line.getAttribute('data-line')}:${start}:${value}`;
+  let id = lineIds.get(line);
+  if (id === undefined) {
+    nextLineId += 1;
+    id = nextLineId;
+    lineIds.set(line, id);
+  }
+  return `${id}:${start}:${value}`;
 }

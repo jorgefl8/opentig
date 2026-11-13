@@ -6,6 +6,11 @@
   pointer-events: none;
 }
 
+/* The positioner around the popup too, so the preview never blocks the code it covers. */
+:has(> .color-preview) {
+  pointer-events: none;
+}
+
 /* A checkerboard under the color, so transparency reads as see-through. */
 .color-preview-swatch {
   --color-preview-check-light: oklch(1 0 0);

@@ -17,6 +17,22 @@ export function findLineElement(path: readonly EventTarget[]): Element | null {
   return null;
 }
 
+/**
+ * The composed path to the element drawn at a viewport point, through open
+ * shadow roots, like an event's `composedPath()` at that point.
+ */
+export function pathFromPoint(document: Document, x: number, y: number): EventTarget[] {
+  let element = document.elementFromPoint(x, y);
+  while (element?.shadowRoot) {
+    const inner = element.shadowRoot.elementFromPoint(x, y);
+    if (!inner || inner === element) break;
+    element = inner;
+  }
+  const path: EventTarget[] = [];
+  for (let node: Node | null = element; node; node = node.parentNode ?? (node instanceof ShadowRoot ? node.host : null)) path.push(node);
+  return path;
+}
+
 /** The closest value of `attribute` along an event's composed path. */
 export function attributeFromPath(path: readonly EventTarget[], attribute: string): string | undefined {
   for (const target of path) {
