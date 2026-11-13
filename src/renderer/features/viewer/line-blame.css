@@ -1,0 +1,70 @@
+/* The ghost text is positioned over the editor, never inside Pierre's DOM. */
+.source-code-editor-content:has(> .line-blame-layer) { position: relative; }
+
+.line-blame-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.line-blame-ghost {
+  position: absolute;
+  overflow: hidden;
+  font-family: var(--opentig-font-mono);
+  white-space: pre;
+  text-overflow: ellipsis;
+  color: var(--muted-foreground);
+  opacity: 0.75;
+}
+
+.line-blame-card {
+  display: flex;
+  width: min(22rem, calc(100vw - 2rem));
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--popover);
+  color: var(--popover-foreground);
+  font-size: var(--text-ui);
+  box-shadow: 0 12px 32px -12px rgb(0 0 0 / 0.35);
+  outline: none;
+}
+
+.line-blame-card p { margin: 0; }
+
+.line-blame-card-title {
+  font-size: var(--text-body);
+  font-weight: var(--weight-strong);
+}
+
+.line-blame-card-meta { color: var(--muted-foreground); }
+
+.line-blame-card-summary {
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+}
+
+.line-blame-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.line-blame-card-oid {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+}
+
+.line-blame-card-oid code {
+  font-family: var(--opentig-font-mono);
+  font-size: var(--text-ui);
+}

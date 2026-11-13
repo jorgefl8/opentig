@@ -245,3 +245,94 @@ test('a stylesheet shows a swatch before each color and previews the hovered col
   await fileTree(page).getByRole('treeitem', { name: 'README.md' }).hover();
   await expect(colorPreview(page, '#3b82f6')).toBeHidden();
 });
+
+/** Commits `content` to `file` as another author, so blame names someone other than the default tester. */
+async function commitAs(repository: GitRepository, author: string, email: string, file: string, content: string, message: string): Promise<void> {
+  await writeFile(path.join(repository.path, file), content);
+  await repository.git('add', file);
+  await repository.git('-c', `user.name=${author}`, '-c', `user.email=${email}`, 'commit', '-q', '-m', message);
+}
+
+/** A rendered line of the open editor; Playwright reaches into the editor's shadow root. */
+function editorLine(page: Page, line: number) {
+  return page.locator(`[data-content] > [data-line="${line}"]`);
+}
+
+test('line blame names the commit of a hovered line and opens it in History', async ({ pairedPage: page, repository }) => {
+  await repository.commit('notes.txt', 'First line\n', 'Add notes');
+  await commitAs(repository, 'Grace Hopper', 'grace@example.com', 'notes.txt', 'First line\nSecond line\n', 'Explain the second step');
+  await openFiles(page, repository);
+
+  await fileTree(page).getByRole('treeitem', { name: 'notes.txt' }).click();
+  await expect(page.getByRole('textbox', { name: 'notes.txt' })).toContainText('Second line');
+  await editorLine(page, 1).hover();
+  const ghost = page.locator('.line-blame-ghost');
+  await expect(ghost).toHaveText(/^E2E Tester, .+ • Add notes$/);
+  await editorLine(page, 2).hover();
+  await expect(ghost).toHaveText(/^Grace Hopper, .+ • Explain the second step$/);
+
+  // The ghost text ignores the pointer; resting over it opens the card.
+  const box = await ghost.boundingBox();
+  if (!box) throw new Error('The blame text has no position.');
+  await page.mouse.move(box.x + 8, box.y + box.height / 2);
+  const card = page.getByRole('dialog', { name: 'Line blame' });
+  await expect(card).toBeVisible();
+  await expect(card.getByText('Grace Hopper', { exact: true })).toBeVisible();
+  await expect(card.getByText('grace@example.com')).toBeVisible();
+  await expect(card.getByText('Explain the second step')).toBeVisible();
+  const oid = await repository.git('rev-parse', '--short=7', 'HEAD');
+  await expect(card.getByRole('code').filter({ hasText: oid })).toBeVisible();
+  await card.getByRole('button', { name: 'Open in History' }).click();
+
+  const list = page.getByRole('list', { name: 'Commit history' });
+  await expect(list.getByRole('button', { name: 'Explain the second step', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('main').getByRole('heading', { name: 'Explain the second step', level: 2 })).toBeVisible();
+});
+
+test('an edited line reads "Not committed yet" and line blame can be turned off', async ({ pairedPage: page, repository }) => {
+  await repository.commit('notes.txt', 'First line\nSecond line\n', 'Add notes');
+  await openFiles(page, repository);
+
+  await fileTree(page).getByRole('treeitem', { name: 'notes.txt' }).click();
+  const editor = page.getByRole('textbox', { name: 'notes.txt' });
+  await expect(editor).toContainText('Second line');
+  // The caret's line shows its blame while the editor has focus.
+  await editorLine(page, 1).click();
+  await page.keyboard.press('End');
+  const ghost = page.locator('.line-blame-ghost');
+  await expect(ghost).toHaveText(/^E2E Tester, .+ • Add notes$/);
+  // Move the pointer away so the caret's line, not the hovered one, is blamed.
+  await page.getByRole('tree', { name: 'Files' }).hover();
+  await page.keyboard.type(' edited');
+
+  await expect(page.getByRole('tablist', { name: 'Open files' }).getByRole('tab', { name: 'notes.txt, unsaved changes' })).toBeVisible();
+  await expect(ghost).toHaveText('Not committed yet');
+
+  await page.getByRole('button', { name: 'Hide line blame' }).click();
+  await expect(ghost).toBeHidden();
+  await expect(page.getByRole('button', { name: 'Show line blame' })).toHaveAttribute('aria-pressed', 'false');
+
+  // The choice is saved with the other preferences.
+  await page.reload();
+  await fileTree(page).getByRole('treeitem', { name: 'notes.txt' }).click();
+  await expect(page.getByRole('button', { name: 'Show line blame' })).toHaveAttribute('aria-pressed', 'false');
+});
+
+test('line blame is written after a syntax problem on the same line', async ({ pairedPage: page, repository }) => {
+  await repository.commit('settings.json', '{\n  "name": "demo",\n}\n', 'Add settings');
+  await openFiles(page, repository);
+
+  await fileTree(page).getByRole('treeitem', { name: 'settings.json' }).click();
+  await expect(page.getByRole('textbox', { name: 'settings.json' })).toContainText('demo');
+  const problem = page.getByText('Trailing comma.', { exact: true });
+  await expect(problem).toBeVisible();
+
+  await editorLine(page, 2).hover();
+  const ghost = page.locator('.line-blame-ghost');
+  await expect(ghost).toHaveText(/^E2E Tester, .+ • Add settings$/);
+  // Both stay readable: the blame starts where the problem's message ends.
+  await expect.poll(async () => {
+    const [message, blame] = await Promise.all([problem.boundingBox(), ghost.boundingBox()]);
+    return message !== null && blame !== null && blame.x >= message.x + message.width;
+  }).toBe(true);
+});

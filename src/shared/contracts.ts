@@ -13,6 +13,7 @@ import type { FilesTreeState } from './files-tree-state';
 import type { OpenFileTab, OpenFilesState } from './open-files-state';
 import type { SearchOptions, SearchReplaceRequest, SearchReplaceResult, SearchResult } from './search';
 import type { ShortcutOverrides } from './shortcuts';
+import type { LineBlameResult } from './line-blame';
 
 export interface RepositoryAiInstructionsStatus {
   enabled: boolean;
@@ -771,6 +772,8 @@ export interface Preferences {
   /** Desktop only: the sidebar shows as a narrow rail of section icons. */
   sidebarCollapsed: boolean;
   showDotEnvFiles: boolean;
+  /** The Files editor shows who last changed the hovered or caret line. */
+  lineBlame: boolean;
   uiZoom: number;
   uiFont: UiFontPreference;
   monoFont: MonoFontPreference;
@@ -899,6 +902,8 @@ export interface OpenTigApi {
     getDirectoryEntries(id: string, path: string): Promise<FileTreeEntry[]>;
     readFile(id: string, path: string, allowLarge?: boolean): Promise<FileResult>;
     readImage(id: string, path: string): Promise<ImageFileResult>;
+    /** Who last changed each line of a tracked file; `draft` blames unsaved editor text instead of the saved file. */
+    lineBlame(id: string, path: string, draft?: string): Promise<LineBlameResult>;
     /** Discovers a favicon or app icon in the repository root when one exists. */
     getFavicon(id: string): Promise<RepositoryFavicon | null>;
     writeFile(id: string, path: string, content: string, expectedContent: string): Promise<WriteFileResult>;
@@ -1055,7 +1060,7 @@ export const IPC = {
   repositoryClone: 'repository:clone', repositoryCloneStatus: 'repository:clone-status', repositoryCancelClone: 'repository:cancel-clone',
   bootstrap: 'app:bootstrap', capabilities: 'app:capabilities', preferences: 'app:preferences', filesTreeStateUpdate: 'app:files-tree-state', openFilesStateUpdate: 'app:open-files-state', projectCreate: 'projects:create', projectRename: 'projects:rename', projectRemove: 'projects:remove', projectAssign: 'projects:assign', projectMove: 'projects:move', projectMoveRepository: 'projects:move-repository',
   repositoryPreparePath: 'repository:prepare-path', repositoryCompleteSetup: 'repository:complete-setup', repositoryOpenPath: 'repository:open-path', repositoryBrowseDirectories: 'repository:browse-directories', repositoryOpenRecent: 'repository:open-recent', repositoryRelocateRecent: 'repository:relocate-recent', repositoryUnavailableRecent: 'repository:unavailable-recent', repositoryFindRelocations: 'repository:find-relocations', repositoryRelocateRecents: 'repository:relocate-recents', repositoryForget: 'repository:forget', repositoryStatus: 'repository:status', repositoryFiles: 'repository:files', repositoryDirectoryEntries: 'repository:directory-entries',
-  repositoryReadFile: 'repository:read-file', repositoryReadImage: 'repository:read-image', repositoryGetFavicon: 'repository:favicon', repositoryWriteFile: 'repository:write-file', repositoryAbsolutePath: 'repository:absolute-path',
+  repositoryReadFile: 'repository:read-file', repositoryReadImage: 'repository:read-image', repositoryLineBlame: 'repository:line-blame', repositoryGetFavicon: 'repository:favicon', repositoryWriteFile: 'repository:write-file', repositoryAbsolutePath: 'repository:absolute-path',
   repositoryCopyEntries: 'repository:copy-entries', repositoryCutEntries: 'repository:cut-entries', repositoryPasteEntries: 'repository:paste-entries', repositoryMoveEntry: 'repository:move-entry', repositoryDeleteEntry: 'repository:delete-entry',
   repositoryMoveEntries: 'repository:move-entries', repositoryDeleteEntries: 'repository:delete-entries', repositoryRenameEntry: 'repository:rename-entry', repositoryCreateEntry: 'repository:create-entry',
   repositoryFileHistoryState: 'repository:file-history-state', repositoryUndoFileOperation: 'repository:undo-file-operation', repositoryRedoFileOperation: 'repository:redo-file-operation',

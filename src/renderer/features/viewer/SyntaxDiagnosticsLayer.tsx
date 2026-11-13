@@ -176,6 +176,7 @@ export function SyntaxDiagnosticsLayer({ diagnostics, onActivateLine }: SyntaxDi
                   render={
                     <span
                       className="syntax-diagnostic-message"
+                      data-syntax-diagnostic-line={placement.line + 1}
                       style={{ ...placement.message, lineHeight: `${placement.message.height}px` }}
                       onMouseDown={(event) => {
                         // Act like a click past the end of the line it covers.

@@ -23,6 +23,7 @@ import { useMobileChrome } from '@/components/mobile-chrome-context';
 import { mobileMainAction } from '@/lib/mobile-main-action';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { FileViewerToolbar } from './FileViewerToolbar';
+import { LineBlameLayer, LineBlameToggle } from './LineBlame';
 import { ColorHoverPreview } from './ColorHoverPreview';
 import { ColorSwatchLayer } from './ColorSwatchLayer';
 import { createColorSwatchRegistry } from './color-swatch-registry';
@@ -71,6 +72,8 @@ interface SourceCodeEditorProps {
   wrapLines: boolean;
   readOnly: boolean;
   onChange(value: string): void;
+  /** The saved text of a working-tree file; shows line blame against it when set. */
+  lineBlameBaseline?: string | undefined;
   ref?: Ref<SourceCodeEditorHandle>;
 }
 
@@ -97,7 +100,7 @@ function VirtualizerScrollBridge({ handleRef }: { handleRef: MutableRefObject<Vi
   return null;
 }
 
-export function SourceCodeEditor({ path, cacheKey, value, themeType, wrapLines, readOnly, onChange, ref }: SourceCodeEditorProps) {
+export function SourceCodeEditor({ path, cacheKey, value, themeType, wrapLines, readOnly, onChange, lineBlameBaseline, ref }: SourceCodeEditorProps) {
   const editReady = useContext(EditReadyContext);
   const shortcuts = useShortcuts();
   // Keep the surface type stable for this mount. Crossing the threshold while
@@ -201,6 +204,8 @@ export function SourceCodeEditor({ path, cacheKey, value, themeType, wrapLines, 
       />
     </>
   );
+  const lineBlame = lineBlameBaseline === undefined ? null
+    : <LineBlameLayer path={path} text={value} savedText={lineBlameBaseline} layoutKey={`${wrapLines}:${themeType}`} />;
 
   return (
     <PierreWorkerPool theme={OPENTIG_CODE_THEMES}>
@@ -208,11 +213,13 @@ export function SourceCodeEditor({ path, cacheKey, value, themeType, wrapLines, 
       <Virtualizer className="source-code-editor" contentClassName="source-code-editor-content">
         <VirtualizerScrollBridge handleRef={virtualizerRef} />
         {fileSurface}
+        {lineBlame}
       </Virtualizer>
       ) : (
         <div ref={plainScrollRef} className="source-code-editor">
           <div className="source-code-editor-content">
             {fileSurface}
+            {lineBlame}
             <SyntaxDiagnosticsLayer diagnostics={diagnostics} onActivateLine={syntaxMarkers.focusLineEnd} />
           </div>
         </div>
@@ -250,7 +257,7 @@ export function EditableFileViewer({ file, initialContent, themeType, wrapLines,
   return (
     <div className="source-file-viewer">
       {/* On a phone Save floats, so a plain file needs no toolbar row of its own. */}
-      {phone ? saveControls : (dirty || saving) && <FileViewerToolbar end={saveControls} />}
+      {phone ? saveControls : <FileViewerToolbar controls={<LineBlameToggle />} end={saveControls} />}
       <div className="source-editor-scroll">
         <SourceCodeEditor
           path={file.path}
@@ -260,6 +267,7 @@ export function EditableFileViewer({ file, initialContent, themeType, wrapLines,
           wrapLines={wrapLines}
           readOnly={readOnly}
           onChange={updateDraft}
+          lineBlameBaseline={file.content}
         />
       </div>
     </div>
