@@ -68,6 +68,7 @@ import {
 import { resolveWindowControlsInset } from './window-controls';
 import { queryKeys, queryResourcesForScope, resetGitHubQueries } from '@/lib/query-client';
 import { listAgents } from '@/features/refs/local-refs-model';
+import { AgentMarks } from '@/features/refs/AgentLabel';
 import { persistTheme } from '@/lib/boot-theme';
 import { useMobileLayout } from '@/lib/use-mobile-layout';
 import { installZoomAwarePositioning } from '@/lib/zoom-aware-positioning';
@@ -2573,6 +2574,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       >
         <DialogPopup className="undo-commit-dialog">
           <div className="undo-commit-content">
+            {agentBranchSwitch && <AgentMarks agents={agentBranchSwitch.agents} max={4} />}
             <DialogTitle>
               {agentBranchSwitch ? `${listAgents(agentBranchSwitch.agents)} ${agentBranchSwitch.agents.length === 1 ? 'is' : 'are'} working in this folder` : 'An agent is working in this folder'}
             </DialogTitle>

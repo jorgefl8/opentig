@@ -21,6 +21,7 @@ describe('agentName', () => {
     ['node', ['node', '/usr/local/bin/gemini'], 'Gemini CLI'],
     ['node', ['/usr/bin/node', '--no-warnings', '/usr/lib/node_modules/@github/copilot/index.js'], 'Copilot CLI'],
     ['.opencode', ['/home/me/.opencode/bin/.opencode'], 'OpenCode'],
+    ['grok', ['/home/me/.grok/bin/grok'], 'Grok Build'],
     ['python3', ['python3', '-m', 'aider'], 'Aider'],
     ['claude.exe', ['C:\\Users\\me\\.local\\bin\\claude.exe'], 'Claude Code'],
   ])('recognizes %s %j as %s', (command, argv, expected) => {

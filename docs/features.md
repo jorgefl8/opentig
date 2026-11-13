@@ -351,11 +351,11 @@ If switching would overwrite local changes, OpenTig offers to move all tracked a
 
 **Agents in worktrees**
 
-A branch belongs to its folder, so switching branches also switches it for every program working in that folder. OpenTig marks worktrees where a coding agent is working with the agent's name, such as **Claude Code**: in the worktree menu, beside the branch it works on in the branch menu, and in **Manage worktrees**. It checks again every 10 seconds while OpenTig is visible. Choose that worktree, or the agent's branch, to open its folder, where its changes appear as it makes them and you can edit them too.
+A branch belongs to its folder, so switching branches also switches it for every program working in that folder. OpenTig marks worktrees where a coding agent is working with the agent's logo and name, such as **Claude Code**, and a pulsing dot: in the worktree menu, beside the branch it works on in the branch menu, and in **Manage worktrees**. It checks again every 10 seconds while OpenTig is visible. Choose that worktree, or the agent's branch, to open its folder, where its changes appear as it makes them and you can edit them too.
 
 If an agent is working in the folder OpenTig has open, switching branches there asks first, because the agent would carry on with the other branch's files and its uncommitted changes would go along. **Switch anyway** continues. To keep agents unaffected, run them in their own worktrees, such as with `claude --worktree`.
 
-OpenTig recognizes Claude Code, Codex, OpenCode, Gemini CLI, Copilot CLI, Cursor Agent, and Aider running on the computer where its server runs. On Linux and macOS it finds them by the folder each one works in. Windows doesn't let a program read another program's working folder, so there it finds only Claude Code in worktrees that Claude Code locked for its sessions, such as with `claude --worktree`. Agents that OpenTig starts itself, such as for commit messages, and other users' processes don't count. Terminals and editors open in a folder aren't detected.
+OpenTig recognizes Claude Code, Codex, OpenCode, Grok Build, Gemini CLI, Copilot CLI, Cursor Agent, and Aider running on the computer where its server runs. On Linux and macOS it finds them by the folder each one works in. Windows doesn't let a program read another program's working folder, so there it finds only Claude Code in worktrees that Claude Code locked for its sessions, such as with `claude --worktree`. Agents that OpenTig starts itself, such as for commit messages, and other users' processes don't count. Terminals and editors open in a folder aren't detected.
 
 **Inspect and refresh branches**
 

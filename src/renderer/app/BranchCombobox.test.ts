@@ -101,7 +101,7 @@ it('honours the busy state whatever else it can offer', async () => {
 
 it('marks the branch an agent is working on, in the worktree it opens', async () => {
   await open({ worktrees: { ...worktreeProps([main, hotfix]), agents: [{ path: hotfix.path, agents: ['Claude Code', 'Codex'] }] } });
-  expect(option('hotfix')?.textContent).toContain('Claude Code +1');
+  expect(option('hotfix')?.textContent).toContain('2 agents (Claude Code and Codex) working');
   expect(option('hotfix')?.textContent).toContain('Open');
   expect(option('feature')?.textContent).not.toContain('Claude Code');
 });

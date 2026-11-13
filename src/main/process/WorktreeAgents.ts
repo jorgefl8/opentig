@@ -29,6 +29,7 @@ const AGENTS: AgentSignature[] = [
   // npm's launcher starts a native binary named after its target triple.
   { name: 'Codex', command: /^codex(?:-(?:x86_64|aarch64)-.*)?$/, packages: ['@openai/codex'] },
   { name: 'OpenCode', command: /^\.?opencode$/, packages: ['opencode-ai'] },
+  { name: 'Grok Build', command: /^grok$/, packages: [] },
   { name: 'Gemini CLI', command: /^gemini$/, packages: ['@google/gemini-cli'] },
   { name: 'Copilot CLI', command: /^copilot$/, packages: ['@github/copilot'] },
   { name: 'Cursor Agent', command: /^cursor-agent$/, packages: [] },
