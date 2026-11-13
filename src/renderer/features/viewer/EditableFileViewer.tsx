@@ -1,4 +1,4 @@
-import { useContext, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { MutableRefObject, Ref } from 'react';
 import { File, Virtualizer, useVirtualizer } from '@pierre/diffs/react';
 import type { EditorOptions } from '@pierre/diffs/edit';
@@ -23,6 +23,9 @@ import { useMobileChrome } from '@/components/mobile-chrome-context';
 import { mobileMainAction } from '@/lib/mobile-main-action';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { FileViewerToolbar } from './FileViewerToolbar';
+import { ColorHoverPreview } from './ColorHoverPreview';
+import { ColorSwatchLayer } from './ColorSwatchLayer';
+import { createColorSwatchRegistry } from './color-swatch-registry';
 import './source-editor.css';
 
 interface FileSaveControlsProps {
@@ -181,13 +184,22 @@ export function SourceCodeEditor({ path, cacheKey, value, themeType, wrapLines, 
     },
   }), []);
 
+  const [colorSwatches] = useState(createColorSwatchRegistry);
+  const getEditorRoot = useCallback(() => {
+    const root = virtualizerRef.current?.getRoot() ?? plainScrollRef.current;
+    return root instanceof HTMLElement ? root : null;
+  }, []);
+
   const fileSurface = (
-    <File
-      file={file}
-      options={options}
-      editorOptions={editorOptions}
-      edit={editing}
-    />
+    <>
+      <ColorSwatchLayer registry={colorSwatches} language={file.lang} />
+      <File
+        file={file}
+        options={options}
+        editorOptions={editorOptions}
+        edit={editing}
+      />
+    </>
   );
 
   return (
@@ -205,6 +217,7 @@ export function SourceCodeEditor({ path, cacheKey, value, themeType, wrapLines, 
           </div>
         </div>
       )}
+      <ColorHoverPreview getRoot={getEditorRoot} language={file.lang} swatches={colorSwatches} />
     </PierreWorkerPool>
   );
 }
