@@ -4,6 +4,8 @@ node_modules/
 dist/
 out/
 coverage/
+test-results/
+playwright-report/
 *.tsbuildinfo
 packages/server/.client/
 packages/server/.resource/

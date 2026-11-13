@@ -148,13 +148,27 @@ React Compiler configuration and gating rules are omitted because the build does
 
 </details>
 
+### Browser end-to-end tests
+
+Playwright tests under `e2e/` drive the real browser UI the way a user does: each test starts the built OpenTig server with a temporary home on a free loopback port, pairs a fresh Chromium browser, and works with a temporary Git repository. They never read or change your OpenTig data or repositories.
+
+```bash
+pnpm run build:server
+pnpm exec playwright install chromium
+pnpm run test:e2e
+```
+
+Each feature area has its own spec, such as `changes`, `sync`, `branches`, `history`, `files`, `search`, `projects`, `interface`, and `access`; shared fixtures and helpers live in `e2e/support/`. The server runs with a private home, so tests never touch your system Trash, CLI logins, or global Git configuration. GitHub, AI, and other networked features are not covered.
+
+Rebuild the server after changing application code; the tests use `packages/server/dist`. Find elements by role and accessible name, assert what the user sees, and check the repository with Git when the outcome is on disk. Keep end-to-end tests for complete user journeys; edge cases and error branches stay in Vitest. Failed runs keep a screenshot and a trace under `test-results/`; open a trace with `pnpm exec playwright show-trace <trace.zip>`. `pnpm run check` does not run them; CI does.
+
 ### What CI validates
 
 PRs and pushes to `main` use the same CI scope rules:
 
 | Changed scope | Validation |
 | --- | --- |
-| **Application code, configuration, or assets** | Tests on Windows and Linux; typecheck, lint, and production dependency audit once on Linux; native Trash and packed CLI smoke checks on Windows, Linux, and macOS. The packed CLI `npx` run is skipped on Windows, where it is slow; the CLI release draft checks it once per release |
+| **Application code, configuration, or assets** | Tests on Windows and Linux; typecheck, lint, production dependency audit, and browser end-to-end tests once on Linux; native Trash and packed CLI smoke checks on Windows, Linux, and macOS. The packed CLI `npx` run is skipped on Windows, where it is slow; the CLI release draft checks it once per release |
 | **Website or published documentation** | Website checks and production/noindex builds on Linux. This job does not deploy the site |
 | **Prose-only documentation** | Application validation jobs retain their scope checks but skip dependency installs, tests, and smoke checks. Published guides still trigger website validation |
 | **Manual CI run** | Full validation regardless of changed paths |

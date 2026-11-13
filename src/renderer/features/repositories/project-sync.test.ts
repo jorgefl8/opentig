@@ -85,6 +85,11 @@ describe('project sync toast copy', () => {
       description: 'Current branch has no upstream configured.',
       duration: 10_000,
     });
+    expect(projectPushBlockedCopy('API · backend', { status: 'rejected', reason: 'remote-changed', message: 'hint: Updates were rejected because the remote contains work' })).toEqual({
+      title: 'Could not push API · backend',
+      description: 'Remote has new changes. Pull first — OpenTig rebases your local commits on top when there are no conflicts.',
+      duration: 10_000,
+    });
     expect(projectPullBlockedCopy('Web · frontend', { status: 'stash-conflict', updated: true, files: ['App.tsx'], stashOid: 'abc123' })).toEqual({
       title: 'Web · frontend updated with local conflicts',
       description: 'Safety stash was preserved. Resolve conflicts before continuing.',
