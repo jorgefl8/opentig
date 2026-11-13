@@ -186,7 +186,6 @@ test('removing a repository from OpenTig keeps its folder on disk', async ({ pai
 
 test('a moved repository folder can be located again', async ({ pairedPage: page, repository }) => {
   await openRepository(page, repository);
-  await expect(page.getByRole('button', { name: 'Refresh' })).toBeEnabled();
   // Stays inside the fixture's temporary folder, so the fixture cleans it up.
   const moved = path.join(path.dirname(repository.path), 'moved-project');
   await rename(repository.path, moved);
@@ -212,8 +211,7 @@ test('a moved repository folder can be located again', async ({ pairedPage: page
 
 test('a missing repository can be removed from the not-found screen', async ({ pairedPage: page, repository }) => {
   await openRepository(page, repository);
-  // Removal is refused while the opening refresh is still running.
-  await expect(page.getByRole('button', { name: 'Refresh' })).toBeEnabled();
+  // Removed right away: the button waits for the opening refresh to finish.
   await rm(repository.path, { recursive: true, force: true });
 
   await expect(page.getByRole('heading', { name: 'sample-project was not found', level: 1 })).toBeVisible();

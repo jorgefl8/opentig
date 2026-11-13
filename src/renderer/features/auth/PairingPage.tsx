@@ -19,8 +19,15 @@ const messages: Record<Exclude<PairingExchangeResult, 'paired'>, string> = {
   disabled: 'Web access is paused. Enable it from the desktop app, or run the recovery command below on the server and restart this instance. Previously paired browsers can then resume their saved sessions; new devices need a pairing link. For a custom CLI home, add --home to the recovery command.',
 };
 
+// The first render clears the code from the address bar. A page that renders
+// again from scratch (React may discard a first render, for example around
+// Suspense) must get the same code back instead of an empty field. It stays in
+// memory only for this page load.
+let fragmentToken: string | undefined;
+const initialToken = () => (fragmentToken ??= consumePairingFragment(window.location, window.history));
+
 export default function PairingPage() {
-  const [token, setToken] = useState(() => consumePairingFragment(window.location, window.history));
+  const [token, setToken] = useState(initialToken);
   const [clientName, setClientName] = useState(() => defaultDeviceName(window.navigator.userAgent));
   const [status, setStatus] = useState<'idle' | 'pairing' | Exclude<PairingExchangeResult, 'paired'>>('idle');
   const [session, setSession] = useState<'checking' | PairingSessionResult>('checking');

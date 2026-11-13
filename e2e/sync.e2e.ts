@@ -139,18 +139,21 @@ test('pulling keeps uncommitted and untracked local changes', async ({ pairedPag
   expect(await repository.git('stash', 'list')).toBe('');
 });
 
-test('pushing is rejected without force-pushing while the remote has commits the branch lacks', async ({ pairedPage: page, repository }) => {
+test('a push rejected because the remote moved offers Pull and never force-pushes', async ({ pairedPage: page, repository }) => {
   const { bare, other } = await repository.addRemote();
-  const remoteHead = await pushFromOtherClone(other, 'remote.txt', 'from the remote\n', 'Add remote file');
   await repository.commit('local.txt', 'from this clone\n', 'Add local file');
   await openRepository(page, repository);
-  await fetchFromToolbar(page, 1);
+  // The remote moves after the last fetch, so OpenTig still shows only a push.
+  const remoteHead = await pushFromOtherClone(other, 'remote.txt', 'from the remote\n', 'Add remote file');
 
   await pushButton(page, 1).click();
 
-  // Git's non-fast-forward rejection is reported in the push notification.
-  await expect(page.getByText('sample-project: could not push commits')).toBeVisible();
+  await expect(page.getByText('sample-project: the remote contains new changes')).toBeVisible();
   // Nothing is force-pushed: the remote keeps its own commit.
   expect(await remoteTip(repository, bare, 'main')).toBe(remoteHead);
-  await expect(pullButton(page, 1)).toBeVisible();
+
+  // Sileo renders a notification's action as a link.
+  await page.getByRole('link', { name: 'Pull', exact: true }).click();
+  await expect.poll(() => repository.git('log', '--format=%s', 'main')).toBe('Add local file\nAdd remote file\nInitial commit');
+  await expect(pushButton(page, 1)).toBeVisible();
 });
