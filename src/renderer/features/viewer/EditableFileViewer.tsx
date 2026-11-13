@@ -1,4 +1,4 @@
-import { useContext, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { MutableRefObject, Ref } from 'react';
 import { File, Virtualizer, useVirtualizer } from '@pierre/diffs/react';
 import type { EditorOptions } from '@pierre/diffs/edit';
@@ -14,6 +14,8 @@ import { syncScrollFraction } from './scroll-sync';
 import { buildFileEditorKeymap } from './source-editor-keymap';
 import { shouldVirtualizeSourceEditor } from './source-editor-virtualization';
 import { useEditableFileDraft } from './useEditableFileDraft';
+import { SYNTAX_MARKER_CSS, SyntaxDiagnosticsLayer } from './SyntaxDiagnosticsLayer';
+import { useSyntaxDiagnostics, useSyntaxMarkers } from './useSyntaxDiagnostics';
 import { useShortcuts } from '@/app/useShortcuts';
 import { Button } from '@/components/ui/button';
 import { MobileMainAction } from '@/components/MobileChrome';
@@ -21,6 +23,10 @@ import { useMobileChrome } from '@/components/mobile-chrome-context';
 import { mobileMainAction } from '@/lib/mobile-main-action';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { FileViewerToolbar } from './FileViewerToolbar';
+import { LineBlameLayer, LineBlameToggle } from './LineBlame';
+import { ColorHoverPreview } from './ColorHoverPreview';
+import { ColorSwatchLayer } from './ColorSwatchLayer';
+import { createColorSwatchRegistry } from './color-swatch-registry';
 import './source-editor.css';
 
 interface FileSaveControlsProps {
@@ -66,6 +72,8 @@ interface SourceCodeEditorProps {
   wrapLines: boolean;
   readOnly: boolean;
   onChange(value: string): void;
+  /** The saved text of a working-tree file; shows line blame against it when set. */
+  lineBlameBaseline?: string | undefined;
   ref?: Ref<SourceCodeEditorHandle>;
 }
 
@@ -92,7 +100,7 @@ function VirtualizerScrollBridge({ handleRef }: { handleRef: MutableRefObject<Vi
   return null;
 }
 
-export function SourceCodeEditor({ path, cacheKey, value, themeType, wrapLines, readOnly, onChange, ref }: SourceCodeEditorProps) {
+export function SourceCodeEditor({ path, cacheKey, value, themeType, wrapLines, readOnly, onChange, lineBlameBaseline, ref }: SourceCodeEditorProps) {
   const editReady = useContext(EditReadyContext);
   const shortcuts = useShortcuts();
   // Keep the surface type stable for this mount. Crossing the threshold while
@@ -103,6 +111,10 @@ export function SourceCodeEditor({ path, cacheKey, value, themeType, wrapLines, 
   const virtualizerRef = useRef<VirtualizerHandle>(undefined);
   const plainScrollRef = useRef<HTMLDivElement>(null);
 
+  // Large files move to the virtualized surface, which the problem layer skips.
+  const { diagnostics } = useSyntaxDiagnostics(path, value, !virtualized);
+  const syntaxMarkers = useSyntaxMarkers(diagnostics);
+
   const editing = editReady && !readOnly;
   const { key: fileKey, noteEditorText } = useEditorFileKey(cacheKey, value, editing);
   const file = useMemo(() => ({ name: path, lang: resolvePierreLanguage(path), contents: value, cacheKey: fileKey }), [fileKey, path, value]);
@@ -111,7 +123,7 @@ export function SourceCodeEditor({ path, cacheKey, value, themeType, wrapLines, 
     themeType,
     theme: OPENTIG_CODE_THEMES,
     overflow: wrapLines ? 'wrap' as const : 'scroll' as const,
-    unsafeCSS: VIEWER_SCROLLBAR_CSS,
+    unsafeCSS: VIEWER_SCROLLBAR_CSS + SYNTAX_MARKER_CSS,
   }), [themeType, wrapLines]);
   // This object must stay stable: EditProvider uses its identity to retain the
   // editor instance and its undo/redo history while the surface rerenders. It is
@@ -119,11 +131,12 @@ export function SourceCodeEditor({ path, cacheKey, value, themeType, wrapLines, 
   const editorOptions = useMemo<EditorOptions<'file', undefined, undefined>>(() => ({
     historyMaxEntries: 500,
     keymap: buildFileEditorKeymap(shortcuts.editorSearch),
+    onAttach: syntaxMarkers.onAttach,
     onChange(event) {
       noteEditorText(event.file.contents);
       onChangeRef.current(event.file.contents);
     },
-  }), [noteEditorText, shortcuts.editorSearch]);
+  }), [noteEditorText, shortcuts.editorSearch, syntaxMarkers.onAttach]);
 
   const cancelScrollSync = useRef<(() => void) | null>(null);
   useEffect(() => () => cancelScrollSync.current?.(), []);
@@ -174,14 +187,25 @@ export function SourceCodeEditor({ path, cacheKey, value, themeType, wrapLines, 
     },
   }), []);
 
+  const [colorSwatches] = useState(createColorSwatchRegistry);
+  const getEditorRoot = useCallback(() => {
+    const root = virtualizerRef.current?.getRoot() ?? plainScrollRef.current;
+    return root instanceof HTMLElement ? root : null;
+  }, []);
+
   const fileSurface = (
-    <File
-      file={file}
-      options={options}
-      editorOptions={editorOptions}
-      edit={editing}
-    />
+    <>
+      <ColorSwatchLayer registry={colorSwatches} language={file.lang} />
+      <File
+        file={file}
+        options={options}
+        editorOptions={editorOptions}
+        edit={editing}
+      />
+    </>
   );
+  const lineBlame = lineBlameBaseline === undefined ? null
+    : <LineBlameLayer path={path} text={value} savedText={lineBlameBaseline} layoutKey={`${wrapLines}:${themeType}`} />;
 
   return (
     <PierreWorkerPool theme={OPENTIG_CODE_THEMES}>
@@ -189,12 +213,18 @@ export function SourceCodeEditor({ path, cacheKey, value, themeType, wrapLines, 
       <Virtualizer className="source-code-editor" contentClassName="source-code-editor-content">
         <VirtualizerScrollBridge handleRef={virtualizerRef} />
         {fileSurface}
+        {lineBlame}
       </Virtualizer>
       ) : (
         <div ref={plainScrollRef} className="source-code-editor">
-          <div className="source-code-editor-content">{fileSurface}</div>
+          <div className="source-code-editor-content">
+            {fileSurface}
+            {lineBlame}
+            <SyntaxDiagnosticsLayer diagnostics={diagnostics} onActivateLine={syntaxMarkers.focusLineEnd} />
+          </div>
         </div>
       )}
+      <ColorHoverPreview getRoot={getEditorRoot} language={file.lang} swatches={colorSwatches} />
     </PierreWorkerPool>
   );
 }
@@ -227,7 +257,7 @@ export function EditableFileViewer({ file, initialContent, themeType, wrapLines,
   return (
     <div className="source-file-viewer">
       {/* On a phone Save floats, so a plain file needs no toolbar row of its own. */}
-      {phone ? saveControls : (dirty || saving) && <FileViewerToolbar end={saveControls} />}
+      {phone ? saveControls : <FileViewerToolbar controls={<LineBlameToggle />} end={saveControls} />}
       <div className="source-editor-scroll">
         <SourceCodeEditor
           path={file.path}
@@ -237,6 +267,7 @@ export function EditableFileViewer({ file, initialContent, themeType, wrapLines,
           wrapLines={wrapLines}
           readOnly={readOnly}
           onChange={updateDraft}
+          lineBlameBaseline={file.content}
         />
       </div>
     </div>

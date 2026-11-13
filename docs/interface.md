@@ -53,7 +53,7 @@ The frame fits smaller windows. Browser revocation, LAN confirmation, device ren
 
 ### Viewer and saved preferences
 
-Choose a **tree or list** for Changes, enable **line wrapping**, and decide whether to **show Git-ignored files**, on by default, in General settings. Diffs remember the split or unified layout chosen with their own button.
+Choose a **tree or list** for Changes, enable **line wrapping**, and decide whether to **show Git-ignored files**, on by default, in General settings. Line blame in the Files editor is turned on or off from its button beside the file tabs and is remembered the same way. Diffs remember the split or unified layout chosen with their own button.
 
 OpenTig starts in **Files** on first use, then reopens your last active section: Changes, Files, History, GitHub, or Search. This choice applies across repositories but is independent for each browser profile or desktop client.
 

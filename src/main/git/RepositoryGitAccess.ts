@@ -2,7 +2,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash } from 'node:crypto';
 import type { RepositoryInfo } from '../../shared/contracts';
 import type { GitHubAccountSelection } from '../../shared/github-accounts';
-import type { PublicationContext, RepositoryAccess, AccessCheck, RemoteAccessProblem } from '../../shared/repository-access';
+import type { PublicationContext, PublicationBlockReason, RepositoryAccess, AccessCheck, RemoteAccessProblem } from '../../shared/repository-access';
 import { parseSshRemote } from '../github/GitHubRemoteParser';
 import { GitOperationError } from '../../shared/errors';
 import { redactSensitiveText } from '../../shared/redaction';
@@ -64,7 +64,12 @@ export class RepositoryGitAccess {
     }
     return { branch, remotes, remote: remote ?? null, urls };
   }
-  async publication(repositoryId: string, selected?: string): Promise<PublicationContext> {
+  /**
+   * What a push of the current branch would do. With `asNewBranch`, a branch
+   * whose upstream has another name on its push remote publishes to its own
+   * name instead; every other check still applies.
+   */
+  async publication(repositoryId: string, selected?: string, options: { asNewBranch?: boolean } = {}): Promise<PublicationContext> {
     const repository = this.repositories.get(repositoryId);
     const selection = this.accounts.selection(repository);
     const { login } = this.accounts.resolve(repository);
@@ -80,23 +85,50 @@ export class RepositoryGitAccess {
     const upstreamRemote = await this.config(repository, `branch.${target.branch}.remote`);
     const merge = await this.config(repository, `branch.${target.branch}.merge`, true);
     const pushDefault = await this.config(repository, 'push.default') || 'simple';
-    const targetRef = target.branch ? (target.remote === upstreamRemote && merge && ['simple', 'upstream'].includes(pushDefault) ? merge : `refs/heads/${target.branch}`) : null;
-    const unsafe = merge && (merge.includes('\n') || !['simple', 'upstream', 'current'].includes(pushDefault) ||
-      (pushDefault === 'simple' && target.remote === upstreamRemote && merge !== `refs/heads/${target.branch}`) ||
-      (pushDefault === 'upstream' && target.remote !== upstreamRemote) ||
-      await this.config(repository, `remote.${target.remote}.push`) || await this.config(repository, `remote.${target.remote}.mirror`) === 'true');
-    const blocked = selected && selected !== '.' && !target.remotes.includes(selected) ? 'The selected push remote is not configured. Review the repository remotes.' : unsafe ? 'The push refspec, mirror or push.default configuration requires review in Git before publishing.' : target.urls.length > 1 ? 'This remote has multiple push URLs. Choose a single destination in Git configuration before publishing.'
-      : target.remote && !target.urls.length ? 'The configured push remote is unavailable.' : undefined;
+    const ownRef = target.branch ? `refs/heads/${target.branch}` : null;
+    // Git's simple push refuses an upstream with another name on the push remote.
+    // Publishing under the branch's own name is offered instead, except for a
+    // local upstream ('.'), where that would only add a branch to this repository.
+    const nameDiffers = Boolean(merge && !merge.includes('\n') && pushDefault === 'simple' && target.remote === upstreamRemote && merge !== ownRef);
+    const mismatch = nameDiffers && upstreamRemote !== '.';
+    const asNewBranch = mismatch && options.asNewBranch === true;
+    const targetRef = target.branch ? (!asNewBranch && target.remote === upstreamRemote && merge && ['simple', 'upstream'].includes(pushDefault) ? merge : ownRef) : null;
+    const reason = merge ? await this.unsafeConfiguration(repository, { branch: target.branch, remote: target.remote, upstreamRemote, merge, pushDefault, nameDiffers: nameDiffers && !asNewBranch }) : undefined;
+    const blocked: { reason: PublicationBlockReason; message: string } | undefined =
+      selected && selected !== '.' && !target.remotes.includes(selected) ? { reason: 'unknown-remote', message: 'The selected push remote is not configured. Review the repository remotes.' }
+      : reason ?? (target.urls.length > 1 ? { reason: 'multiple-urls', message: 'This remote has multiple push URLs. Choose a single destination in Git configuration before publishing.' }
+      : target.remote && !target.urls.length ? { reason: 'remote-unavailable', message: 'The configured push remote is unavailable.' } : undefined);
+    const upstreamBranch = merge.replace(/^refs\/heads\//, '');
     return { ...target, urls: target.urls.map(redactSensitiveText), repositoryId, oid, targetRef,
       hasUpstream: Boolean(upstreamRemote && merge),
       id: digest([repository.commonDir, selection, login, revision, target, oid, configuration]),
       mode: managed && compatible ? 'managed' : 'external', login: managed && compatible ? login : null,
-      ...(blocked ? { blocked } : {}) };
+      ...(mismatch ? { upstreamMismatch: { remote: upstreamRemote, branch: upstreamBranch, ahead: await this.aheadOfUpstream(repository) } } : {}),
+      ...(blocked ? { blocked: blocked.message, blockedReason: blocked.reason } : {}) };
   }
-  async assertPublication(repositoryId: string, expected?: string, remote?: string) {
-    const current = await this.publication(repositoryId, remote);
+  /** The first Git setting that makes a push of this branch go somewhere OpenTig can't show up front. */
+  private async unsafeConfiguration(repository: RepositoryInfo, { branch, remote, upstreamRemote, merge, pushDefault, nameDiffers }: {
+    branch: string | null; remote: string | null; upstreamRemote: string; merge: string; pushDefault: string; nameDiffers: boolean;
+  }): Promise<{ reason: PublicationBlockReason; message: string } | undefined> {
+    if (merge.includes('\n')) return { reason: 'multiple-merge', message: `Git lists more than one upstream branch for ${branch} in branch.${branch}.merge. Keep a single one before publishing.` };
+    if (!['simple', 'upstream', 'current'].includes(pushDefault)) return { reason: 'push-default', message: `push.default is set to "${pushDefault}". OpenTig publishes only with simple, upstream or current.` };
+    if (await this.config(repository, `remote.${remote}.push`)) return { reason: 'push-refspec', message: `remote.${remote}.push sets its own push refspec. Review it in Git before publishing.` };
+    if (await this.config(repository, `remote.${remote}.mirror`) === 'true') return { reason: 'mirror', message: `remote.${remote}.mirror is on, so a push would mirror every ref. Turn it off before publishing.` };
+    const upstreamBranch = merge.replace(/^refs\/heads\//, '');
+    if (nameDiffers && upstreamRemote === '.') return { reason: 'upstream-name', message: `This branch tracks the local branch ${upstreamBranch}, so a push would update ${upstreamBranch} in this repository. Track a remote branch before publishing.` };
+    if (nameDiffers) return { reason: 'upstream-name', message: `This branch tracks ${upstreamRemote}/${upstreamBranch}. Publish it as a new branch so your commits don't go straight to ${upstreamBranch}.` };
+    if (pushDefault === 'upstream' && remote !== upstreamRemote) return { reason: 'upstream-remote', message: `push.default is upstream, but this branch tracks ${upstreamRemote}/${upstreamBranch} and pushes to ${remote ?? 'no remote'}. Use the same remote for both before publishing.` };
+    return undefined;
+  }
+  private async aheadOfUpstream(repository: RepositoryInfo) {
+    try { return Number((await this.git.run(repository.path, ['rev-list', '--count', '@{upstream}..HEAD'], read)).stdout.toString('utf8').trim()); }
+    catch { return null; }
+  }
+  async assertPublication(repositoryId: string, expected?: string, remote?: string, options: { asNewBranch?: boolean } = {}) {
+    const current = await this.publication(repositoryId, remote, options);
     if (expected && expected !== current.id) throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'push', message: 'The account, branch or destination changed. Review the publication context and try again.' });
     if (current.blocked) throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'push', message: current.blocked });
+    if (options.asNewBranch && !current.upstreamMismatch) throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'push', message: 'This branch no longer tracks a branch with another name. Review and try again.' });
     return current;
   }
   async status(repositoryId: string, force = false, apiContext?: { remote: string; nameWithOwner: string | null }): Promise<RepositoryAccess> {
@@ -264,7 +296,7 @@ export class RepositoryGitAccess {
         broker = await createCredentialBroker(url, login, token);
         args = [...await this.managedArgs(repository.path, broker.helper), ...args];
       }
-      if (options.publication) await this.assertPublication(options.publication.repositoryId, options.publication.id, options.publication.remote);
+      if (options.publication) await this.assertPublication(options.publication.repositoryId, options.publication.id, options.publication.remote, { asNewBranch: options.publication.asNewBranch === true });
       const result = await execute(args, { ...options, ...(managed ? { managed: true, managedSecrets: [token] } : {}) });
       this.latest.set(repository.id, { operation: options.operation, url: redactSensitiveText(url), login: managed ? login : null, at: new Date().toISOString(), ok: true });
       return result;

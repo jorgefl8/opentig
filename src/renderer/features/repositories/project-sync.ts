@@ -95,7 +95,13 @@ export function projectPullBlockedCopy(repository: string, result: Exclude<PullR
   };
 }
 
+/** A branch that tracked an upstream with another name, published under its own name. */
+export function newBranchPublishedCopy(result: Extract<PushResult, { status: 'published' }>): ProjectSyncToastCopy {
+  return { title: 'Branch published', description: `${result.branch} now tracks ${result.remote}/${result.branch}.` };
+}
+
 export function projectPushSuccessCopy(repository: string, result: Extract<PushResult, { status: 'success' | 'up-to-date' | 'published' }>): ProjectSyncToastCopy {
+  if (result.status === 'published' && result.previousUpstream) return { ...newBranchPublishedCopy(result), title: `${repository}: branch published` };
   if (result.status === 'published') return { title: `${repository}: branch published`, description: `${result.remote}/${result.branch}` };
   return result.status === 'success'
     ? { title: `${repository}: ${result.commits} ${result.commits === 1 ? 'commit pushed' : 'commits pushed'}` }

@@ -23,6 +23,8 @@ import { SidebarCollapseButton, SidebarRail, type SidebarRailSection } from './S
 import { SidebarResizeHandle } from './SidebarResizeHandle';
 import { useBranchPush } from '@/features/refs/useBranchPush';
 import { PublishRemoteDialog } from '@/features/refs/PublishRemoteDialog';
+import { PublishNewBranchDialog } from '@/features/refs/PublishNewBranchDialog';
+import { publicationKey } from '@/features/refs/publication-context';
 import { normalizeOpenFilesStates, type OpenFilesState } from '../../shared/open-files-state';
 import { normalizeFilesTreeStates } from '../../shared/files-tree-state';
 import { serializedErrorFromReason, type SerializedAiError } from '../../shared/errors';
@@ -60,6 +62,7 @@ import { remoteAccessActionLabel, remoteAccessCopy, type RemoteAccessAction } fr
 import { openOnGitHub } from '@/features/pulls/gh-utils';
 import type { RemoteAccessProblem } from '../../shared/repository-access';
 import { FileViewerToolbarHostContext } from '@/features/viewer/file-viewer-toolbar-host';
+import { LineBlameContext, type LineBlameSettings } from '@/features/viewer/line-blame-context';
 import type { RuntimeFileDraft, ViewerSelection } from '@/features/viewer/Viewer';
 import type { PullRequestsSection } from '@/features/pulls/PullRequestsView';
 import {
@@ -77,7 +80,7 @@ import { startupSplashDetail } from '@/lib/startup-splash';
 import { ServerAuthenticationError, ServerDisconnectedError, UNCONFIRMED_RESULT_MESSAGE, isConnectionLoss, isUnconfirmedResult } from '@/lib/websocket-transport';
 import { conflictNotificationAction, conflictToastId } from '@/features/changes/conflict-notification';
 import { fileCutTransferId, writeClipboardText, writeFileTransfer } from '@/lib/browser-capabilities';
-import { needsBranchPublication, projectPullBlockedCopy, projectPullSuccessCopy, projectPushBlockedCopy, projectPushSuccessCopy, pullSuccessCopy, repositorySyncLoadingToast, type ProjectSyncAction } from '@/features/repositories/project-sync';
+import { needsBranchPublication, newBranchPublishedCopy, projectPullBlockedCopy, projectPullSuccessCopy, projectPushBlockedCopy, projectPushSuccessCopy, pullSuccessCopy, repositorySyncLoadingToast, type ProjectSyncAction } from '@/features/repositories/project-sync';
 import { aiModelLabel, harnessLabel } from '@/features/ai/harness-copy';
 import { DesktopUpdateIndicator } from '@/features/settings/UpdateSettings';
 import { updatesApi } from '@/features/settings/update-api';
@@ -228,6 +231,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   // A path we just created/renamed/moved the viewer onto; it may be missing from
   // an in-flight (stale) file snapshot, so don't declare it deleted until it appears.
   const pendingViewerPathRef = useRef<string | null>(null);
+  /** Shown instead of the section's own selection once a requested section switch lands. */
+  const pendingSectionSelectionRef = useRef<ViewerSelection>(null);
   const generationRequest = useRef<{ id: string; repositoryId: string } | null>(null);
   const repositorySyncOperationsRef = useRef<Map<string, ProjectSyncAction>>(new Map());
   const busyRef = useRef<string | null>(null);
@@ -361,6 +366,15 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   ));
   const currentBranchPullRequest = currentBranch && githubInfo?.isGitHub && !branchPullRequestQuery.isError
     ? branchPullRequestQuery.data ?? null : null;
+  // Only a branch whose upstream has another name needs the server's push review up front.
+  const trackedUnderOtherName = Boolean(currentBranch && status?.upstream && !status.upstream.endsWith(`/${currentBranch}`));
+  const publicationQuery = useQuery({
+    queryKey: [...publicationKey(repository?.id ?? ''), currentBranch, status?.upstream, status?.oid],
+    queryFn: () => opentig.refs.pushContext(repository!.id),
+    enabled: repository !== null && trackedUnderOtherName,
+  });
+  const upstreamMismatch = trackedUnderOtherName ? publicationQuery.data?.upstreamMismatch ?? null : null;
+  const offersNewBranch = upstreamMismatch !== null && publicationQuery.data?.blockedReason === 'upstream-name';
 
   const openFilesStates = bootstrap?.openFilesStates ?? NO_OPEN_FILES_STATES;
   const connectionState = useSyncExternalStore(
@@ -911,6 +925,11 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       initialSelectionApplied.current = true;
       viewerSelectionRef.current = initialSelection;
       setViewerSelection(initialSelection);
+    } else if (pendingSectionSelectionRef.current) {
+      const selection = pendingSectionSelectionRef.current;
+      pendingSectionSelectionRef.current = null;
+      viewerSelectionRef.current = selection;
+      setViewerSelection(selection);
     } else selectFilePath(view === 'files' ? session.activePath : null);
   }, [openFilesStates, repository?.id, selectFilePath, view, initialSelection]);
 
@@ -1107,6 +1126,40 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       reportError('Could not open the commit', reason);
     }
   }, [selectViewer]);
+  // Line blame in the Files editor: a saved preference, applied at once.
+  const lineBlameEnabled = bootstrap?.preferences.lineBlame ?? true;
+  const setLineBlameEnabled = useCallback((enabled: boolean) => {
+    setBootstrap((current) => current ? { ...current, preferences: { ...current.preferences, lineBlame: enabled } } : current);
+    void opentig.app.setPreferences({ lineBlame: enabled }).then(
+      (preferences) => setBootstrap((current) => current ? { ...current, preferences } : current),
+      (reason) => reportError('Could not save settings', reason),
+    );
+  }, []);
+  const openBlamedCommit = useCallback(async (oid: string, subject: string) => {
+    const repositoryId = repositoryRef.current?.id;
+    if (!repositoryId) return;
+    try {
+      if (!await opentig.commits.recognize(repositoryId, oid)) {
+        sileo.error({ title: 'Commit not in this repository', description: `${oid.slice(0, 7)} could not be found in your local copy.` });
+        return;
+      }
+      if (repositoryRef.current?.id !== repositoryId) return;
+      const selection: ViewerSelection = { type: 'commit', oid, subject };
+      // Changing section resets the viewer, so the commit is shown once History is.
+      if (view === 'history') selectViewer(selection);
+      else pendingSectionSelectionRef.current = selection;
+      showSidebarView('history');
+    } catch (reason) {
+      reportError('Could not open the commit', reason);
+    }
+  }, [selectViewer, showSidebarView, view]);
+  const lineBlameSettings = useMemo<LineBlameSettings | null>(() => repository ? {
+    repositoryId: repository.id,
+    revision: refreshVersion,
+    enabled: lineBlameEnabled,
+    setEnabled: setLineBlameEnabled,
+    openCommit: (oid, subject) => void openBlamedCommit(oid, subject),
+  } : null, [lineBlameEnabled, openBlamedCommit, refreshVersion, repository, setLineBlameEnabled]);
   const githubNameWithOwner = githubInfo?.isGitHub ? githubInfo.nameWithOwner : null;
   // Links into this repository, wherever they're shown, can open here as well as on GitHub.
   const repositoryLinks = useMemo<RepositoryLinks | null>(() => githubNameWithOwner ? {
@@ -2083,8 +2136,9 @@ export default function App({ initialView, initialSelection, pullRequestCreation
         if (!result || result.status === 'success' || result.status === 'up-to-date' || result.status === 'published') return result;
         throw new PushBlocked(result);
       }, {
-        loading: repositorySyncLoadingToast(repositoryId, 'push', status?.upstream ? 'Pushing commits…' : 'Publishing branch…'),
+        loading: repositorySyncLoadingToast(repositoryId, 'push', status?.upstream && !offersNewBranch ? 'Pushing commits…' : 'Publishing branch…'),
         success: (result) => !result ? { title: `${repository.name}: publication canceled` }
+          : result.status === 'published' && result.previousUpstream ? newBranchPublishedCopy(result)
           : result.status === 'published' ? { title: `${repository.name}: branch published`, description: `${result.remote}/${result.branch}` }
           : result.status === 'success'
           ? { title: `${repository.name}: ${result.commits} ${result.commits === 1 ? 'commit pushed' : 'commits pushed'}` }
@@ -2585,6 +2639,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
         <CommitAuthorshipDialog key={repository.id} repository={repository} open onOpenChange={(open) => { if (!open) setAuthorshipRepositoryId(null); }} />
       )}
       {branchPush.remoteChoice && <PublishRemoteDialog key={branchPush.remoteChoice.id} choice={branchPush.remoteChoice} onSelect={branchPush.selectRemote} />}
+      {branchPush.newBranchChoice && <PublishNewBranchDialog key={branchPush.newBranchChoice.id} choice={branchPush.newBranchChoice} onConfirm={branchPush.confirmNewBranch} />}
       <MobileChromeContext.Provider value={mobileChrome}>
       <div className="app-shell" data-mobile-pane={mobilePane} inert={welcomeReplay || undefined}>
         <Toolbar
@@ -2596,6 +2651,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
           status={status}
           githubInfo={githubInfo}
           branchPullRequest={currentBranchPullRequest}
+          upstreamMismatch={upstreamMismatch}
           onOpenPullRequest={(number) => { selectViewer({ type: 'pull-request', number }); }}
           branches={branches}
           worktrees={worktrees}
@@ -2689,6 +2745,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
                   branchNeedsPublication={needsBranchPublication(status)}
                   publishDisabled={Boolean(busy) || Boolean(status?.readOnly) || repositorySyncOperations.has(repository.id)}
                   onPublish={() => void pushUpdates()}
+                  upstreamMismatch={offersNewBranch ? upstreamMismatch : null}
                   onSelect={(path, kind) => { selectViewer({ type: 'diff', path, kind }); }}
                   onConflict={(path) => { selectViewer({ type: 'conflict', path }); }}
                   onOpenFile={openFile}
@@ -2855,6 +2912,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
                 <Suspense fallback={<div className="viewer-message"><IconLoader4 className="spinner" /> <ShimmeringText text="Preparing viewer…" /></div>}>
                   <FileViewerToolbarHostContext.Provider value={fileViewerToolbarHost}>
                     <FileLineTargetContext.Provider value={fileLineTarget}>
+                    <LineBlameContext.Provider value={lineBlameSettings}>
                     <Viewer
                       repositoryId={repository.id}
                       selection={viewerSelection}
@@ -2881,6 +2939,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
                       onUpdateConflict={updateConflictFile}
                       onResolveConflict={resolveConflictFile}
                     />
+                    </LineBlameContext.Provider>
                     </FileLineTargetContext.Provider>
                     {mobile && viewerSelection?.type === 'file' && (
                       <MobileFileBar

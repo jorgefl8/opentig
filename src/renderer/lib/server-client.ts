@@ -78,6 +78,7 @@ export function createOpenTigServerClient(options: ServerClientOptions = {}): Op
       getFiles: (id) => invoke(IPC.repositoryFiles, id),
       getDirectoryEntries: (id, path) => invoke(IPC.repositoryDirectoryEntries, id, path),
       readFile: (id, path, allowLarge) => invoke(IPC.repositoryReadFile, id, path, allowLarge),
+      lineBlame: (id, path, draft) => invoke(IPC.repositoryLineBlame, id, path, draft),
       readImage: (id, path) => readImage(fetchRequest, httpOrigin, id, path),
       getFavicon: (id) => invoke(IPC.repositoryGetFavicon, id),
       writeFile: (id, path, content, expectedContent) => invoke(IPC.repositoryWriteFile, id, path, content, expectedContent),

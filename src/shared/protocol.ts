@@ -81,6 +81,7 @@ export const OPEN_TIG_SERVER_COMMANDS = {
   'repository.getDirectoryEntries': command(IPC.repositoryDirectoryEntries, 'directory-entries', false),
   'repository.readFile': command(IPC.repositoryReadFile, 'read-file', false),
   'repository.readImage': command(IPC.repositoryReadImage, 'read-image', false),
+  'repository.lineBlame': command(IPC.repositoryLineBlame, 'line-blame', false, { maxRequestBytes: CONTENT_MAX_REQUEST_BYTES }),
   'repository.getFavicon': command(IPC.repositoryGetFavicon, 'favicon', false),
   'repository.writeFile': command(IPC.repositoryWriteFile, 'write-file', true, { maxRequestBytes: FILE_WRITE_MAX_REQUEST_BYTES }),
   'repository.getAbsolutePath': command(IPC.repositoryAbsolutePath, 'absolute-path', false),

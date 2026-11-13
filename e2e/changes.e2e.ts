@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { Locator, Page } from '@playwright/test';
-import { openRepository } from './support/app';
+import { colorPreview, colorSwatches, hoverCenter, openRepository } from './support/app';
 import { expect, test, type GitRepository } from './support/fixtures';
 
 /** A list of changes: the unlabeled one when nothing is staged, or "Staged" / "Not staged". */
@@ -276,4 +276,27 @@ test('a clean worktree says there are no changes and offers to push unpushed com
   await expect(page.getByText('Nothing to review or commit.')).toBeVisible();
   const head = await repository.git('rev-parse', 'HEAD');
   await expect.poll(async () => (await repository.git('ls-remote', 'origin', 'refs/heads/main')).split('\t')[0]).toBe(head);
+});
+
+test('a stylesheet diff shows swatches on both sides of a changed color', async ({ pairedPage: page, repository }) => {
+  await repository.commit('styles/button.css', '.button {\n  color: #3b82f6;\n}\n', 'Add button');
+  await write(repository, 'styles/button.css', '.button {\n  color: rebeccapurple;\n}\n');
+  await openRepository(page, repository);
+  await openChanges(page, 1);
+
+  await page.getByRole('button', { name: 'View changes for styles/button.css' }).click();
+  const code = page.getByRole('code');
+  await expect(code).toContainText('rebeccapurple');
+
+  // The deleted and the added value each get a swatch; named colors count in stylesheets.
+  const swatches = colorSwatches(page);
+  await expect(swatches).toHaveCount(2);
+  await expect(swatches.nth(0)).toHaveCSS('background-color', 'rgb(59, 130, 246)');
+  await expect(swatches.nth(1)).toHaveCSS('background-color', 'rgb(102, 51, 153)');
+
+  // Pierre redraws the lines once highlighting arrives; the preview follows them.
+  await code.getByText('rebeccapurple', { exact: true }).hover();
+  await expect(colorPreview(page, 'rebeccapurple')).toBeVisible();
+  await hoverCenter(page, swatches.nth(0));
+  await expect(colorPreview(page, '#3b82f6')).toBeVisible();
 });
