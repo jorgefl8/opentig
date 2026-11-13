@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { Page } from '@playwright/test';
-import { openRepository } from './support/app';
+import { colorPreview, colorSwatches, hoverCenter, openRepository } from './support/app';
 import { expect, test, type GitRepository } from './support/fixtures';
 
 /** Opens the repository and shows its Files tree. */
@@ -147,4 +147,43 @@ test('a file is deleted after confirmation and the deletion can be undone', asyn
 
   await expect(tree.getByRole('treeitem', { name: 'notes.txt' })).toBeVisible();
   expect(await readText(repository, 'notes.txt')).toBe('Recover me\n');
+});
+
+test('a stylesheet shows a swatch before each color and previews the hovered color', async ({ pairedPage: page, repository }) => {
+  await repository.commit('styles/theme.css', [
+    ':root {',
+    '  --brand: #3b82f6;',
+    '  --ring: oklch(0.7 0.1 195);',
+    '  --shadow: rgb(15 23 42 / 45%);',
+    '  --accent: rebeccapurple;',
+    '  --tight:#fff;',
+    '  --gap: 4px;',
+    '}',
+    '',
+  ].join('\n'), 'Add theme');
+  await openFiles(page, repository);
+  await fileTree(page).getByRole('treeitem', { name: 'styles' }).click();
+  await fileTree(page).getByRole('treeitem', { name: 'theme.css' }).click();
+  const editor = page.getByRole('textbox', { name: 'styles/theme.css' });
+  await expect(editor).toContainText('--brand');
+
+  // One swatch per color with a space before it; `--tight:#fff` has no room for one.
+  const swatches = colorSwatches(page);
+  await expect(swatches).toHaveCount(4);
+  await expect(swatches.nth(0)).toHaveCSS('background-color', 'rgb(59, 130, 246)');
+  await expect(swatches.nth(1)).toHaveCSS('background-color', 'oklch(0.7 0.1 195)');
+  await expect(swatches.nth(2)).toHaveCSS('background-color', 'rgba(15, 23, 42, 0.45)');
+  await expect(swatches.nth(3)).toHaveCSS('background-color', 'rgb(102, 51, 153)');
+
+  // Resting on any part of a value previews the whole value.
+  await editor.getByText('oklch', { exact: true }).hover();
+  await expect(colorPreview(page, 'oklch(0.7 0.1 195)')).toBeVisible();
+
+  // The swatch on the line above, under the open preview, switches it to its color.
+  await hoverCenter(page, swatches.nth(0));
+  await expect(colorPreview(page, '#3b82f6')).toBeVisible();
+  await expect(colorPreview(page, 'oklch(0.7 0.1 195)')).toBeHidden();
+
+  await fileTree(page).getByRole('treeitem', { name: 'README.md' }).hover();
+  await expect(colorPreview(page, '#3b82f6')).toBeHidden();
 });
