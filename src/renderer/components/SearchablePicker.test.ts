@@ -72,7 +72,13 @@ it('suppresses tooltips during scrolling and allows them again after scrolling s
     expect(option('Beacon').hasAttribute('data-trigger-disabled')).toBe(false);
     await hover('Beacon');
     expect(document.querySelector('[data-slot="tooltip-content"]')?.textContent).toContain('/sample/beacon');
-  } finally { vi.useRealTimers(); }
+  } finally {
+    // Close the picker on the fake clock, so nothing it scheduled there is left waiting once real time is back.
+    await act(async () => root.unmount());
+    await act(async () => { vi.runOnlyPendingTimers(); });
+    vi.useRealTimers();
+    root = createRoot(container);
+  }
 });
 
 async function showAccountOption(tooltip?: string) {
@@ -186,6 +192,8 @@ function mockListLayout() {
     return 32;
   });
   const width = vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(340);
+  // The virtualizer reads the scroll area's size from clientHeight.
+  const clientHeight = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(function(this: HTMLElement) { return this.offsetHeight; });
   const scrollHeight = vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(function(this: HTMLElement) {
     return this.classList.contains('searchable-picker-list') ? Number.parseFloat((this.firstElementChild as HTMLElement)?.style.height ?? '0') : this.offsetHeight;
   });
@@ -204,7 +212,7 @@ function mockListLayout() {
   vi.stubGlobal('scrollTo', scrollTo);
   const previous = HTMLElement.prototype.scrollTo;
   HTMLElement.prototype.scrollTo = scrollTo;
-  return () => { height.mockRestore(); width.mockRestore(); scrollHeight.mockRestore(); rect.mockRestore(); HTMLElement.prototype.scrollTo = previous; };
+  return () => { height.mockRestore(); width.mockRestore(); clientHeight.mockRestore(); scrollHeight.mockRestore(); rect.mockRestore(); HTMLElement.prototype.scrollTo = previous; };
 }
 
 async function showLargePicker(count: number, value = 'item-900', open = true) {
@@ -318,8 +326,8 @@ it('preserves user scrolling when live groups refresh without a query or highlig
 
 it('focuses the search on opening, except on a phone, where that would open the keyboard', async () => {
   const input = () => document.querySelector<HTMLInputElement>('input[role="combobox"]');
-  await act(flushTimers);
-  expect(document.activeElement).toBe(input());
+  // Base UI moves focus into the popup a frame after it opens.
+  await act(() => vi.waitFor(() => expect(document.activeElement).toBe(input())));
   await act(async () => document.querySelector<HTMLButtonElement>('button[role="combobox"]')!.click());
   await act(async () => root.unmount());
   root = createRoot(container);
@@ -329,7 +337,8 @@ it('focuses the search on opening, except on a phone, where that would open the 
     value: 'main', onValueChange, label: 'Branch', triggerLabel: 'main', placeholder: 'Search branches',
   }))));
   await act(async () => document.querySelector<HTMLButtonElement>('button[role="combobox"]')!.click());
-  await act(flushTimers);
+  // Long enough for that frame to have passed.
+  await act(() => new Promise(resolve => setTimeout(resolve, 100)));
   expect(input()).not.toBeNull();
   expect(document.activeElement).not.toBe(input());
 });

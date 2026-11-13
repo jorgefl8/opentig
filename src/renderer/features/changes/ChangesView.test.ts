@@ -99,6 +99,8 @@ beforeEach(() => {
   vi.stubGlobal('ResizeObserver', TestResizeObserver);
   vi.stubGlobal('matchMedia', () => ({ matches: mobile, addEventListener() {}, removeEventListener() {} }));
   vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function(this: HTMLElement) { return height(this); });
+  // The virtualizer reads the scroll area's size from clientHeight.
+  vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(function(this: HTMLElement) { return height(this); });
   vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(500);
   vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function(this: HTMLElement) { return rectangle(this); });
   Object.defineProperty(HTMLElement.prototype, 'scrollTo', { configurable: true, value: function(this: HTMLElement, options: ScrollToOptions | number) {

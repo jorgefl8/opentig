@@ -1,6 +1,7 @@
 import darkTheme from '@shikijs/themes/one-dark-pro';
 import lightTheme from '@shikijs/themes/one-light';
-import { registerCustomTheme, type ThemeRegistration } from '@pierre/diffs';
+import type { ThemeRegistration } from 'shiki';
+import { registerCustomTheme } from '@pierre/diffs';
 
 // Same One Light/One Dark Pro pair the Markdown highlighter uses (see
 // `syntaxThemes.ts`), so a `.ts` snippet reads identically across Files,

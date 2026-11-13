@@ -27,7 +27,7 @@ const toc = headings.filter(heading => heading.depth > 1).map(heading => ({ dept
 ---
 <Layout title={`${title} | OpenTig Docs`} ogType="article" description={page.data.description} pixelFont={false} markdown={markdownPath(Astro.url.pathname)}>
   {structuredData && <script slot="head" type="application/ld+json" set:html={jsonLd(structuredData)} />}
-  <a class="skip-link" href="#main-content">Skip to content</a>
+  <a class="skip-link" href="#nd-page">Skip to content</a>
   <Docs tree={source.getPageTree()} pathname={Astro.url.pathname} title={page.data.title} source={page.data.source} toc={toc} client:load>
     <Content />
   </Docs>

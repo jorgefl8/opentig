@@ -4,7 +4,7 @@ import lightTheme from '@shikijs/themes/one-light';
 import typescript from '@shikijs/langs-precompiled/ts';
 import { createHighlighterCore } from 'shiki/core';
 import { createJavaScriptRawEngine } from 'shiki/engine/javascript';
-import { getHighlighterThemeStyles, resolveThemes, type DiffsHighlighter } from '@pierre/diffs';
+import { disposeHighlighter, getHighlighterThemeStyles, getSharedHighlighter } from '@pierre/diffs';
 import { concreteColor, OPENTIG_CODE_THEMES } from './diffThemes';
 
 afterEach(() => vi.unstubAllGlobals());
@@ -13,7 +13,7 @@ describe('OPENTIG_CODE_THEMES', () => {
   it('keeps app surfaces after Markdown has normalized the shared One palettes', async () => {
     // Shiki inserts an unscoped foreground/background rule into the imported
     // palette. Reproduce opening Markdown before resolving the lazy diff themes.
-    const highlighter = await createHighlighterCore({
+    const markdown = await createHighlighterCore({
       themes: [lightTheme, darkTheme],
       langs: [typescript],
       engine: createJavaScriptRawEngine(),
@@ -38,8 +38,7 @@ describe('OPENTIG_CODE_THEMES', () => {
     }));
 
     try {
-      const themes = await resolveThemes(Object.values(OPENTIG_CODE_THEMES));
-      await highlighter.loadTheme(...themes);
+      const highlighter = await getSharedHighlighter({ themes: Object.values(OPENTIG_CODE_THEMES), langs: ['typescript'] });
       for (const [type, name] of Object.entries(OPENTIG_CODE_THEMES)) {
         const theme = highlighter.getTheme(name);
         expect(theme.bg).toBe(type === 'dark' ? '#0a0a0a' : '#ffffff');
@@ -51,14 +50,15 @@ describe('OPENTIG_CODE_THEMES', () => {
       // including themes serialized to its highlighting worker.
       const css = getHighlighterThemeStyles({
         theme: OPENTIG_CODE_THEMES,
-        highlighter: highlighter as DiffsHighlighter,
+        highlighter,
       });
       expect(css).toContain('--diffs-dark-bg:#0a0a0a;');
       expect(css).toContain('--diffs-light-bg:#ffffff;');
-      expect(highlighter.getTheme('one-dark-pro').bg).toBe('#282c34');
+      expect(markdown.getTheme('one-dark-pro').bg).toBe('#282c34');
       expect(classes.has('dark')).toBe(true);
     } finally {
-      highlighter.dispose();
+      await disposeHighlighter();
+      markdown.dispose();
     }
   });
 

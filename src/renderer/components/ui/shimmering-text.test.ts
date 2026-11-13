@@ -63,7 +63,9 @@ it('preserves timing, text and its running state across content updates', async 
   expect(state()).toBe('running');
   const characters = [...container().children] as HTMLElement[];
   expect(characters[0]!.style.animationDuration).toBe('2.5s');
-  expect(characters[1]!.style.animationDelay).toBe(`${(2 * 1.6) / characters.length}s`);
+  // The style serializer may round the delay, so compare the number.
+  expect(characters[1]!.style.animationDelay).toMatch(/s$/);
+  expect(Number.parseFloat(characters[1]!.style.animationDelay)).toBeCloseTo((2 * 1.6) / characters.length, 5);
   expect(characters[0]!.style.animationTimingFunction).toBe('ease-in-out');
 });
 

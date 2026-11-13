@@ -28,7 +28,7 @@ export function Docs({ tree, pathname, title, source, toc, children }: Props) {
         <a href="/demo/">Try OpenTig</a>
         <a href="/">← Back to website</a>
       </nav> }}>
-      <DocsPage toc={toc} id="main-content" tabIndex={-1} breadcrumb={{ includeRoot: true }}>
+      <DocsPage toc={toc} tabIndex={-1} breadcrumb={{ includeRoot: true }}>
         <DocsTitle>{title}</DocsTitle>
         <DocsBody>{children}</DocsBody>
         <EditOnGitHub data-docs-source="true" href={`${repositoryUrl}/blob/main/${source}`}>Edit on GitHub</EditOnGitHub>
