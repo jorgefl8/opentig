@@ -159,7 +159,8 @@ test('a JSON syntax error is shown inline and clears once the file is fixed', as
   const editor = page.getByRole('textbox', { name: 'config/settings.json' });
   await expect(editor).toContainText('assa');
 
-  const problem = page.getByText('End of file expected.', { exact: true });
+  // The message after the line; its tooltip repeats the text while it is open.
+  const problem = page.getByText('End of file expected.', { exact: true }).first();
   await expect(problem).toBeVisible();
   await problem.hover();
   await expect(page.getByText('JSON error · Line 4, column 1')).toBeVisible();
