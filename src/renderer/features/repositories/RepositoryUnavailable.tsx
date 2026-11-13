@@ -7,10 +7,12 @@ import { Button } from '@/components/ui/button';
  * Shown instead of the workspace when the active repository's folder is gone,
  * so background refreshes stop and the way back is one click away.
  */
-export function RepositoryUnavailable({ repository, otherMissing, onLocate, onRemove, onOpenAnother }: {
+export function RepositoryUnavailable({ repository, otherMissing, waiting = false, onLocate, onRemove, onOpenAnother }: {
   repository: RecentRepository;
   /** Other saved repositories that are also missing. */
   otherMissing: number;
+  /** Another repository operation is still running; locating and removing wait for it. */
+  waiting?: boolean;
   onLocate(): Promise<void>;
   onRemove(): Promise<void>;
   onOpenAnother(): void;
@@ -34,14 +36,15 @@ export function RepositoryUnavailable({ repository, otherMissing, onLocate, onRe
       <code className="repository-unavailable-path">{repository.path}</code>
       {otherMissing > 0 && <p className="repository-unavailable-note">{otherMissing} other saved {otherMissing === 1 ? 'repository is' : 'repositories are'} missing too. After you locate this one, OpenTig looks for them nearby.</p>}
       <div className="repository-unavailable-actions">
-        <Button disabled={Boolean(busy)} onClick={() => void run('locate', onLocate)}>
+        <Button disabled={Boolean(busy) || waiting} onClick={() => void run('locate', onLocate)}>
           {busy === 'locate' ? <IconLoader4 className="animate-spin" /> : <IconFolderSearch />}Locate folder…
         </Button>
-        <Button variant="outline" disabled={Boolean(busy)} onClick={() => void run('remove', onRemove)}>
+        <Button variant="outline" disabled={Boolean(busy) || waiting} onClick={() => void run('remove', onRemove)}>
           {busy === 'remove' ? <IconLoader4 className="animate-spin" /> : <IconTrash />}Remove from OpenTig
         </Button>
         <Button variant="ghost" disabled={Boolean(busy)} onClick={onOpenAnother}><IconArrowLeft />Open another repository</Button>
       </div>
+      {waiting && <p className="repository-unavailable-note" role="status">Waiting for the current repository operation to finish…</p>}
       {error && <p className="repository-unavailable-error" role="alert">{error}</p>}
     </div>
   );
