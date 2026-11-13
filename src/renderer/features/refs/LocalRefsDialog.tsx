@@ -6,7 +6,7 @@ import {
   IconLoader4, IconRefresh, IconSearch, IconX,
 } from '@tabler/icons-react';
 import type { PullRequestSummary, RecentRepository } from '../../../shared/contracts';
-import type { BranchDetails, LocalRefsSnapshot, RemoteBranchDetails, WorktreeDetails, WorktreeRemovalState } from '../../../shared/git-types';
+import type { BranchDetails, LocalRefsSnapshot, RemoteBranchDetails, WorktreeAgents, WorktreeDetails, WorktreeRemovalState } from '../../../shared/git-types';
 import { StatusWord } from '@/components/StatusWord';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -16,7 +16,7 @@ import { opentig } from '@/lib/opentig-api';
 import { UNCONFIRMED_RESULT_MESSAGE, isUnconfirmedResult } from '@/lib/websocket-transport';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
-  branchBadges, branchDeleteEligibility, branchDetailBadges, branchKey, filterBranches, filterWorktrees,
+  agentsAt, branchBadges, branchDeleteEligibility, branchDetailBadges, branchKey, filterBranches, filterWorktrees,
   localChangeSummary, mergedPullRequestTip, nextSelectionKey, removingWorktreeBadges, worktreeBadges, worktreeKey, worktreeName, worktreeRemoveEligibility,
   type LocalRefsTab, type RefBadge,
 } from './local-refs-model';
@@ -25,6 +25,7 @@ import { queryKeys } from '@/lib/query-client';
 import { writeClipboardText } from '@/lib/browser-capabilities';
 import { SearchablePicker } from '@/components/SearchablePicker';
 import { RemoteBranchDetailPanel } from './RemoteBranchDetailPanel';
+import { AgentLabel } from './AgentLabel';
 
 const DISMISSED_NOTICES_KEY = 'opentig.dismissedWorktreeRemovalNotices';
 
@@ -40,6 +41,8 @@ interface LocalRefsDialogProps {
   /** True while a destructive manager operation is pending anywhere in the app. */
   onOpenChange(open: boolean): void;
   onTabChange(tab: LocalRefsTab): void;
+  /** Worktrees in which coding agents are working. */
+  worktreeAgents?: readonly WorktreeAgents[] | undefined;
   /** Reuses the toolbar's existing worktree switching flow. */
   onOpenWorktree(path: string): void;
   /** Called after any successful mutation so the app can refresh in the background. */
@@ -385,6 +388,7 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
                   <span className="local-refs-row-head">
                     <strong>{worktreeName(item.path)}</strong>
                     <RefStates states={removingPaths.has(item.path) ? removingWorktreeBadges() : worktreeBadges(item)} />
+                    <AgentLabel agents={agentsAt(props.worktreeAgents, item.path)} compact />
                   </span>
                   <small className="local-refs-row-meta">
                     <span className="local-refs-row-branch">{item.branch ? `${item.branch}` : 'Detached HEAD'}</span>
@@ -419,6 +423,7 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
             {!detailsLoading && !detailsError && tab === 'worktrees' && worktreeDetails && worktree && (
               <WorktreeDetailPanel
                 details={worktreeDetails}
+                agents={agentsAt(props.worktreeAgents, worktreeDetails.path)}
                 removing={removingPaths.has(worktreeDetails.path)}
                 anyBusy={Boolean(busy)}
                 confirming={confirming === 'remove-worktree'}
@@ -501,8 +506,8 @@ function BranchDetailPanel({ details, pullRequest, busy, anyBusy, confirming, ac
   );
 }
 
-function WorktreeDetailPanel({ details, removing, anyBusy, confirming, actionError, copied, onConfirm, onCancel, onRemove, onCopyPath, onOpen, onShowBranch }: {
-  details: WorktreeDetails; removing: boolean; anyBusy: boolean; confirming: boolean; actionError: string | null; copied: boolean;
+function WorktreeDetailPanel({ details, agents, removing, anyBusy, confirming, actionError, copied, onConfirm, onCancel, onRemove, onCopyPath, onOpen, onShowBranch }: {
+  details: WorktreeDetails; agents: string[]; removing: boolean; anyBusy: boolean; confirming: boolean; actionError: string | null; copied: boolean;
   onConfirm(): void; onCancel(): void; onRemove(force: boolean, deleteBranch: boolean, cleanupOnly: boolean): void; onCopyPath(): void; onOpen(): void; onShowBranch(): void;
 }) {
   const [deleteBranch, setDeleteBranch] = useState(false);
@@ -520,6 +525,7 @@ function WorktreeDetailPanel({ details, removing, anyBusy, confirming, actionErr
       <dl className="local-refs-facts">
         <Fact label="Folder"><span className="local-refs-path local-refs-selectable">{details.path}</span></Fact>
         <Fact label="Branch">{details.branch ?? 'Detached HEAD'}</Fact>
+        {agents.length > 0 && <Fact label="Agents"><AgentLabel agents={agents} /></Fact>}
         <Fact label="HEAD">
           {details.lastCommit
             ? <><code>{details.lastCommit.shortOid}</code> {details.lastCommit.subject}</>

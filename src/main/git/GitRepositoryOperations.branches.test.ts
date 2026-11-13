@@ -2,6 +2,8 @@ import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { managementRepository, addRemote, addWorktree, commitOnBranch, realPath, standaloneRepository, git, gitRaw } from './test-support/repository-fixtures';
+import { WorktreeAgentsDetector } from '../process/WorktreeAgents';
+import { startFakeAgent } from '../process/test-support/fake-agent';
 
 describe('GitRepositoryOperations local refs snapshot', () => {
   it('returns local and remote branches, current first, with tip metadata', async () => {
@@ -225,5 +227,30 @@ describe('GitRepositoryOperations safe branch deletion', () => {
     expect(await fixture.operations.deleteLocalBranch(fixture.repositoryId, 'refs/heads/merged', staleOid)).toEqual({ status: 'stale' });
     expect(await git(fixture.work, ['rev-parse', '--verify', 'refs/heads/merged'])).not.toBe(staleOid);
     expect(await fixture.operations.deleteLocalBranch(fixture.repositoryId, 'refs/heads/never', staleOid)).toEqual({ status: 'missing' });
+  });
+});
+
+describe.runIf(process.platform === 'linux')('GitRepositoryOperations branch switching with agents', () => {
+  it('asks before switching the branch under an agent working in the folder', async () => {
+    const fixture = await managementRepository({ worktreeAgents: new WorktreeAgentsDetector({ ownPid: -1 }) });
+    await git(fixture.work, ['branch', 'destination']);
+    const review = await addWorktree(fixture, 'review', 'review');
+    await startFakeAgent('claude', review);
+    await startFakeAgent('claude', fixture.work);
+
+    expect(await fixture.operations.switchBranch(fixture.repositoryId, 'destination')).toEqual({ status: 'agents-working', agents: ['Claude Code'] });
+    expect(await git(fixture.work, ['branch', '--show-current'])).toBe('main');
+    expect((await fixture.operations.worktreeAgents(fixture.repositoryId)).map((entry) => entry.agents)).toEqual([['Claude Code'], ['Claude Code']]);
+
+    expect(await fixture.operations.switchBranch(fixture.repositoryId, 'destination', false, true)).toEqual({ status: 'switched', movedChanges: false });
+    expect(await git(fixture.work, ['branch', '--show-current'])).toBe('destination');
+  });
+
+  it('switches without asking when the agents work in other worktrees', async () => {
+    const fixture = await managementRepository({ worktreeAgents: new WorktreeAgentsDetector({ ownPid: -1 }) });
+    await git(fixture.work, ['branch', 'destination']);
+    await startFakeAgent('claude', await addWorktree(fixture, 'review', 'review'));
+
+    expect(await fixture.operations.switchBranch(fixture.repositoryId, 'destination')).toEqual({ status: 'switched', movedChanges: false });
   });
 });

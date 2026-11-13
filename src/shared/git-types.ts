@@ -112,6 +112,12 @@ export interface WorktreeInfo {
   main: boolean;
 }
 
+/** Coding agents found working in a worktree, by display name. */
+export interface WorktreeAgents {
+  path: string;
+  agents: string[];
+}
+
 /** A worktree row annotated with whether OpenTig currently has it open. */
 export interface ManagedWorktree extends WorktreeInfo {
   current: boolean;

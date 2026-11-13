@@ -30,6 +30,7 @@ export const queryKeys = {
   status: (repositoryId: string) => ['repository', repositoryId, 'status'] as const,
   branches: (repositoryId: string) => ['repository', repositoryId, 'branches'] as const,
   worktrees: (repositoryId: string) => ['repository', repositoryId, 'worktrees'] as const,
+  worktreeAgents: (repositoryId: string) => ['repository', repositoryId, 'worktree-agents'] as const,
   files: (repositoryId: string) => ['repository', repositoryId, 'files'] as const,
   fileHistory: (repositoryId: string) => ['repository', repositoryId, 'file-history'] as const,
   history: (repositoryId: string) => ['repository', repositoryId, 'history'] as const,

@@ -367,6 +367,14 @@ When the repository has more than one worktree, a small button with their number
 
 If switching would overwrite local changes, OpenTig offers to move all tracked and untracked changes to the destination and leave them unstaged. Conflicts open in **Changes**, with a safety stash kept for recovery.
 
+**Agents in worktrees**
+
+A branch belongs to its folder, so switching branches also switches it for every program working in that folder. OpenTig marks worktrees where a coding agent is working with the agent's logo and name, such as **Claude Code**, and a pulsing dot: in the worktree menu, beside the branch it works on in the branch menu, and in **Manage worktrees**. It checks again every 10 seconds while OpenTig is visible. Choose that worktree, or the agent's branch, to open its folder, where its changes appear as it makes them and you can edit them too.
+
+If an agent is working in the folder OpenTig has open, switching branches there asks first, because the agent would carry on with the other branch's files and its uncommitted changes would go along. **Switch anyway** continues. To keep agents unaffected, run them in their own worktrees, such as with `claude --worktree`.
+
+OpenTig recognizes Claude Code, Codex, OpenCode, Grok Build, Gemini CLI, Copilot CLI, Cursor Agent, and Aider running on the computer where its server runs. On Linux and macOS it finds them by the folder each one works in. Windows doesn't let a program read another program's working folder, so there it finds only Claude Code in worktrees that Claude Code locked for its sessions, such as with `claude --worktree`. Agents that OpenTig starts itself, such as for commit messages, and other users' processes don't count. Terminals and editors open in a folder aren't detected.
+
 **Inspect and refresh branches**
 
 Open **Manage branches** to search, choose **All**, **Local**, or **Remote**, and group or filter by configured remote. Select a branch or worktree for details rather than a hover tooltip.
@@ -377,7 +385,7 @@ Remote references reflect the last fetch. **Fetch** updates all configured remot
 | --- | --- |
 | Local branch | Tip, upstream, ahead/behind state, unique commits, owning worktrees |
 | Remote branch | Fetched tip, local tracking branches, associated GitHub PRs for `origin`, including merged status |
-| Worktree | Path, branch, HEAD, lock/prunable state, local changes |
+| Worktree | Path, branch, HEAD, lock/prunable state, local changes, agents working there |
 
 From a remote's **Local branches** details, create a tracking branch at the fetched tip with an editable name. This does not switch the current checkout or touch uncommitted changes.
 

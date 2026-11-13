@@ -2010,6 +2010,22 @@ section[data-sileo-viewport] [data-sileo-title] { text-transform: none; }
 .searchable-picker-copy small { color: var(--muted-foreground); font-size: var(--text-meta); line-height: 15px; font-weight: var(--weight-regular); }
 .searchable-picker-trailing { display: flex; flex: none; align-items: center; gap: 6px; }
 .searchable-picker-status { color: var(--muted-foreground); font-size: var(--text-meta); }
+/* Where a coding agent is working. */
+/* Where a coding agent works: a chip with its mark and a live dot, tinted like the app's primary actions. */
+.agent-labels { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.agent-label { display: inline-flex; align-items: center; gap: 5px; min-height: 20px; padding: 1px 8px 1px 6px; border: 1px solid color-mix(in oklch, var(--primary) 30%, transparent); border-radius: 999px; background: color-mix(in oklch, var(--primary) 10%, transparent); color: var(--primary-ink); font-size: var(--text-meta); font-weight: var(--weight-medium); line-height: 1; white-space: nowrap; }
+.agent-label-live { position: relative; width: 6px; height: 6px; flex: none; border-radius: 50%; background: var(--success); }
+.agent-label-live::after { content: ''; position: absolute; inset: 0; border-radius: 50%; background: inherit; animation: agent-live 1.8s ease-out infinite; }
+@keyframes agent-live { from { opacity: .7; transform: scale(1); } to { opacity: 0; transform: scale(2.6); } }
+@media (prefers-reduced-motion: reduce) { .agent-label-live::after { animation: none; } }
+.agent-marks { display: inline-flex; align-items: center; gap: 3px; }
+.agent-mark { display: inline-grid; place-items: center; width: 14px; height: 14px; flex: none; color: var(--foreground); }
+.agent-mark > .ai-provider-icon, .agent-mark > svg { width: 14px; height: 14px; }
+/* The warning leads with the agents' marks, as avatars. */
+.undo-commit-content > .agent-marks { gap: 0; margin-bottom: 2px; }
+.undo-commit-content > .agent-marks > .agent-mark { width: 36px; height: 36px; border-radius: 50%; background: var(--muted); box-shadow: 0 0 0 3px var(--popover); }
+.undo-commit-content > .agent-marks > .agent-mark + .agent-mark { margin-left: -8px; }
+.undo-commit-content > .agent-marks > .agent-mark > .ai-provider-icon, .undo-commit-content > .agent-marks > .agent-mark > svg { width: 20px; height: 20px; }
 .searchable-picker-empty { padding: 22px 8px; text-align: center; color: var(--muted-foreground); font-size: var(--text-ui); }
 .searchable-picker-footer { border-top: 1px solid var(--border); padding: 4px; }
 .searchable-picker-footer button { display: flex; width: 100%; min-height: 30px; align-items: center; gap: 7px; padding: 5px 8px; border-radius: 6px; color: var(--muted-foreground); font-size: var(--text-ui); text-align: left; cursor: pointer; }

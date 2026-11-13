@@ -5,7 +5,7 @@ import {
   IconArrowDown, IconArrowUp, IconBrandGithub, IconChevronDown, IconHierarchy2, IconLoader4, IconPlus, IconRefresh, IconSettings,
 } from '@tabler/icons-react';
 import type { BootstrapData, GitHubRepositoryInfo, Preferences, PullRequestSummary, RecentRepository, RepositoryInfo, RepositoryOrganization, RepositoryProject } from '../../shared/contracts';
-import type { BranchInfo, RepositoryStatus, WorktreeInfo } from '../../shared/git-types';
+import type { BranchInfo, RepositoryStatus, WorktreeAgents, WorktreeInfo } from '../../shared/git-types';
 import { Button } from '@/components/ui/button';
 import { Kbd } from '@/components/ui/kbd';
 import { SearchablePicker, type SearchablePickerItem } from '@/components/SearchablePicker';
@@ -14,7 +14,8 @@ import { OpenTigMark } from '@/components/OpenTigMark';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { isEditableTarget } from '@/features/files/file-tree';
 import type { LocalRefsTab } from '@/features/refs/local-refs-model';
-import { samePath } from '@/features/refs/local-refs-model';
+import { agentsAt, listAgents, samePath } from '@/features/refs/local-refs-model';
+import { AgentLabel } from '@/features/refs/AgentLabel';
 import { RepositoryFaviconImage } from '@/features/repositories/RepositoryFavicon';
 import { useRepositoryFavicons } from '@/features/repositories/useRepositoryFavicons';
 import { buildRepositoryPickerModel, formatRepositoryCheckout, getRepositoryPickerDisplayOrder, shortenRepositoryPath, type RepositoryOption } from '@/features/repositories/repository-select-model';
@@ -40,6 +41,8 @@ export interface ToolbarProps {
   mobileViewer?: MobileViewerBarProps | undefined;
   repository: RepositoryInfo; recent: BootstrapData['recentRepositories']; repositoryProjects: RepositoryProject[]; status: RepositoryStatus | null;
   branches: BranchInfo[]; worktrees: WorktreeInfo[]; preferences: Preferences; busy: string | null;
+  /** Worktrees in which coding agents are working. */
+  worktreeAgents?: readonly WorktreeAgents[] | undefined;
   githubInfo: GitHubRepositoryInfo | null;
   branchPullRequest: PullRequestSummary | null;
   /** The current branch tracks a branch with another name on the remote it pushes to. */
@@ -353,13 +356,14 @@ export function Toolbar(props: ToolbarProps) {
   const currentWorktreeName = currentWorktree?.path.split(/[\\/]/).pop() ?? props.repository.name;
   const worktreeControl = (
       <SearchablePicker
-        groups={[{ id: 'worktrees', label: 'Worktrees', items: props.worktrees.map((item) => ({
+        groups={[{ id: 'worktrees', label: 'Worktrees', items: props.worktrees.map((item) => ({ item, agents: agentsAt(props.worktreeAgents, item.path) })).map(({ item, agents }) => ({
           value: item.path,
           label: item.path.split(/[\\/]/).pop() ?? item.path,
           description: `${item.branch ?? 'Detached HEAD'}${item.locked ? ' · Locked' : item.prunable ? ' · Prunable' : item.bare ? ' · Bare' : ''}`,
+          trailing: <AgentLabel agents={agents} compact />,
           search: item.path,
           // A locked worktree opens like any other; the lock says why it can't be removed, often a tool's session using it.
-          tooltip: item.locked && item.locked !== 'locked' ? `${item.path} · Locked: ${item.locked}` : item.path,
+          tooltip: `${item.locked && item.locked !== 'locked' ? `${item.path} · Locked: ${item.locked}` : item.path}${agents.length > 0 ? ` · ${listAgents(agents)} working here` : ''}`,
           icon: <IconHierarchy2 />,
           disabled: Boolean(item.prunable || item.bare),
         })) }]}
@@ -382,7 +386,7 @@ export function Toolbar(props: ToolbarProps) {
         disabled={refsBusy}
         readOnly={props.status?.readOnly}
         crumb={!mobile}
-        worktrees={{ items: props.worktrees, onSelect: props.onWorktree, onManage: () => openRefsManager('worktrees') }}
+        worktrees={{ items: props.worktrees, agents: props.worktreeAgents, onSelect: props.onWorktree, onManage: () => openRefsManager('worktrees') }}
         onBranch={props.onBranch}
         onManage={() => openRefsManager('branches')}
       />
@@ -446,6 +450,7 @@ export function Toolbar(props: ToolbarProps) {
             open={refsOpen}
             tab={refsTab}
             repositoryId={props.repository.id}
+            worktreeAgents={props.worktreeAgents}
             onOpenChange={setRefsOpen}
             onTabChange={setRefsTab}
             onOpenWorktree={(path) => { setRefsOpen(false); props.onWorktree(path); }}
