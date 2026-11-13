@@ -29,7 +29,7 @@ import { useMobileLayout } from '@/lib/use-mobile-layout';
 import { MobileToolbar, type MobileViewerBarProps } from './MobileToolbar';
 import { RepositoryLoadIndicator, type RepositoryLoadPhase } from './RepositoryLoadIndicator';
 import { RemoteAccessIndicator } from './RemoteAccessIndicator';
-import type { RemoteAccessProblem } from '@shared/repository-access';
+import type { RemoteAccessProblem, UpstreamNameMismatch } from '@shared/repository-access';
 import type { RemoteAccessAction } from '@/features/repositories/remote-access';
 import { BranchCombobox } from './BranchCombobox';
 import { openOnGitHub } from '@/features/pulls/gh-utils';
@@ -45,6 +45,8 @@ export interface ToolbarProps {
   worktreeAgents?: readonly WorktreeAgents[] | undefined;
   githubInfo: GitHubRepositoryInfo | null;
   branchPullRequest: PullRequestSummary | null;
+  /** The current branch tracks a branch with another name on the remote it pushes to. */
+  upstreamMismatch?: UpstreamNameMismatch | null | undefined;
   onOpenPullRequest(number: number): void;
   onOpen(): void; onRecent(id: string | null): void; onBranch(name: string | null): void; onWorktree(path: string | null): void;
   /** The repository being opened from the picker, before it replaces the current one. */
@@ -402,6 +404,9 @@ export function Toolbar(props: ToolbarProps) {
         {props.worktrees.length > 1 && worktreeControl}
         <span className="toolbar-crumb-separator" aria-hidden="true">/</span>
         {branchControl}
+        {props.upstreamMismatch && (
+          <span className="toolbar-upstream-chip"><span className="sr-only">Tracks </span><span aria-hidden="true">→ </span>{props.upstreamMismatch.remote}/{props.upstreamMismatch.branch}</span>
+        )}
         {props.branchPullRequest && (
           <BranchPullRequestMenu repositoryId={props.repository.id} key={props.branchPullRequest.url} pullRequest={props.branchPullRequest} onOpenPullRequest={props.onOpenPullRequest} />
         )}

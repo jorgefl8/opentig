@@ -1,5 +1,20 @@
 export type AccessState = 'unchecked' | 'ok' | 'expired' | 'inaccessible' | 'offline' | 'external' | 'stale';
 export interface AccessCheck { state: AccessState; message?: string }
+/** Why OpenTig refuses to push with the current Git configuration. */
+export type PublicationBlockReason =
+  | 'unknown-remote' | 'multiple-merge' | 'push-default' | 'upstream-name' | 'upstream-remote'
+  | 'push-refspec' | 'mirror' | 'multiple-urls' | 'remote-unavailable';
+/**
+ * The branch tracks a branch with another name on the remote it pushes to, so
+ * a plain push would update that branch (`origin/dev`) instead of its own.
+ */
+export interface UpstreamNameMismatch {
+  remote: string;
+  /** The upstream branch's short name, such as `dev`. */
+  branch: string;
+  /** Commits on HEAD that the upstream doesn't have, or null when Git can't count them. */
+  ahead: number | null;
+}
 export interface PublicationContext {
   id: string;
   repositoryId: string;
@@ -14,6 +29,9 @@ export interface PublicationContext {
   /** Whether this branch already tracks a remote branch. */
   hasUpstream?: boolean;
   blocked?: string;
+  blockedReason?: PublicationBlockReason;
+  /** Set when publishing under the branch's own name is offered instead of pushing to its upstream. */
+  upstreamMismatch?: UpstreamNameMismatch;
 }
 export interface RepositoryAccess {
   publication: PublicationContext;

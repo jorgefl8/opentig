@@ -15,6 +15,10 @@ import { getVsCodeFileIconUrl } from '@/lib/vscode-icons';
 import { useParsedDiff } from './useParsedDiff';
 import { OPENTIG_CODE_THEMES } from './diffThemes';
 import { animatesFileToggle, type DiffFileEntry, VIEWER_SCROLLBAR_CSS } from './patch-utils';
+import { resolvePierreLanguage } from './pierreLanguages';
+import { ColorHoverPreview } from './ColorHoverPreview';
+import { ColorSwatchLayer } from './ColorSwatchLayer';
+import { createColorSwatchRegistry } from './color-swatch-registry';
 
 /** A commit reads as one document: its message and files lead into its diffs. */
 export interface DiffCommitLayout {
@@ -86,6 +90,8 @@ function ParsedDiffWorkspace({ contentKey, diff, diffView, themeType, wrapLines,
   // A phone reads inline, leaves through its back arrow, and has one screen to give to the code.
   const phone = useMobileChrome() !== null;
   const sections = useRef(new Map<string, HTMLElement>());
+  const workspaceRef = useRef<HTMLDivElement>(null);
+  const [colorSwatches] = useState(createColorSwatchRegistry);
   const allCollapsed = files.length > 0 && files.every((file) => collapsed.has(file.key));
   const additions = files.reduce((total, file) => total + file.additions, 0);
   const deletions = files.reduce((total, file) => total + file.deletions, 0);
@@ -132,11 +138,13 @@ function ParsedDiffWorkspace({ contentKey, diff, diffView, themeType, wrapLines,
   const toolbarScrollsAway = phone && !message;
 
   return (
-    <div key={contentKey} className={`diff-workspace${compact ? ' compact' : ''}`}>
+    <div key={contentKey} ref={workspaceRef} className={`diff-workspace${compact ? ' compact' : ''}`}>
+      <ColorHoverPreview getRoot={() => workspaceRef.current} swatches={colorSwatches} />
       {commitLayout?.tools && createPortal(<>{scopeControl}{diffActions(files.length > 1)}</>, commitLayout.tools)}
       {!toolbarScrollsAway && toolbar}
       <div style={{ display: 'contents' }} inert={message !== null} aria-hidden={message ? true : undefined}>
         <Virtualizer className="diff-workspace-scroll" contentClassName="diff-workspace-content" style={{ visibility: message ? 'hidden' : undefined }}>
+          <ColorSwatchLayer registry={colorSwatches} />
           {toolbarScrollsAway && toolbar}
           {commitLayout && <div className="diff-workspace-lead">{commitLayout.lead}</div>}
           {/* Only the totals: each file's header follows, so a list of them would say it twice. */}
@@ -148,7 +156,7 @@ function ParsedDiffWorkspace({ contentKey, diff, diffView, themeType, wrapLines,
           {files.map((file) => {
             const isCollapsed = !compact && collapsed.has(file.key);
             return (
-              <section key={file.key} ref={(element) => { if (element) sections.current.set(file.key, element); else sections.current.delete(file.key); }} className="diff-file-section">
+              <section key={file.key} ref={(element) => { if (element) sections.current.set(file.key, element); else sections.current.delete(file.key); }} className="diff-file-section" data-color-language={resolvePierreLanguage(file.path)}>
                 {compact
                   ? phone
                     // The top bar already names a lone file and counts its lines, so all that's left to say is a rename.

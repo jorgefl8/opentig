@@ -25,6 +25,8 @@ import { parseWorktrees } from './WorktreeParser';
 import { GitCommitAuthorship } from './GitCommitAuthorship';
 import type { SetCommitAuthorshipInput } from '../../shared/commit-authorship';
 import { GitRemoteBranches } from './GitRemoteBranches';
+import { LineBlameReader } from './LineBlame';
+import type { LineBlameResult } from '../../shared/line-blame';
 import { WorktreeRemovalTracker } from './WorktreeRemovalTracker';
 import { REMOVE_WORKTREE_GIT_TIMEOUT_MS } from '../../shared/operation-timeouts';
 import { deleteWorktreeFolder, type RemoveEntry, type WorktreeFolderDeletion } from './worktreeDeletion';
@@ -67,6 +69,7 @@ export class GitRepositoryOperations {
   private readonly knownOids = new Map<string, Set<string>>();
   private readonly authorship: GitCommitAuthorship;
   private readonly remoteBranches: GitRemoteBranches;
+  private readonly lineBlames: LineBlameReader;
   private readonly worktreeRemovals = new WorktreeRemovalTracker();
   private readonly worktreeDeletion: 'node' | 'git';
   private readonly removeWorktreeEntry: RemoveEntry | undefined;
@@ -80,6 +83,7 @@ export class GitRepositoryOperations {
   ) {
     this.authorship = new GitCommitAuthorship(git, repositories);
     this.remoteBranches = new GitRemoteBranches(git, repositories);
+    this.lineBlames = new LineBlameReader(git, repositories);
     this.worktreeDeletion = options.worktreeDeletion ?? (process.platform === 'win32' ? 'node' : 'git');
     this.removeWorktreeEntry = options.removeWorktreeEntry;
     this.agents = options.worktreeAgents ?? new WorktreeAgentsDetector();
@@ -89,6 +93,14 @@ export class GitRepositoryOperations {
   createTrackingBranch(request: CreateTrackingBranchRequest) { return this.remoteBranches.create(request); }
   deleteRemoteBranch(request: DeleteRemoteBranchRequest) { return this.git.withNetworkContext(this.repositories.get(request.repositoryId).path, () => this.remoteBranches.delete(request)); }
   fetchBranches(repositoryId: string) { return this.git.withNetworkContext(this.repositories.get(repositoryId).path, () => this.remoteBranches.fetch(repositoryId)); }
+
+  /** Who last changed each line of a working-tree file, or of `draft` when the editor holds unsaved text. */
+  async lineBlame(repositoryId: string, filePath: string, draft?: string): Promise<LineBlameResult> {
+    const result = await this.lineBlames.read(repositoryId, filePath, draft);
+    // Blamed commits can open in the commit viewer like listed ones.
+    if (result.status === 'ready') for (const commit of result.commits) if (!commit.uncommitted) this.rememberOid(repositoryId, commit.oid);
+    return result;
+  }
 
   getCommitAuthorship(repositoryId: string) { return this.authorship.get(repositoryId); }
 
@@ -724,10 +736,13 @@ export class GitRepositoryOperations {
 
   private async pushWithContext(repositoryId: string, publish?: PublishBranchOptions, expectedContext?: string): Promise<PushResult> {
     const repository = this.repositories.get(repositoryId);
+    const asNewBranch = publish?.asNewBranch === true;
+    let previousUpstream: string | undefined;
+    let destination = '';
     try {
-      const reviewed = await this.access!.assertPublication(repositoryId, expectedContext, publish?.remote);
+      const reviewed = await this.access!.assertPublication(repositoryId, expectedContext, publish?.remote, { asNewBranch });
       return await this.git.withNetworkContext(repository.path, () => this.git.runWriteTask(repository.path, async run => {
-        const context = await this.access!.assertPublication(repositoryId, reviewed.id, publish?.remote);
+        const context = await this.access!.assertPublication(repositoryId, reviewed.id, publish?.remote, { asNewBranch });
         const status = await this.repositories.status(repositoryId, false);
         const conflicts = conflictPaths(status);
         if (conflicts.length) return { status: 'blocked-conflicts', files: conflicts };
@@ -736,15 +751,26 @@ export class GitRepositoryOperations {
         if (publish && (publish.expectedBranch !== context.branch || publish.expectedOid !== context.oid)) return { status: 'rejected', reason: 'configuration', message: 'The branch changed. Review and try again.' };
         if (!context.remote) return context.remotes.length ? { status: 'remote-required', branch: context.branch, oid: context.oid, remotes: context.remotes }
           : { status: 'rejected', reason: 'configuration', message: 'No remote is configured.' };
+        if (asNewBranch && context.upstreamMismatch) {
+          previousUpstream = `${context.upstreamMismatch.remote}/${context.upstreamMismatch.branch}`;
+          destination = `${context.remote}/${context.branch}`;
+        }
+        // A branch published under its own name tracks it from now on, instead of the upstream it was created from.
         const result = await run(['-c', `remote.${context.remote}.mirror=false`, 'push', '--porcelain', '--no-follow-tags',
-          ...(!status.upstream ? ['--set-upstream'] : []), '--', context.remote, `refs/heads/${context.branch}:${context.targetRef}`], {
+          ...(!status.upstream || asNewBranch ? ['--set-upstream'] : []), '--', context.remote, `refs/heads/${context.branch}:${context.targetRef}`], {
           operation: 'push', timeoutMs: 120_000, maxOutputBytes: 4 * 1024 * 1024,
-          publication: { repositoryId, id: context.id, ...(publish?.remote ? { remote: publish.remote } : {}) },
+          publication: { repositoryId, id: context.id, ...(publish?.remote ? { remote: publish.remote } : {}), ...(asNewBranch ? { asNewBranch } : {}) },
         });
-        if (!status.upstream) return { status: 'published', branch: context.branch, remote: context.remote };
+        if (!status.upstream || previousUpstream) return { status: 'published', branch: context.branch, remote: context.remote, ...(previousUpstream ? { previousUpstream } : {}) };
         return result.stdout.toString('utf8').includes('[up to date]') ? { status: 'up-to-date' } : { status: 'success', commits: status.ahead };
       }, repository.commonDir));
-    } catch (error) { return pushFailure(error); }
+    } catch (error) {
+      const failure = pushFailure(error);
+      if (previousUpstream && failure.reason === 'remote-changed') {
+        return { ...failure, message: `${destination} already exists and has commits this branch doesn't. OpenTig won't overwrite it, and the branch still tracks ${previousUpstream}. Rename the branch, or bring those commits in with Git, then publish again.` };
+      }
+      return failure;
+    }
   }
 
   private async legacyPush(repositoryId: string, publish?: PublishBranchOptions): Promise<PushResult> {

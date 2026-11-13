@@ -1,0 +1,86 @@
+/* Error Lens-style syntax problems over the Files source editor. */
+
+.source-code-editor {
+  /* Pierre reads these inside its shadow root to color marker underlines. */
+  --diffs-editor-error-fg: var(--destructive);
+  --diffs-editor-warning-fg: var(--warning);
+}
+
+/* The layer is positioned against the surface it measures. */
+.source-code-editor-content {
+  position: relative;
+}
+
+.syntax-diagnostics-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.syntax-diagnostic[data-severity="error"] {
+  --syntax-diagnostic-color: var(--destructive);
+}
+
+.syntax-diagnostic[data-severity="warning"] {
+  --syntax-diagnostic-color: var(--warning);
+}
+
+.syntax-diagnostic-row {
+  position: absolute;
+  background: color-mix(in oklch, var(--syntax-diagnostic-color) 11%, transparent);
+  box-shadow: inset 2px 0 0 color-mix(in oklch, var(--syntax-diagnostic-color) 70%, transparent);
+}
+
+.syntax-diagnostic-message {
+  position: absolute;
+  display: block;
+  overflow: hidden;
+  color: color-mix(in oklch, var(--syntax-diagnostic-color) 82%, var(--foreground));
+  cursor: text;
+  font-family: var(--diffs-font-family);
+  font-size: var(--text-ui);
+  pointer-events: auto;
+  text-overflow: ellipsis;
+  white-space: pre;
+}
+
+.syntax-diagnostic-more {
+  margin-left: 8px;
+  color: var(--muted-foreground);
+}
+
+.syntax-diagnostic-tooltip ul {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.syntax-diagnostic-tooltip li {
+  position: relative;
+  display: grid;
+  gap: 2px;
+  padding-left: 14px;
+}
+
+.syntax-diagnostic-tooltip li::before {
+  position: absolute;
+  top: 0.45em;
+  left: 0;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--destructive);
+  content: "";
+}
+
+.syntax-diagnostic-tooltip li[data-severity="warning"]::before {
+  background: var(--warning);
+}
+
+.syntax-diagnostic-tooltip-meta {
+  color: var(--muted-foreground);
+  font-size: var(--text-meta);
+}

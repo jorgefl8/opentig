@@ -285,6 +285,22 @@ describe('with no changes', () => {
     expect(handlers.onPublish).toHaveBeenCalledOnce();
   });
 
+  it('warns before publishing commits from a branch that tracks another branch, instead of offering a push', async () => {
+    const upstreamMismatch = { remote: 'origin', branch: 'dev', ahead: 1 };
+    await render([], [], 'list', [], { unpublishedCommits: 1, upstreamMismatch });
+    const empty = container.querySelector('.changes-empty')!;
+    expect(empty.textContent).toContain('1 commit isn\'t published yet.');
+    expect(empty.textContent).not.toContain('Push it');
+    expect(empty.querySelector('[role=note]')?.textContent).toContain('This branch tracks origin/devPushing would send your commit straight to dev.');
+    const action = empty.querySelector<HTMLButtonElement>('.upstream-mismatch-action')!;
+    expect(action.textContent).toBe('Publish as new branch');
+    await act(async () => action.click());
+    expect(handlers.onPublish).toHaveBeenCalledOnce();
+    // Nothing to publish yet: nothing to warn about.
+    await render([], [], 'list', [], { unpublishedCommits: 0, upstreamMismatch: { ...upstreamMismatch, ahead: 0 } });
+    expect(empty.textContent).toBe('No changesNothing to review or commit.');
+  });
+
   it('turns the publish action off while it can\'t run', async () => {
     await render([], [], 'list', [], { unpublishedCommits: 1, publishDisabled: true });
     expect(container.querySelector<HTMLButtonElement>('.inline-action')?.disabled).toBe(true);

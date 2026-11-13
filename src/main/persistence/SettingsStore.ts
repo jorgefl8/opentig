@@ -49,7 +49,7 @@ const defaults: SettingsData = {
   openFilesStates: [],
   activeRepositoryId: null,
   preferences: {
-    theme: 'system', diffView: 'unified', changesLayout: 'tree', wrapLines: false, sidebarWidth: 400, sidebarCollapsed: false, showDotEnvFiles: true, uiZoom: 100,
+    theme: 'system', diffView: 'unified', changesLayout: 'tree', wrapLines: false, sidebarWidth: 400, sidebarCollapsed: false, showDotEnvFiles: true, lineBlame: true, uiZoom: 100,
     uiFont: 'plus-jakarta-sans', monoFont: 'jetbrains-mono',
     commitMessageHarness: 'codex', commitMessageModels: { codex: 'default', claude: 'default', opencode: 'default', grok: 'default' },
     aiExecutablePaths: {},
@@ -385,6 +385,7 @@ export class SettingsStore {
     next.sidebarWidth = normalizeSidebarWidth(next.sidebarWidth);
     next.sidebarCollapsed = next.sidebarCollapsed === true;
     next.showDotEnvFiles = typeof next.showDotEnvFiles === 'boolean' ? next.showDotEnvFiles : true;
+    next.lineBlame = typeof next.lineBlame === 'boolean' ? next.lineBlame : true;
     next.uiZoom = Math.max(80, Math.min(130, Math.round(Number(next.uiZoom) || 100)));
     next.uiFont = normalizeUiFont(next.uiFont);
     next.monoFont = isMonoFont(next.monoFont) ? next.monoFont : 'jetbrains-mono';
@@ -542,6 +543,7 @@ function validate(value: unknown, defaultDoubleControlShortcutEnabled: boolean):
         sidebarWidth: normalizeSidebarWidth(parsedPreferences.data.sidebarWidth, input.version !== SETTINGS_SCHEMA_VERSION),
         sidebarCollapsed: parsedPreferences.data.sidebarCollapsed === true,
         showDotEnvFiles: typeof parsedPreferences.data.showDotEnvFiles === 'boolean' ? parsedPreferences.data.showDotEnvFiles : true,
+        lineBlame: typeof parsedPreferences.data.lineBlame === 'boolean' ? parsedPreferences.data.lineBlame : true,
         uiZoom: Math.max(80, Math.min(130, Math.round(Number(parsedPreferences.data.uiZoom) || 100))),
         uiFont: normalizeUiFont(parsedPreferences.data.uiFont),
         monoFont: isMonoFont(parsedPreferences.data.monoFont) ? parsedPreferences.data.monoFont : 'jetbrains-mono',

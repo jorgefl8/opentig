@@ -169,6 +169,7 @@ export function publishBranchArg(value: unknown): PublishBranchOptions | undefin
     remote: refsString(request.remote, 'push', MAX_BRANCH_REF_LENGTH),
     expectedBranch: refsString(request.expectedBranch, 'push', MAX_BRANCH_REF_LENGTH),
     expectedOid: oidArg(request.expectedOid, 'push'),
+    ...(request.asNewBranch === true ? { asNewBranch: true } : {}),
   };
 }
 

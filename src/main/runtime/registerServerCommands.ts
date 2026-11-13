@@ -201,6 +201,11 @@ export function registerServerCommands(
     directoryPath === '' ? '' : stringArg(directoryPath, 'directory-entries'),
   ));
   handle(IPC.repositoryReadFile, 'read-file', (id, filePath, allowLarge) => services.files.read(stringArg(id, 'read-file', 64), stringArg(filePath, 'read-file'), allowLarge === true));
+  handle(IPC.repositoryLineBlame, 'line-blame', (id, filePath, draft) => services.operations.lineBlame(
+    stringArg(id, 'line-blame', 64),
+    stringArg(filePath, 'line-blame'),
+    draft === undefined || draft === null ? undefined : textArg(draft, 'line-blame', 8 * 1024 * 1024),
+  ));
   handle(IPC.repositoryReadImage, 'read-image', (id, filePath) => services.files.readImage(
     stringArg(id, 'read-image', 64),
     stringArg(filePath, 'read-image'),

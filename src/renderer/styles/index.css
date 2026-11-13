@@ -321,6 +321,8 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   .toolbar-brand-divider { width: 1px; height: 18px; flex: none; margin-inline: 4px; background: var(--border); }
   .toolbar-crumbs { display: flex; min-width: 0; flex: 0 1 auto; align-items: center; gap: 2px; }
   .toolbar-crumb-separator { flex: none; color: var(--muted-foreground); font-size: var(--text-ui); }
+  /* The branch tracks an upstream with another name: a push wouldn't land on its own branch. */
+  .toolbar-upstream-chip { flex: none; margin-left: 2px; padding: 1px 6px; border-radius: 999px; background: color-mix(in oklch, var(--warning) 14%, transparent); color: var(--warning); font-family: var(--font-mono); font-size: var(--text-meta); white-space: nowrap; }
   .app-name { white-space: nowrap; }
   .app-name-dev { font-weight: var(--weight-strong); color: var(--foreground); background-image: repeating-linear-gradient(135deg, var(--dev-stripe-foreground) 0 .18em, var(--dev-stripe-yellow) .18em .36em); background-clip: text; -webkit-text-fill-color: transparent; -webkit-text-stroke: .35px color-mix(in oklch, var(--foreground) 65%, transparent); }
   .toolbar-spacer { min-width: 16px; flex: 1; }
@@ -417,6 +419,14 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   .inline-action { border-radius: var(--radius-sm); color: var(--foreground); text-decoration: underline; text-decoration-color: var(--border); text-underline-offset: 3px; }
   .inline-action:hover:not(:disabled) { text-decoration-color: currentColor; }
   .inline-action:disabled { color: var(--muted-foreground); cursor: not-allowed; }
+  .upstream-mismatch-notice { display: flex; gap: 8px; margin: 8px 12px 0; border: 1px solid color-mix(in oklch, var(--warning) 35%, transparent); border-radius: var(--radius-md); background: color-mix(in oklch, var(--warning) 9%, transparent); padding: 10px 10px 10px 9px; font-size: var(--text-ui); line-height: 1.45; }
+  .upstream-mismatch-notice > svg { width: 16px; height: 16px; flex: none; margin-top: 1px; color: var(--warning); }
+  .upstream-mismatch-notice strong { display: block; font-weight: var(--weight-strong); }
+  .changes-empty .upstream-mismatch-notice p { margin: 2px 0 8px; padding: 0; color: var(--muted-foreground); }
+  .upstream-mismatch-notice code, .publish-new-branch-summary code, .undo-commit-content [data-slot="dialog-description"] code { font-family: var(--font-mono); }
+  .upstream-mismatch-action { height: 26px; border-radius: var(--radius-md); background: color-mix(in oklch, var(--git-push) 15%, transparent); padding: 0 10px; color: var(--git-push-ink); font-size: var(--text-meta); font-weight: var(--weight-strong); }
+  .upstream-mismatch-action:hover:not(:disabled) { background: color-mix(in oklch, var(--git-push) 24%, transparent); }
+  .upstream-mismatch-action:disabled { opacity: 0.55; cursor: not-allowed; }
   .change-group-label { display: flex; min-height: 28px; align-items: center; gap: 6px; padding: 4px 12px 0; color: var(--muted-foreground); font-size: var(--text-meta); font-weight: var(--weight-strong); }
   .change-group-label .quiet-action { margin-left: auto; opacity: 0; }
   .change-group-label:hover .quiet-action, .change-group-label .quiet-action:focus-visible { opacity: 1; }
@@ -928,6 +938,12 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   .undo-commit-summary strong { overflow: hidden; font-size: var(--text-ui); font-weight: var(--weight-regular); text-overflow: ellipsis; white-space: nowrap; }
   .destructive-confirmation-detail { max-height: 160px; overflow: auto; margin-top: 2px; color: var(--muted-foreground); font-size: var(--text-meta); line-height: 1.45; overflow-wrap: anywhere; white-space: pre-wrap; }
   .undo-commit-actions { display: flex; justify-content: flex-end; gap: 6px; padding: 12px 16px 16px 20px; }
+  .publish-new-branch-summary { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 14px; margin: 4px 0 0; border-radius: var(--radius-md); background: var(--muted); padding: 10px 12px; font-size: var(--text-ui); }
+  .publish-new-branch-summary dt { color: var(--muted-foreground); }
+  .publish-new-branch-summary dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
+  .publish-new-branch-summary s { color: var(--muted-foreground); }
+  .publish-new-branch-command > summary { font-size: var(--text-meta); }
+  .publish-new-branch-command > code { display: block; margin-top: 6px; border-radius: var(--radius-sm); background: var(--muted); padding: 6px 8px; font-family: var(--font-mono); font-size: var(--text-meta); overflow-wrap: anywhere; user-select: all; }
   .pulls-section { display: flex; height: 100%; min-height: 0; flex-direction: column; }
   .pulls-section-head { --tab-height: 34px; display: flex; height: 34px; flex: none; align-items: center; justify-content: space-between; gap: 8px; border-bottom: 1px solid var(--sidebar-border); padding: 0 6px 0 12px; }
   .pulls-section-tools { display: inline-flex; flex: none; align-items: center; gap: 2px; }

@@ -10,6 +10,8 @@ interface Props {
   description?: string;
   noindex?: boolean;
   canonicalPage?: boolean;
+  /** Open Graph object type: guides are articles, everything else is the website. */
+  ogType?: 'website' | 'article';
   pixelFont?: boolean;
   fullBleed?: boolean;
   /** Markdown twin of this page for agents. */
@@ -20,6 +22,7 @@ const {
   description = siteDescription,
   noindex = false,
   canonicalPage = true,
+  ogType = 'website',
   pixelFont = true,
   fullBleed = false,
   markdown,
@@ -45,7 +48,7 @@ const socialImageAlt = 'OpenTig, a free, open-source Git client, showing a pull 
     {markdown && <link rel="alternate" type="text/markdown" href={markdown} />}
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
-    <meta property="og:type" content="website" />
+    <meta property="og:type" content={ogType} />
     <meta property="og:site_name" content="OpenTig" />
     {canonical && <meta property="og:url" content={canonical} />}
     {socialImage && <meta property="og:image" content={socialImage} />}
