@@ -2,7 +2,7 @@ import { test as base, expect, type Page } from '@playwright/test';
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
 import { existsSync } from 'node:fs';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
@@ -27,6 +27,9 @@ export interface GitRepository {
    */
   addRemote(): Promise<{ bare: string; other: GitRepository }>;
 }
+
+/** Starts an idle process the system reports as a coding agent, such as `claude`, working in `cwd`. */
+export type StartFakeAgent = (name: string, cwd: string) => Promise<void>;
 
 async function freePort(): Promise<number> {
   const probe = createServer();
@@ -91,7 +94,7 @@ async function pair(page: Page, server: OpenTigServer): Promise<void> {
   await expect(page).not.toHaveURL(/\/pair/, { timeout: 20_000 });
 }
 
-export const test = base.extend<{ server: OpenTigServer; repository: GitRepository; pairedPage: Page }>({
+export const test = base.extend<{ server: OpenTigServer; repository: GitRepository; pairedPage: Page; startFakeAgent: StartFakeAgent }>({
   // One isolated server per test: its own home, settings, and port, so tests
   // never share state and nothing touches a developer's OpenTig data. The
   // built server starts in about a second.
@@ -142,6 +145,33 @@ export const test = base.extend<{ server: OpenTigServer; repository: GitReposito
       await use(repository);
     } finally {
       await rm(root, { recursive: true, force: true, maxRetries: 3 });
+    }
+  },
+
+  // Linux names a process after the file it was started from, so a link to
+  // Node named `claude` is what OpenTig's agent detection sees in /proc. The
+  // process is a sibling of the server, not its child, so it counts as an
+  // agent the user started. Agent detection reads /proc, so this only works on
+  // Linux.
+  // oxlint-disable-next-line no-empty-pattern -- Playwright reads fixture dependencies from this parameter.
+  startFakeAgent: async ({}, use) => {
+    const bin = await mkdtemp(path.join(os.tmpdir(), 'opentig-e2e-agent-'));
+    const running: ChildProcess[] = [];
+    try {
+      await use(async (name, cwd) => {
+        const executable = path.join(bin, name);
+        if (!existsSync(executable)) await symlink(process.execPath, executable);
+        const child = spawn(executable, ['-e', 'setInterval(() => {}, 60_000)'], { cwd, stdio: 'ignore' });
+        running.push(child);
+        await once(child, 'spawn');
+      });
+    } finally {
+      await Promise.all(running.filter((child) => child.exitCode === null && child.signalCode === null).map((child) => {
+        const exited = once(child, 'exit');
+        child.kill('SIGKILL');
+        return exited;
+      }));
+      await rm(bin, { recursive: true, force: true });
     }
   },
 });

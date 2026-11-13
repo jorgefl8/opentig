@@ -236,3 +236,56 @@ test('a linked worktree can be removed together with its branch', async ({ paire
   expect(await repository.git('worktree', 'list', '--porcelain')).not.toContain('spike');
   expect(await localBranches(repository)).toEqual(['main']);
 });
+
+test.describe('coding agents in worktrees', () => {
+  // OpenTig finds agents through /proc on Linux; CI runs this suite on Linux.
+  test.skip(process.platform !== 'linux', 'Agent detection by working folder is exercised on Linux.');
+
+  test('switching the branch under an agent asks first, and Cancel keeps it', async ({ pairedPage: page, repository, startFakeAgent }) => {
+    await repository.git('branch', 'feature');
+    await startFakeAgent('claude', repository.path);
+    await openRepository(page, repository);
+
+    // The branch the agent works on is marked in the branch menu.
+    await branchPicker(page).click();
+    const menu = page.getByRole('listbox', { name: 'Select branch' });
+    await expect(menu.getByRole('option', { name: /^main / })).toContainText('Claude Code');
+    await expect(menu.getByRole('option', { name: /^feature(?: |$)/ })).not.toContainText('Claude Code');
+    await menu.getByRole('option', { name: /^feature(?: |$)/ }).click();
+
+    const dialog = page.getByRole('dialog', { name: 'Claude Code is working in this folder' });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole('button', { name: 'Cancel' }).click();
+    await expect(dialog).toBeHidden();
+    await expect(branchPicker(page)).toContainText('main');
+    expect(await currentBranch(repository)).toBe('main');
+
+    await selectBranch(page, 'feature');
+    await dialog.getByRole('button', { name: 'Switch to feature anyway' }).click();
+
+    await expect(dialog).toBeHidden();
+    await expect(branchPicker(page)).toContainText('feature');
+    await expect.poll(() => currentBranch(repository)).toBe('feature');
+  });
+
+  test('an agent in another worktree is marked there and does not hold up switching here', async ({ pairedPage: page, repository, startFakeAgent }) => {
+    await repository.git('branch', 'feature');
+    const worktreePath = `${repository.path}-agent`;
+    await repository.git('worktree', 'add', '-q', '-b', 'agent-work', worktreePath);
+    await startFakeAgent('codex', worktreePath);
+    await openRepository(page, repository);
+
+    await page.getByRole('combobox', { name: /^Select worktree/ }).click();
+    const worktrees = page.getByRole('listbox', { name: /^Select worktree/ });
+    await expect(worktrees.getByRole('option', { name: /sample-project-agent/ })).toContainText('Codex');
+    await expect(worktrees.getByRole('option', { name: /^sample-project(?: |$)/ })).not.toContainText('Codex');
+    await page.keyboard.press('Escape');
+
+    await selectBranch(page, 'feature');
+
+    await expect(branchPicker(page)).toContainText('feature');
+    await expect.poll(() => currentBranch(repository)).toBe('feature');
+    await expect(page.getByRole('dialog', { name: /working in this folder/ })).toHaveCount(0);
+    expect(await repository.git('-C', worktreePath, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('agent-work');
+  });
+});
