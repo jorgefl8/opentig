@@ -3,6 +3,7 @@ import {
   app,
   BrowserWindow,
   dialog,
+  Menu,
   nativeTheme,
   screen,
   session,
@@ -27,6 +28,7 @@ import { boundsVisibleOnDisplays, browserWindowBounds, DesktopWindowState } from
 import { DESKTOP_MIN_WINDOW_HEIGHT, DESKTOP_MIN_WINDOW_WIDTH } from './main/window/desktop-window-size';
 import { getWindowTitleBarOptions, readStartupDark, startupBackground } from './main/window/WindowTitleBar';
 import { serverErrorPageUrl, serverRecoveryAction } from './main/window/ServerErrorPage';
+import { isDevToolsShortcut } from './main/window/ApplicationMenu';
 import { normalizeExternalUrl } from './shared/external-url';
 import type { OpenTigPairingLink, OpenTigWebAccessStatus } from './shared/desktop-api';
 import { applicationName, preferredServerPort, sessionCookieName } from './shared/application-profile';
@@ -170,6 +172,11 @@ async function createWindow(): Promise<void> {
     && allowedServerOrigin !== null && safeOrigin(event.senderFrame.url) === allowedServerOrigin
   ));
   mainWindow.webContents.on('will-prevent-unload', () => desktopUpdater?.cancelInstall());
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (!isDevToolsShortcut(input, applicationProfile)) return;
+    event.preventDefault();
+    mainWindow?.webContents.toggleDevTools();
+  });
 
   const openExternal = (value: string) => {
     const url = normalizeExternalUrl(value);
@@ -412,6 +419,11 @@ app.on('second-instance', () => {
 });
 
 app.whenReady().then(async () => {
+  // Electron's default menu is hidden behind the custom title bar but keeps its
+  // accelerators, which would shadow OpenTig's own shortcuts: Ctrl+R reloads the app,
+  // Ctrl+W closes the window, Ctrl+Shift+I opens DevTools, and Ctrl+= or Ctrl+- zoom
+  // outside Interface size. macOS keeps it for the standard Edit and Quit commands.
+  if (process.platform !== 'darwin') Menu.setApplicationMenu(null);
   desktopUpdater = await createDesktopUpdater(applicationProfile, () => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.close();
     else app.quit();

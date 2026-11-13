@@ -6,6 +6,8 @@ Use **Settings → General** to change themes, fonts, file views, and remote che
 
 On desktop, navigation, file lists, and the commit composer sit in a resizable sidebar; editors, diffs, commits, PRs, releases, and workflow runs open in the viewer. Phone browsers show one pane at a time. Both clients connect to the same repository backend. Native desktop controls are available only in the desktop app.
 
+Like in a desktop app, buttons, tabs, menus, the top bar, and the sidebar's lists don't select their text when you drag across them or double-click. Text you read or copy stays selectable: diffs, code, Markdown, commit and pull request details, error messages, and every text field.
+
 ## Sidebar width and collapsing
 
 Drag the sidebar's right edge to resize it between 300 px and 680 px, or focus the edge and use the arrow keys, `Home`, and `End`. Double-click the edge to return to the default 400 px.
@@ -87,6 +89,8 @@ Open **Settings → Shortcuts** to rebind most shortcuts, check for conflicts, o
 You can disable **double-tap-Control**, which brings the desktop app to the front from another application. See the [default shortcut table](features.md#keyboard-shortcuts).
 
 **In a paired browser,** the section omits double-tap-Control because a web page cannot register global shortcuts. Browsers keep some combinations for their own tabs and windows, such as `Ctrl+W`, `Ctrl+T`, `Ctrl+N`, and `Ctrl+Tab`. Commands bound to one of them show a notice there, and those combinations cannot be assigned from the browser. Shortcut changes are shared with the desktop app. Phone layouts hide the section.
+
+**In the Windows desktop app,** only OpenTig's own shortcuts are active. A combination left unassigned does nothing: `Ctrl+R` never reloads the app, `Ctrl+W` never closes the window, and `Ctrl+=` or `Ctrl+-` don't zoom; use **Interface size** to scale the interface. Developer tools open only in OpenTig Dev, with `F12` or `Ctrl+Shift+I`.
 
 ## Dropdowns and tooltips
 
