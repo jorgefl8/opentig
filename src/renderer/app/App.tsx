@@ -2157,6 +2157,14 @@ export default function App({ initialView, initialSelection, pullRequestCreation
               };
             }
             if (result.status === 'remote-required') return { title: 'Choose a remote to publish the branch' };
+            if (result.status === 'rejected' && result.reason === 'remote-changed') {
+              return {
+                title: `${repository.name}: the remote contains new changes`,
+                description: 'Pull rebases your local commits on top when there are no conflicts, then push again.',
+                duration: 10_000,
+                button: { title: 'Pull', onClick: () => void pullUpdates() },
+              };
+            }
             if (result.status === 'rejected' && result.access) return remoteAccessToast(`${repository.name}: could not push commits`, result.access, true);
             return { title: `${repository.name}: could not push commits`, description: result.message, duration: 10_000, button: { title: 'Repository access', onClick: () => { setSettingsSection('github'); setSettingsOpen(true); } } };
           }
@@ -2419,6 +2427,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
         <RepositoryUnavailable
           repository={missing}
           otherMissing={[...unavailableRepositoryIds].filter((id) => id !== missing.id).length}
+          waiting={Boolean(busy)}
           onLocate={() => locateRepository(missing)}
           onRemove={async () => {
             await forgetRepository({ key: normalizeRepositoryKey(missing.commonDir), name: missing.name, rootPath: missing.path, recent: missing });
@@ -2711,6 +2720,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
                   changed={changed}
                   displayMode={bootstrap.preferences.changesLayout}
                   readOnly={Boolean(status?.readOnly)}
+                  discardDisabled={Boolean(busy)}
                   changeCount={status?.changes.length ?? 0}
                   insertions={status?.insertions ?? 0}
                   deletions={status?.deletions ?? 0}

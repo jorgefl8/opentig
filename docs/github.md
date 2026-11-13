@@ -128,7 +128,7 @@ Beside the branch in the top bar, the PR indicator shows the current branch or w
 
 Matching checks both the head repository and branch name, so another fork's `main` is not mistaken for your clone. When several PRs match, the most recently updated open PR takes priority. Otherwise, the most recently updated PR is shown if merged.
 
-The current branch indicator checks open PRs once a minute while the window is visible. Closed, merged, or absent results are checked every five minutes to discover reopened PRs or reused branches. Returning to the window, reconnecting, changing the repository account, or manually refreshing checks immediately. Failed checks retry every minute; hidden windows do not poll.
+The current branch indicator checks open PRs once a minute while the window is visible. Closed, merged, or absent results are checked every five minutes to discover reopened PRs or reused branches. Returning to the window (switching back to it or making it visible again, at most once every 10 seconds), reconnecting, changing the repository account, or manually refreshing checks immediately, so a PR created in a terminal or browser appears when you come back. Failed checks retry every minute; hidden windows do not poll.
 
 CLI availability is checked at startup and reused across repositories and list filters. Returning to **GitHub** keeps cached results visible during background refreshes. **Refresh pull requests** in the list's menu checks CLI availability again.
 
