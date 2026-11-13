@@ -57,7 +57,7 @@ In **Manage projects**, create, rename, delete, or reassign project groups witho
 
 **Moved or deleted repository folders**
 
-When a saved repository's folder no longer exists, the repository picker and the welcome screen mark it **Not found** and skip it when fetching. Choosing it asks for its new folder instead of opening it. If the open repository's folder disappears, OpenTig stops refreshing it and shows a screen with its last path and three choices: **Locate folder…**, **Remove from OpenTig**, or **Open another repository**. The same screen appears at startup when the last repository can't be restored. Browsers start the folder picker at the closest folder that still exists.
+When a saved repository's folder no longer exists, the repository picker and the welcome screen mark it **Not found** and skip it when fetching. Choosing it asks for its new folder instead of opening it. If the open repository's folder disappears, OpenTig stops refreshing it and shows a screen with its last path and three choices: **Locate folder…**, **Remove from OpenTig**, or **Open another repository**. Locating and removing wait for a repository operation that is still running. The same screen appears at startup when the last repository can't be restored. Browsers start the folder picker at the closest folder that still exists.
 
 After you locate one moved repository, OpenTig looks for the other missing ones near its new folder. It first tries the same relative path from the new parent folder, then folders with the same name up to two levels below the parent of that folder, skipping hidden folders and `node_modules`. A match must be the top of a Git repository or worktree with the same folder and repository names; when two folders could match, OpenTig leaves that repository for you to locate. A dialog lists the matches with their old and new paths, plus any repository that wasn't found, and **Relocate** updates the selected ones together without changing the open repository. A linked worktree whose main repository also moved may need `git worktree repair` before it can be found.
 
@@ -107,7 +107,7 @@ With no changes, the section says so and, when the branch has commits that aren'
 
 Changed Markdown files open their staged or unstaged diff; use **Open file** for the rendered preview. HTML, SVG, and image files open a rich preview and have a separate diff action.
 
-To discard a file's or folder's unstaged changes, review the affected paths in the confirmation dialog. Untracked files go to system Trash (the Recycle Bin on Windows). A folder whose untracked files are all being discarded goes to Trash as one item, unless it also holds tracked or Git-ignored files. Folders the discard leaves empty are removed.
+To discard a file's or folder's unstaged changes, review the affected paths in the confirmation dialog. Discarding is unavailable while another repository operation, such as a refresh or a stage, is still running. Untracked files go to system Trash (the Recycle Bin on Windows). A folder whose untracked files are all being discarded goes to Trash as one item, unless it also holds tracked or Git-ignored files. Folders the discard leaves empty are removed.
 
 **Resolve conflicts**
 
@@ -175,7 +175,7 @@ OpenTig uses the configured push remote or the only available remote. If several
 
 **Read progress and errors**
 
-Each pull or push has its own progress and result notification. Remote rejections, branch protection, authentication, configuration errors, pending conflicts, and other one-shot failures appear there. **Changes** remains the place to inspect unresolved work.
+Each pull or push has its own progress and result notification. Remote rejections, branch protection, authentication, configuration errors, pending conflicts, and other one-shot failures appear there. When a push is rejected because the remote has commits the branch lacks, the notification offers **Pull**; push again afterwards. **Changes** remains the place to inspect unresolved work.
 
 <details>
 <summary>Notification behavior</summary>

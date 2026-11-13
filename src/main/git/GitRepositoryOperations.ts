@@ -1455,7 +1455,9 @@ export function pushFailure(error: unknown): Extract<PushResult, { status: 'reje
   else if (/authentication failed|could not read username|bad credentials|expired|revoked|no usable saved credentials|publickey|(?:http|error:)\s*401/.test(raw)) reason = 'authentication';
   else if (/protected branch|hook declined|pre-receive hook|remote rejected|gh006|gh013|repository rule/.test(raw)) reason = 'hook';
   else if (/permission.*denied|write access.*not granted|access denied|(?:http|error:)\s*403/.test(raw)) reason = 'permission';
-  else if (/non-fast-forward|fetch first|stale info/.test(raw)) reason = 'remote-changed';
+  // With --porcelain, Git reports the rejected ref on stdout, so stderr only
+  // carries its hint about the remote being ahead.
+  else if (/non-fast-forward|fetch first|stale info|updates were rejected because (?:the remote contains work|the tip of your current branch is behind|a pushed branch tip is behind)/.test(raw)) reason = 'remote-changed';
   else if (/could not resolve host|unable to access|connection.*(timed out|reset|refused)|network is unreachable|(?:http|error:)\s*50[0-4]/.test(raw)) reason = 'network';
   else if (detail?.code === 'INVALID_ARGUMENT' || /upstream branch .* does not match|no upstream branch|push\.default|context|account changed/.test(raw)) reason = 'configuration';
   return { status: 'rejected', reason, message: explanation + message, ...(detail?.access ? { access: detail.access } : {}) };
