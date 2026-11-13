@@ -1,3 +1,5 @@
+import { writeFile } from 'node:fs/promises';
+import path from 'node:path';
 import type { Page } from '@playwright/test';
 import { openRepository } from './support/app';
 import { expect, test } from './support/fixtures';
@@ -25,6 +27,39 @@ function sectionContent(page: Page) {
     search: sidebar.getByRole('textbox', { name: 'Search in repository' }),
   };
 }
+
+/** The text a drag or double-click left selected on the page. */
+function selectedText(page: Page) {
+  return page.evaluate(() => window.getSelection()?.toString() ?? '');
+}
+
+test('dragging or double-clicking app chrome selects nothing, while diff text stays selectable', async ({ pairedPage: page, repository }) => {
+  await repository.commit('src/app.js', 'const a = 1;\nconst total = 2;\n', 'Add app');
+  await writeFile(path.join(repository.path, 'src/app.js'), 'const a = 1;\nconst total = 3;\n');
+  await openRepository(page, repository);
+  const sidebar = page.getByRole('complementary');
+  await page.getByRole('navigation', { name: 'Repository views' }).getByRole('button', { name: 'Changes 1' }).click();
+  const row = sidebar.getByRole('treeitem', { name: /^View changes for src\/app\.js / });
+  await row.getByRole('button', { name: 'View changes for src/app.js' }).click();
+  const code = page.getByRole('code');
+  await expect(code).toContainText('const total = 3;');
+
+  // A drag from the summary above the list of changes across the list.
+  const summary = sidebar.getByText('1 change', { exact: true });
+  const from = (await summary.boundingBox())!;
+  const to = (await row.boundingBox())!;
+  await page.mouse.move(from.x + 4, from.y + from.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(to.x + to.width - 4, to.y + to.height / 2, { steps: 10 });
+  await page.mouse.up();
+  expect(await selectedText(page)).toBe('');
+  await summary.dblclick();
+  expect(await selectedText(page)).toBe('');
+
+  // The diff is content to read and copy.
+  await code.getByText('total', { exact: true }).last().dblclick();
+  expect(await selectedText(page)).toBe('total');
+});
 
 test('the theme chosen in Settings applies at once and is kept after a reload', async ({ pairedPage: page, repository }) => {
   await openRepository(page, repository);
