@@ -14,6 +14,8 @@ import { syncScrollFraction } from './scroll-sync';
 import { buildFileEditorKeymap } from './source-editor-keymap';
 import { shouldVirtualizeSourceEditor } from './source-editor-virtualization';
 import { useEditableFileDraft } from './useEditableFileDraft';
+import { SYNTAX_MARKER_CSS, SyntaxDiagnosticsLayer } from './SyntaxDiagnosticsLayer';
+import { useSyntaxDiagnostics, useSyntaxMarkers } from './useSyntaxDiagnostics';
 import { useShortcuts } from '@/app/useShortcuts';
 import { Button } from '@/components/ui/button';
 import { MobileMainAction } from '@/components/MobileChrome';
@@ -103,6 +105,10 @@ export function SourceCodeEditor({ path, cacheKey, value, themeType, wrapLines, 
   const virtualizerRef = useRef<VirtualizerHandle>(undefined);
   const plainScrollRef = useRef<HTMLDivElement>(null);
 
+  // Large files move to the virtualized surface, which the problem layer skips.
+  const { diagnostics } = useSyntaxDiagnostics(path, value, !virtualized);
+  const syntaxMarkers = useSyntaxMarkers(diagnostics);
+
   const editing = editReady && !readOnly;
   const { key: fileKey, noteEditorText } = useEditorFileKey(cacheKey, value, editing);
   const file = useMemo(() => ({ name: path, lang: resolvePierreLanguage(path), contents: value, cacheKey: fileKey }), [fileKey, path, value]);
@@ -111,7 +117,7 @@ export function SourceCodeEditor({ path, cacheKey, value, themeType, wrapLines, 
     themeType,
     theme: OPENTIG_CODE_THEMES,
     overflow: wrapLines ? 'wrap' as const : 'scroll' as const,
-    unsafeCSS: VIEWER_SCROLLBAR_CSS,
+    unsafeCSS: VIEWER_SCROLLBAR_CSS + SYNTAX_MARKER_CSS,
   }), [themeType, wrapLines]);
   // This object must stay stable: EditProvider uses its identity to retain the
   // editor instance and its undo/redo history while the surface rerenders. It is
@@ -119,11 +125,12 @@ export function SourceCodeEditor({ path, cacheKey, value, themeType, wrapLines, 
   const editorOptions = useMemo<EditorOptions<'file', undefined, undefined>>(() => ({
     historyMaxEntries: 500,
     keymap: buildFileEditorKeymap(shortcuts.editorSearch),
+    onAttach: syntaxMarkers.onAttach,
     onChange(event) {
       noteEditorText(event.file.contents);
       onChangeRef.current(event.file.contents);
     },
-  }), [noteEditorText, shortcuts.editorSearch]);
+  }), [noteEditorText, shortcuts.editorSearch, syntaxMarkers.onAttach]);
 
   const cancelScrollSync = useRef<(() => void) | null>(null);
   useEffect(() => () => cancelScrollSync.current?.(), []);
@@ -192,7 +199,10 @@ export function SourceCodeEditor({ path, cacheKey, value, themeType, wrapLines, 
       </Virtualizer>
       ) : (
         <div ref={plainScrollRef} className="source-code-editor">
-          <div className="source-code-editor-content">{fileSurface}</div>
+          <div className="source-code-editor-content">
+            {fileSurface}
+            <SyntaxDiagnosticsLayer diagnostics={diagnostics} onActivateLine={syntaxMarkers.focusLineEnd} />
+          </div>
         </div>
       )}
     </PierreWorkerPool>
