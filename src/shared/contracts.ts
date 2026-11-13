@@ -204,10 +204,15 @@ export interface PublishBranchOptions {
   remote: string;
   expectedBranch: string;
   expectedOid: string;
+  /**
+   * Push to `refs/heads/<branch>` and track it, for a branch whose upstream has
+   * another name on the same remote. Only accepted for that configuration.
+   */
+  asNewBranch?: boolean;
 }
 
 export type PushResult =
-  | { status: 'published'; branch: string; remote: string }
+  | { status: 'published'; branch: string; remote: string; /** The upstream it tracked before, when published as a new branch. */ previousUpstream?: string }
   | { status: 'remote-required'; branch: string; oid: string; remotes: string[] }
   | { status: 'success'; commits: number }
   | { status: 'up-to-date' }

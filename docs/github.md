@@ -319,7 +319,7 @@ An ordinary push runs directly. You do not need to visit Settings, grant browser
 
 For a new branch with a resolved destination, use **Publish branch** to push and set an upstream. If Git cannot choose between remotes, **Where do you want to push?** lists full repository destinations, aliases, and branches. Publishing saves the tracking branch in Git on the server.
 
-Every push reads and validates fresh server configuration. If that prepared context changes during execution, the operation stops. Multiple push URLs and unsupported configurations remain blocked with an explanation. **No operation silently switches accounts, rewrites remotes, or forces a push.**
+Every push reads and validates fresh server configuration. If that prepared context changes during execution, the operation stops. Multiple push URLs and unsupported configurations remain blocked with an explanation that names the setting. A branch whose upstream has another name is [published under its own name](features.md#safe-pull-and-push) after you confirm. **No operation silently switches accounts, rewrites remotes, or forces a push.**
 
 **Understand access checks and rejections**
 

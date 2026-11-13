@@ -112,3 +112,37 @@ it('cancels a missing destination without pushing or saving an approval', async 
     expect(refs.push).not.toHaveBeenCalled(); expect(localStorage.length).toBe(0);
   } finally { await view.close(); }
 });
+
+it('publishes a branch tracking another branch under its own name only after confirmation', async () => {
+  const value: PublicationContext = { ...context('a'), branch: 'fix/login', targetRef: 'refs/heads/dev', blocked: 'This branch tracks origin/dev.', blockedReason: 'upstream-name', upstreamMismatch: { remote: 'origin', branch: 'dev', ahead: 1 } };
+  refs.pushContext.mockResolvedValue(value);
+  let finish!: (result: unknown) => void;
+  refs.push.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+  const view = await mount();
+  try {
+    let result!: ReturnType<typeof view.hook.push>;
+    await act(async () => { result = view.hook.push('a', 'A'); await Promise.resolve(); });
+    expect(view.hook.newBranchChoice).toMatchObject({ branch: 'fix/login', remote: 'origin', upstream: { branch: 'dev' }, publishing: false });
+    await act(async () => { view.hook.confirmNewBranch(false); expect(await result).toBeNull(); });
+    expect(refs.push).not.toHaveBeenCalled(); expect(view.hook.newBranchChoice).toBeUndefined();
+
+    await act(async () => { result = view.hook.push('a', 'A'); await Promise.resolve(); });
+    await act(async () => { view.hook.confirmNewBranch(true); await Promise.resolve(); });
+    expect(refs.push).toHaveBeenCalledWith('a', { remote: 'origin', expectedBranch: 'fix/login', expectedOid: value.oid, asNewBranch: true }, value.id);
+    // The dialog stays open while publishing and can't be dismissed.
+    expect(view.hook.newBranchChoice?.publishing).toBe(true);
+    await act(async () => { view.hook.confirmNewBranch(false); });
+    expect(view.hook.newBranchChoice?.publishing).toBe(true);
+    await act(async () => { finish({ status: 'published', branch: 'fix/login', remote: 'origin', previousUpstream: 'origin/dev' }); expect(await result).toMatchObject({ status: 'published' }); });
+    expect(view.hook.newBranchChoice).toBeUndefined();
+  } finally { await view.close(); }
+});
+
+it('reports any other blocked configuration without offering a new branch', async () => {
+  refs.pushContext.mockResolvedValue({ ...context('a'), blocked: 'remote.origin.mirror is on.', blockedReason: 'mirror', upstreamMismatch: { remote: 'origin', branch: 'dev', ahead: 1 } });
+  const view = await mount();
+  try {
+    await act(async () => { expect(await view.hook.push('a', 'A')).toEqual({ status: 'rejected', reason: 'configuration', message: 'remote.origin.mirror is on.' }); });
+    expect(view.hook.newBranchChoice).toBeUndefined(); expect(refs.push).not.toHaveBeenCalled();
+  } finally { await view.close(); }
+});

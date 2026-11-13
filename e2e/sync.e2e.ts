@@ -157,3 +157,45 @@ test('a push rejected because the remote moved offers Pull and never force-pushe
   await expect.poll(() => repository.git('log', '--format=%s', 'main')).toBe('Add local file\nAdd remote file\nInitial commit');
   await expect(pushButton(page, 1)).toBeVisible();
 });
+
+test('a branch that tracks another remote branch is published under its own name, never pushed to that branch', async ({ pairedPage: page, repository }) => {
+  const { bare } = await repository.addRemote();
+  await repository.git('push', '-q', 'origin', 'main:dev');
+  await repository.git('fetch', '-q', 'origin');
+  const devTip = await remoteTip(repository, bare, 'dev');
+  // Git's default branch.autoSetupMerge makes fix/login track origin/dev.
+  await repository.git('checkout', '-q', '-b', 'fix/login', 'origin/dev');
+  await repository.commit('login.txt', 'fixed\n', 'Fix login');
+  await openRepository(page, repository);
+
+  // The top bar names the tracked branch beside the current one (read as "Tracks origin/dev").
+  const trackedChip = '- text: Tracks origin/dev';
+  await expect(toolbar(page)).toMatchAriaSnapshot(trackedChip);
+  const dialog = page.getByRole('dialog', { name: 'Publish as a new branch?' });
+
+  // The toolbar's push asks first, and cancelling pushes nothing.
+  await pushButton(page, 1).click();
+  await expect(dialog).toContainText('origin/fix/login');
+  await dialog.getByRole('button', { name: 'Cancel' }).click();
+  await expect(dialog).toBeHidden();
+  expect(await remoteTip(repository, bare, 'dev')).toBe(devTip);
+  expect(await repository.git('--git-dir', bare, 'branch', '--list', 'fix/login')).toBe('');
+  expect(await repository.git('rev-parse', '--abbrev-ref', 'fix/login@{upstream}')).toBe('origin/dev');
+
+  // Changes warns instead of offering a push, and publishes after the same confirmation.
+  await page.getByRole('navigation', { name: 'Repository views' }).getByRole('button', { name: /^Changes/ }).click();
+  await expect(page.getByText('1 commit isn\'t published yet.')).toBeVisible();
+  await expect(page.getByRole('note')).toContainText('This branch tracks origin/dev');
+  await expect(page.getByRole('button', { name: 'Push it' })).toBeHidden();
+  await page.getByRole('button', { name: 'Publish as new branch' }).click();
+  await dialog.getByRole('button', { name: 'Publish branch' }).click();
+
+  await expect(page.getByText('fix/login now tracks origin/fix/login.')).toBeVisible();
+  await expect(dialog).toBeHidden();
+  await expect(page.getByText('Nothing to review or commit.')).toBeVisible();
+  await expect(toolbar(page)).not.toMatchAriaSnapshot(trackedChip);
+  await expect(syncButtons(page)).toHaveCount(0);
+  expect(await remoteTip(repository, bare, 'fix/login')).toBe(await repository.git('rev-parse', 'HEAD'));
+  expect(await remoteTip(repository, bare, 'dev')).toBe(devTip);
+  expect(await repository.git('rev-parse', '--abbrev-ref', 'fix/login@{upstream}')).toBe('origin/fix/login');
+});

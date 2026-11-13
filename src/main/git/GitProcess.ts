@@ -22,7 +22,7 @@ export interface GitOutput {
 export interface RunOptions {
   signal?: AbortSignal;
   onStderr?: (chunk: string) => void;
-  publication?: { repositoryId: string; id: string; remote?: string };
+  publication?: { repositoryId: string; id: string; remote?: string; asNewBranch?: boolean };
   managedSecrets?: string[];
   managed?: boolean;
   operation: string;
