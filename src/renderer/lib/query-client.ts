@@ -1,7 +1,10 @@
-import { QueryClient } from '@tanstack/react-query';
+import { focusManager, QueryClient } from '@tanstack/react-query';
 import type { PullRequestState } from '../../shared/contracts';
 import type { RepositoryChangeScope } from '../../shared/repository-change';
 import { refreshOperationsForScope, type RefreshView } from '../app/refresh-policy';
+import { listenForWindowReturn } from './window-focus';
+
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') focusManager.setEventListener(listenForWindowReturn(window));
 
 export const queryClient = new QueryClient({
   defaultOptions: {
