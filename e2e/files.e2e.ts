@@ -149,6 +149,63 @@ test('a file is deleted after confirmation and the deletion can be undone', asyn
   expect(await readText(repository, 'notes.txt')).toBe('Recover me\n');
 });
 
+test('a JSON syntax error is shown inline and clears once the file is fixed', async ({ pairedPage: page, repository }) => {
+  await repository.commit('config/settings.json', '{\n  "name": "demo"\n}\nassa\n', 'Add settings');
+  await openFiles(page, repository);
+
+  const tree = fileTree(page);
+  await tree.getByRole('treeitem', { name: 'config' }).click();
+  await tree.getByRole('treeitem', { name: 'settings.json' }).click();
+  const editor = page.getByRole('textbox', { name: 'config/settings.json' });
+  await expect(editor).toContainText('assa');
+
+  const problem = page.getByText('End of file expected.', { exact: true });
+  await expect(problem).toBeVisible();
+  await problem.hover();
+  await expect(page.getByText('JSON error · Line 4, column 1')).toBeVisible();
+
+  // Delete the stray last line by typing, then save.
+  await editor.click();
+  await page.keyboard.press('Control+End');
+  for (let index = 0; index < 'assa\n'.length; index += 1) await page.keyboard.press('Backspace');
+  await expect(problem).toBeHidden();
+  await page.keyboard.press('Control+s');
+
+  await expect(page.getByRole('button', { name: 'Save file (Ctrl+S)' })).toBeHidden();
+  await expect.poll(() => readText(repository, 'config/settings.json')).toBe('{\n  "name": "demo"\n}\n');
+  expect(JSON.parse(await readText(repository, 'config/settings.json'))).toEqual({ name: 'demo' });
+});
+
+test('a YAML file with a duplicate key shows the problem inline', async ({ pairedPage: page, repository }) => {
+  await repository.commit('deploy.yml', 'name: build\nsteps: []\nname: again\n', 'Add deploy config');
+  await openFiles(page, repository);
+
+  await fileTree(page).getByRole('treeitem', { name: 'deploy.yml' }).click();
+  await expect(page.getByRole('textbox', { name: 'deploy.yml' })).toContainText('name: again');
+
+  const problem = page.getByText('Map keys must be unique.', { exact: true });
+  await expect(problem).toBeVisible();
+  await problem.hover();
+  await expect(page.getByText('YAML error · Line 3, column 1')).toBeVisible();
+});
+
+test('comments are flagged in strict JSON but accepted in tsconfig.json', async ({ pairedPage: page, repository }) => {
+  const withComment = '{\n  // Strict checks\n  "strict": true,\n}\n';
+  await repository.commit('data.json', withComment, 'Add data');
+  await repository.commit('tsconfig.json', withComment, 'Add tsconfig');
+  await openFiles(page, repository);
+
+  const tree = fileTree(page);
+  await tree.getByRole('treeitem', { name: 'data.json' }).click();
+  await expect(page.getByText('Comments are not permitted in JSON.', { exact: true })).toBeVisible();
+  await expect(page.getByText('Trailing comma.', { exact: true })).toBeVisible();
+
+  await tree.getByRole('treeitem', { name: 'tsconfig.json' }).click();
+  await expect(page.getByRole('textbox', { name: 'tsconfig.json' })).toContainText('Strict checks');
+  await expect(page.getByText('Comments are not permitted in JSON.', { exact: true })).toBeHidden();
+  await expect(page.getByText('Trailing comma.', { exact: true })).toBeHidden();
+});
+
 test('a stylesheet shows a swatch before each color and previews the hovered color', async ({ pairedPage: page, repository }) => {
   await repository.commit('styles/theme.css', [
     ':root {',

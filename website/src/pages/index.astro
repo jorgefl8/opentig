@@ -14,23 +14,26 @@ import Faq from '@/components/landing/Faq.astro';
 import Footer from '@/components/landing/Footer.astro';
 import { installationPath } from '@/docs';
 import { indexable } from '@/indexing';
-import { repositoryUrl, downloadUrl, npmUrl, siteDescription } from '@/site';
+import { repositoryUrl, downloadUrl, downloadVersion, npmUrl, siteDescription } from '@/site';
+import { author, entityId, jsonLd } from '@/lib/structured-data';
 
 const homeUrl = Astro.site ? new URL('/', Astro.site).href : undefined;
+// Only a release resolved at build time names a version; the latest-release fallback does not.
+const release = /^v\d+\.\d+\.\d+$/.test(downloadVersion) ? downloadVersion.slice(1) : undefined;
 const structuredData = homeUrl && indexable ? {
   '@context': 'https://schema.org',
   '@graph': [
     {
       '@type': 'WebSite',
-      '@id': `${homeUrl}#website`,
+      '@id': entityId(homeUrl, 'website'),
       name: 'OpenTig',
       url: homeUrl,
       inLanguage: 'en',
-      about: { '@id': `${homeUrl}#application` },
+      about: { '@id': entityId(homeUrl, 'application') },
     },
     {
       '@type': 'SoftwareApplication',
-      '@id': `${homeUrl}#application`,
+      '@id': entityId(homeUrl, 'application'),
       name: 'OpenTig',
       url: homeUrl,
       description: siteDescription,
@@ -40,6 +43,8 @@ const structuredData = homeUrl && indexable ? {
       softwareRequirements: 'Git is required on the repository host. The desktop installer is for Windows 10 or later (x64). The CLI server runs on Windows, Linux, and macOS with Node.js 24 or later. Browser access requires a running OpenTig instance on the repository host and browser pairing.',
       license: `${repositoryUrl}/blob/main/LICENSE`,
       isAccessibleForFree: true,
+      author: { '@id': entityId(homeUrl, 'author') },
+      ...(release && { softwareVersion: release, downloadUrl }),
       sameAs: [repositoryUrl, npmUrl],
       installUrl: new URL(installationPath, homeUrl).href,
       offers: {
@@ -49,12 +54,13 @@ const structuredData = homeUrl && indexable ? {
         url: downloadUrl,
       },
     },
+    author(homeUrl),
   ],
 } : undefined;
 ---
 
 <Layout markdown="/index.md" fullBleed>
-  {structuredData && <script slot="head" type="application/ld+json" set:html={JSON.stringify(structuredData).replace(/</g, '\\u003c')} />}
+  {structuredData && <script slot="head" type="application/ld+json" set:html={jsonLd(structuredData)} />}
   <div class="landing-page relative min-h-screen text-foreground scroll-smooth">
     <div class="fixed inset-0 z-0" data-site-backdrop>
       <FaultyTerminal />

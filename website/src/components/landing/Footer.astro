@@ -1,5 +1,6 @@
 ---
 import Logo from '@/assets/logo.svg';
+import { authorName, authorUrl } from '@/site';
 
 const year = new Date().getFullYear();
 
@@ -34,9 +35,9 @@ const links = [
       ))}
     </div>
 
-    <a href="https://github.com/jorgefl8" target="_blank" rel="noreferrer" class="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors">
-      <img src="https://github.com/jorgefl8.png" alt="jorgefl8" width="32" height="32" class="rounded-full ring-1 ring-border" loading="lazy" />
-      <span>by jorgefl8</span>
+    <a href={authorUrl} target="_blank" rel="author noreferrer" class="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors">
+      <img src={`${authorUrl}.png`} alt={authorName} width="32" height="32" class="rounded-full ring-1 ring-border" loading="lazy" />
+      <span>by {authorName}</span>
     </a>
   </div>
 </footer>

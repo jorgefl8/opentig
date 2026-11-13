@@ -18,7 +18,9 @@ function fixture(t, { indexable = true, site = 'https://opentig.com/' } = {}) {
         applicationCategory: 'DeveloperApplication', applicationSubCategory: 'Git client', operatingSystem: ['Windows'],
         softwareRequirements: 'Git on the host.', isAccessibleForFree: true, license: 'https://github.com/jorgefl8/opentig/blob/main/LICENSE',
         sameAs: ['https://github.com/jorgefl8/opentig', 'https://www.npmjs.com/package/@opentig/cli'], installUrl: 'https://github.com/jorgefl8/opentig/blob/main/docs/getting-started.md',
-        offers: { '@type': 'Offer', price: 0, priceCurrency: 'USD', url: 'https://github.com/jorgefl8/opentig/releases/latest' } },
+        offers: { '@type': 'Offer', price: 0, priceCurrency: 'USD', url: 'https://github.com/jorgefl8/opentig/releases/latest' },
+        author: { '@id': `${site}#author` } },
+      { '@type': 'Person', '@id': `${site}#author`, name: 'jorgefl8', url: 'https://github.com/jorgefl8' },
     ],
   };
   const html = (error = false) => `<!doctype html><html lang="en"><head><title>OpenTig</title>
@@ -125,20 +127,44 @@ test('demo stays noindex and outside the sitemap in production', (t) => {
   assert.throws(output.validate, /sitemap does not match/);
 });
 
-test('documentation search must only point to published pages and real sections', (t) => {
-  const output = fixture(t);
+const guideSchema = (dateModified) => ({
+  '@context': 'https://schema.org',
+  '@graph': [
+    { '@type': 'TechArticle', '@id': 'https://opentig.com/docs/#article', url: 'https://opentig.com/docs/', headline: 'OpenTig',
+      description: 'Review & commit.', image: 'https://opentig.com/card.jpg', inLanguage: 'en', ...(dateModified && { dateModified }),
+      isPartOf: { '@id': 'https://opentig.com/#website' }, about: { '@id': 'https://opentig.com/#application' },
+      author: { '@id': 'https://opentig.com/#author' }, breadcrumb: { '@id': 'https://opentig.com/docs/#breadcrumb' } },
+    { '@type': 'Person', '@id': 'https://opentig.com/#author', name: 'jorgefl8', url: 'https://github.com/jorgefl8' },
+    { '@type': 'BreadcrumbList', '@id': 'https://opentig.com/docs/#breadcrumb', itemListElement: [
+      { '@type': 'ListItem', position: 1, name: 'OpenTig', item: 'https://opentig.com/' },
+      { '@type': 'ListItem', position: 2, name: 'Documentation', item: 'https://opentig.com/docs/' },
+    ] },
+  ],
+});
+
+/** Add an indexable documentation overview to a production fixture. */
+function withGuide(output, { search = true, dateModified } = {}) {
   mkdirSync(join(output.directory, 'docs'));
   mkdirSync(join(output.directory, 'api'));
   const home = readFileSync(join(output.directory, 'index.html'), 'utf8');
-  output.write('docs/index.html', home
+  const page = home
     .replace('rel="canonical" href="https://opentig.com/"', 'rel="canonical" href="https://opentig.com/docs/"')
     .replace('property="og:url" content="https://opentig.com/"', 'property="og:url" content="https://opentig.com/docs/"')
     .replace('href="/index.md"', 'href="/docs/index.md"')
-    .replace(/<script type="application\/ld\+json">.*?<\/script>/, ''));
+    .replace('property="og:type" content="website"', 'property="og:type" content="article"')
+    .replace(/<script type="application\/ld\+json">.*?<\/script>/, `<script type="application/ld+json">${JSON.stringify(guideSchema(dateModified))}</script>`);
+  output.write('docs/index.html', page);
   output.write('docs/index.md', '# Documentation\n');
   output.change('_headers', '/docs/:page/', '/docs/\n  Link: </docs/index.md>; rel="alternate"; type="text/markdown"\n/docs/:page/');
   output.change('llms.txt', '\n', '\n- [Documentation](https://opentig.com/docs/index.md): Overview.\n');
-  output.change('sitemap.xml', '</urlset>', '<url><loc>https://opentig.com/docs/</loc></url></urlset>');
+  output.change('sitemap.xml', '</urlset>', `<url><loc>https://opentig.com/docs/</loc>${dateModified ? `<lastmod>${dateModified}</lastmod>` : ''}</url></urlset>`);
+  if (search) output.write('api/docs-search.json', JSON.stringify({ docs: { docs: { 1: { url: '/docs/' } } } }));
+  return { home, page };
+}
+
+test('documentation search must only point to published pages and real sections', (t) => {
+  const output = fixture(t);
+  const { home } = withGuide(output, { search: false });
   assert.throws(output.validate, /missing static documentation search index/);
   const index = url => output.write('api/docs-search.json', JSON.stringify({ docs: { docs: { 1: { url } } } }));
   index('/docs/#features%26more');
@@ -171,4 +197,47 @@ test('reads the social image type and size from PNG and JPEG headers', () => {
   assert.deepEqual(imageSize(readFileSync(new URL('../public/opentig-social.jpg', import.meta.url))), { type: 'image/jpeg', width: 2400, height: 1260 });
   assert.deepEqual(imageSize(readFileSync(new URL('../public/opentig-social.png', import.meta.url))), { type: 'image/png', width: 1200, height: 630 });
   for (const bytes of [Buffer.alloc(0), Buffer.from('GIF89a'), Buffer.from([0xff, 0xd8, 0x00, 0x00, 0, 0, 0, 0, 0, 0])]) assert.equal(imageSize(bytes), undefined);
+});
+
+test('guides are dated articles with breadcrumbs that agree with the sitemap', (t) => {
+  const date = '2026-11-05T21:03:22+01:00';
+  const output = fixture(t);
+  const { page } = withGuide(output, { dateModified: date });
+  assert.equal(output.validate(), 3);
+  const rejects = (file, before, after, error) => {
+    output.change(file, before, after);
+    assert.throws(output.validate, error);
+    output.change(file, after, before);
+  };
+  rejects('docs/index.html', 'og:type" content="article', 'og:type" content="website', /incorrect website identity/);
+  rejects('docs/index.html', '"headline":"OpenTig"', '"headline":"Other"', /article identity differs/);
+  rejects('docs/index.html', '"item":"https://opentig.com/docs/"', '"item":"https://opentig.com/docs/missing/"', /missing local target/);
+  rejects('docs/index.html', '"position":2', '"position":3', /breadcrumb 2 is malformed/);
+  rejects('docs/index.html', '{"@id":"https://opentig.com/#author"},"breadcrumb"', '{"@id":"https://opentig.com/#someone"},"breadcrumb"', /schema entity links differ/);
+  rejects('sitemap.xml', `<lastmod>${date}</lastmod>`, '<lastmod>2026-11-04</lastmod>', /article and sitemap dates differ/);
+  rejects('sitemap.xml', `<lastmod>${date}</lastmod>`, '<lastmod>5 November 2026</lastmod>', /invalid or future sitemap date/);
+  rejects('sitemap.xml', `<lastmod>${date}</lastmod>`, '<lastmod>2999-01-01</lastmod>', /invalid or future sitemap date/);
+  rejects('sitemap.xml', `<lastmod>${date}</lastmod>`, `<lastmod>${date}</lastmod><lastmod>${date}</lastmod>`, /one modification date/);
+  output.write('docs/index.html', page.replace(/<script type="application\/ld\+json">.*?<\/script>/, ''));
+  assert.throws(output.validate, /expected one JSON-LD script/);
+});
+
+test('sitemap dates are optional when Git history is unavailable', (t) => {
+  const output = fixture(t);
+  withGuide(output);
+  assert.equal(output.validate(), 3);
+  output.change('sitemap.xml', '<loc>https://opentig.com/</loc>', '<loc>https://opentig.com/</loc><lastmod>2026-11-05</lastmod>');
+  assert.equal(output.validate(), 3);
+});
+
+test('the homepage names its author and only a version that matches its installer', (t) => {
+  const output = fixture(t);
+  output.change('index.html', /,\{"@type":"Person".*?\}\]/, ']');
+  assert.throws(output.validate, /missing or duplicate schema entities/);
+  const versioned = fixture(t);
+  const installer = 'https://github.com/jorgefl8/opentig/releases/download/v1.0.0/OpenTig-1.0.0-win32-x64-Setup.exe';
+  versioned.change('index.html', '"url":"https://github.com/jorgefl8/opentig/releases/latest"}', `"url":"${installer}"},"softwareVersion":"1.0.0","downloadUrl":"${installer}"`);
+  assert.equal(versioned.validate(), 2);
+  versioned.change('index.html', '"softwareVersion":"1.0.0"', '"softwareVersion":"1.0.1"');
+  assert.throws(versioned.validate, /version must match its installer/);
 });

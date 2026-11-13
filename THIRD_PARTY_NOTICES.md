@@ -54,6 +54,10 @@ OpenTig uses the [`trash`](https://github.com/sindresorhus/trash) package to mov
 - Under WSL, this version uses Linux Trash rather than the Windows Recycle Bin integration introduced in 10.x.
 - Linux support follows the XDG Trash specification; upstream documents it as weakly maintained, so CI runs an Ubuntu Trash smoke test.
 
+## jsonc-parser
+
+OpenTig uses Microsoft's [`jsonc-parser`](https://github.com/microsoft/node-jsonc-parser), licensed under MIT, to find syntax problems in JSON and JSON-with-comments files open in the Files editor.
+
 ## ws
 
 OpenTig uses [`ws`](https://github.com/websockets/ws) for its authenticated server WebSocket transport.
