@@ -1,4 +1,5 @@
 import { getSingularPatch, type FileDiffMetadata } from '@pierre/diffs';
+import type { ChangeKind } from '@shared/git-types';
 import { diffHighlightKey } from './highlight-cache-key';
 import { resolvePierreLanguage } from './pierreLanguages';
 
@@ -67,7 +68,18 @@ export interface DiffFileEntry {
   additions: number;
   deletions: number;
   changeType: 'change' | 'rename-pure' | 'rename-changed' | 'new' | 'deleted';
+  /** Git had no text to compare, so the counts say nothing about the file. */
+  binary: boolean;
 }
+
+/** The status a patch gives a file, in the vocabulary the Changes list uses. */
+export function diffChangeKind(changeType: DiffFileEntry['changeType']): ChangeKind {
+  if (changeType === 'new') return 'added';
+  if (changeType === 'deleted') return 'deleted';
+  return changeType === 'change' ? 'modified' : 'renamed';
+}
+
+const BINARY_PATCH = /^(?:Binary files .* differ|GIT binary patch)$/m;
 
 /** Builds the lightweight file model used by the shared diff toolbar and rows. */
 export function buildDiffFileEntries(patch: string): DiffFileEntry[] {
@@ -87,6 +99,7 @@ export function buildDiffFileEntry(filePatch: string, index: number): DiffFileEn
     additions: parsed.hunks.reduce((total, hunk) => total + hunk.additionLines, 0),
     deletions: parsed.hunks.reduce((total, hunk) => total + hunk.deletionLines, 0),
     changeType: parsed.type,
+    binary: BINARY_PATCH.test(filePatch),
   };
 }
 

@@ -11,7 +11,7 @@ import { LinkedText } from '@/components/LinkedText';
 import { RepositoryLink } from '@/components/RepositoryLink';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { changeStatusCode } from '@/features/changes/change-status';
+import { ChangeStatusBadge } from '@/features/changes/ChangeStatusBadge';
 import { buildCommitGraph, type CommitGraphRow } from './commit-graph';
 import { canUndoCommit, commitPublication, commitReference, historyRows, matchesHistory, showsBranchLine } from './history-presentation';
 import { readCommitFilesCache, writeCommitFilesCache } from './commit-files-cache';
@@ -330,7 +330,7 @@ function CommitFileRow({ file, onSelect }: { file: CommitFile; onSelect(): void 
           </>
         )}
       </span>
-      <span className="status-code" data-kind={file.kind}>{changeStatusCode(file.kind)}</span>
+      <ChangeStatusBadge kind={file.kind} />
     </div>
   );
 }

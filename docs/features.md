@@ -132,9 +132,9 @@ Settings includes AI run metadata and failed-operation diagnostics, and lets you
 
 Diffs use the same One Light/One Dark Pro token palette as the Files editor and Markdown code blocks. Added, deleted, and modified lines retain their diff colors. Language grammars load for the file being viewed rather than at startup.
 
-File headers show the folder path and filename on one line, then the lines added and removed. When space runs short the folder path shortens first and hovering shows the full path; a filename too long for the row wraps. Sticky headers remain opaque on hover so scrolled code does not show through. Dialogs, including Settings and confirmations, stay above diff content and sticky headers.
+File headers show the folder path and filename on one line, then the lines added and removed and the file's status letter. A side with no lines is left out, so a deleted file shows only what was removed, and a binary file shows **bin** instead of counts. A renamed file also shows the path it came from. When space runs short the folder path shortens first and hovering shows the full path; a filename too long for the row wraps. Sticky headers remain opaque on hover so scrolled code does not show through. Dialogs, including Settings and confirmations, stay above diff content and sticky headers.
 
-A change row shows the file and a status letter: **M** modified, **A** added, **D** deleted, and **C** conflicted are colored, and other statuses stay muted. In a tree, a folder's icon reflects its kind, such as source or tests, and changes when it opens.
+A change row shows the file and a status letter: **M** modified, **A** added, and **D** deleted are colored, a conflict shows a red **!**, and other statuses such as **R** renamed and **U** untracked stay muted. The same letters end each file's row in a commit, in a pull request's **Code** tab, and in an expanded commit in **History**. In a tree, a folder's icon reflects its kind, such as source or tests, and changes when it opens.
 
 Hovering a change or folder row, or moving keyboard focus into it, replaces the letter with its diff, open, stage, unstage, and discard controls without moving the row's text. On touch screens the controls stay visible. The row showing in the viewer stays highlighted.
 

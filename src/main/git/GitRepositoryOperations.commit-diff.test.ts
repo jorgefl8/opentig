@@ -2,7 +2,7 @@ import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { getSingularPatch } from '@pierre/diffs';
 import { describe, expect, it } from 'vitest';
-import { buildDiffFileEntries } from '../../renderer/features/viewer/patch-utils';
+import { buildDiffFileEntries, diffChangeKind } from '../../renderer/features/viewer/patch-utils';
 import { standaloneRepository, git } from './test-support/repository-fixtures';
 
 describe('GitRepositoryOperations commit diffs', () => {
@@ -84,6 +84,28 @@ describe('GitRepositoryOperations commit diffs', () => {
     const diff = await fixture.operations.commitDiff(fixture.repositoryId, commits[0]!.oid);
     expect(getSingularPatch(diff.patch)).toMatchObject({ name: 'file.txt', type: 'new' });
     expect(diff.patch).toContain('+content');
+  });
+
+  it('reports added, modified, deleted and renamed files of one commit, in the list and in the patch', async () => {
+    const fixture = await standaloneRepository();
+    await writeFile(path.join(fixture.work, 'keep.txt'), 'one\ntwo\nthree\nfour\nfive\n');
+    await writeFile(path.join(fixture.work, 'gone.txt'), 'gone\n');
+    await git(fixture.work, ['add', '.']);
+    await git(fixture.work, ['commit', '-m', 'Base']);
+    await writeFile(path.join(fixture.work, 'keep.txt'), 'one\ntwo\nthree\nfour\nsix\n');
+    await writeFile(path.join(fixture.work, 'fresh.txt'), 'fresh\n');
+    await git(fixture.work, ['rm', '-q', 'gone.txt']);
+    await git(fixture.work, ['mv', 'file.txt', 'moved.txt']);
+    await git(fixture.work, ['add', '.']);
+    await git(fixture.work, ['commit', '-m', 'Four kinds of change']);
+    const { commits } = await fixture.operations.listCommits(fixture.repositoryId);
+    const files = await fixture.operations.commitFiles(fixture.repositoryId, commits[0]!.oid);
+    const kinds = (entries: { path: string; kind: string }[]) => Object.fromEntries(entries.map((entry) => [entry.path, entry.kind]));
+    const expected = { 'fresh.txt': 'added', 'gone.txt': 'deleted', 'keep.txt': 'modified', 'moved.txt': 'renamed' };
+    expect(kinds(files)).toEqual(expected);
+    // The viewer derives the same statuses from the patch, so both lists show the same letters.
+    const { patch } = await fixture.operations.commitDiff(fixture.repositoryId, commits[0]!.oid);
+    expect(kinds(buildDiffFileEntries(patch).map((file) => ({ path: file.path, kind: diffChangeKind(file.changeType) })))).toEqual(expected);
   });
 
   it('keeps a renamed file separate from other files matched by its old path', async () => {

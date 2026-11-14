@@ -15,7 +15,8 @@ import { getVsCodeFileIconUrl } from '@/lib/vscode-icons';
 import { useParsedDiff } from './useParsedDiff';
 import { primeDiffsWhenIdle } from './diff-idle-prime';
 import { OPENTIG_CODE_THEMES } from './diffThemes';
-import { animatesFileToggle, type DiffFileEntry, VIEWER_SCROLLBAR_CSS } from './patch-utils';
+import { ChangeStatusBadge } from '@/features/changes/ChangeStatusBadge';
+import { animatesFileToggle, diffChangeKind, type DiffFileEntry, VIEWER_SCROLLBAR_CSS } from './patch-utils';
 import { resolvePierreLanguage } from './pierreLanguages';
 import { ColorHoverPreview } from './ColorHoverPreview';
 import { ColorSwatchLayer } from './ColorSwatchLayer';
@@ -210,7 +211,16 @@ function FileHeaderFacts({ file }: { file: DiffFileEntry }) {
   return (
     <>
       {file.previousPath && file.previousPath !== file.path && <span className="diff-file-previous">from {file.previousPath}</span>}
-      <span className="diff-file-stats"><span className="add">+{file.additions}</span><span className="del">−{file.deletions}</span></span>
+      <span className="diff-file-stats">
+        {/* A side with nothing on it is left out, so a deletion reads "−12" and not "+0 −12". */}
+        {file.binary ? <span className="binary">bin</span> : (
+          <>
+            {file.additions > 0 && <span className="add">+{file.additions}</span>}
+            {file.deletions > 0 && <span className="del">−{file.deletions}</span>}
+          </>
+        )}
+      </span>
+      <ChangeStatusBadge kind={diffChangeKind(file.changeType)} />
     </>
   );
 }

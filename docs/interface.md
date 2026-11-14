@@ -130,7 +130,7 @@ Use the bottom **Changes**, **Files**, **History**, **GitHub**, and **Search** t
 
 | Viewer | Title | Actions |
 | --- | --- | --- |
-| **Diff** | File name, then folder and lines added and removed | **⋯**: **Open file**, **Wrap lines**, **Discard changes** |
+| **Diff** | File name, then folder, lines added and removed, and the status letter | **⋯**: **Open file**, **Wrap lines**, **Discard changes** |
 | **File** | File name. Tap it for the sheet of open files, to switch, close, and see which are unsaved or missing | **⋯**: what the file's row in Files offers, such as **Rename**, **Copy path**, **Move to…**, **Delete** |
 | **Commit** | Short hash | **⋯**: **Copy hash**, the pull request its message refers to, **Open on GitHub**, **Undo commit…** |
 | **Pull request** | Number, then source and base branch | **⋯**: the pull request menu, plus **Disable auto-merge** when it's on |

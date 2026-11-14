@@ -500,7 +500,7 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   /* Status letters are where a change's meaning is colour-coded; anything else stays muted. */
   .status-code { width: 12px; flex: none; color: var(--muted-foreground); font-family: var(--font-mono); font-size: var(--text-meta); font-weight: var(--weight-strong); text-align: center; }
   .status-code[data-kind="modified"] { color: var(--warning); }
-  .status-code[data-kind="added"] { color: var(--success); }
+  .status-code[data-kind="added"], .status-code[data-kind="copied"] { color: var(--success); }
   .status-code[data-kind="deleted"], .status-code[data-kind="conflicted"] { color: var(--destructive); }
   .conflict-section .change-group-label { color: var(--destructive); }
   .conflict-section .plain-count { color: inherit; }
@@ -1919,6 +1919,7 @@ section[data-sileo-viewport] .sync-toast-offer { --_c: var(--sileo-state-info); 
   .diff-total-stats, .diff-file-stats { display: inline-flex; flex: none; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: var(--text-meta); font-weight: var(--weight-medium); }
   .diff-total-stats .add, .diff-file-stats .add { color: var(--diff-added); }
   .diff-total-stats .del, .diff-file-stats .del { color: var(--diff-deleted); }
+  .diff-file-stats .binary { color: var(--muted-foreground); }
   .diff-workspace-actions { display: flex; flex: none; align-items: center; gap: 2px; margin-left: auto; }
   /* Plain tools: an active one is simply brighter than the rest. */
   .diff-workspace-actions button { color: var(--muted-foreground); }

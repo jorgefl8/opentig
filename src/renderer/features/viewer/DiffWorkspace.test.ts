@@ -175,8 +175,37 @@ it('shows the directory and name on one line with the file\'s line counts', asyn
   const header = container.querySelector('.diff-file-header')!;
   expect(header.querySelector('.diff-file-directory')?.textContent).toBe('src/deep/');
   expect(header.querySelector('.diff-file-name')?.textContent).toBe('first.ts');
-  expect(header.querySelector('.diff-file-stats')?.textContent).toMatch(/^\+\d+−\d+$/);
+  // Only added lines here, so the removed side is left out.
+  expect(header.querySelector('.diff-file-stats')?.textContent).toBe('+10001');
   expect(header.querySelector('.diff-file-path')?.firstElementChild).toBe(header.querySelector('.diff-file-directory'));
+});
+
+it('ends each file header with its status letter and leaves out a count of zero', async () => {
+  const patch = [
+    'diff --git a/src/gone.ts b/src/gone.ts\ndeleted file mode 100644\nindex 1111111..0000000\n--- a/src/gone.ts\n+++ /dev/null\n@@ -1,2 +0,0 @@\n-gone\n-too\n',
+    'diff --git a/src/fresh.ts b/src/fresh.ts\nnew file mode 100644\nindex 0000000..1111111\n--- /dev/null\n+++ b/src/fresh.ts\n@@ -0,0 +1 @@\n+fresh\n',
+    'diff --git a/old.txt b/moved.txt\nsimilarity index 100%\nrename from old.txt\nrename to moved.txt\n',
+    'diff --git a/logo.png b/logo.png\nnew file mode 100644\nindex 0000000..2222222\nBinary files /dev/null and b/logo.png differ\n',
+    'diff --git a/README.md b/README.md\nindex 1111111..2222222 100644\n--- a/README.md\n+++ b/README.md\n@@ -1 +1 @@\n-old\n+new\n',
+  ].join('');
+  // Small enough to parse without the worker, a moment after the first render.
+  await render(patch, true, 'statuses', 12);
+  await vi.waitFor(async () => {
+    await act(async () => { await Promise.resolve(); });
+    expect(container.querySelectorAll('.diff-file-header')).toHaveLength(5);
+  });
+  const rows = [...container.querySelectorAll('.diff-file-header')].map((header) => {
+    const status = header.querySelector('.status-code')!;
+    return [header.querySelector('.diff-file-name')?.textContent, header.querySelector('.diff-file-stats')?.textContent, status.textContent, status.getAttribute('aria-label')];
+  });
+  // A deletion used to read "+0−2" and a new file "+1−0", with nothing else to tell them apart.
+  expect(rows).toEqual([
+    ['gone.ts', '−2', 'D', 'Deleted'],
+    ['fresh.ts', '+1', 'A', 'Added'],
+    ['moved.txt', '', 'R', 'Renamed'],
+    ['logo.png', 'bin', 'A', 'Added'],
+    ['README.md', '+1−1', 'M', 'Modified'],
+  ]);
 });
 
 it('shows an icon for the kind of file, without reading it out', async () => {

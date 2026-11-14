@@ -240,7 +240,7 @@
   html .change-row .vscode-tree-icon, html .change-row .folder-icon, html .search-file-toggle .vscode-tree-icon { width: 20px; height: 20px; }
   html .change-file-text { display: grid; align-content: center; gap: 1px; }
   html .change-file-text > span { font-weight: var(--weight-medium); }
-  html .change-row .status-code { width: 14px; font-weight: var(--weight-medium); }
+  html .change-row .status-code, html .diff-file-header .status-code { width: 14px; font-weight: var(--weight-medium); }
   html .change-row-actions .change-action-button { width: 48px; height: 52px; border-radius: 0; }
 
   html .history-more { height: 48px; }
