@@ -103,4 +103,20 @@ describe('GitRepositoryOperations local history', () => {
     expect(await fixture.operations.undoLatestCommit(fixture.repositoryId, mergeOid)).toEqual({ status: 'unsupported-merge' });
     expect(await git(fixture.work, ['rev-parse', 'HEAD'])).toBe(mergeOid);
   });
+
+  it('counts the commits a branch gained after a merged pull request head', async () => {
+    const fixture = await standaloneRepository();
+    await git(fixture.work, ['switch', '-c', 'feature']);
+    await git(fixture.work, ['commit', '--allow-empty', '-m', 'Merged head']);
+    const mergedHead = await git(fixture.work, ['rev-parse', 'HEAD']);
+    expect(await fixture.operations.commitsAfter(fixture.repositoryId, mergedHead)).toBe(0);
+    await git(fixture.work, ['commit', '--allow-empty', '-m', 'After the merge']);
+    await git(fixture.work, ['commit', '--allow-empty', '-m', 'After the merge, again']);
+    expect(await fixture.operations.commitsAfter(fixture.repositoryId, mergedHead)).toBe(2);
+    // A pull request head that was never fetched says nothing about this branch.
+    expect(await fixture.operations.commitsAfter(fixture.repositoryId, 'f'.repeat(40))).toBeNull();
+    // A branch that has not caught up with the pull request has nothing of its own either.
+    await git(fixture.work, ['reset', '--hard', 'main']);
+    expect(await fixture.operations.commitsAfter(fixture.repositoryId, mergedHead)).toBe(0);
+  });
 });

@@ -13,7 +13,7 @@ import { AppName } from '@/components/AppName';
 import { OpenTigMark } from '@/components/OpenTigMark';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { isEditableTarget } from '@/features/files/file-tree';
-import type { LocalRefsTab } from '@/features/refs/local-refs-model';
+import type { LocalRefsFocus, LocalRefsTab } from '@/features/refs/local-refs-model';
 import { agentsAt, listAgents, samePath } from '@/features/refs/local-refs-model';
 import { AgentLabel } from '@/features/refs/AgentLabel';
 import { RepositoryFaviconImage } from '@/features/repositories/RepositoryFavicon';
@@ -36,6 +36,7 @@ import type { RemoteAccessAction } from '@/features/repositories/remote-access';
 import { BranchCombobox } from './BranchCombobox';
 import { openOnGitHub } from '@/features/pulls/gh-utils';
 import { BranchPullRequestMenu } from './BranchPullRequestMenu';
+import { mergedBranchCleanUp, mergedBranchCleanUpStep, type MergedBranchCleanUp } from '@/features/pulls/merged-branch';
 
 export interface ToolbarProps {
   onOnboarding?(): void;
@@ -47,6 +48,11 @@ export interface ToolbarProps {
   worktreeAgents?: readonly WorktreeAgents[] | undefined;
   githubInfo: GitHubRepositoryInfo | null;
   branchPullRequest: PullRequestSummary | null;
+  /** Commits the branch gained after its merged pull request; null while that is unknown. */
+  branchPullRequestNewCommits?: number | null | undefined;
+  /** A branch switch is running or waiting for the user's answer to one of its prompts. */
+  branchSwitchPending?: boolean | undefined;
+  onCreatePullRequest?: (() => void) | undefined;
   /** The current branch tracks a branch with another name on the remote it pushes to. */
   upstreamMismatch?: UpstreamNameMismatch | null | undefined;
   onOpenPullRequest(number: number): void;
@@ -100,8 +106,35 @@ export function Toolbar(props: ToolbarProps) {
   const repositoryNumberTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const repositoryStatusVersions = useRef<Map<string, number>>(new Map());
   const [refsBusy, setRefsBusy] = useState(false);
-  const openRefsManager = (tab: LocalRefsTab) => { setMobileContextOpen(false); setRefsTab(tab); setRefsOpen(true); };
+  const [refsFocus, setRefsFocus] = useState<LocalRefsFocus | undefined>(undefined);
+  const openRefsManager = (tab: LocalRefsTab) => { setMobileContextOpen(false); setRefsTab(tab); setRefsFocus(undefined); setRefsOpen(true); };
   const currentWorktree = props.worktrees.find((item) => samePath(item.path, props.repository.path));
+  // Cleaning up a merged branch leaves it first, through the usual switch and its prompts,
+  // and only then opens the manager on it, where the deletion is reviewed and confirmed.
+  const branchCleanUp = props.branchPullRequest?.state === 'MERGED' && props.status?.branch
+    ? mergedBranchCleanUp({ pullRequest: props.branchPullRequest, branch: props.status.branch, repositoryPath: props.repository.path, branches: props.branches, worktrees: props.worktrees })
+    : null;
+  const [startedCleanUp, setStartedCleanUp] = useState<MergedBranchCleanUp | null>(null);
+  const startCleanUp = (cleanUp: MergedBranchCleanUp) => {
+    setStartedCleanUp(cleanUp);
+    if (cleanUp.kind === 'worktree') props.onWorktree(cleanUp.mainPath);
+    else props.onBranch(cleanUp.base.fullName);
+  };
+  const cleanUpStep = startedCleanUp && mergedBranchCleanUpStep(startedCleanUp, {
+    repositoryPath: props.repository.path,
+    branch: props.status?.branch ?? null,
+    switching: startedCleanUp.kind === 'worktree' ? props.busy === 'worktree' : props.branchSwitchPending === true,
+    conflicts: props.status?.changes.some((change) => change.conflict) ?? false,
+  });
+  useEffect(() => {
+    if (!startedCleanUp || !cleanUpStep || cleanUpStep === 'wait') return;
+    setStartedCleanUp(null);
+    if (cleanUpStep !== 'open') return;
+    setMobileContextOpen(false);
+    setRefsTab(startedCleanUp.kind === 'worktree' ? 'worktrees' : 'branches');
+    setRefsFocus(startedCleanUp.kind === 'worktree' ? { worktree: startedCleanUp.from } : { branch: startedCleanUp.branch });
+    setRefsOpen(true);
+  }, [startedCleanUp, cleanUpStep]);
   const picker = useMemo(() => buildRepositoryPickerModel(props.recent, props.repositoryProjects), [props.recent, props.repositoryProjects]);
   const visibleRepositories = useMemo(() => getRepositoryPickerDisplayOrder(picker), [picker]);
   const repositoryIndex = useMemo(
@@ -401,7 +434,7 @@ export function Toolbar(props: ToolbarProps) {
   );
   return (
     <>
-    {mobile ? <MobileToolbar props={props} repositoryControl={repositoryControl} worktreeControl={worktreeControl} branchControl={branchControl} pendingRepositoryName={pendingRepository?.name ?? null} loadIndicator={loadIndicator} contextOpen={mobileContextOpen} onContextOpen={(open) => { setMobileContextOpen(open); if (!open) setRepositorySelectOpen(false); }} syncBusy={currentRepositorySyncBusy} /> : <header className="toolbar">
+    {mobile ? <MobileToolbar props={props} branchCleanUp={branchCleanUp} onBranchCleanUp={startCleanUp} repositoryControl={repositoryControl} worktreeControl={worktreeControl} branchControl={branchControl} pendingRepositoryName={pendingRepository?.name ?? null} loadIndicator={loadIndicator} contextOpen={mobileContextOpen} onContextOpen={(open) => { setMobileContextOpen(open); if (!open) setRepositorySelectOpen(false); }} syncBusy={currentRepositorySyncBusy} /> : <header className="toolbar">
       <div className="toolbar-brand" aria-label={appDisplayName}>
         <OpenTigMark />
         <AppName />
@@ -416,7 +449,8 @@ export function Toolbar(props: ToolbarProps) {
           <span className="toolbar-upstream-chip"><span className="sr-only">Tracks </span><span aria-hidden="true">→ </span>{props.upstreamMismatch.remote}/{props.upstreamMismatch.branch}</span>
         )}
         {props.branchPullRequest && (
-          <BranchPullRequestMenu repositoryId={props.repository.id} key={props.branchPullRequest.url} pullRequest={props.branchPullRequest} onOpenPullRequest={props.onOpenPullRequest} />
+          <BranchPullRequestMenu repositoryId={props.repository.id} key={props.branchPullRequest.url} pullRequest={props.branchPullRequest} onOpenPullRequest={props.onOpenPullRequest}
+            newCommits={props.branchPullRequestNewCommits} cleanUp={branchCleanUp} onCleanUp={startCleanUp} onCreatePullRequest={props.onCreatePullRequest} />
         )}
       </div>
       <div className="toolbar-spacer" />
@@ -457,6 +491,7 @@ export function Toolbar(props: ToolbarProps) {
           <LocalRefsDialog
             open={refsOpen}
             tab={refsTab}
+            focus={refsFocus}
             repositoryId={props.repository.id}
             worktreeAgents={props.worktreeAgents}
             onOpenChange={setRefsOpen}

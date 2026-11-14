@@ -121,12 +121,22 @@ Both stop if the text changed on GitHub after you last saw it, and saving again 
 
 **Open the current branch's PR**
 
-Beside the branch in the top bar, the PR indicator shows the current branch or worktree's PR number. A purple merge icon identifies a merged PR, and **Draft** a draft one. Click for its full title, status and lines added and removed, then choose **Open in OpenTig** or **Open in GitHub**. Links to the repository's PRs, commits, releases and workflow runs, in descriptions, comments, notes and history, offer the same choice. The mobile repository menu offers the same choices; the repository menu also opens the repository on GitHub.
+Beside the branch in the top bar, the PR indicator shows the current branch or worktree's PR number, whether that PR is open or not. **Draft**, **Merged** and **Closed** name any state other than open, and a merged PR also has a purple merge icon. Click for its full title, status and lines added and removed, then choose **Open in OpenTig** or **Open in GitHub**. Links to the repository's PRs, commits, releases and workflow runs, in descriptions, comments, notes and history, offer the same choice. The mobile repository menu offers the same choices; the repository menu also opens the repository on GitHub.
+
+A merged PR stays on its branch, and the indicator says where the branch stands since then:
+
+- **Nothing new:** the menu explains that this is the checked-out branch's PR and offers to clean up. In the main checkout, **Switch to `<base>` and delete this branch…** switches to the PR's base branch, when you have it locally and no other worktree has it checked out. In a linked worktree, **Remove this worktree and delete the branch…** opens the main worktree. Either way **Branches and worktrees** then opens on that branch or worktree, where you review and confirm the deletion. Nothing is deleted before that, and nothing else happens if the switch is cancelled or fails.
+- **Commits after the merge:** the indicator adds their number, such as **+2 new**, and **Create PR** appears beside it; the menu offers **Create a new pull request**. Once the new PR exists, the indicator shows that one.
+- **Unknown:** when the PR's last commit isn't in your local repository, for example before a fetch, the indicator only says **Merged**.
+
+On a phone the same state reads under the repository name, such as **#145 Merged +2 new**, and the repository menu adds **Create pull request**.
 
 <details>
 <summary>How OpenTig matches and refreshes the current PR</summary>
 
 Matching checks both the head repository and branch name, so another fork's `main` is not mistaken for your clone. When several PRs match, the most recently updated open PR takes priority. Otherwise, the most recently updated PR is shown if merged.
+
+Commits after a merge are those on the checked-out branch that the PR's last commit doesn't reach. They are counted in the local repository, again after each commit, without contacting GitHub.
 
 The current branch indicator checks open PRs once a minute while the window is visible. Closed, merged, or absent results are checked every five minutes to discover reopened PRs or reused branches. Returning to the window (switching back to it or making it visible again, at most once every 10 seconds), reconnecting, changing the repository account, or manually refreshing checks immediately, so a PR created in a terminal or browser appears when you come back. Failed checks retry every minute; hidden windows do not poll.
 

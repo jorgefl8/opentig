@@ -16,9 +16,9 @@ import { opentig } from '@/lib/opentig-api';
 import { UNCONFIRMED_RESULT_MESSAGE, isUnconfirmedResult } from '@/lib/websocket-transport';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
-  agentsAt, branchBadges, branchDeleteEligibility, branchDetailBadges, branchKey, filterBranches, filterWorktrees,
+  agentsAt, samePath, branchBadges, branchDeleteEligibility, branchDetailBadges, branchKey, filterBranches, filterWorktrees,
   localChangeSummary, mergedPullRequestTip, nextSelectionKey, removingWorktreeBadges, worktreeBadges, worktreeKey, worktreeName, worktreeRemoveEligibility,
-  type LocalRefsTab, type RefBadge,
+  normalizeWorktreePath, type LocalRefsFocus, type LocalRefsTab, type RefBadge,
 } from './local-refs-model';
 import { openOnGitHub } from '@/features/pulls/gh-utils';
 import { queryKeys } from '@/lib/query-client';
@@ -37,6 +37,8 @@ function readDismissedNotices(): ReadonlySet<string> {
 interface LocalRefsDialogProps {
   open: boolean;
   tab: LocalRefsTab;
+  /** Opens on this branch or worktree, as when cleaning up a merged branch. A focused worktree starts with its branch marked for deletion too. */
+  focus?: LocalRefsFocus | undefined;
   repositoryId: string;
   /** True while a destructive manager operation is pending anywhere in the app. */
   onOpenChange(open: boolean): void;
@@ -57,8 +59,10 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
   const [branchScope, setBranchScope] = useState<'all' | 'local' | 'remote'>('all');
   const [remoteFilter, setRemoteFilter] = useState('');
   const [mobileDetail, setMobileDetail] = useState(false);
-  const [selectedBranch, setSelectedBranch] = useState<string | null>(null);
-  const [selectedWorktree, setSelectedWorktree] = useState<string | null>(null);
+  const [selectedBranch, setSelectedBranch] = useState<string | null>(props.focus?.branch ?? null);
+  const [selectedWorktree, setSelectedWorktree] = useState<string | null>(props.focus?.worktree ? normalizeWorktreePath(props.focus.worktree) : null);
+  // On a phone the focused item opens straight on its details.
+  const focusPending = useRef(Boolean(props.focus?.branch || props.focus?.worktree));
   const [confirming, setConfirming] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -70,7 +74,7 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
   // The previous ordering, so a deleted row hands its place to a neighbour.
   const snapshotRef = useRef<LocalRefsSnapshot | null>(null);
 
-  useEffect(() => { setMobileDetail(false); }, [open, repositoryId]);
+  useEffect(() => { setMobileDetail(focusPending.current); focusPending.current = false; }, [open, repositoryId]);
 
   const snapshotQuery = useQuery({
     queryKey: queryKeys.localRefs(repositoryId),
@@ -424,6 +428,7 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
               <WorktreeDetailPanel
                 details={worktreeDetails}
                 agents={agentsAt(props.worktreeAgents, worktreeDetails.path)}
+                deleteBranchByDefault={Boolean(props.focus?.worktree && samePath(props.focus.worktree, worktreeDetails.path))}
                 removing={removingPaths.has(worktreeDetails.path)}
                 anyBusy={Boolean(busy)}
                 confirming={confirming === 'remove-worktree'}
@@ -506,16 +511,16 @@ function BranchDetailPanel({ details, pullRequest, busy, anyBusy, confirming, ac
   );
 }
 
-function WorktreeDetailPanel({ details, agents, removing, anyBusy, confirming, actionError, copied, onConfirm, onCancel, onRemove, onCopyPath, onOpen, onShowBranch }: {
-  details: WorktreeDetails; agents: string[]; removing: boolean; anyBusy: boolean; confirming: boolean; actionError: string | null; copied: boolean;
+function WorktreeDetailPanel({ details, agents, deleteBranchByDefault, removing, anyBusy, confirming, actionError, copied, onConfirm, onCancel, onRemove, onCopyPath, onOpen, onShowBranch }: {
+  details: WorktreeDetails; agents: string[]; deleteBranchByDefault: boolean; removing: boolean; anyBusy: boolean; confirming: boolean; actionError: string | null; copied: boolean;
   onConfirm(): void; onCancel(): void; onRemove(force: boolean, deleteBranch: boolean, cleanupOnly: boolean): void; onCopyPath(): void; onOpen(): void; onShowBranch(): void;
 }) {
-  const [deleteBranch, setDeleteBranch] = useState(false);
+  const [deleteBranch, setDeleteBranch] = useState(deleteBranchByDefault);
   const eligibility = worktreeRemoveEligibility(details);
   const changes = localChangeSummary(details);
   const force = eligibility.forceAllowed === true;
   const removalAllowed = eligibility.allowed || force;
-  useEffect(() => setDeleteBranch(false), [details.path]);
+  useEffect(() => setDeleteBranch(deleteBranchByDefault), [details.path, deleteBranchByDefault]);
   return (
     <>
       <div className="local-refs-detail-head">

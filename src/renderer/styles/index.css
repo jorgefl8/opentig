@@ -350,6 +350,14 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   :is(.toolbar-branch-pr, .mobile-pr-number).pr-state-draft { color: var(--muted-foreground); }
   :is(.toolbar-branch-pr, .mobile-pr-number).pr-state-merged { color: var(--pr-merged); }
   :is(.toolbar-branch-pr, .mobile-pr-number).pr-state-closed { color: var(--destructive); }
+  /* A pull request that is no longer open says so in words, and whether its branch has moved on since. */
+  .toolbar-pr-tag { padding: 1px 6px; border-radius: 999px; font-size: var(--text-meta); font-weight: var(--weight-medium); white-space: nowrap; }
+  .pr-state-merged > .toolbar-pr-tag { background: color-mix(in oklch, var(--pr-merged) 16%, transparent); }
+  .pr-state-closed > .toolbar-pr-tag { background: color-mix(in oklch, var(--destructive) 14%, transparent); }
+  .toolbar-branch-pr > .toolbar-pr-tag.neutral { background: var(--muted); color: var(--muted-foreground); }
+  .toolbar-branch-pr.toolbar-pr-create { color: var(--success); }
+  .branch-pr-note { margin: 0 2px 4px; padding: 8px; border-radius: var(--radius-md); background: color-mix(in oklch, var(--pr-merged) 9%, transparent); font-size: var(--text-ui); line-height: 1.45; }
+  .branch-pr-note[data-tone="attention"] { background: color-mix(in oklch, var(--warning) 10%, transparent); }
   .repo-select-favicon { width: 16px; height: 16px; flex: none; border-radius: 3px; object-fit: contain; background: color-mix(in oklch, var(--foreground) 8%, transparent); }
   .repository-sync-actions { display: flex; flex: none; gap: 1px; }
   .repository-missing-badge { flex: none; padding: 1px 6px; border-radius: 999px; background: color-mix(in oklch, var(--warning) 16%, transparent); color: var(--warning); font-size: var(--text-meta); white-space: nowrap; }

@@ -3,7 +3,7 @@ import { parentFolderPath } from '@/features/repositories/directory-navigation';
 import { ONBOARDING_VERSION } from '../../shared/onboarding';
 import { lastCloneParent, resumeBackgroundClone } from '@/features/onboarding/clone-jobs';
 import { useGitHubAccount } from '@/features/pulls/useGitHubAccount';
-import { branchPullRequestQueryOptions } from '@/features/pulls/branch-pull-request-query';
+import { branchPullRequestQueryOptions, commitsAfterMergeQueryOptions } from '@/features/pulls/branch-pull-request-query';
 import { withStackMemberships } from '@/features/pulls/pull-request-list';
 import { releasesQueryOptions } from '@/features/pulls/releases-query';
 import { appDisplayName } from '@/lib/app-identity';
@@ -389,6 +389,10 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   ));
   const currentBranchPullRequest = currentBranch && githubInfo?.isGitHub && !branchPullRequestQuery.isError
     ? branchPullRequestQuery.data ?? null : null;
+  // A merged pull request no longer describes a branch that kept getting commits.
+  const mergedHeadOid = currentBranchPullRequest?.state === 'MERGED' ? currentBranchPullRequest.headRefOid || null : null;
+  const commitsAfterMergeQuery = useQuery(commitsAfterMergeQueryOptions(repository?.id ?? '', mergedHeadOid, status?.oid ?? null));
+  const commitsAfterMerge = mergedHeadOid === null ? null : mergedHeadOid === status?.oid ? 0 : commitsAfterMergeQuery.data ?? null;
   // Only a branch whose upstream has another name needs the server's push review up front.
   const trackedUnderOtherName = Boolean(currentBranch && status?.upstream && !status.upstream.endsWith(`/${currentBranch}`));
   const publicationQuery = useQuery({
@@ -2761,6 +2765,9 @@ export default function App({ initialView, initialSelection, pullRequestCreation
           status={status}
           githubInfo={githubInfo}
           branchPullRequest={currentBranchPullRequest}
+          branchPullRequestNewCommits={commitsAfterMerge}
+          branchSwitchPending={busy === 'branch' || blockedBranchSwitch !== null || agentBranchSwitch !== null}
+          onCreatePullRequest={() => setCreatePrOpen(true)}
           upstreamMismatch={upstreamMismatch}
           onOpenPullRequest={(number) => { selectViewer({ type: 'pull-request', number }); }}
           branches={branches}

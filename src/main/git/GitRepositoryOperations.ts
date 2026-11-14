@@ -1419,6 +1419,18 @@ export class GitRepositoryOperations {
     return true;
   }
 
+  /**
+   * Commits on HEAD that `oid` does not reach: the ones made after a merged pull
+   * request's head, for example. Null when `oid` is not a commit here, as before a
+   * fetch, or when HEAD has no commit yet.
+   */
+  async commitsAfter(repositoryId: string, oid: string): Promise<number | null> {
+    if (!/^([0-9a-f]{40}|[0-9a-f]{64})$/i.test(oid)) return null;
+    const repository = this.repositories.get(repositoryId);
+    const [known, born] = await Promise.all([this.resolves(repository.path, oid), this.resolves(repository.path, 'HEAD')]);
+    return known && born ? this.countCommits(repository.path, oid, 'HEAD') : null;
+  }
+
   private rememberOid(repositoryId: string, oid: string): void {
     const known = this.knownOids.get(repositoryId) ?? new Set<string>();
     known.add(oid);

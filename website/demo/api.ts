@@ -302,6 +302,11 @@ export const opentig: OpenTigApi = {
     }),
     files: async (_id, oid) => model.commitFiles(oid),
     recognize: async (_id, oid) => model.commits.some((commit) => commit.info.oid === oid),
+    // The sample history is one line, newest first: what sits above a commit came after it.
+    countAfter: async (_id, oid) => {
+      const index = model.commits.findIndex((commit) => commit.info.oid === oid);
+      return index < 0 ? null : index;
+    },
     authorship: async () => ({
       author: { name: "OpenTig Demo", email: "demo@example.com" },
       committer: { name: "OpenTig Demo", email: "demo@example.com" },
