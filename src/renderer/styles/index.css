@@ -2030,6 +2030,7 @@ section[data-sileo-viewport] .sync-toast-offer { --_c: var(--sileo-state-info); 
 .searchable-picker-copy small { color: var(--muted-foreground); font-size: var(--text-meta); line-height: 15px; font-weight: var(--weight-regular); }
 .searchable-picker-trailing { display: flex; flex: none; align-items: center; gap: 6px; }
 .searchable-picker-status { color: var(--muted-foreground); font-size: var(--text-meta); }
+.searchable-picker-age { min-width: 6ch; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
 /* Where a coding agent is working. */
 /* Where a coding agent works: a chip with its mark and a live dot, tinted like the app's primary actions. */
 .agent-labels { display: inline-flex; flex-wrap: wrap; gap: 4px; }

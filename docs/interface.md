@@ -96,6 +96,7 @@ You can disable **double-tap-Control**, which brings the desktop app to the fron
 
 Repository, worktree, branch, AI model, project assignment, and PR base selectors have searchable menus. Repository and worktree choices show a second checkout line; other choices use one line.
 
+- **Find a branch:** local branches list the current one first, then `main` (or `master`), then the rest by most recent commit. Each branch shows how long ago its last commit was made. Remote branches stay in alphabetical order.
 - **Find a model:** search by name or identifier; models are grouped by provider.
 - **Keep a default:** **Default (CLI)** and **No project** remain available during filtering.
 - **Switch repositories by number:** number shortcuts remain active until the search field takes focus.

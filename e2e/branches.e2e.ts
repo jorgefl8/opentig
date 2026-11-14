@@ -1,6 +1,8 @@
+import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { promisify } from 'node:util';
 import type { Page } from '@playwright/test';
 import { openRepository } from './support/app';
 import { expect, test, type GitRepository } from './support/fixtures';
@@ -39,6 +41,30 @@ test('choosing another local branch checks it out', async ({ pairedPage: page, r
   await expect(branchPicker(page)).toContainText('feature');
   await expect.poll(() => currentBranch(repository)).toBe('feature');
   await expect(page.getByRole('tree', { name: 'Files' }).getByRole('treeitem', { name: 'feature.txt' })).toBeVisible();
+});
+
+test('the branch menu lists the current branch, then main, then the rest by most recent commit', async ({ pairedPage: page, repository }) => {
+  // Each branch gets one commit with a fixed committer date, so the order does not depend on the clock.
+  const commitOn = async (branch: string, date: string) => {
+    await repository.git('switch', '-q', '-c', branch, 'main');
+    await writeFile(path.join(repository.path, `${branch.replace('/', '-')}.txt`), `${branch}\n`);
+    await repository.git('add', '.');
+    await promisify(execFile)('git', ['commit', '-q', '-m', `Work on ${branch}`], { cwd: repository.path, env: { ...process.env, GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date } });
+  };
+  await commitOn('alpha/stale', '2020-01-15T10:00:00Z');
+  await commitOn('beta/recent', '2024-06-01T10:00:00Z');
+  await commitOn('zeta/current', '2019-03-01T10:00:00Z');
+  await openRepository(page, repository);
+  await expect(branchPicker(page)).toContainText('zeta/current');
+
+  await branchPicker(page).click();
+  const options = page.getByRole('listbox', { name: 'Select branch' }).getByRole('option');
+
+  // Alphabetical order would put the stale branch second and bury main.
+  await expect(options.locator('strong')).toHaveText(['zeta/current', 'main', 'beta/recent', 'alpha/stale']);
+  await expect(options.nth(1)).toContainText('Default');
+  await expect(options.nth(1)).toContainText('just now');
+  await expect(options.nth(3)).toContainText(/\dy ago/);
 });
 
 test('choosing a remote branch creates and checks out its local tracking branch', async ({ pairedPage: page, repository }) => {
