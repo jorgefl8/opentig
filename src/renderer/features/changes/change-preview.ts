@@ -1,9 +1,11 @@
-import { isKnownImagePath, isSvgPath } from '../../../shared/image-types';
-import { isHtmlPath } from '../files/file-tree';
+import { isKnownImagePath } from '../../../shared/image-types';
 
-/** Markdown changes default to their diff; only visual formats open a preview. */
+/**
+ * Text formats, including HTML, SVG and Markdown, open their diff. Only raster
+ * images open a preview, because their diff has nothing readable in it.
+ */
 export function shouldOpenChangePreview(path: string, kind: string): boolean {
   const directorySummary = path.endsWith('/') || path.endsWith('\\');
   if (directorySummary || kind === 'deleted') return false;
-  return isHtmlPath(path) || isSvgPath(path) || isKnownImagePath(path);
+  return isKnownImagePath(path);
 }

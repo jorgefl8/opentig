@@ -67,6 +67,25 @@ test('a modified file opens as a diff, and the split view choice is remembered',
   await expect(code).toHaveCount(2);
 });
 
+test('a changed HTML file opens as a diff, and Open file shows its preview', async ({ pairedPage: page, repository }) => {
+  await repository.commit('index.html', '<!doctype html>\n<title>Sample</title>\n<h1>Before</h1>\n', 'Add page');
+  await write(repository, 'index.html', '<!doctype html>\n<title>Sample</title>\n<h1>After</h1>\n');
+  await openRepository(page, repository);
+  await openChanges(page, 1);
+
+  // The row's main action is the diff, as for any other text file.
+  await page.getByRole('button', { name: 'View changes for index.html' }).click();
+  const code = page.getByRole('code');
+  await expect(code).toContainText('<h1>Before</h1>');
+  await expect(code).toContainText('<h1>After</h1>');
+  await expect(page.getByTitle('Preview of index.html')).toBeHidden();
+
+  // The rendered page stays one step away.
+  await clickRowAction(changeRow(page, 'Changes', 'index.html'), 'Open file');
+  await expect(page.getByRole('tab', { name: 'Preview' })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByTitle('Preview of index.html')).toBeVisible();
+});
+
 test('a single file can be staged and unstaged without touching the others', async ({ pairedPage: page, repository }) => {
   await repository.commit('notes.txt', 'first\n', 'Add notes');
   await write(repository, 'README.md', '# Sample project\n\nEdited.\n');

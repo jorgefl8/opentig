@@ -105,7 +105,7 @@ The top line offers **Stage all**, or **Unstage all** once everything is staged.
 
 With no changes, the section says so and, when the branch has commits that aren't on its remote yet, offers to push or publish them.
 
-Changed Markdown files open their staged or unstaged diff; use **Open file** for the rendered preview. HTML, SVG, and image files open a rich preview and have a separate diff action.
+Changed Markdown, HTML, and SVG files open their staged or unstaged diff; use **Open file** for the rendered preview. Image files open their preview and have a separate **View changes** action.
 
 To discard a file's or folder's unstaged changes, review the affected paths in the confirmation dialog. Discarding is unavailable while another repository operation, such as a refresh or a stage, is still running. Untracked files go to system Trash (the Recycle Bin on Windows). A folder whose untracked files are all being discarded goes to Trash as one item, unless it also holds tracked or Git-ignored files. Folders the discard leaves empty are removed.
 
