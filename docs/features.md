@@ -63,7 +63,7 @@ After you locate one moved repository, OpenTig looks for the other missing ones 
 
 **Sync from the repository picker**
 
-Pull or push from an individual repository's row. Opening the picker fetches each listed repository to refresh its checkout and ahead/behind counts. Only pending operations appear, with their commit counts; multiple repositories can sync concurrently with separate progress and result notifications.
+Pull or push from an individual repository's row. Opening the picker fetches the listed repositories, four at a time, to refresh their checkout and ahead/behind counts. Only pending operations appear, with their commit counts; multiple repositories can sync concurrently with separate progress and result notifications.
 
 Choose periodic remote checks, or turn them off, in **Settings → General**. Manual Refresh still fetches when periodic checks are off. See [remote checks and refresh](interface.md#remote-checks-and-refresh).
 
@@ -72,7 +72,7 @@ Choose periodic remote checks, or turn them off, in **Settings → General**. Ma
 
 The folder dialog shows branches for repositories and linked worktrees, including unborn branches and detached HEAD. Pending or failed navigation clears the previous selection. Mobile keeps the current folder and confirmation visible; the welcome screen scrolls when repositories exceed the available height.
 
-Picker rows show the repository name and the branch used for pull/push. Linked worktrees also show their checkout folder. Menu rows have a tooltip only when their text is cut short, and then it gives the full detail, such as the filesystem path. A repository favicon or app icon appears in the toolbar picker and welcome screen when available, with a folder fallback. Supported sources include `favicon.svg`/`favicon.ico` at the root or under `public/`, `app/`, and similar locations, or a `<link rel="icon">` in `index.html`.
+Picker rows show the repository name and the branch used for pull/push. Linked worktrees also show their checkout folder. Menu rows have a tooltip only when their text is cut short, and then it gives the full detail, such as the filesystem path. A repository favicon or app icon appears in the toolbar picker and welcome screen when available, with a folder fallback. It is read once per session, so an icon added later appears after reloading OpenTig. Supported sources include `favicon.svg`/`favicon.ico` at the root or under `public/`, `app/`, and similar locations, or a `<link rel="icon">` in `index.html`.
 
 The repository dropdown can use up to 80% of the viewport height while keeping search and management visible; other dropdowns stay compact. Mobile reordering preserves scroll and focus and briefly highlights the moved row. Reduced-motion preferences disable that highlight.
 

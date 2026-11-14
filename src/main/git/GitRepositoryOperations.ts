@@ -626,8 +626,16 @@ export class GitRepositoryOperations {
     }, repository.commonDir);
   }
 
+  /** Fetches still running, by repository: a caller that arrives meanwhile shares the Git process and its result. */
+  private readonly runningFetches = new Map<string, Promise<FetchResult>>();
+
   async fetch(repositoryId: string): Promise<FetchResult> {
-    return this.git.withNetworkContext(this.repositories.get(repositoryId).path, () => this.fetchInContext(repositoryId));
+    const running = this.runningFetches.get(repositoryId);
+    if (running) return running;
+    const fetching = this.git.withNetworkContext(this.repositories.get(repositoryId).path, () => this.fetchInContext(repositoryId))
+      .finally(() => { if (this.runningFetches.get(repositoryId) === fetching) this.runningFetches.delete(repositoryId); });
+    this.runningFetches.set(repositoryId, fetching);
+    return fetching;
   }
 
   private async fetchInContext(repositoryId: string): Promise<FetchResult> {

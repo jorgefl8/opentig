@@ -9,13 +9,19 @@ import { OPEN_TIG_SERVER_COMMANDS } from '../../../src/shared/protocol';
 import { BROWSER_SESSION_MAX_AGE_SECONDS, OneTimeBootstrapAuthSource, OpenTigSessionAuth } from './auth';
 import { OpenTigServer } from './OpenTigServer';
 import { NetworkSettings } from './network-settings';
-import { OPEN_TIG_MAX_SERVER_MESSAGE_BYTES } from '../../../src/shared/server-protocol';
+import {
+  OPEN_TIG_CLIENT_MAX_BACKGROUND_REQUESTS, OPEN_TIG_CLIENT_MAX_IN_FLIGHT_REQUESTS, OPEN_TIG_MAX_IN_FLIGHT_REQUESTS, OPEN_TIG_MAX_SERVER_MESSAGE_BYTES,
+} from '../../../src/shared/server-protocol';
+import { IPC } from '../../../src/shared/contracts';
+import { OpenTigWebSocketTransport, inBackground, type WebSocketTransportOptions } from '../../../src/renderer/lib/websocket-transport';
 
 interface Fixture {
   auth: OpenTigSessionAuth;
   server: OpenTigServer;
   origin: string;
   socket(): Promise<WebSocket>;
+  /** The application's own client, connected to this server. */
+  client(options?: WebSocketTransportOptions): OpenTigWebSocketTransport;
   closeRuntime: ReturnType<typeof vi.fn>;
   logger: ReturnType<typeof vi.fn>;
   registry: CommandRegistry;
@@ -23,8 +29,10 @@ interface Fixture {
 
 const fixtures: Fixture[] = [];
 const directories: string[] = [];
+const clients: OpenTigWebSocketTransport[] = [];
 
 afterEach(async () => {
+  for (const client of clients.splice(0)) client.close();
   await Promise.allSettled(fixtures.splice(0).map((fixture) => fixture.server.stop()));
   await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })));
   vi.unstubAllEnvs();
@@ -177,7 +185,7 @@ describe('WebSocket safety limits', () => {
     expect(await (await fetch(`${fixture.origin}/api/auth/descriptor`, { headers: { Cookie: cookie } })).json()).toMatchObject({ authenticated: false });
   });
 
-  it('caps in-flight requests at 32 and times out bounded commands', async () => {
+  it('refuses a request over the in-flight limit as retryable, and times out bounded commands', async () => {
     let release!: (value: unknown) => void;
     const pending = new Promise((resolve) => { release = resolve; });
     const fixture = await startFixture(() => pending, { commandTimeoutMs: 50 });
@@ -186,13 +194,13 @@ describe('WebSocket safety limits', () => {
     // before the 33rd request arrives. Socket I/O stays real.
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     try {
-      for (let index = 0; index < 32; index += 1) {
+      for (let index = 0; index < OPEN_TIG_MAX_IN_FLIGHT_REQUESTS; index += 1) {
         socket.send(JSON.stringify({ type: 'request', id: `pending-${index}`, command: 'app:bootstrap', args: [] }));
       }
       const limited = nextMessage(socket);
       socket.send(JSON.stringify({ type: 'request', id: 'limited', command: 'app:bootstrap', args: [] }));
       expect(await limited).toMatchObject({
-        type: 'result', id: 'limited', result: { ok: false, error: { message: 'Too many in-flight requests.' } },
+        type: 'result', id: 'limited', result: { ok: false, error: { code: 'SERVER_BUSY', retryable: true } },
       });
 
       const timedOut = waitForMessage(socket, (message) => isResult(message) && message.id === 'pending-0');
@@ -202,6 +210,62 @@ describe('WebSocket safety limits', () => {
       vi.useRealTimers();
       release(emptyBootstrap());
     }
+  });
+
+  it('serves 100 requests from one client without refusing any, a later foreground one ahead of waiting background ones', async () => {
+    const fixture = await startFixture(() => emptyBootstrap());
+    const served: string[] = [];
+    let running = 0;
+    let peak = 0;
+    let firstServed!: () => void;
+    const started = new Promise<void>((resolve) => { firstServed = resolve; });
+    fixture.registry.registerHandler(OPEN_TIG_SERVER_COMMANDS['repository.getFavicon'], async (_context, [id]) => {
+      running += 1;
+      peak = Math.max(peak, running);
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      running -= 1;
+      served.push(String(id));
+      firstServed();
+      return null;
+    });
+    const client = fixture.client();
+    const requests = [
+      ...Array.from({ length: 80 }, (_, index) => inBackground(() => client.request(IPC.repositoryGetFavicon, [`background-${index}`]))),
+      ...Array.from({ length: 20 }, (_, index) => client.request(IPC.repositoryGetFavicon, [`foreground-${index}`])),
+    ];
+    await started;
+    // Nearly all the background work is still waiting in the client when the user asks for something else.
+    expect(served.length).toBeLessThanOrEqual(OPEN_TIG_CLIENT_MAX_IN_FLIGHT_REQUESTS);
+    requests.push(client.request(IPC.repositoryGetFavicon, ['late-foreground']));
+
+    expect((await Promise.allSettled(requests)).filter((result) => result.status === 'rejected')).toEqual([]);
+    expect(served).toHaveLength(101);
+    expect(peak).toBeLessThanOrEqual(OPEN_TIG_CLIENT_MAX_IN_FLIGHT_REQUESTS);
+    // Of the 80 background requests, only the ones already with the server are answered before it.
+    const answeredFirst = served.slice(0, served.indexOf('late-foreground'));
+    expect(answeredFirst.filter((id) => id.startsWith('background-')).length).toBeLessThanOrEqual(OPEN_TIG_CLIENT_MAX_BACKGROUND_REQUESTS);
+  });
+
+  it('runs every request once when a client that sends too many at a time is refused and tries again', async () => {
+    const fixture = await startFixture(() => emptyBootstrap());
+    const served: string[] = [];
+    let running = 0;
+    let peak = 0;
+    fixture.registry.registerHandler(OPEN_TIG_SERVER_COMMANDS['repository.getFavicon'], async (_context, [id]) => {
+      running += 1;
+      peak = Math.max(peak, running);
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      running -= 1;
+      served.push(String(id));
+      return null;
+    });
+    const client = fixture.client({ maxInFlight: 60 });
+    const ids = Array.from({ length: 60 }, (_, index) => `request-${index}`);
+    const results = await Promise.allSettled(ids.map((id) => client.request(IPC.repositoryGetFavicon, [id])));
+    expect(results.filter((result) => result.status === 'rejected')).toEqual([]);
+    // The server filled up, so the rest were refused at first; none of them ran twice or was lost.
+    expect(peak).toBe(OPEN_TIG_MAX_IN_FLIGHT_REQUESTS);
+    expect([...served].sort()).toEqual([...ids].sort());
   });
 
   it('aborts the command when its server timeout expires', async () => {
@@ -390,7 +454,22 @@ describe('WebSocket safety limits', () => {
     await sendAndReceive(socket, { type: 'request', id: 'one', command: 'app:bootstrap', args: [] });
     await sendAndReceive(socket, { type: 'request', id: 'two', command: 'app:bootstrap', args: [] });
     const limited = await sendAndReceive(socket, { type: 'request', id: 'three', command: 'app:bootstrap', args: [] });
-    expect(limited).toMatchObject({ result: { ok: false, error: { message: 'Request rate limit exceeded.' } } });
+    expect(limited).toMatchObject({ result: { ok: false, error: { code: 'SERVER_BUSY', retryable: true, message: 'Request rate limit exceeded.' } } });
+  });
+
+  it('delays the requests of a client that goes over the rate limit instead of failing them', async () => {
+    const fixture = await startFixture(() => emptyBootstrap(), { requestRateLimit: 10, requestRateWindowMs: 400 });
+    const served: string[] = [];
+    fixture.registry.registerHandler(OPEN_TIG_SERVER_COMMANDS['repository.getFavicon'], (_context, [id]) => {
+      served.push(String(id));
+      return null;
+    });
+    const client = fixture.client();
+    const ids = Array.from({ length: 30 }, (_, index) => `request-${index}`);
+    const results = await Promise.allSettled(ids.map((id) => client.request(IPC.repositoryGetFavicon, [id])));
+    expect(results.filter((result) => result.status === 'rejected')).toEqual([]);
+    // Refused requests keep their place in line and run once each.
+    expect(served).toEqual(ids);
   });
 
   it('stops idempotently, closes clients, and closes its runtime once', async () => {
@@ -455,6 +534,15 @@ async function startFixture(
     closeRuntime,
     logger,
     socket: () => openWebSocket(address.origin, cookie),
+    client: (options = {}) => {
+      const client = new OpenTigWebSocketTransport({
+        url: address.origin.replace(/^http/, 'ws') + '/ws',
+        createSocket: (url) => new WebSocket(url, { headers: { Origin: address.origin, Cookie: cookie } }) as unknown as globalThis.WebSocket,
+        ...options,
+      });
+      clients.push(client);
+      return client;
+    },
     registry,
   };
   fixtures.push(fixture);

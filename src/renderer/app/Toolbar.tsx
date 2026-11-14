@@ -20,10 +20,12 @@ import { RepositoryFaviconImage } from '@/features/repositories/RepositoryFavico
 import { useRepositoryFavicons } from '@/features/repositories/useRepositoryFavicons';
 import { buildRepositoryPickerModel, formatRepositoryCheckout, getRepositoryPickerDisplayOrder, shortenRepositoryPath, type RepositoryOption } from '@/features/repositories/repository-select-model';
 import { needsBranchPublication, visibleRepositorySyncActions, type ProjectSyncAction, type RepositorySyncCounts } from '@/features/repositories/project-sync';
+import { createBackgroundSyncPool, type BackgroundSyncPool } from '@/features/repositories/background-sync-pool';
 import { DesktopUpdateIndicator } from '@/features/settings/UpdateSettings';
 import type { SettingsSection } from '@/features/settings/SettingsDialog';
 import { normalizeRepositoryKey } from '../../shared/repository-projects';
 import { opentig } from '@/lib/opentig-api';
+import { inBackground } from '@/lib/websocket-transport';
 import { useShortcuts } from './useShortcuts';
 import { useMobileLayout } from '@/lib/use-mobile-layout';
 import { MobileToolbar, type MobileViewerBarProps } from './MobileToolbar';
@@ -73,6 +75,9 @@ export interface ToolbarProps {
   onSettingsOpen(open: boolean): void; onSettingsSection(section: SettingsSection): void;
 }
 
+/** Saved repositories fetched at once while the picker is open. */
+const PICKER_SYNC_CONCURRENCY = 4;
+
 const SettingsDialog = lazyWithRetry(() => import('@/features/settings/SettingsDialog').then((module) => ({ default: module.SettingsDialog })));
 const LocalRefsDialog = lazyWithRetry(() => import('@/features/refs/LocalRefsDialog').then((module) => ({ default: module.LocalRefsDialog })));
 const RepositoryProjectsDialog = lazyWithRetry(() => import('@/features/repositories/RepositoryProjectsDialog').then((module) => ({ default: module.RepositoryProjectsDialog })));
@@ -116,37 +121,39 @@ export function Toolbar(props: ToolbarProps) {
   // A ref, so the availability check that runs as the picker opens does not fetch every repository twice.
   const unavailableRepositoryIds = useRef(props.unavailableRepositoryIds);
   useEffect(() => { unavailableRepositoryIds.current = props.unavailableRepositoryIds; }, [props.unavailableRepositoryIds]);
-  const refreshRepositorySyncCounts = useCallback(async (repositories: RepositoryOption[]) => {
-    await Promise.all(repositories.filter((item) => !unavailableRepositoryIds.current.has(item.recent.id)).map(async (item) => {
-      const repositoryId = item.recent.id;
-      const version = (repositoryStatusVersions.current.get(repositoryId) ?? 0) + 1;
-      repositoryStatusVersions.current.set(repositoryId, version);
-      try {
-        const fetched = await opentig.refs.fetch(repositoryId);
-        if (repositoryStatusVersions.current.get(repositoryId) !== version) return;
-        const status = await opentig.repository.getStatus(repositoryId, false);
-        if (repositoryStatusVersions.current.get(repositoryId) !== version) return;
-        setRepositorySyncCounts((current) => {
-          const next = new Map(current);
-          next.set(repositoryId, {
-            ahead: fetched.status === 'success' ? fetched.ahead : status.ahead,
-            behind: fetched.status === 'success' ? fetched.behind : status.behind,
-            branch: status.branch,
-            detached: status.detached,
-            upstream: status.upstream, unborn: status.unborn, readOnly: status.readOnly, operation: status.operation,
-          });
-          return next;
+  const syncRepositoryCounts = useCallback(async (repositoryId: string) => {
+    const version = (repositoryStatusVersions.current.get(repositoryId) ?? 0) + 1;
+    repositoryStatusVersions.current.set(repositoryId, version);
+    try {
+      const fetched = await inBackground(() => opentig.refs.fetch(repositoryId));
+      if (repositoryStatusVersions.current.get(repositoryId) !== version) return;
+      const status = await inBackground(() => opentig.repository.getStatus(repositoryId, false));
+      if (repositoryStatusVersions.current.get(repositoryId) !== version) return;
+      setRepositorySyncCounts((current) => {
+        const next = new Map(current);
+        next.set(repositoryId, {
+          ahead: fetched.status === 'success' ? fetched.ahead : status.ahead,
+          behind: fetched.status === 'success' ? fetched.behind : status.behind,
+          branch: status.branch,
+          detached: status.detached,
+          upstream: status.upstream, unborn: status.unborn, readOnly: status.readOnly, operation: status.operation,
         });
-      } catch {
-        if (repositoryStatusVersions.current.get(repositoryId) !== version) return;
-        setRepositorySyncCounts((current) => {
-          const next = new Map(current);
-          next.delete(repositoryId);
-          return next;
-        });
-      }
-    }));
+        return next;
+      });
+    } catch {
+      if (repositoryStatusVersions.current.get(repositoryId) !== version) return;
+      setRepositorySyncCounts((current) => {
+        const next = new Map(current);
+        next.delete(repositoryId);
+        return next;
+      });
+    }
   }, []);
+  const syncPool = useRef<BackgroundSyncPool | null>(null);
+  const refreshRepositorySyncCounts = useCallback((repositories: RepositoryOption[], afterChange = false) => {
+    syncPool.current ??= createBackgroundSyncPool(PICKER_SYNC_CONCURRENCY, syncRepositoryCounts);
+    syncPool.current.request(repositories.filter((item) => !unavailableRepositoryIds.current.has(item.recent.id)).map((item) => item.recent.id), afterChange);
+  }, [syncRepositoryCounts]);
 
   useEffect(() => {
     const currentStatus = props.status;
@@ -167,7 +174,7 @@ export function Toolbar(props: ToolbarProps) {
   }, [props.repository.id, props.status]);
 
   useEffect(() => {
-    if (repositorySelectOpen) void refreshRepositorySyncCounts(picker.repositories);
+    if (repositorySelectOpen) refreshRepositorySyncCounts(picker.repositories);
   }, [picker.repositories, refreshRepositorySyncCounts, repositorySelectOpen]);
   const { onRepositoryPickerOpen } = props;
   useEffect(() => {
@@ -302,7 +309,7 @@ export function Toolbar(props: ToolbarProps) {
                   onClick={(event) => {
                     event.preventDefault();
                     event.stopPropagation();
-                    void props.onRepositorySync(group, projectName, action).finally(() => refreshRepositorySyncCounts([group]));
+                    void props.onRepositorySync(group, projectName, action).finally(() => refreshRepositorySyncCounts([group], true));
                   }}
                 />
               )}>

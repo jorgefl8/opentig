@@ -122,6 +122,23 @@ describe('GitRepositoryOperations fetch and pull', () => {
     expect(await fixture.repositories.status(fixture.repositoryId, false)).toMatchObject({ ahead: 0, behind: 1 });
   });
 
+  it('shares one Git fetch among callers that arrive while it runs, and fetches again afterwards', async () => {
+    const fixture = await repositoryWithUpstream();
+    await commitOnRemote(fixture, 'incoming.txt', 'from origin\n', 'Remote commit');
+    let fetches = 0;
+    fixture.gitProcess.network = (_cwd, args, options, execute) => {
+      if (args.includes('fetch')) fetches += 1;
+      return execute(args, options);
+    };
+    const results = await Promise.all([1, 2, 3].map(() => fixture.operations.fetch(fixture.repositoryId)));
+    expect(results).toEqual([1, 2, 3].map(() => ({ status: 'success', ahead: 0, behind: 1 })));
+    expect(fetches).toBe(1);
+
+    await commitOnRemote(fixture, 'later.txt', 'from origin\n', 'Later remote commit');
+    expect(await fixture.operations.fetch(fixture.repositoryId)).toEqual({ status: 'success', ahead: 0, behind: 2 });
+    expect(fetches).toBe(2);
+  });
+
   it('fast-forwards when the branch has no local commits', async () => {
     const fixture = await repositoryWithUpstream();
     await commitOnRemote(fixture, 'incoming.txt', 'from origin\n', 'Remote commit');

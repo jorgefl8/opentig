@@ -79,7 +79,7 @@ import { mobileMainAction } from '@/lib/mobile-main-action';
 import { useElapsed } from '@/lib/use-elapsed';
 import { opentig, serverClient } from '@/lib/opentig-api';
 import { startupSplashDetail } from '@/lib/startup-splash';
-import { ServerAuthenticationError, ServerDisconnectedError, UNCONFIRMED_RESULT_MESSAGE, isConnectionLoss, isUnconfirmedResult } from '@/lib/websocket-transport';
+import { ServerAuthenticationError, ServerDisconnectedError, UNCONFIRMED_RESULT_MESSAGE, inBackground, isConnectionLoss, isUnconfirmedResult } from '@/lib/websocket-transport';
 import { conflictNotificationAction, conflictToastId } from '@/features/changes/conflict-notification';
 import { fileCutTransferId, writeClipboardText, writeFileTransfer } from '@/lib/browser-capabilities';
 import { needsBranchPublication, newBranchPublishedCopy, projectPullBlockedCopy, projectPullSuccessCopy, projectPushBlockedCopy, projectPushSuccessCopy, pullSuccessCopy, repositorySyncLoadingToast, type ProjectSyncAction } from '@/features/repositories/project-sync';
@@ -161,6 +161,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   const [branchesState, setBranches] = useState<BranchInfo[]>([]);
   const [worktreesState, setWorktrees] = useState<WorktreeInfo[]>([]);
   const [snapshotRepositoryId, setSnapshotRepositoryId] = useState<string | null>(null);
+  // Read by a refresh as it starts, to tell the first read of a repository from a later one.
+  const snapshotRepositoryIdRef = useRef<string | null>(null);
   const [pendingRepositoryId, setPendingRepositoryId] = useState<string | null>(null);
   // Saved repositories whose folder is gone, and the active one when that happened to it.
   const [unavailableRepositoryIds, setUnavailableRepositoryIds] = useState<ReadonlySet<string>>(() => new Set());
@@ -727,7 +729,10 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   }, [refreshFileHistoryState, repository]);
 
   const performRefresh = useCallback(async (repositoryId: string, request: RefreshRequest) => {
-    const { background, manual, scope, view: refreshView } = request;
+    const { background, manual, view: refreshView } = request;
+    // Nothing of this repository is on screen yet, so read all of it whatever asked for the refresh.
+    const firstRead = snapshotRepositoryIdRef.current !== repositoryId;
+    const scope = firstRead ? 'unknown' : request.scope;
     const operations = refreshOperationsForScope(scope, refreshView);
     const resources = queryResourcesForScope(scope, refreshView);
     if (!background) { busyRef.current = 'refresh'; setBusy('refresh'); }
@@ -777,13 +782,15 @@ export default function App({ initialView, initialSelection, pullRequestCreation
         snapshot = await readSnapshot();
       } catch (reason) {
         // Automatic refreshes race with tools still writing to the repository; retry once quietly before reporting.
-        if (!background || repositoryRef.current?.id !== repositoryId) throw reason;
+        // So does the first read of a repository, which would otherwise leave its workspace empty; a folder that is gone is reported at once.
+        if (!(background || (firstRead && !isRepositoryMissing(reason))) || repositoryRef.current?.id !== repositoryId) throw reason;
         await new Promise((resolve) => setTimeout(resolve, BACKGROUND_REFRESH_RETRY_MS));
         if (repositoryRef.current?.id !== repositoryId) return;
         snapshot = await readSnapshot();
       }
       const [nextStatus, nextBranches, nextWorktrees, nextFiles, nextHistory] = snapshot;
       if (repositoryRef.current?.id !== repositoryId) return;
+      snapshotRepositoryIdRef.current = repositoryId;
       setSnapshotRepositoryId(repositoryId);
       setStatus(nextStatus);
       if (nextBranches) setBranches(nextBranches);
@@ -864,7 +871,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       if (busyRef.current || repositorySyncOperationsRef.current.has(repositoryId)) return;
       inFlight = true;
       try {
-        const result = await opentig.refs.fetch(repositoryId);
+        const result = await inBackground(() => opentig.refs.fetch(repositoryId));
         if (!cancelled) noteFetchResult(repositoryId, result);
         if (cancelled || repositoryRef.current?.id !== repositoryId || result.status !== 'success') return;
         await refresh({ background: true, scope: 'refs' });
@@ -887,10 +894,14 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   }, [noteFetchResult, refresh, remoteFetchIntervalSeconds, repository]);
 
   useEffect(() => {
+    snapshotRepositoryIdRef.current = null;
     setSnapshotRepositoryId(null);
     clearCommitFilesCache();
     filesRef.current = null;
     setFiles(null);
+    // A later refresh may read only part of the new repository; it must not be shown next to the previous one's refs.
+    setBranches([]);
+    setWorktrees([]);
     setCreatePrOpen(false);
     setQuickOpen(false);
   }, [repository?.id]);

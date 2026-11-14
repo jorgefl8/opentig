@@ -255,6 +255,8 @@ A separate 8 MiB send-queue budget closes an accumulating slow connection with c
 
 A server accepts at most 16 simultaneous WebSocket connections, one per open browser tab or desktop window. Further tabs cannot connect until another closes.
 
+Each connection can have 32 requests running on the server and can start 120 in any 10 seconds. OpenTig stays below the first limit by sending 24 at a time, at most 8 of them for background work such as repository icons and the state of saved repositories that aren't open. The rest wait in the client, and what you are doing goes ahead of background work. A request the server still refuses for either limit has not run, so OpenTig sends it again shortly: with many saved repositories and quick switches the interface can pause for a moment, but it does not report an error.
+
 </details>
 
 ## Diagnostics
