@@ -18,6 +18,8 @@ export interface SerializedGitError {
   operation: string;
   message: string;
   stderr?: string;
+  /** What a push printed on stdout, where `--porcelain` reports each ref, kept apart from stderr. */
+  stdout?: string;
   exitCode?: number;
   access?: import('./repository-access').RemoteAccessProblem;
   /** The server stopped waiting, but the work keeps running and may still succeed. */

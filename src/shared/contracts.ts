@@ -222,8 +222,26 @@ export type PushResult =
   | { status: 'blocked-conflicts'; files: string[] }
   | { status: 'blocked-operation'; operation: string }
   | { status: 'no-upstream' }
-  | { status: 'diverged'; ahead: number; behind: number }
-  | { status: 'rejected'; reason: 'authentication' | 'inaccessible' | 'permission' | 'remote-changed' | 'hook' | 'network' | 'configuration' | 'unknown'; message: string; access?: RemoteAccessProblem };
+  | {
+    /** The upstream has commits this branch lacks, so the push has to wait for a pull. Nothing was overwritten. */
+    status: 'diverged'; ahead: number; behind: number;
+    /** The tracked branch, such as `origin/main`. */
+    upstream?: string;
+    /** The newest commits only the upstream has, each as `<short oid> <subject>`. */
+    incoming?: string[];
+    /** What Git printed when it refused; absent when OpenTig saw it coming and sent nothing. */
+    details?: string;
+  }
+  | {
+    status: 'rejected';
+    /** `destination-exists`: the branch was being published under a name the remote already uses for other commits. */
+    reason: 'authentication' | 'inaccessible' | 'permission' | 'remote-changed' | 'destination-exists' | 'hook' | 'network' | 'configuration' | 'unknown';
+    /** A sentence OpenTig wrote for this case, or empty when the reason alone explains it. */
+    message: string;
+    /** What Git printed, to show only on request. */
+    details?: string;
+    access?: RemoteAccessProblem;
+  };
 
 export interface BranchDetailsRequest {
   repositoryId: string;

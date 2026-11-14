@@ -70,7 +70,8 @@ export interface ToolbarProps {
   onRefsManaged(recentRepositories: RecentRepository[] | null): void;
   onPull(): void; onPush(): void;
   repositorySyncOperations: ReadonlyMap<string, ProjectSyncAction>;
-  onRepositorySync(repository: RepositoryOption, projectName: string | null, action: ProjectSyncAction): Promise<void>;
+  /** `settled` runs after the action, and after any follow-up the user takes from its notice. */
+  onRepositorySync(repository: RepositoryOption, projectName: string | null, action: ProjectSyncAction, settled: () => void): Promise<void>;
   settingsOpen: boolean; settingsSection: SettingsSection;
   onSettingsOpen(open: boolean): void; onSettingsSection(section: SettingsSection): void;
 }
@@ -309,7 +310,7 @@ export function Toolbar(props: ToolbarProps) {
                   onClick={(event) => {
                     event.preventDefault();
                     event.stopPropagation();
-                    void props.onRepositorySync(group, projectName, action).finally(() => refreshRepositorySyncCounts([group], true));
+                    void props.onRepositorySync(group, projectName, action, () => void refreshRepositorySyncCounts([group], true));
                   }}
                 />
               )}>

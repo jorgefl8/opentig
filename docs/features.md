@@ -185,7 +185,23 @@ This applies when the branch pushes to its upstream's remote and `push.default` 
 
 **Read progress and errors**
 
-Each pull or push has its own progress and result notification. Remote rejections, branch protection, authentication, configuration errors, pending conflicts, and other one-shot failures appear there. When a push is rejected because the remote has commits the branch lacks, the notification offers **Pull**; push again afterwards. **Changes** remains the place to inspect unresolved work.
+Each pull or push has its own progress and result notification. Remote rejections, branch protection, authentication, configuration errors, pending conflicts, and other one-shot failures appear there. **Changes** remains the place to inspect unresolved work.
+
+**Push when the remote has commits you don't have**
+
+Git refuses a push until your commits sit on top of the remote's. When OpenTig already knows the branch is behind its upstream, it sends nothing and tells you at once, for example: "origin/main has 1 commit you don't have. Your commit has to go on top of it before it can be pushed." When the remote moved after the last fetch, Git refuses the push, OpenTig fetches, and the same notification shows the real counts. Nothing is overwritten either way.
+
+| Action | What it does |
+| --- | --- |
+| **Pull and push** | Pulls as described above, then pushes, with one progress notification and one result such as "Pulled 1 commit and pushed 1" |
+| **Pull only** | Pulls and leaves the push to you |
+| **Details** | Shows what Git printed, how far the branch is behind and ahead, and the newest incoming commits |
+
+If the pull stops, because the rebase would conflict or local changes could not be restored, the notification says so and nothing is pushed. A rebase that would conflict is aborted, so the branch is exactly as it was. The repository selector's push button offers the same actions for its repository.
+
+**Other push failures**
+
+The notification gives a short reason: the account or credentials were refused, the repository was not found, the account may not push, the remote declined the push through a branch rule or server hook, the remote could not be reached, or the branch's push configuration needs a review. Git's own output is under **Details**. **Repository access** is offered only when the account, its credentials, or its permissions are the problem.
 
 <details>
 <summary>Notification behavior</summary>

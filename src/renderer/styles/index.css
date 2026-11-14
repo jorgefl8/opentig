@@ -1386,6 +1386,16 @@ section[data-sileo-viewport] { z-index: 1100; }
 /* Sileo capitalizes every word in titles by default; keep the app's toast
    copy in sentence case instead. */
 section[data-sileo-viewport] [data-sileo-title] { text-transform: none; }
+/* A notice with its own actions (SyncToast): Sileo's pill buttons side by side,
+   a calmer tone for an offer, and Git's own words folded under "Details". */
+section[data-sileo-viewport] .sync-toast-offer { --_c: var(--sileo-state-info); }
+.sync-toast-lead { color: rgba(255, 255, 255, 0.92); font-weight: var(--weight-strong); }
+.sync-toast-actions { display: flex; gap: 8px; margin-top: 0.75rem; }
+.sync-toast-actions > [data-sileo-button] { flex: 1; margin-top: 0; }
+.sync-toast-actions > [data-sileo-button]:not([data-state]) { color: rgba(255, 255, 255, 0.8); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16); }
+.sync-toast-actions > [data-sileo-button]:not([data-state]):hover { background: rgba(255, 255, 255, 0.08); }
+[data-sileo-button].sync-toast-details-toggle { display: flex; width: fit-content; height: auto; padding: 0; margin-top: 0.625rem; border-radius: 2px; font-size: var(--text-meta); font-weight: var(--weight-regular); text-decoration: underline; text-underline-offset: 2px; }
+.sync-toast-details { max-height: 9rem; margin: 0.5rem 0 0; padding: 8px; overflow: auto; border-radius: 8px; background: rgba(255, 255, 255, 0.06); font-family: var(--font-mono); font-size: var(--text-meta); line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; touch-action: pan-y; }
 /* The ghost hover token is the same `muted` the rows are tinted with, so it
    disappears on top of them; these row actions need their own contrast. */
 .repository-row-actions [data-slot="button"] { color: var(--muted-foreground); }

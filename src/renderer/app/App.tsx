@@ -82,7 +82,7 @@ import { startupSplashDetail } from '@/lib/startup-splash';
 import { ServerAuthenticationError, ServerDisconnectedError, UNCONFIRMED_RESULT_MESSAGE, inBackground, isConnectionLoss, isUnconfirmedResult } from '@/lib/websocket-transport';
 import { conflictNotificationAction, conflictToastId } from '@/features/changes/conflict-notification';
 import { fileCutTransferId, writeClipboardText, writeFileTransfer } from '@/lib/browser-capabilities';
-import { needsBranchPublication, newBranchPublishedCopy, projectPullBlockedCopy, projectPullSuccessCopy, projectPushBlockedCopy, projectPushSuccessCopy, pullSuccessCopy, repositorySyncLoadingToast, type ProjectSyncAction } from '@/features/repositories/project-sync';
+import { needsBranchPublication, newBranchPublishedCopy, nothingPushedCopy, projectPullBlockedCopy, projectPullSuccessCopy, projectPushSuccessCopy, pullAndPushSuccessCopy, pullSuccessCopy, pushBlockedCopy, repositorySyncLoadingToast, syncToast, type ProjectSyncAction } from '@/features/repositories/project-sync';
 import { aiModelLabel, harnessLabel } from '@/features/ai/harness-copy';
 import { DesktopUpdateIndicator } from '@/features/settings/UpdateSettings';
 import { updatesApi } from '@/features/settings/update-api';
@@ -130,6 +130,13 @@ class PushBlocked extends Error {
   constructor(readonly result: Exclude<PushResult, { status: 'success' } | { status: 'up-to-date' } | { status: 'published' }>) {
     super(result.status);
   }
+}
+
+/** Where a pull or push runs: the open repository, or a row of the repository list. */
+interface SyncTarget {
+  repositoryId: string;
+  label: string;
+  row?: { item: RepositoryOption; projectName: string | null; settled: (() => void) | undefined };
 }
 
 const CloneRepositoryDialog = lazyWithRetry(() => import('@/features/onboarding/CloneRepositoryDialog').then(module => ({ default: module.CloneRepositoryDialog })));
@@ -2080,10 +2087,73 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     }
   };
 
-  const pullUpdates = async () => {
+  /** The notice for a pull of the open repository that did not finish. */
+  const pullFailureToast = (err: unknown) => {
+    if (err instanceof PullBlocked) {
+      const result = err.result;
+      if (result.status === 'blocked-conflicts') {
+        return {
+          title: 'Could not pull changes',
+          description: `Resolve ${result.files.length === 1 ? 'the pending conflict' : `${result.files.length} pending conflicts`} before updating.`,
+          duration: 10_000,
+          button: { title: 'View conflicts', onClick: () => showConflicts(result.files) },
+        };
+      }
+      if (result.status === 'stash-conflict') {
+        return {
+          title: result.updated ? 'Update completed with local conflicts' : 'Could not restore local changes',
+          description: 'The safety stash was preserved. Resolve the conflicts to continue.',
+          duration: 12_000,
+          button: { title: 'View conflicts', onClick: () => showConflicts(result.files) },
+        };
+      }
+      if (result.status === 'restore-failed') {
+        return {
+          title: 'Could not automatically restore local changes',
+          description: result.recoveredChanges
+            ? 'Some changes are visible and the safety stash was preserved. Do not continue until you review them.'
+            : 'The worktree is still clean and the safety stash remains intact.',
+          duration: 12_000,
+        };
+      }
+      if (result.status === 'rebase-conflict') {
+        return {
+          title: 'Could not rebase onto the remote',
+          description: result.files.length > 0
+            ? `Your local commits overlap the remote changes in ${result.files.length === 1 ? result.files[0] : `${result.files.length} files`}. The branch was left unchanged.`
+            : 'Your local commits overlap the remote changes. The branch was left unchanged.',
+          duration: 10_000,
+        };
+      }
+      if (result.status === 'diverged') {
+        return {
+          title: 'Branch has diverged',
+          description: `${result.ahead} ahead and ${result.behind} behind.`,
+          duration: 10_000,
+        };
+      }
+      if (result.status === 'no-upstream') {
+        return { title: 'Branch has no upstream configured', duration: 10_000 };
+      }
+      return {
+        title: 'A Git operation is in progress',
+        description: `Finish or cancel ${result.operation} before updating.`,
+        duration: 10_000,
+      };
+    }
+    const unconfirmed = unconfirmedResultToast(err);
+    if (unconfirmed) return unconfirmed;
+    const detail = serializedErrorFromReason(err);
+    const access = detail && 'access' in detail ? detail.access : undefined;
+    if (access) return remoteAccessToast('Could not pull changes', access);
+    const message = messageOf(err);
+    return { title: 'Could not pull changes', description: message, duration: 10_000 };
+  };
+
+  const pullUpdates = async (expectedBehind?: number) => {
     if (!repository || busy) return;
     const repositoryId = repository.id;
-    const pendingBehind = status?.behind ?? 0;
+    const pendingBehind = expectedBehind ?? status?.behind ?? 0;
     setBusy('pull');
     try {
       await sileo.promise(async () => {
@@ -2094,67 +2164,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       }, {
         loading: repositorySyncLoadingToast(repositoryId, 'pull', pendingBehind > 0 ? `Pulling ${pendingBehind} ${pendingBehind === 1 ? 'commit' : 'commits'}…` : 'Pulling changes…'),
         success: (result) => pullSuccessCopy(result),
-        error: (err) => {
-          if (err instanceof PullBlocked) {
-            const result = err.result;
-            if (result.status === 'blocked-conflicts') {
-              return {
-                title: 'Could not pull changes',
-                description: `Resolve ${result.files.length === 1 ? 'the pending conflict' : `${result.files.length} pending conflicts`} before updating.`,
-                duration: 10_000,
-                button: { title: 'View conflicts', onClick: () => showConflicts(result.files) },
-              };
-            }
-            if (result.status === 'stash-conflict') {
-              return {
-                title: result.updated ? 'Update completed with local conflicts' : 'Could not restore local changes',
-                description: 'The safety stash was preserved. Resolve the conflicts to continue.',
-                duration: 12_000,
-                button: { title: 'View conflicts', onClick: () => showConflicts(result.files) },
-              };
-            }
-            if (result.status === 'restore-failed') {
-              return {
-                title: 'Could not automatically restore local changes',
-                description: result.recoveredChanges
-                  ? 'Some changes are visible and the safety stash was preserved. Do not continue until you review them.'
-                  : 'The worktree is still clean and the safety stash remains intact.',
-                duration: 12_000,
-              };
-            }
-            if (result.status === 'rebase-conflict') {
-              return {
-                title: 'Could not rebase onto the remote',
-                description: result.files.length > 0
-                  ? `Your local commits overlap the remote changes in ${result.files.length === 1 ? result.files[0] : `${result.files.length} files`}. The branch was left unchanged.`
-                  : 'Your local commits overlap the remote changes. The branch was left unchanged.',
-                duration: 10_000,
-              };
-            }
-            if (result.status === 'diverged') {
-              return {
-                title: 'Branch has diverged',
-                description: `${result.ahead} ahead and ${result.behind} behind.`,
-                duration: 10_000,
-              };
-            }
-            if (result.status === 'no-upstream') {
-              return { title: 'Branch has no upstream configured', duration: 10_000 };
-            }
-            return {
-              title: 'A Git operation is in progress',
-              description: `Finish or cancel ${result.operation} before updating.`,
-              duration: 10_000,
-            };
-          }
-          const unconfirmed = unconfirmedResultToast(err);
-          if (unconfirmed) return unconfirmed;
-          const detail = serializedErrorFromReason(err);
-          const access = detail && 'access' in detail ? detail.access : undefined;
-          if (access) return remoteAccessToast('Could not pull changes', access);
-          const message = messageOf(err);
-          return { title: 'Could not pull changes', description: message, duration: 10_000 };
-        },
+        error: pullFailureToast,
       });
     } catch {
       // sileo.promise() already rendered the matching error toast above.
@@ -2171,6 +2181,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   const performPush = async () => {
     if (!repository) return;
     const repositoryId = repository.id;
+    const loading = repositorySyncLoadingToast(repositoryId, 'push', status?.upstream && !offersNewBranch ? 'Pushing commits…' : 'Publishing branch…');
     setBusy('push');
     try {
       await sileo.promise(async () => {
@@ -2179,7 +2190,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
         if (!result || result.status === 'success' || result.status === 'up-to-date' || result.status === 'published') return result;
         throw new PushBlocked(result);
       }, {
-        loading: repositorySyncLoadingToast(repositoryId, 'push', status?.upstream && !offersNewBranch ? 'Pushing commits…' : 'Publishing branch…'),
+        loading,
         success: (result) => !result ? { title: `${repository.name}: publication canceled` }
           : result.status === 'published' && result.previousUpstream ? newBranchPublishedCopy(result)
           : result.status === 'published' ? { title: `${repository.name}: branch published`, description: `${result.remote}/${result.branch}` }
@@ -2187,42 +2198,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
           ? { title: `${repository.name}: ${result.commits} ${result.commits === 1 ? 'commit pushed' : 'commits pushed'}` }
           : { title: `${repository.name}: no commits pending push` },
         error: (err) => {
-          if (err instanceof PushBlocked) {
-            const result = err.result;
-            if (result.status === 'blocked-conflicts') {
-              return {
-                title: `${repository.name}: could not push commits`,
-                description: `Resolve ${result.files.length === 1 ? 'the pending conflict' : `${result.files.length} pending conflicts`} before continuing.`,
-                duration: 10_000,
-                button: { title: 'View conflicts', onClick: () => showConflicts(result.files) },
-              };
-            }
-            if (result.status === 'blocked-operation') {
-              return { title: `${repository.name}: a Git operation is in progress`, description: `Finish or cancel ${result.operation} before pushing.`, duration: 10_000 };
-            }
-            if (result.status === 'no-upstream') {
-              return { title: `${repository.name}: branch has no upstream configured`, description: 'Configure a remote branch before pushing.', duration: 10_000 };
-            }
-            if (result.status === 'diverged') {
-              return {
-                title: `${repository.name}: the remote contains new changes`,
-                description: `${result.ahead} ahead and ${result.behind} behind. Pull rebases your local commits on top when there are no conflicts.`,
-                duration: 10_000,
-                button: { title: 'Pull', onClick: () => void pullUpdates() },
-              };
-            }
-            if (result.status === 'remote-required') return { title: 'Choose a remote to publish the branch' };
-            if (result.status === 'rejected' && result.reason === 'remote-changed') {
-              return {
-                title: `${repository.name}: the remote contains new changes`,
-                description: 'Pull rebases your local commits on top when there are no conflicts, then push again.',
-                duration: 10_000,
-                button: { title: 'Pull', onClick: () => void pullUpdates() },
-              };
-            }
-            if (result.status === 'rejected' && result.access) return remoteAccessToast(`${repository.name}: could not push commits`, result.access, true);
-            return { title: `${repository.name}: could not push commits`, description: result.message, duration: 10_000, button: { title: 'Repository access', onClick: () => { setSettingsSection('github'); setSettingsOpen(true); } } };
-          }
+          if (err instanceof PushBlocked) return pushBlockedToast(loading.id, err.result, { repositoryId, label: repository.name });
           return unconfirmedResultToast(err) ?? { title: `${repository.name}: could not push commits`, description: messageOf(err), duration: 10_000 };
         },
       });
@@ -2252,7 +2228,73 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     return { title, description: `${copy.summary} ${copy.detail}`, duration: 10_000, button: { title: label, onClick: () => void handleRemoteAccessAction(copy.action, push) } };
   };
 
-  const syncRepository = async (item: RepositoryOption, projectName: string | null, action: ProjectSyncAction) => {
+  /** The notice for a push that did not happen, with what can be done about it from there. */
+  const pushBlockedToast = (toastId: string, result: PushBlocked['result'], target: SyncTarget) => {
+    const { row } = target;
+    const sentByGit = result.status === 'rejected' && (result.reason === 'remote-changed' || result.reason === 'destination-exists' || result.reason === 'hook');
+    if (!row && result.status === 'rejected' && result.access && !sentByGit) return remoteAccessToast(`${target.label}: could not push commits`, result.access, true);
+    const copy = pushBlockedCopy(target.label, result, { project: Boolean(row), upstream: row ? null : status?.upstream ?? null });
+    // The notice has done its job once an action is taken; the action reports on its own.
+    const closing = (action: () => void) => () => { sileo.dismiss(toastId); action(); };
+    const pullOnly = closing(() => void (row ? syncRepository(row.item, row.projectName, 'pull', row.settled) : pullUpdates(result.status === 'diverged' ? result.behind : undefined)));
+    return syncToast(copy, copy.action === 'sync' ? [
+      { title: 'Pull and push', onClick: closing(() => void pullAndPush(target, result.status === 'diverged' ? result : {})) },
+      { title: 'Pull only', onClick: pullOnly },
+    ] : copy.action === 'pull' ? [{ title: 'Pull', onClick: pullOnly }]
+      : copy.action === 'access' ? [{ title: 'Repository access', onClick: () => { setSettingsSection('github'); setSettingsOpen(true); } }]
+      : copy.action === 'conflicts' && !row && result.status === 'blocked-conflicts' ? [{ title: 'View conflicts', onClick: () => showConflicts(result.files) }]
+      : []);
+  };
+
+  /** Pulls and then pushes as one notice. A pull that does not finish cleanly ends it with nothing pushed. */
+  const pullAndPush = async (target: SyncTarget, pending: { ahead?: number; behind?: number }) => {
+    const { repositoryId, label, row } = target;
+    if (repositorySyncOperationsRef.current.has(repositoryId) || (!row && busyRef.current)) return;
+    const stage = (action: ProjectSyncAction | null) => {
+      if (!row) { busyRef.current = action; setBusy(action); return; }
+      if (action) repositorySyncOperationsRef.current.set(repositoryId, action);
+      else repositorySyncOperationsRef.current.delete(repositoryId);
+      setRepositorySyncOperations(new Map(repositorySyncOperationsRef.current));
+    };
+    const refreshIfOpen = async () => { if (repositoryRef.current?.id === repositoryId) await refresh({ background: true }); };
+    const progress = (verb: string, commits: number | undefined) => `${row ? `${label}: ${verb.toLowerCase()}` : verb} ${commits ? `${commits} ${commits === 1 ? 'commit' : 'commits'}` : 'commits'}…`;
+    const loading = repositorySyncLoadingToast(repositoryId, 'pull', progress('Pulling', pending.behind));
+    let pulling = true;
+    stage('pull');
+    try {
+      await sileo.promise(async () => {
+        const pulled = await opentig.refs.pull(repositoryId).catch(rethrowAfterRefreshing);
+        await refreshIfOpen();
+        if (pulled.status !== 'success' && pulled.status !== 'up-to-date') throw new PullBlocked(pulled);
+        pulling = false;
+        stage('push');
+        sileo.show({ ...loading, type: 'loading', duration: null, title: progress('Pushing', pulled.status === 'success' ? pulled.localCommits : pending.ahead) });
+        const pushed = await branchPush.push(repositoryId, label).catch(rethrowAfterRefreshing);
+        await refreshIfOpen();
+        if (!pushed || pushed.status === 'success' || pushed.status === 'up-to-date' || pushed.status === 'published') return { pulled, pushed };
+        throw new PushBlocked(pushed);
+      }, {
+        loading,
+        success: ({ pulled, pushed }) => pullAndPushSuccessCopy(row ? label : null, pulled, pushed),
+        error: (err) => {
+          if (!pulling) {
+            return err instanceof PushBlocked ? pushBlockedToast(loading.id, err.result, target)
+              : unconfirmedResultToast(err) ?? { title: row ? `Could not push ${label}` : `${label}: could not push commits`, description: messageOf(err), duration: 10_000 };
+          }
+          if (!row) return nothingPushedCopy(pullFailureToast(err));
+          return nothingPushedCopy(err instanceof PullBlocked ? projectPullBlockedCopy(label, err.result)
+            : unconfirmedResultToast(err) ?? { title: `Could not pull ${label}`, description: messageOf(err), duration: 10_000 });
+        },
+      });
+    } catch {
+      // sileo.promise() already rendered the matching error toast above.
+    } finally {
+      stage(null);
+      row?.settled?.();
+    }
+  };
+
+  const syncRepository = async (item: RepositoryOption, projectName: string | null, action: ProjectSyncAction, settled?: () => void) => {
     const repositoryId = item.recent.id;
     if (repositorySyncOperationsRef.current.has(repositoryId)) return;
     repositorySyncOperationsRef.current.set(repositoryId, action);
@@ -2274,16 +2316,17 @@ export default function App({ initialView, initialSelection, pullRequestCreation
             : unconfirmedResultToast(reason) ?? { title: `Could not pull ${label}`, description: messageOf(reason), duration: 10_000 },
         });
       } else {
+        const loading = repositorySyncLoadingToast(repositoryId, action, `Pushing ${label}…`);
         await sileo.promise(async () => {
           const result = await branchPush.push(repositoryId, label).catch(rethrowAfterRefreshing);
           if (repositoryRef.current?.id === repositoryId) await refresh({ background: true });
           if (!result || result.status === 'success' || result.status === 'up-to-date' || result.status === 'published') return result;
           throw new PushBlocked(result);
         }, {
-          loading: repositorySyncLoadingToast(repositoryId, action, `Pushing ${label}…`),
+          loading,
           success: (result) => result ? projectPushSuccessCopy(label, result) : { title: `${label}: publication canceled` },
           error: (reason) => reason instanceof PushBlocked
-            ? projectPushBlockedCopy(label, reason.result)
+            ? pushBlockedToast(loading.id, reason.result, { repositoryId, label, row: { item, projectName, settled } })
             : unconfirmedResultToast(reason) ?? { title: `Could not push ${label}`, description: messageOf(reason), duration: 10_000 },
         });
       }
@@ -2292,6 +2335,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     } finally {
       repositorySyncOperationsRef.current.delete(repositoryId);
       setRepositorySyncOperations(new Map(repositorySyncOperationsRef.current));
+      settled?.();
     }
   };
 

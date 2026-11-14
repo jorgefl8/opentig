@@ -266,7 +266,11 @@ export class GitProcess {
         if (await directoryMissing(cwd)) throw repositoryMissing(options.operation);
         throw this.mapError(options.operation, Object.assign(new Error('Git was not found in PATH.'), { code: 'ENOENT' }));
       }
-      if (result.exitCode !== 0) throw this.fromExit(options.operation, result.exitCode, sanitize(`${stderr.toString('utf8')}${options.operation.includes('push') || options.operation === 'publish-branch' ? '\n' + stdout.toString('utf8') : ''}`));
+      if (result.exitCode !== 0) {
+        // A push reports each ref on stdout; it stays apart from what Git and the remote wrote on stderr.
+        const reportsRefs = options.operation === 'push' || options.operation === 'publish-branch';
+        throw this.fromExit(options.operation, result.exitCode, sanitize(stderr.toString('utf8')), reportsRefs ? sanitize(stdout.toString('utf8')) : '');
+      }
       return { stdout, stderr, exitCode: result.exitCode };
     } catch (error) {
       if (error instanceof GitOperationError) throw error;
@@ -305,7 +309,7 @@ export class GitProcess {
     return new GitOperationError({ code: 'UNKNOWN', operation, message: error instanceof Error ? error.message : 'Could not start Git.' });
   }
 
-  private fromExit(operation: string, exitCode: number, stderr: string): GitOperationError {
+  private fromExit(operation: string, exitCode: number, stderr: string, stdout = ''): GitOperationError {
     const lower = stderr.toLowerCase();
     let code: 'NOT_REPOSITORY' | 'DIRTY_WORKTREE' | 'HOOK_REJECTED' | 'IDENTITY_UNKNOWN' | 'LOCKED_INDEX' | 'UNKNOWN' = 'UNKNOWN';
     if (lower.includes('not a git repository')) code = 'NOT_REPOSITORY';
@@ -319,6 +323,7 @@ export class GitProcess {
       operation,
       message: stderr.trim() || `Git exited with code ${exitCode}.`,
       stderr: stderr.trim(),
+      ...(stdout.trim() ? { stdout: stdout.trim() } : {}),
       exitCode,
     });
   }
