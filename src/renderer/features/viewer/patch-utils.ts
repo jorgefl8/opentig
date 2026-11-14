@@ -1,4 +1,5 @@
 import { getSingularPatch, type FileDiffMetadata } from '@pierre/diffs';
+import { diffHighlightKey } from './highlight-cache-key';
 import { resolvePierreLanguage } from './pierreLanguages';
 
 export const VIEWER_SCROLLBAR_CSS = `
@@ -75,12 +76,14 @@ export function buildDiffFileEntries(patch: string): DiffFileEntry[] {
 
 export function buildDiffFileEntry(filePatch: string, index: number): DiffFileEntry {
   const parsed = getSingularPatch(filePatch);
+  const lang = resolvePierreLanguage(parsed.name);
   return {
     key: `${parsed.prevName ?? ''}:${parsed.name}:${index}`,
     path: parsed.name,
     previousPath: parsed.prevName,
     patch: filePatch,
-    fileDiff: { ...parsed, lang: resolvePierreLanguage(parsed.name) },
+    // Keyed by its own text: a file a refresh left alone keeps its rendered diff and its colors.
+    fileDiff: { ...parsed, lang, cacheKey: diffHighlightKey(filePatch, lang) },
     additions: parsed.hunks.reduce((total, hunk) => total + hunk.additionLines, 0),
     deletions: parsed.hunks.reduce((total, hunk) => total + hunk.deletionLines, 0),
     changeType: parsed.type,

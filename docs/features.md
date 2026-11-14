@@ -147,11 +147,13 @@ Change and folder rows stay aligned as files load, sections empty or refill, con
 <details>
 <summary>Large diffs and highlighting limits</summary>
 
-Large diffs show **Preparing diff…** while a background worker parses their file models. Switching or closing the diff cancels that work; only complete results for the current revision appear. Background patch refreshes preserve collapsed files and the mounted scroll container while hiding the previous revision.
+Large diffs show **Preparing diff…** while a background worker parses their file models; smaller ones appear at once. Switching or closing the diff cancels that work; only complete results for the current revision appear. Background patch refreshes preserve collapsed files and the mounted scroll container, and keep the previous revision on screen until the new one is ready.
 
 Without workers, parsing yields between indexing batches and files, but a single large file can still pause the interface. Each mounted diff has a small byte-budgeted parse cache. Oversized entries still display; closing or changing the document releases the cache.
 
-The highlighting pool is bypassed above 10,000 diff lines or 500,000 conflict characters. Tokenization is also limited on very long lines.
+Code is colored by background workers that stay running for the session: two to six depending on the processor, and one on low-end phones. Small files and diffs are colored as they are drawn. Highlighted files and diffs are remembered, so reopening one, folding and unfolding it, or switching between unified and split view shows it colored at once, and a refresh only redraws the files it changed. A file or diff opened for the first time may wait up to about a tenth of a second behind the previous one to arrive with its colors; a very long one can still appear plain for a moment. Files being edited are colored by the editor itself.
+
+The highlighting pool is bypassed above 500,000 conflict characters. Tokenization is also limited on very long lines.
 
 </details>
 

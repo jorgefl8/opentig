@@ -21,7 +21,8 @@ vi.mock('./diff-parse.worker?worker', () => ({ default: class {
 } }));
 vi.mock('@pierre/diffs/react', () => ({
   Virtualizer: ({ children, className, style }: { children: React.ReactNode; className: string; style: React.CSSProperties }) => createElement('div', { className, style }, children),
-  FileDiff: ({ fileDiff, disableWorkerPool }: { fileDiff: { name: string }; disableWorkerPool: boolean }) => createElement('div', { 'data-code-file': fileDiff.name, 'data-worker-disabled': disableWorkerPool }, fileDiff.name),
+  FileDiff: ({ fileDiff }: { fileDiff: { name: string; cacheKey?: string } }) => createElement('div', { 'data-code-file': fileDiff.name, 'data-cache-key': fileDiff.cacheKey }, fileDiff.name),
+  useWorkerPool: () => undefined,
 }));
 let root: Root;
 let container: HTMLDivElement;
@@ -49,7 +50,7 @@ async function finish(index: number, patch: string) {
   await act(async () => worker.onmessage?.({ data: { revision: worker.request!.revision, files: buildDiffFileEntries(patch) } } as MessageEvent<DiffParseResponse>));
 }
 
-it('publishes complete files atomically, retains the highlighting guard and initializes collapse after parsing', async () => {
+it('publishes complete files atomically and initializes collapse after parsing', async () => {
   const patch = MIXED_PATCH + largePatch();
   await render(patch, true);
   expect(container.textContent).toContain('Preparing diff…');
@@ -59,10 +60,21 @@ it('publishes complete files atomically, retains the highlighting guard and init
   expect(container.querySelectorAll('[data-code-file]')).toHaveLength(0);
   const button = container.querySelector<HTMLButtonElement>('.diff-file-header')!;
   await act(async () => button.click());
-  expect(container.querySelector('[data-worker-disabled="true"]')).not.toBeNull();
+  expect(container.querySelectorAll('[data-code-file]')).toHaveLength(1);
 });
 
-it('hides superseded content immediately and ignores a late revision after switching and unmounting', async () => {
+it('shows a small patch on its first render, without a frame that only says it is being prepared', async () => {
+  const seen: string[] = [];
+  const observer = new MutationObserver(() => { seen.push(container.textContent ?? ''); });
+  observer.observe(container, { childList: true, subtree: true, characterData: true });
+  await render(MIXED_PATCH);
+  observer.disconnect();
+  expect(container.querySelectorAll('.diff-file-section')).toHaveLength(4);
+  expect(seen.some((text) => text.includes('Preparing diff…'))).toBe(false);
+  expect(state.workers).toHaveLength(0);
+});
+
+it('keeps the shown revision readable while its replacement is parsed, and ignores a late revision after switching and unmounting', async () => {
   const first = largePatch(10_001, 24, 'first.ts');
   const second = largePatch(10_001, 24, 'second.ts');
   await render(first);
@@ -74,8 +86,12 @@ it('hides superseded content immediately and ignores a late revision after switc
   await finish(1, second);
   expect(container.textContent).toContain('second.ts');
   await render(first);
-  expect(container.querySelector<HTMLElement>('.diff-workspace-scroll')?.style.visibility).toBe('hidden');
-  expect(container.querySelector('[inert][aria-hidden="true"]')).not.toBeNull();
+  // The refresh is still being parsed: the revision it replaces stays on screen, in use.
+  expect(container.textContent).toContain('second.ts');
+  expect(container.textContent).not.toContain('Preparing diff…');
+  expect(container.querySelector<HTMLElement>('.diff-workspace-scroll')?.style.visibility).toBe('');
+  expect(container.querySelector('[inert]')).toBeNull();
+  expect(container.querySelector('.diff-workspace-scroll')?.closest('[aria-hidden="true"]')).toBeNull();
   const last = state.workers[2]!;
   const handler = last.onmessage!;
   await act(async () => root.unmount());
@@ -249,10 +265,14 @@ it('preserves collapse choices and the scroll container across background patch 
   expect(header.getAttribute('aria-expanded')).toBe('false');
   const scroll = container.querySelector<HTMLElement>('.diff-workspace-scroll')!;
   scroll.scrollTop = 600;
+  const shown = [...container.querySelectorAll('[data-code-file]')].map((file) => file.textContent);
   await render(second);
   expect(container.querySelector('.diff-workspace-scroll')).toBe(scroll);
-  expect(scroll.style.visibility).toBe('hidden');
-  expect(scroll.closest('[inert]')).not.toBeNull();
+  // Nothing is hidden while the new patch is parsed.
+  expect(scroll.style.visibility).toBe('');
+  expect(scroll.closest('[inert]')).toBeNull();
+  expect([...container.querySelectorAll('[data-code-file]')].map((file) => file.textContent)).toEqual(shown);
+  expect(container.querySelector('[role="status"]')).toBeNull();
   await finish(1, second);
   expect(scroll.style.visibility).toBe('');
   expect(scroll.closest('[inert]')).toBeNull();
@@ -265,7 +285,7 @@ it('preserves collapse choices and the scroll container across background patch 
   expect(container.querySelector('.diff-file-toggle')?.getAttribute('aria-expanded')).toBe('true');
 });
 
-it('keeps the previous revision hidden through a failed refresh and restores state on recovery', async () => {
+it('hides the previous revision once a refresh has failed and restores state on recovery', async () => {
   const first = MIXED_PATCH + largePatch();
   await render(first, true);
   await finish(0, first);
@@ -285,17 +305,20 @@ it('keeps the previous revision hidden through a failed refresh and restores sta
   expect(container.querySelector('[role="alert"]')).toBeNull();
 });
 
-it('retains the highlighting guard for the hidden revision until its replacement is ready', async () => {
-  const first = largePatch();
-  const second = largePatch(1, 150_000);
+it('keeps the highlighting of the files a refresh did not change', async () => {
+  const untouched = largePatch(6_000, 24, 'untouched.ts');
+  const first = untouched + largePatch(6_000, 24, 'edited.ts');
+  const second = untouched + largePatch(6_001, 24, 'edited.ts');
+  const keys = () => Object.fromEntries([...container.querySelectorAll<HTMLElement>('[data-code-file]')].map((file) => [file.dataset.codeFile, file.dataset.cacheKey]));
   await render(first);
   await finish(0, first);
-  expect(container.querySelector('[data-worker-disabled="true"]')).not.toBeNull();
-  await render(second, false, 'test', 1);
-  expect(container.querySelector('[data-worker-disabled="true"]')).not.toBeNull();
-  expect(container.querySelector('[data-worker-disabled="false"]')).toBeNull();
+  const before = keys();
+  await render(second);
   await finish(1, second);
-  expect(container.querySelector('[data-worker-disabled="false"]')).not.toBeNull();
+  // Pierre redraws and highlights a file again only when this key changes.
+  expect(keys()['untouched.ts']).toBe(before['untouched.ts']);
+  expect(keys()['edited.ts']).not.toBe(before['edited.ts']);
+  expect(before['untouched.ts']).toBeTruthy();
 });
 
 describe('on a phone', () => {

@@ -39,6 +39,31 @@ describe('patch utilities', () => {
   });
 });
 
+describe('diff highlight keys', () => {
+  const keys = (patch: string) => buildDiffFileEntries(patch).map((file) => file.fileDiff.cacheKey);
+
+  it('gives a file the same key each time its patch is parsed, so its highlighting is found again', () => {
+    expect(keys(PATCH)).toEqual(keys(PATCH));
+    expect(new Set(keys(PATCH)).size).toBe(2);
+  });
+
+  it('changes only the key of the file a refresh changed', () => {
+    const [source, readme] = keys(PATCH);
+    const [refreshedSource, refreshedReadme] = keys(PATCH.replace('+hello world', '+hello there'));
+    expect(refreshedSource).toBe(source);
+    expect(refreshedReadme).not.toBe(readme);
+  });
+
+  it('keeps the same lines apart when another grammar reads them', () => {
+    const [typescript] = keys(PATCH);
+    const [python] = keys(PATCH.replaceAll('.ts', '.py'));
+    const [renamedTypescript] = keys(PATCH.replaceAll('new.ts', 'next.ts'));
+    expect(python).not.toBe(typescript);
+    expect(python).toContain('python');
+    expect(renamedTypescript).not.toBe(typescript);
+  });
+});
+
 describe('patchLineStats', () => {
   it('counts added and removed lines, not the file headers', () => {
     expect(patchLineStats('diff --git a/a b/a\n--- a/a\n+++ b/a\n@@ -1,2 +1,2 @@\n-one\n+uno\n same\n+more\n')).toEqual({ additions: 2, deletions: 1 });

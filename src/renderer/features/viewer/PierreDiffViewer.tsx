@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { File, UnresolvedFile, Virtualizer } from '@pierre/diffs/react';
 import type { MergeConflictRegion, MergeConflictResolution } from '@pierre/diffs/react';
 import type { DiffResult, DiffViewPreference, FileResult, ThemePreference } from '@shared/contracts';
@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { DiffWorkspace, type DiffCommitLayout } from './DiffWorkspace';
 import { OPENTIG_CODE_THEMES } from './diffThemes';
+import { fileHighlightKey } from './highlight-cache-key';
 import { VIEWER_SCROLLBAR_CSS } from './patch-utils';
 import { PierreWorkerPool } from './PierreWorkerPool';
 import { resolvePierreLanguage } from './pierreLanguages';
@@ -44,7 +45,7 @@ type PierreDiffViewerProps =
 export default function PierreDiffViewer(props: PierreDiffViewerProps) {
   return (
     <PierreWorkerPool>
-      <ContentFade key={props.contentKey} className="viewer-transition">
+      <ContentFade key={props.contentKey} className="viewer-transition" animate={false}>
         {props.kind === 'diff'
           ? <DiffContent {...props} />
           : (
@@ -96,6 +97,8 @@ function ConflictViewer({ file, themeType, overflow, onUpdate, onResolve }: {
   const draft = draftState.draft;
   const draftRevision = draftState.revision;
   const unresolved = countConflictBlocks(draft);
+  // The highlight cache outlives this viewer, so a key has to name the text it was made from.
+  const cacheKey = useMemo(() => fileHighlightKey(`${file.path}\u0000${unresolved > 0 ? 'conflict' : 'resolved'}`, draft), [draft, file.path, unresolved]);
 
   useEffect(() => {
     setDraftState((current) => reconcileConflictDraft(current, file.content));
@@ -135,7 +138,7 @@ function ConflictViewer({ file, themeType, overflow, onUpdate, onResolve }: {
         {unresolved > 0 ? (
           <UnresolvedFile
             key={`${file.path}:${draftRevision}`}
-            file={{ name: file.path, lang: resolvePierreLanguage(file.path), contents: draft, cacheKey: `${file.path}:conflict:${draftRevision}` }}
+            file={{ name: file.path, lang: resolvePierreLanguage(file.path), contents: draft, cacheKey }}
             disableWorkerPool={draft.length > 500_000}
             options={{ themeType, theme: OPENTIG_CODE_THEMES, diffIndicators: 'classic', overflow, mergeConflictActionsType: 'none', unsafeCSS: VIEWER_SCROLLBAR_CSS }}
             renderMergeConflictUtility={(action) => (
@@ -148,7 +151,7 @@ function ConflictViewer({ file, themeType, overflow, onUpdate, onResolve }: {
           />
         ) : (
           <File
-            file={{ name: file.path, lang: resolvePierreLanguage(file.path), contents: draft, cacheKey: `${file.path}:resolved:${draftRevision}` }}
+            file={{ name: file.path, lang: resolvePierreLanguage(file.path), contents: draft, cacheKey }}
             options={{ themeType, theme: OPENTIG_CODE_THEMES, overflow, unsafeCSS: VIEWER_SCROLLBAR_CSS }}
           />
         )}
