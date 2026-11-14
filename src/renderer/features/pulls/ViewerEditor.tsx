@@ -1,7 +1,7 @@
 import { useEffect, useRef, type ReactNode } from 'react';
-import { IconLoader4 } from '@tabler/icons-react';
 import { Button } from '@/components/ui/button';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
+import { Spinner } from '@/components/ui/spinner';
 
 /** Takes a viewer's place while its title and text are edited, with Save and Cancel where the actions were. */
 export function ViewerEditor({ titleId, title, edited, busy, canSave, note, onTitleChange, onSave, onClose, children }: {
@@ -28,7 +28,7 @@ export function ViewerEditor({ titleId, title, edited, busy, canSave, note, onTi
           <span className="pr-action-bar">
             <Button variant="ghost" size="xs" disabled={busy} onClick={onClose}>Cancel</Button>
             <Button size="xs" disabled={busy || !title.trim() || !canSave} onClick={onSave}>
-              {busy ? <><IconLoader4 className="animate-spin" /> <ShimmeringText text="Saving…" /></> : 'Save changes'}
+              {busy ? <><Spinner /> <ShimmeringText text="Saving…" /></> : 'Save changes'}
             </Button>
           </span>
         </div>

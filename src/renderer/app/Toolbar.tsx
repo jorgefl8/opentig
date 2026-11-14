@@ -2,7 +2,7 @@ import { appDisplayName } from '@/lib/app-identity';
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { lazyWithRetry } from '@/lib/lazy-with-retry';
 import {
-  IconArrowDown, IconArrowUp, IconBrandGithub, IconChevronDown, IconHierarchy2, IconLoader4, IconPlus, IconRefresh, IconSettings,
+  IconArrowDown, IconArrowUp, IconBrandGithub, IconChevronDown, IconHierarchy2, IconPlus, IconRefresh, IconSettings,
 } from '@tabler/icons-react';
 import type { BootstrapData, GitHubRepositoryInfo, Preferences, PullRequestSummary, RecentRepository, RepositoryInfo, RepositoryOrganization, RepositoryProject } from '../../shared/contracts';
 import type { BranchInfo, RepositoryStatus, WorktreeAgents, WorktreeInfo } from '../../shared/git-types';
@@ -37,6 +37,7 @@ import { BranchCombobox } from './BranchCombobox';
 import { openOnGitHub } from '@/features/pulls/gh-utils';
 import { BranchPullRequestMenu } from './BranchPullRequestMenu';
 import { mergedBranchCleanUp, mergedBranchCleanUpStep, type MergedBranchCleanUp } from '@/features/pulls/merged-branch';
+import { Spinner } from '@/components/ui/spinner';
 
 export interface ToolbarProps {
   onOnboarding?(): void;
@@ -347,7 +348,7 @@ export function Toolbar(props: ToolbarProps) {
                   }}
                 />
               )}>
-                {running === action ? <IconLoader4 data-icon="inline-start" className="animate-spin" /> : action === 'pull' ? <IconArrowDown data-icon="inline-start" /> : <IconArrowUp data-icon="inline-start" />}
+                {running === action ? <Spinner data-icon="inline-start" /> : action === 'pull' ? <IconArrowDown data-icon="inline-start" /> : <IconArrowUp data-icon="inline-start" />}
                 <span>{publishing ? 'Publish' : count}</span>
               </TooltipTrigger>
               <TooltipContent>{publishing ? 'Publish branch' : `${label} ${count} ${count === 1 ? 'commit' : 'commits'}`} · {checkoutLabel}</TooltipContent>
@@ -378,7 +379,7 @@ export function Toolbar(props: ToolbarProps) {
         onValueChange={(key) => { setMobileContextOpen(false); onRecent(picker.repositories.find((group) => group.key === key)?.recent.id ?? null); }}
         label="Select project or repository"
         triggerLabel={pendingRepository ? `Opening ${pendingRepository.name}…` : props.repository.repositoryName}
-        icon={props.repositoryLoadPhase ? <IconLoader4 className="animate-spin" /> : <RepositoryFaviconImage src={favicons.get(currentRepositoryKey)} />}
+        icon={props.repositoryLoadPhase ? <Spinner /> : <RepositoryFaviconImage src={favicons.get(currentRepositoryKey)} />}
         triggerHint={`Switch repository (${repoSwitcherKey.toUpperCase()})`}
         shortcut={repoSwitcherKey.toUpperCase()}
         triggerClassName={mobile ? 'max-w-[240px]' : 'toolbar-crumb toolbar-crumb-repository'}
@@ -457,7 +458,7 @@ export function Toolbar(props: ToolbarProps) {
       {props.status && (props.status.behind > 0 || props.busy === 'pull') && (
         <Tooltip>
           <TooltipTrigger render={<Button variant="ghost" size="sm" data-sync="pull" focusableWhenDisabled disabled={Boolean(props.busy) || currentRepositorySyncBusy} onClick={props.onPull} aria-label={`Pull ${props.status.behind} commits`} />}>
-            {props.busy === 'pull' ? <IconLoader4 data-icon="inline-start" className="animate-spin" /> : <IconArrowDown data-icon="inline-start" />}
+            {props.busy === 'pull' ? <Spinner data-icon="inline-start" /> : <IconArrowDown data-icon="inline-start" />}
             {props.status.behind > 0 && <span>{props.status.behind}</span>}
           </TooltipTrigger>
           <TooltipContent>{props.busy === 'pull' ? 'Pulling changes…' : `Pull ${props.status.behind} ${props.status.behind === 1 ? 'commit' : 'commits'}`}</TooltipContent>
@@ -466,13 +467,13 @@ export function Toolbar(props: ToolbarProps) {
       {props.status && (publishBranch || props.status.unborn || props.status.ahead > 0 || props.busy === 'push') && (
         <Tooltip>
           <TooltipTrigger render={<Button variant="ghost" size="sm" data-sync={publishBranch || props.status.unborn ? 'publish' : 'push'} focusableWhenDisabled disabled={Boolean(props.busy) || currentRepositorySyncBusy || props.status.readOnly || props.status.unborn || props.status.detached} onClick={props.onPush} aria-label={publishBranch || props.status.unborn ? 'Publish branch' : `Push ${props.status.ahead} commits`} />}>
-            {props.busy === 'push' ? <IconLoader4 data-icon="inline-start" className="animate-spin" /> : <IconArrowUp data-icon="inline-start" />}
+            {props.busy === 'push' ? <Spinner data-icon="inline-start" /> : <IconArrowUp data-icon="inline-start" />}
             {publishBranch || props.status.unborn ? <span>Publish</span> : props.status.ahead > 0 && <span>{props.status.ahead}</span>}
           </TooltipTrigger>
           <TooltipContent>{props.status.unborn ? 'Create the first commit before publishing this branch' : props.busy === 'push' ? 'Pushing…' : publishBranch ? 'Publish branch and set upstream' : `Push ${props.status.ahead} ${props.status.ahead === 1 ? 'commit' : 'commits'}`}</TooltipContent>
         </Tooltip>
       )}
-      <Tooltip><TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Refresh" onClick={props.onRefresh} disabled={Boolean(props.busy) || currentRepositorySyncBusy} />}><IconRefresh className={props.busy === 'refresh' ? 'animate-spin' : undefined} /></TooltipTrigger><TooltipContent>Refresh (Ctrl+R)</TooltipContent></Tooltip>
+      <Tooltip><TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Refresh" onClick={props.onRefresh} disabled={Boolean(props.busy) || currentRepositorySyncBusy} />}>{props.busy === 'refresh' ? <Spinner /> : <IconRefresh />}</TooltipTrigger><TooltipContent>Refresh (Ctrl+R)</TooltipContent></Tooltip>
       <DesktopUpdateIndicator />
       {props.remoteProblem && <RemoteAccessIndicator problem={props.remoteProblem.access} message={props.remoteProblem.message} onAction={props.onRemoteAccessAction} />}
       <Tooltip>

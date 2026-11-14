@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useMobileChrome } from '@/components/mobile-chrome-context';
 import { useQuery } from '@tanstack/react-query';
-import { IconExternalLink, IconLoader4, IconRefresh } from '@tabler/icons-react';
+import { IconExternalLink, IconRefresh } from '@tabler/icons-react';
 import { formatDateTime } from '@shared/date-format';
 import type { PullRequestConversationEntry, PullRequestLiveState } from '../../../shared/contracts';
 import { Button } from '@/components/ui/button';
@@ -15,6 +15,7 @@ import { GitHubAvatar } from './GitHubAvatar';
 import { PullRequestComposer } from './PullRequestComposer';
 import { PullRequestEntryEditor, PullRequestEntryMenu } from './PullRequestEntryActions';
 import { hasViewerDraft, pullRequestEntryEditDraft } from './viewer-drafts';
+import { Spinner } from '@/components/ui/spinner';
 
 type RenderedEntry = PullRequestConversationEntry & { html: string };
 
@@ -65,7 +66,7 @@ export function PullRequestConversationView({ repositoryId, number, url, live, a
         <h3>Conversation {conversation && <span className="plain-count">{shown.length}{conversation.truncated ? '+' : ''}</span>}</h3>
         {hasBots && <label className="pr-conversation-filter"><Checkbox checked={hideBots} onCheckedChange={(checked) => setHideBots(checked === true)} /> Hide bots</label>}
       </div>
-      {query.isPending && <p className="pr-empty-description" role="status"><IconLoader4 className="animate-spin" aria-hidden="true" /> <ShimmeringText text="Loading conversation…" /></p>}
+      {query.isPending && <p className="pr-empty-description" role="status"><Spinner /> <ShimmeringText text="Loading conversation…" /></p>}
       {query.isError && (
         <div className="pr-live-notice" role="status">
           {conversation ? "Couldn't refresh. Showing the last conversation." : "Couldn't load the conversation."}

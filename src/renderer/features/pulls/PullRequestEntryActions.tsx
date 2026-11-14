@@ -1,6 +1,6 @@
 import { useState, type KeyboardEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { IconDots, IconLoader4 } from '@tabler/icons-react';
+import { IconDots } from '@tabler/icons-react';
 import { sileo } from 'sileo';
 import type { PullRequestConversationEntry } from '../../../shared/contracts';
 import { MobileSheet } from '@/components/MobileSheet';
@@ -14,6 +14,7 @@ import { ghDetail, ghErrorTitle, isUncertainFailure } from './gh-utils';
 import { MarkdownField } from './MarkdownField';
 import { useGitHubAccount } from './useGitHubAccount';
 import { pullRequestEntryEditDraft, useViewerDraft } from './viewer-drafts';
+import { Spinner } from '@/components/ui/spinner';
 
 interface EntryProps {
   repositoryId: string;
@@ -74,7 +75,7 @@ export function PullRequestEntryMenu({ repositoryId, number, entry, onEdit }: En
         title="Delete comment"
         footnote={account?.login ? `as @${account.login}` : undefined}
         busy={busy}
-        confirm={<Button variant="destructive" size="xs" disabled={busy} onClick={() => remove.mutate()}>{busy ? <><IconLoader4 className="animate-spin" /> <ShimmeringText text="Deleting…" /></> : 'Delete comment'}</Button>}
+        confirm={<Button variant="destructive" size="xs" disabled={busy} onClick={() => remove.mutate()}>{busy ? <><Spinner /> <ShimmeringText text="Deleting…" /></> : 'Delete comment'}</Button>}
         onCancel={() => setAsking(false)}
       >
         <p>Delete this comment from GitHub{account?.login && !phone ? <> as <strong>@{account.login}</strong></> : null}? This can't be undone.</p>
@@ -122,7 +123,7 @@ export function PullRequestEntryEditor({ repositoryId, number, entry, onClose }:
   const canSave = !busy && account?.state === 'ready' && Boolean(draft.body.trim()) && (edited || changedFirst);
   const note = changedFirst ? 'It changed on GitHub first: saving again replaces that version.' : account?.login ? `Saving as @${account.login}` : null;
   const field = <MarkdownField id={`pr-entry-${entry.id}`} label={phone ? 'Text' : `Edit ${noun}`} value={draft.body} rows={4} placeholder="Write a comment (GitHub Markdown)" emptyPreview="_Nothing to preview._" disabled={busy} onChange={(body) => setDraft({ ...draft, body })} />;
-  const saveButton = <Button size="xs" disabled={!canSave} onClick={() => save.mutate()}>{busy ? <><IconLoader4 className="animate-spin" /> <ShimmeringText text="Saving…" /></> : 'Save changes'}</Button>;
+  const saveButton = <Button size="xs" disabled={!canSave} onClick={() => save.mutate()}>{busy ? <><Spinner /> <ShimmeringText text="Saving…" /></> : 'Save changes'}</Button>;
   const cancelButton = <Button variant="ghost" size="xs" disabled={busy} onClick={cancel}>Cancel</Button>;
   if (phone) {
     return (

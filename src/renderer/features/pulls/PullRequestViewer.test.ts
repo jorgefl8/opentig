@@ -218,7 +218,7 @@ it('shows the shape of a PR it knows nothing about yet, instead of a spinner', a
   api.getPullRequest.mockReturnValue(new Promise(() => {}));
   await render();
   expect(container.querySelector('.pr-viewer-skeleton')?.getAttribute('aria-label')).toBe('Loading pull request #7');
-  expect(container.querySelector('.spinner')).toBeNull();
+  expect(container.querySelector('[data-slot="spinner"]')).toBeNull();
 });
 
 it('keeps a visited tab as it was, instead of reading it again on return', async () => {

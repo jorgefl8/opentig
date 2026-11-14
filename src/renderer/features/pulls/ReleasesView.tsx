@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { IconDots, IconLoader4, IconPlus } from '@tabler/icons-react';
+import { IconDots, IconPlus } from '@tabler/icons-react';
 import { formatDate } from '@shared/date-format';
 import type { GitHubRepositoryAccount } from '@shared/github-accounts';
 import type { ReleaseSummary } from '../../../shared/contracts';
@@ -12,6 +12,7 @@ import { releaseStateLabel, releaseStateTone } from './gh-utils';
 import { GitHubSectionMenu } from './GitHubSectionMenu';
 import { releasesQueryOptions } from './releases-query';
 import { opentig } from '@/lib/opentig-api';
+import { Spinner } from '@/components/ui/spinner';
 
 
 export function ReleasesTools({ repositoryId, nameWithOwner, account, onOpenGitHubSettings, onSelect }: {
@@ -61,7 +62,7 @@ export function ReleasesView({ repositoryId, activeTag, onSelect }: { repository
     <div className="pulls-view">
       {error && <div className="pulls-error" role="alert"><span>{error}</span><Button variant="ghost" size="xs" onClick={() => void query.refetch()}>Retry</Button></div>}
       <div className="pulls-scroll" role="list" aria-label="Releases">
-        {releases === null && !error && <div className="view-loading" role="status"><IconLoader4 className="spinner" /> <ShimmeringText text="Loading releases…" /></div>}
+        {releases === null && !error && <div className="view-loading" role="status"><Spinner className="view-spinner" /> <ShimmeringText text="Loading releases…" /></div>}
         {releases?.length === 0 && <p className="empty-list">No releases yet.</p>}
         {releases?.map((release) => (
           <div key={release.tagName} className={`pull-item ${activeTag === release.tagName ? 'active' : ''}`} role="listitem">

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { IconLoader4, IconViewportNarrow, IconViewportWide } from '@tabler/icons-react';
+import { IconViewportNarrow, IconViewportWide } from '@tabler/icons-react';
 import { sileo } from 'sileo';
 import type { FileResult, ThemePreference, WriteFileResult } from '@shared/contracts';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
@@ -17,6 +17,7 @@ import { opentig } from '@/lib/opentig-api';
 import { useMermaid } from './useMermaid';
 import { openExternalUrl, writeClipboardText } from '@/lib/browser-capabilities';
 import './markdown.css';
+import { Spinner } from '@/components/ui/spinner';
 
 interface MarkdownFileViewerProps {
   repositoryId: string;
@@ -322,7 +323,7 @@ export function MarkdownFileViewer({ repositoryId, file, initialContent, revisio
       />
       <ViewerTabsPanel ref={previewPanelRef} value="preview" className="markdown-preview-scroll" onScroll={() => setLinkTooltip(null)}>
           {loading && !html ? (
-            <div className="viewer-message"><IconLoader4 className="spinner" aria-hidden="true" /><ShimmeringText text="Rendering Markdown…" /></div>
+            <div className="viewer-message"><Spinner className="view-spinner" /><ShimmeringText text="Rendering Markdown…" /></div>
           ) : (
             <MarkdownPreviewContent key={`${repositoryId}:${file.path}:${revision}`} repositoryId={repositoryId} markdownPath={file.path} html={html} onClick={(event) => void handlePreviewClick(event)} onLinkHover={handleLinkHover} />
           )}

@@ -4,7 +4,7 @@ import { lazyWithPreload, lazyWithRetry } from '@/lib/lazy-with-retry';
 import { isLowEndDevice } from '@/lib/low-end-device';
 import { whenIdle } from '@/lib/when-idle';
 import { LazyPullRequestViewer as PullRequestViewer } from '@/features/pulls/pull-request-viewer-chunks';
-import { IconDots, IconLoader4 } from '@tabler/icons-react';
+import { IconDots } from '@tabler/icons-react';
 import type { DiffResult, DiffViewPreference, FileResult, ImageFileResult, ThemePreference, WriteFileResult } from '../../../shared/contracts';
 import type { CommitInfo } from '../../../shared/git-types';
 import { isKnownImagePath, isSvgPath } from '../../../shared/image-types';
@@ -23,6 +23,7 @@ import { ByteBudgetLru } from '@/lib/ByteBudgetLru';
 import { opentig } from '@/lib/opentig-api';
 import { MobileCommitBar, MobileDiffBar } from './MobileViewerBars';
 import { ContentFade } from '@/components/Reveal';
+import { Spinner } from '@/components/ui/spinner';
 // The code viewers start downloading with the document they will show, so it mounts once, on a viewer that is already there.
 const PierreDiffViewer = lazyWithPreload(() => import('./PierreDiffViewer'));
 const PierreEditBoundary = lazyWithPreload(() => import('./PierreEditBoundary').then((module) => ({ default: module.PierreEditBoundary })));
@@ -320,7 +321,7 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
   } else if (error) {
     content = <div className="viewer-message text-destructive">{error}</div>;
   } else if (!data) {
-    content = <div className="viewer-message"><IconLoader4 className="spinner" /> <ShimmeringText text="Loading…" /></div>;
+    content = <div className="viewer-message"><Spinner className="view-spinner" /> <ShimmeringText text="Loading…" /></div>;
   } else if (data.type === 'image') {
     content = (
       <Suspense fallback={<ViewerLoading />}>
@@ -501,7 +502,7 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
     <>
       {bar}
       {pierreContent ?? <ContentFade key={data ? data.docKey : docKey} className="viewer-transition" animate={!sourceCode}>{content}</ContentFade>}
-      {reloading && <span className="viewer-reloading" aria-hidden="true"><IconLoader4 className="spinner" /></span>}
+      {reloading && <span className="viewer-reloading" aria-hidden="true"><Spinner className="view-spinner" /></span>}
     </>
   );
   if (data?.type !== 'file') return body;
@@ -640,7 +641,7 @@ function documentKey(repositoryId: string, selection: ViewerSelection): string {
 }
 
 function ViewerLoading() {
-  return <div className="viewer-message"><IconLoader4 className="spinner" /> <ShimmeringText text="Loading viewer…" /></div>;
+  return <div className="viewer-message"><Spinner className="view-spinner" /> <ShimmeringText text="Loading viewer…" /></div>;
 }
 
 function EmptyViewer() {

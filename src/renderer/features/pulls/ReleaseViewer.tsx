@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { IconDots, IconLoader4, IconRefresh } from '@tabler/icons-react';
+import { IconDots, IconRefresh } from '@tabler/icons-react';
 import { sileo } from 'sileo';
 import { formatDateTime } from '@shared/date-format';
 import { Button } from '@/components/ui/button';
@@ -19,6 +19,7 @@ import { ReleaseEditor } from './ReleaseEditor';
 import { hasViewerDraft, releaseEditDraft } from './viewer-drafts';
 import { useGitHubAccount } from './useGitHubAccount';
 import '@/features/markdown/markdown.css';
+import { Spinner } from '@/components/ui/spinner';
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -90,7 +91,7 @@ export function ReleaseViewer({ repositoryId, tagName, onClose }: { repositoryId
       </div>
     );
   }
-  if (!release) return <div className="viewer-message">{bar}<IconLoader4 className="spinner" /> <ShimmeringText text={`Loading release ${tagName}…`} /></div>;
+  if (!release) return <div className="viewer-message">{bar}<Spinner className="view-spinner" /> <ShimmeringText text={`Loading release ${tagName}…`} /></div>;
 
   if (editing) {
     const closeEditor = () => {
@@ -176,7 +177,7 @@ export function ReleaseViewer({ repositoryId, tagName, onClose }: { repositoryId
         footnote={footnote}
         busy={busy}
         onCancel={() => setConfirming(null)}
-        confirm={<Button size="xs" disabled={busy} onClick={() => publish.mutate()}>{publish.isPending ? <><IconLoader4 className="animate-spin" /> <ShimmeringText text="Publishing…" /></> : 'Publish release'}</Button>}
+        confirm={<Button size="xs" disabled={busy} onClick={() => publish.mutate()}>{publish.isPending ? <><Spinner /> <ShimmeringText text="Publishing…" /></> : 'Publish release'}</Button>}
       >
         <p>Publish <strong>{release.name}</strong>{asViewer}? Anyone with access to the repository sees it, and any workflow that runs on publication starts.</p>
         {!release.tagExists && <p>The tag <code>{release.tagName}</code> doesn't exist yet, so GitHub creates it at {targetIsBranch ? <>the latest commit of <code>{target}</code></> : <code>{target}</code>}.</p>}
@@ -194,7 +195,7 @@ export function ReleaseViewer({ repositoryId, tagName, onClose }: { repositoryId
         footnote={footnote}
         busy={busy}
         onCancel={() => setConfirming(null)}
-        confirm={<Button variant="destructive" size="xs" disabled={busy} onClick={() => remove.mutate()}>{busy ? <><IconLoader4 className="animate-spin" /> <ShimmeringText text="Deleting…" /></> : 'Delete draft'}</Button>}
+        confirm={<Button variant="destructive" size="xs" disabled={busy} onClick={() => remove.mutate()}>{busy ? <><Spinner /> <ShimmeringText text="Deleting…" /></> : 'Delete draft'}</Button>}
       >
         <p>Delete the draft <strong>{release.name}</strong>{asViewer}? Its notes and {release.assets.length === 1 ? '1 asset are' : `${release.assets.length} assets are`} lost. The tag isn't touched.</p>
       </ConfirmPopover>}

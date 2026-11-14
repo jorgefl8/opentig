@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { IconExternalLink, IconGitBranch, IconGitMerge, IconGitPullRequest, IconGitPullRequestClosed, IconLoader4, IconRefresh } from '@tabler/icons-react';
+import { IconExternalLink, IconGitBranch, IconGitMerge, IconGitPullRequest, IconGitPullRequestClosed, IconRefresh } from '@tabler/icons-react';
 import type { RemoteBranchDetails } from '@shared/git-types';
 import type { PullRequestSummary } from '@shared/contracts';
 import { formatDateTime } from '@shared/date-format';
@@ -7,6 +7,7 @@ import { ActionConfirmPanel } from '@/components/ActionConfirmPanel';
 import { Button } from '@/components/ui/button';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { openOnGitHub, prStateLabel } from '@/features/pulls/gh-utils';
+import { Spinner } from '@/components/ui/spinner';
 
 interface Props {
   details: RemoteBranchDetails;
@@ -60,14 +61,14 @@ export function RemoteBranchDetailPanel(props: Props) {
       <label htmlFor="tracking-branch-name">Local branch name</label>
       <input id="tracking-branch-name" className="field-input" value={localName} onChange={(event) => setLocalName(event.target.value)} disabled={anyBusy} autoFocus autoComplete="off" spellCheck={false} />
       <p>Creates a tracking branch at the fetched tip. Your checkout and uncommitted changes stay intact.</p>
-      <div className="local-refs-detail-actions"><Button type="submit" variant="ghost" size="sm" disabled={anyBusy || !localName.trim()}>{props.creating ? <IconLoader4 className="animate-spin" /> : <IconGitBranch />} {props.creating ? <ShimmeringText text="Creating…" /> : 'Create local branch'}</Button><Button type="button" variant="ghost" size="sm" disabled={anyBusy} onClick={() => setCreateOpen(false)}>Cancel</Button></div>
+      <div className="local-refs-detail-actions"><Button type="submit" variant="ghost" size="sm" disabled={anyBusy || !localName.trim()}>{props.creating ? <Spinner /> : <IconGitBranch />} {props.creating ? <ShimmeringText text="Creating…" /> : 'Create local branch'}</Button><Button type="button" variant="ghost" size="sm" disabled={anyBusy} onClick={() => setCreateOpen(false)}>Cancel</Button></div>
     </form>}
     <div className="local-refs-danger">
       {details.deletionBlockedReason ? <>
         <p className="local-refs-reason">{missing ? `This branch was already deleted from ${details.remote}. Only its cached reference remains; there is no remote branch to delete.` : details.deletionBlockedReason}</p>
-        {missing && <Button variant="ghost" size="sm" disabled={anyBusy} onClick={props.onFetch}>{props.fetching ? <IconLoader4 className="animate-spin" /> : <IconRefresh />}{props.fetching ? <ShimmeringText text="Fetching…" /> : 'Fetch and clean up'}</Button>}
+        {missing && <Button variant="ghost" size="sm" disabled={anyBusy} onClick={props.onFetch}>{props.fetching ? <Spinner /> : <IconRefresh />}{props.fetching ? <ShimmeringText text="Fetching…" /> : 'Fetch and clean up'}</Button>}
       </>
-        : props.confirming ? <ActionConfirmPanel busy={anyBusy} onCancel={props.onCancel} confirm={<Button variant="destructive" size="sm" disabled={anyBusy} onClick={props.onDelete}>{props.deleting && <IconLoader4 className="animate-spin" />}{props.deleting ? <ShimmeringText text="Deleting…" /> : `Delete from ${details.remote}`}</Button>}>
+        : props.confirming ? <ActionConfirmPanel busy={anyBusy} onCancel={props.onCancel} confirm={<Button variant="destructive" size="sm" disabled={anyBusy} onClick={props.onDelete}>{props.deleting && <Spinner />}{props.deleting ? <ShimmeringText text="Deleting…" /> : `Delete from ${details.remote}`}</Button>}>
           <p>Delete <strong>{details.branchName}</strong> from <strong>{details.remote}</strong>? This removes the branch on the remote server. Your local branches, commits and worktrees stay intact.</p>
         </ActionConfirmPanel> : <>
           <p className="local-refs-reason">Delete only this branch from {details.remote}. Local branches and worktrees are kept.</p>

@@ -12,7 +12,7 @@ import { isModuleLoadError, lazyWithPreload, lazyWithRetry } from '@/lib/lazy-wi
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   IconBrandGithub, IconFileArrowRight, IconFiles, IconGitBranch, IconGitCompare, IconHistory,
-  IconLoader4, IconRefresh, IconRestore, IconSearch, IconTrash,
+  IconRefresh, IconRestore, IconSearch, IconTrash,
 } from '@tabler/icons-react';
 import { sileo } from 'sileo';
 import type { BootstrapData, FetchResult, FileHistoryPathChange, FileHistoryState, GhCliStatus, GitHubRepositoryInfo, OpenTigCapabilities, Preferences, PullRequestState, PullRequestSummary, PullResult, PushResult, RecentRepository, RepositoryInfo, RepositoryRelocationSearch, UndoLatestCommitResult } from '../../shared/contracts';
@@ -90,6 +90,7 @@ import { updatesApi } from '@/features/settings/update-api';
 import type { SettingsSection } from '@/features/settings/SettingsDialog';
 import { CommitAuthorshipDialog } from '@/features/settings/CommitAuthorshipDialog';
 import { RepositoryLinksContext, type RepositoryLinks } from '@/components/repository-links';
+import { Spinner } from '@/components/ui/spinner';
 
 const Viewer = lazyWithRetry(() => import('@/features/viewer/Viewer'));
 const FilesView = lazyWithRetry(() => import('@/features/files/FilesView').then((module) => ({ default: module.FilesView })));
@@ -101,7 +102,7 @@ const CreatePullRequestDialog = lazyWithRetry(() => import('@/features/pulls/Cre
 // Tooltips and menus must land on their anchors under the browser's Interface size zoom.
 installZoomAwarePositioning();
 
-const sidebarFallback = <div className="view-loading" role="status"><IconLoader4 className="spinner" /> <ShimmeringText text="Loading…" /></div>;
+const sidebarFallback = <div className="view-loading" role="status"><Spinner className="view-spinner" /> <ShimmeringText text="Loading…" /></div>;
 const NO_OPEN_FILES_STATES: OpenFilesState[] = [];
 type DirtyCloseChoice = 'save' | 'discard' | 'cancel';
 const SIDEBAR_VIEWS = ['changes', 'files', 'history', 'prs', 'search'] as const;
@@ -2794,7 +2795,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
             <div className="sidebar-body">
               <div className="view-fade">
               {view === 'changes' && !currentSnapshot && (
-                <div className="view-loading" role="status"><IconLoader4 className="spinner" aria-hidden="true" /><ShimmeringText text="Loading changes…" /></div>
+                <div className="view-loading" role="status"><Spinner className="view-spinner" /><ShimmeringText text="Loading changes…" /></div>
               )}
               {view === 'changes' && currentSnapshot && (
                 <ChangesView
@@ -2978,7 +2979,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
                   </div>
                 )}
               >
-                <Suspense fallback={<div className="viewer-message"><IconLoader4 className="spinner" /> <ShimmeringText text="Preparing viewer…" /></div>}>
+                <Suspense fallback={<div className="viewer-message"><Spinner className="view-spinner" /> <ShimmeringText text="Preparing viewer…" /></div>}>
                   <FileViewerToolbarHostContext.Provider value={fileViewerToolbarHost}>
                     <FileLineTargetContext.Provider value={fileLineTarget}>
                     <LineBlameContext.Provider value={lineBlameSettings}>

@@ -2,7 +2,7 @@ import type { PullRequestContextCoverage } from '@shared/pull-request-context';
 import { PullRequestCoverage } from './PullRequestCoverage';
 import { useGitHubAccount } from './useGitHubAccount';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { IconGitBranch, IconGitPullRequest, IconLoader4, IconPlayerStop, IconUpload } from '@tabler/icons-react';
+import { IconGitBranch, IconGitPullRequest, IconPlayerStop, IconUpload } from '@tabler/icons-react';
 import { sileo } from 'sileo';
 import type { AiHarnessId, AiHarnessStatus, Preferences } from '../../../shared/contracts';
 import type { BranchInfo, RepositoryStatus } from '../../../shared/git-types';
@@ -17,6 +17,7 @@ import { accountSourceLabel } from '@/features/settings/github-access-copy';
 import { AiProviderIcon } from '@/features/ai/AiProviderIcon';
 import { ghDetail, ghErrorTitle, openOnGitHub } from './gh-utils';
 import { MarkdownField } from './MarkdownField';
+import { Spinner } from '@/components/ui/spinner';
 
 interface CreatePullRequestDialogProps {
   open: boolean;
@@ -140,7 +141,7 @@ export function CreatePullRequestDialog(props: CreatePullRequestDialogProps) {
             <div className="create-pr-notice">
               <span>{detachedOrUnborn ? 'Check out a branch with at least one commit before publishing.' : 'Publish this branch before creating a pull request.'}</span>
               <Button variant="ghost" size="xs" disabled={props.pushBusy || detachedOrUnborn || Boolean(props.status?.readOnly)} onClick={props.onPush}>
-                {props.pushBusy ? <IconLoader4 className="animate-spin" /> : <IconUpload />} Publish branch
+                {props.pushBusy ? <Spinner /> : <IconUpload />} Publish branch
               </Button>
             </div>
           )}
@@ -148,7 +149,7 @@ export function CreatePullRequestDialog(props: CreatePullRequestDialogProps) {
             <div className="create-pr-notice">
               <span>The branch has {props.status?.ahead} unpushed {props.status?.ahead === 1 ? 'commit' : 'commits'}. Push them so the pull request includes your work.</span>
               <Button variant="ghost" size="xs" disabled={props.pushBusy} onClick={props.onPush}>
-                {props.pushBusy ? <IconLoader4 className="animate-spin" /> : <IconUpload />} Push
+                {props.pushBusy ? <Spinner /> : <IconUpload />} Push
               </Button>
             </div>
           )}
@@ -220,7 +221,7 @@ export function CreatePullRequestDialog(props: CreatePullRequestDialogProps) {
           <div className="create-pr-submit-actions">
             <Button variant="ghost" onClick={() => props.onOpenChange(false)} disabled={creating}>Cancel</Button>
             <Button onClick={() => void create()} disabled={blocked || creating || Boolean(generating) || !title.trim() || !base || account?.state !== 'ready' || accountQuery.isFetching}>
-              {creating ? <IconLoader4 className="animate-spin" /> : <IconGitPullRequest />} {creating ? <ShimmeringText text="Creating…" /> : 'Create pull request'}
+              {creating ? <Spinner /> : <IconGitPullRequest />} {creating ? <ShimmeringText text="Creating…" /> : 'Create pull request'}
             </Button>
           </div>
         </div>

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { IconCheck, IconLoader4 } from '@tabler/icons-react';
+import { IconCheck } from '@tabler/icons-react';
 import { sileo } from 'sileo';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -13,6 +13,7 @@ import type { ReleaseTagCheck } from '@shared/contracts';
 import { ghDetail, ghErrorTitle, isUncertainFailure } from './gh-utils';
 import { MarkdownField } from './MarkdownField';
 import { useGitHubAccount } from './useGitHubAccount';
+import { Spinner } from '@/components/ui/spinner';
 
 export function CreateReleaseDialog({ repositoryId, onClose, onCreated }: { repositoryId: string; onClose(): void; onCreated(tagName: string): void }) {
   const queryClient = useQueryClient();
@@ -93,7 +94,7 @@ export function CreateReleaseDialog({ repositoryId, onClose, onCreated }: { repo
           <div className="create-pr-submit-actions">
             <Button variant="ghost" disabled={busy} onClick={onClose}>Cancel</Button>
             <Button disabled={busy || !ready || !title.trim() || account?.state !== 'ready'} onClick={() => create.mutate()}>
-              {busy ? <><IconLoader4 className="animate-spin" /> <ShimmeringText text="Creating…" /></> : 'Create draft'}
+              {busy ? <><Spinner /> <ShimmeringText text="Creating…" /></> : 'Create draft'}
             </Button>
           </div>
         </div>
@@ -113,7 +114,7 @@ function TagStatus({ tag, check, checking, error, onRetry }: { tag: string; chec
       </p>
     );
   }
-  if (checking || !check) return <p className="release-tag-status" role="status"><IconLoader4 className="animate-spin" aria-hidden="true" /> Checking <code>{tag}</code> on GitHub…</p>;
+  if (checking || !check) return <p className="release-tag-status" role="status"><Spinner /> Checking <code>{tag}</code> on GitHub…</p>;
   if (check.hasRelease) return <p className="release-tag-status tone-attention" role="status"><code>{tag}</code> already has a release. Edit that one instead.</p>;
   if (check.exists) return <p className="release-tag-status" role="status"><IconCheck aria-hidden="true" /> <code>{tag}</code> exists on GitHub.</p>;
   return <p className="release-tag-status" role="status"><code>{tag}</code> is a new tag. GitHub creates it from the branch or commit above when the release is published.</p>;

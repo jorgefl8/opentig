@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { IconAlertTriangle, IconArrowLeft, IconFolderSearch, IconLoader4, IconTrash } from '@tabler/icons-react';
+import { IconAlertTriangle, IconArrowLeft, IconFolderSearch, IconTrash } from '@tabler/icons-react';
 import type { RecentRepository } from '../../../shared/contracts';
 import { Button } from '@/components/ui/button';
+import { Spinner } from '@/components/ui/spinner';
 
 /**
  * Shown instead of the workspace when the active repository's folder is gone,
@@ -37,10 +38,10 @@ export function RepositoryUnavailable({ repository, otherMissing, waiting = fals
       {otherMissing > 0 && <p className="repository-unavailable-note">{otherMissing} other saved {otherMissing === 1 ? 'repository is' : 'repositories are'} missing too. After you locate this one, OpenTig looks for them nearby.</p>}
       <div className="repository-unavailable-actions">
         <Button disabled={Boolean(busy) || waiting} onClick={() => void run('locate', onLocate)}>
-          {busy === 'locate' ? <IconLoader4 className="animate-spin" /> : <IconFolderSearch />}Locate folder…
+          {busy === 'locate' ? <Spinner /> : <IconFolderSearch />}Locate folder…
         </Button>
         <Button variant="outline" disabled={Boolean(busy) || waiting} onClick={() => void run('remove', onRemove)}>
-          {busy === 'remove' ? <IconLoader4 className="animate-spin" /> : <IconTrash />}Remove from OpenTig
+          {busy === 'remove' ? <Spinner /> : <IconTrash />}Remove from OpenTig
         </Button>
         <Button variant="ghost" disabled={Boolean(busy)} onClick={onOpenAnother}><IconArrowLeft />Open another repository</Button>
       </div>

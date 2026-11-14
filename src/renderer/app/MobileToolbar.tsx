@@ -1,5 +1,5 @@
 import { useEffect, useRef, type ReactNode } from 'react';
-import { IconArrowDown, IconArrowLeft, IconArrowUp, IconBrandGithub, IconFolder, IconGitBranch, IconHierarchy2, IconLoader4, IconPlus, IconRefresh, IconSelector, IconSettings } from '@tabler/icons-react';
+import { IconArrowDown, IconArrowLeft, IconArrowUp, IconBrandGithub, IconFolder, IconGitBranch, IconHierarchy2, IconPlus, IconRefresh, IconSelector, IconSettings } from '@tabler/icons-react';
 import { Button } from '@/components/ui/button';
 import { isDevProfile } from '@/lib/app-identity';
 import { AppName } from '@/components/AppName';
@@ -12,6 +12,7 @@ import { mobileSyncPill, needsBranchPublication } from '@/features/repositories/
 import type { ToolbarProps } from './Toolbar';
 import { RemoteAccessIndicator } from './RemoteAccessIndicator';
 import { BranchPullRequestMenu } from './BranchPullRequestMenu';
+import { Spinner } from '@/components/ui/spinner';
 
 export interface MobileViewerBarProps {
   onBack(): void;
@@ -73,7 +74,7 @@ export function MobileToolbar({ props, branchCleanUp, onBranchCleanUp, repositor
       <header className="mobile-toolbar">
         <span className="mobile-toolbar-mark"><OpenTigMark /></span>
         <button className="mobile-repository-context" aria-label="Repository and branch" aria-haspopup="dialog" aria-expanded={contextOpen} onClick={() => onContextOpen(true)}>
-          <strong><span>{pendingRepositoryName ? `Opening ${pendingRepositoryName}…` : props.repository.repositoryName}</span>{props.repositoryLoadPhase ? <IconLoader4 className="animate-spin" aria-hidden="true" /> : <IconSelector aria-hidden="true" />}</strong>
+          <strong><span>{pendingRepositoryName ? `Opening ${pendingRepositoryName}…` : props.repository.repositoryName}</span>{props.repositoryLoadPhase ? <Spinner /> : <IconSelector aria-hidden="true" />}</strong>
           <small>{status ? status.branch ?? 'Detached HEAD' : 'Loading…'}{pullRequest && <> · <span className={`mobile-pr-number pr-state-${pullRequestStateTone(pullRequest)}`}>#{pullRequest.number}{pullRequest.state !== 'OPEN' && ` ${prStateLabel(pullRequest)}`}</span>{newCommits > 0 && ` +${newCommits} new`}</>}</small>
         </button>
         <div className="mobile-toolbar-actions">
@@ -81,7 +82,7 @@ export function MobileToolbar({ props, branchCleanUp, onBranchCleanUp, repositor
           {indicators}
           {pill && runPill && (
             <button type="button" className="mobile-sync-pill" data-sync={pill.action} disabled={Boolean(props.busy) || syncBusy} aria-label={pill.action === 'publish' ? 'Publish branch' : `${pill.action === 'pull' ? 'Pull' : 'Push'} ${commitCount(pill.count)}`} onClick={runPill}>
-              {pillRunning ? <IconLoader4 className="animate-spin" aria-hidden="true" /> : pill.action === 'pull' ? <IconArrowDown aria-hidden="true" /> : <IconArrowUp aria-hidden="true" />}
+              {pillRunning ? <Spinner /> : pill.action === 'pull' ? <IconArrowDown aria-hidden="true" /> : <IconArrowUp aria-hidden="true" />}
               <span>{pill.action === 'publish' ? 'Publish' : `${pill.action === 'pull' ? 'Pull' : 'Push'} ${pill.count}`}</span>
             </button>
           )}

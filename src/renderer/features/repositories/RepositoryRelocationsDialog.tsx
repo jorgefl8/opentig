@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { IconLoader4 } from '@tabler/icons-react';
 import type { RepositoryRelocationSearch } from '../../../shared/contracts';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogDescription, DialogPopup, DialogTitle } from '@/components/ui/dialog';
+import { Spinner } from '@/components/ui/spinner';
 
 /** Offers to update every other moved repository found next to the one just relocated. */
 export function RepositoryRelocationsDialog({ search, onConfirm, onClose }: {
@@ -68,7 +68,7 @@ export function RepositoryRelocationsDialog({ search, onConfirm, onClose }: {
         <div className="undo-commit-actions">
           <Button variant="ghost" disabled={busy} onClick={onClose}>Not now</Button>
           <Button disabled={busy || selected.size === 0} onClick={() => void confirm()}>
-            {busy && <IconLoader4 className="animate-spin" />}Relocate {selected.size}
+            {busy && <Spinner />}Relocate {selected.size}
           </Button>
         </div>
       </DialogPopup>

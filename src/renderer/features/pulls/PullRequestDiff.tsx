@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { IconLoader4, IconRefresh } from '@tabler/icons-react';
+import { IconRefresh } from '@tabler/icons-react';
 import type { DiffResult, DiffViewPreference, PullRequestCommit, ThemePreference } from '@shared/contracts';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -10,6 +10,7 @@ import { DiffWorkspace } from '@/features/viewer/DiffWorkspace';
 import { PierreWorkerPool } from '@/features/viewer/PierreWorkerPool';
 import { queryKeys } from '@/lib/query-client';
 import { opentig } from '@/lib/opentig-api';
+import { Spinner } from '@/components/ui/spinner';
 
 interface PullRequestDiffProps {
   diff: DiffResult;
@@ -76,7 +77,7 @@ export default function PullRequestDiff({ diff, prNumber, repositoryId, commits,
     );
   }
   if (!activeDiff) {
-    return <DiffLoadingShell scopeControl={scopeControl}><IconLoader4 className="spinner" /> <ShimmeringText text="Loading commit diff…" /></DiffLoadingShell>;
+    return <DiffLoadingShell scopeControl={scopeControl}><Spinner className="view-spinner" /> <ShimmeringText text="Loading commit diff…" /></DiffLoadingShell>;
   }
   if (!activeDiff.patch) return <DiffLoadingShell scopeControl={scopeControl}>{activeDiff.truncated ? 'Every changed file is too large to show here.' : 'No differences to show.'}</DiffLoadingShell>;
   return (

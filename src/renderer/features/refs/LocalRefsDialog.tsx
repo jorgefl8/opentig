@@ -3,7 +3,7 @@ import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } fro
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   IconCheck, IconCopy, IconExternalLink, IconGitBranch,
-  IconLoader4, IconRefresh, IconSearch, IconX,
+  IconRefresh, IconSearch, IconX,
 } from '@tabler/icons-react';
 import type { PullRequestSummary, RecentRepository } from '../../../shared/contracts';
 import type { BranchDetails, LocalRefsSnapshot, RemoteBranchDetails, WorktreeAgents, WorktreeDetails, WorktreeRemovalState } from '../../../shared/git-types';
@@ -26,6 +26,7 @@ import { writeClipboardText } from '@/lib/browser-capabilities';
 import { SearchablePicker } from '@/components/SearchablePicker';
 import { RemoteBranchDetailPanel } from './RemoteBranchDetailPanel';
 import { AgentLabel } from './AgentLabel';
+import { Spinner } from '@/components/ui/spinner';
 
 const DISMISSED_NOTICES_KEY = 'opentig.dismissedWorktreeRemovalNotices';
 
@@ -320,7 +321,7 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
             )}
           </div>
           <Tooltip><TooltipTrigger render={<Button variant="ghost" size="sm" onClick={() => tab === 'branches' ? void fetchBranches() : void load()} disabled={loading || Boolean(busy)} />}>
-            {loading || busy === 'fetch-branches' ? <IconLoader4 className="animate-spin" /> : <IconRefresh />} {tab === 'branches' ? 'Fetch' : 'Refresh'}
+            {loading || busy === 'fetch-branches' ? <Spinner /> : <IconRefresh />} {tab === 'branches' ? 'Fetch' : 'Refresh'}
           </TooltipTrigger><TooltipContent>{tab === 'branches' ? 'Fetch branches from all remotes and remove obsolete remote references' : 'Refresh local worktrees'}</TooltipContent></Tooltip>
         </div>
 
@@ -352,7 +353,7 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
           aria-labelledby={`local-refs-tab-${tab}`}
         >
           <div className="local-refs-list" role="listbox" aria-label={tab === 'branches' ? 'Branches' : 'Worktrees'} tabIndex={-1}>
-            {loading && !snapshot && <p className="local-refs-placeholder"><IconLoader4 className="animate-spin" aria-hidden="true" /><ShimmeringText text="Reading the repository…" /></p>}
+            {loading && !snapshot && <p className="local-refs-placeholder"><Spinner /><ShimmeringText text="Reading the repository…" /></p>}
             {!loading && listEmpty && (
               <p className="local-refs-placeholder">{query || remoteFilter ? 'No matches for these filters.' : `This repository has no ${tab === 'branches' ? `${branchScope === 'all' ? '' : `${branchScope} `}branches` : 'worktrees'}.`}</p>
             )}
@@ -404,7 +405,7 @@ export function LocalRefsDialog(props: LocalRefsDialogProps) {
 
           <div className="local-refs-detail">
             {detailsError && <div className="local-refs-error" role="alert"><span>{detailsError}</span></div>}
-            {detailsLoading && <p className="local-refs-placeholder"><IconLoader4 className="animate-spin" aria-hidden="true" /><ShimmeringText text="Loading details…" /></p>}
+            {detailsLoading && <p className="local-refs-placeholder"><Spinner /><ShimmeringText text="Loading details…" /></p>}
             {!detailsLoading && !detailsError && tab === 'branches' && remoteDetails && branch?.remote && <RemoteBranchDetailPanel
               details={remoteDetails} pullRequest={branchPullRequest} anyBusy={Boolean(busy)} deleting={busy === 'delete-remote-branch'} creating={busy === 'create-tracking-branch'}
               confirming={confirming === 'delete-remote-branch'} onConfirm={() => setConfirming('delete-remote-branch')} onCancel={() => setConfirming(null)}
@@ -559,7 +560,7 @@ function WorktreeDetailPanel({ details, agents, deleteBranchByDefault, removing,
       {removing ? (
         <div className="local-refs-danger">
           <p className="local-refs-reason">
-            <IconLoader4 className="animate-spin" aria-hidden="true" />
+            <Spinner />
             <span>Removing this worktree. Large folders can take a few minutes. You can close this dialog: the removal continues as long as OpenTig stays open, and the list updates when it ends.</span>
           </p>
         </div>
@@ -607,7 +608,7 @@ function DestructiveSection({ reason, actionError, confirming, busy, anyBusy, al
           <p>{confirmation}</p>
           <span className="local-refs-confirm-actions">
             <Button variant="destructive" size="sm" onClick={onAct} disabled={busy}>
-              {busy && <IconLoader4 className="animate-spin" />} {busy ? <ShimmeringText text={confirmLabel} /> : confirmLabel}
+              {busy && <Spinner />} {busy ? <ShimmeringText text={confirmLabel} /> : confirmLabel}
             </Button>
             <Button variant="ghost" size="sm" onClick={onCancel} disabled={busy}>Cancel</Button>
           </span>

@@ -8,7 +8,7 @@ import {
   useTable,
   type SortingState,
 } from '@tanstack/react-table';
-import { IconArrowsSort, IconLoader4, IconRefresh, IconSortAscending, IconSortDescending, IconTrash, IconX } from '@tabler/icons-react';
+import { IconArrowsSort, IconRefresh, IconSortAscending, IconSortDescending, IconTrash, IconX } from '@tabler/icons-react';
 import { sileo } from 'sileo';
 import type { AiLogEntry } from '@shared/ai-log';
 import { opentig } from '@/lib/opentig-api';
@@ -18,6 +18,7 @@ import { Dialog, DialogClose, DialogDescription, DialogPopup, DialogTitle } from
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Spinner } from '@/components/ui/spinner';
 
 interface AiLogDialogProps {
   open: boolean;
@@ -172,7 +173,7 @@ export function AiLogDialog({ open, onOpenChange }: AiLogDialogProps) {
           </div>
           <div className="ai-log-header-actions">
             <Button variant="ghost" size="sm" disabled={loading} onClick={() => void load()}>
-              {loading ? <IconLoader4 className="animate-spin" /> : <IconRefresh />} Refresh
+              {loading ? <Spinner /> : <IconRefresh />} Refresh
             </Button>
             <Button variant="ghost" size="sm" disabled={entries.length === 0} onClick={() => void clear()}><IconTrash /> Clear</Button>
             <DialogClose render={<Button variant="ghost" size="icon-sm" aria-label="Close AI history" />}><IconX /></DialogClose>
@@ -189,7 +190,7 @@ export function AiLogDialog({ open, onOpenChange }: AiLogDialogProps) {
         )}
 
         <div className="ai-log-body">
-          {loading && entries.length === 0 && <div className="view-loading" role="status"><IconLoader4 className="spinner" /> <ShimmeringText text="Reading history…" /></div>}
+          {loading && entries.length === 0 && <div className="view-loading" role="status"><Spinner className="view-spinner" /> <ShimmeringText text="Reading history…" /></div>}
           {!loading && entries.length === 0 && <p className="ai-log-empty">No generations recorded yet. Generate a commit message and it will show up here.</p>}
           {entries.length > 0 && (
             <div className="ai-log-table-wrap">

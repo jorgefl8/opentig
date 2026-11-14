@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { IconLoader4, IconZoomIn, IconZoomOut } from '@tabler/icons-react';
+import { IconZoomIn, IconZoomOut } from '@tabler/icons-react';
 import type { FileResult, ImageFileResult, ThemePreference, WriteFileResult } from '@shared/contracts';
 import { Button } from '@/components/ui/button';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
@@ -10,6 +10,7 @@ import { FileViewerToolbar, FileViewerToolbarButton, FileViewerToolbarGroup } fr
 import { MAX_IMAGE_ZOOM, type ImageSizingMode, zoomIn, zoomOut } from './image-viewer-state';
 import { useEditableFileDraft } from './useEditableFileDraft';
 import './image-viewer.css';
+import { Spinner } from '@/components/ui/spinner';
 
 interface ImageFileViewerProps {
   image: ImageFileResult;
@@ -221,7 +222,7 @@ function ImagePreviewWorkspace({ objectUrl, path, size, toolbarView, toolbarEnd 
         }}
       >
         {!objectUrl ? (
-          <span className="image-preview-loading"><IconLoader4 className="animate-spin" aria-hidden="true" /><ShimmeringText text="Loading image…" /></span>
+          <span className="image-preview-loading"><Spinner /><ShimmeringText text="Loading image…" /></span>
         ) : decodeError ? (
           <ImageViewerMessage title="Could not decode this image" detail={path} />
         ) : (

@@ -1,5 +1,5 @@
 import { type FormEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { IconFolder, IconFolderSymlink, IconLoader4, IconPencil, IconTrash, IconX } from '@tabler/icons-react';
+import { IconFolder, IconFolderSymlink, IconPencil, IconTrash, IconX } from '@tabler/icons-react';
 import type { RepositoryOrganization, RepositoryProject } from '../../../shared/contracts';
 import { MAX_PROJECT_NAME_LENGTH } from '../../../shared/repository-projects';
 import { Button } from '@/components/ui/button';
@@ -12,6 +12,7 @@ import { RepositoryOrderButtons, RepositoryOrderList, RepositoryOrderRow } from 
 import { OpenRepositoryDialog } from './OpenRepositoryDialog';
 import { opentig } from '@/lib/opentig-api';
 import { useMobileLayout } from '@/lib/use-mobile-layout';
+import { Spinner } from '@/components/ui/spinner';
 
 const NO_PROJECT = '__opentig_no_project__';
 
@@ -167,7 +168,7 @@ export function RepositoryProjectsDialog({ open, projects, repositories, onOpenC
                 <label className="sr-only" htmlFor="new-project-name">Project name</label>
                 <input id="new-project-name" className="field-input" value={newName} maxLength={MAX_PROJECT_NAME_LENGTH} onChange={(event) => setNewName(event.target.value)} placeholder="New project name" disabled={Boolean(busy)} />
                 <Button type="submit" variant="ghost" size="sm" disabled={!newName.trim() || Boolean(busy)}>
-                  {busy === 'create' && <IconLoader4 className="animate-spin" />} Create
+                  {busy === 'create' && <Spinner />} Create
                 </Button>
               </form>
             </div>
@@ -253,7 +254,7 @@ export function RepositoryProjectsDialog({ open, projects, repositories, onOpenC
                               <TooltipContent>Remove from OpenTig</TooltipContent>
                             </Tooltip>
                           </span>
-                          {rowBusy && <IconLoader4 className="repository-assignment-busy animate-spin" aria-hidden="true" />}
+                          {rowBusy && <Spinner className="repository-assignment-busy" />}
                           <SearchablePicker
                             groups={[
                               { id: 'none', label: '', items: [{ value: NO_PROJECT, label: 'No project', pinned: true }] },

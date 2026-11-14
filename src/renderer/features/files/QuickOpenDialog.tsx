@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { Autocomplete } from '@base-ui/react/autocomplete';
-import { IconFileSearch, IconLoader4, IconSearch } from '@tabler/icons-react';
+import { IconFileSearch, IconSearch } from '@tabler/icons-react';
 import type { FileTreeEntry } from '@shared/git-types';
 import { Dialog, DialogDescription, DialogPopup, DialogTitle } from '@/components/ui/dialog';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { getVsCodeFileIconUrl } from '@/lib/vscode-icons';
 import { useQuickOpenResults } from './use-quick-open-results';
+import { Spinner } from '@/components/ui/spinner';
 
 interface QuickOpenDialogProps {
   open: boolean;
@@ -63,7 +64,7 @@ export function QuickOpenDialog({ open, files, includeIgnored, activePath, onOpe
           <Autocomplete.List aria-label="Repository files" className="quick-open-results">
             {files === null || pending ? (
               <div className="quick-open-status loading" role="status">
-                <IconLoader4 className="spinner" aria-hidden="true" /> <ShimmeringText text={pending ? "Searching files…" : "Loading files…"} />
+                <Spinner className="view-spinner" /> <ShimmeringText text={pending ? "Searching files…" : "Loading files…"} />
               </div>
             ) : results.length === 0 ? (
               <div className="quick-open-status" role="status">

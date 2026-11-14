@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { IconCheck, IconFolder, IconLoader4 } from '@tabler/icons-react';
+import { IconCheck, IconFolder } from '@tabler/icons-react';
 import type { RepositoryInfo, ServerDirectoryListing } from '@shared/contracts';
 import { cloneFolderName, cloneInputError, cloneSource, type CloneJob } from '@shared/onboarding';
 import { Button } from '@/components/ui/button';
@@ -9,6 +9,7 @@ import { opentig } from '@/lib/opentig-api';
 import { joinFolder } from './onboarding-model';
 import { followCloneJob, rememberCloneParent, trackCloneInBackground } from './clone-jobs';
 import './onboarding.css';
+import { Spinner } from '@/components/ui/spinner';
 
 const STEPS = [
   { label: 'Connect', phases: ['Preparing destination', 'Connecting to remote', 'Preparing objects'] },
@@ -123,7 +124,7 @@ export function CloneRepositoryDialog({ open, onOpenChange, defaultParent, onBro
           {error && <p className="onboarding-error" role="alert">{error}</p>}
           <div className="onboarding-dialog-actions">
             <Button type="button" variant="ghost" disabled={starting} onClick={close}>Cancel</Button>
-            <Button type="submit" disabled={starting || !url.trim() || !parent.trim() || !name}>{starting && <IconLoader4 className="animate-spin" />}Clone</Button>
+            <Button type="submit" disabled={starting || !url.trim() || !parent.trim() || !name}>{starting && <Spinner />}Clone</Button>
           </div>
         </form>}
       </DialogPopup>

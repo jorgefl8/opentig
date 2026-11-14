@@ -1,10 +1,11 @@
 import type { ReactNode } from 'react';
 import { Popover } from '@base-ui/react/popover';
-import { IconBrandGithub, IconExternalLink, IconLoader4, IconRefresh } from '@tabler/icons-react';
+import { IconBrandGithub, IconExternalLink, IconRefresh } from '@tabler/icons-react';
 import type { GitHubRepositoryAccount } from '@shared/github-accounts';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { openOnGitHub } from './gh-utils';
+import { Spinner } from '@/components/ui/spinner';
 
 /** The menu beside the section tabs: whatever narrows the list, then refreshing it and where it comes from. */
 export function GitHubSectionMenu({ label, icon, filtered = false, refreshing, refreshLabel, onRefresh, nameWithOwner, githubPath, account, onOpenGitHubSettings, children }: {
@@ -25,7 +26,7 @@ export function GitHubSectionMenu({ label, icon, filtered = false, refreshing, r
     <Popover.Root>
       <Tooltip>
         <TooltipTrigger render={<Popover.Trigger render={<Button variant={filtered ? 'secondary' : 'ghost'} size="icon-xs" className="change-action-button" aria-label={label} aria-pressed={filtered} />} />}>
-          {refreshing ? <IconLoader4 className="animate-spin" /> : icon}
+          {refreshing ? <Spinner /> : icon}
         </TooltipTrigger>
         <TooltipContent>{label}</TooltipContent>
       </Tooltip>
@@ -34,7 +35,7 @@ export function GitHubSectionMenu({ label, icon, filtered = false, refreshing, r
           <Popover.Popup className="pulls-menu-popup" aria-label={label}>
             {children}
             <button className="pulls-menu-action" disabled={refreshing} onClick={onRefresh}>
-              {refreshing ? <IconLoader4 className="animate-spin" aria-hidden="true" /> : <IconRefresh aria-hidden="true" />}
+              {refreshing ? <Spinner /> : <IconRefresh aria-hidden="true" />}
               <span>{refreshLabel}</span>
             </button>
             {nameWithOwner && (

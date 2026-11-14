@@ -3,7 +3,7 @@ import { useMobileLayout } from '@/lib/use-mobile-layout';
 import { useDebouncedValue } from '@/lib/use-debounced-value';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useQuery } from '@tanstack/react-query';
-import { IconChevronDown, IconChevronRight, IconEyeOff, IconLoader4, IconReplace, IconReplaceFilled, IconSearch } from '@tabler/icons-react';
+import { IconChevronDown, IconChevronRight, IconEyeOff, IconReplace, IconReplaceFilled, IconSearch } from '@tabler/icons-react';
 import { sileo } from 'sileo';
 import { Button } from '@/components/ui/button';
 import { MobileSwitchRow } from '@/components/MobileChrome';
@@ -15,6 +15,7 @@ import { buildSearchRegex, type SearchFileResult, type SearchMatch, type SearchO
 import { queryKeys } from '@/lib/query-client';
 import { opentig } from '@/lib/opentig-api';
 import { getVsCodeFileIconUrl } from '@/lib/vscode-icons';
+import { Spinner } from '@/components/ui/spinner';
 
 const DEBOUNCE_MS = 250;
 // Rows fill these heights; .search-file-heading and .search-match in index.css follow them.
@@ -258,7 +259,7 @@ export function SearchView({ repositoryId, active, revision, onOpenFile, unsaved
       </div>
       <div ref={scrollRef} className="search-results">
         {!trimmedQuery && <p className="empty-list">Type to search every file.</p>}
-        {searching && !result && <div className="view-loading" role="status"><IconLoader4 className="spinner" /> <ShimmeringText text="Searching…" /></div>}
+        {searching && !result && <div className="view-loading" role="status"><Spinner className="view-spinner" /> <ShimmeringText text="Searching…" /></div>}
         <div className="search-rows virtual-list" style={{ height: virtualizer.getTotalSize() }}>
           {virtualizer.getVirtualItems().map((virtualRow) => {
             const row = rows[virtualRow.index];

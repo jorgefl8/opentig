@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { IconArrowLeft, IconChevronRight, IconLoader4 } from '@tabler/icons-react';
+import { IconArrowLeft, IconChevronRight } from '@tabler/icons-react';
 import type { FileTreeEntry } from '@shared/git-types';
 import { MobileSheet } from '@/components/MobileSheet';
 import { FolderIcon } from '@/components/FolderIcon';
@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { canMovePathsToDirectory, parentDirectory, pathContains } from './file-tree';
 import { useDirectoryLevel } from './use-directory-level';
+import { Spinner } from '@/components/ui/spinner';
 
 export function MoveFilesDialog({ entries, initialDirectory, revision, readOnly, onLoadDirectory, onMove, onClose }: {
   entries: FileTreeEntry[];
@@ -37,14 +38,14 @@ export function MoveFilesDialog({ entries, initialDirectory, revision, readOnly,
         <span>{destination || 'Repository root'}</span>
       </div>
       <div className="mobile-destination-list">
-        {level === null ? <p className="mobile-list-message" role="status"><IconLoader4 className="animate-spin" aria-hidden="true" /><ShimmeringText text="Loading folders…" /></p>
+        {level === null ? <p className="mobile-list-message" role="status"><Spinner /><ShimmeringText text="Loading folders…" /></p>
           : failed ? <p className="mobile-list-message" role="alert">Could not read this folder.</p>
           : folders.length === 0 ? <p className="mobile-list-message">No subfolders. You can choose this folder below.</p>
           : folders.map((folder) => <button key={folder.path} className="mobile-sheet-action" disabled={moving} onClick={() => setDestination(folder.path)}><FolderIcon path={folder.path} /><span>{folder.name}</span><IconChevronRight /></button>)}
       </div>
       <div className="mobile-sheet-footer">
         <Button variant="ghost" disabled={moving} onClick={onClose}>Cancel</Button>
-        <Button disabled={!canMove} onClick={() => void move()}>{moving && <IconLoader4 className="animate-spin" />} Move here</Button>
+        <Button disabled={!canMove} onClick={() => void move()}>{moving && <Spinner />} Move here</Button>
       </div>
     </MobileSheet>
   );

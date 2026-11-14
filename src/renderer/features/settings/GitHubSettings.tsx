@@ -1,7 +1,7 @@
 import { Tabs } from '@base-ui/react/tabs';
 import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { IconBrandGithub, IconCopy, IconKey, IconLoader4, IconPlus, IconRefresh, IconUsers } from '@tabler/icons-react';
+import { IconBrandGithub, IconCopy, IconKey, IconPlus, IconRefresh, IconUsers } from '@tabler/icons-react';
 import { sileo } from 'sileo';
 import type { RepositoryInfo } from '@shared/contracts';
 import type { GitHubAccountSelection, GitHubAccountsStatus, GitHubRepositoryAccount } from '@shared/github-accounts';
@@ -20,6 +20,7 @@ import { CommitAuthorshipDialog } from './CommitAuthorshipDialog';
 import { authorshipSourceLabel } from './commit-authorship-copy';
 import { gitCredentialsLocation, gitHttpsModeLabel } from './github-access-copy';
 import { publicationDestination } from '@/features/refs/publication-context';
+import { Spinner } from '@/components/ui/spinner';
 
 export function GitHubSettings({ repository }: { repository: RepositoryInfo | null }) {
   const client = useQueryClient();
@@ -108,7 +109,7 @@ export function GitHubSettings({ repository }: { repository: RepositoryInfo | nu
       : defaultLogin ? 'Follows the default account. Change the default in Accounts.' : `There is no default account yet, so Git uses its own credentials on ${gitCredentialsLocation()}. Add an account in Accounts.`;
   const busy = checking || saving || inventory.isFetching;
   const checkButton = <Button variant="ghost" size="sm" onClick={() => void check(true)} disabled={busy}>
-    {checking || saving ? <IconLoader4 className="animate-spin" /> : <IconRefresh />}
+    {checking || saving ? <Spinner /> : <IconRefresh />}
     {checking || saving ? <ShimmeringText text="Checking…" /> : 'Check access'}
   </Button>;
   const repoName = account?.nameWithOwner?.replace(/\.git$/, '') || '';
@@ -196,7 +197,7 @@ export function GitHubSettings({ repository }: { repository: RepositoryInfo | nu
     <SettingGroup title="Available accounts">
       <SettingRow label="Saved accounts" description={`Saved in GitHub CLI on ${gitCredentialsLocation()}. Git's own credentials are managed separately.`}>
         <Button variant="ghost" size="sm" onClick={() => void check()} disabled={busy}>
-          {checking ? <IconLoader4 className="animate-spin" /> : <IconRefresh />}{checking ? <ShimmeringText text="Checking…" /> : 'Refresh accounts'}
+          {checking ? <Spinner /> : <IconRefresh />}{checking ? <ShimmeringText text="Checking…" /> : 'Refresh accounts'}
         </Button>
         <Button variant="ghost" size="sm" onClick={() => { setReconnectLogin(null); setAddOpen(true); }}><IconPlus />Add account</Button>
       </SettingRow>
@@ -262,7 +263,7 @@ function AddGitHubAccountDialog({ open, onOpenChange, status, onCheck, checking,
     </>}
     <div className="github-add-actions"><Button variant="ghost" onClick={() => close(false)}>{step === 2 ? 'Done' : 'Cancel'}</Button>
       {step === 0 ? <Button onClick={() => { setPrevious(status?.activeLogin ?? null); setKnown(status?.accounts.filter(account => account.state === 'authenticated' && account.login !== reconnectLogin).map(account => account.login) ?? []); setStep(1); }}>View instructions</Button>
-        : <Button onClick={() => void onCheck().then((next) => { if (next?.accounts.some(item => item.state === 'authenticated' && !known.includes(item.login))) setStep(2); else if (next) sileo.error({ title: 'Account not connected yet', description: 'Finish the login or reconnect the account, then check again. Your repository choice is unchanged.' }); })} disabled={checking}>{checking && <IconLoader4 className="animate-spin" />}{checking ? <ShimmeringText text={step === 1 ? 'I have finished · check accounts' : 'Check again'} /> : step === 1 ? 'I have finished · check accounts' : 'Check again'}</Button>}
+        : <Button onClick={() => void onCheck().then((next) => { if (next?.accounts.some(item => item.state === 'authenticated' && !known.includes(item.login))) setStep(2); else if (next) sileo.error({ title: 'Account not connected yet', description: 'Finish the login or reconnect the account, then check again. Your repository choice is unchanged.' }); })} disabled={checking}>{checking && <Spinner />}{checking ? <ShimmeringText text={step === 1 ? 'I have finished · check accounts' : 'Check again'} /> : step === 1 ? 'I have finished · check accounts' : 'Check again'}</Button>}
     </div>
   </DialogPopup></Dialog>;
 }

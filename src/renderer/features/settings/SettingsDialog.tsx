@@ -5,7 +5,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import { aiExecutablePathsKey } from '@shared/ai-status';
 import { formatDateTime } from '@shared/date-format';
-import { IconArrowLeft, IconChevronRight, IconLoader4, IconRefresh, IconSparkles, IconX } from '@tabler/icons-react';
+import { IconArrowLeft, IconChevronRight, IconRefresh, IconSparkles, IconX } from '@tabler/icons-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { sileo } from 'sileo';
 import type { AiHarnessId, AiHarnessStatus, Preferences, RepositoryInfo } from '../../../shared/contracts';
@@ -27,6 +27,7 @@ import { SettingRow } from './SettingRows';
 import { ShortcutsSettings } from './ShortcutsSettings';
 import { UpdateSettings } from './UpdateSettings';
 import { WebAccessSettings } from './WebAccessSettings';
+import { Spinner } from '@/components/ui/spinner';
 
 const SETTINGS_SECTIONS = [
   { id: 'general', label: 'General' },
@@ -130,7 +131,7 @@ export function SettingsDialog({ preferences, onPreference, open, onOpenChange, 
               </> : <>
                 <SettingRow label="Local harness" description={<>OpenTig uses the selected CLI session. It does not copy or store credentials.{selectedStatus && <> Last checked: {formatDateTime(selectedStatus.checkedAt, { seconds: true })}</>}</>}>
                   <Button variant="ghost" size="sm" onClick={() => void checkStatuses()} disabled={loadingStatuses}>
-                    {loadingStatuses ? <IconLoader4 className="animate-spin" /> : <IconRefresh />} {loadingStatuses ? <ShimmeringText text={statuses.length ? 'Checking…' : 'Loading…'} /> : 'Check again'}
+                    {loadingStatuses ? <Spinner /> : <IconRefresh />} {loadingStatuses ? <ShimmeringText text={statuses.length ? 'Checking…' : 'Loading…'} /> : 'Check again'}
                   </Button>
                 </SettingRow>
                 <div className="ai-harness-list" role="radiogroup" aria-label="Harness for AI assistance">

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { IconChevronDown, IconLoader4 } from '@tabler/icons-react';
+import { IconChevronDown } from '@tabler/icons-react';
 import { sileo } from 'sileo';
 import type { PullRequestLiveState, ReviewPullRequestInput } from '../../../shared/contracts';
 import { Button } from '@/components/ui/button';
@@ -14,6 +14,7 @@ import { ghDetail, ghErrorTitle, isUncertainFailure } from './gh-utils';
 import { MarkdownField } from './MarkdownField';
 import { useGitHubAccount } from './useGitHubAccount';
 import { pullRequestCommentUncertain, useViewerDraft } from './viewer-drafts';
+import { Spinner } from '@/components/ui/spinner';
 
 type Send = { kind: 'comment' } | { kind: 'review'; verdict: ReviewPullRequestInput['verdict'] };
 
@@ -100,7 +101,7 @@ export function PullRequestComposer({ repositoryId, number, live, draft, onDraft
   );
   const commentButton = (
     <Button size="xs" disabled={blocked || !hasText} onClick={() => send.mutate({ kind: 'comment' })}>
-      {busy ? <><IconLoader4 className="animate-spin" /> <ShimmeringText text="Sending…" /></> : 'Comment'}
+      {busy ? <><Spinner /> <ShimmeringText text="Sending…" /></> : 'Comment'}
     </Button>
   );
   const accountNote = uncertain

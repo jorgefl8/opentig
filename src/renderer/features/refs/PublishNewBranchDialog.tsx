@@ -1,7 +1,7 @@
-import { IconLoader4 } from '@tabler/icons-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogDescription, DialogPopup, DialogTitle } from '@/components/ui/dialog';
 import type { NewBranchChoice } from './useBranchPush';
+import { Spinner } from '@/components/ui/spinner';
 
 /**
  * Confirms publishing a branch under its own name when it tracks a branch with
@@ -34,7 +34,7 @@ export function PublishNewBranchDialog({ choice, onConfirm }: { choice: NewBranc
       <div className="undo-commit-actions">
         <Button variant="ghost" disabled={choice.publishing} onClick={() => onConfirm(false)}>Cancel</Button>
         <Button disabled={choice.publishing} onClick={() => onConfirm(true)}>
-          {choice.publishing ? <><IconLoader4 className="animate-spin" />Publishing…</> : 'Publish branch'}
+          {choice.publishing ? <><Spinner />Publishing…</> : 'Publish branch'}
         </Button>
       </div>
     </DialogPopup>

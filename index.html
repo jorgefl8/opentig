@@ -37,18 +37,18 @@
       #boot-shell strong { color: #f4f4f4; font-size: 18px; font-weight: 650; letter-spacing: -.02em; }
       html.light #boot-shell strong { color: #1a1a1a; }
       #boot-shell span { display: block; min-height: 1.35em; font-size: 13px; }
-      #boot-shell .boot-mark {
-        width: 28px;
-        height: 28px;
-        border: 3px solid #3a3a3a;
-        border-top-color: #2266ea;
-        border-radius: 50%;
+      #boot-shell .boot-mark { width: 28px; height: 28px; }
+      #boot-shell .boot-mark-track { stroke: #3a3a3a; }
+      html.light #boot-shell .boot-mark-track { stroke: #d0d0d0; }
+      /* The arc turns inside the SVG; the element itself is never transformed. */
+      #boot-shell .boot-mark-arc {
+        stroke: #2266ea;
+        transform-origin: 14px 14px;
         animation: boot-spin .8s linear infinite;
       }
-      html.light #boot-shell .boot-mark { border-color: #d0d0d0; border-top-color: #2266ea; }
       @keyframes boot-spin { to { transform: rotate(360deg); } }
       @media (prefers-reduced-motion: reduce) {
-        #boot-shell .boot-mark { animation: none; }
+        #boot-shell .boot-mark-arc { animation: none; }
       }
     </style>
     <script src="/boot-theme.js"></script>
@@ -67,7 +67,10 @@
           <strong>OpenTig</strong>
           <span>Starting…</span>
         </div>
-        <div class="boot-mark" aria-hidden="true"></div>
+        <svg class="boot-mark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 28 28" fill="none" stroke-width="3" aria-hidden="true">
+          <circle class="boot-mark-track" cx="14" cy="14" r="12.5" />
+          <g class="boot-mark-arc"><path d="M5.16 5.16A12.5 12.5 0 0 1 22.84 5.16" /></g>
+        </svg>
       </div>
     </div>
     <script type="module" src="/src/renderer.tsx"></script>

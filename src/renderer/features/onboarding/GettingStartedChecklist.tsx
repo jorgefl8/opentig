@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { IconCheck, IconLoader4, IconX } from '@tabler/icons-react';
+import { IconCheck, IconX } from '@tabler/icons-react';
 import type { RepositoryInfo } from '@shared/contracts';
 import type { CommitAuthorship } from '@shared/commit-authorship';
 import { gitIdentityInputSchema } from '@shared/onboarding';
@@ -11,6 +11,7 @@ import { queryKeys } from '@/lib/query-client';
 import { needsIdentity } from './onboarding-model';
 import { githubCheck, type GitHubCheck } from './useToolChecks';
 import './onboarding.css';
+import { Spinner } from '@/components/ui/spinner';
 
 /** What a new user still needs before their first commit and pull request. */
 export function GettingStartedChecklist({ repository, onDismiss, onSettings }: {
@@ -81,8 +82,8 @@ export function GettingStartedChecklist({ repository, onDismiss, onSettings }: {
           <input aria-label="Email" type="email" placeholder="you@example.com" value={email} maxLength={254} autoComplete="email" onChange={event => setEmail(event.target.value)} />
           {authorship.blockers.map(blocker => <p key={blocker} className="onboarding-hint">{blocker}</p>)}
           <div>
-            <Button type="button" variant="ghost" size="xs" disabled={!identity.success || !authorship.editable || Boolean(saving)} onClick={() => void saveIdentity('repository')}>{saving === 'repository' && <IconLoader4 className="animate-spin" />}This repository</Button>
-            <Button type="submit" size="xs" disabled={!identity.success || Boolean(saving)}>{saving === 'global' && <IconLoader4 className="animate-spin" />}All repositories</Button>
+            <Button type="button" variant="ghost" size="xs" disabled={!identity.success || !authorship.editable || Boolean(saving)} onClick={() => void saveIdentity('repository')}>{saving === 'repository' && <Spinner />}This repository</Button>
+            <Button type="submit" size="xs" disabled={!identity.success || Boolean(saving)}>{saving === 'global' && <Spinner />}All repositories</Button>
           </div>
         </form>}
       </Item>
@@ -102,7 +103,7 @@ export function GettingStartedChecklist({ repository, onDismiss, onSettings }: {
 
 function Item({ done, pending = false, title, detail, children }: { done: boolean; pending?: boolean; title: string; detail?: string; children?: ReactNode }) {
   return <li data-done={done || undefined}>
-    <span className="onboarding-check" aria-hidden="true">{pending ? <IconLoader4 className="animate-spin" /> : done && <IconCheck />}</span>
+    <span className="onboarding-check" aria-hidden="true">{pending ? <Spinner /> : done && <IconCheck />}</span>
     <div><strong>{title}</strong><span className="sr-only">{done ? ', done' : ', to do'}</span>{detail && <small>{detail}</small>}{children}</div>
   </li>;
 }

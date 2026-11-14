@@ -2,7 +2,7 @@ import { formatDateTime } from '@shared/date-format';
 import { PullRequestStackMenu } from './PullRequestStackMenu';
 import { Suspense, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { IconExternalLink, IconLoader4, IconRefresh } from '@tabler/icons-react';
+import { IconExternalLink, IconRefresh } from '@tabler/icons-react';
 import { GITHUB_PR_COMMIT_PAGE, type DiffResult, type DiffViewPreference, type PullRequestCommitList, type PullRequestDetails, type PullRequestLatestReview, type PullRequestLiveState, type ThemePreference } from '../../../shared/contracts';
 import { pullRequestStateLine, pullRequestStatusLine } from '../../../shared/pull-request-actions';
 import { Button } from '@/components/ui/button';
@@ -28,6 +28,7 @@ import { LazyPullRequestDiff as PullRequestDiff } from './pull-request-viewer-ch
 import { opentig } from '@/lib/opentig-api';
 import { queryKeys } from '@/lib/query-client';
 import '@/features/markdown/markdown.css';
+import { Spinner } from '@/components/ui/spinner';
 
 /** How long a PR's details are taken as current without asking again. */
 const PULL_REQUEST_STALE_MS = 60_000;
@@ -253,9 +254,9 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
             <Button variant="outline" size="sm" onClick={() => void diffQuery.refetch()}><IconRefresh /> Try again</Button>
           </div>
         ) : !diff || !details ? (
-          <div className="viewer-message"><IconLoader4 className="spinner" /> <ShimmeringText text="Loading diff…" /></div>
+          <div className="viewer-message"><Spinner className="view-spinner" /> <ShimmeringText text="Loading diff…" /></div>
         ) : (
-          <Suspense fallback={<div className="viewer-message"><IconLoader4 className="spinner" /> <ShimmeringText text="Loading diff viewer…" /></div>}>
+          <Suspense fallback={<div className="viewer-message"><Spinner className="view-spinner" /> <ShimmeringText text="Loading diff viewer…" /></div>}>
             <PullRequestDiff diff={diff} prNumber={pr.number} repositoryId={repositoryId} commits={commits} diffView={diffView} themeType={themeType} wrapLines={wrapLines} onDiffViewChange={onDiffViewChange} onWrapLinesChange={onWrapLinesChange} onClose={onClose} onOpenFile={onOpenFile} />
           </Suspense>
         )}
