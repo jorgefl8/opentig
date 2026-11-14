@@ -15,7 +15,7 @@ import {
   IconLoader4, IconRefresh, IconRestore, IconSearch, IconTrash,
 } from '@tabler/icons-react';
 import { sileo } from 'sileo';
-import type { BootstrapData, CommitSplitProposal, FetchResult, FileHistoryPathChange, FileHistoryState, GhCliStatus, GitHubRepositoryInfo, OpenTigCapabilities, Preferences, PullRequestState, PullRequestSummary, PullResult, PushResult, RecentRepository, RepositoryInfo, RepositoryRelocationSearch, UndoLatestCommitResult } from '../../shared/contracts';
+import type { BootstrapData, FetchResult, FileHistoryPathChange, FileHistoryState, GhCliStatus, GitHubRepositoryInfo, OpenTigCapabilities, Preferences, PullRequestState, PullRequestSummary, PullResult, PushResult, RecentRepository, RepositoryInfo, RepositoryRelocationSearch, UndoLatestCommitResult } from '../../shared/contracts';
 import { matchesCombo, resolveShortcuts, type ShortcutMap } from '../../shared/shortcuts';
 import { ShortcutsProvider } from './ShortcutsContext';
 import { Toolbar } from './Toolbar';
@@ -51,6 +51,7 @@ import {
   restoreSession, serializeSession, setTabDirty, type TabKeyboardAction,
 } from '@/features/files/open-files-model';
 import { CommitComposer } from '@/features/commit/CommitComposer';
+import { useCommitPlan } from '@/features/commit/useCommitPlan';
 import { clearCommitFilesCache } from '@/features/history/commit-files-cache';
 import { OpenRepositoryDialog } from '@/features/repositories/OpenRepositoryDialog';
 import { Welcome } from '@/features/repositories/Welcome';
@@ -201,10 +202,6 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   const [fileViewerToolbarHost, setFileViewerToolbarHost] = useState<HTMLElement | null>(null);
   const initialSelectionApplied = useRef(false);
   const [commitMessage, setCommitMessage] = useState('');
-  const [commitProposal, setCommitProposal] = useState<CommitSplitProposal | null>(null);
-  const [preparedCommitIndex, setPreparedCommitIndex] = useState<number | null>(null);
-  const [completedCommitIndices, setCompletedCommitIndices] = useState<ReadonlySet<number>>(() => new Set());
-  const [commitPlanCollapsed, setCommitPlanCollapsed] = useState(false);
   /** The sidebar width painted while its edge is being dragged. */
   const [sidebarDragWidth, setSidebarDragWidth] = useState<number | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -264,9 +261,6 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   const dirtyCloseResolverRef = useRef<((choice: DirtyCloseChoice) => void) | null>(null);
   const destructiveActionInFlightRef = useRef(false);
   const commitTextareaRef = useRef<HTMLTextAreaElement>(null);
-  // The last message OpenTig itself put in the composer, so an edited one is
-  // never replaced without asking.
-  const lastAppliedMessageRef = useRef('');
   const knownConflictPathsRef = useRef<Map<string, string[]>>(new Map());
   const refreshCyclesRef = useRef<Map<string, { queued: RefreshRequest | null; promise: Promise<void> }>>(new Map());
 
@@ -371,6 +365,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   const repositoryLoadVisible = useElapsed(repositoryLoadPhase ? 'busy' : null, 200);
   const repositoryLoadSlow = useElapsed(pendingRepositoryId ?? (repositoryLoadPhase ? repository?.id ?? null : null), 5000);
   const status = currentSnapshot ? statusState : null;
+  const commitPlan = useCommitPlan({ repositoryId: repository?.id, status, message: commitMessage, setMessage: setCommitMessage, index: opentig.index });
   const files = currentSnapshot ? filesState : null;
   const branches = currentSnapshot ? branchesState : [];
   const worktrees = currentSnapshot ? worktreesState : [];
@@ -1117,11 +1112,10 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     const previous = status;
     setStatus(optimisticStatus(status, paths, mode));
     setBusy(mode);
-    setCommitProposal(null);
-    setPreparedCommitIndex(null);
     try {
       if (mode === 'stage') await opentig.index.stage(repository.id, paths);
       else await opentig.index.unstage(repository.id, paths);
+      commitPlan.pause('You changed the staged files by hand.');
       await refresh({ background: true });
       return true;
     } catch (reason) {
@@ -1569,10 +1563,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     }
     destructiveActionInFlightRef.current = true;
     setDestructiveAction(null);
-    if (action.kind === 'discard') {
-      setCommitProposal(null);
-      setPreparedCommitIndex(null);
-    }
+    if (action.kind === 'discard') commitPlan.pause('You discarded changes by hand.');
     try {
       const outcome = await dispatchDestructiveAction(action, true, {
         discard: (repositoryId, paths) => opentig.index.discard(repositoryId, paths),
@@ -1672,11 +1663,10 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     const previous = status;
     setStatus(optimisticStatus(status, paths, mode));
     setBusy(mode);
-    setCommitProposal(null);
-    setPreparedCommitIndex(null);
     try {
       if (mode === 'stage') await opentig.index.stageAll(repository.id);
       else await opentig.index.unstageAll(repository.id);
+      commitPlan.pause('You changed the staged files by hand.');
       await refresh({ background: true });
     } catch (reason) { setStatus(previous); reportError(mode === 'stage' ? 'Could not stage changes' : 'Could not unstage changes', reason); }
     finally { setBusy(null); }
@@ -1684,31 +1674,22 @@ export default function App({ initialView, initialSelection, pullRequestCreation
 
   const createCommit = async (options?: { push?: boolean }) => {
     if (!repository || !status?.stagedCount || !commitMessage.trim()) return;
+    // While a plan is followed, the commit must hold exactly its group's files.
+    const planStep = commitPlan.stepToCommit();
+    if (planStep === false) return;
     setBusy('commit');
     let committed = false;
     try {
       const result = await opentig.commits.create(repository.id, commitMessage);
       const subject = commitMessage.split(/\r?\n/, 1)[0] ?? commitMessage;
       setCommitMessage('');
-      // Completed groups stay in the plan, marked done. Removing them would
-      // renumber the remaining ones under the user after every commit.
-      if (commitProposal && preparedCommitIndex !== null) {
-        const done = new Set(completedCommitIndices).add(preparedCommitIndex);
-        setCompletedCommitIndices(done);
-        setPreparedCommitIndex(null);
-        if (done.size === commitProposal.commits.length) {
-          setCommitProposal(null);
-          setCompletedCommitIndices(new Set());
-          sileo.success({ title: 'Commit plan finished', description: `${done.size} commits created.` });
-        }
-      } else {
-        setCommitProposal(null);
-        setPreparedCommitIndex(null);
-        setCompletedCommitIndices(new Set());
-      }
-      lastAppliedMessageRef.current = '';
+      // The plan marks its group done and stages the next one, so the box is
+      // ready for the next commit. Any other commit ends the plan.
+      if (planStep) await commitPlan.committed({ oid: result.oid, subject });
+      else commitPlan.clear();
       setViewerSelection({ type: 'commit', oid: result.oid, subject });
-      setMobilePane('viewer');
+      // On a phone the plan stays in front until its last commit is made.
+      if (!planStep) setMobilePane('viewer');
       await refresh({ background: true });
       committed = true;
     } catch (reason) {
@@ -1753,14 +1734,12 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       const result = await opentig.ai.generateCommitMessage({ repositoryId: repository.id, harness, model, requestId });
       if (generationRequest.current?.id !== requestId || generationRequest.current.repositoryId !== repository.id) return;
       setCommitMessage(result.message);
-      lastAppliedMessageRef.current = result.message;
-      setCommitProposal(result.proposal);
-      setPreparedCommitIndex(null);
-      setCompletedCommitIndices(new Set());
-      setCommitPlanCollapsed(false);
+      // Within a plan only one group is staged, so this rewrites that group's message.
+      const withinPlan = commitPlan.step !== null;
+      if (!withinPlan) commitPlan.propose(result.proposal, result.message);
       sileo.success({
         title: `Message generated with ${harnessLabel(result.harness)}`,
-        description: result.proposal
+        description: withinPlan ? undefined : result.proposal
           ? `${result.proposal.commits.length} focused commits may be clearer than one.`
           // Silence used to hide both "the model saw no split" and "OpenTig
           // refused to offer one"; only the second needs explaining.
@@ -1769,7 +1748,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
             : result.contextWasTruncated
               ? 'A truncated version of the staged diff was used.'
               : undefined,
-        ...(result.splitBlockedReason ? { duration: 8_000 } : {}),
+        ...(result.splitBlockedReason && !withinPlan ? { duration: 8_000 } : {}),
       });
     } catch (reason) {
       const detail = aiDetail(reason);
@@ -1790,43 +1769,16 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     }
   };
 
-  const prepareCommitGroup = async (index: number) => {
-    const proposal = commitProposal;
-    const group = proposal?.commits[index];
-    if (!repository || !status || !proposal || !group || status.readOnly || busy) return;
-    // Preparing a different group unstages the one already prepared, so the work
-    // waiting in the index is only discarded when the user says so.
-    if (preparedCommitIndex !== null && preparedCommitIndex !== index
-      && !window.confirm('Commit group ' + (preparedCommitIndex + 1) + ' is staged and not committed yet. Prepare a different group and unstage it?')) {
-      return;
-    }
-    // The generated message is only overwritten when it is still the generated
-    // one; anything typed by hand is the user's to keep.
-    if (commitMessage.trim() && commitMessage !== lastAppliedMessageRef.current
-      && !window.confirm('Replace the commit message you wrote with the one from this group?')) {
-      return;
-    }
+  /** A change the plan makes to the index: staging a group, or staging everything back. */
+  const runCommitPlanTask = async (task: () => Promise<void>) => {
+    if (!repository || busy) return;
     setBusy('prepare-commit-group');
     try {
-      await opentig.index.prepareCommitGroup({
-        repositoryId: repository.id,
-        paths: group.paths,
-        expectedStagedPaths: status.changes.filter((change) => change.staged && !change.conflict).map((change) => change.path).sort(),
-        expectedFingerprint: group.fingerprint,
-      });
-      setCommitMessage(group.message);
-      lastAppliedMessageRef.current = group.message;
-      setPreparedCommitIndex(index);
-      await refresh({ background: true });
-      sileo.success({ title: 'Commit group prepared', description: `${group.paths.length} ${group.paths.length === 1 ? 'file is' : 'files are'} staged. Review the diff before committing.` });
-      window.setTimeout(() => commitTextareaRef.current?.focus(), 0);
+      await task();
     } catch (reason) {
-      // The plan survives a failed prepare: regenerating it costs another model
-      // call, and most failures here are recoverable.
-      setPreparedCommitIndex(null);
-      sileo.error({ title: 'Could not prepare the commit group', description: messageOf(reason), duration: 10_000 });
-      await refresh({ background: true });
+      reportError('Could not stage the files again', reason);
     } finally {
+      await refresh({ background: true });
       setBusy(null);
     }
   };
@@ -1834,13 +1786,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   useEffect(() => {
     const active = generationRequest.current;
     if (active && active.repositoryId !== repository?.id) void opentig.ai.cancelGeneration(active.id);
-    setCommitProposal(null);
-    setPreparedCommitIndex(null);
   }, [repository?.id]);
-
-  // Nothing is left to show in the commit sheet once the last staged file is gone.
-  useEffect(() => {
-  }, [commitProposal, status?.stagedCount]);
 
   useEffect(() => () => {
     const active = generationRequest.current;
@@ -1996,6 +1942,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       const result = await opentig.commits.undoLatest(repository.id, selected.oid);
       if (result.status === 'success') {
         setUndoCommit(null);
+        // A plan can't account for a commit taken back, whether it made it or not.
+        commitPlan.clear();
         setViewerSelection(null);
         setMobilePane('list');
         // The draft lands in the commit box, which a collapsed sidebar hides.
@@ -2576,10 +2524,11 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     return { id: item, icon: <IconSearch />, label: 'Search' };
   });
   const sidebarWidth = sidebarDragWidth ?? bootstrap.preferences.sidebarWidth;
-  // Docked at the bottom of the sidebar on desktop; in a sheet on phones, whose text and plan live here and outlast it.
+  // Docked at the bottom of the sidebar on desktop and floating over the list on phones. Its text and plan live here and outlast it.
+  const hasCommitPlan = commitPlan.plan !== null || commitPlan.outcome !== null;
   const commitComposer = (
     <CommitComposer
-      open={mobile ? mobilePane === 'list' && view === 'changes' && mobileMainAction({ screen: 'changes', stagedCount, hasCommitPlan: commitProposal !== null }) === 'commit' : view === 'changes' && Boolean(status?.stagedCount || commitProposal)}
+      open={mobile ? mobilePane === 'list' && view === 'changes' && mobileMainAction({ screen: 'changes', stagedCount, hasCommitPlan }) === 'commit' : view === 'changes' && Boolean(status?.stagedCount || hasCommitPlan)}
       stagedCount={status?.stagedCount ?? 0}
       message={commitMessage}
       generating={Boolean(generating)}
@@ -2593,18 +2542,20 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       busy={busy}
       readOnly={Boolean(status?.readOnly)}
       canPush={Boolean(status?.branch && !status.detached && !status.readOnly)}
-      proposal={commitProposal}
-      preparedIndex={preparedCommitIndex}
-      completed={completedCommitIndices}
-      collapsed={commitPlanCollapsed}
+      plan={commitPlan.plan}
+      outcome={commitPlan.outcome}
+      changes={status?.changes ?? []}
+      phone={mobile}
       textareaRef={commitTextareaRef}
       onMessage={setCommitMessage}
       onGenerate={() => void generateCommitMessage()}
       onCancelGenerate={() => void cancelCommitMessageGeneration()}
-      onDismissProposal={() => { setCommitProposal(null); setPreparedCommitIndex(null); setCompletedCommitIndices(new Set()); }}
-      onToggleCollapsed={() => setCommitPlanCollapsed((value) => !value)}
-      onOpenPath={(path) => { selectViewer({ type: 'diff', path, kind: 'staged' }); }}
-      onPrepare={(index) => void prepareCommitGroup(index)}
+      onPlanMode={(mode) => void runCommitPlanTask(() => commitPlan.chooseMode(mode))}
+      onActivateGroup={(index) => void runCommitPlanTask(() => commitPlan.activate(index))}
+      onDiscardPlan={() => void runCommitPlanTask(() => commitPlan.discard())}
+      onDismissOutcome={commitPlan.clear}
+      onOpenPath={(path, kind) => { selectViewer({ type: 'diff', path, kind }); }}
+      onOpenCommit={(commit) => { selectViewer({ type: 'commit', oid: commit.oid, subject: commit.subject }); }}
       onCommit={(options) => void createCommit(options)}
     />
   );

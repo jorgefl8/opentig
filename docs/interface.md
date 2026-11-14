@@ -142,14 +142,14 @@ Use the bottom **Changes**, **Files**, **History**, **GitHub**, and **Search** t
 
 | Screen | Main action |
 | --- | --- |
-| **Changes** with staged files, or a commit plan | The commit box, described below |
+| **Changes** with staged files, or a commit plan with something to show | The commit box, described below |
 | **Pull request, Summary** | Its primary action, such as **Merge**, **Merge when ready**, **Update branch**, or **Ready for review**. Nothing floats when there's only a reason to give, such as a conflict |
 | **Pull request, Comments** | A one-line **Write a comment** field that opens the composer in a sheet. A draft stays when the sheet closes, and shows on the field |
 | **Pull request, Checks, Timeline, Code** | None, so the screen goes to what you're reading |
 | **Draft release** | **Publish**. It's disabled with the reason above it when the account can't publish |
 | **A file with unsaved edits** | **Save** |
 
-The commit box stays above the bottom bar in **Changes** while something is staged, and above the keyboard while you type. It holds the message, your AI provider, and the commit button, whose arrow chooses **Commit** or **Commit and push** without running anything. A suggested plan appears above it with its groups and scrolls inside. Opening a diff and coming back keeps the message and the plan, and generating carries on until it finishes or you cancel it.
+The commit box stays above the bottom bar in **Changes** while something is staged, and above the keyboard while you type. It holds the message, your AI provider, and the commit button, whose arrow chooses **Commit** or **Commit and push** without running anything. A suggested split adds the **One commit** / **Split into *n*** choice above it. While splitting, a row shows the progress and opens the plan in a full-height sheet with each commit's card, files, and the button for the next commit. Opening a diff and coming back keeps the message and the plan, with the sheet open again if it was, and committing a group keeps you on the plan. Generating carries on until it finishes or you cancel it.
 
 Actions that ask first do so in a sheet with the same checks as on desktop: merging shows **Method** as a picker and **Delete branch** as a switch where they apply, one button, and the account underneath. A sheet can't be dismissed while its answer is being sent. A notification that arrives while a sheet is open appears at the top of the screen, above the sheet.
 

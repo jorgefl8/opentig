@@ -4,7 +4,7 @@ export type PullRequestTab = 'summary' | 'comments' | 'checks' | 'timeline' | 'd
 
 /** What a screen knows that decides its floating action. Each screen has at most one. */
 export type MobileScreen =
-  | { screen: 'changes'; stagedCount: number; hasCommitPlan: boolean }
+  | { screen: 'changes'; stagedCount: number; /** A plan to follow, or what the last one left to say. */ hasCommitPlan: boolean }
   | { screen: 'file'; dirty: boolean; saving: boolean }
   | { screen: 'pull-request'; tab: PullRequestTab; primary: PullRequestPrimary['kind'] }
   | { screen: 'release'; isDraft: boolean; canWrite: boolean };

@@ -252,6 +252,89 @@ test('choosing Commit and push only changes the button, which then commits and p
   await expect.poll(async () => (await repository.git('ls-remote', 'origin', 'refs/heads/main')).split('\t')[0]).toBe(head);
 });
 
+test.describe('a suggested split into several commits', () => {
+  // No AI CLI is contacted: a stand-in answers with this plan for the two files the journeys stage.
+  test.use({
+    aiAnswer: {
+      subject: 'feat: add search with its guide',
+      body: '',
+      rationale: 'The feature and its guide can be reviewed on their own.',
+      commits: [
+        { subject: 'feat: add search', body: 'Find tasks by title.', reason: 'The feature.', paths: ['search.js'] },
+        { subject: 'docs: describe search', body: '', reason: 'The guide.', paths: ['guide.md'] },
+      ],
+    },
+  });
+
+  async function generatePlan(page: Page, repository: GitRepository): Promise<Locator> {
+    await write(repository, 'search.js', 'export const search = () => [];\n');
+    await write(repository, 'guide.md', '# Search\n');
+    await openRepository(page, repository);
+    await openChanges(page, 2);
+    await page.getByRole('button', { name: 'Stage all', exact: true }).click();
+    await expect.poll(() => stagedFiles(repository)).toBe('guide.md\nsearch.js');
+    const commitBox = page.getByRole('group', { name: 'Create commit' });
+    await commitBox.getByRole('button', { name: /^Generate with Codex/ }).click();
+    // The suggestion changes nothing by itself: one commit stays chosen and everything stays staged.
+    const mode = commitBox.getByRole('group', { name: 'How to commit the staged files' });
+    await expect(mode.getByRole('button', { name: 'One commit' })).toHaveAttribute('aria-pressed', 'true');
+    await expect(commitBox.getByRole('textbox', { name: 'Commit message' })).toHaveValue('feat: add search with its guide');
+    await expect(commitBox.getByRole('button', { name: 'Commit 2 files' })).toBeEnabled();
+    expect(await stagedFiles(repository)).toBe('guide.md\nsearch.js');
+    return commitBox;
+  }
+
+  test('following the plan creates each commit with its own files and message', async ({ pairedPage: page, repository }) => {
+    const commitBox = await generatePlan(page, repository);
+
+    await commitBox.getByRole('button', { name: 'Split into 2' }).click();
+    const first = commitBox.getByRole('button', { name: 'Commit 1 of 2 · 1 file' });
+    await expect(first).toBeEnabled();
+    await expect(commitBox.getByRole('textbox', { name: 'Message for commit 1 of 2' })).toHaveValue('feat: add search\n\nFind tasks by title.');
+    expect(await stagedFiles(repository)).toBe('search.js');
+    await expect(changeRow(page, 'Not staged', 'guide.md')).toBeVisible();
+
+    // Committing one group stages the next, so the same place offers the next commit.
+    await first.click();
+    const second = commitBox.getByRole('button', { name: 'Commit 2 of 2 · 1 file' });
+    await expect(second).toBeEnabled();
+    await expect(commitBox.getByText('1 of 2 committed', { exact: true })).toBeVisible();
+    await expect(commitBox.getByRole('button', { name: 'One commit' })).toBeDisabled();
+    expect(await repository.git('log', '-1', '--format=%B')).toBe('feat: add search\n\nFind tasks by title.');
+    expect(await stagedFiles(repository)).toBe('guide.md');
+
+    await second.click();
+    await expect(commitBox.getByText('2 commits created')).toBeVisible();
+    expect(await repository.git('log', '-3', '--format=%s')).toBe('docs: describe search\nfeat: add search\nInitial commit');
+    expect(await repository.git('show', '--name-only', '--format=', 'HEAD~1')).toBe('search.js');
+    expect(await repository.git('show', '--name-only', '--format=', 'HEAD')).toBe('guide.md');
+    expect(await repository.git('status', '--porcelain')).toBe('');
+  });
+
+  test('staging by hand pauses the plan with the reason, and discarding it stages everything back', async ({ pairedPage: page, repository }) => {
+    const commitBox = await generatePlan(page, repository);
+    await commitBox.getByRole('button', { name: 'Split into 2' }).click();
+    await expect(commitBox.getByRole('button', { name: 'Commit 1 of 2 · 1 file' })).toBeEnabled();
+
+    await clickRowAction(changeRow(page, 'Not staged', 'guide.md'), 'Stage changes');
+    const paused = commitBox.getByRole('alert');
+    await expect(paused).toContainText('Commit plan paused. You changed the staged files by hand.');
+    await expect(commitBox.getByRole('button', { name: 'Commit 2 files' })).toBeVisible();
+
+    await paused.getByRole('button', { name: 'Resume plan' }).click();
+    await expect(commitBox.getByRole('button', { name: 'Commit 1 of 2 · 1 file' })).toBeEnabled();
+    expect(await stagedFiles(repository)).toBe('search.js');
+
+    await commitBox.getByRole('button', { name: 'Discard plan' }).click();
+    await expect(commitBox.getByRole('alert')).toContainText('All 2 files will be staged again');
+    await commitBox.getByRole('alert').getByRole('button', { name: 'Discard plan' }).click();
+    await expect(commitBox.getByText('Plan discarded. All 2 files are staged again.')).toBeVisible();
+    await expect(commitBox.getByRole('button', { name: 'Commit 2 files' })).toBeEnabled();
+    expect(await stagedFiles(repository)).toBe('guide.md\nsearch.js');
+    expect(await repository.git('log', '-1', '--format=%s')).toBe('Initial commit');
+  });
+});
+
 test('undoing a commit keeps the draft in the commit box and offers the undone message', async ({ pairedPage: page, repository }) => {
   // Undo is offered only for a commit that its upstream doesn't have yet.
   await repository.addRemote();

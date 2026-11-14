@@ -75,13 +75,14 @@ The CLI receives a bounded staged diff, summary, paths, branch name, and up to t
 
 **Split independent changes into commits**
 
-1. Request a split proposal when staged changes cover separate responsibilities.
-2. Review each group's message, reason, and complete-file list. Open any listed diff to inspect it.
-3. Prepare one group, review its files, and create its commit. Repeat for the remaining groups.
+1. Generate a message. When the staged changes cover separate responsibilities, the answer includes a plan of two to eight commits, each with its own message and complete files.
+2. Choose **Split into *n*** above the message to follow it, or stay on **One commit** to commit everything with the single message.
+3. Open a commit's card to review its message and files, and open any file's diff. Edit the message in the box if you want.
+4. Press the button, which names the commit it creates, such as **Commit 1 of 3 · 2 files**. OpenTig stages the next group and puts its message in the box. Repeat until the summary lists the commits created.
 
-Preparing a group changes **only the Git index**. It does not create a commit. Groups retain their original numbering and show how many are complete.
+Following a plan changes **only the Git index**: it stages one group at a time, and every commit is created by your press. Generating again while a group is staged rewrites that group's message and keeps the plan. Commits keep their original numbering and show how many exist. **Discard plan** stages what is left as it was before the split.
 
-**Partially staged files, staged renames, or an unreliable file inventory block proposals.** OpenTig explains the refusal. It validates that every staged path appears exactly once and that the staged snapshot has not changed. Every group is rechecked before preparation, so changed files cannot silently use a stale plan.
+**Partially staged files, staged renames, or an unreliable file inventory block proposals.** OpenTig explains the refusal. It validates that every staged path appears exactly once and that the staged snapshot has not changed. Every group is rechecked before it is staged, and the plan pauses with the reason when files were staged, unstaged, discarded, or edited since, so a stale plan cannot be followed silently.
 
 <details>
 <summary>How large staged patches are included</summary>
