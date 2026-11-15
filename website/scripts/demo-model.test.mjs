@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { DemoRepository, patch } from "../demo/model.ts";
+import { applyPatch } from "diff";
+import { DemoRepository, initialFiles, mainOid, patch, sampleHistory } from "../demo/model.ts";
 const filter = "src/filter-tasks.js";
 const tests = "test/filter-tasks.test.js";
 /** Working changes the sample workflow leaves for later, including the untracked changelog. */
@@ -63,7 +64,7 @@ test("new sessions restore the sample independently of edits and commits elsewhe
   first.commit("Sample");
   const second = new DemoRepository();
   assert.equal(second.read(filter), original);
-  assert.equal(second.commits.length, 1);
+  assert.equal(second.commits.length, sampleHistory.length);
   assert.equal(second.status().unstagedCount, 2 + others.length);
   assert.equal(second.status().stagedCount, 0);
 });
@@ -107,8 +108,8 @@ test('supports repeated editing and commits beyond the former session limit', ()
     oids.add(oid);
     assert.equal(repo.head[filter], `export const revision = ${i};\n`);
   }
-  assert.equal(repo.commits.length, 41);
-  assert.equal(repo.getCommit(firstOid).info.subject, 'Add the Launchpad task filter');
+  assert.equal(repo.commits.length, sampleHistory.length + 40);
+  assert.equal(repo.getCommit(firstOid).info.subject, 'Describe the task filter in the README');
   assert.equal(repo.status().stagedCount, 0);
   assert.deepEqual(repo.status().changes.map(f => f.path).sort(), [...others, tests].sort());
 });
@@ -132,36 +133,120 @@ test("an untracked file can be staged as added, unstaged, committed, or discarde
   assert.equal(fresh.files().some((f) => f.path === "CHANGELOG.md"), false);
 });
 
-test("publishing tracks the remote branch, and pushing sends the commits made since", () => {
+test("the sample history is one line that ends on the sample files, with main below the branch", () => {
   const repo = new DemoRepository();
-  assert.deepEqual([repo.status().upstream, repo.status().ahead], [null, 0]);
-  assert.deepEqual(repo.undoLatest(repo.commits[0].info.oid), { status: "no-upstream" });
-  assert.deepEqual(repo.push(), { published: true });
-  assert.equal(repo.status().upstream, "origin/feature/task-filters");
+  assert.deepEqual(repo.commits[0].after, initialFiles);
+  assert.deepEqual(repo.commits.at(-1).before, {});
+  repo.commits.forEach((commit, index) => {
+    const parent = repo.commits[index + 1];
+    assert.ok(repo.commitFiles(commit.info.oid).length > 0, commit.info.subject);
+    assert.deepEqual(commit.info.parentOids, parent ? [parent.info.oid] : []);
+    if (parent) assert.deepEqual(commit.before, parent.after, commit.info.subject);
+    if (parent) assert.ok(Date.parse(commit.info.date) > Date.parse(parent.info.date), commit.info.subject);
+  });
+  // The branch's own commits sit on top of main's, and the remote has them all.
+  assert.deepEqual(repo.commits.map((c) => c.info.baseState), ["outside", "outside", "included", "included", "included"]);
+  assert.equal(repo.commits[2].info.oid, mainOid);
+  assert.ok(repo.commits.every((c) => c.info.upstreamState === "published"));
+  assert.deepEqual([repo.status().upstream, repo.status().ahead, repo.status().behind], ["origin/feature/task-filters", 0, 0]);
+});
+
+test("one commit of the sample history adds, modifies, deletes, and renames a file", () => {
+  const repo = new DemoRepository();
+  const commit = repo.commits.find((c) => c.info.subject === "Turn search into a task filter");
+  const { oid } = commit.info;
+  assert.deepEqual(repo.commitFiles(oid).map((f) => [f.kind, f.oldPath, f.path]), [
+    ["modified", null, "package.json"],
+    ["renamed", "src/search.js", filter],
+    ["added", null, tests],
+    ["deleted", null, "test/smoke.js"],
+  ]);
+  // The viewer reads the kind of each change from the patch, so the patch has to say the same.
+  const whole = repo.commitDiff(oid).patch;
+  assert.match(whole, /^diff --git a\/src\/search\.js b\/src\/filter-tasks\.js\nsimilarity index \d+%\nrename from src\/search\.js\nrename to src\/filter-tasks\.js\n--- a\/src\/search\.js\n\+\+\+ b\/src\/filter-tasks\.js\n@@/m);
+  assert.match(whole, /^diff --git a\/test\/filter-tasks\.test\.js b\/test\/filter-tasks\.test\.js\nnew file mode 100644\n--- \/dev\/null$/m);
+  assert.match(whole, /^diff --git a\/test\/smoke\.js b\/test\/smoke\.js\ndeleted file mode 100644\n--- a\/test\/smoke\.js\n\+\+\+ \/dev\/null$/m);
+  // A renamed file opens from either of its paths, as what the old file became.
+  const renamed = repo.commitDiff(oid, filter).patch;
+  assert.equal(repo.commitDiff(oid, "src/search.js").patch, renamed);
+  assert.equal(applyPatch(commit.before["src/search.js"], renamed.slice(renamed.indexOf("--- "))), commit.after[filter]);
+  assert.throws(() => repo.commitDiff(oid, "missing.js"), /not in this commit/);
+});
+
+test("the first push runs into a teammate's commit, and pulling puts the local commits on top of it", () => {
+  const repo = new DemoRepository();
+  // With nothing to send, a push does not reach the remote and finds nothing.
+  assert.deepEqual(repo.push(), { status: "pushed", commits: 0 });
   repo.stage([filter]);
-  repo.commit("Hide completed tasks");
+  const first = repo.commit("Hide completed tasks");
   repo.stage([tests]);
-  repo.commit("Cover completed tasks");
+  const second = repo.commit("Cover completed tasks");
   assert.equal(repo.status().ahead, 2);
-  assert.deepEqual(repo.push(), { published: false, commits: 2 });
-  assert.equal(repo.status().ahead, 0);
-  assert.equal(repo.commits[0].info.upstreamState, "published");
+
+  const refused = repo.push();
+  assert.deepEqual(refused, { status: "behind", ahead: 2, behind: 1, incoming: ["4e7a1d3 Cover an empty task list"], refused: true });
+  assert.deepEqual([repo.status().ahead, repo.status().behind], [2, 1]);
+  assert.equal(repo.commits[0].info.upstreamState, "local-only");
+  // While the branch is behind, nothing is sent again.
+  assert.equal(repo.push().refused, false);
+
+  const changesBefore = repo.status().changes.map((f) => [f.path, f.staged, f.unstaged]);
+  assert.deepEqual(repo.pull(), { commits: 1, localCommits: 2, restoredLocalChanges: true });
+  assert.equal(repo.pull(), null);
+  assert.deepEqual([repo.status().ahead, repo.status().behind], [2, 0]);
+  assert.deepEqual(repo.commits.slice(0, 4).map((c) => c.info.subject), ["Cover completed tasks", "Hide completed tasks", "Cover an empty task list", "Describe the task filter in the README"]);
+  // The local commits are the same changes under new identifiers, on top of the teammate's commit.
+  const [newSecond, newFirst, teammate] = repo.commits;
+  assert.notEqual(newFirst.info.oid, first.oid);
+  assert.notEqual(newSecond.info.oid, second.oid);
+  assert.deepEqual([newFirst.info.parentOids, newSecond.info.parentOids], [[teammate.info.oid], [newFirst.info.oid]]);
+  assert.deepEqual(repo.commitFiles(newFirst.info.oid).map((f) => f.path), [filter]);
+  assert.deepEqual(repo.commitFiles(newSecond.info.oid).map((f) => f.path), [tests]);
+  assert.deepEqual(repo.commitFiles(teammate.info.oid).map((f) => [f.kind, f.path]), [["added", "test/empty-list.test.js"]]);
+  assert.equal(newSecond.info.isHead, true);
+  assert.equal(repo.status().oid, newSecond.info.oid);
+  // The teammate's file arrives, and the visitor's uncommitted changes are untouched.
+  assert.ok(repo.files().some((f) => f.path === "test" && f.children.some((child) => child.path === "test/empty-list.test.js")));
+  assert.deepEqual(repo.status().changes.map((f) => [f.path, f.staged, f.unstaged]), changesBefore);
+
+  assert.deepEqual(repo.push(), { status: "pushed", commits: 2 });
+  assert.deepEqual([repo.status().ahead, repo.commits[0].info.upstreamState], [0, "published"]);
+  // It happens once: later pushes go through.
+  repo.stage(["README.md"]);
+  repo.commit("Tick the checklist");
+  assert.deepEqual(repo.push(), { status: "pushed", commits: 1 });
+});
+
+test("a pull with no local commits moves the branch onto the teammate's commit", () => {
+  const repo = new DemoRepository();
+  repo.stage([filter]);
+  const { oid } = repo.commit("Hide completed tasks");
+  repo.push();
+  assert.equal(repo.undoLatest(oid).status, "success");
+  assert.deepEqual([repo.status().ahead, repo.status().behind], [0, 1]);
+  assert.deepEqual(repo.pull(), { commits: 1, localCommits: 0, restoredLocalChanges: true });
+  assert.deepEqual([repo.commits[0].info.subject, repo.commits[0].info.isHead, repo.status().ahead], ["Cover an empty task list", true, 0]);
+  // The undone commit left its change staged, and it still is.
+  assert.deepEqual(repo.status().changes.filter((f) => f.staged).map((f) => f.path), [filter]);
 });
 
 test("undoing the latest unpushed commit keeps its changes staged", () => {
   const repo = new DemoRepository();
-  repo.push();
+  const published = repo.commits[0].info.oid;
+  assert.deepEqual(repo.undoLatest(published), { status: "not-local" });
   repo.stage([filter, tests]);
   const { oid } = repo.commit("Hide completed tasks");
   assert.deepEqual(repo.undoLatest("stale"), { status: "stale-head" });
   const undone = repo.undoLatest(oid);
   assert.deepEqual([undone.status, undone.undoneOid, undone.stagedCount], ["success", oid, 2]);
-  assert.equal(repo.commits.length, 1);
+  assert.equal(repo.commits.length, sampleHistory.length);
   assert.equal(repo.commits[0].info.isHead, true);
   const again = repo.commit("Hide completed tasks again");
   assert.notEqual(again.oid, oid);
   repo.push();
-  assert.deepEqual(repo.undoLatest(again.oid), { status: "not-local" });
+  repo.pull();
+  repo.push();
+  assert.deepEqual(repo.undoLatest(repo.commits[0].info.oid), { status: "not-local" });
 });
 
 test("files can be created, renamed, and deleted, and deletions are staged and committed", () => {

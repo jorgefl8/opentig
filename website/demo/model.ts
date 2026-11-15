@@ -17,8 +17,16 @@ export const repository = {
   path: "/demo/launchpad",
   commonDir: "/demo/launchpad/.git",
 };
-export const sampleDate = "2026-01-15T12:00:00.000Z";
-export const initialFiles: Record<string, string> = {
+/** The sample's clock runs back from the moment the page opened, so ages read the same on any day. */
+const openedAt = Date.now();
+export const hoursAgo = (hours: number) => new Date(openedAt - hours * 3_600_000).toISOString();
+export const daysAgo = (days: number) => hoursAgo(days * 24);
+/** When the sample's pull requests, releases, and workflow runs were last touched. */
+export const sampleDate = hoursAgo(2);
+export const branchName = "feature/task-filters";
+export const upstreamName = `origin/${branchName}`;
+export type Tree = Record<string, string>;
+export const initialFiles: Tree = {
   ".github/workflows/ci.yml": sampleWorkflow,
   ".github/workflows/nightly.yml": sampleNightlyWorkflow,
   ".github/workflows/prepare-release.yml": sampleReleaseWorkflow,
@@ -113,7 +121,146 @@ export function counts(before: string, after: string) {
     : { additions: lines(after).length, deletions: lines(before).length };
 }
 
+/** The patch Git writes for a renamed file: where it came from, and what changed on the way. */
+export function renamePatch(from: string, to: string, before: string, after: string): string {
+  const body = patch(to, before, after);
+  const changed = counts(before, after);
+  const similarity = Math.round((1 - Math.max(changed.additions, changed.deletions) / Math.max(lines(before).length, lines(after).length, 1)) * 100);
+  const header = `diff --git a/${from} b/${to}\nsimilarity index ${similarity}%\nrename from ${from}\nrename to ${to}\n`;
+  return body ? header + body.slice(body.indexOf("--- ")).replace(`--- a/${to}`, `--- a/${from}`) : header;
+}
+
+/** What a commit did to each file, sorted by path. A renamed file is listed once, under its new path. */
+export function changedFiles(before: Tree, after: Tree, renames: Record<string, string> = {}): CommitFile[] {
+  const renamedFrom = new Set(Object.values(renames));
+  return [...new Set([...Object.keys(before), ...Object.keys(after)])]
+    .filter((path) => !renamedFrom.has(path) && (before[renames[path] ?? path] !== after[path] || Object.hasOwn(renames, path)))
+    .sort()
+    .map((path) => {
+      const oldPath = renames[path] ?? null;
+      const previous = before[oldPath ?? path];
+      // Counted from the patch the viewer shows, so the two can never disagree.
+      const text = filePatch({ path, oldPath }, before, after);
+      const changed = text.slice(Math.max(text.indexOf("\n@@"), 0)).split("\n");
+      return {
+        path,
+        oldPath,
+        kind: oldPath ? "renamed" : previous === undefined ? "added" : after[path] === undefined ? "deleted" : "modified",
+        additions: changed.filter((line) => line.startsWith("+")).length,
+        deletions: changed.filter((line) => line.startsWith("-")).length,
+        binary: false,
+      };
+    });
+}
+
+/** The patch of one file of a commit, in the form Git gives its kind of change. */
+export function filePatch(file: Pick<CommitFile, "path" | "oldPath">, before: Tree, after: Tree): string {
+  if (file.oldPath) return renamePatch(file.oldPath, file.path, before[file.oldPath] ?? "", after[file.path] ?? "");
+  return patch(file.path, before[file.path] ?? "", after[file.path] ?? "", before[file.path] === undefined, after[file.path] === undefined);
+}
+
+export interface SampleCommit {
+  oid: string;
+  subject: string;
+  body: string;
+  author: string;
+  email: string;
+  date: string;
+  before: Tree;
+  after: Tree;
+  /** New path to the path Git says it was renamed from. */
+  renames: Record<string, string>;
+  /** On main already, or one of the branch's own commits. */
+  onMain: boolean;
+}
+
+/** A copy of a tree with some files replaced, or removed when given as undefined. */
+function withFiles(tree: Tree, changes: Record<string, string | undefined>): Tree {
+  const next = { ...tree };
+  for (const [path, content] of Object.entries(changes)) {
+    if (content === undefined) delete next[path];
+    else next[path] = content;
+  }
+  return next;
+}
+/** An earlier version of a sample file. Fails loudly if the text it undoes is no longer there. */
+function earlier(text: string, replacements: [later: string, before: string][]): string {
+  return replacements.reduce((value, [later, before]) => {
+    if (!value.includes(later)) throw new Error(`The sample history expects "${later}" in a sample file.`);
+    return value.replace(later, before);
+  }, text);
+}
+
+/** The tip of main, which the remote has too. */
+export const mainOid = "a".repeat(40);
+const demoAuthor = { author: "OpenTig Demo", email: "demo@example.com" };
+const searchPath = "src/search.js";
+const filterPath = "src/filter-tasks.js";
+const filterTests = "test/filter-tasks.test.js";
+const smokePath = "test/smoke.js";
+const workflowPaths = Object.keys(initialFiles).filter((path) => path.startsWith(".github/"));
+
+// The history is written backwards from the files as they are now, so its newest commit ends exactly on them.
+const beforeReadmeUpdate = withFiles(initialFiles, {
+  "README.md": earlier(initialFiles["README.md"]!, [
+    ["`filterTasks` matches task titles", "`searchTasks` matches task titles"],
+    ["import { filterTasks } from './src/filter-tasks.js';", "import { searchTasks } from './src/search.js';"],
+    ["const visible = filterTasks(tasks, 'landing');", "const visible = searchTasks(tasks, 'landing');"],
+    ["Runs the task filter tests with `node --test`.", "Runs the search smoke check in `test/smoke.js`."],
+  ]),
+});
+const beforeTaskFilter = withFiles(beforeReadmeUpdate, {
+  [filterPath]: undefined,
+  [searchPath]: earlier(initialFiles[filterPath]!, [["export function filterTasks(", "export function searchTasks("]]),
+  [filterTests]: undefined,
+  [smokePath]: `import assert from 'node:assert/strict';
+import { searchTasks } from '../src/search.js';
+
+const tasks = [{ title: 'Design the landing page' }, { title: 'Write the release notes' }];
+
+assert.deepEqual(searchTasks(tasks, 'LANDING'), [tasks[0]]);
+console.log('search ok');
+`,
+  "package.json": earlier(initialFiles["package.json"]!, [['"test": "node --test"', '"test": "node test/smoke.js"']]),
+});
+const scriptsSection = /## Scripts\n[\s\S]*?\n\n(?=## )/.exec(beforeTaskFilter["README.md"]!)?.[0] ?? "## Scripts";
+const beforeScripts = withFiles(beforeTaskFilter, { "README.md": earlier(beforeTaskFilter["README.md"]!, [[scriptsSection, ""]]) });
+const beforeWorkflows = withFiles(beforeScripts, Object.fromEntries(workflowPaths.map((path) => [path, undefined])));
+
+/** Launchpad's history, oldest first: main, then the two commits of the branch's pull request. */
+export const sampleHistory: SampleCommit[] = [
+  { oid: `7c1e5f0${"c".repeat(33)}`, subject: "Start the Launchpad release board", body: "", ...demoAuthor, date: daysAgo(34), before: {}, after: beforeWorkflows, renames: {}, onMain: true },
+  { oid: `9d42b6a${"c".repeat(33)}`, subject: "Add CI, nightly, and release workflows", body: "", ...demoAuthor, date: daysAgo(20), before: beforeWorkflows, after: beforeScripts, renames: {}, onMain: true },
+  { oid: mainOid, subject: "Document the local test command (#19)", body: "", ...demoAuthor, date: daysAgo(6), before: beforeScripts, after: beforeTaskFilter, renames: {}, onMain: true },
+  {
+    oid: `0000150${"b".repeat(33)}`, subject: "Turn search into a task filter",
+    body: "Rename searchTasks to filterTasks and move it to src/filter-tasks.js.\nReplace the smoke script with node:test tests.",
+    ...demoAuthor, date: daysAgo(3), before: beforeTaskFilter, after: beforeReadmeUpdate, renames: { [filterPath]: searchPath }, onMain: false,
+  },
+  { oid: `0000151${"b".repeat(33)}`, subject: "Describe the task filter in the README", body: "", ...demoAuthor, date: daysAgo(2), before: beforeReadmeUpdate, after: initialFiles, renames: {}, onMain: false },
+];
+
+/** The commit a teammate pushes to the branch while the visitor works, which the first push runs into. */
+const teammateTest = "test/empty-list.test.js";
+function teammateCommit(tip: Tree): SampleCommit {
+  return {
+    oid: `4e7a1d3${"e".repeat(33)}`, subject: "Cover an empty task list", body: "", author: "leo-builds", email: "leo@example.com",
+    date: new Date(Date.now() - 4 * 60_000).toISOString(), before: tip, renames: {}, onMain: false,
+    after: withFiles(tip, {
+      [teammateTest]: `import assert from 'node:assert/strict';
+import test from 'node:test';
+import { filterTasks } from '../src/filter-tasks.js';
+
+test('an empty list has no matches', () => {
+  assert.deepEqual(filterTasks([], 'landing'), []);
+});
+`,
+    }),
+  };
+}
+
 type FileTree = { working: Record<string, string>; emptyFolders: Set<string> };
+type Entry = Pick<SampleCommit, "before" | "after" | "renames"> & { info: CommitInfo };
 
 export class DemoRepository {
   head = { ...initialFiles };
@@ -146,10 +293,14 @@ export class DemoRepository {
       "# Changelog\n\n## Unreleased\n\n- Search hides completed tasks by default. Pass `includeCompleted: true` to show them.\n- The board has a **Hide completed** filter.\n",
   };
   revision = 1;
-  /** Unpublished at first, so visitors can try Publish; it then tracks this remote branch. */
-  upstream: string | null = null;
-  /** The newest commit the simulated remote has; later commits are ahead of it. */
+  /** The branch is published, with an open pull request, and tracks this remote branch. */
+  readonly upstream = upstreamName;
+  /** The newest commit of this branch that the simulated remote has; later commits are ahead of it. */
   pushedOid = "";
+  /** Commits the remote has that this branch lacks, oldest first, once a push has found them. */
+  incoming: SampleCommit[] = [];
+  /** Whether the teammate's commit has reached the remote. It happens once. */
+  private teammatePushed = false;
   /** Folders created in the Files view before any file is added to them. */
   emptyFolders = new Set<string>();
   /** Paths copied or cut in the Files view, waiting to be pasted. */
@@ -159,38 +310,52 @@ export class DemoRepository {
   private fileFuture: Array<{ label: string; before: FileTree; after: FileTree }> = [];
   /** Never reused, so an undone commit's oid does not come back. */
   private nextCommit = 1;
-  commits: Array<{
-    info: CommitInfo;
-    before: Record<string, string>;
-    after: Record<string, string>;
-  }> = [];
+  /** Newest first. */
+  commits: Entry[] = [];
+  /** Commits a pull rewrote, by their old identifier. Like Git, the sample can still show them. */
+  private rewritten = new Map<string, Entry>();
   constructor() {
-    this.commits.push({
-      info: this.info("a".repeat(40), "Add the Launchpad task filter", []),
-      before: {},
-      after: { ...initialFiles },
-    });
-    // The first commit is already on the remote's main branch.
-    this.commits[0]!.info.upstreamState = "published";
+    // Everything in the sample history is on the remote already: main, and the branch's pull request.
+    for (const commit of sampleHistory) this.commits.unshift(this.entry(commit, "published"));
     this.pushedOid = this.commits[0]!.info.oid;
+    this.label();
   }
-  private info(oid: string, message: string, parents: string[]): CommitInfo {
-    const [subject = "", ...body] = message.split("\n");
+  private entry(commit: SampleCommit, upstreamState: CommitInfo["upstreamState"]): Entry {
+    const parents = this.commits[0] ? [this.commits[0].info.oid] : [];
     return {
-      oid,
-      shortOid: oid.slice(0, 7),
-      subject,
-      body: body.join("\n"),
-      author: "OpenTig Demo",
-      email: "demo@example.com",
-      date: sampleDate,
-      decorations: ["feature/task-filters"],
-      parentOids: parents,
-      parentCount: parents.length,
-      upstreamState: "local-only",
-      isHead: true,
-      baseState: "outside",
+      before: commit.before,
+      after: commit.after,
+      renames: commit.renames,
+      info: {
+        oid: commit.oid,
+        shortOid: commit.oid.slice(0, 7),
+        subject: commit.subject,
+        body: commit.body,
+        author: commit.author,
+        email: commit.email,
+        date: commit.date,
+        decorations: [],
+        parentOids: parents,
+        parentCount: parents.length,
+        upstreamState,
+        isHead: false,
+        baseState: commit.onMain ? "included" : "outside",
+      },
     };
+  }
+  /** Mark the newest commit as HEAD and name the branches that end on each commit. */
+  private label() {
+    this.commits.forEach(({ info }, index) => {
+      info.isHead = index === 0;
+      info.decorations = [
+        ...(index === 0 ? [`HEAD -> ${branchName}`] : []),
+        ...(info.oid === this.pushedOid ? [upstreamName] : []),
+        ...(info.oid === mainOid ? ["main", "origin/main"] : []),
+      ];
+    });
+  }
+  private newOid() {
+    return `${(this.nextCommit++).toString(16).padStart(7, "0")}${"d".repeat(33)}`;
   }
   private requireFile(path: string) {
     if (!Object.hasOwn(this.working, path))
@@ -442,11 +607,11 @@ export class DemoRepository {
         };
       });
     return {
-      branch: "feature/task-filters",
+      branch: branchName,
       oid: this.commits[0]!.info.oid,
       upstream: this.upstream,
       ahead: this.ahead(),
-      behind: 0,
+      behind: this.behind(),
       insertions: changes.reduce(
         (n, f) =>
           n + counts(this.head[f.path] ?? "", this.working[f.path] ?? "").additions,
@@ -481,75 +646,131 @@ export class DemoRepository {
   }
   /** Commits made in this page that the simulated remote does not have yet. */
   ahead() {
-    if (!this.upstream) return 0;
     const index = this.commits.findIndex((c) => c.info.oid === this.pushedOid);
     return index < 0 ? 0 : index;
   }
-  /** Publish the branch the first time, then push every local commit to the simulated remote. */
-  push(): { published: true } | { published: false; commits: number } {
-    const published = !this.upstream;
+  /**
+   * Commits on the branch that came after this one, or null when the branch does not have it.
+   * The history is one line, newest first, so they are the ones listed above it.
+   */
+  commitsAfter(oid: string): number | null {
+    const index = this.commits.findIndex((c) => c.info.oid === oid);
+    return index < 0 ? null : index;
+  }
+  /** Commits the remote is known to have that this branch lacks. */
+  behind() {
+    return this.incoming.length;
+  }
+  /** The branch as the remote has it, oldest first: its own commits, without those of main. */
+  remoteBranch(): SampleCommit[] {
+    const published = this.commits.slice(this.ahead()).filter((c) => c.info.baseState !== "included").reverse();
+    return [
+      ...published.map(({ info, before, after, renames }) => ({ oid: info.oid, subject: info.subject, body: info.body, author: info.author, email: info.email, date: info.date, before, after, renames, onMain: false })),
+      ...this.incoming,
+    ];
+  }
+  /**
+   * Push every local commit to the simulated remote. A teammate pushes to the branch first, once:
+   * that push is refused the way Git refuses it, and so is any other while the branch is behind.
+   */
+  push(): { status: "pushed"; commits: number } | { status: "behind"; ahead: number; behind: number; incoming: string[]; refused: boolean } {
     const commits = this.ahead();
-    this.upstream = "origin/feature/task-filters";
+    const refused = commits > 0 && !this.teammatePushed;
+    if (refused) {
+      this.teammatePushed = true;
+      this.incoming = [teammateCommit(this.commits[commits]!.after)];
+      this.revision++;
+    }
+    if (this.incoming.length) {
+      return { status: "behind", ahead: commits, behind: this.incoming.length, incoming: this.incoming.map((c) => `${c.oid.slice(0, 7)} ${c.subject}`).reverse(), refused };
+    }
     this.pushedOid = this.commits[0]!.info.oid;
     for (const commit of this.commits) commit.info.upstreamState = "published";
+    this.label();
     this.revision++;
-    return published ? { published: true } : { published: false, commits };
+    return { status: "pushed", commits };
+  }
+  /**
+   * Bring in the remote's commits and put the local ones on top of them, as a rebasing pull does.
+   * The local commits get new identifiers; uncommitted and staged changes stay as they were.
+   */
+  pull(): { commits: number; localCommits: number; restoredLocalChanges: boolean } | null {
+    const incoming = this.incoming;
+    if (!incoming.length) return null;
+    this.incoming = [];
+    const local = this.commits.splice(0, this.ahead()).reverse();
+    const head = this.head;
+    const restoredLocalChanges = this.status().changes.length > 0;
+    /** What the remote's commits changed, laid over a tree wherever the tree still had the old version. */
+    const bring = (tree: Tree, base: Tree = tree) => {
+      const next = { ...tree };
+      for (const commit of incoming) {
+        for (const path of new Set([...Object.keys(commit.before), ...Object.keys(commit.after)])) {
+          if (commit.before[path] !== commit.after[path] && base[path] === commit.before[path]) DemoRepository.assign(next, path, commit.after[path]);
+        }
+      }
+      return next;
+    };
+    for (const commit of incoming) this.commits.unshift(this.entry(commit, "published"));
+    this.pushedOid = this.commits[0]!.info.oid;
+    for (const commit of local) {
+      this.rewritten.set(commit.info.oid, commit);
+      this.commits.unshift({
+        before: bring(commit.before),
+        after: bring(commit.after),
+        renames: commit.renames,
+        info: { ...commit.info, oid: "", shortOid: "", parentOids: [this.commits[0]!.info.oid] },
+      });
+      const oid = this.newOid();
+      Object.assign(this.commits[0]!.info, { oid, shortOid: oid.slice(0, 7) });
+    }
+    this.head = bring(head);
+    this.index = bring(this.index, head);
+    this.working = bring(this.working, head);
+    this.label();
+    this.revision++;
+    return { commits: incoming.length, localCommits: local.length, restoredLocalChanges };
   }
   /** Undo the newest unpushed commit and keep its changes staged, like git reset --soft. */
   undoLatest(expectedOid: string): UndoLatestCommitResult {
-    if (!this.upstream) return { status: "no-upstream" };
     const latest = this.commits[0]!;
     if (latest.info.oid !== expectedOid) return { status: "stale-head" };
     if (this.ahead() <= 0) return { status: "not-local" };
     this.commits.shift();
-    const head = this.commits[0]!;
-    head.info.isHead = true;
-    head.info.decorations = ["feature/task-filters"];
+    this.label();
     this.head = { ...latest.before };
     this.revision++;
-    return { status: "success", undoneOid: latest.info.oid, newHeadOid: head.info.oid, message: latest.info.subject, stagedCount: this.status().stagedCount };
+    return { status: "success", undoneOid: latest.info.oid, newHeadOid: this.commits[0]!.info.oid, message: latest.info.subject, stagedCount: this.status().stagedCount };
   }
   commit(message: string) {
     if (!message.trim()) throw new Error("Write a commit message first.");
     if (!this.status().stagedCount)
       throw new Error("Stage at least one change first.");
-    const oid = `${(this.nextCommit++).toString(16).padStart(7, "0")}${"d".repeat(33)}`;
-    this.commits[0]!.info.isHead = false;
-    this.commits[0]!.info.decorations = [];
-    this.commits.unshift({
-      info: this.info(oid, message.trim(), [this.commits[0]!.info.oid]),
-      before: { ...this.head },
-      after: { ...this.index },
-    });
+    const [subject = "", ...body] = message.trim().split("\n");
+    const oid = this.newOid();
+    this.commits.unshift(this.entry({
+      oid, subject, body: body.join("\n").trim(), ...demoAuthor, date: new Date().toISOString(),
+      before: { ...this.head }, after: { ...this.index }, renames: {}, onMain: false,
+    }, "local-only"));
+    this.label();
     this.head = { ...this.index };
     this.revision++;
     return { ok: true as const, oid };
   }
   getCommit(oid: string) {
-    const item = this.commits.find((c) => c.info.oid === oid);
+    const item = this.commits.find((c) => c.info.oid === oid) ?? this.rewritten.get(oid);
     if (!item) throw new Error("Choose a commit from the sample history.");
     return item;
   }
   commitFiles(oid: string): CommitFile[] {
-    const { before, after } = this.getCommit(oid);
-    return [...new Set([...Object.keys(before), ...Object.keys(after)])]
-      .filter((path) => before[path] !== after[path])
-      .map((path) => ({
-        path,
-        oldPath: null,
-        kind: before[path] === undefined ? "added" : after[path] === undefined ? "deleted" : "modified",
-        ...counts(before[path] ?? "", after[path] ?? ""),
-        binary: false,
-      }));
+    const { before, after, renames } = this.getCommit(oid);
+    return changedFiles(before, after, renames);
   }
   commitDiff(oid: string, path?: string): DiffResult {
     const { before, after } = this.getCommit(oid);
-    const paths = path ? [path] : this.commitFiles(oid).map((f) => f.path);
-    if (path && !Object.hasOwn(after, path) && !Object.hasOwn(before, path))
-      throw new Error("File is not in this commit.");
-    const text = paths
-      .map((p) => patch(p, before[p] ?? "", after[p] ?? "", before[p] === undefined, after[p] === undefined))
-      .join("");
+    const files = this.commitFiles(oid).filter((file) => !path || file.path === path || file.oldPath === path);
+    if (path && !files.length && !Object.hasOwn(after, path) && !Object.hasOwn(before, path)) throw new Error("File is not in this commit.");
+    const text = files.map((file) => filePatch(file, before, after)).join("");
     return {
       path: path ?? "",
       patch: text,
