@@ -53,13 +53,13 @@ const WORKFLOW_TRIGGERS_MS = 30_000;
  * the kept answer while it is read again.
  */
 const LIVE_MS = 0;
-/** A finished run changes only when it is started again, which the Actions list notices. */
-const FINISHED_RUN_MS = 10 * 60_000;
 /**
  * After the read behind a kept answer, how long that client's next request for it is
  * answered with the new answer instead of reading again: it asks as soon as it is told.
  */
 const REFRESHED_GRACE_MS = 5_000;
+/** Invalidations remembered to decide whether a read that was under way may be kept. */
+const MAX_INVALIDATIONS = 100;
 
 /**
  * How long an answer is served as current, after which a client that can show it
@@ -107,6 +107,11 @@ export class GitHubService {
   private readonly nameWithOwnerByPath = new Map<string, string>();
   /** Bumped by every explicit invalidation, so a read that started before one isn't kept. */
   private settledEpoch = 0;
+  /**
+   * The latest invalidations and what each covered, so a read finishing after one is not kept only
+   * when that change concerns it. A read older than the oldest one here is not kept at all.
+   */
+  private readonly invalidations: Array<{ epoch: number; commonDir: string | null; nameWithOwner: string | null; change: GitHubChange | null }> = [];
   /** Repositories whose PR list was just read again on request, so their line counts are too instead of being reused. */
   private readonly staleLineCounts = new Set<string>();
   /** The last stack membership read per PR, for a live state that couldn't wait for its own. */
@@ -161,8 +166,11 @@ export class GitHubService {
   invalidate(repositoryId?: string, change?: GitHubChange): void {
     this.settledEpoch++;
     this.stackStatuses.clear();
-    if (repositoryId) {
-      const repository = this.repositories.get(repositoryId);
+    const repository = repositoryId ? this.repositories.get(repositoryId) : null;
+    this.invalidations.push({ epoch: this.settledEpoch, commonDir: repository ? githubRepositoryKey(repository.commonDir) : null,
+      nameWithOwner: repository ? this.nameWithOwnerByPath.get(repository.path) ?? null : null, change: change ?? null });
+    if (this.invalidations.length > MAX_INVALIDATIONS) this.invalidations.shift();
+    if (repository) {
       const nameWithOwner = this.nameWithOwnerByPath.get(repository.path);
       this.cache.dropWhere((entry) => (githubRepositoryKey(entry.scope.commonDir) === githubRepositoryKey(repository.commonDir) || entry.scope.nameWithOwner === nameWithOwner)
         && (!change || outdatedBy(change, resourceOf(entry.key))));
@@ -232,18 +240,29 @@ export class GitHubService {
     const epoch = this.settledEpoch;
     const before = this.readKey(repository, []);
     const value = await this.shareRead(repositoryId, resource, read);
-    // An account change gives the read a new key; a change made meanwhile means it may predate it; so does another remote.
-    if (epoch !== this.settledEpoch || before !== this.readKey(this.repositories.get(repositoryId), [])) return value;
+    // An account change gives the read a new key, and so does another remote.
+    if (before !== this.readKey(this.repositories.get(repositoryId), [])) return value;
     const { remote, info } = await this.routing(repositoryId);
-    if (remote.url !== remoteUrl || epoch !== this.settledEpoch) return value;
+    if (remote.url !== remoteUrl) return value;
     const scope = this.cacheScope(this.repositories.get(repositoryId), remote.url, info.nameWithOwner);
-    if (scope) {
-      const key = cacheKey(scope, resource);
-      const readAt = this.now();
-      this.cache.set(key, scope, value, { readAt, noExpiry: policy.noExpiry?.(value) ?? false });
-      onKept?.(key, readAt);
-    }
+    if (!scope) return value;
+    const key = cacheKey(scope, resource);
+    // A change made meanwhile that concerns this answer means the read may predate it.
+    if (this.changedSince(epoch, scope, resource)) return value;
+    const readAt = this.now();
+    if (this.cache.set(key, scope, value, { readAt, noExpiry: policy.noExpiry?.(value) ?? false })) onKept?.(key, readAt);
+    // Too large to keep: what was kept is older than what GitHub just said, and is not served again.
+    else this.cache.delete(key);
     return value;
+  }
+
+  private changedSince(epoch: number, scope: GitHubReadScope, resource: readonly unknown[]): boolean {
+    if (epoch === this.settledEpoch) return false;
+    const oldest = this.invalidations[0];
+    if (!oldest || oldest.epoch > epoch + 1) return true;
+    return this.invalidations.some((invalidation) => invalidation.epoch > epoch
+      && (invalidation.commonDir === null || invalidation.commonDir === githubRepositoryKey(scope.commonDir) || invalidation.nameWithOwner === scope.nameWithOwner)
+      && (invalidation.change === null || outdatedBy(invalidation.change, resource)));
   }
 
   /** Reads a kept answer again. It never fails: a failure is the outcome, and credentials or access GitHub refused drop what was kept with them. */
@@ -654,9 +673,12 @@ export class GitHubService {
       .then(async (list) => { await this.forgetRerunRuns(repositoryId, list.runs).catch(() => undefined); return list; }), { kept });
   }
 
-  /** A finished run is kept past the age limit; one in progress is served as current only briefly. */
+  /**
+   * Never served as current: a finished run can be started again on GitHub, which nothing here
+   * hears of. A finished one is kept past the age limit, and shown at once, marked, while it is read again.
+   */
   getActionRun(repositoryId: string, runId: number, kept?: KeptAnswerSink): Promise<ActionRunDetails> {
-    return this.keptRead(repositoryId, ['action-run', runId], { freshMs: (run) => finishedRun(run) ? FINISHED_RUN_MS : LIVE_MS, noExpiry: finishedRun },
+    return this.keptRead(repositoryId, ['action-run', runId], { freshMs: () => LIVE_MS, noExpiry: finishedRun },
       () => this.actionRuns.viewRun(repositoryId, runId), { kept });
   }
 

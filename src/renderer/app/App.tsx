@@ -383,6 +383,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   useEffect(() => opentig.events.onReconnected(() => { void refreshGitHubQueries(appQueryClient, repositoryRef.current?.id ?? null); }), [appQueryClient]);
   // The server has read again what it answered from what it kept: reading it now is answered at once with the new answer.
   useEffect(() => keptReads.onRefreshed((target) => { void appQueryClient.invalidateQueries({ queryKey: target.invalidateKey }); }), [appQueryClient]);
+  // Whether a GitHub read refreshes something already on screen, which then waits for the fresh answer.
+  useEffect(() => keptReads.setDataLookup((target) => appQueryClient.getQueriesData({ queryKey: target.invalidateKey }).some(([, data]) => data !== undefined)), [appQueryClient]);
   // Changes may have gone unreported while disconnected; the bootstrap that follows says how the server watches now.
   useEffect(() => opentig.events.onReconnected(() => setAnnouncedWatch(null)), []);
   const githubReady = repository !== null && githubInfo?.isGitHub === true && ghStatus?.installed === true;
