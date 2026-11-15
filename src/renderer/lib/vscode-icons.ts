@@ -1,5 +1,6 @@
 import iconMap from '../assets/vscode-icons-map.json';
 import languageMap from '../assets/vscode-language-map.json';
+import { publicAsset } from '@/lib/public-asset';
 
 /**
  * The vscode-icons associations, compacted by `scripts/compact-vscode-icons.mjs`: each
@@ -33,7 +34,7 @@ const theme = {
   languageIds: associations(compact.languageIds),
 };
 const languages = languageMap as { fileExtensions: Record<string, string>; fileNames: Record<string, string> };
-const iconsUrl = './vscode-icons';
+const iconsUrl = publicAsset('vscode-icons');
 declare const __OPENTIG_ICONS_VERSION__: string | undefined;
 /** The icons' fingerprint, from the build: a new set has new addresses, so the server serves them as immutable. */
 const iconsQuery = typeof __OPENTIG_ICONS_VERSION__ === 'string' ? `?v=${__OPENTIG_ICONS_VERSION__}` : '';

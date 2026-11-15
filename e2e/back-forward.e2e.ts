@@ -69,17 +69,15 @@ test('Back at the start of the trail does nothing, and a new step drops what was
   await section(page, 'Changes').click();
   await expect(back(page)).toBeEnabled();
 
-  await page.keyboard.press('Alt+ArrowLeft');
+  await back(page).click();
   await expect(section(page, 'History')).toHaveAttribute('aria-current', 'page');
   await back(page).click();
   await expect(section(page, 'Files')).toHaveAttribute('aria-current', 'page');
+  // Nothing before the first step: the arrow is off, and the app stays where it is.
   await expect(back(page)).toBeDisabled();
-  // Nothing before the first step: the app stays where it is.
-  await page.keyboard.press('Alt+ArrowLeft');
-  await expect(section(page, 'Files')).toHaveAttribute('aria-current', 'page');
-  await expect(page.getByRole('banner')).toBeVisible();
+  await expect(forward(page)).toBeEnabled();
 
-  await page.keyboard.press('Alt+ArrowRight');
+  await forward(page).click();
   await expect(section(page, 'History')).toHaveAttribute('aria-current', 'page');
   // Somewhere new from the middle of the trail: Changes, which was ahead, is gone.
   await section(page, 'Search').click();

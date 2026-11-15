@@ -80,3 +80,31 @@ export function defaultDeviceName(userAgent: string): string {
   ] satisfies Array<[RegExp, string]>).find(([pattern]) => pattern.test(userAgent))?.[1];
   return os ? `${browser} on ${os}` : browser;
 }
+
+const RETURN_ADDRESS_KEY = 'opentig.pairing.return';
+
+/** Keeps the app address a browser without a session was opened on, to return to once it is paired. */
+export function rememberReturnAddress(location: Pick<Location, 'pathname' | 'search' | 'hash'>, storage: Pick<Storage, 'setItem'> = window.sessionStorage): void {
+  if (location.pathname !== '/r' && !location.pathname.startsWith('/r/')) return;
+  try { storage.setItem(RETURN_ADDRESS_KEY, `${location.pathname}${location.search}${location.hash}`); } catch { /* storage unavailable: pairing ends on the start page */ }
+}
+
+/**
+ * Where pairing ends: the app address kept before it, if it still is one of this
+ * origin's app addresses, or the start page. The kept value is used once.
+ */
+export function pairedDestination(origin: string, storage: Pick<Storage, 'getItem' | 'removeItem'> = window.sessionStorage): string {
+  let kept: string | null = null;
+  try {
+    kept = storage.getItem(RETURN_ADDRESS_KEY);
+    storage.removeItem(RETURN_ADDRESS_KEY);
+  } catch { /* storage unavailable */ }
+  if (!kept || !kept.startsWith('/r/') || kept.startsWith('//')) return '/';
+  try {
+    const url = new URL(kept, origin);
+    if (url.origin !== origin || !url.pathname.startsWith('/r/')) return '/';
+    return `${url.pathname}${url.search}${url.hash}`;
+  } catch {
+    return '/';
+  }
+}
