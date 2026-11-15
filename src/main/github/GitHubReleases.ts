@@ -115,7 +115,7 @@ export class GitHubReleases {
   async create(input: CreateReleaseInput): Promise<void> {
     const operation = 'gh-release-create';
     const { target, verifyAccount } = await beginGitHubMutation(this.github, input, operation);
-    this.github.invalidate(input.repositoryId);
+    this.github.invalidate(input.repositoryId, 'releases');
     const [facts, tagExists, releases] = await Promise.all([this.repositoryFacts(target, operation), this.tagExists(target, input.tagName, operation), this.listFor(target, operation)]);
     if (!facts.canWrite) throw this.notAllowed(operation, "This GitHub account doesn't have write access to this repository.");
     if (tagExists !== input.expectedTagExists) {
@@ -133,7 +133,7 @@ export class GitHubReleases {
         ...(input.generateNotes ? ['--generate-notes'] : []), ...(input.prerelease ? ['--prerelease'] : []),
       ], operation));
     } finally {
-      this.github.invalidate(input.repositoryId);
+      this.github.invalidate(input.repositoryId, 'releases');
     }
   }
 
@@ -141,7 +141,7 @@ export class GitHubReleases {
   async update(input: UpdateReleaseInput): Promise<void> {
     const operation = 'gh-release-update';
     const { target, verifyAccount } = await beginGitHubMutation(this.github, input, operation);
-    this.github.invalidate(input.repositoryId);
+    this.github.invalidate(input.repositoryId, 'releases');
     const release = await this.viewFor(target, input.tagName, operation);
     if (release.databaseId !== input.expectedDatabaseId || release.bodyHash !== input.expectedBodyHash) throw this.changed(operation, 'This release changed on GitHub after you started editing. Your changes were not saved.');
     if (!release.viewerCanWrite) throw this.notAllowed(operation, "This GitHub account doesn't have write access to this repository.");
@@ -149,14 +149,14 @@ export class GitHubReleases {
     try {
       await withPrivateTextFile(input.notes, (notesFile) => this.act(target, ['release', 'edit', input.tagName, '-R', target.nameWithOwner, '--title', input.title, '--notes-file', notesFile], operation));
     } finally {
-      this.github.invalidate(input.repositoryId);
+      this.github.invalidate(input.repositoryId, 'releases');
     }
   }
 
   async deleteDraft(input: DeleteDraftReleaseInput): Promise<void> {
     const operation = 'gh-release-delete';
     const { target, verifyAccount } = await beginGitHubMutation(this.github, input, operation);
-    this.github.invalidate(input.repositoryId);
+    this.github.invalidate(input.repositoryId, 'releases');
     const release = await this.viewFor(target, input.tagName, operation);
     if (release.databaseId !== input.expectedDatabaseId) throw this.changed(operation, 'This release changed. Review it and try again.');
     if (!release.isDraft) throw this.notAllowed(operation, 'This release is published, so OpenTig only deletes drafts. Use GitHub to delete it.');
@@ -165,7 +165,7 @@ export class GitHubReleases {
     try {
       await this.act(target, ['release', 'delete', input.tagName, '-R', target.nameWithOwner, '--yes'], operation);
     } finally {
-      this.github.invalidate(input.repositoryId);
+      this.github.invalidate(input.repositoryId, 'releases');
     }
   }
 
@@ -178,7 +178,7 @@ export class GitHubReleases {
   async publish(input: PublishReleaseInput): Promise<void> {
     const operation = 'gh-release-publish';
     const { target, verifyAccount } = await beginGitHubMutation(this.github, input, operation);
-    this.github.invalidate(input.repositoryId);
+    this.github.invalidate(input.repositoryId, 'releases');
     const release = await this.viewFor(target, input.tagName, operation);
     if (release.databaseId !== input.expectedDatabaseId) throw this.changed(operation, 'This release changed. Review it and try again.');
     if (!release.isDraft) throw this.notAllowed(operation, 'This release is already published.');
@@ -191,7 +191,7 @@ export class GitHubReleases {
       const tag = release.tagExists ? ['--tag', input.tagName, '--verify-tag'] : [];
       await this.act(target, ['release', 'edit', input.tagName, '-R', target.nameWithOwner, ...tag, '--draft=false'], operation);
     } finally {
-      this.github.invalidate(input.repositoryId);
+      this.github.invalidate(input.repositoryId, 'releases');
     }
   }
 
@@ -215,7 +215,7 @@ export class GitHubReleases {
   async runWorkflow(input: RunWorkflowInput): Promise<void> {
     const operation = 'gh-workflow-run';
     const { target, verifyAccount } = await beginGitHubMutation(this.github, input, operation);
-    this.github.invalidate(input.repositoryId);
+    this.github.invalidate(input.repositoryId, 'workflow-runs');
     const [list, branchExists] = await Promise.all([this.workflowsFor(target, operation), this.branchExists(target, input.ref, operation)]);
     if (!list.viewerCanWrite) throw this.notAllowed(operation, "This GitHub account doesn't have write access to this repository.");
     if (!list.workflows.some((workflow) => workflow.path === input.path)) throw this.notAllowed(operation, 'This workflow is no longer active. Review the list and try again.');
@@ -225,7 +225,7 @@ export class GitHubReleases {
       const fields = Object.entries(input.inputs).flatMap(([name, value]) => ['-f', `${name}=${value}`]);
       await this.act(target, ['workflow', 'run', input.path, '-R', target.nameWithOwner, '--ref', input.ref, ...fields], operation);
     } finally {
-      this.github.invalidate(input.repositoryId);
+      this.github.invalidate(input.repositoryId, 'workflow-runs');
     }
   }
 }

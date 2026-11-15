@@ -13,6 +13,7 @@ import {
   OPEN_TIG_CLIENT_MAX_BACKGROUND_REQUESTS, OPEN_TIG_CLIENT_MAX_IN_FLIGHT_REQUESTS, OPEN_TIG_MAX_IN_FLIGHT_REQUESTS, OPEN_TIG_MAX_SERVER_MESSAGE_BYTES,
 } from '../../../src/shared/server-protocol';
 import { IPC } from '../../../src/shared/contracts';
+import type { KeptRefreshOutcome } from '../../../src/shared/kept-reads';
 import { OpenTigWebSocketTransport, inBackground, type WebSocketTransportOptions } from '../../../src/renderer/lib/websocket-transport';
 
 interface Fixture {
@@ -218,6 +219,35 @@ describe('WebSocket safety limits', () => {
     expect(signals.get('unannounced')!.aborted).toBe(false);
   });
 
+  it('marks a kept answer and reports its refresh only to the connection that can show one', async () => {
+    const fixture = await startFixture(() => emptyBootstrap());
+    let settle!: (outcome: KeptRefreshOutcome) => void;
+    const refresh = new Promise<KeptRefreshOutcome>((resolve) => { settle = resolve; });
+    // Kept when the client says it can show it, as the GitHub service does.
+    fixture.registry.registerHandler(OPEN_TIG_SERVER_COMMANDS['github.getPullRequest'], (context) => {
+      context.kept?.({ readAt: '2026-11-15T10:00:00.000Z', refresh });
+      return { number: 12, title: 'kept' };
+    });
+
+    // An older client: never asks, so never gets the mark or the event it would take for an account change.
+    const older = await fixture.socket();
+    const olderMessages: unknown[] = [];
+    older.on('message', (data) => olderMessages.push(JSON.parse(data.toString())));
+    const plain = await sendAndReceive(older, { type: 'request', id: 'plain', command: IPC.githubPrView, args: ['repo', 12] });
+    expect(plain).toEqual({ type: 'result', id: 'plain', result: { ok: true, value: { number: 12, title: 'kept' } } });
+
+    // The app's own client, once the server has said it can.
+    const client = fixture.client();
+    client.enableKeptReads();
+    const kept: Array<{ readAt: string; refreshed: Promise<KeptRefreshOutcome> }> = [];
+    expect(await client.request(IPC.githubPrView, ['repo', 12], { onKept: (answer) => kept.push(answer) })).toEqual({ number: 12, title: 'kept' });
+    expect(kept.map((answer) => answer.readAt)).toEqual(['2026-11-15T10:00:00.000Z']);
+    settle({ outcome: 'failed', error: { code: 'GH_RATE_LIMITED', operation: 'gh-pr-view', message: 'GitHub rate limit reached.' } });
+    await expect(kept[0]!.refreshed).resolves.toEqual({ outcome: 'failed', error: { code: 'GH_RATE_LIMITED', operation: 'gh-pr-view', message: 'GitHub rate limit reached.' } });
+    expect(olderMessages).toHaveLength(1);
+    older.close();
+  });
+
   it('refuses a request over the in-flight limit as retryable, and times out bounded commands', async () => {
     let release!: (value: unknown) => void;
     const pending = new Promise((resolve) => { release = resolve; });
@@ -362,7 +392,7 @@ describe('WebSocket safety limits', () => {
   });
 
   it('accepts exactly the byte limit and rejects one more byte without truncating', async () => {
-    const envelope = { type: 'result', id: 'boundary', result: { ok: true, value: { payload: '', server: { protocolVersion: 1, appVersion: 'test', requestCancellation: true } } } };
+    const envelope = { type: 'result', id: 'boundary', result: { ok: true, value: { payload: '', server: { protocolVersion: 1, appVersion: 'test', requestCancellation: true, keptReads: true } } } };
     const overhead = Buffer.byteLength(JSON.stringify(envelope));
     let payload = 'x'.repeat(OPEN_TIG_MAX_SERVER_MESSAGE_BYTES - overhead);
     const fixture = await startFixture(() => ({ payload }));

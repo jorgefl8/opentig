@@ -6,9 +6,12 @@ import type { GitHubAccountDetection } from '@shared/github-accounts';
 import type { OpenTigServerApi } from '@shared/server-api';
 import { OPEN_TIG_PROTOCOL_VERSION } from '@shared/server-protocol';
 import { OpenTigWebSocketTransport } from './websocket-transport';
+import { keptReads as defaultKeptReads, keptReadTarget, type KeptReads } from './kept-reads';
 
 interface ServerClientOptions {
   transport?: OpenTigWebSocketTransport;
+  /** Where answers the server served from what it kept are recorded. */
+  keptReads?: KeptReads;
   httpOrigin?: string;
   fetch?: typeof fetch;
 }
@@ -32,6 +35,18 @@ export function createOpenTigServerClient(options: ServerClientOptions = {}): Op
     command: Command,
     ...args: Parameters<OpenTigServerApiMethod<Command>>
   ): ReturnType<OpenTigServerApiMethod<Command>> => transport.request(command, args) as ReturnType<OpenTigServerApiMethod<Command>>;
+  const kept = options.keptReads ?? defaultKeptReads;
+  /** A GitHub read the server may answer from what it kept: the answer says so, and is recorded as not current until confirmed. */
+  const keptInvoke = <Command extends Parameters<OpenTigWebSocketTransport['request']>[0]>(
+    command: Command,
+    ...args: Parameters<OpenTigServerApiMethod<Command>>
+  ): ReturnType<OpenTigServerApiMethod<Command>> => {
+    const target = keptReadTarget(command, args);
+    if (!target) return invoke(command, ...args);
+    let wasKept = false;
+    return transport.request(command, args, { onKept: ({ readAt, refreshed }) => { wasKept = true; kept.kept(target, readAt, refreshed); } })
+      .then((value) => { if (!wasKept) kept.confirm(target); return value; }) as ReturnType<OpenTigServerApiMethod<Command>>;
+  };
 
   const bootstrap: OpenTigServerApi['app']['bootstrap'] = async () => {
     const data = await transport.request(IPC.bootstrap, []);
@@ -40,6 +55,7 @@ export function createOpenTigServerClient(options: ServerClientOptions = {}): Op
       throw new Error('This OpenTig client is incompatible with the server.');
     }
     if (data.server.requestCancellation === true) transport.enableCancellation();
+    if (data.server.keptReads === true) transport.enableKeptReads();
     return data;
   };
 
@@ -162,10 +178,10 @@ export function createOpenTigServerClient(options: ServerClientOptions = {}): Op
       status: (forceRefresh) => invoke(IPC.githubStatus, forceRefresh),
       repositoryInfo: (repositoryId) => invoke(IPC.githubRepositoryInfo, repositoryId),
       findPullRequestForBranch: (repositoryId, branchName) => invoke(IPC.githubPrForBranch, repositoryId, branchName),
-      listPullRequests: (repositoryId, states, fresh) => invoke(IPC.githubPrList, repositoryId, states, fresh),
-      getPullRequest: (repositoryId, number) => invoke(IPC.githubPrView, repositoryId, number),
-      getPullRequestLiveState: (repositoryId, number) => invoke(IPC.githubPrLiveState, repositoryId, number),
-      getPullRequestConversation: (repositoryId, number) => invoke(IPC.githubPrConversation, repositoryId, number),
+      listPullRequests: (repositoryId, states, fresh) => keptInvoke(IPC.githubPrList, repositoryId, states, fresh),
+      getPullRequest: (repositoryId, number) => keptInvoke(IPC.githubPrView, repositoryId, number),
+      getPullRequestLiveState: (repositoryId, number) => keptInvoke(IPC.githubPrLiveState, repositoryId, number),
+      getPullRequestConversation: (repositoryId, number) => keptInvoke(IPC.githubPrConversation, repositoryId, number),
       runPullRequestAction: (input) => invoke(IPC.githubPrAction, input),
       updatePullRequest: (input) => invoke(IPC.githubPrUpdate, input),
       commentOnPullRequest: (input) => invoke(IPC.githubPrComment, input),
@@ -173,13 +189,13 @@ export function createOpenTigServerClient(options: ServerClientOptions = {}): Op
       editPullRequestEntry: (input) => invoke(IPC.githubPrEntryEdit, input),
       deletePullRequestEntry: (input) => invoke(IPC.githubPrEntryDelete, input),
       getPullRequestStack: (repositoryId, number) => invoke(IPC.githubPrStack, repositoryId, number),
-      listPullRequestStacks: (repositoryId, numbers) => invoke(IPC.githubPrListStacks, repositoryId, numbers),
-      listPullRequestLineCounts: (repositoryId, states) => invoke(IPC.githubPrListLineCounts, repositoryId, states),
+      listPullRequestStacks: (repositoryId, numbers) => keptInvoke(IPC.githubPrListStacks, repositoryId, numbers),
+      listPullRequestLineCounts: (repositoryId, states) => keptInvoke(IPC.githubPrListLineCounts, repositoryId, states),
       getPullRequestDiff: (repositoryId, number, range) => invoke(IPC.githubPrDiff, repositoryId, number, range),
       getPullRequestCommitDiff: (repositoryId, oid) => invoke(IPC.githubPrCommitDiff, repositoryId, oid),
       getPullRequestCommits: (repositoryId, number) => invoke(IPC.githubPrCommits, repositoryId, number),
       createPullRequest: (input) => invoke(IPC.githubPrCreate, input),
-      listReleases: (repositoryId, fresh) => invoke(IPC.githubReleaseList, repositoryId, fresh),
+      listReleases: (repositoryId, fresh) => keptInvoke(IPC.githubReleaseList, repositoryId, fresh),
       getRelease: (repositoryId, tagName) => invoke(IPC.githubReleaseView, repositoryId, tagName),
       checkReleaseTag: (repositoryId, tagName) => invoke(IPC.githubReleaseTag, repositoryId, tagName),
       createRelease: (input) => invoke(IPC.githubReleaseCreate, input),
@@ -190,8 +206,8 @@ export function createOpenTigServerClient(options: ServerClientOptions = {}): Op
       listRunnableWorkflows: (repositoryId) => invoke(IPC.githubWorkflowRunnable, repositoryId),
       getWorkflowTriggers: (repositoryId, path, ref) => invoke(IPC.githubWorkflowTriggers, repositoryId, path, ref),
       runWorkflow: (input) => invoke(IPC.githubWorkflowRun, input),
-      listActionRuns: (repositoryId, workflowId, page = 1) => invoke(IPC.githubActionRunList, repositoryId, workflowId, page),
-      getActionRun: (repositoryId, runId) => invoke(IPC.githubActionRunView, repositoryId, runId),
+      listActionRuns: (repositoryId, workflowId, page = 1) => keptInvoke(IPC.githubActionRunList, repositoryId, workflowId, page),
+      getActionRun: (repositoryId, runId) => keptInvoke(IPC.githubActionRunView, repositoryId, runId),
       generateDraft: (input) => transport.request(IPC.githubPrDraft, [input], { timeoutMs: AI_CLIENT_TIMEOUT_MS }),
       cancelDraft: (requestId) => invoke(IPC.githubPrDraftCancel, requestId),
     },
@@ -253,6 +269,8 @@ function publishRuntimeEvent(
     for (const listener of activeRepositoryChanged) listener(event.repository);
   } else if (event.type === 'ai.instructions-changed') {
     for (const listener of aiInstructionsChanged) listener(event.repositoryIds);
+  } else if (event.type === 'github.read-refreshed') {
+    // Settled by the transport for the request that asked; never an account change.
   } else {
     for (const listener of githubAccountsChanged) listener(event.repositoryIds, event.inventoryChanged, event.detected);
   }

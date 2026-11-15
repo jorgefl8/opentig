@@ -72,6 +72,7 @@ import {
 import { resolveWindowControlsInset } from './window-controls';
 import { SectionSelections, stillShowable } from './section-memory';
 import { historyHead, queryKeys, queryResourcesForScope, refreshGitHubQueries, resetGitHubQueries } from '@/lib/query-client';
+import { keptReads } from '@/lib/kept-reads';
 import { listAgents } from '@/features/refs/local-refs-model';
 import { AgentMarks } from '@/features/refs/AgentLabel';
 import { persistTheme } from '@/lib/boot-theme';
@@ -361,6 +362,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   const githubAccountQuery = useGitHubAccount(repository && githubInfo?.isGitHub ? repository.id : null);
   const githubAccount = githubAccountQuery.data ?? null;
   useEffect(() => opentig.events.onGitHubAccountsChanged((ids, inventoryChanged, detected) => {
+    // What the previous account was shown is gone, with any note that it was old.
+    keptReads.forget((key) => key[0] === 'repository' && (!ids || ids.includes(String(key[1]))));
     void resetGitHubQueries(appQueryClient, ids, inventoryChanged);
     const current = repositoryRef.current;
     if (!detected || !current || !ids?.includes(current.id)) return;
@@ -371,6 +374,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     });
   }), [appQueryClient]);
   useEffect(() => opentig.events.onReconnected(() => { void refreshGitHubQueries(appQueryClient, repositoryRef.current?.id ?? null); }), [appQueryClient]);
+  // The server has read again what it answered from what it kept: reading it now is answered at once with the new answer.
+  useEffect(() => keptReads.onRefreshed((target) => { void appQueryClient.invalidateQueries({ queryKey: target.invalidateKey }); }), [appQueryClient]);
   // Changes may have gone unreported while disconnected; the bootstrap that follows says how the server watches now.
   useEffect(() => opentig.events.onReconnected(() => setAnnouncedWatch(null)), []);
   const githubReady = repository !== null && githubInfo?.isGitHub === true && ghStatus?.installed === true;

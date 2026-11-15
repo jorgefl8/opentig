@@ -1,6 +1,6 @@
 import { formatDateTime } from '@shared/date-format';
 import { PullRequestStackMenu } from './PullRequestStackMenu';
-import { Suspense, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { Suspense, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { IconExternalLink, IconRefresh } from '@tabler/icons-react';
 import { GITHUB_PR_COMMIT_PAGE, type DiffResult, type DiffViewPreference, type PullRequestCommitList, type PullRequestDetails, type PullRequestLatestReview, type PullRequestLiveState, type ThemePreference } from '../../../shared/contracts';
@@ -20,6 +20,8 @@ import type { PullRequestTab } from '@/lib/mobile-main-action';
 import { ghDetail, MERGE_METHOD_LABELS, openOnGitHub, reviewDecisionLabel } from './gh-utils';
 import { GitHubAvatar } from './GitHubAvatar';
 import { PullRequestActionBar } from './PullRequestActionBar';
+import { KeptReadNotice } from '@/components/KeptReadNotice';
+import { useKeptRead } from '@/lib/kept-reads';
 import { PullRequestConversationView } from './PullRequestConversationView';
 import { pullRequestConversationQueryOptions } from './pull-request-conversation-query';
 import { PullRequestChecksLink, PullRequestChecksPanel, PullRequestChecksSummary } from './PullRequestChecks';
@@ -146,6 +148,10 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
     for (const queryKey of queriesOutdatedByLiveState(repositoryId, previous, live)) void queryClient.invalidateQueries({ queryKey });
   }, [live, queryClient, repositoryId]);
 
+  // What the server kept of this pull request, shown until GitHub confirms it; actions wait for the live state.
+  const keptPrefixes = useMemo(() => [queryKeys.pullRequest(repositoryId, prNumber), queryKeys.pullRequestLiveState(repositoryId, prNumber), queryKeys.pullRequestConversation(repositoryId, prNumber)], [repositoryId, prNumber]);
+  const liveKept = useKeptRead([keptPrefixes[1]!]) !== null;
+  const retryKept = () => { for (const queryKey of keptPrefixes) void queryClient.invalidateQueries({ queryKey }); };
   const pr = details ?? summary;
   const bar = <MobileViewerTitle title={`#${prNumber}`} subtitle={pr && <span className="mobile-viewer-mono">{pr.headRefName} → {pr.baseRefName}</span>} />;
   if (detailsError) {
@@ -202,7 +208,7 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
               </div>}
             </div>
             {live && details
-              ? <PullRequestActionBar repositoryId={repositoryId} details={details} live={live} refreshing={liveQuery.isFetching} statusLabel={status.label} tab={tab} onRefresh={() => void liveQuery.refetch()} onEdit={() => setEditing(true)} onSelectPullRequest={onSelectPullRequest} />
+              ? <PullRequestActionBar repositoryId={repositoryId} details={details} live={live} unconfirmed={liveKept} refreshing={liveQuery.isFetching} statusLabel={status.label} tab={tab} onRefresh={() => void liveQuery.refetch()} onEdit={() => setEditing(true)} onSelectPullRequest={onSelectPullRequest} />
               : pr.url && (phone
                 ? <MobileViewerActions><Button variant="ghost" size="icon" className="mobile-bar-button" onClick={() => openOnGitHub(pr.url)} aria-label="Open on GitHub"><IconExternalLink /></Button></MobileViewerActions>
                 : <Tooltip>
@@ -220,6 +226,7 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
             {reviewers.map((reviewer) => <span key={reviewer.author.login} className="pr-reviewer">{verdictLabel(reviewer)} by {reviewer.author.login}{reviewer.outdated ? ', before the latest commit' : ''}</span>)}
             {live?.autoMerge && <span className="pr-auto-merge">Auto-merge · {MERGE_METHOD_LABELS[live.autoMerge.method]}</span>}
             {liveQuery.isError && <PullRequestLiveNotice error={liveQuery.error} hasState={live !== null} open={pr.state === 'OPEN'} retrying={liveQuery.isFetching} onRetry={() => void liveQuery.refetch()} />}
+            <KeptReadNotice prefixes={keptPrefixes} onRetry={retryKept} />
           </div>
           {phone && <div className="pr-viewer-meta">
             <span>{pr.author}</span>

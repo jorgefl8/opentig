@@ -6,7 +6,7 @@
  */
 export type PerformanceRecord =
   | { kind: 'process'; tool: 'git' | 'gh' | 'ssh' | 'cli'; command: string; operation?: string; durationMs: number; outcome: 'ok' | 'failed' }
-  | { kind: 'cache'; cache: string; resource: string; outcome: 'hit' | 'miss' };
+  | { kind: 'cache'; cache: string; resource: string; outcome: 'hit' | 'kept' | 'miss' };
 
 let sink: ((record: PerformanceRecord) => void) | null = null;
 

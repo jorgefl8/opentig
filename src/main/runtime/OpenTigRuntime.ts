@@ -142,6 +142,7 @@ export class OpenTigRuntime {
       this.services.cliRunner.close(),
       this.services.git.close(),
       this.services.aiLog.flush(),
+      this.services.github.cache.close(),
       this.services.problems.flush(),
       this.settings.flush(),
     ]);

@@ -10,6 +10,7 @@ import type { OpenTigServerLogger } from './http';
 import { isAllowedOrigin } from './origin';
 import { redactOperationResult } from './redact';
 import WebSocket, { WebSocketServer } from 'ws';
+import type { KeptAnswer } from '../../../src/shared/kept-reads';
 import { JsonByteLimitError, stringifyBounded } from './bounded-json';
 
 const NORMAL_FRAME_LIMIT = 1024 * 1024;
@@ -180,8 +181,13 @@ export class OpenTigWebSocketTransport {
 
     const controller = new AbortController();
     const startedAt = this.measureTransport ? performance.now() : undefined;
-    state.requests.set(input.id, { controller, cancellable: commandDefinition(input.command)?.mutation === false });
-    const execution = this.options.registry.execute(state.sessionId, input.command, input.args, { signal: controller.signal });
+    const read = commandDefinition(input.command)?.mutation === false;
+    state.requests.set(input.id, { controller, cancellable: read });
+    let kept: KeptAnswer | undefined;
+    const execution = this.options.registry.execute(state.sessionId, input.command, input.args, {
+      signal: controller.signal,
+      ...(read && input.acceptKept === true ? { kept: (answer: KeptAnswer) => { kept ??= answer; } } : {}),
+    });
     this.pendingOperations.add(execution);
     void execution.finally(() => this.pendingOperations.delete(execution));
     const requestedAt = Date.now();
@@ -201,10 +207,20 @@ export class OpenTigWebSocketTransport {
         this.options.registry.recordCommandTimeout(input.command, input.args, timeoutMs);
       }));
       if (input.command === IPC.bootstrap && result.ok && isRecord(result.value)) {
-        // This transport understands `cancel`; a client only sends it to a server that says so.
-        result.value = { ...result.value, server: { ...this.options.identity, requestCancellation: true } satisfies OpenTigServerIdentity };
+        // This transport understands `cancel` and `acceptKept`; a client only sends them to a server that says so.
+        result.value = { ...result.value, server: { ...this.options.identity, requestCancellation: true, keptReads: true } satisfies OpenTigServerIdentity };
       }
-      this.send(socket, { type: 'result', id: input.id, result });
+      if (result.ok && kept && !timedOut) {
+        this.send(socket, { type: 'result', id: input.id, result, kept: { readAt: kept.readAt } });
+        // Only this connection asked: nobody else is told, and a closed connection is told nothing.
+        const requestId = input.id;
+        void kept.refresh.then((outcome) => {
+          const event = outcome.outcome === 'failed'
+            ? { type: 'github.read-refreshed' as const, requestId, outcome: 'failed' as const, error: (redactOperationResult({ ok: false, error: outcome.error }) as { ok: false; error: typeof outcome.error }).error }
+            : { type: 'github.read-refreshed' as const, requestId, outcome: 'updated' as const };
+          this.send(socket, { type: 'event', event });
+        }, () => undefined);
+      } else this.send(socket, { type: 'result', id: input.id, result });
     } finally {
       state.requests.delete(input.id);
       if (startedAt !== undefined) this.measure('request', startedAt, {
@@ -355,7 +371,7 @@ function isPing(value: unknown): value is { type: 'ping' } {
   return isRecord(value) && value.type === 'ping';
 }
 
-function isRequest(value: unknown): value is { type: 'request'; id: string; command: string; args: unknown[] } {
+function isRequest(value: unknown): value is { type: 'request'; id: string; command: string; args: unknown[]; acceptKept?: unknown } {
   return isRecord(value)
     && value.type === 'request'
     && typeof value.id === 'string'

@@ -34,7 +34,12 @@ export interface OpenTigOwnerSession {
 }
 
 export type OpenTigClientMessage =
-  | { type: 'request'; id: string; command: string; args: unknown[] }
+  /**
+   * `acceptKept`: for a read, the client can show an answer the server kept, marked
+   * as old, while the server reads it again. Sent only to a server whose identity has
+   * `keptReads`; an older server ignores it.
+   */
+  | { type: 'request'; id: string; command: string; args: unknown[]; acceptKept?: true }
   /**
    * Stops a read the client no longer needs. Sent only to a server whose identity has
    * `requestCancellation`; the result still arrives, and the client ignores it.
@@ -43,7 +48,12 @@ export type OpenTigClientMessage =
   | { type: 'ping' };
 
 export type OpenTigServerMessage =
-  | { type: 'result'; id: string; result: IpcResult<unknown> }
+  /**
+   * `kept`: the value is an answer the server kept, given by GitHub at `readAt`, and is
+   * being read again. Only for a request with `acceptKept`; a `github.read-refreshed`
+   * event naming the request follows on the same connection.
+   */
+  | { type: 'result'; id: string; result: IpcResult<unknown>; kept?: { readAt: string } }
   | { type: 'event'; event: OpenTigRuntimeEvent }
   | { type: 'pong' };
 
@@ -53,4 +63,6 @@ export interface OpenTigServerIdentity {
   appVersion: string;
   /** Understands `{ type: 'cancel' }`. Absent on servers older than that message. */
   requestCancellation?: true;
+  /** Understands `acceptKept` on a request. Absent on servers older than it. */
+  keptReads?: true;
 }

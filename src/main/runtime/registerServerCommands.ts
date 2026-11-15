@@ -527,35 +527,38 @@ export function registerServerCommands(
   });
   handle(IPC.githubStatus, 'gh-status', (forceRefresh) => services.github.status(booleanArg(forceRefresh, 'gh-status')));
   handle(IPC.githubRepositoryInfo, 'gh-repository-info', (id) => services.github.repositoryInfo(stringArg(id, 'gh-repository-info', 64)));
-  handle(IPC.githubPrForBranch, 'gh-pr-for-branch', (id, branchName) => services.github.findPullRequestForBranch(
+  handleWithContext(IPC.githubPrForBranch, 'gh-pr-for-branch', (context, id, branchName) => services.github.findPullRequestForBranch(
     stringArg(id, 'gh-pr-for-branch', 64),
     stringArg(branchName, 'gh-pr-for-branch', 512),
+    context.kept,
   ));
   handle(IPC.repositoryReplaceSearch, 'replace-search', (id, request) => {
     const repositoryId = stringArg(id, 'replace-search', 64);
     const input = searchReplaceArg(request, 'replace-search');
     return services.fileHistory.serialize(repositoryId, () => services.search.replace(repositoryId, input));
   });
-  handle(IPC.githubPrList, 'gh-pr-list', (id, states, fresh) => services.github.listPullRequests(
+  handleWithContext(IPC.githubPrList, 'gh-pr-list', (context, id, states, fresh) => services.github.listPullRequests(
     stringArg(id, 'gh-pr-list', 64),
     pullRequestStatesArg(states, 'gh-pr-list'),
     fresh == null ? false : booleanArg(fresh, 'gh-pr-list'),
+    context.kept,
   ));
-  handle(IPC.githubPrView, 'gh-pr-view', (id, prNumber) => services.github.getPullRequest(stringArg(id, 'gh-pr-view', 64), prNumberArg(prNumber, 'gh-pr-view')));
-  handle(IPC.githubPrLiveState, 'gh-pr-live-state', (id, prNumber) => services.github.getPullRequestLiveState(stringArg(id, 'gh-pr-live-state', 64), prNumberArg(prNumber, 'gh-pr-live-state')));
-  handle(IPC.githubPrConversation, 'gh-pr-conversation', (id, prNumber) => services.github.getPullRequestConversation(stringArg(id, 'gh-pr-conversation', 64), prNumberArg(prNumber, 'gh-pr-conversation')));
+  handleWithContext(IPC.githubPrView, 'gh-pr-view', (context, id, prNumber) => services.github.getPullRequest(stringArg(id, 'gh-pr-view', 64), prNumberArg(prNumber, 'gh-pr-view'), context.kept));
+  handleWithContext(IPC.githubPrLiveState, 'gh-pr-live-state', (context, id, prNumber) => services.github.getPullRequestLiveState(stringArg(id, 'gh-pr-live-state', 64), prNumberArg(prNumber, 'gh-pr-live-state'), context.kept));
+  handleWithContext(IPC.githubPrConversation, 'gh-pr-conversation', (context, id, prNumber) => services.github.getPullRequestConversation(stringArg(id, 'gh-pr-conversation', 64), prNumberArg(prNumber, 'gh-pr-conversation'), context.kept));
   handle(IPC.githubPrAction, 'gh-pr-action', (input) => services.github.runPullRequestAction(pullRequestActionArg(input)));
   handle(IPC.githubPrUpdate, 'gh-pr-update', (input) => services.github.updatePullRequest(updatePullRequestArg(input)));
   handle(IPC.githubPrComment, 'gh-pr-comment', (input) => services.github.commentOnPullRequest(commentOnPullRequestArg(input)));
   handle(IPC.githubPrReview, 'gh-pr-review', (input) => services.github.reviewPullRequest(reviewPullRequestArg(input)));
   handle(IPC.githubPrEntryEdit, 'gh-pr-entry-edit', (input) => services.github.editPullRequestEntry(editPullRequestEntryArg(input)));
   handle(IPC.githubPrEntryDelete, 'gh-pr-entry-delete', (input) => services.github.deletePullRequestEntry(deletePullRequestEntryArg(input)));
-  handle(IPC.githubPrStack, 'gh-pr-stack', (id, prNumber) => services.github.getPullRequestStack(stringArg(id, 'gh-pr-stack', 64), prNumberArg(prNumber, 'gh-pr-stack')));
-  handle(IPC.githubPrListLineCounts, 'gh-pr-list-line-counts', (id, states) => services.github.listPullRequestLineCounts(
+  handleWithContext(IPC.githubPrStack, 'gh-pr-stack', (context, id, prNumber) => services.github.getPullRequestStack(stringArg(id, 'gh-pr-stack', 64), prNumberArg(prNumber, 'gh-pr-stack'), context.kept));
+  handleWithContext(IPC.githubPrListLineCounts, 'gh-pr-list-line-counts', (context, id, states) => services.github.listPullRequestLineCounts(
     stringArg(id, 'gh-pr-list-line-counts', 64),
     pullRequestStatesArg(states, 'gh-pr-list-line-counts'),
+    context.kept,
   ));
-  handle(IPC.githubPrListStacks, 'gh-pr-list-stacks', (id, numbers) => services.github.listPullRequestStacks(stringArg(id, 'gh-pr-list-stacks', 64), prNumbersArg(numbers, 'gh-pr-list-stacks')));
+  handleWithContext(IPC.githubPrListStacks, 'gh-pr-list-stacks', (context, id, numbers) => services.github.listPullRequestStacks(stringArg(id, 'gh-pr-list-stacks', 64), prNumbersArg(numbers, 'gh-pr-list-stacks'), context.kept));
   handle(IPC.githubPrDiff, 'gh-pr-diff', (id, prNumber, range) => services.github.getPullRequestDiff(stringArg(id, 'gh-pr-diff', 64), prNumberArg(prNumber, 'gh-pr-diff'), pullRequestRangeArg(range, 'gh-pr-diff')));
   handle(IPC.githubPrCommitDiff, 'gh-pr-commit-diff', (id, oid) => services.github.getPullRequestCommitDiff(stringArg(id, 'gh-pr-commit-diff', 64), oidArg(oid, 'gh-pr-commit-diff')));
   handle(IPC.githubPrCommits, 'gh-pr-commits', (id, prNumber) => services.github.getPullRequestCommits(stringArg(id, 'gh-pr-commits', 64), prNumberArg(prNumber, 'gh-pr-commits')));
@@ -563,7 +566,7 @@ export function registerServerCommands(
   handleWithContext(IPC.githubPrDraft, 'ai-pr-draft', (context, input) => (
     services.prDrafts.generate(generatePullRequestDraftArg(input), context.signal)
   ));
-  handle(IPC.githubReleaseList, 'gh-release-list', (id, fresh) => services.github.listReleases(stringArg(id, 'gh-release-list', 64), fresh == null ? false : booleanArg(fresh, 'gh-release-list')));
+  handleWithContext(IPC.githubReleaseList, 'gh-release-list', (context, id, fresh) => services.github.listReleases(stringArg(id, 'gh-release-list', 64), fresh == null ? false : booleanArg(fresh, 'gh-release-list'), context.kept));
   handle(IPC.githubReleaseView, 'gh-release-view', (id, tagName) => services.github.getRelease(stringArg(id, 'gh-release-view', 64), tagNameArg(tagName, 'gh-release-view')));
   handle(IPC.githubReleaseTag, 'gh-release-tag', (id, tagName) => services.github.checkReleaseTag(stringArg(id, 'gh-release-tag', 64), tagNameArg(tagName, 'gh-release-tag')));
   handle(IPC.githubReleaseCreate, 'gh-release-create', (input) => services.github.createRelease(createReleaseArg(input)));
@@ -574,12 +577,13 @@ export function registerServerCommands(
   handle(IPC.githubWorkflowRunnable, 'gh-workflow-runnable', (id) => services.github.listRunnableWorkflows(stringArg(id, 'gh-workflow-runnable', 64)));
   handle(IPC.githubWorkflowTriggers, 'gh-workflow-triggers', (id, path, ref) => services.github.getWorkflowTriggers(stringArg(id, 'gh-workflow-triggers', 64), workflowPathArg(path, 'gh-workflow-triggers'), tagNameArg(ref, 'gh-workflow-triggers')));
   handle(IPC.githubWorkflowRun, 'gh-workflow-run', (input) => services.github.runWorkflow(runWorkflowArg(input)));
-  handle(IPC.githubActionRunList, 'gh-action-run-list', (id, workflowId, page) => services.github.listActionRuns(
+  handleWithContext(IPC.githubActionRunList, 'gh-action-run-list', (context, id, workflowId, page) => services.github.listActionRuns(
     stringArg(id, 'gh-action-run-list', 64),
     workflowId === null || workflowId === undefined ? null : githubIdArg(workflowId, 'gh-action-run-list'),
     page === undefined ? 1 : runPageArg(page, 'gh-action-run-list'),
+    context.kept,
   ));
-  handle(IPC.githubActionRunView, 'gh-action-run-view', (id, runId) => services.github.getActionRun(stringArg(id, 'gh-action-run-view', 64), githubIdArg(runId, 'gh-action-run-view')));
+  handleWithContext(IPC.githubActionRunView, 'gh-action-run-view', (context, id, runId) => services.github.getActionRun(stringArg(id, 'gh-action-run-view', 64), githubIdArg(runId, 'gh-action-run-view'), context.kept));
   handle(IPC.githubPrDraftCancel, 'ai-pr-draft-cancel', (requestId) => {
     services.prDrafts.cancel(aiString(requestId, 'ai-pr-draft-cancel', 100, true));
   });

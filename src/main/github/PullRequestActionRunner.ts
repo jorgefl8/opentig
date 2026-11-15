@@ -54,7 +54,7 @@ export class PullRequestActionRunner {
   async update(input: UpdatePullRequestInput): Promise<void> {
     const operation = 'gh-pr-update';
     const { target, verifyAccount } = await beginGitHubMutation(this.github, input, operation);
-    this.github.invalidate(input.repositoryId);
+    this.github.invalidate(input.repositoryId, { pullRequest: input.number });
     const state = await this.github.readLiveState(input.repositoryId, input.number);
     if (state.updatedAt !== input.expectedUpdatedAt) throw new GhOperationError({ code: 'GH_PR_STATE_CHANGED', operation, message: 'This pull request changed on GitHub after you started editing. Your changes were not saved.' });
     if (!state.viewer.canUpdate) throw new GhOperationError({ code: 'GH_PR_ACTION_NOT_ALLOWED', operation, message: "This GitHub account can't update this pull request." });
@@ -62,7 +62,7 @@ export class PullRequestActionRunner {
     try {
       await withPrivateTextFile(input.body, (bodyFile) => this.gh(target, ['pr', 'edit', String(input.number), '-R', target.nameWithOwner, '--title', input.title, '--body-file', bodyFile], operation));
     } finally {
-      this.github.invalidate(input.repositoryId);
+      this.github.invalidate(input.repositoryId, { pullRequest: input.number });
     }
   }
 
@@ -72,14 +72,14 @@ export class PullRequestActionRunner {
     try {
       await withPrivateTextFile(input.body, (bodyFile) => this.gh(target, ['pr', 'comment', String(input.number), '-R', target.nameWithOwner, '--body-file', bodyFile], operation));
     } finally {
-      this.github.invalidate(input.repositoryId);
+      this.github.invalidate(input.repositoryId, { pullRequest: input.number });
     }
   }
 
   async review(input: ReviewPullRequestInput): Promise<void> {
     const operation = 'gh-pr-review';
     const { target, verifyAccount } = await beginGitHubMutation(this.github, input, operation);
-    this.github.invalidate(input.repositoryId);
+    this.github.invalidate(input.repositoryId, { pullRequest: input.number });
     const state = await this.github.readLiveState(input.repositoryId, input.number);
     if (state.headRefOid !== input.expectedHeadOid) throw new GhOperationError({ code: 'GH_PR_STATE_CHANGED', operation, message: 'This pull request has new commits. Review them and try again.' });
     if (state.state !== 'OPEN') throw new GhOperationError({ code: 'GH_PR_ACTION_NOT_ALLOWED', operation, message: 'This pull request is no longer open.' });
@@ -91,7 +91,7 @@ export class PullRequestActionRunner {
       if (input.body.trim()) await withPrivateTextFile(input.body, (bodyFile) => this.gh(target, [...args, '--body-file', bodyFile], operation));
       else await this.gh(target, args, operation);
     } finally {
-      this.github.invalidate(input.repositoryId);
+      this.github.invalidate(input.repositoryId, { pullRequest: input.number });
     }
   }
 
@@ -106,7 +106,7 @@ export class PullRequestActionRunner {
     try {
       await withPrivateTextFile(input.body, (bodyFile) => this.gh(target, ['api', 'graphql', '-f', `id=${input.entryId}`, '-F', `body=@${bodyFile}`, '-f', `query=${entry.mutations.edit}`], operation));
     } finally {
-      this.github.invalidate(input.repositoryId);
+      this.github.invalidate(input.repositoryId, { pullRequest: input.number });
     }
   }
 
@@ -115,14 +115,14 @@ export class PullRequestActionRunner {
     const { target, verifyAccount } = await beginGitHubMutation(this.github, input, operation);
     const entry = await this.readEntry(input, target, operation);
     // Already gone, which is also what trying again finds after a request that got no answer.
-    if (!entry) { this.github.invalidate(input.repositoryId); return; }
+    if (!entry) { this.github.invalidate(input.repositoryId, { pullRequest: input.number }); return; }
     if (entry.updatedAt !== input.expectedUpdatedAt) throw new GhOperationError({ code: 'GH_PR_STATE_CHANGED', operation, message: `This ${entry.mutations.noun} changed on GitHub. Read it and try again.` });
     if (!entry.canDelete) throw new GhOperationError({ code: 'GH_PR_ACTION_NOT_ALLOWED', operation, message: entry.mutations.noun === 'review' ? "GitHub doesn't allow deleting a submitted review. You can edit its text." : "This GitHub account can't delete this comment." });
     verifyAccount();
     try {
       await this.gh(target, ['api', 'graphql', '-f', `id=${input.entryId}`, '-f', `query=${DELETE_COMMENT}`], operation);
     } finally {
-      this.github.invalidate(input.repositoryId);
+      this.github.invalidate(input.repositoryId, { pullRequest: input.number });
     }
   }
 
@@ -143,7 +143,7 @@ export class PullRequestActionRunner {
 
   async run(input: PullRequestActionInput): Promise<PullRequestActionResult> {
     const { target, verifyAccount } = await beginGitHubMutation(this.github, input, OPERATION);
-    this.github.invalidate(input.repositoryId);
+    this.github.invalidate(input.repositoryId, { pullRequest: input.number });
     const state = await this.github.readLiveState(input.repositoryId, input.number);
     // Someone else, or GitHub itself, already removed the branch.
     if (input.action === 'delete-branch' && state.state !== 'OPEN' && state.head.refOid === null) return { outcome: 'done', state, branchDeleted: true };
@@ -158,7 +158,9 @@ export class PullRequestActionRunner {
     try {
       created = await this.execute(input, state, target);
     } finally {
-      this.github.invalidate(input.repositoryId);
+      this.github.invalidate(input.repositoryId, { pullRequest: input.number });
+      // Approved runs start, and a revert opens another pull request, which the lists already cover.
+      if (input.action === 'approve-workflows') this.github.invalidate(input.repositoryId, 'workflow-runs');
     }
     // The action already happened: a failed read must not present it as failed.
     const after = await this.github.readLiveState(input.repositoryId, input.number).catch(() => null);
@@ -176,7 +178,7 @@ export class PullRequestActionRunner {
     } catch {
       return false;
     } finally {
-      this.github.invalidate(input.repositoryId);
+      this.github.invalidate(input.repositoryId, { pullRequest: input.number });
     }
   }
 
