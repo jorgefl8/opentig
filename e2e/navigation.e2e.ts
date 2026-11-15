@@ -220,3 +220,29 @@ test('a file, a change or a commit opened again asks for nothing until it change
   expect(reopened['commits:files'], JSON.stringify(reopened)).toBeUndefined();
   expect(reopened['diff:commit-file'], JSON.stringify(reopened)).toBeUndefined();
 });
+
+test('going Back and Forward to what was already seen asks the server for nothing', async ({ pairedPage: page, repository }) => {
+  await repository.commit('src/app.js', 'const total = 1;\n', 'Add app');
+  await repository.commit('docs/guide.md', '# Guide\n', 'Write the guide');
+  await openRepository(page, repository);
+  await section(page, 'History').click();
+  const list = page.getByRole('list', { name: 'Commit history' });
+  const viewer = page.getByRole('main');
+  const heading = (subject: string) => viewer.getByRole('heading', { name: subject, level: 2 });
+  await list.getByRole('button', { name: 'Add app', exact: true }).click();
+  await expect(heading('Add app')).toBeVisible();
+  await list.getByRole('button', { name: 'Write the guide', exact: true }).click();
+  await expect(heading('Write the guide')).toBeVisible();
+
+  const banner = page.getByRole('banner');
+  const wentBack = await requestsDuring(page, async () => {
+    await banner.getByRole('button', { name: 'Back', exact: true }).click();
+    await expect(heading('Add app')).toBeVisible();
+  });
+  expect(requestTotal(wentBack), JSON.stringify(wentBack)).toBe(0);
+  const wentForward = await requestsDuring(page, async () => {
+    await banner.getByRole('button', { name: 'Forward', exact: true }).click();
+    await expect(heading('Write the guide')).toBeVisible();
+  });
+  expect(requestTotal(wentForward), JSON.stringify(wentForward)).toBe(0);
+});

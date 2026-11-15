@@ -2,7 +2,7 @@ import { appDisplayName } from '@/lib/app-identity';
 import { Suspense, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { lazyWithRetry } from '@/lib/lazy-with-retry';
 import {
-  IconArrowDown, IconArrowUp, IconBrandGithub, IconChevronDown, IconHierarchy2, IconPlus, IconRefresh, IconSettings,
+  IconArrowDown, IconArrowUp, IconBrandGithub, IconChevronDown, IconChevronLeft, IconChevronRight, IconHierarchy2, IconPlus, IconRefresh, IconSettings,
 } from '@tabler/icons-react';
 import type { BootstrapData, GitHubRepositoryInfo, Preferences, PullRequestSummary, RecentRepository, RepositoryInfo, RepositoryOrganization, RepositoryProject } from '../../shared/contracts';
 import type { BranchInfo, RepositoryStatus, WorktreeAgents, WorktreeInfo } from '../../shared/git-types';
@@ -69,6 +69,11 @@ export interface ToolbarProps {
   remoteProblem: { access: RemoteAccessProblem; message: string } | null;
   onRemoteAccessAction(action: RemoteAccessAction): void;
   onRefresh(): void; onPreference(partial: Partial<Preferences>): void;
+  /** Back and Forward through the places visited; the phone's own arrow walks the same trail. */
+  canGoBack: boolean;
+  canGoForward: boolean;
+  onBack(): void;
+  onForward(): void;
   onForgetRepository(repository: RepositoryOption): Promise<RepositoryOrganization>;
   onRelocateRepository(repository: RepositoryOption, path: string): Promise<void>;
   /** Saved repositories whose folder no longer exists; picking one asks for its new folder. */
@@ -477,6 +482,17 @@ export const Toolbar = memo(function Toolbar(props: ToolbarProps) {
           <TooltipContent>{props.status.unborn ? 'Create the first commit before publishing this branch' : props.busy === 'push' ? 'Pushing…' : publishBranch ? 'Publish branch and set upstream' : `Push ${props.status.ahead} ${props.status.ahead === 1 ? 'commit' : 'commits'}`}</TooltipContent>
         </Tooltip>
       )}
+      <div className="toolbar-history" role="group" aria-label="Navigation history">
+        <Tooltip>
+          <TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Back" aria-keyshortcuts="Alt+ArrowLeft" focusableWhenDisabled disabled={!props.canGoBack} onClick={props.onBack} />}><IconChevronLeft /></TooltipTrigger>
+          <TooltipContent>Back <Kbd>Alt+←</Kbd></TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Forward" aria-keyshortcuts="Alt+ArrowRight" focusableWhenDisabled disabled={!props.canGoForward} onClick={props.onForward} />}><IconChevronRight /></TooltipTrigger>
+          <TooltipContent>Forward <Kbd>Alt+→</Kbd></TooltipContent>
+        </Tooltip>
+      </div>
+      <span className="toolbar-history-divider" aria-hidden="true" />
       <Tooltip><TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Refresh" onClick={props.onRefresh} disabled={Boolean(props.busy) || currentRepositorySyncBusy} />}>{props.busy === 'refresh' ? <Spinner /> : <IconRefresh />}</TooltipTrigger><TooltipContent>Refresh (Ctrl+R)</TooltipContent></Tooltip>
       <DesktopUpdateIndicator />
       {props.remoteProblem && <RemoteAccessIndicator problem={props.remoteProblem.access} message={props.remoteProblem.message} onAction={props.onRemoteAccessAction} />}

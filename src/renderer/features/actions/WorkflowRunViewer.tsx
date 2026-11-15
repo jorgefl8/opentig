@@ -22,6 +22,7 @@ import { Spinner } from '@/components/ui/spinner';
 import { RepositoryLink } from '@/components/RepositoryLink';
 import { useServerFeatures } from '@/lib/server-features';
 import { JobLogView } from './JobLogView';
+import { noteViewState, restoredViewState } from '@/features/viewer/viewer-memory';
 
 /** --motion-med and --ease-out. */
 const PANEL_TRANSITION = { duration: 0.2, ease: [0.32, 0.72, 0, 1] as const };
@@ -54,10 +55,21 @@ export function WorkflowRunViewer({ repositoryId, runId, jobId = null }: { repos
   const queryClient = useQueryClient();
   const [listed] = useState(() => listedRun(queryClient, repositoryId, runId));
   const run = details ?? listed;
-  const [selectedJobId, setSelectedJobId] = useState<number | null>(jobId);
-  useEffect(() => { setSelectedJobId(jobId); }, [jobId]);
+  // Back brings the run back with the job and the log that were open at that step.
+  const memoryKey = `${repositoryId}:workflow-run:${runId}`;
+  const [restored] = useState(() => restoredRunView(restoredViewState(memoryKey)));
+  const [selectedJobId, setSelectedJobId] = useState<number | null>(restored ? restored.job : jobId);
+  const linkedJob = useRef(jobId);
+  useEffect(() => {
+    if (linkedJob.current === jobId) return;
+    linkedJob.current = jobId;
+    setSelectedJobId(jobId);
+  }, [jobId]);
   /** The job whose log fills the body, and the step it opened on. */
-  const [logOf, setLogOf] = useState<{ jobId: number; step: number | null } | null>(null);
+  const [logOf, setLogOf] = useState<{ jobId: number; step: number | null } | null>(restored?.log ?? null);
+  useEffect(() => {
+    noteViewState(memoryKey, { job: selectedJobId, log: logOf ? { jobId: logOf.jobId, step: logOf.step } : null });
+  }, [logOf, memoryKey, selectedJobId]);
   const logs = useServerFeatures().actionJobLogs;
   // The control that opened the log gets the focus back when it closes; the graph stays as it was behind the log.
   const openedFrom = useRef<HTMLElement | null>(null);
@@ -211,4 +223,15 @@ function JobPanel({ job, now, reduceMotion, onClose, onOpenLog }: {
       </ol>
     </motion.aside>
   );
+}
+
+/** A run's view as Back kept it, if what was read back has that shape. */
+function restoredRunView(value: unknown): { job: number | null; log: { jobId: number; step: number | null } | null } | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  const id = (item: unknown) => typeof item === 'number' && Number.isSafeInteger(item) && item > 0;
+  const job = id(record.job) ? record.job as number : null;
+  const log = record.log && typeof record.log === 'object' && !Array.isArray(record.log) ? record.log as Record<string, unknown> : null;
+  const step = log && typeof log.step === 'number' && Number.isSafeInteger(log.step) && log.step >= 0 ? log.step : null;
+  return { job, log: log && id(log.jobId) ? { jobId: log.jobId as number, step } : null };
 }
