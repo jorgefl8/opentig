@@ -58,7 +58,7 @@ function server(file: string, options: { login?: string; remote?: string; clock?
   const resolver = { discover: async () => [{ executable: 'gh', alias: 'gh', source: 'process-path', env: {} }], warning: async () => undefined } as unknown as CliResolver;
   const git = {
     onInvalidate: () => undefined, readScope: (cwd: string) => cwd,
-    run: async (_cwd: string, args: string[]) => ({ stdout: Buffer.from(args.includes('core.sshCommand') || args[0] === 'config' ? '' : state.remote) }),
+    run: async (cwd: string, args: string[]) => ({ stdout: Buffer.from(args.includes('core.sshCommand') || args[0] === 'config' ? '' : cwd === '/work/other' ? 'https://github.com/example/other.git' : state.remote) }),
   } as unknown as GitProcess;
   const repository = { path: '/work/demo', commonDir: '/work/demo/.git', id: 'repo', name: 'demo', repositoryName: 'demo' } as RepositoryInfo;
   const other = { path: '/work/other', commonDir: '/work/other/.git', id: 'other', name: 'other', repositoryName: 'other' } as RepositoryInfo;
@@ -185,6 +185,8 @@ describe('GitHub answers kept on the server', () => {
 
   it('keeps a refresh that finished while another repository was changed through OpenTig', async () => {
     const { service, state, clock } = server(path.join(await folder(), 'github-cache.json'));
+    // The other repository has been read, so which GitHub repository it is is known.
+    await service.getPullRequest('other', 1);
     await service.getPullRequest('repo', 12);
     clock.now += 2 * 60_000;
     let open!: () => void;
@@ -196,8 +198,27 @@ describe('GitHub answers kept on the server', () => {
     state.gate = null;
     await client.answers[0]!.refresh;
     // The refreshed answer was kept, so asking again is answered from it.
-    expect((await service.getPullRequest('repo', 12, keptSink().sink)).title).toBe('read 2');
-    expect(state.views).toBe(2);
+    expect((await service.getPullRequest('repo', 12, keptSink().sink)).title).toBe('read 3');
+    expect(state.views).toBe(3);
+  });
+
+  it('counts a change in a checkout whose GitHub repository is not known yet as concerning every read', async () => {
+    const { service, state, clock } = server(path.join(await folder(), 'github-cache.json'));
+    await service.getPullRequest('repo', 12);
+    clock.now += 2 * 60_000;
+    let open!: () => void;
+    state.gate = new Promise((resolve) => { open = resolve; });
+    const client = keptSink();
+    await service.getPullRequest('repo', 12, client.sink);
+    // The other checkout has made no GitHub read in this run: it may be a clone of the same repository.
+    service.invalidate('other', { pullRequest: 12 });
+    open();
+    state.gate = null;
+    await client.answers[0]!.refresh;
+    clock.now += 10_000;
+    const again = keptSink();
+    expect((await service.getPullRequest('repo', 12, again.sink)).title).toBe('read 1');
+    expect(again.answers).toHaveLength(1);
   });
 
   it('drops only what a change made through OpenTig affects', async () => {
