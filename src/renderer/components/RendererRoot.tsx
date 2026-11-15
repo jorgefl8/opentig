@@ -15,7 +15,8 @@ const PairingPage = lazyWithRetry(() => import('../features/auth/PairingPage'));
 export function RendererRoot() {
   const application = window.location.pathname === '/pair'
     ? <PairingPage />
-    : <ServerConnectionBoundary><App /></ServerConnectionBoundary>;
+    // The web build gives each place an address; the desktop app keeps its trail without one.
+    : <ServerConnectionBoundary><App addresses={!window.opentigDesktop} /></ServerConnectionBoundary>;
   return <>
     <MobileViewport />
     <LowEndDevice />

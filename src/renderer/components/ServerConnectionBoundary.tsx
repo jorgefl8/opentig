@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } fro
 import { sileo, type SileoOptions } from 'sileo';
 import { SplashScreen } from '@/components/SplashScreen';
 import { Button } from '@/components/ui/button';
+import { rememberReturnAddress } from '@/features/auth/pairing';
 import { PairingCommand } from '@/features/auth/PairingCommand';
 import { maintainBrowserSession } from '@/features/auth/session-renewal';
 import { serverClient } from '@/lib/opentig-api';
@@ -66,6 +67,8 @@ export function ServerConnectionBoundary({ children }: { children: ReactNode }) 
 
   if (state === 'auth-required') {
     const desktop = Boolean(window.opentigDesktop);
+    // Pairing this browser comes first; the address it was opened on is where it returns afterwards.
+    if (!desktop) rememberReturnAddress(window.location);
     return (
       <main className="access-page flex min-h-dvh items-center justify-center bg-background px-4 py-6 text-foreground">
         <section className="w-full max-w-md rounded-xl border border-border bg-card p-6 shadow-sm" role="status">

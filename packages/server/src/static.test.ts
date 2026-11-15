@@ -58,3 +58,17 @@ it('lets browsers keep a file icon for good only when its address names the icon
   // An older client asks without the fingerprint, and its icons may change under the same address.
   expect((await fetch(`${origin}/vscode-icons/file_type_js.svg`)).headers.get('cache-control')).toBe('no-cache');
 });
+
+it('answers every app address with the app, never with a file under it or an error page', async () => {
+  const { origin } = await serve();
+  for (const address of ['/r/abc', '/r/abc/file/src/app.ts', '/r/abc/file/assets/index-AbCdEfGh1.js', '/r/abc/file/%E0%A4%A', '/r/abc/file/..%2F..%2Findex.html#L4']) {
+    const response = await fetch(`${origin}${address}`);
+    expect(response.status, address).toBe(200);
+    expect(response.headers.get('content-type'), address).toBe('text/html; charset=utf-8');
+    expect(response.headers.get('cache-control'), address).toBe('no-cache');
+    expect(await response.text(), address).toBe('<!doctype html>');
+  }
+  // Paths outside the app's addresses keep their meaning.
+  expect((await fetch(`${origin}/assets/missing.js`)).status).toBe(404);
+  expect((await fetch(`${origin}/rx/file.js`)).status).toBe(404);
+});

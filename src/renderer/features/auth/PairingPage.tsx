@@ -8,6 +8,7 @@ import {
   consumePairingFragment,
   defaultDeviceName,
   exchangePairingToken,
+  pairedDestination,
   type PairingExchangeResult,
   type PairingSessionResult,
 } from './pairing';
@@ -39,7 +40,7 @@ export default function PairingPage() {
     const timeout = window.setTimeout(() => controller.abort(), 10_000);
     void checkPairingSession(controller.signal).then((result) => {
       if (!active) return;
-      if (result === 'authenticated') window.location.replace('/');
+      if (result === 'authenticated') window.location.replace(pairedDestination(window.location.origin));
       setSession(result);
     }).finally(() => window.clearTimeout(timeout));
     return () => { active = false; controller.abort(); window.clearTimeout(timeout); };
@@ -52,7 +53,7 @@ export default function PairingPage() {
     if (!name || !code || name.length > 64) return;
     setStatus('pairing');
     const result = await exchangePairingToken(code, name);
-    if (result === 'paired') window.location.replace('/');
+    if (result === 'paired') window.location.replace(pairedDestination(window.location.origin));
     else setStatus(result);
   };
 

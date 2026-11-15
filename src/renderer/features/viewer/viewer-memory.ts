@@ -60,8 +60,17 @@ export function rememberedTab<Tab extends string>(documentKey: string, allowed: 
   return tab !== undefined && (allowed as readonly string[]).includes(tab) ? tab as Tab : null;
 }
 
+const tabListeners = new Set<() => void>();
+
 export function rememberTab(documentKey: string, tab: string): void {
   tabs.set(documentKey, tab);
+  for (const listener of [...tabListeners]) listener();
+}
+
+/** Called when a document's tab changes, which the address of a pull request names. */
+export function onRememberedTab(listener: () => void): () => void {
+  tabListeners.add(listener);
+  return () => { tabListeners.delete(listener); };
 }
 
 /** The files left folded in a diff, by their key; undefined when this diff was never changed by hand. */

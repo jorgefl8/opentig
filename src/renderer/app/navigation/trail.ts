@@ -30,7 +30,9 @@ export interface NavigationTrail {
   onRestore(listener: (entry: NavigationEntry) => void): () => void;
   /** For `useSyncExternalStore`: `state()` returns the same object until it changes. */
   subscribe(listener: () => void): () => void;
-  dispose(): void;
+  /** Starts and stops listening to the page, for a trail that keeps its steps there. */
+  attach(): void;
+  detach(): void;
 }
 
 let keyCounter = 0;
@@ -61,10 +63,6 @@ export function createTrailSignals() {
     subscribe(listener: () => void) {
       stateListeners.add(listener);
       return () => { stateListeners.delete(listener); };
-    },
-    clear() {
-      restoreListeners.clear();
-      stateListeners.clear();
     },
   };
 }
@@ -111,6 +109,7 @@ export function createMemoryTrail(limit = MAX_TRAIL_ENTRIES): NavigationTrail {
     forward: () => move(index + 1),
     onRestore: signals.onRestore,
     subscribe: signals.subscribe,
-    dispose: signals.clear,
+    attach: () => undefined,
+    detach: () => undefined,
   };
 }

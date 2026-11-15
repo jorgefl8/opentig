@@ -233,6 +233,27 @@ Before printing a new five-minute code, link, and terminal QR, the command verif
 
 </details>
 
+## Addresses
+
+In a browser, every place in OpenTig has its own address. Copy it from the address bar to open the same place in another tab or on another device paired with the same server, bookmark it, or reload: the page opens where it was, with the list and the viewer scrolled as you left them. The browser's **Back**, **Forward**, their keys and mouse buttons, and a swipe walk the same trail as OpenTig's [Back and Forward](interface.md#back-and-forward); there is no second history. The desktop app keeps the same trail without showing addresses.
+
+| Address | Opens |
+| --- | --- |
+| `/r/<repository>` | The repository, in **Files** |
+| `/r/<repository>/changes`, `/files`, `/history`, `/github`, `/search` | That section |
+| `/r/<repository>/changes/staged/<path>`, `/changes/unstaged/<path>`, `/changes/conflict/<path>` | A change's diff, or a conflict |
+| `/r/<repository>/file/<path>#L40` | A file in **Files**, at line 40 |
+| `/r/<repository>/commit/<commit>` | A commit, by its full object id |
+| `/r/<repository>/commit/<commit>/file/<path>?from=<old path>` | One file of a commit; `from` names its previous path when it was renamed |
+| `/r/<repository>/history?history-of=<path>` | **History** narrowed to one file; the parameter also follows a commit opened from there |
+| `/r/<repository>/pr/24`, `/pr/24/comments`, `/checks`, `/timeline`, `/code` | A pull request, on that tab |
+| `/r/<repository>/release/<tag>` | A release |
+| `/r/<repository>/run/<run>`, `/run/<run>/job/<job>` | A workflow run, or one of its jobs |
+
+`<repository>` is the id this server gives a saved repository or worktree, so an address only works on the server that wrote it. Each part of a path is percent-encoded. Opening an address only navigates: it never stages, saves, discards, switches a branch or changes a setting, and a browser without a session pairs first and then returns to the address.
+
+Every part of an address is checked before it is used: the repository must be one this server knows, commits are full object ids that this clone has, numbers are whole numbers in range, tags are names Git accepts, and file paths stay inside the worktree, outside `.git`. An address that fails a check opens OpenTig where you last were, with a notice saying what was wrong, such as an unknown repository or a commit this clone doesn't have, instead of an error page. Every `/r/…` path is answered with the app, so no address can reach the server's files, API or WebSocket.
+
 ## Connection behavior
 
 Healthy connections show no connection notification. Before the first successful connection, OpenTig shows a full loading state rather than a partial app.

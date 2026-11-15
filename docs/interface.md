@@ -24,7 +24,7 @@ OpenTig keeps a trail of the places you visit. Go back and forward along it with
 
 **Back only navigates.** It never stages, saves, discards, or switches a branch, and what is still in memory shows without being read again. Unsaved edits stay in their tabs. A file whose tab you closed opens again. A step in another repository opens that repository, as choosing it in the picker would. When what a step showed is gone, such as a change you committed or discarded, a deleted file, or a repository removed from OpenTig, a notice says so and you land on the section without it.
 
-The desktop app keeps the last 100 steps of the session.
+The desktop app keeps the last 100 steps of the session. In a browser, the trail is the browser's own history: each step has an [address](web-access.md#addresses), and the browser's Back and Forward walk it too.
 
 ## Appearance and settings
 

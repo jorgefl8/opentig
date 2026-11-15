@@ -1,4 +1,5 @@
 import type { AiHarnessId } from '@shared/contracts';
+import { publicAsset } from '@/lib/public-asset';
 
 interface AiProviderIconProps {
   harness: AiHarnessId;
@@ -26,13 +27,13 @@ export function AiProviderIcon({ harness, className = '' }: AiProviderIconProps)
   }
 
   if (harness === 'claude') {
-    return <img className={classes} src="./vscode-icons/file_type_claude.svg" alt="" aria-hidden="true" draggable={false} />;
+    return <img className={classes} src={publicAsset('vscode-icons/file_type_claude.svg')} alt="" aria-hidden="true" draggable={false} />;
   }
 
   return (
     <span className={`${classes} ai-provider-icon-themed`} aria-hidden="true">
-      <img className="ai-provider-icon-for-light" src="./vscode-icons/file_type_light_opencode.svg" alt="" draggable={false} />
-      <img className="ai-provider-icon-for-dark" src="./vscode-icons/file_type_opencode.svg" alt="" draggable={false} />
+      <img className="ai-provider-icon-for-light" src={publicAsset('vscode-icons/file_type_light_opencode.svg')} alt="" draggable={false} />
+      <img className="ai-provider-icon-for-dark" src={publicAsset('vscode-icons/file_type_opencode.svg')} alt="" draggable={false} />
     </span>
   );
 }
