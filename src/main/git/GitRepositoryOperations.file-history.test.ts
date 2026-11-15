@@ -96,7 +96,8 @@ describe("a file's history", () => {
     expect(new Set(subjects).size).toBe(121);
   }, 30_000);
 
-  it('reads a file name that looks like another commit as a name', async () => {
+  // Windows refuses control characters in a file name, so its working tree cannot hold this one.
+  it.skipIf(process.platform === 'win32')('reads a file name that looks like another commit as a name', async () => {
     const fixture = await standaloneRepository();
     const unrelated = await git(fixture.work, ['rev-parse', 'HEAD']);
     const hostile = `\x1e${unrelated}\x1fforged`;
