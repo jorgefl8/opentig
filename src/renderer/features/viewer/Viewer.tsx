@@ -1,5 +1,5 @@
 import { formatDateTime } from '@shared/date-format';
-import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { Suspense, memo, useCallback, useEffect, useRef, useState } from 'react';
 import { lazyWithPreload, lazyWithRetry, preloadWhenIdle } from '@/lib/lazy-with-retry';
 import { LazyPullRequestDiff } from '@/features/pulls/pull-request-viewer-chunks';
 import { isLowEndDevice } from '@/lib/low-end-device';
@@ -128,7 +128,7 @@ async function prepareHighlight(work: (prime: typeof import('./highlight-prime')
 
 const NO_FILE_STAMP = () => null;
 
-export default function Viewer({ repositoryId, selection, diffView, wrapLines, theme, revision, readOnly, commits, githubRepository, undoBlocked, onUndoCommit, draftFor, fileStamp = NO_FILE_STAMP, onSelect, onOpenFile, onDiffViewChange, onWrapLinesChange, onDraftChange, onDraftSaved, onUpdateConflict, onResolveConflict, onDiscardDiff }: ViewerProps) {
+function Viewer({ repositoryId, selection, diffView, wrapLines, theme, revision, readOnly, commits, githubRepository, undoBlocked, onUndoCommit, draftFor, fileStamp = NO_FILE_STAMP, onSelect, onOpenFile, onDiffViewChange, onWrapLinesChange, onDraftChange, onDraftSaved, onUpdateConflict, onResolveConflict, onDiscardDiff }: ViewerProps) {
   const [data, setData] = useState<ViewerData>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -733,3 +733,6 @@ function formatBytes(bytes: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
+
+/** Memoized: it redraws when what it shows changes, not on every change of the app around it. */
+export default memo(Viewer);

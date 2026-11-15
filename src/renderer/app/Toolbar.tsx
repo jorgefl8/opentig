@@ -1,5 +1,5 @@
 import { appDisplayName } from '@/lib/app-identity';
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { lazyWithRetry } from '@/lib/lazy-with-retry';
 import {
   IconArrowDown, IconArrowUp, IconBrandGithub, IconChevronDown, IconHierarchy2, IconPlus, IconRefresh, IconSettings,
@@ -90,7 +90,8 @@ const SettingsDialog = lazyWithRetry(() => import('@/features/settings/SettingsD
 const LocalRefsDialog = lazyWithRetry(() => import('@/features/refs/LocalRefsDialog').then((module) => ({ default: module.LocalRefsDialog })));
 const RepositoryProjectsDialog = lazyWithRetry(() => import('@/features/repositories/RepositoryProjectsDialog').then((module) => ({ default: module.RepositoryProjectsDialog })));
 
-export function Toolbar(props: ToolbarProps) {
+/** Memoized: it redraws when one of its props changes, which `App` keeps the same otherwise. */
+export const Toolbar = memo(function Toolbar(props: ToolbarProps) {
   const { onRecent } = props;
   const mobile = useMobileLayout();
   const [mobileContextOpen, setMobileContextOpen] = useState(false);
@@ -519,4 +520,4 @@ export function Toolbar(props: ToolbarProps) {
       )}
     </>
   );
-}
+});

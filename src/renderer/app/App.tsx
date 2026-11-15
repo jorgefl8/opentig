@@ -1,4 +1,5 @@
 import { GettingStartedChecklist } from '@/features/onboarding/GettingStartedChecklist';
+import { useStableHandlers } from '@/lib/use-stable-handlers';
 import { parentFolderPath } from '@/features/repositories/directory-navigation';
 import { ONBOARDING_VERSION } from '../../shared/onboarding';
 import { lastCloneParent, resumeBackgroundClone } from '@/features/onboarding/clone-jobs';
@@ -18,7 +19,7 @@ import { sileo } from 'sileo';
 import type { BootstrapData, FetchResult, FileHistoryPathChange, FileHistoryState, GhCliStatus, GitHubRepositoryInfo, OpenTigCapabilities, Preferences, PullRequestState, PullRequestSummary, PullResult, PushResult, RecentRepository, RepositoryInfo, RepositoryRelocationSearch, UndoLatestCommitResult } from '../../shared/contracts';
 import { matchesCombo, resolveShortcuts, type ShortcutMap } from '../../shared/shortcuts';
 import { ShortcutsProvider } from './ShortcutsContext';
-import { Toolbar } from './Toolbar';
+import { Toolbar, type ToolbarProps } from './Toolbar';
 import { SidebarCollapseButton, SidebarRail, type SidebarRailSection } from './SidebarRail';
 import { SidebarResizeHandle } from './SidebarResizeHandle';
 import { useBranchPush } from '@/features/refs/useBranchPush';
@@ -154,6 +155,12 @@ interface SyncTarget {
 const CloneRepositoryDialog = lazyWithRetry(() => import('@/features/onboarding/CloneRepositoryDialog').then(module => ({ default: module.CloneRepositoryDialog })));
 const FindRepositoriesDialog = lazyWithRetry(() => import('@/features/onboarding/FindRepositoriesDialog').then(module => ({ default: module.FindRepositoriesDialog })));
 const WelcomeSettings = lazyWithRetry(() => import('@/features/settings/SettingsDialog').then(module => ({ default: module.SettingsDialog })));
+
+/** The same empty lists on every render, so memoized parts see no change. */
+const NO_COMMITS: CommitInfo[] = [];
+const NO_BRANCHES: BranchInfo[] = [];
+const NO_WORKTREES: WorktreeInfo[] = [];
+const NO_WORKTREE_AGENTS: Awaited<ReturnType<typeof opentig.refs.worktreeAgents>> = [];
 
 export default function App({ initialView, initialSelection, pullRequestCreationDisabledReason }: { initialView?: SidebarView; initialSelection?: ViewerSelection; pullRequestCreationDisabledReason?: string } = {}) {
   const appQueryClient = useQueryClient();
@@ -461,8 +468,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     };
   }, [status?.changes]);
   const files = currentSnapshot ? filesState : null;
-  const branches = currentSnapshot ? branchesState : [];
-  const worktrees = currentSnapshot ? worktreesState : [];
+  const branches = currentSnapshot ? branchesState : NO_BRANCHES;
+  const worktrees = currentSnapshot ? worktreesState : NO_WORKTREES;
   // Agents start and stop without touching Git, so they are looked for on their own and kept fresh.
   const worktreeAgentsQuery = useQuery({
     queryKey: queryKeys.worktreeAgents(repository?.id ?? ''),
@@ -470,7 +477,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     enabled: repository !== null && currentSnapshot,
     refetchInterval: WORKTREE_AGENTS_REFRESH_MS,
   });
-  const worktreeAgents = currentSnapshot ? worktreeAgentsQuery.data ?? [] : [];
+  const worktreeAgents = currentSnapshot ? worktreeAgentsQuery.data ?? NO_WORKTREE_AGENTS : NO_WORKTREE_AGENTS;
   const currentBranch = status && !status.detached && !status.unborn ? status.branch : null;
   const branchPullRequestQuery = useQuery(branchPullRequestQueryOptions(
     repository?.id ?? '', currentBranch ?? '',
@@ -2711,10 +2718,52 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     await addRepositoryPath(path);
   }} />;
 
+  // The toolbar and the viewer are memoized: with these handlers, which stay the same functions,
+  // they redraw when what they show changes, not on every change of the app's state.
+  const toolbarHandlers = useStableHandlers({
+    onOnboarding: showOnboarding,
+    onCreatePullRequest: () => setCreatePrOpen(true),
+    onOpenPullRequest: (number: number) => { selectViewer({ type: 'pull-request', number }); },
+    onOpen: openRepository,
+    onRecent: selectRecent,
+    onRemoteAccessAction: (action: Parameters<typeof handleRemoteAccessAction>[0]) => void handleRemoteAccessAction(action),
+    onBranch: switchBranch,
+    onWorktree: switchWorktree,
+    onRefresh: () => void refresh({ manual: true }),
+    onPull: () => void pullUpdates(),
+    onPush: () => void pushUpdates(),
+    onRepositorySync: syncRepository,
+    onPreference: updateSettingsPreference,
+    onForgetRepository: forgetRepository,
+    onRelocateRepository: relocateRepository,
+    onRepositoryPickerOpen: refreshUnavailableRepositories,
+    onOrganizationChange: (organization: Parameters<ToolbarProps['onOrganizationChange']>[0]) => setBootstrap((current) => current ? { ...current, ...organization } : current),
+    onRefsManaged: handleRefsManaged,
+  });
+  const mobilePreferences = useMemo(() => mobile && bootstrap ? { ...bootstrap.preferences, wrapLines: mobileWrapLines } : null, [bootstrap, mobile, mobileWrapLines]);
+  const viewerHandlers = useStableHandlers({
+    onUndoCommit: setUndoCommit,
+    draftFor: (path: string) => repositoryRef.current ? readFileDraft(repositoryRef.current.id, path) : null,
+    onSelect: selectViewer,
+    onOpenFile: openFile,
+    onDiffViewChange: (value: Preferences['diffView']) => void updatePreference({ diffView: value }),
+    onWrapLinesChange: changeWrapLines,
+    onDiscardDiff: (path: string) => discardChanges([path]),
+    onDraftChange: storeFileDraft,
+    onDraftSaved: (path: string) => {
+      const repositoryId = repositoryRef.current?.id;
+      if (!repositoryId) return;
+      dropFileDraft(repositoryId, path);
+      updateFileSession(repositoryId, (session) => setTabDirty(session, path, false));
+    },
+    onUpdateConflict: updateConflictFile,
+    onResolveConflict: resolveConflictFile,
+  });
+
   if (!bootstrap) {
     return <SplashScreen heading={appDisplayName} detail={startupSplashDetail(connectionState)} />;
   }
-  const settingsPreferences = mobile ? { ...bootstrap.preferences, wrapLines: mobileWrapLines } : bootstrap.preferences;
+  const settingsPreferences = mobilePreferences ?? bootstrap.preferences;
   if (!repository && unavailableRepository && !welcomeReplay) {
     const missing = unavailableRepository;
     return (
@@ -2950,7 +2999,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       <MobileChromeContext.Provider value={mobileChrome}>
       <div className="app-shell" data-mobile-pane={mobilePane} inert={welcomeReplay || undefined}>
         <Toolbar
-          onOnboarding={showOnboarding}
+          {...toolbarHandlers}
           mobileViewer={mobile && mobilePane === 'viewer' ? mobileViewerBar : undefined}
           repository={repository}
           recent={bootstrap.recentRepositories}
@@ -2960,36 +3009,19 @@ export default function App({ initialView, initialSelection, pullRequestCreation
           branchPullRequest={currentBranchPullRequest}
           branchPullRequestNewCommits={commitsAfterMerge}
           branchSwitchPending={busy === 'branch' || blockedBranchSwitch !== null || agentBranchSwitch !== null}
-          onCreatePullRequest={() => setCreatePrOpen(true)}
           upstreamMismatch={upstreamMismatch}
-          onOpenPullRequest={(number) => { selectViewer({ type: 'pull-request', number }); }}
           branches={branches}
           worktrees={worktrees}
           worktreeAgents={worktreeAgents}
           preferences={settingsPreferences}
           busy={busy}
           repositorySyncOperations={repositorySyncOperations}
-          onOpen={openRepository}
-          onRecent={selectRecent}
           remoteProblem={remoteProblem?.repositoryId === repository.id ? remoteProblem : null}
-          onRemoteAccessAction={(action) => void handleRemoteAccessAction(action)}
           pendingRepositoryId={pendingRepositoryId}
           repositoryLoadPhase={repositoryLoadPhase}
           repositoryLoadVisible={repositoryLoadVisible}
           repositoryLoadSlow={repositoryLoadSlow}
-          onBranch={switchBranch}
-          onWorktree={switchWorktree}
-          onRefresh={() => void refresh({ manual: true })}
-          onPull={() => void pullUpdates()}
-          onPush={() => void pushUpdates()}
-          onRepositorySync={syncRepository}
-          onPreference={updateSettingsPreference}
-          onForgetRepository={forgetRepository}
-          onRelocateRepository={relocateRepository}
           unavailableRepositoryIds={unavailableRepositoryIds}
-          onRepositoryPickerOpen={refreshUnavailableRepositories}
-          onOrganizationChange={(organization) => setBootstrap((current) => current ? { ...current, ...organization } : current)}
-          onRefsManaged={handleRefsManaged}
           settingsOpen={settingsOpen}
           settingsSection={settingsSection}
           onSettingsOpen={setSettingsOpen}
@@ -3234,24 +3266,11 @@ export default function App({ initialView, initialSelection, pullRequestCreation
                       theme={theme}
                       revision={refreshVersion}
                       readOnly={Boolean(status?.readOnly)}
-                      commits={commits ?? []}
+                      commits={commits ?? NO_COMMITS}
                       githubRepository={githubInfo?.isGitHub ? githubInfo.nameWithOwner : null}
                       undoBlocked={Boolean(status?.operation) || undoingCommit}
-                      onUndoCommit={setUndoCommit}
-                      draftFor={(path) => readFileDraft(repository.id, path)}
                       fileStamp={fileStamp}
-                      onSelect={selectViewer}
-                      onOpenFile={openFile}
-                      onDiffViewChange={(value) => void updatePreference({ diffView: value })}
-                      onWrapLinesChange={changeWrapLines}
-                      onDiscardDiff={(path) => discardChanges([path])}
-                      onDraftChange={storeFileDraft}
-                      onDraftSaved={(path) => {
-                        dropFileDraft(repository.id, path);
-                        updateFileSession(repository.id, (session) => setTabDirty(session, path, false));
-                      }}
-                      onUpdateConflict={updateConflictFile}
-                      onResolveConflict={resolveConflictFile}
+                      {...viewerHandlers}
                     />
                     </LineBlameContext.Provider>
                     </FileLineTargetContext.Provider>

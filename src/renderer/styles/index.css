@@ -1184,6 +1184,7 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   /* Inline styles survive for math, so third-party text is kept from painting outside its box. */
   .pr-conversation-body, .pr-summary-section, .release-notes { contain: layout paint; }
   .pr-conversation-body { grid-column: 2; min-width: 0; margin-top: 4px; font-size: var(--text-ui); }
+  .pr-conversation-pending { margin: 0; color: var(--muted-foreground); white-space: pre-wrap; overflow-wrap: anywhere; }
   .pr-conversation-hidden summary { color: var(--muted-foreground); font-size: var(--text-meta); cursor: pointer; }
   .pr-action-note { color: var(--muted-foreground); font-size: var(--text-meta); }
   .pr-diff-panel { display: flex; min-height: 0; flex: 1; flex-direction: column; }

@@ -105,7 +105,7 @@ The list's menu shows the effective GitHub account. When a repository can't be r
 
 **Read the conversation**
 
-**Comments** shows the PR's comments and reviews, with Markdown rendered and links that open in a new tab. Choose **Hide bots** to leave out comments from bots. Comments hidden on GitHub stay collapsed until you open them. Past the most recent 100 comments and 100 reviews, the list says so and links to the rest. They load when you open **Comments**. Inline code comments stay on GitHub. **Timeline** lists the PR's commits; a commit's short hash opens it in the commit viewer.
+**Comments** shows the PR's comments and reviews, with Markdown rendered and links that open in a new tab. Each comment is rendered as you scroll near it; until then it shows its text as written. Choose **Hide bots** to leave out comments from bots. Comments hidden on GitHub stay collapsed until you open them. Past the most recent 100 comments and 100 reviews, the list says so and links to the rest. They load when you open **Comments**. Inline code comments stay on GitHub. **Timeline** lists the PR's commits; a commit's short hash opens it in the commit viewer.
 
 **Comment and review**
 
