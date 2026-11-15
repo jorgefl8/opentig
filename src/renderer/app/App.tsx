@@ -187,6 +187,9 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   const [branchesState, setBranches] = useState<BranchInfo[]>([]);
   const [worktreesState, setWorktrees] = useState<WorktreeInfo[]>([]);
   const [snapshotRepositoryId, setSnapshotRepositoryId] = useState<string | null>(null);
+  // The repository a read has confirmed since it was opened. Until then what is shown may come from
+  // memory or from what the server saved, and nothing that changes the repository is offered on it.
+  const [confirmedRepositoryId, setConfirmedRepositoryId] = useState<string | null>(null);
   // Read by a refresh as it starts, to tell the first read of a repository from a later one.
   const snapshotRepositoryIdRef = useRef<string | null>(null);
   const [pendingRepositoryId, setPendingRepositoryId] = useState<string | null>(null);
@@ -451,6 +454,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     : mobilePane === 'viewer' ? { title: viewerTitleHost, actions: viewerActionsHost, float: mobileFloatHost } : NO_MOBILE_CHROME_HOSTS,
   [mobile, mobileFloatHost, mobilePane, viewerActionsHost, viewerTitleHost]);
   const currentSnapshot = snapshotRepositoryId === repository?.id;
+  const unconfirmed = repository !== null && confirmedRepositoryId !== repository.id;
   const repositoryLoadPhase = pendingRepositoryId ? 'opening' : repository && !currentSnapshot ? 'loading' : null;
   // Quick switches finish without a flash; only a noticeable wait shows progress.
   const repositoryLoadVisible = useElapsed(repositoryLoadPhase ? 'busy' : null, 200);
@@ -949,6 +953,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       if (nextFiles) lastReadRef.current.files = lastReadRef.current.snapshot;
       if (nextBranches && nextWorktrees) lastReadRef.current.refs = lastReadRef.current.snapshot;
       setSnapshotRepositoryId(repositoryId);
+      setConfirmedRepositoryId(repositoryId);
       setStatus(nextStatus);
       setShownHistoryHead((current) => current?.repositoryId === repositoryId && current.head === historyHead(nextStatus) ? current : { repositoryId, head: historyHead(nextStatus) });
       if (nextBranches) setBranches(nextBranches);
@@ -1071,6 +1076,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     // from this repository's own entry, so nothing of the previous one is shown next to it.
     const known = repositoryId ? knownSnapshot(appQueryClient, repositoryId) : null;
     setSnapshotRepositoryId(known ? repositoryId : null);
+    setConfirmedRepositoryId(null);
     if (known) setStatus(known.status);
     if (known && repositoryId) setShownHistoryHead({ repositoryId, head: historyHead(known.status) });
     filesRef.current = known?.files ?? null;
@@ -1353,7 +1359,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   }, [filesTreeStates, repository]);
 
   const runIndexOperation = async (mode: 'stage' | 'unstage', paths: string[]): Promise<boolean> => {
-    if (!repository || !status || paths.length === 0) return false;
+    // Nothing is staged or unstaged on the strength of a state no read has confirmed yet.
+    if (!repository || !status || paths.length === 0 || unconfirmed) return false;
     const previous = status;
     setStatus(optimisticStatus(status, paths, mode));
     setBusy(mode);
@@ -1910,7 +1917,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   };
 
   const runAll = async (mode: 'stage' | 'unstage') => {
-    if (!repository || !status) return;
+    if (!repository || !status || unconfirmed) return;
     const paths = status.changes.filter((item) => mode === 'stage' ? item.unstaged : item.staged).map((item) => item.path);
     if (!paths.length) return;
     const previous = status;
@@ -2081,7 +2088,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   const branchLabel = (name: string) => branches.find((branch) => branch.fullName === name)?.name ?? name.replace(/^refs\/(?:heads|remotes)\//, '');
 
   const switchBranch = async (name: string | null, allowAgents = false) => {
-    if (!repository || !name || name === status?.branch) return;
+    if (!repository || !name || name === status?.branch || unconfirmed) return;
     setBusy('branch');
     try {
       const result = await opentig.refs.switchBranch(repository.id, name, false, allowAgents);
@@ -3010,6 +3017,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
           branchPullRequest={currentBranchPullRequest}
           branchPullRequestNewCommits={commitsAfterMerge}
           branchSwitchPending={busy === 'branch' || blockedBranchSwitch !== null || agentBranchSwitch !== null}
+          unconfirmed={unconfirmed}
           upstreamMismatch={upstreamMismatch}
           branches={branches}
           worktrees={worktrees}
@@ -3077,7 +3085,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
                   staged={staged}
                   changed={changed}
                   displayMode={bootstrap.preferences.changesLayout}
-                  readOnly={Boolean(status?.readOnly)}
+                  readOnly={Boolean(status?.readOnly) || unconfirmed}
                   discardDisabled={Boolean(busy)}
                   changeCount={status?.changes.length ?? 0}
                   insertions={status?.insertions ?? 0}
@@ -3111,7 +3119,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
                     filesSnapshotRevision={filesSnapshotRevision}
                     showDotEnvFiles={bootstrap.preferences.showDotEnvFiles}
                     activePath={viewerSelection?.type === 'file' ? viewerSelection.path : null}
-                    readOnly={Boolean(status?.readOnly || busy)}
+                    readOnly={Boolean(status?.readOnly || busy) || unconfirmed}
                     fileClipboardAvailable={capabilities?.fileClipboard === true}
                     revealAvailable={capabilities?.revealInFileManager === true}
                     onQuickOpen={() => setQuickOpen(true)}
@@ -3281,7 +3289,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
                         files={files}
                         session={fileSessions.get(repository.id) ?? emptyFileSession}
                         revision={filesSnapshotRevision}
-                        actions={{ readOnly: Boolean(status?.readOnly || busy), fileClipboardAvailable: capabilities?.fileClipboard === true, revealAvailable: capabilities?.revealInFileManager === true, onOpenFile: openFile, onCopyEntries: copyFileEntries, onCutEntries: cutFileEntries, onCopyPath: copyFilePaths, onCopyContents: copyFileContents, onReveal: revealFileEntry, onPaste: pasteFileEntries, onDeleteEntries: deleteFileEntries }}
+                        actions={{ readOnly: Boolean(status?.readOnly || busy) || unconfirmed, fileClipboardAvailable: capabilities?.fileClipboard === true, revealAvailable: capabilities?.revealInFileManager === true, onOpenFile: openFile, onCopyEntries: copyFileEntries, onCutEntries: cutFileEntries, onCopyPath: copyFilePaths, onCopyContents: copyFileContents, onReveal: revealFileEntry, onPaste: pasteFileEntries, onDeleteEntries: deleteFileEntries }}
                         onActivateFile={activateFileTab}
                         onCloseFile={(path) => void closeFileTab(path)}
                         onLoadDirectory={loadDirectoryEntries}
@@ -3480,12 +3488,12 @@ async function seedSavedSnapshot(client: ReturnType<typeof useQueryClient>, repo
     new Promise<null>((resolve) => { timer = setTimeout(() => resolve(null), SAVED_SNAPSHOT_WAIT_MS); }),
   ]).finally(() => clearTimeout(timer));
   if (!snapshot || client.getQueryData(queryKeys.status(repositoryId))) return;
-  // Dated when it was read, so nothing takes it for a fresh answer.
-  const updatedAt = Date.parse(snapshot.savedAt) || 1;
-  client.setQueryData(queryKeys.status(repositoryId), snapshot.status, { updatedAt });
-  if (snapshot.branches) client.setQueryData(queryKeys.branches(repositoryId), snapshot.branches, { updatedAt });
-  if (snapshot.worktrees) client.setQueryData(queryKeys.worktrees(repositoryId), snapshot.worktrees, { updatedAt });
-  if (snapshot.files) client.setQueryData(queryKeys.files(repositoryId), snapshot.files, { updatedAt });
+  // Each part dated when it was read, so nothing takes it for a fresh answer.
+  const dated = (readAt: string | null | undefined) => ({ updatedAt: Date.parse(readAt ?? snapshot.savedAt) || 1 });
+  client.setQueryData(queryKeys.status(repositoryId), snapshot.status, dated(snapshot.readAt?.status));
+  if (snapshot.branches) client.setQueryData(queryKeys.branches(repositoryId), snapshot.branches, dated(snapshot.readAt?.branches));
+  if (snapshot.worktrees) client.setQueryData(queryKeys.worktrees(repositoryId), snapshot.worktrees, dated(snapshot.readAt?.worktrees));
+  if (snapshot.files) client.setQueryData(queryKeys.files(repositoryId), snapshot.files, dated(snapshot.readAt?.files));
 }
 
 function knownSnapshot(client: ReturnType<typeof useQueryClient>, repositoryId: string): {

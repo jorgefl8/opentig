@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -41,6 +41,45 @@ describe('saved repository snapshots', () => {
     second.record(id, '/work/demo', 'status', { ...status, branch: 'feature' });
     await second.close();
     expect(await new RepositorySnapshotStore(directory, () => true).get(id, '/work/demo')).toMatchObject({ status: { branch: 'feature' }, worktrees: [{ path: '/work/demo' }] });
+  });
+
+  it('dates each part by when it was read, so a file tree never read again ages out on its own', async () => {
+    const { directory } = await store();
+    const clock = { now: Date.parse('2026-10-01T10:00:00Z') };
+    const first = new RepositorySnapshotStore(directory, () => true, () => clock.now);
+    first.record(id, '/work/demo', 'status', status);
+    first.record(id, '/work/demo', 'files', [{ path: 'notes.txt' }]);
+    await first.close();
+    // Weeks of opening the repository in Changes only: the status is read again, the tree never.
+    clock.now += 25 * 24 * 60 * 60_000;
+    const later = new RepositorySnapshotStore(directory, () => true, () => clock.now);
+    later.record(id, '/work/demo', 'status', { ...status, branch: 'later' });
+    await later.close();
+    expect(await new RepositorySnapshotStore(directory, () => true, () => clock.now).get(id, '/work/demo')).toMatchObject({
+      status: { branch: 'later' }, files: [{ path: 'notes.txt' }], readAt: { files: '2026-10-01T10:00:00.000Z' },
+    });
+    clock.now += 10 * 24 * 60 * 60_000;
+    expect(await new RepositorySnapshotStore(directory, () => true, () => clock.now).get(id, '/work/demo')).toMatchObject({ status: { branch: 'later' }, files: null });
+  });
+
+  it('measures what it writes in bytes, as it measures what it reads', async () => {
+    const { directory, store: snapshots } = await store();
+    snapshots.record(id, '/work/demo', 'status', status);
+    // Three bytes a character: under the limit in characters, over it in bytes.
+    snapshots.record(id, '/work/demo', 'files', ['€'.repeat(Math.floor(REPOSITORY_SNAPSHOT_LIMITS.fileBytes / 2))]);
+    await snapshots.close();
+    expect(await new RepositorySnapshotStore(directory, () => true).get(id, '/work/demo')).toMatchObject({ status, files: null });
+  });
+
+  it('makes its folder private and removes what a write cut short left', async () => {
+    if (process.platform === 'win32') return;
+    const { directory } = await store();
+    await mkdir(directory, { recursive: true });
+    await chmod(directory, 0o755);
+    await writeFile(path.join(directory, `${id}.json.0f0e0d0c.tmp`), '{');
+    await new RepositorySnapshotStore(directory, () => true).get(id, '/work/demo');
+    expect((await stat(directory)).mode & 0o777).toBe(0o700);
+    expect(await readdir(directory)).toEqual([]);
   });
 
   it('leaves out a file tree too large to keep, and keeps the rest', async () => {

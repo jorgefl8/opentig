@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdir, readdir, readFile, rm, stat } from 'node:fs/promises';
+import { chmod, mkdir, readdir, readFile, rm, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { z } from 'zod';
 import type { RepositorySnapshot } from '../../shared/contracts';
@@ -10,37 +10,39 @@ export type RepositorySnapshotPart = 'status' | 'branches' | 'worktrees' | 'file
 export const REPOSITORY_SNAPSHOT_LIMITS = {
   /** Repositories with a saved snapshot; the least recently read go first. */
   repositories: 12,
-  /** One repository's file, written as JSON. A larger file tree is left out of it. */
+  /** One repository's file as written, in bytes. A file tree that would not fit is left out of it. */
   fileBytes: 4 * 1024 * 1024,
-  /** A snapshot older than this is not painted. */
+  /** A part read longer ago than this is not painted; without its status, nothing is. */
   maxAgeMs: 30 * 24 * 60 * 60_000,
   /** A burst of reads writes the file once. */
   writeDelayMs: 2_000,
 } as const;
 
 /** Bumped whenever what a snapshot holds changes shape: a file of another format is discarded. */
-const FORMAT = 1;
+const FORMAT = 2;
 
 const fileSchema = z.object({
   format: z.literal(FORMAT),
   repositoryId: z.string().max(64),
   path: z.string().max(4096),
-  savedAt: z.string().datetime(),
   /** SHA-256 of `parts` as written: a file changed or cut short outside OpenTig is not trusted. */
   checksum: z.string().regex(/^[0-9a-f]{64}$/),
   parts: z.string(),
 });
+/** Each part with when it was read: one not read again keeps its own date. */
+const dated = <T extends z.ZodTypeAny>(value: T) => z.object({ readAt: z.number().finite(), value }).nullable();
 const partsSchema = z.object({
-  status: z.record(z.string(), z.unknown()).nullable(),
-  branches: z.array(z.unknown()).nullable(),
-  worktrees: z.array(z.unknown()).nullable(),
-  files: z.array(z.unknown()).nullable(),
+  status: dated(z.record(z.string(), z.unknown())),
+  branches: dated(z.array(z.unknown())),
+  worktrees: dated(z.array(z.unknown())),
+  files: dated(z.array(z.unknown())),
 });
+type Parts = z.infer<typeof partsSchema>;
+type DatedPart = { readAt: number; value: unknown };
 
 interface Pending {
   path: string;
-  savedAt: number;
-  parts: Partial<Record<RepositorySnapshotPart, unknown>>;
+  parts: Partial<Record<RepositorySnapshotPart, DatedPart>>;
   timer: NodeJS.Timeout | null;
 }
 
@@ -61,6 +63,7 @@ export class RepositorySnapshotStore {
   private readonly pending = new Map<string, Pending>();
   private writing: Promise<void> = Promise.resolve();
   private pruned = false;
+  private tidying: Promise<void> | null = null;
   private closed = false;
 
   constructor(private readonly directory: string, private readonly isKnown: (repositoryId: string) => boolean, private readonly now: () => number = Date.now) {}
@@ -71,11 +74,10 @@ export class RepositorySnapshotStore {
     let entry = this.pending.get(repositoryId);
     if (!entry || entry.path !== repositoryPath) {
       if (entry?.timer) clearTimeout(entry.timer);
-      entry = { path: repositoryPath, savedAt: this.now(), parts: {}, timer: null };
+      entry = { path: repositoryPath, parts: {}, timer: null };
       this.pending.set(repositoryId, entry);
     }
-    entry.parts[part] = value;
-    entry.savedAt = this.now();
+    entry.parts[part] = { readAt: this.now(), value };
     if (entry.timer) return;
     entry.timer = setTimeout(() => { entry.timer = null; this.write(repositoryId); }, REPOSITORY_SNAPSHOT_LIMITS.writeDelayMs);
     entry.timer.unref?.();
@@ -88,25 +90,52 @@ export class RepositorySnapshotStore {
    */
   async get(repositoryId: string, repositoryPath: string): Promise<RepositorySnapshot | null> {
     if (!REPOSITORY_ID.test(repositoryId)) return null;
+    await this.tidy();
     await this.writing;
-    return this.read(repositoryId, repositoryPath);
+    const parts = await this.read(repositoryId, repositoryPath);
+    if (!parts?.status) return null;
+    const date = (part: DatedPart | null) => part ? new Date(part.readAt).toISOString() : null;
+    return {
+      savedAt: date(parts.status)!,
+      readAt: { status: date(parts.status)!, branches: date(parts.branches), worktrees: date(parts.worktrees), files: date(parts.files) },
+      status: parts.status.value,
+      branches: parts.branches?.value ?? null,
+      worktrees: parts.worktrees?.value ?? null,
+      files: parts.files?.value ?? null,
+    } as unknown as RepositorySnapshot;
   }
 
-  private async read(repositoryId: string, repositoryPath: string): Promise<RepositorySnapshot | null> {
+  /** The saved parts, each dropped once older than the limit; null when the file is missing or not trusted, which is then deleted. */
+  private async read(repositoryId: string, repositoryPath: string): Promise<Parts | null> {
     const file = path.join(this.directory, fileName(repositoryId));
     try {
-      if ((await stat(file)).size > REPOSITORY_SNAPSHOT_LIMITS.fileBytes * 2) throw new Error('Too large');
+      if ((await stat(file)).size > REPOSITORY_SNAPSHOT_LIMITS.fileBytes) throw new Error('Too large');
       const saved = fileSchema.parse(JSON.parse(await readFile(file, 'utf8')));
       if (createHash('sha256').update(saved.parts).digest('hex') !== saved.checksum) throw new Error('Checksum');
       if (saved.repositoryId !== repositoryId || saved.path !== repositoryPath) throw new Error('Another repository');
-      if (this.now() - Date.parse(saved.savedAt) > REPOSITORY_SNAPSHOT_LIMITS.maxAgeMs) throw new Error('Too old');
       const parts = partsSchema.parse(JSON.parse(saved.parts));
-      if (!parts.status) return null;
-      return { savedAt: saved.savedAt, ...parts } as unknown as RepositorySnapshot;
+      const current = <T extends DatedPart | null>(part: T): T | null => part && this.now() - part.readAt <= REPOSITORY_SNAPSHOT_LIMITS.maxAgeMs ? part : null;
+      return { status: current(parts.status), branches: current(parts.branches), worktrees: current(parts.worktrees), files: current(parts.files) };
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') await rm(file, { force: true }).catch(() => undefined);
       return null;
     }
+  }
+
+  /**
+   * Once per run: the folder is made private to the server's user if it was found looser, and
+   * what a write cut short left behind is removed.
+   */
+  private tidy(): Promise<void> {
+    this.tidying ??= (async () => {
+      const info = await stat(this.directory).catch(() => null);
+      if (!info) return;
+      if (process.platform !== 'win32' && (info.mode & 0o077) !== 0) await chmod(this.directory, 0o700).catch(() => undefined);
+      for (const name of await readdir(this.directory).catch(() => [] as string[])) {
+        if (name.endsWith('.tmp')) await rm(path.join(this.directory, name), { force: true }).catch(() => undefined);
+      }
+    })();
+    return this.tidying;
   }
 
   /** Deletes the snapshots of repositories OpenTig no longer knows, such as one just forgotten. */
@@ -142,9 +171,10 @@ export class RepositorySnapshotStore {
     const prune = !this.pruned;
     this.pruned = true;
     this.writing = this.writing.then(async () => {
+      await this.tidy();
       if (prune) await this.prune();
       const file = path.join(this.directory, fileName(repositoryId));
-      // Parts not read since the server started keep what the file already has.
+      // Parts not read since the server started keep what the file already has, with the date they were read.
       const previous = await this.read(repositoryId, entry.path);
       const parts = {
         status: entry.parts.status ?? previous?.status ?? null,
@@ -152,13 +182,17 @@ export class RepositorySnapshotStore {
         worktrees: entry.parts.worktrees ?? previous?.worktrees ?? null,
         files: entry.parts.files ?? previous?.files ?? null,
       };
-      let text = JSON.stringify(parts);
-      // A file tree too large to keep is left out rather than the rest.
-      if (text.length > REPOSITORY_SNAPSHOT_LIMITS.fileBytes) text = JSON.stringify({ ...parts, files: null });
-      if (text.length > REPOSITORY_SNAPSHOT_LIMITS.fileBytes) return;
-      const contents = JSON.stringify({ format: FORMAT, repositoryId, path: entry.path, savedAt: new Date(entry.savedAt).toISOString(), checksum: createHash('sha256').update(text).digest('hex'), parts: text });
+      const contents = (written: typeof parts) => {
+        const text = JSON.stringify(written);
+        return JSON.stringify({ format: FORMAT, repositoryId, path: entry.path, checksum: createHash('sha256').update(text).digest('hex'), parts: text });
+      };
+      // Measured as written, in bytes, as reading measures it. A file tree that does not fit is left out rather than the rest.
+      let written = contents(parts);
+      if (Buffer.byteLength(written) > REPOSITORY_SNAPSHOT_LIMITS.fileBytes) written = contents({ ...parts, files: null });
+      if (Buffer.byteLength(written) > REPOSITORY_SNAPSHOT_LIMITS.fileBytes) return;
       await mkdir(this.directory, { recursive: true, mode: 0o700 });
-      await writeFileAtomically(file, contents);
+      await this.tidy();
+      await writeFileAtomically(file, written);
       await this.enforceBound();
     }).catch(() => undefined);
   }

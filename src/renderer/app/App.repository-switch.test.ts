@@ -52,6 +52,7 @@ vi.mock('./Toolbar', async () => {
   createElement('output', { 'aria-label': 'Pending' }, props.pendingRepositoryId ?? ''),
   createElement('output', { 'aria-label': 'Phase' }, props.repositoryLoadPhase ?? 'ready'),
   createElement('output', { 'aria-label': 'Busy' }, props.busy ?? ''),
+  createElement('output', { 'aria-label': 'Unconfirmed' }, String(props.unconfirmed ?? false)),
   createElement('output', { 'aria-label': 'Worktrees' }, props.worktrees.map((worktree) => worktree.path).join(' ')),
   createElement('output', { 'aria-label': 'Remote problem' }, props.remoteProblem ? `${props.remoteProblem.access.login} → ${props.remoteProblem.access.candidates.join(',')}` : ''),
   props.remoteProblem && createElement('button', { 'aria-label': 'Use candidate', onClick: () => props.onRemoteAccessAction({ kind: 'use-account', login: props.remoteProblem!.access.candidates[0]! }) }),
@@ -225,11 +226,14 @@ describe('starting up', () => {
     expect(output('Worktrees')).toBe('/repo /repo-saved');
     // Pull, Push, Commit and Discard wait while the toolbar is busy reading.
     expect(output('Busy')).toBe('refresh');
+    // So do staging and switching branch, which do not wait on the toolbar.
+    expect(output('Unconfirmed')).toBe('true');
 
     await act(async () => read.resolve(status));
     await settle();
     expect(output('Busy')).toBe('');
     expect(output('Worktrees')).toBe('/repo /repo-linked');
+    expect(output('Unconfirmed')).toBe('false');
   });
 
   it('puts what the server saved away when the repository cannot be read', async () => {

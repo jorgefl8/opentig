@@ -113,10 +113,10 @@ To show pull requests, lists and workflow runs at once, the backend keeps what G
 
 ### Last repository state on disk
 
-So that starting OpenTig paints the repository at once instead of a loading message, the backend saves the last status, branches, worktrees and file tree it read of each repository in `repository-snapshots/`, one file per repository, beside its other data. They hold file and branch names, paths and change counts, never file contents. What is painted from them is read again at once, and nothing can be committed, pulled, pushed or discarded until that read lands.
+So that starting OpenTig paints the repository at once instead of a loading message, the backend saves the last status, branches, worktrees and file tree it read of each repository in `repository-snapshots/`, one file per repository, beside its other data. They hold file and branch names, paths and change counts, never file contents. What is painted from them is read again at once, and nothing can be staged, committed, pulled, pushed, discarded or switched until that read lands.
 
 - Files are readable only by the user running the server (mode `0600` where the platform has file modes), and each profile has its own folder.
-- At most 12 repositories are kept, the most recently read; a file holds at most 4 MB, and a larger file tree is left out of it. A snapshot older than 30 days, of a repository whose folder moved, damaged, edited outside OpenTig or written by another format version is deleted instead of painted. Forgetting a repository deletes its snapshot.
+- At most 12 repositories are kept, the most recently read; a file holds at most 4 MB, and a larger file tree is left out of it. Each part keeps the date it was read, and one read more than 30 days ago is not painted; without a recent status nothing is. A snapshot of a repository whose folder moved, damaged, edited outside OpenTig or written by another format version is deleted instead of painted, and so are leftovers of a write cut short. The folder is made private to the server's user if it is found looser. Forgetting a repository deletes its snapshot.
 - To clear them, stop the server and delete the `repository-snapshots` folder.
 
 ## Public website analytics
