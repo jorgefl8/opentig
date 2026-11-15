@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { classifyRepositoryChange, RepositoryWatcher, shouldIgnore } from './RepositoryWatcher';
+import { classifyRepositoryChange, RepositoryWatcher, shouldIgnore, MAX_QUIET_WAIT_MS } from './RepositoryWatcher';
 
 describe('shouldIgnore', () => {
   it('ignores nested node_modules', () => {
@@ -57,6 +57,14 @@ describe('classifyRepositoryChange', () => {
     expect(classifyRepositoryChange('.git/objects/ab/cdef', false)).toBeNull();
     expect(classifyRepositoryChange('node_modules/example/index.js', false)).toBeNull();
     expect(classifyRepositoryChange('.git/index.lock', false)).toBeNull();
+    expect(classifyRepositoryChange('refs/heads/main.lock', true)).toBeNull();
+  });
+
+  it('reports a lock file of the worktree, such as a package manager’s, and the repository’s own excludes', () => {
+    expect(classifyRepositoryChange('yarn.lock', false)).toBe('worktree');
+    expect(classifyRepositoryChange('crates/app/Cargo.lock', false)).toBe('worktree');
+    expect(classifyRepositoryChange('.git/info/exclude', false)).toBe('worktree');
+    expect(classifyRepositoryChange('info/exclude', true)).toBe('worktree');
   });
 });
 
@@ -79,6 +87,26 @@ describe('RepositoryWatcher batching', () => {
 
     expect(onChange).toHaveBeenCalledOnce();
     expect(onChange).toHaveBeenCalledWith('repository-1', 'unknown');
+  });
+
+  it('reports within two seconds of the first change even while changes never stop', () => {
+    vi.useFakeTimers();
+    const onChange = vi.fn();
+    const watcher = new RepositoryWatcher(onChange);
+    const internals = watcher as unknown as { active: { id: string } | null; schedule(scope: 'worktree'): void };
+    internals.active = { id: 'repository-1' };
+
+    // A log or a build rewriting a file every 100 ms: the folder is never quiet for 250 ms.
+    for (let elapsed = 0; elapsed < MAX_QUIET_WAIT_MS; elapsed += 100) {
+      internals.schedule('worktree');
+      vi.advanceTimersByTime(100);
+    }
+    // The edit made meanwhile in another file must not wait for the writing to end.
+    expect(onChange).toHaveBeenCalledOnce();
+    // And the wait starts over for what comes after.
+    internals.schedule('worktree');
+    vi.advanceTimersByTime(250);
+    expect(onChange).toHaveBeenCalledTimes(2);
   });
 
   it('defers a batch while Git is active without losing its scope', () => {

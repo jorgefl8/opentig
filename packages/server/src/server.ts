@@ -89,6 +89,7 @@ export async function runOpenTigServer(config: OpenTigServerConfig): Promise<Run
         config.onEvent?.(event);
         transport?.publish(event);
       },
+      ...(config.logger === undefined ? {} : { logger: config.logger }),
     });
   } catch (error) {
     await auth.close();

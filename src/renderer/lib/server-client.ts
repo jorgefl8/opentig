@@ -39,6 +39,7 @@ export function createOpenTigServerClient(options: ServerClientOptions = {}): Op
       transport.markIncompatible();
       throw new Error('This OpenTig client is incompatible with the server.');
     }
+    if (data.server.requestCancellation === true) transport.enableCancellation();
     return data;
   };
 
@@ -216,7 +217,12 @@ export function createOpenTigServerClient(options: ServerClientOptions = {}): Op
     for (const listener of reconnected) listener();
     if (!data.activeRepository) return;
     for (const listener of activeRepositoryChanged) listener(data.activeRepository);
-    for (const listener of repositoryChanged) listener(data.activeRepository.id, 'unknown');
+    // Changes may have gone unreported while disconnected; the server says how its repository is watched now.
+    const watch = data.activeRepositoryWatch;
+    for (const listener of repositoryChanged) {
+      if (watch) listener(data.activeRepository.id, 'unknown', watch.state, ...(watch.watchId ? [watch.watchId] : []));
+      else listener(data.activeRepository.id, 'unknown');
+    }
   });
 
   return { api, transport };
@@ -239,7 +245,10 @@ function publishRuntimeEvent(
   aiInstructionsChanged: ReadonlySet<(repositoryIds: string[]) => void>,
 ): void {
   if (event.type === 'repository.changed') {
-    for (const listener of repositoryChanged) listener(event.repositoryId, event.scope);
+    for (const listener of repositoryChanged) {
+      if (event.watch) listener(event.repositoryId, event.scope, event.watch, ...(event.watchId ? [event.watchId] : []));
+      else listener(event.repositoryId, event.scope);
+    }
   } else if (event.type === 'repository.active-changed') {
     for (const listener of activeRepositoryChanged) listener(event.repository);
   } else if (event.type === 'ai.instructions-changed') {

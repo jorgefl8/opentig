@@ -18,6 +18,7 @@ import { actionStatusLabel, actionTone, elapsed, eventLabel, formatDuration, run
 import { WorkflowCanvas } from './WorkflowCanvas';
 import './actions.css';
 import { Spinner } from '@/components/ui/spinner';
+import { RepositoryLink } from '@/components/RepositoryLink';
 
 /** --motion-med and --ease-out. */
 const PANEL_TRANSITION = { duration: 0.2, ease: [0.32, 0.72, 0, 1] as const };
@@ -91,7 +92,13 @@ export function WorkflowRunViewer({ repositoryId, runId, jobId = null }: { repos
             <span className={`workflow-run-state action-${tone}`}><ActionStatusIcon tone={tone} /> {runSentence(run.status, run.conclusion, details?.jobs ?? [])}</span>
             <span>{run.workflowName} #{run.number}{run.attempt > 1 ? ` · attempt ${run.attempt}` : ''}</span>
             {run.branch && <span className="pr-branches">{run.branch}</span>}
-            <span className="pr-branches">{run.headSha.slice(0, 7)}</span>
+            <RepositoryLink
+              target={{ kind: 'commit', oid: run.headSha }}
+              className="pr-branches pr-commit-oid"
+              label={`Open commit ${run.headSha.slice(0, 7)}`}
+              note={run.headSha}
+              fallback={<span className="pr-branches">{run.headSha.slice(0, 7)}</span>}
+            >{run.headSha.slice(0, 7)}</RepositoryLink>
             <span>{eventLabel(run.event)}{run.actor ? ` by @${run.actor.login}` : ''}</span>
             <span><time dateTime={run.startedAt ?? run.createdAt}>{formatDateTime(run.startedAt ?? run.createdAt)}</time>{duration !== null ? ` · ${formatDuration(duration)}` : ''}</span>
           </div>

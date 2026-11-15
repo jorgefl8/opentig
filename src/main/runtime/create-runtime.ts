@@ -36,6 +36,8 @@ export interface CreateOpenTigRuntimeOptions {
   platform: OpenTigPlatform;
   trash?: TrashAdapter;
   onEvent: OpenTigRuntimeEventSink;
+  /** The server's log, for problems no client asked about, such as a repository watch that failed. */
+  logger?: (level: 'info' | 'warn' | 'error', message: string) => void;
 }
 
 export async function createOpenTigRuntime(
@@ -98,6 +100,18 @@ export async function createOpenTigRuntime(
   const watcher = new RepositoryWatcher(
     events.repositoryChanged,
     () => git.hasActiveProcess(),
+    {
+      platform: process.platform,
+      ...(options.logger ? { logger: options.logger } : {}),
+      onState: (repositoryId, state, watchId) => runtime?.publishRepositoryWatch(repositoryId, state, watchId),
+      // Folders Git ignores entirely, which Linux does not watch. Large outputs are cut off: watching more is safe.
+      listIgnoredDirectories: async (repository) => {
+        const output = await git.run(repository.path, ['ls-files', '-z', '--others', '--ignored', '--exclude-standard', '--directory', '--no-empty-directory'], {
+          operation: 'watch-ignored', readOnly: true, maxOutputBytes: 8 * 1024 * 1024,
+        });
+        return output.stdout.toString('utf8').split('\0').filter((entry) => entry.endsWith('/'));
+      },
+    },
   );
   runtime = new OpenTigRuntime({
     runtimeMode: options.runtimeMode,

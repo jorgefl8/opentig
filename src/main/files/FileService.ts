@@ -171,7 +171,17 @@ export class FileService {
     return ignored;
   }
 
-  async read(repositoryId: string, relativePath: string, allowLarge = false): Promise<FileResult> {
+  /**
+   * Whether the path leads through a symbolic link, its own or a folder's. Such a file's content lives
+   * where the link points, and a change to it is reported for that place, if at all.
+   */
+  async isLinked(repositoryId: string, relativePath: string): Promise<boolean> {
+    const target = this.repositories.resolvePath(repositoryId, relativePath);
+    try { return path.resolve(await realpath(target)) !== path.resolve(target); }
+    catch { return true; }
+  }
+
+  async read(repositoryId: string, relativePath: string, allowLarge = false, signal?: AbortSignal): Promise<FileResult> {
     const repository = this.repositories.get(repositoryId);
     const target = this.repositories.resolvePath(repositoryId, relativePath);
     const resolved = await realpath(target);
@@ -181,9 +191,12 @@ export class FileService {
     }
     const metadata = await stat(resolved);
     if (!metadata.isFile()) throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'read-file', message: 'The path is not a file.' });
+    // When the size and time below were taken, by this machine's clock: see `FileResult.readAtMs`.
+    const readAtMs = Date.now();
     if (metadata.size > PREVIEW_LIMIT && !allowLarge) {
-      return { path: relativePath, content: '', binary: false, tooLarge: true, size: metadata.size, mtimeMs: metadata.mtimeMs };
+      return { path: relativePath, content: '', binary: false, tooLarge: true, size: metadata.size, mtimeMs: metadata.mtimeMs, readAtMs };
     }
+    signal?.throwIfAborted();
     const handle = await open(resolved, 'r');
     try {
       const length = Math.min(metadata.size, allowLarge ? 8 * PREVIEW_LIMIT : PREVIEW_LIMIT);
@@ -197,6 +210,7 @@ export class FileService {
         tooLarge: metadata.size > length,
         size: metadata.size,
         mtimeMs: metadata.mtimeMs,
+        readAtMs,
       };
     } finally {
       await handle.close();

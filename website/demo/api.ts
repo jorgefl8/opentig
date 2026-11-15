@@ -19,6 +19,8 @@ export const isConnectionLoss = (_reason: unknown) => false;
 export const isUnconfirmedResult = (_reason: unknown) => false;
 // Nothing waits in line here: the sample answers every request at once.
 export const inBackground = <T>(start: () => T): T => start();
+// Nor is anything left to cancel.
+export const withSignal = <T>(_signal: AbortSignal, start: () => T): T => start();
 export const model = new DemoRepository();
 const unavailable = (what: string) => async (): Promise<never> => {
   throw new Error(`${what} needs an installed OpenTig instance. This demo simulates editing, staging, committing, pushing and pulling, and sample pull requests.`);

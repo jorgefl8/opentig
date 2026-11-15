@@ -6,6 +6,9 @@ import {
   IconLayoutColumns, IconLayoutRows, IconTextWrap, IconX,
 } from '@tabler/icons-react';
 import type { DiffResult, DiffViewPreference, ThemePreference } from '@shared/contracts';
+import type { ChangeKind, CommitFile } from '@shared/git-types';
+import { ShimmeringText } from '@/components/ui/shimmering-text';
+import { Spinner } from '@/components/ui/spinner';
 import { Button } from '@/components/ui/button';
 import { Reveal } from '@/components/Reveal';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -16,11 +19,12 @@ import { useParsedDiff } from './useParsedDiff';
 import { primeDiffsWhenIdle } from './diff-idle-prime';
 import { OPENTIG_CODE_THEMES } from './diffThemes';
 import { ChangeStatusBadge } from '@/features/changes/ChangeStatusBadge';
-import { animatesFileToggle, diffChangeKind, type DiffFileEntry, VIEWER_SCROLLBAR_CSS } from './patch-utils';
+import { animatesFileToggle, diffChangeKind, splitCommitPatch, type DiffFileEntry, VIEWER_SCROLLBAR_CSS } from './patch-utils';
 import { resolvePierreLanguage } from './pierreLanguages';
 import { ColorHoverPreview } from './ColorHoverPreview';
 import { ColorSwatchLayer } from './ColorSwatchLayer';
 import { createColorSwatchRegistry } from './color-swatch-registry';
+import { rememberedFolds, rememberedKnown, rememberFolds } from './viewer-memory';
 
 /** A commit reads as one document: its message and files lead into its diffs. */
 export interface DiffCommitLayout {
@@ -44,6 +48,8 @@ interface DiffWorkspaceProps {
   themeType: ThemePreference;
   wrapLines: boolean;
   initiallyCollapsed?: boolean | undefined;
+  /** Keeps which files were folded under this key, so the same diff opens again as it was left. */
+  foldMemoryKey?: string | undefined;
   compact?: boolean | undefined;
   scopeControl?: React.ReactNode | undefined;
   commitLayout?: DiffCommitLayout | undefined;
@@ -86,11 +92,22 @@ function DiffDocument(props: DiffWorkspaceProps) {
   );
 }
 
-function ParsedDiffWorkspace({ contentKey, diff, diffView, themeType, wrapLines, initiallyCollapsed = false, compact = false, scopeControl, commitLayout, onDiffViewChange, onWrapLinesChange, onClose, onOpenFile, files, message }: DiffWorkspaceProps & { files: DiffFileEntry[]; message: ParseMessage }) {
+function ParsedDiffWorkspace({ contentKey, diff, diffView, themeType, wrapLines, initiallyCollapsed = false, foldMemoryKey, compact = false, scopeControl, commitLayout, onDiffViewChange, onWrapLinesChange, onClose, onOpenFile, files, message }: DiffWorkspaceProps & { files: DiffFileEntry[]; message: ParseMessage }) {
   const largeCommit = Boolean(commitLayout?.listFiles) && (files.length > LARGE_COMMIT_FILES || diff.lineCount > LARGE_COMMIT_LINES);
-  const [collapsed, setCollapsed] = useState<Set<string>>(
-    () => new Set(initiallyCollapsed || largeCommit ? files.map((file) => file.key) : []),
-  );
+  const [collapsed, setCollapsedState] = useState<Set<string>>(() => {
+    const folded = initiallyCollapsed || largeCommit;
+    const remembered = foldMemoryKey ? rememberedFolds(foldMemoryKey) : undefined;
+    // A file the diff did not have when it was left opens as any new file does.
+    if (remembered) return new Set(files.filter((file) => remembered.has(file.key) || (folded && !rememberedKnown(foldMemoryKey!, file.key))).map((file) => file.key));
+    return new Set(folded ? files.map((file) => file.key) : []);
+  });
+  const setCollapsed = (update: (current: Set<string>) => Set<string>) => {
+    setCollapsedState((current) => {
+      const next = update(current);
+      if (foldMemoryKey) rememberFolds(foldMemoryKey, next, files.map((file) => file.key));
+      return next;
+    });
+  };
   // A phone reads inline, leaves through its back arrow, and has one screen to give to the code.
   const phone = useMobileChrome() !== null;
   const sections = useRef(new Map<string, HTMLElement>());
@@ -110,7 +127,7 @@ function ParsedDiffWorkspace({ contentKey, diff, diffView, themeType, wrapLines,
       return next;
     });
   };
-  const toggleAll = () => setCollapsed(allCollapsed ? new Set() : new Set(files.map((file) => file.key)));
+  const toggleAll = () => setCollapsed(() => allCollapsed ? new Set() : new Set(files.map((file) => file.key)));
   const diffActions = (includeCollapse: boolean) => (
     <div className="diff-workspace-actions">
       {includeCollapse && (
@@ -168,7 +185,7 @@ function ParsedDiffWorkspace({ contentKey, diff, diffView, themeType, wrapLines,
                     // The top bar already names a lone file and counts its lines, so all that's left to say is a rename.
                     ? files.length === 1 ? <RenamedFrom file={file} /> : <CompactFileHeader file={file} actions={null} />
                     : <CompactFileHeader file={file} actions={diffActions(false)} />
-                  : <CollapsibleFileHeader file={file} collapsed={isCollapsed} onToggle={() => toggleFile(file.key)} onOpenFile={onOpenFile} />}
+                  : <CollapsibleFileHeader file={headerFile(file)} collapsed={isCollapsed} onToggle={() => toggleFile(file.key)} onOpenFile={onOpenFile} />}
                 <Reveal open={!isCollapsed} animate={animatesFileToggle(file, files.length)}>
                   <FileDiff
                     key={`${contentKey}:${file.key}:${diffView}:${wrapLines}`}
@@ -207,7 +224,19 @@ function DiffFilePathLabel({ path }: { path: string }) {
   );
 }
 
-function FileHeaderFacts({ file }: { file: DiffFileEntry }) {
+/** What a file's header says, whether it comes from a parsed patch or from a commit's file list. */
+interface HeaderFile {
+  path: string;
+  previousPath?: string | null | undefined;
+  additions: number;
+  deletions: number;
+  binary: boolean;
+  kind: ChangeKind;
+}
+
+const headerFile = (file: DiffFileEntry): HeaderFile => ({ ...file, kind: diffChangeKind(file.changeType) });
+
+function FileHeaderFacts({ file }: { file: HeaderFile }) {
   return (
     <>
       {file.previousPath && file.previousPath !== file.path && <span className="diff-file-previous">from {file.previousPath}</span>}
@@ -220,7 +249,7 @@ function FileHeaderFacts({ file }: { file: DiffFileEntry }) {
           </>
         )}
       </span>
-      <ChangeStatusBadge kind={diffChangeKind(file.changeType)} />
+      <ChangeStatusBadge kind={file.kind} />
     </>
   );
 }
@@ -239,7 +268,7 @@ function CompactFileHeader({ file, actions }: { file: DiffFileEntry; actions: Re
         <TooltipTrigger render={<span ref={pathRef} className="diff-file-path" />}><DiffFilePathLabel path={file.path} /></TooltipTrigger>
         <TooltipContent>{file.path}</TooltipContent>
       </Tooltip>
-      <FileHeaderFacts file={file} />
+      <FileHeaderFacts file={headerFile(file)} />
       {actions}
     </div>
   );
@@ -249,10 +278,10 @@ function CompactFileHeader({ file, actions }: { file: DiffFileEntry; actions: Re
  * The row toggles the file, and its button is what keyboards and screen readers
  * reach. Opening the file is a button of its own beside the name.
  */
-function CollapsibleFileHeader({ file, collapsed, onToggle, onOpenFile }: { file: DiffFileEntry; collapsed: boolean; onToggle(): void; onOpenFile?: ((path: string) => void) | undefined }) {
+function CollapsibleFileHeader({ file, collapsed, onToggle, onOpenFile }: { file: HeaderFile; collapsed: boolean; onToggle(): void; onOpenFile?: ((path: string) => void) | undefined }) {
   const [pathRef, truncated] = useTruncatedText(file.path);
   // A deleted file has nothing left to open.
-  const canOpen = onOpenFile && file.changeType !== 'deleted';
+  const canOpen = onOpenFile && file.kind !== 'deleted';
   return (
     <div className="diff-file-header" onClick={(event) => { if (!(event.target as Element).closest('button')) onToggle(); }}>
       <Tooltip disabled={!truncated}>
@@ -280,3 +309,162 @@ function DiffAction({ label, pressed, className, onClick, children }: { label: s
     </Tooltip>
   );
 }
+
+interface CommitFilesWorkspaceProps {
+  contentKey: string;
+  /** The files the commit changed, from its file list: no diff is read until a file unfolds. */
+  files: readonly CommitFile[];
+  diffView: DiffViewPreference;
+  themeType: ThemePreference;
+  wrapLines: boolean;
+  commitLayout: DiffCommitLayout;
+  /** One file's diff. The same read serves the file opened on its own. */
+  readFile(file: CommitFile, signal: AbortSignal): Promise<DiffResult>;
+  /** Every file's diff in one read, for unfolding them all: one request instead of one per file. */
+  readAll(signal: AbortSignal): Promise<DiffResult>;
+  /** Puts one file's part of that read where `readFile` finds it. */
+  keepFileDiff(file: CommitFile, diff: DiffResult): void;
+  onDiffViewChange?: ((value: DiffViewPreference) => void) | undefined;
+  onWrapLinesChange?: ((value: boolean) => void) | undefined;
+  onOpenFile?: ((path: string) => void) | undefined;
+}
+
+const commitFileKey = (file: CommitFile) => `${file.oldPath ?? ''}:${file.path}`;
+
+/**
+ * A whole commit as a list of its files, each unfolding into its diff. Only the
+ * list is read when the commit opens; a file's diff is read when it unfolds, and
+ * a read whose file folds again or whose commit closes is called off.
+ */
+export function CommitFilesWorkspace({ contentKey, files, diffView, themeType, wrapLines, commitLayout, readFile, readAll, keepFileDiff, onDiffViewChange, onWrapLinesChange, onOpenFile }: CommitFilesWorkspaceProps) {
+  const [unfolded, setUnfolded] = useState<ReadonlySet<string>>(() => new Set());
+  // Unfolding everything reads the whole patch once; each file waits for it rather than asking on its own.
+  const [everything, setEverything] = useState<Promise<void> | null>(null);
+  const everythingController = useRef<AbortController | null>(null);
+  useEffect(() => () => everythingController.current?.abort(), []);
+  const phone = useMobileChrome() !== null;
+  const workspaceRef = useRef<HTMLDivElement>(null);
+  const [colorSwatches] = useState(createColorSwatchRegistry);
+  const allUnfolded = files.length > 0 && files.every((file) => unfolded.has(commitFileKey(file)));
+  const additions = files.reduce((total, file) => total + file.additions, 0);
+  const deletions = files.reduce((total, file) => total + file.deletions, 0);
+
+  const toggleFile = (key: string) => setUnfolded((current) => {
+    const next = new Set(current);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    return next;
+  });
+  const toggleAll = () => {
+    if (allUnfolded) {
+      setUnfolded(new Set());
+      return;
+    }
+    if (!everything) {
+      const controller = new AbortController();
+      everythingController.current = controller;
+      setEverything(readAll(controller.signal).then((whole) => {
+        for (const [index, diff] of splitCommitPatch(whole, files).entries()) if (diff) keepFileDiff(files[index]!, diff);
+      }).catch(() => undefined));
+    }
+    setUnfolded(new Set(files.map(commitFileKey)));
+  };
+  const tools = (
+    <div className="diff-workspace-actions">
+      {files.length > 1 && (
+        <DiffAction label={allUnfolded ? 'Collapse all files' : 'Expand all files'} onClick={toggleAll}>
+          {allUnfolded ? <IconArrowsMinimize /> : <IconArrowsMaximize />}
+        </DiffAction>
+      )}
+      {!phone && <DiffAction label={diffView === 'unified' ? 'Use split diff' : 'Use unified diff'} pressed={diffView === 'split'} onClick={() => onDiffViewChange?.(diffView === 'unified' ? 'split' : 'unified')}>
+        {diffView === 'unified' ? <IconLayoutColumns /> : <IconLayoutRows />}
+      </DiffAction>}
+      <DiffAction label={wrapLines ? 'Disable line wrapping' : 'Wrap long lines'} pressed={wrapLines} onClick={() => onWrapLinesChange?.(!wrapLines)}>
+        <IconTextWrap />
+      </DiffAction>
+    </div>
+  );
+
+  return (
+    <div key={contentKey} ref={workspaceRef} className="diff-workspace">
+      <ColorHoverPreview getRoot={() => workspaceRef.current} swatches={colorSwatches} />
+      {commitLayout.tools && createPortal(tools, commitLayout.tools)}
+      <Virtualizer className="diff-workspace-scroll" contentClassName="diff-workspace-content">
+        <ColorSwatchLayer registry={colorSwatches} />
+        <div className="diff-workspace-lead">{commitLayout.lead}</div>
+        {files.length > 1 && (
+          <div className="diff-file-list">
+            <div className="diff-file-count">{files.length} files · +{additions} −{deletions}</div>
+          </div>
+        )}
+        {files.map((file) => {
+          const key = commitFileKey(file);
+          const open = unfolded.has(key);
+          return (
+            <section key={key} className="diff-file-section" data-color-language={resolvePierreLanguage(file.path)}>
+              <CollapsibleFileHeader
+                file={{ path: file.path, previousPath: file.oldPath, additions: file.additions, deletions: file.deletions, binary: file.binary, kind: file.kind }}
+                collapsed={!open}
+                onToggle={() => toggleFile(key)}
+                onOpenFile={onOpenFile}
+              />
+              <Reveal open={open} animate={animatesFileToggle(file, files.length)}>
+                <CommitFileDiff
+                  contentKey={`${contentKey}:${key}`}
+                  file={file}
+                  everything={everything}
+                  readFile={readFile}
+                  diffView={diffView}
+                  themeType={themeType}
+                  wrapLines={wrapLines}
+                />
+              </Reveal>
+            </section>
+          );
+        })}
+      </Virtualizer>
+    </div>
+  );
+}
+
+function CommitFileDiff({ contentKey, file, everything, readFile, diffView, themeType, wrapLines }: {
+  contentKey: string; file: CommitFile; everything: Promise<void> | null; readFile: CommitFilesWorkspaceProps['readFile'];
+  diffView: DiffViewPreference; themeType: ThemePreference; wrapLines: boolean;
+}) {
+  const [state, setState] = useState<{ diff: DiffResult } | { error: string } | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        await everything;
+        const diff = await readFile(file, controller.signal);
+        if (!controller.signal.aborted) setState({ diff });
+      } catch (reason) {
+        if (!controller.signal.aborted) setState({ error: reason instanceof Error ? reason.message : 'Could not load the diff.' });
+      }
+    })();
+    // A file folded again, or a commit closed, before its diff came back stops reading it.
+    return () => controller.abort();
+  }, [everything, file, readFile]);
+  if (!state) return <div className="diff-file-loading" role="status"><Spinner className="view-spinner" /> <ShimmeringText text="Loading diff…" /></div>;
+  if ('error' in state) return <div className="diff-file-loading text-destructive" role="alert">{state.error}</div>;
+  return <ParsedCommitFileDiff contentKey={contentKey} diff={state.diff} diffView={diffView} themeType={themeType} wrapLines={wrapLines} />;
+}
+
+function ParsedCommitFileDiff({ contentKey, diff, diffView, themeType, wrapLines }: { contentKey: string; diff: DiffResult; diffView: DiffViewPreference; themeType: ThemePreference; wrapLines: boolean }) {
+  const result = useParsedDiff(diff.patch, contentKey);
+  const highlightPool = useWorkerPool();
+  const parsed = result?.files?.[0];
+  useEffect(() => primeDiffsWhenIdle(highlightPool, parsed ? [parsed.fileDiff] : []), [highlightPool, parsed]);
+  if (result?.error !== undefined) return <div className="diff-file-loading text-destructive" role="alert">{result.error}</div>;
+  if (!result) return <div className="diff-file-loading" role="status"><Spinner className="view-spinner" /> <ShimmeringText text="Preparing diff…" /></div>;
+  if (!parsed) return <div className="diff-file-loading">No differences to show.</div>;
+  return (
+    <FileDiff
+      key={`${contentKey}:${diffView}:${wrapLines}`}
+      fileDiff={parsed.fileDiff}
+      options={{ diffStyle: diffView, diffIndicators: 'classic', themeType, theme: OPENTIG_CODE_THEMES, overflow: wrapLines ? 'wrap' : 'scroll', disableFileHeader: true, hunkSeparators: 'line-info-basic', unsafeCSS: VIEWER_SCROLLBAR_CSS }}
+    />
+  );
+}
+

@@ -149,3 +149,4 @@ button.workflow-node-header:focus-visible, .workflow-job:focus-visible { outline
   .run-workflow-body { flex-direction: column; }
   .run-workflow-list { width: auto; max-height: 38%; border-right: 0; border-bottom: 1px solid var(--border); }
 }
+.action-run-body .repository-link-github { pointer-events: auto; }

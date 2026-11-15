@@ -1,6 +1,6 @@
 import { formatDate, formatDateTime } from '@shared/date-format';
 import { useIntentPrefetch } from '@/lib/use-intent-prefetch';
-import { prefetchCommitDiff } from '@/features/viewer/viewer-prefetch';
+import { commitFiles, prefetchCommitFiles } from '@/features/viewer/viewer-prefetch';
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { IconArrowDown, IconChevronRight, IconFilter, IconRestore, IconSearch } from '@tabler/icons-react';
@@ -16,12 +16,11 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { ChangeStatusBadge } from '@/features/changes/ChangeStatusBadge';
 import { buildCommitGraph, type CommitGraphRow } from './commit-graph';
 import { canUndoCommit, commitPublication, commitReference, historyRows, matchesHistory, showsBranchLine } from './history-presentation';
-import { readCommitFilesCache, writeCommitFilesCache } from './commit-files-cache';
+import { readCommitFilesCache } from './commit-files-cache';
 import { Reveal } from '@/components/Reveal';
 import { copyCommitHash } from './copy-commit-hash';
 import { getVsCodeFileIconUrl } from '@/lib/vscode-icons';
 import { useMobileLayout } from '@/lib/use-mobile-layout';
-import { opentig } from '@/lib/opentig-api';
 import { Spinner } from '@/components/ui/spinner';
 
 interface HistoryViewProps {
@@ -39,7 +38,7 @@ export function HistoryView({ repositoryId, upstream, readOnly, operation, commi
   const mobile = useMobileLayout();
   const scrollRef = useRef<HTMLDivElement>(null);
   // A commit the pointer rests on is read then, so clicking it shows it.
-  const readAhead = useIntentPrefetch((oid: string) => prefetchCommitDiff(repositoryId, oid));
+  const readAhead = useIntentPrefetch((oid: string) => prefetchCommitFiles(repositoryId, oid));
   const [expandedCommits, setExpandedCommits] = useState<Set<string>>(new Set());
   const [compact, setCompact] = useState(true);
   const [grouped, setGrouped] = useState(false);
@@ -154,10 +153,9 @@ function CommitRow({ phone, repositoryId, upstream, baseRef, commit, graphRow, s
   useEffect(() => {
     if (phone || !expanded || files || filesError) return;
     let active = true;
-    opentig.commits.files(repositoryId, commit.oid).then((value) => {
-      if (!active) return;
-      writeCommitFilesCache(cacheKey, value);
-      setFiles(value);
+    // Shared with the commit viewer and the read ahead of a click, and kept for both.
+    commitFiles(repositoryId, commit.oid).then((value) => {
+      if (active) setFiles(value);
     }).catch((reason) => { if (active) setFilesError(messageOf(reason)); });
     return () => { active = false; };
   }, [cacheKey, commit.oid, expanded, files, filesError, phone, repositoryId]);

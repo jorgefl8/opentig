@@ -1143,6 +1143,8 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   .pr-commit-content b { font-weight: var(--weight-regular); }
   .pr-timeline-item { display: grid; min-width: 0; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; gap: 9px; padding: 5px 0; }
   .pr-timeline-item code { color: var(--muted-foreground); font-size: var(--text-meta); }
+  .pr-commit-oid { color: var(--primary); font-family: var(--font-mono); font-size: var(--text-meta); text-decoration: underline; text-underline-offset: 2px; }
+  .pr-commit-oid:hover { opacity: .8; }
   /* Rows keep room for their hover, while their text lines up with the other tabs. */
   .pr-checks-panel { display: grid; gap: 3px; padding: 11px 9px 24px; }
   .pr-checks-panel > .pr-empty-description { padding-inline: 7px; }
@@ -1931,8 +1933,14 @@ section[data-sileo-viewport] .sync-toast-offer { --_c: var(--sileo-state-info); 
   .commit-diff-empty > .viewer-message { min-height: 80px; flex: 1; }
   .external-text-link { color: var(--primary); text-decoration: underline; text-underline-offset: 2px; }
   .external-text-link:hover { opacity: .8; }
-  /* A link that asks where to open: a button, so it reads as the link it stands for. */
+  /* A link OpenTig opens itself: a button, so it reads as the link it stands for. The icon after it opens it on GitHub. */
   .repository-link { display: inline; padding: 0; border: 0; background: none; font: inherit; text-align: inherit; cursor: pointer; }
+  /* The icon may wrap after a long link rather than overflow a narrow pane. */
+  .repository-link-pair { display: inline; }
+  .repository-link-github { display: inline-grid; width: 18px; height: 18px; margin-left: 1px; place-items: center; border-radius: 4px; color: var(--muted-foreground); vertical-align: -4px; cursor: pointer; }
+  .repository-link-github svg { width: 12px; height: 12px; }
+  .repository-link-github:hover { background: color-mix(in oklch, var(--foreground) 6%, transparent); color: var(--foreground); }
+  .repository-link-github:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
   .diff-file-list { display: grid; min-width: 0; padding: 0 16px 12px; }
   .diff-file-list .diff-file-count { padding-bottom: 4px; }
 
@@ -1980,6 +1988,8 @@ section[data-sileo-viewport] .sync-toast-offer { --_c: var(--sileo-state-info); 
   /* The rule after a file's code closes it before the next header. A collapsed
      file has no code, so its header's own rule is the only one it needs. */
   .diff-file-section { min-width: 100%; border-bottom: 1px solid var(--border); }
+  /* A commit's file whose diff is still on its way, or could not be read. */
+  .diff-file-loading { display: flex; align-items: center; gap: 8px; padding: 10px 16px; color: var(--muted-foreground); font-size: var(--text-ui); }
   .diff-file-section:last-child, .diff-file-section:has(> .diff-file-header > .diff-file-toggle[aria-expanded="false"]) { border-bottom: 0; }
   /* Sticky, so it stays opaque while code scrolls under it. */
   .diff-file-header {

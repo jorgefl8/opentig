@@ -216,3 +216,37 @@ describe('CommandRegistry', () => {
     expect(received.signal?.aborted).toBe(true);
   });
 });
+
+describe('CommandRegistry and the Problems log', () => {
+  it('leaves out a Git read the client cancelled, and keeps a real failure', async () => {
+    const { mkdtemp, rm } = await import('node:fs/promises');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const { GitProcess } = await import('../git/GitProcess');
+    const directory = await mkdtemp(join(tmpdir(), 'opentig-cancelled-read-'));
+    try {
+      const git = new GitProcess();
+      const registry = new CommandRegistry();
+      const record = vi.fn();
+      registry.setProblemLog({ record });
+      registry.register(OPEN_TIG_SERVER_COMMANDS['diff.get'], async (context) => {
+        await git.run(directory, ['--version'], { operation: 'diff-unstaged', readOnly: true, signal: context.signal });
+        return { patch: '', path: 'a.txt', binary: false, truncated: false, lineCount: 0 };
+      });
+      registry.register(OPEN_TIG_SERVER_COMMANDS['commits.files'], async (context) => {
+        await git.run(directory, ['rev-parse', 'HEAD'], { operation: 'commit-files', readOnly: true, signal: context.signal });
+        return [];
+      });
+      const cancelled = new AbortController();
+      cancelled.abort();
+      const result = await registry.execute('session', IPC.diffGet, [{ repositoryId: 'repo', path: 'a.txt', kind: 'unstaged' }], { signal: cancelled.signal });
+      expect(result.ok).toBe(false);
+      expect(record).not.toHaveBeenCalled();
+      // Not a repository: a failure the log is for.
+      expect((await registry.execute('session', IPC.commitsFiles, ['repo', 'abc'], { signal: new AbortController().signal })).ok).toBe(false);
+      expect(record).toHaveBeenCalledOnce();
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+});

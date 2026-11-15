@@ -3,7 +3,7 @@ import { githubRepositoryKey, type GitHubAccountDetection } from '../../shared/g
 import type { OpenTigPlatform, OpenTigRuntimeMode, RepositoryInfo } from '../../shared/contracts';
 import type { RepositoryChangeScope } from '../../shared/repository-change';
 import { mergeRepositoryChangeScopes } from '../../shared/repository-change';
-import type { OpenTigRuntimeEvent } from '../../shared/runtime-events';
+import type { OpenTigRuntimeEvent, RepositoryWatchState } from '../../shared/runtime-events';
 import type { CommitMessageService } from '../ai/CommitMessageService';
 import type { CliProcessRunner } from '../ai/CliProcessRunner';
 import type { PullRequestDraftService } from '../ai/PullRequestDraftService';
@@ -101,6 +101,18 @@ export class OpenTigRuntime {
     if (this.closePromise) return;
     const repositoryIds = this.services.repositories.recents().filter(repository => githubRepositoryKey(repository.commonDir) === githubRepositoryKey(commonDir)).map(repository => repository.id);
     this.onEvent({ type: 'ai.instructions-changed', repositoryIds });
+  }
+
+  /**
+   * The watch began, moved away, ran into trouble or recovered. Clients read the
+   * repository again, since changes may have gone unreported, and learn whether
+   * they can rely on its reports. That is a read of everything, also when a watch
+   * begins: a branch made or checked out while there was none went unreported too.
+   */
+  publishRepositoryWatch(repositoryId: string, state: RepositoryWatchState, watchId: string | null): void {
+    if (this.closePromise) return;
+    this.services.repositories.invalidateIfKnown(repositoryId);
+    this.onEvent({ type: 'repository.changed', repositoryId, scope: 'unknown', watch: state, ...(watchId ? { watchId } : {}) });
   }
 
   publishActiveRepositoryChange(repository: RepositoryInfo): void {

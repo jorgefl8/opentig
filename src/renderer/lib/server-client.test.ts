@@ -98,10 +98,13 @@ describe('OpenTig server client', () => {
     api.events.onActiveRepositoryChanged(activeChanged);
 
     fixture.event({ type: 'repository.changed', repositoryId: 'repo-id', scope: 'refs' });
+    // A watch in trouble reaches the listener as a change, which is what an older client takes it for too.
+    fixture.event({ type: 'repository.changed', repositoryId: 'repo-id', scope: 'unknown', watch: 'degraded' });
     fixture.event({ type: 'repository.active-changed', repository: bootstrapData().activeRepository! });
     await fixture.reconnect();
 
     expect(changed).toHaveBeenCalledWith('repo-id', 'refs');
+    expect(changed).toHaveBeenCalledWith('repo-id', 'unknown', 'degraded');
     expect(activeChanged).toHaveBeenCalledWith(expect.objectContaining({ id: 'repo-id' }));
     expect(changed).toHaveBeenCalledWith('repo-id', 'unknown');
     expect(fixture.request).toHaveBeenCalledWith(IPC.bootstrap, []);

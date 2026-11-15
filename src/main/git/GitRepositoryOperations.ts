@@ -106,7 +106,7 @@ export class GitRepositoryOperations {
 
   setCommitAuthorship(repositoryId: string, input: SetCommitAuthorshipInput) { return this.authorship.set(repositoryId, input); }
 
-  async diff(request: DiffRequest): Promise<DiffResult> {
+  async diff(request: DiffRequest, signal?: AbortSignal): Promise<DiffResult> {
     const repository = this.repositories.get(request.repositoryId);
     const paths = this.repositories.validatePaths(request.repositoryId, [request.path]);
     // A single index lookup replaces the previous full-worktree status: an
@@ -115,36 +115,37 @@ export class GitRepositoryOperations {
     const tracked = (await this.git.run(
       repository.path,
       ['--literal-pathspecs', 'ls-files', '-z', '--', ...paths],
-      { operation: 'diff-tracked-check', readOnly: true, maxOutputBytes: 1024 * 1024 },
+      { operation: 'diff-tracked-check', readOnly: true, maxOutputBytes: 1024 * 1024, ...(signal ? { signal } : {}) },
     )).stdout.length > 0;
     if (request.kind === 'unstaged' && !tracked) return this.untrackedDiff(request.repositoryId, request.path);
     const args = ['--literal-pathspecs', 'diff'];
     if (request.kind === 'staged') args.push('--cached');
     args.push('--no-color', '--no-ext-diff', '--unified=3', '--', ...paths);
-    const output = await this.git.run(repository.path, args, { operation: `diff-${request.kind}`, readOnly: true, maxOutputBytes: 32 * 1024 * 1024 });
+    const output = await this.git.run(repository.path, args, { operation: `diff-${request.kind}`, readOnly: true, maxOutputBytes: 32 * 1024 * 1024, ...(signal ? { signal } : {}) });
     return makeDiffResult(request.path, output.stdout);
   }
 
-  async commitDiff(repositoryId: string, oid: string): Promise<DiffResult> {
+  async commitDiff(repositoryId: string, oid: string, signal?: AbortSignal): Promise<DiffResult> {
     this.assertKnownOid(repositoryId, oid);
     // Keep Git's combined merge inventory: inherited branch changes are not
     // this merge's own files. Pierre renders two-way unified patches, so show
     // those files against the first parent instead of passing it diff --cc.
-    const files = await this.commitFiles(repositoryId, oid);
+    const files = await this.commitFiles(repositoryId, oid, signal);
     if (!files.length) return makeDiffResult(oid, Buffer.alloc(0));
     // Read the whole patch rather than putting every path on argv: large
     // commits can exceed operating-system command-line limits.
-    return this.readCommitPatch(repositoryId, oid, [], new Set(files.map((file) => file.path)), oid);
+    return this.readCommitPatch(repositoryId, oid, [], new Set(files.map((file) => file.path)), oid, signal);
   }
 
-  async commitFiles(repositoryId: string, oid: string): Promise<CommitFile[]> {
+  async commitFiles(repositoryId: string, oid: string, signal?: AbortSignal): Promise<CommitFile[]> {
     this.assertKnownOid(repositoryId, oid);
     const repository = this.repositories.get(repositoryId);
     const common = ['show', '--format=', '--no-color', '--no-ext-diff', '-M', '-z'];
+    const options = { operation: 'commit-files', readOnly: true, maxOutputBytes: 8 * 1024 * 1024, ...(signal ? { signal } : {}) };
     const [nameStatus, firstParentStatus, numstat] = await Promise.all([
-      this.git.run(repository.path, [...common, '--diff-merges=dense-combined', '--name-status', oid, '--'], { operation: 'commit-files', readOnly: true, maxOutputBytes: 8 * 1024 * 1024 }),
-      this.git.run(repository.path, [...common, '--diff-merges=first-parent', '--name-status', oid, '--'], { operation: 'commit-files', readOnly: true, maxOutputBytes: 8 * 1024 * 1024 }),
-      this.git.run(repository.path, [...common, '--diff-merges=first-parent', '--numstat', oid, '--'], { operation: 'commit-files', readOnly: true, maxOutputBytes: 8 * 1024 * 1024 }),
+      this.git.run(repository.path, [...common, '--diff-merges=dense-combined', '--name-status', oid, '--'], options),
+      this.git.run(repository.path, [...common, '--diff-merges=first-parent', '--name-status', oid, '--'], options),
+      this.git.run(repository.path, [...common, '--diff-merges=first-parent', '--numstat', oid, '--'], options),
     ]);
     const ownPaths = new Set(parseCommitFiles(nameStatus.stdout.toString('utf8'), '').map((file) => file.path));
     // Combined statuses do not identify a single old path. Use the same
@@ -152,18 +153,19 @@ export class GitRepositoryOperations {
     return parseCommitFiles(firstParentStatus.stdout.toString('utf8'), numstat.stdout.toString('utf8')).filter((file) => ownPaths.has(file.path));
   }
 
-  async commitFileDiff(repositoryId: string, oid: string, filePath: string, oldPath?: string): Promise<DiffResult> {
+  async commitFileDiff(repositoryId: string, oid: string, filePath: string, oldPath?: string, signal?: AbortSignal): Promise<DiffResult> {
     this.assertKnownOid(repositoryId, oid);
     const paths = this.repositories.validatePaths(repositoryId, oldPath ? [filePath, oldPath] : [filePath]);
-    return this.readCommitPatch(repositoryId, oid, paths, new Set([filePath]), filePath);
+    return this.readCommitPatch(repositoryId, oid, paths, new Set([filePath]), filePath, signal);
   }
 
-  private async readCommitPatch(repositoryId: string, oid: string, paths: string[], selectedPaths: Set<string>, resultPath: string): Promise<DiffResult> {
+  private async readCommitPatch(repositoryId: string, oid: string, paths: string[], selectedPaths: Set<string>, resultPath: string, signal?: AbortSignal): Promise<DiffResult> {
     const repository = this.repositories.get(repositoryId);
     const common = ['--literal-pathspecs', 'show', '--format=', '--no-color', '--no-ext-diff', '-M', '--diff-merges=first-parent'];
+    const cancel = signal ? { signal } : {};
     const [patch, inventory] = await Promise.all([
-      this.git.run(repository.path, [...common, '--patch', oid, '--', ...paths], { operation: 'commit-diff', readOnly: true, maxOutputBytes: 32 * 1024 * 1024 }),
-      this.git.run(repository.path, [...common, '--name-status', '-z', oid, '--', ...paths], { operation: 'commit-files', readOnly: true, maxOutputBytes: 8 * 1024 * 1024 }),
+      this.git.run(repository.path, [...common, '--patch', oid, '--', ...paths], { operation: 'commit-diff', readOnly: true, maxOutputBytes: 32 * 1024 * 1024, ...cancel }),
+      this.git.run(repository.path, [...common, '--name-status', '-z', oid, '--', ...paths], { operation: 'commit-files', readOnly: true, maxOutputBytes: 8 * 1024 * 1024, ...cancel }),
     ]);
     const files = parseCommitFiles(inventory.stdout.toString('utf8'), '');
     const sections = patch.stdout.toString('utf8').split(/^(?=diff --git )/m).filter(Boolean);

@@ -3,6 +3,8 @@ import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { forgetViewerMemory } from '@/features/viewer/viewer-memory';
+import { RepositoryLinksContext } from '@/components/repository-links';
 import type { PullRequestDetails, PullRequestLiveState } from '@shared/contracts';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { MobileChromeContext, type MobileChromeHosts } from '@/components/mobile-chrome-context';
@@ -36,6 +38,7 @@ let root: Root;
 let container: HTMLDivElement;
 let client: QueryClient;
 beforeEach(() => {
+  forgetViewerMemory();
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
   vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
   api.getPullRequest.mockResolvedValue(details);
@@ -66,6 +69,29 @@ async function refetchLive() {
   await act(async () => { await client.refetchQueries({ queryKey: queryKeys.pullRequestLiveState('repo', 7) }); });
   await settle();
 }
+
+it('says a number that does not open as a pull request may be an issue, and offers it on GitHub', async () => {
+  api.getPullRequest.mockRejectedValue(new Error('Could not resolve to a PullRequest with the number of 7.'));
+  await act(async () => root.render(createElement(QueryClientProvider, { client }, createElement(TooltipProvider, null, createElement(RepositoryLinksContext.Provider, { value: { nameWithOwner: 'sample/demo', open: vi.fn() } }, createElement(PullRequestViewer, {
+    repositoryId: 'repo', prNumber: 7, diffView: 'unified', themeType: 'dark', wrapLines: false, onDiffViewChange: vi.fn(), onWrapLinesChange: vi.fn(), onClose: vi.fn(), onSelectPullRequest: vi.fn(),
+  }))))));
+  await settle();
+  expect(container.textContent).toContain('If #7 is an issue rather than a pull request, it opens on GitHub.');
+  await act(async () => [...container.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent?.includes('Open in GitHub'))!.click());
+  expect(browser.openExternalUrl).toHaveBeenCalledWith('https://github.com/sample/demo/issues/7');
+});
+
+it('opens again on the tab it was left on', async () => {
+  api.getPullRequestConversation.mockResolvedValue({ entries: [], truncated: false, partial: false });
+  await render();
+  await act(async () => [...container.querySelectorAll<HTMLElement>('[role="tab"]')].find((tab) => tab.textContent === 'Comments')!.click());
+  await settle();
+  await act(async () => root.unmount());
+  root = createRoot(container);
+  await render();
+  const selected = [...container.querySelectorAll<HTMLElement>('[role="tab"]')].find((tab) => tab.getAttribute('aria-selected') === 'true');
+  expect(selected?.textContent).toBe('Comments');
+});
 
 it('shows why the PR is blocked once, instead of repeating it in the review badge', async () => {
   await render();

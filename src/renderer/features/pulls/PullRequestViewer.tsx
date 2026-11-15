@@ -1,6 +1,6 @@
 import { formatDateTime } from '@shared/date-format';
 import { PullRequestStackMenu } from './PullRequestStackMenu';
-import { Suspense, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { Suspense, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { IconExternalLink, IconRefresh } from '@tabler/icons-react';
 import { GITHUB_PR_COMMIT_PAGE, type DiffResult, type DiffViewPreference, type PullRequestCommitList, type PullRequestDetails, type PullRequestLatestReview, type PullRequestLiveState, type ThemePreference } from '../../../shared/contracts';
@@ -11,6 +11,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { ViewerTabs, ViewerTabsList, ViewerTabsPanel } from '@/components/ui/viewer-tabs';
 import { LinkedMarkdown } from '@/features/markdown/LinkedMarkdown';
 import { LinkedText } from '@/components/LinkedText';
+import { RepositoryLink } from '@/components/RepositoryLink';
+import { RepositoryLinksContext } from '@/components/repository-links';
 import { MobileViewerActions, MobileViewerTitle } from '@/components/MobileChrome';
 import { useMobileChrome } from '@/components/mobile-chrome-context';
 import type { PullRequestTab } from '@/lib/mobile-main-action';
@@ -30,10 +32,12 @@ import { opentig } from '@/lib/opentig-api';
 import { queryKeys } from '@/lib/query-client';
 import { inBackground } from '@/lib/websocket-transport';
 import { whenIdle } from '@/lib/when-idle';
+import { rememberedTab, rememberTab } from '@/features/viewer/viewer-memory';
 import { downloadsAhead } from '@/lib/lazy-with-retry';
 import '@/features/markdown/markdown.css';
 import { Spinner } from '@/components/ui/spinner';
 
+const PULL_REQUEST_TABS: readonly PullRequestTab[] = ['summary', 'comments', 'checks', 'timeline', 'diff'];
 /** How long a PR's details are taken as current without asking again. */
 const PULL_REQUEST_STALE_MS = 60_000;
 
@@ -51,11 +55,14 @@ interface PullRequestViewerProps {
 }
 
 export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType, wrapLines, onDiffViewChange, onWrapLinesChange, onClose, onOpenFile, onSelectPullRequest }: PullRequestViewerProps) {
-  const [tab, setTabState] = useState<PullRequestTab>('summary');
+  // Opening a pull request again shows the tab it was left on.
+  const memoryKey = `${repositoryId}:pull:${prNumber}`;
+  const [tab, setTabState] = useState<PullRequestTab>(() => rememberedTab(memoryKey, PULL_REQUEST_TABS) ?? 'summary');
   // A tab stays mounted once visited, so going back to it shows what it had instead of loading again.
-  const [visited, setVisited] = useState<ReadonlySet<PullRequestTab>>(() => new Set(['summary']));
+  const [visited, setVisited] = useState<ReadonlySet<PullRequestTab>>(() => new Set(['summary', tab]));
   const setTab = (next: PullRequestTab) => {
     setTabState(next);
+    rememberTab(memoryKey, next);
     setVisited((current) => current.has(next) ? current : new Set([...current, next]));
   };
   const [editing, setEditing] = useState(() => hasViewerDraft(pullRequestEditDraft(repositoryId, prNumber)));
@@ -74,6 +81,7 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
     if (phone && scroller.current && overview.current) scroller.current.scrollTop = Math.min(scroller.current.scrollTop, overview.current.offsetHeight);
   }, [phone, tab]);
   const queryClient = useQueryClient();
+  const links = useContext(RepositoryLinksContext);
   // The list row already has the header's facts, so the PR shows at once and the rest fills in.
   const [summary] = useState(() => cachedPullRequestSummary(queryClient, repositoryId, prNumber));
   const detailsQuery = useQuery<{ details: PullRequestDetails; bodyHtml: string }>({
@@ -145,7 +153,12 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
       <div className="viewer-message flex-col gap-3">
         {bar}
         <p className="text-destructive">{detailsError}</p>
-        <Button variant="outline" size="sm" onClick={() => void detailsQuery.refetch()}><IconRefresh /> Try again</Button>
+        {/* A `#123` taken from a commit subject may be an issue, which only GitHub shows. GitHub sends an issue's address on to a pull request's. */}
+        {links && <p className="text-muted-foreground">If #{prNumber} is an issue rather than a pull request, it opens on GitHub.</p>}
+        <div className="flex flex-wrap justify-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => void detailsQuery.refetch()}><IconRefresh /> Try again</Button>
+          {links && <Button variant="outline" size="sm" onClick={() => openOnGitHub(`https://github.com/${links.nameWithOwner}/issues/${prNumber}`)}><IconExternalLink /> Open in GitHub</Button>}
+        </div>
       </div>
     );
   }
@@ -255,10 +268,17 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
                   <strong><LinkedText text={commit.messageHeadline || '(no commit message)'} /></strong>
                   <span><b>{commit.author}</b> committed <time dateTime={commit.authoredAt}>{formatDateTime(commit.authoredAt)}</time></span>
                 </span>
-                <Tooltip>
-                  <TooltipTrigger render={<code />}>{commit.oid.slice(0, 7)}</TooltipTrigger>
-                  <TooltipContent>{commit.oid}</TooltipContent>
-                </Tooltip>
+                {/* Opens the commit in History's viewer, or on GitHub from the icon beside it. */}
+                <RepositoryLink
+                  target={{ kind: 'commit', oid: commit.oid }}
+                  className="pr-commit-oid"
+                  label={`Open commit ${commit.oid.slice(0, 7)}`}
+                  note={commit.oid}
+                  fallback={<Tooltip>
+                    <TooltipTrigger render={<code />}>{commit.oid.slice(0, 7)}</TooltipTrigger>
+                    <TooltipContent>{commit.oid}</TooltipContent>
+                  </Tooltip>}
+                >{commit.oid.slice(0, 7)}</RepositoryLink>
               </article>
             )) : <p className="pr-empty-description">No commits were returned by GitHub.</p>}
           </section>}

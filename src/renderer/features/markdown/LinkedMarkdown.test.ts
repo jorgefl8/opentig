@@ -66,7 +66,7 @@ it('never makes unsafe links interactive', async () => {
   expect(container.innerHTML).not.toContain('javascript:');
 });
 
-it("asks where to open links into the open repository, and leaves the rest as links", async () => {
+it("opens links into the open repository in OpenTig, with GitHub one icon away, and leaves the rest as links", async () => {
   const open = vi.fn();
   const openExternal = vi.spyOn(window, 'open').mockReturnValue(null);
   const html = await renderMarkdown('[**#65**](https://github.com/sample/demo/pull/65) [v1](https://github.com/sample/demo/releases/tag/v1) [other](https://github.com/other/demo/pull/1)');
@@ -76,11 +76,12 @@ it("asks where to open links into the open repository, and leaves the rest as li
   expect(references[0]!.querySelector('strong')?.textContent).toBe('#65');
   expect(container.querySelectorAll('a')).toHaveLength(1);
   await act(async () => references[1]!.click());
-  await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
-  const item = (label: string) => [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(element => element.textContent?.includes(label))!;
-  expect(document.body.textContent).toContain('Release v1');
-  await act(async () => item('Open in OpenTig').click());
-  expect(open).toHaveBeenCalledWith({ kind: 'release', tag: 'v1' });
+  expect(open).toHaveBeenCalledExactlyOnceWith({ kind: 'release', tag: 'v1' });
+  expect(openExternal).not.toHaveBeenCalled();
+  await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Open pull request #65 in GitHub"]')!.click());
+  // The link as written in the text, not one rebuilt from it.
+  expect(openExternal).toHaveBeenCalledWith('https://github.com/sample/demo/pull/65', '_blank', expect.anything());
+  expect(open).toHaveBeenCalledOnce();
   openExternal.mockRestore();
 });
 

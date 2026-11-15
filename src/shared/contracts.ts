@@ -6,6 +6,7 @@ import type { SerializedOperationError } from './errors';
 import type { BranchDeletionResult, BranchDetails, BranchInfo, CommitFile, CommitPage, FileTreeEntry, LocalRefsSnapshot, RemoteBranchDetails, RemoteBranchDeletionResult, TrackingBranchCreationResult, RepositoryStatus, WorktreeAgents, WorktreeDetails, WorktreeInfo, WorktreeRemovalBlocked } from './git-types';
 import type { RasterImageMime } from './image-types';
 import type { OpenTigServerIdentity } from './server-protocol';
+import type { RepositoryWatchState } from './runtime-events';
 import type { RepositoryChangeScope } from './repository-change';
 import type { AiLogEntry } from './ai-log';
 import type { ProblemLogEntry, ProblemLogRecordInput } from './problems-log';
@@ -57,6 +58,8 @@ export interface DiffResult {
   binary: boolean;
   truncated: boolean;
   lineCount: number;
+  /** For a working-tree diff: the server watch that reports changes to its file, when one does. */
+  watchId?: string;
 }
 
 export interface FileResult {
@@ -66,6 +69,14 @@ export interface FileResult {
   tooLarge: boolean;
   size: number;
   mtimeMs: number;
+  /**
+   * When the server took `size` and `mtimeMs`, on its own clock. A file modified within the
+   * file system's timestamp granularity of this moment could change again without changing
+   * them, so the client keeps such a read only until something changes. Absent from older servers.
+   */
+  readAtMs?: number;
+  /** The server watch that reports changes to this file, when one does. Absent from older servers. */
+  watchId?: string;
 }
 
 export type ImageFileResult =
@@ -844,6 +855,8 @@ export interface BootstrapData {
   unavailableActiveRepositoryId?: string | null;
   /** Present when bootstrap arrived through the authoritative server transport. */
   server?: OpenTigServerIdentity;
+  /** How the active repository is watched for changes, with the watch's id while it reports every change. */
+  activeRepositoryWatch?: { state: RepositoryWatchState; watchId?: string };
 }
 
 /** Another saved repository found in the folder a moved repository now lives in. */
@@ -1078,7 +1091,8 @@ export interface OpenTigApi {
     onGitHubAccountsChanged(callback: (repositoryIds?: string[], inventoryChanged?: boolean, detected?: GitHubAccountDetection) => void): () => void;
     /** The connection to the server came back, after events may have been missed. */
     onReconnected(callback: () => void): () => void;
-    onRepositoryChanged(callback: (repositoryId: string, scope: RepositoryChangeScope) => void): () => void;
+    /** `watch` is set when the server's watch of the repository ran into trouble or recovered. */
+    onRepositoryChanged(callback: (repositoryId: string, scope: RepositoryChangeScope, watch?: RepositoryWatchState, watchId?: string) => void): () => void;
     onActiveRepositoryChanged(callback: (repository: RepositoryInfo) => void): () => void;
   };
   projects: {

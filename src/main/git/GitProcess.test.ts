@@ -19,15 +19,46 @@ vi.mock('execa', async (importOriginal) => {
 });
 
 describe('GitProcess', () => {
-  it.each(['signal', 'onStderr'] as const)('does not share reads with consumer-owned %s options', async key => {
+  it('does not share reads that report progress to their own consumer', async () => {
     const git = new GitProcess();
     const args = node('setTimeout(() => process.stdout.write(String(process.pid)), 50)');
-    const outputs = await Promise.all(Array.from({ length: 2 }, () => {
-      const options = { operation: 'consumer-pid', readOnly: true, timeoutMs: 5_000,
-        [key]: key === 'signal' ? new AbortController().signal : () => undefined };
-      return git.run(process.cwd(), args, options);
-    }));
+    const outputs = await Promise.all(Array.from({ length: 2 }, () => git.run(process.cwd(), args, { operation: 'consumer-pid', readOnly: true, timeoutMs: 5_000, onStderr: () => undefined })));
     expect(new Set(outputs.map(output => output.stdout.toString())).size).toBe(2);
+  });
+
+  it('shares identical reads that can be cancelled, and stops the process only once every caller has cancelled', async () => {
+    const git = new GitProcess();
+    const directory = await mkdtemp(join(tmpdir(), 'opentig-shared-cancel-'));
+    try {
+      const finished = join(directory, 'finished');
+      const args = node(`setTimeout(() => { require('fs').writeFileSync(${JSON.stringify(finished)}, ''); process.stdout.write(String(process.pid)); }, 400)`);
+      const options = (signal: AbortSignal) => ({ operation: 'shared-cancel', readOnly: true, timeoutMs: 5_000, signal });
+      // Two clients reading the same thing run Git once.
+      const both = await Promise.all([git.run(process.cwd(), [...args, 'shared'], options(new AbortController().signal)), git.run(process.cwd(), [...args, 'shared'], options(new AbortController().signal))]);
+      expect(both[0].stdout.toString()).toBe(both[1].stdout.toString());
+      // A click and a read ahead of it, both able to give up.
+      const click = new AbortController();
+      const ahead = new AbortController();
+      const clicked = git.run(process.cwd(), args, options(click.signal));
+      const readAhead = git.run(process.cwd(), args, options(ahead.signal));
+      click.abort();
+      await expect(clicked).rejects.toMatchObject({ name: 'AbortError' });
+      // The other caller still waits, so the one process runs on and answers it.
+      expect((await readAhead).stdout.toString()).toMatch(/^\d+$/);
+
+      const first = new AbortController();
+      const second = new AbortController();
+      const reads = [git.run(process.cwd(), [...args, 'again'], options(first.signal)), git.run(process.cwd(), [...args, 'again'], options(second.signal))];
+      await rm(finished, { force: true });
+      first.abort();
+      second.abort();
+      await Promise.allSettled(reads);
+      await new Promise((resolve) => setTimeout(resolve, 700));
+      // Nobody was left waiting: the process was stopped before it finished.
+      await expect(readFile(finished)).rejects.toMatchObject({ code: 'ENOENT' });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
   });
 
   it('uses one child process for four identical reads and fresh processes after settlement', async () => {

@@ -62,6 +62,7 @@ OpenTig starts in **Files** on first use, then reopens your last active section:
 | **Last active section** | Stored in the client. Clearing site data or unavailable local storage returns it to Files; a selected PR or search query is not restored |
 | **Workspace preferences** | Sidebar width and whether it is collapsed, viewer preferences, fonts, shortcut customizations, repositories, and projects are remembered |
 | **File navigation** | Expanded tree paths and open file tabs are remembered for each worktree |
+| **What each section showed** | For the current session only. Each section of each worktree reopens the change, commit, pull request, or run it last showed in the viewer. A change that was committed, staged, or discarded meanwhile is not brought back. A pull request reopens on the tab it was left on, with the same files of its code folded |
 | **AI model** | Selection is saved per provider |
 
 **Remembered tabs do not save your edits.** Tab paths persist between sessions; unsaved text is not written to disk.
@@ -84,7 +85,13 @@ Refresh also checks for app updates immediately instead of waiting for the five-
 
 The workspace also refreshes automatically when files or Git state change. While another tool keeps writing to the repository, OpenTig shows the newest state it could read and refreshes again after the next change. An automatic refresh that fails retries once after a second and reports an error only if the retry also fails.
 
-Opening another section shows what OpenTig already knows and does not fetch. If the repository was last read more than five seconds ago, its status is read again in the background, and Files reads its tree again; **Pull**, **Push**, and **Commit** stay available meanwhile. Once a minute this read also covers branches, worktrees, and the remote, so a change made outside OpenTig shows up even if the file watcher missed it. History is read again only after its branches changed or 30 seconds passed.
+The server watches the open repository for those changes without holding up other requests while it starts. On Windows and macOS one system watch covers the whole worktree. On Linux each folder is watched on its own, Git-ignored folders and `node_modules` are left out, and new folders are followed as they appear, including a folder a checkout removes and makes again. A change to `.gitignore` or to the repository's `.git/info/exclude` brings folders they stop ignoring into the watch; a global excludes file (`core.excludesFile`) is not followed, so a folder it stops ignoring is watched from the next time the repository is opened. A change inside an ignored folder shows in **Files** at its next five-second check instead.
+
+The server watches one repository at a time: the one opened last, by any browser or the desktop app connected to it. While the repository on your screen is not the one being watched, because another device opened a different one, because the watch is still starting, or because the connection dropped and the server has not confirmed its watch since, OpenTig reads it every ten seconds while it is on screen. The same happens if the system runs out of watches (on Linux, raise `fs.inotify.max_user_watches`) or the watch fails and restarting it doesn't help; the server log then says so.
+
+Sections you open stay in place while you use another one, so coming back shows the same scroll position, search text, and loaded folders, and asks the server for nothing it already has. A hidden section does not refresh itself; switching to another repository or worktree keeps only the section on screen.
+
+Opening another section shows what OpenTig already knows and does not fetch. If the repository was last read more than five seconds ago, its status is read again in the background, and Files reads its tree again; **Pull**, **Push**, and **Commit** stay available meanwhile. Once a minute this read also covers branches, worktrees, and the remote, so a change made outside OpenTig shows up even if the file watcher missed it. History is read again only after its branches changed or 30 seconds passed. Each branch keeps its own history, so checking out another branch never shows the previous branch's commits: it shows that branch's history as last read, or a loading state, until the new one arrives.
 
 ### Shortcuts
 

@@ -61,6 +61,12 @@ native capability.
    shared runtime.
 5. The server returns one typed result for that ID. Interrupted mutations are
    rejected; they are never silently replayed after reconnect.
+   A client that no longer needs a read sends `cancel` with its ID, and the
+   server stops the Git process or file read behind it; the result still
+   arrives and is ignored. Changes are never cancelled. The server announces
+   this in the bootstrap result's `server.requestCancellation`, and a client
+   sends `cancel` only to a server that does, so either side can be older
+   than the other without a protocol version change.
 6. Repository and filesystem changes are published as runtime events to every
    connected owner session.
 7. After reconnect, each client bootstraps fresh authoritative state.

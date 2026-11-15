@@ -185,6 +185,39 @@ describe('WebSocket safety limits', () => {
     expect(await (await fetch(`${fixture.origin}/api/auth/descriptor`, { headers: { Cookie: cookie } })).json()).toMatchObject({ authenticated: false });
   });
 
+  it('stops a read the client gave up on, but never a change, and only for a client that knows the server can', async () => {
+    const fixture = await startFixture(() => emptyBootstrap());
+    const signals = new Map<string, AbortSignal>();
+    const hold = (name: string) => (context: CommandExecutionContext) => { signals.set(name, context.signal); return new Promise(() => {}); };
+    fixture.registry.registerHandler(OPEN_TIG_SERVER_COMMANDS['diff.get'], hold('read'));
+    fixture.registry.registerHandler(OPEN_TIG_SERVER_COMMANDS['refs.pull'], hold('change'));
+    fixture.registry.registerHandler(OPEN_TIG_SERVER_COMMANDS['commits.files'], hold('unannounced'));
+
+    // Until the server says it understands cancelling, the client only gives up on its side.
+    const quiet = fixture.client();
+    const unannounced = new AbortController();
+    const kept = quiet.request(IPC.commitsFiles, ['repo', 'abc'], { signal: unannounced.signal });
+    await vi.waitFor(() => expect(signals.has('unannounced')).toBe(true));
+    unannounced.abort();
+    await expect(kept).rejects.toMatchObject({ name: 'AbortError' });
+
+    const client = fixture.client();
+    client.enableCancellation();
+    const reading = new AbortController();
+    const changing = new AbortController();
+    const read = client.request(IPC.diffGet, [{ repositoryId: 'repo', path: 'a.txt', kind: 'unstaged' }], { signal: reading.signal });
+    const change = client.request(IPC.refsPull, ['repo'], { signal: changing.signal });
+    await vi.waitFor(() => expect([...signals.keys()].sort()).toEqual(['change', 'read', 'unannounced']));
+    reading.abort();
+    changing.abort();
+    await expect(read).rejects.toMatchObject({ name: 'AbortError' });
+    await expect(change).rejects.toMatchObject({ name: 'AbortError' });
+    await vi.waitFor(() => expect(signals.get('read')!.aborted).toBe(true));
+    // A change half done is worse than one that finishes: it runs to its end.
+    expect(signals.get('change')!.aborted).toBe(false);
+    expect(signals.get('unannounced')!.aborted).toBe(false);
+  });
+
   it('refuses a request over the in-flight limit as retryable, and times out bounded commands', async () => {
     let release!: (value: unknown) => void;
     const pending = new Promise((resolve) => { release = resolve; });
@@ -329,7 +362,7 @@ describe('WebSocket safety limits', () => {
   });
 
   it('accepts exactly the byte limit and rejects one more byte without truncating', async () => {
-    const envelope = { type: 'result', id: 'boundary', result: { ok: true, value: { payload: '', server: { protocolVersion: 1, appVersion: 'test' } } } };
+    const envelope = { type: 'result', id: 'boundary', result: { ok: true, value: { payload: '', server: { protocolVersion: 1, appVersion: 'test', requestCancellation: true } } } };
     const overhead = Buffer.byteLength(JSON.stringify(envelope));
     let payload = 'x'.repeat(OPEN_TIG_MAX_SERVER_MESSAGE_BYTES - overhead);
     const fixture = await startFixture(() => ({ payload }));

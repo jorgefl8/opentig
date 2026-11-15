@@ -4,7 +4,8 @@ import type { MergeConflictRegion, MergeConflictResolution } from '@pierre/diffs
 import type { DiffResult, DiffViewPreference, FileResult, ThemePreference } from '@shared/contracts';
 import { Button } from '@/components/ui/button';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
-import { DiffWorkspace, type DiffCommitLayout } from './DiffWorkspace';
+import { CommitFilesWorkspace, DiffWorkspace, type DiffCommitLayout } from './DiffWorkspace';
+import type { CommitFile } from '@shared/git-types';
 import { OPENTIG_CODE_THEMES } from './diffThemes';
 import { fileHighlightKey } from './highlight-cache-key';
 import { VIEWER_SCROLLBAR_CSS } from './patch-utils';
@@ -33,6 +34,21 @@ type PierreDiffViewerProps =
       onOpenFile?(path: string): void;
     }
   | {
+      kind: 'commit-files';
+      contentKey: string;
+      files: readonly CommitFile[];
+      diffView: DiffViewPreference;
+      themeType: ThemePreference;
+      wrapLines: boolean;
+      commitLayout: DiffCommitLayout;
+      readFile(file: CommitFile, signal: AbortSignal): Promise<DiffResult>;
+      readAll(signal: AbortSignal): Promise<DiffResult>;
+      keepFileDiff(file: CommitFile, diff: DiffResult): void;
+      onDiffViewChange?(value: DiffViewPreference): void;
+      onWrapLinesChange?(value: boolean): void;
+      onOpenFile?(path: string): void;
+    }
+  | {
       kind: 'conflict';
       contentKey: string;
       file: FileResult;
@@ -48,6 +64,8 @@ export default function PierreDiffViewer(props: PierreDiffViewerProps) {
       <ContentFade key={props.contentKey} className="viewer-transition" animate={false}>
         {props.kind === 'diff'
           ? <DiffContent {...props} />
+          : props.kind === 'commit-files'
+          ? <CommitFilesWorkspace {...props} />
           : (
             <ConflictViewer
               key={props.file.path}

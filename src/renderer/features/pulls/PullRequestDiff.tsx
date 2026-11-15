@@ -89,6 +89,7 @@ export default function PullRequestDiff({ diff, prNumber, repositoryId, commits,
         themeType={themeType}
         wrapLines={wrapLines}
         initiallyCollapsed
+        foldMemoryKey={`${repositoryId}:${mode === 'all' ? `pull:${prNumber}:all` : `pull:${prNumber}:commit:${selectedCommit?.oid ?? ''}`}`}
         scopeControl={scopeControl}
         onDiffViewChange={onDiffViewChange}
         onWrapLinesChange={onWrapLinesChange}
