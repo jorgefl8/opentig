@@ -26,6 +26,8 @@ const DEFAULT_REQUEST_RATE_LIMIT = 120;
 const DEFAULT_REQUEST_RATE_WINDOW_MS = 10_000;
 /** Time for a rejected client to receive the close frame before the connection is cut. Nothing it sends meanwhile is read. */
 const REJECT_GRACE_MS = 1_000;
+/** Connections without a session being closed at once, apart from the limit signed-in clients share. Past it, more are refused before the upgrade. */
+const UNAUTHENTICATED_CONNECTION_LIMIT = 4;
 
 interface ClientState {
   sessionId: string;
@@ -79,8 +81,10 @@ export class OpenTigWebSocketTransport {
     },
   });
   private readonly clients = new Map<WebSocket, ClientState>();
-  /** Connections refused after the upgrade, until they are cut: they count against the connection limit. */
+  /** Connections without a session, upgraded only to be closed, until they are cut. They have their own bound. */
   private readonly rejected = new Set<WebSocket>();
+  /** Every connection `reject` has refused: it is refused once, and nothing it still emits is acted on. */
+  private readonly refused = new WeakSet<WebSocket>();
   private readonly pendingOperations = new Set<Promise<unknown>>();
   private readonly commandTimeoutMs: number | undefined;
   private readonly connectionLimit: number;
@@ -144,11 +148,15 @@ export class OpenTigWebSocketTransport {
     const rawPath = (request.url ?? '').split(/[?#]/, 1)[0];
     if (rawPath !== '/ws') return rejectUpgrade(socket, 404, 'Not Found');
     if (!isAllowedOrigin(request)) return rejectUpgrade(socket, 403, 'Forbidden');
-    if (this.clients.size + this.rejected.size >= this.connectionLimit) return rejectUpgrade(socket, 503, 'Connection limit reached');
+    const authenticated = this.options.auth.authenticate(request.headers) !== null;
+    // A client without a session never takes the room signed-in clients share: it has its own small
+    // bound, and past it is refused before the upgrade.
+    if (!authenticated && this.rejected.size >= UNAUTHENTICATED_CONNECTION_LIMIT) return rejectUpgrade(socket, 503, 'Too many connections without a session');
+    if (authenticated && this.clients.size >= this.connectionLimit) return rejectUpgrade(socket, 503, 'Connection limit reached');
     // Compression is only negotiated for a session the request already proves: a client without one
     // is upgraded as before, so a browser sees the same 1008 close and shows pairing, and nothing it
     // sends is ever inflated.
-    const compress = !isDirectLocalClient(request) && this.options.auth.authenticate(request.headers) !== null;
+    const compress = authenticated && !isDirectLocalClient(request);
     const server = compress ? this.compressingWebSocketServer : this.webSocketServer;
     server.handleUpgrade(request, socket, head, (webSocket) => {
       server.emit('connection', webSocket, request);
@@ -188,6 +196,9 @@ export class OpenTigWebSocketTransport {
    * the code; the connection is cut shortly after, without waiting for the client's reply.
    */
   private reject(socket: WebSocket, code: number, reason: string): void {
+    // `ws` has no supported way to stop parsing what it already received; what it still emits is ignored (see `message`).
+    if (this.refused.has(socket)) return;
+    this.refused.add(socket);
     if (!this.clients.has(socket) && !this.rejected.has(socket)) {
       this.rejected.add(socket);
       socket.once('close', () => this.rejected.delete(socket));
@@ -200,6 +211,7 @@ export class OpenTigWebSocketTransport {
   }
 
   private async message(socket: WebSocket, state: ClientState, data: WebSocket.RawData, isBinary: boolean): Promise<void> {
+    if (this.refused.has(socket)) return;
     if (!this.options.auth.hasSession(state.sessionId)) return this.reject(socket, 1008, 'Session expired or revoked');
     if (isBinary) return this.reject(socket, 1003, 'Text messages only');
     const bytes = rawBytes(data);

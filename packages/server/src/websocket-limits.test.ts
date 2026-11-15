@@ -308,6 +308,16 @@ describe('WebSocket safety limits', () => {
     decompress.mockRestore();
   });
 
+  it('lets a signed-in client connect however many clients without a session are being refused', async () => {
+    const fixture = await startFixture(() => emptyBootstrap());
+    // Each ignores its close, so it stays refused for as long as the server allows.
+    const strangers = await Promise.all(Array.from({ length: 16 }, () => rawCompressingClient(fixture.origin, '')));
+    expect(strangers.length).toBe(16);
+    const member = await fixture.socket();
+    expect(await sendAndReceive(member, { type: 'request', id: 'member', command: 'app:bootstrap', args: [] })).toMatchObject({ type: 'result', id: 'member', result: { ok: true } });
+    member.close();
+  });
+
   it('refuses a request over the in-flight limit as retryable, and times out bounded commands', async () => {
     let release!: (value: unknown) => void;
     const pending = new Promise((resolve) => { release = resolve; });
