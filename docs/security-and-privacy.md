@@ -110,6 +110,7 @@ To show pull requests, lists and workflow runs at once, the backend keeps what G
 - It holds at most 8 MB of the most recently used answers; an answer larger than 512 KB, such as a very long conversation, is kept in memory only. In memory the backend keeps at most 600 answers and 32 MB. Answers older than 14 days are not shown, except finished workflow runs.
 - Changing an account or the account choice, and credentials GitHub rejects, drop what was read with them. A file that is damaged, edited outside OpenTig or written by another format version is deleted and not read.
 - To clear it, stop the server and delete `github-cache.json` from the data folder. **Settings → GitHub → Refresh accounts** also empties it.
+- Job logs are never in it. A log holds whatever a workflow printed, and GitHub masks only the secrets it knows, so the backend reads a log each time it is opened and keeps no copy; the browser keeps the one on screen and lets it go a minute after it leaves the screen.
 
 ### Last repository state on disk
 

@@ -9,6 +9,8 @@ export interface CliRunOptions {
   stdin?: string;
   timeoutMs?: number;
   maxOutputBytes?: number;
+  /** Past `maxOutputBytes`, return what was read, marked `truncated`, instead of failing. */
+  allowTruncatedOutput?: boolean;
   signal?: AbortSignal;
   removeEnv?: string[];
   env?: Record<string, string>;
@@ -20,6 +22,8 @@ export interface CliRunResult {
   exitCode: number;
   stdout: string;
   stderr: string;
+  /** Output stopped at `maxOutputBytes` (see `allowTruncatedOutput`): the process was stopped there. */
+  truncated?: true;
 }
 
 export class CliProcessRunner {
@@ -78,6 +82,9 @@ export class CliProcessRunner {
     if (result.isCanceled) throw cancelled();
     if (result.timedOut) {
       throw new AiOperationError({ code: 'AI_TIMEOUT', operation: 'ai-process', message: 'Generation took too long.', retryable: true });
+    }
+    if (result.isMaxBuffer && options.allowTruncatedOutput && resolvedCommand.found) {
+      return { exitCode: 0, stdout: result.stdout, stderr: result.stderr, truncated: true };
     }
     if (result.isMaxBuffer) {
       throw new AiOperationError({ code: 'AI_CONTEXT_TOO_LARGE', operation: 'ai-process', message: 'The AI tool produced too much output.' });

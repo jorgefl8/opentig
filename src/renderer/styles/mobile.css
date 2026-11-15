@@ -152,7 +152,7 @@
      so the HTML preview stops above the bar instead. */
   html .changes-scroll, html .mobile-files-scroll, html .history-scroll, html .search-results, html .pulls-scroll,
   html .viewer-scroll, html .diff-workspace-scroll, html .source-code-editor, html .markdown-preview-scroll, html .image-preview-canvas,
-  html .pdf-scroll, html .commit-diff-empty, html .html-preview-panel {
+  html .pdf-scroll, html .commit-diff-empty, html .html-preview-panel, html .job-log-body {
     padding-bottom: var(--mobile-nav-clearance);
     scroll-padding-bottom: var(--mobile-nav-clearance);
   }

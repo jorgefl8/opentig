@@ -64,6 +64,7 @@ import { remoteAccessActionLabel, remoteAccessCopy, type RemoteAccessAction } fr
 import { openOnGitHub } from '@/features/pulls/gh-utils';
 import type { RemoteAccessProblem } from '../../shared/repository-access';
 import { FileViewerToolbarHostContext } from '@/features/viewer/file-viewer-toolbar-host';
+import { ServerFeaturesContext, serverFeatures } from '@/lib/server-features';
 import { LineBlameContext, type LineBlameSettings } from '@/features/viewer/line-blame-context';
 import type { RuntimeFileDraft, ViewerSelection } from '@/features/viewer/Viewer';
 import type { PullRequestsSection } from '@/features/pulls/PullRequestsView';
@@ -535,6 +536,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   const uiFont = bootstrap?.preferences.uiFont ?? 'plus-jakarta-sans';
   const monoFont = bootstrap?.preferences.monoFont ?? 'jetbrains-mono';
   const shortcuts = useMemo(() => resolveShortcuts(bootstrap?.preferences.shortcutOverrides), [bootstrap?.preferences.shortcutOverrides]);
+  const features = useMemo(() => serverFeatures(bootstrap?.server), [bootstrap?.server]);
 
   useEffect(() => {
     let active = true;
@@ -2869,6 +2871,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
 
   return (
     <ShortcutsProvider shortcuts={shortcuts}>
+    <ServerFeaturesContext.Provider value={features}>
     <TooltipProvider>
       {browserRepositoryDialog}
       {relocationDialogs}
@@ -3327,6 +3330,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       </div>
       </MobileChromeContext.Provider>
     </TooltipProvider>
+    </ServerFeaturesContext.Provider>
     </ShortcutsProvider>
   );
 }

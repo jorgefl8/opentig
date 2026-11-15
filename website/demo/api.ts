@@ -9,6 +9,7 @@ import { demoPulls } from "./pulls";
 import { demoReleases } from "./releases";
 import { demoActions } from "./actions";
 import { findSearchMatches } from "../../src/shared/search";
+import { OPEN_TIG_PROTOCOL_VERSION } from "../../src/shared/server-protocol";
 import { sampleCommitMessage, sampleHarness, samplePullRequestDraft } from "./sample-ai.ts";
 
 // The shared app recognizes this error type; the demo has no authentication transport.
@@ -96,6 +97,8 @@ export const opentig: OpenTigApi = {
       openFilesStates: [],
       preferences,
       performanceAutomation: false,
+      // The sample answers the commands of these features as an installed server would.
+      server: { protocolVersion: OPEN_TIG_PROTOCOL_VERSION, appVersion: 'demo', actionJobLogs: true },
     }),
     capabilities: async () => ({
       runtimeMode: "headless",
@@ -431,6 +434,7 @@ export const opentig: OpenTigApi = {
     getWorkflowTriggers: async (_id, path) => demoActions.triggers(path),
     listActionRuns: async (_id, workflowId) => demoActions.list(workflowId),
     getActionRun: async (_id, runId) => demoActions.get(runId),
+    getActionJobLog: async (_id, jobId) => demoActions.log(jobId),
     repositoryAccount: async () => ({
       selection: { mode: "default" },
       nameWithOwner: "demo/launchpad",

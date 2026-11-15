@@ -598,6 +598,7 @@ export function registerServerCommands(
     context.kept,
   ));
   handleWithContext(IPC.githubActionRunView, 'gh-action-run-view', (context, id, runId) => services.github.getActionRun(stringArg(id, 'gh-action-run-view', 64), githubIdArg(runId, 'gh-action-run-view'), context.kept));
+  handleWithContext(IPC.githubActionJobLog, 'gh-action-job-log', (context, id, jobId) => services.github.getActionJobLog(stringArg(id, 'gh-action-job-log', 64), githubIdArg(jobId, 'gh-action-job-log'), context.signal));
   handle(IPC.githubPrDraftCancel, 'ai-pr-draft-cancel', (requestId) => {
     services.prDrafts.cancel(aiString(requestId, 'ai-pr-draft-cancel', 100, true));
   });
