@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { IconLoader4 } from '@tabler/icons-react';
+import { Spinner } from '@/components/ui/spinner';
 
 export type RepositoryLoadPhase = 'opening' | 'loading';
 
@@ -25,7 +25,7 @@ export function RepositoryLoadIndicator({ phase, visible, slow, name }: {
     {(visible || finishing) && <div className="repository-load-progress" data-state={visible ? 'running' : 'done'} aria-hidden="true"><span /></div>}
     {slow && (
       <div className="repository-load-slow" role="status">
-        <IconLoader4 className="animate-spin" aria-hidden="true" />
+        <Spinner />
         <span>Still opening <strong>{name}</strong>…</span>
         <small>Large repositories can take a moment.</small>
       </div>

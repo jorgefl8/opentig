@@ -4,7 +4,6 @@ import type {
   FileChange, LocalRefsSnapshot, WorktreeAgents, WorktreeDetails, WorktreeInfo, WorktreeRemovalBlocked,
 } from '../../shared/git-types';
 import { AiOperationError, GitOperationError } from '../../shared/errors';
-import { redactSensitiveText } from '../../shared/redaction';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import type { FileService } from '../files/FileService';
@@ -25,6 +24,7 @@ import { parseWorktrees } from './WorktreeParser';
 import { GitCommitAuthorship } from './GitCommitAuthorship';
 import type { SetCommitAuthorshipInput } from '../../shared/commit-authorship';
 import { GitRemoteBranches } from './GitRemoteBranches';
+import { pushFailure } from './PushRejection';
 import { LineBlameReader } from './LineBlame';
 import type { LineBlameResult } from '../../shared/line-blame';
 import { WorktreeRemovalTracker } from './WorktreeRemovalTracker';
@@ -626,8 +626,16 @@ export class GitRepositoryOperations {
     }, repository.commonDir);
   }
 
+  /** Fetches still running, by repository: a caller that arrives meanwhile shares the Git process and its result. */
+  private readonly runningFetches = new Map<string, Promise<FetchResult>>();
+
   async fetch(repositoryId: string): Promise<FetchResult> {
-    return this.git.withNetworkContext(this.repositories.get(repositoryId).path, () => this.fetchInContext(repositoryId));
+    const running = this.runningFetches.get(repositoryId);
+    if (running) return running;
+    const fetching = this.git.withNetworkContext(this.repositories.get(repositoryId).path, () => this.fetchInContext(repositoryId))
+      .finally(() => { if (this.runningFetches.get(repositoryId) === fetching) this.runningFetches.delete(repositoryId); });
+    this.runningFetches.set(repositoryId, fetching);
+    return fetching;
   }
 
   private async fetchInContext(repositoryId: string): Promise<FetchResult> {
@@ -739,6 +747,7 @@ export class GitRepositoryOperations {
     const asNewBranch = publish?.asNewBranch === true;
     let previousUpstream: string | undefined;
     let destination = '';
+    let pushesToUpstream = false;
     try {
       const reviewed = await this.access!.assertPublication(repositoryId, expectedContext, publish?.remote, { asNewBranch });
       return await this.git.withNetworkContext(repository.path, () => this.git.runWriteTask(repository.path, async run => {
@@ -751,10 +760,12 @@ export class GitRepositoryOperations {
         if (publish && (publish.expectedBranch !== context.branch || publish.expectedOid !== context.oid)) return { status: 'rejected', reason: 'configuration', message: 'The branch changed. Review and try again.' };
         if (!context.remote) return context.remotes.length ? { status: 'remote-required', branch: context.branch, oid: context.oid, remotes: context.remotes }
           : { status: 'rejected', reason: 'configuration', message: 'No remote is configured.' };
-        if (asNewBranch && context.upstreamMismatch) {
-          previousUpstream = `${context.upstreamMismatch.remote}/${context.upstreamMismatch.branch}`;
-          destination = `${context.remote}/${context.branch}`;
-        }
+        if (asNewBranch && context.upstreamMismatch) previousUpstream = `${context.upstreamMismatch.remote}/${context.upstreamMismatch.branch}`;
+        const target = `${context.remote}/${context.targetRef.replace(/^refs\/heads\//, '')}`;
+        if (!status.upstream || asNewBranch) destination = target;
+        pushesToUpstream = !destination && status.upstream === target;
+        // Git refuses a push from behind the branch it updates, so nothing is sent.
+        if (pushesToUpstream && status.behind > 0) return this.behindUpstream(repository.path, status);
         // A branch published under its own name tracks it from now on, instead of the upstream it was created from.
         const result = await run(['-c', `remote.${context.remote}.mirror=false`, 'push', '--porcelain', '--no-follow-tags',
           ...(!status.upstream || asNewBranch ? ['--set-upstream'] : []), '--', context.remote, `refs/heads/${context.branch}:${context.targetRef}`], {
@@ -766,11 +777,34 @@ export class GitRepositoryOperations {
       }, repository.commonDir));
     } catch (error) {
       const failure = pushFailure(error);
-      if (previousUpstream && failure.reason === 'remote-changed') {
-        return { ...failure, message: `${destination} already exists and has commits this branch doesn't. OpenTig won't overwrite it, and the branch still tracks ${previousUpstream}. Rename the branch, or bring those commits in with Git, then publish again.` };
+      if (failure.reason !== 'remote-changed') return failure;
+      if (destination) {
+        return { ...failure, reason: 'destination-exists', message: `${destination} already exists and has commits this branch doesn't. OpenTig won't overwrite it${previousUpstream ? `, and the branch still tracks ${previousUpstream}` : ''}. Rename the branch, or bring those commits in with Git, then publish again.` };
       }
-      return failure;
+      if (!pushesToUpstream) return failure;
+      // The remote moved after the last fetch. Fetch it, so the answer says how far behind the branch is.
+      try {
+        return await this.git.withNetworkContext(repository.path, async () => {
+          await this.runFetch(repository.path, 'push-fetch');
+          const status = await this.repositories.status(repositoryId, false);
+          return status.behind > 0 ? this.behindUpstream(repository.path, status, failure.details) : failure;
+        });
+      } catch {
+        return failure;
+      }
     }
+  }
+
+  /** A push that has to wait for the upstream's commits, with the newest of them. */
+  private async behindUpstream(repositoryPath: string, status: Awaited<ReturnType<RepositoryService['status']>>, details?: string): Promise<PushResult> {
+    let incoming: string[] = [];
+    try {
+      incoming = (await this.git.run(repositoryPath, ['log', '--format=%h %s', '--max-count=5', 'HEAD..@{upstream}'], { operation: 'incoming-commits', readOnly: true }))
+        .stdout.toString('utf8').split(/\r?\n/).filter(Boolean).map((line) => line.slice(0, 120));
+    } catch {
+      // The counts alone still explain the refusal.
+    }
+    return { status: 'diverged', ahead: status.ahead, behind: status.behind, ...(status.upstream ? { upstream: status.upstream } : {}), incoming, ...(details ? { details } : {}) };
   }
 
   private async legacyPush(repositoryId: string, publish?: PublishBranchOptions): Promise<PushResult> {
@@ -1385,6 +1419,18 @@ export class GitRepositoryOperations {
     return true;
   }
 
+  /**
+   * Commits on HEAD that `oid` does not reach: the ones made after a merged pull
+   * request's head, for example. Null when `oid` is not a commit here, as before a
+   * fetch, or when HEAD has no commit yet.
+   */
+  async commitsAfter(repositoryId: string, oid: string): Promise<number | null> {
+    if (!/^([0-9a-f]{40}|[0-9a-f]{64})$/i.test(oid)) return null;
+    const repository = this.repositories.get(repositoryId);
+    const [known, born] = await Promise.all([this.resolves(repository.path, oid), this.resolves(repository.path, 'HEAD')]);
+    return known && born ? this.countCommits(repository.path, oid, 'HEAD') : null;
+  }
+
   private rememberOid(repositoryId: string, oid: string): void {
     const known = this.knownOids.get(repositoryId) ?? new Set<string>();
     known.add(oid);
@@ -1469,24 +1515,6 @@ function splitBlockedReason(stagedChanges: FileChange[], summaryTruncated: boole
 function bounded(value: string, limit: number): { value: string; truncated: boolean } {
   if (value.length <= limit) return { value, truncated: false };
   return { value: `${value.slice(0, limit)}\n[content truncated by OpenTig]`, truncated: true };
-}
-
-export function pushFailure(error: unknown): Extract<PushResult, { status: 'rejected' }> {
-  const detail = error instanceof GitOperationError ? error.detail : null;
-  const message = redactSensitiveText(detail?.stderr || detail?.message || (error instanceof Error ? error.message : 'Git rejected the push.')).trim().slice(0, 3000);
-  const raw = message.toLowerCase();
-  let reason: Extract<PushResult, { status: 'rejected' }>['reason'] = 'unknown';
-  let explanation = '';
-  if (/repository not found|repository .* not found|(?:http|error:)\s*404/.test(raw)) { reason = 'inaccessible'; explanation = 'The repository is missing or inaccessible to this account. '; }
-  else if (/authentication failed|could not read username|bad credentials|expired|revoked|no usable saved credentials|publickey|(?:http|error:)\s*401/.test(raw)) reason = 'authentication';
-  else if (/protected branch|hook declined|pre-receive hook|remote rejected|gh006|gh013|repository rule/.test(raw)) reason = 'hook';
-  else if (/permission.*denied|write access.*not granted|access denied|(?:http|error:)\s*403/.test(raw)) reason = 'permission';
-  // With --porcelain, Git reports the rejected ref on stdout, so stderr only
-  // carries its hint about the remote being ahead.
-  else if (/non-fast-forward|fetch first|stale info|updates were rejected because (?:the remote contains work|the tip of your current branch is behind|a pushed branch tip is behind)/.test(raw)) reason = 'remote-changed';
-  else if (/could not resolve host|unable to access|connection.*(timed out|reset|refused)|network is unreachable|(?:http|error:)\s*50[0-4]/.test(raw)) reason = 'network';
-  else if (detail?.code === 'INVALID_ARGUMENT' || /upstream branch .* does not match|no upstream branch|push\.default|context|account changed/.test(raw)) reason = 'configuration';
-  return { status: 'rejected', reason, message: explanation + message, ...(detail?.access ? { access: detail.access } : {}) };
 }
 
 function makeDiffResult(path: string, buffer: Buffer): DiffResult {

@@ -1,4 +1,6 @@
 import { execFile } from 'node:child_process';
+import { writeFile } from 'node:fs/promises';
+import path from 'node:path';
 import { promisify } from 'node:util';
 import type { Locator, Page } from '@playwright/test';
 import { openRepository } from './support/app';
@@ -79,6 +81,35 @@ test('opening a commit shows its message, changed files, and diff', async ({ pai
   await file.click();
   await expect(file).toHaveAttribute('aria-expanded', 'false');
   await expect(viewer.getByRole('code').filter({ hasText: 'const b = 3;' })).toBeHidden();
+});
+
+test('a commit shows what happened to each file with a status letter, in the list and in the viewer', async ({ pairedPage: page, repository }) => {
+  await repository.commit('keep.txt', 'one\ntwo\nthree\nfour\nfive\n', 'Add a file to keep');
+  await repository.commit('gone.txt', 'gone\n', 'Add a file to remove');
+  await writeFile(path.join(repository.path, 'keep.txt'), 'one\ntwo\nthree\nfour\nsix\n');
+  await writeFile(path.join(repository.path, 'fresh.txt'), 'fresh\n');
+  await repository.git('rm', '-q', 'gone.txt');
+  await repository.git('mv', 'README.md', 'GUIDE.md');
+  await repository.git('add', '-A');
+  await repository.git('commit', '-q', '-m', 'Four kinds of change');
+
+  const list = await openHistory(page, repository);
+  const row = commitRow(list, 'Four kinds of change');
+  await row.hover();
+  await row.getByRole('button', { name: 'Expand commit' }).click();
+  for (const status of ['Added', 'Deleted', 'Modified', 'Renamed']) await expect(row.getByRole('img', { name: status, exact: true })).toHaveCount(1);
+
+  await row.getByRole('button', { name: 'Four kinds of change', exact: true }).click();
+  const viewer = page.getByRole('main');
+  const header = (file: RegExp) => viewer.locator('.diff-file-header').filter({ has: page.getByRole('button', { name: file }) });
+  await expect(header(/^fresh\.txt$/).getByRole('img', { name: 'Added', exact: true })).toHaveText('A');
+  await expect(header(/^gone\.txt$/).getByRole('img', { name: 'Deleted', exact: true })).toHaveText('D');
+  await expect(header(/^keep\.txt$/).getByRole('img', { name: 'Modified', exact: true })).toHaveText('M');
+  await expect(header(/^GUIDE\.md$/).getByRole('img', { name: 'Renamed', exact: true })).toHaveText('R');
+  // Only the side that has lines is counted, so a deletion does not read "+0 −1".
+  await expect(header(/^gone\.txt$/)).toContainText('−1');
+  await expect(header(/^gone\.txt$/)).not.toContainText('+0');
+  await expect(header(/^fresh\.txt$/)).not.toContainText('−0');
 });
 
 test('a single file picked from an expanded commit opens alone, including a rename', async ({ pairedPage: page, repository }) => {

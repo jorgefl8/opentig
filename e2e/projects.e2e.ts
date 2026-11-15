@@ -134,6 +134,28 @@ test('the repository selector switches between open repositories', async ({ pair
   }
 });
 
+test('a repository row in the selector offers Pull and push when its remote is ahead', async ({ pairedPage: page, repository }) => {
+  const { bare, other } = await repository.addRemote();
+  await other.commit('remote.txt', 'from the remote\n', 'Add remote file');
+  await other.git('push', '-q', 'origin', 'main');
+  await repository.commit('local.txt', 'from this clone\n', 'Add local file');
+  await openRepository(page, repository);
+
+  // Opening the selector fetches each repository, so the row shows both directions.
+  await repositoryPicker(page).click();
+  await expect(page.getByRole('button', { name: 'Pull sample-project' })).toBeVisible();
+  await page.getByRole('button', { name: 'Push sample-project' }).click();
+
+  await expect(page.getByText('sample-project needs the latest commits first')).toBeVisible();
+  await expect(page.getByText('origin/main has 1 commit you don\'t have.')).toBeVisible();
+  await page.getByRole('button', { name: 'Pull and push', exact: true }).click();
+
+  await expect(page.getByText('sample-project: pulled 1 commit and pushed 1')).toBeVisible();
+  const history = 'Add local file\nAdd remote file\nInitial commit';
+  expect(await repository.git('log', '--format=%s', 'main')).toBe(history);
+  expect(await repository.git('--git-dir', bare, 'log', '--format=%s', 'main')).toBe(history);
+});
+
 test('repositories can be grouped into a project', async ({ pairedPage: page, repository }) => {
   const second = await createSecondRepository('second-project');
   try {

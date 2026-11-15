@@ -3,6 +3,7 @@ import { IconExternalLink, IconRefresh } from '@tabler/icons-react';
 import type { GitToolStatus } from '@shared/onboarding';
 import { Button } from '@/components/ui/button';
 import { CopyButton } from '@/components/ui/copy-button';
+import { Spinner } from '@/components/ui/spinner';
 import { openExternalUrl } from '@/lib/browser-capabilities';
 
 const GIT_INSTALL_OPTIONS: Record<GitToolStatus['platform'], { label: string; command: string }[]> = {
@@ -41,7 +42,7 @@ export function GitMissingPanel({ status, checking, onRecheck }: { status: GitTo
     <div className="onboarding-panel-actions">
       <span>{missing ? 'Looked in PATH and your login shell.' : ''}</span>
       <Button variant="outline" size="sm" onClick={() => void openExternalUrl('https://git-scm.com/downloads')}>Install guide<IconExternalLink /></Button>
-      <Button size="sm" disabled={checking} onClick={onRecheck}><IconRefresh className={checking ? 'animate-spin' : undefined} />{checking ? 'Checking…' : 'Check again'}</Button>
+      <Button size="sm" disabled={checking} onClick={onRecheck}>{checking ? <Spinner /> : <IconRefresh />}{checking ? 'Checking…' : 'Check again'}</Button>
     </div>
   </section>;
 }

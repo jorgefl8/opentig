@@ -3,7 +3,8 @@ import type {
   Preferences,
   GhCliStatus,
 } from "../../src/shared/contracts";
-import { DemoRepository, repository, sampleDate } from "./model";
+import { branchName, DemoRepository, repository, sampleDate, upstreamName } from "./model";
+import { currentBranch, sampleBranches } from "./branches.ts";
 import { demoPulls } from "./pulls";
 import { demoReleases } from "./releases";
 import { demoActions } from "./actions";
@@ -16,9 +17,11 @@ export class ServerDisconnectedError extends Error { closeCode?: number; }
 export const UNCONFIRMED_RESULT_MESSAGE = '';
 export const isConnectionLoss = (_reason: unknown) => false;
 export const isUnconfirmedResult = (_reason: unknown) => false;
+// Nothing waits in line here: the sample answers every request at once.
+export const inBackground = <T>(start: () => T): T => start();
 export const model = new DemoRepository();
 const unavailable = (what: string) => async (): Promise<never> => {
-  throw new Error(`${what} needs an installed OpenTig instance. This demo simulates editing, staging, committing, pushing, and sample pull requests.`);
+  throw new Error(`${what} needs an installed OpenTig instance. This demo simulates editing, staging, committing, pushing and pulling, and sample pull requests.`);
 };
 const disabled = unavailable("This action");
 /** Methods the demo leaves out explain, for their area, that they need an installed instance. */
@@ -63,25 +66,12 @@ let preferences: Preferences = {
   doubleControlShortcutEnabled: false,
   remoteFetchIntervalSeconds: 0,
 };
-const branch = () => ({
-  name: "feature/task-filters",
-  fullName: "refs/heads/feature/task-filters",
-  current: true,
-  remote: false,
-  upstream: model.upstream,
-  ahead: model.ahead(),
-  behind: 0,
-  worktreePath: repository.path,
-  oid: model.commits[0]!.info.oid,
-  shortOid: model.commits[0]!.info.shortOid,
-  subject: model.commits[0]!.info.subject,
-  author: "OpenTig Demo",
-  date: sampleDate,
-});
+const branch = () => currentBranch(model);
+const localBranches = () => sampleBranches(model).filter((item) => !item.remote);
 const worktree = () => ({
   path: repository.path,
   oid: model.commits[0]!.info.oid,
-  branch: "refs/heads/feature/task-filters",
+  branch: `refs/heads/${branchName}`,
   bare: false,
   detached: false,
   locked: null,
@@ -145,7 +135,7 @@ export const opentig: OpenTigApi = {
       size: model.read(path).length,
       mtimeMs: model.revision,
     }),
-    // The sample repository has no Git history to blame.
+    // Line blame is not simulated.
     lineBlame: async () => ({ status: "untracked" }),
     createEntry: async (_id, directory, name, kind) => {
       const result = model.track(kind === "file" ? "Create file" : "Create folder", () => model.createEntry(directory, name, kind));
@@ -218,7 +208,7 @@ export const opentig: OpenTigApi = {
         {
           name: "launchpad",
           path: repository.path,
-          repository: { branch: "feature/task-filters" },
+          repository: { branch: branchName },
         },
       ],
     }),
@@ -298,10 +288,11 @@ export const opentig: OpenTigApi = {
     list: async () => ({
       commits: model.commits.map((c) => ({ ...c.info })),
       nextCursor: null,
-      baseRef: null,
+      baseRef: "main",
     }),
     files: async (_id, oid) => model.commitFiles(oid),
     recognize: async (_id, oid) => model.commits.some((commit) => commit.info.oid === oid),
+    countAfter: async (_id, oid) => model.commitsAfter(oid),
     authorship: async () => ({
       author: { name: "OpenTig Demo", email: "demo@example.com" },
       committer: { name: "OpenTig Demo", email: "demo@example.com" },
@@ -312,44 +303,66 @@ export const opentig: OpenTigApi = {
     }),
   }, "Changing commit authorship"),
   refs: group<OpenTigApi["refs"]>({
-    // Pushing is simulated: the sample remote takes every local commit, with no network access.
+    // Pushing is simulated, with no network access: the sample remote takes every local commit.
     pushContext: async (repositoryId) => ({
       id: `demo-push-${model.commits[0]!.info.oid}`,
       repositoryId,
-      branch: "feature/task-filters",
+      branch: branchName,
       oid: model.commits[0]!.info.oid,
-      targetRef: "refs/heads/feature/task-filters",
+      targetRef: `refs/heads/${branchName}`,
       remote: "origin",
       urls: ["https://github.com/opentig-demo/launchpad.git"],
       remotes: ["origin"],
       mode: "managed",
       login: "opentig-demo",
-      hasUpstream: Boolean(model.upstream),
+      hasUpstream: true,
     }),
     push: async () => {
       const result = model.push();
       changed();
-      if (result.published) return { status: "published", branch: "feature/task-filters", remote: "origin" };
+      if (result.status === "behind") {
+        // The pull request already has the teammate's commit, as it would on GitHub.
+        demoPulls.branchPushed(model.remoteBranch());
+        return {
+          status: "diverged",
+          ahead: result.ahead,
+          behind: result.behind,
+          upstream: upstreamName,
+          incoming: result.incoming,
+          // Git's own words are shown only for the push it refused, not for one OpenTig never sent.
+          ...(result.refused ? { details: ` ! [rejected]        ${branchName} -> ${branchName} (fetch first)\nerror: failed to push some refs to 'https://github.com/opentig-demo/launchpad.git'` } : {}),
+        };
+      }
+      demoPulls.branchPushed(model.remoteBranch());
       return result.commits ? { status: "success", commits: result.commits } : { status: "up-to-date" };
     },
-    // The simulated remote never has commits the sample lacks.
-    fetch: async () => ({ status: "success", ahead: model.ahead(), behind: 0 }),
-    fetchBranches: async () => ({ status: "success", ahead: model.ahead(), behind: 0 }),
-    pull: async () => (model.upstream ? { status: "up-to-date" } : { status: "no-upstream" }),
-    listBranches: async () => [branch()],
+    fetch: async () => ({ status: "success", ahead: model.ahead(), behind: model.behind() }),
+    fetchBranches: async () => ({ status: "success", ahead: model.ahead(), behind: model.behind() }),
+    // A pull puts the visitor's unpushed commits on top of the remote's, as the installed app does.
+    pull: async () => {
+      const result = model.pull();
+      if (!result) return { status: "up-to-date" };
+      changed();
+      return { status: "success", commits: result.commits, restoredLocalChanges: result.restoredLocalChanges, rebased: result.localCommits > 0, localCommits: result.localCommits };
+    },
+    listBranches: async () => sampleBranches(model),
     listWorktrees: async () => [worktree()],
     localRefsSnapshot: async () => ({
-      branches: [branch()],
+      branches: localBranches(),
       worktrees: [{ ...worktree(), current: true }],
       remotes: [],
     }),
-    branchDetails: async () => ({
-      ...branch(),
-      deletion: "current",
-      comparisonKind: "none",
-      comparisonBase: null,
-      uniqueCommits: 0,
-    }),
+    branchDetails: async ({ fullName }) => {
+      const details = localBranches().find((item) => item.fullName === fullName) ?? branch();
+      return {
+        ...details,
+        // Deleting a branch needs an installed instance, so none is offered as safe to delete.
+        deletion: details.current ? "current" : "unknown",
+        comparisonKind: "none",
+        comparisonBase: null,
+        uniqueCommits: 0,
+      };
+    },
     worktreeDetails: async () => ({
       ...worktree(),
       current: true,
@@ -363,7 +376,7 @@ export const opentig: OpenTigApi = {
       lastCommit: model.commits[0]!.info,
     }),
     switchBranch: async (_id, name) => {
-      if (name !== branch().name) return disabled();
+      if (name !== branch().name && name !== branch().fullName) return unavailable("Switching branches")();
       return { status: "switched", movedChanges: false };
     },
     selectWorktree: async () => repository,

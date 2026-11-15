@@ -28,7 +28,8 @@
   html:has(.mobile-float:not(:empty)) { --mobile-float-room: 64px; }
   html:has(.mobile-float > .mobile-float-note) { --mobile-float-room: 104px; }
   html:has(.mobile-float .commit-box) { --mobile-float-room: 120px; }
-  html:has(.mobile-float .commit-plan-body) { --mobile-float-room: calc(120px + 30dvh); }
+  /* A plan adds its choice and one row above the box; its cards open in a sheet. */
+  html:has(.mobile-float :is(.commit-plan-bar, .commit-plan-note, .commit-plan-finished, .local-refs-confirm)) { --mobile-float-room: 236px; }
   html[data-mobile-keyboard="true"] { --mobile-nav-clearance: 0px; }
   html[data-mobile-keyboard="true"]:has(.mobile-float .commit-box) { --mobile-nav-clearance: calc(var(--mobile-float-room) + 16px); }
   html #root { height: var(--mobile-viewport-height, 100dvh); }
@@ -240,7 +241,7 @@
   html .change-row .vscode-tree-icon, html .change-row .folder-icon, html .search-file-toggle .vscode-tree-icon { width: 20px; height: 20px; }
   html .change-file-text { display: grid; align-content: center; gap: 1px; }
   html .change-file-text > span { font-weight: var(--weight-medium); }
-  html .change-row .status-code { width: 14px; font-weight: var(--weight-medium); }
+  html .change-row .status-code, html .diff-file-header .status-code { width: 14px; font-weight: var(--weight-medium); }
   html .change-row-actions .change-action-button { width: 48px; height: 52px; border-radius: 0; }
 
   html .history-more { height: 48px; }
@@ -271,8 +272,8 @@
   html .search-match-line { min-width: 4ch; text-align: right; }
   html .search-match-text { display: -webkit-box; font-size: var(--diffs-font-size); line-height: 1.45; overflow-wrap: anywhere; white-space: pre-wrap; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 
-  /* The commit box sits over the list and above the bottom bar, like a chat's. A plan scrolls inside it,
-     and going to a diff and back leaves the draft and the plan intact. */
+  /* The commit box sits over the list and above the bottom bar, like a chat's. A plan adds its choice and
+     one row that opens its cards in a sheet; going to a diff and back leaves the draft and the plan intact. */
   html .commit-composer { max-height: none; width: 100%; max-width: 480px; margin-inline: auto; padding: 0; pointer-events: auto; }
   html .commit-box { border-radius: 18px; background: var(--card); box-shadow: 0 10px 24px -12px rgb(0 0 0 / 50%); padding: 10px 8px 8px 14px; }
   html .commit-composer-input { min-height: 44px; max-height: 25dvh; }
@@ -281,10 +282,14 @@
   html .commit-composer-commit [data-slot="button"] { min-height: 36px; height: 36px; font-size: var(--text-body); }
   html .commit-composer-commit [data-slot="button"]:first-child { border-radius: 999px 0 0 999px; padding-inline: 14px; }
   html .commit-composer-commit .commit-action-menu { width: 34px; min-width: 34px; border-radius: 0 999px 999px 0; }
-  html .commit-plan { flex: none; border-radius: 14px; background: var(--card); padding: 8px 10px; }
-  html .commit-plan-body { max-height: 30dvh; overflow-y: auto; }
-  html .commit-plan-heading { flex-wrap: wrap; }
-  html .commit-plan-heading-actions { margin-left: auto; }
+  /* A commit of a plan has no menu beside it, so its button is the whole pill. */
+  html .commit-composer-commit [data-slot="button"]:only-child { border-radius: 999px; }
+  html .commit-composer > :is(.commit-plan-bar, .commit-plan-open, .commit-plan-note, .commit-plan-finished, .commit-plan-rationale, .local-refs-confirm) { border-radius: 14px; background: var(--card); padding: 8px 10px; }
+  html .commit-composer > :is(.commit-plan-note, .commit-plan-finished) { max-height: 30dvh; overflow-y: auto; }
+  html .commit-mode button { height: 32px; padding: 0 12px; font-size: var(--text-body); }
+  html .commit-plan-open { display: flex; width: 100%; min-height: 44px; align-items: center; gap: 12px; text-align: left; }
+  html .commit-plan-open-label { display: inline-flex; flex: none; align-items: center; gap: 2px; font-size: var(--text-ui); font-weight: var(--weight-medium); }
+  html .commit-plan-open-label svg { width: 16px; height: 16px; color: var(--muted-foreground); }
 
   html .diff-workspace-toolbar { flex-wrap: wrap; gap: 6px; padding: 6px 8px; }
   html .diff-workspace-scope { flex: 1 1 auto; }
@@ -538,6 +543,18 @@ html[data-low-end] .mobile-navigation { background: var(--card); -webkit-backdro
 .mobile-switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 24px; height: 24px; border-radius: 50%; background: var(--primary-foreground); transition: transform .15s ease; }
 [aria-checked="true"] > .mobile-switch { background: var(--primary); }
 [aria-checked="true"] > .mobile-switch::after { transform: translateX(16px); }
+/* A commit plan in a sheet: its cards, then the next commit as one pill. */
+.commit-plan-sheet { display: flex; min-height: 100%; flex-direction: column; gap: 12px; padding: 0 10px 4px; }
+.commit-plan-sheet > .commit-plan-progress { flex: none; font-size: var(--text-ui); }
+.commit-plan-sheet .commit-plan-groups { flex: 1 0 auto; gap: 8px; overflow: visible; }
+.commit-plan-sheet .commit-plan-group-head { min-height: 48px; }
+.commit-plan-sheet :is(.commit-plan-subject, .commit-plan-group-body > p) { font-size: var(--text-body); }
+.commit-plan-sheet .commit-plan-files li { min-height: 40px; }
+.commit-plan-sheet :is(.commit-plan-file, .commit-plan-meta) { font-size: var(--text-ui); }
+.commit-plan-sheet .commit-plan-group-body [data-slot="button"] { height: 36px; padding-inline: 14px; font-size: var(--text-ui); }
+/* The next commit stays reachable under however many cards are open. */
+.commit-plan-sheet-actions { position: sticky; bottom: 0; display: grid; flex: none; margin-inline: -10px; background: var(--popover); padding: 8px 10px 0; }
+.commit-plan-sheet-actions [data-slot="button"] { height: 48px; border-radius: 999px; font-size: var(--text-body); }
 /* A question asked in a sheet: its text, then one pill and who it acts as. */
 .confirm-sheet { display: grid; min-width: 0; gap: 10px; padding: 0 10px 4px; font-size: var(--text-body); line-height: 1.5; }
 .confirm-sheet p { margin: 0; overflow-wrap: anywhere; }

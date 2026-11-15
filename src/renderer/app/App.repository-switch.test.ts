@@ -10,7 +10,7 @@ import type { ToolbarProps } from './Toolbar';
 import { SettingsStore } from '../../main/persistence/SettingsStore';
 
 const calls = vi.hoisted(() => ({
-  bootstrap: vi.fn(), openRecent: vi.fn(), getStatus: vi.fn(), success: vi.fn(), error: vi.fn(), fetch: vi.fn(), setRepositoryAccount: vi.fn(),
+  bootstrap: vi.fn(), openRecent: vi.fn(), getStatus: vi.fn(), success: vi.fn(), error: vi.fn(), fetch: vi.fn(), setRepositoryAccount: vi.fn(), getFavicon: vi.fn(), listWorktrees: vi.fn(),
   activeRepositoryChanged: null as ((repository: RepositoryInfo) => void) | null,
   repositoryChanged: null as ((repositoryId: string, scope: string) => void) | null,
   accountsChanged: null as ((repositoryIds?: string[], inventoryChanged?: boolean, detected?: { login: string; previousLogin: string | null }) => void) | null,
@@ -19,10 +19,10 @@ vi.mock('@/lib/opentig-api', () => ({
   opentig: {
     app: { bootstrap: calls.bootstrap, capabilities: async () => null, setZoomFactor: () => {}, setTitleBarTheme: async () => {} },
     repository: {
-      openRecent: calls.openRecent, getStatus: calls.getStatus,
+      openRecent: calls.openRecent, getStatus: calls.getStatus, getFavicon: calls.getFavicon,
       fileHistoryState: async () => ({ canUndo: false, canRedo: false }), getFiles: async () => [],
     },
-    refs: { listBranches: async () => [], listWorktrees: async () => [], fetch: calls.fetch },
+    refs: { listBranches: async () => [], listWorktrees: calls.listWorktrees, fetch: calls.fetch },
     github: { status: async () => ({ installed: false }), repositoryInfo: async () => ({ isGitHub: false, nameWithOwner: null }), setRepositoryAccount: calls.setRepositoryAccount },
     diagnostics: { record: async () => {} },
     events: {
@@ -35,15 +35,26 @@ vi.mock('@/lib/opentig-api', () => ({
 }));
 vi.mock('@/lib/boot-theme', () => ({ persistTheme: () => {} }));
 vi.mock('sileo', () => ({ sileo: { error: calls.error, success: calls.success, dismiss: () => {} } }));
-vi.mock('./Toolbar', () => ({ Toolbar: (props: ToolbarProps) => createElement('header', null,
+vi.mock('./Toolbar', async () => {
+  // The real icons hook, fed the same list of repositories the real toolbar gives it.
+  const { useRepositoryFavicons } = await vi.importActual<typeof import('@/features/repositories/useRepositoryFavicons')>('@/features/repositories/useRepositoryFavicons');
+  const { buildRepositoryPickerModel } = await vi.importActual<typeof import('@/features/repositories/repository-select-model')>('@/features/repositories/repository-select-model');
+  return { Toolbar: (props: ToolbarProps) => {
+  useRepositoryFavicons([{ key: props.repository.commonDir, recent: { id: props.repository.id } }, ...buildRepositoryPickerModel(props.recent, props.repositoryProjects).repositories]);
+  return createElement('header', null,
   createElement('button', { 'aria-label': 'Open B', onClick: () => props.onRecent('repo-b') }),
   createElement('button', { 'aria-label': 'Open C', onClick: () => props.onRecent('repo-c') }),
+  createElement('button', { 'aria-label': 'Open D', onClick: () => props.onRecent('repo-d') }),
+  createElement('button', { 'aria-label': 'Open E', onClick: () => props.onRecent('repo-e') }),
   createElement('output', { 'aria-label': 'Repository' }, props.repository.id),
   createElement('output', { 'aria-label': 'Pending' }, props.pendingRepositoryId ?? ''),
   createElement('output', { 'aria-label': 'Phase' }, props.repositoryLoadPhase ?? 'ready'),
+  createElement('output', { 'aria-label': 'Worktrees' }, props.worktrees.map((worktree) => worktree.path).join(' ')),
   createElement('output', { 'aria-label': 'Remote problem' }, props.remoteProblem ? `${props.remoteProblem.access.login} → ${props.remoteProblem.access.candidates.join(',')}` : ''),
   props.remoteProblem && createElement('button', { 'aria-label': 'Use candidate', onClick: () => props.onRemoteAccessAction({ kind: 'use-account', login: props.remoteProblem!.access.candidates[0]! }) }),
-) }));
+  );
+  } };
+});
 vi.mock('@/features/changes/ChangesView', () => ({ ChangesView: () => createElement('div', null, 'Changes list') }));
 vi.mock('@/features/commit/CommitComposer', () => ({ CommitComposer: () => null }));
 vi.mock('@/features/viewer/Viewer', () => ({ default: () => null }));
@@ -78,6 +89,8 @@ beforeEach(() => {
     activeRepository: info('repo'), recentRepositories: [], repositoryProjects: [], filesTreeStates: [], openFilesStates: [],
     preferences: { ...new SettingsStore('unused-settings.json').preferences, remoteFetchIntervalSeconds: 0 },
   });
+  calls.getFavicon.mockResolvedValue(null);
+  calls.listWorktrees.mockImplementation(async (id: string) => id === 'repo' ? [{ path: '/repo' }, { path: '/repo-linked' }] : [{ path: `/${id}` }]);
   opens.clear();
   statuses.clear();
   calls.openRecent.mockImplementation((id: string) => {
@@ -159,6 +172,61 @@ it('ends on the latest choice when an earlier open and its activation event arri
   await settle();
   expect(output('Repository')).toBe('repo-c');
   expect(output('Pending')).toBe('');
+});
+
+it.each([
+  ['reads a newly opened repository again, quietly, when its first read fails', 1],
+  ['shows only its own worktrees when a repository is first read by a later, partial refresh', 2],
+] as const)('%s', async (_name, failures) => {
+  await act(async () => root.render(createElement(QueryClientProvider, { client }, createElement(App))));
+  await settle();
+  expect(output('Worktrees')).toBe('/repo /repo-linked');
+  await click('Open B');
+  for (let index = 0; index < failures; index++) calls.getStatus.mockRejectedValueOnce(new Error('index.lock exists'));
+  vi.useFakeTimers();
+  try {
+    await act(async () => opens.get('repo-b')!.resolve(info('repo-b')));
+    // Advance past the quiet retry instead of waiting for it in real time.
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+  } finally { vi.useRealTimers(); }
+  await settle();
+  if (failures === 1) expect(calls.error).not.toHaveBeenCalled();
+  else {
+    // Both reads failed, which is reported. A change to a file then refreshes the status alone.
+    expect(calls.error).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ title: 'Could not refresh' }));
+    expect(output('Phase')).toBe('loading');
+    await act(async () => calls.repositoryChanged!('repo-b', 'worktree'));
+    await settle();
+  }
+  await act(async () => statuses.get('repo-b')!.resolve(status));
+  await settle();
+  expect(output('Phase')).toBe('ready');
+  expect(output('Worktrees')).toBe('/repo-b');
+});
+
+it('asks for the icon of each saved repository once, however often the repository changes', async () => {
+  const bootstrap = await calls.bootstrap();
+  calls.bootstrap.mockResolvedValue({
+    ...bootstrap,
+    recentRepositories: ['repo', 'repo-d', 'repo-e'].map((id) => ({ ...info(id), lastOpenedAt: '2026-01-01T00:00:00.000Z' })),
+  });
+  calls.getFavicon.mockImplementation(async (id: string) => id === 'repo-d' ? { dataUrl: 'data:image/png;base64,AAAA' } : null);
+  await act(async () => root.render(createElement(QueryClientProvider, { client }, createElement(App))));
+  await settle();
+  // Other tests in this file may already have asked about the repository that starts open.
+  const asked = () => calls.getFavicon.mock.calls.map(([id]) => id as string).filter((id) => id !== 'repo').sort();
+  expect(asked()).toEqual(['repo-d', 'repo-e']);
+
+  for (const id of ['repo-d', 'repo-e', 'repo-d']) {
+    await click(id === 'repo-d' ? 'Open D' : 'Open E');
+    await act(async () => opens.get(id)!.resolve(info(id)));
+    await settle();
+    expect(output('Repository')).toBe(id);
+    await act(async () => statuses.get(id)!.resolve(status));
+    await settle();
+  }
+  // Every switch rebuilds the list of saved repositories; neither a known icon nor a known absence is asked for again.
+  expect(asked()).toEqual(['repo-d', 'repo-e']);
 });
 
 it('announces an account chosen automatically for the open repository only', async () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildDiffFileEntries, patchLineStats, splitPatchFiles } from './patch-utils';
+import { buildDiffFileEntries, diffChangeKind, patchLineStats, splitPatchFiles } from './patch-utils';
 
 const PATCH = `diff --git a/src/old.ts b/src/new.ts
 similarity index 80%
@@ -39,6 +39,31 @@ describe('patch utilities', () => {
   });
 });
 
+describe('diff highlight keys', () => {
+  const keys = (patch: string) => buildDiffFileEntries(patch).map((file) => file.fileDiff.cacheKey);
+
+  it('gives a file the same key each time its patch is parsed, so its highlighting is found again', () => {
+    expect(keys(PATCH)).toEqual(keys(PATCH));
+    expect(new Set(keys(PATCH)).size).toBe(2);
+  });
+
+  it('changes only the key of the file a refresh changed', () => {
+    const [source, readme] = keys(PATCH);
+    const [refreshedSource, refreshedReadme] = keys(PATCH.replace('+hello world', '+hello there'));
+    expect(refreshedSource).toBe(source);
+    expect(refreshedReadme).not.toBe(readme);
+  });
+
+  it('keeps the same lines apart when another grammar reads them', () => {
+    const [typescript] = keys(PATCH);
+    const [python] = keys(PATCH.replaceAll('.ts', '.py'));
+    const [renamedTypescript] = keys(PATCH.replaceAll('new.ts', 'next.ts'));
+    expect(python).not.toBe(typescript);
+    expect(python).toContain('python');
+    expect(renamedTypescript).not.toBe(typescript);
+  });
+});
+
 describe('patchLineStats', () => {
   it('counts added and removed lines, not the file headers', () => {
     expect(patchLineStats('diff --git a/a b/a\n--- a/a\n+++ b/a\n@@ -1,2 +1,2 @@\n-one\n+uno\n same\n+more\n')).toEqual({ additions: 2, deletions: 1 });
@@ -50,5 +75,24 @@ describe('patchLineStats', () => {
 
   it('finds nothing in an empty patch', () => {
     expect(patchLineStats('')).toEqual({ additions: 0, deletions: 0 });
+  });
+});
+
+describe('file status in a patch', () => {
+  const ADDED = 'diff --git a/src/fresh.ts b/src/fresh.ts\nnew file mode 100644\nindex 0000000..1111111\n--- /dev/null\n+++ b/src/fresh.ts\n@@ -0,0 +1 @@\n+fresh\n';
+  const DELETED = 'diff --git a/src/gone.ts b/src/gone.ts\ndeleted file mode 100644\nindex 1111111..0000000\n--- a/src/gone.ts\n+++ /dev/null\n@@ -1 +0,0 @@\n-gone\n';
+  const MOVED = 'diff --git a/old.txt b/moved.txt\nsimilarity index 100%\nrename from old.txt\nrename to moved.txt\n';
+  const BINARY = 'diff --git a/logo.png b/logo.png\nnew file mode 100644\nindex 0000000..2222222\nBinary files /dev/null and b/logo.png differ\n';
+  // A text file may quote Git's own wording; only the patch's metadata line means binary.
+  const QUOTES_GIT = 'diff --git a/notes.md b/notes.md\nindex 1111111..2222222 100644\n--- a/notes.md\n+++ b/notes.md\n@@ -1 +1,2 @@\n Git prints:\n+Binary files a/x and b/x differ\n';
+
+  it('names each file\'s status the way the Changes list does', () => {
+    const kinds = buildDiffFileEntries(ADDED + DELETED + MOVED + PATCH).map((file) => [file.path, diffChangeKind(file.changeType)]);
+    expect(kinds).toEqual([['src/fresh.ts', 'added'], ['src/gone.ts', 'deleted'], ['moved.txt', 'renamed'], ['src/new.ts', 'renamed'], ['README.md', 'modified']]);
+  });
+
+  it('marks a binary file, whose zero counts would otherwise read as an empty change', () => {
+    const files = buildDiffFileEntries(BINARY + QUOTES_GIT + MOVED);
+    expect(files.map((file) => [file.path, file.binary, file.additions, file.deletions])).toEqual([['logo.png', true, 0, 0], ['notes.md', false, 1, 0], ['moved.txt', false, 0, 0]]);
   });
 });

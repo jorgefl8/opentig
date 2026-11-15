@@ -68,13 +68,15 @@ function RevealBody({ instant, follow, className, style, children }: {
 const FADE_TRANSITION = { duration: 0.2, ease: [0.32, 0.72, 0, 1] as const };
 
 /**
- * Fades new content in when its key changes, such as the viewer opening another diff.
+ * Fades new content in when its key changes, such as the viewer opening an image.
+ * `animate={false}` shows it at once: code is not faded in, because a fade over
+ * text still waiting for its colors reads as two changes instead of one.
  * Reduced-motion preferences show it immediately.
  */
-export function ContentFade({ className, children }: { className?: string | undefined; children: ReactNode }) {
+export function ContentFade({ className, children, animate = true }: { className?: string | undefined; children: ReactNode; animate?: boolean }) {
   const reduceMotion = useReducedMotion();
   return (
-    <motion.div className={className} initial={reduceMotion ? false : { opacity: 0 }} animate={{ opacity: 1 }} transition={FADE_TRANSITION}>
+    <motion.div className={className} initial={reduceMotion || !animate ? false : { opacity: 0 }} animate={{ opacity: 1 }} transition={FADE_TRANSITION}>
       {children}
     </motion.div>
   );

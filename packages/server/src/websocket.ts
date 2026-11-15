@@ -3,7 +3,7 @@ import type { Duplex } from 'node:stream';
 import { IPC, type IpcResult } from '../../../src/shared/contracts';
 import { DEFAULT_COMMAND_TIMEOUT_MS, commandDefinition } from '../../../src/shared/protocol';
 import type { OpenTigRuntimeEvent } from '../../../src/shared/runtime-events';
-import { OPEN_TIG_MAX_SERVER_MESSAGE_BYTES, type OpenTigServerIdentity, type OpenTigServerMessage } from '../../../src/shared/server-protocol';
+import { OPEN_TIG_MAX_IN_FLIGHT_REQUESTS, OPEN_TIG_MAX_SERVER_MESSAGE_BYTES, type OpenTigServerIdentity, type OpenTigServerMessage } from '../../../src/shared/server-protocol';
 import { CommandRegistry } from '../../../src/main/runtime/CommandRegistry';
 import { OpenTigSessionAuth } from './auth';
 import type { OpenTigServerLogger } from './http';
@@ -15,7 +15,6 @@ import { JsonByteLimitError, stringifyBounded } from './bounded-json';
 const NORMAL_FRAME_LIMIT = 1024 * 1024;
 const CONTENT_FRAME_LIMIT = 9 * 1024 * 1024;
 const FILE_WRITE_FRAME_LIMIT = 17 * 1024 * 1024;
-const MAX_IN_FLIGHT = 32;
 /** Slow enough to help explain a timeout or a stall, without logging ordinary work. */
 const SLOW_COMMAND_MS = 10_000;
 /** Above one full message, so a second response doesn't drop a connection still receiving the first. */
@@ -160,10 +159,10 @@ export class OpenTigWebSocketTransport {
     if (!this.options.auth.hasSession(state.sessionId)) return socket.close(1008, 'Session expired or revoked');
     const now = Date.now();
     state.requestTimes = state.requestTimes.filter((requestedAt) => now - requestedAt < this.requestRateWindowMs);
-    if (state.requestTimes.length >= this.requestRateLimit) return this.sendProtocolError(socket, input.id, 'Request rate limit exceeded.');
+    if (state.requestTimes.length >= this.requestRateLimit) return this.sendBusy(socket, input.id, 'Request rate limit exceeded.');
     state.requestTimes.push(now);
     if (state.requests.has(input.id)) return this.sendProtocolError(socket, input.id, 'Duplicate request id.');
-    if (state.requests.size >= MAX_IN_FLIGHT) return this.sendProtocolError(socket, input.id, 'Too many in-flight requests.');
+    if (state.requests.size >= OPEN_TIG_MAX_IN_FLIGHT_REQUESTS) return this.sendBusy(socket, input.id, 'Too many in-flight requests.');
     if (bytes.byteLength > frameLimit(input.command)) return this.sendProtocolError(socket, input.id, 'Command request exceeded the transport limit.');
     if (input.command === IPC.repositoryReadImage) return this.sendProtocolError(socket, input.id, 'Image previews use authenticated HTTP.');
 
@@ -200,6 +199,15 @@ export class OpenTigWebSocketTransport {
         operation: commandDefinition(input.command)?.operation ?? 'unknown',
       });
     }
+  }
+
+  /** Refuses a request the connection has no room for. Nothing has run, so the client sends it again later. */
+  private sendBusy(socket: WebSocket, id: string, message: string): void {
+    this.send(socket, {
+      type: 'result',
+      id,
+      result: { ok: false, error: { code: 'SERVER_BUSY', operation: 'server-protocol', message, retryable: true } },
+    });
   }
 
   private sendProtocolError(socket: WebSocket, id: string, message: string): void {

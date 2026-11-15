@@ -121,6 +121,7 @@ export function createOpenTigServerClient(options: ServerClientOptions = {}): Op
       list: (repositoryId, cursor) => invoke(IPC.commitsList, repositoryId, cursor),
       files: (repositoryId, oid) => invoke(IPC.commitsFiles, repositoryId, oid),
       recognize: (repositoryId, oid) => invoke(IPC.commitsRecognize, repositoryId, oid),
+      countAfter: (repositoryId, oid) => invoke(IPC.commitsCountAfter, repositoryId, oid),
     },
     refs: {
       listBranches: (repositoryId) => invoke(IPC.branchesList, repositoryId),

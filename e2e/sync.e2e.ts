@@ -139,7 +139,11 @@ test('pulling keeps uncommitted and untracked local changes', async ({ pairedPag
   expect(await repository.git('stash', 'list')).toBe('');
 });
 
-test('a push rejected because the remote moved offers Pull and never force-pushes', async ({ pairedPage: page, repository }) => {
+/** A notice's own controls. Its text is also the name of the notice itself, so they are matched exactly. */
+const noticeAction = (page: Page, name: string) => page.getByRole('button', { name, exact: true });
+const bothCommits = 'Add local file\nAdd remote file\nInitial commit';
+
+test('a push the remote refuses offers Pull and push, which leaves both commits on the remote', async ({ pairedPage: page, repository }) => {
   const { bare, other } = await repository.addRemote();
   await repository.commit('local.txt', 'from this clone\n', 'Add local file');
   await openRepository(page, repository);
@@ -148,13 +152,105 @@ test('a push rejected because the remote moved offers Pull and never force-pushe
 
   await pushButton(page, 1).click();
 
-  await expect(page.getByText('sample-project: the remote contains new changes')).toBeVisible();
+  await expect(page.getByText('Push needs the latest commits first')).toBeVisible();
+  await expect(page.getByText('origin/main has 1 commit you don\'t have.')).toBeVisible();
+  await expect(page.getByText('Your commit has to go on top of it before it can be pushed.')).toBeVisible();
   // Nothing is force-pushed: the remote keeps its own commit.
   expect(await remoteTip(repository, bare, 'main')).toBe(remoteHead);
+  // Git's own words stay folded away until they are asked for.
+  await expect(page.getByText('(fetch first)')).toHaveCount(0);
+  await noticeAction(page, 'Details').click();
+  await expect(page.getByText('! [rejected] main -> main (fetch first)')).toBeVisible();
+  await expect(page.getByText(/incoming: [0-9a-f]+ Add remote file/)).toBeVisible();
 
-  // Sileo renders a notification's action as a link.
-  await page.getByRole('link', { name: 'Pull', exact: true }).click();
-  await expect.poll(() => repository.git('log', '--format=%s', 'main')).toBe('Add local file\nAdd remote file\nInitial commit');
+  await noticeAction(page, 'Pull and push').click();
+
+  await expect(page.getByText('Pulled 1 commit and pushed 1')).toBeVisible();
+  await expect(syncButtons(page)).toHaveCount(0);
+  expect(await repository.git('log', '--format=%s', 'main')).toBe(bothCommits);
+  expect(await repository.git('--git-dir', bare, 'log', '--format=%s', 'main')).toBe(bothCommits);
+  expect(await remoteTip(repository, bare, 'main')).toBe(await repository.git('rev-parse', 'HEAD'));
+  expect(await repository.git('rev-list', '--merges', '--count', 'HEAD')).toBe('0');
+});
+
+test('a push from a branch already known to be behind is not sent, and Pull and push finishes it', async ({ pairedPage: page, repository }) => {
+  const { bare, other } = await repository.addRemote();
+  const remoteHead = await pushFromOtherClone(other, 'remote.txt', 'from the remote\n', 'Add remote file');
+  await repository.commit('local.txt', 'from this clone\n', 'Add local file');
+  await openRepository(page, repository);
+  await fetchFromToolbar(page, 1);
+
+  await pushButton(page, 1).click();
+
+  await expect(page.getByText('origin/main has 1 commit you don\'t have.')).toBeVisible();
+  expect(await remoteTip(repository, bare, 'main')).toBe(remoteHead);
+  // Git was never asked, so the details only place the branch.
+  await noticeAction(page, 'Details').click();
+  await expect(page.getByText('This branch is 1 behind and 1 ahead of origin/main.')).toBeVisible();
+  await expect(page.getByText('[rejected]')).toHaveCount(0);
+
+  await noticeAction(page, 'Pull and push').click();
+
+  await expect(page.getByText('Pulled 1 commit and pushed 1')).toBeVisible();
+  await expect(syncButtons(page)).toHaveCount(0);
+  expect(await repository.git('--git-dir', bare, 'log', '--format=%s', 'main')).toBe(bothCommits);
+  expect(await remoteTip(repository, bare, 'main')).toBe(await repository.git('rev-parse', 'HEAD'));
+});
+
+test('Pull only brings the remote commit in and leaves the push to the user', async ({ pairedPage: page, repository }) => {
+  const { bare, other } = await repository.addRemote();
+  await repository.commit('local.txt', 'from this clone\n', 'Add local file');
+  await openRepository(page, repository);
+  const remoteHead = await pushFromOtherClone(other, 'remote.txt', 'from the remote\n', 'Add remote file');
+
+  await pushButton(page, 1).click();
+  await noticeAction(page, 'Pull only').click();
+
+  await expect(page.getByText('Your local commit was kept on top and is ready to push.')).toBeVisible();
+  expect(await repository.git('log', '--format=%s', 'main')).toBe(bothCommits);
+  await expect(pushButton(page, 1)).toBeVisible();
+  expect(await remoteTip(repository, bare, 'main')).toBe(remoteHead);
+});
+
+test('Pull and push stops at a pull that would conflict, with the branch as it was and nothing pushed', async ({ pairedPage: page, repository }) => {
+  const { bare, other } = await repository.addRemote();
+  const remoteHead = await pushFromOtherClone(other, 'README.md', '# Remote title\n', 'Retitle on the remote');
+  await repository.commit('README.md', '# Local title\n', 'Retitle locally');
+  const localHead = await repository.git('rev-parse', 'HEAD');
+  await openRepository(page, repository);
+  await fetchFromToolbar(page, 1);
+
+  await pushButton(page, 1).click();
+  await noticeAction(page, 'Pull and push').click();
+
+  await expect(page.getByText('Could not rebase onto the remote')).toBeVisible();
+  await expect(page.getByText('Your local commits overlap the remote changes in README.md. The branch was left unchanged. Nothing was pushed.')).toBeVisible();
+  expect(await repository.git('rev-parse', 'HEAD')).toBe(localHead);
+  expect(await repository.git('status', '--porcelain')).toBe('');
+  const gitDir = path.join(repository.path, '.git');
+  expect(existsSync(path.join(gitDir, 'rebase-merge')) || existsSync(path.join(gitDir, 'rebase-apply'))).toBe(false);
+  expect(await remoteTip(repository, bare, 'main')).toBe(remoteHead);
+  await expect(pullButton(page, 1)).toBeVisible();
+  await expect(pushButton(page, 1)).toBeVisible();
+});
+
+test('a push the remote\'s hook declines says so, without offering repository access', async ({ pairedPage: page, repository }) => {
+  const { bare } = await repository.addRemote();
+  const remoteHead = await remoteTip(repository, bare, 'main');
+  await writeFile(path.join(bare, 'hooks', 'pre-receive'), '#!/bin/sh\necho "Commits need a ticket number" >&2\nexit 1\n', { mode: 0o755 });
+  await repository.commit('local.txt', 'from this clone\n', 'Add local file');
+  await openRepository(page, repository);
+
+  await pushButton(page, 1).click();
+
+  await expect(page.getByText('sample-project: could not push commits')).toBeVisible();
+  await expect(page.getByText('The remote declined this push. A branch rule or a check on the server is blocking it.')).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Repository access' })).toHaveCount(0);
+  await expect(page.getByText('Commits need a ticket number')).toHaveCount(0);
+  await noticeAction(page, 'Details').click();
+  await expect(page.getByText(/! \[remote rejected\] main -> main \(pre-receive hook declined\)/)).toBeVisible();
+  await expect(page.getByText(/Commits need a ticket number/)).toBeVisible();
+  expect(await remoteTip(repository, bare, 'main')).toBe(remoteHead);
   await expect(pushButton(page, 1)).toBeVisible();
 });
 

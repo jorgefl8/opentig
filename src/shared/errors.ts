@@ -18,6 +18,8 @@ export interface SerializedGitError {
   operation: string;
   message: string;
   stderr?: string;
+  /** What a push printed on stdout, where `--porcelain` reports each ref, kept apart from stderr. */
+  stdout?: string;
   exitCode?: number;
   access?: import('./repository-access').RemoteAccessProblem;
   /** The server stopped waiting, but the work keeps running and may still succeed. */
@@ -69,12 +71,22 @@ export interface SerializedGhError {
   retryable?: boolean;
 }
 
-export interface SerializedTransportError {
+export interface SerializedResponseTooLargeError {
   code: 'RESPONSE_TOO_LARGE';
   operation: 'server-protocol';
   message: string;
   maxBytes: number;
 }
+
+/** The server refused the request before running it, so sending it again later is safe even for a change. */
+export interface SerializedServerBusyError {
+  code: 'SERVER_BUSY';
+  operation: 'server-protocol';
+  message: string;
+  retryable: true;
+}
+
+export type SerializedTransportError = SerializedResponseTooLargeError | SerializedServerBusyError;
 
 export type SerializedOperationError = SerializedGitError | SerializedAiError | SerializedGhError | SerializedTransportError;
 

@@ -1,6 +1,6 @@
 import { ParsedDiffCache } from './parsed-diff-cache';
 import ParseWorker from './diff-parse.worker?worker';
-import { buildDiffFileEntry, type DiffFileEntry } from './patch-utils';
+import { buildDiffFileEntries, buildDiffFileEntry, type DiffFileEntry } from './patch-utils';
 
 export interface DiffParseRequest { revision: number; patch: string }
 export type DiffParseResponse = { revision: number; files: DiffFileEntry[] } | { revision: number; error: string };
@@ -69,6 +69,18 @@ export class DiffParser {
   clearCache() {
     this.cacheGeneration++;
     this.cache.clear();
+  }
+
+  /**
+   * Parses where it is called. Meant for patches under `DIFF_PARSE_WORKER_THRESHOLD`,
+   * which take a few milliseconds: their files are there on the first render.
+   */
+  parseNow(patch: string): DiffFileEntry[] {
+    const cached = this.cache.get(patch);
+    if (cached) return cached;
+    const files = buildDiffFileEntries(patch);
+    this.cache.set(patch, files);
+    return files;
   }
 
   async parse(patch: string, signal: AbortSignal): Promise<DiffFileEntry[]> {

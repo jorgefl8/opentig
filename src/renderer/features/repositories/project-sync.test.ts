@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mobileSyncPill, projectPullBlockedCopy, projectPullSuccessCopy, projectPushBlockedCopy, projectPushSuccessCopy, repositorySyncLoadingToast, visibleRepositorySyncActions } from './project-sync';
+import { mobileSyncPill, nothingPushedCopy, projectPullBlockedCopy, projectPullSuccessCopy, projectPushSuccessCopy, pullAndPushSuccessCopy, pushBlockedCopy, repositorySyncLoadingToast, visibleRepositorySyncActions } from './project-sync';
 
 describe('the sync pill in a phone top bar', () => {
   const status = { branch: 'feature', upstream: 'origin/feature', ahead: 0, behind: 0 };
@@ -80,14 +80,9 @@ describe('project sync toast copy', () => {
       description: 'Your local commits overlap the remote changes in netpol.yaml. The branch was left unchanged.',
       duration: 10_000,
     });
-    expect(projectPushBlockedCopy('API · backend', { status: 'no-upstream' })).toEqual({
+    expect(pushBlockedCopy('API · backend', { status: 'no-upstream' }, { project: true })).toEqual({
       title: 'Could not push API · backend',
       description: 'Current branch has no upstream configured.',
-      duration: 10_000,
-    });
-    expect(projectPushBlockedCopy('API · backend', { status: 'rejected', reason: 'remote-changed', message: 'hint: Updates were rejected because the remote contains work' })).toEqual({
-      title: 'Could not push API · backend',
-      description: 'Remote has new changes. Pull first — OpenTig rebases your local commits on top when there are no conflicts.',
       duration: 10_000,
     });
     expect(projectPullBlockedCopy('Web · frontend', { status: 'stash-conflict', updated: true, files: ['App.tsx'], stashOid: 'abc123' })).toEqual({
@@ -97,3 +92,85 @@ describe('project sync toast copy', () => {
     });
   });
 });
+
+describe('the notice for a push that did not happen', () => {
+  const gitOutput = " ! [rejected] main -> main (fetch first)\nerror: failed to push some refs to 'https://github.com/acme/deployments.git'";
+
+  it('offers to pull and push with the real upstream and counts', () => {
+    expect(pushBlockedCopy('deployments', { status: 'diverged', ahead: 1, behind: 1, upstream: 'origin/main', incoming: ['4c1d9aa fix(values): bump image tag'], details: gitOutput })).toEqual({
+      title: 'Push needs the latest commits first',
+      lead: "origin/main has 1 commit you don't have.",
+      description: 'Your commit has to go on top of it before it can be pushed.',
+      details: `${gitOutput}\nThis branch is 1 behind and 1 ahead of origin/main.\nincoming: 4c1d9aa fix(values): bump image tag`,
+      action: 'sync', offer: true, duration: 15_000,
+    });
+    expect(pushBlockedCopy('deployments', { status: 'diverged', ahead: 3, behind: 7, upstream: 'origin/main', incoming: ['a1 one', 'b2 two'] })).toMatchObject({
+      lead: "origin/main has 7 commits you don't have.",
+      description: 'Your 3 commits have to go on top of them before they can be pushed.',
+      details: 'This branch is 7 behind and 3 ahead of origin/main.\nincoming: a1 one\nincoming: b2 two\nand 5 more',
+    });
+  });
+
+  it('names the repository of a project row, and falls back to the upstream the client knows', () => {
+    expect(pushBlockedCopy('Web · frontend', { status: 'diverged', ahead: 2, behind: 1, upstream: 'origin/dev' }, { project: true })).toMatchObject({
+      title: 'Web · frontend needs the latest commits first', lead: "origin/dev has 1 commit you don't have.", action: 'sync',
+    });
+    expect(pushBlockedCopy('deployments', { status: 'rejected', reason: 'remote-changed', message: '', details: gitOutput }, { upstream: 'origin/main' })).toMatchObject({
+      title: 'Push needs the latest commits first', lead: "origin/main has commits you don't have.", details: gitOutput, action: 'sync', offer: true,
+    });
+  });
+
+  it('only offers pulling when there is nothing to push', () => {
+    expect(pushBlockedCopy('deployments', { status: 'diverged', ahead: 0, behind: 2, upstream: 'origin/main' })).toMatchObject({
+      description: 'Pull them first. There is nothing to push yet.', action: 'pull',
+    });
+  });
+
+  it('offers repository access only for account problems, and never puts Git output in the body', () => {
+    const reasons = ['authentication', 'inaccessible', 'permission', 'destination-exists', 'hook', 'network', 'configuration', 'unknown'] as const;
+    const copies = reasons.map((reason) => pushBlockedCopy('deployments', { status: 'rejected', reason, message: '', details: gitOutput }));
+    expect(copies.map((copy) => copy.action)).toEqual(['access', 'access', 'access', undefined, undefined, undefined, undefined, undefined]);
+    for (const copy of copies) {
+      expect(copy.title).toBe('deployments: could not push commits');
+      expect(copy.description).toMatch(/^[A-Z][^\n]+\.$/);
+      expect(`${copy.lead ?? ''}${copy.description}`).not.toMatch(/rejected|failed to push|github\.com/);
+      expect(copy.details).toBe(gitOutput);
+    }
+    expect(new Set(copies.map((copy) => copy.description)).size).toBe(reasons.length);
+  });
+
+  it('keeps the sentence the server wrote for a branch name the remote already uses', () => {
+    const message = "origin/fix/login already exists and has commits this branch doesn't. OpenTig won't overwrite it, and the branch still tracks origin/dev.";
+    for (const project of [false, true]) {
+      const copy = pushBlockedCopy('deployments', { status: 'rejected', reason: 'destination-exists', message, details: gitOutput }, { project });
+      expect(copy).toMatchObject({ description: message, details: gitOutput });
+      expect(copy.action).toBeUndefined();
+    }
+  });
+});
+
+describe('pulling and then pushing as one notice', () => {
+  const pulled = { status: 'success', commits: 1, restoredLocalChanges: false, rebased: true, localCommits: 1 } as const;
+
+  it('reports both halves once, with their own counts', () => {
+    expect(pullAndPushSuccessCopy(null, pulled, { status: 'success', commits: 1 })).toEqual({ title: 'Pulled 1 commit and pushed 1' });
+    expect(pullAndPushSuccessCopy('Web · frontend', { ...pulled, commits: 4, restoredLocalChanges: true }, { status: 'success', commits: 2 })).toEqual({
+      title: 'Web · frontend: pulled 4 commits and pushed 2',
+      description: 'Local and staged changes were restored.',
+    });
+  });
+
+  it('does not claim a pull or a push that did not happen', () => {
+    expect(pullAndPushSuccessCopy(null, { status: 'up-to-date' }, { status: 'success', commits: 2 })).toEqual({ title: '2 commits pushed' });
+    expect(pullAndPushSuccessCopy(null, pulled, { status: 'up-to-date' })).toEqual({ title: 'Pulled 1 commit; nothing left to push' });
+    expect(pullAndPushSuccessCopy(null, pulled, null)).toEqual({ title: 'Pulled 1 commit; publication canceled' });
+  });
+
+  it('says nothing was pushed when the pull stops it', () => {
+    const stopped = projectPullBlockedCopy('Web · frontend', { status: 'rebase-conflict', files: ['values.yaml'] });
+    expect(nothingPushedCopy(stopped).description).toBe('Your local commits overlap the remote changes in values.yaml. The branch was left unchanged. Nothing was pushed.');
+    const untitled = { title: 'Branch has no upstream configured' };
+    expect(nothingPushedCopy(untitled)).toEqual({ title: 'Branch has no upstream configured', description: 'Nothing was pushed.' });
+  });
+});
+

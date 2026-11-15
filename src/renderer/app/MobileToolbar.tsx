@@ -1,16 +1,18 @@
 import { useEffect, useRef, type ReactNode } from 'react';
-import { IconArrowDown, IconArrowLeft, IconArrowUp, IconBrandGithub, IconFolder, IconGitBranch, IconHierarchy2, IconLoader4, IconPlus, IconRefresh, IconSelector, IconSettings } from '@tabler/icons-react';
+import { IconArrowDown, IconArrowLeft, IconArrowUp, IconBrandGithub, IconFolder, IconGitBranch, IconHierarchy2, IconPlus, IconRefresh, IconSelector, IconSettings } from '@tabler/icons-react';
 import { Button } from '@/components/ui/button';
 import { isDevProfile } from '@/lib/app-identity';
 import { AppName } from '@/components/AppName';
 import { OpenTigMark } from '@/components/OpenTigMark';
 import { MobileSheet } from '@/components/MobileSheet';
 import { DesktopUpdateIndicator } from '@/features/settings/UpdateSettings';
-import { openOnGitHub, pullRequestStateTone } from '@/features/pulls/gh-utils';
+import { openOnGitHub, prStateLabel, pullRequestStateTone } from '@/features/pulls/gh-utils';
+import type { MergedBranchCleanUp } from '@/features/pulls/merged-branch';
 import { mobileSyncPill, needsBranchPublication } from '@/features/repositories/project-sync';
 import type { ToolbarProps } from './Toolbar';
 import { RemoteAccessIndicator } from './RemoteAccessIndicator';
 import { BranchPullRequestMenu } from './BranchPullRequestMenu';
+import { Spinner } from '@/components/ui/spinner';
 
 export interface MobileViewerBarProps {
   onBack(): void;
@@ -39,8 +41,11 @@ function MobileViewerBar({ onBack, setTitleHost, setActionsHost, indicators, loa
 const commitCount = (count: number) => `${count} ${count === 1 ? 'commit' : 'commits'}`;
 
 /** On a list, where you are and what to sync. Inside a viewer, a back arrow plus what that viewer puts in the bar's two slots. */
-export function MobileToolbar({ props, repositoryControl, worktreeControl, branchControl, pendingRepositoryName, loadIndicator, contextOpen, onContextOpen, syncBusy }: {
+export function MobileToolbar({ props, branchCleanUp, onBranchCleanUp, repositoryControl, worktreeControl, branchControl, pendingRepositoryName, loadIndicator, contextOpen, onContextOpen, syncBusy }: {
   props: ToolbarProps;
+  /** Where to go before deleting the branch of a merged pull request, when there is such a place. */
+  branchCleanUp?: MergedBranchCleanUp | null | undefined;
+  onBranchCleanUp?: ((cleanUp: MergedBranchCleanUp) => void) | undefined;
   repositoryControl: ReactNode;
   worktreeControl: ReactNode;
   branchControl: ReactNode;
@@ -58,6 +63,8 @@ export function MobileToolbar({ props, repositoryControl, worktreeControl, branc
   const runPill = pill && (pill.action === 'pull' ? props.onPull : props.onPush);
   const pillRunning = pill && props.busy === (pill.action === 'pull' ? 'pull' : 'push');
   const contextAction = (action: () => void) => { onContextOpen(false); action(); };
+  const pullRequest = props.branchPullRequest;
+  const newCommits = pullRequest?.state === 'MERGED' ? props.branchPullRequestNewCommits ?? 0 : 0;
   const indicators = <>
     {props.remoteProblem && <RemoteAccessIndicator compact problem={props.remoteProblem.access} message={props.remoteProblem.message} onAction={props.onRemoteAccessAction} />}
     <DesktopUpdateIndicator />
@@ -67,15 +74,15 @@ export function MobileToolbar({ props, repositoryControl, worktreeControl, branc
       <header className="mobile-toolbar">
         <span className="mobile-toolbar-mark"><OpenTigMark /></span>
         <button className="mobile-repository-context" aria-label="Repository and branch" aria-haspopup="dialog" aria-expanded={contextOpen} onClick={() => onContextOpen(true)}>
-          <strong><span>{pendingRepositoryName ? `Opening ${pendingRepositoryName}…` : props.repository.repositoryName}</span>{props.repositoryLoadPhase ? <IconLoader4 className="animate-spin" aria-hidden="true" /> : <IconSelector aria-hidden="true" />}</strong>
-          <small>{status ? status.branch ?? 'Detached HEAD' : 'Loading…'}{props.branchPullRequest && <> · <span className={`mobile-pr-number pr-state-${pullRequestStateTone(props.branchPullRequest)}`}>#{props.branchPullRequest.number}</span></>}</small>
+          <strong><span>{pendingRepositoryName ? `Opening ${pendingRepositoryName}…` : props.repository.repositoryName}</span>{props.repositoryLoadPhase ? <Spinner /> : <IconSelector aria-hidden="true" />}</strong>
+          <small>{status ? status.branch ?? 'Detached HEAD' : 'Loading…'}{pullRequest && <> · <span className={`mobile-pr-number pr-state-${pullRequestStateTone(pullRequest)}`}>#{pullRequest.number}{pullRequest.state !== 'OPEN' && ` ${prStateLabel(pullRequest)}`}</span>{newCommits > 0 && ` +${newCommits} new`}</>}</small>
         </button>
         <div className="mobile-toolbar-actions">
           {isDevProfile && <AppName />}
           {indicators}
           {pill && runPill && (
             <button type="button" className="mobile-sync-pill" data-sync={pill.action} disabled={Boolean(props.busy) || syncBusy} aria-label={pill.action === 'publish' ? 'Publish branch' : `${pill.action === 'pull' ? 'Pull' : 'Push'} ${commitCount(pill.count)}`} onClick={runPill}>
-              {pillRunning ? <IconLoader4 className="animate-spin" aria-hidden="true" /> : pill.action === 'pull' ? <IconArrowDown aria-hidden="true" /> : <IconArrowUp aria-hidden="true" />}
+              {pillRunning ? <Spinner /> : pill.action === 'pull' ? <IconArrowDown aria-hidden="true" /> : <IconArrowUp aria-hidden="true" />}
               <span>{pill.action === 'publish' ? 'Publish' : `${pill.action === 'pull' ? 'Pull' : 'Push'} ${pill.count}`}</span>
             </button>
           )}
@@ -105,7 +112,9 @@ export function MobileToolbar({ props, repositoryControl, worktreeControl, branc
         <button className="mobile-sheet-action" disabled={Boolean(props.busy) || syncBusy} onClick={() => contextAction(props.onRefresh)}><IconRefresh /><span>Refresh</span></button>
       </div>
       <hr />
-      {props.branchPullRequest && <BranchPullRequestMenu repositoryId={props.repository.id} key={props.branchPullRequest.url} pullRequest={props.branchPullRequest} onOpenPullRequest={props.onOpenPullRequest} mobile onNavigate={() => onContextOpen(false)} />}
+      {pullRequest && <BranchPullRequestMenu repositoryId={props.repository.id} key={pullRequest.url} pullRequest={pullRequest} onOpenPullRequest={props.onOpenPullRequest} mobile onNavigate={() => onContextOpen(false)}
+        newCommits={props.branchPullRequestNewCommits} cleanUp={branchCleanUp} onCleanUp={onBranchCleanUp} onCreatePullRequest={props.onCreatePullRequest} />}
+      {newCommits > 0 && props.onCreatePullRequest && <button className="mobile-sheet-action" onClick={() => contextAction(props.onCreatePullRequest!)}><IconPlus /><span>Create pull request</span></button>}
       {props.githubInfo?.isGitHub && props.githubInfo.nameWithOwner && <button className="mobile-sheet-action" onClick={() => contextAction(() => openOnGitHub(`https://github.com/${props.githubInfo!.nameWithOwner}`))}><IconBrandGithub /><span>Open on GitHub</span></button>}
       <button className="mobile-sheet-action" onClick={() => contextAction(props.onOpen)}><IconPlus /><span>Open another repository</span></button>
     </MobileSheet>

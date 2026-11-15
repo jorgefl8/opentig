@@ -2,13 +2,14 @@ import { formatDateTime } from '@shared/date-format';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { DesktopUpdateStatus } from '../../../shared/desktop-updates';
 import { Popover } from '@base-ui/react/popover';
-import { IconAlertTriangle, IconCheck, IconDownload, IconExternalLink, IconLoader2, IconLoader4, IconRefresh } from '@tabler/icons-react';
+import { IconAlertTriangle, IconCheck, IconDownload, IconExternalLink, IconRefresh } from '@tabler/icons-react';
 import { summarizeUpdateReleaseNotes } from './update-release-notes';
 import { Button } from '@/components/ui/button';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { appDisplayName, isDevProfile } from '@/lib/app-identity';
 import { SettingRow } from './SettingRows';
 import { updatesApi } from './update-api';
+import { Spinner } from '@/components/ui/spinner';
 
 function useUpdateStatus(interval: number) {
   const [status, setStatus] = useState<DesktopUpdateStatus | null>(null);
@@ -31,7 +32,7 @@ export function UpdateSettings() {
   const { status, setStatus, error, setError } = useUpdateStatus(1_000);
   const [pending, setPending] = useState(false);
   const api = updatesApi();
-  if (!status) return error ? <p role="status">{error}</p> : <p className="web-access-loading" role="status"><IconLoader4 className="animate-spin" aria-hidden="true" /><ShimmeringText text="Checking update settings…" /></p>;
+  if (!status) return error ? <p role="status">{error}</p> : <p className="web-access-loading" role="status"><Spinner /><ShimmeringText text="Checking update settings…" /></p>;
   const action = async (kind: 'check' | 'download' | 'install') => {
     setPending(true); setError(null);
     try { setStatus(await api[kind]()); }
@@ -115,7 +116,7 @@ export function DesktopUpdateIndicator() {
           }
         }} />}
     >
-      {status.phase === 'available' || status.phase === 'downloading' ? <IconDownload /> : status.phase === 'installing' ? <IconLoader2 className="animate-spin" /> : status.phase === 'error' ? <IconAlertTriangle /> : <IconRefresh />}
+      {status.phase === 'available' || status.phase === 'downloading' ? <IconDownload /> : status.phase === 'installing' ? <Spinner /> : status.phase === 'error' ? <IconAlertTriangle /> : <IconRefresh />}
       {status.phase === 'downloading' && <svg className="pointer-events-none absolute inset-0 size-full! -rotate-90" viewBox="0 0 32 32" aria-hidden="true">
         <circle cx="16" cy="16" r="14" fill="none" stroke="currentColor" strokeOpacity="0.2" strokeWidth="2" />
         <circle cx="16" cy="16" r="14" pathLength="100" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeDasharray="100" strokeDashoffset={100 - progress} className="transition-[stroke-dashoffset] motion-reduce:transition-none" />

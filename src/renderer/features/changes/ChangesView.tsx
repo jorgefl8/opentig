@@ -13,7 +13,7 @@ import { MobileSheet } from '@/components/MobileSheet';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { shouldOpenChangePreview } from './change-preview';
-import { changeStatusCode } from './change-status';
+import { ChangeStatusBadge } from './ChangeStatusBadge';
 import { buildChangeTree, collectChangePaths, flattenChangeTree, type ChangeTreeEntry, type ChangeVirtualRow } from './change-tree';
 import { shouldActivateChangeRow } from './row-activation';
 import { getVsCodeFileIconUrl } from '@/lib/vscode-icons';
@@ -207,7 +207,7 @@ function ConflictRow({ change, current, onSelect, onOpenFile, onMenu }: { change
         </TooltipTrigger>
         <TooltipContent anchor={rowRef} side="right" sideOffset={10}>{change.path}</TooltipContent>
       </Tooltip>
-      <span className="status-code" data-kind="conflicted">C</span>
+      <ChangeStatusBadge kind="conflicted" />
       {onMenu
         ? <MobileRowSheetButton name={name} onPress={() => onMenu(change)} />
         : <span className="change-row-actions">
@@ -373,7 +373,7 @@ function ChangeFileRow({ change, current, disabled, discardDisabled, action, dep
         </TooltipTrigger>
         <TooltipContent anchor={rowRef} side="right" sideOffset={10}>{change.path}</TooltipContent>
       </Tooltip>
-      <span className="status-code" data-kind={change.kind}>{changeStatusCode(change.kind)}</span>
+      <ChangeStatusBadge kind={change.kind} />
       {onMenu && <MobileRowSheetButton name={name} onPress={() => onMenu(change)} />}
       <span className="change-row-actions">
         {!onMenu && !directorySummary && previewable && <Tooltip><TooltipTrigger render={<Button variant="ghost" size="icon-xs" className="change-action-button" onClick={() => onSelect(change.path)} aria-label="View changes" />}><IconGitCompare /></TooltipTrigger><TooltipContent>View changes</TooltipContent></Tooltip>}

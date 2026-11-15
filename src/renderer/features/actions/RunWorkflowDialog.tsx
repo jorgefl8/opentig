@@ -1,6 +1,6 @@
 import { useMemo, useState, type KeyboardEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { IconChevronRight, IconGitBranch, IconLoader4, IconPlayerPlay, IconRefresh, IconSearch } from '@tabler/icons-react';
+import { IconChevronRight, IconGitBranch, IconPlayerPlay, IconRefresh, IconSearch } from '@tabler/icons-react';
 import { sileo } from 'sileo';
 import { formatTimeAgo } from '@shared/date-format';
 import type { ActionRunSummary, RunnableWorkflow, WorkflowInput, WorkflowTriggers } from '../../../shared/contracts';
@@ -21,6 +21,7 @@ import { ActionStatusIcon } from './ActionStatusIcon';
 import { latestActionRunsOptions } from './action-queries';
 import { actionStatusLabel, actionTone, eventLabel, formatDuration, runDuration } from './action-status';
 import './actions.css';
+import { Spinner } from '@/components/ui/spinner';
 
 /** Runs a workflow can't be started by hand unless its file says so; one OpenTig couldn't read is offered anyway. */
 function canRunManually(workflow: RunnableWorkflow): boolean {
@@ -157,7 +158,7 @@ export function RunWorkflowDialog({ repositoryId, initialWorkflowId = null, onOp
               <IconSearch aria-hidden="true" />
               <input value={search} placeholder="Search" aria-label="Search workflows" spellCheck={false} onChange={(event) => setSearch(event.target.value)} />
             </label>
-            {listQuery.isPending && <p className="run-workflow-note" role="status"><IconLoader4 className="animate-spin" aria-hidden="true" /> <ShimmeringText text="Loading workflows…" /></p>}
+            {listQuery.isPending && <p className="run-workflow-note" role="status"><Spinner /> <ShimmeringText text="Loading workflows…" /></p>}
             {listQuery.isError && <div className="run-workflow-note" role="status">Couldn't load the workflows.<Button variant="ghost" size="xs" onClick={() => void listQuery.refetch()}>Retry</Button></div>}
             {list && (
               <>
@@ -240,7 +241,7 @@ export function RunWorkflowDialog({ repositoryId, initialWorkflowId = null, onOp
                   />
                   <small>Uses the workflow file on this branch.</small>
                 </div>
-                {!onDefaultBranch && branchTriggers.isPending && <p className="run-workflow-note" role="status"><IconLoader4 className="animate-spin" aria-hidden="true" /> <ShimmeringText text={`Reading the workflow on ${branch}…`} /></p>}
+                {!onDefaultBranch && branchTriggers.isPending && <p className="run-workflow-note" role="status"><Spinner /> <ShimmeringText text={`Reading the workflow on ${branch}…`} /></p>}
                 {inputs.map((input) => <InputField key={`${workflow.path}:${branch}:${input.name}`} input={input} value={valueOf(input)} disabled={busy} onChange={(value) => setValue(input, value)} />)}
                 <h4 className="run-workflow-section">Latest runs</h4>
                 <RecentRuns runs={runs.data} loading={runs.isPending} failed={runs.isError} onRetry={refreshRuns} onOpen={(id) => { onOpenRun(id); onClose(); }} />
@@ -271,7 +272,7 @@ export function RunWorkflowDialog({ repositoryId, initialWorkflowId = null, onOp
           footnote={account?.login ? `as @${account.login}` : undefined}
           busy={busy}
           onCancel={() => setConfirming(null)}
-          confirm={<Button size="xs" disabled={busy} onClick={() => run.mutate()}>{busy ? <><IconLoader4 className="animate-spin" /> <ShimmeringText text="Starting…" /></> : `Run ${workflow.name}`}</Button>}
+          confirm={<Button size="xs" disabled={busy} onClick={() => run.mutate()}>{busy ? <><Spinner /> <ShimmeringText text="Starting…" /></> : `Run ${workflow.name}`}</Button>}
         >
           <p>Run <strong>{workflow.name}</strong> on <code>{branch}</code>? It does whatever this workflow does, which can include commits, tags and publications.</p>
           {inputs.length > 0 && (

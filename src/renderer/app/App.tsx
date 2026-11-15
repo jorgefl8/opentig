@@ -3,7 +3,7 @@ import { parentFolderPath } from '@/features/repositories/directory-navigation';
 import { ONBOARDING_VERSION } from '../../shared/onboarding';
 import { lastCloneParent, resumeBackgroundClone } from '@/features/onboarding/clone-jobs';
 import { useGitHubAccount } from '@/features/pulls/useGitHubAccount';
-import { branchPullRequestQueryOptions } from '@/features/pulls/branch-pull-request-query';
+import { branchPullRequestQueryOptions, commitsAfterMergeQueryOptions } from '@/features/pulls/branch-pull-request-query';
 import { withStackMemberships } from '@/features/pulls/pull-request-list';
 import { releasesQueryOptions } from '@/features/pulls/releases-query';
 import { appDisplayName } from '@/lib/app-identity';
@@ -12,10 +12,10 @@ import { isModuleLoadError, lazyWithPreload, lazyWithRetry } from '@/lib/lazy-wi
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   IconBrandGithub, IconFileArrowRight, IconFiles, IconGitBranch, IconGitCompare, IconHistory,
-  IconLoader4, IconRefresh, IconRestore, IconSearch, IconTrash,
+  IconRefresh, IconRestore, IconSearch, IconTrash,
 } from '@tabler/icons-react';
 import { sileo } from 'sileo';
-import type { BootstrapData, CommitSplitProposal, FetchResult, FileHistoryPathChange, FileHistoryState, GhCliStatus, GitHubRepositoryInfo, OpenTigCapabilities, Preferences, PullRequestState, PullRequestSummary, PullResult, PushResult, RecentRepository, RepositoryInfo, RepositoryRelocationSearch, UndoLatestCommitResult } from '../../shared/contracts';
+import type { BootstrapData, FetchResult, FileHistoryPathChange, FileHistoryState, GhCliStatus, GitHubRepositoryInfo, OpenTigCapabilities, Preferences, PullRequestState, PullRequestSummary, PullResult, PushResult, RecentRepository, RepositoryInfo, RepositoryRelocationSearch, UndoLatestCommitResult } from '../../shared/contracts';
 import { matchesCombo, resolveShortcuts, type ShortcutMap } from '../../shared/shortcuts';
 import { ShortcutsProvider } from './ShortcutsContext';
 import { Toolbar } from './Toolbar';
@@ -51,6 +51,7 @@ import {
   restoreSession, serializeSession, setTabDirty, type TabKeyboardAction,
 } from '@/features/files/open-files-model';
 import { CommitComposer } from '@/features/commit/CommitComposer';
+import { useCommitPlan } from '@/features/commit/useCommitPlan';
 import { clearCommitFilesCache } from '@/features/history/commit-files-cache';
 import { OpenRepositoryDialog } from '@/features/repositories/OpenRepositoryDialog';
 import { Welcome } from '@/features/repositories/Welcome';
@@ -79,16 +80,17 @@ import { mobileMainAction } from '@/lib/mobile-main-action';
 import { useElapsed } from '@/lib/use-elapsed';
 import { opentig, serverClient } from '@/lib/opentig-api';
 import { startupSplashDetail } from '@/lib/startup-splash';
-import { ServerAuthenticationError, ServerDisconnectedError, UNCONFIRMED_RESULT_MESSAGE, isConnectionLoss, isUnconfirmedResult } from '@/lib/websocket-transport';
+import { ServerAuthenticationError, ServerDisconnectedError, UNCONFIRMED_RESULT_MESSAGE, inBackground, isConnectionLoss, isUnconfirmedResult } from '@/lib/websocket-transport';
 import { conflictNotificationAction, conflictToastId } from '@/features/changes/conflict-notification';
 import { fileCutTransferId, writeClipboardText, writeFileTransfer } from '@/lib/browser-capabilities';
-import { needsBranchPublication, newBranchPublishedCopy, projectPullBlockedCopy, projectPullSuccessCopy, projectPushBlockedCopy, projectPushSuccessCopy, pullSuccessCopy, repositorySyncLoadingToast, type ProjectSyncAction } from '@/features/repositories/project-sync';
+import { needsBranchPublication, newBranchPublishedCopy, nothingPushedCopy, projectPullBlockedCopy, projectPullSuccessCopy, projectPushSuccessCopy, pullAndPushSuccessCopy, pullSuccessCopy, pushBlockedCopy, repositorySyncLoadingToast, syncToast, type ProjectSyncAction } from '@/features/repositories/project-sync';
 import { aiModelLabel, harnessLabel } from '@/features/ai/harness-copy';
 import { DesktopUpdateIndicator } from '@/features/settings/UpdateSettings';
 import { updatesApi } from '@/features/settings/update-api';
 import type { SettingsSection } from '@/features/settings/SettingsDialog';
 import { CommitAuthorshipDialog } from '@/features/settings/CommitAuthorshipDialog';
 import { RepositoryLinksContext, type RepositoryLinks } from '@/components/repository-links';
+import { Spinner } from '@/components/ui/spinner';
 
 const Viewer = lazyWithRetry(() => import('@/features/viewer/Viewer'));
 const FilesView = lazyWithRetry(() => import('@/features/files/FilesView').then((module) => ({ default: module.FilesView })));
@@ -100,7 +102,7 @@ const CreatePullRequestDialog = lazyWithRetry(() => import('@/features/pulls/Cre
 // Tooltips and menus must land on their anchors under the browser's Interface size zoom.
 installZoomAwarePositioning();
 
-const sidebarFallback = <div className="view-loading" role="status"><IconLoader4 className="spinner" /> <ShimmeringText text="Loading…" /></div>;
+const sidebarFallback = <div className="view-loading" role="status"><Spinner className="view-spinner" /> <ShimmeringText text="Loading…" /></div>;
 const NO_OPEN_FILES_STATES: OpenFilesState[] = [];
 type DirtyCloseChoice = 'save' | 'discard' | 'cancel';
 const SIDEBAR_VIEWS = ['changes', 'files', 'history', 'prs', 'search'] as const;
@@ -132,6 +134,13 @@ class PushBlocked extends Error {
   }
 }
 
+/** Where a pull or push runs: the open repository, or a row of the repository list. */
+interface SyncTarget {
+  repositoryId: string;
+  label: string;
+  row?: { item: RepositoryOption; projectName: string | null; settled: (() => void) | undefined };
+}
+
 const CloneRepositoryDialog = lazyWithRetry(() => import('@/features/onboarding/CloneRepositoryDialog').then(module => ({ default: module.CloneRepositoryDialog })));
 const FindRepositoriesDialog = lazyWithRetry(() => import('@/features/onboarding/FindRepositoriesDialog').then(module => ({ default: module.FindRepositoriesDialog })));
 const WelcomeSettings = lazyWithRetry(() => import('@/features/settings/SettingsDialog').then(module => ({ default: module.SettingsDialog })));
@@ -161,6 +170,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   const [branchesState, setBranches] = useState<BranchInfo[]>([]);
   const [worktreesState, setWorktrees] = useState<WorktreeInfo[]>([]);
   const [snapshotRepositoryId, setSnapshotRepositoryId] = useState<string | null>(null);
+  // Read by a refresh as it starts, to tell the first read of a repository from a later one.
+  const snapshotRepositoryIdRef = useRef<string | null>(null);
   const [pendingRepositoryId, setPendingRepositoryId] = useState<string | null>(null);
   // Saved repositories whose folder is gone, and the active one when that happened to it.
   const [unavailableRepositoryIds, setUnavailableRepositoryIds] = useState<ReadonlySet<string>>(() => new Set());
@@ -192,10 +203,6 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   const [fileViewerToolbarHost, setFileViewerToolbarHost] = useState<HTMLElement | null>(null);
   const initialSelectionApplied = useRef(false);
   const [commitMessage, setCommitMessage] = useState('');
-  const [commitProposal, setCommitProposal] = useState<CommitSplitProposal | null>(null);
-  const [preparedCommitIndex, setPreparedCommitIndex] = useState<number | null>(null);
-  const [completedCommitIndices, setCompletedCommitIndices] = useState<ReadonlySet<number>>(() => new Set());
-  const [commitPlanCollapsed, setCommitPlanCollapsed] = useState(false);
   /** The sidebar width painted while its edge is being dragged. */
   const [sidebarDragWidth, setSidebarDragWidth] = useState<number | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -255,9 +262,6 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   const dirtyCloseResolverRef = useRef<((choice: DirtyCloseChoice) => void) | null>(null);
   const destructiveActionInFlightRef = useRef(false);
   const commitTextareaRef = useRef<HTMLTextAreaElement>(null);
-  // The last message OpenTig itself put in the composer, so an edited one is
-  // never replaced without asking.
-  const lastAppliedMessageRef = useRef('');
   const knownConflictPathsRef = useRef<Map<string, string[]>>(new Map());
   const refreshCyclesRef = useRef<Map<string, { queued: RefreshRequest | null; promise: Promise<void> }>>(new Map());
 
@@ -362,6 +366,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   const repositoryLoadVisible = useElapsed(repositoryLoadPhase ? 'busy' : null, 200);
   const repositoryLoadSlow = useElapsed(pendingRepositoryId ?? (repositoryLoadPhase ? repository?.id ?? null : null), 5000);
   const status = currentSnapshot ? statusState : null;
+  const commitPlan = useCommitPlan({ repositoryId: repository?.id, status, message: commitMessage, setMessage: setCommitMessage, index: opentig.index });
   const files = currentSnapshot ? filesState : null;
   const branches = currentSnapshot ? branchesState : [];
   const worktrees = currentSnapshot ? worktreesState : [];
@@ -380,6 +385,10 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   ));
   const currentBranchPullRequest = currentBranch && githubInfo?.isGitHub && !branchPullRequestQuery.isError
     ? branchPullRequestQuery.data ?? null : null;
+  // A merged pull request no longer describes a branch that kept getting commits.
+  const mergedHeadOid = currentBranchPullRequest?.state === 'MERGED' ? currentBranchPullRequest.headRefOid || null : null;
+  const commitsAfterMergeQuery = useQuery(commitsAfterMergeQueryOptions(repository?.id ?? '', mergedHeadOid, status?.oid ?? null));
+  const commitsAfterMerge = mergedHeadOid === null ? null : mergedHeadOid === status?.oid ? 0 : commitsAfterMergeQuery.data ?? null;
   // Only a branch whose upstream has another name needs the server's push review up front.
   const trackedUnderOtherName = Boolean(currentBranch && status?.upstream && !status.upstream.endsWith(`/${currentBranch}`));
   const publicationQuery = useQuery({
@@ -727,7 +736,10 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   }, [refreshFileHistoryState, repository]);
 
   const performRefresh = useCallback(async (repositoryId: string, request: RefreshRequest) => {
-    const { background, manual, scope, view: refreshView } = request;
+    const { background, manual, view: refreshView } = request;
+    // Nothing of this repository is on screen yet, so read all of it whatever asked for the refresh.
+    const firstRead = snapshotRepositoryIdRef.current !== repositoryId;
+    const scope = firstRead ? 'unknown' : request.scope;
     const operations = refreshOperationsForScope(scope, refreshView);
     const resources = queryResourcesForScope(scope, refreshView);
     if (!background) { busyRef.current = 'refresh'; setBusy('refresh'); }
@@ -777,13 +789,15 @@ export default function App({ initialView, initialSelection, pullRequestCreation
         snapshot = await readSnapshot();
       } catch (reason) {
         // Automatic refreshes race with tools still writing to the repository; retry once quietly before reporting.
-        if (!background || repositoryRef.current?.id !== repositoryId) throw reason;
+        // So does the first read of a repository, which would otherwise leave its workspace empty; a folder that is gone is reported at once.
+        if (!(background || (firstRead && !isRepositoryMissing(reason))) || repositoryRef.current?.id !== repositoryId) throw reason;
         await new Promise((resolve) => setTimeout(resolve, BACKGROUND_REFRESH_RETRY_MS));
         if (repositoryRef.current?.id !== repositoryId) return;
         snapshot = await readSnapshot();
       }
       const [nextStatus, nextBranches, nextWorktrees, nextFiles, nextHistory] = snapshot;
       if (repositoryRef.current?.id !== repositoryId) return;
+      snapshotRepositoryIdRef.current = repositoryId;
       setSnapshotRepositoryId(repositoryId);
       setStatus(nextStatus);
       if (nextBranches) setBranches(nextBranches);
@@ -864,7 +878,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       if (busyRef.current || repositorySyncOperationsRef.current.has(repositoryId)) return;
       inFlight = true;
       try {
-        const result = await opentig.refs.fetch(repositoryId);
+        const result = await inBackground(() => opentig.refs.fetch(repositoryId));
         if (!cancelled) noteFetchResult(repositoryId, result);
         if (cancelled || repositoryRef.current?.id !== repositoryId || result.status !== 'success') return;
         await refresh({ background: true, scope: 'refs' });
@@ -887,10 +901,14 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   }, [noteFetchResult, refresh, remoteFetchIntervalSeconds, repository]);
 
   useEffect(() => {
+    snapshotRepositoryIdRef.current = null;
     setSnapshotRepositoryId(null);
     clearCommitFilesCache();
     filesRef.current = null;
     setFiles(null);
+    // A later refresh may read only part of the new repository; it must not be shown next to the previous one's refs.
+    setBranches([]);
+    setWorktrees([]);
     setCreatePrOpen(false);
     setQuickOpen(false);
   }, [repository?.id]);
@@ -1095,11 +1113,10 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     const previous = status;
     setStatus(optimisticStatus(status, paths, mode));
     setBusy(mode);
-    setCommitProposal(null);
-    setPreparedCommitIndex(null);
     try {
       if (mode === 'stage') await opentig.index.stage(repository.id, paths);
       else await opentig.index.unstage(repository.id, paths);
+      commitPlan.pause('You changed the staged files by hand.');
       await refresh({ background: true });
       return true;
     } catch (reason) {
@@ -1547,10 +1564,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     }
     destructiveActionInFlightRef.current = true;
     setDestructiveAction(null);
-    if (action.kind === 'discard') {
-      setCommitProposal(null);
-      setPreparedCommitIndex(null);
-    }
+    if (action.kind === 'discard') commitPlan.pause('You discarded changes by hand.');
     try {
       const outcome = await dispatchDestructiveAction(action, true, {
         discard: (repositoryId, paths) => opentig.index.discard(repositoryId, paths),
@@ -1650,11 +1664,10 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     const previous = status;
     setStatus(optimisticStatus(status, paths, mode));
     setBusy(mode);
-    setCommitProposal(null);
-    setPreparedCommitIndex(null);
     try {
       if (mode === 'stage') await opentig.index.stageAll(repository.id);
       else await opentig.index.unstageAll(repository.id);
+      commitPlan.pause('You changed the staged files by hand.');
       await refresh({ background: true });
     } catch (reason) { setStatus(previous); reportError(mode === 'stage' ? 'Could not stage changes' : 'Could not unstage changes', reason); }
     finally { setBusy(null); }
@@ -1662,31 +1675,22 @@ export default function App({ initialView, initialSelection, pullRequestCreation
 
   const createCommit = async (options?: { push?: boolean }) => {
     if (!repository || !status?.stagedCount || !commitMessage.trim()) return;
+    // While a plan is followed, the commit must hold exactly its group's files.
+    const planStep = commitPlan.stepToCommit();
+    if (planStep === false) return;
     setBusy('commit');
     let committed = false;
     try {
       const result = await opentig.commits.create(repository.id, commitMessage);
       const subject = commitMessage.split(/\r?\n/, 1)[0] ?? commitMessage;
       setCommitMessage('');
-      // Completed groups stay in the plan, marked done. Removing them would
-      // renumber the remaining ones under the user after every commit.
-      if (commitProposal && preparedCommitIndex !== null) {
-        const done = new Set(completedCommitIndices).add(preparedCommitIndex);
-        setCompletedCommitIndices(done);
-        setPreparedCommitIndex(null);
-        if (done.size === commitProposal.commits.length) {
-          setCommitProposal(null);
-          setCompletedCommitIndices(new Set());
-          sileo.success({ title: 'Commit plan finished', description: `${done.size} commits created.` });
-        }
-      } else {
-        setCommitProposal(null);
-        setPreparedCommitIndex(null);
-        setCompletedCommitIndices(new Set());
-      }
-      lastAppliedMessageRef.current = '';
+      // The plan marks its group done and stages the next one, so the box is
+      // ready for the next commit. Any other commit ends the plan.
+      if (planStep) await commitPlan.committed({ oid: result.oid, subject });
+      else commitPlan.clear();
       setViewerSelection({ type: 'commit', oid: result.oid, subject });
-      setMobilePane('viewer');
+      // On a phone the plan stays in front until its last commit is made.
+      if (!planStep) setMobilePane('viewer');
       await refresh({ background: true });
       committed = true;
     } catch (reason) {
@@ -1731,14 +1735,12 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       const result = await opentig.ai.generateCommitMessage({ repositoryId: repository.id, harness, model, requestId });
       if (generationRequest.current?.id !== requestId || generationRequest.current.repositoryId !== repository.id) return;
       setCommitMessage(result.message);
-      lastAppliedMessageRef.current = result.message;
-      setCommitProposal(result.proposal);
-      setPreparedCommitIndex(null);
-      setCompletedCommitIndices(new Set());
-      setCommitPlanCollapsed(false);
+      // Within a plan only one group is staged, so this rewrites that group's message.
+      const withinPlan = commitPlan.step !== null;
+      if (!withinPlan) commitPlan.propose(result.proposal, result.message);
       sileo.success({
         title: `Message generated with ${harnessLabel(result.harness)}`,
-        description: result.proposal
+        description: withinPlan ? undefined : result.proposal
           ? `${result.proposal.commits.length} focused commits may be clearer than one.`
           // Silence used to hide both "the model saw no split" and "OpenTig
           // refused to offer one"; only the second needs explaining.
@@ -1747,7 +1749,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
             : result.contextWasTruncated
               ? 'A truncated version of the staged diff was used.'
               : undefined,
-        ...(result.splitBlockedReason ? { duration: 8_000 } : {}),
+        ...(result.splitBlockedReason && !withinPlan ? { duration: 8_000 } : {}),
       });
     } catch (reason) {
       const detail = aiDetail(reason);
@@ -1768,43 +1770,16 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     }
   };
 
-  const prepareCommitGroup = async (index: number) => {
-    const proposal = commitProposal;
-    const group = proposal?.commits[index];
-    if (!repository || !status || !proposal || !group || status.readOnly || busy) return;
-    // Preparing a different group unstages the one already prepared, so the work
-    // waiting in the index is only discarded when the user says so.
-    if (preparedCommitIndex !== null && preparedCommitIndex !== index
-      && !window.confirm('Commit group ' + (preparedCommitIndex + 1) + ' is staged and not committed yet. Prepare a different group and unstage it?')) {
-      return;
-    }
-    // The generated message is only overwritten when it is still the generated
-    // one; anything typed by hand is the user's to keep.
-    if (commitMessage.trim() && commitMessage !== lastAppliedMessageRef.current
-      && !window.confirm('Replace the commit message you wrote with the one from this group?')) {
-      return;
-    }
+  /** A change the plan makes to the index: staging a group, or staging everything back. */
+  const runCommitPlanTask = async (task: () => Promise<void>) => {
+    if (!repository || busy) return;
     setBusy('prepare-commit-group');
     try {
-      await opentig.index.prepareCommitGroup({
-        repositoryId: repository.id,
-        paths: group.paths,
-        expectedStagedPaths: status.changes.filter((change) => change.staged && !change.conflict).map((change) => change.path).sort(),
-        expectedFingerprint: group.fingerprint,
-      });
-      setCommitMessage(group.message);
-      lastAppliedMessageRef.current = group.message;
-      setPreparedCommitIndex(index);
-      await refresh({ background: true });
-      sileo.success({ title: 'Commit group prepared', description: `${group.paths.length} ${group.paths.length === 1 ? 'file is' : 'files are'} staged. Review the diff before committing.` });
-      window.setTimeout(() => commitTextareaRef.current?.focus(), 0);
+      await task();
     } catch (reason) {
-      // The plan survives a failed prepare: regenerating it costs another model
-      // call, and most failures here are recoverable.
-      setPreparedCommitIndex(null);
-      sileo.error({ title: 'Could not prepare the commit group', description: messageOf(reason), duration: 10_000 });
-      await refresh({ background: true });
+      reportError('Could not stage the files again', reason);
     } finally {
+      await refresh({ background: true });
       setBusy(null);
     }
   };
@@ -1812,13 +1787,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   useEffect(() => {
     const active = generationRequest.current;
     if (active && active.repositoryId !== repository?.id) void opentig.ai.cancelGeneration(active.id);
-    setCommitProposal(null);
-    setPreparedCommitIndex(null);
   }, [repository?.id]);
-
-  // Nothing is left to show in the commit sheet once the last staged file is gone.
-  useEffect(() => {
-  }, [commitProposal, status?.stagedCount]);
 
   useEffect(() => () => {
     const active = generationRequest.current;
@@ -1974,6 +1943,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       const result = await opentig.commits.undoLatest(repository.id, selected.oid);
       if (result.status === 'success') {
         setUndoCommit(null);
+        // A plan can't account for a commit taken back, whether it made it or not.
+        commitPlan.clear();
         setViewerSelection(null);
         setMobilePane('list');
         // The draft lands in the commit box, which a collapsed sidebar hides.
@@ -2069,10 +2040,73 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     }
   };
 
-  const pullUpdates = async () => {
+  /** The notice for a pull of the open repository that did not finish. */
+  const pullFailureToast = (err: unknown) => {
+    if (err instanceof PullBlocked) {
+      const result = err.result;
+      if (result.status === 'blocked-conflicts') {
+        return {
+          title: 'Could not pull changes',
+          description: `Resolve ${result.files.length === 1 ? 'the pending conflict' : `${result.files.length} pending conflicts`} before updating.`,
+          duration: 10_000,
+          button: { title: 'View conflicts', onClick: () => showConflicts(result.files) },
+        };
+      }
+      if (result.status === 'stash-conflict') {
+        return {
+          title: result.updated ? 'Update completed with local conflicts' : 'Could not restore local changes',
+          description: 'The safety stash was preserved. Resolve the conflicts to continue.',
+          duration: 12_000,
+          button: { title: 'View conflicts', onClick: () => showConflicts(result.files) },
+        };
+      }
+      if (result.status === 'restore-failed') {
+        return {
+          title: 'Could not automatically restore local changes',
+          description: result.recoveredChanges
+            ? 'Some changes are visible and the safety stash was preserved. Do not continue until you review them.'
+            : 'The worktree is still clean and the safety stash remains intact.',
+          duration: 12_000,
+        };
+      }
+      if (result.status === 'rebase-conflict') {
+        return {
+          title: 'Could not rebase onto the remote',
+          description: result.files.length > 0
+            ? `Your local commits overlap the remote changes in ${result.files.length === 1 ? result.files[0] : `${result.files.length} files`}. The branch was left unchanged.`
+            : 'Your local commits overlap the remote changes. The branch was left unchanged.',
+          duration: 10_000,
+        };
+      }
+      if (result.status === 'diverged') {
+        return {
+          title: 'Branch has diverged',
+          description: `${result.ahead} ahead and ${result.behind} behind.`,
+          duration: 10_000,
+        };
+      }
+      if (result.status === 'no-upstream') {
+        return { title: 'Branch has no upstream configured', duration: 10_000 };
+      }
+      return {
+        title: 'A Git operation is in progress',
+        description: `Finish or cancel ${result.operation} before updating.`,
+        duration: 10_000,
+      };
+    }
+    const unconfirmed = unconfirmedResultToast(err);
+    if (unconfirmed) return unconfirmed;
+    const detail = serializedErrorFromReason(err);
+    const access = detail && 'access' in detail ? detail.access : undefined;
+    if (access) return remoteAccessToast('Could not pull changes', access);
+    const message = messageOf(err);
+    return { title: 'Could not pull changes', description: message, duration: 10_000 };
+  };
+
+  const pullUpdates = async (expectedBehind?: number) => {
     if (!repository || busy) return;
     const repositoryId = repository.id;
-    const pendingBehind = status?.behind ?? 0;
+    const pendingBehind = expectedBehind ?? status?.behind ?? 0;
     setBusy('pull');
     try {
       await sileo.promise(async () => {
@@ -2083,67 +2117,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       }, {
         loading: repositorySyncLoadingToast(repositoryId, 'pull', pendingBehind > 0 ? `Pulling ${pendingBehind} ${pendingBehind === 1 ? 'commit' : 'commits'}…` : 'Pulling changes…'),
         success: (result) => pullSuccessCopy(result),
-        error: (err) => {
-          if (err instanceof PullBlocked) {
-            const result = err.result;
-            if (result.status === 'blocked-conflicts') {
-              return {
-                title: 'Could not pull changes',
-                description: `Resolve ${result.files.length === 1 ? 'the pending conflict' : `${result.files.length} pending conflicts`} before updating.`,
-                duration: 10_000,
-                button: { title: 'View conflicts', onClick: () => showConflicts(result.files) },
-              };
-            }
-            if (result.status === 'stash-conflict') {
-              return {
-                title: result.updated ? 'Update completed with local conflicts' : 'Could not restore local changes',
-                description: 'The safety stash was preserved. Resolve the conflicts to continue.',
-                duration: 12_000,
-                button: { title: 'View conflicts', onClick: () => showConflicts(result.files) },
-              };
-            }
-            if (result.status === 'restore-failed') {
-              return {
-                title: 'Could not automatically restore local changes',
-                description: result.recoveredChanges
-                  ? 'Some changes are visible and the safety stash was preserved. Do not continue until you review them.'
-                  : 'The worktree is still clean and the safety stash remains intact.',
-                duration: 12_000,
-              };
-            }
-            if (result.status === 'rebase-conflict') {
-              return {
-                title: 'Could not rebase onto the remote',
-                description: result.files.length > 0
-                  ? `Your local commits overlap the remote changes in ${result.files.length === 1 ? result.files[0] : `${result.files.length} files`}. The branch was left unchanged.`
-                  : 'Your local commits overlap the remote changes. The branch was left unchanged.',
-                duration: 10_000,
-              };
-            }
-            if (result.status === 'diverged') {
-              return {
-                title: 'Branch has diverged',
-                description: `${result.ahead} ahead and ${result.behind} behind.`,
-                duration: 10_000,
-              };
-            }
-            if (result.status === 'no-upstream') {
-              return { title: 'Branch has no upstream configured', duration: 10_000 };
-            }
-            return {
-              title: 'A Git operation is in progress',
-              description: `Finish or cancel ${result.operation} before updating.`,
-              duration: 10_000,
-            };
-          }
-          const unconfirmed = unconfirmedResultToast(err);
-          if (unconfirmed) return unconfirmed;
-          const detail = serializedErrorFromReason(err);
-          const access = detail && 'access' in detail ? detail.access : undefined;
-          if (access) return remoteAccessToast('Could not pull changes', access);
-          const message = messageOf(err);
-          return { title: 'Could not pull changes', description: message, duration: 10_000 };
-        },
+        error: pullFailureToast,
       });
     } catch {
       // sileo.promise() already rendered the matching error toast above.
@@ -2160,6 +2134,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   const performPush = async () => {
     if (!repository) return;
     const repositoryId = repository.id;
+    const loading = repositorySyncLoadingToast(repositoryId, 'push', status?.upstream && !offersNewBranch ? 'Pushing commits…' : 'Publishing branch…');
     setBusy('push');
     try {
       await sileo.promise(async () => {
@@ -2168,7 +2143,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
         if (!result || result.status === 'success' || result.status === 'up-to-date' || result.status === 'published') return result;
         throw new PushBlocked(result);
       }, {
-        loading: repositorySyncLoadingToast(repositoryId, 'push', status?.upstream && !offersNewBranch ? 'Pushing commits…' : 'Publishing branch…'),
+        loading,
         success: (result) => !result ? { title: `${repository.name}: publication canceled` }
           : result.status === 'published' && result.previousUpstream ? newBranchPublishedCopy(result)
           : result.status === 'published' ? { title: `${repository.name}: branch published`, description: `${result.remote}/${result.branch}` }
@@ -2176,42 +2151,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
           ? { title: `${repository.name}: ${result.commits} ${result.commits === 1 ? 'commit pushed' : 'commits pushed'}` }
           : { title: `${repository.name}: no commits pending push` },
         error: (err) => {
-          if (err instanceof PushBlocked) {
-            const result = err.result;
-            if (result.status === 'blocked-conflicts') {
-              return {
-                title: `${repository.name}: could not push commits`,
-                description: `Resolve ${result.files.length === 1 ? 'the pending conflict' : `${result.files.length} pending conflicts`} before continuing.`,
-                duration: 10_000,
-                button: { title: 'View conflicts', onClick: () => showConflicts(result.files) },
-              };
-            }
-            if (result.status === 'blocked-operation') {
-              return { title: `${repository.name}: a Git operation is in progress`, description: `Finish or cancel ${result.operation} before pushing.`, duration: 10_000 };
-            }
-            if (result.status === 'no-upstream') {
-              return { title: `${repository.name}: branch has no upstream configured`, description: 'Configure a remote branch before pushing.', duration: 10_000 };
-            }
-            if (result.status === 'diverged') {
-              return {
-                title: `${repository.name}: the remote contains new changes`,
-                description: `${result.ahead} ahead and ${result.behind} behind. Pull rebases your local commits on top when there are no conflicts.`,
-                duration: 10_000,
-                button: { title: 'Pull', onClick: () => void pullUpdates() },
-              };
-            }
-            if (result.status === 'remote-required') return { title: 'Choose a remote to publish the branch' };
-            if (result.status === 'rejected' && result.reason === 'remote-changed') {
-              return {
-                title: `${repository.name}: the remote contains new changes`,
-                description: 'Pull rebases your local commits on top when there are no conflicts, then push again.',
-                duration: 10_000,
-                button: { title: 'Pull', onClick: () => void pullUpdates() },
-              };
-            }
-            if (result.status === 'rejected' && result.access) return remoteAccessToast(`${repository.name}: could not push commits`, result.access, true);
-            return { title: `${repository.name}: could not push commits`, description: result.message, duration: 10_000, button: { title: 'Repository access', onClick: () => { setSettingsSection('github'); setSettingsOpen(true); } } };
-          }
+          if (err instanceof PushBlocked) return pushBlockedToast(loading.id, err.result, { repositoryId, label: repository.name });
           return unconfirmedResultToast(err) ?? { title: `${repository.name}: could not push commits`, description: messageOf(err), duration: 10_000 };
         },
       });
@@ -2241,7 +2181,73 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     return { title, description: `${copy.summary} ${copy.detail}`, duration: 10_000, button: { title: label, onClick: () => void handleRemoteAccessAction(copy.action, push) } };
   };
 
-  const syncRepository = async (item: RepositoryOption, projectName: string | null, action: ProjectSyncAction) => {
+  /** The notice for a push that did not happen, with what can be done about it from there. */
+  const pushBlockedToast = (toastId: string, result: PushBlocked['result'], target: SyncTarget) => {
+    const { row } = target;
+    const sentByGit = result.status === 'rejected' && (result.reason === 'remote-changed' || result.reason === 'destination-exists' || result.reason === 'hook');
+    if (!row && result.status === 'rejected' && result.access && !sentByGit) return remoteAccessToast(`${target.label}: could not push commits`, result.access, true);
+    const copy = pushBlockedCopy(target.label, result, { project: Boolean(row), upstream: row ? null : status?.upstream ?? null });
+    // The notice has done its job once an action is taken; the action reports on its own.
+    const closing = (action: () => void) => () => { sileo.dismiss(toastId); action(); };
+    const pullOnly = closing(() => void (row ? syncRepository(row.item, row.projectName, 'pull', row.settled) : pullUpdates(result.status === 'diverged' ? result.behind : undefined)));
+    return syncToast(copy, copy.action === 'sync' ? [
+      { title: 'Pull and push', onClick: closing(() => void pullAndPush(target, result.status === 'diverged' ? result : {})) },
+      { title: 'Pull only', onClick: pullOnly },
+    ] : copy.action === 'pull' ? [{ title: 'Pull', onClick: pullOnly }]
+      : copy.action === 'access' ? [{ title: 'Repository access', onClick: () => { setSettingsSection('github'); setSettingsOpen(true); } }]
+      : copy.action === 'conflicts' && !row && result.status === 'blocked-conflicts' ? [{ title: 'View conflicts', onClick: () => showConflicts(result.files) }]
+      : []);
+  };
+
+  /** Pulls and then pushes as one notice. A pull that does not finish cleanly ends it with nothing pushed. */
+  const pullAndPush = async (target: SyncTarget, pending: { ahead?: number; behind?: number }) => {
+    const { repositoryId, label, row } = target;
+    if (repositorySyncOperationsRef.current.has(repositoryId) || (!row && busyRef.current)) return;
+    const stage = (action: ProjectSyncAction | null) => {
+      if (!row) { busyRef.current = action; setBusy(action); return; }
+      if (action) repositorySyncOperationsRef.current.set(repositoryId, action);
+      else repositorySyncOperationsRef.current.delete(repositoryId);
+      setRepositorySyncOperations(new Map(repositorySyncOperationsRef.current));
+    };
+    const refreshIfOpen = async () => { if (repositoryRef.current?.id === repositoryId) await refresh({ background: true }); };
+    const progress = (verb: string, commits: number | undefined) => `${row ? `${label}: ${verb.toLowerCase()}` : verb} ${commits ? `${commits} ${commits === 1 ? 'commit' : 'commits'}` : 'commits'}…`;
+    const loading = repositorySyncLoadingToast(repositoryId, 'pull', progress('Pulling', pending.behind));
+    let pulling = true;
+    stage('pull');
+    try {
+      await sileo.promise(async () => {
+        const pulled = await opentig.refs.pull(repositoryId).catch(rethrowAfterRefreshing);
+        await refreshIfOpen();
+        if (pulled.status !== 'success' && pulled.status !== 'up-to-date') throw new PullBlocked(pulled);
+        pulling = false;
+        stage('push');
+        sileo.show({ ...loading, type: 'loading', duration: null, title: progress('Pushing', pulled.status === 'success' ? pulled.localCommits : pending.ahead) });
+        const pushed = await branchPush.push(repositoryId, label).catch(rethrowAfterRefreshing);
+        await refreshIfOpen();
+        if (!pushed || pushed.status === 'success' || pushed.status === 'up-to-date' || pushed.status === 'published') return { pulled, pushed };
+        throw new PushBlocked(pushed);
+      }, {
+        loading,
+        success: ({ pulled, pushed }) => pullAndPushSuccessCopy(row ? label : null, pulled, pushed),
+        error: (err) => {
+          if (!pulling) {
+            return err instanceof PushBlocked ? pushBlockedToast(loading.id, err.result, target)
+              : unconfirmedResultToast(err) ?? { title: row ? `Could not push ${label}` : `${label}: could not push commits`, description: messageOf(err), duration: 10_000 };
+          }
+          if (!row) return nothingPushedCopy(pullFailureToast(err));
+          return nothingPushedCopy(err instanceof PullBlocked ? projectPullBlockedCopy(label, err.result)
+            : unconfirmedResultToast(err) ?? { title: `Could not pull ${label}`, description: messageOf(err), duration: 10_000 });
+        },
+      });
+    } catch {
+      // sileo.promise() already rendered the matching error toast above.
+    } finally {
+      stage(null);
+      row?.settled?.();
+    }
+  };
+
+  const syncRepository = async (item: RepositoryOption, projectName: string | null, action: ProjectSyncAction, settled?: () => void) => {
     const repositoryId = item.recent.id;
     if (repositorySyncOperationsRef.current.has(repositoryId)) return;
     repositorySyncOperationsRef.current.set(repositoryId, action);
@@ -2263,16 +2269,17 @@ export default function App({ initialView, initialSelection, pullRequestCreation
             : unconfirmedResultToast(reason) ?? { title: `Could not pull ${label}`, description: messageOf(reason), duration: 10_000 },
         });
       } else {
+        const loading = repositorySyncLoadingToast(repositoryId, action, `Pushing ${label}…`);
         await sileo.promise(async () => {
           const result = await branchPush.push(repositoryId, label).catch(rethrowAfterRefreshing);
           if (repositoryRef.current?.id === repositoryId) await refresh({ background: true });
           if (!result || result.status === 'success' || result.status === 'up-to-date' || result.status === 'published') return result;
           throw new PushBlocked(result);
         }, {
-          loading: repositorySyncLoadingToast(repositoryId, action, `Pushing ${label}…`),
+          loading,
           success: (result) => result ? projectPushSuccessCopy(label, result) : { title: `${label}: publication canceled` },
           error: (reason) => reason instanceof PushBlocked
-            ? projectPushBlockedCopy(label, reason.result)
+            ? pushBlockedToast(loading.id, reason.result, { repositoryId, label, row: { item, projectName, settled } })
             : unconfirmedResultToast(reason) ?? { title: `Could not push ${label}`, description: messageOf(reason), duration: 10_000 },
         });
       }
@@ -2281,6 +2288,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     } finally {
       repositorySyncOperationsRef.current.delete(repositoryId);
       setRepositorySyncOperations(new Map(repositorySyncOperationsRef.current));
+      settled?.();
     }
   };
 
@@ -2517,10 +2525,11 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     return { id: item, icon: <IconSearch />, label: 'Search' };
   });
   const sidebarWidth = sidebarDragWidth ?? bootstrap.preferences.sidebarWidth;
-  // Docked at the bottom of the sidebar on desktop; in a sheet on phones, whose text and plan live here and outlast it.
+  // Docked at the bottom of the sidebar on desktop and floating over the list on phones. Its text and plan live here and outlast it.
+  const hasCommitPlan = commitPlan.plan !== null || commitPlan.outcome !== null;
   const commitComposer = (
     <CommitComposer
-      open={mobile ? mobilePane === 'list' && view === 'changes' && mobileMainAction({ screen: 'changes', stagedCount, hasCommitPlan: commitProposal !== null }) === 'commit' : view === 'changes' && Boolean(status?.stagedCount || commitProposal)}
+      open={mobile ? mobilePane === 'list' && view === 'changes' && mobileMainAction({ screen: 'changes', stagedCount, hasCommitPlan }) === 'commit' : view === 'changes' && Boolean(status?.stagedCount || hasCommitPlan)}
       stagedCount={status?.stagedCount ?? 0}
       message={commitMessage}
       generating={Boolean(generating)}
@@ -2534,18 +2543,20 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       busy={busy}
       readOnly={Boolean(status?.readOnly)}
       canPush={Boolean(status?.branch && !status.detached && !status.readOnly)}
-      proposal={commitProposal}
-      preparedIndex={preparedCommitIndex}
-      completed={completedCommitIndices}
-      collapsed={commitPlanCollapsed}
+      plan={commitPlan.plan}
+      outcome={commitPlan.outcome}
+      changes={status?.changes ?? []}
+      phone={mobile}
       textareaRef={commitTextareaRef}
       onMessage={setCommitMessage}
       onGenerate={() => void generateCommitMessage()}
       onCancelGenerate={() => void cancelCommitMessageGeneration()}
-      onDismissProposal={() => { setCommitProposal(null); setPreparedCommitIndex(null); setCompletedCommitIndices(new Set()); }}
-      onToggleCollapsed={() => setCommitPlanCollapsed((value) => !value)}
-      onOpenPath={(path) => { selectViewer({ type: 'diff', path, kind: 'staged' }); }}
-      onPrepare={(index) => void prepareCommitGroup(index)}
+      onPlanMode={(mode) => void runCommitPlanTask(() => commitPlan.chooseMode(mode))}
+      onActivateGroup={(index) => void runCommitPlanTask(() => commitPlan.activate(index))}
+      onDiscardPlan={() => void runCommitPlanTask(() => commitPlan.discard())}
+      onDismissOutcome={commitPlan.clear}
+      onOpenPath={(path, kind) => { selectViewer({ type: 'diff', path, kind }); }}
+      onOpenCommit={(commit) => { selectViewer({ type: 'commit', oid: commit.oid, subject: commit.subject }); }}
       onCommit={(options) => void createCommit(options)}
     />
   );
@@ -2706,6 +2717,9 @@ export default function App({ initialView, initialSelection, pullRequestCreation
           status={status}
           githubInfo={githubInfo}
           branchPullRequest={currentBranchPullRequest}
+          branchPullRequestNewCommits={commitsAfterMerge}
+          branchSwitchPending={busy === 'branch' || blockedBranchSwitch !== null || agentBranchSwitch !== null}
+          onCreatePullRequest={() => setCreatePrOpen(true)}
           upstreamMismatch={upstreamMismatch}
           onOpenPullRequest={(number) => { selectViewer({ type: 'pull-request', number }); }}
           branches={branches}
@@ -2781,7 +2795,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
             <div className="sidebar-body">
               <div className="view-fade">
               {view === 'changes' && !currentSnapshot && (
-                <div className="view-loading" role="status"><IconLoader4 className="spinner" aria-hidden="true" /><ShimmeringText text="Loading changes…" /></div>
+                <div className="view-loading" role="status"><Spinner className="view-spinner" /><ShimmeringText text="Loading changes…" /></div>
               )}
               {view === 'changes' && currentSnapshot && (
                 <ChangesView
@@ -2965,7 +2979,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
                   </div>
                 )}
               >
-                <Suspense fallback={<div className="viewer-message"><IconLoader4 className="spinner" /> <ShimmeringText text="Preparing viewer…" /></div>}>
+                <Suspense fallback={<div className="viewer-message"><Spinner className="view-spinner" /> <ShimmeringText text="Preparing viewer…" /></div>}>
                   <FileViewerToolbarHostContext.Provider value={fileViewerToolbarHost}>
                     <FileLineTargetContext.Provider value={fileLineTarget}>
                     <LineBlameContext.Provider value={lineBlameSettings}>

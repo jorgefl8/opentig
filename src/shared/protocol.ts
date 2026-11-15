@@ -120,6 +120,7 @@ export const OPEN_TIG_SERVER_COMMANDS = {
   'commits.list': command(IPC.commitsList, 'history', false),
   'commits.files': command(IPC.commitsFiles, 'commit-files', false),
   'commits.recognize': command(IPC.commitsRecognize, 'commit-recognize', false),
+  'commits.countAfter': command(IPC.commitsCountAfter, 'commits-after', false),
 
   'refs.listBranches': command(IPC.branchesList, 'branches', false),
   'refs.switchBranch': command(IPC.branchSwitch, 'switch-branch', true, { timeoutMs: SWITCH_BRANCH_TIMEOUT_MS }),

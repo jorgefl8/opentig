@@ -2,6 +2,8 @@ import type { BranchDetails, BranchInfo, ManagedWorktree, WorktreeAgents, Worktr
 import type { PullRequestSummary } from '../../../shared/contracts';
 
 export type LocalRefsTab = 'branches' | 'worktrees';
+/** The branch (full ref) or worktree (folder) the manager opens on, when it is opened for one. */
+export interface LocalRefsFocus { branch?: string; worktree?: string }
 
 /** Windows paths compare case-insensitively and ignore separator spelling. */
 export function normalizeWorktreePath(value: string): string {

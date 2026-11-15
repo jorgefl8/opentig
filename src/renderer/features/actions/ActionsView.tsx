@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import { IconBolt, IconCheck, IconClock, IconExternalLink, IconFilter, IconGitCommit, IconGitPullRequest, IconLoader4, IconPlayerPlay, IconTag } from '@tabler/icons-react';
+import { IconBolt, IconCheck, IconClock, IconExternalLink, IconFilter, IconGitCommit, IconGitPullRequest, IconPlayerPlay, IconTag } from '@tabler/icons-react';
 import { formatTimeAgo } from '@shared/date-format';
 import type { GitHubRepositoryAccount } from '@shared/github-accounts';
 import type { ActionRunSummary, RunnableWorkflow } from '../../../shared/contracts';
@@ -21,6 +21,7 @@ import { RunWorkflowDialog } from './RunWorkflowDialog';
 import { actionRunListOptions, latestActionRunsOptions, listedRunIds, runsOfPages } from './action-queries';
 import { actionStatusLabel, actionTone, findStartedRun, formatDuration, runDuration, STARTED_RUN_REFRESH_MS, STARTED_RUN_WINDOW_MS, type StartedWorkflow } from './action-status';
 import './actions.css';
+import { Spinner } from '@/components/ui/spinner';
 
 /** --motion-med and --ease-out, as elsewhere in the app. */
 const ROW_TRANSITION = { duration: 0.2, ease: [0.32, 0.72, 0, 1] as const };
@@ -84,7 +85,7 @@ export function ActionsTools({ repositoryId, nameWithOwner, account, onOpenGitHu
           <button type="button" role="radio" aria-checked={workflowId === null} className="pulls-filter-option" onClick={() => choose(null)}>
             <IconCheck className={workflowId === null ? '' : 'invisible'} aria-hidden="true" /> All workflows
           </button>
-          {workflows.isPending && <span className="pulls-filter-option" role="status"><IconLoader4 className="animate-spin" aria-hidden="true" /> Loading workflows…</span>}
+          {workflows.isPending && <span className="pulls-filter-option" role="status"><Spinner /> Loading workflows…</span>}
           {sorted.map((workflow) => (
             <button key={workflow.id} type="button" role="radio" aria-checked={workflowId === workflow.id} className="pulls-filter-option" onClick={() => choose(workflow.id)}>
               <IconCheck className={workflowId === workflow.id ? '' : 'invisible'} aria-hidden="true" /> {workflow.name}
@@ -94,7 +95,7 @@ export function ActionsTools({ repositoryId, nameWithOwner, account, onOpenGitHu
       </GitHubSectionMenu>
       <Tooltip>
         <TooltipTrigger render={<Button variant="ghost" size="icon-xs" className="change-action-button" onClick={() => setRunning(true)} aria-label={started ? 'Run a workflow (waiting for the started run to appear)' : 'Run a workflow'} />}>
-          {started ? <IconLoader4 className="animate-spin" /> : <IconPlayerPlay />}
+          {started ? <Spinner /> : <IconPlayerPlay />}
         </TooltipTrigger>
         <TooltipContent>{started ? 'Waiting for the run GitHub is starting…' : 'Run a workflow'}</TooltipContent>
       </Tooltip>
@@ -115,7 +116,7 @@ export function ActionsView({ repositoryId, workflowId, activeRunId, onSelect }:
     <div className="pulls-view">
       {error && <div className="pulls-error" role="alert"><span>{error}</span><Button variant="ghost" size="xs" onClick={() => void query.refetch()}>Retry</Button></div>}
       <div className="pulls-scroll" role="list" aria-label="Workflow runs">
-        {runs === null && !error && <div className="view-loading" role="status"><IconLoader4 className="spinner" /> <ShimmeringText text="Loading workflow runs…" /></div>}
+        {runs === null && !error && <div className="view-loading" role="status"><Spinner className="view-spinner" /> <ShimmeringText text="Loading workflow runs…" /></div>}
         {runs?.length === 0 && <p className="empty-list">{workflowId === null ? 'No workflow runs yet.' : 'This workflow has no runs yet.'}</p>}
         {/* The first page just shows; runs that appear later, and pages loaded with Load more, fade in. */}
         <AnimatePresence initial={false}>

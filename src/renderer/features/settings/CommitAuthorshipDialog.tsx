@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { IconLoader4 } from '@tabler/icons-react';
 import { sileo } from 'sileo';
 import type { RepositoryInfo } from '@shared/contracts';
 import { commitAuthorshipInputSchema, type CommitAuthorship } from '@shared/commit-authorship';
@@ -10,6 +9,7 @@ import { Dialog, DialogDescription, DialogPopup, DialogTitle } from '@/component
 import { opentig } from '@/lib/opentig-api';
 import { queryKeys } from '@/lib/query-client';
 import { authorshipSourceLabel } from './commit-authorship-copy';
+import { Spinner } from '@/components/ui/spinner';
 
 export function CommitAuthorshipDialog({ repository, open, onOpenChange }: {
   repository: RepositoryInfo; open: boolean; onOpenChange(open: boolean): void;
@@ -53,7 +53,7 @@ export function CommitAuthorshipDialog({ repository, open, onOpenChange }: {
     <DialogPopup className="github-authorship-dialog">
       <DialogTitle>{review ? 'Apply authorship to this repository' : 'Commit authorship'}</DialogTitle>
       <DialogDescription>{repository.name} · name and email used by Git for future commits.</DialogDescription>
-      {loading ? <p className="github-authorship-loading" role="status"><IconLoader4 className="animate-spin" aria-hidden="true" /><ShimmeringText text="Reading the current Git identity…" /></p> : snapshot && <>
+      {loading ? <p className="github-authorship-loading" role="status"><Spinner /><ShimmeringText text="Reading the current Git identity…" /></p> : snapshot && <>
         <div className="github-authorship-review">
           <span>{review ? 'Current' : 'Current Git identity'}</span><strong>{snapshot.author?.name || 'Not configured'}</strong>
           <p>{snapshot.author?.email || 'No commit email configured'}</p><small>{authorshipSourceLabel(snapshot.source)}</small>
@@ -71,7 +71,7 @@ export function CommitAuthorshipDialog({ repository, open, onOpenChange }: {
       {error && <p className="settings-notice" role="alert">{error}</p>}
       <div className="github-add-actions">
         <Button variant="ghost" disabled={saving} onClick={() => onOpenChange(false)}>Cancel</Button>
-        {review ? <><Button variant="ghost" disabled={saving} onClick={() => setReview(false)}>Back</Button><Button disabled={saving || !snapshot?.editable} onClick={() => void apply()}>{saving && <IconLoader4 className="animate-spin" />}Apply to repository</Button></>
+        {review ? <><Button variant="ghost" disabled={saving} onClick={() => setReview(false)}>Back</Button><Button disabled={saving || !snapshot?.editable} onClick={() => void apply()}>{saving && <Spinner />}Apply to repository</Button></>
           : <Button type="submit" form="commit-authorship-form" disabled={loading || !snapshot?.editable || !parsed.success}>Review changes</Button>}
       </div>
     </DialogPopup>

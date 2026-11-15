@@ -28,6 +28,9 @@ export interface GitRepository {
   addRemote(): Promise<{ bare: string; other: GitRepository }>;
 }
 
+/** What the stand-in AI CLI answers to a generation: the JSON a provider would return. */
+export type AiAnswer = Record<string, unknown>;
+
 /** Starts an idle process the system reports as a coding agent, such as `claude`, working in `cwd`. */
 export type StartFakeAgent = (name: string, cwd: string) => Promise<void>;
 
@@ -94,12 +97,41 @@ async function pair(page: Page, server: OpenTigServer): Promise<void> {
   await expect(page).not.toHaveURL(/\/pair/, { timeout: 20_000 });
 }
 
-export const test = base.extend<{ server: OpenTigServer; repository: GitRepository; pairedPage: Page; startFakeAgent: StartFakeAgent }>({
+/**
+ * Puts a stand-in `codex` first on the server's PATH. It reports a signed-in
+ * account and answers every generation with `answer`, so a journey that needs a
+ * generated message runs without a real AI CLI, account, or network.
+ */
+async function standInAiCli(home: string, answer: AiAnswer): Promise<Record<string, string>> {
+  const bin = path.join(home, 'stand-in-bin');
+  const codexHome = path.join(home, '.codex');
+  await mkdir(bin, { recursive: true });
+  await mkdir(codexHome, { recursive: true });
+  // A generation runs with a profile linked to this file, so it has to exist.
+  await writeFile(path.join(codexHome, 'auth.json'), '{}\n');
+  // The prompt arrives on stdin; the answer goes where --output-last-message says.
+  const script = `#!${process.execPath}
+const { writeFileSync } = require('node:fs');
+const args = process.argv.slice(2);
+if (args[0] === '--version') console.log('codex-cli 0.0.0-e2e');
+else if (args[0] === 'login') console.log('Logged in using a stand-in account');
+else if (args[0] === 'exec') {
+  process.stdin.resume();
+  process.stdin.on('end', () => writeFileSync(args[args.indexOf('--output-last-message') + 1], ${JSON.stringify(JSON.stringify(answer))}));
+} else process.exit(1);
+`;
+  await writeFile(path.join(bin, 'codex'), script, { mode: 0o755 });
+  return { PATH: `${bin}${path.delimiter}${process.env.PATH ?? ''}`, CODEX_HOME: codexHome };
+}
+
+export const test = base.extend<{ aiAnswer: AiAnswer | null; server: OpenTigServer; repository: GitRepository; pairedPage: Page; startFakeAgent: StartFakeAgent }>({
+  // Off unless a journey sets it with `test.use`, so the others see no AI CLI of the tests' making.
+  aiAnswer: [null, { option: true }],
+
   // One isolated server per test: its own home, settings, and port, so tests
   // never share state and nothing touches a developer's OpenTig data. The
   // built server starts in about a second.
-  // oxlint-disable-next-line no-empty-pattern -- Playwright reads fixture dependencies from this parameter.
-  server: async ({}, use, testInfo) => {
+  server: async ({ aiAnswer }, use, testInfo) => {
     const serverEntry = path.resolve(path.dirname(testInfo.config.configFile ?? process.cwd()), 'packages/server/dist/bin.mjs');
     if (!existsSync(serverEntry)) throw new Error('The built OpenTig server is missing. Run "pnpm run build:server" before the end-to-end tests.');
     const home = await mkdtemp(path.join(os.tmpdir(), 'opentig-e2e-home-'));
@@ -108,7 +140,7 @@ export const test = base.extend<{ server: OpenTigServer; repository: GitReposito
     const child = spawn(process.execPath, [serverEntry, 'serve', '--home', home, '--host', '127.0.0.1', '--port', String(port)], {
       // A private HOME keeps the system Trash, CLI logins, and global Git
       // config of the developer's account out of the tests.
-      env: { ...process.env, NO_COLOR: '1', HOME: home, XDG_CONFIG_HOME: path.join(home, 'config'), XDG_DATA_HOME: path.join(home, 'data'), XDG_CACHE_HOME: path.join(home, 'cache') },
+      env: { ...process.env, NO_COLOR: '1', HOME: home, XDG_CONFIG_HOME: path.join(home, 'config'), XDG_DATA_HOME: path.join(home, 'data'), XDG_CACHE_HOME: path.join(home, 'cache'), ...(aiAnswer ? await standInAiCli(home, aiAnswer) : {}) },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     child.stdout.setEncoding('utf8');

@@ -96,12 +96,13 @@ You can disable **double-tap-Control**, which brings the desktop app to the fron
 
 Repository, worktree, branch, AI model, project assignment, and PR base selectors have searchable menus. Repository and worktree choices show a second checkout line; other choices use one line.
 
+- **Find a branch:** local branches list the current one first, then `main` (or `master`), then the rest by most recent commit. Each branch shows how long ago its last commit was made. Remote branches stay in alphabetical order.
 - **Find a model:** search by name or identifier; models are grouped by provider.
 - **Keep a default:** **Default (CLI)** and **No project** remain available during filtering.
 - **Switch repositories by number:** number shortcuts remain active until the search field takes focus.
 - **Read a shortened name:** hover a truncated selected name to see it in full. The hint stays while the pointer remains on the control and hides while the menu is open.
 
-The top bar starts with the OpenTig logo and name, then reads as a breadcrumb: the repository in a soft box with its icon and switcher key, the branch, and the branch's pull request number, colored by its state: green when open, gray with **Draft** for a draft, purple when merged, and red when closed. When that pull request belongs to a native stack, a button beside it lists the stack's layers. On the right it shows **Pull** or **Push** counts and **Publish** only when the branch needs them, then **Refresh**, any update or fetch notice, and **Settings**. Push and Publish are tinted amber, like History's unpublished commits, and Pull blue, for what's coming in; the repository menu's sync buttons and the phone's pill use the same colors.
+The top bar starts with the OpenTig logo and name, then reads as a breadcrumb: the repository in a soft box with its icon and switcher key, the branch, and the branch's pull request number, colored by its state and labeled once it is no longer open: green when open, gray with **Draft** for a draft, purple with **Merged** when merged, and red with **Closed** when closed. It is always the pull request of the branch you have checked out, not the one you are reading. A merged pull request whose branch got commits afterwards adds how many, such as **+2 new**, and **Create PR** appears beside it. When that pull request belongs to a native stack, a button beside it lists the stack's layers. On the right it shows **Pull** or **Push** counts and **Publish** only when the branch needs them, then **Refresh**, any update or fetch notice, and **Settings**. Push and Publish are tinted amber, like History's unpublished commits, and Pull blue, for what's coming in; the repository menu's sync buttons and the phone's pill use the same colors.
 
 - **Repository menu:** repositories, then **Open repository…** (`Ctrl+O`), **Open on GitHub** for GitHub repositories, and **Manage projects…**.
 - **Worktrees:** with more than one, a small button with their number sits beside the repository. Its menu lists them and **Manage worktrees…**, and its tooltip names the current one. A worktree where a coding agent is working shows the agent's logo and name.
@@ -130,7 +131,7 @@ Use the bottom **Changes**, **Files**, **History**, **GitHub**, and **Search** t
 
 | Viewer | Title | Actions |
 | --- | --- | --- |
-| **Diff** | File name, then folder and lines added and removed | **⋯**: **Open file**, **Wrap lines**, **Discard changes** |
+| **Diff** | File name, then folder, lines added and removed, and the status letter | **⋯**: **Open file**, **Wrap lines**, **Discard changes** |
 | **File** | File name. Tap it for the sheet of open files, to switch, close, and see which are unsaved or missing | **⋯**: what the file's row in Files offers, such as **Rename**, **Copy path**, **Move to…**, **Delete** |
 | **Commit** | Short hash | **⋯**: **Copy hash**, the pull request its message refers to, **Open on GitHub**, **Undo commit…** |
 | **Pull request** | Number, then source and base branch | **⋯**: the pull request menu, plus **Disable auto-merge** when it's on |
@@ -141,14 +142,14 @@ Use the bottom **Changes**, **Files**, **History**, **GitHub**, and **Search** t
 
 | Screen | Main action |
 | --- | --- |
-| **Changes** with staged files, or a commit plan | The commit box, described below |
+| **Changes** with staged files, or a commit plan with something to show | The commit box, described below |
 | **Pull request, Summary** | Its primary action, such as **Merge**, **Merge when ready**, **Update branch**, or **Ready for review**. Nothing floats when there's only a reason to give, such as a conflict |
 | **Pull request, Comments** | A one-line **Write a comment** field that opens the composer in a sheet. A draft stays when the sheet closes, and shows on the field |
 | **Pull request, Checks, Timeline, Code** | None, so the screen goes to what you're reading |
 | **Draft release** | **Publish**. It's disabled with the reason above it when the account can't publish |
 | **A file with unsaved edits** | **Save** |
 
-The commit box stays above the bottom bar in **Changes** while something is staged, and above the keyboard while you type. It holds the message, your AI provider, and the commit button, whose arrow chooses **Commit** or **Commit and push** without running anything. A suggested plan appears above it with its groups and scrolls inside. Opening a diff and coming back keeps the message and the plan, and generating carries on until it finishes or you cancel it.
+The commit box stays above the bottom bar in **Changes** while something is staged, and above the keyboard while you type. It holds the message, your AI provider, and the commit button, whose arrow chooses **Commit** or **Commit and push** without running anything. A suggested split adds the **One commit** / **Split into *n*** choice above it. While splitting, a row shows the progress and opens the plan in a full-height sheet with each commit's card, files, and the button for the next commit. Opening a diff and coming back keeps the message and the plan, with the sheet open again if it was, and committing a group keeps you on the plan. Generating carries on until it finishes or you cancel it.
 
 Actions that ask first do so in a sheet with the same checks as on desktop: merging shows **Method** as a picker and **Delete branch** as a switch where they apply, one button, and the account underneath. A sheet can't be dismissed while its answer is being sent. A notification that arrives while a sheet is open appears at the top of the screen, above the sheet.
 
@@ -172,14 +173,14 @@ When you open something from a list and come back, the list is where you left it
 
 Changes is **always a flat list on a phone**, whichever of **Tree** or **List** you chose. That choice stays saved for the desktop layout. Conflicts come first, then **Staged** and **Not staged**, with **Stage all** or **Unstage all** beside the count.
 
-A row has the file's name, its folder when it isn't at the root, its status letter, and a **+** or **−** button at the far right to stage or unstage it. Tap the row for its diff, or its preview for an image, SVG, or HTML file; the diff's top bar has **⋯** for opening the file, wrapping lines, or discarding a working-tree change. There are no folder rows, so staging a whole folder isn't available on a phone; **Stage all** is.
+A row has the file's name, its folder when it isn't at the root, its status letter, and a **+** or **−** button at the far right to stage or unstage it. Tap the row for its diff, or its preview for an image; the diff's top bar has **⋯** for opening the file, wrapping lines, or discarding a working-tree change. There are no folder rows, so staging a whole folder isn't available on a phone; **Stage all** is.
 
 Press and hold a row for:
 
 | Row | Sheet |
 | --- | --- |
-| **Not staged** | **Open file** and **Discard changes**, which asks first. A file that opens on its preview adds **View changes**. A whole new folder offers only **Discard changes** |
-| **Staged** | **Open file**. A file that opens on its preview adds **View changes** |
+| **Not staged** | **Open file** and **Discard changes**, which asks first. An image, which opens on its preview, adds **View changes**. A whole new folder offers only **Discard changes** |
+| **Staged** | **Open file**. An image, which opens on its preview, adds **View changes** |
 | **Conflict** | **Open file**. Tap the row to resolve it |
 
 ### Files

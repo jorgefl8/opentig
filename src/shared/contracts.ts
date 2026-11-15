@@ -222,8 +222,26 @@ export type PushResult =
   | { status: 'blocked-conflicts'; files: string[] }
   | { status: 'blocked-operation'; operation: string }
   | { status: 'no-upstream' }
-  | { status: 'diverged'; ahead: number; behind: number }
-  | { status: 'rejected'; reason: 'authentication' | 'inaccessible' | 'permission' | 'remote-changed' | 'hook' | 'network' | 'configuration' | 'unknown'; message: string; access?: RemoteAccessProblem };
+  | {
+    /** The upstream has commits this branch lacks, so the push has to wait for a pull. Nothing was overwritten. */
+    status: 'diverged'; ahead: number; behind: number;
+    /** The tracked branch, such as `origin/main`. */
+    upstream?: string;
+    /** The newest commits only the upstream has, each as `<short oid> <subject>`. */
+    incoming?: string[];
+    /** What Git printed when it refused; absent when OpenTig saw it coming and sent nothing. */
+    details?: string;
+  }
+  | {
+    status: 'rejected';
+    /** `destination-exists`: the branch was being published under a name the remote already uses for other commits. */
+    reason: 'authentication' | 'inaccessible' | 'permission' | 'remote-changed' | 'destination-exists' | 'hook' | 'network' | 'configuration' | 'unknown';
+    /** A sentence OpenTig wrote for this case, or empty when the reason alone explains it. */
+    message: string;
+    /** What Git printed, to show only on request. */
+    details?: string;
+    access?: RemoteAccessProblem;
+  };
 
 export interface BranchDetailsRequest {
   repositoryId: string;
@@ -951,6 +969,8 @@ export interface OpenTigApi {
     files(repositoryId: string, oid: string): Promise<CommitFile[]>;
     /** Whether a full hash names a commit in the local repository, so a link to it can open the commit viewer. */
     recognize(repositoryId: string, oid: string): Promise<boolean>;
+    /** Commits on HEAD that `oid` does not reach, such as those made after a merged pull request's head. Null when `oid` is not a commit in the local repository. */
+    countAfter(repositoryId: string, oid: string): Promise<number | null>;
   };
   refs: {
     listBranches(repositoryId: string): Promise<BranchInfo[]>;
@@ -1072,7 +1092,7 @@ export const IPC = {
   repositorySearch: 'repository:search', repositoryReplaceSearch: 'repository:replace-search',
   diffGet: 'diff:get', diffCommit: 'diff:commit', diffCommitFile: 'diff:commit-file', indexStage: 'index:stage',
   indexUnstage: 'index:unstage', indexDiscard: 'index:discard', indexStageAll: 'index:stage-all', indexUnstageAll: 'index:unstage-all', indexPrepareCommitGroup: 'index:prepare-commit-group', indexUpdateConflict: 'index:update-conflict', indexResolveConflict: 'index:resolve-conflict', commitCreate: 'commit:create', commitUndoLatest: 'commit:undo-latest',
-  commitsList: 'commits:list', commitsFiles: 'commits:files', commitsRecognize: 'commits:recognize', commitAuthorship: 'commits:authorship', commitSetAuthorship: 'commits:set-authorship', branchesList: 'refs:branches', branchSwitch: 'refs:switch', worktreesList: 'refs:worktrees', worktreeAgents: 'refs:worktree-agents',
+  commitsList: 'commits:list', commitsFiles: 'commits:files', commitsRecognize: 'commits:recognize', commitsCountAfter: 'commits:count-after', commitAuthorship: 'commits:authorship', commitSetAuthorship: 'commits:set-authorship', branchesList: 'refs:branches', branchSwitch: 'refs:switch', worktreesList: 'refs:worktrees', worktreeAgents: 'refs:worktree-agents',
   worktreeSelect: 'refs:select-worktree', refsPull: 'refs:pull', refsPush: 'refs:push', refsPushContext: 'refs:push-context', refsFetch: 'refs:fetch',
   localRefsSnapshot: 'refs:local-snapshot', branchDetails: 'refs:branch-details', worktreeDetails: 'refs:worktree-details',
   branchDelete: 'refs:delete-branch', worktreeRemove: 'refs:remove-worktree',

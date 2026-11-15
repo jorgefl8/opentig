@@ -31,6 +31,7 @@ const worktreeProps = (items: WorktreeInfo[]): BranchComboboxWorktrees => ({ ite
 const trigger = () => container.querySelector<HTMLButtonElement>('[role="combobox"]')!;
 const option = (name: string) => [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(item => item.querySelector('strong')?.textContent === name);
 const groups = () => [...document.querySelectorAll('.searchable-picker-group')].map(group => group.textContent);
+const optionNames = () => [...document.querySelectorAll<HTMLElement>('[role="option"] strong')].map(name => name.textContent);
 const footer = () => [...document.querySelectorAll<HTMLButtonElement>('.searchable-picker-footer button')];
 
 async function open(props: { worktrees?: BranchComboboxWorktrees; readOnly?: boolean; disabled?: boolean }) {
@@ -104,4 +105,27 @@ it('marks the branch an agent is working on, in the worktree it opens', async ()
   expect(option('hotfix')?.textContent).toContain('2 agents (Claude Code and Codex) working');
   expect(option('hotfix')?.textContent).toContain('Open');
   expect(option('feature')?.textContent).not.toContain('Claude Code');
+});
+
+it('lists the current branch, then the default one, then local branches by most recent commit', async () => {
+  const daysAgo = (days: number) => new Date(Date.now() - days * 86_400_000).toISOString();
+  const recent = [
+    branchInfo('chore/deps', { date: daysAgo(21) }),
+    branchInfo('feat/new-order', { date: daysAgo(1) }),
+    branchInfo('feat/status', { current: true, date: daysAgo(40) }),
+    branchInfo('fix/undated'),
+    branchInfo('main', { date: daysAgo(3) }),
+    branchInfo('origin/zeta', { remote: true, date: daysAgo(0.5) }),
+    branchInfo('origin/alpha', { remote: true, date: daysAgo(90) }),
+  ];
+  await act(async () => root.render(createElement(TooltipProvider, { delay: 0 }, createElement(BranchCombobox, { branches: recent, currentLabel: 'feat/status', onBranch, onManage }))));
+  await act(async () => trigger().click());
+
+  // Alphabetical order would bury `main` and put a stale branch first.
+  // Remote branches keep the order Git gave them, since dates there are hard to scan.
+  expect(optionNames()).toEqual(['feat/status', 'main', 'feat/new-order', 'chore/deps', 'fix/undated', 'origin/zeta', 'origin/alpha']);
+  expect(option('main')?.textContent).toContain('Default');
+  expect(option('main')?.textContent).toContain('3d ago');
+  expect(option('feat/new-order')?.textContent).toContain('1d ago');
+  expect(option('fix/undated')?.textContent).not.toContain('ago');
 });

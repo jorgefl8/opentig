@@ -8,7 +8,7 @@ import {
   useTable,
   type SortingState,
 } from '@tanstack/react-table';
-import { IconArrowsSort, IconLoader4, IconRefresh, IconSortAscending, IconSortDescending, IconTrash, IconX } from '@tabler/icons-react';
+import { IconArrowsSort, IconRefresh, IconSortAscending, IconSortDescending, IconTrash, IconX } from '@tabler/icons-react';
 import { sileo } from 'sileo';
 import { groupProblemLogEntries, type ProblemLogEntry, type ProblemLogGroup } from '@shared/problems-log';
 import { opentig } from '@/lib/opentig-api';
@@ -17,6 +17,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogClose, DialogDescription, DialogPopup, DialogTitle } from '@/components/ui/dialog';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Spinner } from '@/components/ui/spinner';
 
 interface ProblemsLogDialogProps {
   open: boolean;
@@ -135,7 +136,7 @@ export function ProblemsLogDialog({ open, onOpenChange }: ProblemsLogDialogProps
           </div>
           <div className="ai-log-header-actions">
             <Button variant="ghost" size="sm" disabled={loading} onClick={() => void load()}>
-              {loading ? <IconLoader4 className="animate-spin" /> : <IconRefresh />} Refresh
+              {loading ? <Spinner /> : <IconRefresh />} Refresh
             </Button>
             <Button variant="ghost" size="sm" disabled={entries.length === 0} onClick={() => void clear()}><IconTrash /> Clear</Button>
             <DialogClose render={<Button variant="ghost" size="icon-sm" aria-label="Close problem history" />}><IconX /></DialogClose>
@@ -151,7 +152,7 @@ export function ProblemsLogDialog({ open, onOpenChange }: ProblemsLogDialogProps
         )}
 
         <div className="ai-log-body">
-          {loading && entries.length === 0 && <div className="view-loading" role="status"><IconLoader4 className="spinner" /> <ShimmeringText text="Reading problems…" /></div>}
+          {loading && entries.length === 0 && <div className="view-loading" role="status"><Spinner className="view-spinner" /> <ShimmeringText text="Reading problems…" /></div>}
           {!loading && entries.length === 0 && <p className="ai-log-empty">No local problems recorded yet. Failed Git, file, and network operations will show up here.</p>}
           {entries.length > 0 && (
             <div className="ai-log-table-wrap">

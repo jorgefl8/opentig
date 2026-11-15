@@ -1,5 +1,8 @@
+import { createElement } from 'react';
+import { IconArrowUp } from '@tabler/icons-react';
 import type { PullResult, PushResult } from '../../../shared/contracts';
 import type { SileoOptions } from 'sileo';
+import { SyncToastBody, type SyncToastAction } from './SyncToastBody';
 
 export type ProjectSyncAction = 'pull' | 'push';
 
@@ -108,12 +111,117 @@ export function projectPushSuccessCopy(repository: string, result: Extract<PushR
     : { title: `${repository}: no commits pending push` };
 }
 
-export function projectPushBlockedCopy(repository: string, result: Exclude<PushResult, { status: 'success' | 'up-to-date' | 'published' }>): ProjectSyncToastCopy {
-  if (result.status === 'remote-required') return { title: `Choose a remote for ${repository}`, description: 'Select where to publish the branch.' };
-  if (result.status === 'blocked-conflicts') return { title: `Could not push ${repository}`, description: `${result.files.length} pending ${result.files.length === 1 ? 'conflict' : 'conflicts'} must be resolved.`, duration: 10_000 };
-  if (result.status === 'blocked-operation') return { title: `Could not push ${repository}`, description: `Finish or cancel ${result.operation} first.`, duration: 10_000 };
-  if (result.status === 'no-upstream') return { title: `Could not push ${repository}`, description: 'Current branch has no upstream configured.', duration: 10_000 };
-  if (result.status === 'diverged') return { title: `Could not push ${repository}`, description: `Remote has new changes; branch is ${result.ahead} ahead and ${result.behind} behind. Pull first — OpenTig rebases your local commits on top when there are no conflicts.`, duration: 10_000 };
-  if (result.status === 'rejected' && result.reason === 'remote-changed') return { title: `Could not push ${repository}`, description: 'Remote has new changes. Pull first — OpenTig rebases your local commits on top when there are no conflicts.', duration: 10_000 };
-  return { title: `Could not push ${repository}`, description: result.message, duration: 10_000 };
+type BlockedPush = Exclude<PushResult, { status: 'success' | 'up-to-date' | 'published' }>;
+
+/** What a notice about a push that did not happen says and offers. */
+export interface PushBlockedCopy extends ProjectSyncToastCopy {
+  /** The sentence that says what happened, shown stronger than the description. */
+  lead?: string;
+  /** Git's own words and the branch's position; only shown on request. */
+  details?: string;
+  /**
+   * What the notice offers: `sync` pulls and then pushes, or only pulls; `pull`
+   * when there is nothing to push yet; `access` reviews the account of the repository.
+   */
+  action?: 'sync' | 'pull' | 'access' | 'conflicts';
+  /** Something to do next rather than a failure. */
+  offer?: boolean;
+}
+
+const commitCount = (count: number) => `${count} ${count === 1 ? 'commit' : 'commits'}`;
+
+/** Why Git refused a push, for the reasons that need no words from the server. */
+const PUSH_REJECTION: Record<Extract<BlockedPush, { status: 'rejected' }>['reason'], string> = {
+  authentication: 'OpenTig could not sign in to the remote. Check the account or credentials this repository uses.',
+  inaccessible: 'The remote repository was not found, or this account cannot see it.',
+  permission: 'This account is not allowed to push to this repository.',
+  'remote-changed': 'Your commits have to go on top of them before they can be pushed.',
+  'destination-exists': 'The remote already has a branch with this name and other commits. OpenTig won\'t overwrite it.',
+  hook: 'The remote declined this push. A branch rule or a check on the server is blocking it.',
+  network: 'Could not reach the remote. Check your connection and try again.',
+  configuration: 'Review how this branch is set up to push in Git, then try again.',
+  unknown: 'Git could not complete the push.',
+};
+
+/**
+ * The notice for a push that did not happen, for the open repository and for a
+ * repository of a project alike. Git's own output never goes in the body.
+ */
+export function pushBlockedCopy(repository: string, result: BlockedPush, options: { project?: boolean; upstream?: string | null } = {}): PushBlockedCopy {
+  const title = options.project ? `Could not push ${repository}` : `${repository}: could not push commits`;
+  const offerTitle = options.project ? `${repository} needs the latest commits first` : 'Push needs the latest commits first';
+  if (result.status === 'remote-required') return options.project ? { title: `Choose a remote for ${repository}`, description: 'Select where to publish the branch.' } : { title: 'Choose a remote to publish the branch' };
+  if (result.status === 'blocked-conflicts') return { title, description: `Resolve ${result.files.length === 1 ? 'the pending conflict' : `${result.files.length} pending conflicts`} before pushing.`, action: 'conflicts', duration: 10_000 };
+  if (result.status === 'blocked-operation') return { title, description: `Finish or cancel ${result.operation} first.`, duration: 10_000 };
+  if (result.status === 'no-upstream') return { title, description: 'Current branch has no upstream configured.', duration: 10_000 };
+  if (result.status === 'diverged') {
+    const upstream = result.upstream ?? options.upstream ?? 'The remote';
+    const them = result.behind === 1 ? 'it' : 'them';
+    const incoming = result.incoming ?? [];
+    const details = [
+      result.details,
+      `This branch is ${result.behind} behind and ${result.ahead} ahead of ${upstream === 'The remote' ? 'its upstream' : upstream}.`,
+      ...incoming.map((commit) => `incoming: ${commit}`),
+      ...(result.behind > incoming.length && incoming.length > 0 ? [`and ${result.behind - incoming.length} more`] : []),
+    ].filter(Boolean).join('\n');
+    return {
+      title: offerTitle,
+      lead: `${upstream} has ${commitCount(result.behind)} you don't have.`,
+      description: result.ahead === 0 ? `Pull ${them} first. There is nothing to push yet.`
+        : result.ahead === 1 ? `Your commit has to go on top of ${them} before it can be pushed.`
+        : `Your ${result.ahead} commits have to go on top of ${them} before they can be pushed.`,
+      details, action: result.ahead === 0 ? 'pull' : 'sync', offer: true, duration: 15_000,
+    };
+  }
+  const details = result.details ? { details: result.details } : {};
+  if (result.reason === 'remote-changed') {
+    return { title: offerTitle, lead: `${options.upstream ?? 'The remote'} has commits you don't have.`, description: PUSH_REJECTION[result.reason], ...details, action: 'sync', offer: true, duration: 15_000 };
+  }
+  const access = result.reason === 'authentication' || result.reason === 'inaccessible' || result.reason === 'permission';
+  return { title, description: result.message || PUSH_REJECTION[result.reason], ...details, ...(access ? { action: 'access' as const } : {}), duration: 10_000 };
+}
+
+/** One notice for a pull followed by a push. */
+export function pullAndPushSuccessCopy(
+  repository: string | null,
+  pulled: Extract<PullResult, { status: 'success' | 'up-to-date' }>,
+  pushed: Extract<PushResult, { status: 'success' | 'up-to-date' | 'published' }> | null,
+): ProjectSyncToastCopy {
+  const pushedAlone = !pushed ? 'Publication canceled'
+    : pushed.status === 'success' ? `${commitCount(pushed.commits)} pushed`
+    : pushed.status === 'published' ? 'Branch published'
+    : 'No commits pending push';
+  const summary = pulled.status === 'up-to-date' ? pushedAlone
+    : `Pulled ${commitCount(pulled.commits)}${!pushed ? '; publication canceled'
+      : pushed.status === 'success' ? ` and pushed ${pushed.commits}`
+      : pushed.status === 'published' ? ' and published the branch'
+      : '; nothing left to push'}`;
+  return {
+    title: repository ? `${repository}: ${summary.charAt(0).toLowerCase()}${summary.slice(1)}` : summary,
+    ...(pulled.status === 'success' && pulled.restoredLocalChanges ? { description: 'Local and staged changes were restored.' } : {}),
+  };
+}
+
+/** A pull that stopped before the push it was meant to prepare. */
+export function nothingPushedCopy<Copy extends object>(copy: Copy): Copy & { description: string } {
+  const description = (copy as { description?: unknown }).description;
+  return { ...copy, description: typeof description === 'string' ? `${description} Nothing was pushed.` : 'Nothing was pushed.' };
+}
+
+/**
+ * The Sileo notice for a push that did not happen. A plain message with at most
+ * one action keeps Sileo's own layout; anything more goes in the notice body.
+ */
+export function syncToast(copy: PushBlockedCopy, actions: SyncToastAction[] = []): SileoOptions {
+  const { title, lead, description, details, offer, duration } = copy;
+  const plain = !lead && !details && actions.length < 2;
+  return {
+    title,
+    ...(duration === undefined ? {} : { duration }),
+    ...(plain
+      ? { ...(description ? { description } : {}), ...(actions[0] ? { button: actions[0] } : {}) }
+      // The actions stay on screen for as long as the notice does.
+      : { description: createElement(SyncToastBody, { lead, description, details, actions, offer }), ...(duration ? { autopilot: { collapse: duration } } : {}) }),
+    ...(offer ? { icon: createElement(IconArrowUp, { size: 16, stroke: 2, 'aria-hidden': true }), styles: { title: 'sync-toast-offer', badge: 'sync-toast-offer' } } : {}),
+  };
 }

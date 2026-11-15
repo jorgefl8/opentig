@@ -1,10 +1,11 @@
 import { useContext } from 'react';
-import { IconAlertTriangle, IconChevronRight, IconCircleCheck, IconCircleMinus, IconCircleX, IconClock, IconExternalLink, IconLoader4 } from '@tabler/icons-react';
+import { IconAlertTriangle, IconChevronRight, IconCircleCheck, IconCircleMinus, IconCircleX, IconClock, IconExternalLink } from '@tabler/icons-react';
 import type { PullRequestCheck, PullRequestCheckState, PullRequestLiveState } from '../../../shared/contracts';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { parseRepositoryLink, RepositoryLinksContext } from '@/components/repository-links';
 import { groupPullRequestChecks, openOnGitHub, pullRequestChecksSentence } from './gh-utils';
+import { Spinner } from '@/components/ui/spinner';
 
 const RESULTS: Record<PullRequestCheck['result'], { Icon: typeof IconClock; label: string; tone: string }> = {
   pass: { Icon: IconCircleCheck, label: 'Passed', tone: 'passing' },
@@ -31,7 +32,7 @@ export function PullRequestChecksPanel({ checks, loading, url }: { checks: PullR
     return (
       <section className="pr-checks-panel" aria-label="Checks">
         {loading
-          ? <p className="pr-empty-description" role="status"><IconLoader4 className="animate-spin" aria-hidden="true" /> <ShimmeringText text="Loading checks…" /></p>
+          ? <p className="pr-empty-description" role="status"><Spinner /> <ShimmeringText text="Loading checks…" /></p>
           : <p className="pr-empty-description">Couldn't load the checks.</p>}
       </section>
     );

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { IconArrowBackUp, IconArrowForwardUp, IconArrowLeft, IconCheck, IconChecklist, IconChevronRight, IconClipboard, IconCopy, IconCut, IconDots, IconFilePlus, IconFiles, IconFolderPlus, IconFolderSymlink, IconLoader4, IconSearch, IconTrash } from '@tabler/icons-react';
+import { IconArrowBackUp, IconArrowForwardUp, IconArrowLeft, IconCheck, IconChecklist, IconChevronRight, IconClipboard, IconCopy, IconCut, IconDots, IconFilePlus, IconFiles, IconFolderPlus, IconFolderSymlink, IconSearch, IconTrash } from '@tabler/icons-react';
 import type { FileTreeEntry } from '@shared/git-types';
 import { Button } from '@/components/ui/button';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
@@ -16,6 +16,7 @@ import { OpenFilesSheet } from './OpenFilesSheet';
 import { parentDirectory, snapshotPathPresence } from './file-tree';
 import { useDirectoryLevel } from './use-directory-level';
 import type { FilesViewProps } from './FilesView';
+import { Spinner } from '@/components/ui/spinner';
 
 // Match .mobile-file-row in mobile.css.
 const ROW_HEIGHT = 48;
@@ -126,7 +127,7 @@ export function MobileFilesView(props: FilesViewProps) {
       </div>
       {directory && <button className="mobile-file-up" aria-label={`Back to ${parentDirectory(directory) || 'the top folder'}`} onClick={() => navigate(parentDirectory(directory))}><IconArrowLeft aria-hidden="true" /><span>{directory}</span></button>}
       <div className="mobile-files-scroll" ref={scrollRef} onScroll={(event) => scrollPositions.current.set(directory, event.currentTarget.scrollTop)}>
-        {level === null ? <p className="mobile-list-message" role="status"><IconLoader4 className="animate-spin" aria-hidden="true" /><ShimmeringText text="Loading files…" /></p> : failed ? <p className="mobile-list-message" role="alert">Could not read this folder.</p>
+        {level === null ? <p className="mobile-list-message" role="status"><Spinner /><ShimmeringText text="Loading files…" /></p> : failed ? <p className="mobile-list-message" role="alert">Could not read this folder.</p>
           : entries.length === 0 ? <p className="mobile-list-message">{query ? 'No matching files in this folder.' : 'This folder is empty.'}</p>
           : <div className="virtual-list" role="list" aria-label="Files in this folder" style={{ height: virtualizer.getTotalSize() }}>
             {virtualizer.getVirtualItems().map((row) => {

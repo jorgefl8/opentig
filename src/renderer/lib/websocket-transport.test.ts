@@ -63,6 +63,8 @@ function fixture(options: ConstructorParameters<typeof OpenTigWebSocketTransport
   return { transport, sockets };
 }
 
+const BUSY = { code: 'SERVER_BUSY', operation: 'server-protocol', message: 'Too many in-flight requests.', retryable: true };
+
 afterEach(() => {
   vi.useRealTimers();
 });
@@ -289,6 +291,87 @@ describe('OpenTigWebSocketTransport', () => {
     expect(transport.getState()).toBe('auth-required');
     await vi.advanceTimersByTimeAsync(10_000);
     expect(sockets).toHaveLength(1);
+    transport.close();
+  });
+
+  it('keeps a waiting request to its own time limit and never sends it afterwards', async () => {
+    vi.useFakeTimers();
+    const { transport, sockets } = fixture({ maxInFlight: 1 });
+    const running = transport.request(IPC.capabilities, []);
+    sockets[0]!.open();
+    const waiting = transport.request(IPC.commitCreate, ['repo-id', 'message'], { timeoutMs: 50 }).catch((reason: unknown) => reason);
+    await vi.advanceTimersByTimeAsync(50);
+    expect(await waiting).toBeInstanceOf(ServerRequestTimeoutError);
+    // The commit never left the client, so there is nothing to check before trying again.
+    expect(isUnconfirmedResult(await waiting)).toBe(false);
+
+    const { id } = JSON.parse(sockets[0]!.sent[0]!) as { id: string };
+    sockets[0]!.message({ type: 'result', id, result: { ok: true, value: { runtimeMode: 'headless' } } });
+    await expect(running).resolves.toMatchObject({ runtimeMode: 'headless' });
+    expect(sockets[0]!.sent).toHaveLength(1);
+    transport.close();
+  });
+
+  it('fails waiting requests on disconnect without calling an unsent change unconfirmed', async () => {
+    vi.useFakeTimers();
+    const { transport, sockets } = fixture({ maxInFlight: 1 });
+    const sent = transport.request(IPC.commitCreate, ['repo-id', 'first']).catch((reason: unknown) => reason);
+    const waiting = transport.request(IPC.commitCreate, ['repo-id', 'second']).catch((reason: unknown) => reason);
+    sockets[0]!.open();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(sockets[0]!.sent).toHaveLength(1);
+
+    sockets[0]!.serverClose(1006);
+    expect(await sent).toBeInstanceOf(ServerDisconnectedError);
+    expect(await waiting).toBeInstanceOf(ServerDisconnectedError);
+    expect(isUnconfirmedResult(await sent)).toBe(true);
+    expect(isUnconfirmedResult(await waiting)).toBe(false);
+    await vi.advanceTimersByTimeAsync(100);
+    sockets[1]!.open();
+    expect(sockets[1]!.sent).toEqual([]);
+    transport.close();
+  });
+
+  it('sends a request the server was too busy to run again, without reporting the refusal', async () => {
+    vi.useFakeTimers();
+    const { transport, sockets } = fixture();
+    const commit = transport.request(IPC.commitCreate, ['repo-id', 'message']);
+    sockets[0]!.open();
+    await Promise.resolve();
+    const first = JSON.parse(sockets[0]!.sent[0]!) as { id: string };
+    sockets[0]!.message({ type: 'result', id: first.id, result: { ok: false, error: BUSY } });
+    expect(sockets[0]!.sent).toHaveLength(1);
+
+    await vi.advanceTimersByTimeAsync(100);
+    expect(sockets[0]!.sent).toHaveLength(2);
+    const second = JSON.parse(sockets[0]!.sent[1]!) as { id: string; command: string; args: unknown[] };
+    expect(second).toMatchObject({ command: IPC.commitCreate, args: ['repo-id', 'message'] });
+    expect(second.id).not.toBe(first.id);
+    sockets[0]!.message({ type: 'result', id: second.id, result: { ok: true, value: { oid: 'abc' } } });
+    await expect(commit).resolves.toEqual({ oid: 'abc' });
+    transport.close();
+  });
+
+  it('gives up on a server that stays busy as a timeout, never as the refusal itself', async () => {
+    vi.useFakeTimers();
+    const { transport, sockets } = fixture({ requestTimeoutMs: 1_000 });
+    const commit = transport.request(IPC.commitCreate, ['repo-id', 'message']).catch((reason: unknown) => reason);
+    sockets[0]!.open();
+    const socket = sockets[0]!;
+    const send = socket.send.bind(socket);
+    socket.send = (data: string) => {
+      send(data);
+      const { id } = JSON.parse(data) as { id: string };
+      queueMicrotask(() => socket.message({ type: 'result', id, result: { ok: false, error: BUSY } }));
+    };
+    await vi.advanceTimersByTimeAsync(1_000);
+    const reason = await commit;
+    expect(reason).toBeInstanceOf(ServerRequestTimeoutError);
+    expect(reason).not.toHaveProperty('detail');
+    // Every attempt was refused before it ran.
+    expect(isUnconfirmedResult(reason)).toBe(false);
+    expect(socket.sent.length).toBeGreaterThan(1);
     transport.close();
   });
 

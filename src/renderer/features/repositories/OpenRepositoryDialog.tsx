@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEventHandler, type ReactNode, type Ref } from 'react';
-import { IconAlertCircle, IconArrowRight, IconArrowUp, IconBook2, IconCheck, IconChevronRight, IconClock, IconDeviceDesktop, IconDownload, IconFileText, IconFolder, IconGitBranch, IconHome, IconInbox, IconLoader4, IconPencil, IconSearch, IconServer, IconX } from '@tabler/icons-react';
+import { IconAlertCircle, IconArrowRight, IconArrowUp, IconBook2, IconCheck, IconChevronRight, IconClock, IconDeviceDesktop, IconDownload, IconFileText, IconFolder, IconGitBranch, IconHome, IconInbox, IconPencil, IconSearch, IconServer, IconX } from '@tabler/icons-react';
 import type { RecentRepository, ServerDirectoryListing } from '../../../shared/contracts';
 import { Button } from '@/components/ui/button';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { Dialog, DialogDescription, DialogPopup, DialogTitle } from '@/components/ui/dialog';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { folderBreadcrumbs, folderName, parentFolderPath, sameFolder } from './directory-navigation';
+import { Spinner } from '@/components/ui/spinner';
 
 type Folder = ServerDirectoryListing['directories'][number];
 const NO_RECENTS: RecentRepository[] = [];
@@ -205,7 +206,7 @@ export function OpenRepositoryDialog({ directory = false, onClone, open, onOpenC
       {openError && <p role="alert" className="repository-browser-open-error"><IconAlertCircle aria-hidden="true" />{openError}</p>}
       <footer className="repository-browser-footer">
         <div className="repository-browser-selection" aria-live="polite"><span className={`repository-selection-icon${selected?.repository ? ' ready' : ''}`}>{selected?.repository ? <IconCheck aria-hidden="true" /> : <IconFolder aria-hidden="true" />}</span><div><strong>{selected?.name ?? (loading ? <ShimmeringText text="Loading folders…" /> : directory ? 'Choose a folder' : 'Choose a repository')}{selected?.repository && <span>Git repository</span>}</strong><Tooltip><TooltipTrigger render={<span className="repository-selection-path" tabIndex={selected ? 0 : undefined} />}>{editingPath ? 'Press Enter to browse the path before opening.' : selected?.path ?? (directory ? 'Select a folder from the list.' : 'Select a Git repository from the list.')}</TooltipTrigger><TooltipContent>{selected?.path ?? (directory ? 'Select a folder from the list.' : 'Select a Git repository from the list.')}</TooltipContent></Tooltip></div></div>
-        <div className="repository-browser-actions"><Button type="button" variant="ghost" disabled={busy} onClick={() => onOpenChange(false)}>Cancel</Button><Button ref={confirmButton} type="button" disabled={!canOpen} onClick={() => void openSelected()}>{busy ? <><IconLoader4 className="animate-spin" /><ShimmeringText text="Working…" /></> : <>{confirmLabel}<IconArrowRight aria-hidden="true" /></>}</Button></div>
+        <div className="repository-browser-actions"><Button type="button" variant="ghost" disabled={busy} onClick={() => onOpenChange(false)}>Cancel</Button><Button ref={confirmButton} type="button" disabled={!canOpen} onClick={() => void openSelected()}>{busy ? <><Spinner /><ShimmeringText text="Working…" /></> : <>{confirmLabel}<IconArrowRight aria-hidden="true" /></>}</Button></div>
       </footer>
     </DialogPopup>
   </Dialog>;

@@ -338,6 +338,14 @@ describe('on a phone', () => {
     expect(container.querySelector('.tree-folder')).not.toBeNull();
   });
 
+  it('marks a conflict with an exclamation mark, apart from every status letter', async () => {
+    await render([], [{ ...changed[0]!, path: 'README.md' }], 'list', [{ ...changed[1]!, path: 'src/app.ts', kind: 'conflicted', conflict: true }]);
+    const status = row('app.ts').querySelector('.status-code')!;
+    expect(status.textContent).toBe('!');
+    expect(status.getAttribute('aria-label')).toBe('Conflicted');
+    expect(row('README.md').querySelector('.status-code')?.getAttribute('aria-label')).toBe('Modified');
+  });
+
   it('gives a row one visible action, the status letter and no folder line at the root', async () => {
     await render([], [{ ...changed[0]!, path: 'README.md' }], 'list', [], { readOnly: false });
     const item = row('README.md');

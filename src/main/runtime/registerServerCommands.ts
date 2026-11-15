@@ -424,6 +424,7 @@ export function registerServerCommands(
   handle(IPC.commitsList, 'history', (id, cursor) => services.operations.listCommits(stringArg(id, 'history', 64), cursor === undefined ? undefined : stringArg(cursor, 'history', 128)));
   handle(IPC.commitsFiles, 'commit-files', (id, oid) => services.operations.commitFiles(stringArg(id, 'commit-files', 64), stringArg(oid, 'commit-files', 128)));
   handle(IPC.commitsRecognize, 'commit-recognize', (id, oid) => services.operations.recognizeCommit(stringArg(id, 'commit-recognize', 64), stringArg(oid, 'commit-recognize', 128)));
+  handle(IPC.commitsCountAfter, 'commits-after', (id, oid) => services.operations.commitsAfter(stringArg(id, 'commits-after', 64), oidArg(oid, 'commits-after')));
   handle(IPC.branchesList, 'branches', (id) => services.operations.branches(stringArg(id, 'branches', 64)));
   handle(IPC.branchSwitch, 'switch-branch', (id, branch, moveChanges, allowAgents) => services.operations.switchBranch(
     stringArg(id, 'switch-branch', 64),

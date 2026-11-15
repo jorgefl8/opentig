@@ -1,7 +1,7 @@
 import { formatDateTime } from '@shared/date-format';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { normalizePairingOrigin } from '@shared/web-access';
-import { IconCopy, IconEdit, IconLoader4, IconTrash, IconX } from '@tabler/icons-react';
+import { IconCopy, IconEdit, IconTrash, IconX } from '@tabler/icons-react';
 import { renderSVG } from 'uqr';
 import { sileo } from 'sileo';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
@@ -19,6 +19,7 @@ import { browserConfiguration, browserWebAccessApi, loadBrowserWebAccessStatus }
 import { ListenerSettings } from './ListenerSettings';
 import { SettingGroup, SettingRow } from './SettingRows';
 import { canRestartForUpdate } from './update-api';
+import { Spinner } from '@/components/ui/spinner';
 
 const STATUS_COPY: Record<OpenTigWebAccessStatus['serverState'], string> = {
   starting: 'Starting',
@@ -148,7 +149,7 @@ export function WebAccessSettings() {
     : '', [pairing]);
 
   if (loading && !status && sessions.length === 0) {
-    return <div className="web-access-loading" role="status"><IconLoader4 className="animate-spin" aria-hidden="true" /><ShimmeringText text="Loading web access…" /></div>;
+    return <div className="web-access-loading" role="status"><Spinner /><ShimmeringText text="Loading web access…" /></div>;
   }
 
   const changeExposure = async (enabled: boolean) => {
@@ -383,7 +384,7 @@ export function WebAccessSettings() {
           </div>
           <div className="settings-row-control">
             <Button size="sm" onClick={() => void createLink()} disabled={!canCreateLink}>
-              {pairingPending && <IconLoader4 className="animate-spin" />} Create pairing link
+              {pairingPending && <Spinner />} Create pairing link
             </Button>
           </div>
         </div>
@@ -391,7 +392,7 @@ export function WebAccessSettings() {
         {pairingVisible && (
           <div className="web-access-pairing" role="status">
             <div className="web-access-pairing-copy">
-              {!pairing && <IconLoader4 className="animate-spin" aria-hidden="true" />}
+              {!pairing && <Spinner />}
               <div><strong>{pairing ? 'Pairing link ready' : <ShimmeringText text="Creating pairing link…" />}</strong><span>{pairing ? `Expires ${formatDateTime(pairing.expiresAt, { seconds: true })}.` : 'You can close this while the link is being created.'}</span></div>
               <Tooltip><TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Close pairing link" onClick={dismissPairing} />}><IconX /></TooltipTrigger><TooltipContent>Close pairing link</TooltipContent></Tooltip>
             </div>

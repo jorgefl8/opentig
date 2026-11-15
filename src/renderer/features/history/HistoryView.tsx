@@ -1,7 +1,7 @@
 import { formatDate, formatDateTime } from '@shared/date-format';
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { IconArrowDown, IconChevronRight, IconFilter, IconLoader4, IconRestore, IconSearch } from '@tabler/icons-react';
+import { IconArrowDown, IconChevronRight, IconFilter, IconRestore, IconSearch } from '@tabler/icons-react';
 import type { CommitFile, CommitInfo } from '../../../shared/git-types';
 import { Button } from '@/components/ui/button';
 import { MobileSwitchRow } from '@/components/MobileChrome';
@@ -11,7 +11,7 @@ import { LinkedText } from '@/components/LinkedText';
 import { RepositoryLink } from '@/components/RepositoryLink';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { changeStatusCode } from '@/features/changes/change-status';
+import { ChangeStatusBadge } from '@/features/changes/ChangeStatusBadge';
 import { buildCommitGraph, type CommitGraphRow } from './commit-graph';
 import { canUndoCommit, commitPublication, commitReference, historyRows, matchesHistory, showsBranchLine } from './history-presentation';
 import { readCommitFilesCache, writeCommitFilesCache } from './commit-files-cache';
@@ -20,6 +20,7 @@ import { copyCommitHash } from './copy-commit-hash';
 import { getVsCodeFileIconUrl } from '@/lib/vscode-icons';
 import { useMobileLayout } from '@/lib/use-mobile-layout';
 import { opentig } from '@/lib/opentig-api';
+import { Spinner } from '@/components/ui/spinner';
 
 interface HistoryViewProps {
   repositoryId: string; upstream: string | null; readOnly: boolean; operation: string | null;
@@ -72,7 +73,7 @@ export function HistoryView({ repositoryId, upstream, readOnly, operation, commi
     setMatchIndex(next);
     commitVirtualizer.scrollToIndex(matches[next]!, { align: 'center' });
   };
-  if (commits === null) return <div className="view-loading" role="status"><IconLoader4 className="spinner" /> <ShimmeringText text="Loading history…" /></div>;
+  if (commits === null) return <div className="view-loading" role="status"><Spinner className="view-spinner" /> <ShimmeringText text="Loading history…" /></div>;
   const canGroup = grouped || commits.some((commit) => commit.parentCount > 1);
   return (
     <div className="history-list" data-searching={searching || undefined} style={{ '--history-row-height': `${rowHeight}px` } as CSSProperties}>
@@ -237,7 +238,7 @@ function CommitRow({ phone, repositoryId, upstream, baseRef, commit, graphRow, s
       <Reveal open={open} follow className="commit-files" style={{ paddingLeft: graphWidth + COMMIT_TEXT_INSET }}>
         {commit.body && <p className="commit-description"><LinkedText text={commit.body} /></p>}
         {filesError && <div className="commit-files-message error">{filesError}</div>}
-        {!files && !filesError && <div className="commit-files-message"><IconLoader4 className="spinner" /> <ShimmeringText text="Loading files…" /></div>}
+        {!files && !filesError && <div className="commit-files-message"><Spinner className="view-spinner" /> <ShimmeringText text="Loading files…" /></div>}
         {files && files.length === 0 && <div className="commit-files-message">{commit.parentCount > 1 ? 'This merge commit has no changes of its own.' : 'This commit has no file changes.'}</div>}
         {files && files.length > 0 && (
           <>
@@ -330,7 +331,7 @@ function CommitFileRow({ file, onSelect }: { file: CommitFile; onSelect(): void 
           </>
         )}
       </span>
-      <span className="status-code" data-kind={file.kind}>{changeStatusCode(file.kind)}</span>
+      <ChangeStatusBadge kind={file.kind} />
     </div>
   );
 }

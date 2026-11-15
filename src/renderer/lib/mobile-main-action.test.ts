@@ -2,8 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { mobileMainAction } from './mobile-main-action';
 
 describe('the one floating action on a phone', () => {
-  it('commits from Changes when something is staged or a plan is waiting', () => {
+  it('commits from Changes when something is staged, and keeps a commit plan in view with nothing staged', () => {
     expect(mobileMainAction({ screen: 'changes', stagedCount: 2, hasCommitPlan: false })).toBe('commit');
+    // A paused plan, or the commits a finished one created, still have something to say.
     expect(mobileMainAction({ screen: 'changes', stagedCount: 0, hasCommitPlan: true })).toBe('commit');
     expect(mobileMainAction({ screen: 'changes', stagedCount: 0, hasCommitPlan: false })).toBeNull();
   });

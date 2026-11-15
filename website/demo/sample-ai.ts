@@ -30,7 +30,7 @@ function describe(paths: string[]): Draft {
     return {
       subject: "feat(filters): hide completed tasks by default",
       body: "Search skips completed work unless includeCompleted is set.",
-      reason: "The filter, its option type, its tests, and the board toggle.",
+      reason: paths.includes("index.html") ? "The filter, its option type, its tests, and the board toggle." : "The filter, its option type, and its tests.",
     };
   }
   if (paths.includes("index.html")) {
@@ -49,15 +49,22 @@ function describe(paths: string[]): Draft {
 
 const message = ({ subject, body }: Draft) => (body ? `${subject}\n\n${body}` : subject);
 
-/** One message for the staged files, plus a plan when code and documentation are mixed. */
+/** The parts a mixed set of staged files falls into, in the order they are committed. */
+const parts: { name: string; has(path: string): boolean }[] = [
+  { name: "code", has: (path) => !isDocs(path) && path !== "index.html" },
+  { name: "the board page", has: (path) => path === "index.html" },
+  { name: "documentation", has: isDocs },
+];
+const list = (names: string[]) => (names.length < 3 ? names.join(" with ") : `${names.slice(0, -1).join(", ")}, and ${names.at(-1)}`);
+
+/** One message for the staged files, plus a plan when code, the board page, and documentation are mixed. */
 export function sampleCommitMessage(staged: string[]): GeneratedCommitMessage {
   if (!staged.length) throw new Error("Stage the changes to describe first.");
   const draft = describe(staged);
-  const code = staged.filter((path) => !isDocs(path));
-  const docs = staged.filter(isDocs);
+  const groups = parts.map((part) => ({ name: part.name, paths: staged.filter(part.has) })).filter((part) => part.paths.length);
   const group = (paths: string[], index: number): CommitPlanItem => {
     const part = describe(paths);
-    return { ...part, message: message(part), paths, fingerprint: `sample-${index}-${paths.join(",")}` };
+    return { ...part, message: message(part), paths, fingerprint: `sample-${index + 1}-${paths.join(",")}` };
   };
   return {
     ...draft,
@@ -65,8 +72,8 @@ export function sampleCommitMessage(staged: string[]): GeneratedCommitMessage {
     harness: sampleHarness.id,
     model: "sample",
     contextWasTruncated: false,
-    proposal: code.length && docs.length
-      ? { rationale: "The staged changes mix code with documentation that can be reviewed on its own.", commits: [group(code, 1), group(docs, 2)] }
+    proposal: groups.length > 1
+      ? { rationale: `The staged changes mix ${list(groups.map((part) => part.name))}. Each part can be reviewed on its own.`, commits: groups.map((part, index) => group(part.paths, index)) }
       : null,
     splitBlockedReason: null,
   };

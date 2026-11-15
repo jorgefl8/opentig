@@ -57,6 +57,7 @@ export const queryKeys = {
   branchDetails: (repositoryId: string, fullName: string) => ['repository', repositoryId, 'branch-details', fullName] as const,
   remoteBranchDetails: (repositoryId: string, fullName: string) => ['repository', repositoryId, 'remote-branch-details', fullName] as const,
   branchPullRequest: (repositoryId: string, name: string) => ['repository', repositoryId, 'branch-pull-request', name] as const,
+  commitsAfter: (repositoryId: string, oid: string, headOid: string) => ['repository', repositoryId, 'commits-after', oid, headOid] as const,
   worktreeDetails: (repositoryId: string, path: string) => ['repository', repositoryId, 'worktree-details', path] as const,
 };
 

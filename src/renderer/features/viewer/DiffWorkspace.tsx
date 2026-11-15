@@ -1,6 +1,6 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { FileDiff, Virtualizer } from '@pierre/diffs/react';
+import { FileDiff, Virtualizer, useWorkerPool } from '@pierre/diffs/react';
 import {
   IconArrowsMaximize, IconArrowsMinimize, IconChevronRight, IconFileArrowRight,
   IconLayoutColumns, IconLayoutRows, IconTextWrap, IconX,
@@ -13,8 +13,10 @@ import { useMobileChrome } from '@/components/mobile-chrome-context';
 import { useTruncatedText } from '@/lib/use-truncated-text';
 import { getVsCodeFileIconUrl } from '@/lib/vscode-icons';
 import { useParsedDiff } from './useParsedDiff';
+import { primeDiffsWhenIdle } from './diff-idle-prime';
 import { OPENTIG_CODE_THEMES } from './diffThemes';
-import { animatesFileToggle, type DiffFileEntry, VIEWER_SCROLLBAR_CSS } from './patch-utils';
+import { ChangeStatusBadge } from '@/features/changes/ChangeStatusBadge';
+import { animatesFileToggle, diffChangeKind, type DiffFileEntry, VIEWER_SCROLLBAR_CSS } from './patch-utils';
 import { resolvePierreLanguage } from './pierreLanguages';
 import { ColorHoverPreview } from './ColorHoverPreview';
 import { ColorSwatchLayer } from './ColorSwatchLayer';
@@ -64,11 +66,13 @@ function DiffDocument(props: DiffWorkspaceProps) {
   if (result?.files && result.files !== lastParsed?.files) setLastParsed({ files: result.files, diff: props.diff });
   const files = result?.files ?? lastParsed?.files;
   const diff = result?.files ? props.diff : lastParsed?.diff ?? props.diff;
-  const message: ParseMessage = !result ? { text: 'Preparing diff…', error: false }
-    : result.error !== undefined ? { text: result.error, error: true } : null;
+  // A refresh that changes the patch keeps the revision on screen, where it can
+  // still be read and scrolled, until the new one has been parsed. Only a first
+  // parse has nothing to show, and only a failed one hides what was there.
+  const message: ParseMessage = result?.error !== undefined ? { text: result.error, error: true }
+    : !result && !files ? { text: 'Preparing diff…', error: false } : null;
   const phone = useMobileChrome() !== null;
-  // Retain this document's mounted virtualizer and collapse choices during a
-  // refresh. Its old revision stays invisible and inert until parsing finishes.
+  // Retain this document's mounted virtualizer and collapse choices during a refresh.
   if (files) return <ParsedDiffWorkspace {...props} diff={diff} files={files} message={message} />;
   return (
     <div className={`diff-workspace${props.compact ? ' compact' : ''}`}>
@@ -92,6 +96,8 @@ function ParsedDiffWorkspace({ contentKey, diff, diffView, themeType, wrapLines,
   const sections = useRef(new Map<string, HTMLElement>());
   const workspaceRef = useRef<HTMLDivElement>(null);
   const [colorSwatches] = useState(createColorSwatchRegistry);
+  const highlightPool = useWorkerPool();
+  useEffect(() => primeDiffsWhenIdle(highlightPool, files.map((file) => file.fileDiff)), [files, highlightPool]);
   const allCollapsed = files.length > 0 && files.every((file) => collapsed.has(file.key));
   const additions = files.reduce((total, file) => total + file.additions, 0);
   const deletions = files.reduce((total, file) => total + file.deletions, 0);
@@ -167,7 +173,6 @@ function ParsedDiffWorkspace({ contentKey, diff, diffView, themeType, wrapLines,
                   <FileDiff
                     key={`${contentKey}:${file.key}:${diffView}:${wrapLines}`}
                     fileDiff={file.fileDiff}
-                    disableWorkerPool={diff.lineCount > 10_000}
                     options={{ diffStyle: diffView, diffIndicators: 'classic', themeType, theme: OPENTIG_CODE_THEMES, overflow: wrapLines ? 'wrap' : 'scroll', disableFileHeader: true, hunkSeparators: 'line-info-basic', unsafeCSS: VIEWER_SCROLLBAR_CSS }}
                   />
                 </Reveal>
@@ -206,7 +211,16 @@ function FileHeaderFacts({ file }: { file: DiffFileEntry }) {
   return (
     <>
       {file.previousPath && file.previousPath !== file.path && <span className="diff-file-previous">from {file.previousPath}</span>}
-      <span className="diff-file-stats"><span className="add">+{file.additions}</span><span className="del">−{file.deletions}</span></span>
+      <span className="diff-file-stats">
+        {/* A side with nothing on it is left out, so a deletion reads "−12" and not "+0 −12". */}
+        {file.binary ? <span className="binary">bin</span> : (
+          <>
+            {file.additions > 0 && <span className="add">+{file.additions}</span>}
+            {file.deletions > 0 && <span className="del">−{file.deletions}</span>}
+          </>
+        )}
+      </span>
+      <ChangeStatusBadge kind={diffChangeKind(file.changeType)} />
     </>
   );
 }

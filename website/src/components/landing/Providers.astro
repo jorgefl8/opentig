@@ -18,11 +18,11 @@ import Shot from './Shot.astro';
     <div class="tile-grid tile-grid-ai mt-12">
       <div class="tile ai-points">
         <article class="ai-point">
-          <h3><span>Commit splitting.</span> <span class="section-heading-detail">Mixed several tasks into your staged changes? Get groups of complete files, each with a message and a reason.</span></h3>
+          <h3><span>Commit splitting.</span> <span class="section-heading-detail">Mixed several tasks into your staged changes? Get a plan of commits, each with its own message and complete files.</span></h3>
           <ol class="ai-steps">
-            <li><span aria-hidden="true">01</span>Review the proposed groups and their diffs.</li>
-            <li><span aria-hidden="true">02</span>Prepare one group in the staging area.</li>
-            <li><span aria-hidden="true">03</span>Create its commit, then continue with the next.</li>
+            <li><span aria-hidden="true">01</span>Choose the split, or keep everything in one commit.</li>
+            <li><span aria-hidden="true">02</span>Review each commit's message, files, and diffs.</li>
+            <li><span aria-hidden="true">03</span>Commit one at a time. OpenTig stages the next.</li>
           </ol>
         </article>
         <article class="ai-point">
@@ -34,7 +34,7 @@ import Shot from './Shot.astro';
       </div>
       <div class="tile">
         <div class="tile-stage has-shot flex-1">
-          <Shot name="split" alt="A suggested commit plan with two commits, each with its message, reason, and files, above the generated commit message." />
+          <Shot name="split" alt="A suggested split into three commits. The first card is open with its message and files, the other two wait below, and the commit button reads Commit 1 of 3 · 3 files." />
         </div>
       </div>
     </div>

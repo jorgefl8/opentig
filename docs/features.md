@@ -63,7 +63,7 @@ After you locate one moved repository, OpenTig looks for the other missing ones 
 
 **Sync from the repository picker**
 
-Pull or push from an individual repository's row. Opening the picker fetches each listed repository to refresh its checkout and ahead/behind counts. Only pending operations appear, with their commit counts; multiple repositories can sync concurrently with separate progress and result notifications.
+Pull or push from an individual repository's row. Opening the picker fetches the listed repositories, four at a time, to refresh their checkout and ahead/behind counts. Only pending operations appear, with their commit counts; multiple repositories can sync concurrently with separate progress and result notifications.
 
 Choose periodic remote checks, or turn them off, in **Settings → General**. Manual Refresh still fetches when periodic checks are off. See [remote checks and refresh](interface.md#remote-checks-and-refresh).
 
@@ -72,7 +72,7 @@ Choose periodic remote checks, or turn them off, in **Settings → General**. Ma
 
 The folder dialog shows branches for repositories and linked worktrees, including unborn branches and detached HEAD. Pending or failed navigation clears the previous selection. Mobile keeps the current folder and confirmation visible; the welcome screen scrolls when repositories exceed the available height.
 
-Picker rows show the repository name and the branch used for pull/push. Linked worktrees also show their checkout folder. Menu rows have a tooltip only when their text is cut short, and then it gives the full detail, such as the filesystem path. A repository favicon or app icon appears in the toolbar picker and welcome screen when available, with a folder fallback. Supported sources include `favicon.svg`/`favicon.ico` at the root or under `public/`, `app/`, and similar locations, or a `<link rel="icon">` in `index.html`.
+Picker rows show the repository name and the branch used for pull/push. Linked worktrees also show their checkout folder. Menu rows have a tooltip only when their text is cut short, and then it gives the full detail, such as the filesystem path. A repository favicon or app icon appears in the toolbar picker and welcome screen when available, with a folder fallback. It is read once per session, so an icon added later appears after reloading OpenTig. Supported sources include `favicon.svg`/`favicon.ico` at the root or under `public/`, `app/`, and similar locations, or a `<link rel="icon">` in `index.html`.
 
 The repository dropdown can use up to 80% of the viewport height while keeping search and management visible; other dropdowns stay compact. Mobile reordering preserves scroll and focus and briefly highlights the moved row. Reduced-motion preferences disable that highlight.
 
@@ -105,7 +105,7 @@ The top line offers **Stage all**, or **Unstage all** once everything is staged.
 
 With no changes, the section says so and, when the branch has commits that aren't on its remote yet, offers to push or publish them.
 
-Changed Markdown files open their staged or unstaged diff; use **Open file** for the rendered preview. HTML, SVG, and image files open a rich preview and have a separate diff action.
+Changed Markdown, HTML, and SVG files open their staged or unstaged diff; use **Open file** for the rendered preview. Image files open their preview and have a separate **View changes** action.
 
 To discard a file's or folder's unstaged changes, review the affected paths in the confirmation dialog. Discarding is unavailable while another repository operation, such as a refresh or a stage, is still running. Untracked files go to system Trash (the Recycle Bin on Windows). A folder whose untracked files are all being discarded goes to Trash as one item, unless it also holds tracked or Git-ignored files. Folders the discard leaves empty are removed.
 
@@ -115,15 +115,17 @@ Use the built-in conflict editor to accept the current, incoming, or both sides,
 
 **Create or undo a commit**
 
-The commit box is docked at the bottom of the **Changes** sidebar while something is staged or a commit plan is open. One box holds the message, your AI provider, which generates a message, and the commit button, which reads **Commit *n* files** or **Commit and push**. The arrow beside the button chooses between **Commit** and **Commit and push**: choosing only changes the button, and nothing runs until you press it. The choice lasts until you change it or restart OpenTig. The commit shortcut in the message field runs the button, and adding Shift also pushes. When an upstream exists, you can commit and push in one action. For a branch without an upstream, see [publishing a branch](#safe-pull-and-push).
+The commit box is docked at the bottom of the **Changes** sidebar while something is staged or a commit plan has something to show. One box holds the message, your AI provider, which generates a message, and the commit button, which reads **Commit *n* files** or **Commit and push**. The arrow beside the button chooses between **Commit** and **Commit and push**: choosing only changes the button, and nothing runs until you press it. The choice lasts until you change it or restart OpenTig. The commit shortcut in the message field runs the button, and adding Shift also pushes. When an upstream exists, you can commit and push in one action. For a branch without an upstream, see [publishing a branch](#safe-pull-and-push).
 
 You can undo the latest unpublished commit and keep its changes staged. OpenTig checks the expected commit and upstream state before rewriting history. Undoing opens **Changes** and puts the commit's message back in the commit box; if you already have a draft, it stays and the notification offers **Use previous message**.
 
 **Split independent changes into commits**
 
-With a [supported AI CLI](ai-assistance.md), request a multi-commit plan for staged files that represent separate responsibilities. The plan opens in the commit composer and scrolls on its own, so the message and commit actions stay in view. Review it, then prepare one complete-file group at a time. Applying a group does not create a commit automatically. **Hide plan** folds the plan, and its **×** discards it to make one commit instead.
+With a [supported AI CLI](ai-assistance.md), generating a message can also suggest splitting the staged files into several commits when they cover separate responsibilities. The commit composer then offers a choice above the message: **One commit** keeps everything staged with the single message, and **Split into *n*** follows the plan. Nothing is staged differently until you choose the split, and you can switch back until the first commit of the plan exists.
 
-Groups retain their original numbers as you commit them and show progress. Open any listed file's diff before applying its group. Each group is rechecked against its files, so it cannot be applied after those files change. Partially staged or renamed files can prevent splitting; OpenTig explains why a plan cannot be offered.
+While splitting, each commit of the plan is a card with its number, subject, and file count. Open a card to read the message body and its files with their status letters; a file opens the diff that shows it as it stands, staged or not. The next commit is highlighted, only its files are staged, and its message is in the box for you to edit. The button names what it creates, such as **Commit 2 of 3 · 1 file**. Committing marks the card with the new commit's hash, advances the progress bar, and stages the next group, so each commit is one press and OpenTig never creates one by itself. **Commit this one next** on another card changes the order, and messages you edited are kept. After the last commit, the composer lists the commits it created.
+
+**Discard plan** asks first, then stages every file the plan has not committed, as before the split; commits already created stay. If you stage, unstage, or discard files by hand, or the files change, the plan pauses in place and says why. **Resume plan** stages the next group again, and **Discard plan** drops it. Each group is rechecked against its files before it is staged, so a stale plan cannot be followed. Undoing a commit ends the plan. Commits of a plan are not pushed one by one; push when they all exist. Partially staged or renamed files can prevent splitting; OpenTig explains why a plan cannot be offered.
 
 Settings includes AI run metadata and failed-operation diagnostics, and lets you clear either history. These histories do not store prompts or file contents. See [usage history and problems](ai-assistance.md#usage-history-and-problems) and [AI privacy](security-and-privacy.md#ai-privacy).
 
@@ -132,9 +134,9 @@ Settings includes AI run metadata and failed-operation diagnostics, and lets you
 
 Diffs use the same One Light/One Dark Pro token palette as the Files editor and Markdown code blocks. Added, deleted, and modified lines retain their diff colors. Language grammars load for the file being viewed rather than at startup.
 
-File headers show the folder path and filename on one line, then the lines added and removed. When space runs short the folder path shortens first and hovering shows the full path; a filename too long for the row wraps. Sticky headers remain opaque on hover so scrolled code does not show through. Dialogs, including Settings and confirmations, stay above diff content and sticky headers.
+File headers show the folder path and filename on one line, then the lines added and removed and the file's status letter. A side with no lines is left out, so a deleted file shows only what was removed, and a binary file shows **bin** instead of counts. A renamed file also shows the path it came from. When space runs short the folder path shortens first and hovering shows the full path; a filename too long for the row wraps. Sticky headers remain opaque on hover so scrolled code does not show through. Dialogs, including Settings and confirmations, stay above diff content and sticky headers.
 
-A change row shows the file and a status letter: **M** modified, **A** added, **D** deleted, and **C** conflicted are colored, and other statuses stay muted. In a tree, a folder's icon reflects its kind, such as source or tests, and changes when it opens.
+A change row shows the file and a status letter: **M** modified, **A** added, and **D** deleted are colored, a conflict shows a red **!**, and other statuses such as **R** renamed and **U** untracked stay muted. The same letters end each file's row in a commit, in a pull request's **Code** tab, and in an expanded commit in **History**. In a tree, a folder's icon reflects its kind, such as source or tests, and changes when it opens.
 
 Hovering a change or folder row, or moving keyboard focus into it, replaces the letter with its diff, open, stage, unstage, and discard controls without moving the row's text. On touch screens the controls stay visible. The row showing in the viewer stays highlighted.
 
@@ -147,11 +149,13 @@ Change and folder rows stay aligned as files load, sections empty or refill, con
 <details>
 <summary>Large diffs and highlighting limits</summary>
 
-Large diffs show **Preparing diff…** while a background worker parses their file models. Switching or closing the diff cancels that work; only complete results for the current revision appear. Background patch refreshes preserve collapsed files and the mounted scroll container while hiding the previous revision.
+Large diffs show **Preparing diff…** while a background worker parses their file models; smaller ones appear at once. Switching or closing the diff cancels that work; only complete results for the current revision appear. Background patch refreshes preserve collapsed files and the mounted scroll container, and keep the previous revision on screen until the new one is ready.
 
 Without workers, parsing yields between indexing batches and files, but a single large file can still pause the interface. Each mounted diff has a small byte-budgeted parse cache. Oversized entries still display; closing or changing the document releases the cache.
 
-The highlighting pool is bypassed above 10,000 diff lines or 500,000 conflict characters. Tokenization is also limited on very long lines.
+Code is colored by background workers that stay running for the session: two to six depending on the processor, and one on low-end phones. Small files and diffs are colored as they are drawn. Highlighted files and diffs are remembered, so reopening one, folding and unfolding it, or switching between unified and split view shows it colored at once, and a refresh only redraws the files it changed. A file or diff opened for the first time may wait up to about a tenth of a second behind the previous one to arrive with its colors; a very long one can still appear plain for a moment. Files being edited are colored by the editor itself.
+
+The highlighting pool is bypassed above 500,000 conflict characters. Tokenization is also limited on very long lines.
 
 </details>
 
@@ -183,7 +187,23 @@ This applies when the branch pushes to its upstream's remote and `push.default` 
 
 **Read progress and errors**
 
-Each pull or push has its own progress and result notification. Remote rejections, branch protection, authentication, configuration errors, pending conflicts, and other one-shot failures appear there. When a push is rejected because the remote has commits the branch lacks, the notification offers **Pull**; push again afterwards. **Changes** remains the place to inspect unresolved work.
+Each pull or push has its own progress and result notification. Remote rejections, branch protection, authentication, configuration errors, pending conflicts, and other one-shot failures appear there. **Changes** remains the place to inspect unresolved work.
+
+**Push when the remote has commits you don't have**
+
+Git refuses a push until your commits sit on top of the remote's. When OpenTig already knows the branch is behind its upstream, it sends nothing and tells you at once, for example: "origin/main has 1 commit you don't have. Your commit has to go on top of it before it can be pushed." When the remote moved after the last fetch, Git refuses the push, OpenTig fetches, and the same notification shows the real counts. Nothing is overwritten either way.
+
+| Action | What it does |
+| --- | --- |
+| **Pull and push** | Pulls as described above, then pushes, with one progress notification and one result such as "Pulled 1 commit and pushed 1" |
+| **Pull only** | Pulls and leaves the push to you |
+| **Details** | Shows what Git printed, how far the branch is behind and ahead, and the newest incoming commits |
+
+If the pull stops, because the rebase would conflict or local changes could not be restored, the notification says so and nothing is pushed. A rebase that would conflict is aborted, so the branch is exactly as it was. The repository selector's push button offers the same actions for its repository.
+
+**Other push failures**
+
+The notification gives a short reason: the account or credentials were refused, the repository was not found, the account may not push, the remote declined the push through a branch rule or server hook, the remote could not be reached, or the branch's push configuration needs a review. Git's own output is under **Details**. **Repository access** is offered only when the account, its credentials, or its permissions are the problem.
 
 <details>
 <summary>Notification behavior</summary>

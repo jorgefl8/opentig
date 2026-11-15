@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { useQuery } from '@tanstack/react-query';
-import { IconExternalLink, IconLoader4, IconRefresh, IconX } from '@tabler/icons-react';
+import { IconExternalLink, IconRefresh, IconX } from '@tabler/icons-react';
 import { formatDateTime } from '@shared/date-format';
 import type { ActionRunDetails, ActionRunJob } from '../../../shared/contracts';
 import { Button } from '@/components/ui/button';
@@ -16,6 +16,7 @@ import { ActionStatusIcon } from './ActionStatusIcon';
 import { actionStatusLabel, actionTone, elapsed, eventLabel, formatDuration, runDuration, runSentence } from './action-status';
 import { WorkflowCanvas } from './WorkflowCanvas';
 import './actions.css';
+import { Spinner } from '@/components/ui/spinner';
 
 /** --motion-med and --ease-out. */
 const PANEL_TRANSITION = { duration: 0.2, ease: [0.32, 0.72, 0, 1] as const };
@@ -62,7 +63,7 @@ export function WorkflowRunViewer({ repositoryId, runId, jobId = null }: { repos
       </div>
     );
   }
-  if (!run) return <div className="viewer-message">{bar}<IconLoader4 className="spinner" /> <ShimmeringText text="Loading workflow run…" /></div>;
+  if (!run) return <div className="viewer-message">{bar}<Spinner className="view-spinner" /> <ShimmeringText text="Loading workflow run…" /></div>;
 
   const tone = actionTone(run.status, run.conclusion);
   const duration = runDuration(run, now);
@@ -77,7 +78,7 @@ export function WorkflowRunViewer({ repositoryId, runId, jobId = null }: { repos
           <div className="pr-viewer-top">
             <div className="pr-viewer-heading"><h2>{run.title}</h2></div>
             {!phone && <span className="pr-action-bar">
-              {query.isFetching && <IconLoader4 className="animate-spin workflow-run-refreshing" aria-label="Refreshing" />}
+              {query.isFetching && <Spinner className="workflow-run-refreshing" label="Refreshing" />}
               <Button variant="ghost" size="xs" onClick={() => openOnGitHub(run.url)}><IconExternalLink /> Open on GitHub</Button>
             </span>}
           </div>

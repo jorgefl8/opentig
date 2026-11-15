@@ -1,4 +1,4 @@
-import { IconLoader4, IconRefresh } from '@tabler/icons-react';
+import { IconRefresh } from '@tabler/icons-react';
 import type { AiHarnessId, AiHarnessStatus } from '@shared/contracts';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -6,6 +6,7 @@ import { AiProviderIcon } from '@/features/ai/AiProviderIcon';
 import { harnessLabel } from '@/features/ai/harness-copy';
 import type { SettingsSection } from '@/features/settings/SettingsDialog';
 import type { ToolChecks } from './useToolChecks';
+import { Spinner } from '@/components/ui/spinner';
 
 const AI_HARNESSES = ['codex', 'claude', 'opencode', 'grok'] as const satisfies readonly AiHarnessId[];
 
@@ -28,12 +29,12 @@ export function EnvironmentStrip({ checks, assistant, onAssistant, onSettings }:
   const [githubLabel, githubDetail] = GITHUB_COPY[github];
   const selected = assistants?.includes(assistant) ? assistant : assistants?.[0];
   return <div className="onboarding-env" aria-label="Tools">
-    <span className="onboarding-chip">{git ? <Dot state={git.state === 'ready' ? 'ready' : 'error'} /> : <Spinner />}{git?.state === 'ready' ? <>Git <em>{git.version}</em></> : git ? 'Git unavailable' : 'Checking Git…'}</span>
+    <span className="onboarding-chip">{git ? <Dot state={git.state === 'ready' ? 'ready' : 'error'} /> : <ChipSpinner />}{git?.state === 'ready' ? <>Git <em>{git.version}</em></> : git ? 'Git unavailable' : 'Checking Git…'}</span>
     <span className="onboarding-chip">
-      {github === 'pending' ? <Spinner /> : <Dot state={github === 'ready' ? 'ready' : github === 'error' ? 'error' : 'warning'} />}{githubLabel}{githubDetail && <em>{githubDetail}</em>}
+      {github === 'pending' ? <ChipSpinner /> : <Dot state={github === 'ready' ? 'ready' : github === 'error' ? 'error' : 'warning'} />}{githubLabel}{githubDetail && <em>{githubDetail}</em>}
       {github !== 'pending' && github !== 'ready' && <button type="button" onClick={() => onSettings('github')}>Set up</button>}
     </span>
-    {!ai || !assistants ? <span className="onboarding-chip"><Spinner />Checking AI assistants…</span>
+    {!ai || !assistants ? <span className="onboarding-chip"><ChipSpinner />Checking AI assistants…</span>
       : <span className="onboarding-ai">
         <Select value={selected ?? null} onValueChange={value => { if (value) onAssistant(value as AiHarnessId); }}>
           {/* The whole chip is the trigger; utilities override the default field look. */}
@@ -71,6 +72,6 @@ function Dot({ state }: { state: 'ready' | 'warning' | 'error' | 'none' }) {
   return <span className={`onboarding-dot ${state}`} aria-hidden="true" />;
 }
 
-function Spinner() {
-  return <IconLoader4 className="onboarding-chip-spinner animate-spin" aria-hidden="true" />;
+function ChipSpinner() {
+  return <Spinner className="onboarding-chip-spinner" />;
 }

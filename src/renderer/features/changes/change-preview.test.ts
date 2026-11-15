@@ -7,10 +7,15 @@ describe('shouldOpenChangePreview', () => {
     expect(shouldOpenChangePreview('docs/guide.mdx', 'added')).toBe(false);
   });
 
-  it('keeps visual file previews as the primary action', () => {
-    expect(shouldOpenChangePreview('page.html', 'modified')).toBe(true);
-    expect(shouldOpenChangePreview('logo.svg', 'modified')).toBe(true);
+  it('opens changed HTML and SVG as a diff, because their source is readable text', () => {
+    expect(shouldOpenChangePreview('page.html', 'modified')).toBe(false);
+    expect(shouldOpenChangePreview('docs/index.xhtml', 'added')).toBe(false);
+    expect(shouldOpenChangePreview('logo.svg', 'modified')).toBe(false);
+  });
+
+  it('keeps the preview as the primary action for raster images', () => {
     expect(shouldOpenChangePreview('photo.png', 'modified')).toBe(true);
+    expect(shouldOpenChangePreview('assets/banner.webp', 'added')).toBe(true);
   });
 
   it('does not preview deleted files or directory summaries', () => {

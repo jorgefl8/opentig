@@ -1,11 +1,12 @@
 import path from 'node:path';
-import { access, readdir, readFile } from 'node:fs/promises';
+import { access, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import { describe, expect, it, vi } from 'vitest';
 import { execa } from 'execa';
 import { managementRepository, repositoryWithUpstream, git, addWorktree } from './test-support/repository-fixtures';
 import { GitProcess, type RunOptions, type GitOutput } from './GitProcess';
-import { GitRepositoryOperations, pushFailure } from './GitRepositoryOperations';
+import { GitRepositoryOperations } from './GitRepositoryOperations';
+import { pushFailure } from './PushRejection';
 import { GitHubAccountsService } from '../github/GitHubAccountsService';
 import type { CliResolver } from '../ai/CliResolver';
 import type { CliProcessRunner } from '../ai/CliProcessRunner';
@@ -223,14 +224,86 @@ describe('credential broker', () => {
   });
 });
 
+describe('a push the remote will not take', () => {
+  // A local bare remote, with Git's own credentials.
+  async function tracked(branch = 'main') {
+    const f = await fixture(true); await f.select('alice', 'git');
+    const remote = path.join(f.root, 'remote.git');
+    if (branch !== 'main') { await git(f.work, ['switch', '-c', branch]); await git(f.work, ['push', '-u', 'origin', branch]); }
+    const remoteTip = () => git(remote, ['rev-parse', `refs/heads/${branch}`]);
+    const moveRemote = async () => {
+      const other = path.join(f.root, 'other');
+      await git(f.root, ['clone', '--branch', branch, remote, other]);
+      await git(other, ['-c', 'user.name=Other', '-c', 'user.email=other@example.com', 'commit', '--allow-empty', '-m', 'Remote work']);
+      await git(other, ['push', 'origin', branch]);
+      return remoteTip();
+    };
+    await git(f.work, ['commit', '--allow-empty', '-m', 'Local work']);
+    return { ...f, remote, moveRemote, remoteTip };
+  }
+
+  it('is not attempted when the branch is already known to be behind, and says by how much', async () => {
+    const f = await tracked();
+    const theirs = await f.moveRemote();
+    await git(f.work, ['fetch', 'origin']);
+    const result = await f.operations.push(f.repositoryId);
+    expect(result).toEqual({ status: 'diverged', ahead: 1, behind: 1, upstream: 'origin/main', incoming: [expect.stringMatching(/^[0-9a-f]{7,} Remote work$/)] });
+    expect(await f.remoteTip()).toBe(theirs);
+  });
+
+  it('fetches after a rejection it could not foresee, so the counts are real', async () => {
+    const f = await tracked();
+    const theirs = await f.moveRemote();
+    expect(await f.repositories.status(f.repositoryId, false)).toMatchObject({ ahead: 1, behind: 0 });
+    const result = await f.operations.push(f.repositoryId);
+    expect(result).toMatchObject({ status: 'diverged', ahead: 1, behind: 1, upstream: 'origin/main', incoming: [expect.stringContaining('Remote work')] });
+    expect(result.status === 'diverged' && result.details).toContain(' ! [rejected] main -> main (fetch first)');
+    expect(await f.remoteTip()).toBe(theirs);
+    expect(await git(f.work, ['rev-parse', 'origin/main'])).toBe(theirs);
+  });
+
+  it('is never read as an access problem because of a word in the branch name', async () => {
+    const f = await tracked('fix/expired-x');
+    await f.moveRemote();
+    // Without --porcelain Git names the branch on stderr, next to its explanation.
+    const plain = await execa('git', ['push', 'origin', 'fix/expired-x'], { cwd: f.work, env: { LC_ALL: 'C' }, reject: false });
+    expect(plain.stderr).toContain('fix/expired-x -> fix/expired-x');
+    expect(pushFailure(new GitOperationError({ code: 'UNKNOWN', operation: 'push', message: plain.stderr, stderr: plain.stderr, exitCode: 1 })).reason).toBe('remote-changed');
+    const result = await f.operations.push(f.repositoryId);
+    expect(result).toMatchObject({ status: 'diverged', ahead: 1, behind: 1, upstream: 'origin/fix/expired-x' });
+    expect(result.status === 'diverged' && result.details).toContain('fix/expired-x -> fix/expired-x (fetch first)');
+  });
+
+  it('reports a hook that declined it as the remote\'s decision, with its words kept apart', async () => {
+    const f = await tracked();
+    const theirs = await f.remoteTip();
+    const hook = path.join(f.remote, 'hooks', 'pre-receive');
+    await mkdir(path.dirname(hook), { recursive: true });
+    await writeFile(hook, '#!/bin/sh\necho "Access denied: this ticket has expired" >&2\nexit 1\n', { mode: 0o755 });
+    const result = await f.operations.push(f.repositoryId);
+    expect(result).toMatchObject({ status: 'rejected', reason: 'hook', message: '' });
+    const details = result.status === 'rejected' ? result.details : '';
+    expect(details).toContain(' ! [remote rejected] main -> main (pre-receive hook declined)');
+    expect(details).toContain('Access denied: this ticket has expired');
+    expect(await f.remoteTip()).toBe(theirs);
+  });
+});
+
+// Failures only a hosting service produces, as Git prints them.
 it.each([
-  ['Repository not found', 'inaccessible'], ['Authentication failed', 'authentication'], ['Write access to repository not granted', 'permission'],
-  ['GH013: repository rule violations\nfailed to push some refs', 'hook'], ['[rejected] (fetch first)\nfailed to push some refs', 'remote-changed'],
-  ["error: failed to push some refs to 'origin'\nhint: Updates were rejected because the remote contains work that you do not\nhint: have locally.", 'remote-changed'],
-  ["error: failed to push some refs to 'origin'\nhint: Updates were rejected because the tip of your current branch is behind\nhint: its remote counterpart.", 'remote-changed'],
-  ['Could not resolve host', 'network'], ['failed to push some refs', 'unknown'],
-])('preserves and classifies push errors: %s', (message, reason) => {
-  expect(pushFailure(new GitOperationError({ code: 'UNKNOWN', operation: 'push', message }))).toMatchObject({ reason, message: expect.stringContaining(message) });
+  ['remote: Repository not found.\nfatal: repository \'https://github.com/team/demo.git/\' not found', 'inaccessible'],
+  ['remote: Invalid username or token.\nfatal: Authentication failed for \'https://github.com/team/demo.git/\'', 'authentication'],
+  ['remote: Write access to repository not granted.\nfatal: unable to access \'https://github.com/team/demo.git/\': The requested URL returned error: 403', 'permission'],
+  ['remote: error: GH013: Repository rule violations found for refs/heads/main.\nerror: failed to push some refs to \'https://github.com/team/demo.git\'', 'hook'],
+  ['fatal: unable to access \'https://github.com/team/revoked-keys.git/\': Could not resolve host: github.com', 'network'],
+  ['error: failed to push some refs to \'https://github.com/team/expired-sessions.git\'', 'unknown'],
+])('classifies a push Git could not send, keeping its output for the details: %s', (stderr, reason) => {
+  expect(pushFailure(new GitOperationError({ code: 'UNKNOWN', operation: 'push', message: stderr, stderr, exitCode: 128 }))).toEqual({ status: 'rejected', reason, message: '', details: stderr });
+});
+
+it('keeps a sentence OpenTig wrote as the message of a refused push', () => {
+  expect(pushFailure(new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'push', message: 'The branch changed. Review and try again.' })))
+    .toEqual({ status: 'rejected', reason: 'configuration', message: 'The branch changed. Review and try again.' });
 });
 
 it.each(['missing', 'revoked', 'denied'])('shows the selected account failure without fallback: %s', async failure => {
@@ -563,7 +636,7 @@ describe('a branch that tracks an upstream with another name', () => {
     const theirs = await f.remoteRef('refs/heads/fix/login');
     const context = await f.service.publication(f.repositoryId);
     const result = await f.operations.push(f.repositoryId, { remote: 'origin', expectedBranch: 'fix/login', expectedOid: context.oid!, asNewBranch: true }, context.id);
-    expect(result).toMatchObject({ status: 'rejected', reason: 'remote-changed' });
+    expect(result).toMatchObject({ status: 'rejected', reason: 'destination-exists' });
     expect(result.status === 'rejected' && result.message).toMatch(/^origin\/fix\/login already exists .* still tracks origin\/dev/);
     expect(await f.remoteRef('refs/heads/fix/login')).toBe(theirs);
     expect(await git(f.work, ['rev-parse', '--abbrev-ref', '@{upstream}'])).toBe('origin/dev');

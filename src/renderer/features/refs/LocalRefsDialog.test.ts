@@ -28,9 +28,10 @@ let root: Root;
 let container: HTMLDivElement;
 let client: QueryClient;
 let tab: 'branches' | 'worktrees';
+let focus: { branch?: string; worktree?: string } | undefined;
 async function render() {
   await act(async () => root.render(createElement(QueryClientProvider, { client }, createElement(TooltipProvider, null,
-    createElement(LocalRefsDialog, { open: true, repositoryId: 'repo', tab, onTabChange: value => { tab = value; void render(); }, onOpenChange: () => {},
+    createElement(LocalRefsDialog, { open: true, repositoryId: 'repo', tab, focus, onTabChange: value => { tab = value; void render(); }, onOpenChange: () => {},
       onOpenWorktree: () => {}, onMutated: calls.mutated, onBusyChange: calls.busy })))));
   await settle();
 }
@@ -50,7 +51,7 @@ beforeEach(async () => {
   calls.pr.mockResolvedValue({ number: 41, state: 'MERGED', baseRefName: 'main', title: 'Sample change', url: 'https://github.com/sample/project/pull/41' });
   calls.fetch.mockResolvedValue({ status: 'success', ahead: 0, behind: 0 });
   client = new QueryClient({ defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } } });
-  container = document.createElement('div'); document.body.append(container); root = createRoot(container); tab = 'branches';
+  container = document.createElement('div'); document.body.append(container); root = createRoot(container); tab = 'branches'; focus = undefined;
   await render();
 });
 afterEach(async () => { await act(async () => root.unmount()); client.clear(); container.remove(); vi.resetAllMocks(); vi.unstubAllGlobals(); });
@@ -133,6 +134,16 @@ it('explains deleted remote branches and cleans up their cached refs without off
   expect(document.querySelectorAll('.local-refs-row')).toHaveLength(1);
 });
 
+it('opens on the merged branch it was asked about instead of the first one', async () => {
+  snapshot = { branches: [local, { ...local, fullName: 'refs/heads/feature', name: 'feature', current: false, worktreePath: null }], worktrees: [], remotes: [] };
+  focus = { branch: 'refs/heads/feature' };
+  client.clear();
+  await act(async () => root.render(null));
+  await render();
+  expect(document.querySelector('.local-refs-row[aria-selected="true"] strong')?.textContent).toBe('feature');
+  expect(calls.details).toHaveBeenLastCalledWith({ repositoryId: 'repo', fullName: 'refs/heads/feature' });
+});
+
 describe('worktree removal', () => {
   const worktree: ManagedWorktree = { path: '/sample/review', oid, branch: 'review', main: false, current: false, detached: false, bare: false, locked: null, prunable: null };
   const details: WorktreeDetails = { path: worktree.path, oid, branch: 'review', main: false, current: false, detached: false, bare: false, locked: null, prunable: null,
@@ -154,6 +165,26 @@ describe('worktree removal', () => {
     await act(async () => [...document.querySelectorAll<HTMLButtonElement>('.local-refs-confirm button')][0]!.click());
     await settle();
   }
+
+  it('opens on the worktree a merged branch was left in, with only that one marked to lose its branch', async () => {
+    const other: ManagedWorktree = { ...worktree, path: '/sample/other', branch: 'other' };
+    snapshot = { branches: [local], worktrees: [other, worktree], remotes: [] };
+    calls.worktreeDetails.mockImplementation(async ({ path }: { path: string }) => ({ ...details, path, branch: path === other.path ? 'other' : 'review' }));
+    calls.removeWorktree.mockResolvedValue({ status: 'removed', recentRepositories: null });
+    tab = 'worktrees'; focus = { worktree: worktree.path };
+    client.clear();
+    await act(async () => root.render(null));
+    await render();
+    await vi.waitFor(async () => { await settle(); button('Remove worktree'); });
+    expect(document.querySelector('.local-refs-row[aria-selected="true"]')?.textContent).toContain('/sample/review');
+    await startRemoval();
+    expect(calls.removeWorktree).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ path: worktree.path, deleteBranch: true }));
+    // Any other worktree still keeps its branch unless the box is ticked for it.
+    await act(async () => document.querySelector<HTMLButtonElement>('.local-refs-row')!.click());
+    await vi.waitFor(async () => { await settle(); button('Remove worktree'); });
+    await startRemoval();
+    expect(calls.removeWorktree).toHaveBeenLastCalledWith(expect.objectContaining({ path: other.path, deleteBranch: false }));
+  });
 
   it('opens a locked worktree, while its lock still stops removal', async () => {
     snapshot = { branches: [local], worktrees: [{ ...worktree, locked: 'claude session review (pid 3692)' }], remotes: [] };

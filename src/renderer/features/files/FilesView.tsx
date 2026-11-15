@@ -7,7 +7,6 @@ import {
 } from '@dnd-kit/core';
 import {
   IconDots, IconArrowBackUp, IconArrowForwardUp, IconChevronRight, IconClipboard, IconColumns2, IconCopy, IconCut, IconEdit,
-  IconLoader4,
   IconExternalLink, IconFileArrowRight, IconFilePlus, IconFiles, IconFileText, IconFolderPlus, IconTrash,
 } from '@tabler/icons-react';
 import type { FileHistoryState } from '@shared/contracts';
@@ -34,6 +33,7 @@ import {
 import { NameDialog, type NameDialogState } from './NameDialog';
 import { MobileFilesView } from './MobileFilesView';
 import type { FileSession } from './open-files-model';
+import { Spinner } from '@/components/ui/spinner';
 
 export function FilesView(props: FilesViewProps) {
   const mobile = useMobileLayout();
@@ -405,7 +405,7 @@ function DesktopFilesView({
   }, [rows, rowByPath, scrollTop, activePath, rowHeight]);
 
   if (visibleFiles === null) {
-    return <div className="view-loading" role="status" hidden={!active}><IconLoader4 className="spinner" aria-hidden="true" /><ShimmeringText text="Loading files…" /></div>;
+    return <div className="view-loading" role="status" hidden={!active}><Spinner className="view-spinner" /><ShimmeringText text="Loading files…" /></div>;
   }
 
   // When nothing is explicitly selected, mirror the open file so it stays highlighted.

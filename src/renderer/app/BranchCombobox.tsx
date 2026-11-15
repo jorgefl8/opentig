@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { IconChevronDown, IconGitBranch } from '@tabler/icons-react';
+import { formatTimeAgo } from '../../shared/date-format';
 import type { BranchInfo, WorktreeAgents, WorktreeInfo } from '../../shared/git-types';
 import { SearchablePicker, type SearchablePickerItem } from '@/components/SearchablePicker';
 import { AgentLabel } from '@/features/refs/AgentLabel';
@@ -14,7 +15,9 @@ export interface BranchComboboxWorktrees {
 }
 
 /**
- * Branch selection. A branch checked out in another worktree opens that worktree
+ * Branch selection. Local branches come in the order someone looks for them: the
+ * current one, then the default branch, then the rest by how recently their tip
+ * was committed. A branch checked out in another worktree opens that worktree
  * instead of being refused. Managing worktrees stays here only while there is
  * one, because from two on they have their own selector.
  */
@@ -25,8 +28,11 @@ export function BranchCombobox({ branches, currentLabel, disabled, readOnly, cru
   const worktreeItems = worktrees?.items;
   const worktreeAgents = worktrees?.agents;
   const { groups, currentValue, openable } = useMemo(() => {
-    const local: SearchablePickerItem[] = [];
+    const local: { item: SearchablePickerItem; rank: number; time: number }[] = [];
     const remote: SearchablePickerItem[] = [];
+    const localNames = new Set(branches.filter((branch) => !branch.remote).map((branch) => branch.name));
+    // Without a remote HEAD to ask, the conventional names stand in for the default branch.
+    const defaultName = localNames.has('main') ? 'main' : localNames.has('master') ? 'master' : null;
     const openable = new Map<string, string>();
     let currentValue = '';
     for (const branch of branches) {
@@ -39,24 +45,31 @@ export function BranchCombobox({ branches, currentLabel, disabled, readOnly, cru
       if (other && canOpen) openable.set(branch.fullName, other.path);
       if (!branch.remote && branch.current) currentValue = branch.fullName;
       const agents = !branch.remote && branch.worktreePath && (branch.current || canOpen) ? agentsAt(worktreeAgents, branch.worktreePath) : [];
+      const isDefault = !branch.remote && branch.name === defaultName;
       const state = branch.current ? <span className="searchable-picker-status">Current</span>
         : canOpen ? <span className="searchable-picker-status">Open</span>
-          : otherPath ? <span className="searchable-picker-status">In use</span> : undefined;
-      (branch.remote ? remote : local).push({
+          : otherPath ? <span className="searchable-picker-status">In use</span>
+            : isDefault ? <span className="searchable-picker-status">Default</span> : undefined;
+      const time = branch.date ? Date.parse(branch.date) : Number.NaN;
+      const age = Number.isNaN(time) ? null : <time className="searchable-picker-status searchable-picker-age" dateTime={branch.date}>{formatTimeAgo(branch.date)}</time>;
+      const item: SearchablePickerItem = {
         value: branch.fullName,
         label: branch.name,
         ...(canOpen ? { description: `In ${folder}` } : {}),
-        trailing: agents.length > 0 ? <><AgentLabel agents={agents} compact />{state}</> : state,
+        trailing: agents.length > 0 || state || age ? <>{agents.length > 0 && <AgentLabel agents={agents} compact />}{state}{age}</> : undefined,
         search: branch.fullName,
         tooltip: `${branch.fullName}${otherPath ? ` · In ${otherPath}` : ''}${agents.length > 0 ? ` · ${listAgents(agents)} working there` : ''}`,
         // Opening a worktree changes nothing in this one, so an operation here doesn't stop it.
         disabled: otherPath ? !canOpen : Boolean(readOnly),
         icon: <IconGitBranch />,
-      });
+      };
+      if (branch.remote) remote.push(item);
+      else local.push({ item, rank: branch.current ? 0 : isDefault ? 1 : 2, time });
     }
-    local.sort((a, b) => (a.value === currentValue ? -1 : b.value === currentValue ? 1 : 0));
+    // A branch whose date Git left out goes last. Equal dates keep Git's alphabetical order.
+    local.sort((a, b) => a.rank - b.rank || (Number.isNaN(b.time) ? -Infinity : b.time) - (Number.isNaN(a.time) ? -Infinity : a.time));
     return { currentValue, openable, groups: [
-      { id: 'local', label: 'Local', items: local },
+      { id: 'local', label: 'Local', items: local.map((entry) => entry.item) },
       { id: 'remote', label: 'Remote', items: remote },
     ] };
   }, [branches, readOnly, worktreeItems, worktreeAgents]);

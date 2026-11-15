@@ -116,6 +116,18 @@ it('labels merged PRs in the repository menu with the merge icon', async () => {
   expect(container.querySelector('.mobile-repository-context small')?.textContent).toBe('main · #13');
 });
 
+it('says under the repository name that the branch PR is merged and has moved on, and offers the next one', async () => {
+  const create = vi.fn();
+  const merged = { number: 12, state: 'MERGED' } as PullRequestSummary;
+  await render(initialStatus, false, merged, null, { branchPullRequestNewCommits: 0, onCreatePullRequest: create });
+  expect(container.querySelector('.mobile-repository-context small')?.textContent).toBe('main · #12 Merged');
+  expect([...container.querySelectorAll('button')].some((button) => button.textContent === 'Create pull request')).toBe(false);
+  await render(initialStatus, false, merged, null, { branchPullRequestNewCommits: 2, onCreatePullRequest: create });
+  expect(container.querySelector('.mobile-repository-context small')?.textContent).toBe('main · #12 Merged +2 new');
+  await act(async () => [...container.querySelectorAll('button')].find((button) => button.textContent === 'Create pull request')!.click());
+  expect(create).toHaveBeenCalledOnce();
+});
+
 it('names the repository being opened and does not report a detached HEAD before its status loads', async () => {
   await render(null, false, null, 'todor');
   const context = container.querySelector('.mobile-repository-context')!;

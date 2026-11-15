@@ -1,10 +1,10 @@
-import { IconBan, IconCircleCheck, IconCircleDot, IconCircleMinus, IconCircleX, IconClock, IconLoader2 } from '@tabler/icons-react';
+import { IconBan, IconCircleCheck, IconCircleDot, IconCircleMinus, IconCircleX, IconClock } from '@tabler/icons-react';
+import { Spinner } from '@/components/ui/spinner';
 import type { ActionTone } from './action-status';
 
-const ICONS: Record<ActionTone, typeof IconClock> = {
+const ICONS: Record<Exclude<ActionTone, 'running'>, typeof IconClock> = {
   success: IconCircleCheck,
   failure: IconCircleX,
-  running: IconLoader2,
   queued: IconClock,
   cancelled: IconBan,
   skipped: IconCircleMinus,
@@ -13,6 +13,8 @@ const ICONS: Record<ActionTone, typeof IconClock> = {
 
 /** Decorative: the text beside it always says the same in words. */
 export function ActionStatusIcon({ tone, className = '' }: { tone: ActionTone; className?: string }) {
+  const classes = `action-status-icon action-${tone} ${className}`;
+  if (tone === 'running') return <Spinner className={classes} />;
   const Icon = ICONS[tone];
-  return <Icon className={`action-status-icon action-${tone} ${tone === 'running' ? 'animate-spin' : ''} ${className}`} aria-hidden="true" />;
+  return <Icon className={classes} aria-hidden="true" />;
 }

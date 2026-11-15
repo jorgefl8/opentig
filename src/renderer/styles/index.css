@@ -350,6 +350,14 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   :is(.toolbar-branch-pr, .mobile-pr-number).pr-state-draft { color: var(--muted-foreground); }
   :is(.toolbar-branch-pr, .mobile-pr-number).pr-state-merged { color: var(--pr-merged); }
   :is(.toolbar-branch-pr, .mobile-pr-number).pr-state-closed { color: var(--destructive); }
+  /* A pull request that is no longer open says so in words, and whether its branch has moved on since. */
+  .toolbar-pr-tag { padding: 1px 6px; border-radius: 999px; font-size: var(--text-meta); font-weight: var(--weight-medium); white-space: nowrap; }
+  .pr-state-merged > .toolbar-pr-tag { background: color-mix(in oklch, var(--pr-merged) 16%, transparent); }
+  .pr-state-closed > .toolbar-pr-tag { background: color-mix(in oklch, var(--destructive) 14%, transparent); }
+  .toolbar-branch-pr > .toolbar-pr-tag.neutral { background: var(--muted); color: var(--muted-foreground); }
+  .toolbar-branch-pr.toolbar-pr-create { color: var(--success); }
+  .branch-pr-note { margin: 0 2px 4px; padding: 8px; border-radius: var(--radius-md); background: color-mix(in oklch, var(--pr-merged) 9%, transparent); font-size: var(--text-ui); line-height: 1.45; }
+  .branch-pr-note[data-tone="attention"] { background: color-mix(in oklch, var(--warning) 10%, transparent); }
   .repo-select-favicon { width: 16px; height: 16px; flex: none; border-radius: 3px; object-fit: contain; background: color-mix(in oklch, var(--foreground) 8%, transparent); }
   .repository-sync-actions { display: flex; flex: none; gap: 1px; }
   .repository-missing-badge { flex: none; padding: 1px 6px; border-radius: 999px; background: color-mix(in oklch, var(--warning) 16%, transparent); color: var(--warning); font-size: var(--text-meta); white-space: nowrap; }
@@ -500,7 +508,7 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   /* Status letters are where a change's meaning is colour-coded; anything else stays muted. */
   .status-code { width: 12px; flex: none; color: var(--muted-foreground); font-family: var(--font-mono); font-size: var(--text-meta); font-weight: var(--weight-strong); text-align: center; }
   .status-code[data-kind="modified"] { color: var(--warning); }
-  .status-code[data-kind="added"] { color: var(--success); }
+  .status-code[data-kind="added"], .status-code[data-kind="copied"] { color: var(--success); }
   .status-code[data-kind="deleted"], .status-code[data-kind="conflicted"] { color: var(--destructive); }
   .conflict-section .change-group-label { color: var(--destructive); }
   .conflict-section .plain-count { color: inherit; }
@@ -567,7 +575,7 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   .viewer-pane-body { position: relative; min-height: 0; flex: 1; }
   .viewer-reloading { position: absolute; top: 10px; right: 14px; z-index: 5; display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: color-mix(in oklch, var(--diff-editor-background) 82%, var(--muted)); opacity: 0; animation: viewer-reloading-show 0.2s ease-out 0.5s forwards; }
   @keyframes viewer-reloading-show { to { opacity: 1; } }
-  .viewer-reloading .spinner { margin-right: 0; }
+  .viewer-reloading .view-spinner { margin-right: 0; }
   /* ContentFade animates it with motion. */
   .viewer-transition { height: 100%; }
   .viewer-scroll { width: 100%; height: 100%; overflow: auto; }
@@ -619,12 +627,11 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   .splash-copy { display: grid; gap: 8px; text-align: center; }
   .splash-copy strong { color: var(--foreground); font-size: var(--text-title); font-weight: var(--weight-strong); letter-spacing: -.02em; }
   .splash-copy span { display: block; min-height: 1.35em; font-size: var(--text-body); }
-  .splash-mark {
-    width: 28px; height: 28px; border: 3px solid color-mix(in oklch, var(--foreground) 16%, transparent); border-top-color: var(--primary);
-    border-radius: 50%; animation: spin .8s linear infinite;
-  }
+  .splash .splash-mark { width: 28px; height: 28px; }
+  .splash-mark-track { stroke: color-mix(in oklch, var(--foreground) 16%, transparent); }
+  .splash-mark-arc { stroke: var(--primary); transform-origin: 14px 14px; animation: spin .8s linear infinite; }
   @media (prefers-reduced-motion: reduce) {
-    .splash-mark { animation: none; }
+    .splash-mark-arc { animation: none; }
   }
   .welcome { display: flex; height: 100%; flex-direction: column; align-items: center; justify-content: center; background: radial-gradient(circle at 50% 38%, color-mix(in oklch, var(--primary) 9%, transparent), transparent 34%), var(--background); color: var(--foreground); padding: 32px; text-align: center; }
   .welcome-titlebar { position: fixed; top: 0; left: var(--window-controls-inset-left); right: var(--window-controls-inset); height: var(--toolbar-height); -webkit-app-region: drag; }
@@ -664,11 +671,14 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   .repository-relocations-error { color: var(--destructive); font-size: var(--text-meta); }
 
   .shortcut { position: fixed; bottom: 22px; color: var(--muted-foreground); }
-  .spinner { display: inline-block; width: 15px; height: 15px; margin-right: 8px; animation: spin 1s linear infinite; color: var(--primary); }
-  /* Icons ship a 24-unit viewBox but render smaller, so the default SVG
-     transform box puts the rotation origin outside the glyph and the spinner
-     orbits instead of turning on itself. Pin it to the rendered box. */
-  .spinner, .animate-spin { transform-box: border-box; transform-origin: center; }
+  /* A spinner turns the arc drawn inside it, about the center of its viewBox.
+     The <svg> element stays untransformed: rotating the element itself was
+     measured to carry the whole icon around a small circle on some displays. */
+  .spinner-arc { transform-origin: 12px 12px; animation: spin 1s linear infinite; }
+  @media (prefers-reduced-motion: reduce) {
+    .spinner-arc { animation: none; }
+  }
+  .view-spinner { display: inline-block; width: 15px; height: 15px; margin-right: 8px; color: var(--primary); }
   .repository-projects-dialog { display: flex; max-height: min(700px, calc(100vh - 40px)); flex-direction: column; }
   .repository-projects-header { display: flex; flex: none; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 14px 12px 6px 20px; }
   .repository-projects-header > div { display: grid; min-width: 0; gap: 3px; }
@@ -1038,7 +1048,7 @@ html[data-mono-font="departure"] :where(code, kbd, pre, textarea, .status-code, 
   .pr-stack-state.draft { color: var(--muted-foreground); }
   .pr-stack-base { border-top: 1px solid var(--border); padding: 7px; overflow-wrap: anywhere; }
   .pr-stack-notice { padding: 6px 7px; }
-  .pr-stack-notice:has(.animate-spin) { display: flex; align-items: center; gap: 6px; }
+  .pr-stack-notice:has([data-slot="spinner"]) { display: flex; align-items: center; gap: 6px; }
   .pr-stack-notice svg { width: 13px; height: 13px; flex: none; color: var(--primary); }
   .pull-avatar { display: grid; width: 100%; height: 100%; place-items: center; overflow: hidden; border-radius: 50%; background: var(--muted); }
   .pull-avatar img { width: 100%; height: 100%; object-fit: cover; }
@@ -1386,6 +1396,16 @@ section[data-sileo-viewport] { z-index: 1100; }
 /* Sileo capitalizes every word in titles by default; keep the app's toast
    copy in sentence case instead. */
 section[data-sileo-viewport] [data-sileo-title] { text-transform: none; }
+/* A notice with its own actions (SyncToast): Sileo's pill buttons side by side,
+   a calmer tone for an offer, and Git's own words folded under "Details". */
+section[data-sileo-viewport] .sync-toast-offer { --_c: var(--sileo-state-info); }
+.sync-toast-lead { color: rgba(255, 255, 255, 0.92); font-weight: var(--weight-strong); }
+.sync-toast-actions { display: flex; gap: 8px; margin-top: 0.75rem; }
+.sync-toast-actions > [data-sileo-button] { flex: 1; margin-top: 0; }
+.sync-toast-actions > [data-sileo-button]:not([data-state]) { color: rgba(255, 255, 255, 0.8); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16); }
+.sync-toast-actions > [data-sileo-button]:not([data-state]):hover { background: rgba(255, 255, 255, 0.08); }
+[data-sileo-button].sync-toast-details-toggle { display: flex; width: fit-content; height: auto; padding: 0; margin-top: 0.625rem; border-radius: 2px; font-size: var(--text-meta); font-weight: var(--weight-regular); text-decoration: underline; text-underline-offset: 2px; }
+.sync-toast-details { max-height: 9rem; margin: 0.5rem 0 0; padding: 8px; overflow: auto; border-radius: 8px; background: rgba(255, 255, 255, 0.06); font-family: var(--font-mono); font-size: var(--text-meta); line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; touch-action: pan-y; }
 /* The ghost hover token is the same `muted` the rows are tinted with, so it
    disappears on top of them; these row actions need their own contrast. */
 .repository-row-actions [data-slot="button"] { color: var(--muted-foreground); }
@@ -1693,7 +1713,7 @@ section[data-sileo-viewport] [data-sileo-title] { text-transform: none; }
   }
 
   /* Commit composer ------------------------------------------------------
-     Docked at the bottom of the sidebar. The plan is the part that scrolls, so
+     Docked at the bottom of the sidebar. A plan's cards are the part that scrolls, so
      the message and its actions stay in view however long the plan gets. */
   .commit-composer {
     display: flex;
@@ -1716,33 +1736,69 @@ section[data-sileo-viewport] [data-sileo-title] { text-transform: none; }
   .commit-composer-commit { display: flex; flex: none; align-items: center; }
   .commit-action-menu { width: 26px; }
   .commit-action-hint { margin: 0; padding: 4px 8px 3px; color: var(--muted-foreground); font-size: var(--text-meta); }
-  .commit-plan { display: flex; min-height: 0; flex: 0 1 auto; flex-direction: column; gap: 4px; }
-  .commit-plan-heading { display: flex; flex: none; align-items: center; justify-content: space-between; gap: 8px; }
-  .commit-plan-heading > span { display: inline-flex; align-items: center; gap: 6px; font-size: var(--text-ui); }
-  .commit-plan-heading-actions { flex: none; gap: 2px; }
-  .commit-plan-progress { color: var(--muted-foreground); font-size: var(--text-meta); font-style: normal; font-weight: var(--weight-regular); }
-  .commit-plan-body { display: grid; min-height: 0; flex: 0 1 auto; gap: 6px; overflow-y: auto; overscroll-behavior: contain; margin-inline: -12px; padding-inline: 12px; }
-  .commit-plan-body > p { margin: 0; color: var(--muted-foreground); font-size: var(--text-meta); line-height: 1.4; }
-  .commit-plan-list { display: grid; min-width: 0; }
-  /* A prepared group wears the same surface as a selected row, edge to edge. */
-  .commit-plan-list article { display: flex; min-width: 0; align-items: flex-start; gap: 8px; margin-inline: -12px; padding: 6px 12px; }
-  .commit-plan-list article.prepared { background: var(--row-selected); }
-  .commit-plan-list article > div { display: grid; min-width: 0; flex: 1; gap: 2px; }
-  .commit-plan-list article > button { flex: none; }
-  .commit-plan-list article strong { font-size: var(--text-ui); font-weight: var(--weight-medium); overflow-wrap: anywhere; }
-  .commit-plan-list article small { color: var(--muted-foreground); font-size: var(--text-meta); line-height: 1.35; }
-  .commit-plan-list article.done strong { color: var(--muted-foreground); text-decoration: line-through; }
-  .commit-plan-done-icon { display: inline; width: 12px; height: 12px; margin-right: 3px; color: var(--success); vertical-align: -2px; }
-  /* Paths wrap as individual targets so a long group stays readable and every
-     file can be opened for review before the group is prepared. */
-  .commit-plan-paths { display: flex; flex-wrap: wrap; gap: 0 8px; }
-  .commit-plan-path {
-    max-width: 100%; overflow: hidden; border-radius: var(--radius-sm);
-    color: var(--muted-foreground); font-family: var(--font-mono); font-size: var(--text-meta);
-    text-align: left; text-overflow: ellipsis; white-space: nowrap;
-  }
-  .commit-plan-path:hover { color: var(--foreground); text-decoration: underline; text-underline-offset: 2px; }
-  .commit-plan-note { color: var(--muted-foreground); font-size: var(--text-meta); line-height: 1.4; }
+  /* A suggested split: the choice, then one card per commit. The cards scroll, the choice and the box don't. */
+  .commit-plan-bar { display: flex; flex: none; align-items: center; justify-content: space-between; gap: 8px; }
+  .commit-mode { display: inline-flex; min-width: 0; gap: 2px; border: 1px solid var(--border); border-radius: var(--radius-md); padding: 2px; }
+  .commit-mode button { height: 24px; border-radius: var(--radius-sm); padding: 0 9px; color: var(--muted-foreground); font-size: var(--text-ui); font-weight: var(--weight-medium); white-space: nowrap; }
+  .commit-mode button:hover:not(:disabled) { color: var(--foreground); }
+  .commit-mode button[aria-pressed="true"] { background: var(--accent); color: var(--foreground); }
+  .commit-mode button:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
+  .commit-mode button:disabled { cursor: default; }
+  .commit-mode button:disabled:not([aria-pressed="true"]) { opacity: .5; }
+  .commit-plan-rationale { flex: none; margin: 0; color: var(--muted-foreground); font-size: var(--text-meta); line-height: 1.4; }
+  .commit-composer > .local-refs-confirm { flex: none; }
+  .commit-composer > .local-refs-confirm p { margin: 0; }
+  .commit-plan { display: flex; min-height: 0; flex: 0 1 auto; flex-direction: column; gap: 8px; }
+  .commit-plan-progress { display: flex; min-width: 0; flex: 1; align-items: center; gap: 8px; color: var(--muted-foreground); font-size: var(--text-meta); white-space: nowrap; }
+  .commit-plan > .commit-plan-progress { flex: none; }
+  .commit-plan-progress-track { height: 3px; min-width: 24px; flex: 1; overflow: hidden; border-radius: 2px; background: var(--muted); }
+  .commit-plan-progress-track i { display: block; height: 100%; background: var(--success); transition: width .3s ease; }
+  /* A column, not a grid: a short sidebar scrolls the cards instead of squeezing each one shut. */
+  .commit-plan-groups { display: flex; min-height: 0; flex: 0 1 auto; flex-direction: column; gap: 6px; overflow-y: auto; overscroll-behavior: contain; margin: 0; padding: 0; list-style: none; }
+  .commit-plan-group { min-width: 0; flex: none; overflow: hidden; border: 1px solid var(--border); border-radius: 10px; background: var(--background); }
+  /* The next commit is the one card with the app's own color on it. */
+  .commit-plan-group.active { border-color: color-mix(in oklch, var(--primary) 60%, transparent); }
+  .commit-plan-group-head { display: flex; width: 100%; min-height: 38px; align-items: center; gap: 8px; padding: 6px 10px; text-align: left; }
+  .commit-plan-group-head:hover { background: var(--row-hover); }
+  .commit-plan-group-head:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
+  .commit-plan-number { display: grid; width: 20px; height: 20px; flex: none; place-items: center; border-radius: 50%; background: var(--muted); color: var(--muted-foreground); font-size: var(--text-meta); font-weight: var(--weight-strong); }
+  .commit-plan-number svg { width: 12px; height: 12px; }
+  .commit-plan-group.active .commit-plan-number { background: var(--primary); color: var(--primary-foreground); }
+  .commit-plan-group.done .commit-plan-number { background: color-mix(in oklch, var(--success) 20%, transparent); color: var(--success); }
+  .commit-plan-subject { min-width: 0; flex: 1; overflow: hidden; font-size: var(--text-ui); font-weight: var(--weight-medium); text-overflow: ellipsis; white-space: nowrap; }
+  /* An open card shows its whole subject, which a narrow sidebar would cut. */
+  .commit-plan-group.expanded .commit-plan-subject { overflow-wrap: anywhere; white-space: normal; }
+  .commit-plan-group.done .commit-plan-subject { color: var(--muted-foreground); }
+  .commit-plan-meta { flex: none; color: var(--muted-foreground); font-size: var(--text-meta); }
+  .commit-plan-meta .commit-oid:hover { color: inherit; text-decoration: none; }
+  .commit-plan-chevron { width: 14px; height: 14px; flex: none; color: var(--muted-foreground); transition: transform .12s ease; }
+  .commit-plan-group.expanded .commit-plan-chevron { transform: rotate(90deg); }
+  .commit-plan-group-body { display: grid; gap: 8px; padding: 0 10px 10px 38px; }
+  .commit-plan-group-body > p { margin: 0; color: var(--muted-foreground); font-size: var(--text-ui); line-height: 1.45; overflow-wrap: anywhere; white-space: pre-wrap; }
+  .commit-plan-files { display: grid; margin: 0; padding: 0; list-style: none; }
+  .commit-plan-files li { display: flex; min-width: 0; min-height: 26px; align-items: center; gap: 6px; }
+  .commit-plan-file { min-width: 0; flex: 1; overflow: hidden; border-radius: var(--radius-sm); font-family: var(--font-mono); font-size: var(--text-meta); text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+  button.commit-plan-file:hover { text-decoration: underline; text-underline-offset: 2px; }
+  button.commit-plan-file:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
+  span.commit-plan-file { color: var(--muted-foreground); }
+  /* What a plan says when it stops or ends, in place of a toast that would be gone before it is read. */
+  .commit-plan-note { display: flex; flex: none; align-items: flex-start; gap: 8px; margin: 0; border: 1px solid var(--border); border-radius: var(--radius-md); padding: 8px 10px; color: var(--muted-foreground); font-size: var(--text-ui); line-height: 1.45; }
+  .commit-plan-note > svg { width: 14px; height: 14px; flex: none; margin-top: 2px; color: var(--success); }
+  .commit-plan-note.paused { border-color: color-mix(in oklch, var(--warning) 35%, transparent); background: color-mix(in oklch, var(--warning) 9%, transparent); color: var(--foreground); }
+  .commit-plan-note.paused > svg { color: var(--warning); }
+  .commit-plan-note > div { display: grid; min-width: 0; gap: 6px; }
+  .commit-plan-note p { margin: 0; overflow-wrap: anywhere; }
+  .commit-plan-note-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+  .commit-plan-finished { display: grid; flex: none; gap: 6px; border: 1px solid var(--border); border-radius: 10px; background: var(--background); padding: 10px 12px; font-size: var(--text-ui); }
+  .commit-plan-finished-heading { display: flex; align-items: center; gap: 8px; font-size: var(--text-body); }
+  .commit-plan-finished-heading > svg { width: 15px; height: 15px; flex: none; color: var(--success); }
+  .commit-plan-finished-heading > strong { min-width: 0; flex: 1; font-weight: var(--weight-strong); }
+  .commit-plan-finished ul { display: grid; margin: 0; padding: 0; list-style: none; }
+  .commit-plan-created { display: flex; width: 100%; min-width: 0; min-height: 24px; align-items: center; gap: 8px; border-radius: var(--radius-sm); text-align: left; }
+  .commit-plan-created:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
+  .commit-plan-created .commit-oid { flex: none; color: var(--muted-foreground); font-size: var(--text-meta); }
+  .commit-plan-created > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .commit-plan-created:hover > span:last-child { text-decoration: underline; text-underline-offset: 2px; }
   .ai-log-dialog { display: grid; max-height: min(720px, calc(100vh - 96px)); gap: 10px; grid-template-rows: auto auto 1fr; padding: 16px; }
   .ai-log-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
   .ai-log-header-actions { display: inline-flex; flex: none; align-items: center; gap: 6px; }
@@ -1909,6 +1965,7 @@ section[data-sileo-viewport] [data-sileo-title] { text-transform: none; }
   .diff-total-stats, .diff-file-stats { display: inline-flex; flex: none; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: var(--text-meta); font-weight: var(--weight-medium); }
   .diff-total-stats .add, .diff-file-stats .add { color: var(--diff-added); }
   .diff-total-stats .del, .diff-file-stats .del { color: var(--diff-deleted); }
+  .diff-file-stats .binary { color: var(--muted-foreground); }
   .diff-workspace-actions { display: flex; flex: none; align-items: center; gap: 2px; margin-left: auto; }
   /* Plain tools: an active one is simply brighter than the rest. */
   .diff-workspace-actions button { color: var(--muted-foreground); }
@@ -2019,6 +2076,7 @@ section[data-sileo-viewport] [data-sileo-title] { text-transform: none; }
 .searchable-picker-copy small { color: var(--muted-foreground); font-size: var(--text-meta); line-height: 15px; font-weight: var(--weight-regular); }
 .searchable-picker-trailing { display: flex; flex: none; align-items: center; gap: 6px; }
 .searchable-picker-status { color: var(--muted-foreground); font-size: var(--text-meta); }
+.searchable-picker-age { min-width: 6ch; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
 /* Where a coding agent is working. */
 /* Where a coding agent works: a chip with its mark and a live dot, tinted like the app's primary actions. */
 .agent-labels { display: inline-flex; flex-wrap: wrap; gap: 4px; }

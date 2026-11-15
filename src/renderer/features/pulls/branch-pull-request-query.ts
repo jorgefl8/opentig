@@ -14,6 +14,21 @@ export function needsUserAction(query: Pick<Query, 'state'>): boolean {
   return NEEDS_USER_ACTION.has(failureCode(query) ?? '');
 }
 
+/**
+ * Commits the checked-out branch gained after the head of its merged pull request.
+ * Keyed by both tips, so every commit asks again and nothing has to poll.
+ */
+export function commitsAfterMergeQueryOptions(repositoryId: string, mergedHeadOid: string | null, headOid: string | null) {
+  return queryOptions({
+    queryKey: queryKeys.commitsAfter(repositoryId, mergedHeadOid ?? '', headOid ?? ''),
+    queryFn: () => opentig.commits.countAfter(repositoryId, mergedHeadOid!),
+    // A branch still on the merged head has nothing new, with no need to ask.
+    enabled: repositoryId !== '' && mergedHeadOid !== null && headOid !== null && mergedHeadOid !== headOid,
+    // A fetch can bring a head that was missing locally, so an answer does not last forever.
+    staleTime: 60_000,
+  });
+}
+
 export function branchPullRequestQueryOptions(repositoryId: string, branch: string, enabled: boolean) {
   return queryOptions({
     queryKey: queryKeys.branchPullRequest(repositoryId, branch),

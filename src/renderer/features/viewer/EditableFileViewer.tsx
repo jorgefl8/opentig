@@ -208,7 +208,7 @@ export function SourceCodeEditor({ path, cacheKey, value, themeType, wrapLines, 
     : <LineBlameLayer path={path} text={value} savedText={lineBlameBaseline} layoutKey={`${wrapLines}:${themeType}`} />;
 
   return (
-    <PierreWorkerPool theme={OPENTIG_CODE_THEMES}>
+    <PierreWorkerPool>
       {virtualized ? (
       <Virtualizer className="source-code-editor" contentClassName="source-code-editor-content">
         <VirtualizerScrollBridge handleRef={virtualizerRef} />

@@ -2,7 +2,7 @@ import { appDisplayName } from '@/lib/app-identity';
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { lazyWithRetry } from '@/lib/lazy-with-retry';
 import {
-  IconArrowDown, IconArrowUp, IconBrandGithub, IconChevronDown, IconHierarchy2, IconLoader4, IconPlus, IconRefresh, IconSettings,
+  IconArrowDown, IconArrowUp, IconBrandGithub, IconChevronDown, IconHierarchy2, IconPlus, IconRefresh, IconSettings,
 } from '@tabler/icons-react';
 import type { BootstrapData, GitHubRepositoryInfo, Preferences, PullRequestSummary, RecentRepository, RepositoryInfo, RepositoryOrganization, RepositoryProject } from '../../shared/contracts';
 import type { BranchInfo, RepositoryStatus, WorktreeAgents, WorktreeInfo } from '../../shared/git-types';
@@ -13,17 +13,19 @@ import { AppName } from '@/components/AppName';
 import { OpenTigMark } from '@/components/OpenTigMark';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { isEditableTarget } from '@/features/files/file-tree';
-import type { LocalRefsTab } from '@/features/refs/local-refs-model';
+import type { LocalRefsFocus, LocalRefsTab } from '@/features/refs/local-refs-model';
 import { agentsAt, listAgents, samePath } from '@/features/refs/local-refs-model';
 import { AgentLabel } from '@/features/refs/AgentLabel';
 import { RepositoryFaviconImage } from '@/features/repositories/RepositoryFavicon';
 import { useRepositoryFavicons } from '@/features/repositories/useRepositoryFavicons';
 import { buildRepositoryPickerModel, formatRepositoryCheckout, getRepositoryPickerDisplayOrder, shortenRepositoryPath, type RepositoryOption } from '@/features/repositories/repository-select-model';
 import { needsBranchPublication, visibleRepositorySyncActions, type ProjectSyncAction, type RepositorySyncCounts } from '@/features/repositories/project-sync';
+import { createBackgroundSyncPool, type BackgroundSyncPool } from '@/features/repositories/background-sync-pool';
 import { DesktopUpdateIndicator } from '@/features/settings/UpdateSettings';
 import type { SettingsSection } from '@/features/settings/SettingsDialog';
 import { normalizeRepositoryKey } from '../../shared/repository-projects';
 import { opentig } from '@/lib/opentig-api';
+import { inBackground } from '@/lib/websocket-transport';
 import { useShortcuts } from './useShortcuts';
 import { useMobileLayout } from '@/lib/use-mobile-layout';
 import { MobileToolbar, type MobileViewerBarProps } from './MobileToolbar';
@@ -34,6 +36,8 @@ import type { RemoteAccessAction } from '@/features/repositories/remote-access';
 import { BranchCombobox } from './BranchCombobox';
 import { openOnGitHub } from '@/features/pulls/gh-utils';
 import { BranchPullRequestMenu } from './BranchPullRequestMenu';
+import { mergedBranchCleanUp, mergedBranchCleanUpStep, type MergedBranchCleanUp } from '@/features/pulls/merged-branch';
+import { Spinner } from '@/components/ui/spinner';
 
 export interface ToolbarProps {
   onOnboarding?(): void;
@@ -45,6 +49,11 @@ export interface ToolbarProps {
   worktreeAgents?: readonly WorktreeAgents[] | undefined;
   githubInfo: GitHubRepositoryInfo | null;
   branchPullRequest: PullRequestSummary | null;
+  /** Commits the branch gained after its merged pull request; null while that is unknown. */
+  branchPullRequestNewCommits?: number | null | undefined;
+  /** A branch switch is running or waiting for the user's answer to one of its prompts. */
+  branchSwitchPending?: boolean | undefined;
+  onCreatePullRequest?: (() => void) | undefined;
   /** The current branch tracks a branch with another name on the remote it pushes to. */
   upstreamMismatch?: UpstreamNameMismatch | null | undefined;
   onOpenPullRequest(number: number): void;
@@ -68,10 +77,14 @@ export interface ToolbarProps {
   onRefsManaged(recentRepositories: RecentRepository[] | null): void;
   onPull(): void; onPush(): void;
   repositorySyncOperations: ReadonlyMap<string, ProjectSyncAction>;
-  onRepositorySync(repository: RepositoryOption, projectName: string | null, action: ProjectSyncAction): Promise<void>;
+  /** `settled` runs after the action, and after any follow-up the user takes from its notice. */
+  onRepositorySync(repository: RepositoryOption, projectName: string | null, action: ProjectSyncAction, settled: () => void): Promise<void>;
   settingsOpen: boolean; settingsSection: SettingsSection;
   onSettingsOpen(open: boolean): void; onSettingsSection(section: SettingsSection): void;
 }
+
+/** Saved repositories fetched at once while the picker is open. */
+const PICKER_SYNC_CONCURRENCY = 4;
 
 const SettingsDialog = lazyWithRetry(() => import('@/features/settings/SettingsDialog').then((module) => ({ default: module.SettingsDialog })));
 const LocalRefsDialog = lazyWithRetry(() => import('@/features/refs/LocalRefsDialog').then((module) => ({ default: module.LocalRefsDialog })));
@@ -94,8 +107,35 @@ export function Toolbar(props: ToolbarProps) {
   const repositoryNumberTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const repositoryStatusVersions = useRef<Map<string, number>>(new Map());
   const [refsBusy, setRefsBusy] = useState(false);
-  const openRefsManager = (tab: LocalRefsTab) => { setMobileContextOpen(false); setRefsTab(tab); setRefsOpen(true); };
+  const [refsFocus, setRefsFocus] = useState<LocalRefsFocus | undefined>(undefined);
+  const openRefsManager = (tab: LocalRefsTab) => { setMobileContextOpen(false); setRefsTab(tab); setRefsFocus(undefined); setRefsOpen(true); };
   const currentWorktree = props.worktrees.find((item) => samePath(item.path, props.repository.path));
+  // Cleaning up a merged branch leaves it first, through the usual switch and its prompts,
+  // and only then opens the manager on it, where the deletion is reviewed and confirmed.
+  const branchCleanUp = props.branchPullRequest?.state === 'MERGED' && props.status?.branch
+    ? mergedBranchCleanUp({ pullRequest: props.branchPullRequest, branch: props.status.branch, repositoryPath: props.repository.path, branches: props.branches, worktrees: props.worktrees })
+    : null;
+  const [startedCleanUp, setStartedCleanUp] = useState<MergedBranchCleanUp | null>(null);
+  const startCleanUp = (cleanUp: MergedBranchCleanUp) => {
+    setStartedCleanUp(cleanUp);
+    if (cleanUp.kind === 'worktree') props.onWorktree(cleanUp.mainPath);
+    else props.onBranch(cleanUp.base.fullName);
+  };
+  const cleanUpStep = startedCleanUp && mergedBranchCleanUpStep(startedCleanUp, {
+    repositoryPath: props.repository.path,
+    branch: props.status?.branch ?? null,
+    switching: startedCleanUp.kind === 'worktree' ? props.busy === 'worktree' : props.branchSwitchPending === true,
+    conflicts: props.status?.changes.some((change) => change.conflict) ?? false,
+  });
+  useEffect(() => {
+    if (!startedCleanUp || !cleanUpStep || cleanUpStep === 'wait') return;
+    setStartedCleanUp(null);
+    if (cleanUpStep !== 'open') return;
+    setMobileContextOpen(false);
+    setRefsTab(startedCleanUp.kind === 'worktree' ? 'worktrees' : 'branches');
+    setRefsFocus(startedCleanUp.kind === 'worktree' ? { worktree: startedCleanUp.from } : { branch: startedCleanUp.branch });
+    setRefsOpen(true);
+  }, [startedCleanUp, cleanUpStep]);
   const picker = useMemo(() => buildRepositoryPickerModel(props.recent, props.repositoryProjects), [props.recent, props.repositoryProjects]);
   const visibleRepositories = useMemo(() => getRepositoryPickerDisplayOrder(picker), [picker]);
   const repositoryIndex = useMemo(
@@ -116,37 +156,39 @@ export function Toolbar(props: ToolbarProps) {
   // A ref, so the availability check that runs as the picker opens does not fetch every repository twice.
   const unavailableRepositoryIds = useRef(props.unavailableRepositoryIds);
   useEffect(() => { unavailableRepositoryIds.current = props.unavailableRepositoryIds; }, [props.unavailableRepositoryIds]);
-  const refreshRepositorySyncCounts = useCallback(async (repositories: RepositoryOption[]) => {
-    await Promise.all(repositories.filter((item) => !unavailableRepositoryIds.current.has(item.recent.id)).map(async (item) => {
-      const repositoryId = item.recent.id;
-      const version = (repositoryStatusVersions.current.get(repositoryId) ?? 0) + 1;
-      repositoryStatusVersions.current.set(repositoryId, version);
-      try {
-        const fetched = await opentig.refs.fetch(repositoryId);
-        if (repositoryStatusVersions.current.get(repositoryId) !== version) return;
-        const status = await opentig.repository.getStatus(repositoryId, false);
-        if (repositoryStatusVersions.current.get(repositoryId) !== version) return;
-        setRepositorySyncCounts((current) => {
-          const next = new Map(current);
-          next.set(repositoryId, {
-            ahead: fetched.status === 'success' ? fetched.ahead : status.ahead,
-            behind: fetched.status === 'success' ? fetched.behind : status.behind,
-            branch: status.branch,
-            detached: status.detached,
-            upstream: status.upstream, unborn: status.unborn, readOnly: status.readOnly, operation: status.operation,
-          });
-          return next;
+  const syncRepositoryCounts = useCallback(async (repositoryId: string) => {
+    const version = (repositoryStatusVersions.current.get(repositoryId) ?? 0) + 1;
+    repositoryStatusVersions.current.set(repositoryId, version);
+    try {
+      const fetched = await inBackground(() => opentig.refs.fetch(repositoryId));
+      if (repositoryStatusVersions.current.get(repositoryId) !== version) return;
+      const status = await inBackground(() => opentig.repository.getStatus(repositoryId, false));
+      if (repositoryStatusVersions.current.get(repositoryId) !== version) return;
+      setRepositorySyncCounts((current) => {
+        const next = new Map(current);
+        next.set(repositoryId, {
+          ahead: fetched.status === 'success' ? fetched.ahead : status.ahead,
+          behind: fetched.status === 'success' ? fetched.behind : status.behind,
+          branch: status.branch,
+          detached: status.detached,
+          upstream: status.upstream, unborn: status.unborn, readOnly: status.readOnly, operation: status.operation,
         });
-      } catch {
-        if (repositoryStatusVersions.current.get(repositoryId) !== version) return;
-        setRepositorySyncCounts((current) => {
-          const next = new Map(current);
-          next.delete(repositoryId);
-          return next;
-        });
-      }
-    }));
+        return next;
+      });
+    } catch {
+      if (repositoryStatusVersions.current.get(repositoryId) !== version) return;
+      setRepositorySyncCounts((current) => {
+        const next = new Map(current);
+        next.delete(repositoryId);
+        return next;
+      });
+    }
   }, []);
+  const syncPool = useRef<BackgroundSyncPool | null>(null);
+  const refreshRepositorySyncCounts = useCallback((repositories: RepositoryOption[], afterChange = false) => {
+    syncPool.current ??= createBackgroundSyncPool(PICKER_SYNC_CONCURRENCY, syncRepositoryCounts);
+    syncPool.current.request(repositories.filter((item) => !unavailableRepositoryIds.current.has(item.recent.id)).map((item) => item.recent.id), afterChange);
+  }, [syncRepositoryCounts]);
 
   useEffect(() => {
     const currentStatus = props.status;
@@ -167,7 +209,7 @@ export function Toolbar(props: ToolbarProps) {
   }, [props.repository.id, props.status]);
 
   useEffect(() => {
-    if (repositorySelectOpen) void refreshRepositorySyncCounts(picker.repositories);
+    if (repositorySelectOpen) refreshRepositorySyncCounts(picker.repositories);
   }, [picker.repositories, refreshRepositorySyncCounts, repositorySelectOpen]);
   const { onRepositoryPickerOpen } = props;
   useEffect(() => {
@@ -302,11 +344,11 @@ export function Toolbar(props: ToolbarProps) {
                   onClick={(event) => {
                     event.preventDefault();
                     event.stopPropagation();
-                    void props.onRepositorySync(group, projectName, action).finally(() => refreshRepositorySyncCounts([group]));
+                    void props.onRepositorySync(group, projectName, action, () => void refreshRepositorySyncCounts([group], true));
                   }}
                 />
               )}>
-                {running === action ? <IconLoader4 data-icon="inline-start" className="animate-spin" /> : action === 'pull' ? <IconArrowDown data-icon="inline-start" /> : <IconArrowUp data-icon="inline-start" />}
+                {running === action ? <Spinner data-icon="inline-start" /> : action === 'pull' ? <IconArrowDown data-icon="inline-start" /> : <IconArrowUp data-icon="inline-start" />}
                 <span>{publishing ? 'Publish' : count}</span>
               </TooltipTrigger>
               <TooltipContent>{publishing ? 'Publish branch' : `${label} ${count} ${count === 1 ? 'commit' : 'commits'}`} · {checkoutLabel}</TooltipContent>
@@ -337,7 +379,7 @@ export function Toolbar(props: ToolbarProps) {
         onValueChange={(key) => { setMobileContextOpen(false); onRecent(picker.repositories.find((group) => group.key === key)?.recent.id ?? null); }}
         label="Select project or repository"
         triggerLabel={pendingRepository ? `Opening ${pendingRepository.name}…` : props.repository.repositoryName}
-        icon={props.repositoryLoadPhase ? <IconLoader4 className="animate-spin" /> : <RepositoryFaviconImage src={favicons.get(currentRepositoryKey)} />}
+        icon={props.repositoryLoadPhase ? <Spinner /> : <RepositoryFaviconImage src={favicons.get(currentRepositoryKey)} />}
         triggerHint={`Switch repository (${repoSwitcherKey.toUpperCase()})`}
         shortcut={repoSwitcherKey.toUpperCase()}
         triggerClassName={mobile ? 'max-w-[240px]' : 'toolbar-crumb toolbar-crumb-repository'}
@@ -393,7 +435,7 @@ export function Toolbar(props: ToolbarProps) {
   );
   return (
     <>
-    {mobile ? <MobileToolbar props={props} repositoryControl={repositoryControl} worktreeControl={worktreeControl} branchControl={branchControl} pendingRepositoryName={pendingRepository?.name ?? null} loadIndicator={loadIndicator} contextOpen={mobileContextOpen} onContextOpen={(open) => { setMobileContextOpen(open); if (!open) setRepositorySelectOpen(false); }} syncBusy={currentRepositorySyncBusy} /> : <header className="toolbar">
+    {mobile ? <MobileToolbar props={props} branchCleanUp={branchCleanUp} onBranchCleanUp={startCleanUp} repositoryControl={repositoryControl} worktreeControl={worktreeControl} branchControl={branchControl} pendingRepositoryName={pendingRepository?.name ?? null} loadIndicator={loadIndicator} contextOpen={mobileContextOpen} onContextOpen={(open) => { setMobileContextOpen(open); if (!open) setRepositorySelectOpen(false); }} syncBusy={currentRepositorySyncBusy} /> : <header className="toolbar">
       <div className="toolbar-brand" aria-label={appDisplayName}>
         <OpenTigMark />
         <AppName />
@@ -408,14 +450,15 @@ export function Toolbar(props: ToolbarProps) {
           <span className="toolbar-upstream-chip"><span className="sr-only">Tracks </span><span aria-hidden="true">→ </span>{props.upstreamMismatch.remote}/{props.upstreamMismatch.branch}</span>
         )}
         {props.branchPullRequest && (
-          <BranchPullRequestMenu repositoryId={props.repository.id} key={props.branchPullRequest.url} pullRequest={props.branchPullRequest} onOpenPullRequest={props.onOpenPullRequest} />
+          <BranchPullRequestMenu repositoryId={props.repository.id} key={props.branchPullRequest.url} pullRequest={props.branchPullRequest} onOpenPullRequest={props.onOpenPullRequest}
+            newCommits={props.branchPullRequestNewCommits} cleanUp={branchCleanUp} onCleanUp={startCleanUp} onCreatePullRequest={props.onCreatePullRequest} />
         )}
       </div>
       <div className="toolbar-spacer" />
       {props.status && (props.status.behind > 0 || props.busy === 'pull') && (
         <Tooltip>
           <TooltipTrigger render={<Button variant="ghost" size="sm" data-sync="pull" focusableWhenDisabled disabled={Boolean(props.busy) || currentRepositorySyncBusy} onClick={props.onPull} aria-label={`Pull ${props.status.behind} commits`} />}>
-            {props.busy === 'pull' ? <IconLoader4 data-icon="inline-start" className="animate-spin" /> : <IconArrowDown data-icon="inline-start" />}
+            {props.busy === 'pull' ? <Spinner data-icon="inline-start" /> : <IconArrowDown data-icon="inline-start" />}
             {props.status.behind > 0 && <span>{props.status.behind}</span>}
           </TooltipTrigger>
           <TooltipContent>{props.busy === 'pull' ? 'Pulling changes…' : `Pull ${props.status.behind} ${props.status.behind === 1 ? 'commit' : 'commits'}`}</TooltipContent>
@@ -424,13 +467,13 @@ export function Toolbar(props: ToolbarProps) {
       {props.status && (publishBranch || props.status.unborn || props.status.ahead > 0 || props.busy === 'push') && (
         <Tooltip>
           <TooltipTrigger render={<Button variant="ghost" size="sm" data-sync={publishBranch || props.status.unborn ? 'publish' : 'push'} focusableWhenDisabled disabled={Boolean(props.busy) || currentRepositorySyncBusy || props.status.readOnly || props.status.unborn || props.status.detached} onClick={props.onPush} aria-label={publishBranch || props.status.unborn ? 'Publish branch' : `Push ${props.status.ahead} commits`} />}>
-            {props.busy === 'push' ? <IconLoader4 data-icon="inline-start" className="animate-spin" /> : <IconArrowUp data-icon="inline-start" />}
+            {props.busy === 'push' ? <Spinner data-icon="inline-start" /> : <IconArrowUp data-icon="inline-start" />}
             {publishBranch || props.status.unborn ? <span>Publish</span> : props.status.ahead > 0 && <span>{props.status.ahead}</span>}
           </TooltipTrigger>
           <TooltipContent>{props.status.unborn ? 'Create the first commit before publishing this branch' : props.busy === 'push' ? 'Pushing…' : publishBranch ? 'Publish branch and set upstream' : `Push ${props.status.ahead} ${props.status.ahead === 1 ? 'commit' : 'commits'}`}</TooltipContent>
         </Tooltip>
       )}
-      <Tooltip><TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Refresh" onClick={props.onRefresh} disabled={Boolean(props.busy) || currentRepositorySyncBusy} />}><IconRefresh className={props.busy === 'refresh' ? 'animate-spin' : undefined} /></TooltipTrigger><TooltipContent>Refresh (Ctrl+R)</TooltipContent></Tooltip>
+      <Tooltip><TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Refresh" onClick={props.onRefresh} disabled={Boolean(props.busy) || currentRepositorySyncBusy} />}>{props.busy === 'refresh' ? <Spinner /> : <IconRefresh />}</TooltipTrigger><TooltipContent>Refresh (Ctrl+R)</TooltipContent></Tooltip>
       <DesktopUpdateIndicator />
       {props.remoteProblem && <RemoteAccessIndicator problem={props.remoteProblem.access} message={props.remoteProblem.message} onAction={props.onRemoteAccessAction} />}
       <Tooltip>
@@ -449,6 +492,7 @@ export function Toolbar(props: ToolbarProps) {
           <LocalRefsDialog
             open={refsOpen}
             tab={refsTab}
+            focus={refsFocus}
             repositoryId={props.repository.id}
             worktreeAgents={props.worktreeAgents}
             onOpenChange={setRefsOpen}

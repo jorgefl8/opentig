@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 're
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Radio } from '@base-ui/react/radio';
 import { RadioGroup } from '@base-ui/react/radio-group';
-import { IconCheck, IconChevronDown, IconDots, IconExternalLink, IconGitBranch, IconGitMerge, IconLoader4, IconRefresh } from '@tabler/icons-react';
+import { IconCheck, IconChevronDown, IconDots, IconExternalLink, IconGitBranch, IconGitMerge, IconRefresh } from '@tabler/icons-react';
 import { sileo } from 'sileo';
 import type { PullRequestAction, PullRequestActionInput, PullRequestActionResult, PullRequestDetails, PullRequestLiveState, PullRequestMergeMethod } from '../../../shared/contracts';
 import { allowedPullRequestActions, canDeleteBranchWithMerge, resolvePullRequestPrimary } from '../../../shared/pull-request-actions';
@@ -22,6 +22,7 @@ import { ConfirmPopover } from './ConfirmPopover';
 import { ghDetail, ghErrorTitle, isUncertainFailure, openOnGitHub } from './gh-utils';
 import { useGitHubAccount } from './useGitHubAccount';
 import { pullRequestRevertUncertain, useViewerDraft } from './viewer-drafts';
+import { Spinner } from '@/components/ui/spinner';
 
 const MERGE_VERBS: Record<PullRequestMergeMethod, string> = { MERGE: 'Merge', SQUASH: 'Squash and merge', REBASE: 'Rebase and merge' };
 const MERGE_HELP: Record<PullRequestMergeMethod, string> = { MERGE: 'Keeps every commit and adds a merge commit', SQUASH: 'Combines the commits into one', REBASE: 'Replays the commits on the base branch' };
@@ -235,7 +236,7 @@ export function PullRequestActionBar({ repositoryId, details, live, refreshing, 
   ];
 
   const progressContent = progress && <>
-    {progress.phase === 'done' || progress.phase === 'leaving' ? <IconCheck className="pr-primary-check" aria-hidden="true" /> : <IconLoader4 className="animate-spin" aria-hidden="true" />}
+    {progress.phase === 'done' || progress.phase === 'leaving' ? <IconCheck className="pr-primary-check" aria-hidden="true" /> : <Spinner />}
     {progress.phase === 'done' || progress.phase === 'leaving'
       ? <span className="pr-primary-label">{progress.label}</span>
       : <ShimmeringText key={progress.label} className="pr-primary-label" text={progress.label} color="color-mix(in oklab, var(--primary-foreground) 60%, transparent)" shimmerColor="var(--primary-foreground)" />}
@@ -247,7 +248,7 @@ export function PullRequestActionBar({ repositoryId, details, live, refreshing, 
     {primary.kind === 'text' && primary.label !== statusLabel && primary.label !== 'Draft' && <span className="pr-action-reason">{primary.label}</span>}
     {primary.kind === 'retry' && <>
       <span className="pr-action-reason">{primary.label}</span>
-      <Button variant="ghost" size="xs" disabled={refreshing} onClick={onRefresh}>{refreshing ? <IconLoader4 className="animate-spin" /> : <IconRefresh />} Retry</Button>
+      <Button variant="ghost" size="xs" disabled={refreshing} onClick={onRefresh}>{refreshing ? <Spinner /> : <IconRefresh />} Retry</Button>
     </>}
     {revertUncertain && <span className="pr-action-reason">The revert may have been created. Check GitHub first.<Button variant="ghost" size="xs" onClick={() => { setRevertUncertain(false); onRefresh(); }}>Refresh</Button></span>}
   </>;
@@ -337,7 +338,7 @@ function Confirmation({ question, live, details, login, busy, method, deleteBran
   onCancel(): void;
   onConfirm(request: ActionRequest): void;
 }) {
-  const working = (label: string) => busy ? <><IconLoader4 className="animate-spin" /> <ShimmeringText text="Working…" /></> : label;
+  const working = (label: string) => busy ? <><Spinner /> <ShimmeringText text="Working…" /></> : label;
   const pull = `#${details.number}`;
   const base = <code>{live.baseRefName}</code>;
   const branch = <code>{live.headRefName}</code>;

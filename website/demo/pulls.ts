@@ -1,8 +1,11 @@
 import type { CommentOnPullRequestInput, DeletePullRequestEntryInput, DiffResult, EditPullRequestEntryInput, PullRequestActionInput, PullRequestActionResult, PullRequestCheck, PullRequestCheckState, PullRequestConversationEntry, PullRequestDetails, PullRequestLiveState, PullRequestParticipant, PullRequestStack, PullRequestStackMembership, PullRequestState, ReviewPullRequestInput, UpdatePullRequestInput } from '../../src/shared/contracts';
-import { counts, initialFiles, modifiedFilter, patch, sampleDate } from './model.ts';
+import { branchName, changedFiles, filePatch, initialFiles, mainOid, sampleDate, sampleHistory, type SampleCommit, type Tree } from './model.ts';
 
-type Change = { path: string; before: string; after: string };
-type Sample = { details: PullRequestDetails; live: PullRequestLiveState; changes: Change[][] };
+/** One commit of a pull request, as the trees before and after it. */
+type Layer = Pick<SampleCommit, 'oid' | 'subject' | 'author' | 'date' | 'before' | 'after' | 'renames'>;
+/** A commit of a sample written as the files it leaves changed. */
+type Edit = { title: string; files: Record<string, string> };
+type Sample = { details: PullRequestDetails; live: PullRequestLiveState; layers: Layer[] };
 type SampleStatus = {
   draft?: boolean;
   mergeable?: PullRequestLiveState['mergeable'];
@@ -13,8 +16,6 @@ type SampleStatus = {
   /** Base branch, when the PR is a layer stacked on another one. */
   base?: string;
 };
-const filter = 'src/filter-tasks.js';
-const tests = 'test/filter-tasks.test.js';
 const html = initialFiles['index.html']!;
 const person = (login: string, isBot = false): PullRequestParticipant => ({ login, avatarUrl: null, isBot });
 const maya = person('maya-reviews');
@@ -25,7 +26,7 @@ const review = (id: string, author: PullRequestParticipant, verdict: NonNullable
 const conversations: Record<number, PullRequestConversationEntry[]> = {
   21: [
     comment('c1', bot, 'All sample checks passed on this commit. The board preview is built once this is merged.'),
-    review('r1', maya, 'APPROVED', 'Reads well. Completed tasks staying hidden by default is what we discussed.'),
+    review('r1', maya, 'APPROVED', 'Reads well. `filterTasks` is the name we agreed on.'),
   ],
   24: [
     comment('c2', leo, 'The `test` job fails on the empty list. Could you check `filterTasks` with no tasks?'),
@@ -40,75 +41,98 @@ function rollup(checks: PullRequestCheck[]): PullRequestCheckState {
   if (checks.some(c => c.result === 'fail' || c.result === 'action-required')) return 'FAILING';
   return checks.some(c => c.result === 'pending') ? 'PENDING' : 'PASSING';
 }
-function sample(number: number, title: string, state: PullRequestState, branch: string, body: string, commits: Array<{ title: string; changes: Change[] }>, status: SampleStatus = {}): Sample {
+/** Everything a pull request changes, from the tree it starts on to the one its last commit leaves. */
+function overall(layers: Layer[]) {
+  const base = layers[0]?.before ?? {};
+  const head = layers.at(-1)?.after ?? base;
+  // A rename counts while the file still has its new name and the old one is gone.
+  const renames = Object.fromEntries(layers.flatMap(layer => Object.entries(layer.renames)).filter(([to, from]) => Object.hasOwn(head, to) && !Object.hasOwn(head, from) && Object.hasOwn(base, from)));
+  return { base, head, files: changedFiles(base, head, renames) };
+}
+/** Write into a sample whatever follows from its commits: the list, the head, and the totals. */
+function setLayers(sample: Sample, layers: Layer[]) {
+  const { files } = overall(layers);
+  const head = layers.at(-1)?.oid ?? '';
+  sample.layers = layers;
+  Object.assign(sample.details, {
+    additions: files.reduce((sum, file) => sum + file.additions, 0), deletions: files.reduce((sum, file) => sum + file.deletions, 0), changedFiles: files.length,
+    commits: layers.map(layer => ({ oid: layer.oid, messageHeadline: layer.subject, authoredAt: layer.date, author: layer.author, authorAvatarUrl: null })),
+    headRefOid: head,
+  });
+  sample.live.headRefOid = head;
+  sample.live.head = { ...sample.live.head!, refOid: head || null };
+}
+function sample(number: number, title: string, state: PullRequestState, branch: string, body: string, commits: Edit[] | Layer[], status: SampleStatus = {}): Sample {
   const { draft = false, checks = passing } = status;
   const reviewDecision = status.review ?? (state === 'MERGED' ? 'APPROVED' : null);
-  const totals = commits.flatMap(c => c.changes).reduce((sum, c) => {
-    const count = counts(c.before, c.after);
-    return { additions: sum.additions + count.additions, deletions: sum.deletions + count.deletions };
-  }, { additions: 0, deletions: 0 });
-  const oids = commits.map((_, i) => `${number.toString(16).padStart(6, '0')}${i}`.padEnd(40, 'b'));
-  return {
+  let tree: Tree = initialFiles;
+  const layers = commits.map((commit, index): Layer => {
+    if ('oid' in commit) return commit;
+    const before = tree;
+    tree = { ...tree, ...commit.files };
+    return { oid: `${number.toString(16).padStart(6, '0')}${index}`.padEnd(40, 'b'), subject: commit.title, author: 'OpenTig Demo', date: sampleDate, before, after: tree, renames: {} };
+  });
+  const result: Sample = {
     details: {
       number, title, state, isDraft: draft, author: 'OpenTig Demo', authorAvatarUrl: null,
       headRefName: branch, baseRefName: status.base ?? 'main', updatedAt: sampleDate,
       // Sample PRs have no corresponding GitHub URL.
       url: '', reviewDecision,
-      ...totals, checksState: rollup(checks), body,
-      changedFiles: new Set(commits.flatMap(c => c.changes.map(f => f.path))).size,
+      additions: 0, deletions: 0, checksState: rollup(checks), body, changedFiles: 0,
       labels: [{ name: branch.startsWith('docs/') ? 'documentation' : 'enhancement', color: '818cf8' }],
-      commits: commits.map((c, i) => ({ oid: oids[i]!, messageHeadline: c.title, authoredAt: sampleDate, author: 'OpenTig Demo', authorAvatarUrl: null })),
-      baseRefOid: 'a'.repeat(40), headRefOid: oids.at(-1) ?? '',
+      commits: [], baseRefOid: mainOid, headRefOid: '',
     },
     live: {
-      id: `demo-pr-${number}`, number, state, isDraft: draft, headRefOid: oids.at(-1) ?? '', headRefName: branch, baseRefName: status.base ?? 'main', updatedAt: sampleDate,
+      id: `demo-pr-${number}`, number, state, isDraft: draft, headRefOid: '', headRefName: branch, baseRefName: status.base ?? 'main', updatedAt: sampleDate,
       // GitHub stops computing mergeability once a PR is finished.
       mergeable: state === 'OPEN' ? status.mergeable ?? 'MERGEABLE' : 'UNKNOWN',
       mergeStateStatus: state === 'OPEN' ? status.mergeState ?? (draft ? 'DRAFT' : 'CLEAN') : 'UNKNOWN',
       reviewDecision, latestReviews: reviewDecision === 'APPROVED' ? [{ author: maya, verdict: 'APPROVED', outdated: state === 'OPEN' }] : [], isCrossRepository: false, stack: 'none', autoMerge: null,
       mergeQueue: { enabled: false, queued: false }, behindBy: status.behindBy ?? 0,
       checks: { rollup: rollup(checks), items: checks, truncated: false, partial: false },
-      head: { repositoryId: 'demo-repository', owner: 'demo', defaultBranch: 'main', refOid: oids.at(-1) ?? null },
+      head: { repositoryId: 'demo-repository', owner: 'demo', defaultBranch: 'main', refOid: null },
       repository: { methods: ['MERGE', 'SQUASH', 'REBASE'], defaultMethod: 'SQUASH', autoMergeAllowed: true, deleteBranchOnMerge: false },
       viewer: { canWrite: true, canUpdate: true, didAuthor: false, canUpdateBranch: true, canDeleteBranch: true },
     },
-    changes: commits.map(c => c.changes),
+    layers: [],
   };
+  setLayers(result, layers);
+  return result;
 }
+/** The pull request of the checked-out branch. Its commits are the branch's own, so History shows them too. */
+const branchPullRequest = 21;
 const readme = initialFiles['README.md']!;
 const samples = [
   sample(25, 'Group tasks by owner', 'OPEN', 'feature/group-by-owner',
     '## What changes\n\nDescribe how the task list can group work by owner.\n', [
-      { title: 'Describe owner groups', changes: [{ path: 'README.md', before: readme, after: `${readme}\n## Owners\n\nGroup tasks by owner to see who is working on what.\n` }] },
+      { title: 'Describe owner groups', files: { 'README.md': `${readme}\n## Owners\n\nGroup tasks by owner to see who is working on what.\n` } },
     ], { mergeState: 'BLOCKED', review: 'REVIEW_REQUIRED', checks: [check('test', 'pending', true), check('lint', 'pass'), check('preview', 'pending')], base: 'feature/overdue-first' }),
   sample(24, 'Show overdue tasks first', 'OPEN', 'feature/overdue-first',
     '## What changes\n\nMove overdue work to the top of the release board.\n', [
-      { title: 'Lead the board with overdue work', changes: [{ path: 'index.html', before: html, after: html.replace('A small team. A big launch.', 'Overdue work comes first.') }] },
+      { title: 'Lead the board with overdue work', files: { 'index.html': html.replace('A small team. A big launch.', 'Overdue work comes first.') } },
     ], { mergeState: 'BLOCKED', review: 'APPROVED', checks: [check('test', 'fail', true), check('lint', 'pass'), check('preview', 'skipped')], base: 'docs/task-filters' }),
   sample(23, 'Explain the task filters', 'OPEN', 'docs/task-filters',
     '## What changes\n\nDocument the options for filtering tasks.\n', [
-      { title: 'Document the task filters', changes: [{ path: 'README.md', before: readme, after: `${readme}\n## Filters\n\nSearch by title, and include completed tasks when you need them.\n` }] },
+      { title: 'Document the task filters', files: { 'README.md': `${readme}\n## Filters\n\nSearch by title, and include completed tasks when you need them.\n` } },
     ], { mergeState: 'BEHIND', behindBy: 2 }),
   sample(22, 'Rename the release board', 'OPEN', 'feature/board-name',
     '## What changes\n\nGive the release board a shorter headline.\n', [
-      { title: 'Shorten the board headline', changes: [{ path: 'index.html', before: html, after: html.replace('A small team. A big launch.', 'Launch board.') }] },
+      { title: 'Shorten the board headline', files: { 'index.html': html.replace('A small team. A big launch.', 'Launch board.') } },
     ], { mergeable: 'CONFLICTING', mergeState: 'DIRTY' }),
-  sample(21, 'Hide completed tasks from search results', 'OPEN', 'feature/task-filters',
-    '## What changes\n\nKeep the task list focused on unfinished work. Completed tasks are hidden by default; pass `includeCompleted: true` to include them.\n\n## Verification\n\n- Case-insensitive search still works.\n- Completed tasks are hidden by default.\n- Callers can opt back into completed tasks.\n', [
-      { title: 'Filter out completed tasks by default', changes: [{ path: filter, before: initialFiles[filter]!, after: modifiedFilter }] },
-      { title: 'Cover completed task visibility', changes: [{ path: tests, before: initialFiles[tests]!, after: initialFiles[tests]! + "\ntest('hides completed tasks by default', () => {\n  assert.deepEqual(filterTasks(tasks), [tasks[0]]);\n});\n\ntest('can include completed tasks', () => {\n  assert.deepEqual(filterTasks(tasks, '', { includeCompleted: true }), tasks);\n});\n" }] },
-    ]),
+  sample(branchPullRequest, 'Turn search into a task filter', 'OPEN', branchName,
+    '## What changes\n\nRename `searchTasks` to `filterTasks` and move it to `src/filter-tasks.js`, so the board can filter by more than the title. `node:test` tests replace the smoke script.\n\n## Verification\n\n- `npm test` covers case-insensitive search.\n- The README names the new function and file.\n',
+    sampleHistory.filter(commit => !commit.onMain)),
   sample(20, 'Refine the release board on small screens', 'OPEN', 'feature/compact-board',
     '## What changes\n\nGive the release board more room on narrow screens, with tighter card spacing and a wider breakpoint for the single-column layout.\n\n## Review\n\nCheck the board at phone and tablet widths before merging.\n', [
-      { title: 'Adjust the compact board layout', changes: [{ path: 'index.html', before: html, after: html.replace('max-width: 560px', 'max-width: 680px').replace('padding: 18px;', 'padding: 14px;') }] },
+      { title: 'Adjust the compact board layout', files: { 'index.html': html.replace('max-width: 560px', 'max-width: 680px').replace('padding: 18px;', 'padding: 14px;') } },
     ], { draft: true, checks: [check('test', 'pending', true), check('lint', 'pass')] }),
   sample(19, 'Document the local test command', 'MERGED', 'docs/test-command',
     '## What changes\n\nDocument how to run the task filter tests with Node.js. No extra test runner is needed.\n', [
-      { title: 'Add testing instructions', changes: [{ path: 'README.md', before: initialFiles['README.md']!, after: initialFiles['README.md']! + '\n## Testing\n\nRun `npm test` to check task filtering.\n' }] },
+      { title: 'Add testing instructions', files: { 'README.md': readme + '\n## Testing\n\nRun `npm test` to check task filtering.\n' } },
     ]),
   sample(18, 'Try a warmer board accent', 'CLOSED', 'design/warm-accent',
     '## Exploration\n\nTry an amber accent on the release board. Closed after review: keep the original violet palette.\n', [
-      { title: 'Try amber for release progress', changes: [{ path: 'index.html', before: html, after: html.replaceAll('#9da8ff', '#f0bc70') }] },
+      { title: 'Try amber for release progress', files: { 'index.html': html.replaceAll('#9da8ff', '#f0bc70') } },
     ]),
 ];
 // One native GitHub stack, from bottom to top, so visitors can open its layer indicator.
@@ -129,8 +153,7 @@ function requireSample(number: number) {
   if (!result) throw new Error('Choose a pull request from the sample repository.');
   return result;
 }
-function result(changes: Change[]): DiffResult {
-  const text = changes.map(c => patch(c.path, c.before, c.after)).join('');
+function result(text: string): DiffResult {
   return { path: '', patch: text, binary: false, truncated: false, lineCount: text.split('\n').length };
 }
 /** The demo's signed-in GitHub account, which authors simulated comments and reviews. */
@@ -254,12 +277,22 @@ export const demoPulls = {
       }),
     };
   },
-  diff(number: number) { return result(requireSample(number).changes.flat()); },
+  diff(number: number) {
+    const { base, head, files } = overall(requireSample(number).layers);
+    return result(files.map(file => filePatch(file, base, head)).join(''));
+  },
   commitDiff(oid: string) {
     for (const sample of samples) {
-      const index = sample.details.commits.findIndex(c => c.oid === oid);
-      if (index >= 0) return result(sample.changes[index]!);
+      const layer = sample.layers.find(item => item.oid === oid);
+      if (layer) return result(changedFiles(layer.before, layer.after, layer.renames).map(file => filePatch(file, layer.before, layer.after)).join(''));
     }
     throw new Error('Choose a commit from a sample pull request.');
+  },
+  /** A push reached the branch: while its pull request is open, the pull request has those commits too. */
+  branchPushed(commits: SampleCommit[]) {
+    const sample = requireSample(branchPullRequest);
+    if (sample.details.state !== 'OPEN' || !commits.length || commits.at(-1)!.oid === sample.details.headRefOid) return;
+    setLayers(sample, commits);
+    touch(sample);
   },
 };

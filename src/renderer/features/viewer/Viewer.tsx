@@ -1,8 +1,10 @@
 import { formatDateTime } from '@shared/date-format';
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
-import { lazyWithRetry } from '@/lib/lazy-with-retry';
+import { lazyWithPreload, lazyWithRetry } from '@/lib/lazy-with-retry';
+import { isLowEndDevice } from '@/lib/low-end-device';
+import { whenIdle } from '@/lib/when-idle';
 import { LazyPullRequestViewer as PullRequestViewer } from '@/features/pulls/pull-request-viewer-chunks';
-import { IconDots, IconLoader4 } from '@tabler/icons-react';
+import { IconDots } from '@tabler/icons-react';
 import type { DiffResult, DiffViewPreference, FileResult, ImageFileResult, ThemePreference, WriteFileResult } from '../../../shared/contracts';
 import type { CommitInfo } from '../../../shared/git-types';
 import { isKnownImagePath, isSvgPath } from '../../../shared/image-types';
@@ -21,10 +23,12 @@ import { ByteBudgetLru } from '@/lib/ByteBudgetLru';
 import { opentig } from '@/lib/opentig-api';
 import { MobileCommitBar, MobileDiffBar } from './MobileViewerBars';
 import { ContentFade } from '@/components/Reveal';
-const PierreDiffViewer = lazyWithRetry(() => import('./PierreDiffViewer'));
-const PierreEditBoundary = lazyWithRetry(() => import('./PierreEditBoundary').then((module) => ({ default: module.PierreEditBoundary })));
+import { Spinner } from '@/components/ui/spinner';
+// The code viewers start downloading with the document they will show, so it mounts once, on a viewer that is already there.
+const PierreDiffViewer = lazyWithPreload(() => import('./PierreDiffViewer'));
+const PierreEditBoundary = lazyWithPreload(() => import('./PierreEditBoundary').then((module) => ({ default: module.PierreEditBoundary })));
 const MarkdownFileViewer = lazyWithRetry(() => import('@/features/markdown/MarkdownFileViewer').then((module) => ({ default: module.MarkdownFileViewer })));
-const EditableFileViewer = lazyWithRetry(() => import('./EditableFileViewer').then((module) => ({ default: module.EditableFileViewer })));
+const EditableFileViewer = lazyWithPreload(() => import('./EditableFileViewer').then((module) => ({ default: module.EditableFileViewer })));
 const HtmlFileViewer = lazyWithRetry(() => import('./HtmlFileViewer').then((module) => ({ default: module.HtmlFileViewer })));
 const ReleaseViewer = lazyWithRetry(() => import('@/features/pulls/ReleaseViewer').then((module) => ({ default: module.ReleaseViewer })));
 const WorkflowRunViewer = lazyWithRetry(() => import('@/features/actions/WorkflowRunViewer').then((module) => ({ default: module.WorkflowRunViewer })));
@@ -98,6 +102,21 @@ const diffCache = new ByteBudgetLru<string, DiffResult>({
 });
 let diffCacheRepositoryId: string | null = null;
 
+/** A file shown as source by `EditableFileViewer`, not through a preview of its own. */
+function isSourcePath(path: string): boolean {
+  return !isKnownImagePath(path) && !isMarkdownPath(path) && !isSvgPath(path) && !isHtmlPath(path);
+}
+
+/**
+ * Gets a document's colors ready before it replaces the one on screen, within
+ * a short budget. Whatever goes wrong, the document is shown and highlighted
+ * as it would have been.
+ */
+async function prepareHighlight(work: (prime: typeof import('./highlight-prime')) => Promise<void>): Promise<void> {
+  try { await work(await import('./highlight-prime')); }
+  catch { /* Shown without waiting. */ }
+}
+
 export default function Viewer({ repositoryId, selection, diffView, wrapLines, theme, revision, readOnly, commits, githubRepository, undoBlocked, onUndoCommit, draftFor, onSelect, onOpenFile, onDiffViewChange, onWrapLinesChange, onDraftChange, onDraftSaved, onUpdateConflict, onResolveConflict, onDiscardDiff }: ViewerProps) {
   const [data, setData] = useState<ViewerData>(null);
   const [loading, setLoading] = useState(false);
@@ -125,6 +144,17 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
     fileDirty.current = false;
   }, [selection]);
 
+  // What the load below reads when its data arrives, without loading again when these change.
+  const shown = useRef({ docKey: null as string | null, draftFor, readOnly });
+  useEffect(() => { shown.current = { docKey: data?.docKey ?? null, draftFor, readOnly }; });
+
+  // The highlighting workers, the themes and the usual grammars load while the
+  // app is idle, so the first diff of the session does not wait for them.
+  useEffect(() => {
+    if (typeof Worker === 'undefined' || isLowEndDevice(navigator)) return;
+    return whenIdle(() => { void import('./pierre-pool').then((pool) => pool.warmHighlighting(whenIdle)).catch(() => undefined); });
+  }, []);
+
   useEffect(() => {
     if (diffCacheRepositoryId !== repositoryId) {
       diffCache.clear();
@@ -135,6 +165,12 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
     // Pull request selections fetch their own data inside PullRequestViewer.
     if (!selection || selection.type === 'pull-request' || selection.type === 'release' || selection.type === 'workflow-run' || (selection.type === 'file' && /\.pdf$/i.test(selection.path))) { setData(null); setLoading(false); return; }
     setLoading(true);
+    if (selection.type === 'file') {
+      if (!isKnownImagePath(selection.path)) PierreEditBoundary.preload();
+      if (isSourcePath(selection.path)) EditableFileViewer.preload();
+    } else {
+      PierreDiffViewer.preload();
+    }
     const run = async () => {
       try {
         if (selection.type === 'file' || selection.type === 'conflict') {
@@ -149,6 +185,13 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
           if (selection.type === 'conflict') {
             setData({ docKey, type: 'conflict', value });
             return;
+          }
+          // Another file keeps the previous document on screen a moment longer to open
+          // with its colors. A refresh of the open file is highlighted where it is.
+          if (shown.current.docKey !== docKey && isSourcePath(value.path) && !value.binary && !value.tooLarge) {
+            const { draftFor: draft, readOnly: locked } = shown.current;
+            await prepareHighlight((prime) => prime.prepareFileHighlight(value.path, draft(value.path)?.content ?? value.content, !locked));
+            if (token !== requestToken.current) return;
           }
           setData((current) => current && current.docKey === docKey && current.type === 'file'
             && fileDirty.current
@@ -171,6 +214,11 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
           }
           if (token !== requestToken.current) return;
           const next = value;
+          // A whole commit opens with its files folded, so it has nothing to highlight yet.
+          if (shown.current.docKey !== docKey && selection.type !== 'commit' && next.patch && !next.binary) {
+            await prepareHighlight((prime) => prime.prepareDiffHighlight(next.patch));
+            if (token !== requestToken.current) return;
+          }
           setData((current) => current && current.docKey === docKey && current.type === 'diff'
             && current.value.patch === next.patch && current.value.binary === next.binary
             ? current
@@ -232,6 +280,8 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
 
   let content: React.ReactNode;
   let pierreContent: React.ReactNode = null;
+  // Source code is shown at once instead of faded in.
+  let sourceCode = false;
   if (!selection) {
     content = <EmptyViewer />;
   } else if (selection.type === 'pull-request') {
@@ -271,7 +321,7 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
   } else if (error) {
     content = <div className="viewer-message text-destructive">{error}</div>;
   } else if (!data) {
-    content = <div className="viewer-message"><IconLoader4 className="spinner" /> <ShimmeringText text="Loading…" /></div>;
+    content = <div className="viewer-message"><Spinner className="view-spinner" /> <ShimmeringText text="Loading…" /></div>;
   } else if (data.type === 'image') {
     content = (
       <Suspense fallback={<ViewerLoading />}>
@@ -366,6 +416,7 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
     );
   } else if (data.type === 'file') {
     const file = data.value;
+    sourceCode = true;
     content = (
       <Suspense fallback={<ViewerLoading />}>
         <EditableFileViewer
@@ -450,8 +501,8 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
   const body = (
     <>
       {bar}
-      {pierreContent ?? <ContentFade key={data ? data.docKey : docKey} className="viewer-transition">{content}</ContentFade>}
-      {reloading && <span className="viewer-reloading" aria-hidden="true"><IconLoader4 className="spinner" /></span>}
+      {pierreContent ?? <ContentFade key={data ? data.docKey : docKey} className="viewer-transition" animate={!sourceCode}>{content}</ContentFade>}
+      {reloading && <span className="viewer-reloading" aria-hidden="true"><Spinner className="view-spinner" /></span>}
     </>
   );
   if (data?.type !== 'file') return body;
@@ -590,7 +641,7 @@ function documentKey(repositoryId: string, selection: ViewerSelection): string {
 }
 
 function ViewerLoading() {
-  return <div className="viewer-message"><IconLoader4 className="spinner" /> <ShimmeringText text="Loading viewer…" /></div>;
+  return <div className="viewer-message"><Spinner className="view-spinner" /> <ShimmeringText text="Loading viewer…" /></div>;
 }
 
 function EmptyViewer() {

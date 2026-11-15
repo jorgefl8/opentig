@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import { IconBook2, IconGitBranch, IconLoader4 } from '@tabler/icons-react';
+import { IconBook2, IconGitBranch } from '@tabler/icons-react';
 import type { ServerDirectoryListing } from '@shared/contracts';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogDescription, DialogPopup, DialogTitle } from '@/components/ui/dialog';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { findRepositories, type FoundRepository } from './find-repositories';
 import './onboarding.css';
+import { Spinner } from '@/components/ui/spinner';
 
 export function FindRepositoriesDialog({ open, onOpenChange, known, onBrowse, onAdd, onOpenFolder }: {
   open: boolean;
@@ -42,12 +43,12 @@ export function FindRepositoriesDialog({ open, onOpenChange, known, onBrowse, on
     <DialogPopup className="onboarding-find-dialog">
       <DialogTitle>Repositories {window.opentigDesktop ? 'on this computer' : 'on your server'}</DialogTitle>
       <DialogDescription>Found in your home folder and common code folders such as ~/code and ~/projects. Choose one to open it.</DialogDescription>
-      {!found ? <p className="onboarding-find-state" role="status"><IconLoader4 className="animate-spin" aria-hidden="true" /><ShimmeringText text="Looking for repositories…" /></p>
+      {!found ? <p className="onboarding-find-state" role="status"><Spinner /><ShimmeringText text="Looking for repositories…" /></p>
         : found.length === 0 ? <div className="onboarding-find-state"><strong>No new repositories found</strong><p>Browse to a folder yourself, or clone one from a URL.</p></div>
         : <ul className="onboarding-find-list" aria-label="Repositories found">{found.map(item => <li key={item.path}>
           <button type="button" disabled={Boolean(adding)} onClick={() => void add(item)}>
             <IconBook2 aria-hidden="true" /><span><strong>{item.name}</strong><small>{item.path}</small></span>
-            {adding === item.path ? <IconLoader4 className="animate-spin" aria-label="Opening" /> : item.branch && <em><IconGitBranch aria-hidden="true" />{item.branch}</em>}
+            {adding === item.path ? <Spinner label="Opening" /> : item.branch && <em><IconGitBranch aria-hidden="true" />{item.branch}</em>}
           </button>
         </li>)}</ul>}
       {error && <p className="onboarding-error" role="alert">{error}</p>}
