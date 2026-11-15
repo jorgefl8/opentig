@@ -3,6 +3,11 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import WebSocket from 'ws';
+import { createRequire } from 'node:module';
+import { randomBytes } from 'node:crypto';
+import { once } from 'node:events';
+import { connect } from 'node:net';
+import { constants as zlibConstants, deflateRawSync } from 'node:zlib';
 import { CommandRegistry, type CommandExecutionContext } from '../../../src/main/runtime/CommandRegistry';
 import type { OpenTigRuntime } from '../../../src/main/runtime/OpenTigRuntime';
 import { OPEN_TIG_SERVER_COMMANDS } from '../../../src/shared/protocol';
@@ -265,6 +270,42 @@ describe('WebSocket safety limits', () => {
     expect(await sendAndReceive(local, { type: 'request', id: 'local', command: 'app:bootstrap', args: [] })).toMatchObject({ type: 'result', id: 'local', result: { ok: true } });
     local.close();
     remote.close();
+  });
+
+  it('never inflates what a client without a session sends, nor anything a refused connection sends afterwards', async () => {
+    const fixture = await startFixture(() => emptyBootstrap());
+    // The same module the server's `ws` loads, which its package does not export.
+    const PerMessageDeflate = createRequire(import.meta.url)(path.resolve('node_modules/ws/lib/permessage-deflate.js')) as { prototype: { decompress(...args: unknown[]): void } };
+    const decompress = vi.spyOn(PerMessageDeflate.prototype, 'decompress');
+    const connect = (headers: Record<string, string>) => new Promise<WebSocket>((resolve, reject) => {
+      const socket = new WebSocket(fixture.origin.replace(/^http/, 'ws') + '/ws', { headers: { Origin: fixture.origin, 'X-Forwarded-For': '203.0.113.7', ...headers }, perMessageDeflate: true });
+      socket.once('open', () => resolve(socket));
+      socket.once('error', reject);
+    });
+    const payload = JSON.stringify({ type: 'request', id: 'x', command: 'app:bootstrap', args: ['a'.repeat(512 * 1024)] });
+
+    // Without a session: upgraded as before, so the browser sees 1008, but never offered compression.
+    const stranger = await connect({});
+    const strangerClosed = closed(stranger);
+    expect(stranger.extensions).toBe('');
+    for (let index = 0; index < 5; index++) stranger.send(payload);
+    await expect(strangerClosed).resolves.toBe(1008);
+
+    // With a session, then revoked: once refused, what the connection sends is not read. A raw client that
+    // ignores the close, as a hostile one would; a browser answers it and ends the connection itself.
+    const cookie = (await fixture.auth.exchangePairingToken(fixture.auth.createPairingToken().token))!.split(';', 1)[0]!;
+    const member = await rawCompressingClient(fixture.origin, cookie);
+    expect(member.extensions).toContain('permessage-deflate');
+    await fixture.auth.revokeBrowserSession(fixture.auth.authenticate({ cookie })!);
+    member.sendText(JSON.stringify({ type: 'ping' }), false);
+    await member.closeReceived;
+    decompress.mockClear();
+    for (let index = 0; index < 5; index++) member.sendText(payload, true);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(decompress).not.toHaveBeenCalled();
+    // And the connection is cut without waiting for the client.
+    await member.ended;
+    decompress.mockRestore();
   });
 
   it('refuses a request over the in-flight limit as retryable, and times out bounded commands', async () => {
@@ -689,6 +730,48 @@ function waitForMessage(socket: WebSocket, predicate: (message: unknown) => bool
 function isResult(value: unknown): value is { type: 'result'; id: string } {
   const candidate = value as { type?: unknown; id?: unknown } | null;
   return candidate?.type === 'result' && typeof candidate.id === 'string';
+}
+
+/** A WebSocket client written by hand: it offers compression, sends what it is told, and never answers a close. */
+async function rawCompressingClient(origin: string, cookie: string) {
+  const url = new URL(origin);
+  const socket = connect(Number(url.port), url.hostname);
+  await once(socket, 'connect');
+  socket.write([
+    'GET /ws HTTP/1.1', `Host: ${url.host}`, 'Upgrade: websocket', 'Connection: Upgrade', 'Sec-WebSocket-Version: 13',
+    `Sec-WebSocket-Key: ${randomBytes(16).toString('base64')}`, 'Sec-WebSocket-Extensions: permessage-deflate',
+    `Origin: ${origin}`, `Cookie: ${cookie}`, 'X-Forwarded-For: 203.0.113.7', '', '',
+  ].join('\r\n'));
+  let received = Buffer.alloc(0);
+  let headers = '';
+  let markClose!: () => void;
+  const closeReceived = new Promise<void>((resolve) => { markClose = resolve; });
+  socket.on('data', (chunk: Buffer) => {
+    received = Buffer.concat([received, chunk]);
+    if (!headers) {
+      const end = received.indexOf('\r\n\r\n');
+      if (end === -1) return;
+      headers = received.subarray(0, end).toString('latin1');
+      received = received.subarray(end + 4);
+    }
+    // An opcode of 8 is a close frame.
+    if (received.length && (received[0]! & 0x0f) === 8) markClose();
+  });
+  while (!headers) await once(socket, 'data');
+  const ended = new Promise<void>((resolve) => socket.once('close', () => resolve()));
+  const sendText = (text: string, compress: boolean) => {
+    let payload = Buffer.from(text);
+    // permessage-deflate drops the final empty block's marker.
+    if (compress) payload = deflateRawSync(payload, { finishFlush: zlibConstants.Z_SYNC_FLUSH }).subarray(0, -4);
+    const mask = randomBytes(4);
+    const length = payload.length;
+    const header = length < 126 ? Buffer.from([0, 0x80 | length]) : length < 65536 ? Buffer.from([0, 0x80 | 126, length >> 8, length & 0xff]) : Buffer.concat([Buffer.from([0, 0x80 | 127]), (() => { const size = Buffer.alloc(8); size.writeBigUInt64BE(BigInt(length)); return size; })()]);
+    header[0] = 0x80 | (compress ? 0x40 : 0) | 1;
+    const masked = Buffer.from(payload.map((byte, index) => byte ^ mask[index % 4]!));
+    if (!socket.destroyed) socket.write(Buffer.concat([header, mask, masked]));
+  };
+  const extensions = /^sec-websocket-extensions: *(.*)$/im.exec(headers)?.[1] ?? '';
+  return { extensions, sendText, closeReceived, ended };
 }
 
 function closed(socket: WebSocket): Promise<number> {

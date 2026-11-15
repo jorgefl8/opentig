@@ -253,7 +253,7 @@ Each WebSocket response is limited to 4 MiB of UTF-8 JSON, including its envelop
 
 A separate 8 MiB send-queue budget closes an accumulating slow connection with code 1013. Reconnection does not replay pending operations.
 
-A browser reaching the server through the network or a tunnel gets the interface's files and its WebSocket messages compressed when it offers to, which shrinks a file tree to about a tenth. A browser on the same machine connecting directly does not, since it would only wait for the compression. A proxy on the same machine counts as remote when it says whom it forwards for (`X-Forwarded-For`, `Forwarded` and similar headers). Compressed files are kept in the server's memory, 48 MB at most, so each is compressed once per run.
+A browser reaching the server through the network or a tunnel gets the interface's files compressed when it offers to, and, once signed in, its WebSocket messages too, which shrinks a file tree to about a tenth. A connection without a valid session is never offered compression, and once the server refuses or closes a connection it reads nothing more from it. A browser on the same machine connecting directly does not, since it would only wait for the compression. A proxy on the same machine counts as remote when it says whom it forwards for (`X-Forwarded-For`, `Forwarded` and similar headers). Compressed files are kept in the server's memory, 48 MB at most, so each is compressed once per run.
 
 A server accepts at most 16 simultaneous WebSocket connections, one per open browser tab or desktop window. Further tabs cannot connect until another closes.
 
