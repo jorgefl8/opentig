@@ -102,6 +102,8 @@ Repository files stay at their existing paths on the host. Application settings 
 
 `settings.json` stores repositories, preferences, and application state. If it cannot be parsed, OpenTig uses the last known-good `settings.json.bak`.
 
+The desktop app also keeps V8's compiled code for its own processes in `opentig/compile-cache` under the system's temporary folder (`~/.cache` on Linux), so later starts skip compiling it again. It holds no user data and can be deleted at any time.
+
 <details>
 <summary>Desktop data files</summary>
 

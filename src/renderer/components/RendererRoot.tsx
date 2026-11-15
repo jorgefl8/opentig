@@ -5,6 +5,8 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { LowEndDevice } from './LowEndDevice';
 import { MobileViewport } from './MobileViewport';
 import { ServerConnectionBoundary } from './ServerConnectionBoundary';
+import { SplashScreen } from './SplashScreen';
+import { appDisplayName } from '../lib/app-identity';
 import { queryClient } from '../lib/query-client';
 
 const App = lazyWithRetry(() => import('../app/App'));
@@ -21,7 +23,8 @@ export function RendererRoot() {
         Sileo's light theme keeps toasts dark regardless of the app theme. */}
     <Toaster theme="light" position="bottom-right" />
     <QueryClientProvider client={queryClient}>
-      <Suspense fallback={null}>{application}</Suspense>
+      {/* Until the app's code is in, the loading screen index.html drew stays in its place instead of a blank frame. */}
+      <Suspense fallback={<SplashScreen heading={appDisplayName} detail="Starting…" />}>{application}</Suspense>
     </QueryClientProvider>
   </>;
 }

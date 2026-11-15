@@ -11,6 +11,7 @@ import { isAllowedOrigin, requestOriginIsSecure } from './origin';
 import { HTML_PREVIEW_BODY_LIMIT, HTML_PREVIEW_CSP, htmlPreviewDocumentFromFormBody } from './html-preview';
 import { embedHtmlPreviewAssets } from './html-preview-assets';
 import { serveStatic, STATIC_SECURITY_HEADERS } from './static';
+import { isDirectLocalClient } from './client-locality';
 
 import type { DesktopUpdatesApi } from '../../../src/shared/desktop-updates';
 import type { OpenTigWebAccessStatus } from '../../../src/shared/desktop-api';
@@ -303,7 +304,10 @@ async function handleRequest(context: OpenTigHttpContext, request: IncomingMessa
 
   if (rawPath.startsWith('/api/')) return sendJson(response, 404, { error: 'Not found.' });
   if (method !== 'GET') return sendJson(response, 405, { error: 'Method not allowed.' }, { Allow: 'GET' });
-  await serveStatic(context.clientRoot, request.url ?? '/', response, context.identity.profile === 'dev');
+  await serveStatic(context.clientRoot, request.url ?? '/', response, context.identity.profile === 'dev', {
+    acceptEncoding: singleHeader(request.headers['accept-encoding']) ?? undefined,
+    local: isDirectLocalClient(request),
+  });
 }
 
 function browserSessionMetadata(request: IncomingMessage, clientName: string): {
