@@ -54,8 +54,8 @@ const WORKFLOW_TRIGGERS_MS = 30_000;
  */
 const LIVE_MS = 0;
 /**
- * After the read behind a kept answer, how long that client's next request for it is
- * answered with the new answer instead of reading again: it asks as soon as it is told.
+ * After the read behind a kept answer, how long a request for it is answered with the new
+ * answer instead of reading again: the client that was told asks as soon as it is.
  */
 const REFRESHED_GRACE_MS = 5_000;
 /** Invalidations remembered to decide whether a read that was under way may be kept. */
@@ -222,8 +222,9 @@ export class GitHubService {
     if (scope) this.cache.dropWhere((entry) => entry.scope.path === repository.path && entry.scope.remote !== scope.remote);
     const hit = key && !options.fresh ? await this.cache.get(key) : undefined;
     const age = hit ? this.now() - hit.readAt : Infinity;
-    // The client told of a refresh asks for it at once: it gets the answer that refresh stored.
-    const refreshed = hit !== undefined && options.kept !== undefined && this.refreshedAt.get(key!) === hit.readAt && age < REFRESHED_GRACE_MS;
+    // The client told of a refresh asks for it at once, without accepting a kept answer: it gets the
+    // answer that refresh stored, as current, rather than a second read from GitHub.
+    const refreshed = hit !== undefined && this.refreshedAt.get(key!) === hit.readAt && age < REFRESHED_GRACE_MS;
     const current = hit !== undefined && (age < policy.freshMs(hit.value as T) || refreshed);
     const kept = hit !== undefined && !current && options.kept !== undefined;
     if (performanceLogging()) notePerformance({ kind: 'cache', cache: 'github-read', resource: performanceLabel(String(resource[0]), 'unknown'), outcome: current ? 'hit' : kept ? 'kept' : 'miss' });
