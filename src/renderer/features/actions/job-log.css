@@ -6,6 +6,8 @@
   --ansi-12: oklch(0.56 0.17 255); --ansi-13: oklch(0.56 0.19 325); --ansi-14: oklch(0.57 0.11 200); --ansi-15: oklch(0.25 0 0);
   display: flex; flex: 1; min-width: 0; min-height: 0; flex-direction: column; background: var(--background);
 }
+/* Focused only so the keyboard reaches the log as it opens: its controls show their own focus. */
+.job-log:focus { outline: none; }
 .dark .job-log {
   --ansi-0: oklch(0.45 0 0); --ansi-1: oklch(0.7 0.17 25); --ansi-2: oklch(0.77 0.15 145); --ansi-3: oklch(0.83 0.13 90);
   --ansi-4: oklch(0.72 0.13 250); --ansi-5: oklch(0.74 0.14 320); --ansi-6: oklch(0.78 0.1 200); --ansi-7: oklch(0.85 0 0);

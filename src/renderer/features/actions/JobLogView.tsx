@@ -55,11 +55,15 @@ export function JobLogView({ repositoryId, job, initialStep = null, now, onBack 
   const log = query.data;
   const openJob = job.url ? () => openOnGitHub(job.url!) : null;
 
+  const sectionRef = useRef<HTMLElement>(null);
+  // Opened, the log has the focus, so the keyboard and Esc reach it: the log itself, so no control's hint opens with it.
+  useEffect(() => { sectionRef.current?.focus({ preventScroll: true }); }, []);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || event.defaultPrevented) return;
-      const target = event.target as HTMLElement | null;
-      if (target?.closest('[role="dialog"], [role="menu"], input, textarea')) return;
+      // Only when the focus is in the log, or nowhere in particular: an editor, a list or a menu elsewhere keeps its Esc.
+      const active = document.activeElement;
+      if (active && active !== document.body && !sectionRef.current?.contains(active)) return;
       onBack();
     };
     window.addEventListener('keydown', onKey);
@@ -93,7 +97,7 @@ export function JobLogView({ repositoryId, job, initialStep = null, now, onBack 
   }
 
   return (
-    <section className="job-log" aria-label={`Log of ${job.name}`}>
+    <section ref={sectionRef} className="job-log" aria-label={`Log of ${job.name}`} tabIndex={-1}>
       <header className="job-log-header">
         <Tooltip>
           <TooltipTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Back to the run" onClick={onBack} />}><IconArrowLeft /></TooltipTrigger>

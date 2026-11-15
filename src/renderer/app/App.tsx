@@ -1427,7 +1427,10 @@ export default function App({ initialView, initialSelection, pullRequestCreation
    * lives in App, so switching tabs, opening a diff, or moving to another
    * worktree simply leaves it in memory until it is saved or explicitly closed.
    */
+  /** Counts what the user chose to show, so something read meanwhile never replaces it. */
+  const viewerChoiceRef = useRef(0);
   const selectViewer = useCallback((selection: ViewerSelection): boolean => {
+    viewerChoiceRef.current++;
     viewerSelectionRef.current = selection;
     setViewerSelection(selection);
     if (selection) setMobilePane('viewer');
@@ -1482,22 +1485,30 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     }
   }, [selectViewer, showSidebarView, view]);
   // A file's history: History narrowed to it, which the newest commit opens in on a wide screen.
-  const firstFileCommitRef = useRef<{ repositoryId: string; path: string } | null>(null);
+  const firstFileCommitRef = useRef<{ repositoryId: string; path: string; choice: number } | null>(null);
   const openFileHistory = useCallback((path: string) => {
     const repositoryId = repositoryRef.current?.id;
     if (!repositoryId) return;
     const from = viewRef.current;
+    const shown = viewerSelectionRef.current;
     setFileHistory((current) => ({
       repositoryId, path,
       // Opened again from within History, it keeps where the first one came from.
-      returnTo: from === 'history' && current?.repositoryId === repositoryId ? current.returnTo : { view: from, selection: viewerSelectionRef.current },
+      returnTo: from === 'history' && current?.repositoryId === repositoryId ? current.returnTo : { view: from, selection: shown },
     }));
-    firstFileCommitRef.current = { repositoryId, path };
+    // Opened from a commit, that commit stays on screen, on this file; otherwise the file's newest change shows once read.
+    const fromCommit: ViewerSelection = shown?.type === 'commit-file' && shown.path === path ? shown
+      : shown?.type === 'commit' || shown?.type === 'commit-file' ? { type: 'commit-file', oid: shown.oid, path } : null;
+    firstFileCommitRef.current = fromCommit ? null : { repositoryId, path, choice: viewerChoiceRef.current };
     if (from !== 'history') {
-      // Not History's last commit: the file's newest change shows once it's read.
       sectionSelections.remember(repositoryId, 'history', null);
+      pendingSectionSelectionRef.current = fromCommit;
       showSidebarView('history');
+    } else if (fromCommit && fromCommit !== shown) {
+      viewerSelectionRef.current = fromCommit;
+      setViewerSelection(fromCommit);
     }
+    // On a phone the list shows; a commit it was opened from stays selected behind it.
     setMobilePane('list');
   }, [sectionSelections, showSidebarView]);
   const closeFileHistory = useCallback((back: boolean) => {
@@ -1524,8 +1535,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     const first = fileHistoryEntries?.[0];
     if (!wanted || !activeFileHistory || wanted.repositoryId !== activeFileHistory.repositoryId || wanted.path !== activeFileHistory.path || !fileHistoryEntries) return;
     firstFileCommitRef.current = null;
-    // On a phone the list is what shows; the commit opens when one is chosen.
-    if (!first || mobile || viewRef.current !== 'history') return;
+    // On a phone the list is what shows; the commit opens when one is chosen. Whatever the user opened meanwhile stays.
+    if (!first || mobile || viewRef.current !== 'history' || viewerChoiceRef.current !== wanted.choice) return;
     selectViewer({ type: 'commit-file', oid: first.commit.oid, path: first.path, oldPath: first.oldPath ?? undefined });
   }, [activeFileHistory, fileHistoryEntries, mobile, selectViewer]);
   const fileHistoryFilter = useMemo<HistoryFileFilter | null>(() => {

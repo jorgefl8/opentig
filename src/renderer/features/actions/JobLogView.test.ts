@@ -77,6 +77,28 @@ describe("a job's log in the run viewer", () => {
     expect(container.textContent).not.toContain('pnpm test\n');
   });
 
+  it('closes on Esc only when the focus is in the log or nowhere in particular', async () => {
+    const onBack = vi.fn();
+    const editor = document.createElement('div');
+    editor.contentEditable = 'true';
+    editor.tabIndex = 0;
+    document.body.append(editor);
+    await mount({ repositoryId: 'repo', job: job(), now: Date.now(), onBack });
+    const escape = () => act(async () => { document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); });
+    // The log takes the focus as it opens.
+    expect(container.contains(document.activeElement)).toBe(true);
+    editor.focus();
+    await escape();
+    expect(onBack).not.toHaveBeenCalled();
+    (document.activeElement as HTMLElement).blur();
+    await escape();
+    expect(onBack).toHaveBeenCalledTimes(1);
+    (container.querySelector('.job-log-step-toggle') as HTMLElement).focus();
+    await escape();
+    expect(onBack).toHaveBeenCalledTimes(2);
+    editor.remove();
+  });
+
   it('waits for a running job to finish, then reads its log', async () => {
     const onBack = vi.fn();
     await mount({ repositoryId: 'repo', job: job({ status: 'in_progress', conclusion: null, completedAt: null }), now: Date.now(), onBack });
