@@ -72,7 +72,7 @@ import {
 } from './refresh-policy';
 import { resolveWindowControlsInset } from './window-controls';
 import { SectionSelections, stillShowable } from './section-memory';
-import { queryKeys, queryResourcesForScope, refreshGitHubQueries, resetGitHubQueries } from '@/lib/query-client';
+import { historyHead, queryKeys, queryResourcesForScope, refreshGitHubQueries, resetGitHubQueries } from '@/lib/query-client';
 import { listAgents } from '@/features/refs/local-refs-model';
 import { AgentMarks } from '@/features/refs/AgentLabel';
 import { persistTheme } from '@/lib/boot-theme';
@@ -295,12 +295,15 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   // When the open repository's snapshot and its file tree were last read, for `sectionRefresh`.
   const lastReadRef = useRef({ snapshot: Number.NEGATIVE_INFINITY, files: Number.NEGATIVE_INFINITY, refs: Number.NEGATIVE_INFINITY });
 
+  // Known once the status is; until then History waits rather than show another branch's commits.
+  const [shownHistoryHead, setShownHistoryHead] = useState<{ repositoryId: string; head: string } | null>(null);
+  const currentHistoryHead = shownHistoryHead && shownHistoryHead.repositoryId === repository?.id ? shownHistoryHead.head : null;
   const historyQuery = useInfiniteQuery({
-    queryKey: queryKeys.history(repository?.id ?? ''),
+    queryKey: queryKeys.history(repository?.id ?? '', currentHistoryHead ?? ''),
     queryFn: ({ pageParam }) => opentig.commits.list(repository!.id, pageParam),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
-    enabled: repository !== null && view === 'history',
+    enabled: repository !== null && currentHistoryHead !== null && view === 'history',
     // A change to the branches marks it outdated (see `performRefresh`), so coming back to History only reads it again after that.
     staleTime: HISTORY_STALE_MS,
   });
@@ -830,7 +833,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     const resources = queryResourcesForScope(scope, refreshView);
     // History is only read while it is open; from another section it is marked outdated, and read when it is opened.
     if (!operations.history && refreshOperationsForScope(scope, 'history').history) {
-      void appQueryClient.invalidateQueries({ queryKey: queryKeys.history(repositoryId), exact: true, refetchType: 'none' });
+      void appQueryClient.invalidateQueries({ queryKey: queryKeys.histories(repositoryId), refetchType: 'none' });
     }
     if (!background) { busyRef.current = 'refresh'; setBusy('refresh'); }
     try {
@@ -856,24 +859,29 @@ export default function App({ initialView, initialSelection, pullRequestCreation
             : resource === 'branches' ? queryKeys.branches(repositoryId)
               : resource === 'worktrees' ? queryKeys.worktrees(repositoryId)
                 : resource === 'files' ? queryKeys.files(repositoryId)
-                  : queryKeys.history(repositoryId),
-          exact: true,
+                  : queryKeys.histories(repositoryId),
+          // Every branch's history: a change to the refs may have moved any of them.
+          exact: resource !== 'history',
           refetchType: 'none',
         })));
         return snapshotReads();
       };
-      const snapshotReads = () => Promise.all([
-        appQueryClient.fetchQuery({ queryKey: queryKeys.status(repositoryId), queryFn: () => opentig.repository.getStatus(repositoryId) }),
-        operations.branches ? appQueryClient.fetchQuery({ queryKey: queryKeys.branches(repositoryId), queryFn: () => opentig.refs.listBranches(repositoryId) }) : Promise.resolve(null),
-        operations.worktrees ? appQueryClient.fetchQuery({ queryKey: queryKeys.worktrees(repositoryId), queryFn: () => opentig.refs.listWorktrees(repositoryId) }) : Promise.resolve(null),
-        operations.files ? appQueryClient.fetchQuery({ queryKey: queryKeys.files(repositoryId), queryFn: () => opentig.repository.getFiles(repositoryId) }) : Promise.resolve(null),
-        operations.history ? appQueryClient.fetchInfiniteQuery({
-          queryKey: queryKeys.history(repositoryId),
-          queryFn: ({ pageParam }) => opentig.commits.list(repositoryId, pageParam),
-          initialPageParam: undefined as string | undefined,
-          getNextPageParam: (lastPage: CommitPage) => lastPage.nextCursor ?? undefined,
-        }) : Promise.resolve(null),
-      ]);
+      const snapshotReads = () => {
+        const statusRead = appQueryClient.fetchQuery({ queryKey: queryKeys.status(repositoryId), queryFn: () => opentig.repository.getStatus(repositoryId) });
+        return Promise.all([
+          statusRead,
+          operations.branches ? appQueryClient.fetchQuery({ queryKey: queryKeys.branches(repositoryId), queryFn: () => opentig.refs.listBranches(repositoryId) }) : Promise.resolve(null),
+          operations.worktrees ? appQueryClient.fetchQuery({ queryKey: queryKeys.worktrees(repositoryId), queryFn: () => opentig.refs.listWorktrees(repositoryId) }) : Promise.resolve(null),
+          operations.files ? appQueryClient.fetchQuery({ queryKey: queryKeys.files(repositoryId), queryFn: () => opentig.repository.getFiles(repositoryId) }) : Promise.resolve(null),
+          // The history of whatever HEAD the status found, so a branch switch lands with that branch's commits.
+          operations.history ? statusRead.then((read) => appQueryClient.fetchInfiniteQuery({
+            queryKey: queryKeys.history(repositoryId, historyHead(read)),
+            queryFn: ({ pageParam }) => opentig.commits.list(repositoryId, pageParam),
+            initialPageParam: undefined as string | undefined,
+            getNextPageParam: (lastPage: CommitPage) => lastPage.nextCursor ?? undefined,
+          })) : Promise.resolve(null),
+        ]);
+      };
       let snapshot: Awaited<ReturnType<typeof snapshotReads>>;
       try {
         snapshot = await readSnapshot();
@@ -893,6 +901,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       if (nextBranches && nextWorktrees) lastReadRef.current.refs = lastReadRef.current.snapshot;
       setSnapshotRepositoryId(repositoryId);
       setStatus(nextStatus);
+      setShownHistoryHead((current) => current?.repositoryId === repositoryId && current.head === historyHead(nextStatus) ? current : { repositoryId, head: historyHead(nextStatus) });
       if (nextBranches) setBranches(nextBranches);
       if (nextWorktrees) setWorktrees(nextWorktrees);
       if (nextFiles) applyFilesSnapshot(nextFiles);
@@ -995,19 +1004,28 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   }, [noteFetchResult, refresh, remoteFetchIntervalSeconds, repository]);
 
   useEffect(() => {
+    const repositoryId = repository?.id ?? null;
+    // Nothing of this repository has been read since it was opened: the first refresh reads all of it.
     snapshotRepositoryIdRef.current = null;
     lastReadRef.current = { snapshot: Number.NEGATIVE_INFINITY, files: Number.NEGATIVE_INFINITY, refs: Number.NEGATIVE_INFINITY };
-    setSnapshotRepositoryId(null);
     clearCommitFilesCache();
-    filesRef.current = null;
     filesComparer.reset();
-    setFiles(null);
+    // A repository or worktree seen in the last few minutes shows what it had at once, while the first
+    // refresh reads it again behind that; it holds Pull, Push and Commit until it has. Each piece comes
+    // from this repository's own entry, so nothing of the previous one is shown next to it.
+    const known = repositoryId ? knownSnapshot(appQueryClient, repositoryId) : null;
+    setSnapshotRepositoryId(known ? repositoryId : null);
+    if (known) setStatus(known.status);
+    if (known && repositoryId) setShownHistoryHead({ repositoryId, head: historyHead(known.status) });
+    filesRef.current = known?.files ?? null;
+    if (known?.files) filesComparer.same(known.files);
+    setFiles(known?.files ?? null);
     // A later refresh may read only part of the new repository; it must not be shown next to the previous one's refs.
-    setBranches([]);
-    setWorktrees([]);
+    setBranches(known?.branches ?? []);
+    setWorktrees(known?.worktrees ?? []);
     setCreatePrOpen(false);
     setQuickOpen(false);
-  }, [filesComparer, repository?.id]);
+  }, [appQueryClient, filesComparer, repository?.id]);
 
   const loadPulls = useCallback(async (_states: PullRequestState[], forceStatus = false) => {
     if (forceStatus) {
@@ -3348,4 +3366,21 @@ function aiErrorTitle(detail: SerializedAiError | null): string {
   if (detail.code === 'AI_STAGED_CHANGES_CHANGED') return 'Staged changes have changed';
   if (detail.code === 'AI_INVALID_OUTPUT') return 'The response was invalid';
   return 'Could not generate the message';
+}
+
+/**
+ * What the client last read of a repository, if it still holds it: status, refs and the file tree are kept
+ * for five minutes after their last read (React Query's default). Without a status there is nothing to show.
+ */
+function knownSnapshot(client: ReturnType<typeof useQueryClient>, repositoryId: string): {
+  status: RepositoryStatus; branches: BranchInfo[] | null; worktrees: WorktreeInfo[] | null; files: FileTreeEntry[] | null;
+} | null {
+  const status = client.getQueryData<RepositoryStatus>(queryKeys.status(repositoryId));
+  if (!status) return null;
+  return {
+    status,
+    branches: client.getQueryData<BranchInfo[]>(queryKeys.branches(repositoryId)) ?? null,
+    worktrees: client.getQueryData<WorktreeInfo[]>(queryKeys.worktrees(repositoryId)) ?? null,
+    files: client.getQueryData<FileTreeEntry[]>(queryKeys.files(repositoryId)) ?? null,
+  };
 }

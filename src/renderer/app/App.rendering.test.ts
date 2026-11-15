@@ -119,7 +119,7 @@ it('keeps 5,000 loaded commits identical across UI renders and invalidates on pa
   }));
   const page: CommitPage = { commits, nextCursor: null };
   const data = { pages: [page], pageParams: [undefined] };
-  await act(async () => { client.setQueryData(queryKeys.history('repo'), data); });
+  await act(async () => { client.setQueryData(queryKeys.history('repo', 'branch:main'), data); });
   await key('keydown', { key: '3', ctrlKey: true });
   const loaded = calls.history.mock.lastCall![0];
   expect(loaded).toEqual(commits);
@@ -128,14 +128,14 @@ it('keeps 5,000 loaded commits identical across UI renders and invalidates on pa
   await key('keydown', { key: 'Control', ctrlKey: true });
   expect(calls.history.mock.lastCall![0]).toBe(loaded);
   await act(async () => {
-    client.setQueryData(queryKeys.history('repo'), { ...data, pages: [page, { commits: [{ ...commits[0]!, oid: 'next-page' }], nextCursor: null }] });
+    client.setQueryData(queryKeys.history('repo', 'branch:main'), { ...data, pages: [page, { commits: [{ ...commits[0]!, oid: 'next-page' }], nextCursor: null }] });
     for (let hop = 0; hop < 5; hop++) await new Promise((resolve) => setTimeout(resolve, 0));
   });
   const appended = calls.history.mock.lastCall![0];
   expect(appended).not.toBe(loaded);
   expect(appended).toHaveLength(5001);
   await act(async () => {
-    client.setQueryData(queryKeys.history('repo'), { ...data, pages: [{ ...page, commits: [{ ...commits[0]!, subject: 'External update' }] }] });
+    client.setQueryData(queryKeys.history('repo', 'branch:main'), { ...data, pages: [{ ...page, commits: [{ ...commits[0]!, subject: 'External update' }] }] });
     for (let hop = 0; hop < 5; hop++) await new Promise((resolve) => setTimeout(resolve, 0));
   });
   expect(calls.history.mock.lastCall![0]).toEqual([expect.objectContaining({ subject: 'External update' })]);

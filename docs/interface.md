@@ -87,7 +87,7 @@ The workspace also refreshes automatically when files or Git state change. While
 
 Sections you open stay in place while you use another one, so coming back shows the same scroll position, search text, and loaded folders, and asks the server for nothing it already has. A hidden section does not refresh itself; switching to another repository or worktree keeps only the section on screen.
 
-Opening another section shows what OpenTig already knows and does not fetch. If the repository was last read more than five seconds ago, its status is read again in the background, and Files reads its tree again; **Pull**, **Push**, and **Commit** stay available meanwhile. Once a minute this read also covers branches, worktrees, and the remote, so a change made outside OpenTig shows up even if the file watcher missed it. History is read again only after its branches changed or 30 seconds passed.
+Opening another section shows what OpenTig already knows and does not fetch. If the repository was last read more than five seconds ago, its status is read again in the background, and Files reads its tree again; **Pull**, **Push**, and **Commit** stay available meanwhile. Once a minute this read also covers branches, worktrees, and the remote, so a change made outside OpenTig shows up even if the file watcher missed it. History is read again only after its branches changed or 30 seconds passed. Each branch keeps its own history, so checking out another branch never shows the previous branch's commits: it shows that branch's history as last read, or a loading state, until the new one arrives.
 
 ### Shortcuts
 

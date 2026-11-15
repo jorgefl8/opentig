@@ -66,7 +66,10 @@ export const queryKeys = {
   worktreeAgents: (repositoryId: string) => ['repository', repositoryId, 'worktree-agents'] as const,
   files: (repositoryId: string) => ['repository', repositoryId, 'files'] as const,
   fileHistory: (repositoryId: string) => ['repository', repositoryId, 'file-history'] as const,
-  history: (repositoryId: string) => ['repository', repositoryId, 'history'] as const,
+  /** Every branch's history of a repository. */
+  histories: (repositoryId: string) => ['repository', repositoryId, 'history'] as const,
+  /** The history read from one HEAD (see `historyHead`), so a branch switch never shows the previous branch's commits. */
+  history: (repositoryId: string, head: string) => ['repository', repositoryId, 'history', head] as const,
   githubInfo: (repositoryId: string) => ['repository', repositoryId, 'github-info'] as const,
   pulls: (repositoryId: string, states: readonly PullRequestState[]) => ['repository', repositoryId, 'pulls', ...states] as const,
   pullStacks: (repositoryId: string, numbers: readonly number[]) => ['repository', repositoryId, 'pull-stacks', ...numbers] as const,
@@ -125,4 +128,9 @@ export async function refreshGitHubQueries(client: QueryClient, openRepositoryId
   const after = account();
   // For the open repository the account is read again with everything else: if it is another one, nothing read before is kept.
   if (before && after && (before.login !== after.login || before.revision !== after.revision)) await resetGitHubQueries(client);
+}
+
+/** What a history is read from: the checked-out branch, or the commit a detached HEAD points at. */
+export function historyHead(status: { branch: string | null; oid: string | null; detached: boolean }): string {
+  return !status.detached && status.branch ? `branch:${status.branch}` : `commit:${status.oid ?? ''}`;
 }

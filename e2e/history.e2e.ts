@@ -250,3 +250,22 @@ test('copying a commit hash from its menu puts the full hash on the clipboard', 
   await expect(page.getByText('Hash copied')).toBeVisible();
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(oid);
 });
+
+test('a branch checked out in a terminal shows its own history, and the previous branch’s comes back when it is checked out again', async ({ pairedPage: page, repository }) => {
+  await repository.commit('src/main.js', 'main\n', 'Work on main');
+  await repository.git('switch', '-q', '-c', 'feature', 'HEAD~1');
+  await repository.commit('src/feature.js', 'feature\n', 'Work on the feature');
+  await repository.git('switch', '-q', 'main');
+
+  const list = await openHistory(page, repository);
+  const subject = (name: string) => list.getByRole('button', { name, exact: true });
+  await expect(subject('Work on main')).toBeVisible();
+
+  await repository.git('switch', '-q', 'feature');
+  await expect(subject('Work on the feature')).toBeVisible();
+  await expect(subject('Work on main')).toBeHidden();
+
+  await repository.git('switch', '-q', 'main');
+  await expect(subject('Work on main')).toBeVisible();
+  await expect(subject('Work on the feature')).toBeHidden();
+});

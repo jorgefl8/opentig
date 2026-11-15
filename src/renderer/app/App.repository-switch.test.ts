@@ -155,6 +155,28 @@ it('shows the opening choice, then a loading workspace, then the opened reposito
   expect(container.textContent).toContain('Changes list');
 });
 
+it('shows a repository seen moments ago as it was, with its own worktrees, while reading it again', async () => {
+  await act(async () => root.render(createElement(QueryClientProvider, { client }, createElement(App))));
+  await settle();
+  await click('Open B');
+  await act(async () => opens.get('repo-b')!.resolve(info('repo-b')));
+  await act(async () => statuses.get('repo-b')!.resolve(status));
+  await settle();
+  expect(output('Worktrees')).toBe('/repo-b');
+
+  // Back to the first repository, whose status now takes as long as it likes.
+  calls.getStatus.mockImplementation(() => new Promise(() => {}));
+  await act(async () => calls.activeRepositoryChanged!(info('repo')));
+  await settle();
+  expect(output('Repository')).toBe('repo');
+  expect(output('Phase')).toBe('ready');
+  expect(container.textContent).toContain('Changes list');
+  expect(container.textContent).not.toContain('Loading changes…');
+  expect(output('Worktrees')).toBe('/repo /repo-linked');
+  // It is read again behind what is shown.
+  expect(calls.getStatus).toHaveBeenLastCalledWith('repo');
+});
+
 it('ends on the latest choice when an earlier open and its activation event arrive late', async () => {
   await act(async () => root.render(createElement(QueryClientProvider, { client }, createElement(App))));
   await settle();
