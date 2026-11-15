@@ -11,6 +11,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { ViewerTabs, ViewerTabsList, ViewerTabsPanel } from '@/components/ui/viewer-tabs';
 import { LinkedMarkdown } from '@/features/markdown/LinkedMarkdown';
 import { LinkedText } from '@/components/LinkedText';
+import { RepositoryLink } from '@/components/RepositoryLink';
 import { MobileViewerActions, MobileViewerTitle } from '@/components/MobileChrome';
 import { useMobileChrome } from '@/components/mobile-chrome-context';
 import type { PullRequestTab } from '@/lib/mobile-main-action';
@@ -260,10 +261,17 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
                   <strong><LinkedText text={commit.messageHeadline || '(no commit message)'} /></strong>
                   <span><b>{commit.author}</b> committed <time dateTime={commit.authoredAt}>{formatDateTime(commit.authoredAt)}</time></span>
                 </span>
-                <Tooltip>
-                  <TooltipTrigger render={<code />}>{commit.oid.slice(0, 7)}</TooltipTrigger>
-                  <TooltipContent>{commit.oid}</TooltipContent>
-                </Tooltip>
+                {/* Opens the commit in History's viewer, or on GitHub from the icon beside it. */}
+                <RepositoryLink
+                  target={{ kind: 'commit', oid: commit.oid }}
+                  className="pr-commit-oid"
+                  label={`Open commit ${commit.oid.slice(0, 7)}`}
+                  note={commit.oid}
+                  fallback={<Tooltip>
+                    <TooltipTrigger render={<code />}>{commit.oid.slice(0, 7)}</TooltipTrigger>
+                    <TooltipContent>{commit.oid}</TooltipContent>
+                  </Tooltip>}
+                >{commit.oid.slice(0, 7)}</RepositoryLink>
               </article>
             )) : <p className="pr-empty-description">No commits were returned by GitHub.</p>}
           </section>}

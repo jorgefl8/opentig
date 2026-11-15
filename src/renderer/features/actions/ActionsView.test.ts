@@ -170,11 +170,13 @@ it('offers OpenTig or GitHub for what started a run, without opening the run', a
   expect(items[2]!.querySelector('.action-run-ref')?.tagName).toBe('SPAN');
   expect(items[2]!.querySelector('.action-run-by')).toBeNull();
 
+  // The reference opens in OpenTig at once, without selecting its row; the icon beside it opens GitHub.
   await act(async () => items[0]!.querySelector<HTMLButtonElement>('button.action-run-ref')!.click());
-  for (let tick = 0; tick < 4; tick++) await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
-  const openHere = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((item) => item.textContent?.includes('Open in OpenTig'))!;
-  expect(document.body.textContent).toContain('CI #340 ran for this pull request.');
-  await act(async () => openHere.click());
-  expect(open).toHaveBeenCalledWith({ kind: 'pull', number: 77 });
+  expect(open).toHaveBeenCalledExactlyOnceWith({ kind: 'pull', number: 77 });
+  const external = vi.spyOn(window, 'open').mockReturnValue(null);
+  await act(async () => items[0]!.querySelector<HTMLButtonElement>('[aria-label="Open pull request #77 in GitHub"]')!.click());
+  expect(external).toHaveBeenCalledWith('https://github.com/sample/demo/pull/77', '_blank', expect.anything());
+  expect(open).toHaveBeenCalledOnce();
   expect(onSelect).not.toHaveBeenCalled();
+  external.mockRestore();
 });

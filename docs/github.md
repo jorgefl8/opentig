@@ -105,7 +105,7 @@ The list's menu shows the effective GitHub account. When a repository can't be r
 
 **Read the conversation**
 
-**Comments** shows the PR's comments and reviews, with Markdown rendered and links that open in a new tab. Choose **Hide bots** to leave out comments from bots. Comments hidden on GitHub stay collapsed until you open them. Past the most recent 100 comments and 100 reviews, the list says so and links to the rest. They load when you open **Comments**. Inline code comments stay on GitHub. **Timeline** lists the PR's commits.
+**Comments** shows the PR's comments and reviews, with Markdown rendered and links that open in a new tab. Choose **Hide bots** to leave out comments from bots. Comments hidden on GitHub stay collapsed until you open them. Past the most recent 100 comments and 100 reviews, the list says so and links to the rest. They load when you open **Comments**. Inline code comments stay on GitHub. **Timeline** lists the PR's commits; a commit's short hash opens it in the commit viewer.
 
 **Comment and review**
 
@@ -121,7 +121,7 @@ Both stop if the text changed on GitHub after you last saw it, and saving again 
 
 **Open the current branch's PR**
 
-Beside the branch in the top bar, the PR indicator shows the current branch or worktree's PR number, whether that PR is open or not. **Draft**, **Merged** and **Closed** name any state other than open, and a merged PR also has a purple merge icon. Click for its full title, status and lines added and removed, then choose **Open in OpenTig** or **Open in GitHub**. Links to the repository's PRs, commits, releases and workflow runs, in descriptions, comments, notes and history, offer the same choice. The mobile repository menu offers the same choices; the repository menu also opens the repository on GitHub.
+Beside the branch in the top bar, the PR indicator shows the current branch or worktree's PR number, whether that PR is open or not. **Draft**, **Merged** and **Closed** name any state other than open, and a merged PR also has a purple merge icon. Click for its full title, status and lines added and removed, then choose **Open in OpenTig** or **Open in GitHub**. Links to the repository's PRs, commits, releases and workflow runs, in descriptions, comments, notes and history, open in OpenTig with one click; the icon after each one opens it on GitHub. The mobile repository menu offers the same choices; the repository menu also opens the repository on GitHub.
 
 A merged PR stays on its branch, and the indicator says where the branch stands since then:
 
@@ -233,13 +233,13 @@ These actions use the repository's account and stop if that account changed sinc
 
 ## Follow workflow runs
 
-In **GitHub**, switch to **Actions** to list the repository's GitHub Actions runs, newest first, 20 at a time; **Load more** at the end of the list adds the next 20, up to GitHub's limit of 1,000. Each row shows the avatar of whoever started the run, with its result as a badge where a pull request shows its status, then the run's title and age. Under them are the workflow, an icon for what started the run with its reference, who started it unless it was scheduled, and how long it took, or its state while it waits to start. A run's commit, pull request, or release opens the same menu as other GitHub references, with **Open in OpenTig** and **Open in GitHub**; the rest of the row opens the run, and on desktop the button at its end opens it on GitHub. A manual or scheduled run shows its branch as plain text, and a fork's pull request, which GitHub doesn't name, shows its branch.
+In **GitHub**, switch to **Actions** to list the repository's GitHub Actions runs, newest first, 20 at a time; **Load more** at the end of the list adds the next 20, up to GitHub's limit of 1,000. Each row shows the avatar of whoever started the run, with its result as a badge where a pull request shows its status, then the run's title and age. Under them are the workflow, an icon for what started the run with its reference, who started it unless it was scheduled, and how long it took, or its state while it waits to start. A run's commit, pull request, or release opens in OpenTig like other GitHub references, with the icon after it for GitHub; the rest of the row opens the run, and on desktop the button at its end opens it on GitHub. A manual or scheduled run shows its branch as plain text, and a fork's pull request, which GitHub doesn't name, shows its branch.
 
 The filter menu beside the tabs shows the runs of one active workflow and has **Refresh workflow runs**, **Open on GitHub**, and the account. While the tab is open, the list is read again every 30 seconds, or every 10 seconds while a listed run hasn't finished, so runs started on GitHub or from a terminal appear by themselves, fading in at the top.
 
 **Read a run**
 
-Select a run to see it in the viewer as a graph of its jobs. The line under its title sums it up, such as **In progress · 3 of 12 jobs done** or **Failed · 2 jobs failed**, followed by the workflow and run number, branch, commit, what started it, when, and its duration. **Open on GitHub** is beside the title, or in **⋯** on a phone. A run that was re-run shows its latest attempt. A run opened from the list shows that line at once from what the list knows, and the graph when its jobs have been read. While the run is going, it's read again every 5 seconds and durations count up.
+Select a run to see it in the viewer as a graph of its jobs. The line under its title sums it up, such as **In progress · 3 of 12 jobs done** or **Failed · 2 jobs failed**, followed by the workflow and run number, branch, commit, what started it, when, and its duration. The commit's short hash opens it in the commit viewer, and the icon after it on GitHub. **Open on GitHub** is beside the title, or in **⋯** on a phone. A run that was re-run shows its latest attempt. A run opened from the list shows that line at once from what the list knows, and the graph when its jobs have been read. While the run is going, it's read again every 5 seconds and durations count up.
 
 Each job of the workflow file is a box, connected to the jobs it needs, and a matrix lists its jobs inside its box, folding past six. A job that hasn't started yet shows **Waiting**, and once the run ends, **Not run**. The dependencies come from the run's workflow file at the run's commit; if OpenTig can't read it, the jobs are grouped by name, unconnected, and a note says so. Runs with more than 100 jobs show the first 100, with a note. The graph opens fitted to the pane:
 

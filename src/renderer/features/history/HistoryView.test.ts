@@ -189,12 +189,8 @@ it('selects a commit from anywhere in its row except the controls inside it', as
   await act(async () => row.querySelector<HTMLElement>('[aria-label="Expand commit"]')!.click());
   await act(async () => row.querySelector<HTMLElement>('[aria-label="Copy hash head"]')!.click());
   expect(props.onSelectCommit).toHaveBeenCalledTimes(2);
-  // Like the branch's pull request, the reference asks where to open it.
+  // The reference opens the pull request, not the commit.
   await act(async () => row.querySelector<HTMLElement>('[aria-label="Open pull request #87"]')!.click());
-  await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
-  const item = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(element => element.textContent?.includes('Open in OpenTig'));
-  expect([...document.querySelectorAll('[role="menuitem"]')].map(element => element.textContent?.trim())).toEqual(['Open in OpenTig', 'Open in GitHub']);
-  await act(async () => item!.click());
   expect(links.open).toHaveBeenCalledWith({ kind: 'pull', number: 87 });
   expect(props.onSelectCommit).toHaveBeenCalledTimes(2);
 });
