@@ -48,8 +48,29 @@ function normalizeLockKey(value: string): string {
   return process.platform === 'win32' ? unified.toLowerCase() : unified;
 }
 
+interface CancellableRead {
+  /** Part of the shared read's key, so a read stopped for good is never joined by a later caller. */
+  id: number;
+  controller: AbortController;
+  waiting: number;
+  /** A caller that cannot cancel joined: the process runs to its end. */
+  keep: boolean;
+}
+
+/**
+ * The client stopped waiting for this read. Named like the platform's own
+ * cancellation, so the Problems log leaves it out: nothing went wrong.
+ */
+function cancelledRead(operation = 'read'): GitOperationError {
+  const error = new GitOperationError({ code: 'UNKNOWN', operation, message: 'Git operation cancelled.' });
+  error.name = 'AbortError';
+  return error;
+}
+
 export class GitProcess {
   private readonly reads = new ReadSingleFlight();
+  private readonly cancellableReads = new Map<string, CancellableRead>();
+  private cancellableReadSequence = 0;
   private readonly repositoryScopes = new Map<string, string>();
   private readonly invalidationListeners = new Set<(scope: string, command?: string) => void>();
   private refreshedPath: string | undefined;
@@ -116,6 +137,44 @@ export class GitProcess {
     return this.reads.run(this.readScope(cwd), JSON.stringify([path.resolve(cwd), key]), read, retryInvalidated);
   }
 
+  /**
+   * Identical reads share one process, as before cancellation existed. A read
+   * that can be cancelled still joins it: the process is only stopped once
+   * every caller waiting for it has cancelled, and a caller without a signal
+   * keeps it going. A caller that cancels is answered at once.
+   */
+  private shareCancellableRead(cwd: string, key: string, signal: AbortSignal | undefined, read: (signal: AbortSignal | null) => Promise<GitOutput>, retryInvalidated: boolean): Promise<GitOutput> {
+    if (signal?.aborted) return Promise.reject(cancelledRead());
+    let shared = this.cancellableReads.get(key);
+    if (!shared) {
+      const created: CancellableRead = { id: ++this.cancellableReadSequence, controller: new AbortController(), waiting: 0, keep: false };
+      this.cancellableReads.set(key, created);
+      shared = created;
+    }
+    const current = shared;
+    current.waiting += 1;
+    if (!signal) current.keep = true;
+    // The shared process gets a signal only while every caller can still cancel.
+    const promise = this.shareRead(cwd, `git:${key}:${current.id}`, () => read(current.keep ? null : current.controller.signal), retryInvalidated);
+    const settle = () => {
+      current.waiting -= 1;
+      if (current.waiting === 0 && this.cancellableReads.get(key) === current) this.cancellableReads.delete(key);
+    };
+    if (!signal) return promise.finally(settle);
+    return new Promise<GitOutput>((resolve, reject) => {
+      const leave = () => {
+        reject(cancelledRead());
+        settle();
+        if (current.waiting === 0 && !current.keep) current.controller.abort();
+      };
+      signal.addEventListener('abort', leave, { once: true });
+      promise.then(
+        (value) => { if (signal.aborted) return; signal.removeEventListener('abort', leave); settle(); resolve(value); },
+        (error: unknown) => { if (signal.aborted) return; signal.removeEventListener('abort', leave); settle(); reject(error); },
+      );
+    });
+  }
+
   run(cwd: string, args: string[], options: RunOptions): Promise<GitOutput> {
     if (this.network && ['fetch', 'push', 'ls-remote'].includes(gitCommand(args) ?? '')) {
       // Routing owns the account session and credential broker. A raw retry
@@ -129,19 +188,19 @@ export class GitProcess {
   private runDirect(cwd: string, args: string[], options: RunOptions, retryInvalidated = true): Promise<GitOutput> {
     const globalArgs = ['--no-pager'];
     if (options.readOnly) globalArgs.push('--no-optional-locks');
-    const execute = () => timedProcess(
+    const execute = (settings: RunOptions = options) => timedProcess(
       () => ({ tool: 'git', command: performanceLabel(gitCommand(args), 'git'), operation: performanceLabel(options.operation, 'unknown') }),
-      () => this.spawnGit(cwd, [...globalArgs, ...args], options),
+      () => this.spawnGit(cwd, [...globalArgs, ...args], settings),
     );
     if (options.readOnly) {
-      // Consumer-owned cancellation/progress cannot share a process. Keep this
-      // boundary safe when callers extend the execution options: JSON keys
-      // omit callbacks and cannot distinguish AbortSignal instances.
-      if (('signal' in options && options.signal != null) || ('onStderr' in options && options.onStderr != null)) return execute();
+      // Progress belongs to one consumer and cannot share a process. Keep this
+      // boundary safe when callers extend the execution options: JSON keys omit callbacks.
+      if ('onStderr' in options && options.onStderr != null) return execute();
+      const { signal, ...shareable } = options;
       // Hash options: managed command arguments/options may contain credentials.
-      const key = createHash('sha256').update(JSON.stringify([args, options, this.authenticationKey?.(cwd)])).digest('hex');
-      return this.shareRead(cwd, `git:${key}`, execute, retryInvalidated).then(output => ({ ...output,
-        stdout: Buffer.from(output.stdout), stderr: Buffer.from(output.stderr) }));
+      const key = createHash('sha256').update(JSON.stringify([args, shareable, this.authenticationKey?.(cwd)])).digest('hex');
+      return this.shareCancellableRead(cwd, key, signal, (shared) => execute({ ...shareable, ...(shared ? { signal: shared } : {}) }), retryInvalidated)
+        .then(output => ({ ...output, stdout: Buffer.from(output.stdout), stderr: Buffer.from(output.stderr) }));
     }
     const command = gitCommand(args);
     this.invalidate(cwd, command);
@@ -258,7 +317,7 @@ export class GitProcess {
       const stdout = options.managed ? Buffer.from(sanitize(Buffer.from(result.stdout).toString('utf8'))) : Buffer.from(result.stdout);
       const stderr = Buffer.from(sanitize(Buffer.from(result.stderr).toString('utf8')));
 
-      if (options.signal?.aborted) throw new GitOperationError({ code: 'UNKNOWN', operation: options.operation, message: 'Git operation cancelled.' });
+      if (options.signal?.aborted) throw cancelledRead(options.operation);
       if (overLimit || result.isMaxBuffer) {
         if (options.truncateOverflow) return { stdout, stderr, exitCode: 0, truncated: true };
         throw new GitOperationError({ code: 'OUTPUT_LIMIT', operation: options.operation, message: 'Git output exceeded the safety limit.' });
