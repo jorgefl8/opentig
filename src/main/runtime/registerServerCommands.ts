@@ -1,4 +1,5 @@
 import { CloneJobs } from '../git/RepositoryClone';
+import type { RepositorySnapshotPart } from '../persistence/RepositorySnapshotStore';
 import { setGlobalGitIdentity } from '../git/GitGlobalIdentity';
 import { githubAccountSelectionSchema } from '../../shared/github-accounts';
 import { commitAuthorshipInputSchema } from '../../shared/commit-authorship';
@@ -46,6 +47,13 @@ export function registerServerCommands(
   };
   const handle = <T>(channel: string, operation: string, handler: (...args: unknown[]) => Promise<T> | T) => {
     handleWithContext(channel, operation, (_context, ...args) => handler(...args));
+  };
+  /** Saves what a read found as the repository's last known state (see `RepositorySnapshotStore`). */
+  const remember = async <T>(repositoryId: string, part: RepositorySnapshotPart, read: Promise<T>): Promise<T> => {
+    const value = await read;
+    try { services.snapshots?.record(repositoryId, services.repositories.get(repositoryId).path, part, value); }
+    catch { /* Saving is best effort; the read itself succeeded. */ }
+    return value;
   };
   const openRepositoryPath = async (selectedPath: string, context: CommandExecutionContext) => {
     const repository = await openRuntimeRepositoryPath(services, selectedPath);
@@ -163,6 +171,7 @@ export function registerServerCommands(
     const organization = await services.repositories.forget(repositoryKeyArg(repositoryKey, 'forget-repository'));
     fileClipboardState(context).pendingCut = null;
     if (activeId && !services.settings.activeRepositoryId) services.watcher.stop();
+    services.snapshots?.forgetUnknown();
     return organization;
   });
   handleWithContext(IPC.repositoryRelocateRecent, 'relocate-recent', async (context, id, selectedPath) => {
@@ -187,11 +196,16 @@ export function registerServerCommands(
       return { id: stringArg(value.id, 'relocate-recents', 64), path: stringArg(value.path, 'relocate-recents', 32_768) };
     }));
   });
-  handle(IPC.repositoryStatus, 'status', (id, includeStats) => services.repositories.status(
+  handle(IPC.repositoryStatus, 'status', (id, includeStats) => remember(stringArg(id, 'status', 64), 'status', services.repositories.status(
     stringArg(id, 'status', 64),
     includeStats === undefined ? true : booleanArg(includeStats, 'status'),
-  ));
-  handle(IPC.repositoryFiles, 'files', (id) => services.files.list(stringArg(id, 'files', 64)));
+  )));
+  handle(IPC.repositoryFiles, 'files', (id) => remember(stringArg(id, 'files', 64), 'files', services.files.list(stringArg(id, 'files', 64))));
+  handle(IPC.repositorySnapshot, 'repository-snapshot', async (id) => {
+    const repositoryId = stringArg(id, 'repository-snapshot', 64);
+    if (!services.snapshots || !services.repositories.isKnown(repositoryId)) return null;
+    return services.snapshots.get(repositoryId, services.repositories.get(repositoryId).path);
+  });
   handle(IPC.repositorySearch, 'search', (id, options) => services.search.search(
     stringArg(id, 'search', 64),
     searchOptionsArg(options, 'search'),
@@ -434,14 +448,14 @@ export function registerServerCommands(
   handleWithContext(IPC.commitsFiles, 'commit-files', (context, id, oid) => services.operations.commitFiles(stringArg(id, 'commit-files', 64), stringArg(oid, 'commit-files', 128), context.signal));
   handle(IPC.commitsRecognize, 'commit-recognize', (id, oid) => services.operations.recognizeCommit(stringArg(id, 'commit-recognize', 64), stringArg(oid, 'commit-recognize', 128)));
   handle(IPC.commitsCountAfter, 'commits-after', (id, oid) => services.operations.commitsAfter(stringArg(id, 'commits-after', 64), oidArg(oid, 'commits-after')));
-  handle(IPC.branchesList, 'branches', (id) => services.operations.branches(stringArg(id, 'branches', 64)));
+  handle(IPC.branchesList, 'branches', (id) => remember(stringArg(id, 'branches', 64), 'branches', services.operations.branches(stringArg(id, 'branches', 64))));
   handle(IPC.branchSwitch, 'switch-branch', (id, branch, moveChanges, allowAgents) => services.operations.switchBranch(
     stringArg(id, 'switch-branch', 64),
     stringArg(branch, 'switch-branch', 512),
     booleanArg(moveChanges, 'switch-branch'),
     allowAgents === undefined ? false : booleanArg(allowAgents, 'switch-branch'),
   ));
-  handle(IPC.worktreesList, 'worktrees', (id) => services.operations.worktrees(stringArg(id, 'worktrees', 64)));
+  handle(IPC.worktreesList, 'worktrees', (id) => remember(stringArg(id, 'worktrees', 64), 'worktrees', services.operations.worktrees(stringArg(id, 'worktrees', 64))));
   handle(IPC.worktreeAgents, 'worktree-agents', (id) => services.operations.worktreeAgents(stringArg(id, 'worktree-agents', 64)));
   handle(IPC.worktreeSelect, 'select-worktree', async (id, targetPath) => {
     const repository = await services.operations.selectWorktree(stringArg(id, 'select-worktree', 64), stringArg(targetPath, 'select-worktree'));

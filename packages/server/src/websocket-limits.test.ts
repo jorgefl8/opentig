@@ -392,7 +392,7 @@ describe('WebSocket safety limits', () => {
   });
 
   it('accepts exactly the byte limit and rejects one more byte without truncating', async () => {
-    const envelope = { type: 'result', id: 'boundary', result: { ok: true, value: { payload: '', server: { protocolVersion: 1, appVersion: 'test', requestCancellation: true, keptReads: true } } } };
+    const envelope = { type: 'result', id: 'boundary', result: { ok: true, value: { payload: '', server: { protocolVersion: 1, appVersion: 'test', requestCancellation: true, keptReads: true, repositorySnapshots: true } } } };
     const overhead = Buffer.byteLength(JSON.stringify(envelope));
     let payload = 'x'.repeat(OPEN_TIG_MAX_SERVER_MESSAGE_BYTES - overhead);
     const fixture = await startFixture(() => ({ payload }));

@@ -65,4 +65,6 @@ export interface OpenTigServerIdentity {
   requestCancellation?: true;
   /** Understands `acceptKept` on a request. Absent on servers older than it. */
   keptReads?: true;
+  /** Answers `repository:snapshot`. Absent on servers older than it. */
+  repositorySnapshots?: true;
 }

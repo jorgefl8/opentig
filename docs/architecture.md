@@ -114,6 +114,7 @@ Desktop paths are derived from Electron's user-data directory:
 | `ai-log.jsonl` | local AI-operation log |
 | `github-status.json` | last checked GitHub CLI/account metadata; no tokens or credential paths |
 | `github-cache.json` | what GitHub last answered, per repository and account, to show it at once; no tokens ([details](security-and-privacy.md#github-answers-kept-on-disk)) |
+| `repository-snapshots/` | last status, branches, worktrees and file tree read of up to 12 repositories, painted at start-up ([details](security-and-privacy.md#last-repository-state-on-disk)) |
 | `problems.jsonl` | local Git, file, and network failure log |
 | `desktop-server.json` | shared persisted desktop web access, domain, address and port |
 | `server/` | hash-only owner-session authentication state |
@@ -133,6 +134,7 @@ The headless CLI derives equivalent paths from `~/.opentig` or `--home`:
 | `ai-log.jsonl` | local AI-operation history |
 | `github-status.json` | last checked GitHub CLI/account metadata; no tokens or credential paths |
 | `github-cache.json` | what GitHub last answered, per repository and account, to show it at once; no tokens ([details](security-and-privacy.md#github-answers-kept-on-disk)) |
+| `repository-snapshots/` | last status, branches, worktrees and file tree read of up to 12 repositories, painted at start-up ([details](security-and-privacy.md#last-repository-state-on-disk)) |
 | `problems.jsonl` | local Git, file, and network failure log |
 | `server/web-access.json` | saved CLI web access, domain, address and port |
 | `server/` | hash-only sessions plus a private same-host admin credential |

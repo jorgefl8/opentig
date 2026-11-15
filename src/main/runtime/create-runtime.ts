@@ -22,6 +22,7 @@ import { GitHubAccountsService } from '../github/GitHubAccountsService';
 import { GitHubStatusStore } from '../persistence/GitHubStatusStore';
 import { GitHubService } from '../github/GitHubService';
 import { GitHubReadCache } from '../github/GitHubReadCache';
+import { RepositorySnapshotStore } from '../persistence/RepositorySnapshotStore';
 import { AiLogStore } from '../persistence/AiLogStore';
 import { AiStatusStore } from '../persistence/AiStatusStore';
 import { ProblemsLogStore, problemsLogPathFromSettings, recordProblemSafely } from '../persistence/ProblemsLogStore';
@@ -134,6 +135,8 @@ export async function createOpenTigRuntime(
     aiLog,
     problems,
     github,
+    // Beside the settings, so each profile keeps its own; see docs/security-and-privacy.md.
+    snapshots: new RepositorySnapshotStore(path.join(path.dirname(options.settingsPath), 'repository-snapshots'), (id) => repositories.isKnown(id)),
     prDrafts,
     events,
   }, options.onEvent);

@@ -2,7 +2,7 @@
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { preloadLazyViews } from './test-support/lazy-views';
 import type { RepositoryInfo } from '../../shared/contracts';
 import type { RepositoryStatus } from '../../shared/git-types';
@@ -10,7 +10,7 @@ import type { ToolbarProps } from './Toolbar';
 import { SettingsStore } from '../../main/persistence/SettingsStore';
 
 const calls = vi.hoisted(() => ({
-  bootstrap: vi.fn(), openRecent: vi.fn(), getStatus: vi.fn(), success: vi.fn(), error: vi.fn(), fetch: vi.fn(), setRepositoryAccount: vi.fn(), getFavicon: vi.fn(), listWorktrees: vi.fn(),
+  bootstrap: vi.fn(), snapshot: vi.fn(), openRecent: vi.fn(), getStatus: vi.fn(), success: vi.fn(), error: vi.fn(), fetch: vi.fn(), setRepositoryAccount: vi.fn(), getFavicon: vi.fn(), listWorktrees: vi.fn(),
   activeRepositoryChanged: null as ((repository: RepositoryInfo) => void) | null,
   repositoryChanged: null as ((repositoryId: string, scope: string, watch?: string, watchId?: string) => void) | null,
   reconnected: [] as Array<() => void>,
@@ -20,7 +20,7 @@ vi.mock('@/lib/opentig-api', () => ({
   opentig: {
     app: { bootstrap: calls.bootstrap, capabilities: async () => null, setZoomFactor: () => {}, setTitleBarTheme: async () => {} },
     repository: {
-      openRecent: calls.openRecent, getStatus: calls.getStatus, getFavicon: calls.getFavicon,
+      openRecent: calls.openRecent, getStatus: calls.getStatus, getFavicon: calls.getFavicon, snapshot: calls.snapshot,
       fileHistoryState: async () => ({ canUndo: false, canRedo: false }), getFiles: async () => [],
     },
     refs: { listBranches: async () => [], listWorktrees: calls.listWorktrees, fetch: calls.fetch },
@@ -51,6 +51,7 @@ vi.mock('./Toolbar', async () => {
   createElement('output', { 'aria-label': 'Repository' }, props.repository.id),
   createElement('output', { 'aria-label': 'Pending' }, props.pendingRepositoryId ?? ''),
   createElement('output', { 'aria-label': 'Phase' }, props.repositoryLoadPhase ?? 'ready'),
+  createElement('output', { 'aria-label': 'Busy' }, props.busy ?? ''),
   createElement('output', { 'aria-label': 'Worktrees' }, props.worktrees.map((worktree) => worktree.path).join(' ')),
   createElement('output', { 'aria-label': 'Remote problem' }, props.remoteProblem ? `${props.remoteProblem.access.login} → ${props.remoteProblem.access.candidates.join(',')}` : ''),
   props.remoteProblem && createElement('button', { 'aria-label': 'Use candidate', onClick: () => props.onRemoteAccessAction({ kind: 'use-account', login: props.remoteProblem!.access.candidates[0]! }) }),
@@ -200,6 +201,63 @@ it('does not leave a repository shown from memory looking current when it cannot
   expect(calls.error).toHaveBeenCalledWith(expect.objectContaining({ title: 'Could not refresh' }));
   expect(output('Phase')).toBe('loading');
   expect(container.textContent).not.toContain('Changes list');
+});
+
+describe('starting up', () => {
+  const saved = { savedAt: '2026-11-15T09:00:00.000Z', status, branches: [], worktrees: [{ path: '/repo' }, { path: '/repo-saved' }], files: [] };
+  beforeEach(() => {
+    calls.bootstrap.mockResolvedValue({
+      activeRepository: info('repo'), recentRepositories: [], repositoryProjects: [], filesTreeStates: [], openFilesStates: [],
+      preferences: { ...new SettingsStore('unused-settings.json').preferences, remoteFetchIntervalSeconds: 0 },
+      server: { protocolVersion: 4, appVersion: 'test', repositorySnapshots: true },
+    });
+    calls.snapshot.mockResolvedValue(saved);
+  });
+
+  it('paints what the server saved at once, and holds every change until the repository is read again', async () => {
+    const read = deferred<RepositoryStatus>();
+    calls.getStatus.mockImplementation(() => read.promise);
+    await act(async () => root.render(createElement(QueryClientProvider, { client }, createElement(App))));
+    await settle();
+    expect(calls.snapshot).toHaveBeenCalledWith('repo');
+    expect(output('Phase')).toBe('ready');
+    expect(container.textContent).toContain('Changes list');
+    expect(output('Worktrees')).toBe('/repo /repo-saved');
+    // Pull, Push, Commit and Discard wait while the toolbar is busy reading.
+    expect(output('Busy')).toBe('refresh');
+
+    await act(async () => read.resolve(status));
+    await settle();
+    expect(output('Busy')).toBe('');
+    expect(output('Worktrees')).toBe('/repo /repo-linked');
+  });
+
+  it('puts what the server saved away when the repository cannot be read', async () => {
+    calls.getStatus.mockImplementation(() => Promise.reject(new Error('index.lock exists')));
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      await act(async () => root.render(createElement(QueryClientProvider, { client }, createElement(App))));
+      await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+      expect(container.textContent).toContain('Changes list');
+      // Past the quiet retry: both reads failed.
+      await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+    } finally { vi.useRealTimers(); }
+    await settle();
+    expect(output('Phase')).toBe('loading');
+    expect(container.textContent).not.toContain('Changes list');
+  });
+
+  it('starts as before with a server that saves nothing', async () => {
+    calls.bootstrap.mockResolvedValue({
+      activeRepository: info('repo'), recentRepositories: [], repositoryProjects: [], filesTreeStates: [], openFilesStates: [],
+      preferences: { ...new SettingsStore('unused-settings.json').preferences, remoteFetchIntervalSeconds: 0 },
+      server: { protocolVersion: 4, appVersion: 'test' },
+    });
+    await act(async () => root.render(createElement(QueryClientProvider, { client }, createElement(App))));
+    await settle();
+    expect(calls.snapshot).not.toHaveBeenCalled();
+    expect(output('Worktrees')).toBe('/repo /repo-linked');
+  });
 });
 
 it('reads the repository on a timer while the server watches another one, until it says it watches this one again', async () => {

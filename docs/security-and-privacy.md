@@ -111,6 +111,14 @@ To show pull requests, lists and workflow runs at once, the backend keeps what G
 - Changing an account or the account choice, and credentials GitHub rejects, drop what was read with them. A file that is damaged, edited outside OpenTig or written by another format version is deleted and not read.
 - To clear it, stop the server and delete `github-cache.json` from the data folder. **Settings → GitHub → Refresh accounts** also empties it.
 
+### Last repository state on disk
+
+So that starting OpenTig paints the repository at once instead of a loading message, the backend saves the last status, branches, worktrees and file tree it read of each repository in `repository-snapshots/`, one file per repository, beside its other data. They hold file and branch names, paths and change counts, never file contents. What is painted from them is read again at once, and nothing can be committed, pulled, pushed or discarded until that read lands.
+
+- Files are readable only by the user running the server (mode `0600` where the platform has file modes), and each profile has its own folder.
+- At most 12 repositories are kept, the most recently read; a file holds at most 4 MB, and a larger file tree is left out of it. A snapshot older than 30 days, of a repository whose folder moved, damaged, edited outside OpenTig or written by another format version is deleted instead of painted. Forgetting a repository deletes its snapshot.
+- To clear them, stop the server and delete the `repository-snapshots` folder.
+
 ## Public website analytics
 
 The public website at opentig.com uses Umami Cloud to count page views, clicks to release downloads and the installation guide, and successful copies of the CLI command. These actions indicate interest; they do not confirm a download or installation. URL queries and fragments are excluded, and the tracker respects the browser's Do Not Track setting. This integration does not enable session replay or identify visitors through OpenTig accounts.

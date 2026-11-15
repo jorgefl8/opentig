@@ -521,7 +521,12 @@ export default function App({ initialView, initialSelection, pullRequestCreation
 
   useEffect(() => {
     let active = true;
-    opentig.app.bootstrap().then((data) => {
+    opentig.app.bootstrap().then(async (data) => {
+      if (!active) return;
+      // Starting up, the repository on screen paints what the server last saved of it, as one seen
+      // moments ago paints what is in memory (see `knownSnapshot`): read again behind it, with Pull,
+      // Push, Commit and Discard held until that read lands, and put away if it fails.
+      if (data.activeRepository && data.server?.repositorySnapshots === true) await seedSavedSnapshot(appQueryClient, data.activeRepository.id);
       if (!active) return;
       filesTreeStates.clear();
       for (const state of data.filesTreeStates) filesTreeStates.set(state.repositoryId, [...state.expandedPaths]);
@@ -541,7 +546,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       if (active) setCapabilities(available);
     }).catch(() => undefined);
     return () => { active = false; };
-  }, [filesTreeStates]);
+  }, [appQueryClient, filesTreeStates]);
 
   useLayoutEffect(() => {
     const overlay = (navigator as Navigator & {
@@ -3443,6 +3448,26 @@ function aiErrorTitle(detail: SerializedAiError | null): string {
  * What the client last read of a repository, if it still holds it: status, refs and the file tree are kept
  * for five minutes after their last read (React Query's default). Without a status there is nothing to show.
  */
+/** How long starting up waits for the saved snapshot before it shows the repository as loading instead. */
+const SAVED_SNAPSHOT_WAIT_MS = 1_500;
+
+/** Puts what the server last saved of a repository where `knownSnapshot` finds it, unless something newer is there. */
+async function seedSavedSnapshot(client: ReturnType<typeof useQueryClient>, repositoryId: string): Promise<void> {
+  if (client.getQueryData(queryKeys.status(repositoryId))) return;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const snapshot = await Promise.race([
+    opentig.repository.snapshot(repositoryId).catch(() => null),
+    new Promise<null>((resolve) => { timer = setTimeout(() => resolve(null), SAVED_SNAPSHOT_WAIT_MS); }),
+  ]).finally(() => clearTimeout(timer));
+  if (!snapshot || client.getQueryData(queryKeys.status(repositoryId))) return;
+  // Dated when it was read, so nothing takes it for a fresh answer.
+  const updatedAt = Date.parse(snapshot.savedAt) || 1;
+  client.setQueryData(queryKeys.status(repositoryId), snapshot.status, { updatedAt });
+  if (snapshot.branches) client.setQueryData(queryKeys.branches(repositoryId), snapshot.branches, { updatedAt });
+  if (snapshot.worktrees) client.setQueryData(queryKeys.worktrees(repositoryId), snapshot.worktrees, { updatedAt });
+  if (snapshot.files) client.setQueryData(queryKeys.files(repositoryId), snapshot.files, { updatedAt });
+}
+
 function knownSnapshot(client: ReturnType<typeof useQueryClient>, repositoryId: string): {
   status: RepositoryStatus; branches: BranchInfo[] | null; worktrees: WorktreeInfo[] | null; files: FileTreeEntry[] | null;
 } | null {

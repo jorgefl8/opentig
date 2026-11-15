@@ -113,6 +113,7 @@ export function createOpenTigServerClient(options: ServerClientOptions = {}): Op
       search: (id, searchOptions) => invoke(IPC.repositorySearch, id, searchOptions),
       replaceSearch: (id, request) => invoke(IPC.repositoryReplaceSearch, id, request),
       fileHistoryState: (id) => invoke(IPC.repositoryFileHistoryState, id),
+      snapshot: (id) => invoke(IPC.repositorySnapshot, id),
       undoFileOperation: (id) => invoke(IPC.repositoryUndoFileOperation, id),
       redoFileOperation: (id) => invoke(IPC.repositoryRedoFileOperation, id),
     },
