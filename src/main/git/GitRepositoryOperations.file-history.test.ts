@@ -75,6 +75,44 @@ describe("a file's history", () => {
     expect(new Set(subjects).size).toBe(121);
   }, 30_000);
 
+  it('reads a file name that looks like another commit as a name', async () => {
+    const fixture = await standaloneRepository();
+    const unrelated = await git(fixture.work, ['rev-parse', 'HEAD']);
+    const hostile = `\x1e${unrelated}\x1fforged`;
+    await commitFile(fixture.work, hostile, 'one\n', 'Add under a strange name');
+    await git(fixture.work, ['mv', hostile, 'clean.txt']);
+    await git(fixture.work, ['commit', '-m', 'Rename to a clean name']);
+    await commitFile(fixture.work, 'clean.txt', 'one\ntwo\n', 'Edit the clean name');
+
+    const page = await fixture.operations.fileHistory(fixture.repositoryId, 'clean.txt');
+    expect(page.entries.map((entry) => [entry.commit.subject, entry.path, entry.oldPath])).toEqual([
+      ['Edit the clean name', 'clean.txt', null],
+      ['Rename to a clean name', 'clean.txt', hostile],
+      ['Add under a strange name', hostile, null],
+    ]);
+    expect(page.entries.map((entry) => entry.commit.oid)).not.toContain(unrelated);
+  });
+
+  it('lists only the changes of the file when the path was once a folder, and refuses a folder', async () => {
+    const fixture = await standaloneRepository();
+    await commitFile(fixture.work, 'docs/a.md', 'a\n', 'Add a');
+    await commitFile(fixture.work, 'docs/b.md', 'b\n', 'Add b');
+    await commitFile(fixture.work, 'docs/a.md', 'a\nmore\n', 'Edit a');
+    await expect(fixture.operations.fileHistory(fixture.repositoryId, 'docs')).rejects.toMatchObject({ detail: { code: 'INVALID_ARGUMENT' } });
+    await git(fixture.work, ['rm', '-rq', 'docs']);
+    await writeFile(path.join(fixture.work, 'docs'), 'x\ny\nz\n');
+    await git(fixture.work, ['add', 'docs']);
+    await git(fixture.work, ['commit', '-m', 'Make docs a file']);
+    await commitFile(fixture.work, 'docs', 'x\n', 'Trim docs');
+
+    const page = await fixture.operations.fileHistory(fixture.repositoryId, 'docs');
+    expect(page.entries.map((entry) => [entry.commit.subject, entry.path, entry.kind, entry.additions, entry.deletions])).toEqual([
+      ['Trim docs', 'docs', 'modified', 0, 2],
+      ['Make docs a file', 'docs', 'added', 3, 0],
+    ]);
+    expect(page.nextCursor).toBeNull();
+  });
+
   it('refuses a folder, a path outside the worktree and a cursor it did not give', async () => {
     const fixture = await standaloneRepository();
     await expect(fixture.operations.fileHistory(fixture.repositoryId, '.')).rejects.toMatchObject({ detail: { code: 'INVALID_ARGUMENT' } });
