@@ -45,8 +45,8 @@ const log = [
 ].join('\n');
 
 describe("a job's log", () => {
-  it('is split into its steps, a composite action keeping its own lines', () => {
-    const parsed = parseActionJobLog(log, { id: 7, steps }, false);
+  it('is split into its steps, a composite action keeping its own lines', async () => {
+    const parsed = await parseActionJobLog(log, { id: 7, steps }, false);
     const byName = Object.fromEntries(parsed.steps.map((section) => [section.name, section.lines.map((line) => line.text)]));
     expect(byName['Set up job']).toEqual(["Current runner version: '2.338.2'", 'Runner Image Provisioner', 'Hosted Compute Agent', '', 'Complete job name: validate']);
     expect(byName['Require a successful scope decision']?.[0]).toBe('Run node -e "process.exit(0)"');
@@ -59,28 +59,28 @@ describe("a job's log", () => {
     expect(parsed).toMatchObject({ readCut: false, displayCut: false });
   });
 
-  it('marks errors and groups, numbers lines within their step and keeps the time apart', () => {
-    const failed = parseActionJobLog(log, { id: 7, steps }, false).steps.find((section) => section.conclusion === 'failure')!;
+  it('marks errors and groups, numbers lines within their step and keeps the time apart', async () => {
+    const failed = (await parseActionJobLog(log, { id: 7, steps }, false)).steps.find((section) => section.conclusion === 'failure')!;
     expect(failed.lines.map((line) => line.kind)).toEqual(['group', 'output', 'endgroup', 'output', 'error', 'error']);
     expect(failed.lines[4]).toEqual({ number: 5, time: Date.parse('2026-11-13T21:58:00.171Z'), kind: 'error', text: "src/a.ts(54,22): error TS2352: Conversion of type 'A' to type 'B' may be a mistake." });
   });
 
-  it('puts every line in one section when GitHub lists no steps', () => {
-    const parsed = parseActionJobLog('2026-11-13T21:57:38.1Z one\n2026-11-13T21:57:38.2Z two\n', { id: 1, steps: [] }, false);
+  it('puts every line in one section when GitHub lists no steps', async () => {
+    const parsed = await parseActionJobLog('2026-11-13T21:57:38.1Z one\n2026-11-13T21:57:38.2Z two\n', { id: 1, steps: [] }, false);
     expect(parsed.steps).toHaveLength(1);
     expect(parsed.steps[0]!.lines.map((line) => line.text)).toEqual(['one', 'two']);
   });
 
-  it('drops the partial last line of a log read only in part', () => {
-    const parsed = parseActionJobLog('2026-11-13T21:57:38.1Z whole\n2026-11-13T21:57:38.2Z cut sho', { id: 1, steps: [] }, true);
+  it('drops the partial last line of a log read only in part', async () => {
+    const parsed = await parseActionJobLog('2026-11-13T21:57:38.1Z whole\n2026-11-13T21:57:38.2Z cut sho', { id: 1, steps: [] }, true);
     expect(parsed.steps[0]!.lines.map((line) => line.text)).toEqual(['whole']);
     expect(parsed.readCut).toBe(true);
   });
 
-  it('keeps the end of the failed step first when the log is larger than what is shown', () => {
+  it('keeps the end of the failed step first when the log is larger than what is shown', async () => {
     const body = Array.from({ length: 50 }, (_, index) => `2026-11-13T21:57:41.5Z output ${index}`);
     const big = [log.split('\n').slice(0, 16).join('\n'), ...body, ...log.split('\n').slice(16)].join('\n');
-    const parsed = parseActionJobLog(big, { id: 7, steps }, false, { lines: 10, bytes: 1_000_000, lineCharacters: 2_000 });
+    const parsed = await parseActionJobLog(big, { id: 7, steps }, false, { limits: { lines: 10, bytes: 1_000_000, lineCharacters: 2_000 } });
     const failed = parsed.steps.find((section) => section.conclusion === 'failure')!;
     expect(failed.lines).toHaveLength(10);
     expect(failed.lines.at(-1)!.text).toBe('Process completed with exit code 1.');
@@ -90,16 +90,16 @@ describe("a job's log", () => {
     expect(parsed.steps.find((section) => section.name === 'Set up job')).toMatchObject({ lines: [], omittedLines: 5 });
     expect(parsed.displayCut).toBe(true);
     // With room for more, every step keeps how it ended before the failed one takes the rest.
-    const roomier = parseActionJobLog(big, { id: 7, steps }, false, { lines: 40, bytes: 1_000_000, lineCharacters: 2_000 });
+    const roomier = await parseActionJobLog(big, { id: 7, steps }, false, { limits: { lines: 40, bytes: 1_000_000, lineCharacters: 2_000 } });
     expect(roomier.steps.find((section) => section.name === 'Set up job')).toMatchObject({ omittedLines: 0 });
     expect(roomier.steps.find((section) => section.conclusion === 'failure')!.lines.at(-1)!.text).toBe('Process completed with exit code 1.');
   });
 
-  it('fits in one answer of the transport however the log is written', () => {
+  it('fits in one answer of the transport however the log is written', async () => {
     // As much as OpenTig reads, in lines of text that grows the most once sent: three-byte characters and escaped control codes.
     const line = `2026-11-13T21:57:41.5Z ##[error]${'€\x1b[31m"\\'.repeat(140)}\n`;
     const raw = line.repeat(Math.floor(ACTION_JOB_LOG_LIMITS.readBytes / Buffer.byteLength(line)));
-    const parsed = parseActionJobLog(raw, { id: 7, steps }, true);
+    const parsed = await parseActionJobLog(raw, { id: 7, steps }, true);
     expect(parsed.displayCut).toBe(true);
     expect(Buffer.byteLength(JSON.stringify({ type: 'result', id: 'x'.repeat(64), result: { ok: true, value: parsed } }))).toBeLessThan(OPEN_TIG_MAX_SERVER_MESSAGE_BYTES);
   });
@@ -107,6 +107,129 @@ describe("a job's log", () => {
   it('cuts a line longer than the limit without splitting a color code', () => {
     const line = parseLine(`2026-11-13T21:57:41.5Z ${'a'.repeat(9)}\x1b[31mred`, 10);
     expect(line).toMatchObject({ text: 'aaaaaaaaa', clipped: true });
+  });
+});
+
+/** A job with service containers, as a recent runner writes it: a composite action's own steps sit between `##[start-action]` and `##[end-action]`. */
+const containerSteps: ActionRunStep[] = [
+  step(1, 'Set up job', '42:42', '42:43'),
+  step(2, 'Initialize containers', '42:43', '42:54'),
+  step(3, 'Run actions/checkout@v4', '42:54', '42:56'),
+  step(4, 'Run ./.github/actions/go-setup', '42:56', '43:33'),
+  step(5, 'Run make test', '43:33', '54:16', 'failure'),
+  step(6, 'Post coverage comment', '54:16', '54:16'),
+  step(8, 'Post Run ./.github/actions/go-setup', '54:16', '54:16'),
+  step(9, 'Post Run actions/checkout@v4', '54:16', '54:16'),
+  step(10, 'Stop containers', '54:16', '54:17'),
+  step(11, 'Complete job', '54:17', '54:17'),
+];
+const containerLog = [
+  '2026-11-13T21:42:42.7Z Current runner version: \'2.338.2\'',
+  '2026-11-13T21:42:43.2Z Complete job name: test-pgsql',
+  '2026-11-13T21:42:43.3Z ##[group]Checking docker version',
+  '2026-11-13T21:42:43.4Z ##[endgroup]',
+  '2026-11-13T21:42:44.5Z ##[group]Starting pgsql service container',
+  '2026-11-13T21:42:49.2Z ##[endgroup]',
+  '2026-11-13T21:42:55.0Z ##[group]Run actions/checkout@v4',
+  '2026-11-13T21:42:56.0Z ##[endgroup]',
+  '2026-11-13T21:42:56.8Z ##[group]Run ./.github/actions/go-setup',
+  '2026-11-13T21:42:56.8Z ##[endgroup]',
+  '2026-11-13T21:42:56.9Z ##[start-action display=Run actions/setup-go@v5;id=__self.setup-go]',
+  '2026-11-13T21:42:56.9Z ##[group]Run actions/setup-go@v5',
+  '2026-11-13T21:42:56.9Z ##[endgroup]',
+  '2026-11-13T21:43:33.2Z ##[end-action id=__self.setup-go;outcome=success;conclusion=success;duration_ms=36000]',
+  '2026-11-13T21:43:33.3Z ##[group]Run make test',
+  '2026-11-13T21:43:33.3Z ##[endgroup]',
+  '2026-11-13T21:54:15.9Z ##[error]Process completed with exit code 2.',
+  '2026-11-13T21:54:16.0Z ##[group]Run gh pr comment --body-file coverage.md',
+  '2026-11-13T21:54:16.0Z ##[endgroup]',
+  '2026-11-13T21:54:16.0Z Post job cleanup.',
+  '2026-11-13T21:54:16.0Z ##[start-action display=Run actions/setup-go@v5;id=__post.setup-go]',
+  '2026-11-13T21:54:16.0Z Post job cleanup.',
+  '2026-11-13T21:54:16.1Z ##[end-action id=__post.setup-go;outcome=success;conclusion=success;duration_ms=128]',
+  '2026-11-13T21:54:16.1Z Post job cleanup.',
+  '2026-11-13T21:54:16.2Z [command]/usr/bin/git version',
+  '2026-11-13T21:54:16.4Z Print service container logs: pgsql',
+  '2026-11-13T21:54:16.4Z Stop and remove container: pgsql',
+  '2026-11-13T21:54:17.0Z Cleaning up orphan processes',
+  '',
+].join('\n');
+
+describe('steps of a job with containers', () => {
+  it('gives each step its own lines, the failed step its error and nothing of the next step', async () => {
+    const parsed = await parseActionJobLog(containerLog, { id: 7, steps: containerSteps }, false);
+    expect(parsed.unsplit).toBeUndefined();
+    const byName = Object.fromEntries(parsed.steps.map((section) => [section.name, section.lines.map((line) => line.text)]));
+    expect(byName['Initialize containers']?.[0]).toBe('Checking docker version');
+    expect(byName['Run actions/checkout@v4']?.[0]).toBe('Run actions/checkout@v4');
+    expect(byName['Run ./.github/actions/go-setup']).toContain('Run actions/setup-go@v5');
+    expect(byName['Run make test']).toEqual(['Run make test', '', 'Process completed with exit code 2.']);
+    expect(parsed.steps.filter((section) => section.lines.some((line) => line.kind === 'error')).map((section) => section.name)).toEqual(['Run make test']);
+    // A step the user named "Post …" is a step of the file, not GitHub's cleanup after an earlier one.
+    expect(byName['Post coverage comment']).toEqual(['Run gh pr comment --body-file coverage.md', '']);
+    // A composite action's own cleanup stays with its post step.
+    expect(byName['Post Run ./.github/actions/go-setup']?.filter((text) => text === 'Post job cleanup.')).toHaveLength(2);
+    expect(byName['Post Run actions/checkout@v4']).toEqual(['Post job cleanup.', '/usr/bin/git version']);
+    expect(byName['Stop containers']).toEqual(['Print service container logs: pgsql', 'Stop and remove container: pgsql']);
+    expect(byName['Complete job']).toEqual(['Cleaning up orphan processes']);
+  });
+
+  it('takes a step without a line of its own from its times, and nothing written before it started', async () => {
+    const withoutDockerGroup = containerLog.replace('##[group]Checking docker version', 'Checking docker version');
+    const parsed = await parseActionJobLog(withoutDockerGroup, { id: 7, steps: containerSteps }, false);
+    const byName = Object.fromEntries(parsed.steps.map((section) => [section.name, section.lines.map((line) => line.text)]));
+    // Lines in the second the set-up ended stay with it; the service starting later is the containers'.
+    expect(byName['Set up job']).toContain('Checking docker version');
+    expect(byName['Initialize containers']).toEqual(['Starting pgsql service container', '']);
+    expect(byName['Run actions/checkout@v4']?.[0]).toBe('Run actions/checkout@v4');
+  });
+
+  it('shows the log whole, and says so, when a step that ran has no line to start from', async () => {
+    const parsed = await parseActionJobLog(containerLog.replace('##[group]Run make test', 'make test'), { id: 7, steps: containerSteps }, false);
+    expect(parsed.unsplit).toBe(true);
+    expect(parsed.steps).toHaveLength(1);
+    expect(parsed.steps[0]).toMatchObject({ number: null, name: 'Log', conclusion: 'failure' });
+    expect(parsed.steps[0]!.lines).toHaveLength(28);
+  });
+});
+
+describe('a hostile log', () => {
+  /** The longest the event loop waited for a turn while `work` ran. */
+  async function longestStall(work: () => Promise<unknown>): Promise<number> {
+    let longest = 0;
+    let last = performance.now();
+    let running = true;
+    const tick = () => {
+      const now = performance.now();
+      longest = Math.max(longest, now - last);
+      last = now;
+      if (running) setImmediate(tick);
+    };
+    setImmediate(tick);
+    await work();
+    running = false;
+    longest = Math.max(longest, performance.now() - last);
+    return longest;
+  }
+  const sixteen = ACTION_JOB_LOG_LIMITS.readBytes;
+
+  it.each([
+    ['one line of unfinished escapes', () => `2026-11-13T21:57:41.5Z ${'\x1b['.repeat(sixteen / 2)}`],
+    ['one line of color codes', () => `2026-11-13T21:57:41.5Z ${'\x1b[1m'.repeat(sixteen / 4)}`],
+    ['many short lines', () => '2026-11-13T21:57:41.5Z output of a step\n'.repeat(Math.floor(sixteen / 40))],
+  ])('keeps the server answering while %s is read', async (_label, make) => {
+    const raw = make();
+    let parsed: Awaited<ReturnType<typeof parseActionJobLog>> | null = null;
+    const stall = await longestStall(async () => { parsed = await parseActionJobLog(raw, { id: 7, steps }, false); });
+    expect(parsed).not.toBeNull();
+    expect(stall).toBeLessThan(100);
+  }, 30_000);
+
+  it('stops when the read is no longer needed', async () => {
+    const controller = new AbortController();
+    const reading = parseActionJobLog('2026-11-13T21:57:41.5Z line\n'.repeat(400_000), { id: 7, steps }, false, { signal: controller.signal });
+    controller.abort(new Error('cancelled'));
+    await expect(reading).rejects.toThrow('cancelled');
   });
 });
 

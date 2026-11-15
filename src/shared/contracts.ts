@@ -824,6 +824,8 @@ export type ActionJobLog =
     readCut: boolean;
     /** Some lines were left out, or cut short, to stay within what OpenTig shows. */
     displayCut: boolean;
+    /** OpenTig couldn't tell which lines belong to which step: `steps` holds the whole log as one. */
+    unsplit?: true;
   }
   /** GitHub serves a job's log once the job has finished. */
   | { state: 'pending'; jobId: number }

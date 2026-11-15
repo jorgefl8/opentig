@@ -94,6 +94,24 @@ describe("reading a job's log", () => {
     await expect(service.getActionJobLog('repo', 77)).rejects.toMatchObject({ detail: { code: 'GH_ACCESS_DENIED' }, message: expect.stringContaining('@sample') });
   });
 
+  it('never quotes or reads the log a failed download printed, on either attempt', async () => {
+    const printed = 'Error: authentication with the deploy credential failed for SECRET_HOST';
+    for (const logs of [
+      () => ({ exitCode: 1, stdout: printed, stderr: 'gh: Something went wrong (HTTP 502)' }),
+      (args: string[]) => args.includes('--allow-escape-sequences')
+        ? { exitCode: 1, stdout: '', stderr: 'unknown flag: --allow-escape-sequences' }
+        : { exitCode: 1, stdout: printed, stderr: 'gh: Something went wrong (HTTP 502)' },
+    ]) {
+      const { service } = fixture({ logs });
+      const error = await service.getActionJobLog('repo', 77).then(() => null, (reason: unknown) => reason as { message: string; detail: { code: string } });
+      expect(error).not.toBeNull();
+      expect(error!.message).not.toContain('SECRET_HOST');
+      expect(JSON.stringify(error!.detail)).not.toContain('SECRET_HOST');
+      // Log text that mentions credentials is not a sign-in problem.
+      expect(error!.detail.code).not.toBe('GH_AUTH_REQUIRED');
+    }
+  });
+
   it('shows the start of a log larger than it reads, and says so', async () => {
     const { service } = fixture({ logs: () => ({ exitCode: 0, stdout: `${LOG}2026-11-13T21:58:00.1Z partial li`, stderr: '', truncated: true }) });
     const log = await service.getActionJobLog('repo', 77);

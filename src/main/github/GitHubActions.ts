@@ -98,8 +98,9 @@ export class GitHubActions {
     let result = await this.github.run(target.executable, ['api', '--allow-escape-sequences', endpoint], options);
     if (result.exitCode !== 0 && /unknown flag:? .*allow-escape-sequences/i.test(result.stderr)) result = await this.github.run(target.executable, ['api', endpoint], options);
     if (result.exitCode !== 0 && /HTTP (?:404|410)\b/i.test(result.stderr)) return { state: 'unavailable', jobId, reason: 'expired' };
-    if (result.exitCode !== 0) throw this.github.failure(result, options);
-    return parseActionJobLog(result.stdout, job, result.truncated === true);
+    // Whatever came out on stdout is the log, or part of it: it is never quoted, kept or read for what went wrong.
+    if (result.exitCode !== 0) throw this.github.failure({ ...result, stdout: '' }, options);
+    return parseActionJobLog(result.stdout, job, result.truncated === true, signal ? { signal } : {});
   }
 
   /** The jobs of the workflow file at the run's commit. Without it the graph still shows every job, unconnected. */
