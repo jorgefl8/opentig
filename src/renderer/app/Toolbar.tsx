@@ -53,6 +53,8 @@ export interface ToolbarProps {
   branchPullRequestNewCommits?: number | null | undefined;
   /** A branch switch is running or waiting for the user's answer to one of its prompts. */
   branchSwitchPending?: boolean | undefined;
+  /** What is shown has not been confirmed by a read yet: no branch or worktree is switched on its strength. */
+  unconfirmed?: boolean | undefined;
   onCreatePullRequest?: (() => void) | undefined;
   /** The current branch tracks a branch with another name on the remote it pushes to. */
   upstreamMismatch?: UpstreamNameMismatch | null | undefined;
@@ -427,7 +429,7 @@ export const Toolbar = memo(function Toolbar(props: ToolbarProps) {
       <BranchCombobox
         branches={props.branches}
         currentLabel={props.status?.branch ?? 'Detached HEAD'}
-        disabled={refsBusy}
+        disabled={refsBusy || props.unconfirmed === true}
         readOnly={props.status?.readOnly}
         crumb={!mobile}
         worktrees={{ items: props.worktrees, agents: props.worktreeAgents, onSelect: props.onWorktree, onManage: () => openRefsManager('worktrees') }}

@@ -161,8 +161,10 @@ export interface RepositoryOrganization {
  * holds every change until that read lands.
  */
 export interface RepositorySnapshot {
-  /** When it was read, by the server's clock. */
+  /** When the status was read, by the server's clock. */
   savedAt: string;
+  /** When each part was read: a part not read again keeps its own, older date. */
+  readAt?: { status: string; branches: string | null; worktrees: string | null; files: string | null };
   status: RepositoryStatus;
   branches: BranchInfo[] | null;
   worktrees: WorktreeInfo[] | null;
