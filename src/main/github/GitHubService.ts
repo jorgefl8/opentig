@@ -167,8 +167,11 @@ export class GitHubService {
     this.settledEpoch++;
     this.stackStatuses.clear();
     const repository = repositoryId ? this.repositories.get(repositoryId) : null;
-    this.invalidations.push({ epoch: this.settledEpoch, commonDir: repository ? githubRepositoryKey(repository.commonDir) : null,
-      nameWithOwner: repository ? this.nameWithOwnerByPath.get(repository.path) ?? null : null, change: change ?? null });
+    // Without the GitHub repository's name, which this checkout learns on its first read, another
+    // clone of it cannot be told apart: the change then concerns reads of every repository.
+    const nameWithOwner = repository ? this.nameWithOwnerByPath.get(repository.path) ?? null : null;
+    this.invalidations.push({ epoch: this.settledEpoch, commonDir: repository && nameWithOwner ? githubRepositoryKey(repository.commonDir) : null,
+      nameWithOwner, change: change ?? null });
     if (this.invalidations.length > MAX_INVALIDATIONS) this.invalidations.shift();
     if (repository) {
       const nameWithOwner = this.nameWithOwnerByPath.get(repository.path);
