@@ -4,8 +4,8 @@ import { opentig } from '@/lib/opentig-api';
 import { queryKeys } from '@/lib/query-client';
 import { runListRefreshInterval } from './action-status';
 
-/** GitHub serves a list's first 1,000 runs; past that, the list ends. */
-const MAX_PAGES = 20;
+/** GitHub serves a list's first 1,000 runs, twenty to a page here; past that, the list ends. */
+const MAX_PAGES = 50;
 
 /** Runs from loaded pages, once each: a run can move to the next page between two reads. */
 export function runsOfPages(pages: readonly ActionRunPage[] | undefined): ActionRunSummary[] {
@@ -31,6 +31,16 @@ export function latestActionRunsOptions(repositoryId: string, workflowId: number
     queryKey: [...queryKeys.actionRuns(repositoryId, workflowId), 'latest'] as const,
     queryFn: () => opentig.github.listActionRuns(repositoryId, workflowId, 1).then((page) => page.runs),
   });
+}
+
+/** A run as a list already holds it, so its viewer has something to show while it reads the jobs. */
+export function listedRun(client: QueryClient, repositoryId: string, runId: number): ActionRunSummary | null {
+  for (const [, data] of client.getQueriesData<unknown>({ queryKey: ['repository', repositoryId, 'action-runs'] })) {
+    const runs = Array.isArray(data) ? data as ActionRunSummary[] : runsOfPages((data as { pages?: ActionRunPage[] } | undefined)?.pages);
+    const found = runs.find((run) => run.id === runId);
+    if (found) return found;
+  }
+  return null;
 }
 
 /** Every run any list has shown, so a new one can be told apart. */

@@ -19,6 +19,7 @@ import { ghDetail, MERGE_METHOD_LABELS, openOnGitHub, reviewDecisionLabel } from
 import { GitHubAvatar } from './GitHubAvatar';
 import { PullRequestActionBar } from './PullRequestActionBar';
 import { PullRequestConversationView } from './PullRequestConversationView';
+import { pullRequestConversationQueryOptions } from './pull-request-conversation-query';
 import { PullRequestChecksLink, PullRequestChecksPanel, PullRequestChecksSummary } from './PullRequestChecks';
 import { PullRequestEditor } from './PullRequestEditor';
 import { hasViewerDraft, pullRequestCommentDraft, pullRequestEditDraft, useViewerDraft } from './viewer-drafts';
@@ -27,6 +28,9 @@ import { cachedPullRequestSummary } from './pull-request-summary-cache';
 import { LazyPullRequestDiff as PullRequestDiff } from './pull-request-viewer-chunks';
 import { opentig } from '@/lib/opentig-api';
 import { queryKeys } from '@/lib/query-client';
+import { inBackground } from '@/lib/websocket-transport';
+import { whenIdle } from '@/lib/when-idle';
+import { downloadsAhead } from '@/lib/lazy-with-retry';
 import '@/features/markdown/markdown.css';
 import { Spinner } from '@/components/ui/spinner';
 
@@ -91,13 +95,25 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
   useEffect(() => { if (loaded) PullRequestDiff.preload(); }, [loaded]);
   const bodyHtml = detailsQuery.data?.bodyHtml ?? '';
   const detailsError = detailsQuery.error instanceof Error ? detailsQuery.error.message : detailsQuery.error ? 'Could not load the pull request.' : null;
+  // Comments and code are asked for with the PR instead of when their tab opens, so
+  // the tab shows them rather than starting to load. Until then they wait behind
+  // whatever is on screen, and the comments until the summary has been drawn.
+  const openTab = useRef(tab);
+  useEffect(() => { openTab.current = tab; }, [tab]);
+  useEffect(() => whenIdle(() => {
+    void inBackground(() => queryClient.prefetchQuery(pullRequestConversationQueryOptions(repositoryId, prNumber)));
+  }), [queryClient, repositoryId, prNumber]);
   const diffQuery = useQuery<DiffResult>({
     // Keyed by the range too, so a new head shows its own code rather than the one read before the details caught up.
     queryKey: [...queryKeys.pullRequestDiff(repositoryId, prNumber), details?.baseRefOid, details?.headRefOid],
-    queryFn: () => opentig.github.getPullRequestDiff(repositoryId, prNumber, details ? { baseOid: details.baseRefOid, headOid: details.headRefOid } : undefined),
+    queryFn: () => {
+      const read = () => opentig.github.getPullRequestDiff(repositoryId, prNumber, details ? { baseOid: details.baseRefOid, headOid: details.headRefOid } : undefined);
+      return openTab.current === 'diff' ? read() : inBackground(read);
+    },
     // The same two commits always give the same code.
     staleTime: Infinity,
-    enabled: visited.has('diff') && details !== null,
+    // Reading it downloads the pull request's commits into the clone: ahead of the Code tab only where that is welcome.
+    enabled: details !== null && (visited.has('diff') || downloadsAhead()),
   });
   const diff = diffQuery.data ?? null;
   // GitHub CLI returns one page of commits; past it, the local clone lists them all.
@@ -145,7 +161,7 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
   const counters = (
     <span className="pr-counters">
       {details && <>{details.changedFiles} {details.changedFiles === 1 ? 'file' : 'files'}{' '}</>}
-      <span className="add">+{pr.additions}</span> <span className="del">−{pr.deletions}</span>
+      {!pr.lineCountsPending && <><span className="add">+{pr.additions}</span> <span className="del">−{pr.deletions}</span></>}
     </span>
   );
   // The status reads membership afresh; until it arrives, the list's is the best known.

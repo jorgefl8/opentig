@@ -13,6 +13,7 @@ import { networkInterfaces } from 'node:os';
 import type { OpenTigWebAccessStatus } from '../../../src/shared/desktop-api';
 import { applyNetworkPatch, isLoopbackHost, type NetworkConfig, type NetworkSettings } from './network-settings';
 import { startStallMonitor } from './stall-monitor';
+import { setPerformanceSink } from '../../../src/main/performance/PerformanceLog';
 
 export interface OpenTigServerOptions {
   network: NetworkConfig;
@@ -58,6 +59,9 @@ export class OpenTigServer {
   constructor(private readonly options: OpenTigServerOptions) {
     this.network = options.network;
     this.logger = options.logger ?? (() => undefined);
+    if (process.env.OPENTIG_PERF_LOG === '1') {
+      setPerformanceSink((record) => this.logger('info', `Server performance ${JSON.stringify(record)}`));
+    }
     this.httpServer = createServer(createOpenTigHttpHandler({
       runtime: options.runtime,
       ...(options.updates ? { updates: options.updates } : {}),
@@ -238,6 +242,7 @@ export class OpenTigServer {
   private async stopServer(): Promise<void> {
     await this.networkMutation;
     this.ready = false;
+    setPerformanceSink(null);
     this.stopStallMonitor?.();
     // Stopping kills running Git and GitHub CLI processes, which isn't a failure to report.
     this.options.registry.setProblemLog(null);

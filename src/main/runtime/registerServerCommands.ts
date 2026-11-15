@@ -542,6 +542,10 @@ export function registerServerCommands(
   handle(IPC.githubPrEntryEdit, 'gh-pr-entry-edit', (input) => services.github.editPullRequestEntry(editPullRequestEntryArg(input)));
   handle(IPC.githubPrEntryDelete, 'gh-pr-entry-delete', (input) => services.github.deletePullRequestEntry(deletePullRequestEntryArg(input)));
   handle(IPC.githubPrStack, 'gh-pr-stack', (id, prNumber) => services.github.getPullRequestStack(stringArg(id, 'gh-pr-stack', 64), prNumberArg(prNumber, 'gh-pr-stack')));
+  handle(IPC.githubPrListLineCounts, 'gh-pr-list-line-counts', (id, states) => services.github.listPullRequestLineCounts(
+    stringArg(id, 'gh-pr-list-line-counts', 64),
+    pullRequestStatesArg(states, 'gh-pr-list-line-counts'),
+  ));
   handle(IPC.githubPrListStacks, 'gh-pr-list-stacks', (id, numbers) => services.github.listPullRequestStacks(stringArg(id, 'gh-pr-list-stacks', 64), prNumbersArg(numbers, 'gh-pr-list-stacks')));
   handle(IPC.githubPrDiff, 'gh-pr-diff', (id, prNumber, range) => services.github.getPullRequestDiff(stringArg(id, 'gh-pr-diff', 64), prNumberArg(prNumber, 'gh-pr-diff'), pullRequestRangeArg(range, 'gh-pr-diff')));
   handle(IPC.githubPrCommitDiff, 'gh-pr-commit-diff', (id, oid) => services.github.getPullRequestCommitDiff(stringArg(id, 'gh-pr-commit-diff', 64), oidArg(oid, 'gh-pr-commit-diff')));

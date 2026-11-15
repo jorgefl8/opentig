@@ -1,4 +1,6 @@
 import { createElement, lazy, useState, type ComponentType } from 'react';
+import { isLowEndDevice, type DeviceHints } from './low-end-device';
+import { whenIdle } from './when-idle';
 
 // Browsers word a failed module load differently: Chromium, WebKit (Safari and every
 // iOS browser), Firefox, and Vite's own CSS preloading.
@@ -58,4 +60,35 @@ export function lazyWithPreload<T extends ComponentType<any>>(load: () => Promis
     /** Starts the download; a failure is left for rendering, which retries and reports it. */
     preload: () => { void start().catch(() => undefined); },
   });
+}
+
+type AheadDevice = DeviceHints & { connection?: { saveData?: boolean } };
+
+/** Whether to fetch what was not asked for yet: not on a connection the user asked to save data on, nor on a low-end phone. */
+export function downloadsAhead(device: AheadDevice | undefined = globalThis.navigator): boolean {
+  return device !== undefined && device.connection?.saveData !== true && !isLowEndDevice(device);
+}
+
+/**
+ * Downloads parts of the app before they are opened, one per idle moment, so
+ * the first click on each shows it instead of a loading message. Nothing is
+ * downloaded ahead on a connection the user asked to save data on, nor on a
+ * low-end phone, where the code would take memory it may never use. Returns
+ * how to call the rest off.
+ */
+export function preloadWhenIdle(
+  parts: ReadonlyArray<{ preload(): void }>,
+  device: AheadDevice | undefined = globalThis.navigator,
+): () => void {
+  if (!downloadsAhead(device)) return () => undefined;
+  let next = 0;
+  let cancel = () => undefined as void;
+  const step = () => {
+    const part = parts[next++];
+    if (!part) return;
+    part.preload();
+    cancel = whenIdle(step);
+  };
+  cancel = whenIdle(step);
+  return () => cancel();
 }

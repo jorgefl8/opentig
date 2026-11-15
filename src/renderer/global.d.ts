@@ -8,6 +8,8 @@ declare global {
       kind: string;
       durationMs: number;
     }>;
+    /** Requests made since the last performance action, by command, and how many are unanswered. */
+    __opentigNavigationRequests?: () => { requested: Record<string, number>; unanswered: number };
   }
 }
 

@@ -26,7 +26,8 @@ export interface GitHubTarget {
 
 /** What the GitHub mutation services need from `GitHubService`, which owns routing and credentials. */
 export interface GitHubAccess {
-  requireGitHub(repositoryId: string, operation: string): Promise<GitHubTarget & { context: { revision: number; login?: string | null } }>;
+  /** `fresh` is for a change made on GitHub: the token and the account behind it are checked again instead of reused. */
+  requireGitHub(repositoryId: string, operation: string, fresh?: boolean): Promise<GitHubTarget & { context: { revision: number; login?: string | null } }>;
   run(executable: CliCandidate, args: string[], options: GhRunOptions): Promise<CliRunResult>;
   /** Fails with a read's classification of what went wrong. */
   runRead(args: string[], options: GhRunOptions): Promise<CliRunResult>;
@@ -38,7 +39,7 @@ export interface GitHubAccess {
 
 /** Resolves the repository and checks it still uses the account the user reviewed. Call the returned check again just before acting. */
 export async function beginGitHubMutation(github: GitHubAccess, input: { repositoryId: string; expectedAccount: { login: string; revision: number } }, operation: string) {
-  const { repository, nameWithOwner, auth, executable, context } = await github.requireGitHub(input.repositoryId, operation);
+  const { repository, nameWithOwner, auth, executable, context } = await github.requireGitHub(input.repositoryId, operation, true);
   const target: GitHubTarget = { repository, nameWithOwner, auth, executable };
   const verifyAccount = () => {
     const expected = input.expectedAccount;

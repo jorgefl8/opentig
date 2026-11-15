@@ -1,6 +1,7 @@
 import { formatDateTime } from '@shared/date-format';
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
-import { lazyWithPreload, lazyWithRetry } from '@/lib/lazy-with-retry';
+import { lazyWithPreload, lazyWithRetry, preloadWhenIdle } from '@/lib/lazy-with-retry';
+import { LazyPullRequestDiff } from '@/features/pulls/pull-request-viewer-chunks';
 import { isLowEndDevice } from '@/lib/low-end-device';
 import { whenIdle } from '@/lib/when-idle';
 import { LazyPullRequestViewer as PullRequestViewer } from '@/features/pulls/pull-request-viewer-chunks';
@@ -19,22 +20,30 @@ import { isHtmlPath, isMarkdownPath } from '@/features/files/file-tree';
 import { copyCommitHash } from '@/features/history/copy-commit-hash';
 import { canUndoCommit, commitGitHubUrl } from '@/features/history/history-presentation';
 import { openExternalUrl } from '@/lib/browser-capabilities';
-import { ByteBudgetLru } from '@/lib/ByteBudgetLru';
 import { opentig } from '@/lib/opentig-api';
 import { MobileCommitBar, MobileDiffBar } from './MobileViewerBars';
+import { loadPierreEditor } from './pierre-editor';
+import { commitDiffKey, immutableDiff, takeFileAhead, scopeDiffCache } from './viewer-prefetch';
 import { ContentFade } from '@/components/Reveal';
 import { Spinner } from '@/components/ui/spinner';
 // The code viewers start downloading with the document they will show, so it mounts once, on a viewer that is already there.
 const PierreDiffViewer = lazyWithPreload(() => import('./PierreDiffViewer'));
 const PierreEditBoundary = lazyWithPreload(() => import('./PierreEditBoundary').then((module) => ({ default: module.PierreEditBoundary })));
-const MarkdownFileViewer = lazyWithRetry(() => import('@/features/markdown/MarkdownFileViewer').then((module) => ({ default: module.MarkdownFileViewer })));
+const MarkdownFileViewer = lazyWithPreload(() => import('@/features/markdown/MarkdownFileViewer').then((module) => ({ default: module.MarkdownFileViewer })));
 const EditableFileViewer = lazyWithPreload(() => import('./EditableFileViewer').then((module) => ({ default: module.EditableFileViewer })));
-const HtmlFileViewer = lazyWithRetry(() => import('./HtmlFileViewer').then((module) => ({ default: module.HtmlFileViewer })));
-const ReleaseViewer = lazyWithRetry(() => import('@/features/pulls/ReleaseViewer').then((module) => ({ default: module.ReleaseViewer })));
-const WorkflowRunViewer = lazyWithRetry(() => import('@/features/actions/WorkflowRunViewer').then((module) => ({ default: module.WorkflowRunViewer })));
+const HtmlFileViewer = lazyWithPreload(() => import('./HtmlFileViewer').then((module) => ({ default: module.HtmlFileViewer })));
+const ReleaseViewer = lazyWithPreload(() => import('@/features/pulls/ReleaseViewer').then((module) => ({ default: module.ReleaseViewer })));
+const WorkflowRunViewer = lazyWithPreload(() => import('@/features/actions/WorkflowRunViewer').then((module) => ({ default: module.WorkflowRunViewer })));
+// Half a megabyte that most sessions never open: downloaded when a PDF is.
 const PdfFileViewer = lazyWithRetry(() => import('./PdfFileViewer').then((module) => ({ default: module.PdfFileViewer })));
-const ImageFileViewer = lazyWithRetry(() => import('./ImageFileViewer').then((module) => ({ default: module.ImageFileViewer })));
-const SvgFileViewer = lazyWithRetry(() => import('./ImageFileViewer').then((module) => ({ default: module.SvgFileViewer })));
+const ImageFileViewer = lazyWithPreload(() => import('./ImageFileViewer').then((module) => ({ default: module.ImageFileViewer })));
+const SvgFileViewer = lazyWithPreload(() => import('./ImageFileViewer').then((module) => ({ default: module.SvgFileViewer })));
+/** The editing bundle a file needs to become editable, fetched apart from the viewer that shows it. */
+const FileEditing = { preload: () => { void loadPierreEditor().catch(() => undefined); } };
+/** What a first click on a change, a file or a commit shows, in the order they are most often opened. */
+const IDLE_VIEWERS = [PierreDiffViewer, PierreEditBoundary, EditableFileViewer, FileEditing, MarkdownFileViewer, ImageFileViewer, HtmlFileViewer];
+/** The same for a repository on GitHub. */
+const IDLE_GITHUB_VIEWERS = [PullRequestViewer, LazyPullRequestDiff, WorkflowRunViewer, ReleaseViewer];
 
 export type ViewerSelection =
   | { type: 'diff'; path: string; kind: 'staged' | 'unstaged' }
@@ -92,15 +101,6 @@ type ViewerData =
   | { docKey: string; type: 'file' | 'conflict'; value: FileResult }
   | { docKey: string; type: 'image'; value: ImageFileResult }
   | null;
-// Commit contents are immutable per oid; only those selections are cached.
-// Patches are JS strings, so two bytes per code unit is a practical upper-bound
-// estimate. Oversized patches remain visible but bypass this cache entirely.
-const diffCache = new ByteBudgetLru<string, DiffResult>({
-  maxEntries: 8,
-  maxBytes: 16 * 1024 * 1024,
-  sizeOf: (value) => value.patch.length * 2 + value.path.length * 2 + 256,
-});
-let diffCacheRepositoryId: string | null = null;
 
 /** A file shown as source by `EditableFileViewer`, not through a preview of its own. */
 function isSourcePath(path: string): boolean {
@@ -148,6 +148,12 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
   const shown = useRef({ docKey: null as string | null, draftFor, readOnly });
   useEffect(() => { shown.current = { docKey: data?.docKey ?? null, draftFor, readOnly }; });
 
+  // The viewers themselves are downloaded while the app is idle, so the first
+  // click on a file, a change or a pull request shows it rather than a loading message.
+  useEffect(() => preloadWhenIdle(IDLE_VIEWERS), []);
+  const onGitHub = Boolean(githubRepository);
+  useEffect(() => onGitHub ? preloadWhenIdle(IDLE_GITHUB_VIEWERS) : undefined, [onGitHub]);
+
   // The highlighting workers, the themes and the usual grammars load while the
   // app is idle, so the first diff of the session does not wait for them.
   useEffect(() => {
@@ -156,10 +162,7 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
   }, []);
 
   useEffect(() => {
-    if (diffCacheRepositoryId !== repositoryId) {
-      diffCache.clear();
-      diffCacheRepositoryId = repositoryId;
-    }
+    scopeDiffCache(repositoryId);
     const token = ++requestToken.current;
     setError(null);
     // Pull request selections fetch their own data inside PullRequestViewer.
@@ -180,7 +183,9 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
             setData({ docKey, type: 'image', value });
             return;
           }
-          const value = await opentig.repository.readFile(repositoryId, selection.path, selection.type === 'conflict' ? true : allowLarge);
+          // A file the pointer rested on is already being read; a refresh of the open file always reads again.
+          const ahead = selection.type === 'file' && !allowLarge && shown.current.docKey !== docKey ? takeFileAhead(repositoryId, selection.path) : null;
+          const value = await ahead?.catch(() => null) ?? await opentig.repository.readFile(repositoryId, selection.path, selection.type === 'conflict' ? true : allowLarge);
           if (token !== requestToken.current) return;
           if (selection.type === 'conflict') {
             setData({ docKey, type: 'conflict', value });
@@ -202,16 +207,12 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
             ? current
             : { docKey, type: 'file', value });
         } else {
-          const immutable = selection.type !== 'diff';
-          let value = immutable ? diffCache.get(docKey) : undefined;
-          if (!value) {
-            value = selection.type === 'commit'
-              ? await opentig.diff.getCommit(repositoryId, selection.oid)
-              : selection.type === 'commit-file'
-                ? await opentig.diff.getCommitFile(repositoryId, selection.oid, selection.path, selection.oldPath)
-                : await opentig.diff.get({ repositoryId, path: selection.path, kind: selection.kind });
-            if (immutable) diffCache.set(docKey, value);
-          }
+          // A commit never changes, so it is read once, by this or by the row the pointer rested on.
+          const value = selection.type === 'commit'
+            ? await immutableDiff(commitDiffKey(repositoryId, selection.oid), () => opentig.diff.getCommit(repositoryId, selection.oid))
+            : selection.type === 'commit-file'
+              ? await immutableDiff(docKey, () => opentig.diff.getCommitFile(repositoryId, selection.oid, selection.path, selection.oldPath))
+              : await opentig.diff.get({ repositoryId, path: selection.path, kind: selection.kind });
           if (token !== requestToken.current) return;
           const next = value;
           // A whole commit opens with its files folded, so it has nothing to highlight yet.

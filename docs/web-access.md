@@ -285,11 +285,13 @@ The rotating log is `logs/server.log` inside Electron's OpenTig user-data direct
 CLI service installation and restart also report known startup failures immediately, with the selected home and recovery instructions. See [command errors and recovery](getting-started.md#command-errors-and-recovery) for port conflicts, startup output, and service recovery.
 
 <details>
-<summary>Enable WebSocket performance logging</summary>
+<summary>Enable performance logging</summary>
 
 Set `OPENTIG_PERF_LOG=1` before starting the server to add performance metadata to the existing log. It is disabled by default and adds I/O when enabled.
 
 Entries include validated operation names, request bytes, encoded JSON bytes, serialization/request duration, queued bytes, and send outcome. Broadcasts are encoded once; send measurements remain per socket. Oversized responses report the replacement error's encoded size, not the original content size.
+
+The same switch adds one `Server performance` entry for every `git`, `gh`, and `ssh` process the server runs, with its duration and whether it succeeded, and one for every GitHub read that could be answered from what the server already holds, saying whether it was. These entries name the command and the operation, such as `pr list` and `gh-pr-list`, and never include arguments, repository names, paths, or output.
 
 Send duration ends at the `ws` write callback. It does not measure receipt, JSON parsing, or client rendering. Payloads, paths, correlation IDs, session IDs, and authentication material are excluded.
 

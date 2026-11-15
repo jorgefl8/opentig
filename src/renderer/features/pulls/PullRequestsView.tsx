@@ -240,7 +240,7 @@ function PullRow({ repositoryId, pr, active, live, phone, onSelect }: { reposito
         <span className="pull-line">
           <span className="pull-meta">#{pr.number} · {status.label}{phone && pr.stack && ` · Layer ${pr.stack.position} of ${pr.stack.size}`}</span>
           <span className="pull-author">· {pr.author}</span>
-          <span className="pull-lines"><span className="add">+{pr.additions}</span> <span className="del">−{pr.deletions}</span></span>
+          {!pr.lineCountsPending && <span className="pull-lines"><span className="add">+{pr.additions}</span> <span className="del">−{pr.deletions}</span></span>}
         </span>
       </button>
       {/* On a phone the whole row is the target, and the viewer has its stack and link. */}

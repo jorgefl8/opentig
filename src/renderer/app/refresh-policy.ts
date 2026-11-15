@@ -52,3 +52,23 @@ export function refreshOperationsForScope(
     history: view === 'history' && (full || scope === 'refs'),
   };
 }
+
+/** Switching between sections quickly asks for nothing; one that was last read longer ago than this is read again behind what it shows. */
+export const SECTION_REFRESH_MIN_INTERVAL_MS = 5_000;
+
+/** Branches, worktrees and the remote are read again on entering a section once they are this old. */
+export const SECTION_FULL_REFRESH_MIN_INTERVAL_MS = 60_000;
+
+/**
+ * What entering a section reads, behind what is already on screen. The file
+ * watcher keeps the status current, so this only covers what it may have missed
+ * and the file tree, which is not read while another section is open. The
+ * watcher can stop, as it does when the system runs out of watches on a very
+ * large repository, and then this is the only thing that notices a branch or a
+ * worktree made elsewhere: once a minute it reads everything.
+ */
+export function sectionRefresh(view: RefreshView, age: { snapshotMs: number; filesMs: number; refsMs: number }): 'none' | 'files' | 'snapshot' | 'full' {
+  if (age.refsMs >= SECTION_FULL_REFRESH_MIN_INTERVAL_MS) return 'full';
+  if (age.snapshotMs >= SECTION_REFRESH_MIN_INTERVAL_MS) return 'snapshot';
+  return view === 'files' && age.filesMs >= SECTION_REFRESH_MIN_INTERVAL_MS ? 'files' : 'none';
+}

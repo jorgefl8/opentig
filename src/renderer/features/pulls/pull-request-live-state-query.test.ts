@@ -7,6 +7,8 @@ import { queryKeys, resetGitHubQueries } from '@/lib/query-client';
 import { pullRequestLiveStateQueryOptions, queriesOutdatedByLiveState } from './pull-request-live-state-query';
 
 const { read } = vi.hoisted(() => ({ read: vi.fn() }));
+// These tests follow each query's own cadence over many minutes with nobody at the window; pausing while idle is covered in window-focus.test.ts.
+vi.mock('@/lib/window-focus', async (original) => ({ ...await original<typeof import('@/lib/window-focus')>(), pausePollingWhileIdle: () => {} }));
 vi.mock('@/lib/opentig-api', () => ({ opentig: { github: { getPullRequestLiveState: read } } }));
 let client: QueryClient;
 let unsubscribe: (() => void) | undefined;
@@ -69,6 +71,15 @@ describe('pull request live state refresh', () => {
     focusManager.setFocused(true);
     await vi.advanceTimersByTimeAsync(0);
     expect(read).toHaveBeenCalledTimes(2);
+  });
+
+  it('asks again within seconds for stack membership the server could not wait for', async () => {
+    read.mockResolvedValueOnce(live({ stack: 'unknown' })).mockResolvedValue(live({ stack: 'none' }));
+    const observer = await observe();
+    expect(observer.getCurrentResult().data?.stack).toBe('unknown');
+    await vi.advanceTimersByTimeAsync(10_000);
+    // Merging was held back for ten seconds, not until the usual check a minute later.
+    expect(observer.getCurrentResult().data?.stack).toBe('none');
   });
 
   it('checks an unknown mergeability often for a minute, then settles to once a minute', async () => {

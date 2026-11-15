@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ComponentPropsWithoutRef } from 'react';
+import { useIntentPrefetch } from '@/lib/use-intent-prefetch';
 import { createPortal } from 'react-dom';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
@@ -72,6 +73,8 @@ export interface FilesViewProps {
   onRedo(): Promise<void>;
   /** A single click previews a file; a double click or Ctrl+click pins its tab. */
   onOpenFile(path: string, mode?: 'preview' | 'pinned'): void;
+  /** The pointer has rested on a file, which a click would open. */
+  onFileIntent?: ((path: string) => void) | undefined;
   onLoadDirectory(path: string): Promise<FileTreeEntry[]>;
   onPersistExpandedPaths(paths: string[]): void;
   onCopyPath(entries: FileTreeEntry[]): Promise<void>;
@@ -151,6 +154,7 @@ function DesktopFilesView({
   onUndo,
   onRedo,
   onOpenFile,
+  onFileIntent,
   onLoadDirectory,
   onPersistExpandedPaths,
   onCopyPath,
@@ -167,6 +171,8 @@ function DesktopFilesView({
   const shortcuts = useShortcuts();
   const rowHeight = FILE_ROW_HEIGHT;
   const scrollRef = useRef<HTMLDivElement>(null);
+  // A file the pointer rests on is read then, so clicking it shows it.
+  const readAhead = useIntentPrefetch((path: string) => onFileIntent?.(path));
   const revealedPathRef = useRef<string | null>(null);
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
   const [anchorPath, setAnchorPath] = useState<string | null>(activePath);
@@ -696,6 +702,8 @@ function DesktopFilesView({
                   height: virtualRow.size,
                   transform: `translateY(${virtualRow.start}px)`,
                 }}
+                onPointerEnter={entry.type === 'file' ? (event) => readAhead.rest(entry.path, event) : undefined}
+                onPointerLeave={readAhead.leave}
               >
                 <FileRow
                   entry={entry}

@@ -124,14 +124,18 @@ else if (args[0] === 'exec') {
   return { PATH: `${bin}${path.delimiter}${process.env.PATH ?? ''}`, CODEX_HOME: codexHome };
 }
 
-export const test = base.extend<{ aiAnswer: AiAnswer | null; server: OpenTigServer; repository: GitRepository; pairedPage: Page; startFakeAgent: StartFakeAgent }>({
+export const test = base.extend<{ aiAnswer: AiAnswer | null; countRequests: boolean; server: OpenTigServer; repository: GitRepository; pairedPage: Page; startFakeAgent: StartFakeAgent }>({
   // Off unless a journey sets it with `test.use`, so the others see no AI CLI of the tests' making.
   aiAnswer: [null, { option: true }],
+
+  // Turns on the app's performance harness, which counts the requests each navigation makes
+  // (see `requestsDuring`). Off unless a journey sets it with `test.use`.
+  countRequests: [false, { option: true }],
 
   // One isolated server per test: its own home, settings, and port, so tests
   // never share state and nothing touches a developer's OpenTig data. The
   // built server starts in about a second.
-  server: async ({ aiAnswer }, use, testInfo) => {
+  server: async ({ aiAnswer, countRequests }, use, testInfo) => {
     const serverEntry = path.resolve(path.dirname(testInfo.config.configFile ?? process.cwd()), 'packages/server/dist/bin.mjs');
     if (!existsSync(serverEntry)) throw new Error('The built OpenTig server is missing. Run "pnpm run build:server" before the end-to-end tests.');
     const home = await mkdtemp(path.join(os.tmpdir(), 'opentig-e2e-home-'));
@@ -140,7 +144,7 @@ export const test = base.extend<{ aiAnswer: AiAnswer | null; server: OpenTigServ
     const child = spawn(process.execPath, [serverEntry, 'serve', '--home', home, '--host', '127.0.0.1', '--port', String(port)], {
       // A private HOME keeps the system Trash, CLI logins, and global Git
       // config of the developer's account out of the tests.
-      env: { ...process.env, NO_COLOR: '1', HOME: home, XDG_CONFIG_HOME: path.join(home, 'config'), XDG_DATA_HOME: path.join(home, 'data'), XDG_CACHE_HOME: path.join(home, 'cache'), ...(aiAnswer ? await standInAiCli(home, aiAnswer) : {}) },
+      env: { ...process.env, NO_COLOR: '1', HOME: home, XDG_CONFIG_HOME: path.join(home, 'config'), XDG_DATA_HOME: path.join(home, 'data'), XDG_CACHE_HOME: path.join(home, 'cache'), ...(aiAnswer ? await standInAiCli(home, aiAnswer) : {}), ...(countRequests ? { OPENTIG_PERF_AUTOMATION: '1' } : {}) },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     child.stdout.setEncoding('utf8');

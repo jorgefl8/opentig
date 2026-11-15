@@ -85,7 +85,9 @@ The one-use desktop bootstrap secret crosses the private parent/utility message 
 
 ### GitHub credentials
 
-Connected CLIs manage their own authentication. For each GitHub operation, OpenTig obtains the selected account's token from `gh` and verifies the user's identity. Only backend child commands receive the token in their environment.
+Connected CLIs manage their own authentication. OpenTig obtains the selected account's token from `gh` and verifies the user's identity. Only backend child commands receive the token in their environment.
+
+To avoid starting `gh` before every read, the backend keeps an account's token in its own memory for up to five minutes. It drops the token as soon as the repository's account, the default account, or the saved accounts change, and when GitHub rejects it. Every change OpenTig makes on GitHub, such as merging or commenting, asks `gh` for the token again, and so does every Git fetch and push. A repository that follows `gh`'s own active account instead of a chosen one also asks every time, because `gh auth switch` can change that account outside OpenTig. Signing an account out with `gh auth logout` can therefore take up to five minutes to stop OpenTig's reads; **Settings → GitHub → Refresh accounts** applies it at once.
 
 Tokens never travel to renderers/browsers, command arguments, settings, status files, or logs. Credential-command output is discarded, and operation errors redact the token. OpenTig does not read or persist AI API tokens.
 
@@ -94,7 +96,7 @@ The guided account flow copies official commands for you to run. It does not exe
 <details>
 <summary>Account overrides, cached metadata, and SSH checks</summary>
 
-Explicit and verified SSH accounts override backend token variables without changing the global `gh` account. In-memory identity caches retain only a one-way fingerprint and login.
+Explicit and verified SSH accounts override backend token variables without changing the global `gh` account. The identity check keeps only a one-way fingerprint of the token and the login it verified. After a minute without GitHub activity, a read uses that login and verifies it again in the background instead of waiting; if GitHub rejects the credentials, everything read with them is dropped. Changes made on GitHub wait for the check.
 
 `github-status.json` contains allowlisted installation/account metadata, never raw CLI output, credential paths, or tokens. SSH checks require existing trusted host keys, use batch mode, and do not create keys or update known hosts.
 

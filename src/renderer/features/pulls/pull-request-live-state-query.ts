@@ -8,14 +8,15 @@ import { failureCode, needsUserAction } from './branch-pull-request-query';
 const CALCULATING_WINDOW_MS = 60_000;
 const unknownSince = new WeakMap<object, number>();
 
-/** GitHub computes mergeability with a delay, so an unknown result is worth checking soon, but not for long. */
+/** GitHub computes mergeability with a delay, and stack membership can arrive after the rest, so an unknown result is worth checking soon, but not for long. */
 export function pullRequestLiveStateInterval(query: Query<PullRequestLiveState, Error, PullRequestLiveState, QueryKey>): number | false {
   const { data } = query.state;
   if (data && data.state !== 'OPEN') return false;
   // Asking again can't help: returning to the window checks again after a rate limit,
   // and a failure only the user can fix waits for them.
   if (failureCode(query) === 'GH_RATE_LIMITED' || needsUserAction(query)) return false;
-  if (data && (data.mergeable === 'UNKNOWN' || data.mergeStateStatus === 'UNKNOWN')) {
+  // Stack membership that wasn't in yet is usually there for the next read, and merging waits for it.
+  if (data && (data.mergeable === 'UNKNOWN' || data.mergeStateStatus === 'UNKNOWN' || data.stack === 'unknown')) {
     const since = unknownSince.get(query) ?? Date.now();
     unknownSince.set(query, since);
     return Date.now() - since < CALCULATING_WINDOW_MS ? 10_000 : 60_000;

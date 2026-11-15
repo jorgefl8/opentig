@@ -4,11 +4,11 @@ import { ONBOARDING_VERSION } from '../../shared/onboarding';
 import { lastCloneParent, resumeBackgroundClone } from '@/features/onboarding/clone-jobs';
 import { useGitHubAccount } from '@/features/pulls/useGitHubAccount';
 import { branchPullRequestQueryOptions, commitsAfterMergeQueryOptions } from '@/features/pulls/branch-pull-request-query';
-import { withStackMemberships } from '@/features/pulls/pull-request-list';
+import { withLineCounts, withStackMemberships } from '@/features/pulls/pull-request-list';
 import { releasesQueryOptions } from '@/features/pulls/releases-query';
 import { appDisplayName } from '@/lib/app-identity';
 import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { isModuleLoadError, lazyWithPreload, lazyWithRetry } from '@/lib/lazy-with-retry';
+import { isModuleLoadError, lazyWithPreload, lazyWithRetry, preloadWhenIdle } from '@/lib/lazy-with-retry';
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   IconBrandGithub, IconFileArrowRight, IconFiles, IconGitBranch, IconGitCompare, IconHistory,
@@ -41,7 +41,7 @@ import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { ChangesView } from '@/features/changes/ChangesView';
 import { createDeleteAction, createDiscardAction, destructiveActionCopy, dispatchDestructiveAction, type DestructiveAction } from '@/features/files/destructive-action';
-import { fileSnapshotFingerprint, pathContains, selectedFileChanged, snapshotPathPresence } from '@/features/files/file-tree';
+import { createSnapshotComparer, pathContains, selectedFileChanged, snapshotPathPresence } from '@/features/files/file-tree';
 import { MobileFileBar } from '@/features/files/MobileFileBar';
 import { FileLineTargetContext, type FileLineTarget } from '@/features/viewer/file-line-target';
 import { OpenFilesStrip } from '@/features/files/OpenFilesStrip';
@@ -50,7 +50,8 @@ import {
   emptyFileSession, type FileSession, markTabsPresent, moveTab, type OpenMode, openTab, removeTabsUnder, renameTabPaths,
   restoreSession, serializeSession, setTabDirty, type TabKeyboardAction,
 } from '@/features/files/open-files-model';
-import { CommitComposer } from '@/features/commit/CommitComposer';
+import { StoredCommitComposer } from '@/features/commit/StoredCommitComposer';
+import { createCommitMessageStore } from '@/features/commit/commit-message-store';
 import { useCommitPlan } from '@/features/commit/useCommitPlan';
 import { clearCommitFilesCache } from '@/features/history/commit-files-cache';
 import { OpenRepositoryDialog } from '@/features/repositories/OpenRepositoryDialog';
@@ -67,15 +68,17 @@ import { LineBlameContext, type LineBlameSettings } from '@/features/viewer/line
 import type { RuntimeFileDraft, ViewerSelection } from '@/features/viewer/Viewer';
 import type { PullRequestsSection } from '@/features/pulls/PullRequestsView';
 import {
-  mergeRefreshRequests, refreshOperationsForScope, shouldRefreshSearch, shouldRefreshViewer, type RefreshRequest,
+  mergeRefreshRequests, refreshOperationsForScope, sectionRefresh, shouldRefreshSearch, shouldRefreshViewer, type RefreshRequest,
 } from './refresh-policy';
 import { resolveWindowControlsInset } from './window-controls';
-import { queryKeys, queryResourcesForScope, resetGitHubQueries } from '@/lib/query-client';
+import { queryKeys, queryResourcesForScope, refreshGitHubQueries, resetGitHubQueries } from '@/lib/query-client';
 import { listAgents } from '@/features/refs/local-refs-model';
 import { AgentMarks } from '@/features/refs/AgentLabel';
 import { persistTheme } from '@/lib/boot-theme';
 import { useMobileLayout } from '@/lib/use-mobile-layout';
 import { installZoomAwarePositioning } from '@/lib/zoom-aware-positioning';
+import { isUserIdle } from '@/lib/window-focus';
+import { dropFilesAhead, prefetchFile } from '@/features/viewer/viewer-prefetch';
 import { mobileMainAction } from '@/lib/mobile-main-action';
 import { useElapsed } from '@/lib/use-elapsed';
 import { opentig, serverClient } from '@/lib/opentig-api';
@@ -92,10 +95,12 @@ import { CommitAuthorshipDialog } from '@/features/settings/CommitAuthorshipDial
 import { RepositoryLinksContext, type RepositoryLinks } from '@/components/repository-links';
 import { Spinner } from '@/components/ui/spinner';
 
-const Viewer = lazyWithRetry(() => import('@/features/viewer/Viewer'));
-const FilesView = lazyWithRetry(() => import('@/features/files/FilesView').then((module) => ({ default: module.FilesView })));
-const HistoryView = lazyWithRetry(() => import('@/features/history/HistoryView').then((module) => ({ default: module.HistoryView })));
-const SearchView = lazyWithRetry(() => import('@/features/search/SearchView').then((module) => ({ default: module.SearchView })));
+// The sections and the viewer are downloaded on first use, or while the app is idle if that comes first (see `preloadWhenIdle`).
+const Viewer = lazyWithPreload(() => import('@/features/viewer/Viewer'));
+const FilesView = lazyWithPreload(() => import('@/features/files/FilesView').then((module) => ({ default: module.FilesView })));
+const HistoryView = lazyWithPreload(() => import('@/features/history/HistoryView').then((module) => ({ default: module.HistoryView })));
+const SearchView = lazyWithPreload(() => import('@/features/search/SearchView').then((module) => ({ default: module.SearchView })));
+const IDLE_SECTIONS = [Viewer, FilesView, HistoryView, SearchView];
 const PullRequestsView = lazyWithPreload(() => import('@/features/pulls/PullRequestsView').then((module) => ({ default: module.PullRequestsView })));
 const QuickOpenDialog = lazyWithRetry(() => import('@/features/files/QuickOpenDialog').then((module) => ({ default: module.QuickOpenDialog })));
 const CreatePullRequestDialog = lazyWithRetry(() => import('@/features/pulls/CreatePullRequestDialog').then((module) => ({ default: module.CreatePullRequestDialog })));
@@ -109,6 +114,7 @@ const SIDEBAR_VIEWS = ['changes', 'files', 'history', 'prs', 'search'] as const;
 const VIEW_STORAGE_KEY = 'opentig.lastView';
 const BACKGROUND_REFRESH_RETRY_MS = 1_000;
 const WORKTREE_AGENTS_REFRESH_MS = 10_000;
+const HISTORY_STALE_MS = 30_000;
 /** A branch switch Git refused over local changes; `allowAgents` keeps a confirmed agent warning confirmed. */
 interface BlockedBranchSwitch { ref: string; label: string; files: string[]; allowAgents?: boolean }
 type SidebarView = (typeof SIDEBAR_VIEWS)[number];
@@ -199,12 +205,15 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   useEffect(() => {
     try { window.localStorage.setItem(VIEW_STORAGE_KEY, view); } catch { /* storage unavailable */ }
   }, [view]);
+  // Read by a refresh as it starts, so opening another section does not make a new `refresh`.
+  const viewRef = useRef(view);
+  useLayoutEffect(() => { viewRef.current = view; }, [view]);
   const [viewerSelection, setViewerSelection] = useState<ViewerSelection>(null);
   const [fileViewerToolbarHost, setFileViewerToolbarHost] = useState<HTMLElement | null>(null);
   const initialSelectionApplied = useRef(false);
-  const [commitMessage, setCommitMessage] = useState('');
-  /** The sidebar width painted while its edge is being dragged. */
-  const [sidebarDragWidth, setSidebarDragWidth] = useState<number | null>(null);
+  // The commit box's text. Not React state: a key pressed in the box must not redraw the app.
+  const [commitMessage] = useState(createCommitMessageStore);
+  const sidebarElement = useRef<HTMLElement>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [repositorySyncOperations, setRepositorySyncOperations] = useState<ReadonlyMap<string, ProjectSyncAction>>(() => new Map());
 
@@ -236,10 +245,11 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   const [blockedBranchSwitch, setBlockedBranchSwitch] = useState<BlockedBranchSwitch | null>(null);
   const [agentBranchSwitch, setAgentBranchSwitch] = useState<{ ref: string; label: string; agents: string[]; moveChanges: boolean } | null>(null);
   // Holding Ctrl reveals the section numbers, so the shortcut is discoverable
-  // without a cheat sheet.
-  const [ctrlHeld, setCtrlHeld] = useState(false);
+  // without a cheat sheet. The page itself carries the state, for the styles to
+  // read: a key that changes nothing else must not redraw the app.
   const ctrlHeldRef = useRef(false);
   const filesRef = useRef<FileTreeEntry[] | null>(null);
+  const [filesComparer] = useState(createSnapshotComparer);
   const viewerSelectionRef = useRef<ViewerSelection>(null);
   // A path we just created/renamed/moved the viewer onto; it may be missing from
   // an in-flight (stale) file snapshot, so don't declare it deleted until it appears.
@@ -264,6 +274,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   const commitTextareaRef = useRef<HTMLTextAreaElement>(null);
   const knownConflictPathsRef = useRef<Map<string, string[]>>(new Map());
   const refreshCyclesRef = useRef<Map<string, { queued: RefreshRequest | null; promise: Promise<void> }>>(new Map());
+  // When the open repository's snapshot and its file tree were last read, for `sectionRefresh`.
+  const lastReadRef = useRef({ snapshot: Number.NEGATIVE_INFINITY, files: Number.NEGATIVE_INFINITY, refs: Number.NEGATIVE_INFINITY });
 
   const historyQuery = useInfiniteQuery({
     queryKey: queryKeys.history(repository?.id ?? ''),
@@ -271,6 +283,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
     enabled: repository !== null && view === 'history',
+    // A change to the branches marks it outdated (see `performRefresh`), so coming back to History only reads it again after that.
+    staleTime: HISTORY_STALE_MS,
   });
   const commits = useMemo(
     () => historyQuery.data ? historyQuery.data.pages.flatMap((page) => page.commits) : null,
@@ -307,6 +321,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       button: { title: 'Change', onClick: () => { setSettingsSection('github'); setSettingsOpen(true); } },
     });
   }), [appQueryClient]);
+  useEffect(() => opentig.events.onReconnected(() => { void refreshGitHubQueries(appQueryClient, repositoryRef.current?.id ?? null); }), [appQueryClient]);
   const githubReady = repository !== null && githubInfo?.isGitHub === true && ghStatus?.installed === true;
   // Set by an explicit refresh, so the next read skips the list the backend keeps for a few seconds.
   const freshPulls = useRef(false);
@@ -352,7 +367,17 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     enabled: repository !== null && pullNumbers.length > 0,
     staleTime: 60_000,
   });
-  const pulls = useMemo(() => withStackMemberships(pullsQuery.data, pullStacksQuery.data), [pullsQuery.data, pullStacksQuery.data]);
+  // So do the line counts of closed and merged PRs, which GitHub is slow to add up.
+  const pullLineCountsQuery = useQuery({
+    queryKey: queryKeys.pullLineCounts(repository?.id ?? '', pullRequestStates),
+    queryFn: () => opentig.github.listPullRequestLineCounts(repository!.id, pullRequestStates),
+    enabled: repository !== null && pullsQuery.data?.some((pull) => pull.lineCountsPending) === true,
+    staleTime: 10 * 60_000,
+  });
+  const pulls = useMemo(
+    () => withStackMemberships(withLineCounts(pullsQuery.data, pullLineCountsQuery.data), pullStacksQuery.data),
+    [pullsQuery.data, pullLineCountsQuery.data, pullStacksQuery.data],
+  );
   const pullsLoading = pullsQuery.isFetching || ghStatusQuery.isFetching;
   const pullsError = ghStatusQuery.error ? messageOf(ghStatusQuery.error) : pullsQuery.error ? messageOf(pullsQuery.error) : null;
   useEffect(() => { setMobilePane('list'); }, [repository?.id]);
@@ -366,7 +391,16 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   const repositoryLoadVisible = useElapsed(repositoryLoadPhase ? 'busy' : null, 200);
   const repositoryLoadSlow = useElapsed(pendingRepositoryId ?? (repositoryLoadPhase ? repository?.id ?? null : null), 5000);
   const status = currentSnapshot ? statusState : null;
-  const commitPlan = useCommitPlan({ repositoryId: repository?.id, status, message: commitMessage, setMessage: setCommitMessage, index: opentig.index });
+  const commitPlan = useCommitPlan({ repositoryId: repository?.id, status, getMessage: commitMessage.get, setMessage: commitMessage.set, index: opentig.index });
+  // Three lists of every change: worked out when the changes do, not on every render.
+  const changeLists = useMemo(() => {
+    const changes = status?.changes ?? [];
+    return {
+      conflicts: changes.filter((change) => change.conflict),
+      staged: changes.filter((change) => change.staged && !change.conflict),
+      changed: changes.filter((change) => change.unstaged && !change.conflict),
+    };
+  }, [status?.changes]);
   const files = currentSnapshot ? filesState : null;
   const branches = currentSnapshot ? branchesState : [];
   const worktrees = currentSnapshot ? worktreesState : [];
@@ -383,8 +417,20 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     repository?.id ?? '', currentBranch ?? '',
     repository !== null && githubInfo?.isGitHub === true && currentBranch !== null && ghStatus?.installed === true,
   ));
-  const currentBranchPullRequest = currentBranch && githubInfo?.isGitHub && !branchPullRequestQuery.isError
+  const branchPullRequest = currentBranch && githubInfo?.isGitHub && !branchPullRequestQuery.isError
     ? branchPullRequestQuery.data ?? null : null;
+  // Its place in a stack is read after it, so the pull request shows without waiting for that.
+  const branchPullRequestNumbers = useMemo(() => branchPullRequest ? [branchPullRequest.number] : [], [branchPullRequest]);
+  const branchPullRequestStackQuery = useQuery({
+    queryKey: queryKeys.pullStacks(repository?.id ?? '', branchPullRequestNumbers),
+    queryFn: () => opentig.github.listPullRequestStacks(repository!.id, branchPullRequestNumbers),
+    enabled: repository !== null && branchPullRequestNumbers.length > 0,
+    staleTime: 60_000,
+  });
+  const currentBranchPullRequest = useMemo(
+    () => branchPullRequest ? withStackMemberships([branchPullRequest], branchPullRequestStackQuery.data)![0]! : null,
+    [branchPullRequest, branchPullRequestStackQuery.data],
+  );
   // A merged pull request no longer describes a branch that kept getting commits.
   const mergedHeadOid = currentBranchPullRequest?.state === 'MERGED' ? currentBranchPullRequest.headRefOid || null : null;
   const commitsAfterMergeQuery = useQuery(commitsAfterMergeQueryOptions(repository?.id ?? '', mergedHeadOid, status?.oid ?? null));
@@ -499,7 +545,14 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     if (!bootstrap?.performanceAutomation) return;
     window.__opentigPerformanceAutomation = true;
     window.__opentigPerformanceResults = [];
+    // Every action starts a new count, so a reading says what that navigation asked the server for.
+    let countedFrom = serverClient.transport.requestCounts().requested;
+    window.__opentigNavigationRequests = () => {
+      const { requested, unanswered } = serverClient.transport.requestCounts();
+      return { requested: requestsSince(countedFrom, requested), unanswered };
+    };
     const handleAction = (event: Event) => {
+      countedFrom = serverClient.transport.requestCounts().requested;
       const action = (event as CustomEvent<unknown>).detail;
       if (!action || typeof action !== 'object') return;
       const record = action as Record<string, unknown>;
@@ -523,8 +576,13 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       window.removeEventListener('opentig:performance-action', handleAction);
       delete window.__opentigPerformanceAutomation;
       delete window.__opentigPerformanceResults;
+      delete window.__opentigNavigationRequests;
     };
   }, [bootstrap?.performanceAutomation]);
+
+  // Once the app is up, the sections not yet opened are downloaded in its idle moments, so the first click on each doesn't wait.
+  const started = bootstrap !== null;
+  useEffect(() => started ? preloadWhenIdle(IDLE_SECTIONS) : undefined, [started]);
 
   useEffect(() => {
     filesRef.current = files;
@@ -645,7 +703,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
 
   const applyFilesSnapshot = useCallback((nextFiles: FileTreeEntry[]) => {
     const previous = filesRef.current;
-    const same = previous !== null && fileSnapshotFingerprint(previous) === fileSnapshotFingerprint(nextFiles);
+    // The first tree of a repository is never the same as none.
+    const same = filesComparer.same(nextFiles) && previous !== null;
     filesRef.current = same && previous ? previous : nextFiles;
     if (!same) setFiles(nextFiles);
     setFilesSnapshotRevision((revision) => revision + 1);
@@ -692,7 +751,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     if (presence === 'present' && previous && selectedFileChanged(previous, nextFiles, active.path)) {
       setRefreshVersion((version) => version + 1);
     }
-  }, [commitFileSession, dropFileDraft]);
+  }, [commitFileSession, dropFileDraft, filesComparer]);
 
   const refreshFilesOnly = useCallback(async () => {
     if (!repository) return;
@@ -701,7 +760,9 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       const nextFiles = await appQueryClient.fetchQuery({
         queryKey: queryKeys.files(repositoryId), queryFn: () => opentig.repository.getFiles(repositoryId),
       });
-      if (repositoryRef.current?.id === repositoryId) applyFilesSnapshot(nextFiles);
+      if (repositoryRef.current?.id !== repositoryId) return;
+      lastReadRef.current.files = Date.now();
+      applyFilesSnapshot(nextFiles);
     } catch (reason) {
       if (repositoryRef.current?.id !== repositoryId) return;
       if (isConnectionLoss(reason)) recordConnectionLoss('Could not refresh files', reason);
@@ -742,6 +803,10 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     const scope = firstRead ? 'unknown' : request.scope;
     const operations = refreshOperationsForScope(scope, refreshView);
     const resources = queryResourcesForScope(scope, refreshView);
+    // History is only read while it is open; from another section it is marked outdated, and read when it is opened.
+    if (!operations.history && refreshOperationsForScope(scope, 'history').history) {
+      void appQueryClient.invalidateQueries({ queryKey: queryKeys.history(repositoryId), exact: true, refetchType: 'none' });
+    }
     if (!background) { busyRef.current = 'refresh'; setBusy('refresh'); }
     try {
       if (manual) {
@@ -798,6 +863,9 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       const [nextStatus, nextBranches, nextWorktrees, nextFiles, nextHistory] = snapshot;
       if (repositoryRef.current?.id !== repositoryId) return;
       snapshotRepositoryIdRef.current = repositoryId;
+      lastReadRef.current.snapshot = Date.now();
+      if (nextFiles) lastReadRef.current.files = lastReadRef.current.snapshot;
+      if (nextBranches && nextWorktrees) lastReadRef.current.refs = lastReadRef.current.snapshot;
       setSnapshotRepositoryId(repositoryId);
       setStatus(nextStatus);
       if (nextBranches) setBranches(nextBranches);
@@ -829,7 +897,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       ...(options?.manual ? { manual: true } : {}),
       background: options?.background === true,
       scope: options?.scope ?? 'unknown',
-      view,
+      view: viewRef.current,
     };
     const existing = refreshCyclesRef.current.get(repositoryId);
     if (existing) {
@@ -853,7 +921,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     });
     refreshCyclesRef.current.set(repositoryId, cycle);
     return cycle.promise;
-  }, [performRefresh, repository, view]);
+  }, [performRefresh, repository]);
 
   // A timeout or disconnect says nothing about the work, so show the real state before anyone retries.
   const refreshAfterUnconfirmedResult = (reason: unknown) => {
@@ -874,7 +942,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     let inFlight = false;
 
     const run = async () => {
-      if (cancelled || inFlight || addingRepository.current || document.visibilityState === 'hidden') return;
+      // Nobody is looking, or nobody has touched the window for a while: the next turn fetches again.
+      if (cancelled || inFlight || addingRepository.current || document.visibilityState === 'hidden' || isUserIdle()) return;
       if (busyRef.current || repositorySyncOperationsRef.current.has(repositoryId)) return;
       inFlight = true;
       try {
@@ -902,16 +971,18 @@ export default function App({ initialView, initialSelection, pullRequestCreation
 
   useEffect(() => {
     snapshotRepositoryIdRef.current = null;
+    lastReadRef.current = { snapshot: Number.NEGATIVE_INFINITY, files: Number.NEGATIVE_INFINITY, refs: Number.NEGATIVE_INFINITY };
     setSnapshotRepositoryId(null);
     clearCommitFilesCache();
     filesRef.current = null;
+    filesComparer.reset();
     setFiles(null);
     // A later refresh may read only part of the new repository; it must not be shown next to the previous one's refs.
     setBranches([]);
     setWorktrees([]);
     setCreatePrOpen(false);
     setQuickOpen(false);
-  }, [repository?.id]);
+  }, [filesComparer, repository?.id]);
 
   const loadPulls = useCallback(async (_states: PullRequestState[], forceStatus = false) => {
     if (forceStatus) {
@@ -929,11 +1000,29 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     if (repository) void appQueryClient.invalidateQueries({ queryKey: ['repository', repository.id, 'branch-pull-request'] });
     freshPulls.current = true;
     await pullsQuery.refetch();
+    // After the list, which tells the backend these are to be read again too.
+    if (repository) void appQueryClient.invalidateQueries({ queryKey: ['repository', repository.id, 'pull-line-counts'] });
   }, [appQueryClient, ghStatusQuery, pullsQuery, repository]);
 
   useEffect(() => {
     void refresh();
-  }, [refresh, repository?.id, view]);
+  }, [refresh, repository?.id]);
+
+  // Opening another section shows what is already known. It reads again behind
+  // that, without holding Pull, Push or Commit, and only what was not read moments ago.
+  const shownSectionRef = useRef(view);
+  useEffect(() => {
+    if (shownSectionRef.current === view) return;
+    shownSectionRef.current = view;
+    const now = Date.now();
+    const due = sectionRefresh(view, { snapshotMs: now - lastReadRef.current.snapshot, filesMs: now - lastReadRef.current.files, refsMs: now - lastReadRef.current.refs });
+    if (due === 'full') {
+      void refresh({ background: true });
+      // The remote may have been added or changed outside the app.
+      if (repository) void appQueryClient.invalidateQueries({ queryKey: queryKeys.githubInfo(repository.id) });
+    } else if (due === 'snapshot') void refresh({ background: true, scope: 'worktree' });
+    else if (due === 'files') void refreshFilesOnly();
+  }, [appQueryClient, refresh, refreshFilesOnly, repository, view]);
 
   // Switching worktree or sidebar view no longer discards the file session: the
   // tabs of each worktree are restored from persisted metadata the first time it
@@ -970,6 +1059,10 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     void refresh({ background: true, scope });
     // An open refs manager may be showing a worktree whose removal another request finished.
     if (scope === 'worktrees' || scope === 'unknown') void appQueryClient.invalidateQueries({ queryKey: queryKeys.localRefs(repositoryId) });
+    // Git's config is among what `unknown` covers, and a remote added in a terminal changes whether this is a GitHub repository.
+    if (scope === 'unknown') void appQueryClient.invalidateQueries({ queryKey: queryKeys.githubInfo(repositoryId) });
+    // A file read ahead of a click may be the one that just changed.
+    if (scope !== 'refs' && scope !== 'worktrees') dropFilesAhead(repositoryId);
   }), [appQueryClient, refresh, repository?.id]);
 
   useEffect(() => {
@@ -992,7 +1085,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   useEffect(() => {
     if (view !== 'files' || !repository) return;
     const reconcile = () => {
-      if (document.visibilityState === 'visible') void refreshFilesOnly();
+      if (document.visibilityState === 'visible' && !isUserIdle()) void refreshFilesOnly();
     };
     const timer = window.setInterval(reconcile, 5_000);
     document.addEventListener('visibilitychange', reconcile);
@@ -1053,7 +1146,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     const setHeld = (held: boolean) => {
       if (ctrlHeldRef.current === held) return;
       ctrlHeldRef.current = held;
-      setCtrlHeld(held);
+      if (held) document.documentElement.dataset.shortcuts = 'visible';
+      else delete document.documentElement.dataset.shortcuts;
     };
     const update = (event: KeyboardEvent) => setHeld(event.ctrlKey && !event.altKey && !event.metaKey);
     // A lost focus never delivers the keyup, so the hint would stay pinned open.
@@ -1065,6 +1159,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       window.removeEventListener('keydown', update);
       window.removeEventListener('keyup', update);
       window.removeEventListener('blur', clear);
+      clear();
     };
   }, []);
 
@@ -1075,6 +1170,20 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       return true;
     } catch (reason) { reportError('Could not save settings', reason); return false; }
   };
+  /**
+   * Paints the width the sidebar would get while its edge is dragged, on the
+   * element itself: as React state every pointer move redrew the whole app.
+   * Null ends the drag and puts back the saved width, which a resize then replaces.
+   */
+  const savedSidebarWidth = useRef(bootstrap?.preferences.sidebarWidth);
+  useEffect(() => { savedSidebarWidth.current = bootstrap?.preferences.sidebarWidth; }, [bootstrap?.preferences.sidebarWidth]);
+  const previewSidebarWidth = useCallback((width: number | null) => {
+    const sidebar = sidebarElement.current;
+    if (!sidebar) return;
+    sidebar.toggleAttribute('data-resizing', width !== null);
+    const shown = width ?? savedSidebarWidth.current;
+    if (shown !== undefined) sidebar.style.width = `${shown}px`;
+  }, []);
   /** Applies a sidebar layout change at once, then saves it; the saved preferences win when they return. */
   const setSidebarLayout = useCallback((partial: Pick<Partial<Preferences>, 'sidebarCollapsed' | 'sidebarWidth'>) => {
     setBootstrap((current) => current ? { ...current, preferences: { ...current.preferences, ...partial } } : current);
@@ -1674,16 +1783,17 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   };
 
   const createCommit = async (options?: { push?: boolean }) => {
-    if (!repository || !status?.stagedCount || !commitMessage.trim()) return;
+    const message = commitMessage.get();
+    if (!repository || !status?.stagedCount || !message.trim()) return;
     // While a plan is followed, the commit must hold exactly its group's files.
     const planStep = commitPlan.stepToCommit();
     if (planStep === false) return;
     setBusy('commit');
     let committed = false;
     try {
-      const result = await opentig.commits.create(repository.id, commitMessage);
-      const subject = commitMessage.split(/\r?\n/, 1)[0] ?? commitMessage;
-      setCommitMessage('');
+      const result = await opentig.commits.create(repository.id, message);
+      const subject = message.split(/\r?\n/, 1)[0] ?? message;
+      commitMessage.set('');
       // The plan marks its group done and stages the next one, so the box is
       // ready for the next commit. Any other commit ends the plan.
       if (planStep) await commitPlan.committed({ oid: result.oid, subject });
@@ -1734,7 +1844,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     try {
       const result = await opentig.ai.generateCommitMessage({ repositoryId: repository.id, harness, model, requestId });
       if (generationRequest.current?.id !== requestId || generationRequest.current.repositoryId !== repository.id) return;
-      setCommitMessage(result.message);
+      commitMessage.set(result.message);
       // Within a plan only one group is staged, so this rewrites that group's message.
       const withinPlan = commitPlan.step !== null;
       if (!withinPlan) commitPlan.propose(result.proposal, result.message);
@@ -1949,13 +2059,13 @@ export default function App({ initialView, initialSelection, pullRequestCreation
         setMobilePane('list');
         // The draft lands in the commit box, which a collapsed sidebar hides.
         showSidebarView('changes');
-        if (!commitMessage.trim()) {
-          setCommitMessage(result.message);
+        if (!commitMessage.get().trim()) {
+          commitMessage.set(result.message);
         } else {
           sileo.success({
             title: 'Commit undone',
             description: 'Its changes are staged again. Your draft was preserved.',
-            button: { title: 'Use previous message', onClick: () => setCommitMessage(result.message) },
+            button: { title: 'Use previous message', onClick: () => commitMessage.set(result.message) },
           });
           await refresh({ background: true });
           window.setTimeout(() => commitTextareaRef.current?.focus(), 0);
@@ -2506,9 +2616,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   const pendingDestructiveCopy = destructiveAction ? destructiveActionCopy(destructiveAction) : null;
   // File tabs only show with files, so this is what still says something is unsaved elsewhere.
   const hasUnsavedFiles = (fileSessions.get(repository.id) ?? emptyFileSession).tabs.some((tab) => tab.dirty);
-  const conflicts = status?.changes.filter((change) => change.conflict) ?? [];
-  const staged = status?.changes.filter((change) => change.staged && !change.conflict) ?? [];
-  const changed = status?.changes.filter((change) => change.unstaged && !change.conflict) ?? [];
+  const { conflicts, staged, changed } = changeLists;
   const stagedCount = status?.stagedCount ?? 0;
   const changeCount = status?.changes.length ?? 0;
   const sidebarSections: SidebarRailSection<SidebarView>[] = SIDEBAR_VIEWS.map((item) => {
@@ -2524,14 +2632,13 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     if (item === 'prs') return { id: item, icon: <IconBrandGithub />, label: pulls?.length ? `GitHub · ${pulls.length} pull ${pulls.length === 1 ? 'request' : 'requests'}` : 'GitHub' };
     return { id: item, icon: <IconSearch />, label: 'Search' };
   });
-  const sidebarWidth = sidebarDragWidth ?? bootstrap.preferences.sidebarWidth;
   // Docked at the bottom of the sidebar on desktop and floating over the list on phones. Its text and plan live here and outlast it.
   const hasCommitPlan = commitPlan.plan !== null || commitPlan.outcome !== null;
   const commitComposer = (
-    <CommitComposer
+    <StoredCommitComposer
+      store={commitMessage}
       open={mobile ? mobilePane === 'list' && view === 'changes' && mobileMainAction({ screen: 'changes', stagedCount, hasCommitPlan }) === 'commit' : view === 'changes' && Boolean(status?.stagedCount || hasCommitPlan)}
       stagedCount={status?.stagedCount ?? 0}
-      message={commitMessage}
       generating={Boolean(generating)}
       harness={bootstrap.preferences.commitMessageHarness}
       harnessLabel={harnessLabel(bootstrap.preferences.commitMessageHarness)}
@@ -2548,7 +2655,6 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       changes={status?.changes ?? []}
       phone={mobile}
       textareaRef={commitTextareaRef}
-      onMessage={setCommitMessage}
       onGenerate={() => void generateCommitMessage()}
       onCancelGenerate={() => void cancelCommitMessageGeneration()}
       onPlanMode={(mode) => void runCommitPlanTask(() => commitPlan.chooseMode(mode))}
@@ -2761,20 +2867,19 @@ export default function App({ initialView, initialSelection, pullRequestCreation
           <aside
             className="sidebar"
             data-collapsed={sidebarCollapsed ? '' : undefined}
-            data-resizing={sidebarDragWidth !== null ? '' : undefined}
-            style={{ width: sidebarCollapsed && sidebarDragWidth === null ? undefined : sidebarWidth }}
+            ref={sidebarElement}
+            style={{ width: sidebarCollapsed ? undefined : bootstrap.preferences.sidebarWidth }}
           >
             {sidebarCollapsed && (
               <SidebarRail
                 sections={sidebarSections}
                 active={view}
-                ctrlHeld={ctrlHeld}
                 toggleCombo={shortcuts.toggleSidebar}
                 onSelect={showSidebarView}
                 onExpand={() => setSidebarLayout({ sidebarCollapsed: false })}
               />
             )}
-            <nav className="sidebar-tabs tab-list" data-shortcuts={ctrlHeld ? 'visible' : undefined} aria-label="Repository views">
+            <nav className="sidebar-tabs tab-list" aria-label="Repository views">
               {SIDEBAR_VIEWS.map((item, index) => (
                 <button
                   key={item}
@@ -2787,7 +2892,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
                   {item === 'changes' && status && status.changes.length > 0 && <span className="plain-count">{status.changes.length}</span>}
                   {item === 'prs' && pulls !== null && pulls.length > 0 && <span className="plain-count">{pulls.length}</span>}
                   {item === 'files' && hasUnsavedFiles && <span className="sidebar-tab-dot" role="img" aria-label="Unsaved files" />}
-                  {ctrlHeld && <span className="sidebar-tab-shortcut" aria-hidden="true">{index + 1}</span>}
+                  <span className="sidebar-tab-shortcut" data-digit={index + 1} aria-hidden="true" />
                 </button>
               ))}
               {!mobile && <SidebarCollapseButton toggleCombo={shortcuts.toggleSidebar} onCollapse={() => setSidebarLayout({ sidebarCollapsed: true })} />}
@@ -2840,6 +2945,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
                     fileClipboardAvailable={capabilities?.fileClipboard === true}
                     revealAvailable={capabilities?.revealInFileManager === true}
                     onQuickOpen={() => setQuickOpen(true)}
+                    onFileIntent={(path) => prefetchFile(repository.id, path)}
                     historyState={fileHistoryState}
                     openFiles={fileSessions.get(repository.id) ?? emptyFileSession}
                     onActivateFile={activateFileTab}
@@ -2946,7 +3052,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
             <SidebarResizeHandle
               width={bootstrap.preferences.sidebarWidth}
               railWidth={SIDEBAR_RAIL_WIDTH}
-              onPreview={setSidebarDragWidth}
+              onPreview={previewSidebarWidth}
               onResize={(width) => setSidebarLayout({ sidebarWidth: width })}
               onCollapse={() => setSidebarLayout({ sidebarCollapsed: true })}
             />
@@ -3089,6 +3195,13 @@ function optimisticStatus(status: RepositoryStatus, paths: string[], mode: 'stag
       : { ...change, staged: false, unstaged: true, indexStatus: '.', worktreeStatus: change.indexStatus }
     : change);
   return { ...status, changes, stagedCount: changes.filter((change) => change.staged && !change.conflict).length, unstagedCount: changes.filter((change) => change.unstaged && !change.conflict).length };
+}
+
+function requestsSince(before: Record<string, number>, now: Record<string, number>): Record<string, number> {
+  return Object.fromEntries(Object.entries(now).flatMap(([command, count]) => {
+    const made = count - (before[command] ?? 0);
+    return made > 0 ? [[command, made]] : [];
+  }));
 }
 
 function isPerformanceSelection(value: unknown): value is ViewerSelection {

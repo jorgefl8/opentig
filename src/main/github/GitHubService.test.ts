@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { GitHubService } from './GitHubService';
 import type { CliProcessRunner, CliRunResult } from '../ai/CliProcessRunner';
 import type { CliResolver } from '../ai/CliResolver';
@@ -6,11 +6,14 @@ import type { GitProcess } from '../git/GitProcess';
 import type { RepositoryService } from '../git/RepositoryService';
 import { GitOperationError } from '../../shared/errors';
 
+afterEach(() => { vi.useRealTimers(); });
+/** A read GitHub never answers. */
+const never = new Promise<CliRunResult>(() => {});
 const ok = (value: unknown): CliRunResult => ({ exitCode: 0, stdout: JSON.stringify(value), stderr: '' });
 const fail = (stderr: string): CliRunResult => ({ exitCode: 1, stdout: '', stderr });
 const stack = { number: 7, base: { ref: 'main' }, pull_requests: [{ number: 101, state: 'open', title: 'Model', head: { ref: 'model' } }] };
 type GitReply = (args: string[], stdin?: string) => string | Error | undefined;
-function fixture(reply: (args: string[]) => CliRunResult, remoteUrl = 'https://github.com/example/demo.git', sshResult: CliRunResult | Error = fail('SSH unavailable'), gitReply: GitReply = () => undefined) {
+function fixture(reply: (args: string[]) => CliRunResult | Promise<CliRunResult>, remoteUrl = 'https://github.com/example/demo.git', sshResult: CliRunResult | Error = fail('SSH unavailable'), gitReply: GitReply = () => undefined) {
   const run = vi.fn(async (exe: string, args: string[]) => {
     if (exe === 'ssh') {
       if (sshResult instanceof Error) throw sshResult;
@@ -69,29 +72,18 @@ describe('GitHub SSH remote detection', () => {
   });
 });
 describe('current branch pull requests', () => {
-  it.each(['OPEN', 'MERGED'] as const)('includes native membership for the selected %s branch PR without fetching layers', async state => {
+  it.each(['OPEN', 'MERGED'] as const)('returns the %s branch PR without reading its stack membership, however long GitHub takes over it', async state => {
     const { service, run } = fixture(args => {
-      if (args[1] === 'graphql') return ok({ data: { repository: { pr12: {
-        stack: { number: 7, size: 3, baseRefName: 'main' }, stackEntry: { position: 2 },
-      } } } });
+      if (args[0] === 'api') return never;
       return ok(state === 'MERGED' && args.includes('open') ? [] : [
         { number: 12, state, headRefName: 'feature', headRepository: { nameWithOwner: 'example/demo' } },
       ]);
     });
-    expect(await service.findPullRequestForBranch('repo', 'feature')).toMatchObject({
-      number: 12, state, stack: { number: 7, size: 3, position: 2, base: 'main' },
-    });
-    expect(run.mock.calls.filter(([, args]) => args[1] === 'graphql')).toHaveLength(1);
-    expect(run.mock.calls.some(([, args]) => args[1]?.includes('/stacks'))).toBe(false);
-  });
-
-  it('preserves the branch PR when optional stack metadata is unavailable', async () => {
-    const { service } = fixture(args => args[1] === 'graphql' ? fail('HTTP 403: rate limit') : ok([
-      { number: 12, state: 'OPEN', headRefName: 'feature', headRepository: { nameWithOwner: 'example/demo' } },
-    ]));
     const pull = await service.findPullRequestForBranch('repo', 'feature');
-    expect(pull?.number).toBe(12);
+    expect(pull).toMatchObject({ number: 12, state });
+    // The client reads membership afterwards, as it does for the list.
     expect(pull?.stack).toBeUndefined();
+    expect(run.mock.calls.filter(([, args]) => args[0] === 'api' && args[1] !== 'user')).toEqual([]);
   });
 
   it('selects the most recently updated open PR when several PRs share a branch', async () => {
@@ -398,12 +390,85 @@ describe('pull request live state', () => {
     expect(views()).toBe(1);
   });
 
+  it('answers without stack membership that is slow to arrive, holding merging back, and uses it for the next read', async () => {
+    vi.useFakeTimers();
+    const main = ok({ data: { repository: { ...repository, pullRequest: pull } } });
+    const member = ok({ data: { repository: { pr12: { stack: { number: 7, size: 3, baseRefName: 'main' }, stackEntry: { position: 2 } } } } });
+    let answerStack!: (result: CliRunResult) => void;
+    const slow = new Promise<CliRunResult>((resolve) => { answerStack = resolve; });
+    let stackReads = 0;
+    const { service } = fixture(args => !isStackRead(args) ? main : ++stackReads === 1 ? slow : never);
+    const first = service.getPullRequestLiveState('repo', 12);
+    await vi.advanceTimersByTimeAsync(600);
+    // `unknown` blocks merging, so nothing is decided on membership that hasn't arrived.
+    expect(await first).toMatchObject({ number: 12, stack: 'unknown', checks: { rollup: 'PASSING' } });
+    answerStack(member);
+    await vi.advanceTimersByTimeAsync(0);
+    const second = service.getPullRequestLiveState('repo', 12);
+    await vi.advanceTimersByTimeAsync(600);
+    expect(await second).toMatchObject({ stack: 'member', stackMembership: { number: 7, size: 3, position: 2, base: 'main' } });
+    // A change made through OpenTig drops what arrived late, like everything else read before it.
+    service.invalidate('repo');
+    const third = service.getPullRequestLiveState('repo', 12);
+    await vi.advanceTimersByTimeAsync(600);
+    expect(await third).toMatchObject({ stack: 'unknown' });
+  });
+
+  it('makes an action wait for stack membership instead of deciding without it', async () => {
+    vi.useFakeTimers();
+    const main = ok({ data: { repository: { ...repository, pullRequest: pull } } });
+    const notInStack = ok({ data: { repository: { pr12: { stack: null, stackEntry: null } } } });
+    const { service, run } = fixture(args => {
+      if (isStackRead(args)) return new Promise((resolve) => { setTimeout(() => resolve(notInStack), 3_000); });
+      return args.some(arg => arg.includes('mutation')) ? ok({ data: {} }) : main;
+    });
+    const action = service.runPullRequestAction({ repositoryId: 'repo', number: 12, action: 'merge', method: 'MERGE', deleteBranch: false, expectedHeadOid: pull.headRefOid, expectedAccount: { login: 'tester', revision: 0 } });
+    await vi.advanceTimersByTimeAsync(10_000);
+    // Read within the grace period the membership would be unknown, which refuses the merge.
+    await expect(action).resolves.toMatchObject({ state: { stack: 'none' } });
+    expect(run.mock.calls.some(([, args]) => args.some(arg => arg.includes('mutation')))).toBe(true);
+  });
+
   it('separates stack membership, its absence, and a failed membership read', async () => {
     const main = ok({ data: { repository: { ...repository, pullRequest: pull } } });
     const member = ok({ data: { repository: { pr12: { stack: { number: 7, size: 3, baseRefName: 'main' }, stackEntry: { position: 2 } } } } });
     expect(await fixture(withStack(main, member)).service.getPullRequestLiveState('repo', 12)).toMatchObject({ stack: 'member', stackMembership: { number: 7, size: 3, position: 2, base: 'main' } });
     expect(await fixture(withStack(main)).service.getPullRequestLiveState('repo', 12)).toMatchObject({ stack: 'none' });
     expect(await fixture(withStack(main, fail('HTTP 403: forbidden'))).service.getPullRequestLiveState('repo', 12)).toMatchObject({ stack: 'unknown' });
+  });
+});
+
+describe('pull request lists', () => {
+  it('lists closed and merged PRs without what GitHub is slow to work out, and reads their line counts apart', async () => {
+    const { service, run } = fixture((args) => {
+      const state = args[args.indexOf('--state') + 1]!;
+      const fields = args[args.indexOf('--json') + 1]!.split(',');
+      // GitHub CLI returns the fields it was asked for.
+      const row = (number: number) => Object.fromEntries(Object.entries({ number, state: state.toUpperCase(), updatedAt: `2026-09-0${number}`, additions: number * 10, deletions: number, statusCheckRollup: [{ state: 'SUCCESS' }] }).filter(([field]) => fields.includes(field)));
+      return ok(state === 'open' ? [row(1)] : [row(2), row(3)]);
+    });
+    const requested = (state: string) => run.mock.calls.filter(([, args]) => args[0] === 'pr' && args.includes(state)).map(([, args]) => args[args.indexOf('--json') + 1]!);
+    const list = await service.listPullRequests('repo', ['OPEN', 'MERGED']);
+    expect(requested('open')[0]).toContain('statusCheckRollup');
+    expect(requested('merged')[0]).not.toMatch(/statusCheckRollup|additions|deletions/);
+    expect(list.find((pull) => pull.number === 1)).toMatchObject({ additions: 10, deletions: 1, checksState: 'PASSING' });
+    expect(list.find((pull) => pull.number === 1)?.lineCountsPending).toBeUndefined();
+    // A count that was never read is marked, so the row doesn't claim an empty PR.
+    expect(list.find((pull) => pull.number === 3)).toMatchObject({ lineCountsPending: true });
+
+    expect(await service.listPullRequestLineCounts('repo', ['OPEN', 'MERGED'])).toEqual([{ number: 2, additions: 20, deletions: 2 }, { number: 3, additions: 30, deletions: 3 }]);
+    expect(requested('merged')).toEqual([expect.any(String), 'number,additions,deletions']);
+    expect(requested('open')).toHaveLength(1);
+    // Open PRs come with their counts, so there is nothing more to ask for.
+    expect(await service.listPullRequestLineCounts('repo', ['OPEN'])).toEqual([]);
+    expect(requested('open')).toHaveLength(1);
+
+    // The counts are kept for minutes, except after the list was read again on request: it may hold a PR merged since.
+    await service.listPullRequestLineCounts('repo', ['OPEN', 'MERGED']);
+    expect(requested('merged')).toHaveLength(2);
+    await service.listPullRequests('repo', ['OPEN', 'MERGED'], true);
+    await service.listPullRequestLineCounts('repo', ['OPEN', 'MERGED']);
+    expect(requested('merged').filter((fields) => fields === 'number,additions,deletions')).toHaveLength(2);
   });
 });
 

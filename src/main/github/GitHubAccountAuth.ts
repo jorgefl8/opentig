@@ -41,7 +41,7 @@ export async function accountAuthentication(login: string | null, executable: Cl
   try {
     const result = await runner.run(executable.executable, ['auth', 'token', '--hostname', 'github.com', ...(login ? ['--user', login] : [])], {
       cwd: os.homedir(), env: { ...executable.env, ...GH_ENV },
-      removeEnv: login ? ['GH_TOKEN', ...GH_PRIVATE_ENV] : ['GH_DEBUG', 'DEBUG'], timeoutMs: 10_000, maxOutputBytes: 8 * 1024,
+      removeEnv: login ? ['GH_TOKEN', ...GH_PRIVATE_ENV] : ['GH_DEBUG', 'DEBUG'], timeoutMs: 10_000, maxOutputBytes: 8 * 1024, operation: 'gh-auth-token',
     });
     const token = result.stdout.trim();
     if (result.exitCode === 0 && /^[A-Za-z0-9_]{20,4096}$/.test(token)) return { env: { GH_TOKEN: token }, removeEnv: GH_PRIVATE_ENV };

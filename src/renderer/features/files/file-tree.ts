@@ -63,6 +63,27 @@ export function fileSnapshotFingerprint(entries: FileTreeEntry[]): string {
   return parts.join('\n');
 }
 
+/**
+ * Tells whether each snapshot shows the same tree as the one before it. The
+ * fingerprint of the tree on screen is kept, so a new snapshot is walked once
+ * instead of both being walked every time, and a response that came back as
+ * the very same object, as an unchanged one does, is not walked at all.
+ */
+export function createSnapshotComparer(): { same(next: FileTreeEntry[]): boolean; reset(): void } {
+  let current: { entries: FileTreeEntry[]; fingerprint: string } | null = null;
+  return {
+    same: (next) => {
+      if (current?.entries === next) return true;
+      const fingerprint = fileSnapshotFingerprint(next);
+      const same = current?.fingerprint === fingerprint;
+      // An equal tree keeps the object already on screen as the one to compare with.
+      current = { entries: same ? current!.entries : next, fingerprint };
+      return same;
+    },
+    reset: () => { current = null; },
+  };
+}
+
 export function selectedFileChanged(previous: FileTreeEntry[], next: FileTreeEntry[], path: string): boolean {
   const before = findEntry(previous, path);
   const after = findEntry(next, path);

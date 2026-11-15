@@ -1,9 +1,17 @@
-import type { PullRequestCheckState, PullRequestCommit, PullRequestDetails, PullRequestLabel, PullRequestState, PullRequestSummary } from '../../shared/contracts';
+import type { PullRequestCheckState, PullRequestCommit, PullRequestDetails, PullRequestLabel, PullRequestLineCounts, PullRequestState, PullRequestSummary } from '../../shared/contracts';
 import { GhOperationError } from '../../shared/errors';
 import { z } from 'zod';
 
 export const PR_SUMMARY_FIELDS = 'number,title,state,isDraft,author,headRefName,headRefOid,baseRefName,updatedAt,url,reviewDecision,additions,deletions,statusCheckRollup';
 export const PR_DETAIL_FIELDS = `${PR_SUMMARY_FIELDS},body,changedFiles,labels,commits,baseRefOid`;
+/**
+ * A list of closed and merged PRs leaves out the check rollup and the line
+ * counts: GitHub works both out per PR, which made fifty of them take several
+ * seconds. Nothing shows the checks of a finished PR in a list, and the counts
+ * are read afterwards with `PR_LINE_COUNT_FIELDS`.
+ */
+export const PR_FINISHED_LIST_FIELDS = 'number,title,state,isDraft,author,headRefName,headRefOid,baseRefName,updatedAt,url,reviewDecision';
+export const PR_LINE_COUNT_FIELDS = 'number,additions,deletions';
 
 const tolerantRecordSchema = z.looseObject({});
 const pullRequestArraySchema = z.array(z.unknown());
@@ -17,6 +25,12 @@ export function parsePullRequestList(raw: string): PullRequestSummary[] {
   const list = pullRequestArraySchema.safeParse(parsed);
   if (!list.success) throw invalidOutput('gh-pr-list');
   return list.data.map((item) => parseSummary(item, 'gh-pr-list'));
+}
+
+export function parsePullRequestLineCounts(raw: string): PullRequestLineCounts[] {
+  const list = z.array(z.looseObject({ number: z.number().safe().int().positive() })).safeParse(parseJson(raw, 'gh-pr-list-line-counts'));
+  if (!list.success) throw invalidOutput('gh-pr-list-line-counts');
+  return list.data.map((item) => ({ number: item.number, additions: numberOrZero(item.additions), deletions: numberOrZero(item.deletions) }));
 }
 
 /** Branch names alone are ambiguous across forks of the same repository; only the given head repositories match. */
@@ -97,6 +111,8 @@ function parseSummary(item: unknown, operation: string): PullRequestSummary {
     additions: numberOrZero(record.additions),
     deletions: numberOrZero(record.deletions),
     checksState: parseChecksState(record.statusCheckRollup),
+    // Not asked for, as opposed to zero lines.
+    ...(record.additions === undefined && record.deletions === undefined ? { lineCountsPending: true as const } : {}),
   };
 }
 

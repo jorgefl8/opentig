@@ -9,8 +9,8 @@ import {
 interface CommitPlanOptions {
   repositoryId: string | undefined;
   status: RepositoryStatus | null;
-  /** The text in the commit box, which holds the active group's message while splitting. */
-  message: string;
+  /** The text in the commit box, which holds the active group's message while splitting. Read when it is needed, so typing redraws nothing here. */
+  getMessage(): string;
   setMessage(message: string): void;
   index: Pick<OpenTigApi['index'], 'prepareCommitGroup' | 'stage'>;
 }
@@ -41,11 +41,11 @@ export interface CommitPlanController {
  * A suggested split of the staged files, followed one commit at a time. Only the
  * index is changed here; every commit is still created by the app on a click.
  */
-export function useCommitPlan({ repositoryId, status, message, setMessage, index }: CommitPlanOptions): CommitPlanController {
+export function useCommitPlan({ repositoryId, status, getMessage, setMessage, index }: CommitPlanOptions): CommitPlanController {
   const [model, setModel] = useState(NO_COMMIT_PLAN);
   // Read after an await, where the render that started the work is out of date.
-  const live = useRef({ model, status, message, repositoryId });
-  useEffect(() => { Object.assign(live.current, { status, message, repositoryId }); });
+  const live = useRef({ model, status, repositoryId });
+  useEffect(() => { Object.assign(live.current, { status, repositoryId }); });
   const dispatch = (action: CommitPlanAction) => {
     const next = commitPlanReducer(live.current.model, action);
     live.current.model = next;
@@ -70,7 +70,7 @@ export function useCommitPlan({ repositoryId, status, message, setMessage, index
       return;
     }
     if (live.current.repositoryId !== repository) return;
-    dispatch({ type: 'activated', index: target, outgoing: live.current.message });
+    dispatch({ type: 'activated', index: target, outgoing: getMessage() });
     const current = live.current.model.plan;
     if (current) setMessage(planMessage(current, target));
   };
@@ -97,7 +97,7 @@ export function useCommitPlan({ repositoryId, status, message, setMessage, index
       const repository = live.current.repositoryId;
       await restage(plan);
       if (live.current.repositoryId !== repository) return;
-      dispatch({ type: 'single', outgoing: live.current.message });
+      dispatch({ type: 'single', outgoing: getMessage() });
       const current = live.current.model.plan;
       if (current) setMessage(planMessage(current, 'one'));
     },

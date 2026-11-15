@@ -36,3 +36,48 @@ export async function hoverCenter(page: Page, target: Locator): Promise<void> {
   if (!box) throw new Error('The target is not on screen.');
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
 }
+
+type NavigationRequests = { requested: Record<string, number>; unanswered: number };
+
+function readNavigationRequests(page: Page): Promise<NavigationRequests> {
+  return page.evaluate(() => {
+    const read = (window as unknown as { __opentigNavigationRequests?: () => NavigationRequests }).__opentigNavigationRequests;
+    if (!read) throw new Error('Request counting is off. Set "test.use({ countRequests: true })".');
+    return read();
+  });
+}
+
+/** Waits until every request is answered and none has been made for `quietMs`. */
+async function settledRequests(page: Page, quietMs: number, timeoutMs: number): Promise<Record<string, number>> {
+  const deadline = Date.now() + timeoutMs;
+  let last = '';
+  let since = Date.now();
+  for (;;) {
+    const { requested, unanswered } = await readNavigationRequests(page);
+    const now = JSON.stringify(requested);
+    if (now !== last || unanswered > 0) { last = now; since = Date.now(); }
+    else if (Date.now() - since >= quietMs) return requested;
+    if (Date.now() > deadline) throw new Error(`The app kept asking the server for more than ${timeoutMs} ms: ${unanswered} unanswered, ${now}`);
+    await page.waitForTimeout(50);
+  }
+}
+
+/**
+ * The requests `navigate` makes to the server, by command, counted until the app
+ * has been quiet for `quietMs`. Requests the app repeats on a timer whatever is on
+ * screen are left out, so the count is what the navigation itself cost. Needs
+ * `test.use({ countRequests: true })`.
+ */
+export async function requestsDuring(page: Page, navigate: () => Promise<void>, { quietMs = 600, timeoutMs = 30_000 } = {}): Promise<Record<string, number>> {
+  await settledRequests(page, quietMs, timeoutMs);
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent('opentig:performance-action', { detail: { type: 'mark' } })));
+  await navigate();
+  const requested = await settledRequests(page, quietMs, timeoutMs);
+  // The agent check runs every ten seconds in any section.
+  delete requested['refs:worktree-agents'];
+  return requested;
+}
+
+export function requestTotal(requested: Record<string, number>): number {
+  return Object.values(requested).reduce((sum, count) => sum + count, 0);
+}

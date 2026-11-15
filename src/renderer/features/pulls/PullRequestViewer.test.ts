@@ -40,6 +40,9 @@ beforeEach(() => {
   vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
   api.getPullRequest.mockResolvedValue(details);
   api.getPullRequestLiveState.mockResolvedValue(live());
+  // Asked for as the PR opens; a test that shows them answers them.
+  api.getPullRequestConversation.mockReturnValue(new Promise(() => {}));
+  api.getPullRequestDiff.mockReturnValue(new Promise(() => {}));
   api.repositoryAccount.mockResolvedValue({ state: 'ready', login: 'sample', revision: 1 });
   client = new QueryClient({ defaultOptions: { queries: { networkMode: 'always', retry: false, gcTime: 0 } } });
   container = document.createElement('div'); document.body.append(container); root = createRoot(container);
@@ -236,9 +239,21 @@ it('keeps a visited tab as it was, instead of reading it again on return', async
   expect(container.querySelectorAll('[role="tabpanel"]:not([hidden])')).toHaveLength(1);
 });
 
-it('does not read the conversation until Comments is open', async () => {
+it('asks for the comments and the code as the PR opens, so their tabs show them without loading', async () => {
+  api.getPullRequestConversation.mockResolvedValue({ entries: [{ id: 'c1', kind: 'comment', author: { login: 'sample', avatarUrl: null, isBot: false }, body: 'Looks right to me', createdAt: '2026-01-01T00:00:00Z', url: '' }], truncated: false, partial: false });
+  api.getPullRequestDiff.mockResolvedValue({ path: 'pull/7', patch: '', binary: false, truncated: false, lineCount: 0 });
+  // As in the app, what was read stays available while nothing shows it yet.
+  client.setDefaultOptions({ queries: { networkMode: 'always', retry: false } });
   await render();
-  expect(api.getPullRequestConversation).not.toHaveBeenCalled();
+  await vi.waitFor(() => expect(api.getPullRequestConversation).toHaveBeenCalledWith('repo', 7));
+  expect(api.getPullRequestDiff).toHaveBeenCalledWith('repo', 7, { baseOid: details.baseRefOid, headOid: details.headRefOid });
+  await vi.waitFor(() => expect(client.getQueryData(queryKeys.pullRequestConversation('repo', 7))).toBeDefined());
+  // Opening the tab reads nothing more and has no loading state to show.
+  await act(async () => [...container.querySelectorAll<HTMLElement>('[role="tab"]')].find((tab) => tab.textContent === 'Comments')!.click());
+  expect(container.textContent).toContain('Looks right to me');
+  expect(container.textContent).not.toContain('Loading conversation');
+  expect(api.getPullRequestConversation).toHaveBeenCalledTimes(1);
+  expect(api.getPullRequestDiff).toHaveBeenCalledTimes(1);
 });
 
 it('reads the status alongside the details rather than after them', async () => {

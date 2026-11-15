@@ -566,6 +566,22 @@ describe('authenticated WebSocket protocol', () => {
     } finally { socket.close(); }
   });
 
+  it('logs how long each Git process took, by name only, when performance logging is on', async () => {
+    vi.stubEnv('OPENTIG_PERF_LOG', '1');
+    const repository = await repositoryWithUpstream();
+    const lines: string[] = [];
+    const fixture = await startFixture({ logger: (_level, message) => { lines.push(message); } });
+    const opened = await fixture.server.runtime.services.repositories.openPath(repository.work);
+    lines.length = 0;
+    await fixture.server.runtime.services.repositories.status(opened.id, false);
+    const records = lines.filter((line) => line.startsWith('Server performance ')).map((line) => JSON.parse(line.slice('Server performance '.length)) as Record<string, unknown>);
+    expect(records).toContainEqual({ kind: 'process', tool: 'git', command: 'status', operation: expect.any(String), durationMs: expect.any(Number), outcome: 'ok' });
+    for (const record of records) expect(Object.keys(record).sort()).toEqual(['command', 'durationMs', 'kind', 'operation', 'outcome', 'tool']);
+    // Only names fixed in the code: nothing of the repository reaches the log.
+    expect(lines.join('\n')).not.toContain(repository.work);
+    vi.unstubAllEnvs();
+  });
+
   it('rejects missing/wrong auth and carries command, error, ping, and runtime event messages', async () => {
     const fixture = await startFixture();
     await expectWebSocketClose(fixture.server.origin, fixture.server.origin, undefined, 1008);
@@ -711,7 +727,7 @@ describe('authenticated WebSocket protocol', () => {
   });
 });
 
-async function startFixture(options: { host?: string; updates?: DesktopUpdatesApi; admin?: { token: string; instanceId: string }; profile?: 'dev'; browserAccessEnabled?: boolean | 'default'; mode?: 'desktop' | 'web-access' } = {}): Promise<{
+async function startFixture(options: { logger?: (level: string, message: string) => void; host?: string; updates?: DesktopUpdatesApi; admin?: { token: string; instanceId: string }; profile?: 'dev'; browserAccessEnabled?: boolean | 'default'; mode?: 'desktop' | 'web-access' } = {}): Promise<{
   server: RunningOpenTigServer;
   directory: string;
   clientRoot: string;
@@ -736,6 +752,7 @@ async function startFixture(options: { host?: string; updates?: DesktopUpdatesAp
     auth: new OneTimeBootstrapAuthSource({ desktopSecret }),
     port: 0,
     ...(options.host ? { host: options.host } : {}),
+    ...(options.logger ? { logger: options.logger } : {}),
     ...(options.updates ? { updates: options.updates } : {}),
     ...(options.admin ? { admin: options.admin } : {}),
     ...(options.profile ? { profile: options.profile } : {}),

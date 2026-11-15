@@ -6,6 +6,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { ActionRunDetails, ActionRunSummary } from '@shared/contracts';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { RepositoryLinksContext } from '@/components/repository-links';
+import { queryKeys } from '@/lib/query-client';
 import { ActionsTools, ActionsView } from './ActionsView';
 import { WorkflowRunViewer } from './WorkflowRunViewer';
 
@@ -97,6 +98,23 @@ it('draws the run as a graph and shows the steps of the job chosen in it', async
 
   await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Close job"]')!.click());
   await act(async () => { await vi.waitFor(() => expect(container.querySelector('.workflow-job-panel')).toBeNull()); });
+});
+
+it('shows a run from its list row at once, and its jobs when GitHub answers', async () => {
+  let answer!: (run: ActionRunDetails) => void;
+  api.getActionRun.mockReturnValue(new Promise((resolve) => { answer = resolve; }));
+  // The list the run was opened from.
+  client.setQueryData(queryKeys.actionRuns('repo', null), { pages: [{ runs: [summary], hasMore: false }], pageParams: [1] });
+  await render(createElement(WorkflowRunViewer, { repositoryId: 'repo', runId: 42 }));
+  expect(container.querySelector('h2')?.textContent).toBe('fix: links');
+  expect(container.querySelector('.pr-viewer-status')?.textContent).toContain('Failed');
+  expect(container.querySelector('.pr-viewer-status')?.textContent).toContain('CI #340');
+  // Nothing about the jobs is claimed before it is known.
+  expect(container.querySelector('.pr-viewer-status')?.textContent).not.toContain('job');
+  expect(container.querySelector('.workflow-run-body')?.textContent).toContain('Loading jobs');
+  await act(async () => { answer(details); await vi.waitFor(() => expect(container.querySelector('.workflow-node')).not.toBeNull()); });
+  expect(container.querySelector('.pr-viewer-status')?.textContent).toContain('Failed · 1 job failed');
+  expect(container.querySelectorAll('.workflow-node')).toHaveLength(3);
 });
 
 it('opens at the job a link points to', async () => {

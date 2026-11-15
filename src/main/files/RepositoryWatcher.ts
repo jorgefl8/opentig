@@ -38,6 +38,9 @@ export function classifyRepositoryChange(
     || gitRelative.startsWith('rebase-merge/') || gitRelative.startsWith('rebase-apply/')) {
     return 'refs';
   }
+  // A linked worktree's HEAD moves when a branch is checked out in it: the worktree list shows that
+  // branch, and when it is the worktree on screen so do its history and branch menu.
+  if (/^worktrees\/[^/]+\/HEAD$/.test(gitRelative)) return 'unknown';
   if (gitRelative.startsWith('worktrees/')) return 'worktrees';
   if (GIT_DIR_FILES.has(gitRelative) || GIT_DIR_PREFIXES.some((prefix) => gitRelative.startsWith(prefix))) {
     return 'unknown';

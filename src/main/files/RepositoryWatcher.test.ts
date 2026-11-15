@@ -39,7 +39,13 @@ describe('classifyRepositoryChange', () => {
     expect(classifyRepositoryChange('.git/index', false)).toBe('index');
     expect(classifyRepositoryChange('.git/HEAD', false)).toBe('refs');
     expect(classifyRepositoryChange('refs/heads/main', true)).toBe('refs');
-    expect(classifyRepositoryChange('worktrees/feature/HEAD', true)).toBe('worktrees');
+    expect(classifyRepositoryChange('worktrees/feature/index', true)).toBe('worktrees');
+  });
+
+  it('reads everything when a linked worktree checks out another branch, since its history and the worktree list both show it', () => {
+    expect(classifyRepositoryChange('worktrees/feature/HEAD', true)).toBe('unknown');
+    expect(classifyRepositoryChange('.git/worktrees/feature/HEAD', false)).toBe('unknown');
+    expect(classifyRepositoryChange('worktrees/feature/logs/HEAD', true)).toBe('worktrees');
   });
 
   it('widens unnamed and configuration changes to unknown', () => {
