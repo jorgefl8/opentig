@@ -24,6 +24,8 @@ const MAX_BUFFERED_SEND_BYTES = 2 * OPEN_TIG_MAX_SERVER_MESSAGE_BYTES;
 const DEFAULT_CONNECTION_LIMIT = 16;
 const DEFAULT_REQUEST_RATE_LIMIT = 120;
 const DEFAULT_REQUEST_RATE_WINDOW_MS = 10_000;
+/** Time for a rejected client to receive the close frame before the connection is cut. Nothing it sends meanwhile is read. */
+const REJECT_GRACE_MS = 1_000;
 
 interface ClientState {
   sessionId: string;
@@ -59,9 +61,12 @@ export class OpenTigWebSocketTransport {
     perMessageDeflate: false,
   });
   /**
-   * Anyone else, through the network or a tunnel: messages over 1 KB are compressed when the
-   * browser offers it (a file tree shrinks to about a sixth). No context is kept between
-   * messages, so each connection holds no compression window between them.
+   * A signed-in client through the network or a tunnel: messages over 1 KB are compressed when
+   * the browser offers it (a file tree shrinks to about a tenth). No context is kept between
+   * messages, so each connection holds no compression window between them. Only a client whose
+   * session the upgrade request already proves gets here (see `upgrade`). What one message may
+   * inflate to is `FILE_WRITE_FRAME_LIMIT`, the largest request a client may send (a file save
+   * of up to 16 MB): the per-command limits are checked on the inflated text.
    */
   private readonly compressingWebSocketServer = new WebSocketServer({
     noServer: true,
@@ -74,6 +79,8 @@ export class OpenTigWebSocketTransport {
     },
   });
   private readonly clients = new Map<WebSocket, ClientState>();
+  /** Connections refused after the upgrade, until they are cut: they count against the connection limit. */
+  private readonly rejected = new Set<WebSocket>();
   private readonly pendingOperations = new Set<Promise<unknown>>();
   private readonly commandTimeoutMs: number | undefined;
   private readonly connectionLimit: number;
@@ -118,7 +125,7 @@ export class OpenTigWebSocketTransport {
     for (const [socket, state] of this.clients) {
       if (revoked.has(state.sessionId)) {
         for (const request of state.requests.values()) request.controller.abort();
-        socket.close(1008, 'Session revoked');
+        this.reject(socket, 1008, 'Session revoked');
       }
     }
   }
@@ -137,8 +144,12 @@ export class OpenTigWebSocketTransport {
     const rawPath = (request.url ?? '').split(/[?#]/, 1)[0];
     if (rawPath !== '/ws') return rejectUpgrade(socket, 404, 'Not Found');
     if (!isAllowedOrigin(request)) return rejectUpgrade(socket, 403, 'Forbidden');
-    if (this.clients.size >= this.connectionLimit) return rejectUpgrade(socket, 503, 'Connection limit reached');
-    const server = isDirectLocalClient(request) ? this.webSocketServer : this.compressingWebSocketServer;
+    if (this.clients.size + this.rejected.size >= this.connectionLimit) return rejectUpgrade(socket, 503, 'Connection limit reached');
+    // Compression is only negotiated for a session the request already proves: a client without one
+    // is upgraded as before, so a browser sees the same 1008 close and shows pairing, and nothing it
+    // sends is ever inflated.
+    const compress = !isDirectLocalClient(request) && this.options.auth.authenticate(request.headers) !== null;
+    const server = compress ? this.compressingWebSocketServer : this.webSocketServer;
     server.handleUpgrade(request, socket, head, (webSocket) => {
       server.emit('connection', webSocket, request);
     });
@@ -147,7 +158,7 @@ export class OpenTigWebSocketTransport {
   private connected(socket: WebSocket, request: IncomingMessage): void {
     const sessionId = this.options.auth.authenticate(request.headers);
     if (!sessionId) {
-      socket.close(1008, 'Unauthorized');
+      this.reject(socket, 1008, 'Unauthorized');
       return;
     }
     const state: ClientState = { sessionId, alive: true, requests: new Map(), requestTimes: [] };
@@ -171,11 +182,28 @@ export class OpenTigWebSocketTransport {
     socket.on('error', () => this.options.logger('warn', 'WebSocket connection failed.'));
   }
 
+  /**
+   * Closes a connection the server refuses and stops reading from it at once: frames it sends
+   * afterwards are neither parsed nor inflated. The close frame still goes out, so a browser sees
+   * the code; the connection is cut shortly after, without waiting for the client's reply.
+   */
+  private reject(socket: WebSocket, code: number, reason: string): void {
+    if (!this.clients.has(socket) && !this.rejected.has(socket)) {
+      this.rejected.add(socket);
+      socket.once('close', () => this.rejected.delete(socket));
+    }
+    if (socket.readyState === WebSocket.OPEN) socket.close(code, reason);
+    socket.pause();
+    const cut = setTimeout(() => socket.terminate(), REJECT_GRACE_MS);
+    cut.unref();
+    socket.once('close', () => clearTimeout(cut));
+  }
+
   private async message(socket: WebSocket, state: ClientState, data: WebSocket.RawData, isBinary: boolean): Promise<void> {
-    if (!this.options.auth.hasSession(state.sessionId)) return socket.close(1008, 'Session expired or revoked');
-    if (isBinary) return socket.close(1003, 'Text messages only');
+    if (!this.options.auth.hasSession(state.sessionId)) return this.reject(socket, 1008, 'Session expired or revoked');
+    if (isBinary) return this.reject(socket, 1003, 'Text messages only');
     const bytes = rawBytes(data);
-    if (bytes.byteLength > FILE_WRITE_FRAME_LIMIT) return socket.close(1009, 'Message too large');
+    if (bytes.byteLength > FILE_WRITE_FRAME_LIMIT) return this.reject(socket, 1009, 'Message too large');
 
     let input: unknown;
     try { input = JSON.parse(bytes.toString('utf8')); }
@@ -188,7 +216,7 @@ export class OpenTigWebSocketTransport {
       return;
     }
     if (!isRequest(input)) return this.sendProtocolError(socket, requestId(input), 'Malformed request.');
-    if (!this.options.auth.hasSession(state.sessionId)) return socket.close(1008, 'Session expired or revoked');
+    if (!this.options.auth.hasSession(state.sessionId)) return this.reject(socket, 1008, 'Session expired or revoked');
     const now = Date.now();
     state.requestTimes = state.requestTimes.filter((requestedAt) => now - requestedAt < this.requestRateWindowMs);
     if (state.requestTimes.length >= this.requestRateLimit) return this.sendBusy(socket, input.id, 'Request rate limit exceeded.');
@@ -285,7 +313,7 @@ export class OpenTigWebSocketTransport {
     if (socket.readyState !== WebSocket.OPEN) return false;
     const state = this.clients.get(socket);
     if (!state || !this.options.auth.hasSession(state.sessionId)) {
-      socket.close(1008, 'Session expired or revoked');
+      this.reject(socket, 1008, 'Session expired or revoked');
       return false;
     }
     return true;
@@ -322,14 +350,14 @@ export class OpenTigWebSocketTransport {
   private sendSerialized(socket: WebSocket, serialized: ReturnType<typeof stringifyBounded> | null): void {
     if (!this.canSend(socket)) return;
     if (!serialized) {
-      socket.close(1009, 'Server message too large');
+      this.reject(socket, 1009, 'Server message too large');
       return;
     }
     const startedAt = this.measureTransport ? performance.now() : undefined;
     const bufferedBytes = socket.bufferedAmount;
     if (bufferedBytes + serialized.bytes > MAX_BUFFERED_SEND_BYTES) {
       if (startedAt !== undefined) this.measure('send', startedAt, { bytes: serialized.bytes, bufferedBytes, outcome: 'backpressure' });
-      socket.close(1013, 'Client is too slow');
+      this.reject(socket, 1013, 'Client is too slow');
       return;
     }
     socket.send(serialized.text, (error) => {
@@ -350,7 +378,7 @@ export class OpenTigWebSocketTransport {
   private checkHeartbeats(): void {
     for (const [socket, state] of this.clients) {
       if (!this.options.auth.hasSession(state.sessionId)) {
-        socket.close(1008, 'Session expired or revoked');
+        this.reject(socket, 1008, 'Session expired or revoked');
         continue;
       }
       if (!state.alive) {
