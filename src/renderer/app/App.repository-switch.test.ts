@@ -10,7 +10,7 @@ import type { ToolbarProps } from './Toolbar';
 import { SettingsStore } from '../../main/persistence/SettingsStore';
 
 const calls = vi.hoisted(() => ({
-  bootstrap: vi.fn(), snapshot: vi.fn(), openRecent: vi.fn(), getStatus: vi.fn(), success: vi.fn(), error: vi.fn(), fetch: vi.fn(), setRepositoryAccount: vi.fn(), getFavicon: vi.fn(), listWorktrees: vi.fn(),
+  bootstrap: vi.fn(), snapshot: vi.fn(), getFiles: vi.fn(), openRecent: vi.fn(), getStatus: vi.fn(), success: vi.fn(), error: vi.fn(), fetch: vi.fn(), setRepositoryAccount: vi.fn(), getFavicon: vi.fn(), listWorktrees: vi.fn(),
   activeRepositoryChanged: null as ((repository: RepositoryInfo) => void) | null,
   repositoryChanged: null as ((repositoryId: string, scope: string, watch?: string, watchId?: string) => void) | null,
   reconnected: [] as Array<() => void>,
@@ -21,7 +21,7 @@ vi.mock('@/lib/opentig-api', () => ({
     app: { bootstrap: calls.bootstrap, capabilities: async () => null, setZoomFactor: () => {}, setTitleBarTheme: async () => {} },
     repository: {
       openRecent: calls.openRecent, getStatus: calls.getStatus, getFavicon: calls.getFavicon, snapshot: calls.snapshot,
-      fileHistoryState: async () => ({ canUndo: false, canRedo: false }), getFiles: async () => [],
+      fileHistoryState: async () => ({ canUndo: false, canRedo: false }), getFiles: calls.getFiles,
     },
     refs: { listBranches: async () => [], listWorktrees: calls.listWorktrees, fetch: calls.fetch },
     github: { status: async () => ({ installed: false }), repositoryInfo: async () => ({ isGitHub: false, nameWithOwner: null }), setRepositoryAccount: calls.setRepositoryAccount },
@@ -61,6 +61,7 @@ vi.mock('./Toolbar', async () => {
 });
 vi.mock('@/features/changes/ChangesView', () => ({ ChangesView: () => createElement('div', null, 'Changes list') }));
 vi.mock('@/features/commit/CommitComposer', () => ({ CommitComposer: () => null }));
+vi.mock('@/features/files/FilesView', () => ({ FilesView: (props: { readOnly: boolean }) => createElement('output', { 'aria-label': 'Files read-only' }, String(props.readOnly)) }));
 vi.mock('@/features/viewer/Viewer', () => ({ default: () => null }));
 vi.mock('@/features/repositories/OpenRepositoryDialog', () => ({ OpenRepositoryDialog: () => null }));
 
@@ -95,6 +96,7 @@ beforeEach(() => {
     preferences: { ...new SettingsStore('unused-settings.json').preferences, remoteFetchIntervalSeconds: 0 },
   });
   calls.getFavicon.mockResolvedValue(null);
+  calls.getFiles.mockResolvedValue([]);
   calls.listWorktrees.mockImplementation(async (id: string) => id === 'repo' ? [{ path: '/repo' }, { path: '/repo-linked' }] : [{ path: `/${id}` }]);
   opens.clear();
   statuses.clear();
@@ -234,6 +236,22 @@ describe('starting up', () => {
     expect(output('Busy')).toBe('');
     expect(output('Worktrees')).toBe('/repo /repo-linked');
     expect(output('Unconfirmed')).toBe('false');
+  });
+
+  it('holds the Files tree\'s changes until its own tree is read, after the first read confirmed the rest', async () => {
+    const tree = deferred<never[]>();
+    calls.getFiles.mockImplementation(() => tree.promise);
+    await act(async () => root.render(createElement(QueryClientProvider, { client }, createElement(App))));
+    await settle();
+    // Changes read again and confirmed; the saved tree was not read, Files being closed.
+    expect(output('Unconfirmed')).toBe('false');
+    const files = [...container.querySelectorAll<HTMLButtonElement>('nav[aria-label="Repository views"] button')].find((button) => button.textContent?.includes('Files'))!;
+    await act(async () => files.click());
+    await settle();
+    expect(output('Files read-only')).toBe('true');
+    await act(async () => tree.resolve([]));
+    await settle();
+    expect(output('Files read-only')).toBe('false');
   });
 
   it('puts what the server saved away when the repository cannot be read', async () => {
