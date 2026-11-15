@@ -276,12 +276,12 @@ A fork's runs waiting for approval are approved from its pull request, with [**A
 
 ## Answers kept by the backend
 
-The backend keeps what GitHub last answered for pull requests, their status, conversation and stacks, the PR lists, releases, the Actions list and each run, and saves it in its data folder, so it outlives a restart. When you open something that was read before, OpenTig shows that answer at once and reads it again behind it. Until the new answer arrives, a line beside it says **Saved 5m ago · Updating…**; it then turns into the current answer without a reload. If GitHub can't be reached, the line says **Couldn't update** with the reason and **Retry**, and the saved answer stays on screen marked as such.
+The backend keeps what GitHub last answered for pull requests, their status, conversation and stacks, the PR lists, releases, the Actions list and each run, and saves it in its data folder, so it outlives a restart. When you open something that isn't on screen yet and was read before, OpenTig shows that answer at once and reads it again behind it; a refresh of something already on screen waits for GitHub and leaves what is shown in place. Until the new answer arrives, a line beside it says **Saved 5m ago · Updating…**; it then turns into the current answer without a reload. If GitHub can't be reached, the line says **Couldn't update** with the reason and **Retry**, and the saved answer stays on screen marked as such.
 
 - While a PR's status is a saved one, merging and the other actions in its bar stay unavailable. Every change you make on GitHub reads the current state itself and refuses to act if the PR moved.
 - An answer is only shown to the same GitHub account, for the same GitHub repository, in the same local repository. Changing a repository's account, the default account or the saved accounts, or pointing the remote elsewhere, drops what was kept for it. So do credentials GitHub rejects and a repository the account can no longer see.
 - A change made through OpenTig drops only what it affects: merging or commenting on a PR drops that PR and the PR lists, editing a release drops the releases list, and running a workflow drops the Actions list.
-- Answers older than 14 days are not shown. A finished workflow run is kept until newer answers push it out; if the Actions list shows it was run again, it is read again.
+- Answers older than 14 days are not shown. A finished workflow run is kept until newer answers push it out, and is always read again when opened, since it can be started again on GitHub.
 
 Without a newer OpenTig in the browser, the backend serves an answer only within the times above and otherwise waits for GitHub, as before. See [Security and privacy](security-and-privacy.md#github-answers-kept-on-disk) for what the file holds and how to clear it.
 

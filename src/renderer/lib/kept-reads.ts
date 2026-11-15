@@ -22,7 +22,12 @@ const MAX_ENTRIES = 300;
 /** Past the server's own budget for the read, a refresh nobody heard back from counts as failed. */
 const REFRESH_DEADLINE_MS = GITHUB_READ_TIMEOUT_MS + 15_000;
 
-interface Entry { state: KeptReadState; timer: ReturnType<typeof setTimeout> | null }
+interface Entry {
+  state: KeptReadState;
+  timer: ReturnType<typeof setTimeout> | null;
+  /** The server has read it again: the next read asks for that, never for a kept answer. */
+  refreshed: boolean;
+}
 
 /** Where a kept answer belongs: the query it fills, and the query to read again once it is refreshed. */
 export interface KeptReadTarget {
@@ -65,11 +70,29 @@ export class KeptReads {
   private readonly listeners = new Set<() => void>();
   private readonly refreshedListeners = new Set<(target: KeptReadTarget) => void>();
   private version = 0;
+  private hasData: (target: KeptReadTarget) => boolean = () => false;
+
+  /** Tells the store how to see whether a query already shows something, from the query client. */
+  setDataLookup(hasData: (target: KeptReadTarget) => boolean): void {
+    this.hasData = hasData;
+  }
+
+  /**
+   * Whether a read for `target` may be answered with a kept answer: only to show something where
+   * there is nothing, or where what is shown is itself a kept answer not yet read again. A read that
+   * refreshes data a confirmed read gave asks for the fresh answer, so nothing on screen is swapped
+   * for an older one, marked as updating, or disabled.
+   */
+  acceptsKept(target: KeptReadTarget): boolean {
+    const entry = this.entries.get(keyOf(target.stateKey));
+    if (entry) return !entry.refreshed;
+    return !this.hasData(target);
+  }
 
   /** An answer for `target` arrived marked as kept; `refreshed` settles when the server has read it again. */
   kept(target: KeptReadTarget, readAt: string, refreshed: Promise<KeptRefreshOutcome>): void {
     const key = keyOf(target.stateKey);
-    const entry: Entry = { state: { readAt, status: 'refreshing' }, timer: null };
+    const entry: Entry = { state: { readAt, status: 'refreshing' }, timer: null, refreshed: false };
     entry.timer = setTimeout(() => this.settle(key, entry, { outcome: 'failed', error: { code: 'TIMEOUT', operation: 'github-read', message: 'GitHub did not answer in time.' } }), REFRESH_DEADLINE_MS);
     this.replace(key, entry);
     void refreshed.then((outcome) => {
@@ -136,7 +159,7 @@ export class KeptReads {
     if (outcome.outcome === 'failed') {
       entry.state = { ...entry.state, status: 'failed', error: outcome.error };
       this.changed();
-    }
+    } else entry.refreshed = true;
   }
 
   private replace(key: string, entry: Entry): void {

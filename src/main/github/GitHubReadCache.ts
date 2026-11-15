@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
-import { readFile, rm, stat } from 'node:fs/promises';
+import { readdir, readFile, rm, stat } from 'node:fs/promises';
+import path from 'node:path';
 import { z } from 'zod';
 import { writeFileAtomically } from '../persistence/atomicWrite';
 
@@ -46,6 +47,8 @@ export const GITHUB_READ_CACHE_LIMITS = {
   maxAgeMs: 14 * 24 * 60 * 60_000,
   /** How long after a change the file is written, so a burst of reads writes it once. */
   writeDelayMs: 15_000,
+  /** The file as written, in bytes, envelope and escaping included: a larger one is not read. */
+  fileBytes: 16 * 1024 * 1024,
 } as const;
 
 /** Bumped whenever what an entry holds changes shape: a file of another format is discarded. */
@@ -85,6 +88,9 @@ export class GitHubReadCache {
   private writing: Promise<void> = Promise.resolve();
   private dirty = false;
   private closed = false;
+  private loaded = false;
+  /** Drops made before the file was read, applied to what it holds as it is read. */
+  private pendingDrops: Array<(entry: GitHubReadEntry) => boolean> = [];
 
   constructor(private readonly filePath: string | null, private readonly now: () => number = Date.now) {
     if (!filePath) this.loading = Promise.resolve();
@@ -94,7 +100,7 @@ export class GitHubReadCache {
 
   /** Reads the file once. A file that is missing, corrupt, too large or of another format is removed and the cache starts empty. */
   load(): Promise<void> {
-    this.loading ??= this.readFile();
+    this.loading ??= this.readFile().finally(() => { this.loaded = true; this.pendingDrops = []; });
     return this.loading;
   }
 
@@ -116,38 +122,45 @@ export class GitHubReadCache {
     return entry && !this.expired(entry) ? entry : undefined;
   }
 
-  set(key: string, scope: GitHubReadScope, value: unknown, options: { readAt?: number; noExpiry?: boolean } = {}): void {
-    if (this.closed) return;
+  /** Keeps `value`; false when it was not kept, being too large, not JSON, or the cache closed. */
+  set(key: string, scope: GitHubReadScope, value: unknown, options: { readAt?: number; noExpiry?: boolean } = {}): boolean {
+    if (this.closed) return false;
     const text = JSON.stringify(value);
     // `undefined` and anything JSON can't hold are not kept.
-    if (text === undefined) return;
-    const bytes = text.length;
-    if (bytes > GITHUB_READ_CACHE_LIMITS.memoryBytes / 4) return;
+    if (text === undefined) return false;
+    const bytes = Buffer.byteLength(text);
+    if (bytes > GITHUB_READ_CACHE_LIMITS.memoryBytes / 4) return false;
     this.remove(key);
     const now = this.now();
     this.entries.set(key, { key, scope: { ...scope }, value: structuredClone(value), readAt: options.readAt ?? now, usedAt: now, noExpiry: options.noExpiry ?? false, bytes });
     this.memoryBytes += bytes;
     this.enforceBounds();
     this.changed();
+    return this.entries.has(key);
   }
 
   delete(key: string): void {
-    if (this.remove(key)) this.changed();
+    this.dropWhere((entry) => entry.key === key);
   }
 
-  /** Drops every answer `drop` matches, from memory and, at the next write, from disk. */
+  /**
+   * Drops every answer `drop` matches, from memory and, at the next write, from disk. Before the
+   * file has been read, the drop also applies to what it holds when it is.
+   */
   dropWhere(drop: (entry: GitHubReadEntry) => boolean): number {
     let count = 0;
     for (const [key, entry] of [...this.entries]) if (drop(entry) && this.remove(key)) count++;
-    if (count) this.changed();
+    if (!this.loaded && this.filePath) {
+      this.pendingDrops.push(drop);
+      // Read now, so the file is rewritten without them even if nothing asks for it.
+      void this.load();
+      this.changed();
+    } else if (count) this.changed();
     return count;
   }
 
   clear(): void {
-    if (!this.entries.size) return;
-    this.entries.clear();
-    this.memoryBytes = 0;
-    this.changed();
+    this.dropWhere(() => true);
   }
 
   /** Writes what changed now, for a server shutting down. Later changes are not kept. */
@@ -199,37 +212,43 @@ export class GitHubReadCache {
     const filePath = this.filePath;
     if (!filePath) return;
     this.dirty = false;
-    // Newest first until the disk bound is reached; answers too large for disk stay in memory only.
-    const kept: Array<Omit<GitHubReadEntry, 'bytes'>> = [];
-    let total = 0;
-    for (const entry of [...this.entries.values()].reverse()) {
-      if (entry.bytes > GITHUB_READ_CACHE_LIMITS.diskEntryBytes || this.expired(entry)) continue;
-      if (total + entry.bytes > GITHUB_READ_CACHE_LIMITS.diskBytes) break;
-      total += entry.bytes;
-      kept.push({ key: entry.key, scope: entry.scope, value: entry.value, readAt: entry.readAt, usedAt: entry.usedAt, noExpiry: entry.noExpiry });
-    }
-    kept.reverse();
-    const entries = JSON.stringify(kept);
-    const contents = JSON.stringify({ format: FORMAT, checksum: createHash('sha256').update(entries).digest('hex'), entries });
-    this.writing = this.writing.then(() => kept.length
-      ? writeFileAtomically(filePath, contents)
-      : rm(filePath, { force: true })).catch(() => undefined);
+    // After the file has been read: what it holds and no drop has removed is part of what is written.
+    this.writing = this.writing.then(() => this.load()).then(() => {
+      // Newest first until the disk bound is reached; answers too large for disk stay in memory only.
+      const kept: Array<Omit<GitHubReadEntry, 'bytes'>> = [];
+      let total = 0;
+      for (const entry of [...this.entries.values()].reverse()) {
+        if (entry.bytes > GITHUB_READ_CACHE_LIMITS.diskEntryBytes || this.expired(entry)) continue;
+        if (total + entry.bytes > GITHUB_READ_CACHE_LIMITS.diskBytes) break;
+        total += entry.bytes;
+        kept.push({ key: entry.key, scope: entry.scope, value: entry.value, readAt: entry.readAt, usedAt: entry.usedAt, noExpiry: entry.noExpiry });
+      }
+      kept.reverse();
+      // Measured as written, in bytes, as reading it measures it: the oldest go until it fits.
+      let contents = envelope(kept);
+      while (kept.length && Buffer.byteLength(contents) > GITHUB_READ_CACHE_LIMITS.fileBytes) {
+        kept.splice(0, Math.max(1, Math.ceil(kept.length / 10)));
+        contents = envelope(kept);
+      }
+      return kept.length ? writeFileAtomically(filePath, contents) : rm(filePath, { force: true });
+    }).catch(() => undefined);
   }
 
   private async readFile(): Promise<void> {
     const filePath = this.filePath;
     if (!filePath) return;
+    await removeLeftovers(filePath);
     try {
-      // Twice the disk bound leaves room for the envelope and escaping; anything larger was not written by this version.
-      if ((await stat(filePath)).size > GITHUB_READ_CACHE_LIMITS.diskBytes * 2 + 64 * 1024) throw new Error('Too large');
+      if ((await stat(filePath)).size > GITHUB_READ_CACHE_LIMITS.fileBytes) throw new Error('Too large');
       const file = fileSchema.parse(JSON.parse(await readFile(filePath, 'utf8')));
       if (createHash('sha256').update(file.entries).digest('hex') !== file.checksum) throw new Error('Checksum');
       const entries = entriesSchema.parse(JSON.parse(file.entries));
       for (const entry of entries) {
         // A change made before the file was read wins over what the file says.
         if (this.entries.has(entry.key)) continue;
-        const loaded: GitHubReadEntry = { ...entry, bytes: JSON.stringify(entry.value)?.length ?? 0 };
-        if (this.expired(loaded) || !loaded.bytes) continue;
+        const text = JSON.stringify(entry.value);
+        const loaded: GitHubReadEntry = { ...entry, bytes: text === undefined ? 0 : Buffer.byteLength(text) };
+        if (this.expired(loaded) || !loaded.bytes || this.pendingDrops.some((drop) => drop(loaded))) continue;
         // Older entries go before the ones set while loading.
         this.entries.set(entry.key, loaded);
         this.memoryBytes += loaded.bytes;
@@ -247,5 +266,19 @@ export class GitHubReadCache {
     const sorted = [...this.entries.values()].sort((a, b) => a.usedAt - b.usedAt);
     this.entries.clear();
     for (const entry of sorted) this.entries.set(entry.key, entry);
+  }
+}
+
+function envelope(entries: Array<Omit<GitHubReadEntry, 'bytes'>>): string {
+  const text = JSON.stringify(entries);
+  return JSON.stringify({ format: FORMAT, checksum: createHash('sha256').update(text).digest('hex'), entries: text });
+}
+
+/** Temporary files a write left behind when the process stopped between writing and renaming. */
+export async function removeLeftovers(filePath: string): Promise<void> {
+  const name = path.basename(filePath);
+  const folder = path.dirname(filePath);
+  for (const entry of await readdir(folder).catch(() => [] as string[])) {
+    if (entry.startsWith(`${name}.`) && entry.endsWith('.tmp')) await rm(path.join(folder, entry), { force: true }).catch(() => undefined);
   }
 }

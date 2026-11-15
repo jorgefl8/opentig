@@ -7,6 +7,7 @@ import type { OpenTigServerApi } from '@shared/server-api';
 import { OPEN_TIG_PROTOCOL_VERSION } from '@shared/server-protocol';
 import { OpenTigWebSocketTransport } from './websocket-transport';
 import { keptReads as defaultKeptReads, keptReadTarget, type KeptReads } from './kept-reads';
+import type { KeptRefreshOutcome } from '@shared/kept-reads';
 
 interface ServerClientOptions {
   transport?: OpenTigWebSocketTransport;
@@ -44,7 +45,9 @@ export function createOpenTigServerClient(options: ServerClientOptions = {}): Op
     const target = keptReadTarget(command, args);
     if (!target) return invoke(command, ...args);
     let wasKept = false;
-    return transport.request(command, args, { onKept: ({ readAt, refreshed }) => { wasKept = true; kept.kept(target, readAt, refreshed); } })
+    // A refresh of what a confirmed read showed waits for the fresh answer (see `acceptsKept`).
+    const options = kept.acceptsKept(target) ? { onKept: ({ readAt, refreshed }: { readAt: string; refreshed: Promise<KeptRefreshOutcome> }) => { wasKept = true; kept.kept(target, readAt, refreshed); } } : {};
+    return transport.request(command, args, options)
       .then((value) => { if (!wasKept) kept.confirm(target); return value; }) as ReturnType<OpenTigServerApiMethod<Command>>;
   };
 

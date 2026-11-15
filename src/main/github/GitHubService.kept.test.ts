@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -29,16 +29,23 @@ async function folder(): Promise<string> {
  * account its settings name, and GitHub answers each `pr view` with a new title.
  */
 function server(file: string, options: { login?: string; remote?: string; clock?: { now: number } } = {}) {
-  const state = { login: options.login ?? 'tester', remote: options.remote ?? 'https://github.com/example/demo.git', views: 0, failWith: null as string | null };
+  const state = { login: options.login ?? 'tester', remote: options.remote ?? 'https://github.com/example/demo.git', views: 0, failWith: null as string | null, gate: null as Promise<void> | null, bodyBytes: 0 };
   const clock = options.clock ?? { now: Date.parse('2026-11-15T10:00:00Z') };
   const run = vi.fn(async (_exe: string, args: string[]): Promise<CliRunResult> => {
     if (args[0] === 'auth' && args[1] === 'token') return { exitCode: 0, stdout: TOKEN, stderr: '' };
     if (args[0] === 'api' && args[1] === 'user') return { exitCode: 0, stdout: state.login, stderr: '' };
     if (args[0] === '--version' || args[0] === 'auth') return ok('ready');
+    if (args[0] === 'api' && /actions\/runs\/\d+$/.test(args[1] ?? '')) {
+      state.views++;
+      return ok({ id: 5, name: 'CI', run_number: 3, run_attempt: 1, workflow_id: 1, status: 'completed', conclusion: state.views > 1 ? 'success' : 'failure', event: 'push', head_branch: 'main', head_sha: 'b'.repeat(40), html_url: 'https://github.com/example/demo/actions/runs/5', path: null, created_at: '2026-11-15T09:00:00Z', updated_at: '2026-11-15T09:00:00Z' });
+    }
+    if (args[0] === 'api' && /\/jobs\?/.test(args[1] ?? '')) return ok({ total_count: 0, jobs: [] });
     if (args[0] === 'pr' && args[1] === 'view') {
       if (state.failWith) return { exitCode: 1, stdout: '', stderr: state.failWith };
       state.views++;
-      return ok({ number: Number(args[2]), state: 'OPEN', title: `read ${state.views}`, updatedAt: '2026-11-15T09:00:00Z', headRefOid: 'a'.repeat(40) });
+      const views = state.views;
+      if (state.gate) await state.gate;
+      return ok({ number: Number(args[2]), state: 'OPEN', title: `read ${views}`, body: 'x'.repeat(state.bodyBytes), updatedAt: '2026-11-15T09:00:00Z', headRefOid: 'a'.repeat(40) });
     }
     return ok([]);
   });
@@ -54,7 +61,8 @@ function server(file: string, options: { login?: string; remote?: string; clock?
     run: async (_cwd: string, args: string[]) => ({ stdout: Buffer.from(args.includes('core.sshCommand') || args[0] === 'config' ? '' : state.remote) }),
   } as unknown as GitProcess;
   const repository = { path: '/work/demo', commonDir: '/work/demo/.git', id: 'repo', name: 'demo', repositoryName: 'demo' } as RepositoryInfo;
-  const repositories = { get: () => repository } as unknown as RepositoryService;
+  const other = { path: '/work/other', commonDir: '/work/other/.git', id: 'other', name: 'other', repositoryName: 'other' } as RepositoryInfo;
+  const repositories = { get: (id: string) => id === 'other' ? other : repository } as unknown as RepositoryService;
   const accounts = new GitHubAccountsService(resolver, { run } as unknown as CliProcessRunner, git, settings);
   const cache = new GitHubReadCache(file, () => clock.now);
   const service = new GitHubService(resolver, { run } as unknown as CliProcessRunner, git, repositories, accounts, cache, () => clock.now);
@@ -141,6 +149,51 @@ describe('GitHub answers kept on the server', () => {
     expect(cache.size).toBe(0);
   });
 
+  it('never shows a finished run as current: it may have been started again on GitHub', async () => {
+    const { service, state } = server(path.join(await folder(), 'github-cache.json'));
+    expect((await service.getActionRun('repo', 5)).conclusion).toBe('failure');
+    // Moments later, a client that can mark it gets it marked, and the run is read again behind it.
+    const client = keptSink();
+    expect((await service.getActionRun('repo', 5, client.sink)).conclusion).toBe('failure');
+    expect(client.answers).toHaveLength(1);
+    await client.answers[0]!.refresh;
+    expect(state.views).toBe(2);
+    // A client that cannot mark it waits for GitHub.
+    await service.getActionRun('repo', 5);
+    expect(state.views).toBe(3);
+  });
+
+  it('does not serve again a kept answer GitHub has replaced with one too large to keep', async () => {
+    const { service, state, clock } = server(path.join(await folder(), 'github-cache.json'));
+    await service.getPullRequest('repo', 12);
+    clock.now += 2 * 60_000;
+    state.bodyBytes = GITHUB_READ_CACHE_LIMITS.memoryBytes / 4 + 1;
+    const client = keptSink();
+    await service.getPullRequest('repo', 12, client.sink);
+    await client.answers[0]!.refresh;
+    // Told of the refresh, the client asks again: it gets GitHub's answer, never the old one again.
+    const again = keptSink();
+    expect((await service.getPullRequest('repo', 12, again.sink)).title).toBe('read 3');
+    expect(again.answers).toHaveLength(0);
+  });
+
+  it('keeps a refresh that finished while another repository was changed through OpenTig', async () => {
+    const { service, state, clock } = server(path.join(await folder(), 'github-cache.json'));
+    await service.getPullRequest('repo', 12);
+    clock.now += 2 * 60_000;
+    let open!: () => void;
+    state.gate = new Promise((resolve) => { open = resolve; });
+    const client = keptSink();
+    await service.getPullRequest('repo', 12, client.sink);
+    service.invalidate('other', { pullRequest: 12 });
+    open();
+    state.gate = null;
+    await client.answers[0]!.refresh;
+    // The refreshed answer was kept, so asking again is answered from it.
+    expect((await service.getPullRequest('repo', 12, keptSink().sink)).title).toBe('read 2');
+    expect(state.views).toBe(2);
+  });
+
   it('drops only what a change made through OpenTig affects', async () => {
     const { service, state } = server(path.join(await folder(), 'github-cache.json'));
     await service.getPullRequest('repo', 12);
@@ -181,6 +234,31 @@ describe('GitHub answers kept on the server', () => {
 
 describe('GitHubReadCache bounds', () => {
   const scope = { host: 'github.com', nameWithOwner: 'example/demo', login: 'tester', path: '/work/demo', commonDir: '/work/demo/.git', remote: 'f'.repeat(64) };
+
+  it('keeps a drop made before the file is read: what it dropped does not come back from disk', async () => {
+    const file = path.join(await folder(), 'github-cache.json');
+    const first = new GitHubReadCache(file);
+    first.set('kept', scope, { title: 'old account' });
+    first.set('other', { ...scope, login: 'someone' }, { title: 'other account' });
+    await first.close();
+    // An account change at start-up, before any GitHub view has read the file.
+    const next = new GitHubReadCache(file);
+    next.dropWhere((entry) => entry.scope.login === 'tester');
+    expect(await next.get('kept')).toBeUndefined();
+    expect(await next.get('other')).toBeDefined();
+    await next.flush();
+    const restarted = new GitHubReadCache(file);
+    expect(await restarted.get('kept')).toBeUndefined();
+    expect(await restarted.get('other')).toBeDefined();
+  });
+
+  it('removes what a write cut short left behind', async () => {
+    const folderPath = await folder();
+    const file = path.join(folderPath, 'github-cache.json');
+    await writeFile(`${file}.0f0e0d0c-aaaa-bbbb-cccc-000000000000.tmp`, '{"format":1,');
+    await new GitHubReadCache(file).load();
+    expect(await readdir(folderPath)).toEqual([]);
+  });
 
   it('keeps a finished run past the age limit, and nothing else', async () => {
     const clock = { now: 0 };
