@@ -1,4 +1,4 @@
-import type { ActionRunDetails, ActionRunGraphNode, ActionRunJob, ActionRunPage, ActionRunSummary, RunnableWorkflowList, WorkflowTriggers } from '../../src/shared/contracts';
+import type { ActionJobLog, ActionJobLogLine, ActionJobLogStep, ActionRunDetails, ActionRunGraphNode, ActionRunJob, ActionRunPage, ActionRunSummary, RunnableWorkflowList, WorkflowTriggers } from '../../src/shared/contracts';
 import { sampleDate } from './model.ts';
 import { demoPulls } from './pulls.ts';
 
@@ -139,12 +139,63 @@ const samples: SampleRun[] = [
   singleJobRun(summary({ id: 29, workflowId: 1, title: 'Prepare release', conclusion: 'failure', createdAt: minutesAgo(2900), updatedAt: minutesAgo(2899), event: 'workflow_dispatch', branch: 'main' }), 'prepare', releaseSteps, 1),
 ];
 
+/** What a step of a sample job printed: its command, then a few lines, and for a failed test step, why. */
+function sampleStepLines(job: ActionRunJob, name: string, result: string | null, time: number): ActionJobLogLine[] {
+  const lines: Array<Omit<ActionJobLogLine, 'number' | 'time'>> = [];
+  const add = (kind: ActionJobLogLine['kind'], text: string) => lines.push({ kind, text });
+  if (name === 'Set up job') {
+    add('output', "Current runner version: '2.338.2'");
+    add('group', 'Runner Image'); add('output', 'Image: ubuntu-24.04'); add('endgroup', '');
+    add('output', `Complete job name: ${job.name}`);
+  } else if (name === 'Complete job') {
+    add('output', 'Cleaning up orphan processes');
+  } else {
+    const command = name.replace(/^Run /, '');
+    add('group', name); add('output', `\x1b[36;1m${command}\x1b[0m`); add('output', 'shell: /usr/bin/bash -e {0}'); add('endgroup', '');
+    if (command === 'npm ci') add('output', 'added 412 packages, and audited 413 packages in 9s');
+    else if (command === 'npm test' && result === 'failure') {
+      add('output', '> sample-tasks@0.4.0 test');
+      add('output', '> node --test');
+      add('output', '\x1b[32m✔\x1b[39m adds a task (1.2ms)');
+      add('output', '\x1b[32m✔\x1b[39m completes a task (0.4ms)');
+      add('output', '\x1b[31m✖\x1b[39m keeps only the chosen status (2.1ms)');
+      add('output', '  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:');
+      add('output', '  \x1b[32m+ actual\x1b[39m \x1b[31m- expected\x1b[39m');
+      add('output', '  \x1b[32m+\x1b[39m 3');
+      add('output', '  \x1b[31m-\x1b[39m 2');
+      add('output', '      at TestContext.<anonymous> (test/filter-tasks.test.js:14:42)');
+      add('error', 'test/filter-tasks.test.js:14:42: keeps only the chosen status: Expected length 2, received 3');
+      add('output', '\x1b[34mℹ\x1b[39m tests 12, pass 11, fail 1');
+      add('error', 'Process completed with exit code 1.');
+    } else if (command === 'npm test') add('output', '\x1b[34mℹ\x1b[39m tests 12, pass 12, fail 0');
+    else if (result === 'failure') add('error', 'Process completed with exit code 1.');
+    else add('output', 'Done.');
+  }
+  return lines.map((line, index) => ({ ...line, number: index + 1, time: time + index * 250 }));
+}
+
+function sampleLog(job: ActionRunJob): ActionJobLog {
+  if (job.status !== 'completed') return { state: 'pending', jobId: job.id };
+  if (job.conclusion === 'skipped' || !job.startedAt) return { state: 'unavailable', jobId: job.id, reason: 'not-run' };
+  const start = Date.parse(job.startedAt);
+  const steps: ActionJobLogStep[] = job.steps.map((step, index) => ({
+    number: step.number, name: step.name, status: step.status, conclusion: step.conclusion, omittedLines: 0,
+    lines: step.conclusion === 'skipped' ? [] : sampleStepLines(job, step.name, step.conclusion, start + index * 4_000),
+  }));
+  return { state: 'ready', jobId: job.id, steps, totalLines: steps.reduce((total, step) => total + step.lines.length, 0), readCut: false, displayCut: false };
+}
+
 export const demoActions = {
   runnable() { return structuredClone(runnable); },
   triggers(path: string): WorkflowTriggers | null { return structuredClone(triggers[path] ?? null); },
   list(workflowId: number | null): ActionRunPage {
     const runs = samples.map((sample) => sample.summary).filter((run) => workflowId === null || run.workflowId === workflowId);
     return { runs: structuredClone(runs), hasMore: false };
+  },
+  log(jobId: number): ActionJobLog {
+    const job = samples.flatMap((sample) => sample.jobs).find((item) => item.id === jobId);
+    if (!job) throw new Error('Choose a job from the sample repository.');
+    return sampleLog(job);
   },
   get(runId: number): ActionRunDetails {
     const sample = samples.find((item) => item.summary.id === runId);
