@@ -174,6 +174,9 @@ export class RepositoryService {
 
   recents(): RecentRepository[] { return this.settings.recentRepositories; }
 
+  /** Opened in this run or saved among the recent repositories. */
+  isKnown(id: string): boolean { return this.repositories.has(id) || Boolean(this.recent(id)); }
+
   async status(id: string, includeStats = true): Promise<RepositoryStatus> {
     const repository = this.get(id);
     return structuredClone(await this.git.shareRead(repository.path, `status:${includeStats}`, () => this.readStatus(id, includeStats)));

@@ -190,6 +190,7 @@ export const opentig: OpenTigApi = {
       return logo ? { mimeType: "image/svg+xml", dataUrl: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(logo)}` } : null;
     },
     fileHistoryState: async () => model.fileHistoryState(),
+    snapshot: async () => null,
     undoFileOperation: async () => {
       const result = model.undoFileOperation("undo");
       changed();

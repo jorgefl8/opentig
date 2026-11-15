@@ -33,7 +33,7 @@ function fixture(overrides: { view?: CliRunResult; list?: CliRunResult; tag?: Cl
     mutations.push(args);
     return overrides.mutate?.(args) ?? { exitCode: 0, stdout: '', stderr: '' };
   });
-  const accounts = { revisionFor: () => 3, authRevision: 1, authenticate: async () => ({ auth: { env: {} }, executable: { executable: 'gh', alias: 'gh', source: 'process-path', env: {} }, context: { login: 'sample', revision: 3 } }) } as unknown as GitHubAccountsService;
+  const accounts = { revisionFor: () => 3, authRevision: 1, onChange: () => () => undefined, context: () => ({ state: 'ready', login: 'sample', revision: 3 }), authenticate: async () => ({ auth: { env: {} }, executable: { executable: 'gh', alias: 'gh', source: 'process-path', env: {} }, context: { login: 'sample', revision: 3 } }) } as unknown as GitHubAccountsService;
   const service = new GitHubService(
     { discover: async () => [], warning: async () => undefined } as unknown as CliResolver,
     { run } as unknown as CliProcessRunner,

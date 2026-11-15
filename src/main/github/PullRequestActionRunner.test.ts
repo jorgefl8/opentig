@@ -35,7 +35,7 @@ function fixture({ reads, stack = ok({ data: { repository: { pr12: { stack: null
     mutations.push(args);
     return mutate(args);
   });
-  const accounts = { revisionFor: () => revision, authRevision: 1, authenticate: async () => ({ auth: { env: {} }, executable: { executable: 'gh', alias: 'gh', source: 'process-path', env: {} }, context: { login, revision } }) } as unknown as GitHubAccountsService;
+  const accounts = { revisionFor: () => revision, authRevision: 1, onChange: () => () => undefined, context: () => ({ state: 'ready', login, revision }), authenticate: async () => ({ auth: { env: {} }, executable: { executable: 'gh', alias: 'gh', source: 'process-path', env: {} }, context: { login, revision } }) } as unknown as GitHubAccountsService;
   const service = new GitHubService(
     { discover: async () => [], warning: async () => undefined } as unknown as CliResolver,
     { run } as unknown as CliProcessRunner,

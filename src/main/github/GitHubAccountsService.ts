@@ -47,10 +47,27 @@ export class GitHubAccountsService {
   private detected: CliDetection | null = null;
   private redetecting = false;
   private access = new Map<string, { at: number; promise: Promise<Array<{ login: string; push: boolean }>> }>();
+  private readonly listeners = new Set<(repository?: RepositoryInfo) => void>();
 
   constructor(private readonly resolver: CliResolver, private readonly runner: CliProcessRunner,
     private readonly git: GitProcess, private readonly settings?: SettingsStore, private readonly store?: GitHubStatusStore,
     private readonly changed: (repository?: RepositoryInfo, defaultOnly?: boolean, detected?: GitHubAccountDetection) => void = () => undefined) {}
+
+  /**
+   * Called when the account of `repository`, or of every repository when absent,
+   * may have changed: a choice, the default, the saved accounts, or credentials
+   * that turned out to belong to someone else or were rejected.
+   */
+  onChange(listener: (repository?: RepositoryInfo) => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  private notify(repository?: RepositoryInfo): void {
+    for (const listener of this.listeners) {
+      try { listener(repository); } catch { /* A listener must not stop the others. */ }
+    }
+  }
 
   status(force = false): Promise<GitHubAccountsStatus> {
     if (force) {
@@ -85,7 +102,7 @@ export class GitHubAccountsService {
       this.tokens.clear();
       await this.settings.setGitHubDefaultLogin(login);
     } catch { /* Retried on the next inventory read. */ }
-    finally { this.changed(undefined, true); }
+    finally { this.notify(); this.changed(undefined, true); }
   }
 
   selection(repository: RepositoryInfo): GitHubAccountSelection {
@@ -194,7 +211,7 @@ export class GitHubAccountsService {
     this.defaultRevision = ++this.revision;
     this.tokens.clear();
     try { await this.settings.setGitHubDefaultLogin(login); }
-    finally { this.changed(undefined, true); }
+    finally { this.notify(); this.changed(undefined, true); }
     return this.status();
   }
 
@@ -210,6 +227,7 @@ export class GitHubAccountsService {
     this.ssh.clear();
     this.identities.clear();
     this.tokens.clear();
+    this.notify(repository);
     this.changed(repository, false, detected);
   }
 

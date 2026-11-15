@@ -1,4 +1,5 @@
 import { GettingStartedChecklist } from '@/features/onboarding/GettingStartedChecklist';
+import { useStableHandlers } from '@/lib/use-stable-handlers';
 import { parentFolderPath } from '@/features/repositories/directory-navigation';
 import { ONBOARDING_VERSION } from '../../shared/onboarding';
 import { lastCloneParent, resumeBackgroundClone } from '@/features/onboarding/clone-jobs';
@@ -18,7 +19,7 @@ import { sileo } from 'sileo';
 import type { BootstrapData, FetchResult, FileHistoryPathChange, FileHistoryState, GhCliStatus, GitHubRepositoryInfo, OpenTigCapabilities, Preferences, PullRequestState, PullRequestSummary, PullResult, PushResult, RecentRepository, RepositoryInfo, RepositoryRelocationSearch, UndoLatestCommitResult } from '../../shared/contracts';
 import { matchesCombo, resolveShortcuts, type ShortcutMap } from '../../shared/shortcuts';
 import { ShortcutsProvider } from './ShortcutsContext';
-import { Toolbar } from './Toolbar';
+import { Toolbar, type ToolbarProps } from './Toolbar';
 import { SidebarCollapseButton, SidebarRail, type SidebarRailSection } from './SidebarRail';
 import { SidebarResizeHandle } from './SidebarResizeHandle';
 import { useBranchPush } from '@/features/refs/useBranchPush';
@@ -72,6 +73,7 @@ import {
 import { resolveWindowControlsInset } from './window-controls';
 import { SectionSelections, stillShowable } from './section-memory';
 import { historyHead, queryKeys, queryResourcesForScope, refreshGitHubQueries, resetGitHubQueries } from '@/lib/query-client';
+import { keptReads } from '@/lib/kept-reads';
 import { listAgents } from '@/features/refs/local-refs-model';
 import { AgentMarks } from '@/features/refs/AgentLabel';
 import { persistTheme } from '@/lib/boot-theme';
@@ -154,6 +156,12 @@ const CloneRepositoryDialog = lazyWithRetry(() => import('@/features/onboarding/
 const FindRepositoriesDialog = lazyWithRetry(() => import('@/features/onboarding/FindRepositoriesDialog').then(module => ({ default: module.FindRepositoriesDialog })));
 const WelcomeSettings = lazyWithRetry(() => import('@/features/settings/SettingsDialog').then(module => ({ default: module.SettingsDialog })));
 
+/** The same empty lists on every render, so memoized parts see no change. */
+const NO_COMMITS: CommitInfo[] = [];
+const NO_BRANCHES: BranchInfo[] = [];
+const NO_WORKTREES: WorktreeInfo[] = [];
+const NO_WORKTREE_AGENTS: Awaited<ReturnType<typeof opentig.refs.worktreeAgents>> = [];
+
 export default function App({ initialView, initialSelection, pullRequestCreationDisabledReason }: { initialView?: SidebarView; initialSelection?: ViewerSelection; pullRequestCreationDisabledReason?: string } = {}) {
   const appQueryClient = useQueryClient();
   const branchPush = useBranchPush();
@@ -179,6 +187,12 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   const [branchesState, setBranches] = useState<BranchInfo[]>([]);
   const [worktreesState, setWorktrees] = useState<WorktreeInfo[]>([]);
   const [snapshotRepositoryId, setSnapshotRepositoryId] = useState<string | null>(null);
+  // The repository a read has confirmed since it was opened. Until then what is shown may come from
+  // memory or from what the server saved, and nothing that changes the repository is offered on it.
+  const [confirmedRepositoryId, setConfirmedRepositoryId] = useState<string | null>(null);
+  // The same for the file tree, which the first read leaves out unless Files is open: until a tree read in
+  // this session lands, the tree shown may be a saved one, and nothing in it is renamed, moved or deleted.
+  const [treeConfirmedRepositoryId, setTreeConfirmedRepositoryId] = useState<string | null>(null);
   // Read by a refresh as it starts, to tell the first read of a repository from a later one.
   const snapshotRepositoryIdRef = useRef<string | null>(null);
   const [pendingRepositoryId, setPendingRepositoryId] = useState<string | null>(null);
@@ -361,6 +375,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   const githubAccountQuery = useGitHubAccount(repository && githubInfo?.isGitHub ? repository.id : null);
   const githubAccount = githubAccountQuery.data ?? null;
   useEffect(() => opentig.events.onGitHubAccountsChanged((ids, inventoryChanged, detected) => {
+    // What the previous account was shown is gone, with any note that it was old.
+    keptReads.forget((key) => key[0] === 'repository' && (!ids || ids.includes(String(key[1]))));
     void resetGitHubQueries(appQueryClient, ids, inventoryChanged);
     const current = repositoryRef.current;
     if (!detected || !current || !ids?.includes(current.id)) return;
@@ -371,6 +387,10 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     });
   }), [appQueryClient]);
   useEffect(() => opentig.events.onReconnected(() => { void refreshGitHubQueries(appQueryClient, repositoryRef.current?.id ?? null); }), [appQueryClient]);
+  // The server has read again what it answered from what it kept: reading it now is answered at once with the new answer.
+  useEffect(() => keptReads.onRefreshed((target) => { void appQueryClient.invalidateQueries({ queryKey: target.invalidateKey }); }), [appQueryClient]);
+  // Whether a GitHub read refreshes something already on screen, which then waits for the fresh answer.
+  useEffect(() => keptReads.setDataLookup((target) => appQueryClient.getQueriesData({ queryKey: target.invalidateKey }).some(([, data]) => data !== undefined)), [appQueryClient]);
   // Changes may have gone unreported while disconnected; the bootstrap that follows says how the server watches now.
   useEffect(() => opentig.events.onReconnected(() => setAnnouncedWatch(null)), []);
   const githubReady = repository !== null && githubInfo?.isGitHub === true && ghStatus?.installed === true;
@@ -437,6 +457,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     : mobilePane === 'viewer' ? { title: viewerTitleHost, actions: viewerActionsHost, float: mobileFloatHost } : NO_MOBILE_CHROME_HOSTS,
   [mobile, mobileFloatHost, mobilePane, viewerActionsHost, viewerTitleHost]);
   const currentSnapshot = snapshotRepositoryId === repository?.id;
+  const unconfirmed = repository !== null && confirmedRepositoryId !== repository.id;
+  const treeUnconfirmed = repository !== null && treeConfirmedRepositoryId !== repository.id;
   const repositoryLoadPhase = pendingRepositoryId ? 'opening' : repository && !currentSnapshot ? 'loading' : null;
   // Quick switches finish without a flash; only a noticeable wait shows progress.
   const repositoryLoadVisible = useElapsed(repositoryLoadPhase ? 'busy' : null, 200);
@@ -456,8 +478,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     };
   }, [status?.changes]);
   const files = currentSnapshot ? filesState : null;
-  const branches = currentSnapshot ? branchesState : [];
-  const worktrees = currentSnapshot ? worktreesState : [];
+  const branches = currentSnapshot ? branchesState : NO_BRANCHES;
+  const worktrees = currentSnapshot ? worktreesState : NO_WORKTREES;
   // Agents start and stop without touching Git, so they are looked for on their own and kept fresh.
   const worktreeAgentsQuery = useQuery({
     queryKey: queryKeys.worktreeAgents(repository?.id ?? ''),
@@ -465,7 +487,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     enabled: repository !== null && currentSnapshot,
     refetchInterval: WORKTREE_AGENTS_REFRESH_MS,
   });
-  const worktreeAgents = currentSnapshot ? worktreeAgentsQuery.data ?? [] : [];
+  const worktreeAgents = currentSnapshot ? worktreeAgentsQuery.data ?? NO_WORKTREE_AGENTS : NO_WORKTREE_AGENTS;
   const currentBranch = status && !status.detached && !status.unborn ? status.branch : null;
   const branchPullRequestQuery = useQuery(branchPullRequestQueryOptions(
     repository?.id ?? '', currentBranch ?? '',
@@ -516,7 +538,12 @@ export default function App({ initialView, initialSelection, pullRequestCreation
 
   useEffect(() => {
     let active = true;
-    opentig.app.bootstrap().then((data) => {
+    opentig.app.bootstrap().then(async (data) => {
+      if (!active) return;
+      // Starting up, the repository on screen paints what the server last saved of it, as one seen
+      // moments ago paints what is in memory (see `knownSnapshot`): read again behind it, with Pull,
+      // Push, Commit and Discard held until that read lands, and put away if it fails.
+      if (data.activeRepository && data.server?.repositorySnapshots === true) await seedSavedSnapshot(appQueryClient, data.activeRepository.id);
       if (!active) return;
       filesTreeStates.clear();
       for (const state of data.filesTreeStates) filesTreeStates.set(state.repositoryId, [...state.expandedPaths]);
@@ -536,7 +563,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       if (active) setCapabilities(available);
     }).catch(() => undefined);
     return () => { active = false; };
-  }, [filesTreeStates]);
+  }, [appQueryClient, filesTreeStates]);
 
   useLayoutEffect(() => {
     const overlay = (navigator as Navigator & {
@@ -723,9 +750,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
    * Records the latest draft for a path. Called on every keystroke, so it only
    * touches refs; React state changes just once, when the dirty flag flips.
    */
-  const storeFileDraft = useCallback((path: string, content: string, expectedContent: string, expectedMtimeMs: number) => {
-    const repositoryId = repositoryRef.current?.id;
-    if (!repositoryId) return;
+  /** `repositoryId` is the one the edit was made in, which may no longer be the one open. */
+  const storeFileDraft = useCallback((path: string, content: string, expectedContent: string, expectedMtimeMs: number, repositoryId: string) => {
     let drafts = fileDraftsRef.current.get(repositoryId);
     if (!drafts) {
       drafts = new Map<string, RuntimeFileDraft>();
@@ -822,6 +848,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       lastReadRef.current.files = Date.now();
       treeGenerationRef.current = treeReadRef.current?.repositoryId === repositoryId ? treeReadRef.current : null;
       applyFilesSnapshot(nextFiles);
+      setTreeConfirmedRepositoryId(repositoryId);
     } catch (reason) {
       if (repositoryRef.current?.id !== repositoryId) return;
       if (isConnectionLoss(reason)) recordConnectionLoss('Could not refresh files', reason);
@@ -931,6 +958,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       if (nextFiles) lastReadRef.current.files = lastReadRef.current.snapshot;
       if (nextBranches && nextWorktrees) lastReadRef.current.refs = lastReadRef.current.snapshot;
       setSnapshotRepositoryId(repositoryId);
+      setConfirmedRepositoryId(repositoryId);
       setStatus(nextStatus);
       setShownHistoryHead((current) => current?.repositoryId === repositoryId && current.head === historyHead(nextStatus) ? current : { repositoryId, head: historyHead(nextStatus) });
       if (nextBranches) setBranches(nextBranches);
@@ -938,6 +966,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       if (nextFiles) {
         treeGenerationRef.current = treeReadRef.current?.repositoryId === repositoryId ? treeReadRef.current : null;
         applyFilesSnapshot(nextFiles);
+        setTreeConfirmedRepositoryId(repositoryId);
       }
       void nextHistory;
       if (shouldRefreshViewer(scope, viewerSelectionRef.current?.type ?? null)) {
@@ -1053,6 +1082,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     // from this repository's own entry, so nothing of the previous one is shown next to it.
     const known = repositoryId ? knownSnapshot(appQueryClient, repositoryId) : null;
     setSnapshotRepositoryId(known ? repositoryId : null);
+    setConfirmedRepositoryId(null);
+    setTreeConfirmedRepositoryId(null);
     if (known) setStatus(known.status);
     if (known && repositoryId) setShownHistoryHead({ repositoryId, head: historyHead(known.status) });
     filesRef.current = known?.files ?? null;
@@ -1335,7 +1366,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   }, [filesTreeStates, repository]);
 
   const runIndexOperation = async (mode: 'stage' | 'unstage', paths: string[]): Promise<boolean> => {
-    if (!repository || !status || paths.length === 0) return false;
+    // Nothing is staged or unstaged on the strength of a state no read has confirmed yet.
+    if (!repository || !status || paths.length === 0 || unconfirmed) return false;
     const previous = status;
     setStatus(optimisticStatus(status, paths, mode));
     setBusy(mode);
@@ -1892,7 +1924,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   };
 
   const runAll = async (mode: 'stage' | 'unstage') => {
-    if (!repository || !status) return;
+    if (!repository || !status || unconfirmed) return;
     const paths = status.changes.filter((item) => mode === 'stage' ? item.unstaged : item.staged).map((item) => item.path);
     if (!paths.length) return;
     const previous = status;
@@ -2063,7 +2095,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   const branchLabel = (name: string) => branches.find((branch) => branch.fullName === name)?.name ?? name.replace(/^refs\/(?:heads|remotes)\//, '');
 
   const switchBranch = async (name: string | null, allowAgents = false) => {
-    if (!repository || !name || name === status?.branch) return;
+    if (!repository || !name || name === status?.branch || unconfirmed) return;
     setBusy('branch');
     try {
       const result = await opentig.refs.switchBranch(repository.id, name, false, allowAgents);
@@ -2154,11 +2186,13 @@ export default function App({ initialView, initialSelection, pullRequestCreation
    * entries are never removed optimistically; only a real backend result
    * reaches this point.
    */
-  const handleRefsManaged = (recentRepositories: RecentRepository[] | null) => {
+  const handleRefsManaged = (recentRepositories: RecentRepository[] | null, commonDir: string) => {
     if (recentRepositories) setBootstrap((current) => current ? { ...current, recentRepositories } : current);
     // A removed branch or worktree can change status, branches, worktrees, and
-    // the visible history, so this asks for the full background refresh.
-    void refresh({ background: true });
+    // the visible history, so this asks for the full background refresh, if what is open
+    // shares its refs with the repository it was done in, as its other worktrees do.
+    const open = repositoryRef.current;
+    if (open && normalizeRepositoryKey(open.commonDir) === normalizeRepositoryKey(commonDir)) void refresh({ background: true });
   };
 
   const loadMore = async () => {
@@ -2701,10 +2735,51 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     await addRepositoryPath(path);
   }} />;
 
+  // The toolbar and the viewer are memoized: with these handlers, which stay the same functions,
+  // they redraw when what they show changes, not on every change of the app's state.
+  const toolbarHandlers = useStableHandlers({
+    onOnboarding: showOnboarding,
+    onCreatePullRequest: () => setCreatePrOpen(true),
+    onOpenPullRequest: (number: number) => { selectViewer({ type: 'pull-request', number }); },
+    onOpen: openRepository,
+    onRecent: selectRecent,
+    onRemoteAccessAction: (action: Parameters<typeof handleRemoteAccessAction>[0]) => void handleRemoteAccessAction(action),
+    onBranch: switchBranch,
+    onWorktree: switchWorktree,
+    onRefresh: () => void refresh({ manual: true }),
+    onPull: () => void pullUpdates(),
+    onPush: () => void pushUpdates(),
+    onRepositorySync: syncRepository,
+    onPreference: updateSettingsPreference,
+    onForgetRepository: forgetRepository,
+    onRelocateRepository: relocateRepository,
+    onRepositoryPickerOpen: refreshUnavailableRepositories,
+    onOrganizationChange: (organization: Parameters<ToolbarProps['onOrganizationChange']>[0]) => setBootstrap((current) => current ? { ...current, ...organization } : current),
+    onRefsManaged: handleRefsManaged,
+  });
+  const mobilePreferences = useMemo(() => mobile && bootstrap ? { ...bootstrap.preferences, wrapLines: mobileWrapLines } : null, [bootstrap, mobile, mobileWrapLines]);
+  const viewerHandlers = useStableHandlers({
+    onUndoCommit: setUndoCommit,
+    draftFor: (path: string, repositoryId: string) => readFileDraft(repositoryId, path),
+    onSelect: selectViewer,
+    onOpenFile: openFile,
+    onDiffViewChange: (value: Preferences['diffView']) => void updatePreference({ diffView: value }),
+    onWrapLinesChange: changeWrapLines,
+    onDiscardDiff: (path: string) => discardChanges([path]),
+    onDraftChange: storeFileDraft,
+    // The repository the save began in, which the viewer passes: by the time the write returns another may be open.
+    onDraftSaved: (path: string, repositoryId: string) => {
+      dropFileDraft(repositoryId, path);
+      updateFileSession(repositoryId, (session) => setTabDirty(session, path, false));
+    },
+    onUpdateConflict: updateConflictFile,
+    onResolveConflict: resolveConflictFile,
+  });
+
   if (!bootstrap) {
     return <SplashScreen heading={appDisplayName} detail={startupSplashDetail(connectionState)} />;
   }
-  const settingsPreferences = mobile ? { ...bootstrap.preferences, wrapLines: mobileWrapLines } : bootstrap.preferences;
+  const settingsPreferences = mobilePreferences ?? bootstrap.preferences;
   if (!repository && unavailableRepository && !welcomeReplay) {
     const missing = unavailableRepository;
     return (
@@ -2940,7 +3015,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       <MobileChromeContext.Provider value={mobileChrome}>
       <div className="app-shell" data-mobile-pane={mobilePane} inert={welcomeReplay || undefined}>
         <Toolbar
-          onOnboarding={showOnboarding}
+          {...toolbarHandlers}
           mobileViewer={mobile && mobilePane === 'viewer' ? mobileViewerBar : undefined}
           repository={repository}
           recent={bootstrap.recentRepositories}
@@ -2950,36 +3025,20 @@ export default function App({ initialView, initialSelection, pullRequestCreation
           branchPullRequest={currentBranchPullRequest}
           branchPullRequestNewCommits={commitsAfterMerge}
           branchSwitchPending={busy === 'branch' || blockedBranchSwitch !== null || agentBranchSwitch !== null}
-          onCreatePullRequest={() => setCreatePrOpen(true)}
+          unconfirmed={unconfirmed}
           upstreamMismatch={upstreamMismatch}
-          onOpenPullRequest={(number) => { selectViewer({ type: 'pull-request', number }); }}
           branches={branches}
           worktrees={worktrees}
           worktreeAgents={worktreeAgents}
           preferences={settingsPreferences}
           busy={busy}
           repositorySyncOperations={repositorySyncOperations}
-          onOpen={openRepository}
-          onRecent={selectRecent}
           remoteProblem={remoteProblem?.repositoryId === repository.id ? remoteProblem : null}
-          onRemoteAccessAction={(action) => void handleRemoteAccessAction(action)}
           pendingRepositoryId={pendingRepositoryId}
           repositoryLoadPhase={repositoryLoadPhase}
           repositoryLoadVisible={repositoryLoadVisible}
           repositoryLoadSlow={repositoryLoadSlow}
-          onBranch={switchBranch}
-          onWorktree={switchWorktree}
-          onRefresh={() => void refresh({ manual: true })}
-          onPull={() => void pullUpdates()}
-          onPush={() => void pushUpdates()}
-          onRepositorySync={syncRepository}
-          onPreference={updateSettingsPreference}
-          onForgetRepository={forgetRepository}
-          onRelocateRepository={relocateRepository}
           unavailableRepositoryIds={unavailableRepositoryIds}
-          onRepositoryPickerOpen={refreshUnavailableRepositories}
-          onOrganizationChange={(organization) => setBootstrap((current) => current ? { ...current, ...organization } : current)}
-          onRefsManaged={handleRefsManaged}
           settingsOpen={settingsOpen}
           settingsSection={settingsSection}
           onSettingsOpen={setSettingsOpen}
@@ -3034,7 +3093,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
                   staged={staged}
                   changed={changed}
                   displayMode={bootstrap.preferences.changesLayout}
-                  readOnly={Boolean(status?.readOnly)}
+                  readOnly={Boolean(status?.readOnly) || unconfirmed}
                   discardDisabled={Boolean(busy)}
                   changeCount={status?.changes.length ?? 0}
                   insertions={status?.insertions ?? 0}
@@ -3068,7 +3127,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
                     filesSnapshotRevision={filesSnapshotRevision}
                     showDotEnvFiles={bootstrap.preferences.showDotEnvFiles}
                     activePath={viewerSelection?.type === 'file' ? viewerSelection.path : null}
-                    readOnly={Boolean(status?.readOnly || busy)}
+                    readOnly={Boolean(status?.readOnly || busy) || unconfirmed || treeUnconfirmed}
                     fileClipboardAvailable={capabilities?.fileClipboard === true}
                     revealAvailable={capabilities?.revealInFileManager === true}
                     onQuickOpen={() => setQuickOpen(true)}
@@ -3224,24 +3283,11 @@ export default function App({ initialView, initialSelection, pullRequestCreation
                       theme={theme}
                       revision={refreshVersion}
                       readOnly={Boolean(status?.readOnly)}
-                      commits={commits ?? []}
+                      commits={commits ?? NO_COMMITS}
                       githubRepository={githubInfo?.isGitHub ? githubInfo.nameWithOwner : null}
                       undoBlocked={Boolean(status?.operation) || undoingCommit}
-                      onUndoCommit={setUndoCommit}
-                      draftFor={(path) => readFileDraft(repository.id, path)}
                       fileStamp={fileStamp}
-                      onSelect={selectViewer}
-                      onOpenFile={openFile}
-                      onDiffViewChange={(value) => void updatePreference({ diffView: value })}
-                      onWrapLinesChange={changeWrapLines}
-                      onDiscardDiff={(path) => discardChanges([path])}
-                      onDraftChange={storeFileDraft}
-                      onDraftSaved={(path) => {
-                        dropFileDraft(repository.id, path);
-                        updateFileSession(repository.id, (session) => setTabDirty(session, path, false));
-                      }}
-                      onUpdateConflict={updateConflictFile}
-                      onResolveConflict={resolveConflictFile}
+                      {...viewerHandlers}
                     />
                     </LineBlameContext.Provider>
                     </FileLineTargetContext.Provider>
@@ -3251,7 +3297,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
                         files={files}
                         session={fileSessions.get(repository.id) ?? emptyFileSession}
                         revision={filesSnapshotRevision}
-                        actions={{ readOnly: Boolean(status?.readOnly || busy), fileClipboardAvailable: capabilities?.fileClipboard === true, revealAvailable: capabilities?.revealInFileManager === true, onOpenFile: openFile, onCopyEntries: copyFileEntries, onCutEntries: cutFileEntries, onCopyPath: copyFilePaths, onCopyContents: copyFileContents, onReveal: revealFileEntry, onPaste: pasteFileEntries, onDeleteEntries: deleteFileEntries }}
+                        actions={{ readOnly: Boolean(status?.readOnly || busy) || unconfirmed || treeUnconfirmed, fileClipboardAvailable: capabilities?.fileClipboard === true, revealAvailable: capabilities?.revealInFileManager === true, onOpenFile: openFile, onCopyEntries: copyFileEntries, onCutEntries: cutFileEntries, onCopyPath: copyFilePaths, onCopyContents: copyFileContents, onReveal: revealFileEntry, onPaste: pasteFileEntries, onDeleteEntries: deleteFileEntries }}
                         onActivateFile={activateFileTab}
                         onCloseFile={(path) => void closeFileTab(path)}
                         onLoadDirectory={loadDirectoryEntries}
@@ -3438,6 +3484,26 @@ function aiErrorTitle(detail: SerializedAiError | null): string {
  * What the client last read of a repository, if it still holds it: status, refs and the file tree are kept
  * for five minutes after their last read (React Query's default). Without a status there is nothing to show.
  */
+/** How long starting up waits for the saved snapshot before it shows the repository as loading instead. */
+const SAVED_SNAPSHOT_WAIT_MS = 1_500;
+
+/** Puts what the server last saved of a repository where `knownSnapshot` finds it, unless something newer is there. */
+async function seedSavedSnapshot(client: ReturnType<typeof useQueryClient>, repositoryId: string): Promise<void> {
+  if (client.getQueryData(queryKeys.status(repositoryId))) return;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const snapshot = await Promise.race([
+    opentig.repository.snapshot(repositoryId).catch(() => null),
+    new Promise<null>((resolve) => { timer = setTimeout(() => resolve(null), SAVED_SNAPSHOT_WAIT_MS); }),
+  ]).finally(() => clearTimeout(timer));
+  if (!snapshot || client.getQueryData(queryKeys.status(repositoryId))) return;
+  // Each part dated when it was read, so nothing takes it for a fresh answer.
+  const dated = (readAt: string | null | undefined) => ({ updatedAt: Date.parse(readAt ?? snapshot.savedAt) || 1 });
+  client.setQueryData(queryKeys.status(repositoryId), snapshot.status, dated(snapshot.readAt?.status));
+  if (snapshot.branches) client.setQueryData(queryKeys.branches(repositoryId), snapshot.branches, dated(snapshot.readAt?.branches));
+  if (snapshot.worktrees) client.setQueryData(queryKeys.worktrees(repositoryId), snapshot.worktrees, dated(snapshot.readAt?.worktrees));
+  if (snapshot.files) client.setQueryData(queryKeys.files(repositoryId), snapshot.files, dated(snapshot.readAt?.files));
+}
+
 function knownSnapshot(client: ReturnType<typeof useQueryClient>, repositoryId: string): {
   status: RepositoryStatus; branches: BranchInfo[] | null; worktrees: WorktreeInfo[] | null; files: FileTreeEntry[] | null;
 } | null {

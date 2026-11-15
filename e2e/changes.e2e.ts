@@ -403,3 +403,44 @@ test('a stylesheet diff shows swatches on both sides of a changed color', async 
   await hoverCenter(page, swatches.nth(0));
   await expect(colorPreview(page, '#3b82f6')).toBeVisible();
 });
+
+test('starting up paints the changes the server last saw, and holds Commit until they are read again', async ({ pairedPage: page, repository }) => {
+  await repository.commit('notes.txt', 'first\n', 'Add notes');
+  await write(repository, 'notes.txt', 'second\n');
+  await repository.git('add', 'notes.txt');
+  await openRepository(page, repository);
+  await openChanges(page, 1);
+  const commitBox = page.getByRole('group', { name: 'Create commit' });
+  await expect(commitBox.getByRole('button', { name: 'Commit 1 file' })).toBeVisible();
+  // The server saves what it read a couple of seconds after reading it.
+  await page.waitForTimeout(3_000);
+
+  // After the reload, the answer to every status read waits until released, to see what is painted before it.
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  await page.routeWebSocket(/\/ws$/, (client) => {
+    const server = client.connectToServer();
+    const statusReads = new Set<string>();
+    client.onMessage((message) => {
+      const request = JSON.parse(String(message)) as { type?: string; id?: string; command?: string };
+      if (request.type === 'request' && request.command === 'repository:status' && request.id) statusReads.add(request.id);
+      server.send(message);
+    });
+    server.onMessage((message) => {
+      const result = JSON.parse(String(message)) as { type?: string; id?: string };
+      if (result.type === 'result' && result.id && statusReads.has(result.id)) void held.then(() => client.send(message));
+      else client.send(message);
+    });
+  });
+  await page.reload();
+
+  await openChanges(page, 1);
+  await expect(changeRow(page, 'Staged', 'notes.txt')).toBeVisible();
+  await expect(page.getByText('Loading changes…')).toBeHidden();
+  await commitBox.getByRole('textbox', { name: 'Commit message' }).fill('Update notes');
+  const commit = commitBox.getByRole('button', { name: 'Commit 1 file' });
+  // Painted from what was saved, not read yet: nothing can be committed on the strength of it.
+  await expect(commit).toBeDisabled();
+  release();
+  await expect(commit).toBeEnabled();
+});

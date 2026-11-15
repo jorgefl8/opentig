@@ -4,6 +4,13 @@ import { clientCommandTimeoutMs, commandDefinition, type OpenTigServerCommandMap
 import type { OpenTigRuntimeEvent } from '@shared/runtime-events';
 import { OPEN_TIG_CLIENT_MAX_BACKGROUND_REQUESTS, OPEN_TIG_CLIENT_MAX_IN_FLIGHT_REQUESTS, type OpenTigServerMessage } from '@shared/server-protocol';
 import { serializedErrorFromReason, type SerializedResponseTooLargeError } from '@shared/errors';
+import type { KeptRefreshOutcome } from '@shared/kept-reads';
+
+/** A read answered from what the server kept, marked as such; `refreshed` settles once the server has read it again. */
+export interface KeptResult {
+  readAt: string;
+  refreshed: Promise<KeptRefreshOutcome>;
+}
 
 export type ServerConnectionState =
   | 'connecting'
@@ -50,6 +57,8 @@ interface ClientRequest {
   timer: ReturnType<typeof setTimeout> | null;
   signal?: AbortSignal;
   abort?: () => void;
+  /** Takes an answer the server kept, when the server can give one. */
+  onKept?: (kept: KeptResult) => void;
 }
 
 interface ConnectionWaiter {
@@ -161,6 +170,10 @@ export class OpenTigWebSocketTransport {
   private readonly requested = new Map<string, number>();
   /** Set once the server said it understands `cancel`; an older one is never sent it. */
   private cancellation = false;
+  /** Set once the server said it understands `acceptKept`; an older one is never asked for a kept answer. */
+  private keptReads = false;
+  /** Kept answers whose refresh the server will report on this connection, by request id. */
+  private readonly keptRefreshes = new Map<string, (outcome: KeptRefreshOutcome) => void>();
   private readonly mutationListeners = new Set<(command: string) => void>();
 
   constructor(options: WebSocketTransportOptions = {}) {
@@ -205,7 +218,7 @@ export class OpenTigWebSocketTransport {
   async request<Command extends keyof OpenTigServerCommandMap>(
     command: Command,
     args: OpenTigServerCommandMap[Command]['args'],
-    options: { signal?: AbortSignal; timeoutMs?: number; priority?: RequestPriority } = {},
+    options: { signal?: AbortSignal; timeoutMs?: number; priority?: RequestPriority; onKept?: (kept: KeptResult) => void } = {},
   ): Promise<OpenTigServerCommandMap[Command]['result']> {
     // Read before the first await, while the caller that chose it is still on the stack.
     const priority = options.priority ?? ambientPriority;
@@ -233,6 +246,7 @@ export class OpenTigWebSocketTransport {
         reject,
         timer: null,
         ...(signal ? { signal } : {}),
+        ...(options.onKept ? { onKept: options.onKept } : {}),
       };
       if (signal) {
         request.abort = () => {
@@ -265,6 +279,11 @@ export class OpenTigWebSocketTransport {
   /** The server understands `cancel` (it says so in its bootstrap identity). */
   enableCancellation(): void {
     this.cancellation = true;
+  }
+
+  /** The server understands `acceptKept` (it says so in its bootstrap identity). */
+  enableKeptReads(): void {
+    this.keptReads = true;
   }
 
   /** Called with each change sent to the server, before its result: what was read before it may be out of date. */
@@ -344,6 +363,14 @@ export class OpenTigWebSocketTransport {
       return;
     }
     if (message.type === 'event') {
+      // Answers this connection's own request: not news for anyone else.
+      if (message.event.type === 'github.read-refreshed') {
+        const settle = this.keptRefreshes.get(message.event.requestId);
+        this.keptRefreshes.delete(message.event.requestId);
+        const { type: _type, requestId: _requestId, ...outcome } = message.event;
+        settle?.(outcome);
+        return;
+      }
       for (const listener of this.eventListeners) listener(message.event);
       return;
     }
@@ -363,7 +390,13 @@ export class OpenTigWebSocketTransport {
       this.enqueue(request);
     } else {
       if (request === this.probe) this.reopen();
+      const id = request.id;
       this.finish(request);
+      if (message.result.ok && message.kept && request.onKept && id !== null) {
+        const readAt = message.kept.readAt;
+        const refreshed = new Promise<KeptRefreshOutcome>((resolve) => this.keptRefreshes.set(id, resolve));
+        request.onKept({ readAt, refreshed });
+      }
       settleResult(request, message.result);
     }
     this.drain();
@@ -448,7 +481,8 @@ export class OpenTigWebSocketTransport {
     if (request.priority === 'background') this.backgroundInFlight += 1;
     if (request.mutation) for (const listener of this.mutationListeners) listener(request.command);
     try {
-      socket.send(JSON.stringify({ type: 'request', id, command: request.command, args: request.args }));
+      const acceptKept = this.keptReads && request.onKept !== undefined && !request.mutation;
+      socket.send(JSON.stringify({ type: 'request', id, command: request.command, args: request.args, ...(acceptKept ? { acceptKept: true } : {}) }));
     } catch {
       this.finish(request);
       request.reject(new ServerDisconnectedError('Could not send request to the OpenTig server.'));
@@ -485,6 +519,9 @@ export class OpenTigWebSocketTransport {
       ? new ServerBackpressureError('OpenTig server disconnected because the client send queue was full.')
       : new ServerDisconnectedError(`OpenTig server disconnected before the request completed. ${disconnectCause(closeCode)}`, closeCode);
     this.rejectPending(createError);
+    // The server reports a refresh only on the connection that asked, which is gone.
+    for (const settle of this.keptRefreshes.values()) settle({ outcome: 'failed', error: { code: 'UNKNOWN', operation: 'github-read', message: 'The connection to the OpenTig server was lost.' } });
+    this.keptRefreshes.clear();
     if (this.stopped) return;
     if (closeCode === 1008) {
       this.stopped = true;

@@ -102,6 +102,8 @@ Repository files stay at their existing paths on the host. Application settings 
 
 `settings.json` stores repositories, preferences, and application state. If it cannot be parsed, OpenTig uses the last known-good `settings.json.bak`.
 
+The desktop app also keeps V8's compiled code for its own processes in `opentig/compile-cache` under the system's temporary folder (`~/.cache` on Linux), so later starts skip compiling it again. It holds no user data and can be deleted at any time.
+
 <details>
 <summary>Desktop data files</summary>
 
@@ -113,6 +115,8 @@ Desktop paths are derived from Electron's user-data directory:
 | `settings.json.bak` | last known-good settings document, used if the primary file cannot be parsed |
 | `ai-log.jsonl` | local AI-operation log |
 | `github-status.json` | last checked GitHub CLI/account metadata; no tokens or credential paths |
+| `github-cache.json` | what GitHub last answered, per repository and account, to show it at once; no tokens ([details](security-and-privacy.md#github-answers-kept-on-disk)) |
+| `repository-snapshots/` | last status, branches, worktrees and file tree read of up to 12 repositories, painted at start-up ([details](security-and-privacy.md#last-repository-state-on-disk)) |
 | `problems.jsonl` | local Git, file, and network failure log |
 | `desktop-server.json` | shared persisted desktop web access, domain, address and port |
 | `server/` | hash-only owner-session authentication state |
@@ -131,6 +135,8 @@ The headless CLI derives equivalent paths from `~/.opentig` or `--home`:
 | `settings.json.bak` | last known-good settings document, used if the primary file cannot be parsed |
 | `ai-log.jsonl` | local AI-operation history |
 | `github-status.json` | last checked GitHub CLI/account metadata; no tokens or credential paths |
+| `github-cache.json` | what GitHub last answered, per repository and account, to show it at once; no tokens ([details](security-and-privacy.md#github-answers-kept-on-disk)) |
+| `repository-snapshots/` | last status, branches, worktrees and file tree read of up to 12 repositories, painted at start-up ([details](security-and-privacy.md#last-repository-state-on-disk)) |
 | `problems.jsonl` | local Git, file, and network failure log |
 | `server/web-access.json` | saved CLI web access, domain, address and port |
 | `server/` | hash-only sessions plus a private same-host admin credential |

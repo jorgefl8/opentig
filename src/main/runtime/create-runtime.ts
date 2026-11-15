@@ -21,6 +21,8 @@ import { SearchService } from '../git/SearchService';
 import { GitHubAccountsService } from '../github/GitHubAccountsService';
 import { GitHubStatusStore } from '../persistence/GitHubStatusStore';
 import { GitHubService } from '../github/GitHubService';
+import { GitHubReadCache } from '../github/GitHubReadCache';
+import { RepositorySnapshotStore } from '../persistence/RepositorySnapshotStore';
 import { AiLogStore } from '../persistence/AiLogStore';
 import { AiStatusStore } from '../persistence/AiStatusStore';
 import { ProblemsLogStore, problemsLogPathFromSettings, recordProblemSafely } from '../persistence/ProblemsLogStore';
@@ -86,7 +88,9 @@ export async function createOpenTigRuntime(
   const gitAccess = new RepositoryGitAccess(git, repositories, githubAccounts, cliRunner);
   gitAccess.install();
   operations.access = gitAccess;
-  const github = new GitHubService(cliResolver, cliRunner, git, repositories, githubAccounts);
+  // Beside the settings, so each profile keeps its own; see docs/security-and-privacy.md.
+  const github = new GitHubService(cliResolver, cliRunner, git, repositories, githubAccounts,
+    new GitHubReadCache(path.join(path.dirname(options.settingsPath), 'github-cache.json')));
   github.gitAccess = gitAccess;
   const events = {
     aiInstructionsChanged: (commonDir: string) => runtime?.publishAiInstructionsChange(commonDir),
@@ -131,6 +135,8 @@ export async function createOpenTigRuntime(
     aiLog,
     problems,
     github,
+    // Beside the settings, so each profile keeps its own; see docs/security-and-privacy.md.
+    snapshots: new RepositorySnapshotStore(path.join(path.dirname(options.settingsPath), 'repository-snapshots'), (id) => repositories.isKnown(id)),
     prDrafts,
     events,
   }, options.onEvent);

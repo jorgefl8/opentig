@@ -69,7 +69,7 @@ Your CLI must support multi-account `auth token --user` and `auth status --json 
 
 The list reads one request for all PRs, which carries their reviews and checks but not whether each one can merge. A row therefore says **Review required**, **Changes requested**, **Checks failing**, **Checks pending**, **Approved**, **Checks passing**, or its state, such as **Draft** or **Merged into main**, and only the selected row shows the full status below.
 
-OpenTig reads the list and the releases as soon as a GitHub repository opens, so the section shows them straight away; opening it refreshes a list read more than 30 seconds earlier, and keeps showing the old one meanwhile. The backend also reuses a list it read in the last 30 seconds, or a minute for releases, so reloading the app doesn't wait for GitHub; **Refresh** always asks GitHub, and so does the first read after a change made through OpenTig. Stack indicators fill in a moment after the rows. Closed and merged PRs are listed without their checks, which no row shows, and their line counts fill in a moment after the rows too: GitHub takes several seconds to work both out for fifty PRs. **Actions** is read when you open it.
+OpenTig reads the list and the releases as soon as a GitHub repository opens, so the section shows them straight away; opening it refreshes a list read more than 30 seconds earlier, and keeps showing the old one meanwhile. The backend also reuses a list it read in the last 30 seconds, or a minute for releases, so reloading the app doesn't wait for GitHub; **Refresh** always asks GitHub, and so does the first read after a change made through OpenTig. Past that, see [Answers kept by the backend](#answers-kept-by-the-backend). Stack indicators fill in a moment after the rows. Closed and merged PRs are listed without their checks, which no row shows, and their line counts fill in a moment after the rows too: GitHub takes several seconds to work both out for fifty PRs. **Actions** is read when you open it.
 
 The filter button beside the tabs chooses which states appear. Its menu also has **Refresh pull requests**, **Open on GitHub** with the repository's name, and the effective account, which opens GitHub settings. **+** creates a PR from the current branch; while it's unavailable, its tooltip says why.
 
@@ -105,7 +105,7 @@ The list's menu shows the effective GitHub account. When a repository can't be r
 
 **Read the conversation**
 
-**Comments** shows the PR's comments and reviews, with Markdown rendered and links that open in a new tab. Choose **Hide bots** to leave out comments from bots. Comments hidden on GitHub stay collapsed until you open them. Past the most recent 100 comments and 100 reviews, the list says so and links to the rest. They load when you open **Comments**. Inline code comments stay on GitHub. **Timeline** lists the PR's commits; a commit's short hash opens it in the commit viewer.
+**Comments** shows the PR's comments and reviews, with Markdown rendered and links that open in a new tab. Each comment is rendered as you scroll near it; until then it shows its text as written. Choose **Hide bots** to leave out comments from bots. Comments hidden on GitHub stay collapsed until you open them. Past the most recent 100 comments and 100 reviews, the list says so and links to the rest. They load when you open **Comments**. Inline code comments stay on GitHub. **Timeline** lists the PR's commits; a commit's short hash opens it in the commit viewer.
 
 **Comment and review**
 
@@ -273,6 +273,17 @@ Apart from starting a workflow, Actions only reads runs. Use GitHub for:
 - enabling, disabling, and editing workflows.
 
 A fork's runs waiting for approval are approved from its pull request, with [**Approve workflows**](#merge-and-manage-a-pull-request).
+
+## Answers kept by the backend
+
+The backend keeps what GitHub last answered for pull requests, their status, conversation and stacks, the PR lists, releases, the Actions list and each run, and saves it in its data folder, so it outlives a restart. When you open something that isn't on screen yet and was read before, OpenTig shows that answer at once and reads it again behind it; a refresh of something already on screen waits for GitHub and leaves what is shown in place. Until the new answer arrives, a line beside it says **Saved 5m ago · Updating…**; it then turns into the current answer without a reload. If GitHub can't be reached, the line says **Couldn't update** with the reason and **Retry**, and the saved answer stays on screen marked as such.
+
+- While a PR's status is a saved one, merging and the other actions in its bar stay unavailable. Every change you make on GitHub reads the current state itself and refuses to act if the PR moved.
+- An answer is only shown to the same GitHub account, for the same GitHub repository, in the same local repository. Changing a repository's account, the default account or the saved accounts, or pointing the remote elsewhere, drops what was kept for it. So do credentials GitHub rejects and a repository the account can no longer see.
+- A change made through OpenTig drops only what it affects: merging or commenting on a PR drops that PR and the PR lists, editing a release drops the releases list, and running a workflow drops the Actions list.
+- Answers older than 14 days are not shown. A finished workflow run is kept until newer answers push it out, and is always read again when opened, since it can be started again on GitHub.
+
+Without a newer OpenTig in the browser, the backend serves an answer only within the times above and otherwise waits for GitHub, as before. See [Security and privacy](security-and-privacy.md#github-answers-kept-on-disk) for what the file holds and how to clear it.
 
 ## Settings scopes
 

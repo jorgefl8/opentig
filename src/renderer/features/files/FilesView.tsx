@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ComponentPropsWithoutRef } from 'react';
+import { memo, useEffect, useMemo, useRef, useState, type ComponentPropsWithoutRef, type Ref } from 'react';
 import { useIntentPrefetch } from '@/lib/use-intent-prefetch';
 import { createPortal } from 'react-dom';
 import { useVirtualizer } from '@tanstack/react-virtual';
@@ -140,6 +140,8 @@ function targetDirectoryFor(entry: FileTreeEntry): string {
   return entry.type === 'directory' ? entry.path : parentDirectory(entry.path);
 }
 
+const MOUSE_DRAG_OPTIONS = { activationConstraint: { distance: 5 } };
+
 function DesktopFilesView({
   active,
   initialExpandedPaths,
@@ -173,6 +175,15 @@ function DesktopFilesView({
   const scrollRef = useRef<HTMLDivElement>(null);
   // A file the pointer rests on is read then, so clicking it shows it.
   const readAhead = useIntentPrefetch((path: string) => onFileIntent?.(path));
+  // Rows are memoized and redraw only when what they show changes, not on every scroll event.
+  // They get one stable set of actions that calls the handlers of the latest render.
+  const latestRowHandlers = useRef<RowHandlers | null>(null);
+  const [rowActions] = useState<FileRowActions>(() => ({
+    click: (entry, mods) => latestRowHandlers.current?.click(entry, mods),
+    doubleClick: (entry) => latestRowHandlers.current?.doubleClick(entry),
+    focus: (path) => latestRowHandlers.current?.focus(path),
+    dragPaths: (path) => latestRowHandlers.current?.dragPaths(path) ?? [path],
+  }));
   const revealedPathRef = useRef<string | null>(null);
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
   const [anchorPath, setAnchorPath] = useState<string | null>(activePath);
@@ -185,9 +196,14 @@ function DesktopFilesView({
   const [reducedMotion, setReducedMotion] = useState(false);
   const [dialogState, setDialogState] = useState<NameDialogState | null>(null);
   const [scrollTop, setScrollTop] = useState(0);
+  // One context menu serves every row: the row it opened on, kept while the menu closes.
+  const [menu, setMenu] = useState<{ entry: FileTreeEntry; open: boolean } | null>(null);
+  const menuTargetRef = useRef<FileTreeEntry | null>(null);
+  const menuRowRef = useRef<HTMLElement | null>(null);
   const [loadedDirectories, setLoadedDirectories] = useState<Map<string, FileTreeEntry[]>>(new Map());
+  // Options kept the same object: new ones would give every row a new drag context on every render.
   const sensors = useSensors(
-    useSensor(MouseDragSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(MouseDragSensor, MOUSE_DRAG_OPTIONS),
     useSensor(KeyboardSensor),
   );
   const loadedDirectoriesRef = useRef(loadedDirectories);
@@ -632,6 +648,22 @@ function DesktopFilesView({
       void movePaths(data.sourcePaths, targetDirectory);
     }
   };
+  // Right-clicking a row, pressing the context-menu key on it or using its ⋯ button opens the
+  // tree's one menu for that row. Elsewhere in the tree the browser's own menu shows, as before.
+  const handleTreeContextMenu = (event: React.MouseEvent<HTMLDivElement>) => {
+    const rowElement = (event.target as HTMLElement).closest<HTMLElement>('.file-tree-row[data-path]');
+    const entry = rowElement ? rowByPath.get(rowElement.dataset.path!)?.entry : undefined;
+    if (!rowElement || !entry) { menuTargetRef.current = null; event.stopPropagation(); return; }
+    menuTargetRef.current = entry;
+    menuRowRef.current = rowElement;
+    handleRowContextMenu(entry);
+  };
+  latestRowHandlers.current = {
+    click: handleRowClick,
+    doubleClick: handleRowDoubleClick,
+    focus: setLeadPath,
+    dragPaths: (path) => selectedPaths.has(path) && selectedPaths.size > 0 ? [...selectedPaths] : [path],
+  };
   return (
     <DndContext
       sensors={sensors}
@@ -674,7 +706,20 @@ function DesktopFilesView({
         </div>
         )}
         {visibleFiles.length ? (
-        <FileTreeDropSurface
+        <ContextMenu
+          open={menu?.open === true}
+          onOpenChange={(open, details) => {
+            if (!open) { setMenu((current) => current && { ...current, open: false }); return; }
+            // The row comes from the event that opened the menu: a right-click, the context-menu key, a long press, or the row's ⋯ button.
+            const target = details.event?.target;
+            const rowElement = target instanceof Element ? target.closest<HTMLElement>('.file-tree-row[data-path]') : null;
+            const entry = rowElement ? rowByPath.get(rowElement.dataset.path!)?.entry : menuTargetRef.current;
+            if (!entry) return;
+            if (rowElement) menuRowRef.current = rowElement;
+            setMenu({ entry, open: true });
+          }}
+        >
+        <ContextMenuTrigger render={<FileTreeDropSurface
           role="tree"
           aria-label="Files"
           className={`files-tree ${dropTargetPath === '' && draggedPaths.length > 0 ? 'root-drop-target' : ''}`}
@@ -689,11 +734,12 @@ function DesktopFilesView({
             setLeadPath(null);
             event.currentTarget.focus();
           }}
-        >
+          onContextMenuCapture={handleTreeContextMenu}
+        />}>
           {virtualizer.getVirtualItems().map((virtualRow) => {
             const { entry, depth } = rows[virtualRow.index]!;
             const expanded = entry.type === 'directory' && expandedPaths.has(entry.path);
-            const multiSelected = selectedPaths.has(entry.path) && selectedPaths.size > 1;
+            const dragging = draggedPaths.length > 0;
             return (
               <div
                 key={virtualRow.key}
@@ -712,37 +758,40 @@ function DesktopFilesView({
                   pendingChildren={entry.type === 'directory' && entry.ignored === true && entry.children.length === 0 && !loadedDirectories.has(entry.path)}
                   selected={highlightedPaths.has(entry.path)}
                   active={activePath === entry.path}
-                  multiSelected={multiSelected}
                   readOnly={readOnly}
-                  fileClipboardAvailable={fileClipboardAvailable}
-                  revealAvailable={revealAvailable}
-                  historyState={historyState}
-                  onUndo={onUndo}
-                  onRedo={onRedo}
-                  draggedPaths={draggedPaths}
-                  dropTargetPath={dropTargetPath}
-                  onFocus={setLeadPath}
-                  onRowClick={handleRowClick}
-                  onRowDoubleClick={handleRowDoubleClick}
-                  onRowContextMenu={handleRowContextMenu}
-                  onOpen={(target) => onOpenFile(target.path)}
-                  onOpenPinned={(target) => onOpenFile(target.path, 'pinned')}
-                  onCopy={(target) => void onCopyEntries(contextTargets(target))}
-                  onCut={(target) => void onCutEntries(contextTargets(target))}
-                  onPasteInto={(target) => void onPaste(targetDirectoryFor(target))}
-                  onCopyPath={(target) => void onCopyPath(contextTargets(target))}
-                  onCopyContents={onCopyContents}
-                  onRename={(target) => setDialogState({ mode: 'rename', entry: target })}
-                  onNewFile={(target) => setDialogState({ mode: 'new-file', entry: target })}
-                  onNewFolder={(target) => setDialogState({ mode: 'new-folder', entry: target })}
-                  onReveal={onReveal}
-                  onDelete={(target) => void onDeleteEntries(contextTargets(target))}
-                  dragPaths={selectedPaths.has(entry.path) && selectedPaths.size > 0 ? [...selectedPaths] : [entry.path]}
+                  dragging={dragging && draggedPaths.includes(entry.path)}
+                  dropTarget={dragging && entry.type === 'directory' && dropTargetPath === entry.path}
+                  inDropRegion={dragging && dropTargetPath !== null && dropTargetPath !== '' && dropTargetPath !== entry.path && pathContains(dropTargetPath, entry.path)}
+                  actions={rowActions}
                 />
               </div>
             );
           })}
-        </FileTreeDropSurface>
+        </ContextMenuTrigger>
+        <FileContextMenuContent
+          entry={menu?.entry ?? null}
+          multiSelected={menu !== null && selectedPaths.has(menu.entry.path) && selectedPaths.size > 1}
+          readOnly={readOnly}
+          fileClipboardAvailable={fileClipboardAvailable}
+          revealAvailable={revealAvailable}
+          historyState={historyState}
+          finalFocus={menuRowRef}
+          onUndo={onUndo}
+          onRedo={onRedo}
+          onOpen={(target) => onOpenFile(target.path)}
+          onOpenPinned={(target) => onOpenFile(target.path, 'pinned')}
+          onCopy={(target) => void onCopyEntries(contextTargets(target))}
+          onCut={(target) => void onCutEntries(contextTargets(target))}
+          onPasteInto={(target) => void onPaste(targetDirectoryFor(target))}
+          onCopyPath={(target) => void onCopyPath(contextTargets(target))}
+          onCopyContents={onCopyContents}
+          onRename={(target) => setDialogState({ mode: 'rename', entry: target })}
+          onNewFile={(target) => setDialogState({ mode: 'new-file', entry: target })}
+          onNewFolder={(target) => setDialogState({ mode: 'new-folder', entry: target })}
+          onReveal={onReveal}
+          onDelete={(target) => void onDeleteEntries(contextTargets(target))}
+        />
+        </ContextMenu>
         ) : <p className="empty-list">No files.</p>}
         <NameDialog state={dialogState} onClose={() => setDialogState(null)} onRename={onRename} onCreate={onCreate} />
       </div>
@@ -757,9 +806,15 @@ function DesktopFilesView({
   );
 }
 
-function FileTreeDropSurface(props: ComponentPropsWithoutRef<'div'>) {
+function FileTreeDropSurface({ ref, ...props }: ComponentPropsWithoutRef<'div'> & { ref?: Ref<HTMLDivElement> }) {
   const { setNodeRef } = useDroppable({ id: ROOT_DROP_ID, data: { targetDirectory: '', expandPath: null } });
-  return <div ref={setNodeRef} {...props} />;
+  // The context menu trigger needs the element too.
+  return <div ref={(element) => { setNodeRef(element); assignRef(ref, element); }} {...props} />;
+}
+
+function assignRef<T>(ref: Ref<T> | undefined, value: T | null): void {
+  if (typeof ref === 'function') ref(value);
+  else if (ref) ref.current = value;
 }
 
 function OpenFilesDropTarget({ visible }: { visible: boolean }) {
@@ -792,6 +847,15 @@ function setsEqual(left: ReadonlySet<string>, right: ReadonlySet<string>): boole
   return true;
 }
 
+type RowHandlers = {
+  click(entry: FileTreeEntry, mods: { ctrl: boolean; shift: boolean }): void;
+  doubleClick(entry: FileTreeEntry): void;
+  focus(path: string): void;
+  /** What dragging the row moves: the selection when the row is in it, otherwise the row. */
+  dragPaths(path: string): string[];
+};
+type FileRowActions = RowHandlers;
+
 interface FileRowProps {
   entry: FileTreeEntry;
   depth: number;
@@ -800,19 +864,95 @@ interface FileRowProps {
   pendingChildren: boolean;
   selected: boolean;
   active: boolean;
+  readOnly: boolean;
+  /** Part of what is being dragged. */
+  dragging: boolean;
+  /** The folder a drag would drop into. */
+  dropTarget: boolean;
+  /** Inside the folder a drag would drop into. */
+  inDropRegion: boolean;
+  actions: FileRowActions;
+}
+
+/** A row of the tree. Its context menu is the tree's (see `FileContextMenuContent`), opened from the row. */
+const FileRow = memo(function FileRow({ entry, depth, expanded, pendingChildren, selected, active, readOnly, dragging, dropTarget, inDropRegion, actions }: FileRowProps) {
+  const rowElement = useRef<HTMLButtonElement | null>(null);
+  const targetDirectory = targetDirectoryFor(entry);
+  const { attributes, listeners, setNodeRef: setDraggableRef, isDragging } = useDraggable({
+    id: `file-drag:${entry.path}`,
+    // Read when a drag starts, so it carries the selection of that moment.
+    data: { get sourcePaths() { return actions.dragPaths(entry.path); }, entry } satisfies FileDragData,
+    disabled: readOnly,
+  });
+  const { setNodeRef: setDroppableRef } = useDroppable({
+    id: `file-drop:${entry.path}`,
+    data: { targetDirectory, expandPath: entry.type === 'directory' ? entry.path : null },
+  });
+  const setRowRef = (element: HTMLButtonElement | null) => {
+    rowElement.current = element;
+    setDraggableRef(element);
+    setDroppableRef(element);
+  };
+  return (
+    <>
+      <button
+        type="button"
+        ref={setRowRef}
+        {...attributes}
+        role="treeitem"
+        data-path={entry.path}
+        aria-selected={selected}
+        aria-current={active ? 'true' : undefined}
+        aria-expanded={entry.type === 'directory' ? expanded : undefined}
+        className={[
+          'file-tree-row',
+          entry.type === 'directory' ? 'folder-row' : '',
+          entry.ignored ? 'ignored-file' : '',
+          dragging || isDragging ? 'dragging' : '',
+          dropTarget ? 'drop-target' : '',
+          inDropRegion ? 'drop-target-region' : '',
+        ].filter(Boolean).join(' ')}
+        style={{ paddingLeft: 12 + depth * 14 }}
+        {...listeners}
+        onClick={(event) => actions.click(entry, { ctrl: event.ctrlKey || event.metaKey, shift: event.shiftKey })}
+        onDoubleClick={() => actions.doubleClick(entry)}
+        onFocus={() => actions.focus(entry.path)}
+      >
+        {entry.type === 'directory'
+          ? <IconChevronRight className={`folder-chevron ${expanded ? 'open' : ''} ${entry.children.length === 0 && !pendingChildren ? 'empty' : ''}`} />
+          : <span className="tree-spacer" />}
+        <TreeIcon path={entry.path} type={entry.type} expanded={expanded} />
+        <span>{entry.name}</span>
+      </button>
+      <Tooltip>
+        <TooltipTrigger render={
+          <button type="button" className="file-row-actions" aria-label={`Actions for ${entry.name}`} aria-haspopup="menu" onClick={(event) => {
+            event.stopPropagation();
+            const rect = event.currentTarget.getBoundingClientRect();
+            // Opens the tree's menu for this row, with its selection handling and focus restoration.
+            rowElement.current?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: rect.left, clientY: rect.bottom }));
+          }} />
+        }><IconDots /></TooltipTrigger>
+        <TooltipContent>More actions</TooltipContent>
+      </Tooltip>
+    </>
+  );
+});
+
+function FileContextMenuContent({
+  entry, multiSelected, readOnly, fileClipboardAvailable, revealAvailable, historyState, finalFocus,
+  onUndo, onRedo, onOpen, onOpenPinned, onCopy, onCut, onPasteInto, onCopyPath, onCopyContents, onRename, onNewFile, onNewFolder, onReveal, onDelete,
+}: {
+  entry: FileTreeEntry | null;
   multiSelected: boolean;
   readOnly: boolean;
   fileClipboardAvailable: boolean;
   revealAvailable: boolean;
   historyState: FileHistoryState;
+  /** The row the menu opened on, which gets the focus back when it closes. */
+  finalFocus: React.RefObject<HTMLElement | null>;
   onUndo(): Promise<void>;
   onRedo(): Promise<void>;
-  draggedPaths: string[];
-  dropTargetPath: string | null;
-  onFocus(path: string): void;
-  onRowClick(entry: FileTreeEntry, mods: { ctrl: boolean; shift: boolean }): void;
-  onRowDoubleClick(entry: FileTreeEntry): void;
-  onRowContextMenu(entry: FileTreeEntry): void;
   onOpen(entry: FileTreeEntry): void;
   onOpenPinned(entry: FileTreeEntry): void;
   onCopy(entry: FileTreeEntry): void;
@@ -825,113 +965,11 @@ interface FileRowProps {
   onNewFolder(entry: FileTreeEntry): void;
   onReveal(entry: FileTreeEntry): Promise<void>;
   onDelete(entry: FileTreeEntry): void;
-  dragPaths: string[];
-}
-
-function FileRow({
-  entry,
-  depth,
-  expanded,
-  pendingChildren,
-  selected,
-  active,
-  multiSelected,
-  readOnly,
-  fileClipboardAvailable,
-  revealAvailable,
-  historyState,
-  onUndo,
-  onRedo,
-  draggedPaths,
-  dropTargetPath,
-  onFocus,
-  onRowClick,
-  onRowDoubleClick,
-  onRowContextMenu,
-  onOpen,
-  onOpenPinned,
-  onCopy,
-  onCut,
-  onPasteInto,
-  onCopyPath,
-  onCopyContents,
-  onRename,
-  onNewFile,
-  onNewFolder,
-  onReveal,
-  onDelete,
-  dragPaths,
-}: FileRowProps) {
+}) {
   const shortcuts = useShortcuts();
-  const rowElement = useRef<HTMLButtonElement | null>(null);
-  const targetDirectory = targetDirectoryFor(entry);
-  const { attributes, listeners, setNodeRef: setDraggableRef, isDragging } = useDraggable({
-    id: `file-drag:${entry.path}`,
-    data: { sourcePaths: dragPaths, entry } satisfies FileDragData,
-    disabled: readOnly,
-  });
-  const { setNodeRef: setDroppableRef } = useDroppable({
-    id: `file-drop:${entry.path}`,
-    data: { targetDirectory, expandPath: entry.type === 'directory' ? entry.path : null },
-  });
-  const setRowRef = (element: HTMLButtonElement | null) => {
-    rowElement.current = element;
-    setDraggableRef(element);
-    setDroppableRef(element);
-  };
-  const isDropTarget = draggedPaths.length > 0 && entry.type === 'directory' && dropTargetPath === entry.path;
-  const inDropRegion = draggedPaths.length > 0
-    && dropTargetPath !== null
-    && dropTargetPath !== ''
-    && dropTargetPath !== entry.path
-    && pathContains(dropTargetPath, entry.path);
-  const row = (
-    <button
-      type="button"
-      ref={setRowRef}
-      {...attributes}
-      role="treeitem"
-      aria-selected={selected}
-      aria-current={active ? 'true' : undefined}
-      aria-expanded={entry.type === 'directory' ? expanded : undefined}
-      className={[
-        'file-tree-row',
-        entry.type === 'directory' ? 'folder-row' : '',
-        entry.ignored ? 'ignored-file' : '',
-        draggedPaths.includes(entry.path) || isDragging ? 'dragging' : '',
-        isDropTarget ? 'drop-target' : '',
-        inDropRegion ? 'drop-target-region' : '',
-      ].filter(Boolean).join(' ')}
-      style={{ paddingLeft: 12 + depth * 14 }}
-      {...listeners}
-      onClick={(event) => onRowClick(entry, { ctrl: event.ctrlKey || event.metaKey, shift: event.shiftKey })}
-      onDoubleClick={() => onRowDoubleClick(entry)}
-      onFocus={() => onFocus(entry.path)}
-      onContextMenu={() => onRowContextMenu(entry)}
-    >
-      {entry.type === 'directory'
-        ? <IconChevronRight className={`folder-chevron ${expanded ? 'open' : ''} ${entry.children.length === 0 && !pendingChildren ? 'empty' : ''}`} />
-        : <span className="tree-spacer" />}
-      <TreeIcon path={entry.path} type={entry.type} expanded={expanded} />
-      <span>{entry.name}</span>
-    </button>
-  );
-
   return (
-    <ContextMenu>
-      <ContextMenuTrigger render={row} />
-      <Tooltip>
-        <TooltipTrigger render={
-          <button type="button" className="file-row-actions" aria-label={`Actions for ${entry.name}`} aria-haspopup="menu" onClick={(event) => {
-            event.stopPropagation();
-            const rect = event.currentTarget.getBoundingClientRect();
-            // Reuse the row's context menu, selection handling and focus restoration.
-            rowElement.current?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: rect.left, clientY: rect.bottom }));
-          }} />
-        }><IconDots /></TooltipTrigger>
-        <TooltipContent>More actions</TooltipContent>
-      </Tooltip>
-      <ContextMenuContent>
+    <ContextMenuContent finalFocus={finalFocus}>
+      {entry && <>
         {entry.type === 'file' && (
           <>
             <ContextMenuItem onClick={() => onOpen(entry)}>
@@ -987,11 +1025,10 @@ function FileRow({
         <ContextMenuItem className="text-destructive data-highlighted:text-destructive" disabled={readOnly} onClick={() => onDelete(entry)}>
           <IconTrash aria-hidden="true" /> Delete <span className="ml-auto text-(length:--text-meta) text-muted-foreground">Del</span>
         </ContextMenuItem>
-      </ContextMenuContent>
-    </ContextMenu>
+      </>}
+    </ContextMenuContent>
   );
 }
-
 
 function TreeIcon({ path, type, expanded = false }: { path: string; type: 'file' | 'directory'; expanded?: boolean }) {
   if (type === 'directory') return <FolderIcon path={path} expanded={expanded} />;

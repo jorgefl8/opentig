@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { KeptReadNotice } from '@/components/KeptReadNotice';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { IconExternalLink, IconRefresh, IconX } from '@tabler/icons-react';
@@ -101,6 +102,7 @@ export function WorkflowRunViewer({ repositoryId, runId, jobId = null }: { repos
             >{run.headSha.slice(0, 7)}</RepositoryLink>
             <span>{eventLabel(run.event)}{run.actor ? ` by @${run.actor.login}` : ''}</span>
             <span><time dateTime={run.startedAt ?? run.createdAt}>{formatDateTime(run.startedAt ?? run.createdAt)}</time>{duration !== null ? ` · ${formatDuration(duration)}` : ''}</span>
+            <KeptReadNotice prefixes={[queryKeys.actionRun(repositoryId, runId)]} onRetry={() => void query.refetch()} />
           </div>
         </div>
       </header>

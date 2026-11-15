@@ -24,6 +24,9 @@ export interface GitHubTarget {
   executable: CliCandidate;
 }
 
+/** What a change made on GitHub through OpenTig makes outdated. */
+export type GitHubChange = { pullRequest: number } | 'pull-requests' | 'releases' | 'workflow-runs';
+
 /** What the GitHub mutation services need from `GitHubService`, which owns routing and credentials. */
 export interface GitHubAccess {
   /** `fresh` is for a change made on GitHub: the token and the account behind it are checked again instead of reused. */
@@ -31,7 +34,8 @@ export interface GitHubAccess {
   run(executable: CliCandidate, args: string[], options: GhRunOptions): Promise<CliRunResult>;
   /** Fails with a read's classification of what went wrong. */
   runRead(args: string[], options: GhRunOptions): Promise<CliRunResult>;
-  invalidate(repositoryId: string): void;
+  /** After a change made on GitHub: what `change` makes outdated is not served again. Without it, nothing read for the repository is. */
+  invalidate(repositoryId: string, change?: GitHubChange): void;
   /** Reads GitHub now, without joining a read already in progress. */
   readLiveState(repositoryId: string, number: number): Promise<PullRequestLiveState>;
   revisionFor(repository: RepositoryInfo): number;

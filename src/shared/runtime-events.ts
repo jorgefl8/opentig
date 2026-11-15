@@ -1,6 +1,7 @@
 import type { RepositoryInfo } from './contracts';
 import type { RepositoryChangeScope } from './repository-change';
 import type { GitHubAccountDetection } from './github-accounts';
+import type { KeptRefreshOutcome } from './kept-reads';
 
 export type OpenTigRuntimeEvent =
   | { type: 'ai.instructions-changed'; repositoryIds: string[] }
@@ -22,7 +23,13 @@ export type OpenTigRuntimeEvent =
   | {
       type: 'repository.active-changed';
       repository: RepositoryInfo;
-    };
+    }
+  /**
+   * The read behind a kept answer finished. Sent only on the connection that made the
+   * request, which asked with `acceptKept`: an older client, which takes an event type
+   * it does not know for a change of GitHub accounts, never receives it.
+   */
+  | ({ type: 'github.read-refreshed'; requestId: string } & KeptRefreshOutcome);
 
 /** `starting` while a watch is being set up: not trouble, but nothing it covers is reported yet. */
 export type RepositoryWatchState = 'starting' | 'watching' | 'degraded' | 'stopped';

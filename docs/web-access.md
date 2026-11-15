@@ -253,6 +253,8 @@ Each WebSocket response is limited to 4 MiB of UTF-8 JSON, including its envelop
 
 A separate 8 MiB send-queue budget closes an accumulating slow connection with code 1013. Reconnection does not replay pending operations.
 
+A browser reaching the server through the network or a tunnel gets the interface's files compressed when it offers to, and, once signed in, its WebSocket messages too, which shrinks a file tree to about a tenth. A connection without a valid session is never offered compression, and once the server refuses or closes a connection it reads nothing more from it. A browser on the same machine connecting directly does not, since it would only wait for the compression. A proxy on the same machine counts as remote when it says whom it forwards for (`X-Forwarded-For`, `Forwarded` and similar headers). Compressed files are kept in the server's memory, 48 MB at most, so each is compressed once per run.
+
 A server accepts at most 16 simultaneous WebSocket connections, one per open browser tab or desktop window. Further tabs cannot connect until another closes.
 
 Each connection can have 32 requests running on the server and can start 120 in any 10 seconds. OpenTig stays below the first limit by sending 24 at a time, at most 8 of them for background work such as repository icons and the state of saved repositories that aren't open. The rest wait in the client, and what you are doing goes ahead of background work. A request the server still refuses for either limit has not run, so OpenTig sends it again shortly: with many saved repositories and quick switches the interface can pause for a moment, but it does not report an error.

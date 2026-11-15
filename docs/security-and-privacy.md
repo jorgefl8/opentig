@@ -102,6 +102,23 @@ Explicit and verified SSH accounts override backend token variables without chan
 
 </details>
 
+### GitHub answers kept on disk
+
+To show pull requests, lists and workflow runs at once, the backend keeps what GitHub answered in `github-cache.json`, beside its other data, and never in the browser. Each answer is filed under the GitHub host, the GitHub repository, the account that read it, the local repository path and a one-way fingerprint of the remote's address, and is only shown again for all five. The file holds the answers as OpenTig parsed them (titles, descriptions, comments, check and run results): no token, no header, no command output, and not the remote's address, which can carry credentials.
+
+- The file is readable only by the user running the server (mode `0600` where the platform has file modes), and each profile has its own: Dev and production never share it.
+- It holds at most 8 MB of the most recently used answers; an answer larger than 512 KB, such as a very long conversation, is kept in memory only. In memory the backend keeps at most 600 answers and 32 MB. Answers older than 14 days are not shown, except finished workflow runs.
+- Changing an account or the account choice, and credentials GitHub rejects, drop what was read with them. A file that is damaged, edited outside OpenTig or written by another format version is deleted and not read.
+- To clear it, stop the server and delete `github-cache.json` from the data folder. **Settings → GitHub → Refresh accounts** also empties it.
+
+### Last repository state on disk
+
+So that starting OpenTig paints the repository at once instead of a loading message, the backend saves the last status, branches, worktrees and file tree it read of each repository in `repository-snapshots/`, one file per repository, beside its other data. They hold file and branch names, paths and change counts, never file contents. What is painted from them is read again at once, and nothing can be staged, committed, pulled, pushed, discarded or switched until that read lands.
+
+- Files are readable only by the user running the server (mode `0600` where the platform has file modes), and each profile has its own folder.
+- At most 12 repositories are kept, the most recently read; a file holds at most 4 MB, and a larger file tree is left out of it. Each part keeps the date it was read, and one read more than 30 days ago is not painted; without a recent status nothing is. A snapshot of a repository whose folder moved, damaged, edited outside OpenTig or written by another format version is deleted instead of painted, and so are leftovers of a write cut short. The folder is made private to the server's user if it is found looser. Forgetting a repository deletes its snapshot.
+- To clear them, stop the server and delete the `repository-snapshots` folder.
+
 ## Public website analytics
 
 The public website at opentig.com uses Umami Cloud to count page views, clicks to release downloads and the installation guide, and successful copies of the CLI command. These actions indicate interest; they do not confirm a download or installation. URL queries and fragments are excluded, and the tracker respects the browser's Do Not Track setting. This integration does not enable session replay or identify visitors through OpenTig accounts.

@@ -12,6 +12,7 @@ function fixture(activeRepositoryId: string | null = 'repo-id') {
   const git = { close: vi.fn(async () => undefined) };
   const aiLog = { flush: vi.fn(async () => undefined) };
   const problems = { flush: vi.fn(async () => undefined) };
+  const github = { cache: { close: vi.fn(async () => undefined) } };
   const settings = {
     activeRepositoryId,
     flush: vi.fn(async () => undefined),
@@ -26,9 +27,10 @@ function fixture(activeRepositoryId: string | null = 'repo-id') {
     git,
     aiLog,
     problems,
+    github,
     settings,
   } as unknown as OpenTigRuntimeServices;
-  return { services, watcher, prDrafts, fileHistory, ai, cliRunner, git, aiLog, problems, settings };
+  return { services, watcher, prDrafts, fileHistory, ai, cliRunner, git, aiLog, problems, github, settings };
 }
 
 describe('OpenTigRuntime', () => {
@@ -92,6 +94,7 @@ describe('OpenTigRuntime', () => {
     expect(state.git.close).toHaveBeenCalledOnce();
     expect(state.aiLog.flush).toHaveBeenCalledOnce();
     expect(state.problems.flush).toHaveBeenCalledOnce();
+    expect(state.github.cache.close).toHaveBeenCalledOnce();
     expect(state.settings.flush).toHaveBeenCalledOnce();
   });
 });

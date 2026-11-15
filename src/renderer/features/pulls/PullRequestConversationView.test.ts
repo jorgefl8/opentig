@@ -19,6 +19,8 @@ const conversation = (entries: PullRequestConversationEntry[], overrides: Partia
 beforeAll(() => import('@/features/markdown/render-markdown'), 60_000);
 let root: Root;
 let container: HTMLDivElement;
+/** Set by a test that stands in for IntersectionObserver: entries then render only once reported near. */
+let observed: Map<Element, (records: Array<{ isIntersecting: boolean }>) => void> | null = null;
 let client: QueryClient;
 beforeEach(() => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
@@ -27,12 +29,13 @@ beforeEach(() => {
   container = document.createElement('div'); document.body.append(container); root = createRoot(container);
 });
 afterEach(async () => {
+  observed = null;
   await act(async () => root.unmount());
   container.remove(); client.clear(); vi.unstubAllGlobals(); vi.resetAllMocks();
 });
 async function render() {
   await act(async () => root.render(createElement(QueryClientProvider, { client }, createElement(TooltipProvider, null, createElement(PullRequestConversationView, { repositoryId: 'repo', number: 1, url: 'https://github.com/sample/demo/pull/1', live: null, draft: '', onDraftChange: vi.fn() })))));
-  for (let tick = 0; tick < 40 && (container.textContent?.includes('Loading conversation') || client.isFetching() > 0); tick++) {
+  for (let tick = 0; tick < 40 && (container.textContent?.includes('Loading conversation') || client.isFetching() > 0 || (!observed && container.querySelector('.pr-conversation-pending'))); tick++) {
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 5)); });
   }
 }
@@ -109,4 +112,29 @@ it('offers changes only on what the viewer can change, and says what was edited'
   expect(own!.querySelector('.pr-conversation-meta')?.textContent).toContain('edited');
   expect(other!.querySelector('[aria-label^="More actions"]')).toBeNull();
   expect(other!.querySelector('.pr-conversation-meta')?.textContent).not.toContain('edited');
+});
+
+it('renders each comment on its own, once it comes near the visible part of the conversation', async () => {
+  observed = new Map();
+  const watching = observed;
+  vi.stubGlobal('IntersectionObserver', class {
+    constructor(private readonly callback: (records: Array<{ isIntersecting: boolean }>) => void) {}
+    observe(element: Element) { watching.set(element, this.callback); }
+    disconnect() {}
+  });
+  api.getPullRequestConversation.mockResolvedValue(conversation([
+    entry({ id: 'c1', body: 'First **one**' }), entry({ id: 'c2', body: 'Second **two**' }), entry({ id: 'c3', body: 'Third **three**' }),
+  ]));
+  await render();
+  const articles = [...container.querySelectorAll('.pr-conversation-entry')];
+  expect(articles).toHaveLength(3);
+  // The text as written shows meanwhile, and nothing is rendered yet.
+  expect(container.querySelectorAll('.pr-conversation-pending')).toHaveLength(3);
+  expect(container.querySelector('.pr-conversation-body strong')).toBeNull();
+
+  await act(async () => watching.get(articles[1]!)!([{ isIntersecting: true }]));
+  for (let tick = 0; tick < 40 && !articles[1]!.querySelector('.pr-conversation-body strong'); tick++) await act(async () => { await new Promise(resolve => setTimeout(resolve, 5)); });
+  expect(articles[1]!.querySelector('.pr-conversation-body strong')?.textContent).toBe('two');
+  expect(articles[0]!.querySelector('.pr-conversation-body strong')).toBeNull();
+  expect(articles[2]!.querySelector('.pr-conversation-body strong')).toBeNull();
 });

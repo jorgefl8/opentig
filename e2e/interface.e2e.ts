@@ -276,3 +276,20 @@ test('on a phone Settings opens as a sheet that drills into sections and hides S
   await page.keyboard.press('Escape');
   await expect(sheet).toBeHidden();
 });
+
+test('the loading screen stays until the app can show something, with no blank frame in between', async ({ pairedPage: page }) => {
+  // Routing turns the browser cache off, so the app's code is downloaded again, slowly.
+  let held = 0;
+  await page.route(/\/assets\/App-[^/]+\.js$/, async (route) => {
+    held++;
+    await new Promise((resolve) => setTimeout(resolve, 2_000));
+    await route.continue();
+  });
+  await page.reload();
+  await expect.poll(() => held).toBeGreaterThan(0);
+  // Once React has replaced the loading screen index.html drew, its own takes the same place, not an empty root.
+  await expect(page.locator('#boot-shell')).toHaveCount(0);
+  await expect(page.locator('.splash')).toBeVisible();
+  await expect(page.locator('.splash')).toContainText('Starting…');
+  await expect(page.getByRole('combobox', { name: 'Select project or repository' }).or(page.getByRole('button', { name: /Open a folder/ }))).toBeVisible({ timeout: 15_000 });
+});
