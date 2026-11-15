@@ -57,6 +57,14 @@ describe('classifyRepositoryChange', () => {
     expect(classifyRepositoryChange('.git/objects/ab/cdef', false)).toBeNull();
     expect(classifyRepositoryChange('node_modules/example/index.js', false)).toBeNull();
     expect(classifyRepositoryChange('.git/index.lock', false)).toBeNull();
+    expect(classifyRepositoryChange('refs/heads/main.lock', true)).toBeNull();
+  });
+
+  it('reports a lock file of the worktree, such as a package manager’s, and the repository’s own excludes', () => {
+    expect(classifyRepositoryChange('yarn.lock', false)).toBe('worktree');
+    expect(classifyRepositoryChange('crates/app/Cargo.lock', false)).toBe('worktree');
+    expect(classifyRepositoryChange('.git/info/exclude', false)).toBe('worktree');
+    expect(classifyRepositoryChange('info/exclude', true)).toBe('worktree');
   });
 });
 

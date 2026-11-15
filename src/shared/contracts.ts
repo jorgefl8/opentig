@@ -58,8 +58,8 @@ export interface DiffResult {
   binary: boolean;
   truncated: boolean;
   lineCount: number;
-  /** A working-tree diff whose file the server is watching, so a change to it will be reported. */
-  watched?: boolean;
+  /** For a working-tree diff: the server watch that reports changes to its file, when one does. */
+  watchId?: string;
 }
 
 export interface FileResult {
@@ -75,8 +75,8 @@ export interface FileResult {
    * them, so the client keeps such a read only until something changes. Absent from older servers.
    */
   readAtMs?: number;
-  /** The server is watching this file's folder, so a change to it will be reported. Absent from older servers. */
-  watched?: boolean;
+  /** The server watch that reports changes to this file, when one does. Absent from older servers. */
+  watchId?: string;
 }
 
 export type ImageFileResult =
@@ -855,8 +855,8 @@ export interface BootstrapData {
   unavailableActiveRepositoryId?: string | null;
   /** Present when bootstrap arrived through the authoritative server transport. */
   server?: OpenTigServerIdentity;
-  /** How the active repository is watched for changes; absent from older servers, which watch it or say nothing. */
-  activeRepositoryWatch?: RepositoryWatchState;
+  /** How the active repository is watched for changes, with the watch's id while it reports every change. */
+  activeRepositoryWatch?: { state: RepositoryWatchState; watchId?: string };
 }
 
 /** Another saved repository found in the folder a moved repository now lives in. */
@@ -1092,7 +1092,7 @@ export interface OpenTigApi {
     /** The connection to the server came back, after events may have been missed. */
     onReconnected(callback: () => void): () => void;
     /** `watch` is set when the server's watch of the repository ran into trouble or recovered. */
-    onRepositoryChanged(callback: (repositoryId: string, scope: RepositoryChangeScope, watch?: RepositoryWatchState) => void): () => void;
+    onRepositoryChanged(callback: (repositoryId: string, scope: RepositoryChangeScope, watch?: RepositoryWatchState, watchId?: string) => void): () => void;
     onActiveRepositoryChanged(callback: (repository: RepositoryInfo) => void): () => void;
   };
   projects: {

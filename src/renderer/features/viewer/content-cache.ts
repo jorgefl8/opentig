@@ -19,10 +19,14 @@ import { ByteBudgetLru } from '@/lib/ByteBudgetLru';
  * necessarily carries a later time. This is Git's rule for racily clean index
  * entries. Tools that put back an older time on purpose are not caught.
  *
- * Only reads the server marks as `watched` are kept: a file in a folder the
- * server does not watch, such as a Git-ignored one on Linux, or a server that
- * does not say, is read again on every open. Without a working watcher none of
- * this is trusted either.
+ * All of that rests on hearing about every change, so nothing is served unless
+ * the client has confirmed it does: the server told it, since it last connected,
+ * that a watch with a given id covers this repository (`confirmWatch`), and the
+ * entry was read under that same watch, which the server names in each read it
+ * covers. A file in a folder the server does not watch, a read from a server that
+ * does not say, a watch that moved to another repository, stopped, restarted or
+ * ran into trouble, and any time the connection dropped: in every such case the
+ * entry is read again. When in doubt, nothing is served.
  */
 
 /** Wider than the coarsest common timestamp granularity, FAT's two seconds. */
@@ -42,7 +46,8 @@ interface Entry<Value> {
 }
 
 let generation = 0;
-let watching = true;
+/** The watch this client knows reports every change to this repository; null when it cannot be sure. */
+let trusted: { repositoryId: string; watchId: string } | null = null;
 
 const files = new ByteBudgetLru<string, Entry<FileResult>>({
   maxEntries: CONTENT_CACHE_ENTRIES,
@@ -65,11 +70,21 @@ export function changeGeneration(): number {
   return generation;
 }
 
-/** The server watches the open repository again, or has stopped doing so. */
-export function setWatching(value: boolean): void {
-  if (watching === value) return;
-  watching = value;
+/** The server said, since this client last connected, that this watch reports every change to the repository. */
+export function confirmWatch(repositoryId: string, watchId: string): void {
+  if (trusted?.repositoryId === repositoryId && trusted.watchId === watchId) return;
+  trusted = { repositoryId, watchId };
+}
+
+/** The client can no longer be sure it hears of every change: nothing kept is served until a watch is confirmed. */
+export function doubtWatch(): void {
+  if (!trusted) return;
+  trusted = null;
   noteChange();
+}
+
+function trustedFor(repositoryId: string, watchId: string | undefined): boolean {
+  return watchId !== undefined && trusted !== null && trusted.repositoryId === repositoryId && trusted.watchId === watchId;
 }
 
 const fileKey = (repositoryId: string, path: string) => `${repositoryId}\0${path}`;
@@ -78,7 +93,7 @@ const diffKey = (repositoryId: string, kind: 'staged' | 'unstaged', path: string
 export function keepFile(repositoryId: string, value: FileResult, readAt: number): void {
   // A preview limited by size, or read past that limit on request, is read again each time, and so is
   // a file no watcher would report a change to.
-  if (value.tooLarge || value.binary || value.watched !== true) return;
+  if (value.tooLarge || value.binary || value.watchId === undefined) return;
   files.set(fileKey(repositoryId, value.path), { generation: readAt, value });
 }
 
@@ -88,9 +103,8 @@ export function keepFile(repositoryId: string, value: FileResult, readAt: number
  * be current.
  */
 export function keptFile(repositoryId: string, path: string, stamp: FileStamp | null): FileResult | null {
-  if (!watching) return null;
   const entry = files.get(fileKey(repositoryId, path));
-  if (!entry) return null;
+  if (!entry || !trustedFor(repositoryId, entry.value.watchId)) return null;
   if (entry.generation === generation) return entry.value;
   const { value } = entry;
   const settled = value.readAtMs !== undefined && value.readAtMs - value.mtimeMs >= RACY_MARGIN_MS;
@@ -98,15 +112,14 @@ export function keptFile(repositoryId: string, path: string, stamp: FileStamp | 
 }
 
 export function keepDiff(repositoryId: string, kind: 'staged' | 'unstaged', path: string, value: DiffResult, readAt: number): void {
-  if (value.watched !== true) return;
+  if (value.watchId === undefined) return;
   diffs.set(diffKey(repositoryId, kind, path), { generation: readAt, value });
 }
 
 /** A change's diff as last read, if nothing has changed in any working tree or index since. */
 export function keptDiff(repositoryId: string, kind: 'staged' | 'unstaged', path: string): DiffResult | null {
-  if (!watching) return null;
   const entry = diffs.get(diffKey(repositoryId, kind, path));
-  return entry && entry.generation === generation ? entry.value : null;
+  return entry && entry.generation === generation && trustedFor(repositoryId, entry.value.watchId) ? entry.value : null;
 }
 
 /** Forgets everything, as a new session would. */
@@ -114,5 +127,5 @@ export function clearContentCache(): void {
   files.clear();
   diffs.clear();
   generation += 1;
-  watching = true;
+  trusted = null;
 }

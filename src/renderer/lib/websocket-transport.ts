@@ -191,6 +191,12 @@ export class OpenTigWebSocketTransport {
     return () => this.eventListeners.delete(listener);
   }
 
+  /** Follows the connection state without opening the connection, as `subscribeState` does. */
+  observeState(listener: () => void): () => void {
+    this.stateListeners.add(listener);
+    return () => this.stateListeners.delete(listener);
+  }
+
   onReconnect(listener: () => void | Promise<void>): () => void {
     this.reconnectListeners.add(listener);
     return () => this.reconnectListeners.delete(listener);

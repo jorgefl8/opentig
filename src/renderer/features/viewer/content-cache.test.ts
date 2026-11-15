@@ -1,11 +1,12 @@
-import { afterEach, expect, it } from 'vitest';
+import { afterEach, beforeEach, expect, it } from 'vitest';
 import type { DiffResult, FileResult } from '@shared/contracts';
-import { changeGeneration, clearContentCache, keepDiff, keepFile, keptDiff, keptFile, noteChange, RACY_MARGIN_MS, setWatching } from './content-cache';
+import { changeGeneration, clearContentCache, confirmWatch, doubtWatch, keepDiff, keepFile, keptDiff, keptFile, noteChange, RACY_MARGIN_MS } from './content-cache';
 
 const modified = 1_700_000_000_000;
-const read = (content: string, readAtMs: number): FileResult => ({ path: 'notes.txt', content, binary: false, tooLarge: false, size: content.length, mtimeMs: modified, readAtMs, watched: true });
-const diff = (patch: string): DiffResult => ({ path: 'notes.txt', patch, binary: false, truncated: false, lineCount: 1, watched: true });
+const read = (content: string, readAtMs: number, watchId = 'watch-1'): FileResult => ({ path: 'notes.txt', content, binary: false, tooLarge: false, size: content.length, mtimeMs: modified, readAtMs, watchId });
+const diff = (patch: string, watchId = 'watch-1'): DiffResult => ({ path: 'notes.txt', patch, binary: false, truncated: false, lineCount: 1, watchId });
 
+beforeEach(() => confirmWatch('repo', 'watch-1'));
 afterEach(clearContentCache);
 
 it('opens a file again from memory until something changes, then only while the tree still gives it the same size and time', () => {
@@ -33,7 +34,7 @@ it('does not trust the size and time of a file read moments after it was written
   expect(keptFile('repo', 'notes.txt', { size: 7, mtimeMs: modified })).toBeNull();
 });
 
-it('opens a change again only while nothing has changed since it was read, and nothing at all without the watcher', () => {
+it('opens a change again only while nothing has changed since it was read', () => {
   const before = changeGeneration();
   keepDiff('repo', 'unstaged', 'notes.txt', diff('+one'), before);
   expect(keptDiff('repo', 'unstaged', 'notes.txt')?.patch).toBe('+one');
@@ -43,17 +44,37 @@ it('opens a change again only while nothing has changed since it was read, and n
   // A read that started before a change and came back after it is already out of date.
   keepDiff('repo', 'unstaged', 'notes.txt', diff('+two'), before);
   expect(keptDiff('repo', 'unstaged', 'notes.txt')).toBeNull();
-
-  keepDiff('repo', 'unstaged', 'notes.txt', diff('+three'), changeGeneration());
-  keepFile('repo', read('settled', modified + RACY_MARGIN_MS), changeGeneration());
-  setWatching(false);
-  expect(keptDiff('repo', 'unstaged', 'notes.txt')).toBeNull();
-  expect(keptFile('repo', 'notes.txt', { size: 7, mtimeMs: modified })).toBeNull();
 });
 
-it('reads again on every open a file or change in a folder the server does not watch', () => {
-  keepFile('repo', { ...read('ignored folder', modified + RACY_MARGIN_MS), watched: false }, changeGeneration());
-  keepDiff('repo', 'unstaged', 'notes.txt', { ...diff('+unwatched'), watched: false }, changeGeneration());
+it('serves nothing it cannot be sure about: a read no watch covers, another repository’s watch, or a watch that is not the one it was read under', () => {
+  const settled = modified + RACY_MARGIN_MS;
+  const unwatched = read('ignored folder', settled);
+  delete unwatched.watchId;
+  keepFile('repo', unwatched, changeGeneration());
+  expect(keptFile('repo', 'notes.txt', null)).toBeNull();
+
+  keepFile('repo', read('first watch', settled), changeGeneration());
+  keepDiff('repo', 'unstaged', 'notes.txt', diff('+first watch'), changeGeneration());
+  expect(keptFile('repo', 'notes.txt', null)?.content).toBe('first watch');
+  // The server now watches another repository: this one's changes go unreported.
+  confirmWatch('other', 'watch-2');
+  expect(keptFile('repo', 'notes.txt', { size: 11, mtimeMs: modified })).toBeNull();
+  expect(keptDiff('repo', 'unstaged', 'notes.txt')).toBeNull();
+  // Watched again, but by a new watch: what happened in between was never reported.
+  confirmWatch('repo', 'watch-3');
+  expect(keptFile('repo', 'notes.txt', { size: 11, mtimeMs: modified })).toBeNull();
+  expect(keptDiff('repo', 'unstaged', 'notes.txt')).toBeNull();
+});
+
+it('stops serving the moment the client cannot be sure it heard every change, such as a dropped connection', () => {
+  keepFile('repo', read('before the drop', modified + RACY_MARGIN_MS), changeGeneration());
+  keepDiff('repo', 'unstaged', 'notes.txt', diff('+before the drop'), changeGeneration());
+  doubtWatch();
   expect(keptFile('repo', 'notes.txt', null)).toBeNull();
   expect(keptDiff('repo', 'unstaged', 'notes.txt')).toBeNull();
+  // Told again that the same watch covers it: only what a tree read since then vouches for is served.
+  confirmWatch('repo', 'watch-1');
+  expect(keptDiff('repo', 'unstaged', 'notes.txt')).toBeNull();
+  expect(keptFile('repo', 'notes.txt', null)).toBeNull();
+  expect(keptFile('repo', 'notes.txt', { size: 15, mtimeMs: modified })?.content).toBe('before the drop');
 });

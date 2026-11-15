@@ -1,11 +1,13 @@
 import type { OpenTigApi } from '@shared/contracts';
 import { createOpenTigServerClient } from './server-client';
 import { isRepositoryMutation } from '@shared/protocol';
-import { noteChange } from '@/features/viewer/content-cache';
+import { doubtWatch, noteChange } from '@/features/viewer/content-cache';
 
 export const serverClient = createOpenTigServerClient();
 // A change this client sends may change what the viewer keeps, before the file watcher says so.
 serverClient.transport.onMutation((command) => { if (isRepositoryMutation(command)) noteChange(); });
+// Changes reported while the connection is down are lost: nothing kept is trusted until the server confirms its watch again.
+serverClient.transport.observeState(() => { if (serverClient.transport.getState() !== 'connected') doubtWatch(); });
 
 const desktop = window.opentigDesktop;
 const server = serverClient.api;

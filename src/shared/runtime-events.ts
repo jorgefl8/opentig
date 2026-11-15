@@ -16,10 +16,13 @@ export type OpenTigRuntimeEvent =
        * they do not know for a change of GitHub accounts, and ignore a field they do not know.
        */
       watch?: RepositoryWatchState;
+      /** With `watch: 'watching'`: the new watch, which read results name when it covers them. */
+      watchId?: string;
     }
   | {
       type: 'repository.active-changed';
       repository: RepositoryInfo;
     };
 
-export type RepositoryWatchState = 'watching' | 'degraded' | 'stopped';
+/** `starting` while a watch is being set up: not trouble, but nothing it covers is reported yet. */
+export type RepositoryWatchState = 'starting' | 'watching' | 'degraded' | 'stopped';

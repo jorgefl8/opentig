@@ -103,7 +103,7 @@ export async function createOpenTigRuntime(
     {
       platform: process.platform,
       ...(options.logger ? { logger: options.logger } : {}),
-      onState: (repositoryId, state) => runtime?.publishRepositoryWatch(repositoryId, state),
+      onState: (repositoryId, state, watchId) => runtime?.publishRepositoryWatch(repositoryId, state, watchId),
       // Folders Git ignores entirely, which Linux does not watch. Large outputs are cut off: watching more is safe.
       listIgnoredDirectories: async (repository) => {
         const output = await git.run(repository.path, ['ls-files', '-z', '--others', '--ignored', '--exclude-standard', '--directory', '--no-empty-directory'], {

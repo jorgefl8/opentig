@@ -76,7 +76,8 @@ export function registerServerCommands(
   handle(IPC.bootstrap, 'bootstrap', async () => {
     const activeRepository = await services.repositories.restore();
     if (activeRepository) services.watcher.start(activeRepository);
-    const activeRepositoryWatch = activeRepository ? services.watcher.state(activeRepository.id) : undefined;
+    const watch = activeRepository ? services.watcher.status(activeRepository.id) : null;
+    const activeRepositoryWatch = watch ? { state: watch.state, ...(watch.watchId ? { watchId: watch.watchId } : {}) } : undefined;
     const unavailableRepositoryIds = await services.repositories.unavailableIds();
     const activeId = services.settings.activeRepositoryId;
     return {
@@ -204,8 +205,8 @@ export function registerServerCommands(
     const repositoryId = stringArg(id, 'read-file', 64);
     const relativePath = stringArg(filePath, 'read-file');
     // Asked before reading: a watch that started meanwhile may not have seen a change made before it.
-    const watched = services.watcher.covers(repositoryId, relativePath);
-    return { ...await services.files.read(repositoryId, relativePath, allowLarge === true, context.signal), watched };
+    const watchId = services.watcher.covers(repositoryId, relativePath);
+    return { ...await services.files.read(repositoryId, relativePath, allowLarge === true, context.signal), ...(watchId ? { watchId } : {}) };
   });
   handle(IPC.repositoryLineBlame, 'line-blame', (id, filePath, draft) => services.operations.lineBlame(
     stringArg(id, 'line-blame', 64),
@@ -368,8 +369,8 @@ export function registerServerCommands(
     const request = raw as Partial<DiffRequest>;
     const repositoryId = stringArg(request.repositoryId, 'diff', 64);
     const diffPath = stringArg(request.path, 'diff');
-    const watched = services.watcher.covers(repositoryId, diffPath);
-    return { ...await services.operations.diff({ repositoryId, path: diffPath, kind: request.kind === 'staged' ? 'staged' : 'unstaged' }, context.signal), watched };
+    const watchId = services.watcher.covers(repositoryId, diffPath);
+    return { ...await services.operations.diff({ repositoryId, path: diffPath, kind: request.kind === 'staged' ? 'staged' : 'unstaged' }, context.signal), ...(watchId ? { watchId } : {}) };
   });
   handleWithContext(IPC.diffCommit, 'commit-diff', (context, id, oid) => services.operations.commitDiff(stringArg(id, 'commit-diff', 64), stringArg(oid, 'commit-diff', 128), context.signal));
   handleWithContext(IPC.diffCommitFile, 'commit-file-diff', (context, id, oid, filePath, oldPath) => services.operations.commitFileDiff(

@@ -121,17 +121,28 @@ export class DirectoryTreeWatcher {
     if (event === 'rename' && child !== null) void this.follow(relative);
   }
 
-  private async follow(relative: string): Promise<void> {
+  /** One follow at a time per path, in the order the system reported them. */
+  private readonly following = new Map<string, Promise<void>>();
+
+  private follow(relative: string): Promise<void> {
+    const previous = this.following.get(relative) ?? Promise.resolve();
+    const next = previous.then(() => this.refollow(relative));
+    this.following.set(relative, next);
+    void next.finally(() => { if (this.following.get(relative) === next) this.following.delete(relative); });
+    return next;
+  }
+
+  private async refollow(relative: string): Promise<void> {
+    if (this.closed) return;
     const directory = this.absolute(relative);
     let isDirectory = false;
     try { isDirectory = (await stat(directory)).isDirectory(); }
     catch { /* Gone. */ }
     if (this.closed) return;
-    if (!isDirectory) {
-      this.forget(directory);
-      return;
-    }
-    if (this.watchers.has(directory) || !this.options.include(relative)) return;
+    // A folder that went away, or was removed and made again, as a checkout does with a folder it
+    // empties and refills: the watch on the old one never fires again, so it is always replaced.
+    this.forget(directory);
+    if (!isDirectory || !this.options.include(relative)) return;
     await this.add(relative);
     // Anything written in it before its watch was in place is read again.
     if (!this.closed) this.options.onChange(relative);

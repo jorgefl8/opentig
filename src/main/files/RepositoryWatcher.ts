@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { watch } from 'node:fs';
 import type { FSWatcher } from 'node:fs';
 import { DirectoryTreeWatcher, type DirectoryTreeWatcherOptions, type WatchFailure } from './DirectoryTreeWatcher';
@@ -25,12 +26,15 @@ export function classifyRepositoryChange(
 ): RepositoryChangeScope | null {
   if (!normalized) return 'unknown';
   if (normalized.split('/').includes('node_modules')) return null;
-  if (normalized.endsWith('.lock')) return null;
   const gitRelative = insideGitDir
     ? normalized
     : normalized === '.git' ? '' : normalized.startsWith('.git/') ? normalized.slice(5) : null;
+  // In the worktree a `.lock` file is the user's, such as yarn.lock or Cargo.lock.
   if (gitRelative === null) return 'worktree';
-  if (gitRelative === '') return null;
+  // In the Git directory it is one of Git's own locks, which come and go with every write.
+  if (gitRelative === '' || gitRelative.endsWith('.lock')) return null;
+  // What the repository's own excludes leave out changes the untracked files.
+  if (gitRelative === 'info/exclude') return 'worktree';
   if (gitRelative === 'index') return 'index';
   if (gitRelative === 'config') return 'unknown';
   if (gitRelative === 'HEAD' || gitRelative === 'ORIG_HEAD'
@@ -52,11 +56,24 @@ export function classifyRepositoryChange(
 
 export type { RepositoryWatchState } from '../../shared/runtime-events';
 
+/** How the open repository is watched, and, while every change is reported, the id of that watch. */
+export interface RepositoryWatchStatus {
+  state: RepositoryWatchState;
+  /**
+   * New each time watching begins: a client that was told this id saw every change
+   * since then, as long as it was connected. Null unless `state` is `watching`.
+   */
+  watchId: string | null;
+}
+
 export interface RepositoryWatcherOptions {
   platform?: NodeJS.Platform;
   logger?: (level: 'info' | 'warn' | 'error', message: string) => void;
-  /** The repository's watch went from one state to another. */
-  onState?: (repositoryId: string, state: RepositoryWatchState) => void;
+  /**
+   * The repository's watch went from one state to another, with the new watch's id
+   * once it is watching. Called for every change but to `starting`.
+   */
+  onState?: (repositoryId: string, state: RepositoryWatchState, watchId: string | null) => void;
   /** Git-ignored folders of a worktree, relative to it, which are not watched on Linux. */
   listIgnoredDirectories?: (repository: RepositoryInfo) => Promise<string[]>;
   /** How long a failed native watch waits before starting again. */
@@ -68,8 +85,9 @@ export interface RepositoryWatcherOptions {
 /** Native watches that fail are started again this many times before the watch counts as stopped. */
 const MAX_RESTARTS = 3;
 // Inside the git dir only these folders hold what OpenTig shows; objects, logs and hooks are never watched.
-const GIT_DIR_FOLDERS = /^(?:refs|worktrees|rebase-merge|rebase-apply)(?:\/|$)/;
-const IGNORE_FILES = /(?:^|\/)\.gitignore$|^\.git\/info\/exclude$/;
+// `info` holds the repository's own excludes, which decide what is ignored and so what is watched.
+const GIT_DIR_FOLDERS = /^(?:refs|worktrees|rebase-merge|rebase-apply|info)(?:\/|$)/;
+const WORKTREE_IGNORE_FILES = /(?:^|\/)\.gitignore$|^\.git\/info\/exclude$/;
 
 /**
  * Reports changes in the open repository, batched per 250 ms and widened to the
@@ -97,14 +115,11 @@ export class RepositoryWatcher {
   private restarts = 0;
   private pendingScope: RepositoryChangeScope | null = null;
   private watchState: RepositoryWatchState = 'stopped';
+  private watchId: string | null = null;
   private readonly platform: NodeJS.Platform;
   private readonly logger: NonNullable<RepositoryWatcherOptions['logger']>;
   private ignoredDirectories: ReadonlySet<string> = new Set();
   private generation = 0;
-  /** Linux folders are still being set up for the open repository. */
-  private settingUp = false;
-  /** The repository clients were last told is not fully watched, until they are told it is again. */
-  private troubled: string | null = null;
 
   constructor(
     private readonly onChange: (repositoryId: string, scope: RepositoryChangeScope) => void,
@@ -115,24 +130,33 @@ export class RepositoryWatcher {
     this.logger = options.logger ?? (() => undefined);
   }
 
-  /** How the open repository is watched; `stopped` when none is. */
-  state(repositoryId: string): RepositoryWatchState {
-    return this.active?.id === repositoryId ? this.watchState : 'stopped';
+  /** How the repository is watched; `stopped` when it is not the open one. */
+  status(repositoryId: string): RepositoryWatchStatus {
+    return this.active?.id === repositoryId ? { state: this.watchState, watchId: this.watchId } : { state: 'stopped', watchId: null };
   }
 
-  /** Whether a change to this file of the open repository is being reported. */
-  covers(repositoryId: string, relativePath: string): boolean {
-    if (this.active?.id !== repositoryId || this.watchState !== 'watching') return false;
+  state(repositoryId: string): RepositoryWatchState {
+    return this.status(repositoryId).state;
+  }
+
+  /**
+   * The id of the watch that reports changes to this file of the open repository,
+   * or null when a change to it would go unreported: another repository is watched,
+   * the watch is starting or in trouble, its folder is not watched, or the
+   * classifier drops changes to it.
+   */
+  covers(repositoryId: string, relativePath: string): string | null {
+    if (this.active?.id !== repositoryId || this.watchState !== 'watching') return null;
     const normalized = relativePath.replace(/\\/g, '/');
-    if (normalized.split('/').includes('node_modules')) return false;
-    if (this.trees.length === 0) return this.watchers.length > 0;
+    if (classifyRepositoryChange(normalized, false) !== 'worktree') return null;
+    if (this.trees.length === 0) return this.watchers.length > 0 ? this.watchId : null;
     const folder = normalized.includes('/') ? normalized.slice(0, normalized.lastIndexOf('/')) : '';
-    return this.trees[0]!.covers(folder);
+    return this.trees[0]!.covers(folder) ? this.watchId : null;
   }
 
   start(repository: RepositoryInfo): boolean {
-    // A client opening the repository already watched leaves the watch as it is.
-    if (this.active?.id === repository.id && this.active.path === repository.path && (this.watchState === 'watching' || this.settingUp)) return true;
+    // A client opening the repository already watched, or being set up, leaves the watch as it is.
+    if (this.active?.id === repository.id && this.active.path === repository.path && (this.watchState === 'watching' || this.watchState === 'starting')) return true;
     this.stop();
     this.active = repository;
     this.restarts = 0;
@@ -140,6 +164,13 @@ export class RepositoryWatcher {
   }
 
   stop(): void {
+    // Clients of the repository it stops watching are told, so they stop relying on its reports.
+    const left = this.active;
+    if (left && this.watchState !== 'stopped') {
+      this.watchState = 'stopped';
+      this.watchId = null;
+      this.options.onState?.(left.id, 'stopped', null);
+    }
     this.generation += 1;
     this.closeWatches();
     if (this.timer) clearTimeout(this.timer);
@@ -150,7 +181,7 @@ export class RepositoryWatcher {
     this.deferrals = 0;
     this.pendingScope = null;
     this.watchState = 'stopped';
-    this.settingUp = false;
+    this.watchId = null;
   }
 
   private closeWatches(): void {
@@ -190,10 +221,12 @@ export class RepositoryWatcher {
     }
     this.restarts += 1;
     this.logger('warn', `Watching ${repositoryLabel(repository)} for changes failed (${code}); starting it again.`);
+    // Until it is back, changes go unreported: clients are told, and told again with a new watch once it is.
+    this.setState(repository.id, 'degraded');
     this.retryTimer = setTimeout(() => {
       this.retryTimer = null;
       if (this.active?.id !== repository.id) return;
-      if (this.startNative(repository)) this.schedule('unknown');
+      this.startNative(repository);
     }, this.options.retryDelayMs ?? 1_000);
   }
 
@@ -221,7 +254,7 @@ export class RepositoryWatcher {
       include: (relative) => this.watchesWorktreeFolder(relative),
       onChange: (relative) => {
         this.report(relative, false);
-        if (IGNORE_FILES.test(relative)) void this.refreshIgnored(repository, generation);
+        if (WORKTREE_IGNORE_FILES.test(relative)) void this.refreshIgnored(repository, generation);
       },
       onFailure: failed,
       ...(this.options.watchDirectory ? { watch: this.options.watchDirectory } : {}),
@@ -231,23 +264,23 @@ export class RepositoryWatcher {
     const common = separate ? new DirectoryTreeWatcher({
       root: repository.commonDir,
       include: (relative) => relative === '' || GIT_DIR_FOLDERS.test(relative),
-      onChange: (relative) => this.report(relative, true),
+      onChange: (relative) => {
+        this.report(relative, true);
+        if (relative === 'info/exclude') void this.refreshIgnored(repository, generation);
+      },
       onFailure: failed,
+      ...(this.options.watchDirectory ? { watch: this.options.watchDirectory } : {}),
     }) : null;
     if (common) this.trees.push(common);
-    // Watching is reported once the folders are in place; until then nothing is taken as covered.
-    this.watchState = 'stopped';
-    this.settingUp = true;
+    // Setting up is not trouble, but nothing is taken as covered until every folder is in place.
+    this.watchState = 'starting';
     void (async () => {
       this.ignoredDirectories = await this.listIgnored(repository);
       if (!current()) return;
       await Promise.all([worktree.add(), common?.add()]);
-      if (!current()) return;
-      this.settingUp = false;
-      if (this.trees.length === 0) return;
-      if (this.watchState !== 'degraded') this.setState(repository.id, 'watching');
-      // Something may have changed while the folders were being set up.
-      this.schedule('worktree');
+      if (!current() || this.trees.length === 0 || this.watchState !== 'starting') return;
+      // Clients are told, with a change in case one landed while the folders were being set up.
+      this.setState(repository.id, 'watching');
     })();
     return true;
   }
@@ -286,10 +319,9 @@ export class RepositoryWatcher {
   private setState(repositoryId: string, state: RepositoryWatchState): void {
     if (this.watchState === state) return;
     this.watchState = state;
-    // Watching is the ordinary case and goes unsaid, unless clients were told of trouble with this repository.
-    if (state === 'watching' && this.troubled !== repositoryId) return;
-    this.troubled = state === 'watching' ? null : repositoryId;
-    this.options.onState?.(repositoryId, state);
+    // Each watch is a new one: whatever happened while there was none went unreported.
+    this.watchId = state === 'watching' ? randomUUID() : null;
+    if (state !== 'starting') this.options.onState?.(repositoryId, state, this.watchId);
   }
 
   private schedule(scope: RepositoryChangeScope): void {

@@ -79,8 +79,7 @@ import { useMobileLayout } from '@/lib/use-mobile-layout';
 import { installZoomAwarePositioning } from '@/lib/zoom-aware-positioning';
 import { isUserIdle } from '@/lib/window-focus';
 import { dropFilesAhead, prefetchFile } from '@/features/viewer/viewer-prefetch';
-import { changeGeneration, noteChange, setWatching, type FileStamp } from '@/features/viewer/content-cache';
-import type { RepositoryWatchState } from '../../shared/runtime-events';
+import { changeGeneration, confirmWatch, doubtWatch, noteChange, type FileStamp } from '@/features/viewer/content-cache';
 import { mobileMainAction } from '@/lib/mobile-main-action';
 import { useElapsed } from '@/lib/use-elapsed';
 import { opentig, serverClient } from '@/lib/opentig-api';
@@ -271,7 +270,9 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   // an in-flight (stale) file snapshot, so don't declare it deleted until it appears.
   const pendingViewerPathRef = useRef<string | null>(null);
   // The open repository's watch on the server, when it is not reporting every change.
-  const [watchTrouble, setWatchTrouble] = useState<{ repositoryId: string; state: RepositoryWatchState } | null>(null);
+  // The latest the server said about its one watch: the repository it reports every change of, and that
+  // watch's id. Null after a reconnect, until the server says it again.
+  const [announcedWatch, setAnnouncedWatch] = useState<{ repositoryId: string; watchId: string } | null>(null);
   /** Shown instead of the section's own selection once a requested section switch lands. */
   const pendingSectionSelectionRef = useRef<ViewerSelection>(null);
   // What each section last showed, per repository; and which section of which repository the viewer shows now.
@@ -300,6 +301,18 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   // The change generation the file tree on screen was read at: while it is the current one, the
   // tree's sizes and times are current too, and the viewer may open a file it read before.
   const treeGenerationRef = useRef<{ repositoryId: string; generation: number } | null>(null);
+  // The change generation at the start of the tree read that last came back. A read that joins one already on
+  // its way gets that read's tree, so the generation comes from the read itself, not from whoever asked.
+  const treeReadRef = useRef<{ repositoryId: string; generation: number } | null>(null);
+  const readTree = useCallback((repositoryId: string) => appQueryClient.fetchQuery({
+    queryKey: queryKeys.files(repositoryId),
+    queryFn: async () => {
+      const generation = changeGeneration();
+      const files = await opentig.repository.getFiles(repositoryId);
+      treeReadRef.current = { repositoryId, generation };
+      return files;
+    },
+  }), [appQueryClient]);
   const fileStamp = useCallback((path: string): FileStamp | null => {
     const tree = treeGenerationRef.current;
     if (!tree || tree.repositoryId !== repositoryRef.current?.id || tree.generation !== changeGeneration() || !filesRef.current) return null;
@@ -357,6 +370,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     });
   }), [appQueryClient]);
   useEffect(() => opentig.events.onReconnected(() => { void refreshGitHubQueries(appQueryClient, repositoryRef.current?.id ?? null); }), [appQueryClient]);
+  // Changes may have gone unreported while disconnected; the bootstrap that follows says how the server watches now.
+  useEffect(() => opentig.events.onReconnected(() => setAnnouncedWatch(null)), []);
   const githubReady = repository !== null && githubInfo?.isGitHub === true && ghStatus?.installed === true;
   // Set by an explicit refresh, so the next read skips the list the backend keeps for a few seconds.
   const freshPulls = useRef(false);
@@ -506,8 +521,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       for (const state of data.filesTreeStates) filesTreeStates.set(state.repositoryId, [...state.expandedPaths]);
       setBootstrap(data);
       setRepository(data.activeRepository);
-      setWatchTrouble(data.activeRepository && data.activeRepositoryWatch && data.activeRepositoryWatch !== 'watching'
-        ? { repositoryId: data.activeRepository.id, state: data.activeRepositoryWatch } : null);
+      setAnnouncedWatch(data.activeRepository && data.activeRepositoryWatch?.state === 'watching' && data.activeRepositoryWatch.watchId
+        ? { repositoryId: data.activeRepository.id, watchId: data.activeRepositoryWatch.watchId } : null);
       setUnavailableRepositoryIds(new Set(data.unavailableRepositoryIds ?? []));
       setUnavailableRepository(data.recentRepositories.find((item) => item.id === data.unavailableActiveRepositoryId) ?? null);
     }).catch((reason) => {
@@ -801,20 +816,17 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     if (!repository) return;
     const repositoryId = repository.id;
     try {
-      const generation = changeGeneration();
-      const nextFiles = await appQueryClient.fetchQuery({
-        queryKey: queryKeys.files(repositoryId), queryFn: () => opentig.repository.getFiles(repositoryId),
-      });
+      const nextFiles = await readTree(repositoryId);
       if (repositoryRef.current?.id !== repositoryId) return;
       lastReadRef.current.files = Date.now();
-      treeGenerationRef.current = { repositoryId, generation };
+      treeGenerationRef.current = treeReadRef.current?.repositoryId === repositoryId ? treeReadRef.current : null;
       applyFilesSnapshot(nextFiles);
     } catch (reason) {
       if (repositoryRef.current?.id !== repositoryId) return;
       if (isConnectionLoss(reason)) recordConnectionLoss('Could not refresh files', reason);
       else reportError('Could not refresh files', reason);
     }
-  }, [applyFilesSnapshot, appQueryClient, repository]);
+  }, [applyFilesSnapshot, readTree, repository]);
 
   // Folders the file tree leaves collapsed (git-ignored trees) are read one level
   // at a time, the first time the user opens them.
@@ -884,15 +896,13 @@ export default function App({ initialView, initialSelection, pullRequestCreation
         })));
         return snapshotReads();
       };
-      let treeGeneration = changeGeneration();
       const snapshotReads = () => {
-        treeGeneration = changeGeneration();
         const statusRead = appQueryClient.fetchQuery({ queryKey: queryKeys.status(repositoryId), queryFn: () => opentig.repository.getStatus(repositoryId) });
         return Promise.all([
           statusRead,
           operations.branches ? appQueryClient.fetchQuery({ queryKey: queryKeys.branches(repositoryId), queryFn: () => opentig.refs.listBranches(repositoryId) }) : Promise.resolve(null),
           operations.worktrees ? appQueryClient.fetchQuery({ queryKey: queryKeys.worktrees(repositoryId), queryFn: () => opentig.refs.listWorktrees(repositoryId) }) : Promise.resolve(null),
-          operations.files ? appQueryClient.fetchQuery({ queryKey: queryKeys.files(repositoryId), queryFn: () => opentig.repository.getFiles(repositoryId) }) : Promise.resolve(null),
+          operations.files ? readTree(repositoryId) : Promise.resolve(null),
           // The history of whatever HEAD the status found, so a branch switch lands with that branch's commits.
           operations.history ? statusRead.then((read) => appQueryClient.fetchInfiniteQuery({
             queryKey: queryKeys.history(repositoryId, historyHead(read)),
@@ -925,7 +935,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       if (nextBranches) setBranches(nextBranches);
       if (nextWorktrees) setWorktrees(nextWorktrees);
       if (nextFiles) {
-        treeGenerationRef.current = { repositoryId, generation: treeGeneration };
+        treeGenerationRef.current = treeReadRef.current?.repositoryId === repositoryId ? treeReadRef.current : null;
         applyFilesSnapshot(nextFiles);
       }
       void nextHistory;
@@ -944,7 +954,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     } finally {
       if (!background && repositoryRef.current?.id === repositoryId) { busyRef.current = null; setBusy(null); }
     }
-  }, [applyFilesSnapshot, appQueryClient, noteFetchResult]);
+  }, [applyFilesSnapshot, appQueryClient, noteFetchResult, readTree]);
   // One cycle per repository folds watcher bursts and explicit mutation
   // refreshes into a single follow-up snapshot with the union of their scopes.
   const refresh = useCallback((options?: AppRefreshOptions): Promise<void> => {
@@ -1138,8 +1148,12 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     }
   }, [openFilesStates, repository?.id, selectFilePath, view, initialSelection, sectionSelections]);
 
-  useEffect(() => opentig.events.onRepositoryChanged((repositoryId, scope, watch) => {
-    if (watch) setWatchTrouble(watch === 'watching' ? null : { repositoryId, state: watch });
+  useEffect(() => opentig.events.onRepositoryChanged((repositoryId, scope, watch, watchId) => {
+    // Whatever repository it is about: the server watches one at a time, and a change it reports, or a
+    // watch it begins elsewhere, may be news about this one too.
+    noteChange();
+    if (watch === 'watching' && watchId) setAnnouncedWatch({ repositoryId, watchId });
+    else if (watch) setAnnouncedWatch((current) => current?.repositoryId === repositoryId ? null : current);
     if (repositoryId !== repository?.id) return;
     void refresh({ background: true, scope });
     // An open refs manager may be showing a worktree whose removal another request finished.
@@ -1148,22 +1162,20 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     if (scope === 'unknown') void appQueryClient.invalidateQueries({ queryKey: queryKeys.githubInfo(repositoryId) });
     // A file read ahead of a click may be the one that just changed.
     if (scope !== 'refs' && scope !== 'worktrees') dropFilesAhead(repositoryId);
-    // So may any file or change the viewer keeps: a moved HEAD changes what is staged, and a
-    // linked worktree's index lives among the worktree metadata.
-    noteChange();
   }), [appQueryClient, refresh, repository?.id]);
 
-  // While the server cannot report every change in the open repository, it is read on a timer instead,
-  // and nothing the viewer read before is trusted to be current.
-  const repositoryWatchDegraded = watchTrouble !== null && watchTrouble.repositoryId === repository?.id;
+  // Unless the server said it reports every change of the open repository, which it stops doing when another
+  // client opens another one, the repository is read on a timer, and nothing the viewer read before is trusted.
+  const confirmedWatchId = announcedWatch !== null && announcedWatch.repositoryId === repository?.id ? announcedWatch.watchId : null;
   useEffect(() => {
-    setWatching(!repositoryWatchDegraded);
-    if (!repositoryWatchDegraded) return;
+    if (repository && confirmedWatchId) confirmWatch(repository.id, confirmedWatchId);
+    else doubtWatch();
+    if (!repository || confirmedWatchId) return;
     const timer = window.setInterval(() => {
       if (document.visibilityState === 'visible' && !isUserIdle()) void refresh({ background: true, scope: 'unknown' });
     }, UNWATCHED_REFRESH_MS);
     return () => window.clearInterval(timer);
-  }, [refresh, repositoryWatchDegraded]);
+  }, [confirmedWatchId, refresh, repository]);
 
   useEffect(() => {
     if (!bootstrap?.performanceAutomation) return;

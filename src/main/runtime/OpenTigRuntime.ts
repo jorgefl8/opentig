@@ -103,11 +103,15 @@ export class OpenTigRuntime {
     this.onEvent({ type: 'ai.instructions-changed', repositoryIds });
   }
 
-  /** The watch ran into trouble or recovered: clients read the repository again and know whether to keep doing so. */
-  publishRepositoryWatch(repositoryId: string, state: RepositoryWatchState): void {
+  /**
+   * The watch began, moved away, ran into trouble or recovered. Clients read the
+   * repository again, since changes may have gone unreported, and learn whether
+   * they can rely on its reports. A watch that begins only needs the worktree read.
+   */
+  publishRepositoryWatch(repositoryId: string, state: RepositoryWatchState, watchId: string | null): void {
     if (this.closePromise) return;
     this.services.repositories.invalidateIfKnown(repositoryId);
-    this.onEvent({ type: 'repository.changed', repositoryId, scope: 'unknown', watch: state });
+    this.onEvent({ type: 'repository.changed', repositoryId, scope: state === 'watching' ? 'worktree' : 'unknown', watch: state, ...(watchId ? { watchId } : {}) });
   }
 
   publishActiveRepositoryChange(repository: RepositoryInfo): void {
