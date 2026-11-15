@@ -1547,7 +1547,10 @@ section[data-sileo-viewport] .sync-toast-offer { --_c: var(--sileo-state-info); 
   .sidebar-tabs button { flex: 1; padding: 0 9px; }
   .sidebar-tabs button > svg { width: 14px; height: 14px; stroke-width: 1.7; }
   /* Holding Ctrl turns the tab bar into its own legend: each section shows the
-     digit that jumps to it. */
+     digit that jumps to it. The page carries the state (see App), so each digit
+     has its place from the start and is only drawn meanwhile. */
+  :root:not([data-shortcuts="visible"]) .sidebar-tab-shortcut { display: none; }
+  .sidebar-tab-shortcut::after { content: attr(data-digit); }
   .sidebar-tabs button .sidebar-tab-shortcut, .sidebar-rail-button .sidebar-rail-shortcut {
     display: inline-grid;
     min-width: 16px;
@@ -1563,7 +1566,7 @@ section[data-sileo-viewport] .sync-toast-offer { --_c: var(--sileo-state-info); 
     line-height: 16px;
     animation: sidebar-shortcut-in .14s var(--ease-out) both;
   }
-  .sidebar-tabs[data-shortcuts="visible"] button { color: var(--foreground); }
+  :root[data-shortcuts="visible"] .sidebar-tabs button { color: var(--foreground); }
   @keyframes sidebar-shortcut-in {
     from { opacity: 0; transform: translateY(-2px) scale(.8); }
     to { opacity: 1; transform: translateY(0) scale(1); }
@@ -1609,7 +1612,7 @@ section[data-sileo-viewport] .sync-toast-offer { --_c: var(--sileo-state-info); 
   }
   .sidebar-rail-button:hover { background: var(--row-hover); color: var(--foreground); }
   .sidebar-rail-button[aria-current="page"] { background: var(--row-selected); color: var(--foreground); }
-  .sidebar-rail[data-shortcuts="visible"] .sidebar-rail-button { color: var(--foreground); }
+  :root[data-shortcuts="visible"] .sidebar-rail .sidebar-rail-button { color: var(--foreground); }
   .sidebar-rail-button:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
   .sidebar-rail-button > svg { width: 16px; height: 16px; stroke-width: 1.7; }
   .sidebar-rail-separator { width: 20px; height: 1px; flex: none; margin: 4px 0 6px; background: var(--sidebar-border); }

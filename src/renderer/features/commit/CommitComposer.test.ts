@@ -6,6 +6,8 @@ import type { CommitSplitProposal, PrepareCommitGroupInput } from '@shared/contr
 import type { FileChange, RepositoryStatus } from '@shared/git-types';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { CommitComposer } from './CommitComposer';
+import { StoredCommitComposer } from './StoredCommitComposer';
+import { createCommitMessageStore } from './commit-message-store';
 import { stagedPaths } from './commit-plan';
 import { useCommitPlan, type CommitPlanController } from './useCommitPlan';
 
@@ -89,6 +91,35 @@ it('never pushes where pushing is not possible, whatever was chosen', async () =
   expect(button('Commit and push')).toBeUndefined();
   await act(async () => button('Commit 1 file')!.click());
   expect(onCommit).toHaveBeenCalledExactlyOnceWith({ push: false });
+});
+
+it('redraws only the box while its text is typed, and gives that text to whoever asks for it', async () => {
+  const store = createCommitMessageStore('');
+  const surroundingsDrawn = vi.fn();
+  // What the app is to the box: it holds the store and never the text.
+  function Surroundings() {
+    surroundingsDrawn();
+    return createElement(TooltipProvider, null, createElement(StoredCommitComposer, {
+      store, open: true, stagedCount: 1, generating: false, harness: 'codex', harnessLabel: 'Codex', modelLabel: 'Default', busy: null,
+      readOnly: false, canPush: true, plan: null, outcome: null, changes: [], phone: false, textareaRef: createRef<HTMLTextAreaElement>(),
+      onGenerate, onCancelGenerate, onPlanMode: vi.fn(), onActivateGroup: vi.fn(), onDiscardPlan: vi.fn(), onDismissOutcome: vi.fn(), onOpenPath, onOpenCommit, onCommit,
+    }));
+  }
+  await act(async () => root.render(createElement(Surroundings)));
+  expect(button('Commit 1 file')!.disabled).toBe(true);
+  surroundingsDrawn.mockClear();
+  const box = container.querySelector('textarea')!;
+  const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!;
+  for (const text of ['f', 'fi', 'fix: a thing']) {
+    await act(async () => { setter.call(box, text); box.dispatchEvent(new Event('input', { bubbles: true })); });
+  }
+  expect(surroundingsDrawn).not.toHaveBeenCalled();
+  expect(box.value).toBe('fix: a thing');
+  expect(store.get()).toBe('fix: a thing');
+  expect(button('Commit 1 file')!.disabled).toBe(false);
+  // Text set from outside, as a generated message is, shows in the box.
+  await act(async () => store.set('feat: generated'));
+  expect(box.value).toBe('feat: generated');
 });
 
 it('keeps the action in place but off until there is a message', async () => {
@@ -202,13 +233,15 @@ let plan: CommitPlanController;
 /** The composer driven by the real plan logic, wired the way the app wires it. */
 function PlanHarness({ open = true, phone = false }: { open?: boolean; phone?: boolean }) {
   const status = useSyncExternalStore(index.subscribe, index.status);
-  const [message, setMessage] = useState(SINGLE);
-  const controller = useCommitPlan({ repositoryId: 'repository', status, message, setMessage, index: index.api });
+  // The text lives in a store, as in the app: the plan reads it when it needs it.
+  const [messages] = useState(() => createCommitMessageStore(SINGLE));
+  const setMessage = messages.set;
+  const controller = useCommitPlan({ repositoryId: 'repository', status, getMessage: messages.get, setMessage, index: index.api });
   useEffect(() => { plan = controller; });
-  return createElement(CommitComposer, {
-    open, stagedCount: status.stagedCount, message, generating: false, harness: 'codex', harnessLabel: 'Codex', modelLabel: 'Default', busy: null,
+  return createElement(StoredCommitComposer, {
+    store: messages, open, stagedCount: status.stagedCount, generating: false, harness: 'codex', harnessLabel: 'Codex', modelLabel: 'Default', busy: null,
     readOnly: false, canPush: true, plan: controller.plan, outcome: controller.outcome, changes: status.changes, phone, textareaRef: createRef<HTMLTextAreaElement>(),
-    onMessage: setMessage, onGenerate, onCancelGenerate, onOpenPath, onOpenCommit,
+    onGenerate, onCancelGenerate, onOpenPath, onOpenCommit,
     onPlanMode: (mode) => void controller.chooseMode(mode),
     onActivateGroup: (group) => void controller.activate(group),
     onDiscardPlan: () => void controller.discard(),
@@ -218,6 +251,7 @@ function PlanHarness({ open = true, phone = false }: { open?: boolean; phone?: b
       const step = controller.stepToCommit();
       if (step === false) return;
       const oid = index.commit();
+      const message = messages.get();
       setMessage('');
       void (step ? controller.committed({ oid, subject: message.split('\n', 1)[0]! }) : Promise.resolve(controller.clear())).then(() => index.refresh());
     },

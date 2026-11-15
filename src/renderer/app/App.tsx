@@ -41,7 +41,7 @@ import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { ChangesView } from '@/features/changes/ChangesView';
 import { createDeleteAction, createDiscardAction, destructiveActionCopy, dispatchDestructiveAction, type DestructiveAction } from '@/features/files/destructive-action';
-import { fileSnapshotFingerprint, pathContains, selectedFileChanged, snapshotPathPresence } from '@/features/files/file-tree';
+import { createSnapshotComparer, pathContains, selectedFileChanged, snapshotPathPresence } from '@/features/files/file-tree';
 import { MobileFileBar } from '@/features/files/MobileFileBar';
 import { FileLineTargetContext, type FileLineTarget } from '@/features/viewer/file-line-target';
 import { OpenFilesStrip } from '@/features/files/OpenFilesStrip';
@@ -50,7 +50,8 @@ import {
   emptyFileSession, type FileSession, markTabsPresent, moveTab, type OpenMode, openTab, removeTabsUnder, renameTabPaths,
   restoreSession, serializeSession, setTabDirty, type TabKeyboardAction,
 } from '@/features/files/open-files-model';
-import { CommitComposer } from '@/features/commit/CommitComposer';
+import { StoredCommitComposer } from '@/features/commit/StoredCommitComposer';
+import { createCommitMessageStore } from '@/features/commit/commit-message-store';
 import { useCommitPlan } from '@/features/commit/useCommitPlan';
 import { clearCommitFilesCache } from '@/features/history/commit-files-cache';
 import { OpenRepositoryDialog } from '@/features/repositories/OpenRepositoryDialog';
@@ -208,9 +209,9 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   const [viewerSelection, setViewerSelection] = useState<ViewerSelection>(null);
   const [fileViewerToolbarHost, setFileViewerToolbarHost] = useState<HTMLElement | null>(null);
   const initialSelectionApplied = useRef(false);
-  const [commitMessage, setCommitMessage] = useState('');
-  /** The sidebar width painted while its edge is being dragged. */
-  const [sidebarDragWidth, setSidebarDragWidth] = useState<number | null>(null);
+  // The commit box's text. Not React state: a key pressed in the box must not redraw the app.
+  const [commitMessage] = useState(createCommitMessageStore);
+  const sidebarElement = useRef<HTMLElement>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [repositorySyncOperations, setRepositorySyncOperations] = useState<ReadonlyMap<string, ProjectSyncAction>>(() => new Map());
 
@@ -242,10 +243,11 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   const [blockedBranchSwitch, setBlockedBranchSwitch] = useState<BlockedBranchSwitch | null>(null);
   const [agentBranchSwitch, setAgentBranchSwitch] = useState<{ ref: string; label: string; agents: string[]; moveChanges: boolean } | null>(null);
   // Holding Ctrl reveals the section numbers, so the shortcut is discoverable
-  // without a cheat sheet.
-  const [ctrlHeld, setCtrlHeld] = useState(false);
+  // without a cheat sheet. The page itself carries the state, for the styles to
+  // read: a key that changes nothing else must not redraw the app.
   const ctrlHeldRef = useRef(false);
   const filesRef = useRef<FileTreeEntry[] | null>(null);
+  const [filesComparer] = useState(createSnapshotComparer);
   const viewerSelectionRef = useRef<ViewerSelection>(null);
   // A path we just created/renamed/moved the viewer onto; it may be missing from
   // an in-flight (stale) file snapshot, so don't declare it deleted until it appears.
@@ -387,7 +389,16 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   const repositoryLoadVisible = useElapsed(repositoryLoadPhase ? 'busy' : null, 200);
   const repositoryLoadSlow = useElapsed(pendingRepositoryId ?? (repositoryLoadPhase ? repository?.id ?? null : null), 5000);
   const status = currentSnapshot ? statusState : null;
-  const commitPlan = useCommitPlan({ repositoryId: repository?.id, status, message: commitMessage, setMessage: setCommitMessage, index: opentig.index });
+  const commitPlan = useCommitPlan({ repositoryId: repository?.id, status, getMessage: commitMessage.get, setMessage: commitMessage.set, index: opentig.index });
+  // Three lists of every change: worked out when the changes do, not on every render.
+  const changeLists = useMemo(() => {
+    const changes = status?.changes ?? [];
+    return {
+      conflicts: changes.filter((change) => change.conflict),
+      staged: changes.filter((change) => change.staged && !change.conflict),
+      changed: changes.filter((change) => change.unstaged && !change.conflict),
+    };
+  }, [status?.changes]);
   const files = currentSnapshot ? filesState : null;
   const branches = currentSnapshot ? branchesState : [];
   const worktrees = currentSnapshot ? worktreesState : [];
@@ -686,7 +697,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
 
   const applyFilesSnapshot = useCallback((nextFiles: FileTreeEntry[]) => {
     const previous = filesRef.current;
-    const same = previous !== null && fileSnapshotFingerprint(previous) === fileSnapshotFingerprint(nextFiles);
+    // The first tree of a repository is never the same as none.
+    const same = filesComparer.same(nextFiles) && previous !== null;
     filesRef.current = same && previous ? previous : nextFiles;
     if (!same) setFiles(nextFiles);
     setFilesSnapshotRevision((revision) => revision + 1);
@@ -733,7 +745,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     if (presence === 'present' && previous && selectedFileChanged(previous, nextFiles, active.path)) {
       setRefreshVersion((version) => version + 1);
     }
-  }, [commitFileSession, dropFileDraft]);
+  }, [commitFileSession, dropFileDraft, filesComparer]);
 
   const refreshFilesOnly = useCallback(async () => {
     if (!repository) return;
@@ -956,13 +968,14 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     setSnapshotRepositoryId(null);
     clearCommitFilesCache();
     filesRef.current = null;
+    filesComparer.reset();
     setFiles(null);
     // A later refresh may read only part of the new repository; it must not be shown next to the previous one's refs.
     setBranches([]);
     setWorktrees([]);
     setCreatePrOpen(false);
     setQuickOpen(false);
-  }, [repository?.id]);
+  }, [filesComparer, repository?.id]);
 
   const loadPulls = useCallback(async (_states: PullRequestState[], forceStatus = false) => {
     if (forceStatus) {
@@ -1116,7 +1129,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     const setHeld = (held: boolean) => {
       if (ctrlHeldRef.current === held) return;
       ctrlHeldRef.current = held;
-      setCtrlHeld(held);
+      if (held) document.documentElement.dataset.shortcuts = 'visible';
+      else delete document.documentElement.dataset.shortcuts;
     };
     const update = (event: KeyboardEvent) => setHeld(event.ctrlKey && !event.altKey && !event.metaKey);
     // A lost focus never delivers the keyup, so the hint would stay pinned open.
@@ -1128,6 +1142,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       window.removeEventListener('keydown', update);
       window.removeEventListener('keyup', update);
       window.removeEventListener('blur', clear);
+      clear();
     };
   }, []);
 
@@ -1138,6 +1153,20 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       return true;
     } catch (reason) { reportError('Could not save settings', reason); return false; }
   };
+  /**
+   * Paints the width the sidebar would get while its edge is dragged, on the
+   * element itself: as React state every pointer move redrew the whole app.
+   * Null ends the drag and puts back the saved width, which a resize then replaces.
+   */
+  const savedSidebarWidth = useRef(bootstrap?.preferences.sidebarWidth);
+  useEffect(() => { savedSidebarWidth.current = bootstrap?.preferences.sidebarWidth; }, [bootstrap?.preferences.sidebarWidth]);
+  const previewSidebarWidth = useCallback((width: number | null) => {
+    const sidebar = sidebarElement.current;
+    if (!sidebar) return;
+    sidebar.toggleAttribute('data-resizing', width !== null);
+    const shown = width ?? savedSidebarWidth.current;
+    if (shown !== undefined) sidebar.style.width = `${shown}px`;
+  }, []);
   /** Applies a sidebar layout change at once, then saves it; the saved preferences win when they return. */
   const setSidebarLayout = useCallback((partial: Pick<Partial<Preferences>, 'sidebarCollapsed' | 'sidebarWidth'>) => {
     setBootstrap((current) => current ? { ...current, preferences: { ...current.preferences, ...partial } } : current);
@@ -1737,16 +1766,17 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   };
 
   const createCommit = async (options?: { push?: boolean }) => {
-    if (!repository || !status?.stagedCount || !commitMessage.trim()) return;
+    const message = commitMessage.get();
+    if (!repository || !status?.stagedCount || !message.trim()) return;
     // While a plan is followed, the commit must hold exactly its group's files.
     const planStep = commitPlan.stepToCommit();
     if (planStep === false) return;
     setBusy('commit');
     let committed = false;
     try {
-      const result = await opentig.commits.create(repository.id, commitMessage);
-      const subject = commitMessage.split(/\r?\n/, 1)[0] ?? commitMessage;
-      setCommitMessage('');
+      const result = await opentig.commits.create(repository.id, message);
+      const subject = message.split(/\r?\n/, 1)[0] ?? message;
+      commitMessage.set('');
       // The plan marks its group done and stages the next one, so the box is
       // ready for the next commit. Any other commit ends the plan.
       if (planStep) await commitPlan.committed({ oid: result.oid, subject });
@@ -1797,7 +1827,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     try {
       const result = await opentig.ai.generateCommitMessage({ repositoryId: repository.id, harness, model, requestId });
       if (generationRequest.current?.id !== requestId || generationRequest.current.repositoryId !== repository.id) return;
-      setCommitMessage(result.message);
+      commitMessage.set(result.message);
       // Within a plan only one group is staged, so this rewrites that group's message.
       const withinPlan = commitPlan.step !== null;
       if (!withinPlan) commitPlan.propose(result.proposal, result.message);
@@ -2012,13 +2042,13 @@ export default function App({ initialView, initialSelection, pullRequestCreation
         setMobilePane('list');
         // The draft lands in the commit box, which a collapsed sidebar hides.
         showSidebarView('changes');
-        if (!commitMessage.trim()) {
-          setCommitMessage(result.message);
+        if (!commitMessage.get().trim()) {
+          commitMessage.set(result.message);
         } else {
           sileo.success({
             title: 'Commit undone',
             description: 'Its changes are staged again. Your draft was preserved.',
-            button: { title: 'Use previous message', onClick: () => setCommitMessage(result.message) },
+            button: { title: 'Use previous message', onClick: () => commitMessage.set(result.message) },
           });
           await refresh({ background: true });
           window.setTimeout(() => commitTextareaRef.current?.focus(), 0);
@@ -2569,9 +2599,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   const pendingDestructiveCopy = destructiveAction ? destructiveActionCopy(destructiveAction) : null;
   // File tabs only show with files, so this is what still says something is unsaved elsewhere.
   const hasUnsavedFiles = (fileSessions.get(repository.id) ?? emptyFileSession).tabs.some((tab) => tab.dirty);
-  const conflicts = status?.changes.filter((change) => change.conflict) ?? [];
-  const staged = status?.changes.filter((change) => change.staged && !change.conflict) ?? [];
-  const changed = status?.changes.filter((change) => change.unstaged && !change.conflict) ?? [];
+  const { conflicts, staged, changed } = changeLists;
   const stagedCount = status?.stagedCount ?? 0;
   const changeCount = status?.changes.length ?? 0;
   const sidebarSections: SidebarRailSection<SidebarView>[] = SIDEBAR_VIEWS.map((item) => {
@@ -2587,14 +2615,13 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     if (item === 'prs') return { id: item, icon: <IconBrandGithub />, label: pulls?.length ? `GitHub · ${pulls.length} pull ${pulls.length === 1 ? 'request' : 'requests'}` : 'GitHub' };
     return { id: item, icon: <IconSearch />, label: 'Search' };
   });
-  const sidebarWidth = sidebarDragWidth ?? bootstrap.preferences.sidebarWidth;
   // Docked at the bottom of the sidebar on desktop and floating over the list on phones. Its text and plan live here and outlast it.
   const hasCommitPlan = commitPlan.plan !== null || commitPlan.outcome !== null;
   const commitComposer = (
-    <CommitComposer
+    <StoredCommitComposer
+      store={commitMessage}
       open={mobile ? mobilePane === 'list' && view === 'changes' && mobileMainAction({ screen: 'changes', stagedCount, hasCommitPlan }) === 'commit' : view === 'changes' && Boolean(status?.stagedCount || hasCommitPlan)}
       stagedCount={status?.stagedCount ?? 0}
-      message={commitMessage}
       generating={Boolean(generating)}
       harness={bootstrap.preferences.commitMessageHarness}
       harnessLabel={harnessLabel(bootstrap.preferences.commitMessageHarness)}
@@ -2611,7 +2638,6 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       changes={status?.changes ?? []}
       phone={mobile}
       textareaRef={commitTextareaRef}
-      onMessage={setCommitMessage}
       onGenerate={() => void generateCommitMessage()}
       onCancelGenerate={() => void cancelCommitMessageGeneration()}
       onPlanMode={(mode) => void runCommitPlanTask(() => commitPlan.chooseMode(mode))}
@@ -2824,20 +2850,19 @@ export default function App({ initialView, initialSelection, pullRequestCreation
           <aside
             className="sidebar"
             data-collapsed={sidebarCollapsed ? '' : undefined}
-            data-resizing={sidebarDragWidth !== null ? '' : undefined}
-            style={{ width: sidebarCollapsed && sidebarDragWidth === null ? undefined : sidebarWidth }}
+            ref={sidebarElement}
+            style={{ width: sidebarCollapsed ? undefined : bootstrap.preferences.sidebarWidth }}
           >
             {sidebarCollapsed && (
               <SidebarRail
                 sections={sidebarSections}
                 active={view}
-                ctrlHeld={ctrlHeld}
                 toggleCombo={shortcuts.toggleSidebar}
                 onSelect={showSidebarView}
                 onExpand={() => setSidebarLayout({ sidebarCollapsed: false })}
               />
             )}
-            <nav className="sidebar-tabs tab-list" data-shortcuts={ctrlHeld ? 'visible' : undefined} aria-label="Repository views">
+            <nav className="sidebar-tabs tab-list" aria-label="Repository views">
               {SIDEBAR_VIEWS.map((item, index) => (
                 <button
                   key={item}
@@ -2850,7 +2875,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
                   {item === 'changes' && status && status.changes.length > 0 && <span className="plain-count">{status.changes.length}</span>}
                   {item === 'prs' && pulls !== null && pulls.length > 0 && <span className="plain-count">{pulls.length}</span>}
                   {item === 'files' && hasUnsavedFiles && <span className="sidebar-tab-dot" role="img" aria-label="Unsaved files" />}
-                  {ctrlHeld && <span className="sidebar-tab-shortcut" aria-hidden="true">{index + 1}</span>}
+                  <span className="sidebar-tab-shortcut" data-digit={index + 1} aria-hidden="true" />
                 </button>
               ))}
               {!mobile && <SidebarCollapseButton toggleCombo={shortcuts.toggleSidebar} onCollapse={() => setSidebarLayout({ sidebarCollapsed: true })} />}
@@ -3010,7 +3035,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
             <SidebarResizeHandle
               width={bootstrap.preferences.sidebarWidth}
               railWidth={SIDEBAR_RAIL_WIDTH}
-              onPreview={setSidebarDragWidth}
+              onPreview={previewSidebarWidth}
               onResize={(width) => setSidebarLayout({ sidebarWidth: width })}
               onCollapse={() => setSidebarLayout({ sidebarCollapsed: true })}
             />

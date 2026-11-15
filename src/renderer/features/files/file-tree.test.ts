@@ -3,6 +3,7 @@ import type { FileTreeEntry } from '@shared/git-types';
 import { DEFAULT_SHORTCUT_MAP } from '@shared/shortcuts';
 import {
   canOpenPinnedDrop,
+  createSnapshotComparer,
   containsPath,
   canMovePathsToDirectory,
   fileSnapshotFingerprint,
@@ -200,5 +201,50 @@ describe('file tree helpers', () => {
     expect(persisted).toContain('docs');
     expect(persisted.filter((path) => path.startsWith('cache-'))).toHaveLength(20);
     expect(persisted).toEqual([...persisted].sort((left, right) => left.split('/').length - right.split('/').length || left.localeCompare(right)));
+  });
+});
+
+describe('createSnapshotComparer', () => {
+  const tree = (mtimeMs: number): FileTreeEntry[] => [
+    { type: 'directory', name: 'src', path: 'src', children: [{ type: 'file', name: 'app.ts', path: 'src/app.ts', size: 10, mtimeMs }] },
+  ] as FileTreeEntry[];
+  /** Counts how often anything inside the tree is looked at. */
+  function watched(entries: FileTreeEntry[]) {
+    let reads = 0;
+    const wrap = <T extends object>(value: T): T => new Proxy(value, {
+      get(target, key, receiver) {
+        reads++;
+        const result = Reflect.get(target, key, receiver) as unknown;
+        return result !== null && typeof result === 'object' ? wrap(result as object) : result;
+      },
+    });
+    return { entries: wrap(entries), reads: () => reads };
+  }
+
+  it('tells a changed tree from an equal one, whichever object carries it', () => {
+    const comparer = createSnapshotComparer();
+    // Nothing was on screen before the first tree.
+    expect(comparer.same(tree(1))).toBe(false);
+    expect(comparer.same(tree(1))).toBe(true);
+    expect(comparer.same(tree(2))).toBe(false);
+    expect(comparer.same(tree(2))).toBe(true);
+    comparer.reset();
+    expect(comparer.same(tree(2))).toBe(false);
+  });
+
+  it('does not walk a response that came back as the same object, and walks a new one once', () => {
+    const comparer = createSnapshotComparer();
+    const first = watched(tree(1));
+    comparer.same(first.entries);
+    const walk = first.reads();
+    expect(walk).toBeGreaterThan(0);
+    // The unchanged tree of every five-second check: no work, whatever its size.
+    expect(comparer.same(first.entries)).toBe(true);
+    expect(first.reads()).toBe(walk);
+    // A new tree is read once; the one on screen is not read again to compare with it.
+    const second = watched(tree(2));
+    expect(comparer.same(second.entries)).toBe(false);
+    expect(second.reads()).toBe(walk);
+    expect(first.reads()).toBe(walk);
   });
 });

@@ -119,6 +119,51 @@ test('the sidebar collapses to a rail with its button and Ctrl+B, and stays coll
   await expect(sectionContent(page).search).toBeVisible();
 });
 
+test('dragging the edge of the sidebar resizes it as it moves, and the width is kept', async ({ pairedPage: page, repository }) => {
+  await openRepository(page, repository);
+  const sidebar = page.getByRole('complementary');
+  const edge = page.getByRole('separator', { name: 'Resize sidebar' });
+  const width = async () => Math.round((await sidebar.boundingBox())!.width);
+  const start = await width();
+  const grip = (await edge.boundingBox())!;
+  const x = grip.x + grip.width / 2;
+  const y = grip.y + grip.height / 2;
+
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x + 60, y, { steps: 6 });
+  // The sidebar follows the pointer before the button is released.
+  await expect.poll(width).toBe(start + 60);
+  await page.mouse.move(x + 90, y, { steps: 3 });
+  await page.mouse.up();
+  await expect.poll(width).toBe(start + 90);
+  await expect(edge).toHaveAttribute('aria-valuenow', String(start + 90));
+
+  await page.reload();
+  await expect.poll(width).toBe(start + 90);
+  // A drag that is called off puts the sidebar back where it was.
+  await edge.dblclick();
+  await expect.poll(width).toBe(start);
+});
+
+test('holding Ctrl shows the number that opens each section, and letting go hides them', async ({ pairedPage: page, repository }) => {
+  await openRepository(page, repository);
+  // Decorative and hidden from assistive technology, so only their class finds them.
+  const digits = page.getByRole('navigation', { name: 'Repository views' }).locator('.sidebar-tab-shortcut');
+  await expect(digits).toHaveCount(5);
+  await expect(digits.first()).toBeHidden();
+
+  await page.keyboard.down('Control');
+  for (let index = 0; index < 5; index += 1) await expect(digits.nth(index)).toBeVisible();
+  expect(await digits.evaluateAll((items) => items.map((item) => getComputedStyle(item, '::after').content))).toEqual(['"1"', '"2"', '"3"', '"4"', '"5"']);
+  // The hint follows the sidebar into its rail.
+  await page.keyboard.press('b');
+  await expect(page.getByRole('navigation', { name: 'Repository views' }).getByRole('button', { name: 'Expand sidebar' })).toBeVisible();
+  await expect(digits.first()).toBeVisible();
+  await page.keyboard.up('Control');
+  await expect(digits.first()).toBeHidden();
+});
+
 test('Ctrl+1 to Ctrl+5 open each sidebar section, and the last one is reopened after a reload', async ({ pairedPage: page, repository }) => {
   await openRepository(page, repository);
   const sections = sectionContent(page);

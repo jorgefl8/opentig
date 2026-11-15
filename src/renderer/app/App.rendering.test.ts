@@ -80,8 +80,10 @@ async function key(type: 'keydown' | 'keyup', options: KeyboardEventInit) {
   return event;
 }
 
-it('updates Ctrl hints only on transitions, including Alt/Meta and blur, without consuming IME input', async () => {
-  const nav = () => container.querySelector('nav[aria-label="Repository views"]');
+it('shows the Ctrl hints without redrawing the app, including Alt/Meta and blur, and without consuming IME input', async () => {
+  // The page carries the state, and the styles show each section's digit while it is there.
+  const nav = () => document.documentElement;
+  expect(container.querySelectorAll('nav[aria-label="Repository views"] .sidebar-tab-shortcut')).toHaveLength(5);
   calls.renders.mockClear();
   const composition = await key('keydown', { key: 'Process', isComposing: true });
   await key('keyup', { key: 'Process', isComposing: true });
@@ -89,7 +91,6 @@ it('updates Ctrl hints only on transitions, including Alt/Meta and blur, without
   expect(calls.renders).not.toHaveBeenCalled();
   await key('keydown', { key: 'Control', ctrlKey: true });
   expect(nav()?.getAttribute('data-shortcuts')).toBe('visible');
-  calls.renders.mockClear();
   await key('keydown', { key: 'a', ctrlKey: true });
   await key('keyup', { key: 'a', ctrlKey: true });
   await key('keydown', { key: 'Control', ctrlKey: true, repeat: true });
@@ -103,9 +104,9 @@ it('updates Ctrl hints only on transitions, including Alt/Meta and blur, without
   await key('keyup', { key: 'Meta', ctrlKey: true });
   await act(async () => { window.dispatchEvent(new Event('blur')); });
   expect(nav()?.hasAttribute('data-shortcuts')).toBe(false);
-  calls.renders.mockClear();
   await act(async () => { window.dispatchEvent(new Event('blur')); });
   await key('keyup', { key: 'Control' });
+  // None of it redrew the app: pressing and releasing Ctrl changes nothing React knows about.
   expect(calls.renders).not.toHaveBeenCalled();
   await key('keydown', { key: '1', ctrlKey: true });
   expect(container.querySelector('[aria-keyshortcuts="Control+1"]')?.getAttribute('aria-current')).toBe('page');

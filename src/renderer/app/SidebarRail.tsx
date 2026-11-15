@@ -18,16 +18,15 @@ function badgeText(value: number): string {
 }
 
 /** The collapsed desktop sidebar: one icon per section, each opening the sidebar on it. */
-export function SidebarRail<V extends string>({ sections, active, ctrlHeld, toggleCombo, onSelect, onExpand }: {
+export function SidebarRail<V extends string>({ sections, active, toggleCombo, onSelect, onExpand }: {
   sections: readonly SidebarRailSection<V>[];
   active: V;
-  ctrlHeld: boolean;
   toggleCombo: string;
   onSelect: (view: V) => void;
   onExpand: () => void;
 }) {
   return (
-    <nav className="sidebar-rail" aria-label="Repository views" data-shortcuts={ctrlHeld ? 'visible' : undefined}>
+    <nav className="sidebar-rail" aria-label="Repository views">
       <Tooltip>
         <TooltipTrigger render={<button type="button" className="sidebar-rail-button" aria-label="Expand sidebar" aria-keyshortcuts={ariaKeyShortcut(toggleCombo)} onClick={onExpand} />}>
           <IconLayoutSidebarLeftExpand aria-hidden="true" />
@@ -54,7 +53,7 @@ export function SidebarRail<V extends string>({ sections, active, ctrlHeld, togg
               <span className="sidebar-rail-badge" data-staged={section.badge.staged ? '' : undefined} aria-hidden="true">{badgeText(section.badge.value)}</span>
             )}
             {section.unsaved && <span className="sidebar-rail-dot" aria-hidden="true" />}
-            {ctrlHeld && <span className="sidebar-tab-shortcut sidebar-rail-shortcut" aria-hidden="true">{index + 1}</span>}
+            <span className="sidebar-tab-shortcut sidebar-rail-shortcut" data-digit={index + 1} aria-hidden="true" />
           </TooltipTrigger>
           <TooltipContent side="right">{section.label} <Kbd>{`Ctrl+${index + 1}`}</Kbd></TooltipContent>
         </Tooltip>
