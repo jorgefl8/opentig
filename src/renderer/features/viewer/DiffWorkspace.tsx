@@ -25,7 +25,7 @@ import { resolvePierreLanguage } from './pierreLanguages';
 import { ColorHoverPreview } from './ColorHoverPreview';
 import { ColorSwatchLayer } from './ColorSwatchLayer';
 import { createColorSwatchRegistry } from './color-swatch-registry';
-import { rememberedFolds, rememberedKnown, rememberFolds } from './viewer-memory';
+import { noteViewState, rememberedFolds, rememberedKnown, rememberFolds, restoredViewState } from './viewer-memory';
 
 /** A commit reads as one document: its message and files lead into its diffs. */
 export interface DiffCommitLayout {
@@ -342,7 +342,18 @@ const commitFileKey = (file: CommitFile) => `${file.oldPath ?? ''}:${file.path}`
  * a read whose file folds again or whose commit closes is called off.
  */
 export function CommitFilesWorkspace({ contentKey, files, diffView, themeType, wrapLines, commitLayout, readFile, readAll, keepFileDiff, onDiffViewChange, onWrapLinesChange, onOpenFile }: CommitFilesWorkspaceProps) {
-  const [unfolded, setUnfolded] = useState<ReadonlySet<string>>(() => new Set());
+  // Back brings a commit back with the files that were unfolded at that step; opened anew, it shows them all folded.
+  const [unfolded, setUnfoldedState] = useState<ReadonlySet<string>>(() => {
+    const restored = restoredViewState(contentKey);
+    if (!Array.isArray(restored)) return new Set();
+    const keys = new Set(files.map(commitFileKey));
+    return new Set(restored.filter((key): key is string => typeof key === 'string' && keys.has(key)));
+  });
+  const setUnfolded = (update: ReadonlySet<string> | ((current: ReadonlySet<string>) => ReadonlySet<string>)) => setUnfoldedState((current) => {
+    const next = typeof update === 'function' ? update(current) : update;
+    noteViewState(contentKey, [...next].slice(0, 500));
+    return next;
+  });
   // Unfolding everything reads the whole patch once; each file waits for it rather than asking on its own.
   const [everything, setEverything] = useState<Promise<void> | null>(null);
   const everythingController = useRef<AbortController | null>(null);

@@ -72,6 +72,7 @@ export interface FixedShortcutReference {
 /** Shown in Settings as read-only reference: structural or OS-convention keys that stay fixed. */
 export const FIXED_SHORTCUTS: readonly FixedShortcutReference[] = [
   { combo: 'Ctrl + 1..5', label: 'Jump to a sidebar section', category: 'General' },
+  { combo: 'Alt + ← / Alt + →', label: 'Go back or forward through the places you visited', category: 'General' },
   { combo: 'Ctrl + Ctrl', label: 'Show and focus OpenTig from anywhere (double-tap Control)', category: 'General', desktopOnly: true },
   { combo: 'Ctrl + A', label: 'Select all files', category: 'Files' },
   { combo: 'Ctrl + C', label: 'Copy selected files', category: 'Files' },

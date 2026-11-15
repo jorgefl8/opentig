@@ -42,7 +42,7 @@ import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { ChangesView } from '@/features/changes/ChangesView';
 import { createDeleteAction, createDiscardAction, destructiveActionCopy, dispatchDestructiveAction, type DestructiveAction } from '@/features/files/destructive-action';
-import { createSnapshotComparer, findEntry, pathContains, selectedFileChanged, snapshotPathPresence } from '@/features/files/file-tree';
+import { createSnapshotComparer, findEntry, isEditableTarget, pathContains, selectedFileChanged, snapshotPathPresence } from '@/features/files/file-tree';
 import { MobileFileBar } from '@/features/files/MobileFileBar';
 import { FileLineTargetContext, type FileLineTarget } from '@/features/viewer/file-line-target';
 import { OpenFilesStrip } from '@/features/files/OpenFilesStrip';
@@ -76,6 +76,10 @@ import {
 } from './refresh-policy';
 import { resolveWindowControlsInset } from './window-controls';
 import { SectionSelections, stillShowable } from './section-memory';
+import { SIDEBAR_VIEWS, isStep, sameLocation, viewerDocumentPrefix, type NavigationEntry, type NavigationLocation, type SidebarView } from './navigation/location';
+import { createMemoryTrail, type NavigationTrail } from './navigation/trail';
+import { createScrollKeeper, type ScrollKeeper } from './navigation/scroll-keeper';
+import { forgetRestoredViewStates, restoreViewerMemory, snapshotViewerMemory } from '@/features/viewer/viewer-memory';
 import { historyHead, queryKeys, queryResourcesForScope, refreshGitHubQueries, resetGitHubQueries } from '@/lib/query-client';
 import { keptReads } from '@/lib/kept-reads';
 import { listAgents } from '@/features/refs/local-refs-model';
@@ -117,7 +121,6 @@ installZoomAwarePositioning();
 const sidebarFallback = <div className="view-loading" role="status"><Spinner className="view-spinner" /> <ShimmeringText text="Loading…" /></div>;
 const NO_OPEN_FILES_STATES: OpenFilesState[] = [];
 type DirtyCloseChoice = 'save' | 'discard' | 'cancel';
-const SIDEBAR_VIEWS = ['changes', 'files', 'history', 'prs', 'search'] as const;
 const VIEW_STORAGE_KEY = 'opentig.lastView';
 const BACKGROUND_REFRESH_RETRY_MS = 1_000;
 const WORKTREE_AGENTS_REFRESH_MS = 10_000;
@@ -126,7 +129,6 @@ const HISTORY_STALE_MS = 30_000;
 const UNWATCHED_REFRESH_MS = 10_000;
 /** A branch switch Git refused over local changes; `allowAgents` keeps a confirmed agent warning confirmed. */
 interface BlockedBranchSwitch { ref: string; label: string; files: string[]; allowAgents?: boolean }
-type SidebarView = (typeof SIDEBAR_VIEWS)[number];
 /** Matches `.sidebar[data-collapsed]` in index.css. */
 const SIDEBAR_RAIL_WIDTH = 44;
 interface AppRefreshOptions {
@@ -173,6 +175,11 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   const [openRepositoryDialog, setOpenRepositoryDialog] = useState(false);
   const addingRepository = useRef(false);
   const [mobilePane, setMobilePane] = useState<'list' | 'viewer'>('list');
+  // Where the user has been, for Back and Forward (see `navigation/`).
+  const [trail] = useState<NavigationTrail>(() => createMemoryTrail());
+  const trailState = useSyncExternalStore(trail.subscribe, trail.state, trail.state);
+  /** A step being put back on screen: the change it makes is not a step of its own. */
+  const restoringRef = useRef<NavigationEntry | null>(null);
   // Long lines wrap on a phone unless turned off for the session; the saved desktop choice stays as it is.
   const [mobileWrapLines, setMobileWrapLines] = useState(true);
   const [viewerTitleHost, setViewerTitleHost] = useState<HTMLElement | null>(null);
@@ -202,6 +209,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   const [pendingRepositoryId, setPendingRepositoryId] = useState<string | null>(null);
   // Saved repositories whose folder is gone, and the active one when that happened to it.
   const [unavailableRepositoryIds, setUnavailableRepositoryIds] = useState<ReadonlySet<string>>(() => new Set());
+  const unavailableRepositoryIdsRef = useRef(unavailableRepositoryIds);
+  unavailableRepositoryIdsRef.current = unavailableRepositoryIds;
   const [unavailableRepository, setUnavailableRepository] = useState<RecentRepository | null>(null);
   // The server folder browser for locating a moved repository (the desktop app uses its native picker).
   const [relocatingRepository, setRelocatingRepository] = useState<RecentRepository | null>(null);
@@ -292,7 +301,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   // watch's id. Null after a reconnect, until the server says it again.
   const [announcedWatch, setAnnouncedWatch] = useState<{ repositoryId: string; watchId: string } | null>(null);
   /** Shown instead of the section's own selection once a requested section switch lands. */
-  const pendingSectionSelectionRef = useRef<ViewerSelection>(null);
+  const pendingSectionSelectionRef = useRef<{ selection: ViewerSelection } | null>(null);
   // What each section last showed, per repository; and which section of which repository the viewer shows now.
   const [sectionSelections] = useState(() => new SectionSelections());
   const shownSelectionKeyRef = useRef<{ repositoryId: string; view: SidebarView } | null>(null);
@@ -479,8 +488,12 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   );
   const pullsLoading = pullsQuery.isFetching || ghStatusQuery.isFetching;
   const pullsError = ghStatusQuery.error ? messageOf(ghStatusQuery.error) : pullsQuery.error ? messageOf(pullsQuery.error) : null;
-  useEffect(() => { setMobilePane('list'); }, [repository?.id]);
-  const mobileViewerBar = useMemo(() => ({ onBack: () => setMobilePane('list'), setTitleHost: setViewerTitleHost, setActionsHost: setViewerActionsHost }), []);
+  useEffect(() => { if (!restoringRef.current) setMobilePane('list'); }, [repository?.id]);
+  // The phone's arrow walks the whole trail; only at its start does it go back to the list.
+  const mobileViewerBar = useMemo(() => ({
+    onBack: () => { if (trail.state().canGoBack) trail.back(); else setMobilePane('list'); },
+    setTitleHost: setViewerTitleHost, setActionsHost: setViewerActionsHost,
+  }), [trail]);
   const mobileChrome = useMemo(() => !mobile ? null
     : mobilePane === 'viewer' ? { title: viewerTitleHost, actions: viewerActionsHost, float: mobileFloatHost } : NO_MOBILE_CHROME_HOSTS,
   [mobile, mobileFloatHost, mobilePane, viewerActionsHost, viewerTitleHost]);
@@ -1194,7 +1207,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       viewerSelectionRef.current = initialSelection;
       setViewerSelection(initialSelection);
     } else if (pendingSectionSelectionRef.current) {
-      const selection = pendingSectionSelectionRef.current;
+      const { selection } = pendingSectionSelectionRef.current;
       pendingSectionSelectionRef.current = null;
       viewerSelectionRef.current = selection;
       setViewerSelection(selection);
@@ -1304,7 +1317,10 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     setBootstrap((current) => current ? rebindBootstrapRepository(current, previousId, selected) : current);
   }, [filesTreeStates]);
 
+  /** The repository last opened, known at once, before the render that shows it. */
+  const openedRepositoryIdRef = useRef<string | null>(null);
   const recordOpenedRepository = useCallback((selected: RepositoryInfo, previousId?: string) => {
+    openedRepositoryIdRef.current = selected.id;
     if (previousId) rebindRelocatedRepository(previousId, selected);
     setRepository(selected);
     setBootstrap((current) => current ? {
@@ -1429,8 +1445,13 @@ export default function App({ initialView, initialSelection, pullRequestCreation
    */
   /** Counts what the user chose to show, so something read meanwhile never replaces it. */
   const viewerChoiceRef = useRef(0);
-  const selectViewer = useCallback((selection: ViewerSelection): boolean => {
+  /** What the user last asked to open: when the viewer shows exactly that, it is a step of its own. */
+  const askedSelectionRef = useRef<ViewerSelection | undefined>(undefined);
+  /** The same for opening or leaving a file's history. */
+  const askedFileHistoryRef = useRef<{ path: string | null } | null>(null);
+  const selectViewer = useCallback((selection: ViewerSelection, asked = true): boolean => {
     viewerChoiceRef.current++;
+    if (asked) askedSelectionRef.current = selection;
     viewerSelectionRef.current = selection;
     setViewerSelection(selection);
     if (selection) setMobilePane('viewer');
@@ -1478,7 +1499,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       const selection: ViewerSelection = { type: 'commit', oid, subject };
       // Changing section resets the viewer, so the commit is shown once History is.
       if (view === 'history') selectViewer(selection);
-      else pendingSectionSelectionRef.current = selection;
+      else pendingSectionSelectionRef.current = { selection };
       showSidebarView('history');
     } catch (reason) {
       reportError('Could not open the commit', reason);
@@ -1491,6 +1512,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     if (!repositoryId) return;
     const from = viewRef.current;
     const shown = viewerSelectionRef.current;
+    askedFileHistoryRef.current = { path };
     setFileHistory((current) => ({
       repositoryId, path,
       // Opened again from within History, it keeps where the first one came from.
@@ -1502,7 +1524,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     firstFileCommitRef.current = fromCommit ? null : { repositoryId, path, choice: viewerChoiceRef.current };
     if (from !== 'history') {
       sectionSelections.remember(repositoryId, 'history', null);
-      pendingSectionSelectionRef.current = fromCommit;
+      pendingSectionSelectionRef.current = fromCommit ? { selection: fromCommit } : null;
       showSidebarView('history');
     } else if (fromCommit && fromCommit !== shown) {
       viewerSelectionRef.current = fromCommit;
@@ -1513,6 +1535,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   }, [sectionSelections, showSidebarView]);
   const closeFileHistory = useCallback((back: boolean) => {
     const current = fileHistory;
+    askedFileHistoryRef.current = { path: null };
     setFileHistory(null);
     firstFileCommitRef.current = null;
     if (!back || !current || current.repositoryId !== repositoryRef.current?.id) return;
@@ -1522,7 +1545,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       setViewerSelection(selection);
       return;
     }
-    pendingSectionSelectionRef.current = selection;
+    pendingSectionSelectionRef.current = selection ? { selection } : null;
     showSidebarView(to);
     if (selection) setMobilePane('viewer');
   }, [fileHistory, showSidebarView]);
@@ -1537,7 +1560,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     firstFileCommitRef.current = null;
     // On a phone the list is what shows; the commit opens when one is chosen. Whatever the user opened meanwhile stays.
     if (!first || mobile || viewRef.current !== 'history' || viewerChoiceRef.current !== wanted.choice) return;
-    selectViewer({ type: 'commit-file', oid: first.commit.oid, path: first.path, oldPath: first.oldPath ?? undefined });
+    selectViewer({ type: 'commit-file', oid: first.commit.oid, path: first.path, oldPath: first.oldPath ?? undefined }, false);
   }, [activeFileHistory, fileHistoryEntries, mobile, selectViewer]);
   const fileHistoryFilter = useMemo<HistoryFileFilter | null>(() => {
     if (!activeFileHistory) return null;
@@ -1554,6 +1577,190 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     };
   }, [activeFileHistory, closeFileHistory, fileHistoryEntries, fileHistoryQuery.data]);
   const fileHistoryOpener = bootstrap?.server?.fileHistory === true ? openFileHistory : null;
+
+  // ── Back and Forward ──────────────────────────────────────────────────────────────
+  // Another repository or section is a step, and so is what the user opens; anything else that
+  // changes (a file's newest commit chosen for it, a tab closed under it, a pane on a phone) only
+  // updates the step it happens in. Scroll positions and the viewer's memory are kept with each
+  // step as they change. Bringing a step back is navigation only: nothing is read that is still
+  // known, and nothing is staged, saved, discarded or switched.
+  const shownLine = viewerSelection?.type === 'file' && fileLineTarget?.path === viewerSelection.path ? fileLineTarget.line : null;
+  const shownLocation = useMemo<NavigationLocation | null>(() => repository ? {
+    repositoryId: repository.id,
+    view,
+    selection: viewerSelection,
+    fileHistory: activeFileHistory ? { path: activeFileHistory.path, returnTo: activeFileHistory.returnTo } : null,
+    line: shownLine,
+    pane: mobilePane,
+  } : null, [activeFileHistory, mobilePane, repository, shownLine, view, viewerSelection]);
+  /** The location on screen as the trail last recorded it, and the step it belongs to. */
+  const shownLocationRef = useRef<NavigationLocation | null>(null);
+  const shownEntryKeyRef = useRef<string | null>(null);
+  /** A step in another repository, waiting for that repository to open. */
+  const pendingRestoreRef = useRef<NavigationEntry | null>(null);
+  const [restoreTick, setRestoreTick] = useState(0);
+  const scrollKeeperRef = useRef<ScrollKeeper | null>(null);
+  useEffect(() => {
+    const keeper = createScrollKeeper({
+      list: () => sidebarElement.current?.querySelector<HTMLElement>('.sidebar-body > .view-fade') ?? null,
+      viewer: () => document.querySelector<HTMLElement>('.viewer-pane-body'),
+    }, (marks) => {
+      const key = shownEntryKeyRef.current;
+      if (key) trail.remember(key, { scroll: marks });
+    });
+    scrollKeeperRef.current = keeper;
+    return () => { keeper.dispose(); scrollKeeperRef.current = null; };
+  }, [trail]);
+  /** Keeps with the step on screen how its documents were left, before another takes its place. */
+  const keepShownEntry = useCallback((shown = shownLocationRef.current) => {
+    const key = shownEntryKeyRef.current;
+    if (key && shown) trail.remember(key, { viewer: snapshotViewerMemory(viewerDocumentPrefix(shown)) });
+  }, [trail]);
+
+  /** Puts a step back on screen, in its repository once that is open. */
+  const applyRestore = (entry: NavigationEntry) => {
+    const target = entry.location;
+    const current = repositoryRef.current;
+    scrollKeeperRef.current?.cancel();
+    restoreViewerMemory(entry.memory.viewer);
+    if (!current || target.repositoryId !== current.id) {
+      const known = bootstrapRef.current?.recentRepositories.some((item) => item.id === target.repositoryId) === true;
+      const stayHere = () => {
+        // The step now describes where the user still is.
+        const shown = shownLocationRef.current;
+        if (shown && trail.current()?.key === entry.key) { trail.replace(shown); shownEntryKeyRef.current = entry.key; }
+      };
+      if (!known || unavailableRepositoryIdsRef.current.has(target.repositoryId)) {
+        sileo.info({ title: 'That repository is no longer available', description: 'It was removed from OpenTig or its folder was moved.' });
+        stayHere();
+        return;
+      }
+      pendingRestoreRef.current = entry;
+      void repositorySwitcher.select(target.repositoryId, current?.id ?? null).then(() => {
+        if (pendingRestoreRef.current !== entry || openedRepositoryIdRef.current === target.repositoryId) return;
+        // Opening it failed or gave way to another choice.
+        pendingRestoreRef.current = null;
+        stayHere();
+      });
+      return;
+    }
+    const repositoryId = current.id;
+    let selection = target.selection;
+    if (selection?.type === 'file') {
+      const path = selection.path;
+      const session = fileSessionsRef.current.get(repositoryId) ?? emptyFileSession;
+      if (session.tabs.some((tab) => tab.path === path)) updateFileSession(repositoryId, (value) => activateTab(value, path));
+      else if (filesRef.current && snapshotPathPresence(filesRef.current, path) === 'missing') {
+        sileo.info({ title: 'That file no longer exists', description: path });
+        selection = null;
+      } else {
+        // Its tab was closed since: it opens again, as a click in the tree would.
+        const result = openTab(session, path, 'preview');
+        if (result.evictedPath) dropFileDraft(repositoryId, result.evictedPath);
+        commitFileSession(repositoryId, result.session);
+      }
+    } else if (selection?.type === 'diff' || selection?.type === 'conflict') {
+      const known = knownStatusRef.current;
+      if (!stillShowable(selection, { status: known?.repositoryId === repositoryId ? known.status : null, openTabs: new Set() })) {
+        sileo.info({ title: 'That change is no longer there', description: `${selection.path} was committed, staged or discarded since.` });
+        selection = null;
+      }
+    }
+    const location: NavigationLocation = { ...target, selection, pane: selection ? target.pane : 'list' };
+    restoringRef.current = { ...entry, location };
+    askedSelectionRef.current = undefined;
+    askedFileHistoryRef.current = null;
+    firstFileCommitRef.current = null;
+    viewerChoiceRef.current++;
+    setFileHistory(location.fileHistory ? { repositoryId, ...location.fileHistory } : null);
+    viewerSelectionRef.current = selection;
+    setViewerSelection(selection);
+    if (location.view !== viewRef.current) {
+      pendingSectionSelectionRef.current = { selection };
+      setView(location.view);
+    }
+    setMobilePane(location.pane);
+    // A kept scroll position says where the file was read; the line it was opened on only counts without one.
+    const keptViewerScroll = entry.memory.scroll.some((mark) => mark.area === 'viewer');
+    setFileLineTarget(selection?.type === 'file' && location.line !== null ? { path: selection.path, line: location.line, reached: keptViewerScroll } : null);
+    setRestoreTick((tick) => tick + 1);
+  };
+  const applyRestoreRef = useRef(applyRestore);
+  applyRestoreRef.current = applyRestore;
+  useEffect(() => trail.onRestore((entry) => {
+    keepShownEntry(shownLocationRef.current);
+    applyRestoreRef.current(entry);
+  }), [keepShownEntry, trail]);
+
+  useLayoutEffect(() => {
+    const location = shownLocation;
+    if (!location) return;
+    const restoring = restoringRef.current;
+    const pending = pendingRestoreRef.current;
+    if (!restoring && pending && pending.location.repositoryId === location.repositoryId && shownLocationRef.current?.repositoryId !== location.repositoryId) {
+      // The repository a step was waiting for is open: the rest of the step follows.
+      pendingRestoreRef.current = null;
+      applyRestoreRef.current(pending);
+      return;
+    }
+    if (restoring) {
+      restoringRef.current = null;
+      shownLocationRef.current = location;
+      shownEntryKeyRef.current = restoring.key;
+      if (trail.current()?.key === restoring.key) trail.replace(location);
+      scrollKeeperRef.current?.reset(restoring.memory.scroll);
+      scrollKeeperRef.current?.restore(restoring.memory.scroll);
+      return;
+    }
+    const previous = shownLocationRef.current;
+    shownLocationRef.current = location;
+    if (!previous || !trail.current()) {
+      shownEntryKeyRef.current = trail.start(location).key;
+      scrollKeeperRef.current?.reset([]);
+      return;
+    }
+    if (sameLocation(previous, location)) return;
+    const askedSelection = askedSelectionRef.current;
+    const askedFileHistory = askedFileHistoryRef.current;
+    const asked = (askedSelection !== undefined && location.selection === askedSelection)
+      || (askedFileHistory !== null && askedFileHistory.path === (location.fileHistory?.path ?? null));
+    askedSelectionRef.current = undefined;
+    askedFileHistoryRef.current = null;
+    if (isStep(previous, location, asked)) {
+      keepShownEntry(previous);
+      // Going somewhere new gives up a step still waiting for its repository.
+      pendingRestoreRef.current = null;
+      forgetRestoredViewStates();
+      shownEntryKeyRef.current = trail.push(location).key;
+      scrollKeeperRef.current?.reset([]);
+    } else trail.replace(location);
+  }, [keepShownEntry, restoreTick, shownLocation, trail]);
+
+  useEffect(() => {
+    const mac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight')) return;
+      // On a Mac, Option with an arrow moves the caret by word.
+      if (mac && isEditableTarget(event.target)) return;
+      if (document.querySelector('[data-slot="dialog-popup"], .mobile-sheet')) return;
+      const back = event.key === 'ArrowLeft';
+      if (back ? !trail.state().canGoBack : !trail.state().canGoForward) return;
+      event.preventDefault();
+      if (back) trail.back(); else trail.forward();
+    };
+    // The mouse's side buttons, which a browser would otherwise take as leaving the page.
+    const onMouseUp = (event: MouseEvent) => {
+      if (event.button !== 3 && event.button !== 4) return;
+      event.preventDefault();
+      if (event.button === 3) trail.back(); else trail.forward();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('mouseup', onMouseUp);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('mouseup', onMouseUp);
+    };
+  }, [trail]);
   const lineBlameSettings = useMemo<LineBlameSettings | null>(() => repository ? {
     repositoryId: repository.id,
     revision: refreshVersion,
@@ -1668,7 +1875,9 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     if (result.session === session) return;
     commitFileSession(repositoryId, result.session);
     if (result.session.activePath !== session.activePath) {
+      askedSelectionRef.current = undefined;
       selectFilePath(result.session.activePath);
+      askedSelectionRef.current = viewerSelectionRef.current;
       setMobilePane('viewer');
       setView('files');
     }
@@ -2854,6 +3063,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     onBranch: switchBranch,
     onWorktree: switchWorktree,
     onRefresh: () => void refresh({ manual: true }),
+    onBack: () => trail.back(),
+    onForward: () => trail.forward(),
     onPull: () => void pullUpdates(),
     onPush: () => void pushUpdates(),
     onRepositorySync: syncRepository,
@@ -3125,6 +3336,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
         <Toolbar
           {...toolbarHandlers}
           mobileViewer={mobile && mobilePane === 'viewer' ? mobileViewerBar : undefined}
+          canGoBack={trailState.canGoBack}
+          canGoForward={trailState.canGoForward}
           repository={repository}
           recent={bootstrap.recentRepositories}
           repositoryProjects={bootstrap.repositoryProjects}
