@@ -184,12 +184,94 @@ describe('steps of a job with containers', () => {
     expect(byName['Run actions/checkout@v4']?.[0]).toBe('Run actions/checkout@v4');
   });
 
-  it('shows the log whole, and says so, when a step that ran has no line to start from', async () => {
+  it('places a step without a line of its own by its times, and says the steps may not line up', async () => {
     const parsed = await parseActionJobLog(containerLog.replace('##[group]Run make test', 'make test'), { id: 7, steps: containerSteps }, false);
+    expect(parsed.unsplit).toBeUndefined();
+    expect(parsed.uncertain).toBe(true);
+    const byName = Object.fromEntries(parsed.steps.map((section) => [section.name, section.lines.map((line) => line.text)]));
+    // Lines in the second the step before it ended stay with that step: the error is the failed step's.
+    expect(byName['Run make test']).toEqual(['Process completed with exit code 2.']);
+    expect(byName['Post coverage comment']).toEqual(['Run gh pr comment --body-file coverage.md', '']);
+  });
+
+  it('shows the log whole, and says so, when its steps have no lines to start from', async () => {
+    const parsed = await parseActionJobLog(containerLog.replaceAll('##[group]Run ', '').replaceAll('Post job cleanup.', 'cleanup'), { id: 7, steps: containerSteps }, false);
     expect(parsed.unsplit).toBe(true);
     expect(parsed.steps).toHaveLength(1);
     expect(parsed.steps[0]).toMatchObject({ number: null, name: 'Log', conclusion: 'failure' });
     expect(parsed.steps[0]!.lines).toHaveLength(28);
+  });
+});
+
+/** A line at a second of the run, as GitHub writes it. */
+const at = (second: number, text: string) => `2026-11-13T21:50:${String(second).padStart(2, '0')}.1234567Z ${text}`;
+const ran = (number: number, name: string, from: number, to: number, conclusion = 'success'): ActionRunStep => (
+  { number, name, status: 'completed', conclusion, startedAt: `2026-11-13T21:50:${String(from).padStart(2, '0')}Z`, completedAt: `2026-11-13T21:50:${String(to).padStart(2, '0')}Z` }
+);
+/** The lines GitHub writes to open a `run:` step: its name, the command echoed in cyan, and its shell. */
+const opens = (second: number, command: string) => [at(second, `##[group]Run ${command}`), at(second, `\x1b[36;1m${command}\x1b[0m`), at(second, 'shell: /usr/bin/bash -e {0}'), at(second, '##[endgroup]')];
+const textsByStep = (parsed: Awaited<ReturnType<typeof parseActionJobLog>>) => Object.fromEntries(parsed.steps.map((section) => [section.name, section.lines.map((line) => line.text)]));
+
+describe('steps that are hard to place', () => {
+  it('keeps the split of a log read only in part, leaving the steps after the cut empty', async () => {
+    const steps = [ran(1, 'Set up job', 1, 2), ran(2, 'Build', 3, 10), ran(3, 'Test', 11, 20, 'failure'), ran(4, 'Complete job', 21, 22)];
+    const raw = [at(1, 'Current runner version'), ...opens(3, 'make build'), at(4, 'compiling'), at(5, 'compil'), ''].join('\n').slice(0, -1);
+    const parsed = await parseActionJobLog(raw, { id: 7, steps }, true);
+    expect(parsed.unsplit).toBeUndefined();
+    expect(parsed.readCut).toBe(true);
+    expect(textsByStep(parsed)).toEqual({ 'Set up job': ['Current runner version'], Build: ['Run make build', '\x1b[36;1mmake build\x1b[0m', 'shell: /usr/bin/bash -e {0}', '', 'compiling'], Test: [], 'Complete job': [] });
+  });
+
+  it("splits a job with a parallel group, which writes no `Run` line of its own", async () => {
+    const steps = [
+      ran(1, 'Set up job', 1, 2), ran(2, 'Setup gems', 3, 9), ran(3, 'pnpm install', 3, 9), ran(4, 'Parallel group', 3, 9),
+      ran(5, 'Create databases', 9, 12), ran(6, 'Migrate database', 12, 20), ran(7, 'Complete job', 21, 21),
+    ];
+    const raw = [
+      at(1, 'Current runner version'), ...opens(3, 'bundle config --local path vendor/bundle'), ...opens(3, 'pnpm install --frozen-lockfile'),
+      at(3, 'Waiting for background step(s) to complete: Setup gems, pnpm install'), at(5, 'Packages: +1200'), at(9, 'Finished waiting for background step(s).'),
+      at(9, '  Setup gems: Succeeded'), ...opens(9, 'bin/rake db:create'), at(11, 'Created database'), ...opens(12, 'bin/rake db:migrate'), at(19, 'migrated'),
+      at(21, 'Cleaning up orphan processes'), '',
+    ].join('\n');
+    const parsed = await parseActionJobLog(raw, { id: 7, steps }, false);
+    expect(parsed.unsplit).toBeUndefined();
+    const byName = textsByStep(parsed);
+    expect(byName['Setup gems']?.[0]).toBe('Run bundle config --local path vendor/bundle');
+    expect(byName['pnpm install']?.[0]).toBe('Run pnpm install --frozen-lockfile');
+    expect(byName['Parallel group']).toEqual(['Finished waiting for background step(s).', '  Setup gems: Succeeded']);
+    expect(byName['Create databases']?.[0]).toBe('Run bin/rake db:create');
+    expect(byName['Migrate database']).toEqual(['Run bin/rake db:migrate', '\x1b[36;1mbin/rake db:migrate\x1b[0m', 'shell: /usr/bin/bash -e {0}', '', 'migrated']);
+  });
+
+  it('leaves a group a script printed with the step that printed it', async () => {
+    const steps = [ran(1, 'Set up job', 1, 2), ran(2, 'Test', 2, 4), ran(3, 'Deploy', 4, 5), ran(4, 'Complete job', 6, 6)];
+    const raw = [
+      at(1, 'Current runner version'), ...opens(2, 'npm test'), at(3, '##[group]Run unit tests'), at(4, 'ok 1'), at(4, '##[endgroup]'),
+      ...opens(5, './deploy.sh'), at(5, 'deploying'), at(6, 'Cleaning up orphan processes'), '',
+    ].join('\n');
+    const parsed = await parseActionJobLog(raw, { id: 7, steps }, false);
+    const byName = textsByStep(parsed);
+    expect(byName.Test).toContain('Run unit tests');
+    expect(byName.Deploy?.[0]).toBe('Run ./deploy.sh');
+    expect(parsed.uncertain).toBeUndefined();
+  });
+
+  it("gives a user's step named like GitHub's container step its own line, and the next step its", async () => {
+    const steps = [ran(1, 'Set up job', 1, 2), ran(2, 'Initialize containers', 2, 2), ran(3, 'Build', 2, 3), ran(4, 'Complete job', 4, 4)];
+    const raw = [at(1, 'Current runner version'), ...opens(2, 'echo hi'), at(2, 'hi'), ...opens(2, 'make'), at(3, 'built'), at(4, 'Cleaning up orphan processes'), ''].join('\n');
+    const byName = textsByStep(await parseActionJobLog(raw, { id: 7, steps }, false));
+    expect(byName['Initialize containers']?.[0]).toBe('Run echo hi');
+    expect(byName['Initialize containers']).toContain('hi');
+    expect(byName.Build?.[0]).toBe('Run make');
+    expect(byName.Build).toContain('built');
+  });
+
+  it('says the steps may not line up when a step had several lines that fit as well', async () => {
+    const steps = [ran(1, 'Set up job', 1, 2), ran(2, 'Test', 2, 4), ran(3, 'Deploy', 4, 5), ran(4, 'Complete job', 6, 6)];
+    const raw = [at(1, 'Current runner version'), at(2, '##[group]Run npm test'), at(3, '##[group]Run unit tests'), at(5, '##[group]Run ./deploy.sh'), at(6, 'Cleaning up orphan processes'), ''].join('\n');
+    const parsed = await parseActionJobLog(raw, { id: 7, steps }, false);
+    expect(parsed.uncertain).toBe(true);
+    expect(textsByStep(parsed).Deploy?.[0]).toBe('Run ./deploy.sh');
   });
 });
 
@@ -217,12 +299,17 @@ describe('a hostile log', () => {
     ['one line of unfinished escapes', () => `2026-11-13T21:57:41.5Z ${'\x1b['.repeat(sixteen / 2)}`],
     ['one line of color codes', () => `2026-11-13T21:57:41.5Z ${'\x1b[1m'.repeat(sixteen / 4)}`],
     ['many short lines', () => '2026-11-13T21:57:41.5Z output of a step\n'.repeat(Math.floor(sixteen / 40))],
+    ['long lines of color codes', () => `${'\x1b[1;31m'.repeat(250)}\n`.repeat(Math.floor(sixteen / 1751))],
+    ['empty lines with a time', () => '2024-01-01T00:00:01.0000000Z \n'.repeat(Math.floor(sixteen / 30))],
+    ['nothing but line breaks', () => '\n'.repeat(sixteen)],
   ])('keeps the server answering while %s is read', async (_label, make) => {
     const raw = make();
     let parsed: Awaited<ReturnType<typeof parseActionJobLog>> | null = null;
     const stall = await longestStall(async () => { parsed = await parseActionJobLog(raw, { id: 7, steps }, false); });
     expect(parsed).not.toBeNull();
-    expect(stall).toBeLessThan(100);
+    // On an idle machine the longest wait is under 25 ms; the parse that held the thread whole waited 557 ms to 2.9 s
+    // on these inputs. 250 ms leaves room for a busy machine and a garbage collection without missing that.
+    expect(stall).toBeLessThan(250);
   }, 30_000);
 
   it('stops when the read is no longer needed', async () => {

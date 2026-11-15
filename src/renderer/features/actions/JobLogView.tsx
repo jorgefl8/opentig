@@ -193,9 +193,12 @@ function ReadyJobLog({ log, job, initialStep, onOpenJob }: { log: ReadyLog; job:
       {log.unsplit && <div className="job-log-notice" role="note">
         <p>OpenTig couldn’t tell which lines belong to which step, so this log is shown whole rather than split wrongly.</p>
       </div>}
+      {log.uncertain && <div className="job-log-notice" role="note">
+        <p>Some steps were placed by their times, or among lines that fit as well, so the steps may not line up exactly with the log.</p>
+      </div>}
       {(log.readCut || log.displayCut) && <div className="job-log-notice" role="note">
         <p>{log.readCut
-          ? `This log is larger than ${formatMegabytes(ACTION_JOB_LOG_LIMITS.readBytes)}. OpenTig read only its start, so later steps may show nothing here.`
+          ? `This log is larger than ${formatMegabytes(ACTION_JOB_LOG_LIMITS.readBytes)} or ${ACTION_JOB_LOG_LIMITS.readLines.toLocaleString()} lines. OpenTig read only its start, so later steps may show nothing here.`
           : `This log is long. OpenTig shows up to ${ACTION_JOB_LOG_LIMITS.lines.toLocaleString()} of its lines, the end of each step and most of a failed one, and cuts lines longer than ${ACTION_JOB_LOG_LIMITS.lineCharacters.toLocaleString()} characters. What is left out is marked.`}</p>
         {onOpenJob && <Button variant="outline" size="xs" onClick={onOpenJob}><IconExternalLink /> Full log on GitHub</Button>}
       </div>}

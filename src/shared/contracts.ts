@@ -820,12 +820,14 @@ export type ActionJobLog =
     steps: ActionJobLogStep[];
     /** Lines in what OpenTig read of the log. */
     totalLines: number;
-    /** OpenTig read only the start of the log: it is larger than `ACTION_JOB_LOG_LIMITS.readBytes`. */
+    /** OpenTig read only the start of the log: it is larger than `ACTION_JOB_LOG_LIMITS.readBytes` or `readLines`. */
     readCut: boolean;
     /** Some lines were left out, or cut short, to stay within what OpenTig shows. */
     displayCut: boolean;
     /** OpenTig couldn't tell which lines belong to which step: `steps` holds the whole log as one. */
     unsplit?: true;
+    /** Some steps were placed by their times, or among lines that fit as well: they may not line up exactly. */
+    uncertain?: true;
   }
   /** GitHub serves a job's log once the job has finished. */
   | { state: 'pending'; jobId: number }
@@ -836,6 +838,8 @@ export type ActionJobLog =
 export const ACTION_JOB_LOG_LIMITS = {
   /** Read from GitHub; past this, only the start is shown. */
   readBytes: 16 * 1024 * 1024,
+  /** Lines read, of a log of very short lines; past this, too, only the start is shown. */
+  readLines: 500_000,
   /** Lines shown, of all steps; failed steps keep their last lines first. */
   lines: 20_000,
   /** UTF-8 bytes shown, of all lines as they are sent, well within what one answer may carry. */
