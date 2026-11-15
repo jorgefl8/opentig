@@ -8,7 +8,7 @@ import { withLineCounts, withStackMemberships } from '@/features/pulls/pull-requ
 import { releasesQueryOptions } from '@/features/pulls/releases-query';
 import { appDisplayName } from '@/lib/app-identity';
 import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { isModuleLoadError, lazyWithPreload, lazyWithRetry } from '@/lib/lazy-with-retry';
+import { isModuleLoadError, lazyWithPreload, lazyWithRetry, preloadWhenIdle } from '@/lib/lazy-with-retry';
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   IconBrandGithub, IconFileArrowRight, IconFiles, IconGitBranch, IconGitCompare, IconHistory,
@@ -95,10 +95,12 @@ import { CommitAuthorshipDialog } from '@/features/settings/CommitAuthorshipDial
 import { RepositoryLinksContext, type RepositoryLinks } from '@/components/repository-links';
 import { Spinner } from '@/components/ui/spinner';
 
-const Viewer = lazyWithRetry(() => import('@/features/viewer/Viewer'));
-const FilesView = lazyWithRetry(() => import('@/features/files/FilesView').then((module) => ({ default: module.FilesView })));
-const HistoryView = lazyWithRetry(() => import('@/features/history/HistoryView').then((module) => ({ default: module.HistoryView })));
-const SearchView = lazyWithRetry(() => import('@/features/search/SearchView').then((module) => ({ default: module.SearchView })));
+// The sections and the viewer are downloaded on first use, or while the app is idle if that comes first (see `preloadWhenIdle`).
+const Viewer = lazyWithPreload(() => import('@/features/viewer/Viewer'));
+const FilesView = lazyWithPreload(() => import('@/features/files/FilesView').then((module) => ({ default: module.FilesView })));
+const HistoryView = lazyWithPreload(() => import('@/features/history/HistoryView').then((module) => ({ default: module.HistoryView })));
+const SearchView = lazyWithPreload(() => import('@/features/search/SearchView').then((module) => ({ default: module.SearchView })));
+const IDLE_SECTIONS = [Viewer, FilesView, HistoryView, SearchView];
 const PullRequestsView = lazyWithPreload(() => import('@/features/pulls/PullRequestsView').then((module) => ({ default: module.PullRequestsView })));
 const QuickOpenDialog = lazyWithRetry(() => import('@/features/files/QuickOpenDialog').then((module) => ({ default: module.QuickOpenDialog })));
 const CreatePullRequestDialog = lazyWithRetry(() => import('@/features/pulls/CreatePullRequestDialog').then((module) => ({ default: module.CreatePullRequestDialog })));
@@ -577,6 +579,10 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       delete window.__opentigNavigationRequests;
     };
   }, [bootstrap?.performanceAutomation]);
+
+  // Once the app is up, the sections not yet opened are downloaded in its idle moments, so the first click on each doesn't wait.
+  const started = bootstrap !== null;
+  useEffect(() => started ? preloadWhenIdle(IDLE_SECTIONS) : undefined, [started]);
 
   useEffect(() => {
     filesRef.current = files;

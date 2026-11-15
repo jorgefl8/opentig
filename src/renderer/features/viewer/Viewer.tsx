@@ -1,6 +1,7 @@
 import { formatDateTime } from '@shared/date-format';
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
-import { lazyWithPreload, lazyWithRetry } from '@/lib/lazy-with-retry';
+import { lazyWithPreload, lazyWithRetry, preloadWhenIdle } from '@/lib/lazy-with-retry';
+import { LazyPullRequestDiff } from '@/features/pulls/pull-request-viewer-chunks';
 import { isLowEndDevice } from '@/lib/low-end-device';
 import { whenIdle } from '@/lib/when-idle';
 import { LazyPullRequestViewer as PullRequestViewer } from '@/features/pulls/pull-request-viewer-chunks';
@@ -21,20 +22,28 @@ import { canUndoCommit, commitGitHubUrl } from '@/features/history/history-prese
 import { openExternalUrl } from '@/lib/browser-capabilities';
 import { opentig } from '@/lib/opentig-api';
 import { MobileCommitBar, MobileDiffBar } from './MobileViewerBars';
+import { loadPierreEditor } from './pierre-editor';
 import { commitDiffKey, immutableDiff, takeFileAhead, scopeDiffCache } from './viewer-prefetch';
 import { ContentFade } from '@/components/Reveal';
 import { Spinner } from '@/components/ui/spinner';
 // The code viewers start downloading with the document they will show, so it mounts once, on a viewer that is already there.
 const PierreDiffViewer = lazyWithPreload(() => import('./PierreDiffViewer'));
 const PierreEditBoundary = lazyWithPreload(() => import('./PierreEditBoundary').then((module) => ({ default: module.PierreEditBoundary })));
-const MarkdownFileViewer = lazyWithRetry(() => import('@/features/markdown/MarkdownFileViewer').then((module) => ({ default: module.MarkdownFileViewer })));
+const MarkdownFileViewer = lazyWithPreload(() => import('@/features/markdown/MarkdownFileViewer').then((module) => ({ default: module.MarkdownFileViewer })));
 const EditableFileViewer = lazyWithPreload(() => import('./EditableFileViewer').then((module) => ({ default: module.EditableFileViewer })));
-const HtmlFileViewer = lazyWithRetry(() => import('./HtmlFileViewer').then((module) => ({ default: module.HtmlFileViewer })));
-const ReleaseViewer = lazyWithRetry(() => import('@/features/pulls/ReleaseViewer').then((module) => ({ default: module.ReleaseViewer })));
-const WorkflowRunViewer = lazyWithRetry(() => import('@/features/actions/WorkflowRunViewer').then((module) => ({ default: module.WorkflowRunViewer })));
+const HtmlFileViewer = lazyWithPreload(() => import('./HtmlFileViewer').then((module) => ({ default: module.HtmlFileViewer })));
+const ReleaseViewer = lazyWithPreload(() => import('@/features/pulls/ReleaseViewer').then((module) => ({ default: module.ReleaseViewer })));
+const WorkflowRunViewer = lazyWithPreload(() => import('@/features/actions/WorkflowRunViewer').then((module) => ({ default: module.WorkflowRunViewer })));
+// Half a megabyte that most sessions never open: downloaded when a PDF is.
 const PdfFileViewer = lazyWithRetry(() => import('./PdfFileViewer').then((module) => ({ default: module.PdfFileViewer })));
-const ImageFileViewer = lazyWithRetry(() => import('./ImageFileViewer').then((module) => ({ default: module.ImageFileViewer })));
-const SvgFileViewer = lazyWithRetry(() => import('./ImageFileViewer').then((module) => ({ default: module.SvgFileViewer })));
+const ImageFileViewer = lazyWithPreload(() => import('./ImageFileViewer').then((module) => ({ default: module.ImageFileViewer })));
+const SvgFileViewer = lazyWithPreload(() => import('./ImageFileViewer').then((module) => ({ default: module.SvgFileViewer })));
+/** The editing bundle a file needs to become editable, fetched apart from the viewer that shows it. */
+const FileEditing = { preload: () => { void loadPierreEditor().catch(() => undefined); } };
+/** What a first click on a change, a file or a commit shows, in the order they are most often opened. */
+const IDLE_VIEWERS = [PierreDiffViewer, PierreEditBoundary, EditableFileViewer, FileEditing, MarkdownFileViewer, ImageFileViewer, HtmlFileViewer];
+/** The same for a repository on GitHub. */
+const IDLE_GITHUB_VIEWERS = [PullRequestViewer, LazyPullRequestDiff, WorkflowRunViewer, ReleaseViewer];
 
 export type ViewerSelection =
   | { type: 'diff'; path: string; kind: 'staged' | 'unstaged' }
@@ -138,6 +147,12 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
   // What the load below reads when its data arrives, without loading again when these change.
   const shown = useRef({ docKey: null as string | null, draftFor, readOnly });
   useEffect(() => { shown.current = { docKey: data?.docKey ?? null, draftFor, readOnly }; });
+
+  // The viewers themselves are downloaded while the app is idle, so the first
+  // click on a file, a change or a pull request shows it rather than a loading message.
+  useEffect(() => preloadWhenIdle(IDLE_VIEWERS), []);
+  const onGitHub = Boolean(githubRepository);
+  useEffect(() => onGitHub ? preloadWhenIdle(IDLE_GITHUB_VIEWERS) : undefined, [onGitHub]);
 
   // The highlighting workers, the themes and the usual grammars load while the
   // app is idle, so the first diff of the session does not wait for them.

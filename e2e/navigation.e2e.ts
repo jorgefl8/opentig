@@ -86,3 +86,32 @@ test('resting the pointer on a file or a commit reads it, so the click has nothi
   });
   expect(openedCommit['diff:commit'], JSON.stringify(openedCommit)).toBeUndefined();
 });
+
+test('the sections and viewers are downloaded while the app is idle, so a first click needs no more code', async ({ pairedPage: page, repository }) => {
+  await repository.commit('notes.txt', 'First line\n', 'Add the notes');
+  let scripts = 0;
+  page.on('request', (request) => { if (request.resourceType() === 'script') scripts += 1; });
+  await openRepository(page, repository);
+  const sidebar = page.getByRole('complementary');
+  // The app goes on downloading in its idle moments; wait until it has stopped.
+  await expect.poll(async () => {
+    const before = scripts;
+    await page.waitForTimeout(1_500);
+    return scripts === before;
+  }, { timeout: 30_000 }).toBe(true);
+
+  // From here on no code can be downloaded: whatever a click needs must already be there.
+  await page.route('**/assets/**/*.js', (route) => route.abort());
+  await section(page, 'History').click();
+  const history = sidebar.getByRole('list', { name: 'Commit history' });
+  await expect(history).toBeVisible();
+  await history.getByRole('button', { name: 'Add the notes', exact: true }).click();
+  await expect(page.getByText('notes.txt').last()).toBeVisible();
+  await section(page, 'Search').click();
+  await expect(sidebar.getByRole('textbox', { name: 'Search in repository' })).toBeVisible();
+  await section(page, 'Files').click();
+  await sidebar.getByRole('tree', { name: 'Files' }).getByRole('treeitem', { name: 'notes.txt' }).click();
+  await expect(page.getByRole('textbox', { name: 'notes.txt' })).toContainText('First line');
+  await section(page, 'Changes').click();
+  await expect(sidebar.getByText('No changes')).toBeVisible();
+});
