@@ -13,7 +13,7 @@ import type { RepositoryInstructionFile } from '../ai/RepositoryAiInstructions';
 import type { GitProcess } from './GitProcess';
 import { parseCommitFiles } from './CommitFilesParser';
 import { LOG_FORMAT, parseLog } from './LogParser';
-import { FILE_HISTORY_WALK_FORMAT, parseFileHistoryWalk } from './FileHistoryParser';
+import { FILE_HISTORY_WALK_FORMAT, parseFileHistoryWalk, type FileHistoryChange, type FileHistoryRecord } from './FileHistoryParser';
 import { selectHistoryBase } from './HistoryBase';
 import { REF_FORMAT, parseRefs } from './RefParser';
 import type { RepositoryService } from './RepositoryService';
@@ -510,7 +510,7 @@ export class GitRepositoryOperations {
     let skip = 0;
     if (cursor) {
       const match = /^([0-9a-f]{40,64}):(\d{1,6})$/i.exec(cursor);
-      if (!match || Number(match[2]) % FILE_HISTORY_PAGE !== 0 || Number(match[2]) >= FILE_HISTORY_LIMIT) {
+      if (!match || Number(match[2]) >= FILE_HISTORY_LIMIT) {
         throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'file-history', message: 'Invalid history position.' });
       }
       start = match[1]!;
@@ -523,14 +523,38 @@ export class GitRepositoryOperations {
       if (!/^[0-9a-f]{40,64}$/i.test(oid)) return { path: pathspec, entries: [], nextCursor: null, limited: false };
       start = oid;
     }
-    const end = skip + FILE_HISTORY_PAGE;
-    const walk = await this.git.run(repository.path, [
-      '--literal-pathspecs', 'log', '--follow', '-M', '--no-color', '--no-ext-diff', '--no-textconv', `--max-count=${end + 1}`,
-      `--format=${FILE_HISTORY_WALK_FORMAT}`, '--raw', '--numstat', '-z', start, '--', pathspec,
-    ], { operation: 'file-history', readOnly: true, maxOutputBytes: 32 * 1024 * 1024, ...cancel });
-    const changes = parseFileHistoryWalk(walk.stdout.toString('utf8'), pathspec);
-    const page = changes.slice(skip, end);
-    if (!page.length) return { path: pathspec, entries: [], nextCursor: null, limited: false };
+    // A folder's commits are those of many files: only a file has a history here.
+    const [onDisk, inCommit] = await Promise.all([
+      lstat(this.repositories.resolvePath(repositoryId, pathspec)).catch(() => null),
+      this.git.run(repository.path, ['--literal-pathspecs', 'ls-tree', '-z', start, '--', pathspec], { operation: 'file-history-path', readOnly: true, ...cancel }),
+    ]);
+    if (onDisk?.isDirectory() || /^\d+ tree /.test(inCommit.stdout.toString('utf8'))) {
+      throw new GitOperationError({ code: 'INVALID_ARGUMENT', operation: 'file-history', message: 'Choose a file to see its history.' });
+    }
+    // The cursor counts the commits the walk listed, some of which may have changed only other paths: a page reads
+    // further, four times as far each time, until it has its commits of the file or the walk ends.
+    let records: FileHistoryRecord[] = [];
+    let page: FileHistoryChange[] = [];
+    let consumed = skip;
+    for (let window = FILE_HISTORY_PAGE + 1; ; window *= 4) {
+      const maxCount = Math.min(skip + window, FILE_HISTORY_LIMIT + 1);
+      const walk = await this.git.run(repository.path, [
+        '--literal-pathspecs', 'log', '--follow', '-M', '--no-color', '--no-ext-diff', '--no-textconv', `--max-count=${maxCount}`,
+        `--format=${FILE_HISTORY_WALK_FORMAT}`, '--raw', '--numstat', '-z', start, '--', pathspec,
+      ], { operation: 'file-history', readOnly: true, maxOutputBytes: 32 * 1024 * 1024, ...cancel });
+      records = parseFileHistoryWalk(walk.stdout.toString('utf8'), pathspec);
+      page = [];
+      consumed = skip;
+      for (let index = skip; index < Math.min(records.length, FILE_HISTORY_LIMIT) && page.length < FILE_HISTORY_PAGE; index++) {
+        const change = records[index]!.change;
+        if (change) page.push(change);
+        consumed = index + 1;
+      }
+      if (page.length >= FILE_HISTORY_PAGE || records.length < maxCount || maxCount > FILE_HISTORY_LIMIT) break;
+    }
+    const more = consumed < Math.min(records.length, FILE_HISTORY_LIMIT);
+    const limited = records.length > FILE_HISTORY_LIMIT && consumed >= FILE_HISTORY_LIMIT;
+    if (!page.length) return { path: pathspec, entries: [], nextCursor: more ? `${start}:${consumed}` : null, limited };
     const [details, localOids] = await Promise.all([
       this.git.run(repository.path, ['log', '--no-walk=unsorted', '--date=iso-strict', `--format=${LOG_FORMAT}`, ...page.map((change) => change.oid), '--'],
         { operation: 'file-history-commits', readOnly: true, maxOutputBytes: 8 * 1024 * 1024, ...cancel }),
@@ -552,9 +576,7 @@ export class GitRepositoryOperations {
         },
       }];
     });
-    const more = changes.length > end;
-    const limited = more && end >= FILE_HISTORY_LIMIT;
-    return { path: pathspec, entries, nextCursor: more && !limited ? `${start}:${end}` : null, limited };
+    return { path: pathspec, entries, nextCursor: more ? `${start}:${consumed}` : null, limited };
   }
 
   async undoLatestCommit(repositoryId: string, expectedOid: string): Promise<UndoLatestCommitResult> {
