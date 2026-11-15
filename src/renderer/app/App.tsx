@@ -67,7 +67,7 @@ import { LineBlameContext, type LineBlameSettings } from '@/features/viewer/line
 import type { RuntimeFileDraft, ViewerSelection } from '@/features/viewer/Viewer';
 import type { PullRequestsSection } from '@/features/pulls/PullRequestsView';
 import {
-  mergeRefreshRequests, refreshOperationsForScope, shouldRefreshSearch, shouldRefreshViewer, type RefreshRequest,
+  mergeRefreshRequests, refreshOperationsForScope, sectionRefresh, shouldRefreshSearch, shouldRefreshViewer, type RefreshRequest,
 } from './refresh-policy';
 import { resolveWindowControlsInset } from './window-controls';
 import { queryKeys, queryResourcesForScope, resetGitHubQueries } from '@/lib/query-client';
@@ -109,6 +109,7 @@ const SIDEBAR_VIEWS = ['changes', 'files', 'history', 'prs', 'search'] as const;
 const VIEW_STORAGE_KEY = 'opentig.lastView';
 const BACKGROUND_REFRESH_RETRY_MS = 1_000;
 const WORKTREE_AGENTS_REFRESH_MS = 10_000;
+const HISTORY_STALE_MS = 30_000;
 /** A branch switch Git refused over local changes; `allowAgents` keeps a confirmed agent warning confirmed. */
 interface BlockedBranchSwitch { ref: string; label: string; files: string[]; allowAgents?: boolean }
 type SidebarView = (typeof SIDEBAR_VIEWS)[number];
@@ -199,6 +200,9 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   useEffect(() => {
     try { window.localStorage.setItem(VIEW_STORAGE_KEY, view); } catch { /* storage unavailable */ }
   }, [view]);
+  // Read by a refresh as it starts, so opening another section does not make a new `refresh`.
+  const viewRef = useRef(view);
+  useLayoutEffect(() => { viewRef.current = view; }, [view]);
   const [viewerSelection, setViewerSelection] = useState<ViewerSelection>(null);
   const [fileViewerToolbarHost, setFileViewerToolbarHost] = useState<HTMLElement | null>(null);
   const initialSelectionApplied = useRef(false);
@@ -264,6 +268,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   const commitTextareaRef = useRef<HTMLTextAreaElement>(null);
   const knownConflictPathsRef = useRef<Map<string, string[]>>(new Map());
   const refreshCyclesRef = useRef<Map<string, { queued: RefreshRequest | null; promise: Promise<void> }>>(new Map());
+  // When the open repository's snapshot and its file tree were last read, for `sectionRefresh`.
+  const lastReadRef = useRef({ snapshot: Number.NEGATIVE_INFINITY, files: Number.NEGATIVE_INFINITY });
 
   const historyQuery = useInfiniteQuery({
     queryKey: queryKeys.history(repository?.id ?? ''),
@@ -271,6 +277,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
     enabled: repository !== null && view === 'history',
+    // A change to the branches marks it outdated (see `performRefresh`), so coming back to History only reads it again after that.
+    staleTime: HISTORY_STALE_MS,
   });
   const commits = useMemo(
     () => historyQuery.data ? historyQuery.data.pages.flatMap((page) => page.commits) : null,
@@ -709,7 +717,9 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       const nextFiles = await appQueryClient.fetchQuery({
         queryKey: queryKeys.files(repositoryId), queryFn: () => opentig.repository.getFiles(repositoryId),
       });
-      if (repositoryRef.current?.id === repositoryId) applyFilesSnapshot(nextFiles);
+      if (repositoryRef.current?.id !== repositoryId) return;
+      lastReadRef.current.files = Date.now();
+      applyFilesSnapshot(nextFiles);
     } catch (reason) {
       if (repositoryRef.current?.id !== repositoryId) return;
       if (isConnectionLoss(reason)) recordConnectionLoss('Could not refresh files', reason);
@@ -750,6 +760,10 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     const scope = firstRead ? 'unknown' : request.scope;
     const operations = refreshOperationsForScope(scope, refreshView);
     const resources = queryResourcesForScope(scope, refreshView);
+    // History is only read while it is open; from another section it is marked outdated, and read when it is opened.
+    if (!operations.history && refreshOperationsForScope(scope, 'history').history) {
+      void appQueryClient.invalidateQueries({ queryKey: queryKeys.history(repositoryId), exact: true, refetchType: 'none' });
+    }
     if (!background) { busyRef.current = 'refresh'; setBusy('refresh'); }
     try {
       if (manual) {
@@ -806,6 +820,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       const [nextStatus, nextBranches, nextWorktrees, nextFiles, nextHistory] = snapshot;
       if (repositoryRef.current?.id !== repositoryId) return;
       snapshotRepositoryIdRef.current = repositoryId;
+      lastReadRef.current.snapshot = Date.now();
+      if (nextFiles) lastReadRef.current.files = lastReadRef.current.snapshot;
       setSnapshotRepositoryId(repositoryId);
       setStatus(nextStatus);
       if (nextBranches) setBranches(nextBranches);
@@ -837,7 +853,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       ...(options?.manual ? { manual: true } : {}),
       background: options?.background === true,
       scope: options?.scope ?? 'unknown',
-      view,
+      view: viewRef.current,
     };
     const existing = refreshCyclesRef.current.get(repositoryId);
     if (existing) {
@@ -861,7 +877,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     });
     refreshCyclesRef.current.set(repositoryId, cycle);
     return cycle.promise;
-  }, [performRefresh, repository, view]);
+  }, [performRefresh, repository]);
 
   // A timeout or disconnect says nothing about the work, so show the real state before anyone retries.
   const refreshAfterUnconfirmedResult = (reason: unknown) => {
@@ -910,6 +926,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
 
   useEffect(() => {
     snapshotRepositoryIdRef.current = null;
+    lastReadRef.current = { snapshot: Number.NEGATIVE_INFINITY, files: Number.NEGATIVE_INFINITY };
     setSnapshotRepositoryId(null);
     clearCommitFilesCache();
     filesRef.current = null;
@@ -941,7 +958,19 @@ export default function App({ initialView, initialSelection, pullRequestCreation
 
   useEffect(() => {
     void refresh();
-  }, [refresh, repository?.id, view]);
+  }, [refresh, repository?.id]);
+
+  // Opening another section shows what is already known. It reads again behind
+  // that, without holding Pull, Push or Commit, and only what was not read moments ago.
+  const shownSectionRef = useRef(view);
+  useEffect(() => {
+    if (shownSectionRef.current === view) return;
+    shownSectionRef.current = view;
+    const now = Date.now();
+    const due = sectionRefresh(view, { snapshotMs: now - lastReadRef.current.snapshot, filesMs: now - lastReadRef.current.files });
+    if (due === 'snapshot') void refresh({ background: true, scope: 'worktree' });
+    else if (due === 'files') void refreshFilesOnly();
+  }, [refresh, refreshFilesOnly, view]);
 
   // Switching worktree or sidebar view no longer discards the file session: the
   // tabs of each worktree are restored from persisted metadata the first time it

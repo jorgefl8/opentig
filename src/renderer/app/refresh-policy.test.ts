@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  mergeRefreshRequests, refreshOperationsForScope, shouldRefreshSearch, shouldRefreshViewer,
+  mergeRefreshRequests, refreshOperationsForScope, SECTION_REFRESH_MIN_INTERVAL_MS, sectionRefresh, shouldRefreshSearch, shouldRefreshViewer,
 } from './refresh-policy';
 
 describe('refreshOperationsForScope', () => {
@@ -61,5 +61,25 @@ describe('refresh scheduling', () => {
     expect(shouldRefreshSearch('worktree')).toBe(true);
     expect(shouldRefreshSearch('index')).toBe(true);
     expect(shouldRefreshSearch('refs')).toBe(false);
+  });
+});
+
+describe('sectionRefresh', () => {
+  const recent = SECTION_REFRESH_MIN_INTERVAL_MS - 1;
+  const old = SECTION_REFRESH_MIN_INTERVAL_MS;
+
+  it('asks for nothing when the section was read moments ago', () => {
+    expect(sectionRefresh('changes', { snapshotMs: recent, filesMs: Number.POSITIVE_INFINITY })).toBe('none');
+    expect(sectionRefresh('files', { snapshotMs: recent, filesMs: recent })).toBe('none');
+  });
+
+  it('reads the file tree alone when only it is missing or old, since no other section reads it', () => {
+    expect(sectionRefresh('files', { snapshotMs: recent, filesMs: Number.POSITIVE_INFINITY })).toBe('files');
+    expect(sectionRefresh('files', { snapshotMs: recent, filesMs: old })).toBe('files');
+  });
+
+  it('reads the snapshot again once it is no longer recent, including before the first one arrives', () => {
+    expect(sectionRefresh('history', { snapshotMs: old, filesMs: recent })).toBe('snapshot');
+    expect(sectionRefresh('files', { snapshotMs: Number.POSITIVE_INFINITY, filesMs: Number.POSITIVE_INFINITY })).toBe('snapshot');
   });
 });

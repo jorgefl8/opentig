@@ -82,6 +82,8 @@ Refresh also checks for app updates immediately instead of waiting for the five-
 
 The workspace also refreshes automatically when files or Git state change. While another tool keeps writing to the repository, OpenTig shows the newest state it could read and refreshes again after the next change. An automatic refresh that fails retries once after a second and reports an error only if the retry also fails.
 
+Opening another section shows what OpenTig already knows and does not fetch. If the repository was last read more than five seconds ago, its status is read again in the background, and Files reads its tree again; **Pull**, **Push**, and **Commit** stay available meanwhile. History is read again only after its branches changed or 30 seconds passed.
+
 ### Shortcuts
 
 Open **Settings → Shortcuts** to rebind most shortcuts, check for conflicts, or reset them to defaults. Fixed shortcuts follow platform or file-manager conventions.

@@ -52,3 +52,16 @@ export function refreshOperationsForScope(
     history: view === 'history' && (full || scope === 'refs'),
   };
 }
+
+/** Switching between sections quickly asks for nothing; one that was last read longer ago than this is read again behind what it shows. */
+export const SECTION_REFRESH_MIN_INTERVAL_MS = 5_000;
+
+/**
+ * What entering a section reads, behind what is already on screen. The file
+ * watcher keeps the status current, so this only covers what it may have missed
+ * and the file tree, which is not read while another section is open.
+ */
+export function sectionRefresh(view: RefreshView, age: { snapshotMs: number; filesMs: number }): 'none' | 'files' | 'snapshot' {
+  if (age.snapshotMs >= SECTION_REFRESH_MIN_INTERVAL_MS) return 'snapshot';
+  return view === 'files' && age.filesMs >= SECTION_REFRESH_MIN_INTERVAL_MS ? 'files' : 'none';
+}
