@@ -33,6 +33,24 @@ describe('FileService', () => {
     await expect(fixture.files.readPreviewAsset(fixture.repositoryId, 'escape.pdf', 100)).rejects.toThrow('outside the worktree');
   });
 
+  it('tells a file reached through a link, its own or a folder’s, from one that is where its path says', async () => {
+    const fixture = await createFixture();
+    await mkdir(path.join(fixture.work, 'real'), { recursive: true });
+    await writeFile(path.join(fixture.work, 'real', 'config.json'), '{}');
+    try {
+      await symlink(path.join('real', 'config.json'), path.join(fixture.work, 'config.json'), 'file');
+      await symlink('real', path.join(fixture.work, 'alias'), 'dir');
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'EPERM') return;
+      throw error;
+    }
+    // A change to the content is reported for `real/`, so only that path's reads can be relied on.
+    expect(await fixture.files.isLinked(fixture.repositoryId, 'real/config.json')).toBe(false);
+    expect(await fixture.files.isLinked(fixture.repositoryId, 'config.json')).toBe(true);
+    expect(await fixture.files.isLinked(fixture.repositoryId, 'alias/config.json')).toBe(true);
+    expect(await fixture.files.isLinked(fixture.repositoryId, 'missing.json')).toBe(true);
+  });
+
   it('reads the repository root and ordinary folders with normalized paths and child ignore flags', async () => {
     const fixture = await createFixture();
     await writeFile(path.join(fixture.work, '.gitignore'), '.env*\ncache/\nsrc/*.log\n');

@@ -63,6 +63,7 @@ vi.mock('@/features/viewer/Viewer', () => ({ default: () => null }));
 vi.mock('@/features/repositories/OpenRepositoryDialog', () => ({ OpenRepositoryDialog: () => null }));
 
 import App from './App';
+import { changeGeneration, doubtWatch, keepFile, keptFile } from '@/features/viewer/content-cache';
 
 const info = (id: string) => ({ id, path: `/${id}`, commonDir: `/${id}/.git`, name: id, repositoryName: id }) as RepositoryInfo;
 const status: RepositoryStatus = {
@@ -229,6 +230,18 @@ it('reads the repository on a timer while the server watches another one, until 
     await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
     await settle();
     expect(reads()).toBe(watched);
+    // The connection dropped and came back to the same server, whose watch never stopped: what is read
+    // from now on can be relied on again, instead of the cache staying off until the watch changes.
+    const kept = (content: string) => {
+      keepFile('repo', { path: 'a.ts', content, binary: false, tooLarge: false, size: 1, mtimeMs: 0, watchId: 'second' }, changeGeneration());
+      return keptFile('repo', 'a.ts', null)?.content ?? null;
+    };
+    expect(kept('before the drop')).toBe('before the drop');
+    doubtWatch();
+    expect(keptFile('repo', 'a.ts', null)).toBeNull();
+    await act(async () => { for (const reconnected of calls.reconnected) reconnected(); calls.repositoryChanged!('repo', 'unknown', 'watching', 'second'); });
+    await settle();
+    expect(kept('after the reconnect')).toBe('after the reconnect');
     // The connection dropped, and the server's bootstrap afterwards named another repository as watched.
     await act(async () => { for (const reconnected of calls.reconnected) reconnected(); });
     await act(async () => calls.repositoryChanged!('repo-b', 'unknown', 'watching', 'elsewhere'));

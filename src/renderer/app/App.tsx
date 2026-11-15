@@ -1179,7 +1179,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       if (document.visibilityState === 'visible' && !isUserIdle()) void refresh({ background: true, scope: 'unknown' });
     }, UNWATCHED_REFRESH_MS);
     return () => window.clearInterval(timer);
-  }, [confirmedWatchId, refresh, repository]);
+    // Each announcement confirms anew, also one that repeats the id known before the connection dropped.
+  }, [announcedWatch, confirmedWatchId, refresh, repository]);
 
   useEffect(() => {
     if (!bootstrap?.performanceAutomation) return;

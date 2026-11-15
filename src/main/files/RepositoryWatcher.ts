@@ -9,6 +9,14 @@ import { mergeRepositoryChangeScopes } from '../../shared/repository-change';
 import type { RepositoryWatchState } from '../../shared/runtime-events';
 
 const MAX_DEFERRALS = 10;
+/** A change is reported once the folder has been quiet this long. */
+const QUIET_MS = 250;
+/**
+ * And no later than this after the first one, however many follow. A folder
+ * written without pause, as a build or a log does, would otherwise hold every
+ * other change back for as long as the writing lasts.
+ */
+export const MAX_QUIET_WAIT_MS = 2_000;
 
 // Inside the git dir only these paths change what OpenTig displays; everything
 // else (objects, logs, fsmonitor cookies, gc.pid, sharedindex…) is bookkeeping
@@ -114,6 +122,8 @@ export class RepositoryWatcher {
   private deferrals = 0;
   private restarts = 0;
   private pendingScope: RepositoryChangeScope | null = null;
+  /** When the first change not yet reported arrived. */
+  private pendingSince: number | null = null;
   private watchState: RepositoryWatchState = 'stopped';
   private watchId: string | null = null;
   private readonly platform: NodeJS.Platform;
@@ -328,8 +338,10 @@ export class RepositoryWatcher {
     this.pendingScope = this.pendingScope
       ? mergeRepositoryChangeScopes(this.pendingScope, scope)
       : scope;
+    const now = Date.now();
+    this.pendingSince ??= now;
     if (this.timer) clearTimeout(this.timer);
-    this.timer = setTimeout(() => this.fire(), 250);
+    this.timer = setTimeout(() => this.fire(), Math.max(0, Math.min(QUIET_MS, this.pendingSince + MAX_QUIET_WAIT_MS - now)));
   }
 
   private fire(): void {
@@ -344,6 +356,7 @@ export class RepositoryWatcher {
     this.deferrals = 0;
     const scope = this.pendingScope ?? 'unknown';
     this.pendingScope = null;
+    this.pendingSince = null;
     this.timer = null;
     this.onChange(this.active.id, scope);
   }

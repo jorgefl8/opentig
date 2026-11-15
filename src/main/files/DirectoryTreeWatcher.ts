@@ -136,9 +136,16 @@ export class DirectoryTreeWatcher {
     if (this.closed) return;
     const directory = this.absolute(relative);
     let isDirectory = false;
-    try { isDirectory = (await stat(directory)).isDirectory(); }
-    catch { /* Gone. */ }
-    if (this.closed) return;
+    // A parent followed meanwhile may have watched this folder anew. What was seen before that is out
+    // of date, and acting on it would close the new watch: it is looked at again.
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const watched = this.watchers.get(directory);
+      isDirectory = false;
+      try { isDirectory = (await stat(directory)).isDirectory(); }
+      catch { /* Gone. */ }
+      if (this.closed) return;
+      if (this.watchers.get(directory) === watched) break;
+    }
     // A folder that went away, or was removed and made again, as a checkout does with a folder it
     // empties and refills: the watch on the old one never fires again, so it is always replaced.
     this.forget(directory);

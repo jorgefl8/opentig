@@ -205,7 +205,9 @@ export function registerServerCommands(
     const repositoryId = stringArg(id, 'read-file', 64);
     const relativePath = stringArg(filePath, 'read-file');
     // Asked before reading: a watch that started meanwhile may not have seen a change made before it.
-    const watchId = services.watcher.covers(repositoryId, relativePath);
+    // A linked file is watched where the link is, not where its content is: its reads are never said to be covered.
+    const covered = services.watcher.covers(repositoryId, relativePath);
+    const watchId = covered && !(await services.files.isLinked(repositoryId, relativePath)) ? covered : null;
     return { ...await services.files.read(repositoryId, relativePath, allowLarge === true, context.signal), ...(watchId ? { watchId } : {}) };
   });
   handle(IPC.repositoryLineBlame, 'line-blame', (id, filePath, draft) => services.operations.lineBlame(

@@ -171,6 +171,16 @@ export class FileService {
     return ignored;
   }
 
+  /**
+   * Whether the path leads through a symbolic link, its own or a folder's. Such a file's content lives
+   * where the link points, and a change to it is reported for that place, if at all.
+   */
+  async isLinked(repositoryId: string, relativePath: string): Promise<boolean> {
+    const target = this.repositories.resolvePath(repositoryId, relativePath);
+    try { return path.resolve(await realpath(target)) !== path.resolve(target); }
+    catch { return true; }
+  }
+
   async read(repositoryId: string, relativePath: string, allowLarge = false, signal?: AbortSignal): Promise<FileResult> {
     const repository = this.repositories.get(repositoryId);
     const target = this.repositories.resolvePath(repositoryId, relativePath);
