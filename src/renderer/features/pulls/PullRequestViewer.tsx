@@ -30,6 +30,7 @@ import { opentig } from '@/lib/opentig-api';
 import { queryKeys } from '@/lib/query-client';
 import { inBackground } from '@/lib/websocket-transport';
 import { whenIdle } from '@/lib/when-idle';
+import { downloadsAhead } from '@/lib/lazy-with-retry';
 import '@/features/markdown/markdown.css';
 import { Spinner } from '@/components/ui/spinner';
 
@@ -111,7 +112,8 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
     },
     // The same two commits always give the same code.
     staleTime: Infinity,
-    enabled: details !== null,
+    // Reading it downloads the pull request's commits into the clone: ahead of the Code tab only where that is welcome.
+    enabled: details !== null && (visited.has('diff') || downloadsAhead()),
   });
   const diff = diffQuery.data ?? null;
   // GitHub CLI returns one page of commits; past it, the local clone lists them all.

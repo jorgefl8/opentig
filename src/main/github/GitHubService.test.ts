@@ -462,6 +462,13 @@ describe('pull request lists', () => {
     // Open PRs come with their counts, so there is nothing more to ask for.
     expect(await service.listPullRequestLineCounts('repo', ['OPEN'])).toEqual([]);
     expect(requested('open')).toHaveLength(1);
+
+    // The counts are kept for minutes, except after the list was read again on request: it may hold a PR merged since.
+    await service.listPullRequestLineCounts('repo', ['OPEN', 'MERGED']);
+    expect(requested('merged')).toHaveLength(2);
+    await service.listPullRequests('repo', ['OPEN', 'MERGED'], true);
+    await service.listPullRequestLineCounts('repo', ['OPEN', 'MERGED']);
+    expect(requested('merged').filter((fields) => fields === 'number,additions,deletions')).toHaveLength(2);
   });
 });
 

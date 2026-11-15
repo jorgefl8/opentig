@@ -78,7 +78,7 @@ import { persistTheme } from '@/lib/boot-theme';
 import { useMobileLayout } from '@/lib/use-mobile-layout';
 import { installZoomAwarePositioning } from '@/lib/zoom-aware-positioning';
 import { isUserIdle } from '@/lib/window-focus';
-import { prefetchFile } from '@/features/viewer/viewer-prefetch';
+import { dropFilesAhead, prefetchFile } from '@/features/viewer/viewer-prefetch';
 import { mobileMainAction } from '@/lib/mobile-main-action';
 import { useElapsed } from '@/lib/use-elapsed';
 import { opentig, serverClient } from '@/lib/opentig-api';
@@ -275,7 +275,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   const knownConflictPathsRef = useRef<Map<string, string[]>>(new Map());
   const refreshCyclesRef = useRef<Map<string, { queued: RefreshRequest | null; promise: Promise<void> }>>(new Map());
   // When the open repository's snapshot and its file tree were last read, for `sectionRefresh`.
-  const lastReadRef = useRef({ snapshot: Number.NEGATIVE_INFINITY, files: Number.NEGATIVE_INFINITY });
+  const lastReadRef = useRef({ snapshot: Number.NEGATIVE_INFINITY, files: Number.NEGATIVE_INFINITY, refs: Number.NEGATIVE_INFINITY });
 
   const historyQuery = useInfiniteQuery({
     queryKey: queryKeys.history(repository?.id ?? ''),
@@ -321,7 +321,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       button: { title: 'Change', onClick: () => { setSettingsSection('github'); setSettingsOpen(true); } },
     });
   }), [appQueryClient]);
-  useEffect(() => opentig.events.onReconnected(() => { void refreshGitHubQueries(appQueryClient); }), [appQueryClient]);
+  useEffect(() => opentig.events.onReconnected(() => { void refreshGitHubQueries(appQueryClient, repositoryRef.current?.id ?? null); }), [appQueryClient]);
   const githubReady = repository !== null && githubInfo?.isGitHub === true && ghStatus?.installed === true;
   // Set by an explicit refresh, so the next read skips the list the backend keeps for a few seconds.
   const freshPulls = useRef(false);
@@ -865,6 +865,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       snapshotRepositoryIdRef.current = repositoryId;
       lastReadRef.current.snapshot = Date.now();
       if (nextFiles) lastReadRef.current.files = lastReadRef.current.snapshot;
+      if (nextBranches && nextWorktrees) lastReadRef.current.refs = lastReadRef.current.snapshot;
       setSnapshotRepositoryId(repositoryId);
       setStatus(nextStatus);
       if (nextBranches) setBranches(nextBranches);
@@ -970,7 +971,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
 
   useEffect(() => {
     snapshotRepositoryIdRef.current = null;
-    lastReadRef.current = { snapshot: Number.NEGATIVE_INFINITY, files: Number.NEGATIVE_INFINITY };
+    lastReadRef.current = { snapshot: Number.NEGATIVE_INFINITY, files: Number.NEGATIVE_INFINITY, refs: Number.NEGATIVE_INFINITY };
     setSnapshotRepositoryId(null);
     clearCommitFilesCache();
     filesRef.current = null;
@@ -999,6 +1000,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     if (repository) void appQueryClient.invalidateQueries({ queryKey: ['repository', repository.id, 'branch-pull-request'] });
     freshPulls.current = true;
     await pullsQuery.refetch();
+    // After the list, which tells the backend these are to be read again too.
+    if (repository) void appQueryClient.invalidateQueries({ queryKey: ['repository', repository.id, 'pull-line-counts'] });
   }, [appQueryClient, ghStatusQuery, pullsQuery, repository]);
 
   useEffect(() => {
@@ -1012,10 +1015,14 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     if (shownSectionRef.current === view) return;
     shownSectionRef.current = view;
     const now = Date.now();
-    const due = sectionRefresh(view, { snapshotMs: now - lastReadRef.current.snapshot, filesMs: now - lastReadRef.current.files });
-    if (due === 'snapshot') void refresh({ background: true, scope: 'worktree' });
+    const due = sectionRefresh(view, { snapshotMs: now - lastReadRef.current.snapshot, filesMs: now - lastReadRef.current.files, refsMs: now - lastReadRef.current.refs });
+    if (due === 'full') {
+      void refresh({ background: true });
+      // The remote may have been added or changed outside the app.
+      if (repository) void appQueryClient.invalidateQueries({ queryKey: queryKeys.githubInfo(repository.id) });
+    } else if (due === 'snapshot') void refresh({ background: true, scope: 'worktree' });
     else if (due === 'files') void refreshFilesOnly();
-  }, [refresh, refreshFilesOnly, view]);
+  }, [appQueryClient, refresh, refreshFilesOnly, repository, view]);
 
   // Switching worktree or sidebar view no longer discards the file session: the
   // tabs of each worktree are restored from persisted metadata the first time it
@@ -1052,6 +1059,10 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     void refresh({ background: true, scope });
     // An open refs manager may be showing a worktree whose removal another request finished.
     if (scope === 'worktrees' || scope === 'unknown') void appQueryClient.invalidateQueries({ queryKey: queryKeys.localRefs(repositoryId) });
+    // Git's config is among what `unknown` covers, and a remote added in a terminal changes whether this is a GitHub repository.
+    if (scope === 'unknown') void appQueryClient.invalidateQueries({ queryKey: queryKeys.githubInfo(repositoryId) });
+    // A file read ahead of a click may be the one that just changed.
+    if (scope !== 'refs' && scope !== 'worktrees') dropFilesAhead(repositoryId);
   }), [appQueryClient, refresh, repository?.id]);
 
   useEffect(() => {

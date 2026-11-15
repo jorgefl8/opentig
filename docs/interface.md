@@ -76,7 +76,7 @@ Set **Settings → General → Repository sync → Remote check interval** to co
 | **Preset or custom** | Choose a common interval, or 5–300 seconds in steps of five |
 | **Off** | Disables periodic checks; checks still run when you pull or push |
 
-Periodic checks pause while the window is hidden and after six minutes without any activity in it, and resume with the next one.
+Periodic checks pause while the window is hidden and after six minutes without any activity in it. The first key press, pointer movement, or scroll after that reads again at once whatever is on screen and read on a timer.
 
 Use the toolbar **Refresh** button or `Ctrl+R` to fetch remote Git changes and then refresh the local workspace, even with automatic checks off. The icon rotates while refreshing and returns to rest afterward.
 
@@ -84,7 +84,7 @@ Refresh also checks for app updates immediately instead of waiting for the five-
 
 The workspace also refreshes automatically when files or Git state change. While another tool keeps writing to the repository, OpenTig shows the newest state it could read and refreshes again after the next change. An automatic refresh that fails retries once after a second and reports an error only if the retry also fails.
 
-Opening another section shows what OpenTig already knows and does not fetch. If the repository was last read more than five seconds ago, its status is read again in the background, and Files reads its tree again; **Pull**, **Push**, and **Commit** stay available meanwhile. History is read again only after its branches changed or 30 seconds passed.
+Opening another section shows what OpenTig already knows and does not fetch. If the repository was last read more than five seconds ago, its status is read again in the background, and Files reads its tree again; **Pull**, **Push**, and **Commit** stay available meanwhile. Once a minute this read also covers branches, worktrees, and the remote, so a change made outside OpenTig shows up even if the file watcher missed it. History is read again only after its branches changed or 30 seconds passed.
 
 ### Shortcuts
 

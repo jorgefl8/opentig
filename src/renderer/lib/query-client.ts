@@ -2,7 +2,7 @@ import { focusManager, QueryClient } from '@tanstack/react-query';
 import type { PullRequestState } from '../../shared/contracts';
 import type { RepositoryChangeScope } from '../../shared/repository-change';
 import { refreshOperationsForScope, type RefreshView } from '../app/refresh-policy';
-import { listenForWindowReturn, pausePollingWhileIdle } from './window-focus';
+import { listenForWindowReturn, onReturnFromIdle, pausePollingWhileIdle } from './window-focus';
 
 if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
   focusManager.setEventListener(listenForWindowReturn(window));
@@ -21,6 +21,19 @@ export const queryClient = new QueryClient({
     mutations: { networkMode: 'always', retry: false },
   },
 });
+
+/**
+ * What is on screen and read on a timer is read again now. The timers stop
+ * while nobody is there, and without this the first look back at a run or a
+ * pull request's checks showed them as they were, for up to a whole interval.
+ */
+export function resumePolling(client: QueryClient): void {
+  void client.refetchQueries({
+    type: 'active',
+    predicate: (query) => query.observers.some((observer) => Boolean(observer.options.refetchInterval)),
+  }, { cancelRefetch: false });
+}
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') onReturnFromIdle(() => resumePolling(queryClient));
 
 /** GitHub is slow to answer again, so what it said stays available this long after it was last on screen, instead of five minutes. */
 export const GITHUB_DATA_GC_MS = 30 * 60_000;
@@ -100,8 +113,16 @@ export async function resetGitHubQueries(client: QueryClient, repositoryIds?: st
  * and stays on screen meanwhile. Emptying it turned every dropped connection
  * into a screen of placeholders, for data that is nearly always still right.
  */
-export async function refreshGitHubQueries(client: QueryClient): Promise<void> {
-  await client.invalidateQueries({
-    predicate: (query) => query.queryKey[0] === 'github' || (query.queryKey[0] === 'repository' && GITHUB_RESOURCES.has(String(query.queryKey[2]))),
-  });
+export async function refreshGitHubQueries(client: QueryClient, openRepositoryId: string | null = null): Promise<void> {
+  const fromGitHub = (query: { queryKey: readonly unknown[] }) => query.queryKey[0] === 'github' || (query.queryKey[0] === 'repository' && GITHUB_RESOURCES.has(String(query.queryKey[2])));
+  // The account may have changed while the connection was down, and that notice was missed. What is
+  // not on screen for another repository would keep the old account's answers, so it is let go.
+  client.removeQueries({ type: 'inactive', predicate: (query) => fromGitHub(query) && query.queryKey[0] === 'repository' && query.queryKey[1] !== openRepositoryId });
+  const accountKey = openRepositoryId ? queryKeys.githubAccount(openRepositoryId) : null;
+  const account = (): { login: string | null; revision: number } | undefined => accountKey ? client.getQueryData(accountKey) : undefined;
+  const before = account();
+  await client.invalidateQueries({ predicate: fromGitHub });
+  const after = account();
+  // For the open repository the account is read again with everything else: if it is another one, nothing read before is kept.
+  if (before && after && (before.login !== after.login || before.revision !== after.revision)) await resetGitHubQueries(client);
 }

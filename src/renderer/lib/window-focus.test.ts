@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { focusManager, QueryClient, QueryObserver } from '@tanstack/react-query';
-import { IDLE_AFTER_MS, isUserIdle, listenForWindowReturn, pausePollingWhileIdle, WINDOW_RETURN_MIN_GAP_MS } from './window-focus';
+import { IDLE_AFTER_MS, isUserIdle, listenForWindowReturn, onReturnFromIdle, pausePollingWhileIdle, WINDOW_RETURN_MIN_GAP_MS } from './window-focus';
+import { resumePolling } from './query-client';
 
 function fakeWindow() {
   const target = new EventTarget() as EventTarget & { document: { visibilityState: DocumentVisibilityState } };
@@ -143,6 +144,40 @@ describe('polling while nobody is there', () => {
       expect(reads).toBe(8);
     } finally {
       unsubscribe();
+      client.unmount();
+      focusManager.isFocused = original;
+    }
+  });
+  it('reads a timer-only query at once when the user is back, not a whole interval later', async () => {
+    vi.useFakeTimers();
+    const target = fakeWindow();
+    const original = focusManager.isFocused;
+    focusManager.setEventListener(listenForWindowReturn(target));
+    pausePollingWhileIdle(focusManager);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } } });
+    client.mount();
+    const stop = onReturnFromIdle(() => resumePolling(client));
+    let runs = 0;
+    let other = 0;
+    // As the list of workflow runs is read: on a timer only.
+    const polling = new QueryObserver(client, { queryKey: ['repository', 'repo', 'action-runs', null], queryFn: async () => ++runs, refetchInterval: 60_000 });
+    const still = new QueryObserver(client, { queryKey: ['repository', 'repo', 'releases'], queryFn: async () => ++other });
+    const unsubscribe = [polling.subscribe(() => undefined), still.subscribe(() => undefined)];
+    try {
+      await vi.advanceTimersByTimeAsync(IDLE_AFTER_MS + 20 * 60_000);
+      const whileIdle = runs;
+      target.dispatchEvent(new Event('pointermove'));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(runs).toBe(whileIdle + 1);
+      // What is not read on a timer is left alone.
+      expect(other).toBe(1);
+      // Further activity is not another return.
+      target.dispatchEvent(new Event('pointermove'));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(runs).toBe(whileIdle + 1);
+    } finally {
+      for (const off of unsubscribe) off();
+      stop();
       client.unmount();
       focusManager.isFocused = original;
     }

@@ -62,6 +62,13 @@ export function lazyWithPreload<T extends ComponentType<any>>(load: () => Promis
   });
 }
 
+type AheadDevice = DeviceHints & { connection?: { saveData?: boolean } };
+
+/** Whether to fetch what was not asked for yet: not on a connection the user asked to save data on, nor on a low-end phone. */
+export function downloadsAhead(device: AheadDevice | undefined = globalThis.navigator): boolean {
+  return device !== undefined && device.connection?.saveData !== true && !isLowEndDevice(device);
+}
+
 /**
  * Downloads parts of the app before they are opened, one per idle moment, so
  * the first click on each shows it instead of a loading message. Nothing is
@@ -71,9 +78,9 @@ export function lazyWithPreload<T extends ComponentType<any>>(load: () => Promis
  */
 export function preloadWhenIdle(
   parts: ReadonlyArray<{ preload(): void }>,
-  device: (DeviceHints & { connection?: { saveData?: boolean } }) | undefined = globalThis.navigator,
+  device: AheadDevice | undefined = globalThis.navigator,
 ): () => void {
-  if (!device || device.connection?.saveData === true || isLowEndDevice(device)) return () => undefined;
+  if (!downloadsAhead(device)) return () => undefined;
   let next = 0;
   let cancel = () => undefined as void;
   const step = () => {

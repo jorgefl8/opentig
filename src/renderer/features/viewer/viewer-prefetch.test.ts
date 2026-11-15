@@ -4,7 +4,7 @@ import type { DiffResult, FileResult } from '@shared/contracts';
 const api = vi.hoisted(() => ({ getCommit: vi.fn(), readFile: vi.fn() }));
 vi.mock('@/lib/opentig-api', () => ({ opentig: { diff: { getCommit: api.getCommit }, repository: { readFile: api.readFile } } }));
 
-import { commitDiffKey, immutableDiff, prefetchCommitDiff, prefetchFile, scopeDiffCache, takeFileAhead } from './viewer-prefetch';
+import { commitDiffKey, dropFilesAhead, immutableDiff, prefetchCommitDiff, prefetchFile, scopeDiffCache, takeFileAhead } from './viewer-prefetch';
 
 const diff = (patch: string): DiffResult => ({ path: 'commit', patch, binary: false, truncated: false, lineCount: 1 });
 const file = (content: string) => ({ path: 'notes.txt', content }) as FileResult;
@@ -57,4 +57,26 @@ it('hands a file read ahead to one click within ten seconds, and never to a late
   prefetchFile('repo', 'logo.png');
   prefetchFile('repo', 'manual.pdf');
   expect(api.readFile).toHaveBeenCalledTimes(2);
+});
+
+it('reads ahead at most two rows at a time, so a click never waits behind rows the pointer only passed over', async () => {
+  const answers: Array<(value: DiffResult) => void> = [];
+  api.getCommit.mockImplementation(() => new Promise((resolve) => { answers.push(resolve); }));
+  for (const oid of ['a1', 'b2', 'c3', 'd4']) prefetchCommitDiff('repo', oid);
+  expect(api.getCommit).toHaveBeenCalledTimes(2);
+  // The row that was skipped is read by its click, as if nothing had been read ahead.
+  const ownRead = vi.fn(async () => diff('+own'));
+  expect((await immutableDiff(commitDiffKey('repo', 'd4'), ownRead)).patch).toBe('+own');
+  // Once one arrives, the next rest reads again.
+  answers[0]!(diff('+a1'));
+  await vi.waitFor(() => { prefetchCommitDiff('repo', 'e5'); expect(api.getCommit).toHaveBeenCalledTimes(3); });
+});
+
+it('forgets a file read ahead when the working tree changes before the click', async () => {
+  api.readFile.mockImplementation(async () => file('before the change'));
+  prefetchFile('repo', 'notes.txt');
+  prefetchFile('other', 'notes.txt');
+  dropFilesAhead('repo');
+  expect(takeFileAhead('repo', 'notes.txt')).toBeNull();
+  expect((await takeFileAhead('other', 'notes.txt'))?.content).toBe('before the change');
 });

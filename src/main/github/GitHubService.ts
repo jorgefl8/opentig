@@ -52,6 +52,8 @@ export class GitHubService {
   private readonly settled = new Map<string, Map<string, { expires: number; value: unknown }>>();
   /** Bumped by every explicit invalidation, so a read that started before one isn't kept. */
   private settledEpoch = 0;
+  /** Repositories whose PR list was just read again on request, so their line counts are too instead of being reused. */
+  private readonly staleLineCounts = new Set<string>();
   /** The last stack membership read per PR, for a live state that couldn't wait for its own. */
   private readonly stackStatuses = new Map<string, { at: number; value: StackStatus }>();
   private readonly localGit: PullRequestLocalGit;
@@ -279,6 +281,8 @@ export class GitHubService {
   }
 
   listPullRequests(repositoryId: string, states: PullRequestState[], fresh = false): Promise<PullRequestSummary[]> {
+    // A list read again on request may hold a PR merged a moment ago, which the kept line counts don't know.
+    if (fresh) this.staleLineCounts.add(repositoryId);
     return this.settledRead(repositoryId, ['list', [...states].sort()], () => LIST_MS, () => this.readListPullRequests(repositoryId, states), fresh);
   }
 
@@ -295,6 +299,7 @@ export class GitHubService {
   listPullRequestLineCounts(repositoryId: string, states: PullRequestState[]): Promise<PullRequestLineCounts[]> {
     const finished = states.filter((state) => state !== 'OPEN').sort();
     if (!finished.length) return Promise.resolve([]);
+    const fresh = this.staleLineCounts.delete(repositoryId);
     return this.settledRead(repositoryId, ['list-line-counts', finished], () => FINISHED_PULL_REQUEST_MS, async () => {
       const operation = 'gh-pr-list-line-counts';
       const { repository, nameWithOwner, auth, executable } = await this.requireGitHub(repositoryId, operation);
@@ -304,7 +309,7 @@ export class GitHubService {
       )));
       const counts = new Map(results.flatMap((result) => parsePullRequestLineCounts(result.stdout)).map((count) => [count.number, count]));
       return [...counts.values()];
-    });
+    }, fresh);
   }
 
   listPullRequestStacks(repositoryId: string, numbers: number[]): Promise<Array<{ number: number; stack: PullRequestStackMembership }>> {

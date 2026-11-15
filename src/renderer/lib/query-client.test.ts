@@ -131,4 +131,27 @@ describe('GitHub data between visits', () => {
     unsubscribe();
     client.clear();
   });
+  it('after a reconnect drops everything read under another account, and what is off screen for other repositories', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    let login = 'before';
+    const account = new QueryObserver(client, { queryKey: queryKeys.githubAccount('repo'), queryFn: async () => ({ login, revision: 1 }) });
+    const unsubscribe = account.subscribe(() => undefined);
+    await vi.waitFor(() => expect(account.getCurrentResult().data).toEqual({ login: 'before', revision: 1 }));
+    client.setQueryData(queryKeys.pullRequest('repo', 1), 'visited, same repository');
+    client.setQueryData(queryKeys.pullRequest('other', 2), 'visited, another repository');
+    client.setQueryData(queryKeys.status('other'), 'git status');
+
+    // Same account: only the other repository's GitHub answers go, since nothing here can vouch for them.
+    await refreshGitHubQueries(client, 'repo');
+    expect(client.getQueryData(queryKeys.pullRequest('repo', 1))).toBe('visited, same repository');
+    expect(client.getQueryData(queryKeys.pullRequest('other', 2))).toBeUndefined();
+    expect(client.getQueryData(queryKeys.status('other'))).toBe('git status');
+
+    // The account changed while the connection was down: the notice was missed, so the reconnect has to catch it.
+    login = 'after';
+    await refreshGitHubQueries(client, 'repo');
+    expect(client.getQueryData(queryKeys.pullRequest('repo', 1))).toBeUndefined();
+    unsubscribe();
+    client.clear();
+  });
 });

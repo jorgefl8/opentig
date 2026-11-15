@@ -186,7 +186,7 @@ export function PullRequestActionBar({ repositoryId, details, live, refreshing, 
       if (detail?.code === 'GH_ACCOUNT_UNRESOLVED') void accountQuery.refetch();
     },
     onSettled: () => {
-      for (const resource of ['pull-request-state', 'pull-request', 'pulls', 'branch-pull-request', 'pull-request-stack']) {
+      for (const resource of ['pull-request-state', 'pull-request', 'pulls', 'pull-line-counts', 'branch-pull-request', 'pull-request-stack']) {
         void queryClient.invalidateQueries({ queryKey: ['repository', repositoryId, resource] });
       }
     },

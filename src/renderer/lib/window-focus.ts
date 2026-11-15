@@ -8,6 +8,14 @@ type FocusTarget = Pick<Window, 'addEventListener' | 'removeEventListener'> & { 
 const ACTIVITY_EVENTS = ['pointerdown', 'pointermove', 'keydown', 'wheel'] as const;
 let lastActivityAt = Date.now();
 
+const idleReturnListeners = new Set<() => void>();
+
+/** Runs `listener` when the user is back after an idle stretch, before anything else reacts to it. Returns how to stop. */
+export function onReturnFromIdle(listener: () => void): () => void {
+  idleReturnListeners.add(listener);
+  return () => { idleReturnListeners.delete(listener); };
+}
+
 /** Nobody has moved the pointer, pressed a key or scrolled for `IDLE_AFTER_MS`. Timers that read again on their own stop meanwhile. */
 export function isUserIdle(now: number = Date.now()): boolean {
   return now - lastActivityAt >= IDLE_AFTER_MS;
@@ -33,8 +41,10 @@ export function listenForWindowReturn(target: FocusTarget, now: () => number = D
     const returned = () => {
       if (target.document.visibilityState === 'hidden') return;
       const at = now();
+      const wasIdle = isUserIdle(at);
       // Coming back to the window is being there, before any key or pointer says so.
       lastActivityAt = at;
+      if (wasIdle) for (const listener of idleReturnListeners) listener();
       // Becoming visible and gaining focus usually arrive together.
       if (at - lastReturn < WINDOW_RETURN_MIN_GAP_MS) return;
       lastReturn = at;
@@ -42,9 +52,8 @@ export function listenForWindowReturn(target: FocusTarget, now: () => number = D
     };
     const active = () => {
       const at = now();
-      const wasIdle = isUserIdle(at);
-      lastActivityAt = at;
-      if (wasIdle) returned();
+      if (isUserIdle(at)) returned();
+      else lastActivityAt = at;
     };
     // Hiding needs no notice: interval polling reads the visibility itself on each tick.
     target.addEventListener('visibilitychange', returned, false);
@@ -62,7 +71,8 @@ export function listenForWindowReturn(target: FocusTarget, now: () => number = D
  * Makes interval polling stop while the user is idle. Every query that reads
  * again on a timer asks the focus manager first, on each tick, so answering
  * "not focused" pauses them all in one place, and the tick after the user is
- * back resumes them.
+ * back resumes them. `onReturnFromIdle` is how they read at once instead of a
+ * whole interval later.
  */
 export function pausePollingWhileIdle(manager: { isFocused(): boolean }, idle: () => boolean = isUserIdle): void {
   const focused = manager.isFocused.bind(manager);
