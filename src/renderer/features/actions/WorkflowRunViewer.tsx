@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Activity, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { KeptReadNotice } from '@/components/KeptReadNotice';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -59,12 +59,25 @@ export function WorkflowRunViewer({ repositoryId, runId, jobId = null }: { repos
   /** The job whose log fills the body, and the step it opened on. */
   const [logOf, setLogOf] = useState<{ jobId: number; step: number | null } | null>(null);
   const logs = useServerFeatures().actionJobLogs;
+  // The control that opened the log gets the focus back when it closes; the graph stays as it was behind the log.
+  const openedFrom = useRef<HTMLElement | null>(null);
+  const openLog = useCallback((jobId: number, step: number | null) => {
+    openedFrom.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setLogOf({ jobId, step });
+  }, []);
   const closeLog = useCallback(() => setLogOf(null), []);
   const active = run !== null && run.status !== 'completed';
   const now = useNow(active);
   const jobs = useMemo(() => new Map((details?.jobs ?? []).map((job) => [job.id, job])), [details?.jobs]);
   const selectedJob = selectedJobId === null ? null : jobs.get(selectedJobId) ?? null;
   const logJob = logOf === null ? null : jobs.get(logOf.jobId) ?? null;
+  const logShown = logJob !== null && logOf !== null;
+  useEffect(() => {
+    if (logShown || !openedFrom.current) return;
+    const control = openedFrom.current;
+    openedFrom.current = null;
+    if (control.isConnected) control.focus({ preventScroll: true });
+  }, [logShown]);
   const title = run ? run.title : `Run ${runId}`;
   const bar = <MobileViewerTitle title={title} subtitle={run ? `${run.workflowName} #${run.number}` : undefined} />;
 
@@ -114,9 +127,10 @@ export function WorkflowRunViewer({ repositoryId, runId, jobId = null }: { repos
         </div>
       </header>
       {details && <RunNotes run={details} />}
-      {logJob && logOf ? <div className="workflow-run-body">
+      {logJob && logOf && <div className="workflow-run-body">
         <JobLogView key={logJob.id} repositoryId={repositoryId} job={logJob} initialStep={logOf.step} now={now} onBack={closeLog} />
-      </div> : <div className={`workflow-run-body ${selectedJob ? 'with-job' : ''}`}>
+      </div>}
+      <Activity mode={logShown ? 'hidden' : 'visible'}><div className={`workflow-run-body ${selectedJob ? 'with-job' : ''}`}>
         {!details
           ? <div className="viewer-message" role="status"><Spinner className="view-spinner" /> <ShimmeringText text="Loading jobs…" /></div>
           : details.graph.length
@@ -124,9 +138,9 @@ export function WorkflowRunViewer({ repositoryId, runId, jobId = null }: { repos
           : <div className="viewer-message">{active ? 'Waiting for the first job to start…' : 'This run has no jobs.'}</div>}
         <AnimatePresence initial={false}>
           {selectedJob && <JobPanel key="job" job={selectedJob} now={now} reduceMotion={Boolean(reduceMotion)} onClose={() => setSelectedJobId(null)}
-            onOpenLog={logs ? (step) => setLogOf({ jobId: selectedJob.id, step }) : null} />}
+            onOpenLog={logs ? (step) => openLog(selectedJob.id, step) : null} />}
         </AnimatePresence>
-      </div>}
+      </div></Activity>
     </div>
   );
 }

@@ -324,3 +324,22 @@ test("a file's history opens from the Files context menu and clears to every com
   await page.getByRole('button', { name: 'Show every commit' }).click();
   await expect(page.getByRole('list', { name: 'Commit history' }).getByRole('button', { name: 'Write the guide', exact: true })).toBeVisible();
 });
+
+test("a file's history opened from a commit keeps that commit on screen, on the file", async ({ pairedPage: page, repository }) => {
+  await repository.commit('notes.txt', 'one\n', 'Add notes');
+  await repository.commit('notes.txt', 'one\ntwo\n', 'Extend notes');
+  await repository.commit('notes.txt', 'one\ntwo\nthree\n', 'Finish notes');
+
+  const list = await openHistory(page, repository);
+  await list.getByRole('button', { name: 'Extend notes', exact: true }).click();
+  const viewer = page.getByRole('main');
+  await expect(viewer.getByRole('heading', { name: 'Extend notes', level: 2 })).toBeVisible();
+  await viewer.getByRole('button', { name: 'File history' }).click();
+
+  const fileList = page.getByRole('list', { name: 'Commits that changed notes.txt' });
+  await expect(fileList.getByRole('listitem')).toHaveCount(3);
+  // Not replaced by the file's newest commit once the list arrives.
+  await expect(fileList.getByRole('button', { name: 'Extend notes', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(viewer.getByRole('heading', { name: 'Extend notes', level: 2 })).toBeVisible();
+  await expect(viewer.getByRole('button', { name: 'All files' })).toBeVisible();
+});
