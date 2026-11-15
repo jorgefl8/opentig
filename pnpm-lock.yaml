@@ -170,6 +170,7 @@ catalogs:
 
 overrides:
   mermaid>katex: 0.18.10
+  sileo>motion: ^14.12.0
 
 importers:
 
@@ -3958,20 +3959,6 @@ packages:
     resolution: {integrity: sha512-vKatAh4SlVfgbv+YtmhiRjhEMJsYpsG1Y2rMQtR+SVSbytsSD1YGzDIcrAJmdFec88u/+VoGmxnl+80gL1tRCQ==}
     engines: {node: '>= 6'}
 
-  framer-motion@12.43.0:
-    resolution: {integrity: sha512-1eaL3RvR/kAlbG7UYcpMptEyzPoENO0c6w7ZnB3/hh2vSAz/6uGAFn6fdoqTBguNstf3MsFhJHsD/0DHiclG+g==}
-    peerDependencies:
-      '@emotion/is-prop-valid': '*'
-      react: ^18.0.0 || ^19.0.0
-      react-dom: ^18.0.0 || ^19.0.0
-    peerDependenciesMeta:
-      '@emotion/is-prop-valid':
-        optional: true
-      react:
-        optional: true
-      react-dom:
-        optional: true
-
   framer-motion@14.12.0:
     resolution: {integrity: sha512-4m+10xYan0ic8nFI8zyB5hJkW5F8F4Rer617UecOs8esw0he9unDgXaEZ0rUX7oztz1w4iuvyPWhk4jltMX5iw==}
     peerDependencies:
@@ -4975,31 +4962,11 @@ packages:
     resolution: {integrity: sha512-FP+p8RB8OWpF3YZBCrP5gtADmtXApB5AMLn+vdyA+PyxCjrCs00mjyUozssO33cwDeT3wNGdLxJ5M//YqtHAJw==}
     hasBin: true
 
-  motion-dom@12.43.0:
-    resolution: {integrity: sha512-azKON4d9S65PEoFUiQTMTgPheEmzf2QngdRc50AKfJp9Q9mmcBVw22c8eMq9k8kxOFHdL7+WZY7N/5F/lwiDag==}
-
   motion-dom@14.12.0:
     resolution: {integrity: sha512-YnAY17g8mXRVoXGZbH+v/O2SkNBJqz2TMuqL9yek9Omfhsdjw7gJwNgI5nsGZFpbbm3vINyOo+VtGPryIslatw==}
 
-  motion-utils@12.39.0:
-    resolution: {integrity: sha512-8nadJAJjTtqRkmRF36FoJTrywK9nnFmnPwnSMyxaOCU7GDjN9RTMJIxx9De8ErM+vpPhMccr/6fo5WciyQLnMQ==}
-
   motion-utils@14.7.0:
     resolution: {integrity: sha512-woO0/Nb7ys75f94fjvQi/6leiHGvZUYkeHUPEZ3vxsV+9OpEVhkxp01x8MlRwX0zt31EqgXsKDAoBoJLC148Tw==}
-
-  motion@12.43.0:
-    resolution: {integrity: sha512-BQgQbSa9Hn3/mtbib0MK53y6JSANa+YKUKlaYnWzAVDH424RYQ5LVpV3pNiWH00BA2z4ojsSdMzqT7g2FQwjuQ==}
-    peerDependencies:
-      '@emotion/is-prop-valid': '*'
-      react: ^18.0.0 || ^19.0.0
-      react-dom: ^18.0.0 || ^19.0.0
-    peerDependenciesMeta:
-      '@emotion/is-prop-valid':
-        optional: true
-      react:
-        optional: true
-      react-dom:
-        optional: true
 
   motion@14.12.0:
     resolution: {integrity: sha512-cxD0c0yGXo/mzPgveXMsXGl138UNsRit9XgInK8kThtDsrvIkhlAR9b6WYoAm7EmKWToMFx6v/G8i0Zjv+2uoA==}
@@ -10088,15 +10055,6 @@ snapshots:
       hasown: 2.0.4
       mime-types: 2.1.35
 
-  framer-motion@12.43.0(react-dom@19.3.1(react@19.3.1))(react@19.3.1):
-    dependencies:
-      motion-dom: 12.43.0
-      motion-utils: 12.39.0
-      tslib: 2.8.1
-    optionalDependencies:
-      react: 19.3.1
-      react-dom: 19.3.1(react@19.3.1)
-
   framer-motion@14.12.0(react-dom@19.3.1(react@19.3.1))(react@19.3.1):
     dependencies:
       motion-dom: 14.12.0
@@ -11403,25 +11361,11 @@ snapshots:
     dependencies:
       minimist: 1.2.8
 
-  motion-dom@12.43.0:
-    dependencies:
-      motion-utils: 12.39.0
-
   motion-dom@14.12.0:
     dependencies:
       motion-utils: 14.7.0
 
-  motion-utils@12.39.0: {}
-
   motion-utils@14.7.0: {}
-
-  motion@12.43.0(react-dom@19.3.1(react@19.3.1))(react@19.3.1):
-    dependencies:
-      framer-motion: 12.43.0(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
-      tslib: 2.8.1
-    optionalDependencies:
-      react: 19.3.1
-      react-dom: 19.3.1(react@19.3.1)
 
   motion@14.12.0(react-dom@19.3.1(react@19.3.1))(react@19.3.1):
     dependencies:
@@ -12284,11 +12228,11 @@ snapshots:
 
   sileo@0.1.6(react-dom@19.3.1(react@19.3.1))(react@19.3.1):
     dependencies:
-      motion: 12.43.0(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      motion: 14.12.0(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       react: 19.3.1
       react-dom: 19.3.1(react@19.3.1)
     transitivePeerDependencies:
-      - '@emotion/is-prop-valid'
+      - remix
 
   simple-update-notifier@2.0.0:
     dependencies:

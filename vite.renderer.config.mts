@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
@@ -20,7 +22,16 @@ function pierreBundledLanguages(): Plugin {
   };
 }
 
+/** A fingerprint of the file icons, added to their addresses so the server can let browsers keep them for good. */
+function iconsVersion(): string {
+  const folder = path.resolve(import.meta.dirname, 'public/vscode-icons');
+  const hash = createHash('sha256');
+  for (const name of readdirSync(folder).sort()) hash.update(name).update(readFileSync(path.join(folder, name)));
+  return hash.digest('hex').slice(0, 12);
+}
+
 export default defineConfig({
+  define: { __OPENTIG_ICONS_VERSION__: JSON.stringify(iconsVersion()) },
   plugins: [react(), tailwindcss(), pierreBundledLanguages(), pdfjsAssets(), clientLicenses()],
   publicDir: path.resolve(import.meta.dirname, 'public'),
   worker: { format: 'es' },

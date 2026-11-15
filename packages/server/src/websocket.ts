@@ -8,6 +8,7 @@ import { CommandRegistry } from '../../../src/main/runtime/CommandRegistry';
 import { OpenTigSessionAuth } from './auth';
 import type { OpenTigServerLogger } from './http';
 import { isAllowedOrigin } from './origin';
+import { isDirectLocalClient } from './client-locality';
 import { redactOperationResult } from './redact';
 import WebSocket, { WebSocketServer } from 'ws';
 import type { KeptAnswer } from '../../../src/shared/kept-reads';
@@ -51,10 +52,26 @@ export interface OpenTigWebSocketOptions {
 }
 
 export class OpenTigWebSocketTransport {
+  /** A browser on this machine: compressing costs it time and saves nothing. */
   private readonly webSocketServer = new WebSocketServer({
     noServer: true,
     maxPayload: FILE_WRITE_FRAME_LIMIT,
     perMessageDeflate: false,
+  });
+  /**
+   * Anyone else, through the network or a tunnel: messages over 1 KB are compressed when the
+   * browser offers it (a file tree shrinks to about a sixth). No context is kept between
+   * messages, so each connection holds no compression window between them.
+   */
+  private readonly compressingWebSocketServer = new WebSocketServer({
+    noServer: true,
+    maxPayload: FILE_WRITE_FRAME_LIMIT,
+    perMessageDeflate: {
+      threshold: 1024,
+      serverNoContextTakeover: true,
+      clientNoContextTakeover: true,
+      zlibDeflateOptions: { level: 6, memLevel: 8 },
+    },
   });
   private readonly clients = new Map<WebSocket, ClientState>();
   private readonly pendingOperations = new Set<Promise<unknown>>();
@@ -75,6 +92,7 @@ export class OpenTigWebSocketTransport {
     this.upgradeHandler = (request, socket, head) => this.upgrade(request, socket, head);
     options.server.on('upgrade', this.upgradeHandler);
     this.webSocketServer.on('connection', (socket, request) => this.connected(socket, request));
+    this.compressingWebSocketServer.on('connection', (socket, request) => this.connected(socket, request));
     this.heartbeat = setInterval(() => this.checkHeartbeats(), options.heartbeatMs ?? 30_000);
     this.heartbeat.unref();
   }
@@ -120,8 +138,9 @@ export class OpenTigWebSocketTransport {
     if (rawPath !== '/ws') return rejectUpgrade(socket, 404, 'Not Found');
     if (!isAllowedOrigin(request)) return rejectUpgrade(socket, 403, 'Forbidden');
     if (this.clients.size >= this.connectionLimit) return rejectUpgrade(socket, 503, 'Connection limit reached');
-    this.webSocketServer.handleUpgrade(request, socket, head, (webSocket) => {
-      this.webSocketServer.emit('connection', webSocket, request);
+    const server = isDirectLocalClient(request) ? this.webSocketServer : this.compressingWebSocketServer;
+    server.handleUpgrade(request, socket, head, (webSocket) => {
+      server.emit('connection', webSocket, request);
     });
   }
 
@@ -356,7 +375,7 @@ export class OpenTigWebSocketTransport {
     ]);
     for (const socket of this.clients.keys()) socket.terminate();
     this.clients.clear();
-    await new Promise<void>((resolve) => this.webSocketServer.close(() => resolve()));
+    await Promise.all([this.webSocketServer, this.compressingWebSocketServer].map((server) => new Promise<void>((resolve) => server.close(() => resolve()))));
   }
 }
 

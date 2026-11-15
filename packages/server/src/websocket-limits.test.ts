@@ -248,6 +248,25 @@ describe('WebSocket safety limits', () => {
     older.close();
   });
 
+  it('compresses messages for a client behind a proxy, and not for a browser on this machine', async () => {
+    const fixture = await startFixture(() => emptyBootstrap());
+    const cookie = (await fixture.auth.exchangePairingToken(fixture.auth.createPairingToken().token))!.split(';', 1)[0]!;
+    const open = (headers: Record<string, string>) => new Promise<WebSocket>((resolve, reject) => {
+      const socket = new WebSocket(fixture.origin.replace(/^http/, 'ws') + '/ws', { headers: { Origin: fixture.origin, Cookie: cookie, ...headers }, perMessageDeflate: true });
+      socket.once('open', () => resolve(socket));
+      socket.once('error', reject);
+    });
+    const local = await open({});
+    const remote = await open({ 'X-Forwarded-For': '203.0.113.7' });
+    expect(local.extensions).toBe('');
+    expect(remote.extensions).toContain('permessage-deflate');
+    // Both still work as before.
+    expect(await sendAndReceive(remote, { type: 'request', id: 'remote', command: 'app:bootstrap', args: [] })).toMatchObject({ type: 'result', id: 'remote', result: { ok: true } });
+    expect(await sendAndReceive(local, { type: 'request', id: 'local', command: 'app:bootstrap', args: [] })).toMatchObject({ type: 'result', id: 'local', result: { ok: true } });
+    local.close();
+    remote.close();
+  });
+
   it('refuses a request over the in-flight limit as retryable, and times out bounded commands', async () => {
     let release!: (value: unknown) => void;
     const pending = new Promise((resolve) => { release = resolve; });
