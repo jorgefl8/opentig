@@ -172,6 +172,7 @@ export function createOpenTigServerClient(options: ServerClientOptions = {}): Op
       deletePullRequestEntry: (input) => invoke(IPC.githubPrEntryDelete, input),
       getPullRequestStack: (repositoryId, number) => invoke(IPC.githubPrStack, repositoryId, number),
       listPullRequestStacks: (repositoryId, numbers) => invoke(IPC.githubPrListStacks, repositoryId, numbers),
+      listPullRequestLineCounts: (repositoryId, states) => invoke(IPC.githubPrListLineCounts, repositoryId, states),
       getPullRequestDiff: (repositoryId, number, range) => invoke(IPC.githubPrDiff, repositoryId, number, range),
       getPullRequestCommitDiff: (repositoryId, oid) => invoke(IPC.githubPrCommitDiff, repositoryId, oid),
       getPullRequestCommits: (repositoryId, number) => invoke(IPC.githubPrCommits, repositoryId, number),

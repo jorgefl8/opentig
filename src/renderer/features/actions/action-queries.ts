@@ -4,8 +4,8 @@ import { opentig } from '@/lib/opentig-api';
 import { queryKeys } from '@/lib/query-client';
 import { runListRefreshInterval } from './action-status';
 
-/** GitHub serves a list's first 1,000 runs; past that, the list ends. */
-const MAX_PAGES = 20;
+/** GitHub serves a list's first 1,000 runs, twenty to a page here; past that, the list ends. */
+const MAX_PAGES = 50;
 
 /** Runs from loaded pages, once each: a run can move to the next page between two reads. */
 export function runsOfPages(pages: readonly ActionRunPage[] | undefined): ActionRunSummary[] {

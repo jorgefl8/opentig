@@ -403,6 +403,8 @@ export const opentig: OpenTigApi = {
     getPullRequestLiveState: async (_id, number) => demoPulls.liveState(number),
     getPullRequestConversation: async (_id, number) => demoPulls.conversation(number),
     listPullRequestStacks: async (_id, numbers) => demoPulls.stacks(numbers),
+    // The demo's lists come with their line counts.
+    listPullRequestLineCounts: async () => [],
     getPullRequestStack: async (_id, number) => demoPulls.stack(number),
     runPullRequestAction: async (input) => demoPulls.act(input),
     generateDraft: async () => {

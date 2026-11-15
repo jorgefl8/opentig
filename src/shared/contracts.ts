@@ -451,6 +451,14 @@ export interface PullRequestSummary {
   additions: number;
   deletions: number;
   checksState: PullRequestCheckState;
+  /** Set on a closed or merged PR of a list, whose line counts `listPullRequestLineCounts` reads afterwards. */
+  lineCountsPending?: true;
+}
+
+export interface PullRequestLineCounts {
+  number: number;
+  additions: number;
+  deletions: number;
 }
 
 export interface PullRequestDetails extends PullRequestSummary {
@@ -1015,10 +1023,13 @@ export interface OpenTigApi {
     setRepositoryAccount(repositoryId: string, selection: GitHubAccountSelection, expectedRevision?: number): Promise<GitHubRepositoryAccount>;
     status(forceRefresh?: boolean): Promise<GhCliStatus>;
     repositoryInfo(repositoryId: string): Promise<GitHubRepositoryInfo>;
+    /** Without stack membership, which `listPullRequestStacks` reads separately so the branch's PR doesn't wait for it. */
     findPullRequestForBranch(repositoryId: string, branchName: string): Promise<PullRequestSummary | null>;
     /** Without stack membership, which `listPullRequestStacks` reads separately so the list doesn't wait for it. */
     /** `fresh` asks GitHub even when the backend read the list moments ago, as a manual refresh should. */
     listPullRequests(repositoryId: string, states: PullRequestState[], fresh?: boolean): Promise<PullRequestSummary[]>;
+    /** The line counts `listPullRequests` leaves out of its closed and merged PRs, for the same states. */
+    listPullRequestLineCounts(repositoryId: string, states: PullRequestState[]): Promise<PullRequestLineCounts[]>;
     /** Which of these PRs belong to a native stack. Optional metadata: a failed read is an empty list. */
     listPullRequestStacks(repositoryId: string, numbers: number[]): Promise<Array<{ number: number; stack: PullRequestStackMembership }>>;
     getPullRequest(repositoryId: string, number: number): Promise<PullRequestDetails>;
@@ -1102,5 +1113,5 @@ export const IPC = {
   diagnosticsList: 'diagnostics:list', diagnosticsClear: 'diagnostics:clear', diagnosticsRecord: 'diagnostics:record',
   githubAccountsStatus: 'github:accounts-status', githubSetDefaultAccount: 'github:set-default-account', githubRepositoryAccount: 'github:repository-account', githubSetRepositoryAccount: 'github:set-repository-account',
   githubStatus: 'github:status', githubRepositoryInfo: 'github:repository-info', githubPrForBranch: 'github:pr-for-branch', githubPrList: 'github:pr-list', githubPrView: 'github:pr-view', githubPrLiveState: 'github:pr-live-state', githubPrConversation: 'github:pr-conversation', githubPrAction: 'github:pr-action', githubPrUpdate: 'github:pr-update', githubPrComment: 'github:pr-comment', githubPrReview: 'github:pr-review', githubPrEntryEdit: 'github:pr-entry-edit', githubPrEntryDelete: 'github:pr-entry-delete',
-  githubPrStack: 'github:pr-stack', githubPrListStacks: 'github:pr-list-stacks', githubPrDiff: 'github:pr-diff', githubPrCommitDiff: 'github:pr-commit-diff', githubPrCommits: 'github:pr-commits', githubPrCreate: 'github:pr-create', githubReleaseList: 'github:release-list', githubReleaseView: 'github:release-view', githubReleaseTag: 'github:release-tag', githubReleaseCreate: 'github:release-create', githubReleaseUpdate: 'github:release-update', githubReleaseDelete: 'github:release-delete', githubReleasePublish: 'github:release-publish', githubWorkflowList: 'github:workflow-list', githubWorkflowRunnable: 'github:workflow-runnable', githubWorkflowTriggers: 'github:workflow-triggers', githubWorkflowRun: 'github:workflow-run', githubActionRunList: 'github:action-run-list', githubActionRunView: 'github:action-run-view', githubPrDraft: 'github:pr-draft', githubPrDraftCancel: 'github:pr-draft-cancel',
+  githubPrStack: 'github:pr-stack', githubPrListStacks: 'github:pr-list-stacks', githubPrListLineCounts: 'github:pr-list-line-counts', githubPrDiff: 'github:pr-diff', githubPrCommitDiff: 'github:pr-commit-diff', githubPrCommits: 'github:pr-commits', githubPrCreate: 'github:pr-create', githubReleaseList: 'github:release-list', githubReleaseView: 'github:release-view', githubReleaseTag: 'github:release-tag', githubReleaseCreate: 'github:release-create', githubReleaseUpdate: 'github:release-update', githubReleaseDelete: 'github:release-delete', githubReleasePublish: 'github:release-publish', githubWorkflowList: 'github:workflow-list', githubWorkflowRunnable: 'github:workflow-runnable', githubWorkflowTriggers: 'github:workflow-triggers', githubWorkflowRun: 'github:workflow-run', githubActionRunList: 'github:action-run-list', githubActionRunView: 'github:action-run-view', githubPrDraft: 'github:pr-draft', githubPrDraftCancel: 'github:pr-draft-cancel',
 } as const;

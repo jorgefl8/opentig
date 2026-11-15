@@ -16,6 +16,12 @@ import { parseSshRemote } from './GitHubRemoteParser';
 import { notePerformance } from '../performance/PerformanceLog';
 
 const CACHE_MS = 60_000;
+/**
+ * How long an account's token is reused. It is held in this process's memory
+ * only: never saved, logged, or sent to a client, and dropped at once when an
+ * account or the choice of account changes.
+ */
+export const TOKEN_REUSE_MS = 5 * 60_000;
 
 const emptyStatus = (): GitHubAccountsStatus => ({ installationStatus: 'unchecked', accounts: [], activeLogin: null,
   environment: { present: false, login: null, state: 'unknown' }, checkedAt: null });
@@ -36,7 +42,10 @@ export class GitHubAccountsService {
   }
   private contexts = new Map<string, { remote: string; value: GitHubRepositoryAccount }>();
   private ssh = new Map<string, { at: number; promise: Promise<string | null> }>();
-  private identities = new Map<string, { at: number; promise: Promise<string> }>();
+  private identities = new Map<string, { at: number; promise: Promise<string>; login?: string; rechecking?: boolean }>();
+  private tokens = new Map<string, { at: number; promise: Promise<GitHubCommandAuth> }>();
+  private detected: CliDetection | null = null;
+  private redetecting = false;
   private access = new Map<string, { at: number; promise: Promise<Array<{ login: string; push: boolean }>> }>();
 
   constructor(private readonly resolver: CliResolver, private readonly runner: CliProcessRunner,
@@ -73,6 +82,7 @@ export class GitHubAccountsService {
     if (!login) return;
     try {
       this.defaultRevision = ++this.revision;
+      this.tokens.clear();
       await this.settings.setGitHubDefaultLogin(login);
     } catch { /* Retried on the next inventory read. */ }
     finally { this.changed(undefined, true); }
@@ -94,7 +104,8 @@ export class GitHubAccountsService {
 
   /** A connected account's token for one operation, verified to still authenticate that account. */
   async accountToken(login: string, operation: string): Promise<string> {
-    const detection = await this.detect();
+    // Git's own fetches and pushes get a token read for them, never a reused one.
+    const detection = await this.detect(false, true);
     if (detection.state !== 'available' || !detection.candidate) throw new GhOperationError({ code: detection.state === 'not-found' ? 'GH_CLI_NOT_FOUND' : 'GH_PROCESS_FAILED', operation,
       message: detection.state === 'not-found' ? 'GitHub CLI is not installed on the backend host.' : 'GitHub CLI could not run. Check Settings → GitHub.' });
     const auth = await accountAuthentication(login, detection.candidate, this.runner, operation);
@@ -136,7 +147,7 @@ export class GitHubAccountsService {
     const promise = (async () => {
       let inventory = await this.status();
       if (!inventory.accounts.some(account => account.state === 'authenticated')) inventory = await this.status(true);
-      const detection = await this.detect();
+      const detection = await this.detect(false, true);
       const executable = detection.candidate;
       if (detection.state !== 'available' || !executable) return [];
       const results = await Promise.all(inventory.accounts.filter(account => account.state === 'authenticated').map(async ({ login }) => {
@@ -181,6 +192,7 @@ export class GitHubAccountsService {
     if (!this.settings) throw new Error('GitHub account settings are unavailable.');
     // Invalidate prepared operations only for repositories following this default.
     this.defaultRevision = ++this.revision;
+    this.tokens.clear();
     try { await this.settings.setGitHubDefaultLogin(login); }
     finally { this.changed(undefined, true); }
     return this.status();
@@ -197,34 +209,86 @@ export class GitHubAccountsService {
     }
     this.ssh.clear();
     this.identities.clear();
+    this.tokens.clear();
     this.changed(repository, false, detected);
   }
 
   refreshAuthentication(): void {
     this.ssh.clear();
     this.identities.clear();
+    this.tokens.clear();
     this.access.clear();
+  }
+
+  /**
+   * The token of `login`, or of GitHub CLI's own account when null. A run of
+   * reads shares the token of a named account for `TOKEN_REUSE_MS`. GitHub CLI
+   * is asked every time for its own account, which `gh auth switch` changes
+   * without telling anyone, and when `fresh`, as every change made on GitHub is.
+   */
+  private credentials(login: string | null, executable: CliCandidate, operation: string, fresh = false): Promise<GitHubCommandAuth> {
+    if (login === null) return accountAuthentication(null, executable, this.runner, operation);
+    const key = `${executable.executable}\0${login.toLowerCase()}`;
+    const held = this.tokens.get(key);
+    const reused = !fresh && held !== undefined && Date.now() - held.at < TOKEN_REUSE_MS;
+    notePerformance({ kind: 'cache', cache: 'github-token', resource: 'token', outcome: reused ? 'hit' : 'miss' });
+    if (reused) return held.promise;
+    const promise = accountAuthentication(login, executable, this.runner, operation);
+    const entry = { at: Date.now(), promise };
+    this.tokens.set(key, entry);
+    // A failure is never kept, and neither is a token read while the accounts changed.
+    void promise.catch(() => { if (this.tokens.get(key) === entry) this.tokens.delete(key); });
+    return promise;
   }
 
   /** The last detection, however old, without starting one. */
   get lastDetection(): Promise<CliDetection> | null { return this.detection?.promise ?? null; }
 
-  async detect(force = false): Promise<CliDetection> {
-    if (force || !this.detection || Date.now() - this.detection.at > CACHE_MS) {
-      this.detection = { at: Date.now(), promise: selectCli(this.resolver, this.runner, 'gh', { forceRefresh: force,
-        runOptions: { cwd: os.homedir(), env: { ...GH_ENV }, removeEnv: ['GH_DEBUG', 'DEBUG'] } }) };
+  /**
+   * Finds GitHub CLI, at most once a minute. After a pause a read uses the CLI
+   * that last worked while it is looked for again, so it doesn't wait for that;
+   * `current` waits, as a forced check and every change made on GitHub do.
+   */
+  async detect(force = false, current = force): Promise<CliDetection> {
+    const expired = !this.detection || Date.now() - this.detection.at > CACHE_MS;
+    if (!force && !current && expired && this.detected?.state === 'available') {
+      if (!this.redetecting) {
+        this.redetecting = true;
+        const previous = this.detected;
+        void this.startDetection(false).then((next) => {
+          // Another CLI may hold other accounts: nothing kept for the old one is reused.
+          if (next.state !== previous.state || next.candidate?.executable !== previous.candidate?.executable) this.refreshAuthentication();
+        }, () => undefined).finally(() => { this.redetecting = false; });
+      }
+      return this.detected;
     }
-    return this.detection.promise;
+    if (force || expired) return this.startDetection(force);
+    return this.detection!.promise;
   }
 
-  async authenticate(repository: RepositoryInfo, remote: string, nameWithOwner: string, operation: string) {
+  private startDetection(force: boolean): Promise<CliDetection> {
+    const promise = selectCli(this.resolver, this.runner, 'gh', { forceRefresh: force,
+      runOptions: { cwd: os.homedir(), env: { ...GH_ENV }, removeEnv: ['GH_DEBUG', 'DEBUG'] } });
+    const entry = { at: Date.now(), promise };
+    this.detection = entry;
+    void promise.then((detected) => { if (this.detection === entry) this.detected = detected; }, () => undefined);
+    return promise;
+  }
+
+  /**
+   * The account and token an operation runs with. A read reuses what was
+   * checked moments ago, and after a pause checks it again behind itself
+   * rather than waiting. `fresh` is for a change made on GitHub: it asks
+   * GitHub CLI for the token again and waits for an identity checked within the minute.
+   */
+  async authenticate(repository: RepositoryInfo, remote: string, nameWithOwner: string, operation: string, fresh = false) {
     const revision = this.revisionFor(repository);
     const selection = this.selection(repository);
     const resolved = this.resolve(repository);
     let login: string | null = resolved.login;
     let source: GitHubRepositoryAccount['source'] = resolved.login ? resolved.source : null;
     try {
-      const detection = await this.detect();
+      const detection = await this.detect(false, fresh);
       if (detection.state !== 'available' || !detection.candidate) throw new GhOperationError({ code: detection.state === 'not-found' ? 'GH_CLI_NOT_FOUND' : 'GH_PROCESS_FAILED', operation,
         message: detection.state === 'not-found' ? 'GitHub CLI is not installed on the backend host.' : 'GitHub CLI could not run. Check Settings → GitHub.' });
       const executable = detection.candidate;
@@ -248,8 +312,8 @@ export class GitHubAccountsService {
           message: 'SSH could not verify a GitHub user account. Check again or choose an account in Settings → GitHub. Deploy keys do not identify user accounts.' });
       }
       if (!source) source = executable.env.GH_TOKEN || executable.env.GITHUB_TOKEN || process.env.GH_TOKEN || process.env.GITHUB_TOKEN ? 'environment' : 'global';
-      const auth = await accountAuthentication(login, executable, this.runner, operation);
-      const verified = await this.identity(executable, auth, operation);
+      const auth = await this.credentials(login, executable, operation, fresh);
+      const verified = await this.identity(executable, auth, operation, !fresh);
       if (login && login.toLowerCase() !== verified.toLowerCase()) throw new GhOperationError({ code: 'GH_AUTH_REQUIRED', operation,
         message: `The saved credentials for @${login} authenticate a different account. Authenticate @${login} again and check Settings → GitHub.` });
       login = verified;
@@ -278,33 +342,55 @@ export class GitHubAccountsService {
     return this.contexts.get(repository.id)?.value.login ?? this.resolve(repository).login;
   }
 
-  private identity(executable: CliCandidate, auth: GitHubCommandAuth, operation: string): Promise<string> {
-    // Only a one-way credential fingerprint is retained; tokens live in the operation's context.
+  /**
+   * The login a token authenticates. A token always belongs to the same
+   * account, so with `allowStale` a login checked before is used at once and
+   * checked again behind the read; the check only finds out that the token
+   * stopped working, which drops everything read with it.
+   */
+  private identity(executable: CliCandidate, auth: GitHubCommandAuth, operation: string, allowStale = false): Promise<string> {
+    // Only a one-way credential fingerprint is retained as the key; the token stays in the operation's context and `tokens`.
     const fingerprint = createHash('sha256').update(auth.env?.GH_TOKEN ?? '').digest('hex');
-    let cached = this.identities.get(fingerprint);
-    const kept = cached !== undefined && Date.now() - cached.at <= CACHE_MS;
-    notePerformance({ kind: 'cache', cache: 'github-identity', resource: 'identity', outcome: kept ? 'hit' : 'miss' });
-    if (!cached || !kept) {
-      const promise = (async () => {
-        const result = await this.runner.run(executable.executable, ['api', 'user', '--jq', '.login'], {
-          cwd: os.homedir(), env: { ...executable.env, ...GH_ENV, ...auth.env }, ...(auth.removeEnv ? { removeEnv: auth.removeEnv } : {}),
-          timeoutMs: 15_000, maxOutputBytes: 8 * 1024, operation: 'gh-identity',
+    const cached = this.identities.get(fingerprint);
+    const current = cached !== undefined && Date.now() - cached.at <= CACHE_MS;
+    notePerformance({ kind: 'cache', cache: 'github-identity', resource: 'identity', outcome: current ? 'hit' : 'miss' });
+    if (cached && current) return cached.promise;
+    if (cached?.login && allowStale) {
+      if (!cached.rechecking) {
+        cached.rechecking = true;
+        void this.readIdentity(executable, auth, operation).then((login) => {
+          if (this.identities.get(fingerprint) !== cached) return;
+          if (login.toLowerCase() === cached.login!.toLowerCase()) this.identities.set(fingerprint, { at: Date.now(), promise: cached.promise, login });
+          else this.invalidate();
+        }, (error: unknown) => {
+          cached.rechecking = false;
+          // Rejected credentials are gone for good; anything else is tried again by the next read.
+          if (this.identities.get(fingerprint) === cached && error instanceof GhOperationError && error.detail.code === 'GH_AUTH_REQUIRED') this.invalidate();
         });
-        const login = result.stdout.trim();
-        if (result.exitCode === 0 && GITHUB_LOGIN.test(login)) return login;
-        if (/HTTP 401|bad credentials|requires authentication/i.test(result.stderr)) {
-          throw new GhOperationError({ code: 'GH_AUTH_REQUIRED', operation, message: 'GitHub rejected these credentials. They may be expired or revoked. Authenticate this account again and check Settings → GitHub.' });
-        }
-        // A rate limit, an outage, and a dropped connection need different things from the user.
-        if (!result.stderr.trim()) throw new GhOperationError({ code: 'GH_PROCESS_FAILED', operation, message: 'Could not verify this GitHub account. Check your connection and try again.', retryable: true });
-        const { detail } = classifyFailure({ ...result, stdout: '', stderr: redactCommandToken(result.stderr, auth) }, operation);
-        throw new GhOperationError({ ...detail, retryable: true });
-      })();
-      cached = { at: Date.now(), promise };
-      this.identities.set(fingerprint, cached);
-      void promise.catch(() => { if (this.identities.get(fingerprint)?.promise === promise) this.identities.delete(fingerprint); });
+      }
+      return cached.promise;
     }
-    return cached.promise;
+    const promise = this.readIdentity(executable, auth, operation);
+    const entry: { at: number; promise: Promise<string>; login?: string } = { at: Date.now(), promise };
+    this.identities.set(fingerprint, entry);
+    void promise.then((login) => { entry.login = login; }, () => { if (this.identities.get(fingerprint) === entry) this.identities.delete(fingerprint); });
+    return promise;
+  }
+
+  private async readIdentity(executable: CliCandidate, auth: GitHubCommandAuth, operation: string): Promise<string> {
+    const result = await this.runner.run(executable.executable, ['api', 'user', '--jq', '.login'], {
+      cwd: os.homedir(), env: { ...executable.env, ...GH_ENV, ...auth.env }, ...(auth.removeEnv ? { removeEnv: auth.removeEnv } : {}),
+      timeoutMs: 15_000, maxOutputBytes: 8 * 1024, operation: 'gh-identity',
+    });
+    const login = result.stdout.trim();
+    if (result.exitCode === 0 && GITHUB_LOGIN.test(login)) return login;
+    if (/HTTP 401|bad credentials|requires authentication/i.test(result.stderr)) {
+      throw new GhOperationError({ code: 'GH_AUTH_REQUIRED', operation, message: 'GitHub rejected these credentials. They may be expired or revoked. Authenticate this account again and check Settings → GitHub.' });
+    }
+    // A rate limit, an outage, and a dropped connection need different things from the user.
+    if (!result.stderr.trim()) throw new GhOperationError({ code: 'GH_PROCESS_FAILED', operation, message: 'Could not verify this GitHub account. Check your connection and try again.', retryable: true });
+    const { detail } = classifyFailure({ ...result, stdout: '', stderr: redactCommandToken(result.stderr, auth) }, operation);
+    throw new GhOperationError({ ...detail, retryable: true });
   }
 
   private async check(): Promise<GitHubAccountsStatus> {

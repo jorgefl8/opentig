@@ -4,7 +4,7 @@ import { ONBOARDING_VERSION } from '../../shared/onboarding';
 import { lastCloneParent, resumeBackgroundClone } from '@/features/onboarding/clone-jobs';
 import { useGitHubAccount } from '@/features/pulls/useGitHubAccount';
 import { branchPullRequestQueryOptions, commitsAfterMergeQueryOptions } from '@/features/pulls/branch-pull-request-query';
-import { withStackMemberships } from '@/features/pulls/pull-request-list';
+import { withLineCounts, withStackMemberships } from '@/features/pulls/pull-request-list';
 import { releasesQueryOptions } from '@/features/pulls/releases-query';
 import { appDisplayName } from '@/lib/app-identity';
 import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
@@ -360,7 +360,17 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     enabled: repository !== null && pullNumbers.length > 0,
     staleTime: 60_000,
   });
-  const pulls = useMemo(() => withStackMemberships(pullsQuery.data, pullStacksQuery.data), [pullsQuery.data, pullStacksQuery.data]);
+  // So do the line counts of closed and merged PRs, which GitHub is slow to add up.
+  const pullLineCountsQuery = useQuery({
+    queryKey: queryKeys.pullLineCounts(repository?.id ?? '', pullRequestStates),
+    queryFn: () => opentig.github.listPullRequestLineCounts(repository!.id, pullRequestStates),
+    enabled: repository !== null && pullsQuery.data?.some((pull) => pull.lineCountsPending) === true,
+    staleTime: 10 * 60_000,
+  });
+  const pulls = useMemo(
+    () => withStackMemberships(withLineCounts(pullsQuery.data, pullLineCountsQuery.data), pullStacksQuery.data),
+    [pullsQuery.data, pullLineCountsQuery.data, pullStacksQuery.data],
+  );
   const pullsLoading = pullsQuery.isFetching || ghStatusQuery.isFetching;
   const pullsError = ghStatusQuery.error ? messageOf(ghStatusQuery.error) : pullsQuery.error ? messageOf(pullsQuery.error) : null;
   useEffect(() => { setMobilePane('list'); }, [repository?.id]);
@@ -391,8 +401,20 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     repository?.id ?? '', currentBranch ?? '',
     repository !== null && githubInfo?.isGitHub === true && currentBranch !== null && ghStatus?.installed === true,
   ));
-  const currentBranchPullRequest = currentBranch && githubInfo?.isGitHub && !branchPullRequestQuery.isError
+  const branchPullRequest = currentBranch && githubInfo?.isGitHub && !branchPullRequestQuery.isError
     ? branchPullRequestQuery.data ?? null : null;
+  // Its place in a stack is read after it, so the pull request shows without waiting for that.
+  const branchPullRequestNumbers = useMemo(() => branchPullRequest ? [branchPullRequest.number] : [], [branchPullRequest]);
+  const branchPullRequestStackQuery = useQuery({
+    queryKey: queryKeys.pullStacks(repository?.id ?? '', branchPullRequestNumbers),
+    queryFn: () => opentig.github.listPullRequestStacks(repository!.id, branchPullRequestNumbers),
+    enabled: repository !== null && branchPullRequestNumbers.length > 0,
+    staleTime: 60_000,
+  });
+  const currentBranchPullRequest = useMemo(
+    () => branchPullRequest ? withStackMemberships([branchPullRequest], branchPullRequestStackQuery.data)![0]! : null,
+    [branchPullRequest, branchPullRequestStackQuery.data],
+  );
   // A merged pull request no longer describes a branch that kept getting commits.
   const mergedHeadOid = currentBranchPullRequest?.state === 'MERGED' ? currentBranchPullRequest.headRefOid || null : null;
   const commitsAfterMergeQuery = useQuery(commitsAfterMergeQueryOptions(repository?.id ?? '', mergedHeadOid, status?.oid ?? null));

@@ -6,7 +6,8 @@ import { parseActionRun, parseActionRunJobs, parseActionRunPage, parseBranchName
 import { parseWorkflowTriggers } from './WorkflowDispatch';
 import { buildRunGraph, parseWorkflowJobs, type WorkflowJobDefinition } from './WorkflowGraph';
 
-export const RUN_PAGE_SIZE = 50;
+/** Twenty runs fill the list several times over, and GitHub answers them in about half the time fifty take. Every poll reads a page again. */
+export const RUN_PAGE_SIZE = 20;
 const JOBS_PER_PAGE = 100;
 const WORKFLOW_FILE_CACHE_SIZE = 50;
 const WORKFLOW_FILE = /^\.github\/workflows\/[^/]+\.ya?ml$/i;

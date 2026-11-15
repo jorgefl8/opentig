@@ -71,6 +71,15 @@ describe('pull request live state refresh', () => {
     expect(read).toHaveBeenCalledTimes(2);
   });
 
+  it('asks again within seconds for stack membership the server could not wait for', async () => {
+    read.mockResolvedValueOnce(live({ stack: 'unknown' })).mockResolvedValue(live({ stack: 'none' }));
+    const observer = await observe();
+    expect(observer.getCurrentResult().data?.stack).toBe('unknown');
+    await vi.advanceTimersByTimeAsync(10_000);
+    // Merging was held back for ten seconds, not until the usual check a minute later.
+    expect(observer.getCurrentResult().data?.stack).toBe('none');
+  });
+
   it('checks an unknown mergeability often for a minute, then settles to once a minute', async () => {
     read.mockResolvedValue(live({ mergeable: 'UNKNOWN' }));
     await observe();

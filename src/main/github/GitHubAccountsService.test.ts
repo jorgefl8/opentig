@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -10,11 +10,14 @@ import type { CliProcessRunner, CliRunOptions } from '../ai/CliProcessRunner';
 import type { CliResolver } from '../ai/CliResolver';
 import type { GitProcess } from '../git/GitProcess';
 import type { RepositoryService } from '../git/RepositoryService';
-import { GitHubAccountsService } from './GitHubAccountsService';
+import { GitHubAccountsService, TOKEN_REUSE_MS } from './GitHubAccountsService';
+import { setPerformanceSink, type PerformanceRecord } from '../performance/PerformanceLog';
 import { GitHubService } from './GitHubService';
 
 const directories: string[] = [];
 afterEach(async () => {
+  vi.useRealTimers();
+  setPerformanceSink(null);
   vi.unstubAllEnvs();
   await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })));
 });
@@ -201,6 +204,136 @@ describe('coherent GitHub operations and persistence', () => {
     expect(await f.service.repositoryAccount('repo')).toMatchObject({ state: 'ready', login: 'bob', revision: first.revision + 1 });
     await f.service.listPullRequests('repo', ['OPEN']);
     expect(f.changed).toHaveBeenCalledOnce();
+  });
+});
+
+describe('GitHub token held in memory', () => {
+  const bob = { mode: 'account', host: 'github.com', login: 'bob' } as const;
+  type Fixture = Awaited<ReturnType<typeof fixture>>;
+  const tokenReads = (f: Fixture) => f.run.mock.calls.filter(([, args]) => args[0] === 'auth' && args[1] === 'token').length;
+  const read = (f: Fixture, fresh = false) => f.accounts.authenticate(repo, 'https://github.com/organisation/demo.git', 'organisation/demo', 'read', fresh);
+  /** Answers some commands differently from the fixture. */
+  const answering = (f: Fixture, answer: (args: string[]) => ReturnType<typeof response> | Promise<ReturnType<typeof response>> | undefined) => {
+    const original = f.run.getMockImplementation()!;
+    f.run.mockImplementation(async (executable, args, options) => (await answer(args)) ?? original(executable, args, options));
+  };
+
+  it('asks GitHub CLI for an account\'s token once for a run of reads, and again five minutes later', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const f = await fixture({ https: true });
+    await f.accounts.setSelection(repo, bob);
+    expect((await read(f)).auth.env?.GH_TOKEN).toBe(token('bob'));
+    await read(f);
+    await f.service.getPullRequest('repo', 12);
+    expect(tokenReads(f)).toBe(1);
+    vi.setSystemTime(Date.now() + TOKEN_REUSE_MS - 1);
+    await read(f);
+    expect(tokenReads(f)).toBe(1);
+    vi.setSystemTime(Date.now() + 1);
+    await read(f);
+    expect(tokenReads(f)).toBe(2);
+  });
+
+  it('reads the token again for every change made on GitHub', async () => {
+    const f = await fixture({ https: true });
+    await f.accounts.setSelection(repo, bob);
+    const reviewed = await f.service.repositoryAccount('repo', true);
+    await read(f);
+    const before = tokenReads(f);
+    await f.service.createPullRequest({ repositoryId: 'repo', title: 'Fixture', body: 'Body', base: 'main', draft: false, expectedAccount: { login: 'bob', revision: reviewed.revision } });
+    expect(tokenReads(f)).toBe(before + 1);
+  });
+
+  it.each([
+    ['the repository changes account', (f: Fixture) => f.accounts.setSelection(repo, { mode: 'account', host: 'github.com', login: 'alice' })],
+    ['the default account changes', (f: Fixture) => f.accounts.setDefaultAccount('alice')],
+    ['the saved accounts are checked again', (f: Fixture) => f.accounts.status(true)],
+  ])('drops the token when %s', async (_name, change) => {
+    const f = await fixture({ https: true });
+    await f.accounts.setSelection(repo, bob);
+    await read(f);
+    await change(f);
+    await f.accounts.setSelection(repo, bob);
+    const before = tokenReads(f);
+    await read(f);
+    expect(tokenReads(f)).toBe(before + 1);
+  });
+
+  it('drops a token GitHub rejected instead of using it again', async () => {
+    const f = await fixture({ https: true });
+    await f.accounts.setSelection(repo, bob);
+    await read(f);
+    answering(f, (args) => args[0] === 'pr' ? response('', 1, 'HTTP 401: Bad credentials') : undefined);
+    await expect(f.service.listPullRequests('repo', ['OPEN'])).rejects.toMatchObject({ detail: { code: 'GH_AUTH_REQUIRED' } });
+    const before = tokenReads(f);
+    await read(f);
+    expect(tokenReads(f)).toBe(before + 1);
+  });
+
+  it('asks every time for GitHub CLI\'s own account, which can change outside OpenTig', async () => {
+    const f = await fixture({ https: true });
+    await f.accounts.setSelection(repo, { mode: 'git' });
+    expect((await read(f)).auth.env?.GH_TOKEN).toBe(token('alice'));
+    f.setActive('bob');
+    expect((await read(f)).auth.env?.GH_TOKEN).toBe(token('bob'));
+  });
+
+  it('keeps the token out of saved files, of what clients receive, of errors and of the performance log', async () => {
+    const records: PerformanceRecord[] = [];
+    setPerformanceSink((record) => records.push(record));
+    const f = await fixture({ https: true });
+    await f.accounts.setSelection(repo, bob);
+    await f.accounts.status(true);
+    await f.accounts.setSelection(repo, bob);
+    await read(f);
+    await f.service.getPullRequest('repo', 12);
+    // GitHub CLI echoing the token back is the worst case for an error message.
+    answering(f, (args) => args[0] === 'pr' && args[1] === 'list' ? response(token('bob'), 1, `could not use ${token('bob')}`) : undefined);
+    const failure = await f.service.listPullRequests('repo', ['OPEN']).catch((error: unknown) => error as { message: string; detail: unknown });
+    const sent = JSON.stringify([await f.service.repositoryAccount('repo'), await f.accounts.status(), failure, (failure as { message: string }).message]);
+    const saved = (await Promise.all((await readdir(path.dirname(f.file))).map((name) => readFile(path.join(path.dirname(f.file), name), 'utf8')))).join('\n');
+    expect(records.some((record) => record.kind === 'cache' && record.cache === 'github-token')).toBe(true);
+    for (const text of [sent, saved, JSON.stringify(records)]) expect(text).not.toContain('gho_fixture');
+  });
+});
+
+describe('account checks behind a read', () => {
+  const bob = { mode: 'account', host: 'github.com', login: 'bob' } as const;
+  type Fixture = Awaited<ReturnType<typeof fixture>>;
+  const read = (f: Fixture, fresh = false) => f.accounts.authenticate(repo, 'https://github.com/organisation/demo.git', 'organisation/demo', 'read', fresh);
+  const checks = (f: Fixture) => f.run.mock.calls.filter(([, args]) => args[1] === 'user' || args[0] === '--version').length;
+  const settled = (work: Promise<unknown>) => Promise.race([work.then(() => 'answered', () => 'failed'), new Promise((resolve) => setTimeout(() => resolve('waiting'), 50))]);
+
+  it('does not make a read after a pause wait for the CLI and the account to be checked again', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const f = await fixture({ https: true });
+    await f.accounts.setSelection(repo, bob);
+    await read(f);
+    const before = checks(f);
+    vi.setSystemTime(Date.now() + 61_000);
+    // GitHub taking forever over the checks must not hold the read.
+    const original = f.run.getMockImplementation()!;
+    f.run.mockImplementation((executable, args, options) => args[1] === 'user' || args[0] === '--version' ? new Promise(() => {}) : original(executable, args, options));
+    expect(await settled(read(f))).toBe('answered');
+    // Both checks did start, behind the read.
+    expect(checks(f)).toBe(before + 2);
+    // A change made on GitHub still waits for them.
+    expect(await settled(read(f, true))).toBe('waiting');
+  });
+
+  it('drops everything read with credentials the check behind a read finds rejected', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const f = await fixture({ https: true });
+    await f.accounts.setSelection(repo, bob);
+    await read(f);
+    f.changed.mockClear();
+    vi.setSystemTime(Date.now() + 61_000);
+    const original = f.run.getMockImplementation()!;
+    f.run.mockImplementation(async (executable, args, options) => args[1] === 'user' ? response('', 1, 'HTTP 401: Bad credentials') : original(executable, args, options));
+    await read(f);
+    await vi.waitFor(() => expect(f.changed).toHaveBeenCalled());
+    // The next read checks in the open and reports it.
+    await expect(read(f)).rejects.toMatchObject({ detail: { code: 'GH_AUTH_REQUIRED' } });
   });
 });
 

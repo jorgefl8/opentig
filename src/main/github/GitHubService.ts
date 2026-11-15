@@ -5,7 +5,7 @@ import type { CliDetection } from '../ai/cli-selection';
 import { parsePullRequestStack, parseStackMemberships, stackMembershipQuery } from './PullRequestStackParser';
 import os from 'node:os';
 import { GITHUB_PR_COMMIT_PAGE } from '../../shared/contracts';
-import type { ActionRunDetails, ActionRunPage, RunnableWorkflowList, WorkflowTriggers, RepositoryInfo, CreatePullRequestInput, CreatePullRequestResult, CommentOnPullRequestInput, CreateReleaseInput, DeleteDraftReleaseInput, DeletePullRequestEntryInput, EditPullRequestEntryInput, PublishReleaseInput, ReleaseDetails, ReleaseTagCheck, ReleaseSummary, RepositoryWorkflowList, RunWorkflowInput, UpdateReleaseInput, DiffResult, ReviewPullRequestInput, UpdatePullRequestInput, PullRequestActionInput, PullRequestActionResult, PullRequestConversation, PullRequestCommitList, GhCliStatus, GitHubRepositoryInfo, PullRequestDetails, PullRequestLiveState, PullRequestStack, PullRequestStackMembership, PullRequestState, PullRequestSummary } from '../../shared/contracts';
+import type { ActionRunDetails, ActionRunPage, RunnableWorkflowList, WorkflowTriggers, RepositoryInfo, CreatePullRequestInput, CreatePullRequestResult, CommentOnPullRequestInput, CreateReleaseInput, DeleteDraftReleaseInput, DeletePullRequestEntryInput, EditPullRequestEntryInput, PublishReleaseInput, ReleaseDetails, ReleaseTagCheck, ReleaseSummary, RepositoryWorkflowList, RunWorkflowInput, UpdateReleaseInput, DiffResult, ReviewPullRequestInput, UpdatePullRequestInput, PullRequestActionInput, PullRequestActionResult, PullRequestConversation, PullRequestCommitList, GhCliStatus, GitHubRepositoryInfo, PullRequestDetails, PullRequestLineCounts, PullRequestLiveState, PullRequestStack, PullRequestStackMembership, PullRequestState, PullRequestSummary } from '../../shared/contracts';
 import { AiOperationError, GhOperationError } from '../../shared/errors';
 import type { CliProcessRunner, CliRunResult } from '../ai/CliProcessRunner';
 import type { CliResolver } from '../ai/CliResolver';
@@ -19,7 +19,7 @@ import { PullRequestActionRunner } from './PullRequestActionRunner';
 import { GitHubReleases } from './GitHubReleases';
 import { GitHubActions } from './GitHubActions';
 import { withPrivateTextFile, type GhRunOptions } from './GitHubAccess';
-import { parseBranchPullRequestList, parseCreatedPullRequestUrl, parsePullRequestDetails, parsePullRequestList, PR_DETAIL_FIELDS, PR_SUMMARY_FIELDS, selectPullRequestsNewestFirst, sortPullRequestsNewestFirst } from './PullRequestParser';
+import { parseBranchPullRequestList, parseCreatedPullRequestUrl, parsePullRequestDetails, parsePullRequestLineCounts, parsePullRequestList, PR_DETAIL_FIELDS, PR_FINISHED_LIST_FIELDS, PR_LINE_COUNT_FIELDS, PR_SUMMARY_FIELDS, selectPullRequestsNewestFirst, sortPullRequestsNewestFirst } from './PullRequestParser';
 
 import { GitHubAccountsService } from './GitHubAccountsService';
 import { PullRequestLocalGit, diffResult, type PullRequestRange } from './PullRequestLocalGit';
@@ -35,7 +35,14 @@ const OPEN_PULL_REQUEST_MS = 60_000;
 const FINISHED_PULL_REQUEST_MS = 10 * 60_000;
 /** Lists are reused briefly, so reloading the app doesn't wait for GitHub; a change made through OpenTig drops them at once. */
 const LIST_MS = 30_000;
+const LIST_LIMIT = 50;
 const RELEASES_MS = 60_000;
+/** How long the live state waits for stack membership once GitHub has answered everything else. */
+const STACK_GRACE_MS = 500;
+/** How long stack membership that arrived too late is offered to the next live state. */
+const LATE_STACK_MS = 60_000;
+
+type StackStatus = { status: PullRequestLiveState['stack']; membership?: PullRequestStackMembership };
 const WORKFLOW_TRIGGERS_MS = 30_000;
 
 export class GitHubService {
@@ -45,6 +52,8 @@ export class GitHubService {
   private readonly settled = new Map<string, Map<string, { expires: number; value: unknown }>>();
   /** Bumped by every explicit invalidation, so a read that started before one isn't kept. */
   private settledEpoch = 0;
+  /** The last stack membership read per PR, for a live state that couldn't wait for its own. */
+  private readonly stackStatuses = new Map<string, { at: number; value: StackStatus }>();
   private readonly localGit: PullRequestLocalGit;
   private readonly actions: PullRequestActionRunner;
   private readonly releases: GitHubReleases;
@@ -66,11 +75,12 @@ export class GitHubService {
     // opens, wait for its pull requests twice.
     this.git.onInvalidate((scope, command) => { if (command !== 'fetch') this.reads.invalidate(scope); });
     const access = {
-      requireGitHub: (repositoryId: string, operation: string) => this.requireGitHub(repositoryId, operation),
+      requireGitHub: (repositoryId: string, operation: string, fresh?: boolean) => this.requireGitHub(repositoryId, operation, fresh),
       run: (executable: CliCandidate, args: string[], options: GhRunOptions) => this.run(executable, args, options),
       runRead: (args: string[], options: GhRunOptions) => this.runGh(args, options),
       invalidate: (repositoryId: string) => this.invalidate(repositoryId),
-      readLiveState: (repositoryId: string, number: number) => this.readGetPullRequestLiveState(repositoryId, number),
+      // What decides an action waits for the whole state, however long the stack takes.
+      readLiveState: (repositoryId: string, number: number) => this.readGetPullRequestLiveState(repositoryId, number, true),
       revisionFor: (repository: RepositoryInfo) => this.accounts.revisionFor(repository),
     };
     this.actions = new PullRequestActionRunner(access);
@@ -81,6 +91,7 @@ export class GitHubService {
   /** After a change made through OpenTig: nothing read before it is reused. */
   invalidate(repositoryId?: string): void {
     this.settledEpoch++;
+    this.stackStatuses.clear();
     if (repositoryId) this.settled.delete(this.repositories.get(repositoryId).path);
     else this.settled.clear();
     this.invalidatePending(repositoryId);
@@ -274,10 +285,26 @@ export class GitHubService {
   private async readListPullRequests(repositoryId: string, states: PullRequestState[]): Promise<PullRequestSummary[]> {
     const { repository, nameWithOwner, auth, executable } = await this.requireGitHub(repositoryId, 'gh-pr-list');
     const results = await Promise.all(states.map((state) => this.runGhRead(
-      ['pr', 'list', '-R', nameWithOwner, '--state', state.toLowerCase(), '--json', PR_SUMMARY_FIELDS, '--limit', '50'],
+      ['pr', 'list', '-R', nameWithOwner, '--state', state.toLowerCase(), '--json', state === 'OPEN' ? PR_SUMMARY_FIELDS : PR_FINISHED_LIST_FIELDS, '--limit', String(LIST_LIMIT)],
       { auth, executable, cwd: repository.path, operation: 'gh-pr-list', timeoutMs: NETWORK_TIMEOUT_MS, maxOutputBytes: 4 * 1024 * 1024 },
     )));
     return selectPullRequestsNewestFirst(results.flatMap((result) => parsePullRequestList(result.stdout)), states);
+  }
+
+  /** The line counts the list leaves out of its closed and merged PRs, read after the rows are on screen. */
+  listPullRequestLineCounts(repositoryId: string, states: PullRequestState[]): Promise<PullRequestLineCounts[]> {
+    const finished = states.filter((state) => state !== 'OPEN').sort();
+    if (!finished.length) return Promise.resolve([]);
+    return this.settledRead(repositoryId, ['list-line-counts', finished], () => FINISHED_PULL_REQUEST_MS, async () => {
+      const operation = 'gh-pr-list-line-counts';
+      const { repository, nameWithOwner, auth, executable } = await this.requireGitHub(repositoryId, operation);
+      const results = await Promise.all(finished.map((state) => this.runGhRead(
+        ['pr', 'list', '-R', nameWithOwner, '--state', state.toLowerCase(), '--json', PR_LINE_COUNT_FIELDS, '--limit', String(LIST_LIMIT)],
+        { auth, executable, cwd: repository.path, operation, timeoutMs: NETWORK_TIMEOUT_MS, maxOutputBytes: 1024 * 1024 },
+      )));
+      const counts = new Map(results.flatMap((result) => parsePullRequestLineCounts(result.stdout)).map((count) => [count.number, count]));
+      return [...counts.values()];
+    });
   }
 
   listPullRequestStacks(repositoryId: string, numbers: number[]): Promise<Array<{ number: number; stack: PullRequestStackMembership }>> {
@@ -305,13 +332,13 @@ export class GitHubService {
       { auth, executable, cwd: repository.path, operation, timeoutMs: NETWORK_TIMEOUT_MS, maxOutputBytes: 1024 * 1024 },
     );
     const openPull = sortPullRequestsNewestFirst(parseBranchPullRequestList(openResult.stdout, heads, branch)).find((pull) => pull.state === 'OPEN');
-    if (openPull) return (await this.withStackMembership(repository.path, nameWithOwner, auth, executable, [openPull]))[0]!;
+    // Stack membership is read apart, as for the list: it used to hold the PR back for as long as GitHub took over it.
+    if (openPull) return openPull;
     const result = await this.runGhRead(
       ['pr', 'list', '-R', nameWithOwner, '--head', branch, '--state', 'all', '--json', `${PR_SUMMARY_FIELDS},headRepository`, '--limit', '10'],
       { auth, executable, cwd: repository.path, operation, timeoutMs: NETWORK_TIMEOUT_MS, maxOutputBytes: 1024 * 1024 },
     );
-    const pull = sortPullRequestsNewestFirst(parseBranchPullRequestList(result.stdout, heads, branch))[0];
-    return pull ? (await this.withStackMembership(repository.path, nameWithOwner, auth, executable, [pull]))[0]! : null;
+    return sortPullRequestsNewestFirst(parseBranchPullRequestList(result.stdout, heads, branch))[0] ?? null;
   }
 
   getPullRequest(repositoryId: string, prNumber: number): Promise<PullRequestDetails> {
@@ -358,21 +385,34 @@ export class GitHubService {
     return this.actions.deleteEntry(input);
   }
 
-  private async readGetPullRequestLiveState(repositoryId: string, prNumber: number): Promise<PullRequestLiveState> {
+  /**
+   * The state comes first: unless `waitForStack`, it waits for stack membership
+   * only a moment longer than GitHub took over everything else. Membership that
+   * is not in by then is `unknown`, which holds merging back until the next read,
+   * and that read takes what arrived meanwhile.
+   */
+  private async readGetPullRequestLiveState(repositoryId: string, prNumber: number, waitForStack = false): Promise<PullRequestLiveState> {
     const operation = 'gh-pr-live-state';
     const { repository, nameWithOwner, auth, executable } = await this.requireGitHub(repositoryId, operation);
     const [owner, name] = nameWithOwner.split('/');
-    const [result, stack] = await Promise.all([
-      this.run(executable, ['api', 'graphql', '-f', `owner=${owner}`, '-f', `name=${name}`, '-F', `number=${prNumber}`, '-f', `headRef=refs/pull/${prNumber}/head`, '-f', `query=${PR_LIVE_STATE_QUERY}`], {
-        auth, executable, cwd: repository.path, operation, timeoutMs: GITHUB_LIVE_READ_TIMEOUT_MS, maxOutputBytes: 4 * 1024 * 1024,
-      }),
-      this.stackStatus(repository.path, nameWithOwner, auth, executable, prNumber),
-    ]);
+    const stackKey = this.readKey(repository, [nameWithOwner, 'stack-status', prNumber]);
+    const epoch = this.settledEpoch;
+    const stackRead = this.stackStatus(repository.path, nameWithOwner, auth, executable, prNumber).then((value) => {
+      if (value.status !== 'unknown' && epoch === this.settledEpoch) this.stackStatuses.set(stackKey, { at: Date.now(), value });
+      return value;
+    });
+    const result = await this.run(executable, ['api', 'graphql', '-f', `owner=${owner}`, '-f', `name=${name}`, '-F', `number=${prNumber}`, '-f', `headRef=refs/pull/${prNumber}/head`, '-f', `query=${PR_LIVE_STATE_QUERY}`], {
+      auth, executable, cwd: repository.path, operation, timeoutMs: GITHUB_LIVE_READ_TIMEOUT_MS, maxOutputBytes: 4 * 1024 * 1024,
+    });
+    const stack = waitForStack ? await stackRead : await withinGrace<StackStatus>(stackRead, STACK_GRACE_MS, () => {
+      const late = this.stackStatuses.get(stackKey);
+      return late && Date.now() - late.at < LATE_STACK_MS ? late.value : { status: 'unknown' };
+    });
     const read = parsePullRequestLiveState(result.stdout, stack.status);
     if (read.status === 'ok') return stack.membership ? { ...read.state, stackMembership: stack.membership } : read.state;
     if (read.status === 'missing') throw new GhOperationError({ code: 'GH_PROCESS_FAILED', operation, message: `Pull request #${prNumber} was not found in this repository.`, exitCode: result.exitCode });
     // stdout holds GitHub data here, where check names and URLs could look like another failure.
-    if (result.exitCode !== 0) throw classifyFailure({ ...result, stdout: '', stderr: redactCommandToken(result.stderr, auth) }, operation);
+    if (result.exitCode !== 0) throw this.failure({ ...result, stdout: '' }, auth, operation);
     throw new GhOperationError({ code: 'GH_INVALID_OUTPUT', operation, message: 'GitHub CLI returned an unexpected response.' });
   }
 
@@ -389,12 +429,12 @@ export class GitHubService {
     });
     const conversation = parsePullRequestConversation(result.stdout);
     if (conversation) return conversation;
-    if (result.exitCode !== 0) throw classifyFailure({ ...result, stdout: '', stderr: redactCommandToken(result.stderr, auth) }, operation);
+    if (result.exitCode !== 0) throw this.failure({ ...result, stdout: '' }, auth, operation);
     throw new GhOperationError({ code: 'GH_INVALID_OUTPUT', operation, message: 'GitHub CLI returned an unexpected response.' });
   }
 
   /** Membership is optional metadata: a failed read stays `unknown` instead of failing the live state. */
-  private async stackStatus(cwd: string, nameWithOwner: string, auth: GitHubCommandAuth, executable: CliCandidate, prNumber: number): Promise<{ status: PullRequestLiveState['stack']; membership?: PullRequestStackMembership }> {
+  private async stackStatus(cwd: string, nameWithOwner: string, auth: GitHubCommandAuth, executable: CliCandidate, prNumber: number): Promise<StackStatus> {
     const [owner, name] = nameWithOwner.split('/');
     try {
       const result = await this.runGhRead(['api', 'graphql', '-f', `owner=${owner}`, '-f', `name=${name}`, '-f', `query=${stackMembershipQuery([prNumber])}`], {
@@ -467,11 +507,6 @@ export class GitHubService {
 
   runWorkflow(input: RunWorkflowInput): Promise<void> {
     return this.releases.runWorkflow(input);
-  }
-
-  private async withStackMembership<T extends PullRequestSummary>(cwd: string, nameWithOwner: string, auth: GitHubCommandAuth, executable: CliCandidate, pulls: T[]): Promise<T[]> {
-    const memberships = await this.stackMemberships(cwd, nameWithOwner, auth, executable, pulls.map((pr) => pr.number));
-    return pulls.map((pr) => { const stack = memberships.get(pr.number); return stack ? { ...pr, stack } : pr; });
   }
 
   private async stackMemberships(cwd: string, nameWithOwner: string, auth: GitHubCommandAuth, executable: CliCandidate, numbers: number[]): Promise<Map<number, PullRequestStackMembership>> {
@@ -604,7 +639,7 @@ export class GitHubService {
 
   async createPullRequest(input: CreatePullRequestInput): Promise<CreatePullRequestResult> {
     const operation = 'gh-pr-create';
-    const { repository, nameWithOwner, auth, executable, context } = await this.requireGitHub(input.repositoryId, operation);
+    const { repository, nameWithOwner, auth, executable, context } = await this.requireGitHub(input.repositoryId, operation, true);
     const verifyAccount = () => {
       if (input.expectedAccount && (input.expectedAccount.revision !== this.accounts.revisionFor(repository) || input.expectedAccount.revision !== context.revision || input.expectedAccount.login.toLowerCase() !== context.login?.toLowerCase())) {
         throw new GhOperationError({ code: 'GH_ACCOUNT_UNRESOLVED', operation, message: 'The GitHub account changed. Review the current identity before creating the pull request.' });
@@ -659,11 +694,11 @@ export class GitHubService {
     return headRepository && headRepository.toLowerCase() !== nameWithOwner.toLowerCase() ? `${headRepository.split('/')[0]}:${name}` : name;
   }
 
-  private async requireGitHub(repositoryId: string, operation: string) {
+  private async requireGitHub(repositoryId: string, operation: string, fresh = false) {
     const repository = this.repositories.get(repositoryId);
     const { remote: { url: remote }, info } = await this.routing(repositoryId);
     if (!info.isGitHub || !info.nameWithOwner) throw new GhOperationError({ code: 'GH_NOT_GITHUB_REPO', operation, message: 'The origin remote does not point to a GitHub repository.' });
-    const authenticated = await this.accounts.authenticate(repository, remote, info.nameWithOwner, operation);
+    const authenticated = await this.accounts.authenticate(repository, remote, info.nameWithOwner, operation, fresh);
     return { repository, nameWithOwner: info.nameWithOwner, ...authenticated };
   }
 
@@ -677,8 +712,15 @@ export class GitHubService {
 
   private async runGh(args: string[], options: GhRunOptions): Promise<CliRunResult> {
     const result = await this.run(options.executable, args, options);
-    if (result.exitCode !== 0) throw classifyFailure({ ...result, stdout: redactCommandToken(result.stdout, options.auth), stderr: redactCommandToken(result.stderr, options.auth) }, options.operation);
+    if (result.exitCode !== 0) throw this.failure({ ...result, stdout: redactCommandToken(result.stdout, options.auth) }, options.auth, options.operation);
     return result;
+  }
+
+  /** Why a command failed. Credentials GitHub rejected are not reused for the next one. */
+  private failure(result: CliRunResult, auth: GitHubCommandAuth, operation: string): GhOperationError {
+    const error = classifyFailure({ ...result, stderr: redactCommandToken(result.stderr, auth) }, operation);
+    if (error.detail.code === 'GH_AUTH_REQUIRED') this.accounts.refreshAuthentication();
+    return error;
   }
 
   private async run(executable: CliCandidate, args: string[], options: GhRunOptions): Promise<CliRunResult> {
@@ -697,6 +739,14 @@ export class GitHubService {
       throw new GhOperationError({ ...mapped.detail, message: redactCommandToken(mapped.message, options.auth ?? {}) });
     }
   }
+}
+
+/** `read` if it settles within `graceMs`, otherwise `fallback()`; `read` goes on either way. */
+function withinGrace<T>(read: Promise<T>, graceMs: number, fallback: () => T): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => resolve(fallback()), graceMs);
+    read.then((value) => { clearTimeout(timer); resolve(value); }, (error: unknown) => { clearTimeout(timer); reject(error); });
+  });
 }
 
 function sameCli(previous: CliDetection | null, next: CliDetection): boolean {

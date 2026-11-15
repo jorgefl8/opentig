@@ -145,7 +145,7 @@ export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType,
   const counters = (
     <span className="pr-counters">
       {details && <>{details.changedFiles} {details.changedFiles === 1 ? 'file' : 'files'}{' '}</>}
-      <span className="add">+{pr.additions}</span> <span className="del">−{pr.deletions}</span>
+      {!pr.lineCountsPending && <><span className="add">+{pr.additions}</span> <span className="del">−{pr.deletions}</span></>}
     </span>
   );
   // The status reads membership afresh; until it arrives, the list's is the best known.
