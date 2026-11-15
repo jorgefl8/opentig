@@ -7,7 +7,7 @@ import { whenIdle } from '@/lib/when-idle';
 import { LazyPullRequestViewer as PullRequestViewer } from '@/features/pulls/pull-request-viewer-chunks';
 import { IconDots } from '@tabler/icons-react';
 import type { DiffResult, DiffViewPreference, FileResult, ImageFileResult, ThemePreference, WriteFileResult } from '../../../shared/contracts';
-import type { CommitInfo } from '../../../shared/git-types';
+import type { CommitFile, CommitInfo } from '../../../shared/git-types';
 import { isKnownImagePath, isSvgPath } from '../../../shared/image-types';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -23,7 +23,9 @@ import { openExternalUrl } from '@/lib/browser-capabilities';
 import { opentig } from '@/lib/opentig-api';
 import { MobileCommitBar, MobileDiffBar } from './MobileViewerBars';
 import { loadPierreEditor } from './pierre-editor';
-import { commitDiffKey, immutableDiff, takeFileAhead, scopeDiffCache } from './viewer-prefetch';
+import { commitDiffKey, commitFileDiffKey, commitFiles, immutableDiff, keepImmutableDiff, takeFileAhead } from './viewer-prefetch';
+import { changeGeneration, keepDiff, keepFile, keptDiff, keptFile, type FileStamp } from './content-cache';
+import { withSignal } from '@/lib/websocket-transport';
 import { ContentFade } from '@/components/Reveal';
 import { Spinner } from '@/components/ui/spinner';
 // The code viewers start downloading with the document they will show, so it mounts once, on a viewer that is already there.
@@ -83,6 +85,12 @@ interface ViewerProps {
   undoBlocked?: boolean | undefined;
   onUndoCommit?: ((commit: CommitInfo) => void) | undefined;
   draftFor(path: string): RuntimeFileDraft | null;
+  /**
+   * The size and modification time the file tree gives a file, when the tree was
+   * read after the last change; null otherwise. Lets a file read before an
+   * unrelated change open again without reading it.
+   */
+  fileStamp?: ((path: string) => FileStamp | null) | undefined;
   onSelect(selection: ViewerSelection): void;
   /** Every `type: 'file'` selection goes through App so it registers a tab. */
   onOpenFile(path: string): void;
@@ -98,6 +106,7 @@ interface ViewerProps {
 
 type ViewerData =
   | { docKey: string; type: 'diff'; value: DiffResult }
+  | { docKey: string; type: 'commit-files'; value: CommitFile[] }
   | { docKey: string; type: 'file' | 'conflict'; value: FileResult }
   | { docKey: string; type: 'image'; value: ImageFileResult }
   | null;
@@ -117,7 +126,9 @@ async function prepareHighlight(work: (prime: typeof import('./highlight-prime')
   catch { /* Shown without waiting. */ }
 }
 
-export default function Viewer({ repositoryId, selection, diffView, wrapLines, theme, revision, readOnly, commits, githubRepository, undoBlocked, onUndoCommit, draftFor, onSelect, onOpenFile, onDiffViewChange, onWrapLinesChange, onDraftChange, onDraftSaved, onUpdateConflict, onResolveConflict, onDiscardDiff }: ViewerProps) {
+const NO_FILE_STAMP = () => null;
+
+export default function Viewer({ repositoryId, selection, diffView, wrapLines, theme, revision, readOnly, commits, githubRepository, undoBlocked, onUndoCommit, draftFor, fileStamp = NO_FILE_STAMP, onSelect, onOpenFile, onDiffViewChange, onWrapLinesChange, onDraftChange, onDraftSaved, onUpdateConflict, onResolveConflict, onDiscardDiff }: ViewerProps) {
   const [data, setData] = useState<ViewerData>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -145,8 +156,8 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
   }, [selection]);
 
   // What the load below reads when its data arrives, without loading again when these change.
-  const shown = useRef({ docKey: null as string | null, draftFor, readOnly });
-  useEffect(() => { shown.current = { docKey: data?.docKey ?? null, draftFor, readOnly }; });
+  const shown = useRef({ docKey: null as string | null, draftFor, readOnly, fileStamp });
+  useEffect(() => { shown.current = { docKey: data?.docKey ?? null, draftFor, readOnly, fileStamp }; });
 
   // The viewers themselves are downloaded while the app is idle, so the first
   // click on a file, a change or a pull request shows it rather than a loading message.
@@ -162,11 +173,15 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
   }, []);
 
   useEffect(() => {
-    scopeDiffCache(repositoryId);
     const token = ++requestToken.current;
+    // Whatever this load asks for is called off, on the server too, once another document replaces it.
+    const controller = new AbortController();
+    const { signal } = controller;
     setError(null);
     // Pull request selections fetch their own data inside PullRequestViewer.
     if (!selection || selection.type === 'pull-request' || selection.type === 'release' || selection.type === 'workflow-run' || (selection.type === 'file' && /\.pdf$/i.test(selection.path))) { setData(null); setLoading(false); return; }
+    // Opening another document may use what was read before; a refresh of the one on screen always reads again.
+    const reopening = shown.current.docKey !== docKey;
     setLoading(true);
     if (selection.type === 'file') {
       if (!isKnownImagePath(selection.path)) PierreEditBoundary.preload();
@@ -178,14 +193,18 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
       try {
         if (selection.type === 'file' || selection.type === 'conflict') {
           if (selection.type === 'file' && isKnownImagePath(selection.path)) {
-            const value = await opentig.repository.readImage(repositoryId, selection.path);
+            const value = await withSignal(signal, () => opentig.repository.readImage(repositoryId, selection.path));
             if (token !== requestToken.current) return;
             setData({ docKey, type: 'image', value });
             return;
           }
-          // A file the pointer rested on is already being read; a refresh of the open file always reads again.
-          const ahead = selection.type === 'file' && !allowLarge && shown.current.docKey !== docKey ? takeFileAhead(repositoryId, selection.path) : null;
-          const value = await ahead?.catch(() => null) ?? await opentig.repository.readFile(repositoryId, selection.path, selection.type === 'conflict' ? true : allowLarge);
+          const large = selection.type === 'conflict' ? true : allowLarge;
+          const kept = selection.type === 'file' && !large && reopening ? keptFile(repositoryId, selection.path, shown.current.fileStamp(selection.path)) : null;
+          // A file the pointer rested on is already being read.
+          const ahead = !kept && selection.type === 'file' && !large && reopening ? takeFileAhead(repositoryId, selection.path) : null;
+          const generation = ahead?.generation ?? changeGeneration();
+          const value = kept ?? await ahead?.read.catch(() => null) ?? await withSignal(signal, () => opentig.repository.readFile(repositoryId, selection.path, large));
+          if (!kept && selection.type === 'file' && !large) keepFile(repositoryId, value, generation);
           if (token !== requestToken.current) return;
           if (selection.type === 'conflict') {
             setData({ docKey, type: 'conflict', value });
@@ -193,7 +212,7 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
           }
           // Another file keeps the previous document on screen a moment longer to open
           // with its colors. A refresh of the open file is highlighted where it is.
-          if (shown.current.docKey !== docKey && isSourcePath(value.path) && !value.binary && !value.tooLarge) {
+          if (reopening && isSourcePath(value.path) && !value.binary && !value.tooLarge) {
             const { draftFor: draft, readOnly: locked } = shown.current;
             await prepareHighlight((prime) => prime.prepareFileHighlight(value.path, draft(value.path)?.content ?? value.content, !locked));
             if (token !== requestToken.current) return;
@@ -206,17 +225,25 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
             && current.value.binary === value.binary && current.value.tooLarge === value.tooLarge
             ? current
             : { docKey, type: 'file', value });
+        } else if (selection.type === 'commit') {
+          // A commit opens as the list of its files; each file's diff is read when it unfolds.
+          const files = await commitFiles(repositoryId, selection.oid, signal);
+          if (token !== requestToken.current) return;
+          setData((current) => current && current.docKey === docKey && current.type === 'commit-files' ? current : { docKey, type: 'commit-files', value: files });
         } else {
-          // A commit never changes, so it is read once, by this or by the row the pointer rested on.
-          const value = selection.type === 'commit'
-            ? await immutableDiff(commitDiffKey(repositoryId, selection.oid), () => opentig.diff.getCommit(repositoryId, selection.oid))
-            : selection.type === 'commit-file'
-              ? await immutableDiff(docKey, () => opentig.diff.getCommitFile(repositoryId, selection.oid, selection.path, selection.oldPath))
-              : await opentig.diff.get({ repositoryId, path: selection.path, kind: selection.kind });
+          let value: DiffResult;
+          if (selection.type === 'commit-file') {
+            // A commit never changes, so its files are read once, here or when unfolded in the commit.
+            value = await immutableDiff(commitFileDiffKey(repositoryId, selection.oid, selection.path, selection.oldPath), () => opentig.diff.getCommitFile(repositoryId, selection.oid, selection.path, selection.oldPath), signal);
+          } else {
+            const kept = reopening ? keptDiff(repositoryId, selection.kind, selection.path) : null;
+            const generation = changeGeneration();
+            value = kept ?? await withSignal(signal, () => opentig.diff.get({ repositoryId, path: selection.path, kind: selection.kind }));
+            if (!kept) keepDiff(repositoryId, selection.kind, selection.path, value, generation);
+          }
           if (token !== requestToken.current) return;
           const next = value;
-          // A whole commit opens with its files folded, so it has nothing to highlight yet.
-          if (shown.current.docKey !== docKey && selection.type !== 'commit' && next.patch && !next.binary) {
+          if (reopening && next.patch && !next.binary) {
             await prepareHighlight((prime) => prime.prepareDiffHighlight(next.patch));
             if (token !== requestToken.current) return;
           }
@@ -226,12 +253,13 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
             : { docKey, type: 'diff', value: next });
         }
       } catch (reason) {
-        if (token === requestToken.current) setError(reason instanceof Error ? reason.message : 'Could not load the viewer.');
+        if (token === requestToken.current && !signal.aborted) setError(reason instanceof Error ? reason.message : 'Could not load the viewer.');
       } finally {
         if (token === requestToken.current) setLoading(false);
       }
     };
     void run();
+    return () => controller.abort();
   }, [allowLarge, docKey, repositoryId, revision, selection]);
 
   const themeType = theme === 'system' ? 'system' : theme;
@@ -328,6 +356,29 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
       <Suspense fallback={<ViewerLoading />}>
         <ImageFileViewer key={`${data.value.path}:${data.value.mtimeMs}`} image={data.value} />
       </Suspense>
+    );
+  } else if (data.type === 'commit-files') {
+    const commitSelection = selection.type === 'commit' ? selection : null;
+    content = null;
+    pierreContent = commitSelection && (
+      <CommitDiffViewer
+        key={commitSelection.oid}
+        contentKey={data.docKey}
+        repositoryId={repositoryId}
+        selection={commitSelection}
+        commit={commits.find((item) => item.oid === commitSelection.oid)}
+        value={{ files: data.value }}
+        diffView={diffView}
+        themeType={themeType}
+        wrapLines={wrapLines}
+        canUndo={!readOnly && !undoBlocked}
+        githubRepository={githubRepository}
+        onUndo={onUndoCommit}
+        onSelect={onSelect}
+        onOpenFile={onOpenFile}
+        onDiffViewChange={onDiffViewChange}
+        onWrapLinesChange={onWrapLinesChange}
+      />
     );
   } else if (data.type !== 'diff' && data.value.binary) {
     content = <div className="viewer-message">Binary file · {formatBytes(data.value.size)}</div>;
@@ -434,15 +485,16 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
       </Suspense>
     );
   } else if (data.type === 'diff') {
-    const commitSelection = selection.type === 'commit' || selection.type === 'commit-file' ? selection : null;
+    const commitSelection = selection.type === 'commit-file' ? selection : null;
     content = null;
     pierreContent = commitSelection ? (
       <CommitDiffViewer
         key={commitSelection.oid}
         contentKey={data.docKey}
+        repositoryId={repositoryId}
         selection={commitSelection}
         commit={commits.find((item) => item.oid === commitSelection.oid)}
-        value={data.value}
+        value={{ diff: data.value }}
         diffView={diffView}
         themeType={themeType}
         wrapLines={wrapLines}
@@ -516,8 +568,10 @@ export default function Viewer({ repositoryId, selection, diffView, wrapLines, t
 
 type CommitSelection = Extract<NonNullable<ViewerSelection>, { type: 'commit' | 'commit-file' }>;
 
-function CommitDiffViewer({ contentKey, selection, commit, value, diffView, themeType, wrapLines, canUndo, githubRepository, onUndo, onSelect, onOpenFile, onDiffViewChange, onWrapLinesChange }: {
-  contentKey: string; selection: CommitSelection; commit: CommitInfo | undefined; value: DiffResult;
+function CommitDiffViewer({ contentKey, repositoryId, selection, commit, value, diffView, themeType, wrapLines, canUndo, githubRepository, onUndo, onSelect, onOpenFile, onDiffViewChange, onWrapLinesChange }: {
+  contentKey: string; repositoryId: string; selection: CommitSelection; commit: CommitInfo | undefined;
+  /** A whole commit's files, or the diff of the one file picked from it. */
+  value: { files: CommitFile[] } | { diff: DiffResult };
   diffView: DiffViewPreference; themeType: ThemePreference; wrapLines: boolean; canUndo: boolean; githubRepository: string | null | undefined;
   onUndo: ((commit: CommitInfo) => void) | undefined; onSelect(selection: ViewerSelection): void; onOpenFile(path: string): void;
   onDiffViewChange(value: DiffViewPreference): void; onWrapLinesChange(value: boolean): void;
@@ -540,27 +594,51 @@ function CommitDiffViewer({ contentKey, selection, commit, value, diffView, them
   const description = <CommitMessage body={commit?.body ?? ''} />;
   // A phone's top bar already names the commit, so everything else scrolls away with the diffs.
   const message = phone ? <>{header}{description}</> : description;
+  const { oid } = selection;
+  // Each file's diff is read when it unfolds, under the key that opening the file on its own uses too.
+  const readFile = useCallback((file: CommitFile, signal: AbortSignal) => immutableDiff(
+    commitFileDiffKey(repositoryId, oid, file.path, file.oldPath),
+    () => opentig.diff.getCommitFile(repositoryId, oid, file.path, file.oldPath ?? undefined),
+    signal,
+  ), [oid, repositoryId]);
+  const readAll = useCallback((signal: AbortSignal) => immutableDiff(commitDiffKey(repositoryId, oid), () => opentig.diff.getCommit(repositoryId, oid), signal), [oid, repositoryId]);
+  const keepFileDiff = useCallback((file: CommitFile, diff: DiffResult) => keepImmutableDiff(commitFileDiffKey(repositoryId, oid, file.path, file.oldPath), diff), [oid, repositoryId]);
+  const hasChanges = 'files' in value ? value.files.length > 0 : Boolean(value.diff.patch);
   return (
     <div className="commit-diff-viewer">
       {!phone && header}
-      {value.patch ? <Suspense fallback={<ViewerLoading />}>
-        <PierreDiffViewer
-          kind="diff"
-          contentKey={contentKey}
-          value={value}
-          diffView={diffView}
-          themeType={themeType}
-          wrapLines={wrapLines}
-          commitLayout={{ tools, lead: message, listFiles: selection.type === 'commit' }}
-          // The whole commit opens as a list of its files, each unfolding on request; one picked file shows its diff.
-          initiallyCollapsed={selection.type === 'commit'}
-          scopeControl={selection.type === 'commit-file'
-            ? <Button type="button" variant="ghost" size="xs" onClick={() => onSelect({ type: 'commit', oid: selection.oid, subject: commit?.subject ?? selection.oid.slice(0, 8) })}>All files</Button>
-            : undefined}
-          onDiffViewChange={onDiffViewChange}
-          onWrapLinesChange={onWrapLinesChange}
-          onOpenFile={onOpenFile}
-        />
+      {hasChanges ? <Suspense fallback={<ViewerLoading />}>
+        {'files' in value ? (
+          <PierreDiffViewer
+            kind="commit-files"
+            contentKey={contentKey}
+            files={value.files}
+            diffView={diffView}
+            themeType={themeType}
+            wrapLines={wrapLines}
+            commitLayout={{ tools, lead: message, listFiles: true }}
+            readFile={readFile}
+            readAll={readAll}
+            keepFileDiff={keepFileDiff}
+            onDiffViewChange={onDiffViewChange}
+            onWrapLinesChange={onWrapLinesChange}
+            onOpenFile={onOpenFile}
+          />
+        ) : (
+          <PierreDiffViewer
+            kind="diff"
+            contentKey={contentKey}
+            value={value.diff}
+            diffView={diffView}
+            themeType={themeType}
+            wrapLines={wrapLines}
+            commitLayout={{ tools, lead: message, listFiles: false }}
+            scopeControl={<Button type="button" variant="ghost" size="xs" onClick={() => onSelect({ type: 'commit', oid: selection.oid, subject: commit?.subject ?? selection.oid.slice(0, 8) })}>All files</Button>}
+            onDiffViewChange={onDiffViewChange}
+            onWrapLinesChange={onWrapLinesChange}
+            onOpenFile={onOpenFile}
+          />
+        )}
       </Suspense> : <div className="commit-diff-empty">
         {message}
         <div className="viewer-message">{selection.type === 'commit' && commit?.parentCount && commit.parentCount > 1 ? 'This merge commit has no changes of its own.' : 'No differences to show.'}</div>

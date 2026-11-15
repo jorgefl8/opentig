@@ -220,6 +220,15 @@ export function commandDefinition(command: string): OpenTigServerCommandDefiniti
   return COMMANDS_BY_NAME.get(command);
 }
 
+const REPOSITORY_MUTATIONS = new Set<string>(Object.entries(OPEN_TIG_SERVER_COMMANDS)
+  .filter(([method, definition]) => definition.mutation && ['repository.', 'index.', 'commits.', 'refs.'].some((prefix) => method.startsWith(prefix)))
+  .map(([, definition]) => definition.command));
+
+/** A command that writes to a repository: its files, index, commits or refs. */
+export function isRepositoryMutation(command: string): boolean {
+  return REPOSITORY_MUTATIONS.has(command);
+}
+
 /** How long a client waits for a command that already reached the server. */
 export function clientCommandTimeoutMs(command: string): number {
   return (commandDefinition(command)?.timeoutMs ?? DEFAULT_COMMAND_TIMEOUT_MS) + CLIENT_TIMEOUT_MARGIN_MS;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildDiffFileEntries, diffChangeKind, patchLineStats, splitPatchFiles } from './patch-utils';
+import { buildDiffFileEntries, diffChangeKind, patchLineStats, splitCommitPatch, splitPatchFiles } from './patch-utils';
 
 const PATCH = `diff --git a/src/old.ts b/src/new.ts
 similarity index 80%
@@ -94,5 +94,19 @@ describe('file status in a patch', () => {
   it('marks a binary file, whose zero counts would otherwise read as an empty change', () => {
     const files = buildDiffFileEntries(BINARY + QUOTES_GIT + MOVED);
     expect(files.map((file) => [file.path, file.binary, file.additions, file.deletions])).toEqual([['logo.png', true, 0, 0], ['notes.md', false, 1, 0], ['moved.txt', false, 0, 0]]);
+  });
+});
+
+describe('splitCommitPatch', () => {
+  const section = (path: string) => `diff --git a/${path} b/${path}\n--- a/${path}\n+++ b/${path}\n@@ -1 +1 @@\n-old\n+new\n`;
+  const listed = (path: string) => ({ path, oldPath: null, kind: 'modified' as const, additions: 1, deletions: 1, binary: false });
+  const whole = (patch: string) => ({ path: 'commit', patch, binary: false, truncated: false, lineCount: 0 });
+
+  it('gives each listed file its own part of the whole patch, and none it cannot match', () => {
+    const parts = splitCommitPatch(whole(section('a.txt') + section('b.txt')), [listed('a.txt'), listed('b.txt')]);
+    expect(parts.map((part) => part?.patch)).toEqual([section('a.txt'), section('b.txt')]);
+    // A part that names another file is not shown under this one: that file is read on its own.
+    expect(splitCommitPatch(whole(section('a.txt') + section('c.txt')), [listed('a.txt'), listed('b.txt')]).map((part) => part?.path ?? null)).toEqual(['a.txt', null]);
+    expect(splitCommitPatch(whole(section('a.txt')), [listed('a.txt'), listed('b.txt')])).toEqual([null, null]);
   });
 });

@@ -39,6 +39,7 @@ export function createOpenTigServerClient(options: ServerClientOptions = {}): Op
       transport.markIncompatible();
       throw new Error('This OpenTig client is incompatible with the server.');
     }
+    if (data.server.requestCancellation === true) transport.enableCancellation();
     return data;
   };
 

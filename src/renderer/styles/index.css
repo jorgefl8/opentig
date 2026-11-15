@@ -1980,6 +1980,8 @@ section[data-sileo-viewport] .sync-toast-offer { --_c: var(--sileo-state-info); 
   /* The rule after a file's code closes it before the next header. A collapsed
      file has no code, so its header's own rule is the only one it needs. */
   .diff-file-section { min-width: 100%; border-bottom: 1px solid var(--border); }
+  /* A commit's file whose diff is still on its way, or could not be read. */
+  .diff-file-loading { display: flex; align-items: center; gap: 8px; padding: 10px 16px; color: var(--muted-foreground); font-size: var(--text-ui); }
   .diff-file-section:last-child, .diff-file-section:has(> .diff-file-header > .diff-file-toggle[aria-expanded="false"]) { border-bottom: 0; }
   /* Sticky, so it stays opaque while code scrolls under it. */
   .diff-file-header {

@@ -41,7 +41,7 @@ import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { ChangesView } from '@/features/changes/ChangesView';
 import { createDeleteAction, createDiscardAction, destructiveActionCopy, dispatchDestructiveAction, type DestructiveAction } from '@/features/files/destructive-action';
-import { createSnapshotComparer, pathContains, selectedFileChanged, snapshotPathPresence } from '@/features/files/file-tree';
+import { createSnapshotComparer, findEntry, pathContains, selectedFileChanged, snapshotPathPresence } from '@/features/files/file-tree';
 import { MobileFileBar } from '@/features/files/MobileFileBar';
 import { FileLineTargetContext, type FileLineTarget } from '@/features/viewer/file-line-target';
 import { OpenFilesStrip } from '@/features/files/OpenFilesStrip';
@@ -53,7 +53,6 @@ import {
 import { StoredCommitComposer } from '@/features/commit/StoredCommitComposer';
 import { createCommitMessageStore } from '@/features/commit/commit-message-store';
 import { useCommitPlan } from '@/features/commit/useCommitPlan';
-import { clearCommitFilesCache } from '@/features/history/commit-files-cache';
 import { OpenRepositoryDialog } from '@/features/repositories/OpenRepositoryDialog';
 import { Welcome } from '@/features/repositories/Welcome';
 import { RepositoryUnavailable } from '@/features/repositories/RepositoryUnavailable';
@@ -80,6 +79,7 @@ import { useMobileLayout } from '@/lib/use-mobile-layout';
 import { installZoomAwarePositioning } from '@/lib/zoom-aware-positioning';
 import { isUserIdle } from '@/lib/window-focus';
 import { dropFilesAhead, prefetchFile } from '@/features/viewer/viewer-prefetch';
+import { changeGeneration, noteChange, type FileStamp } from '@/features/viewer/content-cache';
 import { mobileMainAction } from '@/lib/mobile-main-action';
 import { useElapsed } from '@/lib/use-elapsed';
 import { opentig, serverClient } from '@/lib/opentig-api';
@@ -292,6 +292,15 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   const commitTextareaRef = useRef<HTMLTextAreaElement>(null);
   const knownConflictPathsRef = useRef<Map<string, string[]>>(new Map());
   const refreshCyclesRef = useRef<Map<string, { queued: RefreshRequest | null; promise: Promise<void> }>>(new Map());
+  // The change generation the file tree on screen was read at: while it is the current one, the
+  // tree's sizes and times are current too, and the viewer may open a file it read before.
+  const treeGenerationRef = useRef<{ repositoryId: string; generation: number } | null>(null);
+  const fileStamp = useCallback((path: string): FileStamp | null => {
+    const tree = treeGenerationRef.current;
+    if (!tree || tree.repositoryId !== repositoryRef.current?.id || tree.generation !== changeGeneration() || !filesRef.current) return null;
+    const entry = findEntry(filesRef.current, path);
+    return entry?.type === 'file' ? { size: entry.size, mtimeMs: entry.mtimeMs } : null;
+  }, []);
   // When the open repository's snapshot and its file tree were last read, for `sectionRefresh`.
   const lastReadRef = useRef({ snapshot: Number.NEGATIVE_INFINITY, files: Number.NEGATIVE_INFINITY, refs: Number.NEGATIVE_INFINITY });
 
@@ -785,11 +794,13 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     if (!repository) return;
     const repositoryId = repository.id;
     try {
+      const generation = changeGeneration();
       const nextFiles = await appQueryClient.fetchQuery({
         queryKey: queryKeys.files(repositoryId), queryFn: () => opentig.repository.getFiles(repositoryId),
       });
       if (repositoryRef.current?.id !== repositoryId) return;
       lastReadRef.current.files = Date.now();
+      treeGenerationRef.current = { repositoryId, generation };
       applyFilesSnapshot(nextFiles);
     } catch (reason) {
       if (repositoryRef.current?.id !== repositoryId) return;
@@ -866,7 +877,9 @@ export default function App({ initialView, initialSelection, pullRequestCreation
         })));
         return snapshotReads();
       };
+      let treeGeneration = changeGeneration();
       const snapshotReads = () => {
+        treeGeneration = changeGeneration();
         const statusRead = appQueryClient.fetchQuery({ queryKey: queryKeys.status(repositoryId), queryFn: () => opentig.repository.getStatus(repositoryId) });
         return Promise.all([
           statusRead,
@@ -904,7 +917,10 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       setShownHistoryHead((current) => current?.repositoryId === repositoryId && current.head === historyHead(nextStatus) ? current : { repositoryId, head: historyHead(nextStatus) });
       if (nextBranches) setBranches(nextBranches);
       if (nextWorktrees) setWorktrees(nextWorktrees);
-      if (nextFiles) applyFilesSnapshot(nextFiles);
+      if (nextFiles) {
+        treeGenerationRef.current = { repositoryId, generation: treeGeneration };
+        applyFilesSnapshot(nextFiles);
+      }
       void nextHistory;
       if (shouldRefreshViewer(scope, viewerSelectionRef.current?.type ?? null)) {
         setRefreshVersion((version) => version + 1);
@@ -1008,7 +1024,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     // Nothing of this repository has been read since it was opened: the first refresh reads all of it.
     snapshotRepositoryIdRef.current = null;
     lastReadRef.current = { snapshot: Number.NEGATIVE_INFINITY, files: Number.NEGATIVE_INFINITY, refs: Number.NEGATIVE_INFINITY };
-    clearCommitFilesCache();
+    // Only the open repository is watched: what was read of this one before may have changed since.
+    noteChange();
     filesComparer.reset();
     // A repository or worktree seen in the last few minutes shows what it had at once, while the first
     // refresh reads it again behind that; it holds Pull, Push and Commit until it has. Each piece comes
@@ -1123,6 +1140,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     if (scope === 'unknown') void appQueryClient.invalidateQueries({ queryKey: queryKeys.githubInfo(repositoryId) });
     // A file read ahead of a click may be the one that just changed.
     if (scope !== 'refs' && scope !== 'worktrees') dropFilesAhead(repositoryId);
+    // So may any file or change the viewer keeps; a moved HEAD changes what is staged.
+    if (scope !== 'worktrees') noteChange();
   }), [appQueryClient, refresh, repository?.id]);
 
   useEffect(() => {
@@ -3007,7 +3026,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
                     fileClipboardAvailable={capabilities?.fileClipboard === true}
                     revealAvailable={capabilities?.revealInFileManager === true}
                     onQuickOpen={() => setQuickOpen(true)}
-                    onFileIntent={(path) => prefetchFile(repository.id, path)}
+                    onFileIntent={(path) => prefetchFile(repository.id, path, fileStamp(path))}
                     historyState={fileHistoryState}
                     openFiles={fileSessions.get(repository.id) ?? emptyFileSession}
                     onActivateFile={activateFileTab}
@@ -3164,6 +3183,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
                       undoBlocked={Boolean(status?.operation) || undoingCommit}
                       onUndoCommit={setUndoCommit}
                       draftFor={(path) => readFileDraft(repository.id, path)}
+                      fileStamp={fileStamp}
                       onSelect={selectViewer}
                       onOpenFile={openFile}
                       onDiffViewChange={(value) => void updatePreference({ diffView: value })}

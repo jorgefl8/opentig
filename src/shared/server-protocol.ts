@@ -35,6 +35,11 @@ export interface OpenTigOwnerSession {
 
 export type OpenTigClientMessage =
   | { type: 'request'; id: string; command: string; args: unknown[] }
+  /**
+   * Stops a read the client no longer needs. Sent only to a server whose identity has
+   * `requestCancellation`; the result still arrives, and the client ignores it.
+   */
+  | { type: 'cancel'; id: string }
   | { type: 'ping' };
 
 export type OpenTigServerMessage =
@@ -46,4 +51,6 @@ export interface OpenTigServerIdentity {
   profile?: ApplicationProfile;
   protocolVersion: number;
   appVersion: string;
+  /** Understands `{ type: 'cancel' }`. Absent on servers older than that message. */
+  requestCancellation?: true;
 }

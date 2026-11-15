@@ -87,6 +87,8 @@ On desktop, a supervised utility process keeps repository watchers and in-flight
 
 Resting the pointer on a file in **Files** or a commit in **History** for a moment reads it, so clicking it shows it without a wait; passing over rows reads nothing.
 
+Opening a file or a change you opened a moment ago shows it again without reading it, as long as nothing was written to the repository since; a file also stays as read while the file tree still gives it the same size and modification time. If the file watcher has stopped, everything is read again on each open. A read for something you no longer wait for, because you opened another document, is stopped on the server too.
+
 The workspace shell loads first. Files, History, Search, and the viewers for changes, files, and commits are then downloaded in the background while the app is idle, so the first click on each shows it straight away; for a GitHub repository, so are the GitHub section and its viewers. Settings, PR creation, and the PDF viewer load when first opened. Nothing is downloaded ahead in a browser set to save data or on a low-end Android phone, where each part loads on first use. Overlapping watcher and manual refreshes are combined; status-only or reference-only updates keep the current diff mounted.
 
 [Development profiles](development.md) separate Dev application data from production. Repositories and authenticated host CLIs remain real resources in either profile.
@@ -328,7 +330,7 @@ Search data is prepared when Quick Open opens and reused until the file list cha
 
 Open **History** and click a commit's row for its title, hash, author, date, publication state, message, its file count and line totals, and each file's diff. A long message starts folded to three lines; **Show full description** opens it. Merge and empty commits also open with complete metadata.
 
-Click a file's header to fold or unfold its diff, or, with several files, the toolbar button to fold or unfold them all, and a file's **Open file** button to open the file as it is now in your worktree; a file the commit deleted has none. In the list, expand a row with its chevron and pick a file to see only that file's diff, including renamed paths; **All files** returns to the whole commit. A commit opens with its files folded, so it reads as a list first; a single file picked from the list opens unfolded.
+Click a file's header to fold or unfold its diff, or, with several files, the toolbar button to fold or unfold them all, and a file's **Open file** button to open the file as it is now in your worktree; a file the commit deleted has none. In the list, expand a row with its chevron and pick a file to see only that file's diff, including renamed paths; **All files** returns to the whole commit. A commit opens with its files folded, so it reads as a list first; a single file picked from the list opens unfolded. Opening a commit reads only its list of files: a file's diff is read when you unfold it, unfolding them all reads the whole commit once, and a diff already read opens again without asking.
 
 The commit's **⋯** menu copies the full hash, opens a published commit on GitHub, undoes the commit, and closes the viewer. In the list, click a short hash to copy the full one.
 

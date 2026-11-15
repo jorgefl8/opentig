@@ -67,6 +67,7 @@ const BUSY_RETRY_MAX_MS = 2_000;
 const BUSY_PROBE_WAIT_MS = 250;
 
 let ambientPriority: RequestPriority = 'foreground';
+let ambientSignal: AbortSignal | undefined;
 
 /**
  * Marks the requests `start` makes before it returns as background work, such as
@@ -78,6 +79,18 @@ export function inBackground<T>(start: () => T): T {
   ambientPriority = 'background';
   try { return start(); }
   finally { ambientPriority = previous; }
+}
+
+/**
+ * Ties the requests `start` makes before it returns to `signal`: once it aborts,
+ * those still waiting are dropped and those the server is running are cancelled
+ * there too, when the server supports it. Only reads are cancelled on the server.
+ */
+export function withSignal<T>(signal: AbortSignal, start: () => T): T {
+  const previous = ambientSignal;
+  ambientSignal = signal;
+  try { return start(); }
+  finally { ambientSignal = previous; }
 }
 
 export const UNCONFIRMED_RESULT_MESSAGE = 'OpenTig did not receive the result. The operation may have finished or may still be running, so check the current state before trying again.';
@@ -146,6 +159,9 @@ export class OpenTigWebSocketTransport {
   private stopped = false;
   private connectedBefore = false;
   private readonly requested = new Map<string, number>();
+  /** Set once the server said it understands `cancel`; an older one is never sent it. */
+  private cancellation = false;
+  private readonly mutationListeners = new Set<(command: string) => void>();
 
   constructor(options: WebSocketTransportOptions = {}) {
     this.url = options.url ?? defaultWebSocketUrl();
@@ -187,10 +203,11 @@ export class OpenTigWebSocketTransport {
   ): Promise<OpenTigServerCommandMap[Command]['result']> {
     // Read before the first await, while the caller that chose it is still on the stack.
     const priority = options.priority ?? ambientPriority;
+    const signal = options.signal ?? ambientSignal;
     const timeoutMs = options.timeoutMs ?? this.requestTimeoutMs ?? clientCommandTimeoutMs(command);
     this.start();
-    await this.waitForConnection(Math.min(timeoutMs, this.connectionWaitMs), options.signal);
-    if (options.signal?.aborted) throw abortError();
+    await this.waitForConnection(Math.min(timeoutMs, this.connectionWaitMs), signal);
+    if (signal?.aborted) throw abortError();
     if (!this.socket || this.socket.readyState !== SOCKET_OPEN) throw new ServerDisconnectedError('OpenTig server disconnected.');
 
     this.requested.set(command, (this.requested.get(command) ?? 0) + 1);
@@ -209,15 +226,18 @@ export class OpenTigWebSocketTransport {
         resolve,
         reject,
         timer: null,
-        ...(options.signal ? { signal: options.signal } : {}),
+        ...(signal ? { signal } : {}),
       };
-      if (options.signal) {
+      if (signal) {
         request.abort = () => {
+          const sentAs = request.id;
           this.finish(request);
+          // The server is running it: a read is stopped there too, so it frees its slot and its process.
+          if (sentAs !== null && !request.mutation) this.cancelOnServer(sentAs);
           reject(abortError());
           this.drain();
         };
-        options.signal.addEventListener('abort', request.abort, { once: true });
+        signal.addEventListener('abort', request.abort, { once: true });
       }
       this.enqueue(request);
       this.drain();
@@ -234,6 +254,24 @@ export class OpenTigWebSocketTransport {
       requested: Object.fromEntries(this.requested),
       unanswered: this.pending.size + this.waiting.foreground.length + this.waiting.background.length,
     };
+  }
+
+  /** The server understands `cancel` (it says so in its bootstrap identity). */
+  enableCancellation(): void {
+    this.cancellation = true;
+  }
+
+  /** Called with each change sent to the server, before its result: what was read before it may be out of date. */
+  onMutation(listener: (command: string) => void): () => void {
+    this.mutationListeners.add(listener);
+    return () => this.mutationListeners.delete(listener);
+  }
+
+  private cancelOnServer(id: string): void {
+    const socket = this.socket;
+    if (!this.cancellation || !socket || socket.readyState !== SOCKET_OPEN) return;
+    try { socket.send(JSON.stringify({ type: 'cancel', id })); }
+    catch { /* The result is ignored either way. */ }
   }
 
   markIncompatible(): void {
@@ -402,6 +440,7 @@ export class OpenTigWebSocketTransport {
     }, request.timeoutMs);
     this.pending.set(id, request);
     if (request.priority === 'background') this.backgroundInFlight += 1;
+    if (request.mutation) for (const listener of this.mutationListeners) listener(request.command);
     try {
       socket.send(JSON.stringify({ type: 'request', id, command: request.command, args: request.args }));
     } catch {

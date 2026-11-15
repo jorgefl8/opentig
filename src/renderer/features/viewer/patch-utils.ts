@@ -1,5 +1,6 @@
 import { getSingularPatch, type FileDiffMetadata } from '@pierre/diffs';
-import type { ChangeKind } from '@shared/git-types';
+import type { ChangeKind, CommitFile } from '@shared/git-types';
+import type { DiffResult } from '@shared/contracts';
 import { diffHighlightKey } from './highlight-cache-key';
 import { resolvePierreLanguage } from './pierreLanguages';
 
@@ -110,4 +111,20 @@ const ANIMATED_FILE_COUNT = 40;
 
 export function animatesFileToggle(file: Pick<DiffFileEntry, 'additions' | 'deletions'>, fileCount: number): boolean {
   return fileCount <= ANIMATED_FILE_COUNT && file.additions + file.deletions <= ANIMATED_FILE_LINES;
+}
+
+/**
+ * A whole commit's patch cut into its files. The server lists the patch's files
+ * in the same order as the commit's file list, both from the same Git command;
+ * a part that does not name its file is left out, and that file is read alone.
+ */
+export function splitCommitPatch(whole: DiffResult, files: readonly CommitFile[]): Array<DiffResult | null> {
+  const sections = splitPatchFiles(whole.patch);
+  if (sections.length !== files.length) return files.map(() => null);
+  return files.map((file, index) => {
+    const section = sections[index]!;
+    const header = section.slice(0, section.indexOf('\n') + 1 || section.length);
+    if (!header.includes(file.path)) return null;
+    return { path: file.path, patch: section, binary: /^(?:Binary files .* differ|GIT binary patch)$/m.test(section), truncated: false, lineCount: section.split('\n').length };
+  });
 }

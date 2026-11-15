@@ -1,7 +1,11 @@
 import type { OpenTigApi } from '@shared/contracts';
 import { createOpenTigServerClient } from './server-client';
+import { isRepositoryMutation } from '@shared/protocol';
+import { noteChange } from '@/features/viewer/content-cache';
 
 export const serverClient = createOpenTigServerClient();
+// A change this client sends may change what the viewer keeps, before the file watcher says so.
+serverClient.transport.onMutation((command) => { if (isRepositoryMutation(command)) noteChange(); });
 
 const desktop = window.opentigDesktop;
 const server = serverClient.api;

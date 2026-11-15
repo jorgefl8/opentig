@@ -1,3 +1,5 @@
+import { writeFile } from 'node:fs/promises';
+import path from 'node:path';
 import type { Page } from '@playwright/test';
 import { openRepository, requestsDuring, requestTotal } from './support/app';
 import { expect, test } from './support/fixtures';
@@ -78,13 +80,14 @@ test('resting the pointer on a file or a commit reads it, so the click has nothi
 
   await section(page, 'History').click();
   const commit = sidebar.getByRole('list', { name: 'Commit history' }).getByRole('button', { name: 'Add the notes', exact: true });
+  // A commit opens as the list of its files, which is all resting on it reads.
   const restedOnCommit = await requestsDuring(page, () => commit.hover());
-  expect(restedOnCommit['diff:commit'], JSON.stringify(restedOnCommit)).toBe(1);
+  expect(restedOnCommit, JSON.stringify(restedOnCommit)).toEqual({ 'commits:files': 1 });
   const openedCommit = await requestsDuring(page, async () => {
     await commit.click();
     await expect(page.getByText('notes.txt').last()).toBeVisible();
   });
-  expect(openedCommit['diff:commit'], JSON.stringify(openedCommit)).toBeUndefined();
+  expect(openedCommit, JSON.stringify(openedCommit)).toEqual({});
 });
 
 test('the sections and viewers are downloaded while the app is idle, so a first click needs no more code', async ({ pairedPage: page, repository }) => {
@@ -149,8 +152,71 @@ test('a section shows what it was left with: the open commit, the scroll positio
   expect(await history.evaluate((element) => element.scrollTop)).toBe(scrolled);
   // Neither the history nor the commit is read again.
   expect(back['commits:list'], JSON.stringify(back)).toBeUndefined();
-  expect(back['diff:commit'], JSON.stringify(back)).toBeUndefined();
+  expect(back['commits:files'], JSON.stringify(back)).toBeUndefined();
 
   await section(page, 'Search').click();
   await expect(search).toHaveValue('Step');
+});
+
+test('a file, a change or a commit opened again asks for nothing until it changes, and a commit reads only the files unfolded', async ({ pairedPage: page, repository }) => {
+  await repository.commit('notes.txt', 'First line\n', 'Add the notes');
+  await repository.commit('other.txt', 'Other line\n', 'Add another file');
+  await openRepository(page, repository);
+  const sidebar = page.getByRole('complementary');
+  const viewer = page.getByRole('main');
+
+  // Files: the second visit to a file reads nothing; a change on disk is read and shown.
+  const tree = sidebar.getByRole('tree', { name: 'Files' });
+  const openFile = async (name: string, text: string) => {
+    await tree.getByRole('treeitem', { name }).click();
+    await expect(page.getByRole('textbox', { name })).toContainText(text);
+  };
+  await openFile('notes.txt', 'First line');
+  await openFile('other.txt', 'Other line');
+  const fileAgain = await requestsDuring(page, () => openFile('notes.txt', 'First line'));
+  expect(fileAgain['repository:read-file'], JSON.stringify(fileAgain)).toBeUndefined();
+  await writeFile(path.join(repository.path, 'notes.txt'), 'Changed on disk\n');
+  await expect(page.getByRole('textbox', { name: 'notes.txt' })).toContainText('Changed on disk');
+  await openFile('other.txt', 'Other line');
+  await openFile('notes.txt', 'Changed on disk');
+
+  // Changes: going back to a change already shown reads nothing.
+  await writeFile(path.join(repository.path, 'other.txt'), 'Other line, edited\n');
+  // The tab counts the changed files.
+  await page.getByRole('navigation', { name: 'Repository views' }).getByRole('button', { name: 'Changes 2', exact: true }).click();
+  const change = (name: string) => sidebar.getByRole('treeitem', { name: new RegExp(`^View changes for ${name.replace('.', '\\.')} `) });
+  await change('notes.txt').click();
+  await expect(viewer.getByText('Changed on disk')).toBeVisible();
+  await change('other.txt').click();
+  await expect(viewer.getByText('Other line, edited')).toBeVisible();
+  const diffAgain = await requestsDuring(page, async () => {
+    await change('notes.txt').click();
+    await expect(viewer.getByText('Changed on disk')).toBeVisible();
+  });
+  expect(diffAgain['diff:get'], JSON.stringify(diffAgain)).toBeUndefined();
+
+  // History: a commit reads its files' list, then one diff per file unfolded, once.
+  await section(page, 'History').click();
+  const history = sidebar.getByRole('list', { name: 'Commit history' });
+  const opened = await requestsDuring(page, async () => {
+    await history.getByRole('button', { name: 'Add the notes', exact: true }).click();
+    await expect(viewer.getByRole('heading', { name: 'Add the notes', level: 2 })).toBeVisible();
+  });
+  expect(opened['diff:commit'], JSON.stringify(opened)).toBeUndefined();
+  expect(opened['diff:commit-file'], JSON.stringify(opened)).toBeUndefined();
+  const file = viewer.getByRole('button', { name: /^notes\.txt$/ });
+  const unfolded = await requestsDuring(page, async () => {
+    await file.click();
+    await expect(viewer.getByRole('code').filter({ hasText: 'First line' })).toBeVisible();
+  });
+  expect(unfolded, JSON.stringify(unfolded)).toEqual({ 'diff:commit-file': 1 });
+  await history.getByRole('button', { name: 'Add another file', exact: true }).click();
+  await expect(viewer.getByRole('heading', { name: 'Add another file', level: 2 })).toBeVisible();
+  const reopened = await requestsDuring(page, async () => {
+    await history.getByRole('button', { name: 'Add the notes', exact: true }).click();
+    await file.click();
+    await expect(viewer.getByRole('code').filter({ hasText: 'First line' })).toBeVisible();
+  });
+  expect(reopened['commits:files'], JSON.stringify(reopened)).toBeUndefined();
+  expect(reopened['diff:commit-file'], JSON.stringify(reopened)).toBeUndefined();
 });

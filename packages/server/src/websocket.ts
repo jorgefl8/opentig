@@ -26,8 +26,14 @@ const DEFAULT_REQUEST_RATE_WINDOW_MS = 10_000;
 interface ClientState {
   sessionId: string;
   alive: boolean;
-  requests: Map<string, AbortController>;
+  requests: Map<string, RunningRequest>;
   requestTimes: number[];
+}
+
+interface RunningRequest {
+  controller: AbortController;
+  /** A change is never stopped halfway: only reads can be cancelled. */
+  cancellable: boolean;
 }
 
 export interface OpenTigWebSocketOptions {
@@ -92,7 +98,7 @@ export class OpenTigWebSocketTransport {
     const revoked = new Set(sessionIds);
     for (const [socket, state] of this.clients) {
       if (revoked.has(state.sessionId)) {
-        for (const controller of state.requests.values()) controller.abort();
+        for (const request of state.requests.values()) request.controller.abort();
         socket.close(1008, 'Session revoked');
       }
     }
@@ -136,7 +142,7 @@ export class OpenTigWebSocketTransport {
       if (state.requests.size > 0 || ![1000, 1001, 1005].includes(code)) {
         this.note(`WebSocket closed ${JSON.stringify({ code, requestsInFlight: state.requests.size })}`);
       }
-      for (const controller of state.requests.values()) controller.abort();
+      for (const request of state.requests.values()) request.controller.abort();
       this.clients.delete(socket);
       if (![...this.clients.values()].some((client) => client.sessionId === sessionId)) {
         this.options.registry.clearSession(sessionId);
@@ -155,6 +161,12 @@ export class OpenTigWebSocketTransport {
     try { input = JSON.parse(bytes.toString('utf8')); }
     catch { return this.sendProtocolError(socket, '', 'Malformed request.'); }
     if (isPing(input)) return void this.send(socket, { type: 'pong' });
+    if (isCancel(input)) {
+      // Unknown or finished ids are ignored: the result may already be on its way.
+      const running = state.requests.get(input.id);
+      if (running?.cancellable) running.controller.abort();
+      return;
+    }
     if (!isRequest(input)) return this.sendProtocolError(socket, requestId(input), 'Malformed request.');
     if (!this.options.auth.hasSession(state.sessionId)) return socket.close(1008, 'Session expired or revoked');
     const now = Date.now();
@@ -168,7 +180,7 @@ export class OpenTigWebSocketTransport {
 
     const controller = new AbortController();
     const startedAt = this.measureTransport ? performance.now() : undefined;
-    state.requests.set(input.id, controller);
+    state.requests.set(input.id, { controller, cancellable: commandDefinition(input.command)?.mutation === false });
     const execution = this.options.registry.execute(state.sessionId, input.command, input.args, { signal: controller.signal });
     this.pendingOperations.add(execution);
     void execution.finally(() => this.pendingOperations.delete(execution));
@@ -189,7 +201,8 @@ export class OpenTigWebSocketTransport {
         this.options.registry.recordCommandTimeout(input.command, input.args, timeoutMs);
       }));
       if (input.command === IPC.bootstrap && result.ok && isRecord(result.value)) {
-        result.value = { ...result.value, server: this.options.identity };
+        // This transport understands `cancel`; a client only sends it to a server that says so.
+        result.value = { ...result.value, server: { ...this.options.identity, requestCancellation: true } satisfies OpenTigServerIdentity };
       }
       this.send(socket, { type: 'result', id: input.id, result });
     } finally {
@@ -318,7 +331,7 @@ export class OpenTigWebSocketTransport {
     clearInterval(this.heartbeat);
     this.options.server.off('upgrade', this.upgradeHandler);
     for (const [socket, state] of this.clients) {
-      for (const controller of state.requests.values()) controller.abort();
+      for (const request of state.requests.values()) request.controller.abort();
       socket.close(1001, 'Server shutting down');
     }
     await Promise.race([
@@ -352,6 +365,10 @@ function isRequest(value: unknown): value is { type: 'request'; id: string; comm
     && value.command.length > 0
     && value.command.length <= 200
     && Array.isArray(value.args);
+}
+
+function isCancel(value: unknown): value is { type: 'cancel'; id: string } {
+  return isRecord(value) && value.type === 'cancel' && typeof value.id === 'string' && value.id.length > 0 && value.id.length <= 128;
 }
 
 function requestId(value: unknown): string {

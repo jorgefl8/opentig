@@ -8,7 +8,7 @@ import type { DiffRequest, Preferences } from '../../shared/contracts';
 import { IPC } from '../../shared/contracts';
 import { aiExecutablePathsKey } from '../../shared/ai-status';
 import { GitOperationError } from '../../shared/errors';
-import { OPEN_TIG_SERVER_COMMANDS, type OpenTigServerCommandDefinition } from '../../shared/protocol';
+import { isRepositoryMutation, OPEN_TIG_SERVER_COMMANDS, type OpenTigServerCommandDefinition } from '../../shared/protocol';
 import { repositoryRootFromCommonDir } from '../../shared/repository-favicon';
 import { readRepositoryFavicon } from '../files/RepositoryFavicon';
 import { browseServerDirectories } from '../files/ServerDirectoryBrowser';
@@ -27,9 +27,6 @@ export function registerServerCommands(
   const serverDefinitions = new Map<string, OpenTigServerCommandDefinition>(
     Object.values(OPEN_TIG_SERVER_COMMANDS).map((definition) => [definition.command, definition]),
   );
-  const repositoryMutations = new Set<string>(Object.entries(OPEN_TIG_SERVER_COMMANDS)
-    .filter(([method, definition]) => definition.mutation && ['repository.', 'index.', 'commits.', 'refs.'].some(prefix => method.startsWith(prefix)))
-    .map(([, definition]) => definition.command));
   const handleWithContext = <T>(
     channel: string,
     operation: string,
@@ -42,9 +39,9 @@ export function registerServerCommands(
       // Include filesystem-only mutations, which do not pass through Git's write queue.
       const first = args[0];
       const repositoryId = typeof first === 'object' && first !== null && 'repositoryId' in first ? first.repositoryId : first;
-      if (repositoryMutations.has(channel)) services.repositories.invalidateIfKnown(repositoryId);
+      if (isRepositoryMutation(channel)) services.repositories.invalidateIfKnown(repositoryId);
       try { return await handler(context, ...args); }
-      finally { if (repositoryMutations.has(channel)) services.repositories.invalidateIfKnown(repositoryId); }
+      finally { if (isRepositoryMutation(channel)) services.repositories.invalidateIfKnown(repositoryId); }
     });
   };
   const handle = <T>(channel: string, operation: string, handler: (...args: unknown[]) => Promise<T> | T) => {
@@ -200,7 +197,8 @@ export function registerServerCommands(
     stringArg(id, 'directory-entries', 64),
     directoryPath === '' ? '' : stringArg(directoryPath, 'directory-entries'),
   ));
-  handle(IPC.repositoryReadFile, 'read-file', (id, filePath, allowLarge) => services.files.read(stringArg(id, 'read-file', 64), stringArg(filePath, 'read-file'), allowLarge === true));
+  // Reads a client may stop (see `cancel` in the WebSocket protocol) take the request's signal.
+  handleWithContext(IPC.repositoryReadFile, 'read-file', (context, id, filePath, allowLarge) => services.files.read(stringArg(id, 'read-file', 64), stringArg(filePath, 'read-file'), allowLarge === true, context.signal));
   handle(IPC.repositoryLineBlame, 'line-blame', (id, filePath, draft) => services.operations.lineBlame(
     stringArg(id, 'line-blame', 64),
     stringArg(filePath, 'line-blame'),
@@ -358,20 +356,21 @@ export function registerServerCommands(
   handle(IPC.repositoryFileHistoryState, 'file-history-state', (id) => services.fileHistory.state(stringArg(id, 'file-history-state', 64)));
   handle(IPC.repositoryUndoFileOperation, 'undo-file-operation', (id) => services.fileHistory.undo(stringArg(id, 'undo-file-operation', 64)));
   handle(IPC.repositoryRedoFileOperation, 'redo-file-operation', (id) => services.fileHistory.redo(stringArg(id, 'redo-file-operation', 64)));
-  handle(IPC.diffGet, 'diff', (raw) => {
+  handleWithContext(IPC.diffGet, 'diff', (context, raw) => {
     const request = raw as Partial<DiffRequest>;
     return services.operations.diff({
       repositoryId: stringArg(request.repositoryId, 'diff', 64),
       path: stringArg(request.path, 'diff'),
       kind: request.kind === 'staged' ? 'staged' : 'unstaged',
-    });
+    }, context.signal);
   });
-  handle(IPC.diffCommit, 'commit-diff', (id, oid) => services.operations.commitDiff(stringArg(id, 'commit-diff', 64), stringArg(oid, 'commit-diff', 128)));
-  handle(IPC.diffCommitFile, 'commit-file-diff', (id, oid, filePath, oldPath) => services.operations.commitFileDiff(
+  handleWithContext(IPC.diffCommit, 'commit-diff', (context, id, oid) => services.operations.commitDiff(stringArg(id, 'commit-diff', 64), stringArg(oid, 'commit-diff', 128), context.signal));
+  handleWithContext(IPC.diffCommitFile, 'commit-file-diff', (context, id, oid, filePath, oldPath) => services.operations.commitFileDiff(
     stringArg(id, 'commit-file-diff', 64),
     stringArg(oid, 'commit-file-diff', 128),
     stringArg(filePath, 'commit-file-diff'),
     oldPath === undefined ? undefined : stringArg(oldPath, 'commit-file-diff'),
+    context.signal,
   ));
   handle(IPC.indexStage, 'stage', (id, paths) => services.operations.stage(stringArg(id, 'stage', 64), pathsArg(paths, 'stage')));
   handle(IPC.indexUnstage, 'unstage', (id, paths) => services.operations.unstage(stringArg(id, 'unstage', 64), pathsArg(paths, 'unstage')));
@@ -422,7 +421,7 @@ export function registerServerCommands(
     oidArg(expectedOid, 'undo-latest-commit'),
   ));
   handle(IPC.commitsList, 'history', (id, cursor) => services.operations.listCommits(stringArg(id, 'history', 64), cursor === undefined ? undefined : stringArg(cursor, 'history', 128)));
-  handle(IPC.commitsFiles, 'commit-files', (id, oid) => services.operations.commitFiles(stringArg(id, 'commit-files', 64), stringArg(oid, 'commit-files', 128)));
+  handleWithContext(IPC.commitsFiles, 'commit-files', (context, id, oid) => services.operations.commitFiles(stringArg(id, 'commit-files', 64), stringArg(oid, 'commit-files', 128), context.signal));
   handle(IPC.commitsRecognize, 'commit-recognize', (id, oid) => services.operations.recognizeCommit(stringArg(id, 'commit-recognize', 64), stringArg(oid, 'commit-recognize', 128)));
   handle(IPC.commitsCountAfter, 'commits-after', (id, oid) => services.operations.commitsAfter(stringArg(id, 'commits-after', 64), oidArg(oid, 'commits-after')));
   handle(IPC.branchesList, 'branches', (id) => services.operations.branches(stringArg(id, 'branches', 64)));

@@ -66,6 +66,12 @@ export interface FileResult {
   tooLarge: boolean;
   size: number;
   mtimeMs: number;
+  /**
+   * When the server took `size` and `mtimeMs`, on its own clock. A file modified within the
+   * file system's timestamp granularity of this moment could change again without changing
+   * them, so the client keeps such a read only until something changes. Absent from older servers.
+   */
+  readAtMs?: number;
 }
 
 export type ImageFileResult =
