@@ -190,6 +190,9 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   // The repository a read has confirmed since it was opened. Until then what is shown may come from
   // memory or from what the server saved, and nothing that changes the repository is offered on it.
   const [confirmedRepositoryId, setConfirmedRepositoryId] = useState<string | null>(null);
+  // The same for the file tree, which the first read leaves out unless Files is open: until a tree read in
+  // this session lands, the tree shown may be a saved one, and nothing in it is renamed, moved or deleted.
+  const [treeConfirmedRepositoryId, setTreeConfirmedRepositoryId] = useState<string | null>(null);
   // Read by a refresh as it starts, to tell the first read of a repository from a later one.
   const snapshotRepositoryIdRef = useRef<string | null>(null);
   const [pendingRepositoryId, setPendingRepositoryId] = useState<string | null>(null);
@@ -455,6 +458,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   [mobile, mobileFloatHost, mobilePane, viewerActionsHost, viewerTitleHost]);
   const currentSnapshot = snapshotRepositoryId === repository?.id;
   const unconfirmed = repository !== null && confirmedRepositoryId !== repository.id;
+  const treeUnconfirmed = repository !== null && treeConfirmedRepositoryId !== repository.id;
   const repositoryLoadPhase = pendingRepositoryId ? 'opening' : repository && !currentSnapshot ? 'loading' : null;
   // Quick switches finish without a flash; only a noticeable wait shows progress.
   const repositoryLoadVisible = useElapsed(repositoryLoadPhase ? 'busy' : null, 200);
@@ -844,6 +848,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       lastReadRef.current.files = Date.now();
       treeGenerationRef.current = treeReadRef.current?.repositoryId === repositoryId ? treeReadRef.current : null;
       applyFilesSnapshot(nextFiles);
+      setTreeConfirmedRepositoryId(repositoryId);
     } catch (reason) {
       if (repositoryRef.current?.id !== repositoryId) return;
       if (isConnectionLoss(reason)) recordConnectionLoss('Could not refresh files', reason);
@@ -961,6 +966,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       if (nextFiles) {
         treeGenerationRef.current = treeReadRef.current?.repositoryId === repositoryId ? treeReadRef.current : null;
         applyFilesSnapshot(nextFiles);
+        setTreeConfirmedRepositoryId(repositoryId);
       }
       void nextHistory;
       if (shouldRefreshViewer(scope, viewerSelectionRef.current?.type ?? null)) {
@@ -1077,6 +1083,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     const known = repositoryId ? knownSnapshot(appQueryClient, repositoryId) : null;
     setSnapshotRepositoryId(known ? repositoryId : null);
     setConfirmedRepositoryId(null);
+    setTreeConfirmedRepositoryId(null);
     if (known) setStatus(known.status);
     if (known && repositoryId) setShownHistoryHead({ repositoryId, head: historyHead(known.status) });
     filesRef.current = known?.files ?? null;
@@ -2179,12 +2186,13 @@ export default function App({ initialView, initialSelection, pullRequestCreation
    * entries are never removed optimistically; only a real backend result
    * reaches this point.
    */
-  const handleRefsManaged = (recentRepositories: RecentRepository[] | null, repositoryId: string) => {
+  const handleRefsManaged = (recentRepositories: RecentRepository[] | null, commonDir: string) => {
     if (recentRepositories) setBootstrap((current) => current ? { ...current, recentRepositories } : current);
     // A removed branch or worktree can change status, branches, worktrees, and
-    // the visible history, so this asks for the full background refresh, of the
-    // repository it was done in: if another is open by now, that one is read when it is opened again.
-    if (repositoryRef.current?.id === repositoryId) void refresh({ background: true });
+    // the visible history, so this asks for the full background refresh, if what is open
+    // shares its refs with the repository it was done in, as its other worktrees do.
+    const open = repositoryRef.current;
+    if (open && normalizeRepositoryKey(open.commonDir) === normalizeRepositoryKey(commonDir)) void refresh({ background: true });
   };
 
   const loadMore = async () => {
@@ -3119,7 +3127,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
                     filesSnapshotRevision={filesSnapshotRevision}
                     showDotEnvFiles={bootstrap.preferences.showDotEnvFiles}
                     activePath={viewerSelection?.type === 'file' ? viewerSelection.path : null}
-                    readOnly={Boolean(status?.readOnly || busy) || unconfirmed}
+                    readOnly={Boolean(status?.readOnly || busy) || unconfirmed || treeUnconfirmed}
                     fileClipboardAvailable={capabilities?.fileClipboard === true}
                     revealAvailable={capabilities?.revealInFileManager === true}
                     onQuickOpen={() => setQuickOpen(true)}
@@ -3289,7 +3297,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
                         files={files}
                         session={fileSessions.get(repository.id) ?? emptyFileSession}
                         revision={filesSnapshotRevision}
-                        actions={{ readOnly: Boolean(status?.readOnly || busy) || unconfirmed, fileClipboardAvailable: capabilities?.fileClipboard === true, revealAvailable: capabilities?.revealInFileManager === true, onOpenFile: openFile, onCopyEntries: copyFileEntries, onCutEntries: cutFileEntries, onCopyPath: copyFilePaths, onCopyContents: copyFileContents, onReveal: revealFileEntry, onPaste: pasteFileEntries, onDeleteEntries: deleteFileEntries }}
+                        actions={{ readOnly: Boolean(status?.readOnly || busy) || unconfirmed || treeUnconfirmed, fileClipboardAvailable: capabilities?.fileClipboard === true, revealAvailable: capabilities?.revealInFileManager === true, onOpenFile: openFile, onCopyEntries: copyFileEntries, onCutEntries: cutFileEntries, onCopyPath: copyFilePaths, onCopyContents: copyFileContents, onReveal: revealFileEntry, onPaste: pasteFileEntries, onDeleteEntries: deleteFileEntries }}
                         onActivateFile={activateFileTab}
                         onCloseFile={(path) => void closeFileTab(path)}
                         onLoadDirectory={loadDirectoryEntries}
