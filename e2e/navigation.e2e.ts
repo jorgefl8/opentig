@@ -115,3 +115,42 @@ test('the sections and viewers are downloaded while the app is idle, so a first 
   await section(page, 'Changes').click();
   await expect(sidebar.getByText('No changes')).toBeVisible();
 });
+
+test('a section shows what it was left with: the open commit, the scroll position and the search text', async ({ pairedPage: page, repository }) => {
+  // Enough commits for the history to scroll.
+  for (let index = 1; index <= 60; index++) await repository.git('commit', '--allow-empty', '-q', '-m', `Step ${index}`);
+  await openRepository(page, repository);
+  const sidebar = page.getByRole('complementary');
+  const viewer = page.getByRole('main');
+
+  await section(page, 'Search').click();
+  const search = sidebar.getByRole('textbox', { name: 'Search in repository' });
+  await search.fill('Step');
+
+  await section(page, 'History').click();
+  const history = sidebar.getByRole('list', { name: 'Commit history' });
+  await expect(history.getByRole('button', { name: 'Step 60', exact: true })).toBeVisible();
+  await history.evaluate((element) => { element.scrollTop = element.scrollHeight; });
+  const commit = history.getByRole('button', { name: 'Step 5', exact: true });
+  await commit.click();
+  await expect(viewer.getByRole('heading', { name: 'Step 5', level: 2 })).toBeVisible();
+  const scrolled = await history.evaluate((element) => element.scrollTop);
+  expect(scrolled).toBeGreaterThan(0);
+
+  await section(page, 'Changes').click();
+  await expect(sidebar.getByText('No changes')).toBeVisible();
+  await expect(viewer.getByRole('heading', { name: 'Step 5', level: 2 })).toBeHidden();
+
+  const back = await requestsDuring(page, async () => {
+    await section(page, 'History').click();
+    await expect(viewer.getByRole('heading', { name: 'Step 5', level: 2 })).toBeVisible();
+  });
+  await expect(commit).toHaveAttribute('aria-pressed', 'true');
+  expect(await history.evaluate((element) => element.scrollTop)).toBe(scrolled);
+  // Neither the history nor the commit is read again.
+  expect(back['commits:list'], JSON.stringify(back)).toBeUndefined();
+  expect(back['diff:commit'], JSON.stringify(back)).toBeUndefined();
+
+  await section(page, 'Search').click();
+  await expect(search).toHaveValue('Step');
+});

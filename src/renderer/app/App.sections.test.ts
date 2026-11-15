@@ -32,7 +32,16 @@ vi.mock('./Toolbar', () => ({ Toolbar: (props: ToolbarProps) => createElement('h
 vi.mock('@/features/changes/ChangesView', () => ({ ChangesView: () => null }));
 vi.mock('@/features/commit/CommitComposer', () => ({ CommitComposer: () => null }));
 vi.mock('@/features/files/FilesView', () => ({ FilesView: () => null }));
-vi.mock('@/features/history/HistoryView', () => ({ HistoryView: () => null }));
+// Counts how often History is built and how many of its effects are running, which is where a section polls or listens.
+const historySection = vi.hoisted(() => ({ built: 0, running: 0 }));
+vi.mock('@/features/history/HistoryView', async () => {
+  const { createElement: element, useEffect, useState } = await import('react');
+  return { HistoryView: () => {
+    useState(() => { historySection.built += 1; return null; });
+    useEffect(() => { historySection.running += 1; return () => { historySection.running -= 1; }; }, []);
+    return element('p', null, 'History list');
+  } };
+});
 vi.mock('@/features/search/SearchView', () => ({ SearchView: () => null }));
 vi.mock('@/features/viewer/Viewer', () => ({ default: () => null }));
 vi.mock('@/features/repositories/OpenRepositoryDialog', () => ({ OpenRepositoryDialog: () => null }));
@@ -117,4 +126,16 @@ it('brings a section up to date behind what it shows once the last read is no lo
   // One read of the status and the tree, in the background: no fetch, branches, worktrees or GitHub.
   expect(requests()).toEqual({ status: 1, files: 1 });
   expect(container.querySelector('output')?.textContent).toBe('Idle');
+});
+
+it('keeps a section it left in place, with nothing of it running until it is shown again', async () => {
+  historySection.built = 0;
+  await open('History');
+  expect(historySection).toEqual({ built: 1, running: 1 });
+  await open('Changes');
+  // Still there, so it comes back as it was, but hidden and with its timers and listeners stopped.
+  expect(historySection).toEqual({ built: 1, running: 0 });
+  expect(container.textContent).toContain('History list');
+  await open('History');
+  expect(historySection).toEqual({ built: 1, running: 1 });
 });

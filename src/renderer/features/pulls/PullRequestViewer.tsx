@@ -30,10 +30,12 @@ import { opentig } from '@/lib/opentig-api';
 import { queryKeys } from '@/lib/query-client';
 import { inBackground } from '@/lib/websocket-transport';
 import { whenIdle } from '@/lib/when-idle';
+import { rememberedTab, rememberTab } from '@/features/viewer/viewer-memory';
 import { downloadsAhead } from '@/lib/lazy-with-retry';
 import '@/features/markdown/markdown.css';
 import { Spinner } from '@/components/ui/spinner';
 
+const PULL_REQUEST_TABS: readonly PullRequestTab[] = ['summary', 'comments', 'checks', 'timeline', 'diff'];
 /** How long a PR's details are taken as current without asking again. */
 const PULL_REQUEST_STALE_MS = 60_000;
 
@@ -51,11 +53,14 @@ interface PullRequestViewerProps {
 }
 
 export function PullRequestViewer({ repositoryId, prNumber, diffView, themeType, wrapLines, onDiffViewChange, onWrapLinesChange, onClose, onOpenFile, onSelectPullRequest }: PullRequestViewerProps) {
-  const [tab, setTabState] = useState<PullRequestTab>('summary');
+  // Opening a pull request again shows the tab it was left on.
+  const memoryKey = `${repositoryId}:pull:${prNumber}`;
+  const [tab, setTabState] = useState<PullRequestTab>(() => rememberedTab(memoryKey, PULL_REQUEST_TABS) ?? 'summary');
   // A tab stays mounted once visited, so going back to it shows what it had instead of loading again.
-  const [visited, setVisited] = useState<ReadonlySet<PullRequestTab>>(() => new Set(['summary']));
+  const [visited, setVisited] = useState<ReadonlySet<PullRequestTab>>(() => new Set(['summary', tab]));
   const setTab = (next: PullRequestTab) => {
     setTabState(next);
+    rememberTab(memoryKey, next);
     setVisited((current) => current.has(next) ? current : new Set([...current, next]));
   };
   const [editing, setEditing] = useState(() => hasViewerDraft(pullRequestEditDraft(repositoryId, prNumber)));

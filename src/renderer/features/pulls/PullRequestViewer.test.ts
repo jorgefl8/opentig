@@ -3,6 +3,7 @@ import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { forgetViewerMemory } from '@/features/viewer/viewer-memory';
 import type { PullRequestDetails, PullRequestLiveState } from '@shared/contracts';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { MobileChromeContext, type MobileChromeHosts } from '@/components/mobile-chrome-context';
@@ -36,6 +37,7 @@ let root: Root;
 let container: HTMLDivElement;
 let client: QueryClient;
 beforeEach(() => {
+  forgetViewerMemory();
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
   vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
   api.getPullRequest.mockResolvedValue(details);
@@ -66,6 +68,18 @@ async function refetchLive() {
   await act(async () => { await client.refetchQueries({ queryKey: queryKeys.pullRequestLiveState('repo', 7) }); });
   await settle();
 }
+
+it('opens again on the tab it was left on', async () => {
+  api.getPullRequestConversation.mockResolvedValue({ entries: [], truncated: false, partial: false });
+  await render();
+  await act(async () => [...container.querySelectorAll<HTMLElement>('[role="tab"]')].find((tab) => tab.textContent === 'Comments')!.click());
+  await settle();
+  await act(async () => root.unmount());
+  root = createRoot(container);
+  await render();
+  const selected = [...container.querySelectorAll<HTMLElement>('[role="tab"]')].find((tab) => tab.getAttribute('aria-selected') === 'true');
+  expect(selected?.textContent).toBe('Comments');
+});
 
 it('shows why the PR is blocked once, instead of repeating it in the review badge', async () => {
   await render();

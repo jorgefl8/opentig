@@ -62,6 +62,7 @@ OpenTig starts in **Files** on first use, then reopens your last active section:
 | **Last active section** | Stored in the client. Clearing site data or unavailable local storage returns it to Files; a selected PR or search query is not restored |
 | **Workspace preferences** | Sidebar width and whether it is collapsed, viewer preferences, fonts, shortcut customizations, repositories, and projects are remembered |
 | **File navigation** | Expanded tree paths and open file tabs are remembered for each worktree |
+| **What each section showed** | For the current session only. Each section of each worktree reopens the change, commit, pull request, or run it last showed in the viewer. A change that was committed, staged, or discarded meanwhile is not brought back. A pull request reopens on the tab it was left on, with the same files of its code folded |
 | **AI model** | Selection is saved per provider |
 
 **Remembered tabs do not save your edits.** Tab paths persist between sessions; unsaved text is not written to disk.
@@ -83,6 +84,8 @@ Use the toolbar **Refresh** button or `Ctrl+R` to fetch remote Git changes and t
 Refresh also checks for app updates immediately instead of waiting for the five-minute update interval.
 
 The workspace also refreshes automatically when files or Git state change. While another tool keeps writing to the repository, OpenTig shows the newest state it could read and refreshes again after the next change. An automatic refresh that fails retries once after a second and reports an error only if the retry also fails.
+
+Sections you open stay in place while you use another one, so coming back shows the same scroll position, search text, and loaded folders, and asks the server for nothing it already has. A hidden section does not refresh itself; switching to another repository or worktree keeps only the section on screen.
 
 Opening another section shows what OpenTig already knows and does not fetch. If the repository was last read more than five seconds ago, its status is read again in the background, and Files reads its tree again; **Pull**, **Push**, and **Commit** stay available meanwhile. Once a minute this read also covers branches, worktrees, and the remote, so a change made outside OpenTig shows up even if the file watcher missed it. History is read again only after its branches changed or 30 seconds passed.
 

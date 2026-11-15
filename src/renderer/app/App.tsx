@@ -7,7 +7,7 @@ import { branchPullRequestQueryOptions, commitsAfterMergeQueryOptions } from '@/
 import { withLineCounts, withStackMemberships } from '@/features/pulls/pull-request-list';
 import { releasesQueryOptions } from '@/features/pulls/releases-query';
 import { appDisplayName } from '@/lib/app-identity';
-import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { Activity, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { isModuleLoadError, lazyWithPreload, lazyWithRetry, preloadWhenIdle } from '@/lib/lazy-with-retry';
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -71,6 +71,7 @@ import {
   mergeRefreshRequests, refreshOperationsForScope, sectionRefresh, shouldRefreshSearch, shouldRefreshViewer, type RefreshRequest,
 } from './refresh-policy';
 import { resolveWindowControlsInset } from './window-controls';
+import { SectionSelections, stillShowable } from './section-memory';
 import { queryKeys, queryResourcesForScope, refreshGitHubQueries, resetGitHubQueries } from '@/lib/query-client';
 import { listAgents } from '@/features/refs/local-refs-model';
 import { AgentMarks } from '@/features/refs/AgentLabel';
@@ -208,6 +209,18 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   // Read by a refresh as it starts, so opening another section does not make a new `refresh`.
   const viewRef = useRef(view);
   useLayoutEffect(() => { viewRef.current = view; }, [view]);
+  // Sections opened in this repository stay mounted, hidden, so going back to one shows what it had: its
+  // scroll position, search text and loaded folders. Hidden, their effects are torn down, so they neither
+  // poll nor listen. Opening another repository keeps only the section on screen.
+  const [keptSectionsState, setKeptSectionsState] = useState<{ repositoryId: string | null; sections: ReadonlySet<SidebarView> }>(
+    () => ({ repositoryId: null, sections: new Set() }),
+  );
+  let keptSections = keptSectionsState.sections;
+  const keptRepositoryId = repository?.id ?? null;
+  if (keptSectionsState.repositoryId !== keptRepositoryId || !keptSections.has(view)) {
+    keptSections = new Set(keptSectionsState.repositoryId === keptRepositoryId ? [...keptSections, view] : [view]);
+    setKeptSectionsState({ repositoryId: keptRepositoryId, sections: keptSections });
+  }
   const [viewerSelection, setViewerSelection] = useState<ViewerSelection>(null);
   const [fileViewerToolbarHost, setFileViewerToolbarHost] = useState<HTMLElement | null>(null);
   const initialSelectionApplied = useRef(false);
@@ -256,6 +269,11 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   const pendingViewerPathRef = useRef<string | null>(null);
   /** Shown instead of the section's own selection once a requested section switch lands. */
   const pendingSectionSelectionRef = useRef<ViewerSelection>(null);
+  // What each section last showed, per repository; and which section of which repository the viewer shows now.
+  const [sectionSelections] = useState(() => new SectionSelections());
+  const shownSelectionKeyRef = useRef<{ repositoryId: string; view: SidebarView } | null>(null);
+  // The status last read for a repository, for deciding whether a remembered change is still there.
+  const knownStatusRef = useRef<{ repositoryId: string; status: RepositoryStatus } | null>(null);
   const generationRequest = useRef<{ id: string; repositoryId: string } | null>(null);
   const repositorySyncOperationsRef = useRef<Map<string, ProjectSyncAction>>(new Map());
   const busyRef = useRef<string | null>(null);
@@ -391,6 +409,9 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   const repositoryLoadVisible = useElapsed(repositoryLoadPhase ? 'busy' : null, 200);
   const repositoryLoadSlow = useElapsed(pendingRepositoryId ?? (repositoryLoadPhase ? repository?.id ?? null : null), 5000);
   const status = currentSnapshot ? statusState : null;
+  useEffect(() => {
+    if (repository && status) knownStatusRef.current = { repositoryId: repository.id, status };
+  }, [repository, status]);
   const commitPlan = useCommitPlan({ repositoryId: repository?.id, status, getMessage: commitMessage.get, setMessage: commitMessage.set, index: opentig.index });
   // Three lists of every change: worked out when the changes do, not on every render.
   const changeLists = useMemo(() => {
@@ -699,7 +720,11 @@ export default function App({ initialView, initialSelection, pullRequestCreation
 
   useEffect(() => {
     viewerSelectionRef.current = viewerSelection;
-  }, [viewerSelection]);
+    // Each section keeps what it shows, for when it is opened again. Read from the refs, which already
+    // name the section a click moved to along with its selection, such as a file tab opening Files.
+    const repositoryId = repositoryRef.current?.id;
+    if (repositoryId) sectionSelections.remember(repositoryId, viewRef.current, viewerSelection);
+  }, [sectionSelections, viewerSelection]);
 
   const applyFilesSnapshot = useCallback((nextFiles: FileTreeEntry[]) => {
     const previous = filesRef.current;
@@ -1042,6 +1067,9 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       setFileSessions(map);
       persistedSessionsRef.current.set(repositoryId, JSON.stringify(serializeSession(session)));
     }
+    const left = shownSelectionKeyRef.current;
+    const moved = left?.repositoryId !== repositoryId || left.view !== view;
+    shownSelectionKeyRef.current = { repositoryId, view };
     if (!initialSelectionApplied.current && initialSelection) {
       initialSelectionApplied.current = true;
       viewerSelectionRef.current = initialSelection;
@@ -1051,8 +1079,22 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       pendingSectionSelectionRef.current = null;
       viewerSelectionRef.current = selection;
       setViewerSelection(selection);
-    } else selectFilePath(view === 'files' ? session.activePath : null);
-  }, [openFilesStates, repository?.id, selectFilePath, view, initialSelection]);
+    } else if (!moved) {
+      // The same section of the same repository: nothing to bring back.
+    } else if (view === 'files') selectFilePath(session.activePath);
+    else {
+      const remembered = sectionSelections.recall(repositoryId, view);
+      const known = knownStatusRef.current;
+      const showable = stillShowable(remembered, {
+        status: known?.repositoryId === repositoryId ? known.status : null,
+        openTabs: new Set(session.tabs.map((tab) => tab.path)),
+      });
+      const selection = showable ? remembered : null;
+      viewerSelectionRef.current = selection;
+      setViewerSelection(selection);
+      if (!selection) setMobilePane('list');
+    }
+  }, [openFilesStates, repository?.id, selectFilePath, view, initialSelection, sectionSelections]);
 
   useEffect(() => opentig.events.onRepositoryChanged((repositoryId, scope) => {
     if (repositoryId !== repository?.id) return;
@@ -2899,10 +2941,11 @@ export default function App({ initialView, initialSelection, pullRequestCreation
             </nav>
             <div className="sidebar-body">
               <div className="view-fade">
-              {view === 'changes' && !currentSnapshot && (
+              {keptSections.has('changes') && <Activity mode={view === 'changes' ? 'visible' : 'hidden'}>
+              {!currentSnapshot && (
                 <div className="view-loading" role="status"><Spinner className="view-spinner" /><ShimmeringText text="Loading changes…" /></div>
               )}
-              {view === 'changes' && currentSnapshot && (
+              {currentSnapshot && (
                 <ChangesView
                   conflicts={conflicts}
                   staged={staged}
@@ -2931,7 +2974,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
                   onUnstageAll={() => void runAll('unstage')}
                 />
               )}
-              {view === 'files' && (
+              </Activity>}
+              {keptSections.has('files') && <Activity mode={view === 'files' ? 'visible' : 'hidden'}>
                 <Suspense fallback={sidebarFallback}>
                   <FilesView
                     key={repository.id}
@@ -2967,8 +3011,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
                     onCreate={createFileEntry}
                   />
                 </Suspense>
-              )}
-              {view === 'history' && (
+              </Activity>}
+              {keptSections.has('history') && <Activity mode={view === 'history' ? 'visible' : 'hidden'}>
                 <Suspense fallback={sidebarFallback}>
                 <HistoryView
                   key={repository.id}
@@ -2988,8 +3032,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
                   onMore={() => void loadMore()}
                 />
                 </Suspense>
-              )}
-              {view === 'search' && (
+              </Activity>}
+              {keptSections.has('search') && <Activity mode={view === 'search' ? 'visible' : 'hidden'}>
                 <Suspense fallback={sidebarFallback}>
                 <SearchView
                   repositoryId={repository.id}
@@ -3000,8 +3044,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
                   onReplaced={() => { void refresh({ background: true }); }}
                 />
                 </Suspense>
-              )}
-              {view === 'prs' && (
+              </Activity>}
+              {keptSections.has('prs') && <Activity mode={view === 'prs' ? 'visible' : 'hidden'}>
                 <Suspense fallback={sidebarFallback}>
                 <PullRequestsView
                   repositoryId={repository.id}
@@ -3042,7 +3086,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
                   }}
                 />
                 </Suspense>
-              )}
+              </Activity>}
               </div>
             </div>
             {!mobile && commitComposer}

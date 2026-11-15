@@ -21,6 +21,7 @@ import { resolvePierreLanguage } from './pierreLanguages';
 import { ColorHoverPreview } from './ColorHoverPreview';
 import { ColorSwatchLayer } from './ColorSwatchLayer';
 import { createColorSwatchRegistry } from './color-swatch-registry';
+import { rememberedFolds, rememberedKnown, rememberFolds } from './viewer-memory';
 
 /** A commit reads as one document: its message and files lead into its diffs. */
 export interface DiffCommitLayout {
@@ -44,6 +45,8 @@ interface DiffWorkspaceProps {
   themeType: ThemePreference;
   wrapLines: boolean;
   initiallyCollapsed?: boolean | undefined;
+  /** Keeps which files were folded under this key, so the same diff opens again as it was left. */
+  foldMemoryKey?: string | undefined;
   compact?: boolean | undefined;
   scopeControl?: React.ReactNode | undefined;
   commitLayout?: DiffCommitLayout | undefined;
@@ -86,11 +89,22 @@ function DiffDocument(props: DiffWorkspaceProps) {
   );
 }
 
-function ParsedDiffWorkspace({ contentKey, diff, diffView, themeType, wrapLines, initiallyCollapsed = false, compact = false, scopeControl, commitLayout, onDiffViewChange, onWrapLinesChange, onClose, onOpenFile, files, message }: DiffWorkspaceProps & { files: DiffFileEntry[]; message: ParseMessage }) {
+function ParsedDiffWorkspace({ contentKey, diff, diffView, themeType, wrapLines, initiallyCollapsed = false, foldMemoryKey, compact = false, scopeControl, commitLayout, onDiffViewChange, onWrapLinesChange, onClose, onOpenFile, files, message }: DiffWorkspaceProps & { files: DiffFileEntry[]; message: ParseMessage }) {
   const largeCommit = Boolean(commitLayout?.listFiles) && (files.length > LARGE_COMMIT_FILES || diff.lineCount > LARGE_COMMIT_LINES);
-  const [collapsed, setCollapsed] = useState<Set<string>>(
-    () => new Set(initiallyCollapsed || largeCommit ? files.map((file) => file.key) : []),
-  );
+  const [collapsed, setCollapsedState] = useState<Set<string>>(() => {
+    const folded = initiallyCollapsed || largeCommit;
+    const remembered = foldMemoryKey ? rememberedFolds(foldMemoryKey) : undefined;
+    // A file the diff did not have when it was left opens as any new file does.
+    if (remembered) return new Set(files.filter((file) => remembered.has(file.key) || (folded && !rememberedKnown(foldMemoryKey!, file.key))).map((file) => file.key));
+    return new Set(folded ? files.map((file) => file.key) : []);
+  });
+  const setCollapsed = (update: (current: Set<string>) => Set<string>) => {
+    setCollapsedState((current) => {
+      const next = update(current);
+      if (foldMemoryKey) rememberFolds(foldMemoryKey, next, files.map((file) => file.key));
+      return next;
+    });
+  };
   // A phone reads inline, leaves through its back arrow, and has one screen to give to the code.
   const phone = useMobileChrome() !== null;
   const sections = useRef(new Map<string, HTMLElement>());
@@ -110,7 +124,7 @@ function ParsedDiffWorkspace({ contentKey, diff, diffView, themeType, wrapLines,
       return next;
     });
   };
-  const toggleAll = () => setCollapsed(allCollapsed ? new Set() : new Set(files.map((file) => file.key)));
+  const toggleAll = () => setCollapsed(() => allCollapsed ? new Set() : new Set(files.map((file) => file.key)));
   const diffActions = (includeCollapse: boolean) => (
     <div className="diff-workspace-actions">
       {includeCollapse && (
