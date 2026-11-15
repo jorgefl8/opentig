@@ -93,7 +93,7 @@ import { DesktopUpdateIndicator } from '@/features/settings/UpdateSettings';
 import { updatesApi } from '@/features/settings/update-api';
 import type { SettingsSection } from '@/features/settings/SettingsDialog';
 import { CommitAuthorshipDialog } from '@/features/settings/CommitAuthorshipDialog';
-import { RepositoryLinksContext, type RepositoryLinks } from '@/components/repository-links';
+import { RepositoryLinksContext, repositoryLinkUrl, type RepositoryLinks } from '@/components/repository-links';
 import { Spinner } from '@/components/ui/spinner';
 
 // The sections and the viewer are downloaded on first use, or while the app is idle if that comes first (see `preloadWhenIdle`).
@@ -320,6 +320,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     return entry?.type === 'file' ? { size: entry.size, mtimeMs: entry.mtimeMs } : null;
   }, []);
   // When the open repository's snapshot and its file tree were last read, for `sectionRefresh`.
+  const githubNameWithOwnerRef = useRef<string | null>(null);
   const lastReadRef = useRef({ snapshot: Number.NEGATIVE_INFINITY, files: Number.NEGATIVE_INFINITY, refs: Number.NEGATIVE_INFINITY });
 
   // Known once the status is; until then History waits rather than show another branch's commits.
@@ -949,6 +950,9 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       }
     } catch (reason) {
       if (repositoryRef.current?.id !== repositoryId) return;
+      // What was shown from memory on opening the repository could not be confirmed: it is not left
+      // looking current. The section shows it is still loading until a read succeeds.
+      if (firstRead && snapshotRepositoryIdRef.current !== repositoryId) setSnapshotRepositoryId(null);
       if (background && isConnectionLoss(reason)) recordConnectionLoss('Could not refresh', reason);
       else reportError('Could not refresh', reason);
     } finally {
@@ -1370,7 +1374,14 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     if (!repositoryId) return;
     try {
       if (!await opentig.commits.recognize(repositoryId, oid)) {
-        sileo.error({ title: 'Commit not in this repository yet', description: `${oid.slice(0, 7)} isn't in your local copy. Fetch or pull to get it, or open it on GitHub.`, duration: 10_000 });
+        // It may come from a fork, which no fetch or pull of this clone brings: GitHub can show it.
+        const nameWithOwner = githubNameWithOwnerRef.current;
+        sileo.error({
+          title: 'Commit not in the local clone',
+          description: `${oid.slice(0, 7)} isn't in your copy of this repository. It may come from a fork or from a branch you haven't fetched.`,
+          duration: 10_000,
+          ...(nameWithOwner ? { button: { title: 'Open in GitHub', onClick: () => openOnGitHub(repositoryLinkUrl(nameWithOwner, { kind: 'commit', oid })) } } : {}),
+        });
         return;
       }
       if (repositoryRef.current?.id === repositoryId) selectViewer({ type: 'commit', oid, subject: oid.slice(0, 8) });
@@ -1413,6 +1424,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     openCommit: (oid, subject) => void openBlamedCommit(oid, subject),
   } : null, [lineBlameEnabled, openBlamedCommit, refreshVersion, repository, setLineBlameEnabled]);
   const githubNameWithOwner = githubInfo?.isGitHub ? githubInfo.nameWithOwner : null;
+  useEffect(() => { githubNameWithOwnerRef.current = githubNameWithOwner; }, [githubNameWithOwner]);
   // Links into this repository, wherever they're shown, can open here as well as on GitHub.
   const repositoryLinks = useMemo<RepositoryLinks | null>(() => githubNameWithOwner ? {
     nameWithOwner: githubNameWithOwner,

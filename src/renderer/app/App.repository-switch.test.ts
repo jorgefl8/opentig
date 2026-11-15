@@ -179,6 +179,28 @@ it('shows a repository seen moments ago as it was, with its own worktrees, while
   expect(calls.getStatus).toHaveBeenLastCalledWith('repo');
 });
 
+it('does not leave a repository shown from memory looking current when it cannot be read again', async () => {
+  await act(async () => root.render(createElement(QueryClientProvider, { client }, createElement(App))));
+  await settle();
+  await click('Open B');
+  await act(async () => opens.get('repo-b')!.resolve(info('repo-b')));
+  await act(async () => statuses.get('repo-b')!.resolve(status));
+  await settle();
+  // Back to the first repository, which can no longer be read.
+  calls.getStatus.mockImplementation(() => Promise.reject(new Error('index.lock exists')));
+  vi.useFakeTimers();
+  try {
+    await act(async () => calls.activeRepositoryChanged!(info('repo')));
+    expect(container.textContent).toContain('Changes list');
+    // Past the quiet retry: both reads failed.
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+  } finally { vi.useRealTimers(); }
+  await settle();
+  expect(calls.error).toHaveBeenCalledWith(expect.objectContaining({ title: 'Could not refresh' }));
+  expect(output('Phase')).toBe('loading');
+  expect(container.textContent).not.toContain('Changes list');
+});
+
 it('reads the repository on a timer while the server watches another one, until it says it watches this one again', async () => {
   calls.bootstrap.mockResolvedValue({
     activeRepository: info('repo'), recentRepositories: [], repositoryProjects: [], filesTreeStates: [], openFilesStates: [],
