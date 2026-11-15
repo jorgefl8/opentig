@@ -114,6 +114,7 @@ async function collectRendererDiagnostics(window: BrowserWindow): Promise<Record
           ? Math.round(memory.usedJSHeapSize / 1048576 * 100) / 100
           : null,
         results,
+        requests: typeof window.__opentigNavigationRequests === 'function' ? window.__opentigNavigationRequests() : null,
         grammarChunks: [...new Set(grammarChunks)],
       };
     })()`, true) as Record<string, unknown>;

@@ -353,6 +353,30 @@ describe('OpenTigWebSocketTransport', () => {
     transport.close();
   });
 
+  it('counts a request once per command, however often the server made it wait', async () => {
+    vi.useFakeTimers();
+    const { transport, sockets } = fixture();
+    const status = transport.request(IPC.repositoryStatus, ['repo-id']);
+    const branches = transport.request(IPC.branchesList, ['repo-id']);
+    sockets[0]!.open();
+    await Promise.resolve();
+    expect(transport.requestCounts()).toEqual({ requested: { [IPC.repositoryStatus]: 1, [IPC.branchesList]: 1 }, unanswered: 2 });
+
+    const refused = JSON.parse(sockets[0]!.sent[0]!) as { id: string };
+    sockets[0]!.message({ type: 'result', id: refused.id, result: { ok: false, error: BUSY } });
+    await vi.advanceTimersByTimeAsync(100);
+    // The refused request went out a second time: still one request, and still unanswered.
+    expect(sockets[0]!.sent).toHaveLength(3);
+    expect(transport.requestCounts()).toEqual({ requested: { [IPC.repositoryStatus]: 1, [IPC.branchesList]: 1 }, unanswered: 2 });
+
+    for (const sent of sockets[0]!.sent.slice(1)) {
+      sockets[0]!.message({ type: 'result', id: (JSON.parse(sent) as { id: string }).id, result: { ok: true, value: [] } });
+    }
+    await Promise.all([status, branches]);
+    expect(transport.requestCounts().unanswered).toBe(0);
+    transport.close();
+  });
+
   it('gives up on a server that stays busy as a timeout, never as the refusal itself', async () => {
     vi.useFakeTimers();
     const { transport, sockets } = fixture({ requestTimeoutMs: 1_000 });

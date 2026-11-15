@@ -2,6 +2,7 @@ import { cleanEnvironment } from './CliEnvironment';
 import { execa } from 'execa';
 import { AiOperationError } from '../../shared/errors';
 import { resolveProcessCommand } from '../process/resolveProcessCommand';
+import { describeCliProcess, performanceLabel, timedProcess } from '../performance/PerformanceLog';
 
 export interface CliRunOptions {
   cwd?: string;
@@ -11,6 +12,8 @@ export interface CliRunOptions {
   signal?: AbortSignal;
   removeEnv?: string[];
   env?: Record<string, string>;
+  /** Names the work in the performance log. */
+  operation?: string;
 }
 
 export interface CliRunResult {
@@ -42,7 +45,11 @@ export class CliProcessRunner {
     let result;
     try {
       resolvedCommand = resolveProcessCommand(command, options.cwd ?? process.cwd(), environment);
-      result = await execa(resolvedCommand.file, args, {
+      const file = resolvedCommand.file;
+      result = await timedProcess(() => ({
+        ...describeCliProcess(command, args),
+        ...(options.operation ? { operation: performanceLabel(options.operation, 'unknown') } : {}),
+      }), () => execa(file, args, {
         ...(options.cwd ? { cwd: options.cwd } : {}),
         cancelSignal: signal,
         env: environment,
@@ -56,7 +63,7 @@ export class CliProcessRunner {
         input: options.stdin ?? '',
         stripFinalNewline: false,
         reject: false,
-      }).catch((error: unknown) => {
+      }), (finished) => finished.exitCode === 0).catch((error: unknown) => {
         if (signal.aborted) throw cancelled();
         throw processFailed(error);
       });

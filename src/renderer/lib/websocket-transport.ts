@@ -145,6 +145,7 @@ export class OpenTigWebSocketTransport {
   private started = false;
   private stopped = false;
   private connectedBefore = false;
+  private readonly requested = new Map<string, number>();
 
   constructor(options: WebSocketTransportOptions = {}) {
     this.url = options.url ?? defaultWebSocketUrl();
@@ -192,6 +193,7 @@ export class OpenTigWebSocketTransport {
     if (options.signal?.aborted) throw abortError();
     if (!this.socket || this.socket.readyState !== SOCKET_OPEN) throw new ServerDisconnectedError('OpenTig server disconnected.');
 
+    this.requested.set(command, (this.requested.get(command) ?? 0) + 1);
     const wireArgs: unknown[] = [...args];
     while (wireArgs.length > 0 && wireArgs.at(-1) === undefined) wireArgs.pop();
     return new Promise<OpenTigServerCommandMap[Command]['result']>((resolve, reject) => {
@@ -220,6 +222,18 @@ export class OpenTigWebSocketTransport {
       this.enqueue(request);
       this.drain();
     });
+  }
+
+  /**
+   * How many requests each command has been asked for since the page loaded, and
+   * how many are still unanswered. Diagnostics compare two readings to count what
+   * a navigation costs; a request the server refused and took later counts once.
+   */
+  requestCounts(): { requested: Record<string, number>; unanswered: number } {
+    return {
+      requested: Object.fromEntries(this.requested),
+      unanswered: this.pending.size + this.waiting.foreground.length + this.waiting.background.length,
+    };
   }
 
   markIncompatible(): void {

@@ -10,6 +10,7 @@ import { resolveProcessCommand } from '../process/resolveProcessCommand';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { ReadSingleFlight } from './ReadSingleFlight';
+import { performanceLabel, timedProcess } from '../performance/PerformanceLog';
 
 export interface GitOutput {
   stdout: Buffer;
@@ -128,7 +129,10 @@ export class GitProcess {
   private runDirect(cwd: string, args: string[], options: RunOptions, retryInvalidated = true): Promise<GitOutput> {
     const globalArgs = ['--no-pager'];
     if (options.readOnly) globalArgs.push('--no-optional-locks');
-    const execute = () => this.spawnGit(cwd, [...globalArgs, ...args], options);
+    const execute = () => timedProcess(
+      () => ({ tool: 'git', command: performanceLabel(gitCommand(args), 'git'), operation: performanceLabel(options.operation, 'unknown') }),
+      () => this.spawnGit(cwd, [...globalArgs, ...args], options),
+    );
     if (options.readOnly) {
       // Consumer-owned cancellation/progress cannot share a process. Keep this
       // boundary safe when callers extend the execution options: JSON keys

@@ -26,6 +26,7 @@ import { PullRequestLocalGit, diffResult, type PullRequestRange } from './PullRe
 import type { GitHubAccountSelection } from '../../shared/github-accounts';
 import { GITHUB_LIVE_READ_TIMEOUT_MS, GITHUB_NETWORK_TIMEOUT_MS as NETWORK_TIMEOUT_MS } from '../../shared/operation-timeouts';
 import { classifyFailure } from './GitHubFailure';
+import { notePerformance, performanceLabel, performanceLogging } from '../performance/PerformanceLog';
 
 const ACCOUNT_USED = 'Account used:';
 /** How long a PR's details and conversation are reused. Its live state, read every time, drops them sooner when GitHub reports a change. */
@@ -107,7 +108,9 @@ export class GitHubService {
     const settledResource = [remote.url, ...resource];
     const key = this.readKey(repository, settledResource);
     const hit = fresh ? undefined : this.settled.get(repository.path)?.get(key);
-    if (hit && hit.expires > Date.now()) return structuredClone(hit.value as T);
+    const kept = hit !== undefined && hit.expires > Date.now();
+    if (performanceLogging()) notePerformance({ kind: 'cache', cache: 'github-read', resource: performanceLabel(String(resource[0]), 'unknown'), outcome: kept ? 'hit' : 'miss' });
+    if (kept) return structuredClone(hit.value as T);
     const epoch = this.settledEpoch;
     const value = await this.shareRead(repositoryId, resource, read);
     // An account change gives the read a new key; a change made meanwhile means it may predate it.
@@ -682,6 +685,7 @@ export class GitHubService {
     try {
       return await this.runner.run(executable.executable, args, {
         cwd: options.cwd,
+        operation: options.operation,
         env: { ...executable.env, ...GH_ENV, ...options.auth?.env },
         ...(options.auth?.removeEnv ? { removeEnv: options.auth.removeEnv } : {}),
         ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),

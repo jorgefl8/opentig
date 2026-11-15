@@ -499,7 +499,14 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     if (!bootstrap?.performanceAutomation) return;
     window.__opentigPerformanceAutomation = true;
     window.__opentigPerformanceResults = [];
+    // Every action starts a new count, so a reading says what that navigation asked the server for.
+    let countedFrom = serverClient.transport.requestCounts().requested;
+    window.__opentigNavigationRequests = () => {
+      const { requested, unanswered } = serverClient.transport.requestCounts();
+      return { requested: requestsSince(countedFrom, requested), unanswered };
+    };
     const handleAction = (event: Event) => {
+      countedFrom = serverClient.transport.requestCounts().requested;
       const action = (event as CustomEvent<unknown>).detail;
       if (!action || typeof action !== 'object') return;
       const record = action as Record<string, unknown>;
@@ -523,6 +530,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       window.removeEventListener('opentig:performance-action', handleAction);
       delete window.__opentigPerformanceAutomation;
       delete window.__opentigPerformanceResults;
+      delete window.__opentigNavigationRequests;
     };
   }, [bootstrap?.performanceAutomation]);
 
@@ -3089,6 +3097,13 @@ function optimisticStatus(status: RepositoryStatus, paths: string[], mode: 'stag
       : { ...change, staged: false, unstaged: true, indexStatus: '.', worktreeStatus: change.indexStatus }
     : change);
   return { ...status, changes, stagedCount: changes.filter((change) => change.staged && !change.conflict).length, unstagedCount: changes.filter((change) => change.unstaged && !change.conflict).length };
+}
+
+function requestsSince(before: Record<string, number>, now: Record<string, number>): Record<string, number> {
+  return Object.fromEntries(Object.entries(now).flatMap(([command, count]) => {
+    const made = count - (before[command] ?? 0);
+    return made > 0 ? [[command, made]] : [];
+  }));
 }
 
 function isPerformanceSelection(value: unknown): value is ViewerSelection {

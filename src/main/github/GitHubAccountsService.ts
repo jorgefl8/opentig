@@ -13,6 +13,7 @@ import { accountAuthentication, GH_ENV, GH_PRIVATE_ENV, identifySshAccount, reda
 import { GITHUB_LOGIN, parseGitHubAuthStatus } from './GitHubAuthStatusParser';
 import { classifyFailure } from './GitHubFailure';
 import { parseSshRemote } from './GitHubRemoteParser';
+import { notePerformance } from '../performance/PerformanceLog';
 
 const CACHE_MS = 60_000;
 
@@ -281,11 +282,13 @@ export class GitHubAccountsService {
     // Only a one-way credential fingerprint is retained; tokens live in the operation's context.
     const fingerprint = createHash('sha256').update(auth.env?.GH_TOKEN ?? '').digest('hex');
     let cached = this.identities.get(fingerprint);
-    if (!cached || Date.now() - cached.at > CACHE_MS) {
+    const kept = cached !== undefined && Date.now() - cached.at <= CACHE_MS;
+    notePerformance({ kind: 'cache', cache: 'github-identity', resource: 'identity', outcome: kept ? 'hit' : 'miss' });
+    if (!cached || !kept) {
       const promise = (async () => {
         const result = await this.runner.run(executable.executable, ['api', 'user', '--jq', '.login'], {
           cwd: os.homedir(), env: { ...executable.env, ...GH_ENV, ...auth.env }, ...(auth.removeEnv ? { removeEnv: auth.removeEnv } : {}),
-          timeoutMs: 15_000, maxOutputBytes: 8 * 1024,
+          timeoutMs: 15_000, maxOutputBytes: 8 * 1024, operation: 'gh-identity',
         });
         const login = result.stdout.trim();
         if (result.exitCode === 0 && GITHUB_LOGIN.test(login)) return login;
