@@ -12,6 +12,9 @@ catalog:
 
 overrides:
   mermaid>katex: 'catalog:'
+  # Sileo's toasts use only `motion.rect`; one copy of the animation library is
+  # downloaded at start-up instead of two.
+  sileo>motion: ^14.12.0
 
 allowBuilds:
   electron-winstaller: true

@@ -15,6 +15,7 @@ import type { GitRepositoryOperations } from '../git/GitRepositoryOperations';
 import type { RepositoryService } from '../git/RepositoryService';
 import type { SearchService } from '../git/SearchService';
 import type { GitHubService } from '../github/GitHubService';
+import type { RepositorySnapshotStore } from '../persistence/RepositorySnapshotStore';
 import type { AiLogStore } from '../persistence/AiLogStore';
 import type { ProblemsLogStore } from '../persistence/ProblemsLogStore';
 import type { SettingsStore } from '../persistence/SettingsStore';
@@ -38,6 +39,8 @@ export interface OpenTigRuntimeServices {
   aiLog: AiLogStore;
   problems: ProblemsLogStore;
   github: GitHubService;
+  /** The last state read of each repository, painted when a client starts up. */
+  snapshots?: RepositorySnapshotStore;
   prDrafts: PullRequestDraftService;
   events: OpenTigRuntimeEventPublisher;
 }
@@ -142,6 +145,8 @@ export class OpenTigRuntime {
       this.services.cliRunner.close(),
       this.services.git.close(),
       this.services.aiLog.flush(),
+      this.services.github.cache.close(),
+      this.services.snapshots?.close(),
       this.services.problems.flush(),
       this.settings.flush(),
     ]);

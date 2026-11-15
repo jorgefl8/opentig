@@ -103,10 +103,12 @@ function successToast(request: ActionRequest, result: PullRequestActionResult, d
   }
 }
 
-export function PullRequestActionBar({ repositoryId, details, live, refreshing, statusLabel, tab = 'summary', onRefresh, onEdit, onSelectPullRequest }: {
+export function PullRequestActionBar({ repositoryId, details, live, unconfirmed = false, refreshing, statusLabel, tab = 'summary', onRefresh, onEdit, onSelectPullRequest }: {
   repositoryId: string;
   details: PullRequestDetails;
   live: PullRequestLiveState;
+  /** `live` is a state the server kept and GitHub has not confirmed yet: nothing is offered on the strength of it. */
+  unconfirmed?: boolean;
   refreshing: boolean;
   /** Already on screen, so a primary that would only repeat it stays out. */
   statusLabel: string | null;
@@ -223,7 +225,7 @@ export function PullRequestActionBar({ repositoryId, details, live, refreshing, 
   const menuActions = allowed.filter((action) => action !== primaryAction && action !== 'update-branch' && action !== 'disable-auto-merge' && !(action === 'revert' && revertUncertain));
   const canUpdateBranch = allowed.includes('update-branch');
   const canDisableAutoMerge = allowed.includes('disable-auto-merge');
-  const accountReady = account?.state === 'ready' && Boolean(account.login);
+  const accountReady = account?.state === 'ready' && Boolean(account.login) && !unconfirmed;
   const hasMenu = menuActions.length > 0 || canUpdateBranch || live.viewer.canUpdate || Boolean(details.url);
   // A merge queue decides the method by itself, so only a plain merge has options to open.
   const splitMerge = primaryAction === 'merge' && !live.mergeQueue.enabled;

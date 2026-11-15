@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useMobileChrome } from '@/components/mobile-chrome-context';
 import { useQuery } from '@tanstack/react-query';
 import { IconExternalLink, IconRefresh } from '@tabler/icons-react';
@@ -9,7 +9,8 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { ShimmeringText } from '@/components/ui/shimmering-text';
 import { LinkedMarkdown } from '@/features/markdown/LinkedMarkdown';
 import { openOnGitHub } from './gh-utils';
-import { pullRequestConversationQueryOptions, type RenderedEntry } from './pull-request-conversation-query';
+import { pullRequestConversationQueryOptions } from './pull-request-conversation-query';
+import { useCommentHtml } from './conversation-markdown';
 import { GitHubAvatar } from './GitHubAvatar';
 import { PullRequestComposer } from './PullRequestComposer';
 import { PullRequestEntryEditor, PullRequestEntryMenu } from './PullRequestEntryActions';
@@ -65,14 +66,17 @@ export function PullRequestConversationView({ repositoryId, number, url, live, a
   );
 }
 
-function ConversationEntry({ entry, repositoryId, number }: { entry: RenderedEntry; repositoryId: string; number: number }) {
+function ConversationEntry({ entry, repositoryId, number }: { entry: PullRequestConversationEntry; repositoryId: string; number: number }) {
   const phone = useMobileChrome() !== null;
   // Text being edited survives switching tabs. On a phone it waits for Edit, rather than a sheet opening by itself.
   const [editing, setEditing] = useState(() => !phone && entry.canEdit && hasViewerDraft(pullRequestEntryEditDraft(repositoryId, number, entry.id)));
   const verdict = entry.verdict ? VERDICT_TEXT[entry.verdict] : null;
-  const body = entry.html ? <LinkedMarkdown html={entry.html} /> : null;
+  const article = useRef<HTMLElement>(null);
+  const html = useCommentHtml(entry.body, article);
+  // Until it is rendered, the text as written, which React keeps as text.
+  const body = !entry.body.trim() ? null : html !== null ? <LinkedMarkdown html={html} /> : <p className="pr-conversation-pending">{entry.body}</p>;
   return (
-    <article className="pr-conversation-entry">
+    <article ref={article} className="pr-conversation-entry">
       <GitHubAvatar key={entry.author?.avatarUrl} src={entry.author?.avatarUrl ?? null} className="pr-conversation-avatar" />
       <div className="pr-conversation-meta">
         <span className="pr-conversation-who">

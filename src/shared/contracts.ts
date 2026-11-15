@@ -155,6 +155,22 @@ export interface RepositoryOrganization {
   recentRepositories: RecentRepository[];
 }
 
+/**
+ * What the server last read of a repository, saved so that starting up paints it
+ * at once. Never current: the client reads the repository again behind it and
+ * holds every change until that read lands.
+ */
+export interface RepositorySnapshot {
+  /** When the status was read, by the server's clock. */
+  savedAt: string;
+  /** When each part was read: a part not read again keeps its own, older date. */
+  readAt?: { status: string; branches: string | null; worktrees: string | null; files: string | null };
+  status: RepositoryStatus;
+  branches: BranchInfo[] | null;
+  worktrees: WorktreeInfo[] | null;
+  files: FileTreeEntry[] | null;
+}
+
 export interface FileHistoryState {
   canUndo: boolean;
   undoLabel: string | null;
@@ -963,6 +979,8 @@ export interface OpenTigApi {
     search(id: string, options: SearchOptions): Promise<SearchResult>;
     replaceSearch(id: string, request: SearchReplaceRequest): Promise<SearchReplaceResult>;
     fileHistoryState(id: string): Promise<FileHistoryState>;
+    /** The last state the server saved for the repository, or null. Only on a server whose identity has `repositorySnapshots`. */
+    snapshot(id: string): Promise<RepositorySnapshot | null>;
     undoFileOperation(id: string): Promise<FileHistoryResult>;
     redoFileOperation(id: string): Promise<FileHistoryResult>;
   };
@@ -1115,7 +1133,7 @@ export const IPC = {
   repositoryReadFile: 'repository:read-file', repositoryReadImage: 'repository:read-image', repositoryLineBlame: 'repository:line-blame', repositoryGetFavicon: 'repository:favicon', repositoryWriteFile: 'repository:write-file', repositoryAbsolutePath: 'repository:absolute-path',
   repositoryCopyEntries: 'repository:copy-entries', repositoryCutEntries: 'repository:cut-entries', repositoryPasteEntries: 'repository:paste-entries', repositoryMoveEntry: 'repository:move-entry', repositoryDeleteEntry: 'repository:delete-entry',
   repositoryMoveEntries: 'repository:move-entries', repositoryDeleteEntries: 'repository:delete-entries', repositoryRenameEntry: 'repository:rename-entry', repositoryCreateEntry: 'repository:create-entry',
-  repositoryFileHistoryState: 'repository:file-history-state', repositoryUndoFileOperation: 'repository:undo-file-operation', repositoryRedoFileOperation: 'repository:redo-file-operation',
+  repositoryFileHistoryState: 'repository:file-history-state', repositorySnapshot: 'repository:snapshot', repositoryUndoFileOperation: 'repository:undo-file-operation', repositoryRedoFileOperation: 'repository:redo-file-operation',
   repositorySearch: 'repository:search', repositoryReplaceSearch: 'repository:replace-search',
   diffGet: 'diff:get', diffCommit: 'diff:commit', diffCommitFile: 'diff:commit-file', indexStage: 'index:stage',
   indexUnstage: 'index:unstage', indexDiscard: 'index:discard', indexStageAll: 'index:stage-all', indexUnstageAll: 'index:unstage-all', indexPrepareCommitGroup: 'index:prepare-commit-group', indexUpdateConflict: 'index:update-conflict', indexResolveConflict: 'index:resolve-conflict', commitCreate: 'commit:create', commitUndoLatest: 'commit:undo-latest',

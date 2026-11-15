@@ -49,9 +49,9 @@ afterEach(async () => {
 async function settle() {
   for (let tick = 0; tick < 5; tick++) await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
 }
-async function render(state: PullRequestLiveState = live()) {
+async function render(state: PullRequestLiveState = live(), unconfirmed = false) {
   await act(async () => root.render(createElement(QueryClientProvider, { client }, createElement(TooltipProvider, null, createElement(PullRequestActionBar, {
-    repositoryId: 'repo', details, live: state, refreshing: false, statusLabel: null, onRefresh, onEdit, onSelectPullRequest,
+    repositoryId: 'repo', details, live: state, unconfirmed, refreshing: false, statusLabel: null, onRefresh, onEdit, onSelectPullRequest,
   })))));
   await settle();
 }
@@ -75,6 +75,15 @@ describe('merging', () => {
     expect(toast.success).toHaveBeenCalledWith(expect.objectContaining({ title: 'Merged' }));
     expect(panel()).toBeNull();
     expect(refs.fetch).toHaveBeenCalledWith('repo');
+  });
+
+  it('offers nothing on a state the server kept until GitHub confirms it', async () => {
+    await render(live(), true);
+    expect(button('Merge')?.disabled).toBe(true);
+    await click('Merge');
+    expect(panel()).toBeNull();
+    await render(live(), false);
+    expect(button('Merge')?.disabled).toBe(false);
   });
 
   it('cancels with Escape, without merging', async () => {

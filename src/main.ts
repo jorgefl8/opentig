@@ -1,3 +1,6 @@
+import { enableCompileCache } from './main/process/compile-cache';
+// First, so what this process loads afterwards is compiled from the cache.
+enableCompileCache();
 import path from 'node:path';
 import {
   app,
@@ -424,6 +427,18 @@ app.whenReady().then(async () => {
   // Ctrl+W closes the window, Ctrl+Shift+I opens DevTools, and Ctrl+= or Ctrl+- zoom
   // outside Interface size. macOS keeps it for the standard Edit and Quit commands.
   if (process.platform !== 'darwin') Menu.setApplicationMenu(null);
+  // The server starts first: the window waits for it, and the updater and the rest do not need it.
+  const userData = app.getPath('userData');
+  desktopServerSettings = new DesktopServerSettings(path.join(userData, 'desktop-server.json'));
+  const serverSettings = await desktopServerSettings.load(() => hasActiveBrowserSessions(path.join(userData, 'server')));
+  webAccessEnabled = serverSettings.webAccessEnabled;
+  lanAccessEnabled = serverSettings.lanAccessEnabled;
+  publicOrigin = serverSettings.publicOrigin;
+  listenerHost = serverSettings.listenerHost ?? null;
+  listenerPort = serverSettings.listenerPort;
+  serverManager = createServerManager();
+  // The window awaits the same start and reports its failure; this only begins it sooner.
+  void serverManager.start().catch(() => undefined);
   desktopUpdater = await createDesktopUpdater(applicationProfile, () => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.close();
     else app.quit();
@@ -434,19 +449,10 @@ app.whenReady().then(async () => {
   } catch (error) {
     console.error('Could not start the OpenTig performance sampler.', error);
   }
-  const userData = app.getPath('userData');
   windowState = new DesktopWindowState(
     path.join(userData, 'desktop-window.json'),
     path.join(userData, 'settings.json'),
   );
-  desktopServerSettings = new DesktopServerSettings(path.join(userData, 'desktop-server.json'));
-  const serverSettings = await desktopServerSettings.load(() => hasActiveBrowserSessions(path.join(userData, 'server')));
-  webAccessEnabled = serverSettings.webAccessEnabled;
-  lanAccessEnabled = serverSettings.lanAccessEnabled;
-  publicOrigin = serverSettings.publicOrigin;
-  listenerHost = serverSettings.listenerHost ?? null;
-  listenerPort = serverSettings.listenerPort;
-  serverManager = createServerManager();
 
   const clipboardPermissions = new Set(['clipboard-read', 'clipboard-sanitized-write']);
   const trustedClipboardRequest = (webContents: WebContents | null, permission: string) => (

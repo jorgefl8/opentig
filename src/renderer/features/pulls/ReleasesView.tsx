@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { queryKeys } from '@/lib/query-client';
+import { KeptReadNotice } from '@/components/KeptReadNotice';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { IconDots, IconPlus } from '@tabler/icons-react';
 import { formatDate } from '@shared/date-format';
@@ -61,6 +63,7 @@ export function ReleasesView({ repositoryId, activeTag, onSelect }: { repository
   return (
     <div className="pulls-view">
       {error && <div className="pulls-error" role="alert"><span>{error}</span><Button variant="ghost" size="xs" onClick={() => void query.refetch()}>Retry</Button></div>}
+      <KeptReadNotice className="pulls-kept" prefixes={[queryKeys.releases(repositoryId)]} onRetry={() => void query.refetch()} />
       <div className="pulls-scroll" role="list" aria-label="Releases">
         {releases === null && !error && <div className="view-loading" role="status"><Spinner className="view-spinner" /> <ShimmeringText text="Loading releases…" /></div>}
         {releases?.length === 0 && <p className="empty-list">No releases yet.</p>}

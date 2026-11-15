@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { KeptReadNotice } from '@/components/KeptReadNotice';
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { IconBolt, IconCheck, IconClock, IconExternalLink, IconFilter, IconGitCommit, IconGitPullRequest, IconPlayerPlay, IconTag } from '@tabler/icons-react';
@@ -115,6 +116,7 @@ export function ActionsView({ repositoryId, workflowId, activeRunId, onSelect }:
   return (
     <div className="pulls-view">
       {error && <div className="pulls-error" role="alert"><span>{error}</span><Button variant="ghost" size="xs" onClick={() => void query.refetch()}>Retry</Button></div>}
+      <KeptReadNotice className="pulls-kept" prefixes={[queryKeys.actionRuns(repositoryId, workflowId)]} onRetry={() => void query.refetch()} />
       <div className="pulls-scroll" role="list" aria-label="Workflow runs">
         {runs === null && !error && <div className="view-loading" role="status"><Spinner className="view-spinner" /> <ShimmeringText text="Loading workflow runs…" /></div>}
         {runs?.length === 0 && <p className="empty-list">{workflowId === null ? 'No workflow runs yet.' : 'This workflow has no runs yet.'}</p>}

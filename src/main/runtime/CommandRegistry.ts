@@ -1,4 +1,5 @@
 import type { IpcResult } from '../../shared/contracts';
+import type { KeptAnswerSink } from '../../shared/kept-reads';
 import { GitOperationError, serializeError } from '../../shared/errors';
 import type { ProblemLogRecorder } from '../persistence/ProblemsLogStore';
 import { recordProblemSafely } from '../persistence/ProblemsLogStore';
@@ -15,12 +16,15 @@ import type {
 export interface CommandExecutionContext {
   readonly sessionId: string;
   readonly signal: AbortSignal;
+  /** Present when the client can show an answer marked as old while it is read again (see `KeptAnswer`). */
+  readonly kept?: KeptAnswerSink;
   state<Value>(key: string, initialize: () => Value): Value;
   deleteState(key: string): void;
 }
 
 export interface CommandExecutionOptions {
   signal?: AbortSignal;
+  kept?: KeptAnswerSink;
 }
 
 type CommandHandler = (
@@ -99,7 +103,7 @@ export class CommandRegistry {
         throw invalidCommand(operation, 'Command request exceeded the safety limit.');
       }
       if (this.updating) throw invalidCommand(operation, 'The server is restarting to install an update. Try again after reconnecting.');
-      const context = this.context(sessionId, options.signal);
+      const context = this.context(sessionId, options.signal, options.kept);
       this.activeCommands += 1;
       try { return { ok: true, value: await registered.handler(context, args) }; }
       finally { this.activeCommands -= 1; }
@@ -167,7 +171,7 @@ export class CommandRegistry {
     this.sessions.clear();
   }
 
-  private context(sessionId: string, signal = NEVER_ABORTED_SIGNAL): CommandExecutionContext {
+  private context(sessionId: string, signal = NEVER_ABORTED_SIGNAL, kept?: KeptAnswerSink): CommandExecutionContext {
     let values = this.sessions.get(sessionId);
     if (!values) {
       values = new Map<string, unknown>();
@@ -176,6 +180,7 @@ export class CommandRegistry {
     return {
       sessionId,
       signal,
+      ...(kept ? { kept } : {}),
       state: <Value>(key: string, initialize: () => Value): Value => {
         if (!values!.has(key)) values!.set(key, initialize());
         return values!.get(key) as Value;

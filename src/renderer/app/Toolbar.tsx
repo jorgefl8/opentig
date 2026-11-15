@@ -1,5 +1,5 @@
 import { appDisplayName } from '@/lib/app-identity';
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { lazyWithRetry } from '@/lib/lazy-with-retry';
 import {
   IconArrowDown, IconArrowUp, IconBrandGithub, IconChevronDown, IconHierarchy2, IconPlus, IconRefresh, IconSettings,
@@ -53,6 +53,8 @@ export interface ToolbarProps {
   branchPullRequestNewCommits?: number | null | undefined;
   /** A branch switch is running or waiting for the user's answer to one of its prompts. */
   branchSwitchPending?: boolean | undefined;
+  /** What is shown has not been confirmed by a read yet: no branch or worktree is switched on its strength. */
+  unconfirmed?: boolean | undefined;
   onCreatePullRequest?: (() => void) | undefined;
   /** The current branch tracks a branch with another name on the remote it pushes to. */
   upstreamMismatch?: UpstreamNameMismatch | null | undefined;
@@ -74,7 +76,8 @@ export interface ToolbarProps {
   /** The picker opened, a good moment to recheck which saved folders still exist. */
   onRepositoryPickerOpen(): void;
   onOrganizationChange(organization: RepositoryOrganization): void;
-  onRefsManaged(recentRepositories: RecentRepository[] | null): void;
+  /** `commonDir` is the Git folder of the repository the branch or worktree was managed in, which may no longer be open when it is done. */
+  onRefsManaged(recentRepositories: RecentRepository[] | null, commonDir: string): void;
   onPull(): void; onPush(): void;
   repositorySyncOperations: ReadonlyMap<string, ProjectSyncAction>;
   /** `settled` runs after the action, and after any follow-up the user takes from its notice. */
@@ -90,7 +93,8 @@ const SettingsDialog = lazyWithRetry(() => import('@/features/settings/SettingsD
 const LocalRefsDialog = lazyWithRetry(() => import('@/features/refs/LocalRefsDialog').then((module) => ({ default: module.LocalRefsDialog })));
 const RepositoryProjectsDialog = lazyWithRetry(() => import('@/features/repositories/RepositoryProjectsDialog').then((module) => ({ default: module.RepositoryProjectsDialog })));
 
-export function Toolbar(props: ToolbarProps) {
+/** Memoized: it redraws when one of its props changes, which `App` keeps the same otherwise. */
+export const Toolbar = memo(function Toolbar(props: ToolbarProps) {
   const { onRecent } = props;
   const mobile = useMobileLayout();
   const [mobileContextOpen, setMobileContextOpen] = useState(false);
@@ -425,7 +429,7 @@ export function Toolbar(props: ToolbarProps) {
       <BranchCombobox
         branches={props.branches}
         currentLabel={props.status?.branch ?? 'Detached HEAD'}
-        disabled={refsBusy}
+        disabled={refsBusy || props.unconfirmed === true}
         readOnly={props.status?.readOnly}
         crumb={!mobile}
         worktrees={{ items: props.worktrees, agents: props.worktreeAgents, onSelect: props.onWorktree, onManage: () => openRefsManager('worktrees') }}
@@ -498,7 +502,7 @@ export function Toolbar(props: ToolbarProps) {
             onOpenChange={setRefsOpen}
             onTabChange={setRefsTab}
             onOpenWorktree={(path) => { setRefsOpen(false); props.onWorktree(path); }}
-            onMutated={props.onRefsManaged}
+            onMutated={(recentRepositories) => props.onRefsManaged(recentRepositories, props.repository.commonDir)}
             onBusyChange={setRefsBusy}
           />
         </Suspense>
@@ -519,4 +523,4 @@ export function Toolbar(props: ToolbarProps) {
       )}
     </>
   );
-}
+});

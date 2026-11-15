@@ -1,4 +1,5 @@
 import type { GitHubRepositoryAccount } from '@shared/github-accounts';
+import { KeptReadNotice } from '@/components/KeptReadNotice';
 import { formatTimeAgo } from '@shared/date-format';
 import { PullRequestStackMenu } from './PullRequestStackMenu';
 import { Suspense, useEffect, useRef } from 'react';
@@ -194,6 +195,7 @@ function PullsList(props: PullRequestsViewProps) {
           <Button variant="ghost" size="xs" onClick={props.onRefresh}>Retry</Button>
         </div>
       )}
+      <KeptReadNotice className="pulls-kept" prefixes={[['repository', props.repositoryId, 'pulls'], ['repository', props.repositoryId, 'pull-stacks'], ['repository', props.repositoryId, 'pull-line-counts']]} onRetry={props.onRefresh} />
       <div ref={scrollRef} className="pulls-scroll" role="list" aria-label={`${props.states.map(stateLabel).join(', ') || 'No'} pull requests`}>
         {pulls === null && !props.error ? (
           <div className="view-loading" role="status"><Spinner className="view-spinner" /> <ShimmeringText text="Loading pull requests…" /></div>

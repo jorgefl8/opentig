@@ -97,6 +97,7 @@ export const OPEN_TIG_SERVER_COMMANDS = {
   'repository.search': command(IPC.repositorySearch, 'search', false),
   'repository.replaceSearch': command(IPC.repositoryReplaceSearch, 'replace-search', true),
   'repository.fileHistoryState': command(IPC.repositoryFileHistoryState, 'file-history-state', false),
+  'repository.snapshot': command(IPC.repositorySnapshot, 'repository-snapshot', false),
   'repository.undoFileOperation': command(IPC.repositoryUndoFileOperation, 'undo-file-operation', true),
   'repository.redoFileOperation': command(IPC.repositoryRedoFileOperation, 'redo-file-operation', true),
 

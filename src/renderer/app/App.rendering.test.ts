@@ -8,7 +8,7 @@ import type { ToolbarProps } from './Toolbar';
 import { SettingsStore } from '../../main/persistence/SettingsStore';
 
 const calls = vi.hoisted(() => ({
-  bootstrap: vi.fn(), setPreferences: vi.fn(), status: vi.fn(), fetch: vi.fn(), checkUpdates: vi.fn(), error: vi.fn(), renders: vi.fn(), history: vi.fn(),
+  bootstrap: vi.fn(), setPreferences: vi.fn(), status: vi.fn(), fetch: vi.fn(), checkUpdates: vi.fn(), error: vi.fn(), renders: vi.fn(), history: vi.fn(), toolbar: vi.fn(), viewer: vi.fn(),
 }));
 vi.mock('@/lib/opentig-api', () => ({
   opentig: {
@@ -24,16 +24,23 @@ vi.mock('@/lib/opentig-api', () => ({
 vi.mock('@/features/settings/update-api', () => ({ updatesApi: () => ({ check: calls.checkUpdates }) }));
 vi.mock('@/lib/boot-theme', () => ({ persistTheme: () => {} }));
 vi.mock('sileo', () => ({ sileo: { error: calls.error, dismiss: () => {} } }));
-vi.mock('./Toolbar', () => ({ Toolbar: (props: ToolbarProps) => createElement('header', null,
-  createElement('button', { 'aria-label': 'Refresh', disabled: Boolean(props.busy), onClick: props.onRefresh }, 'Refresh'),
-  createElement('output', null, `Behind: ${props.status?.behind ?? 0}`),
-) }));
+// Memoized, as the real toolbar and viewer are, so the tests see what App makes them redraw.
+vi.mock('./Toolbar', async () => {
+  const { memo } = await vi.importActual<typeof import('react')>('react');
+  return { Toolbar: memo((props: ToolbarProps) => { calls.toolbar(); return createElement('header', null,
+    createElement('button', { 'aria-label': 'Refresh', disabled: Boolean(props.busy), onClick: props.onRefresh }, 'Refresh'),
+    createElement('output', null, `Behind: ${props.status?.behind ?? 0}`),
+  ); }) };
+});
 vi.mock('@/features/changes/ChangesView', () => ({ ChangesView: () => null }));
 vi.mock('@/features/commit/CommitComposer', () => ({ CommitComposer: () => null }));
 vi.mock('@/lib/use-mobile-layout', () => ({ useMobileLayout: () => { calls.renders(); return false; } }));
 vi.mock('@/features/files/FilesView', () => ({ FilesView: () => null }));
 vi.mock('@/features/history/HistoryView', () => ({ HistoryView: (props: { commits: CommitInfo[] | null }) => { calls.history(props.commits); return null; } }));
-vi.mock('@/features/viewer/Viewer', () => ({ default: () => null }));
+vi.mock('@/features/viewer/Viewer', async () => {
+  const { memo } = await vi.importActual<typeof import('react')>('react');
+  return { default: memo(() => { calls.viewer(); return null; }) };
+});
 vi.mock('@/features/repositories/OpenRepositoryDialog', () => ({ OpenRepositoryDialog: () => null }));
 
 import { queryKeys } from '@/lib/query-client';
@@ -175,3 +182,25 @@ it('resizes the sidebar from its edge with the keyboard', async () => {
   await act(async () => { handle.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true })); });
   expect(calls.setPreferences).toHaveBeenLastCalledWith({ sidebarWidth: 300 });
 });
+
+it('redraws the toolbar but not the viewer for a new status, and neither for another section', async () => {
+  await settle();
+  expect(calls.viewer).toHaveBeenCalled();
+  calls.toolbar.mockClear();
+  calls.viewer.mockClear();
+  calls.status.mockResolvedValue({ ...initialStatus, behind: 2 });
+  await act(async () => { container.querySelector<HTMLButtonElement>('[aria-label="Refresh"]')!.click(); });
+  await settle();
+  expect(container.textContent).toContain('Behind: 2');
+  expect(calls.toolbar).toHaveBeenCalled();
+  expect(calls.viewer).not.toHaveBeenCalled();
+
+  calls.toolbar.mockClear();
+  const files = [...container.querySelectorAll<HTMLButtonElement>('nav[aria-label="Repository views"] button')].find((button) => button.textContent?.includes('Files'))!;
+  await act(async () => files.click());
+  await settle();
+  expect(calls.toolbar).not.toHaveBeenCalled();
+  expect(calls.viewer).not.toHaveBeenCalled();
+});
+
+async function settle() { await act(async () => { for (let hop = 0; hop < 5; hop++) await new Promise((resolve) => setTimeout(resolve, 0)); }); }
