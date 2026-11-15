@@ -1,7 +1,28 @@
-import { mkdir, writeFile } from 'node:fs/promises';
+import { execFile, execFileSync } from 'node:child_process';
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { promisify } from 'node:util';
+import { describe, expect, it, vi } from 'vitest';
+import { parseFileHistoryWalk } from './FileHistoryParser';
 import { git, standaloneRepository } from './test-support/repository-fixtures';
+
+const run = promisify(execFile);
+const hasSshKeygen = (() => { try { execFileSync('ssh-keygen', ['-?'], { stdio: 'ignore' }); return true; } catch (error) { return (error as { status?: number }).status !== undefined; } })();
+
+/** Appends `count` commits that each change `file`, in one `git fast-import` run. */
+async function fastCommits(work: string, file: string, count: number) {
+  const now = Math.floor(Date.now() / 1000);
+  let stream = '';
+  for (let index = 0; index < count; index++) {
+    const content = `${index}\n`;
+    stream += `commit refs/heads/main\ncommitter OpenTig Test <opentig@example.invalid> ${now} +0000\ndata 7\nchange\n${index === 0 ? 'from refs/heads/main^0\n' : ''}M 100644 inline ${file}\ndata ${Buffer.byteLength(content)}\n${content}\n`;
+  }
+  const child = run('git', ['fast-import', '--quiet'], { cwd: work, maxBuffer: 16 * 1024 * 1024 });
+  child.child.stdin!.end(stream);
+  await child;
+  await git(work, ['reset', '-q', '--hard']);
+}
 
 async function commitFile(work: string, file: string, content: string, message: string) {
   await mkdir(path.dirname(path.join(work, file)), { recursive: true });
@@ -111,6 +132,51 @@ describe("a file's history", () => {
       ['Make docs a file', 'docs', 'added', 3, 0],
     ]);
     expect(page.nextCursor).toBeNull();
+  });
+
+  it('ends at the commit that created the file, without walking the folder the path was before', async () => {
+    const fixture = await standaloneRepository();
+    // More commits than a history lists: walking them all would report the history as cut short.
+    await fastCommits(fixture.work, 'x/a', 10_100);
+    await git(fixture.work, ['rm', '-rq', 'x']);
+    await writeFile(path.join(fixture.work, 'x'), 'now a file\n');
+    await git(fixture.work, ['add', 'x']);
+    await git(fixture.work, ['commit', '-qm', 'Make x a file']);
+    for (let index = 0; index < 5; index++) await commitFile(fixture.work, 'x', `${index}\n`, `Edit x ${index}`);
+
+    const walks = vi.spyOn(fixture.gitProcess, 'run');
+    const page = await fixture.operations.fileHistory(fixture.repositoryId, 'x');
+    expect(page.entries.map((entry) => entry.commit.subject)).toEqual(['Edit x 4', 'Edit x 3', 'Edit x 2', 'Edit x 1', 'Edit x 0', 'Make x a file']);
+    expect(page).toMatchObject({ nextCursor: null, limited: false });
+    expect(walks.mock.calls.filter(([, args]) => args.includes('--follow'))).toHaveLength(1);
+  }, 60_000);
+
+  it('keeps what a walk cut at the output limit read, and says the history is cut', async () => {
+    const oid = (digit: string) => digit.repeat(40);
+    const output = [
+      `\x1e${oid('a')}\x1f`, '\n:100644 100644 1111111 2222222 M', 'notes.txt', '1\t0\tnotes.txt',
+      `\x1e${oid('b')}\x1f`, '\n:100644 100644 3333333 1111111 M', 'notes.txt', '2\t1\tnotes.txt',
+      `\x1e${oid('c')}\x1f`, '\n:100644 100644 4444444 3333333 M', 'not',
+    ].join('\0');
+    const walk = await parseFileHistoryWalk(output, 'notes.txt', { truncated: true });
+    expect(walk.records.map((record) => record.oid)).toEqual([oid('a'), oid('b')]);
+    expect(walk).toMatchObject({ cut: true, ended: false });
+  });
+
+  it.skipIf(!hasSshKeygen)('reads signed commits when Git is set to show signatures', async () => {
+    const fixture = await standaloneRepository();
+    const keys = await mkdtemp(path.join(os.tmpdir(), 'opentig-signing-'));
+    await run('ssh-keygen', ['-q', '-t', 'ed25519', '-N', '', '-f', path.join(keys, 'key')]);
+    for (const [key, value] of [['gpg.format', 'ssh'], ['user.signingkey', path.join(keys, 'key')], ['commit.gpgsign', 'true']]) await git(fixture.work, ['config', key!, value!]);
+    await commitFile(fixture.work, 'notes.txt', 'one\n', 'Add notes');
+    await commitFile(fixture.work, 'notes.txt', 'one\ntwo\n', 'Extend notes');
+    await git(fixture.work, ['config', 'log.showSignature', 'true']);
+
+    expect((await fixture.operations.listCommits(fixture.repositoryId)).commits.map((commit) => commit.subject)).toEqual(['Extend notes', 'Add notes', 'Initial commit']);
+    const page = await fixture.operations.fileHistory(fixture.repositoryId, 'notes.txt');
+    expect(page.entries.map((entry) => entry.commit.subject)).toEqual(['Extend notes', 'Add notes']);
+    expect((await fixture.operations.commitFileDiff(fixture.repositoryId, page.entries[0]!.commit.oid, 'notes.txt')).patch).toContain('+two');
+    expect((await fixture.operations.commitFiles(fixture.repositoryId, page.entries[0]!.commit.oid)).map((file) => file.path)).toEqual(['notes.txt']);
   });
 
   it('refuses a folder, a path outside the worktree and a cursor it did not give', async () => {
