@@ -742,9 +742,8 @@ export default function App({ initialView, initialSelection, pullRequestCreation
    * Records the latest draft for a path. Called on every keystroke, so it only
    * touches refs; React state changes just once, when the dirty flag flips.
    */
-  const storeFileDraft = useCallback((path: string, content: string, expectedContent: string, expectedMtimeMs: number) => {
-    const repositoryId = repositoryRef.current?.id;
-    if (!repositoryId) return;
+  /** `repositoryId` is the one the edit was made in, which may no longer be the one open. */
+  const storeFileDraft = useCallback((path: string, content: string, expectedContent: string, expectedMtimeMs: number, repositoryId: string) => {
     let drafts = fileDraftsRef.current.get(repositoryId);
     if (!drafts) {
       drafts = new Map<string, RuntimeFileDraft>();
@@ -2173,11 +2172,12 @@ export default function App({ initialView, initialSelection, pullRequestCreation
    * entries are never removed optimistically; only a real backend result
    * reaches this point.
    */
-  const handleRefsManaged = (recentRepositories: RecentRepository[] | null) => {
+  const handleRefsManaged = (recentRepositories: RecentRepository[] | null, repositoryId: string) => {
     if (recentRepositories) setBootstrap((current) => current ? { ...current, recentRepositories } : current);
     // A removed branch or worktree can change status, branches, worktrees, and
-    // the visible history, so this asks for the full background refresh.
-    void refresh({ background: true });
+    // the visible history, so this asks for the full background refresh, of the
+    // repository it was done in: if another is open by now, that one is read when it is opened again.
+    if (repositoryRef.current?.id === repositoryId) void refresh({ background: true });
   };
 
   const loadMore = async () => {
@@ -2745,16 +2745,15 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   const mobilePreferences = useMemo(() => mobile && bootstrap ? { ...bootstrap.preferences, wrapLines: mobileWrapLines } : null, [bootstrap, mobile, mobileWrapLines]);
   const viewerHandlers = useStableHandlers({
     onUndoCommit: setUndoCommit,
-    draftFor: (path: string) => repositoryRef.current ? readFileDraft(repositoryRef.current.id, path) : null,
+    draftFor: (path: string, repositoryId: string) => readFileDraft(repositoryId, path),
     onSelect: selectViewer,
     onOpenFile: openFile,
     onDiffViewChange: (value: Preferences['diffView']) => void updatePreference({ diffView: value }),
     onWrapLinesChange: changeWrapLines,
     onDiscardDiff: (path: string) => discardChanges([path]),
     onDraftChange: storeFileDraft,
-    onDraftSaved: (path: string) => {
-      const repositoryId = repositoryRef.current?.id;
-      if (!repositoryId) return;
+    // The repository the save began in, which the viewer passes: by the time the write returns another may be open.
+    onDraftSaved: (path: string, repositoryId: string) => {
       dropFileDraft(repositoryId, path);
       updateFileSession(repositoryId, (session) => setTabDirty(session, path, false));
     },

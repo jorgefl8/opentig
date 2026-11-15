@@ -84,7 +84,8 @@ interface ViewerProps {
   /** The repository is busy with something an undo can't run alongside. */
   undoBlocked?: boolean | undefined;
   onUndoCommit?: ((commit: CommitInfo) => void) | undefined;
-  draftFor(path: string): RuntimeFileDraft | null;
+  /** Each of these names the repository the viewer showed when the edit or the save began, which may no longer be open when it ends. */
+  draftFor(path: string, repositoryId: string): RuntimeFileDraft | null;
   /**
    * The size and modification time the file tree gives a file, when the tree was
    * read after the last change; null otherwise. Lets a file read before an
@@ -96,8 +97,8 @@ interface ViewerProps {
   onOpenFile(path: string): void;
   onDiffViewChange(value: DiffViewPreference): void;
   onWrapLinesChange(value: boolean): void;
-  onDraftChange(path: string, content: string, expectedContent: string, expectedMtimeMs: number): void;
-  onDraftSaved(path: string): void;
+  onDraftChange(path: string, content: string, expectedContent: string, expectedMtimeMs: number, repositoryId: string): void;
+  onDraftSaved(path: string, repositoryId: string): void;
   onUpdateConflict(path: string, content: string): Promise<boolean>;
   onResolveConflict(path: string, content: string): Promise<boolean>;
   /** A phone's diff bar discards the change it shows. */
@@ -214,7 +215,7 @@ function Viewer({ repositoryId, selection, diffView, wrapLines, theme, revision,
           // with its colors. A refresh of the open file is highlighted where it is.
           if (reopening && isSourcePath(value.path) && !value.binary && !value.tooLarge) {
             const { draftFor: draft, readOnly: locked } = shown.current;
-            await prepareHighlight((prime) => prime.prepareFileHighlight(value.path, draft(value.path)?.content ?? value.content, !locked));
+            await prepareHighlight((prime) => prime.prepareFileHighlight(value.path, draft(value.path, repositoryId)?.content ?? value.content, !locked));
             if (token !== requestToken.current) return;
           }
           setData((current) => current && current.docKey === docKey && current.type === 'file'
@@ -273,11 +274,11 @@ function Viewer({ repositoryId, selection, diffView, wrapLines, theme, revision,
     // A draft that survived a tab switch keeps the text the file had when the
     // edit began; saving against a freshly read disk copy would overwrite an
     // external change instead of reporting the conflict.
-    const draft = draftFor(path);
+    const draft = draftFor(path, repositoryId);
     const result = await opentig.repository.writeFile(repositoryId, path, content, draft?.expectedContent ?? expectedContent);
     if (result.status === 'saved') {
       fileDirty.current = false;
-      onDraftSaved(path);
+      onDraftSaved(path, repositoryId);
       setData((current) => current?.type === 'file' && current.value.path === path
         ? {
           ...current,
@@ -301,8 +302,8 @@ function Viewer({ repositoryId, selection, diffView, wrapLines, theme, revision,
   // never remounts while the tab stays open; `useEditableFileDraft` handles
   // resyncing the draft in place when the file genuinely changes on disk.
   const fileMountKey = useCallback((file: FileResult): string => file.path, []);
-  const draftContent = useCallback((file: FileResult): string => draftFor(file.path)?.content ?? file.content, [draftFor]);
-  const reportDraft = useCallback((file: FileResult) => (content: string) => onDraftChange(file.path, content, file.content, file.mtimeMs), [onDraftChange]);
+  const draftContent = useCallback((file: FileResult): string => draftFor(file.path, repositoryId)?.content ?? file.content, [draftFor, repositoryId]);
+  const reportDraft = useCallback((file: FileResult) => (content: string) => onDraftChange(file.path, content, file.content, file.mtimeMs, repositoryId), [onDraftChange, repositoryId]);
   // While a new document loads, the previous one stays on screen; the swap
   // animates when the fresh data arrives instead of blanking to a spinner.
   const reloading = loading && data !== null && !error;

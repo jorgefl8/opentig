@@ -74,7 +74,8 @@ export interface ToolbarProps {
   /** The picker opened, a good moment to recheck which saved folders still exist. */
   onRepositoryPickerOpen(): void;
   onOrganizationChange(organization: RepositoryOrganization): void;
-  onRefsManaged(recentRepositories: RecentRepository[] | null): void;
+  /** `repositoryId` is the one the branch or worktree was managed in, which may no longer be open when it is done. */
+  onRefsManaged(recentRepositories: RecentRepository[] | null, repositoryId: string): void;
   onPull(): void; onPush(): void;
   repositorySyncOperations: ReadonlyMap<string, ProjectSyncAction>;
   /** `settled` runs after the action, and after any follow-up the user takes from its notice. */
@@ -499,7 +500,7 @@ export const Toolbar = memo(function Toolbar(props: ToolbarProps) {
             onOpenChange={setRefsOpen}
             onTabChange={setRefsTab}
             onOpenWorktree={(path) => { setRefsOpen(false); props.onWorktree(path); }}
-            onMutated={props.onRefsManaged}
+            onMutated={(recentRepositories) => props.onRefsManaged(recentRepositories, props.repository.id)}
             onBusyChange={setRefsBusy}
           />
         </Suspense>
