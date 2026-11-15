@@ -3,7 +3,7 @@ import type { CloneJob, CloneRepositoryInput, GitIdentityInput, GitToolStatus } 
 import type { RemoteAccessProblem } from './repository-access';
 import type { CommitAuthorship, SetCommitAuthorshipInput } from './commit-authorship';
 import type { SerializedOperationError } from './errors';
-import type { BranchDeletionResult, BranchDetails, BranchInfo, CommitFile, CommitPage, FileTreeEntry, LocalRefsSnapshot, RemoteBranchDetails, RemoteBranchDeletionResult, TrackingBranchCreationResult, RepositoryStatus, WorktreeAgents, WorktreeDetails, WorktreeInfo, WorktreeRemovalBlocked } from './git-types';
+import type { BranchDeletionResult, BranchDetails, BranchInfo, CommitFile, CommitPage, FileHistoryPage, FileTreeEntry, LocalRefsSnapshot, RemoteBranchDetails, RemoteBranchDeletionResult, TrackingBranchCreationResult, RepositoryStatus, WorktreeAgents, WorktreeDetails, WorktreeInfo, WorktreeRemovalBlocked } from './git-types';
 import type { RasterImageMime } from './image-types';
 import type { OpenTigServerIdentity } from './server-protocol';
 import type { RepositoryWatchState } from './runtime-events';
@@ -1064,6 +1064,11 @@ export interface OpenTigApi {
     undoLatest(repositoryId: string, expectedOid: string): Promise<UndoLatestCommitResult>;
     list(repositoryId: string, cursor?: string): Promise<CommitPage>;
     files(repositoryId: string, oid: string): Promise<CommitFile[]>;
+    /**
+     * The commits that changed a file, newest first, following its renames, a page at a time from
+     * `cursor`. Only on a server whose identity has `fileHistory`.
+     */
+    fileHistory(repositoryId: string, path: string, cursor?: string): Promise<FileHistoryPage>;
     /** Whether a full hash names a commit in the local repository, so a link to it can open the commit viewer. */
     recognize(repositoryId: string, oid: string): Promise<boolean>;
     /** Commits on HEAD that `oid` does not reach, such as those made after a merged pull request's head. Null when `oid` is not a commit in the local repository. */
@@ -1197,7 +1202,7 @@ export const IPC = {
   repositorySearch: 'repository:search', repositoryReplaceSearch: 'repository:replace-search',
   diffGet: 'diff:get', diffCommit: 'diff:commit', diffCommitFile: 'diff:commit-file', indexStage: 'index:stage',
   indexUnstage: 'index:unstage', indexDiscard: 'index:discard', indexStageAll: 'index:stage-all', indexUnstageAll: 'index:unstage-all', indexPrepareCommitGroup: 'index:prepare-commit-group', indexUpdateConflict: 'index:update-conflict', indexResolveConflict: 'index:resolve-conflict', commitCreate: 'commit:create', commitUndoLatest: 'commit:undo-latest',
-  commitsList: 'commits:list', commitsFiles: 'commits:files', commitsRecognize: 'commits:recognize', commitsCountAfter: 'commits:count-after', commitAuthorship: 'commits:authorship', commitSetAuthorship: 'commits:set-authorship', branchesList: 'refs:branches', branchSwitch: 'refs:switch', worktreesList: 'refs:worktrees', worktreeAgents: 'refs:worktree-agents',
+  commitsList: 'commits:list', commitsFiles: 'commits:files', commitsFileHistory: 'commits:file-history', commitsRecognize: 'commits:recognize', commitsCountAfter: 'commits:count-after', commitAuthorship: 'commits:authorship', commitSetAuthorship: 'commits:set-authorship', branchesList: 'refs:branches', branchSwitch: 'refs:switch', worktreesList: 'refs:worktrees', worktreeAgents: 'refs:worktree-agents',
   worktreeSelect: 'refs:select-worktree', refsPull: 'refs:pull', refsPush: 'refs:push', refsPushContext: 'refs:push-context', refsFetch: 'refs:fetch',
   localRefsSnapshot: 'refs:local-snapshot', branchDetails: 'refs:branch-details', worktreeDetails: 'refs:worktree-details',
   branchDelete: 'refs:delete-branch', worktreeRemove: 'refs:remove-worktree',

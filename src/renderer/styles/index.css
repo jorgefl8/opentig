@@ -1485,6 +1485,7 @@ section[data-sileo-viewport] .sync-toast-offer { --_c: var(--sileo-state-info); 
      the strip's overflow fade doesn't fade it too. */
   .open-files-bar { display: flex; min-width: 0; flex: none; box-shadow: inset 0 -1px 0 var(--border); container-type: inline-size; }
   .open-files-tools { display: flex; min-width: 0; max-width: 70%; flex: none; }
+  .open-files-file-tools { display: flex; flex: none; align-items: center; padding: 0 2px 0 6px; }
   .open-files-strip {
     --tab-height: 34px;
     position: relative; min-width: 0; flex: 1; gap: 10px; overflow-x: auto; padding-inline: 16px; scroll-padding-inline: 16px; scrollbar-width: none;
@@ -1834,6 +1835,22 @@ section[data-sileo-viewport] .sync-toast-offer { --_c: var(--sileo-state-info); 
   /* History -------------------------------------------------------------- */
   .history-list { --history-lane: color-mix(in oklch, var(--muted-foreground) 35%, transparent); display: flex; height: 100%; min-height: 0; flex-direction: column; }
   .history-toolbar { display: flex; flex: none; align-items: center; gap: 2px; padding: 8px 8px 6px; }
+  /* History narrowed to one file: back to where it was opened, the file, and the way to every commit. */
+  .history-file-filter { display: flex; min-width: 0; flex: none; align-items: center; gap: 6px; border-bottom: 1px solid var(--border); padding: 6px 6px 6px 8px; background: color-mix(in oklch, var(--primary) 6%, transparent); }
+  .history-file-filter .vscode-tree-icon { flex: none; }
+  .history-file-filter-path { min-width: 0; flex: 1; overflow: hidden; border-radius: var(--radius-sm, 4px); font-size: var(--text-ui); text-overflow: ellipsis; white-space: nowrap; }
+  .history-file-filter-path:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
+  .history-file-filter-label { color: var(--muted-foreground); }
+  .history-file-filter-name { font-weight: var(--weight-strong); }
+  .history-file-filter-folder { color: var(--muted-foreground); font-size: var(--text-meta); }
+  .history-end-note { display: flex; align-items: center; margin: 0; }
+  .commit-meta > .commit-file-name { min-width: 0; flex: 0 1 auto; overflow: hidden; font-family: var(--font-mono); text-overflow: ellipsis; }
+  /* In a file's history the author comes last, after what the commit did to the file, and gives way first. */
+  .commit-meta > .commit-file-name ~ .commit-author { flex-shrink: 4; }
+  .commit-meta > .commit-file-stats { display: inline-flex; gap: 3px; }
+  .commit-meta > .commit-file-stats .add { color: var(--diff-added); }
+  .commit-meta > .commit-file-stats .del { color: var(--diff-deleted); }
+  .commit-file-change.deleted { color: var(--destructive); }
   .history-search { min-width: 0; flex: 1; margin-right: 2px; }
   .history-search input { width: 100%; }
   .history-search input::-webkit-search-cancel-button { opacity: .55; }

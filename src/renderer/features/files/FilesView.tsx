@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState, type ComponentPropsWithoutRef, type Ref } from 'react';
+import { memo, useContext, useEffect, useMemo, useRef, useState, type ComponentPropsWithoutRef, type Ref } from 'react';
 import { useIntentPrefetch } from '@/lib/use-intent-prefetch';
 import { createPortal } from 'react-dom';
 import { useVirtualizer } from '@tanstack/react-virtual';
@@ -8,8 +8,9 @@ import {
 } from '@dnd-kit/core';
 import {
   IconDots, IconArrowBackUp, IconArrowForwardUp, IconChevronRight, IconClipboard, IconColumns2, IconCopy, IconCut, IconEdit,
-  IconExternalLink, IconFileArrowRight, IconFilePlus, IconFiles, IconFileText, IconFolderPlus, IconTrash,
+  IconExternalLink, IconFileArrowRight, IconFilePlus, IconFiles, IconFileText, IconFolderPlus, IconHistory, IconTrash,
 } from '@tabler/icons-react';
+import { FileHistoryContext } from '@/features/history/file-history-context';
 import type { FileHistoryState } from '@shared/contracts';
 import type { FileTreeEntry } from '@shared/git-types';
 import { FolderIcon } from '@/components/FolderIcon';
@@ -967,6 +968,7 @@ function FileContextMenuContent({
   onDelete(entry: FileTreeEntry): void;
 }) {
   const shortcuts = useShortcuts();
+  const openHistory = useContext(FileHistoryContext);
   return (
     <ContextMenuContent finalFocus={finalFocus}>
       {entry && <>
@@ -978,6 +980,9 @@ function FileContextMenuContent({
             <ContextMenuItem onClick={() => onOpenPinned(entry)}>
               <IconColumns2 aria-hidden="true" /> Open to the Side <span className="ml-auto text-(length:--text-meta) text-muted-foreground">Ctrl+Click</span>
             </ContextMenuItem>
+            {openHistory && <ContextMenuItem disabled={multiSelected} onClick={() => openHistory(entry.path)}>
+              <IconHistory aria-hidden="true" /> Show History
+            </ContextMenuItem>}
             <ContextMenuSeparator />
           </>
         )}

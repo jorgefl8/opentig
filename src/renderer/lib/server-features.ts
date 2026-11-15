@@ -9,12 +9,14 @@ import type { OpenTigServerIdentity } from '@shared/server-protocol';
 export interface ServerFeatures {
   /** `github.getActionJobLog`. */
   actionJobLogs: boolean;
+  /** `commits.fileHistory`. */
+  fileHistory: boolean;
 }
 
-export const NO_SERVER_FEATURES: ServerFeatures = { actionJobLogs: false };
+export const NO_SERVER_FEATURES: ServerFeatures = { actionJobLogs: false, fileHistory: false };
 
 export function serverFeatures(identity: OpenTigServerIdentity | undefined): ServerFeatures {
-  return { actionJobLogs: identity?.actionJobLogs === true };
+  return { actionJobLogs: identity?.actionJobLogs === true, fileHistory: identity?.fileHistory === true };
 }
 
 export const ServerFeaturesContext = createContext<ServerFeatures>(NO_SERVER_FEATURES);

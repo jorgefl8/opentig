@@ -65,6 +65,9 @@ import { openOnGitHub } from '@/features/pulls/gh-utils';
 import type { RemoteAccessProblem } from '../../shared/repository-access';
 import { FileViewerToolbarHostContext } from '@/features/viewer/file-viewer-toolbar-host';
 import { ServerFeaturesContext, serverFeatures } from '@/lib/server-features';
+import { FileHistoryContext } from '@/features/history/file-history-context';
+import { FileHistoryButton } from '@/features/history/FileHistoryButton';
+import type { HistoryFileFilter } from '@/features/history/HistoryView';
 import { LineBlameContext, type LineBlameSettings } from '@/features/viewer/line-blame-context';
 import type { RuntimeFileDraft, ViewerSelection } from '@/features/viewer/Viewer';
 import type { PullRequestsSection } from '@/features/pulls/PullRequestsView';
@@ -87,7 +90,7 @@ import { mobileMainAction } from '@/lib/mobile-main-action';
 import { useElapsed } from '@/lib/use-elapsed';
 import { opentig, serverClient } from '@/lib/opentig-api';
 import { startupSplashDetail } from '@/lib/startup-splash';
-import { ServerAuthenticationError, ServerDisconnectedError, UNCONFIRMED_RESULT_MESSAGE, inBackground, isConnectionLoss, isUnconfirmedResult } from '@/lib/websocket-transport';
+import { ServerAuthenticationError, ServerDisconnectedError, UNCONFIRMED_RESULT_MESSAGE, inBackground, isConnectionLoss, isUnconfirmedResult, withSignal } from '@/lib/websocket-transport';
 import { conflictNotificationAction, conflictToastId } from '@/features/changes/conflict-notification';
 import { fileCutTransferId, writeClipboardText, writeFileTransfer } from '@/lib/browser-capabilities';
 import { needsBranchPublication, newBranchPublishedCopy, nothingPushedCopy, projectPullBlockedCopy, projectPullSuccessCopy, projectPushSuccessCopy, pullAndPushSuccessCopy, pullSuccessCopy, pushBlockedCopy, repositorySyncLoadingToast, syncToast, type ProjectSyncAction } from '@/features/repositories/project-sync';
@@ -338,6 +341,11 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   const githubNameWithOwnerRef = useRef<string | null>(null);
   const lastReadRef = useRef({ snapshot: Number.NEGATIVE_INFINITY, files: Number.NEGATIVE_INFINITY, refs: Number.NEGATIVE_INFINITY });
 
+  /**
+   * History narrowed to one file, opened from that file and left with one step back to where it was
+   * opened from. It belongs to the repository it was opened in, and is let go when another opens.
+   */
+  const [fileHistory, setFileHistory] = useState<{ repositoryId: string; path: string; returnTo: { view: SidebarView; selection: ViewerSelection } } | null>(null);
   // Known once the status is; until then History waits rather than show another branch's commits.
   const [shownHistoryHead, setShownHistoryHead] = useState<{ repositoryId: string; head: string } | null>(null);
   const currentHistoryHead = shownHistoryHead && shownHistoryHead.repositoryId === repository?.id ? shownHistoryHead.head : null;
@@ -346,7 +354,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     queryFn: ({ pageParam }) => opentig.commits.list(repository!.id, pageParam),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
-    enabled: repository !== null && currentHistoryHead !== null && view === 'history',
+    enabled: repository !== null && currentHistoryHead !== null && view === 'history' && !(fileHistory && fileHistory.repositoryId === repository.id),
     // A change to the branches marks it outdated (see `performRefresh`), so coming back to History only reads it again after that.
     staleTime: HISTORY_STALE_MS,
   });
@@ -355,6 +363,25 @@ export default function App({ initialView, initialSelection, pullRequestCreation
     [historyQuery.data],
   );
   const nextCursor = historyQuery.hasNextPage ? historyQuery.data?.pages.at(-1)?.nextCursor ?? null : null;
+
+  const activeFileHistory = fileHistory && fileHistory.repositoryId === repository?.id ? fileHistory : null;
+  const fileHistoryRef = useRef(fileHistory);
+  useLayoutEffect(() => { fileHistoryRef.current = fileHistory; }, [fileHistory]);
+  const fileHistoryQuery = useInfiniteQuery({
+    queryKey: [...queryKeys.history(repository?.id ?? '', currentHistoryHead ?? ''), 'file', activeFileHistory?.path ?? ''] as const,
+    // Leaving the file's history, or another file's, stops a long walk nobody waits for.
+    queryFn: ({ pageParam, signal }) => withSignal(signal, () => opentig.commits.fileHistory(repository!.id, activeFileHistory!.path, pageParam)),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+    enabled: repository !== null && currentHistoryHead !== null && view === 'history' && activeFileHistory !== null && bootstrap?.server?.fileHistory === true,
+    staleTime: HISTORY_STALE_MS,
+  });
+  const fileHistoryEntries = useMemo(
+    () => fileHistoryQuery.data ? fileHistoryQuery.data.pages.flatMap((page) => page.entries) : null,
+    [fileHistoryQuery.data],
+  );
+  const fileHistoryCommits = useMemo(() => fileHistoryEntries?.map((entry) => entry.commit) ?? null, [fileHistoryEntries]);
+  const fileHistoryNextCursor = fileHistoryQuery.hasNextPage ? fileHistoryQuery.data?.pages.at(-1)?.nextCursor ?? null : null;
 
   const githubInfoQuery = useQuery<GitHubRepositoryInfo>({
     queryKey: queryKeys.githubInfo(repository?.id ?? ''),
@@ -934,12 +961,15 @@ export default function App({ initialView, initialSelection, pullRequestCreation
           operations.worktrees ? appQueryClient.fetchQuery({ queryKey: queryKeys.worktrees(repositoryId), queryFn: () => opentig.refs.listWorktrees(repositoryId) }) : Promise.resolve(null),
           operations.files ? readTree(repositoryId) : Promise.resolve(null),
           // The history of whatever HEAD the status found, so a branch switch lands with that branch's commits.
-          operations.history ? statusRead.then((read) => appQueryClient.fetchInfiniteQuery({
-            queryKey: queryKeys.history(repositoryId, historyHead(read)),
-            queryFn: ({ pageParam }) => opentig.commits.list(repositoryId, pageParam),
-            initialPageParam: undefined as string | undefined,
-            getNextPageParam: (lastPage: CommitPage) => lastPage.nextCursor ?? undefined,
-          })) : Promise.resolve(null),
+          operations.history ? statusRead.then((read) => fileHistoryRef.current?.repositoryId === repositoryId
+            // History narrowed to a file reads that file's commits again, not the whole history.
+            ? appQueryClient.refetchQueries({ queryKey: [...queryKeys.history(repositoryId, historyHead(read)), 'file'], type: 'active' }).then(() => null)
+            : appQueryClient.fetchInfiniteQuery({
+              queryKey: queryKeys.history(repositoryId, historyHead(read)),
+              queryFn: ({ pageParam }) => opentig.commits.list(repositoryId, pageParam),
+              initialPageParam: undefined as string | undefined,
+              getNextPageParam: (lastPage: CommitPage) => lastPage.nextCursor ?? undefined,
+            })) : Promise.resolve(null),
         ]);
       };
       let snapshot: Awaited<ReturnType<typeof snapshotReads>>;
@@ -1451,6 +1481,68 @@ export default function App({ initialView, initialSelection, pullRequestCreation
       reportError('Could not open the commit', reason);
     }
   }, [selectViewer, showSidebarView, view]);
+  // A file's history: History narrowed to it, which the newest commit opens in on a wide screen.
+  const firstFileCommitRef = useRef<{ repositoryId: string; path: string } | null>(null);
+  const openFileHistory = useCallback((path: string) => {
+    const repositoryId = repositoryRef.current?.id;
+    if (!repositoryId) return;
+    const from = viewRef.current;
+    setFileHistory((current) => ({
+      repositoryId, path,
+      // Opened again from within History, it keeps where the first one came from.
+      returnTo: from === 'history' && current?.repositoryId === repositoryId ? current.returnTo : { view: from, selection: viewerSelectionRef.current },
+    }));
+    firstFileCommitRef.current = { repositoryId, path };
+    if (from !== 'history') {
+      // Not History's last commit: the file's newest change shows once it's read.
+      sectionSelections.remember(repositoryId, 'history', null);
+      showSidebarView('history');
+    }
+    setMobilePane('list');
+  }, [sectionSelections, showSidebarView]);
+  const closeFileHistory = useCallback((back: boolean) => {
+    const current = fileHistory;
+    setFileHistory(null);
+    firstFileCommitRef.current = null;
+    if (!back || !current || current.repositoryId !== repositoryRef.current?.id) return;
+    const { view: to, selection } = current.returnTo;
+    if (to === 'history') {
+      viewerSelectionRef.current = selection;
+      setViewerSelection(selection);
+      return;
+    }
+    pendingSectionSelectionRef.current = selection;
+    showSidebarView(to);
+    if (selection) setMobilePane('viewer');
+  }, [fileHistory, showSidebarView]);
+  // Another repository or worktree has its own files: a file's history is let go when it opens.
+  useEffect(() => {
+    setFileHistory((current) => current && current.repositoryId !== repository?.id ? null : current);
+  }, [repository?.id]);
+  useEffect(() => {
+    const wanted = firstFileCommitRef.current;
+    const first = fileHistoryEntries?.[0];
+    if (!wanted || !activeFileHistory || wanted.repositoryId !== activeFileHistory.repositoryId || wanted.path !== activeFileHistory.path || !fileHistoryEntries) return;
+    firstFileCommitRef.current = null;
+    // On a phone the list is what shows; the commit opens when one is chosen.
+    if (!first || mobile || viewRef.current !== 'history') return;
+    selectViewer({ type: 'commit-file', oid: first.commit.oid, path: first.path, oldPath: first.oldPath ?? undefined });
+  }, [activeFileHistory, fileHistoryEntries, mobile, selectViewer]);
+  const fileHistoryFilter = useMemo<HistoryFileFilter | null>(() => {
+    if (!activeFileHistory) return null;
+    const { view: from, selection } = activeFileHistory.returnTo;
+    const backLabel = selection?.type === 'file' || selection?.type === 'diff' ? selection.path.split('/').pop() ?? selection.path
+      : from === 'history' ? null : from === 'changes' ? 'Changes' : from === 'files' ? 'Files' : from === 'prs' ? 'GitHub' : 'Search';
+    return {
+      path: activeFileHistory.path,
+      entries: new Map((fileHistoryEntries ?? []).map((entry) => [entry.commit.oid, entry])),
+      limited: fileHistoryQuery.data?.pages.at(-1)?.limited === true,
+      backLabel,
+      onBack: () => closeFileHistory(true),
+      onClear: () => closeFileHistory(false),
+    };
+  }, [activeFileHistory, closeFileHistory, fileHistoryEntries, fileHistoryQuery.data]);
+  const fileHistoryOpener = bootstrap?.server?.fileHistory === true ? openFileHistory : null;
   const lineBlameSettings = useMemo<LineBlameSettings | null>(() => repository ? {
     repositoryId: repository.id,
     revision: refreshVersion,
@@ -2198,10 +2290,12 @@ export default function App({ initialView, initialSelection, pullRequestCreation
   };
 
   const loadMore = async () => {
-    if (!repository || !nextCursor) return;
+    const filtered = activeFileHistory !== null;
+    if (!repository || !(filtered ? fileHistoryNextCursor : nextCursor)) return;
     setBusy('history');
     try {
-      await historyQuery.fetchNextPage();
+      const result = filtered ? await fileHistoryQuery.fetchNextPage() : await historyQuery.fetchNextPage();
+      if (result.isError) throw result.error;
     } catch (reason) { reportError('Could not load more history', reason); }
     finally { setBusy(null); }
   };
@@ -3050,6 +3144,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
         {status?.readOnly && <div className="operation-banner">Repository is read-only: {status.operation} is in progress.</div>}
 
         <RepositoryLinksContext.Provider value={repositoryLinks}>
+        <FileHistoryContext.Provider value={fileHistoryOpener}>
         <main className={`workspace${pendingRepositoryId && repositoryLoadVisible ? ' workspace-switching' : ''}`} aria-busy={repositoryLoadPhase ? true : undefined}>
           <aside
             className="sidebar"
@@ -3167,10 +3262,16 @@ export default function App({ initialView, initialSelection, pullRequestCreation
                   upstream={status?.upstream ?? null}
                   readOnly={Boolean(status?.readOnly)}
                   operation={status?.operation ?? null}
-                  commits={commits}
-                  nextCursor={nextCursor}
+                  commits={fileHistoryFilter ? fileHistoryCommits : commits}
+                  nextCursor={fileHistoryFilter ? fileHistoryNextCursor : nextCursor}
+                  fileFilter={fileHistoryFilter}
                   loading={busy === 'history'}
-                  onSelectCommit={(commit) => { selectViewer({ type: 'commit', oid: commit.oid, subject: commit.subject }); }}
+                  onSelectCommit={(commit) => {
+                    const entry = fileHistoryFilter?.entries.get(commit.oid);
+                    // In a file's history, a commit opens on the file's diff; All files is one click from there.
+                    if (entry) selectViewer({ type: 'commit-file', oid: commit.oid, path: entry.path, oldPath: entry.oldPath ?? undefined });
+                    else selectViewer({ type: 'commit', oid: commit.oid, subject: commit.subject });
+                  }}
                   onSelectFile={(oid, file) => { selectViewer({ type: 'commit-file', oid, path: file.path, oldPath: file.oldPath ?? undefined }); }}
                   onUndo={setUndoCommit}
                   undoing={undoingCommit}
@@ -3255,6 +3356,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
                 onClose={(path) => void closeFileTab(path)}
                 onReorder={reorderFileTab}
                 toolsRef={setFileViewerToolbarHost}
+                trailing={fileHistoryOpener && viewerSelection?.type === 'file' ? <FileHistoryButton path={viewerSelection.path} onOpen={fileHistoryOpener} /> : null}
               />
             )}
             <div className="viewer-pane-body">
@@ -3286,7 +3388,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
                       theme={theme}
                       revision={refreshVersion}
                       readOnly={Boolean(status?.readOnly)}
-                      commits={commits ?? NO_COMMITS}
+                      commits={(fileHistoryFilter ? fileHistoryCommits : commits) ?? NO_COMMITS}
                       githubRepository={githubInfo?.isGitHub ? githubInfo.nameWithOwner : null}
                       undoBlocked={Boolean(status?.operation) || undoingCommit}
                       fileStamp={fileStamp}
@@ -3315,6 +3417,7 @@ export default function App({ initialView, initialSelection, pullRequestCreation
             </div>
           </section>
         </main>
+        </FileHistoryContext.Provider>
         </RepositoryLinksContext.Provider>
         {mobile && <div ref={setMobileFloatHost} className="mobile-float">{commitComposer}</div>}
         <nav className="mobile-navigation" aria-label="Repository views">
